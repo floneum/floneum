@@ -1,0 +1,19 @@
+[package]
+name = "ai"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bytesize = "1.2.0"
+llm = { git = "https://github.com/rustformers/llm", branch = "main" }
+log = "0.4.17"
+rand = "0.8.5"
+rustyline = "11.0.0"
+serde_json = "1.0.96"
+spinoff = "0.7.0"
+tokio = { version = "1.28.1", features = ["full"] }
+
+[profile.dev.package.ggml-sys]
+opt-level = 3
