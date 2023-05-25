@@ -1,0 +1,4 @@
+default world hello-world {
+    import name: func() -> string
+    export greet: func()
+}

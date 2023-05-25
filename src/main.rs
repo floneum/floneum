@@ -1,14 +1,27 @@
+use futures_util::stream::StreamExt;
 use llm::{
-    InferenceFeedback, InferenceRequest, InferenceResponse, InferenceStats, LoadProgress,
+    InferenceFeedback, InferenceRequest, InferenceResponse, InferenceStats, LoadProgress, Model,
     ModelArchitecture,
 };
 use rustyline::error::ReadlineError;
 use spinoff::{spinners::Dots2, Spinner};
-use std::{convert::Infallible, io::Write, path::Path, time::Instant};
+use std::{convert::Infallible, error::Error, io::Write, path::PathBuf, time::Instant};
+use tokio::{fs::File, io::AsyncWriteExt};
 
-fn main() {
-    let model_architecture = ModelArchitecture::Mpt;
-    let model_path = Path::new("C:/Users/Desktop/Desktop/mpt-7b-instruct-q4_0.bin");
+mod plugins;
+
+async fn download(model_type: ModelArchitecture) -> Box<dyn Model> {
+    let url = match model_type {
+        ModelArchitecture::Bloom => "https://huggingface.co/nouamanetazi/bloomz-560m-ggml/resolve/main/ggml-model-bloomz-560m-f16-q4_0.bin",
+        ModelArchitecture::Gpt2 => todo!(),
+        ModelArchitecture::GptJ => "https://huggingface.co/Kastor/GPT-J-6B-Pygway-ggml-q4_1/resolve/main/GPT-J-6B-Pygway-ggml-q4_0.bin",
+        ModelArchitecture::GptNeoX => "https://huggingface.co/oeathus/stablelm-base-alpha-7b-ggml-q4/resolve/main/ggml-model-q4_0.bin",
+        ModelArchitecture::Llama => todo!(),
+        ModelArchitecture::Mpt => "https://huggingface.co/LLukas22/mpt-7b-ggml/resolve/main/mpt-7b-storywriter-q4_0.bin",
+    };
+
+    let path = download_model(url).await.unwrap();
+
     let overrides = None;
 
     let sp = Some(Spinner::new(Dots2, "Loading model...", None));
@@ -16,27 +29,60 @@ fn main() {
     let now = Instant::now();
     let prev_load_time = now;
 
-    let model = llm::load_dynamic(
-        model_architecture,
-        model_path,
+    llm::load_dynamic(
+        model_type,
+        &path,
         Default::default(),
         overrides,
         load_progress_callback(sp, now, prev_load_time),
     )
-    .unwrap_or_else(|err| {
-        panic!("Failed to load {model_architecture} model from {model_path:?}: {err}")
-    });
+    .unwrap_or_else(|err| panic!("Failed to load {model_type} model from {path:?}: {err}"))
+}
+
+async fn download_model(model_url: &str) -> Result<PathBuf, Box<dyn Error>> {
+    let path: PathBuf = format!("./{}", model_url.rsplit_once('/').unwrap().1).into();
+    if path.exists() {
+        return Ok(path);
+    }
+    let response = reqwest::get(model_url).await?;
+    println!("downloading model. This will take several minutes");
+
+    let mut file = { File::create(&path).await? };
+
+    let size = response.content_length().unwrap_or(4_294_967_296) as usize;
+
+    let mut stream = response.bytes_stream();
+    let mut current_size = 0;
+    let mut old_precent = 0;
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result?;
+        current_size += chunk.len();
+        file.write_all(&chunk).await?;
+        let new_precent = current_size * 100 / size;
+        if old_precent != new_precent {
+            println!("{}%", new_precent);
+        }
+        old_precent = new_precent;
+    }
+
+    file.flush().await?;
+
+    println!("Finished Downloading");
+
+    Ok(path)
+}
+
+#[tokio::main]
+async fn main() {
+    let model_architecture = ModelArchitecture::Mpt;
+    let model = download(model_architecture).await;
 
     let mut session = model.start_session(Default::default());
 
     let character_name = "### Assistant";
     let user_name = "### Human";
-    let persona = "A chat between a human and an assistant. The Human is unhelpful and the assistant is helpful.";
-    let history = format!(
-        "{character_name}: Hello - How may I help you today?\n\
-         {user_name}: What is the capital or France?\n\
-         {character_name}:  Paris is the capital of France."
-    );
+    let persona = include_str!("../prompt.txt");
+    let history = format!("{character_name}: Hello - How may I help you today?\n");
 
     session
         .feed_prompt(
@@ -46,7 +92,7 @@ fn main() {
             &mut Default::default(),
             llm::feed_prompt_callback(prompt_callback),
         )
-        .expect("Failed to ingest initial prompt.");
+        .unwrap();
 
     let mut rl = rustyline::DefaultEditor::new().expect("Failed to create input reader");
 
