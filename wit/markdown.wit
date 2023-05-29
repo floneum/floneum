@@ -1,0 +1,21 @@
+package plugins:main
+
+interface imports {
+  load-model: func(ty: model-type) -> model-id
+  unload-model: func(id: model-id)
+  infer: func(id: model-id, input: string, stop-on: string) -> string
+  print: func(str: string)
+  
+  record model-id {
+    id: u32,
+  }
+
+  variant model-type { MPT(mpt-type) }
+  variant mpt-type { base, story, instruct, chat }
+}
+
+world plugin-world {
+  import imports
+
+  export start: func()
+}

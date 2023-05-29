@@ -3,9 +3,22 @@ name = "plugin"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[lib]
-crate-type = ["cdylib"]
-
 [dependencies]
+wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", features = ['component-model'] }
+wit-component = "0.11.0"
+bytesize = "1.2.0"
+futures-util = "0.3.28"
+llm = { git = "https://github.com/rustformers/llm", branch = "main" }
+log = "0.4.17"
+rand = "0.8.5"
+reqwest = { version = "0.11.18", features = ["stream"] }
+serde_json = "1.0.96"
+spinoff = "0.7.0"
+tokio = { version = "1.28.1", features = ["full"] }
+scraper = "0.16.0"
+wai-bindgen-rust = "0.2.3"
+wasmer = "3.3.0"
+slab = "0.4.8"
+
+[profile.dev.package.ggml-sys]
+opt-level = 3
