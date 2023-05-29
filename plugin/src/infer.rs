@@ -4,7 +4,7 @@ use llm::{
     InferenceFeedback, InferenceRequest, InferenceResponse, LoadProgress, Model, ModelArchitecture,
 };
 use spinoff::{spinners::Dots2, Spinner};
-use std::{convert::Infallible, error::Error, io::Write, path::PathBuf, time::Instant};
+use std::{convert::Infallible, error::Error, path::PathBuf, time::Instant};
 use tokio::{fs::File, io::AsyncWriteExt};
 
 fn download(model_type: ModelType) -> Box<dyn Model> {
@@ -94,7 +94,13 @@ impl InferenceSessions {
         self.sessions.remove(id.id as usize);
     }
 
-    pub fn infer(&mut self, id: ModelId, prompt: String, stop_on: String) -> String {
+    pub fn infer(
+        &mut self,
+        id: ModelId,
+        prompt: String,
+        max_tokens: Option<u32>,
+        stop_on: Option<String>,
+    ) -> String {
         let (model, session) = self.sessions.get_mut(id.id as usize).unwrap();
 
         let mut rng = rand::thread_rng();
@@ -103,7 +109,7 @@ impl InferenceSessions {
             prompt: (&prompt).into(),
             parameters: &Default::default(),
             play_back_previous_tokens: false,
-            maximum_token_count: None,
+            maximum_token_count: max_tokens.map(|x| x as usize),
         };
 
         session
@@ -178,43 +184,24 @@ fn load_progress_callback(
     }
 }
 
-fn prompt_callback(resp: InferenceResponse) -> Result<InferenceFeedback, Infallible> {
-    match resp {
-        InferenceResponse::PromptToken(t) | InferenceResponse::InferredToken(t) => print_token(t),
-        _ => Ok(InferenceFeedback::Continue),
-    }
-}
-
 fn inference_callback(
-    stop_sequence: String,
+    stop_sequence: Option<String>,
     buf: &mut String,
 ) -> impl FnMut(InferenceResponse) -> Result<InferenceFeedback, Infallible> + '_ {
     move |resp| match resp {
         InferenceResponse::InferredToken(t) => {
             let mut reverse_buf = buf.clone();
             reverse_buf.push_str(t.as_str());
-            if stop_sequence.as_str().eq(reverse_buf.as_str()) {
-                buf.clear();
-                return Ok(InferenceFeedback::Halt);
-            } else if stop_sequence.as_str().starts_with(reverse_buf.as_str()) {
-                buf.push_str(t.as_str());
-                return Ok(InferenceFeedback::Continue);
+            if let Some(stop_sequence) = &stop_sequence {
+                if stop_sequence.as_str().eq(reverse_buf.as_str()) {
+                    return Ok(InferenceFeedback::Halt);
+                }
             }
+            buf.push_str(t.as_str());
 
-            if buf.is_empty() {
-                print_token(t)
-            } else {
-                print_token(reverse_buf)
-            }
+            Ok(InferenceFeedback::Continue)
         }
         InferenceResponse::EotToken => Ok(InferenceFeedback::Halt),
         _ => Ok(InferenceFeedback::Continue),
     }
-}
-
-fn print_token(t: String) -> Result<InferenceFeedback, Infallible> {
-    print!("{t}");
-    std::io::stdout().flush().unwrap();
-
-    Ok(InferenceFeedback::Continue)
 }

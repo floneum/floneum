@@ -7,14 +7,28 @@ export_plugin_world!(Plugin);
 
 impl PluginWorld for Plugin {
     fn start() {
-        let session = load_model(ModelType::Mpt(MptType::Instruct));
+        for model in [
+            ModelType::Mpt(MptType::Instruct),
+            ModelType::Mpt(MptType::Chat),
+            ModelType::Mpt(MptType::Base),
+            ModelType::Mpt(MptType::Story),
+        ] {
+            let session = load_model(model);
 
-        let responce = infer(
-            session,
-            "### Assistant: Hello - How may I help you today?",
-            " ",
-        );
+            let responce = infer(
+                session,
+                r####"A chat between a human and an assistant. The assistant is trained to be helpful and respond with a responce starting with "### Assistant".
+### Human
+What are the most important countries in Europe geopolitically?
+### Assistant
+"####,
+                Some(500),
+                Some("### Human"),
+            );
 
-        print(&responce);
+            print(&(responce + "\n\n\n"));
+
+            unload_model(session);
+        }
     }
 }

@@ -3,7 +3,7 @@ use wasmtime::component::{Component, Linker};
 use wasmtime::Config;
 use wasmtime::Engine;
 use wasmtime::Store;
-use wit_component::{ComponentEncoder, StringEncoding};
+use wit_component::ComponentEncoder;
 
 mod infer;
 
@@ -30,18 +30,20 @@ impl Host for State {
         &mut self,
         id: ModelId,
         input: String,
-        stop_on: String,
+        max_tokens: Option<u32>,
+        stop_on: Option<String>,
     ) -> std::result::Result<String, wasmtime::Error> {
-        Ok(self.sessions.infer(id, input, stop_on))
+        Ok(self.sessions.infer(id, input, max_tokens, stop_on))
     }
 
     fn print(&mut self, str: String) -> std::result::Result<(), wasmtime::Error> {
-        println!("{}", str);
+        print!("{}", str);
         Ok(())
     }
 }
 
 fn main() {
+    println!("loading plugin");
     let mut config = Config::new();
     config.wasm_component_model(true);
     let engine = Engine::new(&config).unwrap();
@@ -52,6 +54,8 @@ fn main() {
     let module =
         std::fs::read("../plugin_demo/target/wasm32-unknown-unknown/release/plugin_demo.wasm")
             .unwrap();
+    let size = module.len();
+    println!("loaded plugin ({:01} mb)", size as f64 / (1024. * 1024.));
     // then we transform module to compoennt.
     // remember to get wasi_snapshot_preview1.wasm first.
     let component = ComponentEncoder::default()
@@ -66,8 +70,7 @@ fn main() {
         .encode()
         .unwrap();
     let component = Component::from_binary(&engine, &component).unwrap();
-    // after getting the component, we can instantiate a markdown instance.
     let (testing, _instance) = PluginWorld::instantiate(&mut store, &component, &linker).unwrap();
-    // let res = markdown(&mut store, 1234).unwrap();
-    panic!("res: {:?}", testing.call_start(&mut store));
+    testing.call_start(&mut store).unwrap();
+    println!("shutting down");
 }

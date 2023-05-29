@@ -3,7 +3,7 @@ package plugins:main
 interface imports {
   load-model: func(ty: model-type) -> model-id
   unload-model: func(id: model-id)
-  infer: func(id: model-id, input: string, stop-on: string) -> string
+  infer: func(id: model-id, input: string, max-tokens: option<u32>, stop-on: option<string>) -> string
   print: func(str: string)
   
   record model-id {
@@ -11,7 +11,7 @@ interface imports {
   }
 
   variant model-type { MPT(mpt-type) }
-  variant mpt-type { base, story, instruct, chat }
+  enum mpt-type { base, story, instruct, chat }
 }
 
 world plugin-world {
