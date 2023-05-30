@@ -11,13 +11,29 @@ interface imports {
   }
 
   variant model-type { MPT(mpt-type), gpt-neo-x(gpt-neo-x-type), llama(llama-type) }
-  enum llama-type { vicuna }
+  enum llama-type { vicuna, guanaco, wizardlm }
   enum mpt-type { base, story, instruct, chat }
-  enum gpt-neo-x-type { large-pythia, tiny-pythia, dolly-seven-b }
+  enum gpt-neo-x-type { large-pythia, tiny-pythia, dolly-seven-b, stablelm }
+}
+
+interface definitions {
+  record definition {
+    name: string,
+    description: string,
+    inputs: list<input>
+  }
+
+  variant input {
+    text(string),
+    embedding(list<float32>),
+  }
+
+  structure: func() -> definition
 }
 
 world plugin-world {
   import imports
+  export definitions
 
   export start: func()
 }

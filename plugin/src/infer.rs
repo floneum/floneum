@@ -8,9 +8,19 @@ use std::{convert::Infallible, error::Error, path::PathBuf, time::Instant};
 use tokio::{fs::File, io::AsyncWriteExt};
 
 pub fn download(model_type: ModelType) -> Box<dyn Model> {
+    // https://www.reddit.com/r/LocalLLaMA/wiki/models/
     let url = match model_type {
         ModelType::Llama(LlamaType::Vicuna) => {
             "https://huggingface.co/CRD716/ggml-vicuna-1.1-quantized/resolve/main/ggml-vicuna-13B-1.1-q4_0.bin"
+        }
+        ModelType::Llama(LlamaType::Guanaco) => {
+            "https://huggingface.co/TheBloke/guanaco-7B-GGML/resolve/main/guanaco-7B.ggmlv3.q4_0.bin"
+        }
+        ModelType::Llama(LlamaType::Wizardlm) => {
+            "https://huggingface.co/TehVenom/WizardLM-13B-Uncensored-Q5_1-GGML/blob/main/WizardML-Unc-13b-Q5_1.bin"
+        }
+        ModelType::GptNeoX(GptNeoXType::Stablelm) => {
+            "https://huggingface.co/cakewalk/ggml-q4_0-stablelm-tuned-alpha-7b/resolve/main/ggml-model-stablelm-tuned-alpha-7b-q4_0.bin"
         }
         ModelType::GptNeoX(GptNeoXType::DollySevenB) => {
             "https://huggingface.co/mverrilli/dolly-v2-7b-ggml/resolve/main/ggml-model-f16.bin"
