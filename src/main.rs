@@ -1,8 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 use eframe::{
-    egui::{self, DragValue, TextEdit, TextStyle},
-    epaint::{ahash::HashSet, Rect},
+    egui::{self, TextEdit},
+    epaint::{ahash::HashSet},
 };
 use egui_node_graph::*;
 use plugin::exports::plugins::main::definitions::ValueType;
