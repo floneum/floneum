@@ -8,9 +8,10 @@ use egui_node_graph::*;
 use plugin::exports::plugins::main::definitions::ValueType;
 use plugin::{Plugin, PluginEngine, PluginInstance};
 use serde::{Deserialize, Serialize};
-use std::{borrow::Cow, collections::HashMap, path::PathBuf};
+use std::{borrow::Cow, path::PathBuf};
 
-fn main() {
+#[tokio::main]
+async fn main() {
     use eframe::egui::Visuals;
 
     eframe::run_native(
