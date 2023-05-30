@@ -1,5 +1,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
+use eframe::{
+    egui::{self, DragValue, TextEdit, TextStyle},
+    epaint::{ahash::HashSet, Rect},
+};
+use egui_node_graph::*;
+use plugin::exports::plugins::main::definitions::ValueType;
+use plugin::{Plugin, PluginEngine, PluginInstance};
+use serde::{Deserialize, Serialize};
+use std::{borrow::Cow, collections::HashMap, path::PathBuf};
+
 fn main() {
     use eframe::egui::Visuals;
 
@@ -13,16 +23,6 @@ fn main() {
     )
     .expect("Failed to run native example");
 }
-
-use std::{borrow::Cow, collections::HashMap, path::PathBuf};
-
-use eframe::{
-    egui::{self, DragValue, TextEdit, TextStyle},
-    epaint::{Rect, ahash::HashSet},
-};
-use egui_node_graph::*;
-use plugin::{Plugin, PluginEngine, PluginInstance};
-use serde::{Deserialize, Serialize};
 
 // ========= First, define your user data types =============
 
@@ -151,7 +151,7 @@ impl NodeTemplateTrait for PluginId {
     fn build_node(
         &self,
         graph: &mut Graph<Self::NodeData, Self::DataType, Self::ValueType>,
-        user_state: &mut Self::UserState,
+        _user_state: &mut Self::UserState,
         node_id: NodeId,
     ) {
         // The nodes are created empty by default. This function needs to take
@@ -187,8 +187,25 @@ impl NodeTemplateTrait for PluginId {
             graph.add_output_param(node_id, name.to_string(), MyDataType::Embedding);
         };
 
-        input_text(graph, "value");
-        output_text(graph, "out");
+        let node = &graph[node_id];
+
+        let meta = node.user_data.instance.metadata().clone();
+
+        for input in &meta.inputs {
+            let name = &input.name;
+            match &input.ty {
+                ValueType::Text => input_text(graph, name),
+                ValueType::Embedding => input_vector(graph, name),
+            }
+        }
+
+        for output in &meta.outputs {
+            let name = &output.name;
+            match &output.ty {
+                ValueType::Text => output_text(graph, name),
+                ValueType::Embedding => output_vector(graph, name),
+            }
+        }
     }
 }
 
@@ -252,10 +269,10 @@ impl NodeDataTrait for MyNodeData {
     // node graph library.
     fn bottom_ui(
         &self,
-        ui: &mut egui::Ui,
-        node_id: NodeId,
+        _ui: &mut egui::Ui,
+        _node_id: NodeId,
         _graph: &Graph<MyNodeData, MyDataType, MyValueType>,
-        user_state: &mut Self::UserState,
+        _user_state: &mut Self::UserState,
     ) -> Vec<NodeResponse<MyResponse, MyNodeData>>
     where
         MyResponse: UserResponseTrait,
@@ -265,30 +282,7 @@ impl NodeDataTrait for MyNodeData {
         // the value stored in the global user state, and draw different button
         // UIs based on that.
 
-        let mut responses = vec![];
-        let is_active = user_state
-            .active_node
-            .map(|id| id == node_id)
-            .unwrap_or(false);
-
-        // Pressing the button will emit a custom user response to either set,
-        // or clear the active node. These responses do nothing by themselves,
-        // the library only makes the responses available to you after the graph
-        // has been drawn. See below at the update method for an example.
-        if !is_active {
-            if ui.button("👁 Set active").clicked() {
-                responses.push(NodeResponse::User(MyResponse::SetActiveNode(node_id)));
-            }
-        } else {
-            let button =
-                egui::Button::new(egui::RichText::new("👁 Active").color(egui::Color32::BLACK))
-                    .fill(egui::Color32::GOLD);
-            if ui.add(button).clicked() {
-                responses.push(NodeResponse::User(MyResponse::ClearActiveNode));
-            }
-        }
-
-        responses
+        vec![]
     }
 }
 
@@ -356,11 +350,7 @@ impl eframe::App for NodeGraphExample {
             .show(ctx, |ui| {
                 self.state.draw_graph_editor(
                     ui,
-                    AllMyNodeTemplates(
-                        self.user_state.all_plugins
-                            .iter().copied()
-                            .collect(),
-                    ),
+                    AllMyNodeTemplates(self.user_state.all_plugins.iter().copied().collect()),
                     &mut self.user_state,
                     Vec::default(),
                 )
@@ -381,7 +371,7 @@ impl eframe::App for NodeGraphExample {
     }
 }
 
-type OutputsCache = HashMap<OutputId, MyValueType>;
+// type OutputsCache = HashMap<OutputId, MyValueType>;
 
 // /// Recursively evaluates all dependencies of this node, then evaluates the node itself.
 // pub fn evaluate_node(

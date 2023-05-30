@@ -5,7 +5,7 @@ use llm::{
 };
 use spinoff::{spinners::Dots2, Spinner};
 use std::{convert::Infallible, error::Error, path::PathBuf, time::Instant};
-use tokio::{fs::File, io::AsyncWriteExt};
+use tokio::{fs::File, io::AsyncWriteExt, runtime::Handle};
 
 pub fn download(model_type: ModelType) -> Box<dyn Model> {
     // https://www.reddit.com/r/LocalLLaMA/wiki/models/
@@ -50,8 +50,13 @@ pub fn download(model_type: ModelType) -> Box<dyn Model> {
         ModelType::Mpt(_) => ModelArchitecture::Mpt,
     };
 
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let path = rt.block_on(download_model(url)).unwrap();
+    let handle = Handle::current();
+    let path = std::thread::spawn(move || {
+        // Using Handle::block_on to run async code in the new thread.
+        handle.block_on(async { download_model(url).await.unwrap() })
+    })
+    .join()
+    .unwrap();
 
     let sp = Some(Spinner::new(Dots2, "Loading model...", None));
 

@@ -1,6 +1,9 @@
-wit_bindgen::generate!(in "../wit");
+use std::vec;
+
 use crate::exports::plugins::main::definitions::*;
 use crate::plugins::main::imports::*;
+
+wit_bindgen::generate!(in "../wit");
 
 struct Plugin;
 
@@ -11,27 +14,30 @@ impl Definitions for Plugin {
         Definition {
             name: "test plugin".to_string(),
             description: "this is a test plugin".to_string(),
-            inputs: vec![],
+            inputs: vec![IoDefinition {
+                name: "input".to_string(),
+                ty: ValueType::Text,
+            }],
+            outputs: vec![IoDefinition {
+                name: "output".to_string(),
+                ty: ValueType::Text,
+            }],
         }
     }
-}
 
-impl PluginWorld for Plugin {
-    fn start() {
+    fn run(input: Vec<Value>) -> Vec<Value> {
         let model = ModelType::GptNeoX(GptNeoXType::TinyPythia);
         let session = load_model(model);
 
-        let responce = infer(
-            session,
-            r####"A chat between a human and an assistant. The assistant is trained to be helpful and respond with a responce starting with "### Assistant".
-### Human
-What is the capital of France?
-### Assistant
-"####,
-            Some(50),
-            Some("### Human"),
-        );
+        let text_input = match &input[0] {
+            Value::Text(text) => text,
+            _ => panic!("expected text input"),
+        };
 
-        print(&(responce + "\n\n\n"));
+        let responce = infer(session, text_input, Some(50), Some("### Human"));
+
+        print(&(responce.clone() + "\n\n\n"));
+
+        vec![Value::Text(responce)]
     }
 }

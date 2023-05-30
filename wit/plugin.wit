@@ -20,20 +20,31 @@ interface definitions {
   record definition {
     name: string,
     description: string,
-    inputs: list<input>
+    inputs: list<io-definition>,
+    outputs: list<io-definition>,
   }
 
-  variant input {
+  record io-definition {
+    name: string,
+    ty: value-type,
+  }
+
+  variant value {
     text(string),
     embedding(list<float32>),
   }
 
+  enum value-type {
+    text,
+    embedding,
+  }
+
   structure: func() -> definition
+
+  run: func(inputs: list<value>) -> list<value>
 }
 
 world plugin-world {
   import imports
   export definitions
-
-  export start: func()
 }

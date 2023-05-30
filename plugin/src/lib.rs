@@ -1,8 +1,8 @@
-use std::ops::{Deref, DerefMut};
 use std::path::Path;
 
 use crate::plugins::main::imports::*;
-use exports::plugins::main::definitions::Definition;
+use exports::plugins::main::definitions::*;
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use wasmtime::component::{Component, Linker};
 use wasmtime::Config;
 use wasmtime::Engine;
@@ -79,7 +79,10 @@ impl PluginEngine {
             .validate(true)
             .adapter(
                 "wasi_snapshot_preview1",
-                &std::fs::read(&std::path::Path::new("/Users/evanalmloff/Desktop/Github/ai/plugin/wasi_snapshot_preview1.wasm")).unwrap(),
+                &std::fs::read(&std::path::Path::new(
+                    "/Users/evanalmloff/Desktop/Github/ai/plugin/wasi_snapshot_preview1.wasm",
+                ))
+                .unwrap(),
             )
             .unwrap()
             .encode()
@@ -111,7 +114,26 @@ impl Plugin {
         let (world, _instance) =
             PluginWorld::instantiate(&mut store, &self.component, &engine.linker).unwrap();
 
-        PluginInstance { store, world }
+        let (input_sender, mut input_reciever) = unbounded_channel::<Vec<Value>>();
+        let (output_sender, output_reciever) = unbounded_channel();
+
+        tokio::spawn(async move {
+            loop {
+                let Some(inputs) = input_reciever.recv().await else{break;};
+                let borrowed = inputs.iter().collect::<Vec<_>>();
+                let outputs = world.interface0.call_run(&mut store, &borrowed).unwrap();
+                if output_sender.send(outputs).is_err() {
+                    break;
+                }
+            }
+            println!("plugin instance dropped... exiting");
+        });
+
+        PluginInstance {
+            sender: input_sender,
+            reciever: output_reciever,
+            metadata: self.metadata.clone(),
+        }
     }
 
     pub fn name(&self) -> String {
@@ -124,8 +146,9 @@ impl Plugin {
 }
 
 pub struct PluginInstance {
-    world: PluginWorld,
-    store: Store<State>,
+    metadata: Definition,
+    sender: UnboundedSender<Vec<Value>>,
+    reciever: UnboundedReceiver<Vec<Value>>,
 }
 
 impl Default for PluginInstance {
@@ -135,45 +158,42 @@ impl Default for PluginInstance {
 }
 
 impl PluginInstance {
-    pub fn start(&mut self) -> wasmtime::Result<()> {
-        self.world.call_start(&mut self.store)
+    pub async fn run(&mut self, inputs: Vec<Value>) -> Vec<Value> {
+        self.sender.send(inputs).unwrap();
+        self.reciever.recv().await.unwrap()
     }
-}
 
-impl Deref for PluginInstance {
-    type Target = PluginWorld;
-
-    fn deref(&self) -> &Self::Target {
-        &self.world
-    }
-}
-
-impl DerefMut for PluginInstance {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.world
+    pub fn metadata(&self) -> &Definition {
+        &self.metadata
     }
 }
 
 #[test]
 fn load_plugin() {
-    // first build the plugin_demo
-    // cargo build --release --target wasm32-unknown-unknown
-    let command = std::process::Command::new("cargo")
-        .args(&["build", "--release", "--target", "wasm32-unknown-unknown"])
-        .current_dir("../plugin_demo")
-        .stdout(std::process::Stdio::inherit())
-        .output()
-        .unwrap();
+    let runtime = tokio::runtime::Runtime::new().unwrap();
 
-    println!("{:?}", command);
+    runtime.block_on(async move {
+        // first build the plugin_demo
+        // cargo build --release --target wasm32-unknown-unknown
+        let command = std::process::Command::new("cargo")
+            .args(&["build", "--release", "--target", "wasm32-unknown-unknown"])
+            .current_dir("../plugin_demo")
+            .stdout(std::process::Stdio::inherit())
+            .output()
+            .unwrap();
 
-    let path = "../target/wasm32-unknown-unknown/release/plugin_demo.wasm";
+        println!("{:?}", command);
 
-    let mut engine = PluginEngine::default();
+        let path = "../target/wasm32-unknown-unknown/release/plugin_demo.wasm";
 
-    let plugin = engine.load_plugin(&std::path::PathBuf::from(path));
+        let mut engine = PluginEngine::default();
 
-    let mut instance = plugin.instance(&engine);
+        let plugin = engine.load_plugin(&std::path::PathBuf::from(path));
 
-    instance.start().unwrap();
+        let mut instance = plugin.instance(&engine);
+
+        let inputs = vec![Value::Text("hello world".to_string())];
+        let outputs = instance.run(inputs).await;
+        println!("{:?}", outputs);
+    });
 }
