@@ -8,6 +8,10 @@ export_plugin_world!(Plugin);
 impl PluginWorld for Plugin {
     fn start() {
         for model in [
+            ModelType::GptNeoX(GptNeoXType::TinyPythia),
+            ModelType::GptNeoX(GptNeoXType::LargePythia),
+            ModelType::Llama(LlamaType::Vicuna),
+            ModelType::GptNeoX(GptNeoXType::DollySevenB),
             ModelType::Mpt(MptType::Instruct),
             ModelType::Mpt(MptType::Chat),
             ModelType::Mpt(MptType::Base),

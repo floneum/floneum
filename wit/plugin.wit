@@ -10,8 +10,10 @@ interface imports {
     id: u32,
   }
 
-  variant model-type { MPT(mpt-type) }
+  variant model-type { MPT(mpt-type), gpt-neo-x(gpt-neo-x-type), llama(llama-type) }
+  enum llama-type { vicuna }
   enum mpt-type { base, story, instruct, chat }
+  enum gpt-neo-x-type { large-pythia, tiny-pythia, dolly-seven-b }
 }
 
 world plugin-world {

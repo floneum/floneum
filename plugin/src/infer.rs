@@ -1,4 +1,4 @@
-use crate::{ModelId, ModelType, MptType};
+use crate::{GptNeoXType, LlamaType, ModelId, ModelType, MptType};
 use futures_util::stream::StreamExt;
 use llm::{
     InferenceFeedback, InferenceRequest, InferenceResponse, LoadProgress, Model, ModelArchitecture,
@@ -7,8 +7,20 @@ use spinoff::{spinners::Dots2, Spinner};
 use std::{convert::Infallible, error::Error, path::PathBuf, time::Instant};
 use tokio::{fs::File, io::AsyncWriteExt};
 
-fn download(model_type: ModelType) -> Box<dyn Model> {
+pub fn download(model_type: ModelType) -> Box<dyn Model> {
     let url = match model_type {
+        ModelType::Llama(LlamaType::Vicuna) => {
+            "https://huggingface.co/CRD716/ggml-vicuna-1.1-quantized/resolve/main/ggml-vicuna-13B-1.1-q4_0.bin"
+        }
+        ModelType::GptNeoX(GptNeoXType::DollySevenB) => {
+            "https://huggingface.co/mverrilli/dolly-v2-7b-ggml/resolve/main/ggml-model-f16.bin"
+        }
+        ModelType::GptNeoX(GptNeoXType::TinyPythia) => {
+            "https://huggingface.co/rustformers/pythia-ggml/resolve/main/pythia-70m-q4_0.bin"
+        }
+        ModelType::GptNeoX(GptNeoXType::LargePythia) => {
+            "https://huggingface.co/rustformers/pythia-ggml/resolve/main/pythia-2.8b-q4_0.bin"
+        }
         ModelType::Mpt(MptType::Chat) => {
             "https://huggingface.co/rustformers/mpt-7b-ggml/resolve/main/mpt-7b-chat-q4_0.bin"
         }
@@ -22,11 +34,14 @@ fn download(model_type: ModelType) -> Box<dyn Model> {
             "https://huggingface.co/rustformers/mpt-7b-ggml/resolve/main/mpt-7b-q4_0.bin"
         }
     };
+    let archetecture = match model_type {
+        ModelType::Llama(_) => ModelArchitecture::Llama,
+        ModelType::GptNeoX(_) => ModelArchitecture::GptNeoX,
+        ModelType::Mpt(_) => ModelArchitecture::Mpt,
+    };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     let path = rt.block_on(download_model(url)).unwrap();
-
-    let overrides = None;
 
     let sp = Some(Spinner::new(Dots2, "Loading model...", None));
 
@@ -34,10 +49,10 @@ fn download(model_type: ModelType) -> Box<dyn Model> {
     let prev_load_time = now;
 
     llm::load_dynamic(
-        ModelArchitecture::Mpt,
+        archetecture,
         &path,
+        llm::VocabularySource::Model,
         Default::default(),
-        overrides,
         load_progress_callback(sp, now, prev_load_time),
     )
     .unwrap_or_else(|err| panic!("Failed to load model from {path:?}: {err}"))

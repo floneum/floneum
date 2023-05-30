@@ -5,6 +5,7 @@ use wasmtime::Engine;
 use wasmtime::Store;
 use wit_component::ComponentEncoder;
 
+mod embedding;
 mod infer;
 
 use crate::infer::InferenceSessions;
