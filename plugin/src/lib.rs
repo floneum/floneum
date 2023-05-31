@@ -195,7 +195,7 @@ fn load_plugin() {
 
         let plugin = engine.load_plugin(&std::path::PathBuf::from(path));
 
-        let mut instance = plugin.instance(&engine);
+        let instance = plugin.instance(&engine);
 
         let inputs = vec![Value::Text("hello world".to_string())];
         let outputs = instance.run(inputs).await;
