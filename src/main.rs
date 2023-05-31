@@ -2,13 +2,14 @@
 
 use eframe::{
     egui::{self, TextEdit},
-    epaint::{ahash::HashSet},
+    epaint::ahash::{HashMap, HashSet},
 };
 use egui_node_graph::*;
-use plugin::exports::plugins::main::definitions::ValueType;
+use plugin::exports::plugins::main::definitions::{Value, ValueType};
 use plugin::{Plugin, PluginEngine, PluginInstance};
 use serde::{Deserialize, Serialize};
 use std::{borrow::Cow, path::PathBuf};
+use tokio::sync::mpsc::{Receiver, Sender};
 
 #[tokio::main]
 async fn main() {
@@ -23,6 +24,11 @@ async fn main() {
         }),
     )
     .expect("Failed to run native example");
+}
+
+struct SetOutputMessage {
+    node_id: NodeId,
+    values: Vec<Value>,
 }
 
 // ========= First, define your user data types =============
@@ -89,6 +95,8 @@ pub struct MyGraphState {
     #[serde(skip)]
     pub plugins: slab::Slab<Plugin>,
     pub all_plugins: HashSet<PluginId>,
+    #[serde(skip)]
+    pub node_outputs: HashMap<NodeId, Vec<Value>>,
 }
 
 impl MyGraphState {
@@ -272,7 +280,7 @@ impl NodeDataTrait for MyNodeData {
         ui: &mut egui::Ui,
         node_id: NodeId,
         _graph: &Graph<MyNodeData, MyDataType, MyValueType>,
-        _user_state: &mut Self::UserState,
+        user_state: &mut Self::UserState,
     ) -> Vec<NodeResponse<MyResponse, MyNodeData>>
     where
         MyResponse: UserResponseTrait,
@@ -284,8 +292,26 @@ impl NodeDataTrait for MyNodeData {
 
         // This allows you to return your responses from the inline widgets.
         let run_button = ui.button("Run");
-        if run_button.clicked(){
+        if run_button.clicked() {
             return vec![NodeResponse::User(MyResponse::RunNode(node_id))];
+        }
+
+        // Render the current output of the node
+        let output = user_state
+            .node_outputs
+            .get(&node_id)
+            .cloned()
+            .unwrap_or_default();
+
+        for value in output {
+            ui.horizontal(|ui| match &value {
+                Value::Embedding(values) => {
+                    ui.label(format!("{:?}", values));
+                }
+                Value::Text(value) => {
+                    ui.label(value);
+                }
+            });
         }
 
         vec![]
@@ -295,15 +321,30 @@ impl NodeDataTrait for MyNodeData {
 type MyGraph = Graph<MyNodeData, MyDataType, MyValueType>;
 type MyEditorState = GraphEditorState<MyNodeData, MyDataType, MyValueType, PluginId, MyGraphState>;
 
-#[derive(Default)]
 pub struct NodeGraphExample {
-    // The `GraphEditorState` is the top-level object. You "register" all your
-    // custom types by specifying it as its generic parameters.
     state: MyEditorState,
 
     user_state: MyGraphState,
 
     search_text: String,
+
+    rx: Receiver<SetOutputMessage>,
+
+    tx: Sender<SetOutputMessage>,
+}
+
+impl Default for NodeGraphExample {
+    fn default() -> Self {
+        let (tx, rx) = tokio::sync::mpsc::channel(100);
+
+        Self {
+            state: MyEditorState::default(),
+            user_state: MyGraphState::default(),
+            search_text: String::new(),
+            rx,
+            tx,
+        }
+    }
 }
 
 const PERSISTENCE_KEY: &str = "egui_node_graph";
@@ -316,10 +357,14 @@ impl NodeGraphExample {
             .storage
             .and_then(|storage| eframe::get_value(storage, PERSISTENCE_KEY))
             .unwrap_or_default();
+        let (tx, rx) = tokio::sync::mpsc::channel(100);
+
         Self {
             state,
             user_state: MyGraphState::default(),
             search_text: String::new(),
+            rx,
+            tx,
         }
     }
 }
@@ -333,6 +378,11 @@ impl eframe::App for NodeGraphExample {
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Recieve any async messages about setting node outputs.
+        while let Ok(msg) = self.rx.try_recv() {
+            self.user_state.node_outputs.insert(msg.node_id, msg.values);
+        }
+
         egui::TopBottomPanel::top("top").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 egui::widgets::global_dark_light_mode_switch(ui);
@@ -363,9 +413,35 @@ impl eframe::App for NodeGraphExample {
             })
             .inner;
 
-        for responce in graph_response.node_responses  {
-            if let NodeResponse::User(MyResponse::RunNode(id)) = responce{
-                println!("run node {:?}", id);
+        for responce in graph_response.node_responses {
+            if let NodeResponse::User(MyResponse::RunNode(id)) = responce {
+                let node = &self.state.graph[id];
+
+                let values: Vec<Value> = node
+                    .inputs
+                    .iter()
+                    .map(|(_, id)| {
+                        let input = self.state.graph.get_input(*id);
+                        match &input.value {
+                            MyValueType::Text(text) => Value::Text(text.clone()),
+                            MyValueType::Embedding => todo!(),
+                        }
+                    })
+                    .collect();
+
+                let fut = node.user_data.instance.run(values);
+                let sender = self.tx.clone();
+
+                tokio::spawn(async move {
+                    let outputs = fut.await;
+
+                    let _ = sender
+                        .send(SetOutputMessage {
+                            node_id: id,
+                            values: outputs,
+                        })
+                        .await;
+                });
             }
         }
     }

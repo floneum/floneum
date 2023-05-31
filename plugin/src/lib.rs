@@ -2,7 +2,8 @@ use std::path::Path;
 
 use crate::plugins::main::imports::*;
 use exports::plugins::main::definitions::*;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use futures_util::Future;
+use tokio::sync::broadcast;
 use wasmtime::component::{Component, Linker};
 use wasmtime::Config;
 use wasmtime::Engine;
@@ -114,12 +115,12 @@ impl Plugin {
         let (world, _instance) =
             PluginWorld::instantiate(&mut store, &self.component, &engine.linker).unwrap();
 
-        let (input_sender, mut input_reciever) = unbounded_channel::<Vec<Value>>();
-        let (output_sender, output_reciever) = unbounded_channel();
+        let (input_sender, mut input_reciever) = broadcast::channel::<Vec<Value>>(100);
+        let (output_sender, output_reciever) = broadcast::channel(100);
 
         tokio::spawn(async move {
             loop {
-                let Some(inputs) = input_reciever.recv().await else{break;};
+                let Ok(inputs) = input_reciever.recv().await else{break;};
                 let borrowed = inputs.iter().collect::<Vec<_>>();
                 let outputs = world.interface0.call_run(&mut store, &borrowed).unwrap();
                 if output_sender.send(outputs).is_err() {
@@ -147,8 +148,8 @@ impl Plugin {
 
 pub struct PluginInstance {
     metadata: Definition,
-    sender: UnboundedSender<Vec<Value>>,
-    reciever: UnboundedReceiver<Vec<Value>>,
+    sender: broadcast::Sender<Vec<Value>>,
+    reciever: broadcast::Receiver<Vec<Value>>,
 }
 
 impl Default for PluginInstance {
@@ -158,9 +159,13 @@ impl Default for PluginInstance {
 }
 
 impl PluginInstance {
-    pub async fn run(&mut self, inputs: Vec<Value>) -> Vec<Value> {
-        self.sender.send(inputs).unwrap();
-        self.reciever.recv().await.unwrap()
+    pub fn run(&self, inputs: Vec<Value>) -> impl Future<Output = Vec<Value>> + 'static {
+        let sender = self.sender.clone();
+        let mut reciever = self.reciever.resubscribe();
+        async move {
+            sender.send(inputs).unwrap();
+            reciever.recv().await.unwrap()
+        }
     }
 
     pub fn metadata(&self) -> &Definition {

@@ -26,18 +26,39 @@ impl Definitions for Plugin {
     }
 
     fn run(input: Vec<Value>) -> Vec<Value> {
-        let model = ModelType::GptNeoX(GptNeoXType::TinyPythia);
-        let session = load_model(model);
+        let models = [
+            ModelType::Llama(LlamaType::Vicuna),
+            ModelType::Llama(LlamaType::Guanaco),
+            ModelType::GptNeoX(GptNeoXType::DollySevenB),
+            ModelType::GptNeoX(GptNeoXType::TinyPythia),
+            ModelType::GptNeoX(GptNeoXType::LargePythia),
+            ModelType::Mpt(MptType::Chat),
+            ModelType::Mpt(MptType::Story),
+            ModelType::Mpt(MptType::Instruct),
+            ModelType::Mpt(MptType::Base),
+        ];
 
-        let text_input = match &input[0] {
-            Value::Text(text) => text,
-            _ => panic!("expected text input"),
-        };
+        let mut outputs = String::new();
 
-        let responce = infer(session, text_input, Some(50), Some("### Human"));
+        for model in models {
+            let session = load_model(model);
 
-        print(&(responce.clone() + "\n\n\n"));
+            let text_input = match &input[0] {
+                Value::Text(text) => text,
+                _ => panic!("expected text input"),
+            };
 
-        vec![Value::Text(responce)]
+            let text_input = format!("This is a chat between an AI chatbot and a human. The chatbot is programmed to be extremly helpful and always attempt to answer correctly. The human will start questions with ### Human; the AI with start answers with ### Assistant\n### Human{text_input}\n ### Assistant");
+
+            let responce = infer(session, &text_input, Some(50), Some("### Human"));
+
+            let text = format!("{model:?}:\n{}\n\n", responce);
+            print(&text);
+            outputs += &text;
+
+            unload_model(session);
+        }
+
+        vec![Value::Text(outputs)]
     }
 }
