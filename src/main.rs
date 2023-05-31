@@ -387,7 +387,7 @@ impl eframe::App for NodeGraphExample {
             egui::menu::bar(ui, |ui| {
                 egui::widgets::global_dark_light_mode_switch(ui);
                 let response = ui.add(egui::TextEdit::singleline(&mut self.search_text));
-                if response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     let path = PathBuf::from(&self.search_text);
                     if path.exists() {
                         let plugin = self.user_state.plugin_engine.load_plugin(&path);

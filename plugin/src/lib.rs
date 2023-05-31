@@ -80,10 +80,9 @@ impl PluginEngine {
             .validate(true)
             .adapter(
                 "wasi_snapshot_preview1",
-                &std::fs::read(&std::path::Path::new(
-                    "/Users/evanalmloff/Desktop/Github/ai/plugin/wasi_snapshot_preview1.wasm",
-                ))
-                .unwrap(),
+                include_bytes!(
+                    "../wasi_snapshot_preview1.wasm",
+                )
             )
             .unwrap()
             .encode()
