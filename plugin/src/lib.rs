@@ -1,3 +1,6 @@
+// Ideas:
+// https://github.com/1rgs/jsonformer
+
 use std::path::Path;
 
 use crate::plugins::main::imports::*;
@@ -11,9 +14,11 @@ use wasmtime::Store;
 use wit_component::ComponentEncoder;
 
 mod embedding;
-mod infer;
+mod sessions;
+mod download;
+mod vector_db;
 
-use crate::infer::InferenceSessions;
+use crate::sessions::InferenceSessions;
 
 wasmtime::component::bindgen!(in "../wit");
 
@@ -30,6 +35,23 @@ impl Host for State {
     fn unload_model(&mut self, id: ModelId) -> std::result::Result<(), wasmtime::Error> {
         self.sessions.remove(id);
         Ok(())
+    }
+
+    fn get_embedding(&mut self, id: ModelId, text: String) -> std::result::Result<plugins::main::types::Embedding, wasmtime::Error> {
+        Ok(self.sessions.get_embedding(id, &text))
+    }
+
+    fn create_embedding_db(&mut self, embeddings: Vec<plugins::main::types::Embedding>, documents: Vec<String>) -> std::result::Result<EmbeddingDbId, wasmtime::Error>{
+        Ok(self.sessions.create_db(embeddings, documents))
+    }
+
+    fn find_closest_documents(&mut self, id: EmbeddingDbId, search: plugins::main::types::Embedding, count: u32) ->  std::result::Result<Vec<String>, wasmtime::Error>{
+        Ok(self.sessions.get_closest(id, search, count as usize))
+
+    }
+
+    fn find_documents_within(&mut self, id: EmbeddingDbId, search: plugins::main::types::Embedding, distance: f32) ->  std::result::Result<Vec<String>, wasmtime::Error>{
+        Ok(self.sessions.get_within(id, search, distance))
     }
 
     fn infer(

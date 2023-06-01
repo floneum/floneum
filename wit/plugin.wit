@@ -1,14 +1,27 @@
 package plugins:main
 
 interface imports {
+  use types.{embedding}
+
   load-model: func(ty: model-type) -> model-id
   unload-model: func(id: model-id)
   infer: func(id: model-id, input: string, max-tokens: option<u32>, stop-on: option<string>) -> string
-  print: func(str: string)
   
   record model-id {
     id: u32,
   }
+
+  get-embedding: func(id: model-id, document: string) -> embedding
+
+  create-embedding-db: func(embeddings: list<embedding>, documents: list<string>) -> embedding-db-id
+  find-closest-documents: func(id: embedding-db-id, search: embedding, count: u32) -> list<string>
+  find-documents-within: func(id: embedding-db-id, search: embedding, within: float32) -> list<string>
+
+  record embedding-db-id {
+    id: u32,
+  }
+
+  print: func(str: string)
 
   variant model-type { MPT(mpt-type), gpt-neo-x(gpt-neo-x-type), llama(llama-type) }
   enum llama-type { vicuna, guanaco, wizardlm }
@@ -16,7 +29,15 @@ interface imports {
   enum gpt-neo-x-type { large-pythia, tiny-pythia, dolly-seven-b, stablelm }
 }
 
+interface types {
+  record embedding {
+    vector: list<float32>
+  }
+}
+
 interface definitions {
+  use types.{embedding}
+
   record definition {
     name: string,
     description: string,
@@ -31,7 +52,7 @@ interface definitions {
 
   variant value {
     text(string),
-    embedding(list<float32>),
+    embedding(embedding),
   }
 
   enum value-type {

@@ -29,6 +29,7 @@ impl Definitions for Plugin {
         let models = [
             ModelType::Llama(LlamaType::Vicuna),
             ModelType::Llama(LlamaType::Guanaco),
+            // doesn't work with embeddings
             ModelType::GptNeoX(GptNeoXType::DollySevenB),
             ModelType::GptNeoX(GptNeoXType::TinyPythia),
             ModelType::GptNeoX(GptNeoXType::LargePythia),
