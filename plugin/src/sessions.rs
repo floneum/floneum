@@ -1,12 +1,16 @@
-use crate::{GptNeoXType, LlamaType, ModelId, EmbeddingDbId, ModelType, MptType, embedding::get_embeddings, exports::plugins::main::definitions::Embedding, download::download, vector_db::VectorDB};
+use crate::{
+    download::download, embedding::get_embeddings, exports::plugins::main::definitions::Embedding,
+    vector_db::VectorDB, EmbeddingDbId, GptNeoXType, LlamaType, ModelId, ModelType, MptType,
+};
 use futures_util::stream::StreamExt;
 use llm::{
-    InferenceFeedback, InferenceRequest, InferenceResponse, LoadProgress, Model, ModelArchitecture, InferenceSession,
+    InferenceFeedback, InferenceRequest, InferenceResponse, InferenceSession, LoadProgress, Model,
+    ModelArchitecture,
 };
+use slab::Slab;
 use spinoff::{spinners::Dots2, Spinner};
 use std::{convert::Infallible, error::Error, path::PathBuf, time::Instant};
 use tokio::{fs::File, io::AsyncWriteExt, runtime::Handle};
-use slab::Slab;
 
 #[derive(Default)]
 pub struct InferenceSessions {
@@ -15,19 +19,20 @@ pub struct InferenceSessions {
 }
 
 impl InferenceSessions {
-    pub fn session_get(&self, id: ModelId) -> & (Box<dyn Model>, InferenceSession){
+    pub fn session_get(&self, id: ModelId) -> &(Box<dyn Model>, InferenceSession) {
         self.sessions.get(id.id as usize).unwrap()
     }
-    
-    pub fn session_get_mut(&mut self, id: ModelId) -> &mut (Box<dyn Model>, InferenceSession){
+
+    pub fn session_get_mut(&mut self, id: ModelId) -> &mut (Box<dyn Model>, InferenceSession) {
         self.sessions.get_mut(id.id as usize).unwrap()
     }
 
-    pub fn vector_db_get(&self, id: EmbeddingDbId) -> &VectorDB<String>{
+    pub fn vector_db_get(&self, id: EmbeddingDbId) -> &VectorDB<String> {
         self.vector_dbs.get(id.id as usize).unwrap()
     }
 
-    pub fn vector_db_get_mut(&mut self, id: EmbeddingDbId) -> &mut VectorDB<String>{
+    #[allow(unused)]
+    pub fn vector_db_get_mut(&mut self, id: EmbeddingDbId) -> &mut VectorDB<String> {
         self.vector_dbs.get_mut(id.id as usize).unwrap()
     }
 
@@ -74,25 +79,32 @@ impl InferenceSessions {
         buf
     }
 
-    pub fn get_embedding(&self, id: ModelId, text: &str) -> Embedding{
+    pub fn get_embedding(&self, id: ModelId, text: &str) -> Embedding {
         let (model, _session) = self.session_get(id);
         let inference_parameters = llm::InferenceParameters::default();
         get_embeddings(model.as_ref(), &inference_parameters, text)
     }
 
-    pub fn create_db(&mut self, embedding: Vec<Embedding>, documents: Vec<String>) -> EmbeddingDbId{
-        let idx=self.vector_dbs.insert(VectorDB::new(embedding, documents));
+    pub fn create_db(
+        &mut self,
+        embedding: Vec<Embedding>,
+        documents: Vec<String>,
+    ) -> EmbeddingDbId {
+        let idx = self.vector_dbs.insert(VectorDB::new(embedding, documents));
 
-        EmbeddingDbId{
-            id:idx as u32
-        }
+        EmbeddingDbId { id: idx as u32 }
     }
 
     pub fn get_closest(&self, id: EmbeddingDbId, embedding: Embedding, n: usize) -> Vec<String> {
         self.vector_db_get(id).get_closest(embedding, n)
     }
 
-    pub fn get_within(&self, id: EmbeddingDbId, embedding: Embedding, distance: f32) -> Vec<String> {
+    pub fn get_within(
+        &self,
+        id: EmbeddingDbId,
+        embedding: Embedding,
+        distance: f32,
+    ) -> Vec<String> {
         self.vector_db_get(id).get_within(embedding, distance)
     }
 }

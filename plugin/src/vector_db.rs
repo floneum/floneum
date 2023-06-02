@@ -1,25 +1,33 @@
-use instant_distance::{Builder, Search, HnswMap};
 use crate::plugins::main::types::Embedding;
+use instant_distance::{Builder, HnswMap, Search};
 
 pub struct VectorDB<T> {
-    model: HnswMap<Point, T>
+    model: HnswMap<Point, T>,
 }
 
-impl<T: Clone> VectorDB<T>{
-    pub fn new(points: Vec<Embedding>, values: Vec<T>) -> Self{
-        let model = Builder::default().build(points.into_iter().map(|e| Point(e)).collect(), values);
+impl<T: Clone> VectorDB<T> {
+    pub fn new(points: Vec<Embedding>, values: Vec<T>) -> Self {
+        let model =
+            Builder::default().build(points.into_iter().map(|e| Point(e)).collect(), values);
 
         VectorDB { model }
     }
 
     pub fn get_closest(&self, embedding: Embedding, n: usize) -> Vec<T> {
         let mut search = Search::default();
-        self.model.search(&Point(embedding), &mut search).take(n).map(|result| result.value.clone()).collect()
+        self.model
+            .search(&Point(embedding), &mut search)
+            .take(n)
+            .map(|result| result.value.clone())
+            .collect()
     }
 
-    pub fn get_within(&self, embedding: Embedding, distance: f32) -> Vec<T>{
+    pub fn get_within(&self, embedding: Embedding, distance: f32) -> Vec<T> {
         let mut search = Search::default();
-        self.model.search(&Point(embedding), &mut search).map_while(|result| (result.distance < distance).then(||result.value.clone())).collect()
+        self.model
+            .search(&Point(embedding), &mut search)
+            .map_while(|result| (result.distance < distance).then(|| result.value.clone()))
+            .collect()
     }
 }
 
@@ -28,7 +36,7 @@ pub struct Point(Embedding);
 
 impl instant_distance::Point for Point {
     fn distance(&self, other: &Self) -> f32 {
-        cosine_similarity(&self.0.vector,& other.0.vector)
+        cosine_similarity(&self.0.vector, &other.0.vector)
     }
 }
 

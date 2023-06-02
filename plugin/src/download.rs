@@ -1,11 +1,10 @@
-use tokio::{fs::File, io::AsyncWriteExt, runtime::Handle};
-use std::{path::PathBuf, error::Error,  time::Instant};
 use futures_util::StreamExt;
-use llm::{Model, LoadProgress, ModelArchitecture};
-use spinoff::{Spinner, spinners::Dots2};
+use llm::{LoadProgress, Model, ModelArchitecture};
+use spinoff::{spinners::Dots2, Spinner};
+use std::{error::Error, path::PathBuf, time::Instant};
+use tokio::{fs::File, io::AsyncWriteExt, runtime::Handle};
 
-use crate::plugins::main::imports::{ModelType, LlamaType, GptNeoXType, MptType};
-
+use crate::plugins::main::imports::{GptNeoXType, LlamaType, ModelType, MptType};
 
 fn load_progress_callback(
     mut sp: Option<Spinner>,
@@ -65,7 +64,6 @@ fn load_progress_callback(
     }
 }
 
-
 pub fn download(model_type: ModelType) -> Box<dyn Model> {
     // https://www.reddit.com/r/LocalLLaMA/wiki/models/
     let url = match model_type {
@@ -108,12 +106,12 @@ pub fn download(model_type: ModelType) -> Box<dyn Model> {
         ModelType::GptNeoX(_) => ModelArchitecture::GptNeoX,
         ModelType::Mpt(_) => ModelArchitecture::Mpt,
     };
-    let context_size = match model_type{
+    let context_size = match model_type {
         ModelType::Llama(_) => 2024,
         ModelType::GptNeoX(GptNeoXType::Stablelm) => 4048,
-        ModelType::GptNeoX(_)=>2048,
+        ModelType::GptNeoX(_) => 2048,
         ModelType::Mpt(MptType::Story) => 65_000,
-        ModelType::Mpt(_) => 2024
+        ModelType::Mpt(_) => 2024,
     };
 
     let handle = Handle::current();

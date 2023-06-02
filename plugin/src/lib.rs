@@ -13,9 +13,9 @@ use wasmtime::Engine;
 use wasmtime::Store;
 use wit_component::ComponentEncoder;
 
+mod download;
 mod embedding;
 mod sessions;
-mod download;
 mod vector_db;
 
 use crate::sessions::InferenceSessions;
@@ -27,6 +27,8 @@ pub struct State {
     sessions: InferenceSessions,
 }
 
+impl plugins::main::types::Host for State {}
+
 impl Host for State {
     fn load_model(&mut self, ty: ModelType) -> std::result::Result<ModelId, wasmtime::Error> {
         Ok(self.sessions.create(ty))
@@ -37,20 +39,37 @@ impl Host for State {
         Ok(())
     }
 
-    fn get_embedding(&mut self, id: ModelId, text: String) -> std::result::Result<plugins::main::types::Embedding, wasmtime::Error> {
+    fn get_embedding(
+        &mut self,
+        id: ModelId,
+        text: String,
+    ) -> std::result::Result<plugins::main::types::Embedding, wasmtime::Error> {
         Ok(self.sessions.get_embedding(id, &text))
     }
 
-    fn create_embedding_db(&mut self, embeddings: Vec<plugins::main::types::Embedding>, documents: Vec<String>) -> std::result::Result<EmbeddingDbId, wasmtime::Error>{
+    fn create_embedding_db(
+        &mut self,
+        embeddings: Vec<plugins::main::types::Embedding>,
+        documents: Vec<String>,
+    ) -> std::result::Result<EmbeddingDbId, wasmtime::Error> {
         Ok(self.sessions.create_db(embeddings, documents))
     }
 
-    fn find_closest_documents(&mut self, id: EmbeddingDbId, search: plugins::main::types::Embedding, count: u32) ->  std::result::Result<Vec<String>, wasmtime::Error>{
+    fn find_closest_documents(
+        &mut self,
+        id: EmbeddingDbId,
+        search: plugins::main::types::Embedding,
+        count: u32,
+    ) -> std::result::Result<Vec<String>, wasmtime::Error> {
         Ok(self.sessions.get_closest(id, search, count as usize))
-
     }
 
-    fn find_documents_within(&mut self, id: EmbeddingDbId, search: plugins::main::types::Embedding, distance: f32) ->  std::result::Result<Vec<String>, wasmtime::Error>{
+    fn find_documents_within(
+        &mut self,
+        id: EmbeddingDbId,
+        search: plugins::main::types::Embedding,
+        distance: f32,
+    ) -> std::result::Result<Vec<String>, wasmtime::Error> {
         Ok(self.sessions.get_within(id, search, distance))
     }
 
@@ -102,9 +121,7 @@ impl PluginEngine {
             .validate(true)
             .adapter(
                 "wasi_snapshot_preview1",
-                include_bytes!(
-                    "../wasi_snapshot_preview1.wasm",
-                )
+                include_bytes!("../wasi_snapshot_preview1.wasm",),
             )
             .unwrap()
             .encode()
