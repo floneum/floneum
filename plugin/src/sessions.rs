@@ -1,16 +1,14 @@
 use crate::{
     download::download, embedding::get_embeddings, exports::plugins::main::definitions::Embedding,
-    vector_db::VectorDB, EmbeddingDbId, GptNeoXType, LlamaType, ModelId, ModelType, MptType,
+    vector_db::VectorDB, EmbeddingDbId, ModelId, ModelType,
 };
-use futures_util::stream::StreamExt;
 use llm::{
-    InferenceFeedback, InferenceRequest, InferenceResponse, InferenceSession, LoadProgress, Model,
-    ModelArchitecture,
+    InferenceFeedback, InferenceRequest, InferenceResponse, InferenceSession, Model,
 };
 use slab::Slab;
-use spinoff::{spinners::Dots2, Spinner};
-use std::{convert::Infallible, error::Error, path::PathBuf, time::Instant};
-use tokio::{fs::File, io::AsyncWriteExt, runtime::Handle};
+
+use std::{convert::Infallible};
+
 
 #[derive(Default)]
 pub struct InferenceSessions {

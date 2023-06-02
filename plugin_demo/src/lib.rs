@@ -54,7 +54,7 @@ impl Definitions for Plugin {
                 .collect();
             let borrowed_embeddings: Vec<_> = embeddings.iter().collect();
             let db: EmbeddingDbId = create_embedding_db(&borrowed_embeddings, &texts);
-            let results = find_closest_documents(db, &embeddings[0], 10);
+            let _results = find_closest_documents(db, &embeddings[0], 10);
             unload_model(session);
         }
 
