@@ -2,13 +2,10 @@ use crate::{
     download::download, embedding::get_embeddings, exports::plugins::main::definitions::Embedding,
     vector_db::VectorDB, EmbeddingDbId, ModelId, ModelType,
 };
-use llm::{
-    InferenceFeedback, InferenceRequest, InferenceResponse, InferenceSession, Model,
-};
+use llm::{InferenceFeedback, InferenceRequest, InferenceResponse, InferenceSession, Model};
 use slab::Slab;
 
-use std::{convert::Infallible};
-
+use std::convert::Infallible;
 
 #[derive(Default)]
 pub struct InferenceSessions {
@@ -91,6 +88,10 @@ impl InferenceSessions {
         let idx = self.vector_dbs.insert(VectorDB::new(embedding, documents));
 
         EmbeddingDbId { id: idx as u32 }
+    }
+
+    pub fn remove_embedding_db(&mut self, id: EmbeddingDbId) {
+        self.vector_dbs.remove(id.id as usize);
     }
 
     pub fn get_closest(&self, id: EmbeddingDbId, embedding: Embedding, n: usize) -> Vec<String> {

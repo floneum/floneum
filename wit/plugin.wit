@@ -14,6 +14,7 @@ interface imports {
   get-embedding: func(id: model-id, document: string) -> embedding
 
   create-embedding-db: func(embeddings: list<embedding>, documents: list<string>) -> embedding-db-id
+  remove-embedding-db: func(id: embedding-db-id)
   find-closest-documents: func(id: embedding-db-id, search: embedding, count: u32) -> list<string>
   find-documents-within: func(id: embedding-db-id, search: embedding, within: float32) -> list<string>
 

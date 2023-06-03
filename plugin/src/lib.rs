@@ -1,5 +1,6 @@
 // Ideas:
 // https://github.com/1rgs/jsonformer
+// https://github.com/bytecodealliance/wasmtime/issues/6074
 
 use std::path::Path;
 
@@ -53,6 +54,13 @@ impl Host for State {
         documents: Vec<String>,
     ) -> std::result::Result<EmbeddingDbId, wasmtime::Error> {
         Ok(self.sessions.create_db(embeddings, documents))
+    }
+
+    fn remove_embedding_db(
+        &mut self,
+        id: EmbeddingDbId,
+    ) -> std::result::Result<(), wasmtime::Error> {
+        Ok(self.sessions.remove_embedding_db(id))
     }
 
     fn find_closest_documents(

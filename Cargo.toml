@@ -29,5 +29,6 @@ opt-level = 3
 [workspace]
 members = [
     "plugin",
+    "rust_adapter",
     "plugin_demo",
 ]

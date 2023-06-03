@@ -16,8 +16,6 @@ serde_json = "1.0.96"
 spinoff = "0.7.0"
 tokio = { version = "1.28.1", features = ["full"] }
 scraper = "0.16.0"
-wai-bindgen-rust = "0.2.3"
-wasmer = "3.3.0"
 slab = "0.4.8"
 instant-distance = { version = "0.6.0", features = ["with-serde"] }
 serde = { version = "1.0.163", features = ["derive"] }

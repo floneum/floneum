@@ -1,14 +1,18 @@
+#![allow(unused)]
+
 use core::panic;
 use std::vec;
 
-use crate::exports::plugins::main::definitions::*;
+use exports::plugins::main::definitions::*;
+use rust_adapter::{ModelInstance, print};
 use crate::plugins::main::imports::*;
 
 wit_bindgen::generate!(in "../wit");
 
-struct Plugin;
-
 export_plugin_world!(Plugin);
+
+
+pub struct Plugin;
 
 impl Definitions for Plugin {
     fn structure() -> Definition {
@@ -27,59 +31,25 @@ impl Definitions for Plugin {
     }
 
     fn run(input: Vec<Value>) -> Vec<Value> {
-        let models = [
-            ModelType::Llama(LlamaType::Vicuna),
-            ModelType::Llama(LlamaType::Guanaco),
-            // doesn't work with embeddings
-            ModelType::GptNeoX(GptNeoXType::DollySevenB),
-            ModelType::GptNeoX(GptNeoXType::TinyPythia),
-            ModelType::GptNeoX(GptNeoXType::LargePythia),
-            ModelType::Mpt(MptType::Chat),
-            ModelType::Mpt(MptType::Story),
-            ModelType::Mpt(MptType::Instruct),
-            ModelType::Mpt(MptType::Base),
-        ];
+        let model = ModelType::Llama(LlamaType::Vicuna);
 
-        {
-            let session = load_model(ModelType::Llama(LlamaType::Vicuna));
+        let session = ModelInstance::new(model);
 
-            let texts: Vec<_> = ARTICLE.split(".").collect();
-            let embeddings: Vec<_> = texts
-                .iter()
-                .enumerate()
-                .map(|(i, text)| {
-                    print(&format!("{}/{}:{text}\n", i, texts.len()));
-                    get_embedding(session, text)
-                })
-                .collect();
-            let borrowed_embeddings: Vec<_> = embeddings.iter().collect();
-            let db: EmbeddingDbId = create_embedding_db(&borrowed_embeddings, &texts);
-            let _results = find_closest_documents(db, &embeddings[0], 10);
-            unload_model(session);
-        }
+        let text_input = match &input[0] {
+            Value::Text(text) => text,
+            _ => panic!("expected text input"),
+        };
 
-        let mut outputs = String::new();
+        let text_input = format!("This is a chat between an AI chatbot and a human. The chatbot is programmed to be extremly helpful and always attempt to answer correctly. The human will start questions with ### Human; the AI with start answers with ### Assistant\n### Human{text_input}\n ### Assistant");
 
-        for model in models {
-            let session = load_model(model);
+        let mut responce = model.infer(&text_input, Some(50), Some("### Human"));
+        responce += "\n";
 
-            let text_input = match &input[0] {
-                Value::Text(text) => text,
-                _ => panic!("expected text input"),
-            };
+        print(&responce);
 
-            let text_input = format!("This is a chat between an AI chatbot and a human. The chatbot is programmed to be extremly helpful and always attempt to answer correctly. The human will start questions with ### Human; the AI with start answers with ### Assistant\n### Human{text_input}\n ### Assistant");
+        unload_model(session);
 
-            let responce = infer(session, &text_input, Some(50), Some("### Human"));
-
-            let text = format!("{model:?}:\n{}\n\n", responce);
-            print(&text);
-            outputs += &text;
-
-            unload_model(session);
-        }
-
-        vec![Value::Text(outputs)]
+        vec![Value::Text(responce)]
     }
 }
 

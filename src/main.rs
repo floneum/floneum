@@ -62,13 +62,32 @@ pub enum MyDataType {
 pub enum MyValueType {
     Text(String),
     Embedding,
+    Unset,
+}
+
+impl Into<Value> for MyValueType {
+    fn into(self) -> Value {
+        match self {
+            Self::Text(text) => Value::Text(text),
+            _ => todo!(),
+        }
+    }
+}
+
+impl From<Value> for MyValueType {
+    fn from(value: Value) -> Self {
+        match value {
+            Value::Embedding(_) => MyValueType::Embedding,
+            Value::Text(text) => MyValueType::Text(text),
+        }
+    }
 }
 
 impl Default for MyValueType {
     fn default() -> Self {
         // NOTE: This is just a dummy `Default` implementation. The library
         // requires it to circumvent some internal borrow checker issues.
-        Self::Text(String::new())
+        Self::Unset
     }
 }
 
@@ -96,7 +115,7 @@ pub struct MyGraphState {
     pub plugins: slab::Slab<Plugin>,
     pub all_plugins: HashSet<PluginId>,
     #[serde(skip)]
-    pub node_outputs: HashMap<NodeId, Vec<Value>>,
+    pub node_outputs: HashMap<OutputId, MyValueType>,
 }
 
 impl MyGraphState {
@@ -254,9 +273,10 @@ impl WidgetValueTrait for MyValueType {
             MyValueType::Text(value) => {
                 ui.horizontal(|ui| {
                     ui.label(param_name);
-                    ui.add(TextEdit::singleline(value));
+                    ui.add(TextEdit::multiline(value));
                 });
             }
+            MyValueType::Unset => {}
         }
 
         Vec::new()
@@ -279,7 +299,7 @@ impl NodeDataTrait for MyNodeData {
         &self,
         ui: &mut egui::Ui,
         node_id: NodeId,
-        _graph: &Graph<MyNodeData, MyDataType, MyValueType>,
+        graph: &Graph<MyNodeData, MyDataType, MyValueType>,
         user_state: &mut Self::UserState,
     ) -> Vec<NodeResponse<MyResponse, MyNodeData>>
     where
@@ -297,20 +317,18 @@ impl NodeDataTrait for MyNodeData {
         }
 
         // Render the current output of the node
-        let output = user_state
-            .node_outputs
-            .get(&node_id)
-            .cloned()
-            .unwrap_or_default();
+        let outputs = &graph[node_id].outputs;
 
-        for value in output {
+        for (_, id) in outputs {
+            let value = user_state.node_outputs.get(id).cloned().unwrap_or_default();
             ui.horizontal(|ui| match &value {
-                Value::Embedding(values) => {
-                    ui.label(format!("{:?}", values));
+                MyValueType::Embedding => {
+                    todo!();
                 }
-                Value::Text(value) => {
+                MyValueType::Text(value) => {
                     ui.label(value);
                 }
+                MyValueType::Unset => {}
             });
         }
 
@@ -380,7 +398,10 @@ impl eframe::App for NodeGraphExample {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Recieve any async messages about setting node outputs.
         while let Ok(msg) = self.rx.try_recv() {
-            self.user_state.node_outputs.insert(msg.node_id, msg.values);
+            let node = &self.state.graph[msg.node_id].outputs;
+            for ((_, id), value) in node.iter().zip(msg.values.into_iter()) {
+                self.user_state.node_outputs.insert(*id, value.into());
+            }
         }
 
         egui::TopBottomPanel::top("top").show(ctx, |ui| {
@@ -409,21 +430,32 @@ impl eframe::App for NodeGraphExample {
             })
             .inner;
 
-        for responce in graph_response.node_responses {
+        'o: for responce in graph_response.node_responses {
             if let NodeResponse::User(MyResponse::RunNode(id)) = responce {
                 let node = &self.state.graph[id];
 
-                let values: Vec<Value> = node
-                    .inputs
-                    .iter()
-                    .map(|(_, id)| {
-                        let input = self.state.graph.get_input(*id);
-                        match &input.value {
-                            MyValueType::Text(text) => Value::Text(text.clone()),
-                            MyValueType::Embedding => todo!(),
+                let mut values: Vec<Value> = Vec::new();
+                for (_, id) in &node.inputs {
+                    let input = self.state.graph.get_input(*id);
+                    let connection = self.state.graph.connections.get(input.id);
+                    let value = match connection {
+                        Some(&connection) => {
+                            let connection = self.state.graph.get_output(connection);
+                            let output_id = connection.id;
+                            if let Some(value) = self.user_state.node_outputs.get(&output_id) {
+                                value
+                            } else {
+                                continue 'o;
+                            }
                         }
-                    })
-                    .collect();
+                        None => &input.value,
+                    };
+                    match &value {
+                        MyValueType::Text(text) => values.push(Value::Text(text.clone())),
+                        MyValueType::Embedding => todo!(),
+                        MyValueType::Unset => continue 'o,
+                    }
+                }
 
                 let fut = node.user_data.instance.run(values);
                 let sender = self.tx.clone();

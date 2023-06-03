@@ -9,4 +9,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen" }
-pulldown-cmark = { version = "0.9.1", default-features = false }
+rust_adapter = { path = "../rust_adapter" }
