@@ -63,7 +63,7 @@ interface definitions {
 
   variant value-type {
     single(primitive-value-type),
-    many(list<primitive-value-type>),
+    many(primitive-value-type),
   }
 
   enum primitive-value-type {

@@ -5,7 +5,7 @@ use std::fmt::Debug;
 
 use crate::json::{ParseStream, Structure, Validate};
 
-struct StructuredSampler {
+pub struct StructuredSampler {
     vocab: Vocabulary,
     structure: Structure,
     /// The top K words by score are kept during sampling.
@@ -25,6 +25,19 @@ struct StructuredSampler {
 }
 
 impl StructuredSampler {
+    pub fn new(vocab: Vocabulary, structure: Structure) -> Self{
+        Self {
+            top_k: 40,
+            top_p: 0.95,
+            repeat_penalty: 1.30,
+            temperature: 0.80,
+            bias_tokens: TokenBias::empty(),
+            repetition_penalty_last_n: 512,
+            vocab,
+            structure,
+        }
+    }
+
     fn invalid_token(&self, previous_tokens: &[TokenId], new_token: TokenId) -> bool {
         let mut tokens = Vec::new();
         for token in previous_tokens {
@@ -38,11 +51,12 @@ impl StructuredSampler {
         let new_token = String::from_utf8_lossy(&new_token).to_string();
 
         borrowed.push(new_token.as_str());
+        println!("borrowed: {:?}", borrowed);
 
-        !self
+        dbg!(!self
             .structure
             .validate(ParseStream::new(&borrowed))
-            .is_invalid()
+            .is_invalid())
     }
 }
 
@@ -57,21 +71,6 @@ impl Debug for StructuredSampler {
             .field("bias_tokens", &self.bias_tokens)
             .field("repetition_penalty_last_n", &self.repetition_penalty_last_n)
             .finish()
-    }
-}
-
-impl Default for StructuredSampler {
-    fn default() -> Self {
-        Self {
-            top_k: 40,
-            top_p: 0.95,
-            repeat_penalty: 1.30,
-            temperature: 0.80,
-            bias_tokens: TokenBias::empty(),
-            repetition_penalty_last_n: 512,
-            vocab: todo!(),
-            structure: todo!(),
-        }
     }
 }
 

@@ -1,11 +1,11 @@
 use crate::{
     download::download, embedding::get_embeddings, exports::plugins::main::definitions::Embedding,
-    vector_db::VectorDB, EmbeddingDbId, ModelId, ModelType,
+    vector_db::VectorDB, EmbeddingDbId, ModelId, ModelType, structured::StructuredSampler,
 };
-use llm::{InferenceFeedback, InferenceRequest, InferenceResponse, InferenceSession, Model};
+use llm::{InferenceFeedback, InferenceRequest, InferenceResponse, InferenceSession, Model, InferenceParameters};
 use slab::Slab;
 
-use std::convert::Infallible;
+use std::{convert::Infallible, sync::Arc};
 
 #[derive(Default)]
 pub struct InferenceSessions {
@@ -52,11 +52,22 @@ impl InferenceSessions {
     ) -> String {
         let (model, session) = self.session_get_mut(id);
 
+        let parmeters = InferenceParameters{
+            sampler: Arc::new(StructuredSampler::new(
+                match model.vocabulary(){
+                    llm::Vocabulary::External(ex) => llm::Vocabulary::External(ex.clone()),
+                    llm::Vocabulary::Model(inn) => llm::Vocabulary::Model(inn.clone())
+                },
+                crate::json::Structure::Sequence(Box::new(crate::json::Structure::Num))
+            )),
+            ..Default::default()
+        };
+
         let mut rng = rand::thread_rng();
         let mut buf = String::new();
         let request = InferenceRequest {
             prompt: (&prompt).into(),
-            parameters: &Default::default(),
+            parameters: &parmeters,
             play_back_previous_tokens: false,
             maximum_token_count: max_tokens.map(|x| x as usize),
         };

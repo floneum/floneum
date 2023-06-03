@@ -5,7 +5,7 @@ use eframe::{
     epaint::ahash::{HashMap, HashSet},
 };
 use egui_node_graph::*;
-use plugin::exports::plugins::main::definitions::{Embedding, Value, ValueType};
+use plugin::exports::plugins::main::definitions::{Embedding, Value, ValueType, PrimitiveValueType, PrimitiveValue};
 use plugin::{Plugin, PluginEngine, PluginInstance};
 use serde::{Deserialize, Serialize};
 use std::{borrow::Cow, path::PathBuf};
@@ -47,6 +47,12 @@ pub struct MyNodeData {
 /// attaching incompatible datatypes.
 #[derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum MyDataType {
+    Single(MyPrimitiveDataType),
+    List(MyPrimitiveDataType),
+}
+
+#[derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum MyPrimitiveDataType {
     Text,
     Embedding,
 }
@@ -74,7 +80,14 @@ pub enum MyPrimitiveValueType {
 impl Into<Value> for MyValueType {
     fn into(self) -> Value {
         match self {
-            Self::Text(text) => Value::Text(text),
+            Self::Single(value) => Value::Single(match value {
+                MyPrimitiveValueType::Text(text) => PrimitiveValue::Text(text),
+                MyPrimitiveValueType::Embedding(embedding) => PrimitiveValue::Embedding(Embedding { vector: embedding }),
+            }),
+            Self::List(values) => Value::Many(values.into_iter().map(|value| match value {
+                MyPrimitiveValueType::Text(text) => PrimitiveValue::Text(text),
+                MyPrimitiveValueType::Embedding(embedding) => PrimitiveValue::Embedding(Embedding { vector: embedding }),
+            }).collect()),
             _ => todo!(),
         }
     }
@@ -83,8 +96,14 @@ impl Into<Value> for MyValueType {
 impl From<Value> for MyValueType {
     fn from(value: Value) -> Self {
         match value {
-            Value::Embedding(embedding) => MyValueType::Embedding(embedding.vector),
-            Value::Text(text) => MyValueType::Text(text),
+            Value::Single(value) => match value {
+                PrimitiveValue::Text(text) => Self::Single(MyPrimitiveValueType::Text(text)),
+                PrimitiveValue::Embedding(embedding) => Self::Single(MyPrimitiveValueType::Embedding(embedding.vector)),
+            },
+            Value::Many(values) => Self::List(values.into_iter().map(|value| match value {
+                PrimitiveValue::Text(text) => MyPrimitiveValueType::Text(text),
+                PrimitiveValue::Embedding(embedding) => MyPrimitiveValueType::Embedding(embedding.vector),
+            }).collect()),
         }
     }
 }
@@ -136,15 +155,19 @@ impl MyGraphState {
 impl DataTypeTrait<MyGraphState> for MyDataType {
     fn data_type_color(&self, _user_state: &mut MyGraphState) -> egui::Color32 {
         match self {
-            MyDataType::Text => egui::Color32::from_rgb(38, 109, 211),
-            MyDataType::Embedding => egui::Color32::from_rgb(238, 207, 109),
+            MyDataType::Single(MyPrimitiveDataType::Text) => egui::Color32::from_rgb(38, 109, 211),
+            MyDataType::Single(MyPrimitiveDataType::Embedding) => egui::Color32::from_rgb(238, 207, 109),
+            MyDataType::List(MyPrimitiveDataType::Text) => egui::Color32::from_rgb(38, 109, 211),
+            MyDataType::List(MyPrimitiveDataType::Embedding) => egui::Color32::from_rgb(238, 207, 109),
         }
     }
 
     fn name(&self) -> Cow<'_, str> {
         match self {
-            MyDataType::Text => Cow::Borrowed("Text"),
-            MyDataType::Embedding => Cow::Borrowed("2d vector"),
+            MyDataType::Single(MyPrimitiveDataType::Text) => Cow::Borrowed("text"),
+            MyDataType::Single(MyPrimitiveDataType::Embedding) => Cow::Borrowed("embedding"),
+            MyDataType::List(MyPrimitiveDataType::Text) => Cow::Borrowed("list of texts"),
+            MyDataType::List(MyPrimitiveDataType::Embedding) => Cow::Borrowed("list of embeddings"),
         }
     }
 }
@@ -190,36 +213,6 @@ impl NodeTemplateTrait for PluginId {
         // The nodes are created empty by default. This function needs to take
         // care of creating the desired inputs and outputs based on the template
 
-        // We define some closures here to avoid boilerplate. Note that this is
-        // entirely optional.
-        let input_text = |graph: &mut MyGraph, name: &str| {
-            graph.add_input_param(
-                node_id,
-                name.to_string(),
-                MyDataType::Text,
-                MyValueType::Text(String::new()),
-                InputParamKind::ConnectionOrConstant,
-                true,
-            );
-        };
-        let input_vector = |graph: &mut MyGraph, name: &str| {
-            graph.add_input_param(
-                node_id,
-                name.to_string(),
-                MyDataType::Embedding,
-                MyValueType::Embedding(Vec::new()),
-                InputParamKind::ConnectionOrConstant,
-                true,
-            );
-        };
-
-        let output_text = |graph: &mut MyGraph, name: &str| {
-            graph.add_output_param(node_id, name.to_string(), MyDataType::Text);
-        };
-        let output_vector = |graph: &mut MyGraph, name: &str| {
-            graph.add_output_param(node_id, name.to_string(), MyDataType::Embedding);
-        };
-
         let node = &graph[node_id];
 
         let meta = node.user_data.instance.metadata().clone();
@@ -227,17 +220,58 @@ impl NodeTemplateTrait for PluginId {
         for input in &meta.inputs {
             let name = &input.name;
             match &input.ty {
-                ValueType::Text => input_text(graph, name),
-                ValueType::Embedding => input_vector(graph, name),
-            }
+                ValueType::Single(ty) => match ty {
+                    PrimitiveValueType::Text => graph.add_input_param(
+                        node_id,
+                        name.to_string(),
+                        MyDataType::Single(MyPrimitiveDataType::Text),
+                        MyValueType::Single(MyPrimitiveValueType::Text(String::new())),
+                        InputParamKind::ConnectionOrConstant,
+                        true,
+                    ),
+                    PrimitiveValueType::Embedding => graph.add_input_param(
+                        node_id,
+                        name.to_string(),
+                        MyDataType::Single(MyPrimitiveDataType::Embedding),
+                        MyValueType::Single(MyPrimitiveValueType::Embedding(Vec::new())),
+                        InputParamKind::ConnectionOrConstant,
+                        true,
+                    ),
+                },
+                ValueType::Many(ty) => match ty {
+                    PrimitiveValueType::Text => graph.add_input_param(
+                        node_id,
+                        name.to_string(),
+                        MyDataType::List(MyPrimitiveDataType::Text),
+                        MyValueType::List(vec![MyPrimitiveValueType::Text(String::new())]),
+                        InputParamKind::ConnectionOrConstant,
+                        true,
+                    ),
+                    PrimitiveValueType::Embedding => graph.add_input_param(
+                        node_id,
+                        name.to_string(),
+                        MyDataType::List(MyPrimitiveDataType::Embedding),
+                        MyValueType::List(vec![MyPrimitiveValueType::Embedding(Vec::new())]),
+                        InputParamKind::ConnectionOrConstant,
+                        true,
+                    ),
+                },
+            };
         }
 
         for output in &meta.outputs {
             let name = &output.name;
-            match &output.ty {
-                ValueType::Text => output_text(graph, name),
-                ValueType::Embedding => output_vector(graph, name),
-            }
+            let ty =match &output.ty {
+                ValueType::Many(ty) => match ty{
+                    PrimitiveValueType::Text => MyDataType::List(MyPrimitiveDataType::Text),
+                    PrimitiveValueType::Embedding => MyDataType::List(MyPrimitiveDataType::Embedding),
+                }
+                ValueType::Single(ty) => match ty{
+                    PrimitiveValueType::Text => MyDataType::Single(MyPrimitiveDataType::Text),
+                    PrimitiveValueType::Embedding => MyDataType::Single(MyPrimitiveDataType::Embedding),
+                }
+            };
+            graph.add_output_param(node_id, name.to_string(),ty);
         }
     }
 }
@@ -270,16 +304,36 @@ impl WidgetValueTrait for MyValueType {
         // This trait is used to tell the library which UI to display for the
         // inline parameter widgets.
         match self {
-            MyValueType::Embedding(_) => {
+            MyValueType::Single(value) => {
                 ui.label(param_name);
-                ui.horizontal(|ui| {
-                    ui.label("embedding");
-                });
+                match value{
+
+                    MyPrimitiveValueType::Text(value) => {
+                        ui.horizontal(|ui| {
+                            ui.add(TextEdit::multiline(value));
+                        });
+                    }
+                    MyPrimitiveValueType::Embedding(_) => {
+                        ui.horizontal(|ui| {
+                            ui.label("Embedding")
+                        });
+                    }
+                }
             }
-            MyValueType::Text(value) => {
+            MyValueType::List(values) => {
                 ui.horizontal(|ui| {
                     ui.label(param_name);
-                    ui.add(TextEdit::multiline(value));
+                    for value in values {
+                        match value{
+
+                            MyPrimitiveValueType::Text(value) => {
+                                ui.add(TextEdit::multiline(value));
+                            }
+                            MyPrimitiveValueType::Embedding(_) => {
+                                ui.label("Embedding");
+                            }
+                        }
+                    }
                 });
             }
             MyValueType::Unset => {}
@@ -327,22 +381,39 @@ impl NodeDataTrait for MyNodeData {
 
         for (_, id) in outputs {
             let value = user_state.node_outputs.get(id).cloned().unwrap_or_default();
-            ui.horizontal(|ui| match &value {
-                MyValueType::Embedding(vector) => {
-                    ui.label(format!("{:?}", &vector[..5]));
+            ui.horizontal(|ui| {
+                match &value {
+                MyValueType::Single(single) => {
+                    match single{
+                        MyPrimitiveValueType::Text(value) => {
+                            ui.label(value);
+                        }
+                        MyPrimitiveValueType::Embedding(value) => {
+                            ui.label(format!("{:?}", &value[..5]));
+                        }
+                    }
                 }
-                MyValueType::Text(value) => {
-                    ui.label(value);
+                MyValueType::List(many) => {
+                    for value in many {
+                        match value {
+                            MyPrimitiveValueType::Text(value) => {
+                                ui.label(value);
+                            }
+                            MyPrimitiveValueType::Embedding(value) => {
+                                ui.label(format!("{:?}", &value[..5]));
+                            }
+                        }
+                    }
                 }
                 MyValueType::Unset => {}
-            });
+            }
+        });
         }
 
         vec![]
     }
 }
 
-type MyGraph = Graph<MyNodeData, MyDataType, MyValueType>;
 type MyEditorState = GraphEditorState<MyNodeData, MyDataType, MyValueType, PluginId, MyGraphState>;
 
 pub struct NodeGraphExample {
@@ -457,13 +528,8 @@ impl eframe::App for NodeGraphExample {
                         None => &input.value,
                     };
                     match &value {
-                        MyValueType::Text(text) => values.push(Value::Text(text.clone())),
-                        MyValueType::Embedding(embedding) => {
-                            values.push(Value::Embedding(Embedding {
-                                vector: embedding.clone(),
-                            }))
-                        }
                         MyValueType::Unset => continue 'o,
+                        _ => values.push(value.clone().into()),
                     }
                 }
 
