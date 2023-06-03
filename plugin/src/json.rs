@@ -103,8 +103,6 @@ impl<'a> Validate<'a> for StructureMap {
                     let Some(value_structure) = self.0.get(&key) else {
                         return ParseStatus::Invalid;
                     };
-                    println!("tokens: {:?}", tokens);
-                    println!("value_structure: {:?}", value_structure);
 
                     let parse_colon = SkipSpaces.then(":");
 
@@ -244,7 +242,6 @@ struct ValidateString;
 
 impl<'a> Validate<'a> for ValidateString {
     fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
-        println!("validating string {:?}", tokens);
         let mut iter = tokens.iter();
         let mut escape = false;
 
@@ -266,7 +263,7 @@ impl<'a> Validate<'a> for ValidateString {
                 '"' => {
                     if !escape {
                         let _ = iter.next();
-                        return dbg!(ParseStatus::Complete(iter.current()));
+                        return ParseStatus::Complete(iter.current());
                     }
                 }
                 _ => {}
@@ -430,9 +427,9 @@ struct Then<'a, A: Validate<'a>, B: Validate<'a>>(A, B, std::marker::PhantomData
 
 impl<'a, A: Validate<'a>, B: Validate<'a>> Validate<'a> for Then<'a, A, B> {
     fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
-        match dbg!(self.0.validate(tokens)) {
+        match self.0.validate(tokens) {
             ParseStatus::Complete(Some(tokens)) => {
-                dbg!(self.1.validate(tokens))
+                self.1.validate(tokens)
             }
             ParseStatus::Complete(None) => ParseStatus::Incomplete,
             ParseStatus::Invalid => ParseStatus::Invalid,
@@ -445,9 +442,9 @@ struct Or<'a, A: Validate<'a>, B: Validate<'a>>(A, B, std::marker::PhantomData<&
 
 impl<'a, A: Validate<'a>, B: Validate<'a>> Validate<'a> for Or<'a, A, B> {
     fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
-        match dbg!(self.0.validate(tokens)) {
+        match self.0.validate(tokens) {
             ParseStatus::Complete(tokens) => ParseStatus::Complete(tokens),
-            ParseStatus::Invalid => dbg!(self.1.validate(tokens)),
+            ParseStatus::Invalid => self.1.validate(tokens),
             ParseStatus::Incomplete => ParseStatus::Incomplete,
         }
     }
@@ -476,7 +473,6 @@ impl<'a> Validate<'a> for &str {
             let _ = iter.next();
         };
 
-        println!("{}: {:?}", self, result);
         result
     }
 }
