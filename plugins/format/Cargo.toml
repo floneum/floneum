@@ -1,5 +1,5 @@
 [package]
-name = "plugin_demo"
+name = "plugin_format"
 version = "0.1.0"
 edition = "2021"
 
@@ -9,4 +9,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen" }
-rust_adapter = { path = "../rust_adapter" }
+rust_adapter = { path = "../../rust_adapter" }

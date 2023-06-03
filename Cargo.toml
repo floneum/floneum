@@ -30,5 +30,6 @@ opt-level = 3
 members = [
     "plugin",
     "rust_adapter",
-    "plugin_demo",
+    "plugins/infer",
+    "plugins/format",
 ]

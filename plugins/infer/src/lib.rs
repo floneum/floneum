@@ -12,8 +12,8 @@ pub struct Plugin;
 impl Definitions for Plugin {
     fn structure() -> Definition {
         Definition {
-            name: "test plugin".to_string(),
-            description: "this is a test plugin".to_string(),
+            name: "inference".to_string(),
+            description: "loads a model and runs it".to_string(),
             inputs: vec![IoDefinition {
                 name: "input".to_string(),
                 ty: ValueType::Text,
@@ -35,13 +35,10 @@ impl Definitions for Plugin {
             _ => panic!("expected text input"),
         };
 
-        let text_input = format!("This is a chat between an AI chatbot and a human. The chatbot is programmed to be extremly helpful and always attempt to answer correctly. The human will start questions with ### Human; the AI with start answers with ### Assistant\n### Human{text_input}\n ### Assistant");
-
-        let mut responce = session.infer(&text_input, Some(50), Some("### Human"));
+        let mut responce = session.infer(&text_input, Some(100), None);
         responce += "\n";
 
         print(&responce);
-
 
         vec![Value::Text(responce)]
     }

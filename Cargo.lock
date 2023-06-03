@@ -3148,7 +3148,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "plugin_demo"
+name = "plugin_format"
+version = "0.1.0"
+dependencies = [
+ "rust_adapter",
+ "wit-bindgen",
+]
+
+[[package]]
+name = "plugin_infer"
 version = "0.1.0"
 dependencies = [
  "rust_adapter",
