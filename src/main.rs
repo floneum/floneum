@@ -5,7 +5,7 @@ use eframe::{
     epaint::ahash::{HashMap, HashSet},
 };
 use egui_node_graph::*;
-use plugin::exports::plugins::main::definitions::{Value, ValueType};
+use plugin::exports::plugins::main::definitions::{Value, ValueType, Embedding};
 use plugin::{Plugin, PluginEngine, PluginInstance};
 use serde::{Deserialize, Serialize};
 use std::{borrow::Cow, path::PathBuf};
@@ -60,9 +60,15 @@ pub enum MyDataType {
 /// with a DataType of Text and a ValueType of Embedding.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum MyValueType {
-    Text(String),
-    Embedding,
+    Single(MyPrimitiveValueType),
+    List(Vec<MyPrimitiveValueType>),
     Unset,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub enum MyPrimitiveValueType {
+    Text(String),
+    Embedding(Vec<f32>),
 }
 
 impl Into<Value> for MyValueType {
@@ -77,7 +83,7 @@ impl Into<Value> for MyValueType {
 impl From<Value> for MyValueType {
     fn from(value: Value) -> Self {
         match value {
-            Value::Embedding(_) => MyValueType::Embedding,
+            Value::Embedding(embedding) => MyValueType::Embedding(embedding.vector),
             Value::Text(text) => MyValueType::Text(text),
         }
     }
@@ -201,7 +207,7 @@ impl NodeTemplateTrait for PluginId {
                 node_id,
                 name.to_string(),
                 MyDataType::Embedding,
-                MyValueType::Embedding,
+                MyValueType::Embedding(Vec::new()),
                 InputParamKind::ConnectionOrConstant,
                 true,
             );
@@ -264,7 +270,7 @@ impl WidgetValueTrait for MyValueType {
         // This trait is used to tell the library which UI to display for the
         // inline parameter widgets.
         match self {
-            MyValueType::Embedding => {
+            MyValueType::Embedding(_) => {
                 ui.label(param_name);
                 ui.horizontal(|ui| {
                     ui.label("embedding");
@@ -322,8 +328,8 @@ impl NodeDataTrait for MyNodeData {
         for (_, id) in outputs {
             let value = user_state.node_outputs.get(id).cloned().unwrap_or_default();
             ui.horizontal(|ui| match &value {
-                MyValueType::Embedding => {
-                    todo!();
+                MyValueType::Embedding(vector) => {
+                    ui.label(format!("{:?}", &vector[..5]));
                 }
                 MyValueType::Text(value) => {
                     ui.label(value);
@@ -452,7 +458,11 @@ impl eframe::App for NodeGraphExample {
                     };
                     match &value {
                         MyValueType::Text(text) => values.push(Value::Text(text.clone())),
-                        MyValueType::Embedding => todo!(),
+                        MyValueType::Embedding(embedding) => {
+                            values.push(Value::Embedding(Embedding{
+                                vector: embedding.clone(),
+                            }))
+                        },
                         MyValueType::Unset => continue 'o,
                     }
                 }

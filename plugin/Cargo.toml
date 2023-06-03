@@ -19,3 +19,4 @@ scraper = "0.16.0"
 slab = "0.4.8"
 instant-distance = { version = "0.6.0", features = ["with-serde"] }
 serde = { version = "1.0.163", features = ["derive"] }
+partial_sort = "0.2.0"

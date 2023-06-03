@@ -3,7 +3,7 @@
 use crate::plugins::main::imports::*;
 
 pub use crate::exports::plugins::main::definitions::{
-    Definition, Definitions, IoDefinition, Value, ValueType,
+    Definition, Definitions, IoDefinition, Value, ValueType, PrimitiveValue, PrimitiveValueType
 };
 pub use crate::plugins::main::imports::{print, GptNeoXType, LlamaType, ModelType, MptType};
 pub use plugins::main::types::Embedding;

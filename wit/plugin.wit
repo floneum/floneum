@@ -52,11 +52,21 @@ interface definitions {
   }
 
   variant value {
+    single(primitive-value),
+    many(list<primitive-value>),
+  }
+
+  variant primitive-value {
     text(string),
     embedding(embedding),
   }
 
-  enum value-type {
+  variant value-type {
+    single(primitive-value-type),
+    many(list<primitive-value-type>),
+  }
+
+  enum primitive-value-type {
     text,
     embedding,
   }

@@ -16,11 +16,11 @@ impl Definitions for Plugin {
             description: "loads a model and runs it".to_string(),
             inputs: vec![IoDefinition {
                 name: "input".to_string(),
-                ty: ValueType::Text,
+                ty: ValueType::Single(PrimitiveValueType::Text),
             }],
             outputs: vec![IoDefinition {
                 name: "output".to_string(),
-                ty: ValueType::Text,
+                ty: ValueType::Single(PrimitiveValueType::Text),
             }],
         }
     }
@@ -31,7 +31,7 @@ impl Definitions for Plugin {
         let session = ModelInstance::new(model);
 
         let text_input = match &input[0] {
-            Value::Text(text) => text,
+            Value::Single(PrimitiveValue::Text(text)) => text,
             _ => panic!("expected text input"),
         };
 
@@ -40,7 +40,7 @@ impl Definitions for Plugin {
 
         print(&responce);
 
-        vec![Value::Text(responce)]
+        vec![Value::Single(PrimitiveValue::Text(responce))]
     }
 }
 

@@ -8,5 +8,4 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen" }
 rust_adapter = { path = "../../rust_adapter" }

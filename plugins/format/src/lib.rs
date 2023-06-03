@@ -12,33 +12,33 @@ impl Definitions for Plugin {
             inputs: vec![
                 IoDefinition {
                     name: "template".to_string(),
-                    ty: ValueType::Text,
+                    ty: ValueType::Single(PrimitiveValueType::Text),
                 },
                 IoDefinition {
                     name: "input".to_string(),
-                    ty: ValueType::Text,
+                    ty: ValueType::Single(PrimitiveValueType::Text),
                 },
             ],
             outputs: vec![IoDefinition {
                 name: "output".to_string(),
-                ty: ValueType::Text,
+                ty: ValueType::Single(PrimitiveValueType::Text),
             }],
         }
     }
 
     fn run(input: Vec<Value>) -> Vec<Value> {
         let template = match &input[0] {
-            Value::Text(text) => text,
+            Value::Single(PrimitiveValue::Text(text)) => text,
             _ => panic!("expected text input"),
         };
 
         let input = match &input[1] {
-            Value::Text(text) => text,
+            Value::Single(PrimitiveValue::Text(text)) => text,
             _ => panic!("expected text input"),
         };
 
         let text = template.replacen("{}", input, 1);
 
-        vec![Value::Text(text)]
+        vec![Value::Single(PrimitiveValue::Text(text))]
     }
 }

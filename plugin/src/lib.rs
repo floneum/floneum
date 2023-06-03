@@ -16,7 +16,9 @@ use wit_component::ComponentEncoder;
 
 mod download;
 mod embedding;
+mod json;
 mod sessions;
+mod structured;
 mod vector_db;
 
 use crate::sessions::InferenceSessions;
@@ -228,14 +230,14 @@ fn load_plugin() {
         // cargo build --release --target wasm32-unknown-unknown
         let command = std::process::Command::new("cargo")
             .args(&["build", "--release", "--target", "wasm32-unknown-unknown"])
-            .current_dir("../plugin_demo")
+            .current_dir("../plugins/format")
             .stdout(std::process::Stdio::inherit())
             .output()
             .unwrap();
 
         println!("{:?}", command);
 
-        let path = "../target/wasm32-unknown-unknown/release/plugin_demo.wasm";
+        let path = "../target/wasm32-unknown-unknown/release/plugin_format.wasm";
 
         let mut engine = PluginEngine::default();
 
@@ -243,8 +245,20 @@ fn load_plugin() {
 
         let instance = plugin.instance(&engine);
 
-        let inputs = vec![Value::Text("hello world".to_string())];
+        let inputs = vec![
+            Value::Single(PrimitiveValue::Text("hello {}".to_string())),
+            Value::Single(PrimitiveValue::Text("world".to_string())),
+        ];
         let outputs = instance.run(inputs).await;
         println!("{:?}", outputs);
+
+        assert_eq!(outputs.len(), 1);
+        let first = outputs.first().unwrap();
+        match first {
+            Value::Single(PrimitiveValue::Text(text)) => {
+                assert_eq!(text, "hello world");
+            }
+            _ => panic!("unexpected text output"),
+        }
     });
 }

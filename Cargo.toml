@@ -32,4 +32,5 @@ members = [
     "rust_adapter",
     "plugins/infer",
     "plugins/format",
+    "plugins/embedding",
 ]

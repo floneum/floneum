@@ -3135,6 +3135,7 @@ dependencies = [
  "instant-distance",
  "llm",
  "log",
+ "partial_sort",
  "rand 0.8.5",
  "reqwest",
  "scraper",
@@ -3148,11 +3149,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "plugin_embedding"
+version = "0.1.0"
+dependencies = [
+ "rust_adapter",
+]
+
+[[package]]
 name = "plugin_format"
 version = "0.1.0"
 dependencies = [
  "rust_adapter",
- "wit-bindgen",
 ]
 
 [[package]]
@@ -3160,7 +3167,6 @@ name = "plugin_infer"
 version = "0.1.0"
 dependencies = [
  "rust_adapter",
- "wit-bindgen",
 ]
 
 [[package]]
