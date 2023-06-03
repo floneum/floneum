@@ -1,9 +1,9 @@
 use llm::{Sampler, TokenBias, TokenId, Vocabulary};
 use partial_sort::PartialSort;
 use rand::{distributions::WeightedIndex, prelude::Distribution};
-use std::{fmt::Debug};
+use std::fmt::Debug;
 
-use crate::json::{Structure, Validate, ParseStream};
+use crate::json::{ParseStream, Structure, Validate};
 
 struct StructuredSampler {
     vocab: Vocabulary,
@@ -39,7 +39,10 @@ impl StructuredSampler {
 
         borrowed.push(new_token.as_str());
 
-        !self.structure.validate(ParseStream::new(&borrowed)).is_invalid()
+        !self
+            .structure
+            .validate(ParseStream::new(&borrowed))
+            .is_invalid()
     }
 }
 

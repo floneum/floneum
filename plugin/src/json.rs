@@ -3,73 +3,40 @@ use std::{cell::Cell, collections::HashMap, ops::Deref};
 #[derive(Debug)]
 pub enum Structure {
     Sequence(Box<Structure>),
-    Map(HashMap<String, Structure>),
+    Map(StructureMap),
     Num,
     String,
     Either(Box<Structure>, Box<Structure>),
 }
 
-impl<'a> Validate<'a> for Structure{
+impl<'a> Validate<'a> for Structure {
     fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
         match self {
             Structure::Sequence(inner) => {
-                let parse_sequence =Seperated::new(
-                     inner.as_ref(),
-                     ",",
-                     None
-                );
+                let parse_sequence = Seperated::new(inner.as_ref(), ",", None);
 
-                let parse_array = Between::new(
-                    "[",
-                    parse_sequence,
-                    "]",
-                );
+                let parse_array = Between::new("[", parse_sequence, "]");
 
                 parse_array.validate(tokens)
             }
-            Structure::Map(_map) => {
-                let parse_key = SkipSpaces.then(ValidateString);
-                let parse_key_colon = parse_key.then(":");
-                let parse_value = SkipSpaces.then(ValidateString);
-                let parse_kv = parse_key_colon.then(parse_value);
-
-                let parse_map = Seperated::new(
-                    parse_kv,
-                    ",",
-                    None
-                );
-
-                let parse_object = Between::new(
-                    "{",
-                    parse_map,
-                    "}",
-                );
-
-                parse_object.validate(tokens)
-            }
+            Structure::Map(map) => map.validate(tokens),
             Structure::Num => {
                 let parse_int = ValidateInt;
-                SkipSpaces.then(
-                    parse_int
-                ).validate(tokens)
-            },
+                SkipSpaces.then(parse_int).validate(tokens)
+            }
             Structure::String => {
                 let parse_string = ValidateString;
-                SkipSpaces.then(
-                    parse_string
-                ).validate(tokens)
-            },
-            Structure::Either(left, right) => {
-                left.deref().or(right.deref()).validate(tokens)
+                SkipSpaces.then(parse_string).validate(tokens)
             }
+            Structure::Either(left, right) => left.deref().or(right.deref()).validate(tokens),
         }
     }
 }
 
 #[test]
-fn parse_structured(){
+fn parse_structured() {
     let parse_array_of_ints = Structure::Sequence(Box::new(Structure::Num));
-    
+
     let tokens = ParseStream::new(&["[1,2,3]"]);
     assert!(parse_array_of_ints.validate(tokens).is_complete());
 
@@ -80,7 +47,7 @@ fn parse_structured(){
     assert!(parse_array_of_ints.validate(tokens).is_invalid());
 
     let parse_array_of_strings = Structure::Sequence(Box::new(Structure::String));
-    
+
     let tokens = ParseStream::new(&[r#"["hello", "world"]"#]);
     assert!(parse_array_of_strings.validate(tokens).is_complete());
 
@@ -104,18 +71,102 @@ fn parse_structured(){
     let tokens = ParseStream::new(&[r#"1,"2",3"#]);
     assert!(parse_array_of_either.validate(tokens).is_invalid());
 
-    let parse_object = Structure::Map(HashMap::new());
+    let parse_object = Structure::Map(StructureMap(
+        vec![
+            ("hello".to_string(), Structure::String),
+            ("world".to_string(), Structure::Num),
+        ]
+        .into_iter()
+        .collect(),
+    ));
 
-    let tokens = ParseStream::new(&[r#"{"hello": "world"}"#]);
+    let tokens = ParseStream::new(&[r#"{"hello": "world", "world": 1}"#]);
     assert!(parse_object.validate(tokens).is_complete());
 
-    let tokens = ParseStream::new(&[r#"{"hello": "world""#]);
+    let tokens = ParseStream::new(&[r#"{"hello": "world", "world": 1"#]);
     assert!(parse_object.validate(tokens).is_incomplete());
 
-    let tokens = ParseStream::new(&[r#""hello": "world""#]);
+    let tokens = ParseStream::new(&[r#""hello": "world", "world": 1}"#]);
     assert!(parse_object.validate(tokens).is_invalid());
 }
 
+#[derive(Debug)]
+struct StructureMap(HashMap<String, Structure>);
+
+impl<'a> Validate<'a> for StructureMap {
+    fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
+        let parse_kv = Anonymous(|tokens: ParseStream<'a>| {
+            let (key, status) = parse_string(tokens);
+
+            match status {
+                ParseStatus::Complete(Some(tokens)) => {
+                    let Some(value_structure) = self.0.get(&key) else {
+                        return ParseStatus::Invalid;
+                    };
+                    println!("tokens: {:?}", tokens);
+                    println!("value_structure: {:?}", value_structure);
+
+                    let parse_colon = SkipSpaces.then(":");
+
+                    let parse_key =
+                    SkipSpaces.then(value_structure);
+
+                    let parse_kv = parse_colon.then(parse_key);
+                    parse_kv.validate(tokens)
+                }
+                ParseStatus::Complete(None) => {
+                    if self.0.get(&key).is_some() {
+                        ParseStatus::Incomplete
+                    } else {
+                        ParseStatus::Invalid
+                    }
+                }
+                ParseStatus::Incomplete => {
+                    // check if any of the keys match the first part of the string
+                    // if so, return incomplete
+                    // otherwise, return invalid
+                    if self.0.keys().any(|k| k.starts_with(&key)) {
+                        ParseStatus::Incomplete
+                    } else {
+                        ParseStatus::Invalid
+                    }
+                }
+                _ => status,
+            }
+        });
+
+        let parse_map = Seperated::new(SkipSpaces.then( parse_kv), ",", None);
+
+        let parse_object = Between::new("{", parse_map, "}");
+
+        parse_object.validate(tokens)
+    }
+}
+
+fn parse_string(tokens: ParseStream) -> (String, ParseStatus) {
+    let mut iter = tokens.iter();
+    let mut string = String::new();
+
+    if iter.peek() != Some('"') {
+        return (string, ParseStatus::Invalid);
+    }
+    let _ = iter.next();
+
+    while let Some(c) = iter.peek() {
+        match c {
+            '"' => {
+                let _ = iter.next();
+                return (string, ParseStatus::Complete(iter.current()));
+            }
+            _ => {
+                string.push(c);
+            }
+        }
+        let _ = iter.next();
+    }
+
+    (string, ParseStatus::Incomplete)
+}
 
 struct SkipSpaces;
 
@@ -140,17 +191,19 @@ struct ValidateInt;
 impl<'a> Validate<'a> for ValidateInt {
     fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
         let mut iter = tokens.iter();
-        
+
         if iter.peek() == Some('-') {
             let _ = iter.next();
         }
-        
+
         let mut has_decimal = false;
         let mut has_digits = false;
 
         while let Some(c) = iter.peek() {
             match c {
-                '0'..='9'  => {has_digits = true;}
+                '0'..='9' => {
+                    has_digits = true;
+                }
                 '.' => {
                     if has_decimal {
                         return ParseStatus::Complete(iter.current());
@@ -163,7 +216,7 @@ impl<'a> Validate<'a> for ValidateInt {
                     } else {
                         return ParseStatus::Invalid;
                     }
-                },
+                }
             }
             let _ = iter.next();
         }
@@ -173,7 +226,7 @@ impl<'a> Validate<'a> for ValidateInt {
 }
 
 #[test]
-fn test_parse_num(){
+fn test_parse_num() {
     let tokens = ParseStream::new(&["-1234"]);
     assert!(ValidateInt.validate(tokens).is_complete());
 
@@ -211,7 +264,7 @@ impl<'a> Validate<'a> for ValidateString {
                     escape = true;
                 }
                 '"' => {
-                    if !escape{
+                    if !escape {
                         let _ = iter.next();
                         return dbg!(ParseStatus::Complete(iter.current()));
                     }
@@ -284,17 +337,16 @@ impl<'a> ParseStream<'a> {
         let token_index = self.token_index;
         let char_index = self.char_index;
         if let Some(c) = self.tokens.get(token_index) {
-                if let Some(c) = c.chars().nth(char_index) {
-                    return Some(c);
-                }
-               
+            if let Some(c) = c.chars().nth(char_index) {
+                return Some(c);
+            }
         }
         None
     }
 
     fn take(self) -> Option<ParseStream<'a>> {
         let mut token_index = self.token_index;
-        let mut char_index = self.char_index+1;
+        let mut char_index = self.char_index + 1;
         loop {
             if let Some(c) = self.tokens.get(token_index) {
                 if c.chars().nth(char_index).is_some() {
@@ -303,13 +355,11 @@ impl<'a> ParseStream<'a> {
                         token_index,
                         char_index,
                     });
-                }
-                else {
+                } else {
                     token_index += 1;
                     char_index = 0;
                 }
-            }
-            else {
+            } else {
                 return None;
             }
         }
@@ -324,7 +374,7 @@ impl<'a> ParseStreamIter<'a> {
     fn peek(&self) -> Option<char> {
         self.stream.get()?.peek()
     }
-    
+
     fn current(&self) -> Option<ParseStream<'a>> {
         self.stream.get()
     }
@@ -359,6 +409,12 @@ pub trait Validate<'a> {
     }
 }
 
+impl<'a, V: Validate<'a>> Validate<'a> for &V {
+    fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
+        (*self).validate(tokens)
+    }
+}
+
 struct Anonymous<F>(pub F);
 
 impl<'a, F> Validate<'a> for Anonymous<F>
@@ -367,12 +423,6 @@ where
 {
     fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
         self.0(tokens)
-    }
-}
-
-impl<'a, V: Validate<'a>> Validate<'a> for &V {
-    fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
-        (*self).validate(tokens)
     }
 }
 
@@ -423,7 +473,7 @@ impl<'a> Validate<'a> for &str {
                 break ParseStatus::Invalid;
             }
 
-            let _ =iter.next();
+            let _ = iter.next();
         };
 
         println!("{}: {:?}", self, result);

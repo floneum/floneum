@@ -5,7 +5,7 @@ use eframe::{
     epaint::ahash::{HashMap, HashSet},
 };
 use egui_node_graph::*;
-use plugin::exports::plugins::main::definitions::{Value, ValueType, Embedding};
+use plugin::exports::plugins::main::definitions::{Embedding, Value, ValueType};
 use plugin::{Plugin, PluginEngine, PluginInstance};
 use serde::{Deserialize, Serialize};
 use std::{borrow::Cow, path::PathBuf};
@@ -459,10 +459,10 @@ impl eframe::App for NodeGraphExample {
                     match &value {
                         MyValueType::Text(text) => values.push(Value::Text(text.clone())),
                         MyValueType::Embedding(embedding) => {
-                            values.push(Value::Embedding(Embedding{
+                            values.push(Value::Embedding(Embedding {
                                 vector: embedding.clone(),
                             }))
-                        },
+                        }
                         MyValueType::Unset => continue 'o,
                     }
                 }

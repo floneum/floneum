@@ -26,7 +26,7 @@ impl Definitions for Plugin {
             _ => panic!("expected text input"),
         };
 
-        let model =  ModelInstance::new(ModelType::Llama(LlamaType::Vicuna));
+        let model = ModelInstance::new(ModelType::Llama(LlamaType::Vicuna));
 
         let embedding = model.get_embedding(input);
 

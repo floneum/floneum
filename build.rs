@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
-fn main(){
+fn main() {
     // build the plugins
-    for plugin in ["embedding", "format", "infer"]{
+    for plugin in ["embedding", "format", "infer"] {
         let path = PathBuf::from("./plugins").join(plugin);
         let status = std::process::Command::new("cargo")
             .args(&["build", "--target", "wasm32-unknown-unknown", "--release"])
