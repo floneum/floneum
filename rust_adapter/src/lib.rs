@@ -2,11 +2,11 @@
 
 use crate::plugins::main::imports::*;
 
-pub use crate::plugins::main::imports::{print, ModelType, LlamaType, GptNeoXType, MptType, };
-pub use crate::exports::plugins::main::definitions::{Value, Definition, IoDefinition, ValueType};
+pub use crate::plugins::main::imports::{print, ModelType, LlamaType, GptNeoXType, MptType};
+pub use crate::exports::plugins::main::definitions::{Value, Definition, IoDefinition, ValueType,Definitions};
 pub use plugins::main::types::Embedding;
 
-wit_bindgen::generate!(in "../wit");
+wit_bindgen::generate!({path: "../wit", macro_export});
 
 pub struct VectorDatabase {
     id: EmbeddingDbId,

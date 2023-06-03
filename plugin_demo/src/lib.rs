@@ -3,14 +3,9 @@
 use core::panic;
 use std::vec;
 
-use exports::plugins::main::definitions::*;
-use rust_adapter::{ModelInstance, print};
-use crate::plugins::main::imports::*;
-
-wit_bindgen::generate!(in "../wit");
+use rust_adapter::*;
 
 export_plugin_world!(Plugin);
-
 
 pub struct Plugin;
 
@@ -42,12 +37,11 @@ impl Definitions for Plugin {
 
         let text_input = format!("This is a chat between an AI chatbot and a human. The chatbot is programmed to be extremly helpful and always attempt to answer correctly. The human will start questions with ### Human; the AI with start answers with ### Assistant\n### Human{text_input}\n ### Assistant");
 
-        let mut responce = model.infer(&text_input, Some(50), Some("### Human"));
+        let mut responce = session.infer(&text_input, Some(50), Some("### Human"));
         responce += "\n";
 
         print(&responce);
 
-        unload_model(session);
 
         vec![Value::Text(responce)]
     }
