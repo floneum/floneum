@@ -42,18 +42,30 @@ impl StructuredSampler {
         let mut tokens = Vec::new();
         for token in previous_tokens {
             let token = self.vocab.token(*token as usize);
-            tokens.push(String::from_utf8_lossy(&token).to_string());
+            let Ok(token) = String::from_utf8(token) else{
+                return true;
+            };
+            if !token.is_ascii() {
+                return true;
+            }
+            tokens.push(token);
         }
 
         let mut borrowed = tokens.iter().map(|x| x.as_str()).collect::<Vec<_>>();
 
         let new_token = self.vocab.token(new_token as usize);
-        let new_token = String::from_utf8_lossy(&new_token).to_string();
+        let Ok(new_token) = String::from_utf8(new_token)
+        else{
+            return true;
+        };
+        if !new_token.is_ascii() {
+            return true;
+        }
 
         borrowed.push(new_token.as_str());
         println!("borrowed: {:?}", borrowed);
 
-        dbg!(!self
+        dbg!(self
             .structure
             .validate(ParseStream::new(&borrowed))
             .is_invalid())
@@ -102,7 +114,7 @@ impl Sampler for StructuredSampler {
                 let tid = i as TokenId;
 
                 let val = if self.invalid_token(previous_tokens, tid) {
-                    -1.0
+                    -1.
                 } else if let Some(logit_override) = bias_tokens.get(tid) {
                     logit_override
                 } else if previous_tokens[previous_tokens

@@ -58,7 +58,9 @@ impl InferenceSessions {
                     llm::Vocabulary::External(ex) => llm::Vocabulary::External(ex.clone()),
                     llm::Vocabulary::Model(inn) => llm::Vocabulary::Model(inn.clone())
                 },
-                crate::json::Structure::Sequence(Box::new(crate::json::Structure::Num))
+                crate::json::Structure::Sequence(Box::new(
+                    crate::json::Structure::Sequence(Box::new(crate::json::Structure::String))
+                )),
             )),
             ..Default::default()
         };
