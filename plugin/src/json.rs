@@ -106,8 +106,7 @@ impl<'a> Validate<'a> for StructureMap {
 
                     let parse_colon = SkipSpaces.then(":");
 
-                    let parse_key =
-                    SkipSpaces.then(value_structure);
+                    let parse_key = SkipSpaces.then(value_structure);
 
                     let parse_kv = parse_colon.then(parse_key);
                     parse_kv.validate(tokens)
@@ -133,7 +132,7 @@ impl<'a> Validate<'a> for StructureMap {
             }
         });
 
-        let parse_map = Seperated::new(SkipSpaces.then( parse_kv), ",", None);
+        let parse_map = Seperated::new(SkipSpaces.then(parse_kv), ",", None);
 
         let parse_object = Between::new("{", parse_map, "}");
 
@@ -295,7 +294,7 @@ pub enum ParseStatus<'a> {
 }
 
 impl ParseStatus<'_> {
-    fn is_complete(&self) -> bool {
+    pub fn is_complete(&self) -> bool {
         matches!(self, ParseStatus::Complete(_))
     }
 
@@ -303,7 +302,7 @@ impl ParseStatus<'_> {
         matches!(self, ParseStatus::Invalid)
     }
 
-    fn is_incomplete(&self) -> bool {
+    pub fn is_incomplete(&self) -> bool {
         matches!(self, ParseStatus::Incomplete)
     }
 }
@@ -428,9 +427,7 @@ struct Then<'a, A: Validate<'a>, B: Validate<'a>>(A, B, std::marker::PhantomData
 impl<'a, A: Validate<'a>, B: Validate<'a>> Validate<'a> for Then<'a, A, B> {
     fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
         match self.0.validate(tokens) {
-            ParseStatus::Complete(Some(tokens)) => {
-                self.1.validate(tokens)
-            }
+            ParseStatus::Complete(Some(tokens)) => self.1.validate(tokens),
             ParseStatus::Complete(None) => ParseStatus::Incomplete,
             ParseStatus::Invalid => ParseStatus::Invalid,
             ParseStatus::Incomplete => ParseStatus::Incomplete,

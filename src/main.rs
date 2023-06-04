@@ -5,7 +5,9 @@ use eframe::{
     epaint::ahash::{HashMap, HashSet},
 };
 use egui_node_graph::*;
-use plugin::exports::plugins::main::definitions::{Embedding, Value, ValueType, PrimitiveValueType, PrimitiveValue};
+use plugin::exports::plugins::main::definitions::{
+    Embedding, PrimitiveValue, PrimitiveValueType, Value, ValueType,
+};
 use plugin::{Plugin, PluginEngine, PluginInstance};
 use serde::{Deserialize, Serialize};
 use std::{borrow::Cow, path::PathBuf};
@@ -82,12 +84,21 @@ impl Into<Value> for MyValueType {
         match self {
             Self::Single(value) => Value::Single(match value {
                 MyPrimitiveValueType::Text(text) => PrimitiveValue::Text(text),
-                MyPrimitiveValueType::Embedding(embedding) => PrimitiveValue::Embedding(Embedding { vector: embedding }),
+                MyPrimitiveValueType::Embedding(embedding) => {
+                    PrimitiveValue::Embedding(Embedding { vector: embedding })
+                }
             }),
-            Self::List(values) => Value::Many(values.into_iter().map(|value| match value {
-                MyPrimitiveValueType::Text(text) => PrimitiveValue::Text(text),
-                MyPrimitiveValueType::Embedding(embedding) => PrimitiveValue::Embedding(Embedding { vector: embedding }),
-            }).collect()),
+            Self::List(values) => Value::Many(
+                values
+                    .into_iter()
+                    .map(|value| match value {
+                        MyPrimitiveValueType::Text(text) => PrimitiveValue::Text(text),
+                        MyPrimitiveValueType::Embedding(embedding) => {
+                            PrimitiveValue::Embedding(Embedding { vector: embedding })
+                        }
+                    })
+                    .collect(),
+            ),
             _ => todo!(),
         }
     }
@@ -98,12 +109,21 @@ impl From<Value> for MyValueType {
         match value {
             Value::Single(value) => match value {
                 PrimitiveValue::Text(text) => Self::Single(MyPrimitiveValueType::Text(text)),
-                PrimitiveValue::Embedding(embedding) => Self::Single(MyPrimitiveValueType::Embedding(embedding.vector)),
+                PrimitiveValue::Embedding(embedding) => {
+                    Self::Single(MyPrimitiveValueType::Embedding(embedding.vector))
+                }
             },
-            Value::Many(values) => Self::List(values.into_iter().map(|value| match value {
-                PrimitiveValue::Text(text) => MyPrimitiveValueType::Text(text),
-                PrimitiveValue::Embedding(embedding) => MyPrimitiveValueType::Embedding(embedding.vector),
-            }).collect()),
+            Value::Many(values) => Self::List(
+                values
+                    .into_iter()
+                    .map(|value| match value {
+                        PrimitiveValue::Text(text) => MyPrimitiveValueType::Text(text),
+                        PrimitiveValue::Embedding(embedding) => {
+                            MyPrimitiveValueType::Embedding(embedding.vector)
+                        }
+                    })
+                    .collect(),
+            ),
         }
     }
 }
@@ -156,9 +176,13 @@ impl DataTypeTrait<MyGraphState> for MyDataType {
     fn data_type_color(&self, _user_state: &mut MyGraphState) -> egui::Color32 {
         match self {
             MyDataType::Single(MyPrimitiveDataType::Text) => egui::Color32::from_rgb(38, 109, 211),
-            MyDataType::Single(MyPrimitiveDataType::Embedding) => egui::Color32::from_rgb(238, 207, 109),
+            MyDataType::Single(MyPrimitiveDataType::Embedding) => {
+                egui::Color32::from_rgb(238, 207, 109)
+            }
             MyDataType::List(MyPrimitiveDataType::Text) => egui::Color32::from_rgb(38, 109, 211),
-            MyDataType::List(MyPrimitiveDataType::Embedding) => egui::Color32::from_rgb(238, 207, 109),
+            MyDataType::List(MyPrimitiveDataType::Embedding) => {
+                egui::Color32::from_rgb(238, 207, 109)
+            }
         }
     }
 
@@ -261,17 +285,21 @@ impl NodeTemplateTrait for PluginId {
 
         for output in &meta.outputs {
             let name = &output.name;
-            let ty =match &output.ty {
-                ValueType::Many(ty) => match ty{
+            let ty = match &output.ty {
+                ValueType::Many(ty) => match ty {
                     PrimitiveValueType::Text => MyDataType::List(MyPrimitiveDataType::Text),
-                    PrimitiveValueType::Embedding => MyDataType::List(MyPrimitiveDataType::Embedding),
-                }
-                ValueType::Single(ty) => match ty{
+                    PrimitiveValueType::Embedding => {
+                        MyDataType::List(MyPrimitiveDataType::Embedding)
+                    }
+                },
+                ValueType::Single(ty) => match ty {
                     PrimitiveValueType::Text => MyDataType::Single(MyPrimitiveDataType::Text),
-                    PrimitiveValueType::Embedding => MyDataType::Single(MyPrimitiveDataType::Embedding),
-                }
+                    PrimitiveValueType::Embedding => {
+                        MyDataType::Single(MyPrimitiveDataType::Embedding)
+                    }
+                },
             };
-            graph.add_output_param(node_id, name.to_string(),ty);
+            graph.add_output_param(node_id, name.to_string(), ty);
         }
     }
 }
@@ -306,17 +334,14 @@ impl WidgetValueTrait for MyValueType {
         match self {
             MyValueType::Single(value) => {
                 ui.label(param_name);
-                match value{
-
+                match value {
                     MyPrimitiveValueType::Text(value) => {
                         ui.horizontal(|ui| {
                             ui.add(TextEdit::multiline(value));
                         });
                     }
                     MyPrimitiveValueType::Embedding(_) => {
-                        ui.horizontal(|ui| {
-                            ui.label("Embedding")
-                        });
+                        ui.horizontal(|ui| ui.label("Embedding"));
                     }
                 }
             }
@@ -324,8 +349,7 @@ impl WidgetValueTrait for MyValueType {
                 ui.horizontal(|ui| {
                     ui.label(param_name);
                     for value in values {
-                        match value{
-
+                        match value {
                             MyPrimitiveValueType::Text(value) => {
                                 ui.add(TextEdit::multiline(value));
                             }
@@ -381,18 +405,15 @@ impl NodeDataTrait for MyNodeData {
 
         for (_, id) in outputs {
             let value = user_state.node_outputs.get(id).cloned().unwrap_or_default();
-            ui.horizontal(|ui| {
-                match &value {
-                MyValueType::Single(single) => {
-                    match single{
-                        MyPrimitiveValueType::Text(value) => {
-                            ui.label(value);
-                        }
-                        MyPrimitiveValueType::Embedding(value) => {
-                            ui.label(format!("{:?}", &value[..5]));
-                        }
+            ui.horizontal(|ui| match &value {
+                MyValueType::Single(single) => match single {
+                    MyPrimitiveValueType::Text(value) => {
+                        ui.label(value);
                     }
-                }
+                    MyPrimitiveValueType::Embedding(value) => {
+                        ui.label(format!("{:?}", &value[..5]));
+                    }
+                },
                 MyValueType::List(many) => {
                     for value in many {
                         match value {
@@ -406,8 +427,7 @@ impl NodeDataTrait for MyNodeData {
                     }
                 }
                 MyValueType::Unset => {}
-            }
-        });
+            });
         }
 
         vec![]

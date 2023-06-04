@@ -22,10 +22,11 @@ pub struct StructuredSampler {
     bias_tokens: TokenBias,
     /// The number of tokens to consider for the repetition penalty.
     repetition_penalty_last_n: usize,
+    current_token_count: usize,
 }
 
 impl StructuredSampler {
-    pub fn new(vocab: Vocabulary, structure: Structure) -> Self{
+    pub fn new(vocab: Vocabulary, structure: Structure, current_token_count: usize) -> Self {
         Self {
             top_k: 40,
             top_p: 0.95,
@@ -35,12 +36,13 @@ impl StructuredSampler {
             repetition_penalty_last_n: 512,
             vocab,
             structure,
+            current_token_count,
         }
     }
 
     fn invalid_token(&self, previous_tokens: &[TokenId], new_token: TokenId) -> bool {
         let mut tokens = Vec::new();
-        for token in previous_tokens {
+        for token in &previous_tokens[self.current_token_count..] {
             let token = self.vocab.token(*token as usize);
             let Ok(token) = String::from_utf8(token) else{
                 return true;
@@ -54,8 +56,7 @@ impl StructuredSampler {
         let mut borrowed = tokens.iter().map(|x| x.as_str()).collect::<Vec<_>>();
 
         let new_token = self.vocab.token(new_token as usize);
-        let Ok(new_token) = String::from_utf8(new_token)
-        else{
+        let Ok(new_token) = String::from_utf8(new_token) else{
             return true;
         };
         if !new_token.is_ascii() {
@@ -63,12 +64,25 @@ impl StructuredSampler {
         }
 
         borrowed.push(new_token.as_str());
-        println!("borrowed: {:?}", borrowed);
 
-        dbg!(self
+        if borrowed.iter().all(|s|s.is_empty()){
+            return true;
+        }
+
+        let status = self
             .structure
             .validate(ParseStream::new(&borrowed))
-            .is_invalid())
+            ;
+
+        if new_token.is_empty() && status.is_incomplete(){
+            return true;
+        }
+
+        let invalid = status.is_invalid();
+        if !invalid {
+            println!("borrowed: {:?}", borrowed);
+        }
+        invalid
     }
 }
 

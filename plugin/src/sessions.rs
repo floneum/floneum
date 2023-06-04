@@ -1,8 +1,11 @@
 use crate::{
     download::download, embedding::get_embeddings, exports::plugins::main::definitions::Embedding,
-    vector_db::VectorDB, EmbeddingDbId, ModelId, ModelType, structured::StructuredSampler,
+    structured::StructuredSampler, vector_db::VectorDB, EmbeddingDbId, ModelId, ModelType,
 };
-use llm::{InferenceFeedback, InferenceRequest, InferenceResponse, InferenceSession, Model, InferenceParameters};
+use llm::{
+    InferenceFeedback, InferenceParameters, InferenceRequest, InferenceResponse, InferenceSession,
+    Model,
+};
 use slab::Slab;
 
 use std::{convert::Infallible, sync::Arc};
@@ -52,15 +55,18 @@ impl InferenceSessions {
     ) -> String {
         let (model, session) = self.session_get_mut(id);
 
-        let parmeters = InferenceParameters{
+        let tokens = model.vocabulary().tokenize(&prompt, false).unwrap();
+
+        let parmeters = InferenceParameters {
             sampler: Arc::new(StructuredSampler::new(
-                match model.vocabulary(){
+                match model.vocabulary() {
                     llm::Vocabulary::External(ex) => llm::Vocabulary::External(ex.clone()),
-                    llm::Vocabulary::Model(inn) => llm::Vocabulary::Model(inn.clone())
+                    llm::Vocabulary::Model(inn) => llm::Vocabulary::Model(inn.clone()),
                 },
-                crate::json::Structure::Sequence(Box::new(
-                    crate::json::Structure::Sequence(Box::new(crate::json::Structure::String))
-                )),
+                crate::json::Structure::Sequence(Box::new(crate::json::Structure::Sequence(
+                    Box::new(crate::json::Structure::String),
+                ))),
+                tokens.len() + 1,
             )),
             ..Default::default()
         };
