@@ -42,7 +42,7 @@ impl<V: for<'a> Validate<'a>> StructuredSampler<V> {
 
     fn invalid_token(&self, previous_tokens: &[TokenId], new_token: TokenId) -> bool {
         let mut tokens = Vec::new();
-        for token in &previous_tokens[self.current_token_count..] {
+        for token in &previous_tokens[self.current_token_count.saturating_sub(1)..] {
             let token = self.vocab.token(*token as usize);
             let Ok(token) = String::from_utf8(token) else{
                 return true;
@@ -120,7 +120,7 @@ impl<V: for<'a> Validate<'a> + Send + Sync> Sampler for StructuredSampler<V> {
                 let tid = i as TokenId;
 
                 let val = if self.invalid_token(previous_tokens, tid) {
-                    -1.
+                    continue;
                 } else if let Some(logit_override) = bias_tokens.get(tid) {
                     logit_override
                 } else if previous_tokens[previous_tokens
@@ -146,7 +146,8 @@ impl<V: for<'a> Validate<'a> + Send + Sync> Sampler for StructuredSampler<V> {
 
         // find the top K tokens
         {
-            logits_id.partial_sort(top_k, |a, b| {
+            let logits_id_len = logits_id.len();
+            logits_id.partial_sort(top_k.min(logits_id_len), |a, b| {
                 // Sort descending
                 b.0.total_cmp(&a.0)
             });

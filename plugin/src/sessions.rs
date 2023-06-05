@@ -2,7 +2,7 @@ use crate::{
     download::download,
     embedding::get_embeddings,
     exports::plugins::main::definitions::Embedding,
-    json::{ParseStream, StructureMap, Validate},
+    json::{ParseStream, Validate},
     structured::StructuredSampler,
     vector_db::VectorDB,
     EmbeddingDbId, ModelId, ModelType,
@@ -74,10 +74,12 @@ impl InferenceSessions {
             ..Default::default()
         };
 
+        let token_ids = tokens.iter().map(|(_, id)| *id).collect::<Vec<_>>();
+
         let mut rng = rand::thread_rng();
-        let mut tokens = Vec::new();
+        let mut result_tokens = Vec::new();
         let request = InferenceRequest {
-            prompt: (&prompt).into(),
+            prompt: llm::Prompt::Tokens(&token_ids),
             parameters: &parmeters,
             play_back_previous_tokens: false,
             maximum_token_count: max_tokens.map(|x| x as usize),
@@ -89,14 +91,14 @@ impl InferenceSessions {
                 &mut rng,
                 &request,
                 &mut Default::default(),
-                // impl FnMut(InferenceResponse) -> Result<InferenceFeedback, E>
                 {
-                    let tokens = &mut tokens;
+                    let tokens = &mut result_tokens;
                     move |resp| match resp {
                         InferenceResponse::InferredToken(t) => {
+                            println!("token {}: {}", tokens.len(), t);
                             tokens.push(t);
                             let borrowed: Vec<_> = tokens.iter().map(|s| s.as_str()).collect();
-                            match validator.validate(ParseStream::new(&borrowed)) {
+                            match dbg!(validator.validate(ParseStream::new(&borrowed))) {
                                 crate::json::ParseStatus::Incomplete => {
                                     Ok::<_, Infallible>(InferenceFeedback::Continue)
                                 }
@@ -113,7 +115,7 @@ impl InferenceSessions {
             )
             .unwrap_or_else(|e| panic!("{e}"));
 
-        tokens.join("")
+        result_tokens.join("")
     }
 
     pub fn infer(
@@ -124,8 +126,6 @@ impl InferenceSessions {
         stop_on: Option<String>,
     ) -> String {
         let (model, session) = self.session_get_mut(id);
-
-        let tokens = model.vocabulary().tokenize(&prompt, false).unwrap();
 
         let parmeters = Default::default();
 

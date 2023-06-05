@@ -31,11 +31,11 @@ impl<'a> Validate<'a> for Structure {
             Structure::Map(map) => map.validate(tokens),
             Structure::Num => {
                 let parse_int = ValidateInt;
-                SkipSpaces.then(parse_int).validate(tokens)
+                parse_int.validate(tokens)
             }
             Structure::String => {
                 let parse_string = ValidateString;
-                SkipSpaces.then(parse_string).validate(tokens)
+                parse_string.validate(tokens)
             }
             Structure::Either(left, right) => left.deref().or(right.deref()).validate(tokens),
         }
@@ -110,9 +110,9 @@ impl<'a> Validate<'a> for StructureMap {
                         return ParseStatus::Invalid;
                     };
 
-                    let parse_colon = SkipSpaces.then(":");
+                    let parse_colon = ":";
 
-                    let parse_key = SkipSpaces.then(value_structure);
+                    let parse_key = value_structure;
 
                     let parse_kv = parse_colon.then(parse_key);
                     parse_kv.validate(tokens)
@@ -138,7 +138,7 @@ impl<'a> Validate<'a> for StructureMap {
             }
         });
 
-        let parse_map = Seperated::new(SkipSpaces.then(parse_kv), ",", None);
+        let parse_map = Seperated::new(parse_kv, ",", None);
 
         let parse_object = Between::new("{", parse_map, "}");
 
@@ -169,24 +169,6 @@ fn parse_string(tokens: ParseStream) -> (String, ParseStatus) {
     }
 
     (string, ParseStatus::Incomplete)
-}
-
-struct SkipSpaces;
-
-impl<'a> Validate<'a> for SkipSpaces {
-    fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
-        let mut iter = tokens.iter();
-
-        while let Some(c) = iter.peek() {
-            match c {
-                ' ' | '\t' | '\n' => {}
-                _ => return ParseStatus::Complete(iter.current()),
-            }
-            let _ = iter.next();
-        }
-
-        ParseStatus::Complete(iter.current())
-    }
 }
 
 struct ValidateInt;

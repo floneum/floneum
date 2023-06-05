@@ -7,6 +7,7 @@ pub use crate::exports::plugins::main::definitions::{
 };
 pub use crate::plugins::main::imports::{print, GptNeoXType, LlamaType, ModelType, MptType};
 pub use plugins::main::types::Embedding;
+use plugins::main::types::{JsonKvPair, JsonStructureEither, JsonStructureMap};
 
 wit_bindgen::generate!({path: "../wit", macro_export});
 
@@ -60,6 +61,10 @@ impl ModelInstance {
         infer(self.id, input, max_tokens, stop_on)
     }
 
+    pub fn infer_structured(&self, input: &str, max_tokens: Option<u32>, structure: Structured) -> String {
+        infer_structured(self.id, input, max_tokens, structure.id)
+    }
+
     pub fn get_embedding(&self, text: &str) -> Embedding {
         get_embedding(self.id, text)
     }
@@ -69,5 +74,58 @@ impl Drop for ModelInstance {
     fn drop(&mut self) {
         let id = self.id;
         unload_model(id);
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Structured {
+    id: StructureId,
+}
+
+impl Structured {
+    pub fn sequence_of(item: Structured) -> Self {
+        let inner = JsonStructure::Sequence(item.id);
+        let id = create_json_structure(inner);
+        Structured { id }
+    }
+
+    pub fn map_of(items: Vec<(String, Structured)>) -> Self {
+        let items: Vec<_> = items
+            .iter()
+            .map(|(k, v)| JsonKvPair {
+                key: &k,
+                value: v.id,
+            })
+            .collect();
+        let inner = JsonStructure::Map(JsonStructureMap { items: &items });
+        let id = create_json_structure(inner);
+        Structured { id }
+    }
+
+    pub fn num() -> Self {
+        let inner = JsonStructure::Num;
+        let id = create_json_structure(inner);
+        Structured { id }
+    }
+
+    pub fn str() -> Self {
+        let inner = JsonStructure::Str;
+        let id = create_json_structure(inner);
+        Structured { id }
+    }
+
+    pub fn boolean() -> Self {
+        let inner = JsonStructure::Boolean;
+        let id = create_json_structure(inner);
+        Structured { id }
+    }
+
+    pub fn either(first: Structured, second: Structured) -> Self {
+        let inner = JsonStructure::Either(JsonStructureEither {
+            first: first.id,
+            second: second.id,
+        });
+        let id = create_json_structure(inner);
+        Structured { id }
     }
 }

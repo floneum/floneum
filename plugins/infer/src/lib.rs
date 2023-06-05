@@ -35,7 +35,9 @@ impl Definitions for Plugin {
             _ => panic!("expected text input"),
         };
 
-        let mut responce = session.infer(&text_input, Some(100), None);
+        let structure = Structured::sequence_of(Structured::str());
+
+        let mut responce = session.infer_structured(&text_input, Some(100), structure);
         responce += "\n";
 
         print(&responce);
