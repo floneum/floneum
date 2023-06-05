@@ -7,6 +7,8 @@ use std::path::Path;
 use crate::plugins::main::imports::*;
 use exports::plugins::main::definitions::*;
 use futures_util::Future;
+use json::{Structure, StructureMap};
+use slab::Slab;
 use tokio::sync::broadcast;
 use wasmtime::component::{Component, Linker};
 use wasmtime::Config;
@@ -28,11 +30,47 @@ wasmtime::component::bindgen!(in "../wit");
 #[derive(Default)]
 pub struct State {
     sessions: InferenceSessions,
+    structures: Slab<JsonStructure>
+}
+
+impl State{
+    fn decode_structure(&self, id: StructureId) -> Structure{
+        match &self.structures[id.id as usize]{
+            JsonStructure::Sequence(id) => Structure::Sequence(Box::new(self.decode_structure(*id))),
+            JsonStructure::Map(map) => {
+                let mut new_map = std::collections::HashMap::new();
+                for kv in map.items.iter(){
+                    let key = &kv.key;
+                    let value = &kv.value;
+                    new_map.insert(key.clone(), self.decode_structure(*value));
+                }
+                Structure::Map(StructureMap(new_map))
+            },
+            JsonStructure::Str => Structure::String,
+            JsonStructure::Num => Structure::Num,
+            JsonStructure::Boolean => Structure::Bool,
+            JsonStructure::Either(either) => {
+                let id1 = &either.first;
+                let id2: &plugins::main::types::StructureId = &either.second;
+                Structure::Either(Box::new(self.decode_structure(*id1)), Box::new(self.decode_structure(*id2)))
+            },
+        } 
+    }
 }
 
 impl plugins::main::types::Host for State {}
 
 impl Host for State {
+    fn remove_json_structure(&mut self, id: StructureId) -> std::result::Result<(), wasmtime::Error> { 
+        self.structures.remove(id.id as usize);
+        Ok(())
+     }
+
+    fn create_json_structure(&mut self, json: JsonStructure) -> std::result::Result<plugins::main::types::StructureId, wasmtime::Error> { 
+        let id = self.structures.insert(json);
+        Ok(plugins::main::types::StructureId { id: id as u32 })
+    }
+
     fn load_model(&mut self, ty: ModelType) -> std::result::Result<ModelId, wasmtime::Error> {
         Ok(self.sessions.create(ty))
     }
@@ -91,6 +129,17 @@ impl Host for State {
         stop_on: Option<String>,
     ) -> std::result::Result<String, wasmtime::Error> {
         Ok(self.sessions.infer(id, input, max_tokens, stop_on))
+    }
+
+    fn infer_structured(
+        &mut self,
+        id: ModelId,
+        input: String,
+        max_tokens: Option<u32>,
+        structure: StructureId,
+    ) -> std::result::Result<String, wasmtime::Error> {
+        let structure = self.decode_structure(structure);
+        Ok(self.sessions.infer_validate(id, input, max_tokens, structure))
     }
 
     fn print(&mut self, str: String) -> std::result::Result<(), wasmtime::Error> {

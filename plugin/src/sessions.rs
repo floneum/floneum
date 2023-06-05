@@ -1,6 +1,11 @@
 use crate::{
-    download::download, embedding::get_embeddings, exports::plugins::main::definitions::Embedding,
-    structured::StructuredSampler, vector_db::VectorDB, EmbeddingDbId, ModelId, ModelType,
+    download::download,
+    embedding::get_embeddings,
+    exports::plugins::main::definitions::Embedding,
+    json::{ParseStream, StructureMap, Validate},
+    structured::StructuredSampler,
+    vector_db::VectorDB,
+    EmbeddingDbId, ModelId, ModelType,
 };
 use llm::{
     InferenceFeedback, InferenceParameters, InferenceRequest, InferenceResponse, InferenceSession,
@@ -46,12 +51,12 @@ impl InferenceSessions {
         self.sessions.remove(id.id as usize);
     }
 
-    pub fn infer(
+    pub fn infer_validate<V: for<'a> Validate<'a> + Clone + Send + Sync + 'static>(
         &mut self,
         id: ModelId,
         prompt: String,
         max_tokens: Option<u32>,
-        stop_on: Option<String>,
+        validator: V,
     ) -> String {
         let (model, session) = self.session_get_mut(id);
 
@@ -63,13 +68,66 @@ impl InferenceSessions {
                     llm::Vocabulary::External(ex) => llm::Vocabulary::External(ex.clone()),
                     llm::Vocabulary::Model(inn) => llm::Vocabulary::Model(inn.clone()),
                 },
-                crate::json::Structure::Sequence(Box::new(crate::json::Structure::Sequence(
-                    Box::new(crate::json::Structure::String),
-                ))),
+                validator.clone(),
                 tokens.len() + 1,
             )),
             ..Default::default()
         };
+
+        let mut rng = rand::thread_rng();
+        let mut tokens = Vec::new();
+        let request = InferenceRequest {
+            prompt: (&prompt).into(),
+            parameters: &parmeters,
+            play_back_previous_tokens: false,
+            maximum_token_count: max_tokens.map(|x| x as usize),
+        };
+
+        session
+            .infer(
+                model.as_ref(),
+                &mut rng,
+                &request,
+                &mut Default::default(),
+                // impl FnMut(InferenceResponse) -> Result<InferenceFeedback, E>
+                {
+                    let tokens = &mut tokens;
+                    move |resp| match resp {
+                        InferenceResponse::InferredToken(t) => {
+                            tokens.push(t);
+                            let borrowed: Vec<_> = tokens.iter().map(|s| s.as_str()).collect();
+                            match validator.validate(ParseStream::new(&borrowed)) {
+                                crate::json::ParseStatus::Incomplete => {
+                                    Ok::<_, Infallible>(InferenceFeedback::Continue)
+                                }
+                                crate::json::ParseStatus::Complete(_) => {
+                                    Ok(InferenceFeedback::Halt)
+                                }
+                                crate::json::ParseStatus::Invalid => Ok(InferenceFeedback::Halt),
+                            }
+                        }
+                        InferenceResponse::EotToken => Ok(InferenceFeedback::Halt),
+                        _ => Ok(InferenceFeedback::Continue),
+                    }
+                },
+            )
+            .unwrap_or_else(|e| panic!("{e}"));
+
+        tokens.join("")
+    }
+
+    pub fn infer(
+        &mut self,
+        id: ModelId,
+        prompt: String,
+        max_tokens: Option<u32>,
+        stop_on: Option<String>,
+    ) -> String {
+        let (model, session) = self.session_get_mut(id);
+
+        let tokens = model.vocabulary().tokenize(&prompt, false).unwrap();
+
+        let parmeters = Default::default();
 
         let mut rng = rand::thread_rng();
         let mut buf = String::new();

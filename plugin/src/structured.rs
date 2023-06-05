@@ -3,11 +3,11 @@ use partial_sort::PartialSort;
 use rand::{distributions::WeightedIndex, prelude::Distribution};
 use std::fmt::Debug;
 
-use crate::json::{ParseStream, Structure, Validate};
+use crate::json::{ParseStream, Validate};
 
-pub struct StructuredSampler {
+pub struct StructuredSampler<V: for<'a> Validate<'a>> {
     vocab: Vocabulary,
-    structure: Structure,
+    structure: V,
     /// The top K words by score are kept during sampling.
     top_k: usize,
     /// The cumulative probability after which no more words are kept for sampling.
@@ -25,8 +25,8 @@ pub struct StructuredSampler {
     current_token_count: usize,
 }
 
-impl StructuredSampler {
-    pub fn new(vocab: Vocabulary, structure: Structure, current_token_count: usize) -> Self {
+impl<V: for<'a> Validate<'a>> StructuredSampler<V> {
+    pub fn new(vocab: Vocabulary, structure: V, current_token_count: usize) -> Self {
         Self {
             top_k: 40,
             top_p: 0.95,
@@ -65,31 +65,23 @@ impl StructuredSampler {
 
         borrowed.push(new_token.as_str());
 
-        if borrowed.iter().all(|s|s.is_empty()){
+        if borrowed.iter().all(|s| s.is_empty()) {
             return true;
         }
 
-        let status = self
-            .structure
-            .validate(ParseStream::new(&borrowed))
-            ;
+        let status = self.structure.validate(ParseStream::new(&borrowed));
 
-        if new_token.is_empty() && status.is_incomplete(){
+        if new_token.is_empty() && status.is_incomplete() {
             return true;
         }
 
-        let invalid = status.is_invalid();
-        if !invalid {
-            println!("borrowed: {:?}", borrowed);
-        }
-        invalid
+        status.is_invalid()
     }
 }
 
-impl Debug for StructuredSampler {
+impl<V: for<'a> Validate<'a>> Debug for StructuredSampler<V> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("StructuredSampler")
-            .field("structure", &self.structure)
             .field("top_k", &self.top_k)
             .field("top_p", &self.top_p)
             .field("repeat_penalty", &self.repeat_penalty)
@@ -100,7 +92,7 @@ impl Debug for StructuredSampler {
     }
 }
 
-impl Sampler for StructuredSampler {
+impl<V: for<'a> Validate<'a> + Send + Sync> Sampler for StructuredSampler<V> {
     fn sample(
         &self,
         previous_tokens: &[TokenId],

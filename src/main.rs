@@ -331,37 +331,33 @@ impl WidgetValueTrait for MyValueType {
     ) -> Vec<MyResponse> {
         // This trait is used to tell the library which UI to display for the
         // inline parameter widgets.
-        match self {
+        egui::ScrollArea::vertical().show(ui, |ui| match self {
             MyValueType::Single(value) => {
                 ui.label(param_name);
                 match value {
                     MyPrimitiveValueType::Text(value) => {
-                        ui.horizontal(|ui| {
-                            ui.add(TextEdit::multiline(value));
-                        });
+                        ui.add(TextEdit::multiline(value));
                     }
                     MyPrimitiveValueType::Embedding(_) => {
-                        ui.horizontal(|ui| ui.label("Embedding"));
+                        ui.label("Embedding");
                     }
                 }
             }
             MyValueType::List(values) => {
-                ui.horizontal(|ui| {
-                    ui.label(param_name);
-                    for value in values {
-                        match value {
-                            MyPrimitiveValueType::Text(value) => {
-                                ui.add(TextEdit::multiline(value));
-                            }
-                            MyPrimitiveValueType::Embedding(_) => {
-                                ui.label("Embedding");
-                            }
+                ui.label(param_name);
+                for value in values {
+                    match value {
+                        MyPrimitiveValueType::Text(value) => {
+                            ui.add(TextEdit::multiline(value));
+                        }
+                        MyPrimitiveValueType::Embedding(_) => {
+                            ui.label("Embedding");
                         }
                     }
-                });
+                }
             }
             MyValueType::Unset => {}
-        }
+        });
 
         Vec::new()
     }

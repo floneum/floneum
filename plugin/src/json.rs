@@ -1,13 +1,17 @@
 use std::{cell::Cell, collections::HashMap, ops::Deref};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Structure {
     Sequence(Box<Structure>),
     Map(StructureMap),
     Num,
     String,
+    Bool,
     Either(Box<Structure>, Box<Structure>),
 }
+
+#[derive(Debug, Clone)]
+pub struct StructureMap(pub HashMap<String, Structure>);
 
 impl<'a> Validate<'a> for Structure {
     fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
@@ -18,6 +22,11 @@ impl<'a> Validate<'a> for Structure {
                 let parse_array = Between::new("[", parse_sequence, "]");
 
                 parse_array.validate(tokens)
+            }
+            Structure::Bool => {
+                let true_validator = "true";
+                let false_validator = "false";
+                true_validator.or(false_validator).validate(tokens)
             }
             Structure::Map(map) => map.validate(tokens),
             Structure::Num => {
@@ -89,9 +98,6 @@ fn parse_structured() {
     let tokens = ParseStream::new(&[r#""hello": "world", "world": 1}"#]);
     assert!(parse_object.validate(tokens).is_invalid());
 }
-
-#[derive(Debug)]
-struct StructureMap(HashMap<String, Structure>);
 
 impl<'a> Validate<'a> for StructureMap {
     fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
@@ -218,19 +224,19 @@ impl<'a> Validate<'a> for ValidateInt {
             let _ = iter.next();
         }
 
-        ParseStatus::Complete(iter.current())
+        ParseStatus::Incomplete
     }
 }
 
 #[test]
 fn test_parse_num() {
-    let tokens = ParseStream::new(&["-1234"]);
+    let tokens = ParseStream::new(&["-1234 "]);
     assert!(ValidateInt.validate(tokens).is_complete());
 
     let tokens = ParseStream::new(&["1234hello"]);
     assert!(ValidateInt.validate(tokens).is_complete());
 
-    let tokens = ParseStream::new(&["1234.0"]);
+    let tokens = ParseStream::new(&["1234.0 "]);
     assert!(ValidateInt.validate(tokens).is_complete());
 
     let tokens = ParseStream::new(&["1234.0.0"]);
@@ -422,7 +428,7 @@ where
     }
 }
 
-struct Then<'a, A: Validate<'a>, B: Validate<'a>>(A, B, std::marker::PhantomData<&'a ()>);
+pub struct Then<'a, A: Validate<'a>, B: Validate<'a>>(A, B, std::marker::PhantomData<&'a ()>);
 
 impl<'a, A: Validate<'a>, B: Validate<'a>> Validate<'a> for Then<'a, A, B> {
     fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
@@ -435,7 +441,7 @@ impl<'a, A: Validate<'a>, B: Validate<'a>> Validate<'a> for Then<'a, A, B> {
     }
 }
 
-struct Or<'a, A: Validate<'a>, B: Validate<'a>>(A, B, std::marker::PhantomData<&'a ()>);
+pub struct Or<'a, A: Validate<'a>, B: Validate<'a>>(A, B, std::marker::PhantomData<&'a ()>);
 
 impl<'a, A: Validate<'a>, B: Validate<'a>> Validate<'a> for Or<'a, A, B> {
     fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {

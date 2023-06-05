@@ -1,11 +1,12 @@
 package plugins:main
 
 interface imports {
-  use types.{embedding}
+  use types.{embedding, json-structure, structure-id}
 
   load-model: func(ty: model-type) -> model-id
   unload-model: func(id: model-id)
   infer: func(id: model-id, input: string, max-tokens: option<u32>, stop-on: option<string>) -> string
+  infer-structured: func(id: model-id, input: string, max-tokens: option<u32>, structure: structure-id) -> string
   
   record model-id {
     id: u32,
@@ -28,11 +29,41 @@ interface imports {
   enum llama-type { vicuna, guanaco, wizardlm }
   enum mpt-type { base, story, instruct, chat }
   enum gpt-neo-x-type { large-pythia, tiny-pythia, dolly-seven-b, stablelm }
+
+  create-json-structure: func(structure: json-structure) -> structure-id
+  remove-json-structure: func(id: structure-id)
 }
 
 interface types {
   record embedding {
     vector: list<float32>
+  }
+
+  variant json-structure {
+    sequence(structure-id),
+    map(json-structure-map),
+    num,
+    str,
+    boolean,
+    either(json-structure-either),
+  }
+
+  record json-structure-either {
+    first: structure-id,
+    second: structure-id,
+  }
+
+  record json-structure-map {
+    items: list<json-kv-pair>
+  }
+
+  record json-kv-pair {
+    key: string,
+    value: structure-id,
+  }
+
+  record structure-id {
+    id: u32
   }
 }
 

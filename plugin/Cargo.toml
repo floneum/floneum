@@ -12,7 +12,6 @@ llm = { git = "https://github.com/rustformers/llm", branch = "main" }
 log = "0.4.17"
 rand = "0.8.5"
 reqwest = { version = "0.11.18", features = ["stream"] }
-serde_json = "1.0.96"
 spinoff = "0.7.0"
 tokio = { version = "1.28.1", features = ["full"] }
 scraper = "0.16.0"
