@@ -15,7 +15,7 @@ reqwest = { version = "0.11.18", features = ["stream"] }
 spinoff = "0.7.0"
 tokio = { version = "1.28.1", features = ["full"] }
 scraper = "0.16.0"
-slab = "0.4.8"
+slab = { version = "0.4.8", features = ["serde"] }
 instant-distance = { version = "0.6.0", features = ["with-serde"] }
 serde = { version = "1.0.163", features = ["derive"] }
 partial_sort = "0.2.0"

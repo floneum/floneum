@@ -12,7 +12,6 @@ use llm::{
     Model,
 };
 use slab::Slab;
-
 use std::{convert::Infallible, sync::Arc};
 
 #[derive(Default)]

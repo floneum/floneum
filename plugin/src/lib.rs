@@ -3,11 +3,13 @@
 // https://github.com/bytecodealliance/wasmtime/issues/6074
 
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::plugins::main::imports::*;
 use exports::plugins::main::definitions::*;
 use futures_util::Future;
 use json::{Structure, StructureMap};
+use serde::{Serialize, Serializer, Deserializer, Deserialize};
 use slab::Slab;
 use tokio::sync::broadcast;
 use wasmtime::component::{Component, Linker};
@@ -25,7 +27,7 @@ mod vector_db;
 
 use crate::sessions::InferenceSessions;
 
-wasmtime::component::bindgen!(in "../wit");
+wasmtime::component::bindgen!({path: "../wit"});
 
 #[derive(Default)]
 pub struct State {
@@ -183,12 +185,16 @@ impl PluginEngine {
 
         // we first read the bytes of the wasm module.
         let module = std::fs::read(path).unwrap();
-        let size = module.len();
+        self.load_plugin_from_bytes(module)
+    }
+
+    pub fn load_plugin_from_bytes(&mut self, bytes: Vec<u8>) -> Plugin {
+        let size = bytes.len();
         println!("loaded plugin ({:01} mb)", size as f64 / (1024. * 1024.));
         // then we transform module to compoennt.
         // remember to get wasi_snapshot_preview1.wasm first.
         let component = ComponentEncoder::default()
-            .module(module.as_slice())
+            .module(bytes.as_slice())
             .unwrap()
             .validate(true)
             .adapter(
@@ -207,6 +213,7 @@ impl PluginEngine {
         let structure = world.interface0.call_structure(&mut store).unwrap();
 
         Plugin {
+            bytes:Arc::new(bytes),
             component,
             metadata: structure,
         }
@@ -214,8 +221,24 @@ impl PluginEngine {
 }
 
 pub struct Plugin {
+    bytes: Arc<Vec<u8>>,
     metadata: Definition,
     component: Component,
+}
+
+impl Serialize for Plugin {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // Just serialize the bytes.
+        serializer.serialize_bytes(&self.bytes)
+    }
+}
+
+impl<'de> Deserialize<'de> for Plugin {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        // Just deserialize the bytes.
+        let bytes = Vec::<u8>::deserialize(deserializer)?;
+        Ok(PluginEngine::default().load_plugin_from_bytes(bytes))
+    }
 }
 
 impl Plugin {
@@ -241,6 +264,7 @@ impl Plugin {
         });
 
         PluginInstance {
+            source_bytes: self.bytes.clone(),
             sender: input_sender,
             reciever: output_reciever,
             metadata: self.metadata.clone(),
@@ -257,14 +281,27 @@ impl Plugin {
 }
 
 pub struct PluginInstance {
+    source_bytes: Arc<Vec<u8>>,
     metadata: Definition,
     sender: broadcast::Sender<Vec<Value>>,
     reciever: broadcast::Receiver<Vec<Value>>,
 }
 
-impl Default for PluginInstance {
-    fn default() -> Self {
-        panic!("PluginInstance cannot be created by default")
+impl Serialize for PluginInstance {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // Just serialize the bytes.
+        serializer.serialize_bytes(&self.source_bytes)
+    }
+}
+
+impl<'de> Deserialize<'de> for PluginInstance {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        // Just deserialize the bytes.
+        println!("deserializing plugin instance");
+        let bytes = Vec::<u8>::deserialize(deserializer)?;
+        println!("deserialized plugin instance");
+        let mut engine = PluginEngine::default();
+        Ok(engine.load_plugin_from_bytes(bytes).instance(&engine))
     }
 }
 

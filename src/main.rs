@@ -10,7 +10,7 @@ use plugin::exports::plugins::main::definitions::{
 };
 use plugin::{Plugin, PluginEngine, PluginInstance};
 use serde::{Deserialize, Serialize};
-use std::{borrow::Cow, path::PathBuf};
+use std::{borrow::Cow, path::PathBuf, fmt::{Debug, Formatter}};
 use tokio::sync::mpsc::{Receiver, Sender};
 
 #[tokio::main]
@@ -18,11 +18,16 @@ async fn main() {
     use eframe::egui::Visuals;
 
     eframe::run_native(
-        "Egui node graph example",
+        "Egui AI",
         eframe::NativeOptions::default(),
         Box::new(|cc| {
             cc.egui_ctx.set_visuals(Visuals::dark());
-            Box::<NodeGraphExample>::default()
+            if let Some(from_storage) = cc.storage.and_then(|storage|dbg!(eframe::get_value::<NodeGraphExample>(storage, PERSISTENCE_KEY))){
+                Box::new(from_storage)
+            }
+            else{
+                Box::<NodeGraphExample>::default()
+            }
         }),
     )
     .expect("Failed to run native example");
@@ -37,10 +42,9 @@ struct SetOutputMessage {
 
 /// The NodeData holds a custom data struct inside each node. It's useful to
 /// store additional information that doesn't live in parameters. For this
-/// example, the node data stores the template (i.e. the "type") of the node.
+/// example, the node data stores the template (i.e. the "type") of the node.ƒ
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct MyNodeData {
-    #[serde(skip)]
     instance: PluginInstance,
 }
 
@@ -155,11 +159,8 @@ pub enum MyResponse {
 pub struct MyGraphState {
     #[serde(skip)]
     pub plugin_engine: PluginEngine,
-    pub active_node: Option<NodeId>,
-    #[serde(skip)]
     pub plugins: slab::Slab<Plugin>,
     pub all_plugins: HashSet<PluginId>,
-    #[serde(skip)]
     pub node_outputs: HashMap<OutputId, MyValueType>,
 }
 
@@ -432,6 +433,7 @@ impl NodeDataTrait for MyNodeData {
 
 type MyEditorState = GraphEditorState<MyNodeData, MyDataType, MyValueType, PluginId, MyGraphState>;
 
+#[derive(Serialize, Deserialize)]
 pub struct NodeGraphExample {
     state: MyEditorState,
 
@@ -439,21 +441,41 @@ pub struct NodeGraphExample {
 
     search_text: String,
 
-    rx: Receiver<SetOutputMessage>,
+    #[serde(skip)]
+    txrx: TxRx,
+}
 
-    tx: Sender<SetOutputMessage>,
+impl Debug for NodeGraphExample {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NodeGraphExample")
+            .field("search_text", &self.search_text)
+            .finish()
+    }
 }
 
 impl Default for NodeGraphExample {
     fn default() -> Self {
-        let (tx, rx) = tokio::sync::mpsc::channel(100);
-
         Self {
             state: MyEditorState::default(),
             user_state: MyGraphState::default(),
             search_text: String::new(),
-            rx,
+            txrx: Default::default(),
+        }
+    }
+}
+
+struct TxRx{
+    tx: Sender<SetOutputMessage>,
+    rx: Receiver<SetOutputMessage>,
+}
+
+impl Default for TxRx{
+    fn default() -> Self {
+        let (tx, rx) = tokio::sync::mpsc::channel(100);
+
+        Self {
             tx,
+            rx,
         }
     }
 }
@@ -468,14 +490,12 @@ impl NodeGraphExample {
             .storage
             .and_then(|storage| eframe::get_value(storage, PERSISTENCE_KEY))
             .unwrap_or_default();
-        let (tx, rx) = tokio::sync::mpsc::channel(100);
 
         Self {
             state,
             user_state: MyGraphState::default(),
             search_text: String::new(),
-            rx,
-            tx,
+            txrx: TxRx::default(),
         }
     }
 }
@@ -484,13 +504,14 @@ impl eframe::App for NodeGraphExample {
     /// If the persistence function is enabled,
     /// Called by the frame work to save state before shutdown.
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        eframe::set_value(storage, PERSISTENCE_KEY, &self.state);
+        println!("Saving state");
+        eframe::set_value(storage, PERSISTENCE_KEY, &self);
     }
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Recieve any async messages about setting node outputs.
-        while let Ok(msg) = self.rx.try_recv() {
+        while let Ok(msg) = self.txrx.rx.try_recv() {
             let node = &self.state.graph[msg.node_id].outputs;
             for ((_, id), value) in node.iter().zip(msg.values.into_iter()) {
                 self.user_state.node_outputs.insert(*id, value.into());
@@ -550,7 +571,7 @@ impl eframe::App for NodeGraphExample {
                 }
 
                 let fut = node.user_data.instance.run(values);
-                let sender = self.tx.clone();
+                let sender = self.txrx.tx.clone();
 
                 tokio::spawn(async move {
                     let outputs = fut.await;
