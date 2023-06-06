@@ -9,7 +9,7 @@ use crate::plugins::main::imports::*;
 use exports::plugins::main::definitions::*;
 use futures_util::Future;
 use json::{Structure, StructureMap};
-use serde::{Serialize, Serializer, Deserializer, Deserialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use slab::Slab;
 use tokio::sync::broadcast;
 use wasmtime::component::{Component, Linker};
@@ -213,7 +213,7 @@ impl PluginEngine {
         let structure = world.interface0.call_structure(&mut store).unwrap();
 
         Plugin {
-            bytes:Arc::new(bytes),
+            bytes: Arc::new(bytes),
             component,
             metadata: structure,
         }

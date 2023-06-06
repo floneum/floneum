@@ -1,33 +1,85 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
+use eframe::egui::Visuals;
 use eframe::{
     egui::{self, TextEdit},
     epaint::ahash::{HashMap, HashSet},
 };
 use egui_node_graph::*;
+use log::LevelFilter;
 use plugin::exports::plugins::main::definitions::{
     Embedding, PrimitiveValue, PrimitiveValueType, Value, ValueType,
 };
 use plugin::{Plugin, PluginEngine, PluginInstance};
-use serde::{Deserialize, Serialize};
-use std::{borrow::Cow, path::PathBuf, fmt::{Debug, Formatter}};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use std::{
+    borrow::Cow,
+    fmt::{Debug, Formatter},
+    fs::File,
+    io::Read,
+    io::Write,
+    path::PathBuf,
+};
 use tokio::sync::mpsc::{Receiver, Sender};
+
+fn save_to_file<D: Serialize>(data: D) {
+    let mut current_dir = std::env::current_dir().unwrap();
+    current_dir.push("save.bin");
+    match File::create(current_dir) {
+        Ok(mut file) => {
+            log::info!("serializing");
+            match bincode::serialize(&data) {
+                Ok(bytes) => {
+                    log::info!("done serializing");
+                    let result =  file.write_all(&bytes);
+                    log::info!("done writing {result:?}");
+                }
+                Err(err) => {
+                    log::error!("{}", err)
+                }
+            }
+        }
+        Err(err) => {
+            log::error!("{}", err)
+        }
+    }
+}
+
+fn get_from_file<D: DeserializeOwned + Default>() -> D {
+    let mut current_dir = std::env::current_dir().unwrap();
+    current_dir.push("save.bin");
+    if let Ok(mut file) = File::open(current_dir) {
+        let mut buffer = Vec::new();
+
+        if file.read_to_end(&mut buffer).is_err() {
+            return Default::default();
+        }
+
+        if let Ok(from_storage) = bincode::deserialize(&buffer[..]) {
+            from_storage
+        } else {
+            Default::default()
+        }
+    } else {
+        Default::default()
+    }
+}
 
 #[tokio::main]
 async fn main() {
-    use eframe::egui::Visuals;
+    simple_logger::SimpleLogger::new()
+        .with_level(LevelFilter::Off)
+        .with_module_level("ai", LevelFilter::Info)
+        .init()
+        .unwrap();
 
     eframe::run_native(
         "Egui AI",
         eframe::NativeOptions::default(),
         Box::new(|cc| {
             cc.egui_ctx.set_visuals(Visuals::dark());
-            if let Some(from_storage) = cc.storage.and_then(|storage|dbg!(eframe::get_value::<NodeGraphExample>(storage, PERSISTENCE_KEY))){
-                Box::new(from_storage)
-            }
-            else{
-                Box::<NodeGraphExample>::default()
-            }
+            let app: NodeGraphExample = get_from_file();
+            Box::new(app)
         }),
     )
     .expect("Failed to run native example");
@@ -464,19 +516,16 @@ impl Default for NodeGraphExample {
     }
 }
 
-struct TxRx{
+struct TxRx {
     tx: Sender<SetOutputMessage>,
     rx: Receiver<SetOutputMessage>,
 }
 
-impl Default for TxRx{
+impl Default for TxRx {
     fn default() -> Self {
         let (tx, rx) = tokio::sync::mpsc::channel(100);
 
-        Self {
-            tx,
-            rx,
-        }
+        Self { tx, rx }
     }
 }
 
@@ -503,9 +552,9 @@ impl NodeGraphExample {
 impl eframe::App for NodeGraphExample {
     /// If the persistence function is enabled,
     /// Called by the frame work to save state before shutdown.
-    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+    fn save(&mut self, _: &mut dyn eframe::Storage) {
         println!("Saving state");
-        eframe::set_value(storage, PERSISTENCE_KEY, &self);
+        save_to_file(self);
     }
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.

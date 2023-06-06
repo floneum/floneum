@@ -61,7 +61,12 @@ impl ModelInstance {
         infer(self.id, input, max_tokens, stop_on)
     }
 
-    pub fn infer_structured(&self, input: &str, max_tokens: Option<u32>, structure: Structured) -> String {
+    pub fn infer_structured(
+        &self,
+        input: &str,
+        max_tokens: Option<u32>,
+        structure: Structured,
+    ) -> String {
         infer_structured(self.id, input, max_tokens, structure.id)
     }
 
