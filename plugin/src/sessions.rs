@@ -12,12 +12,13 @@ use llm::{
     Model,
 };
 use slab::Slab;
-use std::{convert::Infallible, sync::Arc};
+use std::{convert::Infallible, sync::{Arc, RwLock}, collections::HashMap};
 
 #[derive(Default)]
 pub struct InferenceSessions {
     sessions: Slab<(Box<dyn Model>, llm::InferenceSession)>,
     vector_dbs: Slab<VectorDB<String>>,
+    embedding_cache: RwLock<Vec<HashMap<String, Embedding>>>,
 }
 
 impl InferenceSessions {
@@ -151,9 +152,26 @@ impl InferenceSessions {
     }
 
     pub fn get_embedding(&self, id: ModelId, text: &str) -> Embedding {
-        let (model, _session) = self.session_get(id);
-        let inference_parameters = llm::InferenceParameters::default();
-        get_embeddings(model.as_ref(), &inference_parameters, text)
+        let mut write = self.embedding_cache.write().unwrap();
+        let cache = if let Some(cache) = write.get_mut(id.id as usize){
+            cache
+        }
+        else {
+            if id.id as usize >= write.len(){
+                write.resize_with(id.id  as usize + 1, Default::default);
+            }
+            &mut write[id.id as usize]
+        };
+        if let Some(embedding) = cache.get(text){
+            embedding.clone()
+        }
+        else {
+            let (model, _session) = self.session_get(id);
+            let inference_parameters = llm::InferenceParameters::default();
+            let new_embedding = get_embeddings(model.as_ref(), &inference_parameters, text);
+            cache.insert(text.to_string(), new_embedding.clone());
+            new_embedding
+        }
     }
 
     pub fn create_db(
