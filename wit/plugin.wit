@@ -102,6 +102,8 @@ interface definitions {
   enum primitive-value-type {
     text,
     embedding,
+    database,
+    model,
   }
 
   structure: func() -> definition

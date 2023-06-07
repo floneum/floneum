@@ -9,13 +9,10 @@ impl Definitions for Plugin {
         Definition {
             name: "embedding data base".to_string(),
             description: "a database for embeddings".to_string(),
-            inputs: vec![IoDefinition {
-                name: "input".to_string(),
-                ty: ValueType::Text,
-            }],
+            inputs: vec![],
             outputs: vec![IoDefinition {
-                name: "embedding".to_string(),
-                ty: ValueType::Embedding,
+                name: "database".to_string(),
+                ty: ValueType::Database,
             }],
         }
     }

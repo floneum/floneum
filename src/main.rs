@@ -91,19 +91,11 @@ struct SetOutputMessage {
     values: Vec<Value>,
 }
 
-// ========= First, define your user data types =============
-
-/// The NodeData holds a custom data struct inside each node. It's useful to
-/// store additional information that doesn't live in parameters. For this
-/// example, the node data stores the template (i.e. the "type") of the node.ƒ
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct MyNodeData {
     instance: PluginInstance,
 }
 
-/// `DataType`s are what defines the possible range of connections when
-/// attaching two ports together. The graph UI will make sure to not allow
-/// attaching incompatible datatypes.
 #[derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum MyDataType {
     Single(MyPrimitiveDataType),
@@ -116,13 +108,6 @@ pub enum MyPrimitiveDataType {
     Embedding,
 }
 
-/// In the graph, input parameters can optionally have a constant value. This
-/// value can be directly edited in a widget inside the node itself.
-///
-/// There will usually be a correspondence between DataTypes and ValueTypes. But
-/// this library makes no attempt to check this consistency. For instance, it is
-/// up to the user code in this example to make sure no parameter is created
-/// with a DataType of Text and a ValueType of Embedding.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum MyValueType {
     Single(MyPrimitiveValueType),
@@ -201,8 +186,6 @@ impl From<Value> for MyValueType {
 
 impl Default for MyValueType {
     fn default() -> Self {
-        // NOTE: This is just a dummy `Default` implementation. The library
-        // requires it to circumvent some internal borrow checker issues.
         Self::Unset
     }
 }
@@ -210,18 +193,11 @@ impl Default for MyValueType {
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
 pub struct PluginId(usize);
 
-/// The response type is used to encode side-effects produced when drawing a
-/// node in the graph. Most side-effects (creating new nodes, deleting existing
-/// nodes, handling connections...) are already handled by the library, but this
-/// mechanism allows creating additional side effects from user code.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MyResponse {
     RunNode(NodeId),
 }
 
-/// The graph 'global' state. This state struct is passed around to the node and
-/// parameter drawing callbacks. The contents of this struct are entirely up to
-/// the user. For this example, we use it to keep track of the 'active' node.
 #[derive(Default, serde::Serialize, serde::Deserialize)]
 pub struct MyGraphState {
     #[serde(skip)]
@@ -237,9 +213,6 @@ impl MyGraphState {
     }
 }
 
-// =========== Then, you need to implement some traits ============
-
-// A trait for the data types, to tell the library how to display them
 impl DataTypeTrait<MyGraphState> for MyDataType {
     fn data_type_color(&self, _user_state: &mut MyGraphState) -> egui::Color32 {
         match self {
@@ -264,8 +237,7 @@ impl DataTypeTrait<MyGraphState> for MyDataType {
     }
 }
 
-// A trait for the node kinds, which tells the library how to build new nodes
-// from the templates in the node finder
+
 impl NodeTemplateTrait for PluginId {
     type NodeData = MyNodeData;
     type DataType = MyDataType;
@@ -450,11 +422,6 @@ impl NodeDataTrait for MyNodeData {
     type DataType = MyDataType;
     type ValueType = MyValueType;
 
-    // This method will be called when drawing each node. This allows adding
-    // extra ui elements inside the nodes. In this case, we create an "active"
-    // button which introduces the concept of having an active node in the
-    // graph. This is done entirely from user code with no modifications to the
-    // node graph library.
     fn bottom_ui(
         &self,
         ui: &mut egui::Ui,
