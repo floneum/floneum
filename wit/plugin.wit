@@ -1,16 +1,12 @@
 package plugins:main
 
 interface imports {
-  use types.{embedding, json-structure, structure-id}
+  use types.{embedding, json-structure, structure-id, model-id, embedding-db-id}
 
   load-model: func(ty: model-type) -> model-id
   unload-model: func(id: model-id)
   infer: func(id: model-id, input: string, max-tokens: option<u32>, stop-on: option<string>) -> string
   infer-structured: func(id: model-id, input: string, max-tokens: option<u32>, structure: structure-id) -> string
-  
-  record model-id {
-    id: u32,
-  }
 
   get-embedding: func(id: model-id, document: string) -> embedding
 
@@ -18,10 +14,6 @@ interface imports {
   remove-embedding-db: func(id: embedding-db-id)
   find-closest-documents: func(id: embedding-db-id, search: embedding, count: u32) -> list<string>
   find-documents-within: func(id: embedding-db-id, search: embedding, within: float32) -> list<string>
-
-  record embedding-db-id {
-    id: u32,
-  }
 
   print: func(str: string)
 
@@ -65,10 +57,18 @@ interface types {
   record structure-id {
     id: u32
   }
+
+  record embedding-db-id {
+    id: u32,
+  }
+
+  record model-id {
+    id: u32,
+  }
 }
 
 interface definitions {
-  use types.{embedding}
+  use types.{embedding, model-id, embedding-db-id}
 
   record definition {
     name: string,
@@ -88,6 +88,8 @@ interface definitions {
   }
 
   variant primitive-value {
+    model(model-id),
+    database(embedding-db-id),
     text(string),
     embedding(embedding),
   }

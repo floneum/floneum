@@ -84,18 +84,24 @@ impl Host for State {
         Ok(plugins::main::types::StructureId { id: id as u32 })
     }
 
-    fn load_model(&mut self, ty: ModelType) -> std::result::Result<ModelId, wasmtime::Error> {
+    fn load_model(
+        &mut self,
+        ty: ModelType,
+    ) -> std::result::Result<exports::plugins::main::definitions::ModelId, wasmtime::Error> {
         Ok(self.sessions.create(ty))
     }
 
-    fn unload_model(&mut self, id: ModelId) -> std::result::Result<(), wasmtime::Error> {
+    fn unload_model(
+        &mut self,
+        id: exports::plugins::main::definitions::ModelId,
+    ) -> std::result::Result<(), wasmtime::Error> {
         self.sessions.remove(id);
         Ok(())
     }
 
     fn get_embedding(
         &mut self,
-        id: ModelId,
+        id: exports::plugins::main::definitions::ModelId,
         text: String,
     ) -> std::result::Result<plugins::main::types::Embedding, wasmtime::Error> {
         Ok(self.sessions.get_embedding(id, &text))
@@ -105,20 +111,21 @@ impl Host for State {
         &mut self,
         embeddings: Vec<plugins::main::types::Embedding>,
         documents: Vec<String>,
-    ) -> std::result::Result<EmbeddingDbId, wasmtime::Error> {
+    ) -> std::result::Result<exports::plugins::main::definitions::EmbeddingDbId, wasmtime::Error>
+    {
         Ok(self.sessions.create_db(embeddings, documents))
     }
 
     fn remove_embedding_db(
         &mut self,
-        id: EmbeddingDbId,
+        id: exports::plugins::main::definitions::EmbeddingDbId,
     ) -> std::result::Result<(), wasmtime::Error> {
         Ok(self.sessions.remove_embedding_db(id))
     }
 
     fn find_closest_documents(
         &mut self,
-        id: EmbeddingDbId,
+        id: exports::plugins::main::definitions::EmbeddingDbId,
         search: plugins::main::types::Embedding,
         count: u32,
     ) -> std::result::Result<Vec<String>, wasmtime::Error> {
@@ -127,7 +134,7 @@ impl Host for State {
 
     fn find_documents_within(
         &mut self,
-        id: EmbeddingDbId,
+        id: exports::plugins::main::definitions::EmbeddingDbId,
         search: plugins::main::types::Embedding,
         distance: f32,
     ) -> std::result::Result<Vec<String>, wasmtime::Error> {
@@ -136,7 +143,7 @@ impl Host for State {
 
     fn infer(
         &mut self,
-        id: ModelId,
+        id: exports::plugins::main::definitions::ModelId,
         input: String,
         max_tokens: Option<u32>,
         stop_on: Option<String>,
@@ -146,7 +153,7 @@ impl Host for State {
 
     fn infer_structured(
         &mut self,
-        id: ModelId,
+        id: exports::plugins::main::definitions::ModelId,
         input: String,
         max_tokens: Option<u32>,
         structure: StructureId,

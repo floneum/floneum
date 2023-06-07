@@ -10,6 +10,7 @@ use log::LevelFilter;
 use plugin::exports::plugins::main::definitions::{
     Embedding, PrimitiveValue, PrimitiveValueType, Value, ValueType,
 };
+use plugin::plugins::main::types::{EmbeddingDbId, ModelId};
 use plugin::{Plugin, PluginEngine, PluginInstance};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{
@@ -31,7 +32,7 @@ fn save_to_file<D: Serialize>(data: D) {
             match bincode::serialize(&data) {
                 Ok(bytes) => {
                     log::info!("done serializing");
-                    let result =  file.write_all(&bytes);
+                    let result = file.write_all(&bytes);
                     log::info!("done writing {result:?}");
                 }
                 Err(err) => {
@@ -133,6 +134,8 @@ pub enum MyValueType {
 pub enum MyPrimitiveValueType {
     Text(String),
     Embedding(Vec<f32>),
+    Model(u32),
+    Database(u32),
 }
 
 impl Into<Value> for MyValueType {
@@ -143,6 +146,10 @@ impl Into<Value> for MyValueType {
                 MyPrimitiveValueType::Embedding(embedding) => {
                     PrimitiveValue::Embedding(Embedding { vector: embedding })
                 }
+                MyPrimitiveValueType::Database(id) => {
+                    PrimitiveValue::Database(EmbeddingDbId { id })
+                }
+                MyPrimitiveValueType::Model(id) => PrimitiveValue::Model(ModelId { id }),
             }),
             Self::List(values) => Value::Many(
                 values
@@ -152,6 +159,10 @@ impl Into<Value> for MyValueType {
                         MyPrimitiveValueType::Embedding(embedding) => {
                             PrimitiveValue::Embedding(Embedding { vector: embedding })
                         }
+                        MyPrimitiveValueType::Database(id) => {
+                            PrimitiveValue::Database(EmbeddingDbId { id })
+                        }
+                        MyPrimitiveValueType::Model(id) => PrimitiveValue::Model(ModelId { id }),
                     })
                     .collect(),
             ),
@@ -163,12 +174,14 @@ impl Into<Value> for MyValueType {
 impl From<Value> for MyValueType {
     fn from(value: Value) -> Self {
         match value {
-            Value::Single(value) => match value {
-                PrimitiveValue::Text(text) => Self::Single(MyPrimitiveValueType::Text(text)),
+            Value::Single(value) => Self::Single(match value {
+                PrimitiveValue::Text(text) => MyPrimitiveValueType::Text(text),
                 PrimitiveValue::Embedding(embedding) => {
-                    Self::Single(MyPrimitiveValueType::Embedding(embedding.vector))
+                    MyPrimitiveValueType::Embedding(embedding.vector)
                 }
-            },
+                PrimitiveValue::Model(id) => MyPrimitiveValueType::Model(id.id),
+                PrimitiveValue::Database(id) => MyPrimitiveValueType::Database(id.id),
+            }),
             Value::Many(values) => Self::List(
                 values
                     .into_iter()
@@ -177,6 +190,8 @@ impl From<Value> for MyValueType {
                         PrimitiveValue::Embedding(embedding) => {
                             MyPrimitiveValueType::Embedding(embedding.vector)
                         }
+                        PrimitiveValue::Model(id) => MyPrimitiveValueType::Model(id.id),
+                        PrimitiveValue::Database(id) => MyPrimitiveValueType::Database(id.id),
                     })
                     .collect(),
             ),
@@ -394,6 +409,12 @@ impl WidgetValueTrait for MyValueType {
                     MyPrimitiveValueType::Embedding(_) => {
                         ui.label("Embedding");
                     }
+                    MyPrimitiveValueType::Model(_) => {
+                        ui.label("Model");
+                    }
+                    MyPrimitiveValueType::Database(_) => {
+                        ui.label("Database");
+                    }
                 }
             }
             MyValueType::List(values) => {
@@ -405,6 +426,12 @@ impl WidgetValueTrait for MyValueType {
                         }
                         MyPrimitiveValueType::Embedding(_) => {
                             ui.label("Embedding");
+                        }
+                        MyPrimitiveValueType::Model(_) => {
+                            ui.label("Model");
+                        }
+                        MyPrimitiveValueType::Database(_) => {
+                            ui.label("Database");
                         }
                     }
                 }
@@ -462,6 +489,12 @@ impl NodeDataTrait for MyNodeData {
                     MyPrimitiveValueType::Embedding(value) => {
                         ui.label(format!("{:?}", &value[..5]));
                     }
+                    MyPrimitiveValueType::Model(id) => {
+                        ui.label(format!("Model: {id:?}"));
+                    }
+                    MyPrimitiveValueType::Database(id) => {
+                        ui.label(format!("Database: {id:?}"));
+                    }
                 },
                 MyValueType::List(many) => {
                     for value in many {
@@ -471,6 +504,12 @@ impl NodeDataTrait for MyNodeData {
                             }
                             MyPrimitiveValueType::Embedding(value) => {
                                 ui.label(format!("{:?}", &value[..5]));
+                            }
+                            MyPrimitiveValueType::Model(id) => {
+                                ui.label(format!("Model: {id:?}"));
+                            }
+                            MyPrimitiveValueType::Database(id) => {
+                                ui.label(format!("Database: {id:?}"));
                             }
                         }
                     }

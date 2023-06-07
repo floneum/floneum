@@ -2,17 +2,23 @@ use crate::{
     download::download,
     embedding::get_embeddings,
     exports::plugins::main::definitions::Embedding,
+    exports::plugins::main::definitions::EmbeddingDbId,
+    exports::plugins::main::definitions::ModelId,
     json::{ParseStream, Validate},
     structured::StructuredSampler,
     vector_db::VectorDB,
-    EmbeddingDbId, ModelId, ModelType,
+    ModelType,
 };
 use llm::{
     InferenceFeedback, InferenceParameters, InferenceRequest, InferenceResponse, InferenceSession,
     Model,
 };
 use slab::Slab;
-use std::{convert::Infallible, sync::{Arc, RwLock}, collections::HashMap};
+use std::{
+    collections::HashMap,
+    convert::Infallible,
+    sync::{Arc, RwLock},
+};
 
 #[derive(Default)]
 pub struct InferenceSessions {
@@ -153,19 +159,17 @@ impl InferenceSessions {
 
     pub fn get_embedding(&self, id: ModelId, text: &str) -> Embedding {
         let mut write = self.embedding_cache.write().unwrap();
-        let cache = if let Some(cache) = write.get_mut(id.id as usize){
+        let cache = if let Some(cache) = write.get_mut(id.id as usize) {
             cache
-        }
-        else {
-            if id.id as usize >= write.len(){
-                write.resize_with(id.id  as usize + 1, Default::default);
+        } else {
+            if id.id as usize >= write.len() {
+                write.resize_with(id.id as usize + 1, Default::default);
             }
             &mut write[id.id as usize]
         };
-        if let Some(embedding) = cache.get(text){
+        if let Some(embedding) = cache.get(text) {
             embedding.clone()
-        }
-        else {
+        } else {
             let (model, _session) = self.session_get(id);
             let inference_parameters = llm::InferenceParameters::default();
             let new_embedding = get_embeddings(model.as_ref(), &inference_parameters, text);
