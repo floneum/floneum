@@ -299,9 +299,7 @@ impl NodeTemplateTrait for PluginId {
 
     fn user_data(&self, user_state: &mut Self::UserState) -> Self::NodeData {
         MyNodeData {
-            instance: user_state
-                .get_plugin(*self)
-                .instance(),
+            instance: user_state.get_plugin(*self).instance(),
         }
     }
 

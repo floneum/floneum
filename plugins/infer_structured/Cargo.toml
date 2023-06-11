@@ -1,0 +1,13 @@
+[package]
+name = "plugin_infer_structured"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+rust_adapter = { path = "../../rust_adapter" }
+pest = "2.6.0"
+pest_derive = "2.6.0"

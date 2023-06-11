@@ -1,0 +1,31 @@
+number = { "#" }
+empty_string = { "\"\"" }
+
+object = {
+    "{" ~ "}" |
+    "{" ~ pair ~ ("," ~ pair)* ~ "}"
+}
+pair = { string ~ ":" ~ value }
+array = {
+    "[" ~ "]" |
+    "[" ~ value ~ "]"
+}
+
+calculation = _{ SOI ~ value ~ EOI }
+
+value = _{ object | array | empty_string | number | boolean | either }
+
+boolean = { "bool" }
+
+either = { wrapped ~ ("|" ~ wrapped)* }
+wrapped = { "(" ~ value ~ ")" }
+
+string = ${ "\"" ~ inner ~ "\"" }
+inner = @{ char* }
+char = {
+    !("\"" | "\\") ~ ANY
+    | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
+    | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
+}
+
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }

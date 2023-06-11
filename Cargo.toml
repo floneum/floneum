@@ -30,6 +30,7 @@ members = [
     "plugin",
     "rust_adapter",
     "plugins/infer",
+    "plugins/infer_structured",
     "plugins/format",
     "plugins/embedding",
 ]
