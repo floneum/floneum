@@ -2,6 +2,7 @@
 // https://github.com/1rgs/jsonformer
 // https://github.com/bytecodealliance/wasmtime/issues/6074
 
+use once_cell::sync::Lazy;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -170,19 +171,22 @@ impl Host for State {
     }
 }
 
-pub struct PluginEngine {
-    engine: Engine,
-    linker: Linker<State>,
-}
+static LINKER: Lazy<Linker<State>> = Lazy::new(|| {
+    let mut linker = Linker::new(&*ENGINE);
+    PluginWorld::add_to_linker(&mut linker, |x| x).unwrap();
+    linker
+});
+static ENGINE: Lazy<Engine> = Lazy::new(|| {
+    let mut config = Config::new();
+    config.wasm_component_model(true);
+    Engine::new(&config).unwrap()
+});
+
+pub struct PluginEngine;
 
 impl Default for PluginEngine {
     fn default() -> Self {
-        let mut config = Config::new();
-        config.wasm_component_model(true);
-        let engine = Engine::new(&config).unwrap();
-        let mut linker = Linker::new(&engine);
-        PluginWorld::add_to_linker(&mut linker, |x| x).unwrap();
-        Self { engine, linker }
+        Self
     }
 }
 
@@ -211,12 +215,12 @@ impl PluginEngine {
             .unwrap()
             .encode()
             .unwrap();
-        let component = Component::from_binary(&self.engine, &component).unwrap();
+        let component = Component::from_binary(&*ENGINE, &component).unwrap();
 
         // then we get the structure of the plugin.
-        let mut store = Store::new(&self.engine, State::default());
+        let mut store = Store::new(&*ENGINE, State::default());
         let (world, _instance) =
-            PluginWorld::instantiate(&mut store, &component, &self.linker).unwrap();
+            PluginWorld::instantiate(&mut store, &component, &*LINKER).unwrap();
         let structure = world.interface0.call_structure(&mut store).unwrap();
 
         Plugin {
@@ -243,17 +247,20 @@ impl Serialize for Plugin {
 impl<'de> Deserialize<'de> for Plugin {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         // Just deserialize the bytes.
+        println!("deserializing plugin");
         let bytes = Vec::<u8>::deserialize(deserializer)?;
-        Ok(PluginEngine::default().load_plugin_from_bytes(bytes))
+        let mut engine = PluginEngine::default();
+        println!("deserialized plugin");
+        Ok(engine.load_plugin_from_bytes(bytes))
     }
 }
 
 impl Plugin {
-    pub fn instance(&self, engine: &PluginEngine) -> PluginInstance {
+    pub fn instance(&self) -> PluginInstance {
         // create the store of models
-        let mut store = Store::new(&engine.engine, State::default());
+        let mut store = Store::new(&*ENGINE, State::default());
         let (world, _instance) =
-            PluginWorld::instantiate(&mut store, &self.component, &engine.linker).unwrap();
+            PluginWorld::instantiate(&mut store, &self.component, &LINKER).unwrap();
 
         let (input_sender, mut input_reciever) = broadcast::channel::<Vec<Value>>(100);
         let (output_sender, output_reciever) = broadcast::channel(100);
@@ -307,8 +314,7 @@ impl<'de> Deserialize<'de> for PluginInstance {
         println!("deserializing plugin instance");
         let bytes = Vec::<u8>::deserialize(deserializer)?;
         println!("deserialized plugin instance");
-        let mut engine = PluginEngine::default();
-        Ok(engine.load_plugin_from_bytes(bytes).instance(&engine))
+        Ok(PluginEngine.load_plugin_from_bytes(bytes).instance())
     }
 }
 
@@ -349,7 +355,7 @@ fn load_plugin() {
 
         let plugin = engine.load_plugin(&std::path::PathBuf::from(path));
 
-        let instance = plugin.instance(&engine);
+        let instance = plugin.instance();
 
         let inputs = vec![
             Value::Single(PrimitiveValue::Text("hello {}".to_string())),

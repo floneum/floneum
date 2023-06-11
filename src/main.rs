@@ -102,6 +102,25 @@ pub enum MyDataType {
     List(MyPrimitiveDataType),
 }
 
+impl From<ValueType> for MyDataType {
+    fn from(value: ValueType) -> Self {
+        match value {
+            ValueType::Single(value) => match value {
+                PrimitiveValueType::Text => Self::Single(MyPrimitiveDataType::Text),
+                PrimitiveValueType::Embedding => Self::Single(MyPrimitiveDataType::Embedding),
+                PrimitiveValueType::Database => Self::Single(MyPrimitiveDataType::Embedding),
+                PrimitiveValueType::Model => Self::Single(MyPrimitiveDataType::Embedding),
+            },
+            ValueType::Many(value) => match value {
+                PrimitiveValueType::Text => Self::List(MyPrimitiveDataType::Text),
+                PrimitiveValueType::Embedding => Self::List(MyPrimitiveDataType::Embedding),
+                PrimitiveValueType::Database => Self::List(MyPrimitiveDataType::Embedding),
+                PrimitiveValueType::Model => Self::List(MyPrimitiveDataType::Embedding),
+            },
+        }
+    }
+}
+
 #[derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum MyPrimitiveDataType {
     Text,
@@ -113,6 +132,25 @@ pub enum MyValueType {
     Single(MyPrimitiveValueType),
     List(Vec<MyPrimitiveValueType>),
     Unset,
+}
+
+impl MyValueType {
+    fn default_of_type(ty: &MyDataType) -> Self {
+        match ty {
+            MyDataType::Single(value) => match value {
+                MyPrimitiveDataType::Text => {
+                    Self::Single(MyPrimitiveValueType::Text(String::new()))
+                }
+                MyPrimitiveDataType::Embedding => {
+                    Self::Single(MyPrimitiveValueType::Embedding(Vec::new()))
+                }
+            },
+            MyDataType::List(value) => match value {
+                MyPrimitiveDataType::Text => Self::List(Vec::new()),
+                MyPrimitiveDataType::Embedding => Self::List(Vec::new()),
+            },
+        }
+    }
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -237,7 +275,6 @@ impl DataTypeTrait<MyGraphState> for MyDataType {
     }
 }
 
-
 impl NodeTemplateTrait for PluginId {
     type NodeData = MyNodeData;
     type DataType = MyDataType;
@@ -264,7 +301,7 @@ impl NodeTemplateTrait for PluginId {
         MyNodeData {
             instance: user_state
                 .get_plugin(*self)
-                .instance(&user_state.plugin_engine),
+                .instance(),
         }
     }
 
@@ -283,62 +320,21 @@ impl NodeTemplateTrait for PluginId {
 
         for input in &meta.inputs {
             let name = &input.name;
-            match &input.ty {
-                ValueType::Single(ty) => match ty {
-                    PrimitiveValueType::Text => graph.add_input_param(
-                        node_id,
-                        name.to_string(),
-                        MyDataType::Single(MyPrimitiveDataType::Text),
-                        MyValueType::Single(MyPrimitiveValueType::Text(String::new())),
-                        InputParamKind::ConnectionOrConstant,
-                        true,
-                    ),
-                    PrimitiveValueType::Embedding => graph.add_input_param(
-                        node_id,
-                        name.to_string(),
-                        MyDataType::Single(MyPrimitiveDataType::Embedding),
-                        MyValueType::Single(MyPrimitiveValueType::Embedding(Vec::new())),
-                        InputParamKind::ConnectionOrConstant,
-                        true,
-                    ),
-                },
-                ValueType::Many(ty) => match ty {
-                    PrimitiveValueType::Text => graph.add_input_param(
-                        node_id,
-                        name.to_string(),
-                        MyDataType::List(MyPrimitiveDataType::Text),
-                        MyValueType::List(vec![MyPrimitiveValueType::Text(String::new())]),
-                        InputParamKind::ConnectionOrConstant,
-                        true,
-                    ),
-                    PrimitiveValueType::Embedding => graph.add_input_param(
-                        node_id,
-                        name.to_string(),
-                        MyDataType::List(MyPrimitiveDataType::Embedding),
-                        MyValueType::List(vec![MyPrimitiveValueType::Embedding(Vec::new())]),
-                        InputParamKind::ConnectionOrConstant,
-                        true,
-                    ),
-                },
-            };
+            let ty = input.ty.into();
+            let value = MyValueType::default_of_type(&ty);
+            graph.add_input_param(
+                node_id,
+                name.to_string(),
+                ty,
+                value,
+                InputParamKind::ConnectionOrConstant,
+                true,
+            );
         }
 
         for output in &meta.outputs {
             let name = &output.name;
-            let ty = match &output.ty {
-                ValueType::Many(ty) => match ty {
-                    PrimitiveValueType::Text => MyDataType::List(MyPrimitiveDataType::Text),
-                    PrimitiveValueType::Embedding => {
-                        MyDataType::List(MyPrimitiveDataType::Embedding)
-                    }
-                },
-                ValueType::Single(ty) => match ty {
-                    PrimitiveValueType::Text => MyDataType::Single(MyPrimitiveDataType::Text),
-                    PrimitiveValueType::Embedding => {
-                        MyDataType::Single(MyPrimitiveDataType::Embedding)
-                    }
-                },
-            };
+            let ty: MyDataType = output.ty.into();
             graph.add_output_param(node_id, name.to_string(), ty);
         }
     }
@@ -580,7 +576,7 @@ impl eframe::App for NodeGraphExample {
                 if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     let path = PathBuf::from(&self.search_text);
                     if path.exists() {
-                        let plugin = self.user_state.plugin_engine.load_plugin(&path);
+                        let plugin = PluginEngine.load_plugin(&path);
                         let id = self.user_state.plugins.insert(plugin);
                         self.user_state.all_plugins.insert(PluginId(id));
                     }
