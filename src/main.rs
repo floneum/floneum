@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use eframe::egui::Visuals;
+use eframe::egui::{Visuals, DragValue};
 use eframe::{
     egui::{self, TextEdit},
     epaint::ahash::{HashMap, HashSet},
@@ -106,16 +106,18 @@ impl From<ValueType> for MyDataType {
     fn from(value: ValueType) -> Self {
         match value {
             ValueType::Single(value) => match value {
+                PrimitiveValueType::Number => Self::Single(MyPrimitiveDataType::Number),
                 PrimitiveValueType::Text => Self::Single(MyPrimitiveDataType::Text),
                 PrimitiveValueType::Embedding => Self::Single(MyPrimitiveDataType::Embedding),
-                PrimitiveValueType::Database => Self::Single(MyPrimitiveDataType::Embedding),
-                PrimitiveValueType::Model => Self::Single(MyPrimitiveDataType::Embedding),
+                PrimitiveValueType::Database => Self::Single(MyPrimitiveDataType::Database),
+                PrimitiveValueType::Model => Self::Single(MyPrimitiveDataType::Model),
             },
             ValueType::Many(value) => match value {
+                PrimitiveValueType::Number => Self::List(MyPrimitiveDataType::Number),
                 PrimitiveValueType::Text => Self::List(MyPrimitiveDataType::Text),
                 PrimitiveValueType::Embedding => Self::List(MyPrimitiveDataType::Embedding),
-                PrimitiveValueType::Database => Self::List(MyPrimitiveDataType::Embedding),
-                PrimitiveValueType::Model => Self::List(MyPrimitiveDataType::Embedding),
+                PrimitiveValueType::Database => Self::List(MyPrimitiveDataType::Database),
+                PrimitiveValueType::Model => Self::List(MyPrimitiveDataType::Model),
             },
         }
     }
@@ -123,8 +125,11 @@ impl From<ValueType> for MyDataType {
 
 #[derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum MyPrimitiveDataType {
+    Number,
     Text,
     Embedding,
+    Model,
+    Database
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -144,17 +149,18 @@ impl MyValueType {
                 MyPrimitiveDataType::Embedding => {
                     Self::Single(MyPrimitiveValueType::Embedding(Vec::new()))
                 }
+                MyPrimitiveDataType::Number => Self::Single(MyPrimitiveValueType::Number(0)),
+                MyPrimitiveDataType::Model => Self::Single(MyPrimitiveValueType::Model(0)),
+                MyPrimitiveDataType::Database => Self::Single(MyPrimitiveValueType::Database(0)),
             },
-            MyDataType::List(value) => match value {
-                MyPrimitiveDataType::Text => Self::List(Vec::new()),
-                MyPrimitiveDataType::Embedding => Self::List(Vec::new()),
-            },
+            MyDataType::List(_) => Self::List(Vec::new())
         }
     }
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum MyPrimitiveValueType {
+    Number(u32),
     Text(String),
     Embedding(Vec<f32>),
     Model(u32),
@@ -165,6 +171,7 @@ impl Into<Value> for MyValueType {
     fn into(self) -> Value {
         match self {
             Self::Single(value) => Value::Single(match value {
+                MyPrimitiveValueType::Number(text) => PrimitiveValue::Number(text),
                 MyPrimitiveValueType::Text(text) => PrimitiveValue::Text(text),
                 MyPrimitiveValueType::Embedding(embedding) => {
                     PrimitiveValue::Embedding(Embedding { vector: embedding })
@@ -178,6 +185,7 @@ impl Into<Value> for MyValueType {
                 values
                     .into_iter()
                     .map(|value| match value {
+                        MyPrimitiveValueType::Number(text) => PrimitiveValue::Number(text),
                         MyPrimitiveValueType::Text(text) => PrimitiveValue::Text(text),
                         MyPrimitiveValueType::Embedding(embedding) => {
                             PrimitiveValue::Embedding(Embedding { vector: embedding })
@@ -198,6 +206,7 @@ impl From<Value> for MyValueType {
     fn from(value: Value) -> Self {
         match value {
             Value::Single(value) => Self::Single(match value {
+                PrimitiveValue::Number(text) => MyPrimitiveValueType::Number(text),
                 PrimitiveValue::Text(text) => MyPrimitiveValueType::Text(text),
                 PrimitiveValue::Embedding(embedding) => {
                     MyPrimitiveValueType::Embedding(embedding.vector)
@@ -209,6 +218,7 @@ impl From<Value> for MyValueType {
                 values
                     .into_iter()
                     .map(|value| match value {
+                        PrimitiveValue::Number(text) => MyPrimitiveValueType::Number(text),
                         PrimitiveValue::Text(text) => MyPrimitiveValueType::Text(text),
                         PrimitiveValue::Embedding(embedding) => {
                             MyPrimitiveValueType::Embedding(embedding.vector)
@@ -258,9 +268,19 @@ impl DataTypeTrait<MyGraphState> for MyDataType {
             MyDataType::Single(MyPrimitiveDataType::Embedding) => {
                 egui::Color32::from_rgb(238, 207, 109)
             }
+            MyDataType::Single(MyPrimitiveDataType::Number) => egui::Color32::from_rgb(211, 38, 38),
+            MyDataType::Single(MyPrimitiveDataType::Model) => egui::Color32::from_rgb(38, 211, 109),
+            MyDataType::Single(MyPrimitiveDataType::Database) => {
+                egui::Color32::from_rgb(38, 211, 109)
+            }
             MyDataType::List(MyPrimitiveDataType::Text) => egui::Color32::from_rgb(38, 109, 211),
             MyDataType::List(MyPrimitiveDataType::Embedding) => {
                 egui::Color32::from_rgb(238, 207, 109)
+            }
+            MyDataType::List(MyPrimitiveDataType::Number) => egui::Color32::from_rgb(211, 38, 38),
+            MyDataType::List(MyPrimitiveDataType::Model) => egui::Color32::from_rgb(38, 211, 109),
+            MyDataType::List(MyPrimitiveDataType::Database) => {
+                egui::Color32::from_rgb(38, 211, 109)
             }
         }
     }
@@ -269,8 +289,14 @@ impl DataTypeTrait<MyGraphState> for MyDataType {
         match self {
             MyDataType::Single(MyPrimitiveDataType::Text) => Cow::Borrowed("text"),
             MyDataType::Single(MyPrimitiveDataType::Embedding) => Cow::Borrowed("embedding"),
+            MyDataType::Single(MyPrimitiveDataType::Number) => Cow::Borrowed("number"),
+            MyDataType::Single(MyPrimitiveDataType::Model) => Cow::Borrowed("model"),
+            MyDataType::Single(MyPrimitiveDataType::Database) => Cow::Borrowed("database"),
             MyDataType::List(MyPrimitiveDataType::Text) => Cow::Borrowed("list of texts"),
             MyDataType::List(MyPrimitiveDataType::Embedding) => Cow::Borrowed("list of embeddings"),
+            MyDataType::List(MyPrimitiveDataType::Number) => Cow::Borrowed("list of numbers"),
+            MyDataType::List(MyPrimitiveDataType::Model) => Cow::Borrowed("list of models"),
+            MyDataType::List(MyPrimitiveDataType::Database) => Cow::Borrowed("list of databases"),
         }
     }
 }
@@ -358,14 +384,14 @@ impl WidgetValueTrait for MyValueType {
     fn value_widget(
         &mut self,
         param_name: &str,
-        _node_id: NodeId,
+        node_id: NodeId,
         ui: &mut egui::Ui,
         _user_state: &mut MyGraphState,
         _node_data: &MyNodeData,
     ) -> Vec<MyResponse> {
         // This trait is used to tell the library which UI to display for the
         // inline parameter widgets.
-        egui::ScrollArea::vertical().show(ui, |ui| match self {
+        egui::ScrollArea::vertical().id_source((node_id, param_name)).show(ui, |ui| match self {
             MyValueType::Single(value) => {
                 ui.label(param_name);
                 match value {
@@ -380,6 +406,9 @@ impl WidgetValueTrait for MyValueType {
                     }
                     MyPrimitiveValueType::Database(_) => {
                         ui.label("Database");
+                    }
+                    MyPrimitiveValueType::Number(value) => {
+                        ui.add(DragValue::new(value));
                     }
                 }
             }
@@ -398,6 +427,9 @@ impl WidgetValueTrait for MyValueType {
                         }
                         MyPrimitiveValueType::Database(_) => {
                             ui.label("Database");
+                        }
+                        MyPrimitiveValueType::Number(value) => {
+                            ui.add(DragValue::new(value));
                         }
                     }
                 }
@@ -456,6 +488,9 @@ impl NodeDataTrait for MyNodeData {
                     MyPrimitiveValueType::Database(id) => {
                         ui.label(format!("Database: {id:?}"));
                     }
+                    MyPrimitiveValueType::Number(value) => {
+                        ui.label(format!("{:02}", value));
+                    }
                 },
                 MyValueType::List(many) => {
                     for value in many {
@@ -471,6 +506,9 @@ impl NodeDataTrait for MyNodeData {
                             }
                             MyPrimitiveValueType::Database(id) => {
                                 ui.label(format!("Database: {id:?}"));
+                            }
+                            MyPrimitiveValueType::Number(value) => {
+                                ui.label(format!("{:02}", value));
                             }
                         }
                     }

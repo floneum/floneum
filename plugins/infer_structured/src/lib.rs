@@ -25,6 +25,10 @@ impl Definitions for Plugin {
                     name: "input".to_string(),
                     ty: ValueType::Single(PrimitiveValueType::Text),
                 },
+                IoDefinition {
+                    name: "max output length".to_string(),
+                    ty: ValueType::Single(PrimitiveValueType::Number),
+                },
             ],
             outputs: vec![IoDefinition {
                 name: "output".to_string(),
@@ -50,7 +54,18 @@ impl Definitions for Plugin {
             _ => panic!("expected text input"),
         };
 
-        let mut responce = session.infer_structured(&text_input, Some(100), structure);
+        let max_output_length = match &input[2] {
+            Value::Single(PrimitiveValue::Number(num)) => *num,
+            _ => panic!("expected number input"),
+        };
+
+        let max_output_length = if max_output_length == 0 {
+            None
+        }else{
+            Some(max_output_length)
+        };
+
+        let mut responce = session.infer_structured(&text_input, max_output_length, structure);
         responce += "\n";
 
         print(&responce);
@@ -70,7 +85,7 @@ fn structured_from_string(input: &str) -> Structured {
 
 fn structured_from_rule(rule: Pair<Rule>) -> Structured {
     match rule.as_rule() {
-        Rule::string => Structured::str(),
+        Rule::empty_string => Structured::str(),
         Rule::boolean => Structured::boolean(),
         Rule::number => Structured::num(),
         Rule::array => {
@@ -81,13 +96,18 @@ fn structured_from_rule(rule: Pair<Rule>) -> Structured {
             let mut fields = Vec::new();
             while let Some(pair) = pairs.next() {
                 let mut inner = pair.into_inner();
-                let name = inner.next().unwrap().as_str().to_string();
+                let name = inner.next().unwrap().as_str();
+                let name = name[1..name.len()-2].to_string();
                 let value = structured_from_rule(inner.next().unwrap());
                 fields.push((name, value));
             }
             Structured::map_of(fields)
         }
-        _ => todo!(),
+        _ => {
+            let error = format!("unexpected rule: {:?}", rule);
+            print(&error);
+            todo!();
+        },
     }
 }
 

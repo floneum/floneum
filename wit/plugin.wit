@@ -90,6 +90,7 @@ interface definitions {
   variant primitive-value {
     model(model-id),
     database(embedding-db-id),
+    number(u32),
     text(string),
     embedding(embedding),
   }
@@ -100,6 +101,7 @@ interface definitions {
   }
 
   enum primitive-value-type {
+    number,
     text,
     embedding,
     database,
