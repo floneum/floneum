@@ -51,9 +51,14 @@ impl State {
                 }
                 Structure::Map(StructureMap(new_map))
             }
-            JsonStructure::Str => Structure::String,
-            JsonStructure::Num => Structure::Num,
+            JsonStructure::Str(range) => Structure::String(range.min, range.max),
+            JsonStructure::Num(range) => Structure::Num {
+                min: range.min,
+                max: range.max,
+                integer: range.integer,
+            },
             JsonStructure::Boolean => Structure::Bool,
+            JsonStructure::Null => Structure::Null,
             JsonStructure::Either(either) => {
                 let id1 = &either.first;
                 let id2: &plugins::main::types::StructureId = &either.second;

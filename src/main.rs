@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use eframe::egui::{Visuals, DragValue};
+use eframe::egui::{DragValue, Visuals};
 use eframe::{
     egui::{self, TextEdit},
     epaint::ahash::{HashMap, HashSet},
@@ -129,7 +129,7 @@ pub enum MyPrimitiveDataType {
     Text,
     Embedding,
     Model,
-    Database
+    Database,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -153,14 +153,14 @@ impl MyValueType {
                 MyPrimitiveDataType::Model => Self::Single(MyPrimitiveValueType::Model(0)),
                 MyPrimitiveDataType::Database => Self::Single(MyPrimitiveValueType::Database(0)),
             },
-            MyDataType::List(_) => Self::List(Vec::new())
+            MyDataType::List(_) => Self::List(Vec::new()),
         }
     }
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum MyPrimitiveValueType {
-    Number(u32),
+    Number(i64),
     Text(String),
     Embedding(Vec<f32>),
     Model(u32),
@@ -391,30 +391,11 @@ impl WidgetValueTrait for MyValueType {
     ) -> Vec<MyResponse> {
         // This trait is used to tell the library which UI to display for the
         // inline parameter widgets.
-        egui::ScrollArea::vertical().id_source((node_id, param_name)).show(ui, |ui| match self {
-            MyValueType::Single(value) => {
-                ui.label(param_name);
-                match value {
-                    MyPrimitiveValueType::Text(value) => {
-                        ui.add(TextEdit::multiline(value));
-                    }
-                    MyPrimitiveValueType::Embedding(_) => {
-                        ui.label("Embedding");
-                    }
-                    MyPrimitiveValueType::Model(_) => {
-                        ui.label("Model");
-                    }
-                    MyPrimitiveValueType::Database(_) => {
-                        ui.label("Database");
-                    }
-                    MyPrimitiveValueType::Number(value) => {
-                        ui.add(DragValue::new(value));
-                    }
-                }
-            }
-            MyValueType::List(values) => {
-                ui.label(param_name);
-                for value in values {
+        egui::ScrollArea::vertical()
+            .id_source((node_id, param_name))
+            .show(ui, |ui| match self {
+                MyValueType::Single(value) => {
+                    ui.label(param_name);
                     match value {
                         MyPrimitiveValueType::Text(value) => {
                             ui.add(TextEdit::multiline(value));
@@ -433,9 +414,30 @@ impl WidgetValueTrait for MyValueType {
                         }
                     }
                 }
-            }
-            MyValueType::Unset => {}
-        });
+                MyValueType::List(values) => {
+                    ui.label(param_name);
+                    for value in values {
+                        match value {
+                            MyPrimitiveValueType::Text(value) => {
+                                ui.add(TextEdit::multiline(value));
+                            }
+                            MyPrimitiveValueType::Embedding(_) => {
+                                ui.label("Embedding");
+                            }
+                            MyPrimitiveValueType::Model(_) => {
+                                ui.label("Model");
+                            }
+                            MyPrimitiveValueType::Database(_) => {
+                                ui.label("Database");
+                            }
+                            MyPrimitiveValueType::Number(value) => {
+                                ui.add(DragValue::new(value));
+                            }
+                        }
+                    }
+                }
+                MyValueType::Unset => {}
+            });
 
         Vec::new()
     }

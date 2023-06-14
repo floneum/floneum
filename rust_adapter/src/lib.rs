@@ -7,7 +7,7 @@ pub use crate::exports::plugins::main::definitions::{
 };
 pub use crate::plugins::main::imports::{print, GptNeoXType, LlamaType, ModelType, MptType};
 pub use plugins::main::types::Embedding;
-use plugins::main::types::{JsonKvPair, JsonStructureEither, JsonStructureMap};
+use plugins::main::types::{JsonKvPair, JsonStructureEither, JsonStructureMap,NumberParameters,UnsignedRange};
 
 wit_bindgen::generate!({path: "../wit", macro_export});
 
@@ -107,14 +107,45 @@ impl Structured {
         Structured { id }
     }
 
-    pub fn num() -> Self {
-        let inner = JsonStructure::Num;
+    pub fn float() -> Self {
+        Self::ranged_float(f64::MIN, f64::MAX)
+    }
+
+    pub fn ranged_float(min: f64, max: f64) -> Self {
+        Self::number(min, max, false)
+    }
+
+    pub fn int() -> Self {
+        Self::ranged_int(f64::MIN, f64::MAX)
+    }
+
+    pub fn ranged_int(min: f64, max: f64) -> Self {
+        Self::number(min, max, true)
+    }
+
+    pub fn number(min: f64, max: f64, int: bool) -> Self {
+        let inner = JsonStructure::Num(
+            NumberParameters{
+                min,
+                max,
+                integer: int,
+            }
+        );
         let id = create_json_structure(inner);
         Structured { id }
     }
 
     pub fn str() -> Self {
-        let inner = JsonStructure::Str;
+        Self::ranged_str(0, u64::MAX)
+    }
+
+    pub fn ranged_str(min_len:u64, max_len:u64) -> Self {
+        let inner = JsonStructure::Str(
+            UnsignedRange{
+                min: min_len ,
+                max: max_len ,
+            }
+        );
         let id = create_json_structure(inner);
         Structured { id }
     }
@@ -123,6 +154,17 @@ impl Structured {
         let inner = JsonStructure::Boolean;
         let id = create_json_structure(inner);
         Structured { id }
+    }
+
+    pub fn null() -> Self {
+        let null = JsonStructure::Null;
+        let id = create_json_structure(null);
+        Structured { id }
+    }
+
+    pub fn or_not(self) -> Self {
+        let null = Self::null();
+        Self::either(self, null)
     }
 
     pub fn either(first: Structured, second: Structured) -> Self {

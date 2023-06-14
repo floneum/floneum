@@ -34,10 +34,22 @@ interface types {
   variant json-structure {
     sequence(structure-id),
     map(json-structure-map),
-    num,
-    str,
+    num(number-parameters),
+    str(unsigned-range),
     boolean,
+    null,
     either(json-structure-either),
+  }
+
+  record number-parameters {
+    min: float64,
+    max: float64,
+    integer: bool
+  }
+
+  record unsigned-range {
+    min: u64,
+    max: u64,
   }
 
   record json-structure-either {
@@ -90,7 +102,7 @@ interface definitions {
   variant primitive-value {
     model(model-id),
     database(embedding-db-id),
-    number(u32),
+    number(s64),
     text(string),
     embedding(embedding),
   }

@@ -61,8 +61,8 @@ impl Definitions for Plugin {
 
         let max_output_length = if max_output_length == 0 {
             None
-        }else{
-            Some(max_output_length)
+        } else {
+            max_output_length.try_into().ok()
         };
 
         let mut responce = session.infer_structured(&text_input, max_output_length, structure);
@@ -87,7 +87,7 @@ fn structured_from_rule(rule: Pair<Rule>) -> Structured {
     match rule.as_rule() {
         Rule::empty_string => Structured::str(),
         Rule::boolean => Structured::boolean(),
-        Rule::number => Structured::num(),
+        Rule::number => Structured::float(),
         Rule::array => {
             Structured::sequence_of(structured_from_rule(rule.into_inner().next().unwrap()))
         }
@@ -97,7 +97,7 @@ fn structured_from_rule(rule: Pair<Rule>) -> Structured {
             while let Some(pair) = pairs.next() {
                 let mut inner = pair.into_inner();
                 let name = inner.next().unwrap().as_str();
-                let name = name[1..name.len()-2].to_string();
+                let name = name[1..name.len() - 1].to_string();
                 let value = structured_from_rule(inner.next().unwrap());
                 fields.push((name, value));
             }
@@ -107,7 +107,7 @@ fn structured_from_rule(rule: Pair<Rule>) -> Structured {
             let error = format!("unexpected rule: {:?}", rule);
             print(&error);
             todo!();
-        },
+        }
     }
 }
 
