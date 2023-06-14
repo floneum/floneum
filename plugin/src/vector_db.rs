@@ -1,14 +1,18 @@
 use crate::plugins::main::types::Embedding;
 use instant_distance::{Builder, HnswMap, Search};
+use serde::{Deserialize, Serialize};
 
+#[derive(Deserialize, Serialize)]
 pub struct VectorDB<T> {
     model: HnswMap<Point, T>,
 }
 
 impl<T: Clone> VectorDB<T> {
     pub fn new(points: Vec<Embedding>, values: Vec<T>) -> Self {
-        let model =
-            Builder::default().build(points.into_iter().map(|e| Point(e)).collect(), values);
+        let model = Builder::default().build(
+            points.into_iter().map(|e| Point(e.vector)).collect(),
+            values,
+        );
 
         VectorDB { model }
     }
@@ -16,7 +20,7 @@ impl<T: Clone> VectorDB<T> {
     pub fn get_closest(&self, embedding: Embedding, n: usize) -> Vec<T> {
         let mut search = Search::default();
         self.model
-            .search(&Point(embedding), &mut search)
+            .search(&Point(embedding.vector), &mut search)
             .take(n)
             .map(|result| result.value.clone())
             .collect()
@@ -25,18 +29,18 @@ impl<T: Clone> VectorDB<T> {
     pub fn get_within(&self, embedding: Embedding, distance: f32) -> Vec<T> {
         let mut search = Search::default();
         self.model
-            .search(&Point(embedding), &mut search)
+            .search(&Point(embedding.vector), &mut search)
             .map_while(|result| (result.distance < distance).then(|| result.value.clone()))
             .collect()
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Point(Embedding);
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Point(Vec<f32>);
 
 impl instant_distance::Point for Point {
     fn distance(&self, other: &Self) -> f32 {
-        cosine_similarity(&self.0.vector, &other.0.vector)
+        cosine_similarity(&self.0, &other.0)
     }
 }
 

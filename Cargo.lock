@@ -3222,6 +3222,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "plugin_embedding_db"
+version = "0.1.0"
+dependencies = [
+ "rust_adapter",
+]
+
+[[package]]
 name = "plugin_format"
 version = "0.1.0"
 dependencies = [
@@ -3241,6 +3248,13 @@ version = "0.1.0"
 dependencies = [
  "pest",
  "pest_derive",
+ "rust_adapter",
+]
+
+[[package]]
+name = "plugin_search"
+version = "0.1.0"
+dependencies = [
  "rust_adapter",
 ]
 

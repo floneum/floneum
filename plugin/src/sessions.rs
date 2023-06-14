@@ -2,11 +2,9 @@ use crate::{
     download::download,
     embedding::get_embeddings,
     exports::plugins::main::definitions::Embedding,
-    exports::plugins::main::definitions::EmbeddingDbId,
     exports::plugins::main::definitions::ModelId,
     json::{ParseStream, Validate},
     structured::StructuredSampler,
-    vector_db::VectorDB,
     ModelType,
 };
 use llm::{
@@ -23,7 +21,6 @@ use std::{
 #[derive(Default)]
 pub struct InferenceSessions {
     sessions: Slab<(Box<dyn Model>, llm::InferenceSession)>,
-    vector_dbs: Slab<VectorDB<String>>,
     embedding_cache: RwLock<Vec<HashMap<String, Embedding>>>,
 }
 
@@ -34,15 +31,6 @@ impl InferenceSessions {
 
     pub fn session_get_mut(&mut self, id: ModelId) -> &mut (Box<dyn Model>, InferenceSession) {
         self.sessions.get_mut(id.id as usize).unwrap()
-    }
-
-    pub fn vector_db_get(&self, id: EmbeddingDbId) -> &VectorDB<String> {
-        self.vector_dbs.get(id.id as usize).unwrap()
-    }
-
-    #[allow(unused)]
-    pub fn vector_db_get_mut(&mut self, id: EmbeddingDbId) -> &mut VectorDB<String> {
-        self.vector_dbs.get_mut(id.id as usize).unwrap()
     }
 
     pub fn create(&mut self, ty: ModelType) -> ModelId {
@@ -176,33 +164,6 @@ impl InferenceSessions {
             cache.insert(text.to_string(), new_embedding.clone());
             new_embedding
         }
-    }
-
-    pub fn create_db(
-        &mut self,
-        embedding: Vec<Embedding>,
-        documents: Vec<String>,
-    ) -> EmbeddingDbId {
-        let idx = self.vector_dbs.insert(VectorDB::new(embedding, documents));
-
-        EmbeddingDbId { id: idx as u32 }
-    }
-
-    pub fn remove_embedding_db(&mut self, id: EmbeddingDbId) {
-        self.vector_dbs.remove(id.id as usize);
-    }
-
-    pub fn get_closest(&self, id: EmbeddingDbId, embedding: Embedding, n: usize) -> Vec<String> {
-        self.vector_db_get(id).get_closest(embedding, n)
-    }
-
-    pub fn get_within(
-        &self,
-        id: EmbeddingDbId,
-        embedding: Embedding,
-        distance: f32,
-    ) -> Vec<String> {
-        self.vector_db_get(id).get_within(embedding, distance)
     }
 }
 

@@ -27,6 +27,10 @@ mod structured;
 mod vector_db;
 
 use crate::sessions::InferenceSessions;
+use crate::{
+    vector_db::VectorDB,
+    ModelType,
+};
 
 wasmtime::component::bindgen!({path: "../wit"});
 
@@ -34,6 +38,7 @@ wasmtime::component::bindgen!({path: "../wit"});
 pub struct State {
     sessions: InferenceSessions,
     structures: Slab<JsonStructure>,
+    vector_dbs: Slab<VectorDB<String>>,
 }
 
 impl State {
@@ -68,6 +73,38 @@ impl State {
                 )
             }
         }
+    }
+
+    fn vector_db_get(&self, id: exports::plugins::main::definitions::EmbeddingDbId) -> &VectorDB<String> {
+        self.vector_dbs.get(dbg!(id.id as usize)).unwrap()
+    }
+
+    pub fn create_db(
+        &mut self,
+        embedding: Vec<exports::plugins::main::definitions::Embedding>,
+        documents: Vec<String>,
+    ) -> exports::plugins::main::definitions::EmbeddingDbId {
+        let idx = self.vector_dbs.insert(VectorDB::new(embedding, documents));
+
+        exports::plugins::main::definitions::EmbeddingDbId { id: idx as u32 }
+    }
+
+    pub fn remove_embedding_db(&mut self, id: exports::plugins::main::definitions::EmbeddingDbId) {
+        println!("Removing db: {}", id.id);
+        self.vector_dbs.remove(id.id as usize);
+    }
+
+    pub fn get_closest(&self, id: exports::plugins::main::definitions::EmbeddingDbId, embedding: exports::plugins::main::definitions::Embedding, n: usize) -> Vec<String> {
+        self.vector_db_get(id).get_closest(embedding, n)
+    }
+
+    pub fn get_within(
+        &self,
+        id: exports::plugins::main::definitions::EmbeddingDbId,
+        embedding: exports::plugins::main::definitions::Embedding,
+        distance: f32,
+    ) -> Vec<String> {
+        self.vector_db_get(id).get_within(embedding, distance)
     }
 }
 
@@ -119,14 +156,14 @@ impl Host for State {
         documents: Vec<String>,
     ) -> std::result::Result<exports::plugins::main::definitions::EmbeddingDbId, wasmtime::Error>
     {
-        Ok(self.sessions.create_db(embeddings, documents))
+        Ok(self.create_db(embeddings, documents))
     }
 
     fn remove_embedding_db(
         &mut self,
         id: exports::plugins::main::definitions::EmbeddingDbId,
     ) -> std::result::Result<(), wasmtime::Error> {
-        Ok(self.sessions.remove_embedding_db(id))
+        Ok(self.remove_embedding_db(id))
     }
 
     fn find_closest_documents(
@@ -135,7 +172,7 @@ impl Host for State {
         search: plugins::main::types::Embedding,
         count: u32,
     ) -> std::result::Result<Vec<String>, wasmtime::Error> {
-        Ok(self.sessions.get_closest(id, search, count as usize))
+        Ok(self.get_closest(id, search, count as usize))
     }
 
     fn find_documents_within(
@@ -144,7 +181,7 @@ impl Host for State {
         search: plugins::main::types::Embedding,
         distance: f32,
     ) -> std::result::Result<Vec<String>, wasmtime::Error> {
-        Ok(self.sessions.get_within(id, search, distance))
+        Ok(self.get_within(id, search, distance))
     }
 
     fn infer(
@@ -328,7 +365,7 @@ impl PluginInstance {
         let sender = self.sender.clone();
         let mut reciever = self.reciever.resubscribe();
         async move {
-            sender.send(inputs).unwrap();
+            let _ = sender.send(inputs);
             reciever.recv().await.unwrap()
         }
     }

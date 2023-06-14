@@ -7,19 +7,22 @@ pub use crate::exports::plugins::main::definitions::{
 };
 pub use crate::plugins::main::imports::{print, GptNeoXType, LlamaType, ModelType, MptType};
 pub use plugins::main::types::Embedding;
-use plugins::main::types::{JsonKvPair, JsonStructureEither, JsonStructureMap,NumberParameters,UnsignedRange};
+use plugins::main::types::{
+    JsonKvPair, JsonStructureEither, JsonStructureMap, NumberParameters, UnsignedRange,
+};
 
 wit_bindgen::generate!({path: "../wit", macro_export});
 
 pub struct VectorDatabase {
     id: EmbeddingDbId,
+    drop: bool,
 }
 
 impl VectorDatabase {
     pub fn new(embeddings: &[&plugins::main::types::Embedding], documents: &[&str]) -> Self {
         let id = create_embedding_db(embeddings, documents);
 
-        VectorDatabase { id }
+        VectorDatabase { id, drop: true }
     }
 
     pub fn find_closest_documents(
@@ -37,12 +40,28 @@ impl VectorDatabase {
     ) -> Vec<String> {
         find_documents_within(self.id, embedding, distance)
     }
+
+    pub fn from_id(id: EmbeddingDbId) -> Self {
+        VectorDatabase { id, drop: false }
+    }
+
+    pub fn leak(self) -> EmbeddingDbId {
+        let id = self.id;
+        std::mem::forget(self);
+        id
+    }
+
+    pub fn manually_drop(self) {
+        remove_embedding_db(self.id);
+    }
 }
 
 impl Drop for VectorDatabase {
     fn drop(&mut self) {
-        let id = self.id;
-        remove_embedding_db(id);
+        if self.drop {
+            println!("Dropping vector database {}", self.id.id);
+            remove_embedding_db(self.id);
+        }
     }
 }
 
@@ -124,13 +143,11 @@ impl Structured {
     }
 
     pub fn number(min: f64, max: f64, int: bool) -> Self {
-        let inner = JsonStructure::Num(
-            NumberParameters{
-                min,
-                max,
-                integer: int,
-            }
-        );
+        let inner = JsonStructure::Num(NumberParameters {
+            min,
+            max,
+            integer: int,
+        });
         let id = create_json_structure(inner);
         Structured { id }
     }
@@ -139,13 +156,11 @@ impl Structured {
         Self::ranged_str(0, u64::MAX)
     }
 
-    pub fn ranged_str(min_len:u64, max_len:u64) -> Self {
-        let inner = JsonStructure::Str(
-            UnsignedRange{
-                min: min_len ,
-                max: max_len ,
-            }
-        );
+    pub fn ranged_str(min_len: u64, max_len: u64) -> Self {
+        let inner = JsonStructure::Str(UnsignedRange {
+            min: min_len,
+            max: max_len,
+        });
         let id = create_json_structure(inner);
         Structured { id }
     }
