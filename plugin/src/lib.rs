@@ -27,10 +27,7 @@ mod structured;
 mod vector_db;
 
 use crate::sessions::InferenceSessions;
-use crate::{
-    vector_db::VectorDB,
-    ModelType,
-};
+use crate::{vector_db::VectorDB, ModelType};
 
 wasmtime::component::bindgen!({path: "../wit"});
 
@@ -75,7 +72,10 @@ impl State {
         }
     }
 
-    fn vector_db_get(&self, id: exports::plugins::main::definitions::EmbeddingDbId) -> &VectorDB<String> {
+    fn vector_db_get(
+        &self,
+        id: exports::plugins::main::definitions::EmbeddingDbId,
+    ) -> &VectorDB<String> {
         self.vector_dbs.get(dbg!(id.id as usize)).unwrap()
     }
 
@@ -94,7 +94,12 @@ impl State {
         self.vector_dbs.remove(id.id as usize);
     }
 
-    pub fn get_closest(&self, id: exports::plugins::main::definitions::EmbeddingDbId, embedding: exports::plugins::main::definitions::Embedding, n: usize) -> Vec<String> {
+    pub fn get_closest(
+        &self,
+        id: exports::plugins::main::definitions::EmbeddingDbId,
+        embedding: exports::plugins::main::definitions::Embedding,
+        n: usize,
+    ) -> Vec<String> {
         self.vector_db_get(id).get_closest(embedding, n)
     }
 

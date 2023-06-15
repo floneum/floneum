@@ -1,8 +1,7 @@
 use std::{
     cell::{Cell, RefCell},
-    collections::{HashMap, HashSet},
+    collections::{HashMap,},
     ops::Deref,
-    rc::Rc,
 };
 
 #[derive(Debug, Clone)]
@@ -130,94 +129,29 @@ fn parse_structured() {
 
 impl<'a> Validate<'a> for StructureMap {
     fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
-        let keys_parsed = Rc::new(RefCell::new(HashSet::new()));
-        let parse_kv = Anonymous::new({
-            let keys_parsed = keys_parsed.clone();
-            move |tokens: ParseStream<'a>| {
-                let mut keys_parsed = keys_parsed.borrow_mut();
-                let (key, status) = parse_string(tokens);
+        let mut body: BoxedValidate<'a> = "".boxed();
+        for (i, (key, value)) in self.0.iter().enumerate() {
+            let parse_key = "\"".then(key.to_string()).then("\"");
+            let parse_colon = ":";
+            let parse_value = value.clone();
+            let parse_comma = ",";
 
-                match status {
-                    ParseStatus::Complete(Some(tokens)) => {
-                        let Some(value_structure) = self.0.get(&key) else {
-                        return ParseStatus::Invalid;
-                    };
-                        keys_parsed.insert(key);
-
-                        let parse_colon = ":";
-
-                        let parse_key = value_structure;
-
-                        let parse_kv = parse_colon.then(parse_key);
-                        parse_kv.validate(tokens)
-                    }
-                    ParseStatus::Complete(None) => {
-                        if self.0.get(&key).is_some() {
-                            keys_parsed.insert(key);
-                            ParseStatus::Incomplete
-                        } else {
-                            ParseStatus::Invalid
-                        }
-                    }
-                    ParseStatus::Incomplete => {
-                        // check if any of the keys match the first part of the string
-                        // if so, return incomplete
-                        // otherwise, return invalid
-                        if self
-                            .0
-                            .keys()
-                            .any(|k| !keys_parsed.contains(k) && k.starts_with(&key))
-                        {
-                            ParseStatus::Incomplete
-                        } else {
-                            ParseStatus::Invalid
-                        }
-                    }
-                    _ => status,
-                }
-            }
-        });
-
-        let parse_closing_brace_if_complete = Anonymous::new(move |tokens: ParseStream<'a>| {
-            if keys_parsed.borrow().len() == self.0.len() {
-                let parse_closing_brace = "}";
-                parse_closing_brace.validate(tokens)
+            if i == self.0.len() - 1 {
+                let parse_entry = body.or(parse_key.then(parse_colon).then(parse_value));
+                body = parse_entry.boxed();
             } else {
-                ParseStatus::Invalid
+                let parse_entry = body.or(parse_key
+                    .then(parse_colon)
+                    .then(parse_value)
+                    .then(parse_comma));
+                body = parse_entry.boxed();
             }
-        });
+        }
 
-        let parse_map = Seperated::new(parse_kv, ",", None);
-
-        let parse_object = Between::new("{", parse_map, parse_closing_brace_if_complete);
+        let parse_object = Between::new("{", body, "}");
 
         parse_object.validate(tokens)
     }
-}
-
-fn parse_string(tokens: ParseStream) -> (String, ParseStatus) {
-    let mut iter = tokens.iter();
-    let mut string = String::new();
-
-    if iter.peek() != Some('"') {
-        return (string, ParseStatus::Invalid);
-    }
-    let _ = iter.next();
-
-    while let Some(c) = iter.peek() {
-        match c {
-            '"' => {
-                let _ = iter.next();
-                return (string, ParseStatus::Complete(iter.current()));
-            }
-            _ => {
-                string.push(c);
-            }
-        }
-        let _ = iter.next();
-    }
-
-    (string, ParseStatus::Incomplete)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -519,18 +453,33 @@ impl<'a> Iterator for ParseStreamIter<'a> {
 pub trait Validate<'a> {
     fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a>;
 
-    fn or<V: Validate<'a>>(&self, other: V) -> Or<'a, &Self, V>
+    fn or<V: Validate<'a>>(self, other: V) -> Or<'a, Self, V>
     where
         Self: Sized,
     {
         Or(self, other, std::marker::PhantomData)
     }
 
-    fn then<V: Validate<'a>>(&self, other: V) -> Then<'a, &Self, V>
+    fn then<V: Validate<'a>>(self, other: V) -> Then<'a, Self, V>
     where
         Self: Sized,
     {
         Then(self, other, std::marker::PhantomData)
+    }
+
+    fn boxed(self) -> BoxedValidate<'a>
+    where
+        Self: Sized + 'a,
+    {
+        BoxedValidate(Box::new(self))
+    }
+}
+
+pub struct BoxedValidate<'a>(Box<dyn Validate<'a> + 'a>);
+
+impl<'a> Validate<'a> for BoxedValidate<'a> {
+    fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
+        self.0.validate(tokens)
     }
 }
 
@@ -542,6 +491,7 @@ impl<'a, V: Validate<'a>> Validate<'a> for &V {
 
 struct Anonymous<F>(RefCell<F>);
 
+#[allow(unused)]
 impl<'a, F> Anonymous<F>
 where
     F: FnMut(ParseStream<'a>) -> ParseStatus<'a>,
@@ -582,6 +532,12 @@ impl<'a, A: Validate<'a>, B: Validate<'a>> Validate<'a> for Or<'a, A, B> {
             ParseStatus::Invalid => self.1.validate(tokens),
             ParseStatus::Incomplete => ParseStatus::Incomplete,
         }
+    }
+}
+
+impl<'a> Validate<'a> for String {
+    fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
+        self.as_str().validate(tokens)
     }
 }
 
@@ -632,7 +588,7 @@ impl<'a, S: Validate<'a>, I: Validate<'a>, E: Validate<'a>> Between<'a, S, I, E>
 
 impl<'a, S: Validate<'a>, I: Validate<'a>, E: Validate<'a>> Validate<'a> for Between<'a, S, I, E> {
     fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
-        self.start
+        (&self.start)
             .then(&self.inner)
             .then(&self.end)
             .validate(tokens)
