@@ -1,6 +1,6 @@
 use std::{
     cell::{Cell, RefCell},
-    collections::{HashMap,},
+    collections::HashMap,
     ops::Deref,
 };
 
