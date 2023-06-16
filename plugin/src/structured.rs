@@ -3,7 +3,7 @@ use partial_sort::PartialSort;
 use rand::{distributions::WeightedIndex, prelude::Distribution};
 use std::fmt::Debug;
 
-use crate::json::{ParseStream, Validate};
+use crate::structured_parser::{ParseStream, Validate};
 
 pub struct StructuredSampler<V: for<'a> Validate<'a>> {
     vocab: Vocabulary,

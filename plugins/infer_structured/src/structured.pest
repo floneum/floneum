@@ -1,31 +1,32 @@
-number = { "#" }
-empty_string = { "\"\"" }
+hashtag = { "#" }
+string = { "\"" ~ (char*) ~ "\"" }
 
-object = {
-    "{" ~ "}" |
-    "{" ~ pair ~ ("," ~ pair)* ~ "}"
-}
-pair = { string ~ ":" ~ value }
 array = {
-    "[" ~ "]" |
-    "[" ~ value ~ "]"
+    "[" ~ value ~ (";" ~ range)? ~ "]"
+}
+range = {
+    number ~ "-" ~ number
+}
+number = {
+    (ASCII_DIGIT)*
 }
 
 calculation = _{ SOI ~ value ~ EOI }
 
-value = _{ object | array | empty_string | number | boolean | either }
+format = { (value)+ }
+value = _{ literal | generated }
+literal = { non_generated_chars+ }
+non_generated_chars = { ((!"{" ~ ANY) ~ "{" ~ (!"{" ~ ANY)) | (!"{" ~ ANY) | " " }
+
+generated = _{ "{{" ~ ( hashtag | string | boolean | array ) ~ "}}" }
 
 boolean = { "bool" }
 
 either = { wrapped ~ ("|" ~ wrapped)* }
-wrapped = { "(" ~ value ~ ")" }
+wrapped = { value }
 
-string = ${ "\"" ~ inner ~ "\"" }
-inner = @{ char* }
 char = {
     !("\"" | "\\") ~ ANY
     | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
     | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
 }
-
-WHITESPACE = _{ " " | "\t" | "\r" | "\n" }

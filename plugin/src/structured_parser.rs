@@ -1,40 +1,58 @@
 use std::{
     cell::{Cell, RefCell},
-    collections::HashMap,
     ops::Deref,
 };
 
 #[derive(Debug, Clone)]
-pub enum Structure {
-    Sequence(Box<Structure>),
-    Map(StructureMap),
-    Num { min: f64, max: f64, integer: bool },
-    String(u64, u64),
-    Bool,
-    Null,
-    Either(Box<Structure>, Box<Structure>),
+pub enum StructureParser {
+    Literal(String),
+    Sequence {
+        item: Box<StructureParser>,
+        seperator: Box<StructureParser>,
+        min_len: u64,
+        max_len: u64,
+    },
+    Num {
+        min: f64,
+        max: f64,
+        integer: bool,
+    },
+    String {
+        min_len: u64,
+        max_len: u64,
+    },
+    Either {
+        first: Box<StructureParser>,
+        second: Box<StructureParser>,
+    },
+    Then {
+        first: Box<StructureParser>,
+        second: Box<StructureParser>,
+    },
 }
 
-#[derive(Debug, Clone)]
-pub struct StructureMap(pub HashMap<String, Structure>);
-
-impl<'a> Validate<'a> for Structure {
+impl<'a> Validate<'a> for StructureParser {
     fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
         match self {
-            Structure::Sequence(inner) => {
-                let parse_sequence = Seperated::new(inner.as_ref(), ",", None);
+            StructureParser::Literal(text) => text.validate(tokens),
+            StructureParser::Sequence {
+                item,
+                seperator,
+                min_len,
+                max_len,
+            } => {
+                let parse_sequence = Seperated::new(
+                    item.as_ref(),
+                    seperator.as_ref(),
+                    *min_len as usize,
+                    *max_len as usize,
+                );
 
                 let parse_array = Between::new("[", parse_sequence, "]");
 
                 parse_array.validate(tokens)
             }
-            Structure::Bool => {
-                let true_validator = "true";
-                let false_validator = "false";
-                true_validator.or(false_validator).validate(tokens)
-            }
-            Structure::Map(map) => map.validate(tokens),
-            Structure::Num { min, max, integer } => {
+            StructureParser::Num { min, max, integer } => {
                 let parse_int = ValidateInt {
                     min: *min,
                     max: *max,
@@ -42,115 +60,17 @@ impl<'a> Validate<'a> for Structure {
                 };
                 parse_int.validate(tokens)
             }
-            Structure::String(min_len, max_len) => {
+            StructureParser::String { min_len, max_len } => {
                 let parse_string = ValidateString(*min_len, *max_len);
                 parse_string.validate(tokens)
             }
-            Structure::Null => {
-                let null_validator = "null";
-                null_validator.validate(tokens)
+            StructureParser::Either { first, second } => {
+                first.deref().or(second.deref()).validate(tokens)
             }
-            Structure::Either(left, right) => left.deref().or(right.deref()).validate(tokens),
-        }
-    }
-}
-
-#[test]
-fn parse_structured() {
-    let parse_array_of_ints = Structure::Sequence(Box::new(Structure::Num {
-        min: 1.,
-        max: 3.,
-        integer: true,
-    }));
-
-    let tokens = ParseStream::new(&["[1,2,3]"]);
-    assert!(parse_array_of_ints.validate(tokens).is_complete());
-
-    let tokens = ParseStream::new(&["[1,2,3"]);
-    assert!(parse_array_of_ints.validate(tokens).is_incomplete());
-
-    let tokens = ParseStream::new(&["1,2,3"]);
-    assert!(parse_array_of_ints.validate(tokens).is_invalid());
-
-    let parse_array_of_strings = Structure::Sequence(Box::new(Structure::String(5, 5)));
-
-    let tokens = ParseStream::new(&[r#"["hello","world"]"#]);
-    assert!(parse_array_of_strings.validate(tokens).is_complete());
-
-    let tokens = ParseStream::new(&[r#"["hello","world"#]);
-    assert!(parse_array_of_strings.validate(tokens).is_incomplete());
-
-    let tokens = ParseStream::new(&["hello, world"]);
-    assert!(parse_array_of_strings.validate(tokens).is_invalid());
-
-    let parse_array_of_either = Structure::Sequence(Box::new(Structure::Either(
-        Box::new(Structure::Num {
-            min: 1.,
-            max: 3.,
-            integer: true,
-        }),
-        Box::new(Structure::String(0, 1)),
-    )));
-
-    let tokens = ParseStream::new(&[r#"[1,"2",3]"#]);
-    assert!(parse_array_of_either.validate(tokens).is_complete());
-
-    let tokens = ParseStream::new(&[r#"[1,"2",3"#]);
-    assert!(parse_array_of_either.validate(tokens).is_incomplete());
-
-    let tokens = ParseStream::new(&[r#"1,"2",3"#]);
-    assert!(parse_array_of_either.validate(tokens).is_invalid());
-
-    let parse_object = Structure::Map(StructureMap(
-        vec![
-            ("hello".to_string(), Structure::String(5, 5)),
-            (
-                "world".to_string(),
-                Structure::Num {
-                    min: 0.,
-                    max: 1.,
-                    integer: true,
-                },
-            ),
-        ]
-        .into_iter()
-        .collect(),
-    ));
-
-    let tokens = ParseStream::new(&[r#"{"hello":"world","world":1}"#]);
-    assert!(parse_object.validate(tokens).is_complete());
-
-    let tokens = ParseStream::new(&[r#"{"hello":"world","world":1"#]);
-    assert!(parse_object.validate(tokens).is_incomplete());
-
-    let tokens = ParseStream::new(&[r#""hello":"world","world":1}"#]);
-    assert!(parse_object.validate(tokens).is_invalid());
-}
-
-impl<'a> Validate<'a> for StructureMap {
-    fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
-        let mut body: BoxedValidate<'a> = "".boxed();
-        for (i, (key, value)) in self.0.iter().enumerate() {
-            let parse_key = "\"".then(key.to_string()).then("\"");
-            let parse_colon = ":";
-            let parse_value = value.clone();
-            let parse_comma = ",";
-
-            if i == self.0.len() - 1 {
-                let parse_entry = body.or(parse_key.then(parse_colon).then(parse_value));
-                body = parse_entry.boxed();
-            } else {
-                let parse_entry = body.or(parse_key
-                    .then(parse_colon)
-                    .then(parse_value)
-                    .then(parse_comma));
-                body = parse_entry.boxed();
+            StructureParser::Then { first, second } => {
+                first.deref().then(second.deref()).validate(tokens)
             }
         }
-
-        let parse_object = Between::new("{", body, "}");
-
-        parse_object.validate(tokens)
     }
 }
 
@@ -222,10 +142,15 @@ impl<'a> Validate<'a> for ValidateInt {
                         return ParseStatus::Invalid;
                     }
                     if has_decimal {
-                        if real_number > max || real_number < min {
+                        if has_digits {
+                            if real_number > max || real_number < min {
+                                return ParseStatus::Invalid;
+                            }
+                            return ParseStatus::Complete(iter.current());
+                        }
+                        else {
                             return ParseStatus::Invalid;
                         }
-                        return ParseStatus::Complete(iter.current());
                     }
                     has_decimal = true;
                     decimal_place = 0.1;
@@ -598,15 +523,17 @@ impl<'a, S: Validate<'a>, I: Validate<'a>, E: Validate<'a>> Validate<'a> for Bet
 struct Seperated<'a, S: Validate<'a>, I: Validate<'a>> {
     inner: I,
     seperator: S,
-    max: Option<usize>,
+    min: usize,
+    max: usize,
     _phantom: std::marker::PhantomData<&'a ()>,
 }
 
 impl<'a, S: Validate<'a>, I: Validate<'a>> Seperated<'a, S, I> {
-    fn new(inner: I, seperator: S, max: Option<usize>) -> Self {
+    fn new(inner: I, seperator: S, min: usize, max: usize) -> Self {
         Seperated {
             inner,
             seperator,
+            min,
             max,
             _phantom: std::marker::PhantomData,
         }
@@ -618,10 +545,8 @@ impl<'a, S: Validate<'a>, I: Validate<'a>> Validate<'a> for Seperated<'a, S, I> 
         let mut tokens = tokens;
         let mut count = 0;
         loop {
-            if let Some(max) = self.max {
-                if count >= max {
-                    return ParseStatus::Complete(Some(tokens));
-                }
+            if count >= self.max {
+                return ParseStatus::Complete(Some(tokens));
             }
             // first parse an item
             match self.inner.validate(tokens) {
@@ -631,15 +556,33 @@ impl<'a, S: Validate<'a>, I: Validate<'a>> Validate<'a> for Seperated<'a, S, I> 
                         // if we get a complete seperator, then we can parse another item
                         ParseStatus::Complete(Some(new_tokens)) => tokens = new_tokens,
                         // if we get a complete seperator with no tokens, then we are done
-                        ParseStatus::Complete(None) => return ParseStatus::Complete(Some(tokens)),
+                        ParseStatus::Complete(None) => {
+                            if count >= self.min {
+                                return ParseStatus::Complete(Some(tokens));
+                            } else {
+                                return ParseStatus::Incomplete;
+                            }
+                        }
                         // if we get an invalid seperator, then this is the end of the list
-                        ParseStatus::Invalid => return ParseStatus::Complete(Some(new_tokens)),
+                        ParseStatus::Invalid => {
+                            if count >= self.min {
+                                return ParseStatus::Complete(Some(new_tokens));
+                            } else {
+                                return ParseStatus::Invalid;
+                            }
+                        }
                         // if we get an incomplete seperator, then we need to wait for more tokens
                         ParseStatus::Incomplete => return ParseStatus::Incomplete,
                     }
                 }
-                // if we get a complete item with no tokens, then we are done
-                ParseStatus::Complete(None) => return ParseStatus::Complete(None),
+                ParseStatus::Complete(None) => {
+                    if count >= self.min {
+                        // if we get a complete item with no tokens and enough items, then we are done
+                        return ParseStatus::Complete(None);
+                    } else {
+                        return ParseStatus::Invalid;
+                    }
+                }
                 ParseStatus::Invalid => return ParseStatus::Invalid,
                 ParseStatus::Incomplete => return ParseStatus::Incomplete,
             }
@@ -734,7 +677,8 @@ fn test_seperated() {
         let seperated = Seperated {
             inner: "a",
             seperator: ",",
-            max: None,
+            min: 6,
+            max: 6,
             _phantom: std::marker::PhantomData,
         };
 

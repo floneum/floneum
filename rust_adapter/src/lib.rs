@@ -1,15 +1,15 @@
 #![allow(unused_macros)]
 
-use crate::plugins::main::imports::*;
-
 pub use crate::exports::plugins::main::definitions::{
     Definition, Definitions, IoDefinition, PrimitiveValue, PrimitiveValueType, Value, ValueType,
 };
+use crate::plugins::main::imports::*;
 pub use crate::plugins::main::imports::{print, GptNeoXType, LlamaType, ModelType, MptType};
 pub use plugins::main::types::Embedding;
 use plugins::main::types::{
-    JsonKvPair, JsonStructureEither, JsonStructureMap, NumberParameters, UnsignedRange,
+    EitherStructure, NumberParameters, SequenceParameters, Structure, ThenStructure, UnsignedRange,
 };
+use std::ops::RangeInclusive;
 
 wit_bindgen::generate!({path: "../wit", macro_export});
 
@@ -107,48 +107,51 @@ pub struct Structured {
 }
 
 impl Structured {
-    pub fn sequence_of(item: Structured) -> Self {
-        let inner = JsonStructure::Sequence(item.id);
-        let id = create_json_structure(inner);
+    pub fn literal(text: &str) -> Self {
+        let inner = Structure::Literal(text);
+
+        let id = create_structure(inner);
         Structured { id }
     }
 
-    pub fn map_of(items: Vec<(String, Structured)>) -> Self {
-        let items: Vec<_> = items
-            .iter()
-            .map(|(k, v)| JsonKvPair {
-                key: &k,
-                value: v.id,
-            })
-            .collect();
-        let inner = JsonStructure::Map(JsonStructureMap { items: &items });
-        let id = create_json_structure(inner);
+    pub fn sequence_of(
+        item: Structured,
+        seperator: Structured,
+        range: RangeInclusive<u64>,
+    ) -> Self {
+        let inner = Structure::Sequence(SequenceParameters {
+            item: item.id,
+            seperator: seperator.id,
+            min_len: *range.start(),
+            max_len: *range.end(),
+        });
+        let id = create_structure(inner);
         Structured { id }
     }
 
     pub fn float() -> Self {
-        Self::ranged_float(f64::MIN, f64::MAX)
+        Self::ranged_float(f64::MIN..=f64::MAX)
     }
 
-    pub fn ranged_float(min: f64, max: f64) -> Self {
-        Self::number(min, max, false)
+    pub fn ranged_float(range: RangeInclusive<f64>) -> Self {
+        Self::number(range, false)
     }
 
     pub fn int() -> Self {
-        Self::ranged_int(f64::MIN, f64::MAX)
+        Self::ranged_int(f64::MIN..=f64::MAX)
     }
 
-    pub fn ranged_int(min: f64, max: f64) -> Self {
-        Self::number(min, max, true)
+    pub fn ranged_int(range: RangeInclusive<f64>) -> Self {
+        Self::number(range, true)
     }
 
-    pub fn number(min: f64, max: f64, int: bool) -> Self {
-        let inner = JsonStructure::Num(NumberParameters {
-            min,
-            max,
+    pub fn number(range: RangeInclusive<f64>, int: bool) -> Self {
+        let inner = Structure::Num(NumberParameters {
+            min: *range.start(),
+            max: *range.end(),
             integer: int,
         });
-        let id = create_json_structure(inner);
+        let id = create_structure(inner);
         Structured { id }
     }
 
@@ -157,37 +160,41 @@ impl Structured {
     }
 
     pub fn ranged_str(min_len: u64, max_len: u64) -> Self {
-        let inner = JsonStructure::Str(UnsignedRange {
+        let inner = Structure::Str(UnsignedRange {
             min: min_len,
             max: max_len,
         });
-        let id = create_json_structure(inner);
+        let id = create_structure(inner);
         Structured { id }
     }
 
     pub fn boolean() -> Self {
-        let inner = JsonStructure::Boolean;
-        let id = create_json_structure(inner);
-        Structured { id }
+        Self::literal("true").or(Self::literal("false"))
     }
 
     pub fn null() -> Self {
-        let null = JsonStructure::Null;
-        let id = create_json_structure(null);
-        Structured { id }
+        Self::literal("null")
     }
 
     pub fn or_not(self) -> Self {
-        let null = Self::null();
-        Self::either(self, null)
+        self.or(Self::null())
     }
 
-    pub fn either(first: Structured, second: Structured) -> Self {
-        let inner = JsonStructure::Either(JsonStructureEither {
-            first: first.id,
+    pub fn or(self, second: Structured) -> Self {
+        let inner = Structure::Or(EitherStructure {
+            first: self.id,
             second: second.id,
         });
-        let id = create_json_structure(inner);
+        let id = create_structure(inner);
+        Structured { id }
+    }
+
+    pub fn then(self, then: Structured) -> Self {
+        let inner = Structure::Then(ThenStructure {
+            first: self.id,
+            second: then.id,
+        });
+        let id = create_structure(inner);
         Structured { id }
     }
 }

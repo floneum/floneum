@@ -3,15 +3,16 @@
 // https://github.com/bytecodealliance/wasmtime/issues/6074
 
 use once_cell::sync::Lazy;
+use plugins::main::types::Structure;
 use std::path::Path;
 use std::sync::Arc;
 
 use crate::plugins::main::imports::*;
 use exports::plugins::main::definitions::*;
 use futures_util::Future;
-use json::{Structure, StructureMap};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use slab::Slab;
+use structured_parser::StructureParser;
 use tokio::sync::broadcast;
 use wasmtime::component::{Component, Linker};
 use wasmtime::Config;
@@ -21,9 +22,9 @@ use wit_component::ComponentEncoder;
 
 mod download;
 mod embedding;
-mod json;
 mod sessions;
 mod structured;
+mod structured_parser;
 mod vector_db;
 
 use crate::sessions::InferenceSessions;
@@ -34,41 +35,37 @@ wasmtime::component::bindgen!({path: "../wit"});
 #[derive(Default)]
 pub struct State {
     sessions: InferenceSessions,
-    structures: Slab<JsonStructure>,
+    structures: Slab<Structure>,
     vector_dbs: Slab<VectorDB<String>>,
 }
 
 impl State {
-    fn decode_structure(&self, id: StructureId) -> Structure {
+    fn decode_structure(&self, id: StructureId) -> StructureParser {
         match &self.structures[id.id as usize] {
-            JsonStructure::Sequence(id) => {
-                Structure::Sequence(Box::new(self.decode_structure(*id)))
-            }
-            JsonStructure::Map(map) => {
-                let mut new_map = std::collections::HashMap::new();
-                for kv in map.items.iter() {
-                    let key = &kv.key;
-                    let value = &kv.value;
-                    new_map.insert(key.clone(), self.decode_structure(*value));
-                }
-                Structure::Map(StructureMap(new_map))
-            }
-            JsonStructure::Str(range) => Structure::String(range.min, range.max),
-            JsonStructure::Num(range) => Structure::Num {
+            Structure::Literal(text) => StructureParser::Literal(text.clone()),
+            Structure::Str(range) => StructureParser::String {
+                min_len: range.min,
+                max_len: range.max,
+            },
+            Structure::Num(range) => StructureParser::Num {
                 min: range.min,
                 max: range.max,
                 integer: range.integer,
             },
-            JsonStructure::Boolean => Structure::Bool,
-            JsonStructure::Null => Structure::Null,
-            JsonStructure::Either(either) => {
-                let id1 = &either.first;
-                let id2: &plugins::main::types::StructureId = &either.second;
-                Structure::Either(
-                    Box::new(self.decode_structure(*id1)),
-                    Box::new(self.decode_structure(*id2)),
-                )
-            }
+            Structure::Or(params) => StructureParser::Either {
+                first: Box::new(self.decode_structure(params.first)),
+                second: Box::new(self.decode_structure(params.second)),
+            },
+            Structure::Then(params) => StructureParser::Then {
+                first: Box::new(self.decode_structure(params.first)),
+                second: Box::new(self.decode_structure(params.second)),
+            },
+            Structure::Sequence(params) => StructureParser::Sequence {
+                item: Box::new(self.decode_structure(params.item)),
+                seperator: Box::new(self.decode_structure(params.seperator)),
+                min_len: params.min_len,
+                max_len: params.max_len,
+            },
         }
     }
 
@@ -76,7 +73,7 @@ impl State {
         &self,
         id: exports::plugins::main::definitions::EmbeddingDbId,
     ) -> &VectorDB<String> {
-        self.vector_dbs.get(dbg!(id.id as usize)).unwrap()
+        self.vector_dbs.get(id.id as usize).unwrap()
     }
 
     pub fn create_db(
@@ -116,19 +113,16 @@ impl State {
 impl plugins::main::types::Host for State {}
 
 impl Host for State {
-    fn remove_json_structure(
-        &mut self,
-        id: StructureId,
-    ) -> std::result::Result<(), wasmtime::Error> {
+    fn remove_structure(&mut self, id: StructureId) -> std::result::Result<(), wasmtime::Error> {
         self.structures.remove(id.id as usize);
         Ok(())
     }
 
-    fn create_json_structure(
+    fn create_structure(
         &mut self,
-        json: JsonStructure,
+        structure: Structure,
     ) -> std::result::Result<plugins::main::types::StructureId, wasmtime::Error> {
-        let id = self.structures.insert(json);
+        let id = self.structures.insert(structure);
         Ok(plugins::main::types::StructureId { id: id as u32 })
     }
 

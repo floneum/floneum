@@ -3,8 +3,8 @@ use crate::{
     embedding::get_embeddings,
     exports::plugins::main::definitions::Embedding,
     exports::plugins::main::definitions::ModelId,
-    json::{ParseStream, Validate},
     structured::StructuredSampler,
+    structured_parser::{ParseStream, Validate},
     ModelType,
 };
 use llm::{
@@ -92,14 +92,16 @@ impl InferenceSessions {
                             println!("token {}: {}", tokens.len(), t);
                             tokens.push(t);
                             let borrowed: Vec<_> = tokens.iter().map(|s| s.as_str()).collect();
-                            match dbg!(validator.validate(ParseStream::new(&borrowed))) {
-                                crate::json::ParseStatus::Incomplete => {
+                            match validator.validate(ParseStream::new(&borrowed)) {
+                                crate::structured_parser::ParseStatus::Incomplete => {
                                     Ok::<_, Infallible>(InferenceFeedback::Continue)
                                 }
-                                crate::json::ParseStatus::Complete(_) => {
+                                crate::structured_parser::ParseStatus::Complete(_) => {
                                     Ok(InferenceFeedback::Halt)
                                 }
-                                crate::json::ParseStatus::Invalid => Ok(InferenceFeedback::Halt),
+                                crate::structured_parser::ParseStatus::Invalid => {
+                                    Ok(InferenceFeedback::Halt)
+                                }
                             }
                         }
                         InferenceResponse::EotToken => Ok(InferenceFeedback::Halt),

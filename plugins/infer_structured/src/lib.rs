@@ -22,10 +22,6 @@ impl Definitions for Plugin {
                     ty: ValueType::Single(PrimitiveValueType::Text),
                 },
                 IoDefinition {
-                    name: "input".to_string(),
-                    ty: ValueType::Single(PrimitiveValueType::Text),
-                },
-                IoDefinition {
                     name: "max output length".to_string(),
                     ty: ValueType::Single(PrimitiveValueType::Number),
                 },
@@ -49,11 +45,6 @@ impl Definitions for Plugin {
 
         let structure = structured_from_string(structured);
 
-        let text_input = match &input[1] {
-            Value::Single(PrimitiveValue::Text(text)) => text,
-            _ => panic!("expected text input"),
-        };
-
         let max_output_length = match &input[2] {
             Value::Single(PrimitiveValue::Number(num)) => *num,
             _ => panic!("expected number input"),
@@ -65,47 +56,68 @@ impl Definitions for Plugin {
             max_output_length.try_into().ok()
         };
 
-        let mut responce = session.infer_structured(&text_input, max_output_length, structure);
+        let mut responce = session.infer_structured("", max_output_length, structure);
         responce += "\n";
 
-        print(&responce);
 
         vec![Value::Single(PrimitiveValue::Text(responce))]
     }
 }
 
 fn structured_from_string(input: &str) -> Structured {
-    let Some(rule) = StructuredParser::parse(Rule::value, input).ok().and_then(|mut iter| iter.next())
-        else {
-            return Structured::str();
-        };
+    let pattern = StructuredParser::parse(Rule::format, input)
+        .map(|mut iter| iter.next());
+    match pattern {
+        Ok(Some(pattern)) =>{
+            multiple_structured_from_rule(pattern)
+        },
+        Err(err) => {
+            Structured::str()
+        },
+        _ => Structured::str(),
+    }
+}
 
-    structured_from_rule(rule)
+fn multiple_structured_from_rule(rule: Pair<Rule>) -> Structured {
+    let mut iter = rule.into_inner();
+    let mut current = structured_from_rule(iter.next().unwrap());
+    for item in iter {
+        current = current.then(structured_from_rule(item));
+    }
+    current
 }
 
 fn structured_from_rule(rule: Pair<Rule>) -> Structured {
     match rule.as_rule() {
-        Rule::empty_string => Structured::str(),
+        Rule::literal => Structured::literal(rule.as_str()),
+        Rule::string => Structured::str(),
         Rule::boolean => Structured::boolean(),
-        Rule::number => Structured::float(),
-        Rule::array => {
-            Structured::sequence_of(structured_from_rule(rule.into_inner().next().unwrap()))
-        }
-        Rule::object => {
-            let mut pairs = rule.into_inner();
-            let mut fields = Vec::new();
-            while let Some(pair) = pairs.next() {
-                let mut inner = pair.into_inner();
-                let name = inner.next().unwrap().as_str();
-                let name = name[1..name.len() - 1].to_string();
-                let value = structured_from_rule(inner.next().unwrap());
-                fields.push((name, value));
+        Rule::hashtag => Structured::float(),
+        Rule::either => {
+            let mut iter = rule.into_inner();
+            let mut current = structured_from_rule(iter.next().unwrap());
+            for other in iter {
+                current = current.or(structured_from_rule(other));
             }
-            Structured::map_of(fields)
+            current
+        }
+        Rule::array => {
+            let mut iter = rule.into_inner();
+            let item = multiple_structured_from_rule(iter.next().unwrap());
+            let seperator = Structured::literal(",");
+            let range = if let Some(rule) = iter.next().filter(|pair| pair.as_rule() == Rule::range)
+            {
+                let mut iter = rule.into_inner();
+                let min = iter.next().unwrap().as_str().parse().unwrap();
+                let max = iter.next().unwrap().as_str().parse().unwrap();
+                min..=max
+            } else {
+                0..=u64::MAX
+            };
+            Structured::sequence_of(item, seperator, range)
         }
         _ => {
-            let error = format!("unexpected rule: {:?}", rule);
-            print(&error);
+            let error = format!("unexpected rule: {:?}\n", rule);
             todo!();
         }
     }
