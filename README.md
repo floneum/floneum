@@ -2,6 +2,8 @@
 
 NAME is a graph editor for AI workflows with a focus on community made plugins, local AI and safety.
 
+<img width="1512" alt="Screenshot 2023-06-18 at 4 26 11 PM" src="https://github.com/Demonthos/ai/assets/66571940/8c97b3b2-784d-4631-883a-4381ffc60312">
+
 ## Features
 
 - Visual interface: You can use NAME without any knowledge of programming. The visual graph editor makes it easy to combine community made plugins with local AI models
