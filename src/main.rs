@@ -557,14 +557,16 @@ impl Default for NodeGraphExample {
         path.push("wasm32-unknown-unknown");
         path.push("release");
 
-        let dir = std::fs::read_dir(&path).unwrap();
-        for entry in dir {
-            let entry = entry.unwrap();
-            let path = entry.path();
-            if path.extension().unwrap_or_default() == "wasm" {
-                let plugin = user_state.plugin_engine.load_plugin(&path);
-                let id = user_state.plugins.insert(plugin);
-                user_state.all_plugins.insert(PluginId(id));
+        if let Ok(dir) = std::fs::read_dir(&path){
+            for entry in dir {
+                if let Ok(entry) = entry{
+                    let path = entry.path();
+                    if path.extension().unwrap_or_default() == "wasm" {
+                        let plugin = user_state.plugin_engine.load_plugin(&path);
+                        let id = user_state.plugins.insert(plugin);
+                        user_state.all_plugins.insert(PluginId(id));
+                    }
+                }
             }
         }
 
@@ -632,7 +634,8 @@ impl eframe::App for NodeGraphExample {
             egui::menu::bar(ui, |ui| {
                 egui::widgets::global_dark_light_mode_switch(ui);
                 let response = ui.add(egui::TextEdit::singleline(&mut self.search_text));
-                if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                let button = ui.button("Load Plugin at path");
+                if button.clicked() || (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))) {
                     let path = PathBuf::from(&self.search_text);
                     if path.exists() {
                         let plugin = self.user_state.plugin_engine.load_plugin(&path);
