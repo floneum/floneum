@@ -28,6 +28,10 @@ impl VectorDatabase {
         VectorDatabase { id, drop: true }
     }
 
+    pub fn add_embedding(&self, embedding: &plugins::main::types::Embedding, document: &str) {
+        add_embedding(self.id, embedding, document);
+    }
+
     pub fn find_closest_documents(
         &self,
         embedding: &plugins::main::types::Embedding,
@@ -302,7 +306,7 @@ macro_rules! impl_into_return_values {
     (
         $($var:ident : $ty:ident),*
     ) => {
-        impl<$(ty: IntoReturnValue,)*> IntoReturnValues for ($($ty,)*) {
+        impl<$($ty: IntoReturnValue,)*> IntoReturnValues for ($($ty,)*) {
             fn into_return_values(self) -> Vec<Value> {
                 let ($($var,)*) = self;
                 vec![$($var.into_return_value(),)*]
@@ -310,3 +314,16 @@ macro_rules! impl_into_return_values {
         }
     };
 }
+
+impl_into_return_values!();
+impl_into_return_values!(a: A);
+impl_into_return_values!(a: A, b: B);
+impl_into_return_values!(a: A, b: B, c: C);
+impl_into_return_values!(a: A, b: B, c: C, d: D);
+impl_into_return_values!(a: A, b: B, c: C, d: D, e: E);
+impl_into_return_values!(a: A, b: B, c: C, d: D, e: E, f: F);
+impl_into_return_values!(a: A, b: B, c: C, d: D, e: E, f: F, g: G);
+impl_into_return_values!(a: A, b: B, c: C, d: D, e: E, f: F, g: G, h: H);
+impl_into_return_values!(a: A, b: B, c: C, d: D, e: E, f: F, g: G, h: H, i: I);
+impl_into_return_values!(a: A, b: B, c: C, d: D, e: E, f: F, g: G, h: H, i: I, j: J);
+impl_into_return_values!(a: A, b: B, c: C, d: D, e: E, f: F, g: G, h: H, i: I, j: J, k: K);

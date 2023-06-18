@@ -57,6 +57,13 @@ impl MultiPluginState {
         self.vector_dbs.get(id.id as usize).unwrap()
     }
 
+    fn vector_db_get_mut(
+        &mut self,
+        id: exports::plugins::main::definitions::EmbeddingDbId,
+    ) -> &mut VectorDB<String> {
+        self.vector_dbs.get_mut(id.id as usize).unwrap()
+    }
+
     pub fn create_db(
         &mut self,
         embedding: Vec<exports::plugins::main::definitions::Embedding>,
@@ -186,6 +193,20 @@ impl Host for State {
             .create_db(embeddings, documents))
     }
 
+    fn add_embedding(
+        &mut self,
+        id: exports::plugins::main::definitions::EmbeddingDbId,
+        embedding: plugins::main::types::Embedding,
+        document: String,
+    ) -> std::result::Result<(), wasmtime::Error> {
+        MULTI_PLUGIN_STATE
+            .write()
+            .unwrap()
+            .vector_db_get_mut(id)
+            .add_embedding(embedding, document);
+        Ok(())
+    }
+
     fn remove_embedding_db(
         &mut self,
         id: exports::plugins::main::definitions::EmbeddingDbId,
@@ -292,18 +313,16 @@ pub struct Plugin {
 
 impl Serialize for Plugin {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        // Just serialize the bytes.
+        // Just serialize the bytes
         serializer.serialize_bytes(&self.bytes)
     }
 }
 
 impl<'de> Deserialize<'de> for Plugin {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        // Just deserialize the bytes.
-        println!("deserializing plugin");
+        // Just deserialize the bytes
         let bytes = Vec::<u8>::deserialize(deserializer)?;
         let mut engine = PluginEngine::default();
-        println!("deserialized plugin");
         Ok(engine.load_plugin_from_bytes(bytes))
     }
 }
@@ -327,7 +346,6 @@ impl Plugin {
                     break;
                 }
             }
-            println!("plugin instance dropped... exiting");
         });
 
         PluginInstance {
@@ -356,17 +374,15 @@ pub struct PluginInstance {
 
 impl Serialize for PluginInstance {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        // Just serialize the bytes.
+        // Just serialize the bytes
         serializer.serialize_bytes(&self.source_bytes)
     }
 }
 
 impl<'de> Deserialize<'de> for PluginInstance {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        // Just deserialize the bytes.
-        println!("deserializing plugin instance");
+        // Just deserialize the bytes
         let bytes = Vec::<u8>::deserialize(deserializer)?;
-        println!("deserialized plugin instance");
         Ok(PluginEngine::default()
             .load_plugin_from_bytes(bytes)
             .instance())

@@ -11,7 +11,7 @@ fn embedding_db(
     let model = ModelType::Llama(LlamaType::Vicuna);
     let instance = ModelInstance::new(model);
 
-    let borrowed_documents = text.split(&seperator).collect::<Vec<_>>();
+    let borrowed_documents = text.split(&seperator).filter(|text| !text.is_empty()).collect::<Vec<_>>();
     let embeddings = borrowed_documents
         .iter()
         .map(|s| instance.get_embedding(s))

@@ -3215,6 +3215,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "plugin_add_embedding"
+version = "0.1.0"
+dependencies = [
+ "rust_adapter",
+]
+
+[[package]]
 name = "plugin_embedding"
 version = "0.1.0"
 dependencies = [

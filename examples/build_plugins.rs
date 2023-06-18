@@ -3,6 +3,7 @@ use std::path::PathBuf;
 fn main() {
     // build the plugins
     for plugin in [
+        "add_embedding",
         "embedding",
         "embedding_db",
         "format",

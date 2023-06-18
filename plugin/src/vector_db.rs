@@ -9,25 +9,42 @@ pub struct VectorDB<T> {
     model: HnswMap<Point, T>,
 }
 
-impl<T: Clone + Debug> VectorDB<T> {
+impl<T: Clone + PartialEq> VectorDB<T> {
     pub fn new(points: Vec<Embedding>, values: Vec<T>) -> Self {
         let points = points.into_iter().map(|e| Point(e.vector)).collect();
-        println!("points: {:?}", points);
         let model = Builder::default().build(points, values);
 
         VectorDB { model }
     }
 
+    pub fn add_embedding(&mut self, embedding: Embedding, value: T) {
+        let already_exists = self
+            .model
+            .search(&Point(embedding.vector.clone()), &mut Search::default())
+            .next()
+            .filter(|result| result.distance < f32::EPSILON && result.value == &value)
+            .is_some();
+        if already_exists {
+            return;
+        }
+        let mut new_points = vec![embedding];
+        let mut new_values = vec![value];
+        for (value_id, point) in self.model.iter() {
+            new_points.push(Embedding {
+                vector: point.0.clone(),
+            });
+            let value = self.model.values[value_id.into_inner() as usize].clone();
+            new_values.push(value);
+        }
+        *self = Self::new(new_points, new_values);
+    }
+
     pub fn get_closest(&self, embedding: Embedding, n: usize) -> Vec<T> {
         let mut search = Search::default();
-        println!("embedding: {:?}", embedding);
         self.model
             .search(&Point(embedding.vector), &mut search)
             .take(n)
-            .map(|result| {
-                println!("score: {}, value: {:?}", result.distance, result.value);
-                result.value.clone()
-            })
+            .map(|result| result.value.clone())
             .collect()
     }
 

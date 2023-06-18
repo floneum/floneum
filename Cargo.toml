@@ -36,4 +36,5 @@ members = [
     "plugins/search",
     "plugins/embedding",
     "plugins/embedding_db",
+    "plugins/add_embedding"
 ]
