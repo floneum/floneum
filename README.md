@@ -41,7 +41,11 @@ fn add(
 }
 ```
 
-Finally, build your plugin:
+Next, build your plugin:
 ```sh
 cargo build --target wasm32-unknown-unknown --release
 ```
+
+> You can look at the default plugins [here](./plugins) to see how more complex plugins work
+
+Finally, load your plugin by running the main NAME application and typing the path to your `.wasm` file in the load plugin text box in the top left.
