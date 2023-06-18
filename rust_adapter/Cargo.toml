@@ -1,8 +1,8 @@
 [package]
-name = "rust_adapter"
+name = "floneum_rust"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen" }
-rust_macro = { path = "../rust_macro" }
+floneum_rust_macro = { path = "../rust_macro" }

@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use rust_adapter::*;
+use floneum_rust::*;
 
 #[export_plugin]
 /// loads a model and runs it

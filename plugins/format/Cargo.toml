@@ -1,5 +1,5 @@
 [package]
-name = "plugin_format"
+name = "floneum_format"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,4 +8,4 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-rust_adapter = { path = "../../rust_adapter" }
+floneum_rust = { path = "../../rust_adapter" }

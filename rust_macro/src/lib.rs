@@ -103,18 +103,18 @@ pub fn export_plugin(_: TokenStream, input: TokenStream) -> TokenStream {
     TokenStream::from(quote! {
         #input
 
-        rust_adapter::export_plugin_world!(Plugin);
+        floneum_rust::export_plugin_world!(Plugin);
 
         pub struct Plugin;
 
-        impl rust_adapter::Definitions for Plugin {
-            fn structure() -> rust_adapter::Definition {
-                rust_adapter::Definition {
+        impl floneum_rust::Definitions for Plugin {
+            fn structure() -> floneum_rust::Definition {
+                floneum_rust::Definition {
                     name: #function_name.to_string(),
                     description: #discription.to_string(),
                     inputs: vec![
                         #(
-                            rust_adapter::IoDefinition {
+                            floneum_rust::IoDefinition {
                                 name: #input_names.to_string(),
                                 ty: #input_types,
                             },
@@ -122,7 +122,7 @@ pub fn export_plugin(_: TokenStream, input: TokenStream) -> TokenStream {
                     ],
                     outputs: vec![
                         #(
-                            rust_adapter::IoDefinition {
+                            floneum_rust::IoDefinition {
                                 name: #output_names.to_string(),
                                 ty: #output_types,
                             },
@@ -131,12 +131,12 @@ pub fn export_plugin(_: TokenStream, input: TokenStream) -> TokenStream {
                 }
             }
 
-            fn run(input: Vec<rust_adapter::Value>) -> Vec<rust_adapter::Value> {
+            fn run(input: Vec<floneum_rust::Value>) -> Vec<floneum_rust::Value> {
                 #(
                     #extract_inputs
                 )*
 
-                use rust_adapter::IntoReturnValues;
+                use floneum_rust::IntoReturnValues;
 
                 #function_ident(#(#input_idents,)*).into_return_values()
             }
@@ -201,27 +201,27 @@ impl ToTokens for IoDefinitionType {
         };
         let quote_inner = match inner {
             PrimitiveValueType::Number => quote! {
-                rust_adapter::PrimitiveValueType::Number
+                floneum_rust::PrimitiveValueType::Number
             },
             PrimitiveValueType::Text => quote! {
-                rust_adapter::PrimitiveValueType::Text
+                floneum_rust::PrimitiveValueType::Text
             },
             PrimitiveValueType::Embedding => quote! {
-                rust_adapter::PrimitiveValueType::Embedding
+                floneum_rust::PrimitiveValueType::Embedding
             },
             PrimitiveValueType::Database => quote! {
-                rust_adapter::PrimitiveValueType::Database
+                floneum_rust::PrimitiveValueType::Database
             },
             PrimitiveValueType::Model => quote! {
-                rust_adapter::PrimitiveValueType::Model
+                floneum_rust::PrimitiveValueType::Model
             },
         };
         let quote = match &self.value_type {
             ValueType::Single(_) => quote! {
-                rust_adapter::ValueType::Single(#quote_inner)
+                floneum_rust::ValueType::Single(#quote_inner)
             },
             ValueType::Many(_) => quote! {
-                rust_adapter::ValueType::Many(#quote_inner)
+                floneum_rust::ValueType::Many(#quote_inner)
             },
         };
         tokens.extend(quote)

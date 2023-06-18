@@ -2,3 +2,4 @@
 /plugin/target
 /plugin_demo/target
 /*.bin
+.DS_Store

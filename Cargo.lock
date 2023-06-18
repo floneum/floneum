@@ -154,30 +154,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ai"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bincode",
- "bytesize",
- "eframe",
- "egui_node_graph",
- "futures-util",
- "log",
- "plugin",
- "rand 0.8.5",
- "reqwest",
- "scraper",
- "serde",
- "serde_json",
- "simple_logger",
- "slab",
- "spinoff",
- "tokio",
- "wai-bindgen-rust",
-]
-
-[[package]]
 name = "android-activity"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1559,6 +1535,121 @@ checksum = "3b9429470923de8e8cbd4d2dc513535400b4b3fef0319fb5c4e1f520a7bef743"
 dependencies = [
  "crc32fast",
  "miniz_oxide",
+]
+
+[[package]]
+name = "floneum"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "bytesize",
+ "eframe",
+ "egui_node_graph",
+ "floneum_plugin",
+ "futures-util",
+ "log",
+ "rand 0.8.5",
+ "reqwest",
+ "scraper",
+ "serde",
+ "serde_json",
+ "simple_logger",
+ "slab",
+ "spinoff",
+ "tokio",
+ "wai-bindgen-rust",
+]
+
+[[package]]
+name = "floneum_add_embedding"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+]
+
+[[package]]
+name = "floneum_embedding"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+]
+
+[[package]]
+name = "floneum_embedding_db"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+]
+
+[[package]]
+name = "floneum_format"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+]
+
+[[package]]
+name = "floneum_infer"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+]
+
+[[package]]
+name = "floneum_infer_structured"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+ "pest",
+ "pest_derive",
+]
+
+[[package]]
+name = "floneum_plugin"
+version = "0.1.0"
+dependencies = [
+ "bytesize",
+ "futures-util",
+ "instant-distance",
+ "llm",
+ "log",
+ "once_cell",
+ "partial_sort",
+ "rand 0.8.5",
+ "reqwest",
+ "scraper",
+ "serde",
+ "slab",
+ "spinoff",
+ "tokio",
+ "wasmtime",
+ "wit-component",
+]
+
+[[package]]
+name = "floneum_rust"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust_macro",
+ "wit-bindgen",
+]
+
+[[package]]
+name = "floneum_rust_macro"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.18",
+ "wit-bindgen",
+]
+
+[[package]]
+name = "floneum_search"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
 ]
 
 [[package]]
@@ -3193,79 +3284,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "26072860ba924cbfa98ea39c8c19b4dd6a4a25423dbdf219c1eca91aa0cf6964"
 
 [[package]]
-name = "plugin"
-version = "0.1.0"
-dependencies = [
- "bytesize",
- "futures-util",
- "instant-distance",
- "llm",
- "log",
- "once_cell",
- "partial_sort",
- "rand 0.8.5",
- "reqwest",
- "scraper",
- "serde",
- "slab",
- "spinoff",
- "tokio",
- "wasmtime",
- "wit-component",
-]
-
-[[package]]
-name = "plugin_add_embedding"
-version = "0.1.0"
-dependencies = [
- "rust_adapter",
-]
-
-[[package]]
-name = "plugin_embedding"
-version = "0.1.0"
-dependencies = [
- "rust_adapter",
-]
-
-[[package]]
-name = "plugin_embedding_db"
-version = "0.1.0"
-dependencies = [
- "rust_adapter",
-]
-
-[[package]]
-name = "plugin_format"
-version = "0.1.0"
-dependencies = [
- "rust_adapter",
-]
-
-[[package]]
-name = "plugin_infer"
-version = "0.1.0"
-dependencies = [
- "rust_adapter",
-]
-
-[[package]]
-name = "plugin_infer_structured"
-version = "0.1.0"
-dependencies = [
- "pest",
- "pest_derive",
- "rust_adapter",
-]
-
-[[package]]
-name = "plugin_search"
-version = "0.1.0"
-dependencies = [
- "rust_adapter",
-]
-
-[[package]]
 name = "png"
 version = "0.17.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3593,24 +3611,6 @@ dependencies = [
  "base64 0.13.1",
  "bitflags 1.3.2",
  "serde",
-]
-
-[[package]]
-name = "rust_adapter"
-version = "0.1.0"
-dependencies = [
- "rust_macro",
- "wit-bindgen",
-]
-
-[[package]]
-name = "rust_macro"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.18",
- "wit-bindgen",
 ]
 
 [[package]]

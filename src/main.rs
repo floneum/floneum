@@ -7,11 +7,11 @@ use eframe::{
 };
 use egui_node_graph::*;
 use log::LevelFilter;
-use plugin::exports::plugins::main::definitions::{
+use floneum_plugin::exports::plugins::main::definitions::{
     Embedding, PrimitiveValue, PrimitiveValueType, Value, ValueType,
 };
-use plugin::plugins::main::types::{EmbeddingDbId, ModelId};
-use plugin::{Plugin, PluginEngine, PluginInstance};
+use floneum_plugin::plugins::main::types::{EmbeddingDbId, ModelId};
+use floneum_plugin::{Plugin, PluginEngine, PluginInstance};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{
     borrow::Cow,
@@ -70,12 +70,12 @@ fn get_from_file<D: DeserializeOwned + Default>() -> D {
 async fn main() {
     simple_logger::SimpleLogger::new()
         .with_level(LevelFilter::Off)
-        .with_module_level("ai", LevelFilter::Info)
+        .with_module_level("floneum", LevelFilter::Info)
         .init()
         .unwrap();
 
     eframe::run_native(
-        "Egui AI",
+        "Floneum",
         eframe::NativeOptions::default(),
         Box::new(|cc| {
             cc.egui_ctx.set_visuals(Visuals::dark());

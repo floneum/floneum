@@ -1,5 +1,5 @@
 [package]
-name = "plugin_infer_structured"
+name = "floneum_infer_structured"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,6 +8,6 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-rust_adapter = { path = "../../rust_adapter" }
+floneum_rust = { path = "../../rust_adapter" }
 pest = "2.6.0"
 pest_derive = "2.6.0"

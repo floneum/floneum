@@ -1,4 +1,4 @@
-use rust_adapter::*;
+use floneum_rust::*;
 
 #[export_plugin]
 /// creates embeddings for text

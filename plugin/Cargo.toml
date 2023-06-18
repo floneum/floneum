@@ -1,5 +1,5 @@
 [package]
-name = "plugin"
+name = "floneum_plugin"
 version = "0.1.0"
 edition = "2021"
 

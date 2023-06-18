@@ -1,4 +1,4 @@
-use rust_adapter::*;
+use floneum_rust::*;
 
 #[export_plugin]
 /// searches an embedding database for the closest embedding

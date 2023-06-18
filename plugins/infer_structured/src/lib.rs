@@ -5,7 +5,7 @@ use std::vec;
 
 use pest::{iterators::Pair, Parser};
 use pest_derive::Parser;
-use rust_adapter::*;
+use floneum_rust::*;
 
 #[export_plugin]
 /// loads a model and runs it
