@@ -3592,6 +3592,17 @@ dependencies = [
 name = "rust_adapter"
 version = "0.1.0"
 dependencies = [
+ "rust_macro",
+ "wit-bindgen",
+]
+
+[[package]]
+name = "rust_macro"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.18",
  "wit-bindgen",
 ]
 

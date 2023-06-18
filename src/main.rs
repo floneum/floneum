@@ -474,49 +474,51 @@ impl NodeDataTrait for MyNodeData {
         // Render the current output of the node
         let outputs = &graph[node_id].outputs;
 
-        for (_, id) in outputs {
+        for (name, id) in outputs {
             let value = user_state.node_outputs.get(id).cloned().unwrap_or_default();
-            ui.horizontal(|ui| match &value {
-                MyValueType::Single(single) => match single {
-                    MyPrimitiveValueType::Text(value) => {
-                        ui.label(value);
-                    }
-                    MyPrimitiveValueType::Embedding(value) => {
-                        ui.label(format!("{:?}", &value[..5]));
-                    }
-                    MyPrimitiveValueType::Model(id) => {
-                        ui.label(format!("Model: {id:?}"));
-                    }
-                    MyPrimitiveValueType::Database(id) => {
-                        ui.label(format!("Database: {id:?}"));
-                    }
-                    MyPrimitiveValueType::Number(value) => {
-                        ui.label(format!("{:02}", value));
-                    }
-                },
-                MyValueType::List(many) => {
-                    for value in many {
-                        match value {
-                            MyPrimitiveValueType::Text(value) => {
-                                ui.label(value);
-                            }
-                            MyPrimitiveValueType::Embedding(value) => {
-                                ui.label(format!("{:?}", &value[..5]));
-                            }
-                            MyPrimitiveValueType::Model(id) => {
-                                ui.label(format!("Model: {id:?}"));
-                            }
-                            MyPrimitiveValueType::Database(id) => {
-                                ui.label(format!("Database: {id:?}"));
-                            }
-                            MyPrimitiveValueType::Number(value) => {
-                                ui.label(format!("{:02}", value));
+            egui::ScrollArea::vertical()
+                .id_source((node_id, name))
+                .show(ui, |ui| match &value {
+                    MyValueType::Single(single) => match single {
+                        MyPrimitiveValueType::Text(value) => {
+                            ui.label(value);
+                        }
+                        MyPrimitiveValueType::Embedding(value) => {
+                            ui.label(format!("{:?}", &value[..5]));
+                        }
+                        MyPrimitiveValueType::Model(id) => {
+                            ui.label(format!("Model: {id:?}"));
+                        }
+                        MyPrimitiveValueType::Database(id) => {
+                            ui.label(format!("Database: {id:?}"));
+                        }
+                        MyPrimitiveValueType::Number(value) => {
+                            ui.label(format!("{:02}", value));
+                        }
+                    },
+                    MyValueType::List(many) => {
+                        for value in many {
+                            match value {
+                                MyPrimitiveValueType::Text(value) => {
+                                    ui.label(value);
+                                }
+                                MyPrimitiveValueType::Embedding(value) => {
+                                    ui.label(format!("{:?}", &value[..5]));
+                                }
+                                MyPrimitiveValueType::Model(id) => {
+                                    ui.label(format!("Model: {id:?}"));
+                                }
+                                MyPrimitiveValueType::Database(id) => {
+                                    ui.label(format!("Database: {id:?}"));
+                                }
+                                MyPrimitiveValueType::Number(value) => {
+                                    ui.label(format!("{:02}", value));
+                                }
                             }
                         }
                     }
-                }
-                MyValueType::Unset => {}
-            });
+                    MyValueType::Unset => {}
+                });
         }
 
         vec![]

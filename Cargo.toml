@@ -29,6 +29,7 @@ simple_logger = "4.1.0"
 members = [
     "plugin",
     "rust_adapter",
+    "rust_macro",
     "plugins/infer",
     "plugins/infer_structured",
     "plugins/format",

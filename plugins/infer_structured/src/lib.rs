@@ -7,73 +7,37 @@ use pest::{iterators::Pair, Parser};
 use pest_derive::Parser;
 use rust_adapter::*;
 
-export_plugin_world!(Plugin);
+#[export_plugin]
+/// loads a model and runs it
+fn structured_inference(
+    /// the structure to use when running the model
+    structure: String,
+    /// the maximum length of the output
+    max_output_length: i64,
+) -> String {
+    let structure = structured_from_string(&structure);
+    let model = ModelType::Llama(LlamaType::Vicuna);
+    let session = ModelInstance::new(model);
 
-pub struct Plugin;
+    let max_output_length = if max_output_length == 0 {
+        None
+    } else {
+        max_output_length.try_into().ok()
+    };
 
-impl Definitions for Plugin {
-    fn structure() -> Definition {
-        Definition {
-            name: "structured inference".to_string(),
-            description: "loads a model and runs it".to_string(),
-            inputs: vec![
-                IoDefinition {
-                    name: "structure".to_string(),
-                    ty: ValueType::Single(PrimitiveValueType::Text),
-                },
-                IoDefinition {
-                    name: "max output length".to_string(),
-                    ty: ValueType::Single(PrimitiveValueType::Number),
-                },
-            ],
-            outputs: vec![IoDefinition {
-                name: "output".to_string(),
-                ty: ValueType::Single(PrimitiveValueType::Text),
-            }],
-        }
-    }
+    let mut responce = session.infer_structured("", max_output_length, structure);
+    responce += "\n";
 
-    fn run(input: Vec<Value>) -> Vec<Value> {
-        let model = ModelType::Llama(LlamaType::Vicuna);
+    print(&responce);
 
-        let session = ModelInstance::new(model);
-
-        let structured = match &input[0] {
-            Value::Single(PrimitiveValue::Text(text)) => text,
-            _ => panic!("expected text input"),
-        };
-
-        let structure = structured_from_string(structured);
-
-        let max_output_length = match &input[2] {
-            Value::Single(PrimitiveValue::Number(num)) => *num,
-            _ => panic!("expected number input"),
-        };
-
-        let max_output_length = if max_output_length == 0 {
-            None
-        } else {
-            max_output_length.try_into().ok()
-        };
-
-        let mut responce = session.infer_structured("", max_output_length, structure);
-        responce += "\n";
-
-
-        vec![Value::Single(PrimitiveValue::Text(responce))]
-    }
+    responce
 }
 
 fn structured_from_string(input: &str) -> Structured {
-    let pattern = StructuredParser::parse(Rule::format, input)
-        .map(|mut iter| iter.next());
+    let pattern = StructuredParser::parse(Rule::format, input).map(|mut iter| iter.next());
     match pattern {
-        Ok(Some(pattern)) =>{
-            multiple_structured_from_rule(pattern)
-        },
-        Err(err) => {
-            Structured::str()
-        },
+        Ok(Some(pattern)) => multiple_structured_from_rule(pattern),
+        Err(err) => Structured::str(),
         _ => Structured::str(),
     }
 }

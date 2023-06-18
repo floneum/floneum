@@ -1,8 +1,13 @@
 [package]
-name = "rust_adapter"
+name = "rust_macro"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+proc-macro = true
+
 [dependencies]
+syn = { version = "2.0.18", features = ["full"] }
+proc-macro2 = "1"
+quote = "1"
 wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen" }
-rust_macro = { path = "../rust_macro" }

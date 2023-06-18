@@ -4,11 +4,14 @@ pub use crate::exports::plugins::main::definitions::{
     Definition, Definitions, IoDefinition, PrimitiveValue, PrimitiveValueType, Value, ValueType,
 };
 use crate::plugins::main::imports::*;
-pub use crate::plugins::main::imports::{print, GptNeoXType, LlamaType, ModelType, MptType};
+pub use crate::plugins::main::imports::{
+    print, EmbeddingDbId, GptNeoXType, LlamaType, ModelType, MptType,
+};
 pub use plugins::main::types::Embedding;
 use plugins::main::types::{
     EitherStructure, NumberParameters, SequenceParameters, Structure, ThenStructure, UnsignedRange,
 };
+pub use rust_macro::export_plugin;
 use std::ops::RangeInclusive;
 
 wit_bindgen::generate!({path: "../wit", macro_export});
@@ -197,4 +200,113 @@ impl Structured {
         let id = create_structure(inner);
         Structured { id }
     }
+}
+
+trait IntoReturnValue {
+    fn into_return_value(self) -> Value;
+}
+
+impl<T: IntoPrimitiveValue> IntoReturnValue for T {
+    fn into_return_value(self) -> Value {
+        Value::Single(self.into_primitive_value())
+    }
+}
+
+impl IntoReturnValue for Vec<i64> {
+    fn into_return_value(self) -> Value {
+        Value::Many(self.into_iter().map(|x| x.into_primitive_value()).collect())
+    }
+}
+
+impl IntoReturnValue for Vec<String> {
+    fn into_return_value(self) -> Value {
+        Value::Many(self.into_iter().map(|x| x.into_primitive_value()).collect())
+    }
+}
+
+impl IntoReturnValue for Vec<ModelInstance> {
+    fn into_return_value(self) -> Value {
+        Value::Many(self.into_iter().map(|x| x.into_primitive_value()).collect())
+    }
+}
+
+impl IntoReturnValue for Vec<VectorDatabase> {
+    fn into_return_value(self) -> Value {
+        Value::Many(self.into_iter().map(|x| x.into_primitive_value()).collect())
+    }
+}
+
+impl IntoReturnValue for Vec<EmbeddingDbId> {
+    fn into_return_value(self) -> Value {
+        Value::Many(self.into_iter().map(|x| x.into_primitive_value()).collect())
+    }
+}
+
+impl IntoReturnValue for Vec<Embedding> {
+    fn into_return_value(self) -> Value {
+        Value::Many(self.into_iter().map(|x| x.into_primitive_value()).collect())
+    }
+}
+
+trait IntoPrimitiveValue {
+    fn into_primitive_value(self) -> PrimitiveValue;
+}
+
+impl IntoPrimitiveValue for i64 {
+    fn into_primitive_value(self) -> PrimitiveValue {
+        PrimitiveValue::Number(self)
+    }
+}
+
+impl IntoPrimitiveValue for String {
+    fn into_primitive_value(self) -> PrimitiveValue {
+        PrimitiveValue::Text(self)
+    }
+}
+
+impl IntoPrimitiveValue for ModelInstance {
+    fn into_primitive_value(self) -> PrimitiveValue {
+        PrimitiveValue::Model(self.id)
+    }
+}
+
+impl IntoPrimitiveValue for VectorDatabase {
+    fn into_primitive_value(self) -> PrimitiveValue {
+        PrimitiveValue::Database(self.id)
+    }
+}
+
+impl IntoPrimitiveValue for EmbeddingDbId {
+    fn into_primitive_value(self) -> PrimitiveValue {
+        PrimitiveValue::Database(self)
+    }
+}
+
+impl IntoPrimitiveValue for Embedding {
+    fn into_primitive_value(self) -> PrimitiveValue {
+        PrimitiveValue::Embedding(self)
+    }
+}
+
+pub trait IntoReturnValues {
+    fn into_return_values(self) -> Vec<Value>;
+}
+
+impl<T: IntoReturnValue> IntoReturnValues for T {
+    fn into_return_values(self) -> Vec<Value> {
+        vec![self.into_return_value()]
+    }
+}
+
+macro_rules! impl_into_return_values {
+    (
+        $($var:ident : $ty:ident),*
+    ) => {
+        impl<$(ty: IntoReturnValue,)*> IntoReturnValues for ($($ty,)*) {
+            fn into_return_values(self) -> Vec<Value> {
+                let ($($var,)*) = self;
+                vec![$($var.into_return_value(),)*]
+            }
+        }
+    };
 }

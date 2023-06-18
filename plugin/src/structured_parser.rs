@@ -147,8 +147,7 @@ impl<'a> Validate<'a> for ValidateInt {
                                 return ParseStatus::Invalid;
                             }
                             return ParseStatus::Complete(iter.current());
-                        }
-                        else {
+                        } else {
                             return ParseStatus::Invalid;
                         }
                     }

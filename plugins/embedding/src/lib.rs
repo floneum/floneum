@@ -1,35 +1,11 @@
 use rust_adapter::*;
 
-export_plugin_world!(Plugin);
+#[export_plugin]
+/// creates embeddings for text
+fn embedding(input: String) -> Embedding {
+    let model = ModelInstance::new(ModelType::Llama(LlamaType::Vicuna));
 
-pub struct Plugin;
+    let embedding = model.get_embedding(&input);
 
-impl Definitions for Plugin {
-    fn structure() -> Definition {
-        Definition {
-            name: "embedding".to_string(),
-            description: "creates embeddings for text".to_string(),
-            inputs: vec![IoDefinition {
-                name: "input".to_string(),
-                ty: ValueType::Single(PrimitiveValueType::Text),
-            }],
-            outputs: vec![IoDefinition {
-                name: "embedding".to_string(),
-                ty: ValueType::Single(PrimitiveValueType::Embedding),
-            }],
-        }
-    }
-
-    fn run(input: Vec<Value>) -> Vec<Value> {
-        let input = match &input[0] {
-            Value::Single(PrimitiveValue::Text(text)) => text,
-            _ => panic!("expected text input"),
-        };
-
-        let model = ModelInstance::new(ModelType::Llama(LlamaType::Vicuna));
-
-        let embedding = model.get_embedding(input);
-
-        vec![Value::Single(PrimitiveValue::Embedding(embedding))]
-    }
+    embedding
 }
