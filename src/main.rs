@@ -549,9 +549,28 @@ impl Debug for NodeGraphExample {
 
 impl Default for NodeGraphExample {
     fn default() -> Self {
+        let mut user_state = MyGraphState::default();
+
+        // try to load any default plugins (built in the target/wasm32-unknown-unknown/release directory)
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("target");
+        path.push("wasm32-unknown-unknown");
+        path.push("release");
+
+        let dir = std::fs::read_dir(&path).unwrap();
+        for entry in dir {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if path.extension().unwrap_or_default() == "wasm" {
+                let plugin = user_state.plugin_engine.load_plugin(&path);
+                let id = user_state.plugins.insert(plugin);
+                user_state.all_plugins.insert(PluginId(id));
+            }
+        }
+
         Self {
             state: MyEditorState::default(),
-            user_state: MyGraphState::default(),
+            user_state,
             search_text: String::new(),
             txrx: Default::default(),
         }
@@ -616,7 +635,7 @@ impl eframe::App for NodeGraphExample {
                 if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     let path = PathBuf::from(&self.search_text);
                     if path.exists() {
-                        let plugin = PluginEngine.load_plugin(&path);
+                        let plugin = self.user_state.plugin_engine.load_plugin(&path);
                         let id = self.user_state.plugins.insert(plugin);
                         self.user_state.all_plugins.insert(PluginId(id));
                     }

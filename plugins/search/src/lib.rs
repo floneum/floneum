@@ -9,7 +9,8 @@ pub fn search(
     database: EmbeddingDbId,
 ) -> String {
     let database = VectorDatabase::from_id(database);
-    let nearest = database.find_closest_documents(&key, 1);
+    let nearest = database.find_closest_documents(&key, 10);
+    print(&format!("nearest: {:?}\n", nearest));
 
     nearest.first().cloned().unwrap_or_default()
 }

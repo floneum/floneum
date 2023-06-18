@@ -5,7 +5,7 @@
 use once_cell::sync::Lazy;
 use plugins::main::types::Structure;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use crate::plugins::main::imports::*;
 use exports::plugins::main::definitions::*;
@@ -32,11 +32,50 @@ use crate::{vector_db::VectorDB, ModelType};
 
 wasmtime::component::bindgen!({path: "../wit"});
 
+static LINKER: Lazy<Linker<State>> = Lazy::new(|| {
+    let mut linker = Linker::new(&*ENGINE);
+    PluginWorld::add_to_linker(&mut linker, |x| x).unwrap();
+    linker
+});
+static ENGINE: Lazy<Engine> = Lazy::new(|| {
+    let mut config = Config::new();
+    config.wasm_component_model(true);
+    Engine::new(&config).unwrap()
+});
+static MULTI_PLUGIN_STATE: Lazy<RwLock<MultiPluginState>> = Lazy::new(Default::default);
+
+#[derive(Default)]
+struct MultiPluginState {
+    vector_dbs: Slab<VectorDB<String>>,
+}
+
+impl MultiPluginState {
+    fn vector_db_get(
+        &self,
+        id: exports::plugins::main::definitions::EmbeddingDbId,
+    ) -> &VectorDB<String> {
+        self.vector_dbs.get(id.id as usize).unwrap()
+    }
+
+    pub fn create_db(
+        &mut self,
+        embedding: Vec<exports::plugins::main::definitions::Embedding>,
+        documents: Vec<String>,
+    ) -> exports::plugins::main::definitions::EmbeddingDbId {
+        let idx = self.vector_dbs.insert(VectorDB::new(embedding, documents));
+
+        exports::plugins::main::definitions::EmbeddingDbId { id: idx as u32 }
+    }
+
+    pub fn remove_embedding_db(&mut self, id: exports::plugins::main::definitions::EmbeddingDbId) {
+        self.vector_dbs.remove(id.id as usize);
+    }
+}
+
 #[derive(Default)]
 pub struct State {
     sessions: InferenceSessions,
     structures: Slab<Structure>,
-    vector_dbs: Slab<VectorDB<String>>,
 }
 
 impl State {
@@ -69,35 +108,17 @@ impl State {
         }
     }
 
-    fn vector_db_get(
-        &self,
-        id: exports::plugins::main::definitions::EmbeddingDbId,
-    ) -> &VectorDB<String> {
-        self.vector_dbs.get(id.id as usize).unwrap()
-    }
-
-    pub fn create_db(
-        &mut self,
-        embedding: Vec<exports::plugins::main::definitions::Embedding>,
-        documents: Vec<String>,
-    ) -> exports::plugins::main::definitions::EmbeddingDbId {
-        let idx = self.vector_dbs.insert(VectorDB::new(embedding, documents));
-
-        exports::plugins::main::definitions::EmbeddingDbId { id: idx as u32 }
-    }
-
-    pub fn remove_embedding_db(&mut self, id: exports::plugins::main::definitions::EmbeddingDbId) {
-        println!("Removing db: {}", id.id);
-        self.vector_dbs.remove(id.id as usize);
-    }
-
     pub fn get_closest(
         &self,
         id: exports::plugins::main::definitions::EmbeddingDbId,
         embedding: exports::plugins::main::definitions::Embedding,
         n: usize,
     ) -> Vec<String> {
-        self.vector_db_get(id).get_closest(embedding, n)
+        MULTI_PLUGIN_STATE
+            .read()
+            .unwrap()
+            .vector_db_get(id)
+            .get_closest(embedding, n)
     }
 
     pub fn get_within(
@@ -106,7 +127,11 @@ impl State {
         embedding: exports::plugins::main::definitions::Embedding,
         distance: f32,
     ) -> Vec<String> {
-        self.vector_db_get(id).get_within(embedding, distance)
+        MULTI_PLUGIN_STATE
+            .read()
+            .unwrap()
+            .vector_db_get(id)
+            .get_within(embedding, distance)
     }
 }
 
@@ -155,14 +180,17 @@ impl Host for State {
         documents: Vec<String>,
     ) -> std::result::Result<exports::plugins::main::definitions::EmbeddingDbId, wasmtime::Error>
     {
-        Ok(self.create_db(embeddings, documents))
+        Ok(MULTI_PLUGIN_STATE
+            .write()
+            .unwrap()
+            .create_db(embeddings, documents))
     }
 
     fn remove_embedding_db(
         &mut self,
         id: exports::plugins::main::definitions::EmbeddingDbId,
     ) -> std::result::Result<(), wasmtime::Error> {
-        Ok(self.remove_embedding_db(id))
+        Ok(MULTI_PLUGIN_STATE.write().unwrap().remove_embedding_db(id))
     }
 
     fn find_closest_documents(
@@ -212,24 +240,8 @@ impl Host for State {
     }
 }
 
-static LINKER: Lazy<Linker<State>> = Lazy::new(|| {
-    let mut linker = Linker::new(&*ENGINE);
-    PluginWorld::add_to_linker(&mut linker, |x| x).unwrap();
-    linker
-});
-static ENGINE: Lazy<Engine> = Lazy::new(|| {
-    let mut config = Config::new();
-    config.wasm_component_model(true);
-    Engine::new(&config).unwrap()
-});
-
-pub struct PluginEngine;
-
-impl Default for PluginEngine {
-    fn default() -> Self {
-        Self
-    }
-}
+#[derive(Default)]
+pub struct PluginEngine {}
 
 impl PluginEngine {
     pub fn load_plugin(&mut self, path: &Path) -> Plugin {
@@ -355,7 +367,9 @@ impl<'de> Deserialize<'de> for PluginInstance {
         println!("deserializing plugin instance");
         let bytes = Vec::<u8>::deserialize(deserializer)?;
         println!("deserialized plugin instance");
-        Ok(PluginEngine.load_plugin_from_bytes(bytes).instance())
+        Ok(PluginEngine::default()
+            .load_plugin_from_bytes(bytes)
+            .instance())
     }
 }
 

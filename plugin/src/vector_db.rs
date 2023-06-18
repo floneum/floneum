@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use crate::plugins::main::types::Embedding;
 use instant_distance::{Builder, HnswMap, Search};
 use serde::{Deserialize, Serialize};
@@ -7,22 +9,25 @@ pub struct VectorDB<T> {
     model: HnswMap<Point, T>,
 }
 
-impl<T: Clone> VectorDB<T> {
+impl<T: Clone + Debug> VectorDB<T> {
     pub fn new(points: Vec<Embedding>, values: Vec<T>) -> Self {
-        let model = Builder::default().build(
-            points.into_iter().map(|e| Point(e.vector)).collect(),
-            values,
-        );
+        let points = points.into_iter().map(|e| Point(e.vector)).collect();
+        println!("points: {:?}", points);
+        let model = Builder::default().build(points, values);
 
         VectorDB { model }
     }
 
     pub fn get_closest(&self, embedding: Embedding, n: usize) -> Vec<T> {
         let mut search = Search::default();
+        println!("embedding: {:?}", embedding);
         self.model
             .search(&Point(embedding.vector), &mut search)
             .take(n)
-            .map(|result| result.value.clone())
+            .map(|result| {
+                println!("score: {}, value: {:?}", result.distance, result.value);
+                result.value.clone()
+            })
             .collect()
     }
 
@@ -40,7 +45,7 @@ pub struct Point(Vec<f32>);
 
 impl instant_distance::Point for Point {
     fn distance(&self, other: &Self) -> f32 {
-        cosine_similarity(&self.0, &other.0)
+        1. - cosine_similarity(&self.0, &other.0)
     }
 }
 
