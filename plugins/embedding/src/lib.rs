@@ -5,7 +5,5 @@ use floneum_rust::*;
 fn embedding(input: String) -> Embedding {
     let model = ModelInstance::new(ModelType::Llama(LlamaType::Vicuna));
 
-    let embedding = model.get_embedding(&input);
-
-    embedding
+    model.get_embedding(&input)
 }

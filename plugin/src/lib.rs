@@ -33,7 +33,7 @@ use crate::{vector_db::VectorDB, ModelType};
 wasmtime::component::bindgen!({path: "../wit"});
 
 static LINKER: Lazy<Linker<State>> = Lazy::new(|| {
-    let mut linker = Linker::new(&*ENGINE);
+    let mut linker = Linker::new(&ENGINE);
     PluginWorld::add_to_linker(&mut linker, |x| x).unwrap();
     linker
 });
@@ -211,7 +211,8 @@ impl Host for State {
         &mut self,
         id: exports::plugins::main::definitions::EmbeddingDbId,
     ) -> std::result::Result<(), wasmtime::Error> {
-        Ok(MULTI_PLUGIN_STATE.write().unwrap().remove_embedding_db(id))
+        MULTI_PLUGIN_STATE.write().unwrap().remove_embedding_db(id);
+        Ok(())
     }
 
     fn find_closest_documents(
@@ -289,10 +290,10 @@ impl PluginEngine {
             .unwrap()
             .encode()
             .unwrap();
-        let component = Component::from_binary(&*ENGINE, &component).unwrap();
+        let component = Component::from_binary(&ENGINE, &component).unwrap();
 
         // then we get the structure of the plugin.
-        let mut store = Store::new(&*ENGINE, State::default());
+        let mut store = Store::new(&ENGINE, State::default());
         let (world, _instance) =
             PluginWorld::instantiate(&mut store, &component, &*LINKER).unwrap();
         let structure = world.interface0.call_structure(&mut store).unwrap();
@@ -330,7 +331,7 @@ impl<'de> Deserialize<'de> for Plugin {
 impl Plugin {
     pub fn instance(&self) -> PluginInstance {
         // create the store of models
-        let mut store = Store::new(&*ENGINE, State::default());
+        let mut store = Store::new(&ENGINE, State::default());
         let (world, _instance) =
             PluginWorld::instantiate(&mut store, &self.component, &LINKER).unwrap();
 
@@ -412,7 +413,7 @@ fn load_plugin() {
         // first build the plugin_demo
         // cargo build --release --target wasm32-unknown-unknown
         let command = std::process::Command::new("cargo")
-            .args(&["build", "--release", "--target", "wasm32-unknown-unknown"])
+            .args(["build", "--release", "--target", "wasm32-unknown-unknown"])
             .current_dir("../plugins/format")
             .stdout(std::process::Stdio::inherit())
             .output()

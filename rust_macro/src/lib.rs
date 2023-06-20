@@ -241,19 +241,20 @@ impl Parse for IoDefinitionType {
                 {
                     let Some(ident) = item_type.path.get_ident()
                         else{
-                            return Err(Error::new_spanned(item_type,format!(
-                                "Vec missing Generics"
-                            )))
+                            return Err(Error::new_spanned(item_type,"Vec missing Generics".to_string()))
                         };
                     parse_primitive_value_type(ident)?
                 } else {
                     return Err(Error::new_spanned(
                         inner,
-                        format!("Vec must have a simple type as a genric"),
+                        "Vec must have a simple type as a genric".to_string(),
                     ));
                 }
             } else {
-                return Err(Error::new_spanned(ident, format!("Vec missing Generics")));
+                return Err(Error::new_spanned(
+                    ident,
+                    "Vec missing Generics".to_string(),
+                ));
             }
         } else {
             parse_primitive_value_type(&ident.ident)?
@@ -281,7 +282,7 @@ fn parse_primitive_value_type(ident: &Ident) -> syn::Result<PrimitiveValueType> 
     } else if ident == "Embedding" {
         Ok(PrimitiveValueType::Embedding)
     } else {
-        let error = format!("type {} not allowed. Inputs and outputs must be one of i64, String, ModelInstance, VectorDatabase", ident.to_token_stream().to_string());
+        let error = format!("type {} not allowed. Inputs and outputs must be one of i64, String, ModelInstance, VectorDatabase", ident.to_token_stream());
         Err(Error::new_spanned(ident, error))
     }
 }

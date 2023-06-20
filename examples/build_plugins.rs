@@ -13,7 +13,7 @@ fn main() {
     ] {
         let path = PathBuf::from("./plugins").join(plugin);
         let status = std::process::Command::new("cargo")
-            .args(&["build", "--target", "wasm32-unknown-unknown", "--release"])
+            .args(["build", "--target", "wasm32-unknown-unknown", "--release"])
             .current_dir(path)
             .status()
             .expect("failed to build plugin");

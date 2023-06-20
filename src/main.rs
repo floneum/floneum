@@ -168,21 +168,21 @@ pub enum MyPrimitiveValueType {
     Database(u32),
 }
 
-impl Into<Value> for MyValueType {
-    fn into(self) -> Value {
-        match self {
-            Self::Single(value) => Value::Single(match value {
+impl From<MyValueType> for Value {
+    fn from(value: MyValueType) -> Self {
+        match value {
+            MyValueType::Single(value) => Self::Single(match value {
                 MyPrimitiveValueType::Number(text) => PrimitiveValue::Number(text),
                 MyPrimitiveValueType::Text(text) => PrimitiveValue::Text(text),
                 MyPrimitiveValueType::Embedding(embedding) => {
                     PrimitiveValue::Embedding(Embedding { vector: embedding })
                 }
+                MyPrimitiveValueType::Model(id) => PrimitiveValue::Model(ModelId { id }),
                 MyPrimitiveValueType::Database(id) => {
                     PrimitiveValue::Database(EmbeddingDbId { id })
                 }
-                MyPrimitiveValueType::Model(id) => PrimitiveValue::Model(ModelId { id }),
             }),
-            Self::List(values) => Value::Many(
+            MyValueType::List(values) => Self::Many(
                 values
                     .into_iter()
                     .map(|value| match value {
@@ -191,14 +191,14 @@ impl Into<Value> for MyValueType {
                         MyPrimitiveValueType::Embedding(embedding) => {
                             PrimitiveValue::Embedding(Embedding { vector: embedding })
                         }
+                        MyPrimitiveValueType::Model(id) => PrimitiveValue::Model(ModelId { id }),
                         MyPrimitiveValueType::Database(id) => {
                             PrimitiveValue::Database(EmbeddingDbId { id })
                         }
-                        MyPrimitiveValueType::Model(id) => PrimitiveValue::Model(ModelId { id }),
                     })
                     .collect(),
             ),
-            _ => todo!(),
+            MyValueType::Unset => todo!(),
         }
     }
 }
@@ -567,14 +567,12 @@ impl Default for NodeGraphExample {
         path.push("release");
 
         if let Ok(dir) = std::fs::read_dir(&path) {
-            for entry in dir {
-                if let Ok(entry) = entry {
-                    let path = entry.path();
-                    if path.extension().unwrap_or_default() == "wasm" {
-                        let plugin = user_state.plugin_engine.load_plugin(&path);
-                        let id = user_state.plugins.insert(plugin);
-                        user_state.all_plugins.insert(PluginId(id));
-                    }
+            for entry in dir.flatten() {
+                let path = entry.path();
+                if path.extension().unwrap_or_default() == "wasm" {
+                    let plugin = user_state.plugin_engine.load_plugin(&path);
+                    let id = user_state.plugins.insert(plugin);
+                    user_state.all_plugins.insert(PluginId(id));
                 }
             }
         }
