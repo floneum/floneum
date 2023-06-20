@@ -121,7 +121,6 @@ impl InferenceSessions {
         max_tokens: Option<u32>,
         stop_on: Option<String>,
     ) -> String {
-        println!("infer");
         let (model, session) = self.session_get_mut(id);
 
         let parmeters = Default::default();
