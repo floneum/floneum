@@ -6,12 +6,12 @@ use eframe::{
     epaint::ahash::{HashMap, HashSet},
 };
 use egui_node_graph::*;
-use log::LevelFilter;
 use floneum_plugin::exports::plugins::main::definitions::{
     Embedding, PrimitiveValue, PrimitiveValueType, Value, ValueType,
 };
 use floneum_plugin::plugins::main::types::{EmbeddingDbId, ModelId};
 use floneum_plugin::{Plugin, PluginEngine, PluginInstance};
+use log::LevelFilter;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{
     borrow::Cow,
@@ -94,6 +94,7 @@ struct SetOutputMessage {
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct MyNodeData {
     instance: PluginInstance,
+    running: bool,
 }
 
 #[derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -325,6 +326,7 @@ impl NodeTemplateTrait for PluginId {
 
     fn user_data(&self, user_state: &mut Self::UserState) -> Self::NodeData {
         MyNodeData {
+            running: false,
             instance: user_state.get_plugin(*self).instance(),
         }
     }
@@ -460,10 +462,17 @@ impl NodeDataTrait for MyNodeData {
     where
         MyResponse: UserResponseTrait,
     {
-        // This logic is entirely up to the user. In this case, we check if the
-        // current node we're drawing is the active one, by comparing against
-        // the value stored in the global user state, and draw different button
-        // UIs based on that.
+        let node = &graph[node_id];
+
+        if node.user_data.running {
+            ui.with_layout(
+                egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
+                |ui| {
+                    ui.add(egui::widgets::Spinner::new());
+                },
+            );
+            return vec![];
+        }
 
         // This allows you to return your responses from the inline widgets.
         let run_button = ui.button("Run");
@@ -472,7 +481,7 @@ impl NodeDataTrait for MyNodeData {
         }
 
         // Render the current output of the node
-        let outputs = &graph[node_id].outputs;
+        let outputs = &node.outputs;
 
         for (name, id) in outputs {
             let value = user_state.node_outputs.get(id).cloned().unwrap_or_default();
@@ -557,9 +566,9 @@ impl Default for NodeGraphExample {
         path.push("wasm32-unknown-unknown");
         path.push("release");
 
-        if let Ok(dir) = std::fs::read_dir(&path){
+        if let Ok(dir) = std::fs::read_dir(&path) {
             for entry in dir {
-                if let Ok(entry) = entry{
+                if let Ok(entry) = entry {
                     let path = entry.path();
                     if path.extension().unwrap_or_default() == "wasm" {
                         let plugin = user_state.plugin_engine.load_plugin(&path);
@@ -628,6 +637,7 @@ impl eframe::App for NodeGraphExample {
             for ((_, id), value) in node.iter().zip(msg.values.into_iter()) {
                 self.user_state.node_outputs.insert(*id, value.into());
             }
+            self.state.graph[msg.node_id].user_data.running = false;
         }
 
         egui::TopBottomPanel::top("top").show(ctx, |ui| {
@@ -635,7 +645,9 @@ impl eframe::App for NodeGraphExample {
                 egui::widgets::global_dark_light_mode_switch(ui);
                 let response = ui.add(egui::TextEdit::singleline(&mut self.search_text));
                 let button = ui.button("Load Plugin at path");
-                if button.clicked() || (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))) {
+                if button.clicked()
+                    || (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+                {
                     let path = PathBuf::from(&self.search_text);
                     if path.exists() {
                         let plugin = self.user_state.plugin_engine.load_plugin(&path);
@@ -685,6 +697,7 @@ impl eframe::App for NodeGraphExample {
 
                 let fut = node.user_data.instance.run(values);
                 let sender = self.txrx.tx.clone();
+                self.state.graph[id].user_data.running = true;
 
                 tokio::spawn(async move {
                     let outputs = fut.await;

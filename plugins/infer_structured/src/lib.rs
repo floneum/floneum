@@ -3,9 +3,9 @@
 use core::panic;
 use std::vec;
 
+use floneum_rust::*;
 use pest::{iterators::Pair, Parser};
 use pest_derive::Parser;
-use floneum_rust::*;
 
 #[export_plugin]
 /// loads a model and runs it

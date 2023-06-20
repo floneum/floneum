@@ -7,11 +7,11 @@ use crate::plugins::main::imports::*;
 pub use crate::plugins::main::imports::{
     print, EmbeddingDbId, GptNeoXType, LlamaType, ModelType, MptType,
 };
+pub use floneum_rust_macro::export_plugin;
 pub use plugins::main::types::Embedding;
 use plugins::main::types::{
     EitherStructure, NumberParameters, SequenceParameters, Structure, ThenStructure, UnsignedRange,
 };
-pub use floneum_rust_macro::export_plugin;
 use std::ops::RangeInclusive;
 
 wit_bindgen::generate!({path: "../wit", macro_export});
@@ -326,4 +326,16 @@ impl_into_return_values!(a: A, b: B, c: C, d: D, e: E, f: F, g: G);
 impl_into_return_values!(a: A, b: B, c: C, d: D, e: E, f: F, g: G, h: H);
 impl_into_return_values!(a: A, b: B, c: C, d: D, e: E, f: F, g: G, h: H, i: I);
 impl_into_return_values!(a: A, b: B, c: C, d: D, e: E, f: F, g: G, h: H, i: I, j: J);
-impl_into_return_values!(a: A, b: B, c: C, d: D, e: E, f: F, g: G, h: H, i: I, j: J, k: K);
+impl_into_return_values!(
+    a: A,
+    b: B,
+    c: C,
+    d: D,
+    e: E,
+    f: F,
+    g: G,
+    h: H,
+    i: I,
+    j: J,
+    k: K
+);
