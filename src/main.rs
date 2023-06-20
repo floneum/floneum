@@ -94,6 +94,7 @@ struct SetOutputMessage {
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct MyNodeData {
     instance: PluginInstance,
+    #[serde(skip)]
     running: bool,
 }
 
@@ -548,6 +549,51 @@ pub struct NodeGraphExample {
     txrx: TxRx,
 }
 
+impl NodeGraphExample {
+    fn run_node(&mut self, id: NodeId) {
+        println!("Running node: {:?}", id);
+        let node = &self.state.graph[id];
+
+        let mut values: Vec<Value> = Vec::new();
+        for (_, id) in &node.inputs {
+            let input = self.state.graph.get_input(*id);
+            let connection = self.state.graph.connections.get(input.id);
+            let value = match connection {
+                Some(&connection) => {
+                    let connection = self.state.graph.get_output(connection);
+                    let output_id = connection.id;
+                    if let Some(value) = self.user_state.node_outputs.get(&output_id) {
+                        value
+                    } else {
+                        return;
+                    }
+                }
+                None => &input.value,
+            };
+            match &value {
+                MyValueType::Unset => return,
+                _ => values.push(value.clone().into()),
+            }
+        }
+
+        println!("Running node: ");
+        let fut = node.user_data.instance.run(values);
+        let sender = self.txrx.tx.clone();
+        self.state.graph[id].user_data.running = true;
+
+        tokio::spawn(async move {
+            let outputs = fut.await;
+
+            let _ = sender
+                .send(SetOutputMessage {
+                    node_id: id,
+                    values: outputs,
+                })
+                .await;
+        });
+    }
+}
+
 impl Debug for NodeGraphExample {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NodeGraphExample")
@@ -636,6 +682,21 @@ impl eframe::App for NodeGraphExample {
                 self.user_state.node_outputs.insert(*id, value.into());
             }
             self.state.graph[msg.node_id].user_data.running = false;
+            // start all connecting nodes
+            let mut nodes_to_start = Vec::new();
+            for (_, id) in &self.state.graph[msg.node_id].outputs {
+                for (input, output) in self.state.graph.iter_connections() {
+                    if output == *id {
+                        let node_id = self.state.graph[input].node;
+                        if !self.state.graph[node_id].user_data.running {
+                            nodes_to_start.push(node_id);
+                        }
+                    }
+                }
+            }
+            for node in nodes_to_start {
+                self.run_node(node);
+            }
         }
 
         egui::TopBottomPanel::top("top").show(ctx, |ui| {
@@ -667,46 +728,9 @@ impl eframe::App for NodeGraphExample {
             })
             .inner;
 
-        'o: for responce in graph_response.node_responses {
+        for responce in graph_response.node_responses {
             if let NodeResponse::User(MyResponse::RunNode(id)) = responce {
-                let node = &self.state.graph[id];
-
-                let mut values: Vec<Value> = Vec::new();
-                for (_, id) in &node.inputs {
-                    let input = self.state.graph.get_input(*id);
-                    let connection = self.state.graph.connections.get(input.id);
-                    let value = match connection {
-                        Some(&connection) => {
-                            let connection = self.state.graph.get_output(connection);
-                            let output_id = connection.id;
-                            if let Some(value) = self.user_state.node_outputs.get(&output_id) {
-                                value
-                            } else {
-                                continue 'o;
-                            }
-                        }
-                        None => &input.value,
-                    };
-                    match &value {
-                        MyValueType::Unset => continue 'o,
-                        _ => values.push(value.clone().into()),
-                    }
-                }
-
-                let fut = node.user_data.instance.run(values);
-                let sender = self.txrx.tx.clone();
-                self.state.graph[id].user_data.running = true;
-
-                tokio::spawn(async move {
-                    let outputs = fut.await;
-
-                    let _ = sender
-                        .send(SetOutputMessage {
-                            node_id: id,
-                            values: outputs,
-                        })
-                        .await;
-                });
+                self.run_node(id);
             }
         }
     }

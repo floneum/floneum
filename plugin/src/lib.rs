@@ -395,7 +395,9 @@ impl PluginInstance {
         let sender = self.sender.clone();
         let mut reciever = self.reciever.resubscribe();
         async move {
+            println!("sending inputs");
             let _ = sender.send(inputs);
+            println!("waiting for outputs");
             reciever.recv().await.unwrap()
         }
     }
