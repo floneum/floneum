@@ -815,13 +815,18 @@ impl eframe::App for NodeGraphExample {
         if zoom_delta != 1.0 {
             self.state
                 .pan_zoom
-                .adjust_zoom(zoom_delta, Vec2::ZERO, 0.0, 50.0)
-        }
-        let node_ids: Vec<_> = self.state.graph.nodes.iter().map(|(id, _)| id).collect();
-        for id in node_ids {
-            let center = graph_response.response.rect.center().to_vec2();
-            let old_pos = self.state.node_positions[id].clone().to_vec2() -center;
-            self.state.node_positions[id] = ((old_pos * zoom_delta)+center).to_pos2();
+                .adjust_zoom(zoom_delta, Vec2::ZERO, 0.0, 50.0);
+            let mut pixels_per_point = ctx.pixels_per_point();
+            pixels_per_point *= zoom_delta;
+            pixels_per_point = pixels_per_point.clamp(0.1, 50.0);
+            pixels_per_point = (pixels_per_point * 10.).round() / 10.;
+            ctx.set_pixels_per_point(pixels_per_point);
+            let node_ids: Vec<_> = self.state.graph.nodes.iter().map(|(id, _)| id).collect();
+            for id in node_ids {
+                let center = graph_response.response.rect.center().to_vec2();
+                let old_pos = self.state.node_positions[id].clone().to_vec2() - center;
+                self.state.node_positions[id] = ((old_pos * zoom_delta) + center).to_pos2();
+            }
         }
         let graph_response = graph_response.inner;
 
