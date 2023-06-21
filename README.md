@@ -49,3 +49,9 @@ cargo build --target wasm32-unknown-unknown --release
 > You can look at the default plugins [here](./plugins) to see how more complex plugins work
 
 Finally, load your plugin by running the main Floneum application and typing the path to your `.wasm` file in the load plugin text box in the top left.
+
+## Contributing
+
+- Report issues on our [issue tracker](https://github.com/floneum/floneum/issues).
+- Help other users in the Floneum discord
+- If you are interested in contributing, reach out on discord
