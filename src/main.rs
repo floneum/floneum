@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 use eframe::egui::{DragValue, Visuals};
+use eframe::epaint::Vec2;
 use eframe::{
     egui::{self, TextEdit},
     epaint::ahash::{HashMap, HashSet},
@@ -473,7 +474,7 @@ impl NodeDataTrait for MyNodeData {
     {
         let node = &graph[node_id];
 
-        ui.label(format!("run count {}",self.run_count));
+        ui.label(format!("run count {}", self.run_count));
 
         if node.user_data.running {
             ui.with_layout(
@@ -571,7 +572,7 @@ impl NodeGraphExample {
         {
             // first add all of the inputs to the current node
             let node = &self.state.graph.nodes[id];
-            if node.user_data.running{
+            if node.user_data.running {
                 return false;
             }
             for (_, id) in &node.inputs {
@@ -647,7 +648,7 @@ impl NodeGraphExample {
         let fut = node.user_data.instance.run(values);
         let sender = self.txrx.tx.clone();
         self.state.graph[id].user_data.running = true;
-        self.state.graph[id].user_data.run_count +=1;
+        self.state.graph[id].user_data.run_count += 1;
 
         tokio::spawn(async move {
             let outputs = fut.await;
@@ -770,7 +771,7 @@ impl eframe::App for NodeGraphExample {
                     }
                 }
             }
-            for node in &nodes_to_start{
+            for node in &nodes_to_start {
                 self.state.graph[*node].user_data.queued = true;
             }
             for node in nodes_to_start {
@@ -796,16 +797,29 @@ impl eframe::App for NodeGraphExample {
             });
         });
 
-        let graph_response = egui::CentralPanel::default()
-            .show(ctx, |ui| {
-                self.state.draw_graph_editor(
-                    ui,
-                    AllMyNodeTemplates(self.user_state.all_plugins.iter().copied().collect()),
-                    &mut self.user_state,
-                    Vec::default(),
-                )
-            })
-            .inner;
+        let graph_response = egui::CentralPanel::default().show(ctx, |ui| {
+            if ui.input(|i| i.pointer.primary_down()) && ctx.input(|i| i.key_down(egui::Key::Space))
+            {
+                let delta = ui.input(|i| i.pointer.delta());
+                self.state.pan_zoom.pan += delta;
+                self.state.ongoing_box_selection = None;
+            }
+            let zoom_delta = ctx.input(|i| i.zoom_delta());
+            if zoom_delta != 1.0 {
+                if let Some(mouse_pos) = ctx.pointer_latest_pos() {
+                    self.state
+                        .pan_zoom
+                        .adjust_zoom(zoom_delta, Vec2::ZERO, 0.0, 50.0)
+                }
+            }
+            self.state.draw_graph_editor(
+                ui,
+                AllMyNodeTemplates(self.user_state.all_plugins.iter().copied().collect()),
+                &mut self.user_state,
+                Vec::default(),
+            )
+        });
+        let graph_response = graph_response.inner;
 
         for responce in graph_response.node_responses {
             match responce {
