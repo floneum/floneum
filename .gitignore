@@ -3,3 +3,4 @@
 /plugin_demo/target
 /*.bin
 .DS_Store
+/docs/nightly

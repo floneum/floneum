@@ -1,0 +1,26 @@
+[book.en]
+title = "Floneum Documentation"
+description = "Get started with Floneum, a safe, local, and extensable graph editor for your AI workflows"
+authors = ["Evan Almloff"]
+language = "en"
+
+[language.en]
+name = "English"
+
+[rust]
+edition = "2021"
+
+[output.html]
+mathjax-support = true
+site-url = "/mdBook/"
+git-repository-url = "https://github.com/floneum/floneum/edit/master/docs"
+edit-url-template = "https://github.com/floneum/floneum/edit/master/docs/{path}"
+
+[output.html.search]
+limit-results = 20
+use-boolean-and = true
+boost-title = 2
+boost-hierarchy = 2
+boost-paragraph = 1
+expand = true
+heading-split-level = 2
