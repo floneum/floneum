@@ -95,7 +95,11 @@ struct SetOutputMessage {
 pub struct MyNodeData {
     instance: PluginInstance,
     #[serde(skip)]
+    run_count: usize,
+    #[serde(skip)]
     running: bool,
+    #[serde(skip)]
+    queued: bool,
 }
 
 #[derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -246,7 +250,7 @@ pub struct PluginId(usize);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MyResponse {
     RunNode(NodeId),
-    ClearNode(NodeId)
+    ClearNode(NodeId),
 }
 
 #[derive(Default, serde::Serialize, serde::Deserialize)]
@@ -330,6 +334,8 @@ impl NodeTemplateTrait for PluginId {
     fn user_data(&self, user_state: &mut Self::UserState) -> Self::NodeData {
         MyNodeData {
             running: false,
+            queued: false,
+            run_count: 0,
             instance: user_state.get_plugin(*self).instance(),
         }
     }
@@ -467,6 +473,8 @@ impl NodeDataTrait for MyNodeData {
     {
         let node = &graph[node_id];
 
+        ui.label(format!("run count {}",self.run_count));
+
         if node.user_data.running {
             ui.with_layout(
                 egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
@@ -555,7 +563,61 @@ pub struct NodeGraphExample {
 }
 
 impl NodeGraphExample {
+    fn should_run_node(&self, id: NodeId) -> bool {
+        // traverse back through inputs to see if any of those nodes are running
+        let mut visited = HashSet::default();
+        visited.insert(id);
+        let mut should_visit = Vec::new();
+        {
+            // first add all of the inputs to the current node
+            let node = &self.state.graph.nodes[id];
+            if node.user_data.running{
+                return false;
+            }
+            for (_, id) in &node.inputs {
+                if let Some(node) = self.find_connected_node(*id) {
+                    should_visit.push(node);
+                    visited.insert(node);
+                }
+            }
+        }
+
+        while let Some(id) = should_visit.pop() {
+            let node = &self.state.graph.nodes[id];
+            if node.user_data.running || node.user_data.queued {
+                return false;
+            }
+            for (_, id) in &node.inputs {
+                if let Some(node) = self.find_connected_node(*id) {
+                    if !visited.contains(&node) {
+                        should_visit.push(node);
+                        visited.insert(node);
+                    }
+                }
+            }
+        }
+
+        true
+    }
+
+    fn find_connected_node(&self, input_id: InputId) -> Option<NodeId> {
+        for (input, output) in self.state.graph.iter_connections() {
+            if input == input_id {
+                let node_id: NodeId = self.state.graph[output].node;
+                return Some(node_id);
+            }
+        }
+        None
+    }
+
     fn run_node(&mut self, id: NodeId) {
+        if !self.should_run_node(id) {
+            println!(
+                "node {:?} has unresolved dependancies, skipping running",
+                id
+            );
+            return;
+        }
         println!("Running node: {:?}", id);
         let node = &self.state.graph[id];
 
@@ -585,6 +647,7 @@ impl NodeGraphExample {
         let fut = node.user_data.instance.run(values);
         let sender = self.txrx.tx.clone();
         self.state.graph[id].user_data.running = true;
+        self.state.graph[id].user_data.run_count +=1;
 
         tokio::spawn(async move {
             let outputs = fut.await;
@@ -598,9 +661,10 @@ impl NodeGraphExample {
         });
     }
 
-    fn clear_node(&mut self, id:NodeId){
+    fn clear_node(&mut self, id: NodeId) {
         self.state.graph[id].user_data.running = false;
-        for (_, id) in &self.state.graph[id].outputs{
+        self.state.graph[id].user_data.queued = false;
+        for (_, id) in &self.state.graph[id].outputs {
             self.user_state.node_outputs.remove(id);
         }
     }
@@ -693,18 +757,21 @@ impl eframe::App for NodeGraphExample {
             for ((_, id), value) in node.iter().zip(msg.values.into_iter()) {
                 self.user_state.node_outputs.insert(*id, value.into());
             }
+            // stop this node's loading indicator
             self.state.graph[msg.node_id].user_data.running = false;
+            self.state.graph[msg.node_id].user_data.queued = false;
             // start all connecting nodes
             let mut nodes_to_start = Vec::new();
             for (_, id) in &self.state.graph[msg.node_id].outputs {
                 for (input, output) in self.state.graph.iter_connections() {
                     if output == *id {
                         let node_id = self.state.graph[input].node;
-                        if !self.state.graph[node_id].user_data.running {
-                            nodes_to_start.push(node_id);
-                        }
+                        nodes_to_start.push(node_id);
                     }
                 }
+            }
+            for node in &nodes_to_start{
+                self.state.graph[*node].user_data.queued = true;
             }
             for node in nodes_to_start {
                 self.run_node(node);
@@ -743,11 +810,9 @@ impl eframe::App for NodeGraphExample {
         for responce in graph_response.node_responses {
             match responce {
                 NodeResponse::User(MyResponse::RunNode(id)) => {
-
                     self.run_node(id);
                 }
                 NodeResponse::User(MyResponse::ClearNode(id)) => {
-
                     self.clear_node(id);
                 }
                 _ => {}

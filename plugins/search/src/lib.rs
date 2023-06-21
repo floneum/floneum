@@ -9,8 +9,12 @@ pub fn search(
     database: EmbeddingDbId,
 ) -> String {
     let database = VectorDatabase::from_id(database);
-    let nearest = database.find_closest_documents(&key, 10);
+    let nearest = database.find_closest_documents(&key, 5);
     print(&format!("nearest: {:?}\n", nearest));
 
-    nearest.first().cloned().unwrap_or_default()
+    let mut message = String::new();
+    for (i, embedding) in nearest.iter().enumerate() {
+        message.push_str(&format!("{}: {}\n", i, embedding));
+    }
+    message
 }
