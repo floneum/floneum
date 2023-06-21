@@ -246,6 +246,7 @@ pub struct PluginId(usize);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MyResponse {
     RunNode(NodeId),
+    ClearNode(NodeId)
 }
 
 #[derive(Default, serde::Serialize, serde::Deserialize)]
@@ -475,10 +476,13 @@ impl NodeDataTrait for MyNodeData {
             return vec![];
         }
 
-        // This allows you to return your responses from the inline widgets.
         let run_button = ui.button("Run");
         if run_button.clicked() {
             return vec![NodeResponse::User(MyResponse::RunNode(node_id))];
+        }
+        let run_button = ui.button("Clear");
+        if run_button.clicked() {
+            return vec![NodeResponse::User(MyResponse::ClearNode(node_id))];
         }
 
         // Render the current output of the node
@@ -591,6 +595,13 @@ impl NodeGraphExample {
                 })
                 .await;
         });
+    }
+
+    fn clear_node(&mut self, id:NodeId){
+        self.state.graph[id].user_data.running = false;
+        for (_, id) in &self.state.graph[id].outputs{
+            self.user_state.node_outputs.remove(id);
+        }
     }
 }
 
@@ -729,8 +740,16 @@ impl eframe::App for NodeGraphExample {
             .inner;
 
         for responce in graph_response.node_responses {
-            if let NodeResponse::User(MyResponse::RunNode(id)) = responce {
-                self.run_node(id);
+            match responce {
+                NodeResponse::User(MyResponse::RunNode(id)) => {
+
+                    self.run_node(id);
+                }
+                NodeResponse::User(MyResponse::ClearNode(id)) => {
+
+                    self.clear_node(id);
+                }
+                _ => {}
             }
         }
     }
