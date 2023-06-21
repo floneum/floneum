@@ -255,6 +255,7 @@ pub struct MyGraphState {
     pub plugin_engine: PluginEngine,
     pub plugins: slab::Slab<Plugin>,
     pub all_plugins: HashSet<PluginId>,
+    #[serde(skip)]
     pub node_outputs: HashMap<OutputId, MyValueType>,
 }
 
