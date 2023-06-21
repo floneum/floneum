@@ -804,14 +804,6 @@ impl eframe::App for NodeGraphExample {
                 self.state.pan_zoom.pan += delta;
                 self.state.ongoing_box_selection = None;
             }
-            let zoom_delta = ctx.input(|i| i.zoom_delta());
-            if zoom_delta != 1.0 {
-                if let Some(mouse_pos) = ctx.pointer_latest_pos() {
-                    self.state
-                        .pan_zoom
-                        .adjust_zoom(zoom_delta, Vec2::ZERO, 0.0, 50.0)
-                }
-            }
             self.state.draw_graph_editor(
                 ui,
                 AllMyNodeTemplates(self.user_state.all_plugins.iter().copied().collect()),
@@ -819,6 +811,18 @@ impl eframe::App for NodeGraphExample {
                 Vec::default(),
             )
         });
+        let zoom_delta = ctx.input(|i| i.zoom_delta());
+        if zoom_delta != 1.0 {
+            self.state
+                .pan_zoom
+                .adjust_zoom(zoom_delta, Vec2::ZERO, 0.0, 50.0)
+        }
+        let node_ids: Vec<_> = self.state.graph.nodes.iter().map(|(id, _)| id).collect();
+        for id in node_ids {
+            let center = graph_response.response.rect.center().to_vec2();
+            let old_pos = self.state.node_positions[id].clone().to_vec2() -center;
+            self.state.node_positions[id] = ((old_pos * zoom_delta)+center).to_pos2();
+        }
         let graph_response = graph_response.inner;
 
         for responce in graph_response.node_responses {
