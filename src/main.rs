@@ -79,6 +79,7 @@ async fn main() {
         "Floneum",
         eframe::NativeOptions::default(),
         Box::new(|cc| {
+            cc.egui_ctx.set_pixels_per_point(1.0);
             cc.egui_ctx.set_visuals(Visuals::dark());
             let app: NodeGraphExample = get_from_file();
             Box::new(app)
