@@ -131,6 +131,7 @@ pub fn download(model_type: ModelType) -> Box<dyn Model> {
         prefer_mmap: true,
         context_size,
         lora_adapters: None,
+        use_gpu: true
     };
 
     llm::load_dynamic(
