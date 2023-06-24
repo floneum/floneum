@@ -4,6 +4,7 @@ use anyhow::{anyhow, Ok};
 use directories::BaseDirs;
 
 mod package;
+pub use package::PackageStructure;
 
 pub struct Index {
     entries: Vec<Package>,
@@ -12,9 +13,13 @@ pub struct Index {
 impl Index {
     pub fn new() -> anyhow::Result<Self> {
         let path = packages_path()?;
-        if !path.exists(){
-            download_package_index()?;
+        if path.exists() {
+            // remove the old packages
+            // TODO: use git fetch to update the packages
+            std::fs::remove_dir_all(&path)?;
         }
+        download_package_index()?;
+
         let entries = std::fs::read_dir(path)?
             .filter_map(|entry| {
                 let entry = entry.ok()?;

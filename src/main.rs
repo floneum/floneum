@@ -571,6 +571,7 @@ pub struct NodeGraphExample {
     txrx: TxRx,
 
     #[serde(skip, default = "new_index")]
+    #[allow(unused)]
     package_manager: Index,
 }
 
@@ -693,22 +694,13 @@ impl Debug for NodeGraphExample {
 impl Default for NodeGraphExample {
     fn default() -> Self {
         let mut user_state = MyGraphState::default();
+        let package_manager = new_index();
 
-        // try to load any default plugins (built in the target/wasm32-unknown-unknown/release directory)
-        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        path.push("target");
-        path.push("wasm32-unknown-unknown");
-        path.push("release");
-
-        if let Ok(dir) = std::fs::read_dir(&path) {
-            for entry in dir.flatten() {
-                let path = entry.path();
-                if path.extension().unwrap_or_default() == "wasm" {
-                    let plugin = user_state.plugin_engine.load_plugin(&path);
-                    let id = user_state.plugins.insert(plugin);
-                    user_state.all_plugins.insert(PluginId(id));
-                }
-            }
+        for package in package_manager.entries() {
+            let path = package.path();
+            let plugin = user_state.plugin_engine.load_plugin(&path);
+            let id = user_state.plugins.insert(plugin);
+            user_state.all_plugins.insert(PluginId(id));
         }
 
         Self {
@@ -717,7 +709,7 @@ impl Default for NodeGraphExample {
             search_text: String::new(),
             plugin_path_text: String::new(),
             txrx: Default::default(),
-            package_manager: new_index(),
+            package_manager,
         }
     }
 }
@@ -752,7 +744,7 @@ impl NodeGraphExample {
             search_text: String::new(),
             plugin_path_text: String::new(),
             txrx: TxRx::default(),
-            package_manager: new_index()
+            package_manager: new_index(),
         }
     }
 }
@@ -797,27 +789,6 @@ impl eframe::App for NodeGraphExample {
         egui::TopBottomPanel::top("top").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 egui::widgets::global_dark_light_mode_switch(ui);
-                let response = ui.add(egui::TextEdit::singleline(&mut self.search_text));
-                if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    let package=self.package_manager.entries().iter().find(|entry| entry.name().contains(&self.search_text));
-                    if let Some(entry) = package {
-                        let plugin = self.user_state.plugin_engine.load_plugin(&entry.path());
-                        let id = self.user_state.plugins.insert(plugin);
-                        self.user_state.all_plugins.insert(PluginId(id));
-                    }
-                }
-                for entry in self
-                .package_manager.entries().iter() {
-                    let name = entry.name();
-                    if name.contains(&self.search_text) {
-                        let button = ui.button(name);
-                        if button.clicked() {
-                            let plugin = self.user_state.plugin_engine.load_plugin(&entry.path());
-                            let id = self.user_state.plugins.insert(plugin);
-                            self.user_state.all_plugins.insert(PluginId(id));
-                        }
-                    }
-                }
 
                 let response = ui.add(egui::TextEdit::singleline(&mut self.plugin_path_text));
                 let button = ui.button("Load Plugin at path");

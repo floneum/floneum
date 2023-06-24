@@ -1621,6 +1621,7 @@ dependencies = [
  "slab",
  "spinoff",
  "tokio",
+ "toml 0.7.5",
  "wai-bindgen-rust",
 ]
 
