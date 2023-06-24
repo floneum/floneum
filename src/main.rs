@@ -12,6 +12,7 @@ use floneum_plugin::exports::plugins::main::definitions::{
 };
 use floneum_plugin::plugins::main::types::{EmbeddingDbId, ModelId};
 use floneum_plugin::{Plugin, PluginEngine, PluginInstance};
+use floneumate::Index;
 use log::LevelFilter;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{
@@ -552,16 +553,25 @@ impl NodeDataTrait for MyNodeData {
 
 type MyEditorState = GraphEditorState<MyNodeData, MyDataType, MyValueType, PluginId, MyGraphState>;
 
+fn new_index() -> Index {
+    Index::new().unwrap()
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct NodeGraphExample {
     state: MyEditorState,
 
     user_state: MyGraphState,
 
+    plugin_path_text: String,
+
     search_text: String,
 
     #[serde(skip)]
     txrx: TxRx,
+
+    #[serde(skip, default = "new_index")]
+    package_manager: Index,
 }
 
 impl NodeGraphExample {
@@ -705,7 +715,9 @@ impl Default for NodeGraphExample {
             state: MyEditorState::default(),
             user_state,
             search_text: String::new(),
+            plugin_path_text: String::new(),
             txrx: Default::default(),
+            package_manager: new_index(),
         }
     }
 }
@@ -738,7 +750,9 @@ impl NodeGraphExample {
             state,
             user_state: MyGraphState::default(),
             search_text: String::new(),
+            plugin_path_text: String::new(),
             txrx: TxRx::default(),
+            package_manager: new_index()
         }
     }
 }
@@ -784,11 +798,33 @@ impl eframe::App for NodeGraphExample {
             egui::menu::bar(ui, |ui| {
                 egui::widgets::global_dark_light_mode_switch(ui);
                 let response = ui.add(egui::TextEdit::singleline(&mut self.search_text));
+                if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    let package=self.package_manager.entries().iter().find(|entry| entry.name().contains(&self.search_text));
+                    if let Some(entry) = package {
+                        let plugin = self.user_state.plugin_engine.load_plugin(&entry.path());
+                        let id = self.user_state.plugins.insert(plugin);
+                        self.user_state.all_plugins.insert(PluginId(id));
+                    }
+                }
+                for entry in self
+                .package_manager.entries().iter() {
+                    let name = entry.name();
+                    if name.contains(&self.search_text) {
+                        let button = ui.button(name);
+                        if button.clicked() {
+                            let plugin = self.user_state.plugin_engine.load_plugin(&entry.path());
+                            let id = self.user_state.plugins.insert(plugin);
+                            self.user_state.all_plugins.insert(PluginId(id));
+                        }
+                    }
+                }
+
+                let response = ui.add(egui::TextEdit::singleline(&mut self.plugin_path_text));
                 let button = ui.button("Load Plugin at path");
                 if button.clicked()
                     || (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
                 {
-                    let path = PathBuf::from(&self.search_text);
+                    let path = PathBuf::from(&self.plugin_path_text);
                     if path.exists() {
                         let plugin = self.user_state.plugin_engine.load_plugin(&path);
                         let id = self.user_state.plugins.insert(plugin);

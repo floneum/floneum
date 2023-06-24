@@ -21,6 +21,7 @@ egui_node_graph = { git = "https://github.com/setzer22/egui_node_graph", feature
 eframe = { version = "0.21.0", features = ["persistence"] }
 anyhow = "1.0"
 floneum_plugin = { path = "./plugin" }
+floneumate = { path = "./floneumate" }
 serde = { version = "1.0.163", features = ["derive"] }
 slab = "0.4.8"
 bincode = "1.3.3"
@@ -32,6 +33,7 @@ members = [
     "plugin",
     "rust_adapter",
     "rust_macro",
+    "floneumate",
     "plugins/infer",
     "plugins/infer_structured",
     "plugins/format",
