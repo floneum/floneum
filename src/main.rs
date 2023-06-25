@@ -14,6 +14,7 @@ use floneum_plugin::plugins::main::types::{EmbeddingDbId, ModelId};
 use floneum_plugin::{Plugin, PluginEngine, PluginInstance};
 use floneumate::Index;
 use log::LevelFilter;
+use pollster::FutureExt;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{
     borrow::Cow,
@@ -48,23 +49,23 @@ fn save_to_file<D: Serialize>(data: D) {
     }
 }
 
-fn get_from_file<D: DeserializeOwned + Default>() -> D {
+fn get_from_file<D: DeserializeOwned>(create: impl FnOnce() -> D) -> D {
     let mut current_dir = std::env::current_dir().unwrap();
     current_dir.push("save.bin");
     if let Ok(mut file) = File::open(current_dir) {
         let mut buffer = Vec::new();
 
         if file.read_to_end(&mut buffer).is_err() {
-            return Default::default();
+            return create();
         }
 
         if let Ok(from_storage) = bincode::deserialize(&buffer[..]) {
             from_storage
         } else {
-            Default::default()
+            create()
         }
     } else {
-        Default::default()
+        create()
     }
 }
 
@@ -76,17 +77,19 @@ async fn main() {
         .init()
         .unwrap();
 
+    let default_app = NodeGraphExample::default().await;
+
     eframe::run_native(
         "Floneum",
         eframe::NativeOptions::default(),
         Box::new(|cc| {
             cc.egui_ctx.set_pixels_per_point(1.0);
             cc.egui_ctx.set_visuals(Visuals::dark());
-            let app: NodeGraphExample = get_from_file();
+            let app: NodeGraphExample = get_from_file(|| default_app);
             Box::new(app)
         }),
     )
-    .expect("Failed to run native example");
+    .expect("Failed to run native example")
 }
 
 struct SetOutputMessage {
@@ -339,7 +342,7 @@ impl NodeTemplateTrait for PluginId {
             running: false,
             queued: false,
             run_count: 0,
-            instance: user_state.get_plugin(*self).instance(),
+            instance: user_state.get_plugin(*self).instance().block_on(),
         }
     }
 
@@ -631,7 +634,6 @@ impl NodeGraphExample {
             );
             return;
         }
-        println!("Running node: {:?}", id);
         let node = &self.state.graph[id];
 
         let mut values: Vec<Value> = Vec::new();
@@ -656,7 +658,6 @@ impl NodeGraphExample {
             }
         }
 
-        println!("Running node: ");
         let fut = node.user_data.instance.run(values);
         let sender = self.txrx.tx.clone();
         self.state.graph[id].user_data.running = true;
@@ -691,14 +692,14 @@ impl Debug for NodeGraphExample {
     }
 }
 
-impl Default for NodeGraphExample {
-    fn default() -> Self {
+impl NodeGraphExample {
+    async fn default() -> Self {
         let mut user_state = MyGraphState::default();
         let package_manager = new_index();
 
         for package in package_manager.entries() {
             let path = package.path();
-            let plugin = user_state.plugin_engine.load_plugin(&path);
+            let plugin = user_state.plugin_engine.load_plugin(&path).await;
             let id = user_state.plugins.insert(plugin);
             user_state.all_plugins.insert(PluginId(id));
         }
@@ -797,7 +798,7 @@ impl eframe::App for NodeGraphExample {
                 {
                     let path = PathBuf::from(&self.plugin_path_text);
                     if path.exists() {
-                        let plugin = self.user_state.plugin_engine.load_plugin(&path);
+                        let plugin = self.user_state.plugin_engine.load_plugin(&path).block_on();
                         let id = self.user_state.plugins.insert(plugin);
                         self.user_state.all_plugins.insert(PluginId(id));
                     }

@@ -179,14 +179,29 @@ impl IoDefinitionType {
             }
             ValueType::Many(_) => {
                 quote! {
-                    Value::Many(#match_inner)
+                    Value::Many(inner)
+                }
+            }
+        };
+        let get_return_value = match &self.value_type {
+            ValueType::Single(_) => {
+                quote! {
+                    inner.clone()
+                }
+            }
+            ValueType::Many(_) => {
+                quote! {
+                    inner.iter().map(|inner| match inner {
+                        #match_inner => inner.clone(),
+                        _ => panic!("unexpected input type {:?}", inner),
+                    }).collect()
                 }
             }
         };
         quote! {
             let value = &input[#idx];
             let #ident = match value {
-                #quote => inner.clone(),
+                #quote => #get_return_value,
                 _ => panic!("unexpected input type {:?}", value),
             };
         }

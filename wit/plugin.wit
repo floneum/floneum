@@ -16,8 +16,6 @@ interface imports {
   find-closest-documents: func(id: embedding-db-id, search: embedding, count: u32) -> list<string>
   find-documents-within: func(id: embedding-db-id, search: embedding, within: float32) -> list<string>
 
-  print: func(str: string)
-
   variant model-type { MPT(mpt-type), gpt-neo-x(gpt-neo-x-type), llama(llama-type) }
   enum llama-type { vicuna, guanaco, wizardlm, orca }
   enum mpt-type { base, story, instruct, chat }

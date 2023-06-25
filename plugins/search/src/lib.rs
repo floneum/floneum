@@ -10,7 +10,7 @@ pub fn search(
 ) -> String {
     let database = VectorDatabase::from_id(database);
     let nearest = database.find_closest_documents(&key, 5);
-    print(&format!("nearest: {:?}\n", nearest));
+    println!("nearest: {:?}\n", nearest);
 
     let mut message = String::new();
     for (i, embedding) in nearest.iter().enumerate() {
