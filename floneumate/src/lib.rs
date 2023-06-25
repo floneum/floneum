@@ -64,7 +64,11 @@ impl Package {
     }
 
     pub fn version(&self) -> &str {
-        &self.structure.version
+        &self.structure.package_version
+    }
+
+    pub fn binding_version(&self) -> &str {
+        &self.structure.binding_version
     }
 
     pub fn path(&self) -> &std::path::Path {
