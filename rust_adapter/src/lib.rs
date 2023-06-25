@@ -5,7 +5,7 @@ pub use crate::exports::plugins::main::definitions::{
 };
 use crate::plugins::main::imports::*;
 pub use crate::plugins::main::imports::{
-    print, EmbeddingDbId, GptNeoXType, LlamaType, ModelType, MptType,
+    EmbeddingDbId, GptNeoXType, LlamaType, ModelType, MptType,
 };
 pub use floneum_rust_macro::export_plugin;
 pub use plugins::main::types::Embedding;

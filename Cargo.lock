@@ -154,6 +154,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ambient-authority"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9d4ee0d472d1cd2e28c97dfa124b3d8d992e10eb0a035f33f5d12e3a177ba3b"
+
+[[package]]
 name = "android-activity"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -346,7 +352,7 @@ checksum = "0e97ce7de6cf12de5d7226c73f5ba9811622f4db3a5b91b55c53e987e5f91cba"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.18",
+ "syn 2.0.21",
 ]
 
 [[package]]
@@ -363,7 +369,7 @@ checksum = "b9ccdd8f2a161be9bd5c023df56f1b2a0bd1d83872ae53b71a84a12c9bf6e842"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.18",
+ "syn 2.0.21",
 ]
 
 [[package]]
@@ -538,7 +544,7 @@ checksum = "fdde5c9cd29ebd706ce1b35600920a33550e402fc998a2e53ad3b42c3c47a192"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.18",
+ "syn 2.0.21",
 ]
 
 [[package]]
@@ -617,6 +623,69 @@ dependencies = [
 ]
 
 [[package]]
+name = "cap-fs-ext"
+version = "1.0.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "58bc48200a1a0fa6fba138b1802ad7def18ec1cdd92f7b2a04e21f1bd887f7b9"
+dependencies = [
+ "cap-primitives",
+ "cap-std",
+ "io-lifetimes",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "cap-primitives"
+version = "1.0.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4b6df5b295dca8d56f35560be8c391d59f0420f72e546997154e24e765e6451"
+dependencies = [
+ "ambient-authority",
+ "fs-set-times",
+ "io-extras",
+ "io-lifetimes",
+ "ipnet",
+ "maybe-owned",
+ "rustix",
+ "windows-sys 0.48.0",
+ "winx",
+]
+
+[[package]]
+name = "cap-rand"
+version = "1.0.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d25555efacb0b5244cf1d35833d55d21abc916fff0eaad254b8e2453ea9b8ab"
+dependencies = [
+ "ambient-authority",
+ "rand 0.8.5",
+]
+
+[[package]]
+name = "cap-std"
+version = "1.0.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3373a62accd150b4fcba056d4c5f3b552127f0ec86d3c8c102d60b978174a012"
+dependencies = [
+ "cap-primitives",
+ "io-extras",
+ "io-lifetimes",
+ "rustix",
+]
+
+[[package]]
+name = "cap-time-ext"
+version = "1.0.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e95002993b7baee6b66c8950470e59e5226a23b3af39fc59c47fe416dd39821a"
+dependencies = [
+ "cap-primitives",
+ "once_cell",
+ "rustix",
+ "winx",
+]
+
+[[package]]
 name = "cc"
 version = "1.0.79"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -664,9 +733,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.3.5"
+version = "4.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2686c4115cb0810d9a984776e197823d08ec94f176549a89a9efded477c456dc"
+checksum = "d9394150f5b4273a1763355bd1c2ec54cc5a2593f790587bcd6b2c947cfa9211"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -675,9 +744,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.3.5"
+version = "4.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e53afce1efce6ed1f633cf0e57612fe51db54a1ee4fd8f8503d078fe02d69ae"
+checksum = "9a78fbdd3cc2914ddf37ba444114bc7765bbdcb55ec9cbe6fa054f0137400717"
 dependencies = [
  "anstream",
  "anstyle",
@@ -695,7 +764,7 @@ dependencies = [
  "heck 0.4.1",
  "proc-macro2",
  "quote",
- "syn 2.0.18",
+ "syn 2.0.21",
 ]
 
 [[package]]
@@ -843,7 +912,7 @@ dependencies = [
 [[package]]
 name = "cranelift-bforest"
 version = "0.98.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#155d60281cd3455b49e4e73720486991e22f59e6"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
 dependencies = [
  "cranelift-entity",
 ]
@@ -851,7 +920,7 @@ dependencies = [
 [[package]]
 name = "cranelift-codegen"
 version = "0.98.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#155d60281cd3455b49e4e73720486991e22f59e6"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
 dependencies = [
  "bumpalo",
  "cranelift-bforest",
@@ -871,7 +940,7 @@ dependencies = [
 [[package]]
 name = "cranelift-codegen-meta"
 version = "0.98.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#155d60281cd3455b49e4e73720486991e22f59e6"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
 dependencies = [
  "cranelift-codegen-shared",
 ]
@@ -879,12 +948,12 @@ dependencies = [
 [[package]]
 name = "cranelift-codegen-shared"
 version = "0.98.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#155d60281cd3455b49e4e73720486991e22f59e6"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
 
 [[package]]
 name = "cranelift-control"
 version = "0.98.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#155d60281cd3455b49e4e73720486991e22f59e6"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
 dependencies = [
  "arbitrary",
 ]
@@ -892,7 +961,7 @@ dependencies = [
 [[package]]
 name = "cranelift-entity"
 version = "0.98.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#155d60281cd3455b49e4e73720486991e22f59e6"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
 dependencies = [
  "serde",
 ]
@@ -900,7 +969,7 @@ dependencies = [
 [[package]]
 name = "cranelift-frontend"
 version = "0.98.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#155d60281cd3455b49e4e73720486991e22f59e6"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
 dependencies = [
  "cranelift-codegen",
  "log",
@@ -911,12 +980,12 @@ dependencies = [
 [[package]]
 name = "cranelift-isle"
 version = "0.98.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#155d60281cd3455b49e4e73720486991e22f59e6"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
 
 [[package]]
 name = "cranelift-native"
 version = "0.98.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#155d60281cd3455b49e4e73720486991e22f59e6"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
 dependencies = [
  "cranelift-codegen",
  "libc",
@@ -926,7 +995,7 @@ dependencies = [
 [[package]]
 name = "cranelift-wasm"
 version = "0.98.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#155d60281cd3455b49e4e73720486991e22f59e6"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
 dependencies = [
  "cranelift-codegen",
  "cranelift-entity",
@@ -1054,7 +1123,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13b588ba4ac1a99f7f2964d24b3d896ddc6bf847ee3855dbd4366f058cfcd331"
 dependencies = [
  "quote",
- "syn 2.0.18",
+ "syn 2.0.21",
 ]
 
 [[package]]
@@ -1371,7 +1440,7 @@ dependencies = [
 [[package]]
 name = "egui_node_graph"
 version = "0.4.0"
-source = "git+https://github.com/setzer22/egui_node_graph#3068b8cd9bad3a419682af273c01cd700bda2739"
+source = "git+https://github.com/Demonthos/egui_node_graph#86cdd9ca042797fe6b1fd24c801992603fe28d3d"
 dependencies = [
  "egui",
  "serde",
@@ -1441,7 +1510,7 @@ checksum = "5e9a1f9f7d83e59740248a6e14ecf93929ade55027844dfcea78beafccc15745"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.18",
+ "syn 2.0.21",
 ]
 
 [[package]]
@@ -1452,7 +1521,7 @@ checksum = "48016319042fb7c87b78d2993084a831793a897a5cd1a2a67cab9d1eeb4b7d76"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.18",
+ "syn 2.0.21",
 ]
 
 [[package]]
@@ -1559,6 +1628,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6999dc1837253364c2ebb0704ba97994bd874e8f195d665c50b7548f6ea92764"
 
 [[package]]
+name = "fd-lock"
+version = "3.0.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "39ae6b3d9530211fb3b12a95374b8b0823be812f53d09e18c5675c0146b09642"
+dependencies = [
+ "cfg-if",
+ "rustix",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
 name = "fdeflate"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1612,6 +1692,7 @@ dependencies = [
  "floneumate",
  "futures-util",
  "log",
+ "pollster",
  "rand 0.8.5",
  "reqwest",
  "scraper",
@@ -1687,6 +1768,7 @@ dependencies = [
  "log",
  "once_cell",
  "partial_sort",
+ "pollster",
  "rand 0.8.5",
  "reqwest",
  "scraper",
@@ -1695,6 +1777,7 @@ dependencies = [
  "spinoff",
  "tokio",
  "wasmtime",
+ "wasmtime-wasi",
  "wit-component",
 ]
 
@@ -1712,7 +1795,7 @@ version = "0.1.0"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.18",
+ "syn 2.0.21",
  "wit-bindgen",
 ]
 
@@ -1762,6 +1845,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a62bc1cf6f830c2ec14a513a9fb124d0a213a629668a4186f329db21fe045652"
 dependencies = [
  "percent-encoding",
+]
+
+[[package]]
+name = "fs-set-times"
+version = "0.19.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7833d0f115a013d51c55950a3b09d30e4b057be9961b709acb9b5b17a1108861"
+dependencies = [
+ "io-lifetimes",
+ "rustix",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -1828,7 +1922,7 @@ checksum = "89ca545a94061b6365f2c7355b4b32bd20df3ff95f02da9329b34ccc3bd6ee72"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.18",
+ "syn 2.0.21",
 ]
 
 [[package]]
@@ -1936,7 +2030,7 @@ dependencies = [
 [[package]]
 name = "ggml"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm?branch=main#7927d0d9cb366dc60dfa8c3400825f43bd1a1654"
+source = "git+https://github.com/rustformers/llm?branch=main#9123171ab1aa436fcfa45b9aaef90211534f9fdb"
 dependencies = [
  "ggml-sys",
  "memmap2 0.5.10",
@@ -1946,7 +2040,7 @@ dependencies = [
 [[package]]
 name = "ggml-sys"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm?branch=main#7927d0d9cb366dc60dfa8c3400825f43bd1a1654"
+source = "git+https://github.com/rustformers/llm?branch=main#9123171ab1aa436fcfa45b9aaef90211534f9fdb"
 dependencies = [
  "cc",
 ]
@@ -1965,7 +2059,7 @@ dependencies = [
 [[package]]
 name = "gix"
 version = "0.47.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "gix-actor",
  "gix-attributes",
@@ -2015,7 +2109,7 @@ dependencies = [
 [[package]]
 name = "gix-actor"
 version = "0.22.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "bstr",
  "btoi",
@@ -2028,7 +2122,7 @@ dependencies = [
 [[package]]
 name = "gix-attributes"
 version = "0.14.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "bstr",
  "gix-glob",
@@ -2044,7 +2138,7 @@ dependencies = [
 [[package]]
 name = "gix-bitmap"
 version = "0.2.5"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "thiserror",
 ]
@@ -2052,7 +2146,7 @@ dependencies = [
 [[package]]
 name = "gix-chunk"
 version = "0.4.3"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "thiserror",
 ]
@@ -2060,7 +2154,7 @@ dependencies = [
 [[package]]
 name = "gix-command"
 version = "0.2.6"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "bstr",
 ]
@@ -2068,20 +2162,20 @@ dependencies = [
 [[package]]
 name = "gix-commitgraph"
 version = "0.17.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "bstr",
  "gix-chunk",
  "gix-features",
  "gix-hash",
- "memmap2 0.7.0",
+ "memmap2 0.7.1",
  "thiserror",
 ]
 
 [[package]]
 name = "gix-config"
 version = "0.24.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "bstr",
  "gix-config-value",
@@ -2102,7 +2196,7 @@ dependencies = [
 [[package]]
 name = "gix-config-value"
 version = "0.12.2"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "bitflags 2.3.2",
  "bstr",
@@ -2114,7 +2208,7 @@ dependencies = [
 [[package]]
 name = "gix-credentials"
 version = "0.16.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "bstr",
  "gix-command",
@@ -2129,7 +2223,7 @@ dependencies = [
 [[package]]
 name = "gix-date"
 version = "0.6.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "bstr",
  "itoa",
@@ -2140,7 +2234,7 @@ dependencies = [
 [[package]]
 name = "gix-diff"
 version = "0.31.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "gix-hash",
  "gix-object",
@@ -2151,7 +2245,7 @@ dependencies = [
 [[package]]
 name = "gix-discover"
 version = "0.20.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "bstr",
  "dunce",
@@ -2165,7 +2259,7 @@ dependencies = [
 [[package]]
 name = "gix-features"
 version = "0.31.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "bytes",
  "bytesize",
@@ -2187,7 +2281,7 @@ dependencies = [
 [[package]]
 name = "gix-fs"
 version = "0.3.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "gix-features",
 ]
@@ -2195,7 +2289,7 @@ dependencies = [
 [[package]]
 name = "gix-glob"
 version = "0.9.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "bitflags 2.3.2",
  "bstr",
@@ -2206,7 +2300,7 @@ dependencies = [
 [[package]]
 name = "gix-hash"
 version = "0.11.3"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "hex",
  "thiserror",
@@ -2215,7 +2309,7 @@ dependencies = [
 [[package]]
 name = "gix-hashtable"
 version = "0.2.2"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "gix-hash",
  "hashbrown 0.14.0",
@@ -2225,7 +2319,7 @@ dependencies = [
 [[package]]
 name = "gix-ignore"
 version = "0.4.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "bstr",
  "gix-glob",
@@ -2236,7 +2330,7 @@ dependencies = [
 [[package]]
 name = "gix-index"
 version = "0.19.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "bitflags 2.3.2",
  "bstr",
@@ -2249,7 +2343,7 @@ dependencies = [
  "gix-object",
  "gix-traverse",
  "itoa",
- "memmap2 0.7.0",
+ "memmap2 0.7.1",
  "smallvec",
  "thiserror",
 ]
@@ -2257,7 +2351,7 @@ dependencies = [
 [[package]]
 name = "gix-lock"
 version = "7.0.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "gix-tempfile",
  "gix-utils",
@@ -2267,7 +2361,7 @@ dependencies = [
 [[package]]
 name = "gix-mailmap"
 version = "0.14.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "bstr",
  "gix-actor",
@@ -2278,7 +2372,7 @@ dependencies = [
 [[package]]
 name = "gix-negotiate"
 version = "0.3.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "bitflags 2.3.2",
  "gix-commitgraph",
@@ -2293,7 +2387,7 @@ dependencies = [
 [[package]]
 name = "gix-object"
 version = "0.31.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "bstr",
  "btoi",
@@ -2312,7 +2406,7 @@ dependencies = [
 [[package]]
 name = "gix-odb"
 version = "0.48.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "arc-swap",
  "gix-date",
@@ -2330,7 +2424,7 @@ dependencies = [
 [[package]]
 name = "gix-pack"
 version = "0.38.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "clru",
  "gix-chunk",
@@ -2342,7 +2436,7 @@ dependencies = [
  "gix-path",
  "gix-tempfile",
  "gix-traverse",
- "memmap2 0.7.0",
+ "memmap2 0.7.1",
  "parking_lot",
  "smallvec",
  "thiserror",
@@ -2352,7 +2446,7 @@ dependencies = [
 [[package]]
 name = "gix-packetline"
 version = "0.16.3"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "bstr",
  "hex",
@@ -2362,7 +2456,7 @@ dependencies = [
 [[package]]
 name = "gix-path"
 version = "0.8.2"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "bstr",
  "gix-trace",
@@ -2374,7 +2468,7 @@ dependencies = [
 [[package]]
 name = "gix-prompt"
 version = "0.5.2"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "gix-command",
  "gix-config-value",
@@ -2386,7 +2480,7 @@ dependencies = [
 [[package]]
 name = "gix-protocol"
 version = "0.34.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "bstr",
  "btoi",
@@ -2403,7 +2497,7 @@ dependencies = [
 [[package]]
 name = "gix-quote"
 version = "0.4.5"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "bstr",
  "btoi",
@@ -2413,7 +2507,7 @@ dependencies = [
 [[package]]
 name = "gix-ref"
 version = "0.31.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "gix-actor",
  "gix-date",
@@ -2425,7 +2519,7 @@ dependencies = [
  "gix-path",
  "gix-tempfile",
  "gix-validate",
- "memmap2 0.7.0",
+ "memmap2 0.7.1",
  "nom",
  "thiserror",
 ]
@@ -2433,7 +2527,7 @@ dependencies = [
 [[package]]
 name = "gix-refspec"
 version = "0.12.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "bstr",
  "gix-hash",
@@ -2446,7 +2540,7 @@ dependencies = [
 [[package]]
 name = "gix-revision"
 version = "0.16.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "bstr",
  "gix-date",
@@ -2460,7 +2554,7 @@ dependencies = [
 [[package]]
 name = "gix-revwalk"
 version = "0.2.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "gix-commitgraph",
  "gix-date",
@@ -2474,7 +2568,7 @@ dependencies = [
 [[package]]
 name = "gix-sec"
 version = "0.8.2"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "bitflags 2.3.2",
  "gix-path",
@@ -2485,7 +2579,7 @@ dependencies = [
 [[package]]
 name = "gix-tempfile"
 version = "7.0.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "gix-fs",
  "libc",
@@ -2499,12 +2593,12 @@ dependencies = [
 [[package]]
 name = "gix-trace"
 version = "0.1.1"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 
 [[package]]
 name = "gix-transport"
 version = "0.33.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "base64 0.21.2",
  "bstr",
@@ -2522,7 +2616,7 @@ dependencies = [
 [[package]]
 name = "gix-traverse"
 version = "0.28.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "gix-commitgraph",
  "gix-date",
@@ -2537,7 +2631,7 @@ dependencies = [
 [[package]]
 name = "gix-url"
 version = "0.20.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "bstr",
  "gix-features",
@@ -2550,7 +2644,7 @@ dependencies = [
 [[package]]
 name = "gix-utils"
 version = "0.1.3"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "fastrand 2.0.0",
 ]
@@ -2558,7 +2652,7 @@ dependencies = [
 [[package]]
 name = "gix-validate"
 version = "0.7.6"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "bstr",
  "thiserror",
@@ -2567,7 +2661,7 @@ dependencies = [
 [[package]]
 name = "gix-worktree"
 version = "0.20.0"
-source = "git+https://github.com/Byron/gitoxide#6906e0d717bb04efb0744eb20afb4c53ebe360c9"
+source = "git+https://github.com/Byron/gitoxide#3c8e3c1e88d36657d4e6eeaf0819be7fd9341ae1"
 dependencies = [
  "bstr",
  "filetime",
@@ -2698,10 +2792,11 @@ dependencies = [
 
 [[package]]
 name = "half"
-version = "2.2.1"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02b4af3693f1b705df946e9fe5631932443781d0aabb423b62fcd4d73f6d2fd0"
+checksum = "9906a89f1724975a455316ae0554ceaa45ad83bb336f1125a87bfbdb9197cfa0"
 dependencies = [
+ "cfg-if",
  "crunchy",
 ]
 
@@ -3048,6 +3143,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "io-extras"
+version = "0.17.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fde93d48f0d9277f977a333eca8313695ddd5301dc96f7e02aeddcb0dd99096f"
+dependencies = [
+ "io-lifetimes",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
 name = "io-lifetimes"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3259,7 +3364,7 @@ checksum = "ef53942eb7bf7ff43a617b3e2c1c4a5ecf5944a7c1bc12d7ee39bbb15e5c1519"
 [[package]]
 name = "llm"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm?branch=main#7927d0d9cb366dc60dfa8c3400825f43bd1a1654"
+source = "git+https://github.com/rustformers/llm?branch=main#9123171ab1aa436fcfa45b9aaef90211534f9fdb"
 dependencies = [
  "llm-base",
  "llm-bloom",
@@ -3274,7 +3379,7 @@ dependencies = [
 [[package]]
 name = "llm-base"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm?branch=main#7927d0d9cb366dc60dfa8c3400825f43bd1a1654"
+source = "git+https://github.com/rustformers/llm?branch=main#9123171ab1aa436fcfa45b9aaef90211534f9fdb"
 dependencies = [
  "bytemuck",
  "ggml",
@@ -3292,7 +3397,7 @@ dependencies = [
 [[package]]
 name = "llm-bloom"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm?branch=main#7927d0d9cb366dc60dfa8c3400825f43bd1a1654"
+source = "git+https://github.com/rustformers/llm?branch=main#9123171ab1aa436fcfa45b9aaef90211534f9fdb"
 dependencies = [
  "bytemuck",
  "llm-base",
@@ -3301,7 +3406,7 @@ dependencies = [
 [[package]]
 name = "llm-gpt2"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm?branch=main#7927d0d9cb366dc60dfa8c3400825f43bd1a1654"
+source = "git+https://github.com/rustformers/llm?branch=main#9123171ab1aa436fcfa45b9aaef90211534f9fdb"
 dependencies = [
  "bytemuck",
  "llm-base",
@@ -3310,7 +3415,7 @@ dependencies = [
 [[package]]
 name = "llm-gptj"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm?branch=main#7927d0d9cb366dc60dfa8c3400825f43bd1a1654"
+source = "git+https://github.com/rustformers/llm?branch=main#9123171ab1aa436fcfa45b9aaef90211534f9fdb"
 dependencies = [
  "bytemuck",
  "llm-base",
@@ -3319,7 +3424,7 @@ dependencies = [
 [[package]]
 name = "llm-gptneox"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm?branch=main#7927d0d9cb366dc60dfa8c3400825f43bd1a1654"
+source = "git+https://github.com/rustformers/llm?branch=main#9123171ab1aa436fcfa45b9aaef90211534f9fdb"
 dependencies = [
  "bytemuck",
  "llm-base",
@@ -3329,7 +3434,7 @@ dependencies = [
 [[package]]
 name = "llm-llama"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm?branch=main#7927d0d9cb366dc60dfa8c3400825f43bd1a1654"
+source = "git+https://github.com/rustformers/llm?branch=main#9123171ab1aa436fcfa45b9aaef90211534f9fdb"
 dependencies = [
  "bytemuck",
  "llm-base",
@@ -3340,7 +3445,7 @@ dependencies = [
 [[package]]
 name = "llm-mpt"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm?branch=main#7927d0d9cb366dc60dfa8c3400825f43bd1a1654"
+source = "git+https://github.com/rustformers/llm?branch=main#9123171ab1aa436fcfa45b9aaef90211534f9fdb"
 dependencies = [
  "bytemuck",
  "llm-base",
@@ -3449,6 +3554,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "maybe-owned"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4facc753ae494aeb6e3c22f839b158aebd4f9270f55cd3c79906c45476c47ab4"
+
+[[package]]
 name = "memchr"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3474,9 +3585,9 @@ dependencies = [
 
 [[package]]
 name = "memmap2"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "180d4b35be83d33392d1d1bfbd2ae1eca7ff5de1a94d3fc87faaa99a069e7cbd"
+checksum = "f49388d20533534cd19360ad3d6a7dadc885944aa802ba3995040c5ec11288c6"
 dependencies = [
  "libc",
 ]
@@ -3560,7 +3671,7 @@ checksum = "8795add3e14028f11f8e848bd3294898a8294767b3776b6f733560d33bd2530b"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.18",
+ "syn 2.0.21",
 ]
 
 [[package]]
@@ -3843,7 +3954,7 @@ checksum = "a948666b637a0f465e8564c73e89d4dde00d72d4d473cc972f390fc3dcee7d9c"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.18",
+ "syn 2.0.21",
 ]
 
 [[package]]
@@ -4007,7 +4118,7 @@ dependencies = [
  "pest_meta",
  "proc-macro2",
  "quote",
- "syn 2.0.18",
+ "syn 2.0.21",
 ]
 
 [[package]]
@@ -4161,6 +4272,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "pollster"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22686f4785f02a4fcc856d3b3bb19bf6c8160d103f7a99cc258bddd0251dc7f2"
+
+[[package]]
 name = "ppv-lite86"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4190,9 +4307,9 @@ checksum = "dc375e1527247fe1a97d8b7156678dfe7c1af2fc075c9a4db3690ecd2a148068"
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.60"
+version = "1.0.61"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dec2b086b7a862cf4de201096214fa870344cf922b2b30c167badb3af3195406"
+checksum = "363a6f739a0c0addeaf6ed75150b95743aa18643a3c6f40409ed7b6db3a6911f"
 dependencies = [
  "unicode-ident",
 ]
@@ -4544,8 +4661,10 @@ dependencies = [
  "bitflags 1.3.2",
  "errno",
  "io-lifetimes",
+ "itoa",
  "libc",
  "linux-raw-sys",
+ "once_cell",
  "windows-sys 0.48.0",
 ]
 
@@ -4750,14 +4869,14 @@ checksum = "d9735b638ccc51c28bf6914d90a2e9725b377144fc612c49a611fddd1b631d68"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.18",
+ "syn 2.0.21",
 ]
 
 [[package]]
 name = "serde_json"
-version = "1.0.97"
+version = "1.0.99"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bdf3bf93142acad5821c99197022e170842cdbc1c30482b98750c688c640842a"
+checksum = "46266871c240a00b8f503b877622fe33430b3c7d963bdc0f2adc511e54a1eae3"
 dependencies = [
  "itoa",
  "ryu",
@@ -4772,7 +4891,7 @@ checksum = "bcec881020c684085e55a25f7fd888954d56609ef363479dc5a1305eb0d40cab"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.18",
+ "syn 2.0.21",
 ]
 
 [[package]]
@@ -4832,6 +4951,15 @@ dependencies = [
  "cfg-if",
  "cpufeatures",
  "digest",
+]
+
+[[package]]
+name = "shellexpand"
+version = "2.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ccc8076840c4da029af4f87e4e8daeb0fca6b87bbb02e10cb60b791450e11e4"
+dependencies = [
+ "dirs",
 ]
 
 [[package]]
@@ -5071,13 +5199,29 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.18"
+version = "2.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32d41677bcbe24c20c52e7c70b0d8db04134c5d1066bf98662e2871ad200ea3e"
+checksum = "1182caafaab7018eaea9b404afa8184c0baf42a04d5e10ae4f4843c2029c8aab"
 dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "system-interface"
+version = "0.25.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "928ebd55ab758962e230f51ca63735c5b283f26292297c81404289cda5d78631"
+dependencies = [
+ "bitflags 1.3.2",
+ "cap-fs-ext",
+ "cap-std",
+ "fd-lock",
+ "io-lifetimes",
+ "rustix",
+ "windows-sys 0.48.0",
+ "winx",
 ]
 
 [[package]]
@@ -5148,7 +5292,7 @@ checksum = "f9456a42c5b0d803c8cd86e73dd7cc9edd429499f37a3550d286d5e86720569f"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.18",
+ "syn 2.0.21",
 ]
 
 [[package]]
@@ -5283,7 +5427,7 @@ checksum = "630bdcf245f78637c13ec01ffae6187cca34625e8c63150d424b59e55af2675e"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.18",
+ "syn 2.0.21",
 ]
 
 [[package]]
@@ -5376,6 +5520,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ce8c33a8d48bd45d624a6e523445fd21ec13d3653cd51f681abf67418f54eb8"
 dependencies = [
  "cfg-if",
+ "log",
  "pin-project-lite",
  "tracing-attributes",
  "tracing-core",
@@ -5389,7 +5534,7 @@ checksum = "5f4f31f56159e98206da9efd823404b79b6ef3143b4a7ab76e67b1751b25a4ab"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.18",
+ "syn 2.0.21",
 ]
 
 [[package]]
@@ -5716,6 +5861,48 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c8d87e72b64a3b4db28d11ce29237c246188f4f51057d65a7eab63b7987e423"
 
 [[package]]
+name = "wasi-cap-std-sync"
+version = "11.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "cap-fs-ext",
+ "cap-rand",
+ "cap-std",
+ "cap-time-ext",
+ "fs-set-times",
+ "io-extras",
+ "io-lifetimes",
+ "is-terminal",
+ "once_cell",
+ "rustix",
+ "system-interface",
+ "tracing",
+ "wasi-common",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "wasi-common"
+version = "11.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
+dependencies = [
+ "anyhow",
+ "bitflags 1.3.2",
+ "cap-rand",
+ "cap-std",
+ "io-extras",
+ "log",
+ "rustix",
+ "thiserror",
+ "tracing",
+ "wasmtime",
+ "wiggle",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
 name = "wasm-bindgen"
 version = "0.2.84"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5839,7 +6026,7 @@ dependencies = [
 [[package]]
 name = "wasmtime"
 version = "11.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#155d60281cd3455b49e4e73720486991e22f59e6"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5876,7 +6063,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-asm-macros"
 version = "11.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#155d60281cd3455b49e4e73720486991e22f59e6"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
 dependencies = [
  "cfg-if",
 ]
@@ -5884,7 +6071,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-cache"
 version = "11.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#155d60281cd3455b49e4e73720486991e22f59e6"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
 dependencies = [
  "anyhow",
  "base64 0.21.2",
@@ -5903,7 +6090,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-component-macro"
 version = "11.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#155d60281cd3455b49e4e73720486991e22f59e6"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
 dependencies = [
  "anyhow",
  "proc-macro2",
@@ -5917,12 +6104,12 @@ dependencies = [
 [[package]]
 name = "wasmtime-component-util"
 version = "11.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#155d60281cd3455b49e4e73720486991e22f59e6"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
 
 [[package]]
 name = "wasmtime-cranelift"
 version = "11.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#155d60281cd3455b49e4e73720486991e22f59e6"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
@@ -5944,7 +6131,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-cranelift-shared"
 version = "11.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#155d60281cd3455b49e4e73720486991e22f59e6"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
@@ -5959,7 +6146,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-environ"
 version = "11.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#155d60281cd3455b49e4e73720486991e22f59e6"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
 dependencies = [
  "anyhow",
  "cranelift-entity",
@@ -5980,7 +6167,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-fiber"
 version = "11.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#155d60281cd3455b49e4e73720486991e22f59e6"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
 dependencies = [
  "cc",
  "cfg-if",
@@ -5992,7 +6179,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-jit"
 version = "11.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#155d60281cd3455b49e4e73720486991e22f59e6"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
 dependencies = [
  "addr2line",
  "anyhow",
@@ -6017,7 +6204,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-jit-debug"
 version = "11.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#155d60281cd3455b49e4e73720486991e22f59e6"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
 dependencies = [
  "object",
  "once_cell",
@@ -6027,7 +6214,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-jit-icache-coherence"
 version = "11.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#155d60281cd3455b49e4e73720486991e22f59e6"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
 dependencies = [
  "cfg-if",
  "libc",
@@ -6037,7 +6224,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-runtime"
 version = "11.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#155d60281cd3455b49e4e73720486991e22f59e6"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
 dependencies = [
  "anyhow",
  "cc",
@@ -6063,7 +6250,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-types"
 version = "11.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#155d60281cd3455b49e4e73720486991e22f59e6"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
 dependencies = [
  "cranelift-entity",
  "serde",
@@ -6072,9 +6259,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasmtime-wasi"
+version = "11.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bitflags 1.3.2",
+ "cap-fs-ext",
+ "cap-rand",
+ "cap-std",
+ "cap-time-ext",
+ "fs-set-times",
+ "io-extras",
+ "libc",
+ "rustix",
+ "system-interface",
+ "thiserror",
+ "tracing",
+ "wasi-cap-std-sync",
+ "wasi-common",
+ "wasmtime",
+ "wiggle",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
 name = "wasmtime-winch"
 version = "11.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#155d60281cd3455b49e4e73720486991e22f59e6"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
@@ -6090,11 +6303,20 @@ dependencies = [
 [[package]]
 name = "wasmtime-wit-bindgen"
 version = "11.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#155d60281cd3455b49e4e73720486991e22f59e6"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
 dependencies = [
  "anyhow",
  "heck 0.4.1",
  "wit-parser",
+]
+
+[[package]]
+name = "wast"
+version = "35.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ef140f1b49946586078353a453a1d28ba90adfc54dde75710bc1931de204d68"
+dependencies = [
+ "leb128",
 ]
 
 [[package]]
@@ -6115,7 +6337,7 @@ version = "1.0.66"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5abe520f0ab205366e9ac7d3e6b2fc71de44e32a2b58f2ec871b6b575bdcea3b"
 dependencies = [
- "wast",
+ "wast 60.0.0",
 ]
 
 [[package]]
@@ -6256,6 +6478,45 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "653f141f39ec16bba3c5abe400a0c60da7468261cc2cbf36805022876bc721a8"
 
 [[package]]
+name = "wiggle"
+version = "11.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bitflags 1.3.2",
+ "thiserror",
+ "tracing",
+ "wasmtime",
+ "wiggle-macro",
+]
+
+[[package]]
+name = "wiggle-generate"
+version = "11.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
+dependencies = [
+ "anyhow",
+ "heck 0.4.1",
+ "proc-macro2",
+ "quote",
+ "shellexpand",
+ "syn 1.0.109",
+ "witx",
+]
+
+[[package]]
+name = "wiggle-macro"
+version = "11.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+ "wiggle-generate",
+]
+
+[[package]]
 name = "winapi"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6298,7 +6559,7 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 [[package]]
 name = "winch-codegen"
 version = "0.9.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#155d60281cd3455b49e4e73720486991e22f59e6"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
@@ -6557,9 +6818,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "winx"
+version = "0.35.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c52a121f0fbf9320d5f2a9a5d82f6cb7557eda5e8b47fc3e7f359ec866ae960"
+dependencies = [
+ "bitflags 1.3.2",
+ "io-lifetimes",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
 name = "wit-bindgen"
-version = "0.7.0"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#131746313de2f90d2688afbbc40c4a7ca309fe0d"
+version = "0.8.0"
+source = "git+https://github.com/bytecodealliance/wit-bindgen#544576ea94bbddbb893f91cba8e16f5cce8a7472"
 dependencies = [
  "bitflags 2.3.2",
  "wit-bindgen-rust-macro",
@@ -6567,8 +6839,8 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-core"
-version = "0.7.0"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#131746313de2f90d2688afbbc40c4a7ca309fe0d"
+version = "0.8.0"
+source = "git+https://github.com/bytecodealliance/wit-bindgen#544576ea94bbddbb893f91cba8e16f5cce8a7472"
 dependencies = [
  "anyhow",
  "wit-component",
@@ -6577,8 +6849,8 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust"
-version = "0.7.0"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#131746313de2f90d2688afbbc40c4a7ca309fe0d"
+version = "0.8.0"
+source = "git+https://github.com/bytecodealliance/wit-bindgen#544576ea94bbddbb893f91cba8e16f5cce8a7472"
 dependencies = [
  "heck 0.4.1",
  "wasm-metadata",
@@ -6589,8 +6861,8 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust-lib"
-version = "0.7.0"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#131746313de2f90d2688afbbc40c4a7ca309fe0d"
+version = "0.8.0"
+source = "git+https://github.com/bytecodealliance/wit-bindgen#544576ea94bbddbb893f91cba8e16f5cce8a7472"
 dependencies = [
  "heck 0.4.1",
  "wit-bindgen-core",
@@ -6598,12 +6870,12 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust-macro"
-version = "0.7.0"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#131746313de2f90d2688afbbc40c4a7ca309fe0d"
+version = "0.8.0"
+source = "git+https://github.com/bytecodealliance/wit-bindgen#544576ea94bbddbb893f91cba8e16f5cce8a7472"
 dependencies = [
  "anyhow",
  "proc-macro2",
- "syn 2.0.18",
+ "syn 2.0.21",
  "wit-bindgen-core",
  "wit-bindgen-rust",
  "wit-component",
@@ -6639,6 +6911,17 @@ dependencies = [
  "semver",
  "unicode-xid",
  "url",
+]
+
+[[package]]
+name = "witx"
+version = "0.9.1"
+source = "git+https://github.com/bytecodealliance/wasmtime#2d34b4657aa5290948da9a07cb31764a12c12994"
+dependencies = [
+ "anyhow",
+ "log",
+ "thiserror",
+ "wast 35.0.2",
 ]
 
 [[package]]

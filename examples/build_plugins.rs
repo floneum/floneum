@@ -17,7 +17,7 @@ async fn main() {
     for plugin in plugins {
         let path = PathBuf::from("./plugins").join(plugin);
         let status = std::process::Command::new("cargo")
-            .args(["build", "--target", "wasm32-unknown-unknown", "--release"])
+            .args(["build", "--target", "wasm32-wasi", "--release"])
             .current_dir(path)
             .status()
             .expect("failed to build plugin");
@@ -36,15 +36,28 @@ async fn main() {
             std::fs::remove_dir_all(path).unwrap();
         }
     }
-    let build_path = "target/wasm32-unknown-unknown/release";
+    let build_path = "target/wasm32-wasi/release";
     let mut plugin_manager = PluginEngine::default();
     for plugin in read_dir(build_path).unwrap().flatten() {
         let path = plugin.path();
         if path.extension() != Some(std::ffi::OsStr::new("wasm")) {
             continue;
         }
-        let plugin = plugin_manager.load_plugin(&path);
-        let instance = plugin.instance();
+        let status = std::process::Command::new("wasm-tools")
+            .args([
+                "component",
+                "new",
+                &*path.to_string_lossy(),
+                "-o",
+                "my-component.wasm",
+                "--adapt",
+                "./plugin/wasi_snapshot_preview1.wasm",
+            ])
+            .status()
+            .expect("failed to build plugin");
+        assert!(status.success());
+        let plugin = plugin_manager.load_plugin(&path).await;
+        let instance = plugin.instance().await;
         let info = instance.metadata();
         let name = &info.name;
         let version = "0.1";

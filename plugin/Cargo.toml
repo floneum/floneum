@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", features = ['component-model'] }
+wasmtime-wasi = { git = "https://github.com/bytecodealliance/wasmtime", features = ['preview2'] }
 wit-component = "0.11.0"
 bytesize = "1.2.0"
 futures-util = "0.3.28"
@@ -21,3 +22,4 @@ instant-distance = { version = "0.6.0", features = ["with-serde"] }
 serde = { version = "1.0.163", features = ["derive"] }
 partial_sort = "0.2.0"
 once_cell = "1.18.0"
+pollster = "0.3.0"

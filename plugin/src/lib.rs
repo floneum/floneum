@@ -4,8 +4,12 @@
 
 use once_cell::sync::Lazy;
 use plugins::main::types::Structure;
+use pollster::FutureExt;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
+use wasmtime::component::__internal::async_trait;
+use wasmtime_wasi::preview2::{self, DirPerms, FilePerms, WasiView};
+use wasmtime_wasi::Dir;
 
 use crate::plugins::main::imports::*;
 use exports::plugins::main::definitions::*;
@@ -30,16 +34,28 @@ mod vector_db;
 use crate::sessions::InferenceSessions;
 use crate::{vector_db::VectorDB, ModelType};
 
-wasmtime::component::bindgen!({path: "../wit"});
-
 static LINKER: Lazy<Linker<State>> = Lazy::new(|| {
     let mut linker = Linker::new(&ENGINE);
-    PluginWorld::add_to_linker(&mut linker, |x| x).unwrap();
+    let l = &mut linker;
+    PluginWorld::add_to_linker(l, |x| x).unwrap();
+    preview2::wasi::clocks::wall_clock::add_to_linker(l, |t| t).unwrap();
+    preview2::wasi::clocks::monotonic_clock::add_to_linker(l, |t| t).unwrap();
+    preview2::wasi::clocks::timezone::add_to_linker(l, |t| t).unwrap();
+    preview2::wasi::filesystem::filesystem::add_to_linker(l, |t| t).unwrap();
+    preview2::wasi::poll::poll::add_to_linker(l, |t| t).unwrap();
+    preview2::wasi::io::streams::add_to_linker(l, |t| t).unwrap();
+    preview2::wasi::random::random::add_to_linker(l, |t| t).unwrap();
+    preview2::wasi::cli_base::exit::add_to_linker(l, |t| t).unwrap();
+    preview2::wasi::cli_base::environment::add_to_linker(l, |t| t).unwrap();
+    preview2::wasi::cli_base::preopens::add_to_linker(l, |t| t).unwrap();
+    preview2::wasi::cli_base::stdin::add_to_linker(l, |t| t).unwrap();
+    preview2::wasi::cli_base::stdout::add_to_linker(l, |t| t).unwrap();
+    preview2::wasi::cli_base::stderr::add_to_linker(l, |t| t).unwrap();
     linker
 });
 static ENGINE: Lazy<Engine> = Lazy::new(|| {
     let mut config = Config::new();
-    config.wasm_component_model(true);
+    config.wasm_component_model(true).async_support(true);
     Engine::new(&config).unwrap()
 });
 static MULTI_PLUGIN_STATE: Lazy<RwLock<MultiPluginState>> = Lazy::new(Default::default);
@@ -79,10 +95,55 @@ impl MultiPluginState {
     }
 }
 
-#[derive(Default)]
 pub struct State {
     sessions: InferenceSessions,
     structures: Slab<Structure>,
+    table: preview2::Table,
+    ctx: preview2::WasiCtx,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        let sandbox = Path::new("./sandbox");
+        std::fs::create_dir_all(sandbox).unwrap();
+        let ctx_builder = preview2::WasiCtxBuilder::new()
+            .inherit_stderr()
+            .inherit_stdin()
+            .inherit_stdio()
+            .inherit_stdout()
+            .push_preopened_dir(
+                Dir::open_ambient_dir(sandbox, wasmtime_wasi::sync::ambient_authority()).unwrap(),
+                DirPerms::all(),
+                FilePerms::all(),
+                ".",
+            );
+        let mut table = preview2::Table::new();
+        let ctx = ctx_builder.build(&mut table).unwrap();
+        State {
+            sessions: InferenceSessions::default(),
+            structures: Slab::new(),
+            table,
+            ctx,
+        }
+    }
+}
+
+impl WasiView for State {
+    fn table(&self) -> &preview2::Table {
+        &self.table
+    }
+
+    fn table_mut(&mut self) -> &mut preview2::Table {
+        &mut self.table
+    }
+
+    fn ctx(&self) -> &preview2::WasiCtx {
+        &self.ctx
+    }
+
+    fn ctx_mut(&mut self) -> &mut preview2::WasiCtx {
+        &mut self.ctx
+    }
 }
 
 impl State {
@@ -144,13 +205,17 @@ impl State {
 
 impl plugins::main::types::Host for State {}
 
+#[async_trait]
 impl Host for State {
-    fn remove_structure(&mut self, id: StructureId) -> std::result::Result<(), wasmtime::Error> {
+    async fn remove_structure(
+        &mut self,
+        id: StructureId,
+    ) -> std::result::Result<(), wasmtime::Error> {
         self.structures.remove(id.id as usize);
         Ok(())
     }
 
-    fn create_structure(
+    async fn create_structure(
         &mut self,
         structure: Structure,
     ) -> std::result::Result<plugins::main::types::StructureId, wasmtime::Error> {
@@ -158,14 +223,14 @@ impl Host for State {
         Ok(plugins::main::types::StructureId { id: id as u32 })
     }
 
-    fn load_model(
+    async fn load_model(
         &mut self,
         ty: ModelType,
     ) -> std::result::Result<exports::plugins::main::definitions::ModelId, wasmtime::Error> {
         Ok(self.sessions.create(ty))
     }
 
-    fn unload_model(
+    async fn unload_model(
         &mut self,
         id: exports::plugins::main::definitions::ModelId,
     ) -> std::result::Result<(), wasmtime::Error> {
@@ -173,7 +238,7 @@ impl Host for State {
         Ok(())
     }
 
-    fn get_embedding(
+    async fn get_embedding(
         &mut self,
         id: exports::plugins::main::definitions::ModelId,
         text: String,
@@ -181,7 +246,7 @@ impl Host for State {
         Ok(self.sessions.get_embedding(id, &text))
     }
 
-    fn create_embedding_db(
+    async fn create_embedding_db(
         &mut self,
         embeddings: Vec<plugins::main::types::Embedding>,
         documents: Vec<String>,
@@ -193,7 +258,7 @@ impl Host for State {
             .create_db(embeddings, documents))
     }
 
-    fn add_embedding(
+    async fn add_embedding(
         &mut self,
         id: exports::plugins::main::definitions::EmbeddingDbId,
         embedding: plugins::main::types::Embedding,
@@ -207,7 +272,7 @@ impl Host for State {
         Ok(())
     }
 
-    fn remove_embedding_db(
+    async fn remove_embedding_db(
         &mut self,
         id: exports::plugins::main::definitions::EmbeddingDbId,
     ) -> std::result::Result<(), wasmtime::Error> {
@@ -215,7 +280,7 @@ impl Host for State {
         Ok(())
     }
 
-    fn find_closest_documents(
+    async fn find_closest_documents(
         &mut self,
         id: exports::plugins::main::definitions::EmbeddingDbId,
         search: plugins::main::types::Embedding,
@@ -224,7 +289,7 @@ impl Host for State {
         Ok(self.get_closest(id, search, count as usize))
     }
 
-    fn find_documents_within(
+    async fn find_documents_within(
         &mut self,
         id: exports::plugins::main::definitions::EmbeddingDbId,
         search: plugins::main::types::Embedding,
@@ -233,7 +298,7 @@ impl Host for State {
         Ok(self.get_within(id, search, distance))
     }
 
-    fn infer(
+    async fn infer(
         &mut self,
         id: exports::plugins::main::definitions::ModelId,
         input: String,
@@ -243,7 +308,7 @@ impl Host for State {
         Ok(self.sessions.infer(id, input, max_tokens, stop_on))
     }
 
-    fn infer_structured(
+    async fn infer_structured(
         &mut self,
         id: exports::plugins::main::definitions::ModelId,
         input: String,
@@ -255,26 +320,21 @@ impl Host for State {
             .sessions
             .infer_validate(id, input, max_tokens, structure))
     }
-
-    fn print(&mut self, str: String) -> std::result::Result<(), wasmtime::Error> {
-        print!("{}", str);
-        Ok(())
-    }
 }
 
 #[derive(Default)]
 pub struct PluginEngine {}
 
 impl PluginEngine {
-    pub fn load_plugin(&mut self, path: &Path) -> Plugin {
+    pub async fn load_plugin(&mut self, path: &Path) -> Plugin {
         println!("loading plugin");
 
         // we first read the bytes of the wasm module.
         let module = std::fs::read(path).unwrap();
-        self.load_plugin_from_bytes(module)
+        self.load_plugin_from_bytes(module).await
     }
 
-    pub fn load_plugin_from_bytes(&mut self, bytes: Vec<u8>) -> Plugin {
+    pub async fn load_plugin_from_bytes(&mut self, bytes: Vec<u8>) -> Plugin {
         let size = bytes.len();
         println!("loaded plugin ({:01} mb)", size as f64 / (1024. * 1024.));
         // then we transform module to compoennt.
@@ -294,9 +354,10 @@ impl PluginEngine {
 
         // then we get the structure of the plugin.
         let mut store = Store::new(&ENGINE, State::default());
-        let (world, _instance) =
-            PluginWorld::instantiate(&mut store, &component, &*LINKER).unwrap();
-        let structure = world.interface0.call_structure(&mut store).unwrap();
+        let (world, _instance) = PluginWorld::instantiate_async(&mut store, &component, &*LINKER)
+            .await
+            .unwrap();
+        let structure = world.interface0.call_structure(&mut store).await.unwrap();
 
         Plugin {
             bytes: Arc::new(bytes),
@@ -323,17 +384,23 @@ impl<'de> Deserialize<'de> for Plugin {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         // Just deserialize the bytes
         let bytes = Vec::<u8>::deserialize(deserializer)?;
-        let mut engine = PluginEngine::default();
-        Ok(engine.load_plugin_from_bytes(bytes))
+
+        Ok(async move {
+            let mut engine = PluginEngine::default();
+            engine.load_plugin_from_bytes(bytes).await
+        }
+        .block_on())
     }
 }
 
 impl Plugin {
-    pub fn instance(&self) -> PluginInstance {
+    pub async fn instance(&self) -> PluginInstance {
         // create the store of models
         let mut store = Store::new(&ENGINE, State::default());
         let (world, _instance) =
-            PluginWorld::instantiate(&mut store, &self.component, &LINKER).unwrap();
+            PluginWorld::instantiate_async(&mut store, &self.component, &LINKER)
+                .await
+                .unwrap();
 
         let (input_sender, mut input_reciever) = broadcast::channel::<Vec<Value>>(100);
         let (output_sender, output_reciever) = broadcast::channel(100);
@@ -342,7 +409,11 @@ impl Plugin {
             loop {
                 let Ok(inputs) = input_reciever.recv().await else{break;};
                 let borrowed = inputs.iter().collect::<Vec<_>>();
-                let outputs = world.interface0.call_run(&mut store, &borrowed).unwrap();
+                let outputs = world
+                    .interface0
+                    .call_run(&mut store, &borrowed)
+                    .await
+                    .unwrap();
                 if output_sender.send(outputs).is_err() {
                     break;
                 }
@@ -384,9 +455,14 @@ impl<'de> Deserialize<'de> for PluginInstance {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         // Just deserialize the bytes
         let bytes = Vec::<u8>::deserialize(deserializer)?;
-        Ok(PluginEngine::default()
-            .load_plugin_from_bytes(bytes)
-            .instance())
+        Ok(async move {
+            PluginEngine::default()
+                .load_plugin_from_bytes(bytes)
+                .await
+                .instance()
+                .await
+        }
+        .block_on())
     }
 }
 
@@ -409,7 +485,7 @@ impl PluginInstance {
 
 #[test]
 fn load_plugin() {
-    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let runtime = tokio::runtime::Handle::current();
 
     runtime.block_on(async move {
         // first build the plugin_demo
@@ -427,9 +503,9 @@ fn load_plugin() {
 
         let mut engine = PluginEngine::default();
 
-        let plugin = engine.load_plugin(&std::path::PathBuf::from(path));
+        let plugin = engine.load_plugin(&std::path::PathBuf::from(path)).await;
 
-        let instance = plugin.instance();
+        let instance = plugin.instance().await;
 
         let inputs = vec![
             Value::Single(PrimitiveValue::Text("hello {}".to_string())),
@@ -448,3 +524,8 @@ fn load_plugin() {
         }
     });
 }
+
+wasmtime::component::bindgen!({
+    path: "../wit",
+    async: true,
+});

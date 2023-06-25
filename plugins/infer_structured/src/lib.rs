@@ -28,7 +28,7 @@ fn structured_inference(
     let mut responce = session.infer_structured("", max_output_length, structure);
     responce += "\n";
 
-    print(&responce);
+    println!("{}", &responce);
 
     responce
 }

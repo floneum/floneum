@@ -12,7 +12,5 @@ fn inference(input: String) -> String {
     let mut responce = session.infer(&input, Some(100), None);
     responce += "\n";
 
-    print(&responce);
-
     responce
 }
