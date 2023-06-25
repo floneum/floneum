@@ -3,6 +3,7 @@ name = "floneum"
 version = "0.1.0"
 edition = "2021"
 license = "MIT/Apache-2.0"
+repository = "https://github.com/floneum/floneum"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -16,8 +17,8 @@ serde_json = "1.0.96"
 spinoff = "0.7.0"
 tokio = { version = "1.28.1", features = ["full"] }
 scraper = "0.16.0"
-# egui_node_graph = { git = "https://github.com/Demonthos/egui_node_graph", features = ["persistence"] }
-egui_node_graph = { git = "https://github.com/setzer22/egui_node_graph", features = ["persistence"] }
+egui_node_graph = { git = "https://github.com/Demonthos/egui_node_graph", features = ["persistence"] }
+# egui_node_graph = { git = "https://github.com/setzer22/egui_node_graph", features = ["persistence"] }
 eframe = { version = "0.21.0", features = ["persistence"] }
 anyhow = "1.0"
 floneum_plugin = { path = "./plugin" }
@@ -28,6 +29,7 @@ bincode = "1.3.3"
 simple_logger = "4.1.0"
 toml = "0.7.5"
 pollster = "0.3.0"
+cargo-dist = "0.0.7"
 
 [workspace]
 members = [
@@ -44,3 +46,21 @@ members = [
     "plugins/embedding_db",
     "plugins/add_embedding",
 ]
+
+# Config for 'cargo dist'
+[workspace.metadata.dist]
+# The preferred cargo-dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.0.7"
+# The preferred Rust toolchain to use in CI (rustup toolchain syntax)
+rust-toolchain-version = "1.67.1"
+# Target platforms to build apps for (Rust target-triple syntax)
+targets = ["x86_64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-pc-windows-msvc", "aarch64-apple-darwin"]
+# CI backends to support (see 'cargo dist generate-ci')
+ci = ["github"]
+# The installers to generate for each app
+installers = []
+
+# The profile that 'cargo dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

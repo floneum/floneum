@@ -774,8 +774,8 @@ impl NodeGraphExample {
             let input = self.state.graph.get_input(*id);
             let connection = self.state.graph.connections.get(input.id);
             let value = match connection {
-                Some(&connection) => {
-                    let connection = self.state.graph.get_output(connection);
+                Some(connection) => {
+                    let connection = self.state.graph.get_output(connection[0]);
                     let output_id = connection.id;
                     if let Some(value) = self.user_state.node_outputs.get(&output_id) {
                         value
