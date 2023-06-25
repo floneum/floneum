@@ -3,12 +3,13 @@ use floneum_rust::*;
 #[export_plugin]
 /// creates a database of embeddings
 fn embedding_db(
+    /// the model to use
+    model: ModelType,
     /// the seperator between documents
     seperator: String,
     /// the documents to index
     text: String,
 ) -> EmbeddingDbId {
-    let model = ModelType::Llama(LlamaType::Orca);
     let instance = ModelInstance::new(model);
 
     let borrowed_documents = text

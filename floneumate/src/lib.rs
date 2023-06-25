@@ -12,7 +12,7 @@ pub struct Index {
 
 impl Index {
     pub fn new() -> anyhow::Result<Self> {
-        let path =packages_path()?;
+        let path = packages_path()?;
         if path.exists() {
             // remove the old packages
             // TODO: use git fetch to update the packages

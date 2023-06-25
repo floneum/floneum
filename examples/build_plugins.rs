@@ -62,5 +62,4 @@ async fn main() {
         let wasm_path = package_path.join("package.wasm");
         std::fs::copy(path, wasm_path).unwrap();
     }
-    std::fs::remove_file("temp-component.wasm").unwrap();
 }

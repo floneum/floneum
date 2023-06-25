@@ -4,7 +4,7 @@ pub use crate::exports::plugins::main::definitions::{
     Definition, Definitions, IoDefinition, PrimitiveValue, PrimitiveValueType, Value, ValueType,
 };
 use crate::plugins::main::imports::*;
-pub use crate::plugins::main::imports::{
+pub use crate::plugins::main::types::{
     EmbeddingDbId, GptNeoXType, LlamaType, ModelType, MptType,
 };
 pub use floneum_rust_macro::export_plugin;

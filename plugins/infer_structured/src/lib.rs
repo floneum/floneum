@@ -10,13 +10,14 @@ use pest_derive::Parser;
 #[export_plugin]
 /// loads a model and runs it
 fn structured_inference(
+    /// the model to use
+    model: ModelType,
     /// the structure to use when running the model
     structure: String,
     /// the maximum length of the output
     max_output_length: i64,
 ) -> String {
     let structure = structured_from_string(&structure);
-    let model = ModelType::Llama(LlamaType::Orca);
     let session = ModelInstance::new(model);
 
     let max_output_length = if max_output_length == 0 {

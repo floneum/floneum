@@ -16,7 +16,6 @@ serde_json = "1.0.96"
 spinoff = "0.7.0"
 tokio = { version = "1.28.1", features = ["full"] }
 scraper = "0.16.0"
-wai-bindgen-rust = "0.2.3"
 # egui_node_graph = { git = "https://github.com/Demonthos/egui_node_graph", features = ["persistence"] }
 egui_node_graph = { git = "https://github.com/setzer22/egui_node_graph", features = ["persistence"] }
 eframe = { version = "0.21.0", features = ["persistence"] }
@@ -43,5 +42,5 @@ members = [
     "plugins/search",
     "plugins/embedding",
     "plugins/embedding_db",
-    "plugins/add_embedding"
+    "plugins/add_embedding",
 ]

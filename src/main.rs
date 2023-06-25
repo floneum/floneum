@@ -10,7 +10,7 @@ use egui_node_graph::*;
 use floneum_plugin::exports::plugins::main::definitions::{
     Embedding, PrimitiveValue, PrimitiveValueType, Value, ValueType,
 };
-use floneum_plugin::plugins::main::types::{EmbeddingDbId, ModelId};
+use floneum_plugin::plugins::main::types::{EmbeddingDbId, ModelId, ModelType, MptType, GptNeoXType, LlamaType};
 use floneum_plugin::{Plugin, PluginEngine, PluginInstance};
 use floneumate::Index;
 use log::LevelFilter;
@@ -25,6 +25,49 @@ use std::{
     path::PathBuf,
 };
 use tokio::sync::mpsc::{Receiver, Sender};
+
+trait Variants: Sized +'static {
+    const VARIANTS: &'static [Self];
+}
+
+impl Variants for ModelType{
+     const VARIANTS: &'static [Self] = &[
+        ModelType::Llama(LlamaType::Guanaco),
+        ModelType::Llama(LlamaType::Orca),
+        ModelType::Llama(LlamaType::Vicuna),
+        ModelType::Llama(LlamaType::Wizardlm),
+        ModelType::GptNeoX(GptNeoXType::TinyPythia),
+        ModelType::GptNeoX(GptNeoXType::LargePythia),
+        ModelType::GptNeoX(GptNeoXType::Stablelm),
+        ModelType::GptNeoX(GptNeoXType::DollySevenB),
+        ModelType::Mpt(MptType::Base),
+        ModelType::Mpt(MptType::Chat),
+        ModelType::Mpt(MptType::Story),
+        ModelType::Mpt(MptType::Instruct),];
+}
+
+trait Named {
+    fn name(&self) -> &'static str;
+}
+
+impl Named for ModelType {
+    fn name(&self) -> &'static str {
+        match self {
+            ModelType::Llama(LlamaType::Guanaco) => "Guanaco",
+            ModelType::Llama(LlamaType::Orca) => "Orca",
+            ModelType::Llama(LlamaType::Vicuna) => "Vicuna",
+            ModelType::Llama(LlamaType::Wizardlm) => "Wizardlm",
+            ModelType::GptNeoX(GptNeoXType::TinyPythia) => "Tiny Pythia",
+            ModelType::GptNeoX(GptNeoXType::LargePythia) => "Large Pythia",
+            ModelType::GptNeoX(GptNeoXType::Stablelm) => "Stablelm",
+            ModelType::GptNeoX(GptNeoXType::DollySevenB) => "Dolly",
+            ModelType::Mpt(MptType::Base) => "Mpt base",
+            ModelType::Mpt(MptType::Chat) => "Mpt chat",
+            ModelType::Mpt(MptType::Story) => "Mpt story",
+            ModelType::Mpt(MptType::Instruct) => "Mpt instruct",
+        }
+    }
+}
 
 fn save_to_file<D: Serialize>(data: D) {
     let mut current_dir = std::env::current_dir().unwrap();
@@ -123,6 +166,7 @@ impl From<ValueType> for MyDataType {
                 PrimitiveValueType::Embedding => Self::Single(MyPrimitiveDataType::Embedding),
                 PrimitiveValueType::Database => Self::Single(MyPrimitiveDataType::Database),
                 PrimitiveValueType::Model => Self::Single(MyPrimitiveDataType::Model),
+                PrimitiveValueType::ModelType => Self::Single(MyPrimitiveDataType::ModelType),
             },
             ValueType::Many(value) => match value {
                 PrimitiveValueType::Number => Self::List(MyPrimitiveDataType::Number),
@@ -130,6 +174,7 @@ impl From<ValueType> for MyDataType {
                 PrimitiveValueType::Embedding => Self::List(MyPrimitiveDataType::Embedding),
                 PrimitiveValueType::Database => Self::List(MyPrimitiveDataType::Database),
                 PrimitiveValueType::Model => Self::List(MyPrimitiveDataType::Model),
+                PrimitiveValueType::ModelType => Self::List(MyPrimitiveDataType::ModelType),
             },
         }
     }
@@ -141,6 +186,7 @@ pub enum MyPrimitiveDataType {
     Text,
     Embedding,
     Model,
+    ModelType,
     Database,
 }
 
@@ -163,11 +209,50 @@ impl MyValueType {
                 }
                 MyPrimitiveDataType::Number => Self::Single(MyPrimitiveValueType::Number(0)),
                 MyPrimitiveDataType::Model => Self::Single(MyPrimitiveValueType::Model(0)),
+                MyPrimitiveDataType::ModelType => Self::Single(MyPrimitiveValueType::ModelType(ModelType::Llama(LlamaType::Vicuna))),
                 MyPrimitiveDataType::Database => Self::Single(MyPrimitiveValueType::Database(0)),
             },
             MyDataType::List(_) => Self::List(Vec::new()),
         }
     }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "ModelType")]
+enum ModelTypeDef {
+    #[serde(with = "MptTypeDef")]
+    Mpt(MptType),
+    #[serde(with = "GptNeoXTypeDef")]
+    GptNeoX(GptNeoXType),
+    #[serde(with = "LlamaTypeDef")]
+    Llama(LlamaType),
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "MptType")]
+enum MptTypeDef {
+    Base,
+    Story,
+    Instruct,
+    Chat,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "GptNeoXType")]
+enum GptNeoXTypeDef {
+    LargePythia,
+    TinyPythia,
+    DollySevenB,
+    Stablelm,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "LlamaType")]
+enum LlamaTypeDef {
+    Vicuna,
+    Guanaco,
+    Wizardlm,
+    Orca,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -177,6 +262,10 @@ pub enum MyPrimitiveValueType {
     Embedding(Vec<f32>),
     Model(u32),
     Database(u32),
+    ModelType(
+        #[serde(with = "ModelTypeDef")]
+        ModelType
+    ),
 }
 
 impl From<MyValueType> for Value {
@@ -192,6 +281,7 @@ impl From<MyValueType> for Value {
                 MyPrimitiveValueType::Database(id) => {
                     PrimitiveValue::Database(EmbeddingDbId { id })
                 }
+                MyPrimitiveValueType::ModelType(model_type) => PrimitiveValue::ModelType(model_type),
             }),
             MyValueType::List(values) => Self::Many(
                 values
@@ -206,6 +296,7 @@ impl From<MyValueType> for Value {
                         MyPrimitiveValueType::Database(id) => {
                             PrimitiveValue::Database(EmbeddingDbId { id })
                         }
+                        MyPrimitiveValueType::ModelType(model_type) => PrimitiveValue::ModelType(model_type),
                     })
                     .collect(),
             ),
@@ -225,6 +316,7 @@ impl From<Value> for MyValueType {
                 }
                 PrimitiveValue::Model(id) => MyPrimitiveValueType::Model(id.id),
                 PrimitiveValue::Database(id) => MyPrimitiveValueType::Database(id.id),
+                PrimitiveValue::ModelType(model_type) => MyPrimitiveValueType::ModelType(model_type),
             }),
             Value::Many(values) => Self::List(
                 values
@@ -237,6 +329,7 @@ impl From<Value> for MyValueType {
                         }
                         PrimitiveValue::Model(id) => MyPrimitiveValueType::Model(id.id),
                         PrimitiveValue::Database(id) => MyPrimitiveValueType::Database(id.id),
+                        PrimitiveValue::ModelType(model_type) => MyPrimitiveValueType::ModelType(model_type),
                     })
                     .collect(),
             ),
@@ -287,6 +380,9 @@ impl DataTypeTrait<MyGraphState> for MyDataType {
             MyDataType::Single(MyPrimitiveDataType::Database) => {
                 egui::Color32::from_rgb(38, 211, 109)
             }
+            MyDataType::Single(MyPrimitiveDataType::ModelType) => {
+                egui::Color32::from_rgb(38, 50, 109)
+            }
             MyDataType::List(MyPrimitiveDataType::Text) => egui::Color32::from_rgb(38, 109, 211),
             MyDataType::List(MyPrimitiveDataType::Embedding) => {
                 egui::Color32::from_rgb(238, 207, 109)
@@ -295,6 +391,9 @@ impl DataTypeTrait<MyGraphState> for MyDataType {
             MyDataType::List(MyPrimitiveDataType::Model) => egui::Color32::from_rgb(38, 211, 109),
             MyDataType::List(MyPrimitiveDataType::Database) => {
                 egui::Color32::from_rgb(38, 211, 109)
+            }
+            MyDataType::List(MyPrimitiveDataType::ModelType) => {
+                egui::Color32::from_rgb(38, 50, 109)
             }
         }
     }
@@ -306,11 +405,15 @@ impl DataTypeTrait<MyGraphState> for MyDataType {
             MyDataType::Single(MyPrimitiveDataType::Number) => Cow::Borrowed("number"),
             MyDataType::Single(MyPrimitiveDataType::Model) => Cow::Borrowed("model"),
             MyDataType::Single(MyPrimitiveDataType::Database) => Cow::Borrowed("database"),
+            MyDataType::Single(MyPrimitiveDataType::ModelType) => Cow::Borrowed("model type"),
             MyDataType::List(MyPrimitiveDataType::Text) => Cow::Borrowed("list of texts"),
             MyDataType::List(MyPrimitiveDataType::Embedding) => Cow::Borrowed("list of embeddings"),
             MyDataType::List(MyPrimitiveDataType::Number) => Cow::Borrowed("list of numbers"),
             MyDataType::List(MyPrimitiveDataType::Model) => Cow::Borrowed("list of models"),
             MyDataType::List(MyPrimitiveDataType::Database) => Cow::Borrowed("list of databases"),
+            MyDataType::List(MyPrimitiveDataType::ModelType) => {
+                Cow::Borrowed("list of model types")
+            }
         }
     }
 }
@@ -429,6 +532,18 @@ impl WidgetValueTrait for MyValueType {
                         MyPrimitiveValueType::Number(value) => {
                             ui.add(DragValue::new(value));
                         }
+                        MyPrimitiveValueType::ModelType(ty) => {
+                            let name = ty.name();
+                            ui.collapsing(name,  |ui| {
+                                ui.vertical(|ui| {
+                                    for varient in ModelType::VARIANTS {
+                                        if ui.button(varient.name()).clicked() {
+                                            *ty = *varient;
+                                        }
+                                    }
+                                })
+                            });
+                        }
                     }
                 }
                 MyValueType::List(values) => {
@@ -449,6 +564,18 @@ impl WidgetValueTrait for MyValueType {
                             }
                             MyPrimitiveValueType::Number(value) => {
                                 ui.add(DragValue::new(value));
+                            }
+                            MyPrimitiveValueType::ModelType(ty) => {
+                                let name = ty.name();
+                                ui.collapsing(name,  |ui| {
+                                    ui.vertical(|ui| {
+                                        for varient in ModelType::VARIANTS {
+                                            if ui.button(varient.name()).clicked() {
+                                                *ty = *varient;
+                                            }
+                                        }
+                                    })
+                                });
                             }
                         }
                     }
@@ -524,6 +651,9 @@ impl NodeDataTrait for MyNodeData {
                         MyPrimitiveValueType::Number(value) => {
                             ui.label(format!("{:02}", value));
                         }
+                        MyPrimitiveValueType::ModelType(ty) => {
+                            ui.label(ty.name());
+                        }
                     },
                     MyValueType::List(many) => {
                         for value in many {
@@ -542,6 +672,9 @@ impl NodeDataTrait for MyNodeData {
                                 }
                                 MyPrimitiveValueType::Number(value) => {
                                     ui.label(format!("{:02}", value));
+                                }
+                                MyPrimitiveValueType::ModelType(ty) => {
+                                    ui.label(ty.name());
                                 }
                             }
                         }

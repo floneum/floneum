@@ -4,7 +4,7 @@ use spinoff::{spinners::Dots2, Spinner};
 use std::{error::Error, path::PathBuf, time::Instant};
 use tokio::{fs::File, io::AsyncWriteExt, runtime::Handle};
 
-use crate::plugins::main::imports::{GptNeoXType, LlamaType, ModelType, MptType};
+use crate::plugins::main::types::{GptNeoXType, LlamaType, ModelType, MptType};
 
 fn load_progress_callback(
     mut sp: Option<Spinner>,

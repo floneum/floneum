@@ -32,7 +32,7 @@ mod structured_parser;
 mod vector_db;
 
 use crate::sessions::InferenceSessions;
-use crate::{vector_db::VectorDB, ModelType};
+use crate::{vector_db::VectorDB, exports::plugins::main::definitions::ModelType};
 
 static LINKER: Lazy<Linker<State>> = Lazy::new(|| {
     let mut linker = Linker::new(&ENGINE);
@@ -116,7 +116,8 @@ impl Default for State {
                 DirPerms::all(),
                 FilePerms::all(),
                 ".",
-            );
+            )
+            .set_clocks(wasmtime_wasi::preview2::clocks::host::clocks_ctx());
         let mut table = preview2::Table::new();
         let ctx = ctx_builder.build(&mut table).unwrap();
         State {
@@ -225,7 +226,7 @@ impl Host for State {
 
     async fn load_model(
         &mut self,
-        ty: ModelType,
+        ty: exports::plugins::main::definitions::ModelType,
     ) -> std::result::Result<exports::plugins::main::definitions::ModelId, wasmtime::Error> {
         Ok(self.sessions.create(ty))
     }
