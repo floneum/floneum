@@ -1440,7 +1440,7 @@ dependencies = [
 [[package]]
 name = "egui_node_graph"
 version = "0.4.0"
-source = "git+https://github.com/Demonthos/egui_node_graph#86cdd9ca042797fe6b1fd24c801992603fe28d3d"
+source = "git+https://github.com/setzer22/egui_node_graph#3068b8cd9bad3a419682af273c01cd700bda2739"
 dependencies = [
  "egui",
  "serde",

@@ -12,13 +12,13 @@ pub struct Index {
 
 impl Index {
     pub fn new() -> anyhow::Result<Self> {
-        let path = packages_path()?;
-        if !path.exists() {
-            // // remove the old packages
-            // // TODO: use git fetch to update the packages
-            // std::fs::remove_dir_all(&path)?;
-            download_package_index()?;
+        let path =packages_path()?;
+        if path.exists() {
+            // remove the old packages
+            // TODO: use git fetch to update the packages
+            std::fs::remove_dir_all(&path)?;
         }
+        download_package_index()?;
 
         let entries = std::fs::read_dir(path)?
             .filter_map(|entry| {

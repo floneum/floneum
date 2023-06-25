@@ -43,19 +43,6 @@ async fn main() {
         if path.extension() != Some(std::ffi::OsStr::new("wasm")) {
             continue;
         }
-        let status = std::process::Command::new("wasm-tools")
-            .args([
-                "component",
-                "new",
-                &*path.to_string_lossy(),
-                "-o",
-                "my-component.wasm",
-                "--adapt",
-                "./plugin/wasi_snapshot_preview1.wasm",
-            ])
-            .status()
-            .expect("failed to build plugin");
-        assert!(status.success());
         let plugin = plugin_manager.load_plugin(&path).await;
         let instance = plugin.instance().await;
         let info = instance.metadata();
@@ -75,4 +62,5 @@ async fn main() {
         let wasm_path = package_path.join("package.wasm");
         std::fs::copy(path, wasm_path).unwrap();
     }
+    std::fs::remove_file("temp-component.wasm").unwrap();
 }
