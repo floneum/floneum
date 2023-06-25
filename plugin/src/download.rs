@@ -67,6 +67,9 @@ fn load_progress_callback(
 pub fn download(model_type: ModelType) -> Box<dyn Model> {
     // https://www.reddit.com/r/LocalLLaMA/wiki/models/
     let url = match model_type {
+        ModelType::Llama(LlamaType::Orca) => {
+            "https://huggingface.co/TheBloke/orca_mini_7B-GGML/resolve/main/orca-mini-7b.ggmlv3.q4_0.bin"
+        }
         ModelType::Llama(LlamaType::Vicuna) => {
             "https://huggingface.co/CRD716/ggml-vicuna-1.1-quantized/resolve/main/ggml-vicuna-13B-1.1-q4_0.bin"
         }

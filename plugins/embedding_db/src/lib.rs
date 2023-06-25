@@ -8,7 +8,7 @@ fn embedding_db(
     /// the documents to index
     text: String,
 ) -> EmbeddingDbId {
-    let model = ModelType::Llama(LlamaType::Vicuna);
+    let model = ModelType::Llama(LlamaType::Orca);
     let instance = ModelInstance::new(model);
 
     let borrowed_documents = text

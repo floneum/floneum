@@ -19,7 +19,7 @@ interface imports {
   print: func(str: string)
 
   variant model-type { MPT(mpt-type), gpt-neo-x(gpt-neo-x-type), llama(llama-type) }
-  enum llama-type { vicuna, guanaco, wizardlm }
+  enum llama-type { vicuna, guanaco, wizardlm, orca }
   enum mpt-type { base, story, instruct, chat }
   enum gpt-neo-x-type { large-pythia, tiny-pythia, dolly-seven-b, stablelm }
 

@@ -16,7 +16,7 @@ fn structured_inference(
     max_output_length: i64,
 ) -> String {
     let structure = structured_from_string(&structure);
-    let model = ModelType::Llama(LlamaType::Vicuna);
+    let model = ModelType::Llama(LlamaType::Orca);
     let session = ModelInstance::new(model);
 
     let max_output_length = if max_output_length == 0 {
