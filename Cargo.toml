@@ -30,6 +30,7 @@ simple_logger = "4.1.0"
 toml = "0.7.5"
 pollster = "0.3.0"
 cargo-dist = "0.0.7"
+once_cell = "1.18.0"
 
 [workspace]
 members = [

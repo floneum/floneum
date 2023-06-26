@@ -16,6 +16,7 @@ use floneum_plugin::plugins::main::types::{
 use floneum_plugin::{Plugin, PluginEngine, PluginInstance};
 use floneumate::Index;
 use log::LevelFilter;
+use once_cell::sync::Lazy;
 use pollster::FutureExt;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{
@@ -730,9 +731,7 @@ impl NodeDataTrait for MyNodeData {
 
 type MyEditorState = GraphEditorState<MyNodeData, MyDataType, MyValueType, PluginId, MyGraphState>;
 
-fn new_index() -> Index {
-    Index::new().unwrap()
-}
+static PACKAGE_MANAGER: Lazy<Index> = Lazy::new(|| Index::new().unwrap());
 
 #[derive(Serialize, Deserialize)]
 pub struct NodeGraphExample {
@@ -746,10 +745,6 @@ pub struct NodeGraphExample {
 
     #[serde(skip)]
     txrx: TxRx,
-
-    #[serde(skip, default = "new_index")]
-    #[allow(unused)]
-    package_manager: Index,
 }
 
 impl NodeGraphExample {
@@ -895,9 +890,8 @@ impl Debug for NodeGraphExample {
 impl NodeGraphExample {
     async fn default() -> Self {
         let mut user_state = MyGraphState::default();
-        let package_manager = new_index();
 
-        for package in package_manager.entries() {
+        for package in PACKAGE_MANAGER.entries() {
             let path = package.path();
             let plugin = user_state.plugin_engine.load_plugin(&path).await;
             let id = user_state.plugins.insert(plugin);
@@ -910,7 +904,6 @@ impl NodeGraphExample {
             search_text: String::new(),
             plugin_path_text: String::new(),
             txrx: Default::default(),
-            package_manager,
         }
     }
 }
@@ -945,7 +938,6 @@ impl NodeGraphExample {
             search_text: String::new(),
             plugin_path_text: String::new(),
             txrx: TxRx::default(),
-            package_manager: new_index(),
         }
     }
 }
