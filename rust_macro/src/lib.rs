@@ -302,7 +302,7 @@ fn parse_primitive_value_type(ident: &Ident) -> syn::Result<PrimitiveValueType> 
         Ok(PrimitiveValueType::Database)
     } else if ident == "Embedding" {
         Ok(PrimitiveValueType::Embedding)
-    }else if ident == "ModelType" {
+    } else if ident == "ModelType" {
         Ok(PrimitiveValueType::ModelType)
     } else {
         let error = format!("type {} not allowed. Inputs and outputs must be one of i64, String, ModelInstance, VectorDatabase", ident.to_token_stream());

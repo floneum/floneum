@@ -10,7 +10,9 @@ use egui_node_graph::*;
 use floneum_plugin::exports::plugins::main::definitions::{
     Embedding, PrimitiveValue, PrimitiveValueType, Value, ValueType,
 };
-use floneum_plugin::plugins::main::types::{EmbeddingDbId, ModelId, ModelType, MptType, GptNeoXType, LlamaType};
+use floneum_plugin::plugins::main::types::{
+    EmbeddingDbId, GptNeoXType, LlamaType, ModelId, ModelType, MptType,
+};
 use floneum_plugin::{Plugin, PluginEngine, PluginInstance};
 use floneumate::Index;
 use log::LevelFilter;
@@ -26,12 +28,12 @@ use std::{
 };
 use tokio::sync::mpsc::{Receiver, Sender};
 
-trait Variants: Sized +'static {
+trait Variants: Sized + 'static {
     const VARIANTS: &'static [Self];
 }
 
-impl Variants for ModelType{
-     const VARIANTS: &'static [Self] = &[
+impl Variants for ModelType {
+    const VARIANTS: &'static [Self] = &[
         ModelType::Llama(LlamaType::Guanaco),
         ModelType::Llama(LlamaType::Orca),
         ModelType::Llama(LlamaType::Vicuna),
@@ -43,7 +45,8 @@ impl Variants for ModelType{
         ModelType::Mpt(MptType::Base),
         ModelType::Mpt(MptType::Chat),
         ModelType::Mpt(MptType::Story),
-        ModelType::Mpt(MptType::Instruct),];
+        ModelType::Mpt(MptType::Instruct),
+    ];
 }
 
 trait Named {
@@ -151,10 +154,24 @@ pub struct MyNodeData {
     queued: bool,
 }
 
-#[derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Eq, serde::Serialize, serde::Deserialize, Debug)]
 pub enum MyDataType {
     Single(MyPrimitiveDataType),
     List(MyPrimitiveDataType),
+}
+
+impl PartialEq for MyDataType {
+    fn eq(&self, other: &Self) -> bool {
+        let inner = match self {
+            MyDataType::Single(inner) => inner,
+            MyDataType::List(inner) => inner,
+        };
+        let other_inner = match other {
+            MyDataType::Single(inner) => inner,
+            MyDataType::List(inner) => inner,
+        };
+        inner == other_inner
+    }
 }
 
 impl From<ValueType> for MyDataType {
@@ -180,7 +197,7 @@ impl From<ValueType> for MyDataType {
     }
 }
 
-#[derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(PartialEq, Eq, serde::Serialize, serde::Deserialize, Debug, Clone, Copy)]
 pub enum MyPrimitiveDataType {
     Number,
     Text,
@@ -200,19 +217,10 @@ pub enum MyValueType {
 impl MyValueType {
     fn default_of_type(ty: &MyDataType) -> Self {
         match ty {
-            MyDataType::Single(value) => match value {
-                MyPrimitiveDataType::Text => {
-                    Self::Single(MyPrimitiveValueType::Text(String::new()))
-                }
-                MyPrimitiveDataType::Embedding => {
-                    Self::Single(MyPrimitiveValueType::Embedding(Vec::new()))
-                }
-                MyPrimitiveDataType::Number => Self::Single(MyPrimitiveValueType::Number(0)),
-                MyPrimitiveDataType::Model => Self::Single(MyPrimitiveValueType::Model(0)),
-                MyPrimitiveDataType::ModelType => Self::Single(MyPrimitiveValueType::ModelType(ModelType::Llama(LlamaType::Vicuna))),
-                MyPrimitiveDataType::Database => Self::Single(MyPrimitiveValueType::Database(0)),
-            },
-            MyDataType::List(_) => Self::List(Vec::new()),
+            MyDataType::Single(value) => Self::Single(MyPrimitiveValueType::default_of_type(*value)),
+            MyDataType::List(value) => Self::List(vec![MyPrimitiveValueType::default_of_type(
+                *value,
+            )]),
         }
     }
 }
@@ -262,10 +270,20 @@ pub enum MyPrimitiveValueType {
     Embedding(Vec<f32>),
     Model(u32),
     Database(u32),
-    ModelType(
-        #[serde(with = "ModelTypeDef")]
-        ModelType
-    ),
+    ModelType(#[serde(with = "ModelTypeDef")] ModelType),
+}
+
+impl MyPrimitiveValueType {
+    fn default_of_type(ty: MyPrimitiveDataType) -> Self {
+        match ty {
+            MyPrimitiveDataType::Number => Self::Number(0),
+            MyPrimitiveDataType::Text => Self::Text(String::new()),
+            MyPrimitiveDataType::Embedding => Self::Embedding(vec![0.0; 512]),
+            MyPrimitiveDataType::Model => Self::Model(0),
+            MyPrimitiveDataType::Database => Self::Database(0),
+            MyPrimitiveDataType::ModelType => Self::ModelType(ModelType::Llama(LlamaType::Vicuna)),
+        }
+    }
 }
 
 impl From<MyValueType> for Value {
@@ -281,7 +299,9 @@ impl From<MyValueType> for Value {
                 MyPrimitiveValueType::Database(id) => {
                     PrimitiveValue::Database(EmbeddingDbId { id })
                 }
-                MyPrimitiveValueType::ModelType(model_type) => PrimitiveValue::ModelType(model_type),
+                MyPrimitiveValueType::ModelType(model_type) => {
+                    PrimitiveValue::ModelType(model_type)
+                }
             }),
             MyValueType::List(values) => Self::Many(
                 values
@@ -296,7 +316,9 @@ impl From<MyValueType> for Value {
                         MyPrimitiveValueType::Database(id) => {
                             PrimitiveValue::Database(EmbeddingDbId { id })
                         }
-                        MyPrimitiveValueType::ModelType(model_type) => PrimitiveValue::ModelType(model_type),
+                        MyPrimitiveValueType::ModelType(model_type) => {
+                            PrimitiveValue::ModelType(model_type)
+                        }
                     })
                     .collect(),
             ),
@@ -316,7 +338,9 @@ impl From<Value> for MyValueType {
                 }
                 PrimitiveValue::Model(id) => MyPrimitiveValueType::Model(id.id),
                 PrimitiveValue::Database(id) => MyPrimitiveValueType::Database(id.id),
-                PrimitiveValue::ModelType(model_type) => MyPrimitiveValueType::ModelType(model_type),
+                PrimitiveValue::ModelType(model_type) => {
+                    MyPrimitiveValueType::ModelType(model_type)
+                }
             }),
             Value::Many(values) => Self::List(
                 values
@@ -329,7 +353,9 @@ impl From<Value> for MyValueType {
                         }
                         PrimitiveValue::Model(id) => MyPrimitiveValueType::Model(id.id),
                         PrimitiveValue::Database(id) => MyPrimitiveValueType::Database(id.id),
-                        PrimitiveValue::ModelType(model_type) => MyPrimitiveValueType::ModelType(model_type),
+                        PrimitiveValue::ModelType(model_type) => {
+                            MyPrimitiveValueType::ModelType(model_type)
+                        }
                     })
                     .collect(),
             ),
@@ -466,14 +492,29 @@ impl NodeTemplateTrait for PluginId {
             let name = &input.name;
             let ty = input.ty.into();
             let value = MyValueType::default_of_type(&ty);
-            graph.add_input_param(
-                node_id,
-                name.to_string(),
-                ty,
-                value,
-                InputParamKind::ConnectionOrConstant,
-                true,
-            );
+            match &ty {
+                MyDataType::List(_) => {
+                    graph.add_wide_input_param(
+                        node_id,
+                        name.to_string(),
+                        ty,
+                        value,
+                        InputParamKind::ConnectionOrConstant,
+                        None,
+                        true,
+                    );
+                }
+                MyDataType::Single(_) => {
+                    graph.add_input_param(
+                        node_id,
+                        name.to_string(),
+                        ty,
+                        value,
+                        InputParamKind::ConnectionOrConstant,
+                        true,
+                    );
+                }
+            }
         }
 
         for output in &meta.outputs {
@@ -534,7 +575,7 @@ impl WidgetValueTrait for MyValueType {
                         }
                         MyPrimitiveValueType::ModelType(ty) => {
                             let name = ty.name();
-                            ui.collapsing(name,  |ui| {
+                            ui.collapsing(name, |ui| {
                                 ui.vertical(|ui| {
                                     for varient in ModelType::VARIANTS {
                                         if ui.button(varient.name()).clicked() {
@@ -567,7 +608,7 @@ impl WidgetValueTrait for MyValueType {
                             }
                             MyPrimitiveValueType::ModelType(ty) => {
                                 let name = ty.name();
-                                ui.collapsing(name,  |ui| {
+                                ui.collapsing(name, |ui| {
                                     ui.vertical(|ui| {
                                         for varient in ModelType::VARIANTS {
                                             if ui.button(varient.name()).clicked() {
@@ -774,20 +815,46 @@ impl NodeGraphExample {
             let input = self.state.graph.get_input(*id);
             let connection = self.state.graph.connections.get(input.id);
             let value = match connection {
-                Some(connection) => {
-                    let connection = self.state.graph.get_output(connection[0]);
-                    let output_id = connection.id;
-                    if let Some(value) = self.user_state.node_outputs.get(&output_id) {
-                        value
-                    } else {
-                        return;
+                Some(connections) => {
+                    let mut values = Vec::new();
+                    for connection in connections {
+                        let connection = self.state.graph.get_output(*connection);
+                        let output_id = connection.id;
+                        if let Some(value) = self.user_state.node_outputs.get(&output_id) {
+                            match value {
+                                MyValueType::List(items) => {
+                                    for value in items {
+                                        values.push(value.clone().into());
+                                    }
+                                }
+                                MyValueType::Single(value) => {
+                                    values.push(value.clone().into());
+                                }
+                                _ => return,
+                            }
+                        } else {
+                            return;
+                        }
+                    }
+
+                    match input.typ {
+                        MyDataType::Single(_) => {
+                            if values.len() != 1 {
+                                return;
+                            }
+                            MyValueType::Single(values.pop().unwrap())
+                        }
+                        MyDataType::List(_) => {
+                            values.reverse();
+                            MyValueType::List(values)
+                        },
                     }
                 }
-                None => &input.value,
+                None => input.value.clone().into(),
             };
             match &value {
                 MyValueType::Unset => return,
-                _ => values.push(value.clone().into()),
+                _ => values.push(value.into()),
             }
         }
 

@@ -32,7 +32,7 @@ mod structured_parser;
 mod vector_db;
 
 use crate::sessions::InferenceSessions;
-use crate::{vector_db::VectorDB, exports::plugins::main::definitions::ModelType};
+use crate::{exports::plugins::main::definitions::ModelType, vector_db::VectorDB};
 
 static LINKER: Lazy<Linker<State>> = Lazy::new(|| {
     let mut linker = Linker::new(&ENGINE);
