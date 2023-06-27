@@ -14,7 +14,7 @@ number = {
 format              =  { (value)+ }
 value               = _{ literal | generated }
 literal             =  { non_generated_chars+ }
-non_generated_chars =  { ((!"{" ~ ANY) ~ "{" ~ (!"{" ~ ANY)) | (!"{" ~ ANY) | " " }
+non_generated_chars =  { ((!"{" ~ ANY) ~ "{" ~ (!"{" ~ ANY)) | ((!"}" ~ ANY) ~ "}" ~ (!"}" ~ ANY)) | (!"{" ~ !"}" ~ ANY) | " " }
 
 generated = _{ "{{" ~ (hashtag | string | boolean | array | either) ~ "}}" }
 

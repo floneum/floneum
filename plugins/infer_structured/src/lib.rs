@@ -38,7 +38,10 @@ fn structured_from_string(input: &str) -> Structured {
     let pattern = StructuredParser::parse(Rule::format, input).map(|mut iter| iter.next());
     match pattern {
         Ok(Some(pattern)) => multiple_structured_from_rule(pattern),
-        Err(err) => Structured::str(),
+        Err(err) => {
+            println!("error parsing pattern: {:?}\n", err);
+            Structured::str()
+        },
         _ => Structured::str(),
     }
 }
