@@ -218,10 +218,12 @@ pub enum MyValueType {
 impl MyValueType {
     fn default_of_type(ty: &MyDataType) -> Self {
         match ty {
-            MyDataType::Single(value) => Self::Single(MyPrimitiveValueType::default_of_type(*value)),
-            MyDataType::List(value) => Self::List(vec![MyPrimitiveValueType::default_of_type(
-                *value,
-            )]),
+            MyDataType::Single(value) => {
+                Self::Single(MyPrimitiveValueType::default_of_type(*value))
+            }
+            MyDataType::List(value) => {
+                Self::List(vec![MyPrimitiveValueType::default_of_type(*value)])
+            }
         }
     }
 }
@@ -842,7 +844,7 @@ impl NodeGraphExample {
                         MyDataType::List(_) => {
                             values.reverse();
                             MyValueType::List(values)
-                        },
+                        }
                     }
                 }
                 None => input.value.clone().into(),

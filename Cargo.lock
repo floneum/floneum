@@ -1315,6 +1315,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cssparser"
+version = "0.31.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b3df4f93e5fbbe73ec01ec8d3f68bba73107993a5b1e7519273c32db9b0d5be"
+dependencies = [
+ "cssparser-macros",
+ "dtoa-short",
+ "itoa",
+ "phf 0.10.1",
+ "smallvec",
+]
+
+[[package]]
 name = "cssparser-macros"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1947,7 +1960,7 @@ dependencies = [
  "pollster",
  "rand 0.8.5",
  "reqwest",
- "scraper",
+ "scraper 0.16.0",
  "serde",
  "serde_json",
  "simple_logger",
@@ -2022,7 +2035,6 @@ dependencies = [
  "pollster",
  "rand 0.8.5",
  "reqwest",
- "scraper",
  "serde",
  "slab",
  "spinoff",
@@ -2055,6 +2067,14 @@ name = "floneum_search"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+]
+
+[[package]]
+name = "floneum_search_engine"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+ "scraper 0.17.1",
 ]
 
 [[package]]
@@ -5287,12 +5307,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "59e25654b5e9fd557a67dbaab5a5d36b8c448d0561beb4c041b6dbb902eddfa6"
 dependencies = [
  "ahash 0.8.3",
- "cssparser",
+ "cssparser 0.29.6",
  "ego-tree",
  "getopts",
  "html5ever",
  "once_cell",
- "selectors",
+ "selectors 0.24.0",
+ "smallvec",
+ "tendril",
+]
+
+[[package]]
+name = "scraper"
+version = "0.17.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c95a930e03325234c18c7071fd2b60118307e025d6fff3e12745ffbf63a3d29c"
+dependencies = [
+ "ahash 0.8.3",
+ "cssparser 0.31.2",
+ "ego-tree",
+ "getopts",
+ "html5ever",
+ "once_cell",
+ "selectors 0.25.0",
  "smallvec",
  "tendril",
 ]
@@ -5350,14 +5387,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c37578180969d00692904465fb7f6b3d50b9a2b952b87c23d0e2e5cb5013416"
 dependencies = [
  "bitflags 1.3.2",
- "cssparser",
+ "cssparser 0.29.6",
  "derive_more",
  "fxhash",
  "log",
  "phf 0.8.0",
  "phf_codegen 0.8.0",
  "precomputed-hash",
- "servo_arc",
+ "servo_arc 0.2.0",
+ "smallvec",
+]
+
+[[package]]
+name = "selectors"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4eb30575f3638fc8f6815f448d50cb1a2e255b0897985c8c59f4d37b72a07b06"
+dependencies = [
+ "bitflags 2.3.2",
+ "cssparser 0.31.2",
+ "derive_more",
+ "fxhash",
+ "log",
+ "new_debug_unreachable",
+ "phf 0.10.1",
+ "phf_codegen 0.10.0",
+ "precomputed-hash",
+ "servo_arc 0.3.0",
  "smallvec",
 ]
 
@@ -5481,6 +5537,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d52aa42f8fdf0fed91e5ce7f23d8138441002fa31dca008acf47e6fd4721f741"
 dependencies = [
  "nodrop",
+ "stable_deref_trait",
+]
+
+[[package]]
+name = "servo_arc"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d036d71a959e00c77a63538b90a6c2390969f9772b096ea837205c6bd0491a44"
+dependencies = [
  "stable_deref_trait",
 ]
 

@@ -5,6 +5,7 @@
 use once_cell::sync::Lazy;
 use plugins::main::types::Structure;
 use pollster::FutureExt;
+use reqwest::header::{HeaderMap, HeaderName};
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 use wasmtime::component::__internal::async_trait;
@@ -208,6 +209,22 @@ impl plugins::main::types::Host for State {}
 
 #[async_trait]
 impl Host for State {
+    async fn get_request(
+        &mut self,
+        url: String,
+        headers: Vec<Header>,
+    ) -> std::result::Result<String, wasmtime::Error> {
+        let client = reqwest::Client::new();
+        let mut header_map = HeaderMap::new();
+
+        for header in headers {
+            header_map.append(HeaderName::try_from(&header.key)?, header.value.parse()?);
+        }
+
+        let response = client.get(&url).headers(header_map).send().await?;
+        Ok(response.text().await?)
+    }
+
     async fn remove_structure(
         &mut self,
         id: StructureId,

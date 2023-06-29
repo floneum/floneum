@@ -11,6 +11,7 @@ use plugins::main::types::{
     EitherStructure, NumberParameters, SequenceParameters, Structure, ThenStructure, UnsignedRange,
 };
 use std::ops::RangeInclusive;
+pub use crate::plugins::main::imports::{Header, get_request};
 
 wit_bindgen::generate!({path: "../wit", macro_export});
 

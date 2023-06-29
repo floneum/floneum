@@ -41,7 +41,7 @@ fn structured_from_string(input: &str) -> Structured {
         Err(err) => {
             println!("error parsing pattern: {:?}\n", err);
             Structured::str()
-        },
+        }
         _ => Structured::str(),
     }
 }

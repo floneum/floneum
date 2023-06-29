@@ -12,6 +12,7 @@ async fn main() {
         "infer",
         "infer_structured",
         "search",
+        "search_engine",
     ];
     // build the plugins
     for plugin in plugins {

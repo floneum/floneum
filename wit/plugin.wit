@@ -18,6 +18,13 @@ interface imports {
 
   create-structure: func(structure: structure) -> structure-id
   remove-structure: func(id: structure-id)
+
+  get-request: func(url: string, headers: list<header>) -> string
+
+  record header {
+    key: string,
+    value: string,
+  }
 }
 
 interface types {
