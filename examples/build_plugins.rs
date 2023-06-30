@@ -52,7 +52,7 @@ async fn main() {
         let binding_version = "0.1";
         let description = &info.description;
         let package =
-            floneumate::PackageStructure::new(name, version, description, binding_version);
+            floneumite::PackageStructure::new(name, version, description, binding_version);
 
         let package_path = repo_path.join(name);
         std::fs::create_dir_all(&package_path).unwrap();

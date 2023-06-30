@@ -14,7 +14,7 @@ use floneum_plugin::plugins::main::types::{
     EmbeddingDbId, GptNeoXType, LlamaType, ModelId, ModelType, MptType,
 };
 use floneum_plugin::{Plugin, PluginEngine, PluginInstance};
-use floneumate::Index;
+use floneumite::Index;
 use log::LevelFilter;
 use once_cell::sync::Lazy;
 use pollster::FutureExt;
