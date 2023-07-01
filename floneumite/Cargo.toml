@@ -8,6 +8,6 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.71"
 directories = "5.0.1"
-gix = { git = "https://github.com/Byron/gitoxide", features = ["blocking-network-client", "blocking-http-transport-reqwest-rust-tls"] }
+gix = { git = "https://github.com/Byron/gitoxide", features = ["blocking-network-client", "blocking-http-transport-reqwest-rust-tls"], rev = "97f8e960ed52538bb55b72f9dfc5f9d144d72885" }
 serde = { version = "1.0.164", features = ["derive"] }
 toml = "0.7.4"

@@ -4,5 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen" }
+wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen", rev = "70190725949c6f460e49c00880982cefa130354c" }
 floneum_rust_macro = { path = "../rust_macro" }

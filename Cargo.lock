@@ -2433,7 +2433,7 @@ dependencies = [
 [[package]]
 name = "gix"
 version = "0.48.0"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "gix-actor",
  "gix-attributes",
@@ -2483,7 +2483,7 @@ dependencies = [
 [[package]]
 name = "gix-actor"
 version = "0.23.0"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "bstr",
  "btoi",
@@ -2496,7 +2496,7 @@ dependencies = [
 [[package]]
 name = "gix-attributes"
 version = "0.14.1"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "bstr",
  "gix-glob",
@@ -2512,7 +2512,7 @@ dependencies = [
 [[package]]
 name = "gix-bitmap"
 version = "0.2.5"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "thiserror",
 ]
@@ -2520,7 +2520,7 @@ dependencies = [
 [[package]]
 name = "gix-chunk"
 version = "0.4.3"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "thiserror",
 ]
@@ -2528,7 +2528,7 @@ dependencies = [
 [[package]]
 name = "gix-command"
 version = "0.2.6"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "bstr",
 ]
@@ -2536,7 +2536,7 @@ dependencies = [
 [[package]]
 name = "gix-commitgraph"
 version = "0.17.1"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "bstr",
  "gix-chunk",
@@ -2549,7 +2549,7 @@ dependencies = [
 [[package]]
 name = "gix-config"
 version = "0.25.1"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "bstr",
  "gix-config-value",
@@ -2570,7 +2570,7 @@ dependencies = [
 [[package]]
 name = "gix-config-value"
 version = "0.12.3"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "bitflags 2.3.3",
  "bstr",
@@ -2582,7 +2582,7 @@ dependencies = [
 [[package]]
 name = "gix-credentials"
 version = "0.16.1"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "bstr",
  "gix-command",
@@ -2597,7 +2597,7 @@ dependencies = [
 [[package]]
 name = "gix-date"
 version = "0.7.0"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "bstr",
  "itoa 1.0.6",
@@ -2608,7 +2608,7 @@ dependencies = [
 [[package]]
 name = "gix-diff"
 version = "0.32.0"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "gix-hash",
  "gix-object",
@@ -2619,7 +2619,7 @@ dependencies = [
 [[package]]
 name = "gix-discover"
 version = "0.21.1"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "bstr",
  "dunce",
@@ -2633,7 +2633,7 @@ dependencies = [
 [[package]]
 name = "gix-features"
 version = "0.31.1"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "bytes",
  "bytesize",
@@ -2655,7 +2655,7 @@ dependencies = [
 [[package]]
 name = "gix-fs"
 version = "0.3.0"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "gix-features",
 ]
@@ -2663,7 +2663,7 @@ dependencies = [
 [[package]]
 name = "gix-glob"
 version = "0.9.1"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "bitflags 2.3.3",
  "bstr",
@@ -2674,7 +2674,7 @@ dependencies = [
 [[package]]
 name = "gix-hash"
 version = "0.11.3"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "hex",
  "thiserror",
@@ -2683,7 +2683,7 @@ dependencies = [
 [[package]]
 name = "gix-hashtable"
 version = "0.2.3"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "gix-hash",
  "hashbrown 0.14.0",
@@ -2693,7 +2693,7 @@ dependencies = [
 [[package]]
 name = "gix-ignore"
 version = "0.4.1"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "bstr",
  "gix-glob",
@@ -2704,7 +2704,7 @@ dependencies = [
 [[package]]
 name = "gix-index"
 version = "0.20.0"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "bitflags 2.3.3",
  "bstr",
@@ -2725,7 +2725,7 @@ dependencies = [
 [[package]]
 name = "gix-lock"
 version = "7.0.1"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "gix-tempfile",
  "gix-utils",
@@ -2735,7 +2735,7 @@ dependencies = [
 [[package]]
 name = "gix-mailmap"
 version = "0.15.0"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "bstr",
  "gix-actor",
@@ -2746,7 +2746,7 @@ dependencies = [
 [[package]]
 name = "gix-negotiate"
 version = "0.4.0"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "bitflags 2.3.3",
  "gix-commitgraph",
@@ -2761,7 +2761,7 @@ dependencies = [
 [[package]]
 name = "gix-object"
 version = "0.32.0"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "bstr",
  "btoi",
@@ -2780,7 +2780,7 @@ dependencies = [
 [[package]]
 name = "gix-odb"
 version = "0.49.1"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "arc-swap",
  "gix-date",
@@ -2798,7 +2798,7 @@ dependencies = [
 [[package]]
 name = "gix-pack"
 version = "0.39.1"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "clru",
  "gix-chunk",
@@ -2820,7 +2820,7 @@ dependencies = [
 [[package]]
 name = "gix-packetline"
 version = "0.16.3"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "bstr",
  "hex",
@@ -2830,7 +2830,7 @@ dependencies = [
 [[package]]
 name = "gix-path"
 version = "0.8.3"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "bstr",
  "gix-trace",
@@ -2842,7 +2842,7 @@ dependencies = [
 [[package]]
 name = "gix-prompt"
 version = "0.5.2"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "gix-command",
  "gix-config-value",
@@ -2854,7 +2854,7 @@ dependencies = [
 [[package]]
 name = "gix-protocol"
 version = "0.35.0"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "bstr",
  "btoi",
@@ -2871,7 +2871,7 @@ dependencies = [
 [[package]]
 name = "gix-quote"
 version = "0.4.5"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "bstr",
  "btoi",
@@ -2881,7 +2881,7 @@ dependencies = [
 [[package]]
 name = "gix-ref"
 version = "0.32.1"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "gix-actor",
  "gix-date",
@@ -2901,7 +2901,7 @@ dependencies = [
 [[package]]
 name = "gix-refspec"
 version = "0.13.0"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "bstr",
  "gix-hash",
@@ -2914,7 +2914,7 @@ dependencies = [
 [[package]]
 name = "gix-revision"
 version = "0.17.0"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "bstr",
  "gix-date",
@@ -2928,7 +2928,7 @@ dependencies = [
 [[package]]
 name = "gix-revwalk"
 version = "0.3.0"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "gix-commitgraph",
  "gix-date",
@@ -2942,7 +2942,7 @@ dependencies = [
 [[package]]
 name = "gix-sec"
 version = "0.8.3"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "bitflags 2.3.3",
  "gix-path",
@@ -2953,7 +2953,7 @@ dependencies = [
 [[package]]
 name = "gix-tempfile"
 version = "7.0.0"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "gix-fs",
  "libc",
@@ -2967,12 +2967,12 @@ dependencies = [
 [[package]]
 name = "gix-trace"
 version = "0.1.2"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 
 [[package]]
 name = "gix-transport"
 version = "0.33.1"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "base64 0.21.2",
  "bstr",
@@ -2990,7 +2990,7 @@ dependencies = [
 [[package]]
 name = "gix-traverse"
 version = "0.29.0"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "gix-commitgraph",
  "gix-date",
@@ -3005,7 +3005,7 @@ dependencies = [
 [[package]]
 name = "gix-url"
 version = "0.20.1"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "bstr",
  "gix-features",
@@ -3018,7 +3018,7 @@ dependencies = [
 [[package]]
 name = "gix-utils"
 version = "0.1.4"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "fastrand 2.0.0",
 ]
@@ -3026,7 +3026,7 @@ dependencies = [
 [[package]]
 name = "gix-validate"
 version = "0.7.6"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "bstr",
  "thiserror",
@@ -3035,7 +3035,7 @@ dependencies = [
 [[package]]
 name = "gix-worktree"
 version = "0.21.1"
-source = "git+https://github.com/Byron/gitoxide#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
+source = "git+https://github.com/Byron/gitoxide?rev=97f8e960ed52538bb55b72f9dfc5f9d144d72885#97f8e960ed52538bb55b72f9dfc5f9d144d72885"
 dependencies = [
  "bstr",
  "filetime",
@@ -7758,7 +7758,7 @@ dependencies = [
 [[package]]
 name = "wit-bindgen"
 version = "0.8.0"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#70190725949c6f460e49c00880982cefa130354c"
+source = "git+https://github.com/bytecodealliance/wit-bindgen?rev=70190725949c6f460e49c00880982cefa130354c#70190725949c6f460e49c00880982cefa130354c"
 dependencies = [
  "bitflags 2.3.3",
  "wit-bindgen-rust-macro",
@@ -7767,7 +7767,7 @@ dependencies = [
 [[package]]
 name = "wit-bindgen-core"
 version = "0.8.0"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#70190725949c6f460e49c00880982cefa130354c"
+source = "git+https://github.com/bytecodealliance/wit-bindgen?rev=70190725949c6f460e49c00880982cefa130354c#70190725949c6f460e49c00880982cefa130354c"
 dependencies = [
  "anyhow",
  "wit-component",
@@ -7777,7 +7777,7 @@ dependencies = [
 [[package]]
 name = "wit-bindgen-rust"
 version = "0.8.0"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#70190725949c6f460e49c00880982cefa130354c"
+source = "git+https://github.com/bytecodealliance/wit-bindgen?rev=70190725949c6f460e49c00880982cefa130354c#70190725949c6f460e49c00880982cefa130354c"
 dependencies = [
  "heck",
  "wasm-metadata",
@@ -7789,7 +7789,7 @@ dependencies = [
 [[package]]
 name = "wit-bindgen-rust-lib"
 version = "0.8.0"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#70190725949c6f460e49c00880982cefa130354c"
+source = "git+https://github.com/bytecodealliance/wit-bindgen?rev=70190725949c6f460e49c00880982cefa130354c#70190725949c6f460e49c00880982cefa130354c"
 dependencies = [
  "heck",
  "wit-bindgen-core",
@@ -7798,7 +7798,7 @@ dependencies = [
 [[package]]
 name = "wit-bindgen-rust-macro"
 version = "0.8.0"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#70190725949c6f460e49c00880982cefa130354c"
+source = "git+https://github.com/bytecodealliance/wit-bindgen?rev=70190725949c6f460e49c00880982cefa130354c#70190725949c6f460e49c00880982cefa130354c"
 dependencies = [
  "anyhow",
  "proc-macro2",
