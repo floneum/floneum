@@ -54,13 +54,17 @@ impl InferenceSessions {
     ) -> String {
         let (model, session) = self.session_get_mut(id);
 
-        let tokens = model.vocabulary().tokenize(&prompt, false).unwrap();
+        let tokens = model.tokenizer().tokenize(&prompt, false).unwrap();
 
         let parmeters = InferenceParameters {
             sampler: Arc::new(StructuredSampler::new(
-                match model.vocabulary() {
-                    llm::Vocabulary::External(ex) => llm::Vocabulary::External(ex.clone()),
-                    llm::Vocabulary::Model(inn) => llm::Vocabulary::Model(inn.clone()),
+                match model.tokenizer() {
+                    llm::Tokenizer::Embedded(embedded) => {
+                        llm::Tokenizer::Embedded(embedded.clone())
+                    }
+                    llm::Tokenizer::HuggingFace(hugging_face) => {
+                        llm::Tokenizer::HuggingFace(hugging_face.clone())
+                    }
                 },
                 validator.clone(),
                 tokens.len() + 1,

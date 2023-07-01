@@ -15,14 +15,14 @@ fn embedding_db(
     let borrowed_documents = text
         .split(&seperator)
         .filter(|text| !text.is_empty())
+        .map(|text| text.to_string())
         .collect::<Vec<_>>();
     let embeddings = borrowed_documents
         .iter()
         .map(|s| instance.get_embedding(s))
         .collect::<Vec<_>>();
-    let borrowed_embeddings = embeddings.iter().collect::<Vec<_>>();
 
-    let database = VectorDatabase::new(&borrowed_embeddings, &borrowed_documents);
+    let database = VectorDatabase::new(&embeddings, &borrowed_documents);
 
     database.leak()
 }

@@ -21,7 +21,7 @@ pub struct VectorDatabase {
 }
 
 impl VectorDatabase {
-    pub fn new(embeddings: &[&plugins::main::types::Embedding], documents: &[&str]) -> Self {
+    pub fn new(embeddings: &[plugins::main::types::Embedding], documents: &[String]) -> Self {
         let id = create_embedding_db(embeddings, documents);
 
         VectorDatabase { id, drop: true }
@@ -113,10 +113,10 @@ pub struct Structured {
 }
 
 impl Structured {
-    pub fn literal(text: &str) -> Self {
-        let inner = Structure::Literal(text);
+    pub fn literal(text: impl Into<String>) -> Self {
+        let inner = Structure::Literal(text.into());
 
-        let id = create_structure(inner);
+        let id = create_structure(&inner);
         Structured { id }
     }
 
@@ -131,7 +131,7 @@ impl Structured {
             min_len: *range.start(),
             max_len: *range.end(),
         });
-        let id = create_structure(inner);
+        let id = create_structure(&inner);
         Structured { id }
     }
 
@@ -157,7 +157,7 @@ impl Structured {
             max: *range.end(),
             integer: int,
         });
-        let id = create_structure(inner);
+        let id = create_structure(&inner);
         Structured { id }
     }
 
@@ -170,7 +170,7 @@ impl Structured {
             min: min_len,
             max: max_len,
         });
-        let id = create_structure(inner);
+        let id = create_structure(&inner);
         Structured { id }
     }
 
@@ -191,7 +191,7 @@ impl Structured {
             first: self.id,
             second: second.id,
         });
-        let id = create_structure(inner);
+        let id = create_structure(&inner);
         Structured { id }
     }
 
@@ -200,7 +200,7 @@ impl Structured {
             first: self.id,
             second: then.id,
         });
-        let id = create_structure(inner);
+        let id = create_structure(&inner);
         Structured { id }
     }
 }

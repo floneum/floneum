@@ -138,9 +138,9 @@ pub fn download(model_type: ModelType) -> Box<dyn Model> {
     };
 
     llm::load_dynamic(
-        archetecture,
+        Some(archetecture),
         &path,
-        llm::VocabularySource::Model,
+        llm::TokenizerSource::Embedded,
         model_params,
         load_progress_callback(sp, now, prev_load_time),
     )

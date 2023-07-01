@@ -1,4 +1,4 @@
-use llm::{Sampler, TokenBias, TokenId, Vocabulary};
+use llm::{Sampler, TokenBias, TokenId, Tokenizer};
 use partial_sort::PartialSort;
 use rand::{distributions::WeightedIndex, prelude::Distribution};
 use std::fmt::Debug;
@@ -6,7 +6,7 @@ use std::fmt::Debug;
 use crate::structured_parser::{ParseStream, Validate};
 
 pub struct StructuredSampler<V: for<'a> Validate<'a>> {
-    vocab: Vocabulary,
+    tokenizer: Tokenizer,
     structure: V,
     /// The top K words by score are kept during sampling.
     top_k: usize,
@@ -26,7 +26,7 @@ pub struct StructuredSampler<V: for<'a> Validate<'a>> {
 }
 
 impl<V: for<'a> Validate<'a>> StructuredSampler<V> {
-    pub fn new(vocab: Vocabulary, structure: V, current_token_count: usize) -> Self {
+    pub fn new(tokenizer: Tokenizer, structure: V, current_token_count: usize) -> Self {
         Self {
             top_k: 40,
             top_p: 0.95,
@@ -34,7 +34,7 @@ impl<V: for<'a> Validate<'a>> StructuredSampler<V> {
             temperature: 0.80,
             bias_tokens: TokenBias::empty(),
             repetition_penalty_last_n: 512,
-            vocab,
+            tokenizer,
             structure,
             current_token_count,
         }
@@ -43,7 +43,7 @@ impl<V: for<'a> Validate<'a>> StructuredSampler<V> {
     fn invalid_token(&self, previous_tokens: &[TokenId], new_token: TokenId) -> bool {
         let mut tokens = Vec::new();
         for token in &previous_tokens[self.current_token_count.saturating_sub(1)..] {
-            let token = self.vocab.token(*token as usize);
+            let token = self.tokenizer.token(*token as usize);
             let Ok(token) = String::from_utf8(token) else{
                 return true;
             };
@@ -55,7 +55,7 @@ impl<V: for<'a> Validate<'a>> StructuredSampler<V> {
 
         let mut borrowed = tokens.iter().map(|x| x.as_str()).collect::<Vec<_>>();
 
-        let new_token = self.vocab.token(new_token as usize);
+        let new_token = self.tokenizer.token(new_token as usize);
         let Ok(new_token) = String::from_utf8(new_token) else{
             return true;
         };
