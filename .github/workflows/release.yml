@@ -51,10 +51,12 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: recursive
       - name: Install Rust
         run: rustup update 1.70.0 --no-self-update && rustup default 1.70.0
       - name: Install cargo-dist
-        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/axodotdev/cargo-dist/releases/download/v0.0.7/cargo-dist-installer.sh | sh
+        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/axodotdev/cargo-dist/releases/download/v0.1.0-prerelease.4/cargo-dist-installer.sh | sh
       - id: create-release
         run: |
           cargo dist plan --tag=${{ github.ref_name }} --output-format=json > dist-manifest.json
@@ -87,19 +89,18 @@ jobs:
         include:
         - os: macos-11
           dist-args: --artifacts=local --target=aarch64-apple-darwin --target=x86_64-apple-darwin
-          install-dist: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/axodotdev/cargo-dist/releases/download/v0.0.7/cargo-dist-installer.sh | sh
-        - os: ubuntu-20.04
-          dist-args: --artifacts=local --target=x86_64-unknown-linux-gnu
-          install-dist: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/axodotdev/cargo-dist/releases/download/v0.0.7/cargo-dist-installer.sh | sh
+          install-dist: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/axodotdev/cargo-dist/releases/download/v0.1.0-prerelease.4/cargo-dist-installer.sh | sh
         - os: windows-2019
           dist-args: --artifacts=local --target=x86_64-pc-windows-msvc
-          install-dist: irm  https://github.com/axodotdev/cargo-dist/releases/download/v0.0.7/cargo-dist-installer.ps1 | iex
+          install-dist: irm  https://github.com/axodotdev/cargo-dist/releases/download/v0.1.0-prerelease.4/cargo-dist-installer.ps1 | iex
 
     runs-on: ${{ matrix.os }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: recursive
       - name: Install Rust
         run: rustup update 1.70.0 --no-self-update && rustup default 1.70.0
       - name: Install cargo-dist
@@ -132,6 +133,8 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: recursive
       - name: mark release as non-draft
         run: |
           gh release edit ${{ github.ref_name }} --draft=false

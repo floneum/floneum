@@ -39,20 +39,20 @@ members = [
     "rust_macro",
     "floneumite",
     "floneum-cli",
-    "plugins/infer",
-    "plugins/infer_structured",
-    "plugins/format",
-    "plugins/search",
-    "plugins/embedding",
-    "plugins/embedding_db",
-    "plugins/add_embedding",
-    "plugins/search_engine",
+    # "plugins/infer",
+    # "plugins/infer_structured",
+    # "plugins/format",
+    # "plugins/search",
+    # "plugins/embedding",
+    # "plugins/embedding_db",
+    # "plugins/add_embedding",
+    # "plugins/search_engine",
 ]
 
 # Config for 'cargo dist'
 [workspace.metadata.dist]
 # The preferred cargo-dist version to use in CI (Cargo.toml SemVer syntax)
-cargo-dist-version = "0.1.0-prerelease.2"
+cargo-dist-version = "0.1.0-prerelease.4"
 # The preferred Rust toolchain to use in CI (rustup toolchain syntax)
 rust-toolchain-version = "1.70.0"
 # Target platforms to build apps for (Rust target-triple syntax)
