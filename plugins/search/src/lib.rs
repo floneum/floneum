@@ -7,14 +7,16 @@ pub fn search(
     key: Embedding,
     /// the embedding database to search
     database: EmbeddingDbId,
+    /// the number of documents to return
+    top_n: i64,
 ) -> String {
     let database = VectorDatabase::from_id(database);
-    let nearest = database.find_closest_documents(&key, 5);
+    let nearest = database.find_closest_documents(&key, top_n.abs().try_into().unwrap());
     println!("nearest: {:?}\n", nearest);
 
     let mut message = String::new();
-    for (i, embedding) in nearest.iter().enumerate() {
-        message.push_str(&format!("{}: {}\n", i, embedding));
+    for embedding in &nearest {
+        message.push_str(&format!("{}\n", embedding));
     }
     message
 }

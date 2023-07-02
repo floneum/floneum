@@ -565,13 +565,13 @@ impl WidgetValueTrait for MyValueType {
                             ui.add(TextEdit::multiline(value));
                         }
                         MyPrimitiveValueType::Embedding(_) => {
-                            ui.label("Embedding");
+                            // ui.label("Embedding");
                         }
                         MyPrimitiveValueType::Model(_) => {
-                            ui.label("Model");
+                            // ui.label("Model");
                         }
                         MyPrimitiveValueType::Database(_) => {
-                            ui.label("Database");
+                            // ui.label("Database");
                         }
                         MyPrimitiveValueType::Number(value) => {
                             ui.add(DragValue::new(value));
@@ -649,8 +649,6 @@ impl NodeDataTrait for MyNodeData {
         MyResponse: UserResponseTrait,
     {
         let node = &graph[node_id];
-
-        ui.label(format!("run count {}", self.run_count));
 
         if node.user_data.running {
             ui.with_layout(
