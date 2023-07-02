@@ -40,6 +40,7 @@ on:
   push:
     tags:
       - '*-?v[0-9]+*'
+  workflow_dispatch:
 
 jobs:
   # Create the Github Release™ so the packages have something to be uploaded to
@@ -52,7 +53,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Install Rust
-        run: rustup update 1.67.1 --no-self-update && rustup default 1.67.1
+        run: rustup update 1.70.0 --no-self-update && rustup default 1.70.0
       - name: Install cargo-dist
         run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/axodotdev/cargo-dist/releases/download/v0.0.7/cargo-dist-installer.sh | sh
       - id: create-release
@@ -101,7 +102,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Install Rust
-        run: rustup update 1.67.1 --no-self-update && rustup default 1.67.1
+        run: rustup update 1.70.0 --no-self-update && rustup default 1.70.0
       - name: Install cargo-dist
         run: ${{ matrix.install-dist }}
       - name: Run cargo-dist
