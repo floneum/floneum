@@ -173,6 +173,9 @@ impl IoDefinitionType {
             PrimitiveValueType::ModelType => quote! {
                 PrimitiveValue::ModelType(inner)
             },
+            PrimitiveValueType::Boolean => quote! {
+                PrimitiveValue::Boolean(inner)
+            },
         };
         let quote = match &self.value_type {
             ValueType::Single(_) => {
@@ -236,6 +239,10 @@ impl ToTokens for IoDefinitionType {
             PrimitiveValueType::ModelType => quote! {
                 floneum_rust::PrimitiveValueType::ModelType
             },
+            PrimitiveValueType::Boolean => quote! {
+                floneum_rust::PrimitiveValueType::Boolean
+            },
+            
         };
         let quote = match &self.value_type {
             ValueType::Single(_) => quote! {
@@ -304,6 +311,8 @@ fn parse_primitive_value_type(ident: &Ident) -> syn::Result<PrimitiveValueType> 
         Ok(PrimitiveValueType::Embedding)
     } else if ident == "ModelType" {
         Ok(PrimitiveValueType::ModelType)
+    } else if ident == "bool" {
+        Ok(PrimitiveValueType::Boolean)
     } else {
         let error = format!("type {} not allowed. Inputs and outputs must be one of i64, String, ModelInstance, VectorDatabase", ident.to_token_stream());
         Err(Error::new_spanned(ident, error))

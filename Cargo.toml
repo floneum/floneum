@@ -39,14 +39,14 @@ members = [
     "rust_macro",
     "floneumite",
     "floneum-cli",
-    # "plugins/infer",
-    # "plugins/infer_structured",
-    # "plugins/format",
-    # "plugins/search",
-    # "plugins/embedding",
-    # "plugins/embedding_db",
-    # "plugins/add_embedding",
-    # "plugins/search_engine",
+    "plugins/infer",
+    "plugins/infer_structured",
+    "plugins/format",
+    "plugins/search",
+    "plugins/embedding",
+    "plugins/embedding_db",
+    "plugins/add_embedding",
+    "plugins/search_engine",
 ]
 
 # Config for 'cargo dist'

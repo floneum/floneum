@@ -114,6 +114,7 @@ interface definitions {
     number(s64),
     text(string),
     embedding(embedding),
+    boolean(bool)
   }
 
   variant value-type {
@@ -128,6 +129,7 @@ interface definitions {
     database,
     model,
     model-type,
+    boolean
   }
 
   structure: func() -> definition

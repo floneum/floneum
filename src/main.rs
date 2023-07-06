@@ -185,6 +185,7 @@ impl From<ValueType> for MyDataType {
                 PrimitiveValueType::Database => Self::Single(MyPrimitiveDataType::Database),
                 PrimitiveValueType::Model => Self::Single(MyPrimitiveDataType::Model),
                 PrimitiveValueType::ModelType => Self::Single(MyPrimitiveDataType::ModelType),
+                PrimitiveValueType::Boolean => Self::Single(MyPrimitiveDataType::Boolean),
             },
             ValueType::Many(value) => match value {
                 PrimitiveValueType::Number => Self::List(MyPrimitiveDataType::Number),
@@ -193,6 +194,7 @@ impl From<ValueType> for MyDataType {
                 PrimitiveValueType::Database => Self::List(MyPrimitiveDataType::Database),
                 PrimitiveValueType::Model => Self::List(MyPrimitiveDataType::Model),
                 PrimitiveValueType::ModelType => Self::List(MyPrimitiveDataType::ModelType),
+                PrimitiveValueType::Boolean => Self::Single(MyPrimitiveDataType::Boolean),
             },
         }
     }
@@ -206,6 +208,7 @@ pub enum MyPrimitiveDataType {
     Model,
     ModelType,
     Database,
+    Boolean
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -274,6 +277,7 @@ pub enum MyPrimitiveValueType {
     Model(u32),
     Database(u32),
     ModelType(#[serde(with = "ModelTypeDef")] ModelType),
+    Boolean(bool),
 }
 
 impl MyPrimitiveValueType {
@@ -285,6 +289,7 @@ impl MyPrimitiveValueType {
             MyPrimitiveDataType::Model => Self::Model(0),
             MyPrimitiveDataType::Database => Self::Database(0),
             MyPrimitiveDataType::ModelType => Self::ModelType(ModelType::Llama(LlamaType::Vicuna)),
+            MyPrimitiveDataType::Boolean => Self::Boolean(false),
         }
     }
 }
@@ -305,6 +310,9 @@ impl From<MyValueType> for Value {
                 MyPrimitiveValueType::ModelType(model_type) => {
                     PrimitiveValue::ModelType(model_type)
                 }
+                MyPrimitiveValueType::Boolean(model_type) => {
+                    PrimitiveValue::Boolean(model_type)
+                }
             }),
             MyValueType::List(values) => Self::Many(
                 values
@@ -322,6 +330,7 @@ impl From<MyValueType> for Value {
                         MyPrimitiveValueType::ModelType(model_type) => {
                             PrimitiveValue::ModelType(model_type)
                         }
+                        MyPrimitiveValueType::Boolean(bool) => PrimitiveValue::Boolean(bool),
                     })
                     .collect(),
             ),
@@ -344,6 +353,7 @@ impl From<Value> for MyValueType {
                 PrimitiveValue::ModelType(model_type) => {
                     MyPrimitiveValueType::ModelType(model_type)
                 }
+                PrimitiveValue::Boolean(bool) => MyPrimitiveValueType::Boolean(bool),
             }),
             Value::Many(values) => Self::List(
                 values
@@ -359,6 +369,7 @@ impl From<Value> for MyValueType {
                         PrimitiveValue::ModelType(model_type) => {
                             MyPrimitiveValueType::ModelType(model_type)
                         }
+                        PrimitiveValue::Boolean(bool) => MyPrimitiveValueType::Boolean(bool),
                     })
                     .collect(),
             ),
@@ -412,6 +423,9 @@ impl DataTypeTrait<MyGraphState> for MyDataType {
             MyDataType::Single(MyPrimitiveDataType::ModelType) => {
                 egui::Color32::from_rgb(38, 50, 109)
             }
+            MyDataType::Single(MyPrimitiveDataType::Boolean) => {
+                egui::Color32::from_rgb(100, 100, 0)
+            }
             MyDataType::List(MyPrimitiveDataType::Text) => egui::Color32::from_rgb(38, 109, 211),
             MyDataType::List(MyPrimitiveDataType::Embedding) => {
                 egui::Color32::from_rgb(238, 207, 109)
@@ -424,6 +438,9 @@ impl DataTypeTrait<MyGraphState> for MyDataType {
             MyDataType::List(MyPrimitiveDataType::ModelType) => {
                 egui::Color32::from_rgb(38, 50, 109)
             }
+            MyDataType::List(MyPrimitiveDataType::Boolean) => {
+                egui::Color32::from_rgb(100, 100, 0)
+            }
         }
     }
 
@@ -435,6 +452,7 @@ impl DataTypeTrait<MyGraphState> for MyDataType {
             MyDataType::Single(MyPrimitiveDataType::Model) => Cow::Borrowed("model"),
             MyDataType::Single(MyPrimitiveDataType::Database) => Cow::Borrowed("database"),
             MyDataType::Single(MyPrimitiveDataType::ModelType) => Cow::Borrowed("model type"),
+            MyDataType::Single(MyPrimitiveDataType::Boolean) => Cow::Borrowed("true/false"),
             MyDataType::List(MyPrimitiveDataType::Text) => Cow::Borrowed("list of texts"),
             MyDataType::List(MyPrimitiveDataType::Embedding) => Cow::Borrowed("list of embeddings"),
             MyDataType::List(MyPrimitiveDataType::Number) => Cow::Borrowed("list of numbers"),
@@ -443,6 +461,7 @@ impl DataTypeTrait<MyGraphState> for MyDataType {
             MyDataType::List(MyPrimitiveDataType::ModelType) => {
                 Cow::Borrowed("list of model types")
             }
+            MyDataType::List(MyPrimitiveDataType::Boolean) => Cow::Borrowed("true/false"),
         }
     }
 }
@@ -588,6 +607,9 @@ impl WidgetValueTrait for MyValueType {
                                 })
                             });
                         }
+                        MyPrimitiveValueType::Boolean(val) => {
+                            ui.checkbox(val, param_name);
+                        }
                     }
                 }
                 MyValueType::List(values) => {
@@ -620,6 +642,9 @@ impl WidgetValueTrait for MyValueType {
                                         }
                                     })
                                 });
+                            }
+                            MyPrimitiveValueType::Boolean(val) => {
+                                ui.label(format!("{val:?}"));
                             }
                         }
                     }
@@ -696,6 +721,9 @@ impl NodeDataTrait for MyNodeData {
                         MyPrimitiveValueType::ModelType(ty) => {
                             ui.label(ty.name());
                         }
+                        MyPrimitiveValueType::Boolean(val) => {
+                            ui.label(format!("{val:?}"));
+                        }
                     },
                     MyValueType::List(many) => {
                         for value in many {
@@ -717,6 +745,9 @@ impl NodeDataTrait for MyNodeData {
                                 }
                                 MyPrimitiveValueType::ModelType(ty) => {
                                     ui.label(ty.name());
+                                }
+                                MyPrimitiveValueType::Boolean(val) => {
+                                    ui.label(format!("{val:?}"));
                                 }
                             }
                         }
