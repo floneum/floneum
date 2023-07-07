@@ -2,8 +2,8 @@ use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use quote::{quote, ToTokens};
 use syn::{
-    parse::Parse, parse_macro_input, parse_quote, Error, FnArg, GenericArgument, ItemFn, LitStr,
-    Meta, Path, PathArguments, PathSegment, ReturnType, Type, Expr,
+    parse::Parse, parse_macro_input, parse_quote, Error, Expr, FnArg, GenericArgument, ItemFn,
+    LitStr, Meta, Path, PathArguments, PathSegment, ReturnType, Type,
 };
 
 #[allow(unused_macros)]
@@ -84,18 +84,16 @@ pub fn export_plugin(args: TokenStream, input: TokenStream) -> TokenStream {
     match &input.sig.output {
         ReturnType::Type(_, ty) => match &**ty {
             Type::Tuple(tuple) => {
-                 match syn::parse2::<syn::ExprTuple>(quote! {
-                    #ty
-                }){
+                match syn::parse::<syn::ExprTuple>(args) {
                     Ok(ty) => {
-                        for item in &ty.elems{
+                        for item in &ty.elems {
                             if let Ok(lit_str) = syn::parse2::<syn::LitStr>(quote! {
                                 #item
-                            }){
+                            }) {
                                 output_names.push(lit_str.value());
                             }
                         }
-                    },
+                    }
                     Err(_) => {
                         for _ in 0..tuple.elems.len() {
                             output_names.push(format!("output{}", output_names.len()))
@@ -148,7 +146,7 @@ pub fn export_plugin(args: TokenStream, input: TokenStream) -> TokenStream {
                 }
             }
 
-            
+
             fn run(input: Vec<floneum_rust::Input>) -> Vec<floneum_rust::Output> {
                 let __inner_fn = #function_ident;
                 #(
