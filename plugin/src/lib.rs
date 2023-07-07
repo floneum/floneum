@@ -171,7 +171,7 @@ impl State {
             },
             Structure::Sequence(params) => StructureParser::Sequence {
                 item: Box::new(self.decode_structure(params.item)),
-                seperator: Box::new(self.decode_structure(params.seperator)),
+                separator: Box::new(self.decode_structure(params.separator)),
                 min_len: params.min_len,
                 max_len: params.max_len,
             },
@@ -420,7 +420,7 @@ impl Plugin {
                 .await
                 .unwrap();
 
-        let (input_sender, mut input_reciever) = broadcast::channel::<Vec<Value>>(100);
+        let (input_sender, mut input_reciever) = broadcast::channel::<Vec<Input>>(100);
         let (output_sender, output_reciever) = broadcast::channel(100);
 
         tokio::spawn(async move {
@@ -458,8 +458,8 @@ impl Plugin {
 pub struct PluginInstance {
     source_bytes: Arc<Vec<u8>>,
     metadata: Definition,
-    sender: broadcast::Sender<Vec<Value>>,
-    reciever: broadcast::Receiver<Vec<Value>>,
+    sender: broadcast::Sender<Vec<Input>>,
+    reciever: broadcast::Receiver<Vec<Output>>,
 }
 
 impl Serialize for PluginInstance {
@@ -485,7 +485,7 @@ impl<'de> Deserialize<'de> for PluginInstance {
 }
 
 impl PluginInstance {
-    pub fn run(&self, inputs: Vec<Value>) -> impl Future<Output = Vec<Value>> + 'static {
+    pub fn run(&self, inputs: Vec<Input>) -> impl Future<Output = Vec<Output>> + 'static {
         let sender = self.sender.clone();
         let mut reciever = self.reciever.resubscribe();
         async move {
@@ -526,8 +526,8 @@ fn load_plugin() {
         let instance = plugin.instance().await;
 
         let inputs = vec![
-            Value::Single(PrimitiveValue::Text("hello {}".to_string())),
-            Value::Single(PrimitiveValue::Text("world".to_string())),
+            Input::Single(PrimitiveValue::Text("hello {}".to_string())),
+            Input::Single(PrimitiveValue::Text("world".to_string())),
         ];
         let outputs = instance.run(inputs).await;
         println!("{:?}", outputs);
@@ -535,7 +535,7 @@ fn load_plugin() {
         assert_eq!(outputs.len(), 1);
         let first = outputs.first().unwrap();
         match first {
-            Value::Single(PrimitiveValue::Text(text)) => {
+            Output::Single(PrimitiveValue::Text(text)) => {
                 assert_eq!(text, "hello world");
             }
             _ => panic!("unexpected text output"),

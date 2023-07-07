@@ -8,7 +8,7 @@ pub enum StructureParser {
     Literal(String),
     Sequence {
         item: Box<StructureParser>,
-        seperator: Box<StructureParser>,
+        separator: Box<StructureParser>,
         min_len: u64,
         max_len: u64,
     },
@@ -37,13 +37,13 @@ impl<'a> Validate<'a> for StructureParser {
             StructureParser::Literal(text) => text.validate(tokens),
             StructureParser::Sequence {
                 item,
-                seperator,
+                separator,
                 min_len,
                 max_len,
             } => {
                 let parse_sequence = Seperated::new(
                     item.as_ref(),
-                    seperator.as_ref(),
+                    separator.as_ref(),
                     *min_len as usize,
                     *max_len as usize,
                 );
@@ -521,17 +521,17 @@ impl<'a, S: Validate<'a>, I: Validate<'a>, E: Validate<'a>> Validate<'a> for Bet
 
 struct Seperated<'a, S: Validate<'a>, I: Validate<'a>> {
     inner: I,
-    seperator: S,
+    separator: S,
     min: usize,
     max: usize,
     _phantom: std::marker::PhantomData<&'a ()>,
 }
 
 impl<'a, S: Validate<'a>, I: Validate<'a>> Seperated<'a, S, I> {
-    fn new(inner: I, seperator: S, min: usize, max: usize) -> Self {
+    fn new(inner: I, separator: S, min: usize, max: usize) -> Self {
         Seperated {
             inner,
-            seperator,
+            separator,
             min,
             max,
             _phantom: std::marker::PhantomData,
@@ -549,12 +549,12 @@ impl<'a, S: Validate<'a>, I: Validate<'a>> Validate<'a> for Seperated<'a, S, I> 
             }
             // first parse an item
             match self.inner.validate(tokens) {
-                // if we get a complete item, then we can parse a seperator
+                // if we get a complete item, then we can parse a separator
                 ParseStatus::Complete(Some(new_tokens)) => {
-                    match self.seperator.validate(new_tokens) {
-                        // if we get a complete seperator, then we can parse another item
+                    match self.separator.validate(new_tokens) {
+                        // if we get a complete separator, then we can parse another item
                         ParseStatus::Complete(Some(new_tokens)) => tokens = new_tokens,
-                        // if we get a complete seperator with no tokens, then we are done
+                        // if we get a complete separator with no tokens, then we are done
                         ParseStatus::Complete(None) => {
                             if count >= self.min {
                                 return ParseStatus::Complete(Some(tokens));
@@ -562,7 +562,7 @@ impl<'a, S: Validate<'a>, I: Validate<'a>> Validate<'a> for Seperated<'a, S, I> 
                                 return ParseStatus::Incomplete;
                             }
                         }
-                        // if we get an invalid seperator, then this is the end of the list
+                        // if we get an invalid separator, then this is the end of the list
                         ParseStatus::Invalid => {
                             if count >= self.min {
                                 return ParseStatus::Complete(Some(new_tokens));
@@ -570,7 +570,7 @@ impl<'a, S: Validate<'a>, I: Validate<'a>> Validate<'a> for Seperated<'a, S, I> 
                                 return ParseStatus::Invalid;
                             }
                         }
-                        // if we get an incomplete seperator, then we need to wait for more tokens
+                        // if we get an incomplete separator, then we need to wait for more tokens
                         ParseStatus::Incomplete => return ParseStatus::Incomplete,
                     }
                 }
@@ -675,7 +675,7 @@ fn test_seperated() {
 
         let seperated = Seperated {
             inner: "a",
-            seperator: ",",
+            separator: ",",
             min: 6,
             max: 6,
             _phantom: std::marker::PhantomData,

@@ -1,9 +1,11 @@
 #![allow(unused_macros)]
 
 pub use crate::exports::plugins::main::definitions::{
-    Definition, Definitions, IoDefinition, PrimitiveValue, PrimitiveValueType, Value, ValueType,
+    Definition, Definitions, Input, IoDefinition, Output, PrimitiveValue, PrimitiveValueType,
+    ValueType,
 };
 use crate::plugins::main::imports::*;
+pub use crate::plugins::main::imports::{get_request, Header};
 pub use crate::plugins::main::types::{EmbeddingDbId, GptNeoXType, LlamaType, ModelType, MptType};
 pub use floneum_rust_macro::export_plugin;
 pub use plugins::main::types::Embedding;
@@ -11,7 +13,6 @@ use plugins::main::types::{
     EitherStructure, NumberParameters, SequenceParameters, Structure, ThenStructure, UnsignedRange,
 };
 use std::ops::RangeInclusive;
-pub use crate::plugins::main::imports::{Header, get_request};
 
 wit_bindgen::generate!({path: "../wit", macro_export});
 
@@ -122,12 +123,12 @@ impl Structured {
 
     pub fn sequence_of(
         item: Structured,
-        seperator: Structured,
+        separator: Structured,
         range: RangeInclusive<u64>,
     ) -> Self {
         let inner = Structure::Sequence(SequenceParameters {
             item: item.id,
-            seperator: seperator.id,
+            separator: separator.id,
             min_len: *range.start(),
             max_len: *range.end(),
         });
@@ -205,49 +206,32 @@ impl Structured {
     }
 }
 
-trait IntoReturnValue {
-    fn into_return_value(self) -> Value;
+trait IntoReturnValue<T=()> {
+    fn into_return_value(self) -> Output;
+}
+
+struct OptionMarker;
+
+impl<T: IntoReturnValue> IntoReturnValue<OptionMarker> for Option<T> {
+    fn into_return_value(self) -> Output {
+        match self {
+            Some(x) => x.into_return_value(),
+            None => Output::Halt,
+        }
+    }
 }
 
 impl<T: IntoPrimitiveValue> IntoReturnValue for T {
-    fn into_return_value(self) -> Value {
-        Value::Single(self.into_primitive_value())
+    fn into_return_value(self) -> Output {
+        Output::Single(self.into_primitive_value())
     }
 }
 
-impl IntoReturnValue for Vec<i64> {
-    fn into_return_value(self) -> Value {
-        Value::Many(self.into_iter().map(|x| x.into_primitive_value()).collect())
-    }
-}
+struct VecMarker;
 
-impl IntoReturnValue for Vec<String> {
-    fn into_return_value(self) -> Value {
-        Value::Many(self.into_iter().map(|x| x.into_primitive_value()).collect())
-    }
-}
-
-impl IntoReturnValue for Vec<ModelInstance> {
-    fn into_return_value(self) -> Value {
-        Value::Many(self.into_iter().map(|x| x.into_primitive_value()).collect())
-    }
-}
-
-impl IntoReturnValue for Vec<VectorDatabase> {
-    fn into_return_value(self) -> Value {
-        Value::Many(self.into_iter().map(|x| x.into_primitive_value()).collect())
-    }
-}
-
-impl IntoReturnValue for Vec<EmbeddingDbId> {
-    fn into_return_value(self) -> Value {
-        Value::Many(self.into_iter().map(|x| x.into_primitive_value()).collect())
-    }
-}
-
-impl IntoReturnValue for Vec<Embedding> {
-    fn into_return_value(self) -> Value {
-        Value::Many(self.into_iter().map(|x| x.into_primitive_value()).collect())
+impl<T: IntoPrimitiveValue> IntoReturnValue<VecMarker> for Vec<T> {
+    fn into_return_value(self) -> Output {
+        Output::Many(self.into_iter().map(|x| x.into_primitive_value()).collect())
     }
 }
 
@@ -292,11 +276,11 @@ impl IntoPrimitiveValue for Embedding {
 }
 
 pub trait IntoReturnValues {
-    fn into_return_values(self) -> Vec<Value>;
+    fn into_return_values(self) -> Vec<Output>;
 }
 
 impl<T: IntoReturnValue> IntoReturnValues for T {
-    fn into_return_values(self) -> Vec<Value> {
+    fn into_return_values(self) -> Vec<Output> {
         vec![self.into_return_value()]
     }
 }
@@ -306,7 +290,7 @@ macro_rules! impl_into_return_values {
         $($var:ident : $ty:ident),*
     ) => {
         impl<$($ty: IntoReturnValue,)*> IntoReturnValues for ($($ty,)*) {
-            fn into_return_values(self) -> Vec<Value> {
+            fn into_return_values(self) -> Vec<Output> {
                 let ($($var,)*) = self;
                 vec![$($var.into_return_value(),)*]
             }

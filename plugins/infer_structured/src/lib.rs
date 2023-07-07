@@ -72,7 +72,7 @@ fn structured_from_rule(rule: Pair<Rule>) -> Structured {
         Rule::array => {
             let mut iter = rule.into_inner();
             let item = multiple_structured_from_rule(iter.next().unwrap());
-            let seperator = Structured::literal(",");
+            let separator = Structured::literal(",");
             let range = if let Some(rule) = iter.next().filter(|pair| pair.as_rule() == Rule::range)
             {
                 let mut iter = rule.into_inner();
@@ -82,7 +82,7 @@ fn structured_from_rule(rule: Pair<Rule>) -> Structured {
             } else {
                 0..=u64::MAX
             };
-            Structured::sequence_of(item, seperator, range)
+            Structured::sequence_of(item, separator, range)
         }
         _ => {
             let error = format!("unexpected rule: {:?}\n", rule);

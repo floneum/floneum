@@ -131,7 +131,7 @@ pub fn export_plugin(_: TokenStream, input: TokenStream) -> TokenStream {
                 }
             }
 
-            fn run(input: Vec<floneum_rust::Value>) -> Vec<floneum_rust::Value> {
+            fn run(input: Vec<floneum_rust::Input>) -> Vec<floneum_rust::Output> {
                 #(
                     #extract_inputs
                 )*
@@ -180,12 +180,12 @@ impl IoDefinitionType {
         let quote = match &self.value_type {
             ValueType::Single(_) => {
                 quote! {
-                    Value::Single(#match_inner)
+                    Input::Single(#match_inner)
                 }
             }
             ValueType::Many(_) => {
                 quote! {
-                    Value::Many(inner)
+                    Input::Many(inner)
                 }
             }
         };
@@ -242,7 +242,6 @@ impl ToTokens for IoDefinitionType {
             PrimitiveValueType::Boolean => quote! {
                 floneum_rust::PrimitiveValueType::Boolean
             },
-            
         };
         let quote = match &self.value_type {
             ValueType::Single(_) => quote! {

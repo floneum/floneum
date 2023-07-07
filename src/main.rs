@@ -8,7 +8,7 @@ use eframe::{
 };
 use egui_node_graph::*;
 use floneum_plugin::exports::plugins::main::definitions::{
-    Embedding, PrimitiveValue, PrimitiveValueType, Value, ValueType,
+    Embedding, PrimitiveValue, PrimitiveValueType, Output, Input, ValueType,
 };
 use floneum_plugin::plugins::main::types::{
     EmbeddingDbId, GptNeoXType, LlamaType, ModelId, ModelType, MptType,
@@ -141,7 +141,7 @@ async fn main() {
 
 struct SetOutputMessage {
     node_id: NodeId,
-    values: Vec<Value>,
+    values: Vec<Output>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -208,7 +208,7 @@ pub enum MyPrimitiveDataType {
     Model,
     ModelType,
     Database,
-    Boolean
+    Boolean,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -294,7 +294,7 @@ impl MyPrimitiveValueType {
     }
 }
 
-impl From<MyValueType> for Value {
+impl From<MyValueType> for Input {
     fn from(value: MyValueType) -> Self {
         match value {
             MyValueType::Single(value) => Self::Single(match value {
@@ -310,9 +310,7 @@ impl From<MyValueType> for Value {
                 MyPrimitiveValueType::ModelType(model_type) => {
                     PrimitiveValue::ModelType(model_type)
                 }
-                MyPrimitiveValueType::Boolean(model_type) => {
-                    PrimitiveValue::Boolean(model_type)
-                }
+                MyPrimitiveValueType::Boolean(model_type) => PrimitiveValue::Boolean(model_type),
             }),
             MyValueType::List(values) => Self::Many(
                 values
@@ -339,10 +337,10 @@ impl From<MyValueType> for Value {
     }
 }
 
-impl From<Value> for MyValueType {
-    fn from(value: Value) -> Self {
+impl From<Input> for MyValueType {
+    fn from(value: Input) -> Self {
         match value {
-            Value::Single(value) => Self::Single(match value {
+            Input::Single(value) => Self::Single(match value {
                 PrimitiveValue::Number(text) => MyPrimitiveValueType::Number(text),
                 PrimitiveValue::Text(text) => MyPrimitiveValueType::Text(text),
                 PrimitiveValue::Embedding(embedding) => {
@@ -355,7 +353,7 @@ impl From<Value> for MyValueType {
                 }
                 PrimitiveValue::Boolean(bool) => MyPrimitiveValueType::Boolean(bool),
             }),
-            Value::Many(values) => Self::List(
+            Input::Many(values) => Self::List(
                 values
                     .into_iter()
                     .map(|value| match value {
@@ -373,6 +371,45 @@ impl From<Value> for MyValueType {
                     })
                     .collect(),
             ),
+        }
+    }
+}
+
+impl From<Output> for MyValueType {
+    fn from(value: Output) -> Self {
+        match value {
+            Output::Single(value) => Self::Single(match value {
+                PrimitiveValue::Number(text) => MyPrimitiveValueType::Number(text),
+                PrimitiveValue::Text(text) => MyPrimitiveValueType::Text(text),
+                PrimitiveValue::Embedding(embedding) => {
+                    MyPrimitiveValueType::Embedding(embedding.vector)
+                }
+                PrimitiveValue::Model(id) => MyPrimitiveValueType::Model(id.id),
+                PrimitiveValue::Database(id) => MyPrimitiveValueType::Database(id.id),
+                PrimitiveValue::ModelType(model_type) => {
+                    MyPrimitiveValueType::ModelType(model_type)
+                }
+                PrimitiveValue::Boolean(bool) => MyPrimitiveValueType::Boolean(bool),
+            }),
+            Output::Many(values) => Self::List(
+                values
+                    .into_iter()
+                    .map(|value| match value {
+                        PrimitiveValue::Number(text) => MyPrimitiveValueType::Number(text),
+                        PrimitiveValue::Text(text) => MyPrimitiveValueType::Text(text),
+                        PrimitiveValue::Embedding(embedding) => {
+                            MyPrimitiveValueType::Embedding(embedding.vector)
+                        }
+                        PrimitiveValue::Model(id) => MyPrimitiveValueType::Model(id.id),
+                        PrimitiveValue::Database(id) => MyPrimitiveValueType::Database(id.id),
+                        PrimitiveValue::ModelType(model_type) => {
+                            MyPrimitiveValueType::ModelType(model_type)
+                        }
+                        PrimitiveValue::Boolean(bool) => MyPrimitiveValueType::Boolean(bool),
+                    })
+                    .collect(),
+            ),
+            Output::Halt => Self::Unset,
         }
     }
 }
@@ -438,9 +475,7 @@ impl DataTypeTrait<MyGraphState> for MyDataType {
             MyDataType::List(MyPrimitiveDataType::ModelType) => {
                 egui::Color32::from_rgb(38, 50, 109)
             }
-            MyDataType::List(MyPrimitiveDataType::Boolean) => {
-                egui::Color32::from_rgb(100, 100, 0)
-            }
+            MyDataType::List(MyPrimitiveDataType::Boolean) => egui::Color32::from_rgb(100, 100, 0),
         }
     }
 
@@ -836,7 +871,7 @@ impl NodeGraphExample {
         }
         let node = &self.state.graph[id];
 
-        let mut values: Vec<Value> = Vec::new();
+        let mut values: Vec<Input> = Vec::new();
         for (_, id) in &node.inputs {
             let input = self.state.graph.get_input(*id);
             let connection = self.state.graph.connections.get(input.id);

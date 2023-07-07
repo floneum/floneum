@@ -5,15 +5,15 @@ use floneum_rust::*;
 fn embedding_db(
     /// the model to use
     model: ModelType,
-    /// the seperator between documents
-    seperator: String,
+    /// the separator between documents
+    separator: String,
     /// the documents to index
     text: String,
 ) -> EmbeddingDbId {
     let instance = ModelInstance::new(model);
 
     let borrowed_documents = text
-        .split(&seperator)
+        .split(&separator)
         .filter(|text| !text.is_empty())
         .map(|text| text.to_string())
         .collect::<Vec<_>>();

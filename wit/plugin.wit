@@ -53,7 +53,7 @@ interface types {
 
   record sequence-parameters {
     item: structure-id,
-    seperator: structure-id,
+    separator: structure-id,
     min-len: u64,
     max-len: u64,
   }
@@ -102,9 +102,15 @@ interface definitions {
     ty: value-type,
   }
 
-  variant value {
+  variant input {
     single(primitive-value),
     many(list<primitive-value>),
+  }
+
+  variant output {
+    single(primitive-value),
+    many(list<primitive-value>),
+    halt,
   }
 
   variant primitive-value {
@@ -134,7 +140,7 @@ interface definitions {
 
   structure: func() -> definition
 
-  run: func(inputs: list<value>) -> list<value>
+  run: func(inputs: list<input>) -> list<output>
 }
 
 world plugin-world {
