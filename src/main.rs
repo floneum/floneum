@@ -81,9 +81,8 @@ fn save_to_file<D: Serialize>(data: D) {
             log::info!("serializing");
             match bincode::serialize(&data) {
                 Ok(bytes) => {
-                    log::info!("done serializing");
-                    let result = file.write_all(&bytes);
-                    log::info!("done writing {result:?}");
+                    let compressed = yazi::compress(&bytes, yazi::Format::Zlib,yazi::CompressionLevel::Default).unwrap();
+                    let _= file.write_all(&compressed);
                 }
                 Err(err) => {
                     log::error!("{}", err)
@@ -106,7 +105,9 @@ fn get_from_file<D: DeserializeOwned>(create: impl FnOnce() -> D) -> D {
             return create();
         }
 
-        if let Ok(from_storage) = bincode::deserialize(&buffer[..]) {
+        let (uncompressed, _) = yazi::decompress(&buffer[..], yazi::Format::Zlib).unwrap();
+
+        if let Ok(from_storage) = bincode::deserialize(&uncompressed[..]) {
             from_storage
         } else {
             create()
