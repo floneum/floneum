@@ -153,6 +153,8 @@ pub struct MyNodeData {
     running: bool,
     #[serde(skip)]
     queued: bool,
+    #[serde(skip)]
+    error: Option<String>,
 }
 
 #[derive(Eq, serde::Serialize, serde::Deserialize, Debug)]
@@ -527,6 +529,7 @@ impl NodeTemplateTrait for PluginId {
         MyNodeData {
             running: false,
             queued: false,
+            error: None,
             run_count: 0,
             instance: user_state.get_plugin(*self).instance().block_on(),
         }
@@ -730,39 +733,22 @@ impl NodeDataTrait for MyNodeData {
         }
 
         // Render the current output of the node
-        let outputs = &node.outputs;
 
-        for (name, id) in outputs {
-            let value = user_state.node_outputs.get(id).cloned().unwrap_or_default();
-            egui::ScrollArea::vertical()
-                .id_source((node_id, name))
-                .show(ui, |ui| match &value {
-                    MyValueType::Single(single) => match single {
-                        MyPrimitiveValueType::Text(value) => {
-                            ui.label(value);
-                        }
-                        MyPrimitiveValueType::Embedding(value) => {
-                            ui.label(format!("{:?}", &value[..5]));
-                        }
-                        MyPrimitiveValueType::Model(id) => {
-                            ui.label(format!("Model: {id:?}"));
-                        }
-                        MyPrimitiveValueType::Database(id) => {
-                            ui.label(format!("Database: {id:?}"));
-                        }
-                        MyPrimitiveValueType::Number(value) => {
-                            ui.label(format!("{:02}", value));
-                        }
-                        MyPrimitiveValueType::ModelType(ty) => {
-                            ui.label(ty.name());
-                        }
-                        MyPrimitiveValueType::Boolean(val) => {
-                            ui.label(format!("{val:?}"));
-                        }
-                    },
-                    MyValueType::List(many) => {
-                        for value in many {
-                            match value {
+        match &node.user_data.error {
+            Some(err) => {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    ui.label(format!("Error running node: {err}"));
+                });
+            }
+            None => {
+                let outputs = &node.outputs;
+
+                for (name, id) in outputs {
+                    let value = user_state.node_outputs.get(id).cloned().unwrap_or_default();
+                    egui::ScrollArea::vertical()
+                        .id_source((node_id, name))
+                        .show(ui, |ui| match &value {
+                            MyValueType::Single(single) => match single {
                                 MyPrimitiveValueType::Text(value) => {
                                     ui.label(value);
                                 }
@@ -784,13 +770,39 @@ impl NodeDataTrait for MyNodeData {
                                 MyPrimitiveValueType::Boolean(val) => {
                                     ui.label(format!("{val:?}"));
                                 }
+                            },
+                            MyValueType::List(many) => {
+                                for value in many {
+                                    match value {
+                                        MyPrimitiveValueType::Text(value) => {
+                                            ui.label(value);
+                                        }
+                                        MyPrimitiveValueType::Embedding(value) => {
+                                            ui.label(format!("{:?}", &value[..5]));
+                                        }
+                                        MyPrimitiveValueType::Model(id) => {
+                                            ui.label(format!("Model: {id:?}"));
+                                        }
+                                        MyPrimitiveValueType::Database(id) => {
+                                            ui.label(format!("Database: {id:?}"));
+                                        }
+                                        MyPrimitiveValueType::Number(value) => {
+                                            ui.label(format!("{:02}", value));
+                                        }
+                                        MyPrimitiveValueType::ModelType(ty) => {
+                                            ui.label(ty.name());
+                                        }
+                                        MyPrimitiveValueType::Boolean(val) => {
+                                            ui.label(format!("{val:?}"));
+                                        }
+                                    }
+                                }
                             }
-                        }
-                    }
-                    MyValueType::Unset => {}
-                });
+                            MyValueType::Unset => {}
+                        });
+                }
+            }
         }
-
         vec![]
     }
 }
@@ -1021,34 +1033,41 @@ impl eframe::App for NodeGraphExample {
         // Recieve any async messages about setting node outputs.
         while let Ok(msg) = self.txrx.rx.try_recv() {
             let node = &self.state.graph[msg.node_id].outputs;
-            if let Ok(values) = &*msg.values {
-                for ((_, id), value) in node.iter().zip(values.into_iter()) {
-                    self.user_state
-                        .node_outputs
-                        .insert(*id, value.clone().into());
-                }
-                // stop this node's loading indicator
-                self.state.graph[msg.node_id].user_data.running = false;
-                self.state.graph[msg.node_id].user_data.queued = false;
-                // start all connecting nodes
-                let mut nodes_to_start = Vec::new();
-                for (_, id) in &self.state.graph[msg.node_id].outputs {
-                    for (input, output) in self.state.graph.iter_connections() {
-                        if output == *id {
-                            let node_id = self.state.graph[input].node;
-                            nodes_to_start.push(node_id);
+            match &*msg.values {
+                Ok(values) => {
+                    for ((_, id), value) in node.iter().zip(values.into_iter()) {
+                        self.user_state
+                            .node_outputs
+                            .insert(*id, value.clone().into());
+                    }
+                    // stop this node's loading indicator
+                    let node = &mut self.state.graph[msg.node_id];
+                    node.user_data.running = false;
+                    node.user_data.queued = false;
+                    node.user_data.error = None;
+                    // start all connecting nodes
+                    let mut nodes_to_start = Vec::new();
+                    for (_, id) in &self.state.graph[msg.node_id].outputs {
+                        for (input, output) in self.state.graph.iter_connections() {
+                            if output == *id {
+                                let node_id = self.state.graph[input].node;
+                                nodes_to_start.push(node_id);
+                            }
                         }
                     }
+                    for node in &nodes_to_start {
+                        self.state.graph[*node].user_data.queued = true;
+                    }
+                    for node in nodes_to_start {
+                        self.run_node(node);
+                    }
                 }
-                for node in &nodes_to_start {
-                    self.state.graph[*node].user_data.queued = true;
+                Err(e) => {
+                    let node = &mut self.state.graph[msg.node_id];
+                    node.user_data.running = false;
+                    node.user_data.queued = false;
+                    node.user_data.error = Some(e.to_string());
                 }
-                for node in nodes_to_start {
-                    self.run_node(node);
-                }
-            } else {
-                self.state.graph[msg.node_id].user_data.running = false;
-                self.state.graph[msg.node_id].user_data.queued = false;
             }
         }
 
