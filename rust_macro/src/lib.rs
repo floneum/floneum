@@ -3,7 +3,7 @@ use proc_macro2::Ident;
 use quote::{quote, ToTokens};
 use syn::{
     parse::Parse, parse_macro_input, parse_quote, Error, FnArg, GenericArgument, ItemFn, LitStr,
-    Meta, Path, PathArguments, PathSegment, ReturnType, Type,
+    Meta, Path, PathArguments, PathSegment, ReturnType, Type, Expr,
 };
 
 #[allow(unused_macros)]
@@ -24,7 +24,7 @@ macro_rules! try_parse_quote {
 }
 
 #[proc_macro_attribute]
-pub fn export_plugin(_: TokenStream, input: TokenStream) -> TokenStream {
+pub fn export_plugin(args: TokenStream, input: TokenStream) -> TokenStream {
     let mut input = parse_macro_input!(input as ItemFn);
 
     let function_ident = input.sig.ident.clone();
@@ -84,10 +84,27 @@ pub fn export_plugin(_: TokenStream, input: TokenStream) -> TokenStream {
     match &input.sig.output {
         ReturnType::Type(_, ty) => match &**ty {
             Type::Tuple(tuple) => {
+                 match syn::parse2::<syn::ExprTuple>(quote! {
+                    #ty
+                }){
+                    Ok(ty) => {
+                        for item in &ty.elems{
+                            if let Ok(lit_str) = syn::parse2::<syn::LitStr>(quote! {
+                                #item
+                            }){
+                                output_names.push(lit_str.value());
+                            }
+                        }
+                    },
+                    Err(_) => {
+                        for _ in 0..tuple.elems.len() {
+                            output_names.push(format!("output{}", output_names.len()))
+                        }
+                    }
+                };
                 for ty in tuple.elems.iter() {
                     let ty = try_parse_quote!(#ty);
                     output_types.push(ty);
-                    output_names.push(format!("output{}", output_names.len()))
                 }
             }
             _ => {
