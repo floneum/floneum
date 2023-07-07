@@ -1,8 +1,8 @@
 use floneum_rust::*;
 
 #[export_plugin]
-/// creates embeddings for text
-fn embedding(value: String, first: bool) -> (Option<String>, Option<String>) {
+/// switch between two values based on a condition
+fn if_statement(value: String, first: bool) -> (Option<String>, Option<String>) {
     if first {
         (Some(value), None)
     } else {

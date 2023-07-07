@@ -634,9 +634,9 @@ impl WidgetValueTrait for MyValueType {
                             let name = ty.name();
                             ui.collapsing(name, |ui| {
                                 ui.vertical(|ui| {
-                                    for varient in ModelType::VARIANTS {
-                                        if ui.button(varient.name()).clicked() {
-                                            *ty = *varient;
+                                    for variant in ModelType::VARIANTS {
+                                        if ui.button(variant.name()).clicked() {
+                                            *ty = *variant;
                                         }
                                     }
                                 })

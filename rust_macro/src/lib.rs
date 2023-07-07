@@ -131,14 +131,16 @@ pub fn export_plugin(_: TokenStream, input: TokenStream) -> TokenStream {
                 }
             }
 
+            
             fn run(input: Vec<floneum_rust::Input>) -> Vec<floneum_rust::Output> {
+                let __inner_fn = #function_ident;
                 #(
                     #extract_inputs
                 )*
 
                 use floneum_rust::IntoReturnValues;
 
-                #function_ident(#(#input_idents,)*).into_return_values()
+                __inner_fn(#(#input_idents,)*).into_return_values()
             }
         }
     })

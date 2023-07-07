@@ -2051,6 +2051,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "floneum_contains"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+]
+
+[[package]]
 name = "floneum_embedding"
 version = "0.1.0"
 dependencies = [

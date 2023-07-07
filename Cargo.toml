@@ -48,6 +48,7 @@ members = [
     "plugins/add_embedding",
     "plugins/search_engine",
     "plugins/if_statement",
+    "plugins/contains",
 ]
 
 # Config for 'cargo dist'
