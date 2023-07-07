@@ -20,9 +20,9 @@ use slab::Slab;
 use structured_parser::StructureParser;
 use tokio::sync::broadcast;
 use wasmtime::component::{Component, Linker};
-use wasmtime::{Config, Error};
 use wasmtime::Engine;
 use wasmtime::Store;
+use wasmtime::{Config, Error};
 use wit_component::ComponentEncoder;
 
 mod download;
@@ -427,11 +427,7 @@ impl Plugin {
             loop {
                 let Ok(inputs) = input_reciever.recv().await else{break;};
                 let borrowed = inputs.iter().collect::<Vec<_>>();
-                let outputs = world
-                    .interface0
-                    .call_run(&mut store, &borrowed)
-                    .await
-                    ;
+                let outputs = world.interface0.call_run(&mut store, &borrowed).await;
                 if output_sender.send(Arc::new(outputs)).is_err() {
                     break;
                 }
@@ -485,7 +481,10 @@ impl<'de> Deserialize<'de> for PluginInstance {
 }
 
 impl PluginInstance {
-    pub fn run(&self, inputs: Vec<Input>) -> impl Future<Output = Option<Arc<Result<Vec<Output>, Error>>>> + 'static {
+    pub fn run(
+        &self,
+        inputs: Vec<Input>,
+    ) -> impl Future<Output = Option<Arc<Result<Vec<Output>, Error>>>> + 'static {
         let sender = self.sender.clone();
         let mut reciever = self.reciever.resubscribe();
         async move {

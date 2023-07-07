@@ -141,7 +141,7 @@ async fn main() {
 
 struct SetOutputMessage {
     node_id: NodeId,
-    values: std::sync::Arc<Result<Vec<Output>,wasmtime::Error>>,
+    values: std::sync::Arc<Result<Vec<Output>, wasmtime::Error>>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -1021,36 +1021,35 @@ impl eframe::App for NodeGraphExample {
         // Recieve any async messages about setting node outputs.
         while let Ok(msg) = self.txrx.rx.try_recv() {
             let node = &self.state.graph[msg.node_id].outputs;
-            if let Ok(values) = &*msg.values{
-
-            
-            for ((_, id), value) in node.iter().zip(values.into_iter()) {
-                self.user_state.node_outputs.insert(*id, value.clone().into());
-            }
-            // stop this node's loading indicator
-            self.state.graph[msg.node_id].user_data.running = false;
-            self.state.graph[msg.node_id].user_data.queued = false;
-            // start all connecting nodes
-            let mut nodes_to_start = Vec::new();
-            for (_, id) in &self.state.graph[msg.node_id].outputs {
-                for (input, output) in self.state.graph.iter_connections() {
-                    if output == *id {
-                        let node_id = self.state.graph[input].node;
-                        nodes_to_start.push(node_id);
+            if let Ok(values) = &*msg.values {
+                for ((_, id), value) in node.iter().zip(values.into_iter()) {
+                    self.user_state
+                        .node_outputs
+                        .insert(*id, value.clone().into());
+                }
+                // stop this node's loading indicator
+                self.state.graph[msg.node_id].user_data.running = false;
+                self.state.graph[msg.node_id].user_data.queued = false;
+                // start all connecting nodes
+                let mut nodes_to_start = Vec::new();
+                for (_, id) in &self.state.graph[msg.node_id].outputs {
+                    for (input, output) in self.state.graph.iter_connections() {
+                        if output == *id {
+                            let node_id = self.state.graph[input].node;
+                            nodes_to_start.push(node_id);
+                        }
                     }
                 }
+                for node in &nodes_to_start {
+                    self.state.graph[*node].user_data.queued = true;
+                }
+                for node in nodes_to_start {
+                    self.run_node(node);
+                }
+            } else {
+                self.state.graph[msg.node_id].user_data.running = false;
+                self.state.graph[msg.node_id].user_data.queued = false;
             }
-            for node in &nodes_to_start {
-                self.state.graph[*node].user_data.queued = true;
-            }
-            for node in nodes_to_start {
-                self.run_node(node);
-            }
-        }
-        else {
-            self.state.graph[msg.node_id].user_data.running = false;
-            self.state.graph[msg.node_id].user_data.queued = false;
-        }
         }
 
         egui::TopBottomPanel::top("top").show(ctx, |ui| {
