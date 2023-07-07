@@ -13,6 +13,7 @@ async fn main() {
         "infer_structured",
         "search",
         "search_engine",
+        "if_statement",
     ];
     // build the plugins
     for plugin in plugins {

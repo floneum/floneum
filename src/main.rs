@@ -8,7 +8,7 @@ use eframe::{
 };
 use egui_node_graph::*;
 use floneum_plugin::exports::plugins::main::definitions::{
-    Embedding, PrimitiveValue, PrimitiveValueType, Output, Input, ValueType,
+    Embedding, Input, Output, PrimitiveValue, PrimitiveValueType, ValueType,
 };
 use floneum_plugin::plugins::main::types::{
     EmbeddingDbId, GptNeoXType, LlamaType, ModelId, ModelType, MptType,

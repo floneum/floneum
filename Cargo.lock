@@ -2072,6 +2072,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "floneum_if"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+]
+
+[[package]]
 name = "floneum_infer"
 version = "0.1.0"
 dependencies = [

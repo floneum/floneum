@@ -3,7 +3,7 @@ use proc_macro2::Ident;
 use quote::{quote, ToTokens};
 use syn::{
     parse::Parse, parse_macro_input, parse_quote, Error, FnArg, GenericArgument, ItemFn, LitStr,
-    Meta, Path, PathArguments, ReturnType, Type,
+    Meta, Path, PathArguments, PathSegment, ReturnType, Type,
 };
 
 #[allow(unused_macros)]
@@ -205,10 +205,10 @@ impl IoDefinitionType {
             }
         };
         quote! {
-            let value = &input[#idx];
-            let #ident = match value {
+            let __value = &input[#idx];
+            let #ident = match __value {
                 #quote => #get_return_value,
-                _ => panic!("unexpected input type {:?}", value),
+                _ => panic!("unexpected input type {:?}", __value),
             };
         }
     }
@@ -260,7 +260,29 @@ impl Parse for IoDefinitionType {
         let ty: Path = input.parse()?;
         let mut segments = ty.segments.into_iter();
         let mut many = false;
-        let ident = segments.next().unwrap();
+        let mut ident = segments.next().unwrap();
+
+        if ident.ident == "Option" {
+            if let PathArguments::AngleBracketed(inner) = ident.arguments {
+                if let Some(GenericArgument::Type(Type::Path(item_type))) = inner.args.iter().next()
+                {
+                    let path = &item_type.path;
+                    let inner: PathSegment = path.segments.first().unwrap().clone();
+                    ident = inner.clone();
+                } else {
+                    return Err(Error::new_spanned(
+                        inner,
+                        "Option must have a simple type as it's Generic".to_string(),
+                    ));
+                }
+            } else {
+                return Err(Error::new_spanned(
+                    ident,
+                    "Option missing Generics".to_string(),
+                ));
+            }
+        }
+
         let primitive_type = if ident.ident == "Vec" {
             many = true;
             if let PathArguments::AngleBracketed(inner) = ident.arguments {
@@ -274,7 +296,7 @@ impl Parse for IoDefinitionType {
                 } else {
                     return Err(Error::new_spanned(
                         inner,
-                        "Vec must have a simple type as a genric".to_string(),
+                        "Vec must have a simple type as it's Generic".to_string(),
                     ));
                 }
             } else {

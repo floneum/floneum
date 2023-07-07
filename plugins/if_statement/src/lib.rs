@@ -5,8 +5,7 @@ use floneum_rust::*;
 fn embedding(value: String, first: bool) -> (Option<String>, Option<String>) {
     if first {
         (Some(value), None)
-    }
-    else {
+    } else {
         (None, Some(value))
     }
 }

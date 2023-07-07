@@ -206,11 +206,12 @@ impl Structured {
     }
 }
 
-trait IntoReturnValue<T=()> {
+trait IntoReturnValue<T = ()> {
     fn into_return_value(self) -> Output;
 }
 
-struct OptionMarker;
+#[doc(hidden)]
+pub struct OptionMarker;
 
 impl<T: IntoReturnValue> IntoReturnValue<OptionMarker> for Option<T> {
     fn into_return_value(self) -> Output {
@@ -227,7 +228,8 @@ impl<T: IntoPrimitiveValue> IntoReturnValue for T {
     }
 }
 
-struct VecMarker;
+#[doc(hidden)]
+pub struct VecMarker;
 
 impl<T: IntoPrimitiveValue> IntoReturnValue<VecMarker> for Vec<T> {
     fn into_return_value(self) -> Output {
@@ -275,11 +277,11 @@ impl IntoPrimitiveValue for Embedding {
     }
 }
 
-pub trait IntoReturnValues {
+pub trait IntoReturnValues<T = ()> {
     fn into_return_values(self) -> Vec<Output>;
 }
 
-impl<T: IntoReturnValue> IntoReturnValues for T {
+impl<T: IntoReturnValue<I>, I> IntoReturnValues<I> for T {
     fn into_return_values(self) -> Vec<Output> {
         vec![self.into_return_value()]
     }
@@ -287,9 +289,9 @@ impl<T: IntoReturnValue> IntoReturnValues for T {
 
 macro_rules! impl_into_return_values {
     (
-        $($var:ident : $ty:ident),*
+        $($var:ident : $ty:ident $ty2:ident),*
     ) => {
-        impl<$($ty: IntoReturnValue,)*> IntoReturnValues for ($($ty,)*) {
+        impl<$($ty: IntoReturnValue<$ty2>, $ty2, )*> IntoReturnValues<($($ty2,)*)> for ($($ty,)*) {
             fn into_return_values(self) -> Vec<Output> {
                 let ($($var,)*) = self;
                 vec![$($var.into_return_value(),)*]
@@ -299,26 +301,11 @@ macro_rules! impl_into_return_values {
 }
 
 impl_into_return_values!();
-impl_into_return_values!(a: A);
-impl_into_return_values!(a: A, b: B);
-impl_into_return_values!(a: A, b: B, c: C);
-impl_into_return_values!(a: A, b: B, c: C, d: D);
-impl_into_return_values!(a: A, b: B, c: C, d: D, e: E);
-impl_into_return_values!(a: A, b: B, c: C, d: D, e: E, f: F);
-impl_into_return_values!(a: A, b: B, c: C, d: D, e: E, f: F, g: G);
-impl_into_return_values!(a: A, b: B, c: C, d: D, e: E, f: F, g: G, h: H);
-impl_into_return_values!(a: A, b: B, c: C, d: D, e: E, f: F, g: G, h: H, i: I);
-impl_into_return_values!(a: A, b: B, c: C, d: D, e: E, f: F, g: G, h: H, i: I, j: J);
-impl_into_return_values!(
-    a: A,
-    b: B,
-    c: C,
-    d: D,
-    e: E,
-    f: F,
-    g: G,
-    h: H,
-    i: I,
-    j: J,
-    k: K
-);
+impl_into_return_values!(a: A A2);
+impl_into_return_values!(a: A A2, b: B B2);
+impl_into_return_values!(a: A A2, b: B B2, c: C C2);
+impl_into_return_values!(a: A A2, b: B B2, c: C C2, d: D D2);
+impl_into_return_values!(a: A A2, b: B B2, c: C C2, d: D D2, e: E E2);
+impl_into_return_values!(a: A A2, b: B B2, c: C C2, d: D D2, e: E E2, f: F F2);
+impl_into_return_values!(a: A A2, b: B B2, c: C C2, d: D D2, e: E E2, f: F F2, g: G G2);
+impl_into_return_values!(a: A A2, b: B B2, c: C C2, d: D D2, e: E E2, f: F F2, g: G G2, h: H H2);
