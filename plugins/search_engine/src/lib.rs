@@ -19,7 +19,6 @@ fn search_engine(query: String) -> String {
     document.select("a").iter().for_each(|link| {
         let href = link.attr("href").unwrap();
         if href.starts_with("https://en.wikipedia.org/wiki/") || href.starts_with("/wiki/") {
-            println!("{href:?}");
             if article_count > 5 {
                 return;
             }

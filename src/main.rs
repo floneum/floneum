@@ -141,7 +141,7 @@ async fn main() {
 
 struct SetOutputMessage {
     node_id: NodeId,
-    values: Vec<Output>,
+    values: std::sync::Arc<Result<Vec<Output>,wasmtime::Error>>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -925,14 +925,14 @@ impl NodeGraphExample {
         self.state.graph[id].user_data.run_count += 1;
 
         tokio::spawn(async move {
-            let outputs = fut.await;
-
-            let _ = sender
-                .send(SetOutputMessage {
-                    node_id: id,
-                    values: outputs,
-                })
-                .await;
+            if let Some(outputs) = fut.await {
+                let _ = sender
+                    .send(SetOutputMessage {
+                        node_id: id,
+                        values: outputs,
+                    })
+                    .await;
+            }
         });
     }
 
@@ -1021,8 +1021,11 @@ impl eframe::App for NodeGraphExample {
         // Recieve any async messages about setting node outputs.
         while let Ok(msg) = self.txrx.rx.try_recv() {
             let node = &self.state.graph[msg.node_id].outputs;
-            for ((_, id), value) in node.iter().zip(msg.values.into_iter()) {
-                self.user_state.node_outputs.insert(*id, value.into());
+            if let Ok(values) = &*msg.values{
+
+            
+            for ((_, id), value) in node.iter().zip(values.into_iter()) {
+                self.user_state.node_outputs.insert(*id, value.clone().into());
             }
             // stop this node's loading indicator
             self.state.graph[msg.node_id].user_data.running = false;
@@ -1043,6 +1046,11 @@ impl eframe::App for NodeGraphExample {
             for node in nodes_to_start {
                 self.run_node(node);
             }
+        }
+        else {
+            self.state.graph[msg.node_id].user_data.running = false;
+            self.state.graph[msg.node_id].user_data.queued = false;
+        }
         }
 
         egui::TopBottomPanel::top("top").show(ctx, |ui| {

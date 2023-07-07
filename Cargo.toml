@@ -31,6 +31,7 @@ toml = "0.7.5"
 pollster = "0.3.0"
 cargo-dist = "0.0.7"
 once_cell = "1.18.0"
+wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", rev = "2d34b4657aa5290948da9a07cb31764a12c12994", features = ['component-model'] }
 
 [workspace]
 members = [

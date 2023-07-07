@@ -20,7 +20,7 @@ use slab::Slab;
 use structured_parser::StructureParser;
 use tokio::sync::broadcast;
 use wasmtime::component::{Component, Linker};
-use wasmtime::Config;
+use wasmtime::{Config, Error};
 use wasmtime::Engine;
 use wasmtime::Store;
 use wit_component::ComponentEncoder;
@@ -431,8 +431,8 @@ impl Plugin {
                     .interface0
                     .call_run(&mut store, &borrowed)
                     .await
-                    .unwrap();
-                if output_sender.send(outputs).is_err() {
+                    ;
+                if output_sender.send(Arc::new(outputs)).is_err() {
                     break;
                 }
             }
@@ -459,7 +459,7 @@ pub struct PluginInstance {
     source_bytes: Arc<Vec<u8>>,
     metadata: Definition,
     sender: broadcast::Sender<Vec<Input>>,
-    reciever: broadcast::Receiver<Vec<Output>>,
+    reciever: broadcast::Receiver<Arc<Result<Vec<Output>, wasmtime::Error>>>,
 }
 
 impl Serialize for PluginInstance {
@@ -485,14 +485,12 @@ impl<'de> Deserialize<'de> for PluginInstance {
 }
 
 impl PluginInstance {
-    pub fn run(&self, inputs: Vec<Input>) -> impl Future<Output = Vec<Output>> + 'static {
+    pub fn run(&self, inputs: Vec<Input>) -> impl Future<Output = Option<Arc<Result<Vec<Output>, Error>>>> + 'static {
         let sender = self.sender.clone();
         let mut reciever = self.reciever.resubscribe();
         async move {
-            println!("sending inputs");
             let _ = sender.send(inputs);
-            println!("waiting for outputs");
-            reciever.recv().await.unwrap()
+            reciever.recv().await.ok()
         }
     }
 
@@ -529,7 +527,8 @@ fn load_plugin() {
             Input::Single(PrimitiveValue::Text("hello {}".to_string())),
             Input::Single(PrimitiveValue::Text("world".to_string())),
         ];
-        let outputs = instance.run(inputs).await;
+        let outputs = instance.run(inputs).await.unwrap();
+        let outputs = outputs.as_deref().clone().unwrap();
         println!("{:?}", outputs);
 
         assert_eq!(outputs.len(), 1);

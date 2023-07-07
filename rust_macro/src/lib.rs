@@ -2,8 +2,8 @@ use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use quote::{quote, ToTokens};
 use syn::{
-    parse::Parse, parse_macro_input, parse_quote, Error, FnArg, GenericArgument, ItemFn,
-    LitStr, Meta, Path, PathArguments, PathSegment, ReturnType, Type,
+    parse::Parse, parse_macro_input, parse_quote, Error, FnArg, GenericArgument, ItemFn, LitStr,
+    Meta, Path, PathArguments, PathSegment, ReturnType, Type,
 };
 
 #[allow(unused_macros)]
