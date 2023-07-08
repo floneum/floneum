@@ -18,7 +18,7 @@ use floneumite::Index;
 use log::LevelFilter;
 use once_cell::sync::Lazy;
 use pollster::FutureExt;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::{
     borrow::Cow,
     fmt::{Debug, Formatter},
@@ -81,8 +81,10 @@ fn save_to_file<D: Serialize>(data: D) {
             log::info!("serializing");
             match bincode::serialize(&data) {
                 Ok(bytes) => {
-                    let compressed = yazi::compress(&bytes, yazi::Format::Zlib,yazi::CompressionLevel::Default).unwrap();
-                    let _= file.write_all(&compressed);
+                    let compressed =
+                        yazi::compress(&bytes, yazi::Format::Zlib, yazi::CompressionLevel::Default)
+                            .unwrap();
+                    let _ = file.write_all(&compressed);
                 }
                 Err(err) => {
                     log::error!("{}", err)
@@ -95,28 +97,6 @@ fn save_to_file<D: Serialize>(data: D) {
     }
 }
 
-fn get_from_file<D: DeserializeOwned>(create: impl FnOnce() -> D) -> D {
-    let mut current_dir = std::env::current_dir().unwrap();
-    current_dir.push("save.bin");
-    if let Ok(mut file) = File::open(current_dir) {
-        let mut buffer = Vec::new();
-
-        if file.read_to_end(&mut buffer).is_err() {
-            return create();
-        }
-
-        let (uncompressed, _) = yazi::decompress(&buffer[..], yazi::Format::Zlib).unwrap();
-
-        if let Ok(from_storage) = bincode::deserialize(&uncompressed[..]) {
-            from_storage
-        } else {
-            create()
-        }
-    } else {
-        create()
-    }
-}
-
 #[tokio::main]
 async fn main() {
     simple_logger::SimpleLogger::new()
@@ -125,7 +105,25 @@ async fn main() {
         .init()
         .unwrap();
 
-    let default_app = NodeGraphExample::default().await;
+    let mut current_dir = std::env::current_dir().unwrap();
+    current_dir.push("save.bin");
+    let app: NodeGraphExample = if let Ok(mut file) = File::open(current_dir) {
+        let mut buffer = Vec::new();
+
+        if file.read_to_end(&mut buffer).is_err() {
+            NodeGraphExample::default().await
+        } else {
+            let (uncompressed, _) = yazi::decompress(&buffer[..], yazi::Format::Zlib).unwrap();
+
+            if let Ok(from_storage) = bincode::deserialize(&uncompressed[..]) {
+                from_storage
+            } else {
+                NodeGraphExample::default().await
+            }
+        }
+    } else {
+        NodeGraphExample::default().await
+    };
 
     eframe::run_native(
         "Floneum",
@@ -133,7 +131,6 @@ async fn main() {
         Box::new(|cc| {
             cc.egui_ctx.set_pixels_per_point(1.0);
             cc.egui_ctx.set_visuals(Visuals::dark());
-            let app: NodeGraphExample = get_from_file(|| default_app);
             Box::new(app)
         }),
     )
