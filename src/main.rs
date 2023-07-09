@@ -721,8 +721,16 @@ impl NodeDataTrait for MyNodeData {
             return vec![];
         }
 
-        ui.collapsing("Description", |ui| {
-            ui.label(&node.user_data.instance.metadata().description);
+        let response = ui.button("Help");
+        let popup_id = ui.make_persistent_id(format!("help_id_{:?}", node_id));
+        if response.clicked() {
+            ui.memory_mut(|mem| mem.toggle_popup(popup_id));
+        }
+        egui::popup::popup_below_widget(ui, popup_id, &response, |ui| {
+            egui::containers::Resize::default().show(ui,|ui|{
+                ui.set_min_width(200.0);
+                ui.label(&node.user_data.instance.metadata().description);
+            });
         });
 
         let run_button = ui.button("Run");
@@ -811,13 +819,14 @@ impl NodeDataTrait for MyNodeData {
 
 type MyEditorState = GraphEditorState<MyNodeData, MyDataType, MyValueType, PluginId, MyGraphState>;
 
-static PACKAGE_MANAGER: Lazy<FloneumPackageIndex> = Lazy::new(|| match FloneumPackageIndex::fetch() {
-    Ok(index) => index,
-    Err(err) => {
-        log::error!("Error creating index: {err}");
-        Default::default()
-    }
-});
+static PACKAGE_MANAGER: Lazy<FloneumPackageIndex> =
+    Lazy::new(|| match FloneumPackageIndex::fetch() {
+        Ok(index) => index,
+        Err(err) => {
+            log::error!("Error creating index: {err}");
+            Default::default()
+        }
+    });
 
 #[derive(Serialize, Deserialize)]
 pub struct NodeGraphExample {

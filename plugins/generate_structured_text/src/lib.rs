@@ -9,11 +9,11 @@ use pest_derive::Parser;
 
 #[export_plugin]
 /// Calls a large language model to generate structured text. You can create a template for the language model to fill in. The model will fill in any segments that contain {**type**} where **type** is "", bool, or #
-/// 
+///
 /// It is important to keep in mind that the language model is just generating text. Because the model is merely continuing the text you give it, the formatting of that text can be important.
-/// 
+///
 /// It is commonly helpful to provide a few examples to the model before your new data so that the model can pick up on the pattern of the text
-/// 
+///
 /// Example:
 /// The following is a chat between a user and an assistant. The assistant helpfully and succinctly answers questions posed by the user.
 /// ### USER

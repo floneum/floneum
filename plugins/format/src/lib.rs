@@ -2,12 +2,12 @@ use floneum_rust::*;
 
 #[export_plugin]
 /// Formats some text by replacing any instances of {} in order with the texts passed in.
-/// 
+///
 /// Example:
-/// 
+///
 /// template: "Who is {}?"
 /// inputs: "queen of england"
-/// 
+///
 /// result: Who is the queen of england?
 fn format(
     /// The template to format text with
