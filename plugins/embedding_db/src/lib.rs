@@ -1,7 +1,9 @@
 use floneum_rust::*;
 
 #[export_plugin]
-/// creates a database of embeddings
+/// Creates a database of embeddings. (A database is just a different way to store information, in this cases this stores documents in a way that makes it easy to find other documents with similar meanings)
+/// 
+/// When using this embedding database, you must use the same model to generate the embeddings you insert into this database.
 fn embedding_db(
     /// the model to use
     model: ModelType,

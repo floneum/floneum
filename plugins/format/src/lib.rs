@@ -1,11 +1,18 @@
 use floneum_rust::*;
 
 #[export_plugin]
-/// formats a string
+/// Formats some text by replacing any instances of {} in order with the texts passed in.
+/// 
+/// Example:
+/// 
+/// template: "Who is {}?"
+/// inputs: "queen of england"
+/// 
+/// result: Who is the queen of england?
 fn format(
-    /// the format string
+    /// The template to format text with
     template: String,
-    /// the input to the format string
+    /// The inputs to the template
     input: Vec<String>,
 ) -> String {
     let mut input = input;

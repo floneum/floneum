@@ -1,7 +1,11 @@
 use floneum_rust::*;
 
 #[export_plugin]
-/// searches an embedding database for the closest embedding
+/// Searches an embedding database for the closest embedding
+/// 
+/// This node requires that the Embedding Database and the Embedding use the same model.
+/// 
+/// Returns text with documents separated with newlines.
 pub fn search(
     /// the embedding to search for
     key: Embedding,

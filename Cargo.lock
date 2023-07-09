@@ -2081,26 +2081,26 @@ dependencies = [
 ]
 
 [[package]]
-name = "floneum_if"
-version = "0.1.0"
-dependencies = [
- "floneum_rust",
-]
-
-[[package]]
-name = "floneum_infer"
-version = "0.1.0"
-dependencies = [
- "floneum_rust",
-]
-
-[[package]]
-name = "floneum_infer_structured"
+name = "floneum_generate_structured_text"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
  "pest",
  "pest_derive",
+]
+
+[[package]]
+name = "floneum_generate_text"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+]
+
+[[package]]
+name = "floneum_if"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
 ]
 
 [[package]]

@@ -4,7 +4,7 @@ use floneum_rust::{plugins::main::imports::get_request, *};
 use nipper::Document;
 
 #[export_plugin]
-/// Fetches the top article from wikipedia
+/// Searches wikipedia, fetches the top article from wikipedia, and returns it as text
 fn search_engine(query: String) -> String {
     let url = format!(
         "https://en.wikipedia.org/w/index.php?search={}",

@@ -14,7 +14,7 @@ use floneum_plugin::plugins::main::types::{
     EmbeddingDbId, GptNeoXType, LlamaType, ModelId, ModelType, MptType,
 };
 use floneum_plugin::{Plugin, PluginEngine, PluginInstance};
-use floneumite::Index;
+use floneumite::FloneumPackageIndex;
 use log::LevelFilter;
 use once_cell::sync::Lazy;
 use pollster::FutureExt;
@@ -721,6 +721,10 @@ impl NodeDataTrait for MyNodeData {
             return vec![];
         }
 
+        ui.collapsing("Description", |ui| {
+            ui.label(&node.user_data.instance.metadata().description);
+        });
+
         let run_button = ui.button("Run");
         if run_button.clicked() {
             return vec![NodeResponse::User(MyResponse::RunNode(node_id))];
@@ -807,7 +811,13 @@ impl NodeDataTrait for MyNodeData {
 
 type MyEditorState = GraphEditorState<MyNodeData, MyDataType, MyValueType, PluginId, MyGraphState>;
 
-static PACKAGE_MANAGER: Lazy<Index> = Lazy::new(|| Index::new().unwrap());
+static PACKAGE_MANAGER: Lazy<FloneumPackageIndex> = Lazy::new(|| match FloneumPackageIndex::fetch() {
+    Ok(index) => index,
+    Err(err) => {
+        log::error!("Error creating index: {err}");
+        Default::default()
+    }
+});
 
 #[derive(Serialize, Deserialize)]
 pub struct NodeGraphExample {

@@ -1,24 +1,27 @@
 // Clone a repository from any URL or Path to a given target directory
 
+use std::path::Path;
+
 use anyhow::{anyhow, Ok};
 use directories::BaseDirs;
 
 mod package;
 pub use package::PackageStructure;
 
-pub struct Index {
+#[derive(Default)]
+pub struct FloneumPackageIndex {
     entries: Vec<Package>,
 }
 
-impl Index {
-    pub fn new() -> anyhow::Result<Self> {
+impl FloneumPackageIndex {
+    pub fn fetch() -> anyhow::Result<Self> {
         let path = packages_path()?;
         if path.exists() {
             // remove the old packages
             // TODO: use git fetch to update the packages
             std::fs::remove_dir_all(&path)?;
         }
-        download_package_index()?;
+        download_package_index(&path)?;
 
         let entries = std::fs::read_dir(path)?
             .filter_map(|entry| {
@@ -86,16 +89,14 @@ fn packages_path() -> anyhow::Result<std::path::PathBuf> {
     Ok(base_dirs.data_dir().join("floneum").join("packages"))
 }
 
-fn download_package_index() -> anyhow::Result<()> {
+fn download_package_index(path: &Path) -> anyhow::Result<()> {
     let repo_url = "https://github.com/floneum/floneum-packages";
 
-    let dst = packages_path()?;
-
     gix::interrupt::init_handler(|| {})?;
-    std::fs::create_dir_all(&dst)?;
+    std::fs::create_dir_all(path)?;
     let url = gix::url::parse(repo_url.into())?;
 
-    let mut prepare_clone = gix::prepare_clone(url, &dst)?;
+    let mut prepare_clone = gix::prepare_clone(url, path)?;
 
     let (mut prepare_checkout, _) = prepare_clone
         .fetch_then_checkout(gix::progress::Discard, &gix::interrupt::IS_INTERRUPTED)?;

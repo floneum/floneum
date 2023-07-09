@@ -1,5 +1,5 @@
 [package]
-name = "floneum_infer"
+name = "floneum_generate_structured_text"
 version = "0.1.0"
 edition = "2021"
 publish = false
@@ -10,3 +10,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 floneum_rust = { path = "../../rust_adapter" }
+pest = "2.6.0"
+pest_derive = "2.6.0"
+

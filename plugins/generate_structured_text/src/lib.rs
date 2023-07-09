@@ -8,8 +8,27 @@ use pest::{iterators::Pair, Parser};
 use pest_derive::Parser;
 
 #[export_plugin]
-/// loads a model and runs it
-fn structured_inference(
+/// Calls a large language model to generate structured text. You can create a template for the language model to fill in. The model will fill in any segments that contain {**type**} where **type** is "", bool, or #
+/// 
+/// It is important to keep in mind that the language model is just generating text. Because the model is merely continuing the text you give it, the formatting of that text can be important.
+/// 
+/// It is commonly helpful to provide a few examples to the model before your new data so that the model can pick up on the pattern of the text
+/// 
+/// Example:
+/// The following is a chat between a user and an assistant. The assistant helpfully and succinctly answers questions posed by the user.
+/// ### USER
+/// What is 3 + 6?
+/// ### ASSISTANT
+/// 9
+/// ### USER
+/// What is 1 + 1?
+/// ### ASSISTANT
+/// 2
+/// ### USER
+/// **your real question**
+/// ### ASSISTANT
+/// {#}
+fn generate_structured_text(
     /// the model to use
     model: ModelType,
     /// the structure to use when running the model
