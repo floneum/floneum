@@ -241,6 +241,12 @@ trait IntoPrimitiveValue {
     fn into_primitive_value(self) -> PrimitiveValue;
 }
 
+impl IntoPrimitiveValue for PrimitiveValue {
+    fn into_primitive_value(self) -> PrimitiveValue {
+        self
+    }
+}
+
 impl IntoPrimitiveValue for bool {
     fn into_primitive_value(self) -> PrimitiveValue {
         PrimitiveValue::Boolean(self)

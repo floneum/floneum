@@ -9,7 +9,7 @@ use crate::{
 };
 use llm::{
     InferenceFeedback, InferenceParameters, InferenceRequest, InferenceResponse, InferenceSession,
-    Model,
+    InferenceSessionConfig, Model,
 };
 use slab::Slab;
 use std::{
@@ -55,7 +55,10 @@ impl InferenceSessions {
             // }
         }
         let model = download(ty);
-        let session = model.start_session(Default::default());
+        let session = model.start_session(InferenceSessionConfig {
+            use_gpu: true,
+            ..Default::default()
+        });
         ModelId {
             id: self.sessions.insert((model, session, ty)) as u32,
         }

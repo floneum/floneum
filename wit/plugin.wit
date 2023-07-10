@@ -135,7 +135,8 @@ interface definitions {
     database,
     model,
     model-type,
-    boolean
+    boolean,
+    any
   }
 
   structure: func() -> definition
