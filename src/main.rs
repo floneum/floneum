@@ -190,6 +190,7 @@ impl From<ValueType> for MyDataType {
                 PrimitiveValueType::Model => Self::Single(MyPrimitiveDataType::Model),
                 PrimitiveValueType::ModelType => Self::Single(MyPrimitiveDataType::ModelType),
                 PrimitiveValueType::Boolean => Self::Single(MyPrimitiveDataType::Boolean),
+                PrimitiveValueType::Any => Self::Single(MyPrimitiveDataType::Any),
             },
             ValueType::Many(value) => match value {
                 PrimitiveValueType::Number => Self::List(MyPrimitiveDataType::Number),
@@ -199,12 +200,13 @@ impl From<ValueType> for MyDataType {
                 PrimitiveValueType::Model => Self::List(MyPrimitiveDataType::Model),
                 PrimitiveValueType::ModelType => Self::List(MyPrimitiveDataType::ModelType),
                 PrimitiveValueType::Boolean => Self::Single(MyPrimitiveDataType::Boolean),
+                PrimitiveValueType::Any => Self::Single(MyPrimitiveDataType::Any),
             },
         }
     }
 }
 
-#[derive(PartialEq, Eq, serde::Serialize, serde::Deserialize, Debug, Clone, Copy)]
+#[derive(Eq, serde::Serialize, serde::Deserialize, Debug, Clone, Copy)]
 pub enum MyPrimitiveDataType {
     Number,
     Text,
@@ -213,6 +215,19 @@ pub enum MyPrimitiveDataType {
     ModelType,
     Database,
     Boolean,
+    Any,
+}
+
+impl PartialEq for MyPrimitiveDataType {
+    fn eq(&self, other: &Self) -> bool {
+        if let Self::Any = self {
+            true
+        } else if let Self::Any = other {
+            true
+        } else {
+            core::mem::discriminant(self) == core::mem::discriminant(other)
+        }
+    }
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -294,6 +309,7 @@ impl MyPrimitiveValueType {
             MyPrimitiveDataType::Database => Self::Database(0),
             MyPrimitiveDataType::ModelType => Self::ModelType(ModelType::Llama(LlamaType::Vicuna)),
             MyPrimitiveDataType::Boolean => Self::Boolean(false),
+            MyPrimitiveDataType::Any => Self::Text(String::new()),
         }
     }
 }
@@ -467,6 +483,7 @@ impl DataTypeTrait<MyGraphState> for MyDataType {
             MyDataType::Single(MyPrimitiveDataType::Boolean) => {
                 egui::Color32::from_rgb(100, 100, 0)
             }
+            MyDataType::Single(MyPrimitiveDataType::Any) => egui::Color32::from_rgb(100, 100, 100),
             MyDataType::List(MyPrimitiveDataType::Text) => egui::Color32::from_rgb(38, 109, 211),
             MyDataType::List(MyPrimitiveDataType::Embedding) => {
                 egui::Color32::from_rgb(238, 207, 109)
@@ -480,6 +497,7 @@ impl DataTypeTrait<MyGraphState> for MyDataType {
                 egui::Color32::from_rgb(38, 50, 109)
             }
             MyDataType::List(MyPrimitiveDataType::Boolean) => egui::Color32::from_rgb(100, 100, 0),
+            MyDataType::List(MyPrimitiveDataType::Any) => egui::Color32::from_rgb(100, 100, 100),
         }
     }
 
@@ -492,6 +510,7 @@ impl DataTypeTrait<MyGraphState> for MyDataType {
             MyDataType::Single(MyPrimitiveDataType::Database) => Cow::Borrowed("database"),
             MyDataType::Single(MyPrimitiveDataType::ModelType) => Cow::Borrowed("model type"),
             MyDataType::Single(MyPrimitiveDataType::Boolean) => Cow::Borrowed("true/false"),
+            MyDataType::Single(MyPrimitiveDataType::Any) => Cow::Borrowed("any"),
             MyDataType::List(MyPrimitiveDataType::Text) => Cow::Borrowed("list of texts"),
             MyDataType::List(MyPrimitiveDataType::Embedding) => Cow::Borrowed("list of embeddings"),
             MyDataType::List(MyPrimitiveDataType::Number) => Cow::Borrowed("list of numbers"),
@@ -501,6 +520,7 @@ impl DataTypeTrait<MyGraphState> for MyDataType {
                 Cow::Borrowed("list of model types")
             }
             MyDataType::List(MyPrimitiveDataType::Boolean) => Cow::Borrowed("true/false"),
+            MyDataType::List(MyPrimitiveDataType::Any) => Cow::Borrowed("list of any"),
         }
     }
 }
@@ -604,6 +624,7 @@ impl WidgetValueTrait for MyValueType {
     type Response = MyResponse;
     type UserState = MyGraphState;
     type NodeData = MyNodeData;
+
     fn value_widget(
         &mut self,
         param_name: &str,
@@ -623,15 +644,9 @@ impl WidgetValueTrait for MyValueType {
                         MyPrimitiveValueType::Text(value) => {
                             ui.add(TextEdit::multiline(value));
                         }
-                        MyPrimitiveValueType::Embedding(_) => {
-                            // ui.label("Embedding");
-                        }
-                        MyPrimitiveValueType::Model(_) => {
-                            // ui.label("Model");
-                        }
-                        MyPrimitiveValueType::Database(_) => {
-                            // ui.label("Database");
-                        }
+                        MyPrimitiveValueType::Embedding(_) => {}
+                        MyPrimitiveValueType::Model(_) => {}
+                        MyPrimitiveValueType::Database(_) => {}
                         MyPrimitiveValueType::Number(value) => {
                             ui.add(DragValue::new(value));
                         }
@@ -659,15 +674,9 @@ impl WidgetValueTrait for MyValueType {
                             MyPrimitiveValueType::Text(value) => {
                                 ui.add(TextEdit::multiline(value));
                             }
-                            MyPrimitiveValueType::Embedding(_) => {
-                                ui.label("Embedding");
-                            }
-                            MyPrimitiveValueType::Model(_) => {
-                                ui.label("Model");
-                            }
-                            MyPrimitiveValueType::Database(_) => {
-                                ui.label("Database");
-                            }
+                            MyPrimitiveValueType::Embedding(_) => {}
+                            MyPrimitiveValueType::Model(_) => {}
+                            MyPrimitiveValueType::Database(_) => {}
                             MyPrimitiveValueType::Number(value) => {
                                 ui.add(DragValue::new(value));
                             }
