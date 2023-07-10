@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use eframe::egui::{DragValue, Visuals};
-use eframe::epaint::Vec2;
+use eframe::egui::{DragValue, Margin, Visuals};
+use eframe::epaint::{Stroke, Vec2};
 use eframe::{
     egui::{self, TextEdit},
     epaint::ahash::{HashMap, HashSet},
@@ -727,7 +727,7 @@ impl NodeDataTrait for MyNodeData {
             ui.memory_mut(|mem| mem.toggle_popup(popup_id));
         }
         egui::popup::popup_below_widget(ui, popup_id, &response, |ui| {
-            egui::containers::Resize::default().show(ui,|ui|{
+            egui::containers::Resize::default().show(ui, |ui| {
                 ui.set_min_width(200.0);
                 ui.label(&node.user_data.instance.metadata().description);
             });
@@ -757,58 +757,70 @@ impl NodeDataTrait for MyNodeData {
                     let value = user_state.node_outputs.get(id).cloned().unwrap_or_default();
                     egui::ScrollArea::vertical()
                         .id_source((node_id, name))
-                        .show(ui, |ui| match &value {
-                            MyValueType::Single(single) => match single {
-                                MyPrimitiveValueType::Text(value) => {
-                                    ui.label(value);
-                                }
-                                MyPrimitiveValueType::Embedding(value) => {
-                                    ui.label(format!("{:?}", &value[..5]));
-                                }
-                                MyPrimitiveValueType::Model(id) => {
-                                    ui.label(format!("Model: {id:?}"));
-                                }
-                                MyPrimitiveValueType::Database(id) => {
-                                    ui.label(format!("Database: {id:?}"));
-                                }
-                                MyPrimitiveValueType::Number(value) => {
-                                    ui.label(format!("{:02}", value));
-                                }
-                                MyPrimitiveValueType::ModelType(ty) => {
-                                    ui.label(ty.name());
-                                }
-                                MyPrimitiveValueType::Boolean(val) => {
-                                    ui.label(format!("{val:?}"));
-                                }
-                            },
-                            MyValueType::List(many) => {
-                                for value in many {
-                                    match value {
-                                        MyPrimitiveValueType::Text(value) => {
-                                            ui.label(value);
+                        .show(ui, |ui| {
+                            egui::Frame::none()
+                                .stroke(Stroke::new(1.0, egui::Color32::WHITE))
+                                .rounding(2.0)
+                                .inner_margin(Margin::symmetric(2.0, 2.0))
+                                .outer_margin(Margin::symmetric(2.0, 2.0))
+                                .show(ui, |ui| {
+                                    ui.label(format!("{name}:"));
+                                    match &value {
+                                        MyValueType::Single(single) => match single {
+                                            MyPrimitiveValueType::Text(value) => {
+                                                ui.label(value);
+                                            }
+                                            MyPrimitiveValueType::Embedding(value) => {
+                                                ui.label(format!("{:?}", &value[..5]));
+                                            }
+                                            MyPrimitiveValueType::Model(id) => {
+                                                ui.label(format!("Model: {id:?}"));
+                                            }
+                                            MyPrimitiveValueType::Database(id) => {
+                                                ui.label(format!("Database: {id:?}"));
+                                            }
+                                            MyPrimitiveValueType::Number(value) => {
+                                                ui.label(format!("{:02}", value));
+                                            }
+                                            MyPrimitiveValueType::ModelType(ty) => {
+                                                ui.label(ty.name());
+                                            }
+                                            MyPrimitiveValueType::Boolean(val) => {
+                                                ui.label(format!("{val:?}"));
+                                            }
+                                        },
+                                        MyValueType::List(many) => {
+                                            for value in many {
+                                                match value {
+                                                    MyPrimitiveValueType::Text(value) => {
+                                                        ui.label(value);
+                                                    }
+                                                    MyPrimitiveValueType::Embedding(value) => {
+                                                        ui.label(format!("{:?}", &value[..5]));
+                                                    }
+                                                    MyPrimitiveValueType::Model(id) => {
+                                                        ui.label(format!("Model: {id:?}"));
+                                                    }
+                                                    MyPrimitiveValueType::Database(id) => {
+                                                        ui.label(format!("Database: {id:?}"));
+                                                    }
+                                                    MyPrimitiveValueType::Number(value) => {
+                                                        ui.label(format!("{:02}", value));
+                                                    }
+                                                    MyPrimitiveValueType::ModelType(ty) => {
+                                                        ui.label(ty.name());
+                                                    }
+                                                    MyPrimitiveValueType::Boolean(val) => {
+                                                        ui.label(format!("{val:?}"));
+                                                    }
+                                                }
+                                            }
                                         }
-                                        MyPrimitiveValueType::Embedding(value) => {
-                                            ui.label(format!("{:?}", &value[..5]));
-                                        }
-                                        MyPrimitiveValueType::Model(id) => {
-                                            ui.label(format!("Model: {id:?}"));
-                                        }
-                                        MyPrimitiveValueType::Database(id) => {
-                                            ui.label(format!("Database: {id:?}"));
-                                        }
-                                        MyPrimitiveValueType::Number(value) => {
-                                            ui.label(format!("{:02}", value));
-                                        }
-                                        MyPrimitiveValueType::ModelType(ty) => {
-                                            ui.label(ty.name());
-                                        }
-                                        MyPrimitiveValueType::Boolean(val) => {
-                                            ui.label(format!("{val:?}"));
+                                        MyValueType::Unset => {
+                                            ui.label("(Unset)");
                                         }
                                     }
-                                }
-                            }
-                            MyValueType::Unset => {}
+                                });
                         });
                 }
             }
@@ -844,6 +856,7 @@ pub struct NodeGraphExample {
 
 impl NodeGraphExample {
     fn should_run_node(&self, id: NodeId) -> bool {
+        log::info!("Checking if node {id:?} should run");
         // traverse back through inputs to see if any of those nodes are running
         let mut visited = HashSet::default();
         visited.insert(id);
@@ -852,6 +865,7 @@ impl NodeGraphExample {
             // first add all of the inputs to the current node
             let node = &self.state.graph.nodes[id];
             if node.user_data.running {
+                log::info!("Node {id:?} is running, so we shouldn't run it again");
                 return false;
             }
             for (_, id) in &node.inputs {
@@ -862,13 +876,17 @@ impl NodeGraphExample {
             }
         }
 
-        while let Some(id) = should_visit.pop() {
-            let node = &self.state.graph.nodes[id];
+        while let Some(new_id) = should_visit.pop() {
+            if new_id == id {
+                continue;
+            }
+            let node = &self.state.graph.nodes[new_id];
             if node.user_data.running || node.user_data.queued {
+                log::info!("Node {new_id:?} is running... we should wait until it's done");
                 return false;
             }
-            for (_, id) in &node.inputs {
-                if let Some(node) = self.find_connected_node(*id) {
+            for (_, new_id) in &node.inputs {
+                if let Some(node) = self.find_connected_node(*new_id) {
                     if !visited.contains(&node) {
                         should_visit.push(node);
                         visited.insert(node);
@@ -892,8 +910,8 @@ impl NodeGraphExample {
 
     fn run_node(&mut self, id: NodeId) {
         if !self.should_run_node(id) {
-            println!(
-                "node {:?} has unresolved dependancies, skipping running",
+            log::info!(
+                "node {:?} has unresolved dependencies, skipping running",
                 id
             );
             return;
@@ -901,49 +919,68 @@ impl NodeGraphExample {
         let node = &self.state.graph[id];
 
         let mut values: Vec<Input> = Vec::new();
-        for (_, id) in &node.inputs {
-            let input = self.state.graph.get_input(*id);
+        for (_, input_id) in &node.inputs {
+            let input = self.state.graph.get_input(*input_id);
             let connection = self.state.graph.connections.get(input.id);
             let value = match connection {
                 Some(connections) => {
-                    let mut values = Vec::new();
-                    for connection in connections {
-                        let connection = self.state.graph.get_output(*connection);
-                        let output_id = connection.id;
-                        if let Some(value) = self.user_state.node_outputs.get(&output_id) {
-                            match value {
-                                MyValueType::List(items) => {
-                                    for value in items {
+                    if connections.is_empty() {
+                        input.value.clone().into()
+                    } else {
+                        let mut values = Vec::new();
+                        for connection in connections {
+                            let connection = self.state.graph.get_output(*connection);
+                            let output_id = connection.id;
+                            if let Some(value) = self.user_state.node_outputs.get(&output_id) {
+                                match value {
+                                    MyValueType::List(items) => {
+                                        for value in items {
+                                            values.push(value.clone().into());
+                                        }
+                                    }
+                                    MyValueType::Single(value) => {
                                         values.push(value.clone().into());
                                     }
+                                    other => {
+                                        log::error!("unexpected value type: {:?}", other);
+                                        self.state.graph[id].user_data.running = false;
+                                        self.state.graph[id].user_data.queued = false;
+                                        return;
+                                    }
                                 }
-                                MyValueType::Single(value) => {
-                                    values.push(value.clone().into());
-                                }
-                                _ => return,
-                            }
-                        } else {
-                            return;
-                        }
-                    }
-
-                    match input.typ {
-                        MyDataType::Single(_) => {
-                            if values.len() != 1 {
+                            } else {
+                                log::error!("missing value for output: {:?}", output_id);
+                                self.state.graph[id].user_data.running = false;
+                                self.state.graph[id].user_data.queued = false;
                                 return;
                             }
-                            MyValueType::Single(values.pop().unwrap())
                         }
-                        MyDataType::List(_) => {
-                            values.reverse();
-                            MyValueType::List(values)
+
+                        match input.typ {
+                            MyDataType::Single(_) => {
+                                if values.len() != 1 {
+                                    log::error!("expected 1 value, got: {:?}", values);
+                                    self.state.graph[id].user_data.running = false;
+                                    self.state.graph[id].user_data.queued = false;
+                                    return;
+                                }
+                                MyValueType::Single(values.pop().unwrap())
+                            }
+                            MyDataType::List(_) => {
+                                values.reverse();
+                                MyValueType::List(values)
+                            }
                         }
                     }
                 }
                 None => input.value.clone().into(),
             };
             match &value {
-                MyValueType::Unset => return,
+                MyValueType::Unset => {
+                    self.state.graph[id].user_data.running = false;
+                    self.state.graph[id].user_data.queued = false;
+                    return;
+                }
                 _ => values.push(value.into()),
             }
         }
