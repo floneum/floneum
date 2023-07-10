@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use eframe::egui::{DragValue, Margin, Visuals};
+use eframe::egui::{DragValue, Margin, Visuals, Ui};
 use eframe::epaint::{Stroke, Vec2};
 use eframe::{
     egui::{self, TextEdit},
@@ -218,6 +218,31 @@ pub enum MyPrimitiveDataType {
     Any,
 }
 
+impl MyPrimitiveDataType{
+    const VARIANTS: &'static [Self] = &[
+        Self::Number,
+        Self::Text,
+        Self::Embedding,
+        Self::Model,
+        Self::ModelType,
+        Self::Database,
+        Self::Boolean,
+    ];
+
+    fn name(&self) -> &'static str {
+        match self {
+            Self::Number => "Number",
+            Self::Text => "Text",
+            Self::Embedding => "Embedding",
+            Self::Model => "Model",
+            Self::ModelType => "ModelType",
+            Self::Database => "Database",
+            Self::Boolean => "Boolean",
+            Self::Any => "Any",
+        }
+    }
+}
+
 impl PartialEq for MyPrimitiveDataType {
     fn eq(&self, other: &Self) -> bool {
         if let Self::Any = self {
@@ -297,9 +322,80 @@ pub enum MyPrimitiveValueType {
     Database(u32),
     ModelType(#[serde(with = "ModelTypeDef")] ModelType),
     Boolean(bool),
+    Any(Box<MyPrimitiveValueType>)
 }
 
 impl MyPrimitiveValueType {
+fn show(&self, ui:&mut Ui){
+    match self {
+        MyPrimitiveValueType::Text(value) => {
+            ui.label(value);
+        }
+        MyPrimitiveValueType::Embedding(value) => {
+            ui.label(format!("{:?}", &value[..5]));
+        }
+        MyPrimitiveValueType::Model(id) => {
+            ui.label(format!("Model: {id:?}"));
+        }
+        MyPrimitiveValueType::Database(id) => {
+            ui.label(format!("Database: {id:?}"));
+        }
+        MyPrimitiveValueType::Number(value) => {
+            ui.label(format!("{:02}", value));
+        }
+        MyPrimitiveValueType::ModelType(ty) => {
+            ui.label(ty.name());
+        }
+        MyPrimitiveValueType::Boolean(val) => {
+            ui.label(format!("{val:?}"));
+        }
+        MyPrimitiveValueType::Any(val) => {
+            val.show(ui)
+        }
+    }
+}
+
+    fn modify(&mut self, param_name:&str, ui:&mut  egui::Ui) {
+        match self {
+            MyPrimitiveValueType::Text(value) => {
+                ui.add(TextEdit::multiline(value));
+            }
+            MyPrimitiveValueType::Embedding(_) => {}
+            MyPrimitiveValueType::Model(_) => {}
+            MyPrimitiveValueType::Database(_) => {}
+            MyPrimitiveValueType::Number(value) => {
+                ui.add(DragValue::new(value));
+            }
+            MyPrimitiveValueType::ModelType(ty) => {
+                let name = ty.name();
+                ui.collapsing(name, |ui| {
+                    ui.vertical(|ui| {
+                        for variant in ModelType::VARIANTS {
+                            if ui.button(variant.name()).clicked() {
+                                *ty = *variant;
+                            }
+                        }
+                    })
+                });
+            }
+            MyPrimitiveValueType::Boolean(val) => {
+                ui.checkbox(val, param_name);
+            }
+            MyPrimitiveValueType::Any(any) => {
+                ui.collapsing("Change Type", |ui| {
+                    ui.vertical(|ui| {
+                        for variant in MyPrimitiveDataType::VARIANTS {
+                            if ui.button(variant.name()).clicked() {
+                                *any = Box::new(MyPrimitiveValueType::default_of_type(*variant));
+                            }
+                        }
+                    })
+                });
+                any.modify(param_name, ui);
+            }
+        }
+    }
+
     fn default_of_type(ty: MyPrimitiveDataType) -> Self {
         match ty {
             MyPrimitiveDataType::Number => Self::Number(0),
@@ -309,47 +405,39 @@ impl MyPrimitiveValueType {
             MyPrimitiveDataType::Database => Self::Database(0),
             MyPrimitiveDataType::ModelType => Self::ModelType(ModelType::Llama(LlamaType::Vicuna)),
             MyPrimitiveDataType::Boolean => Self::Boolean(false),
-            MyPrimitiveDataType::Any => Self::Text(String::new()),
+            MyPrimitiveDataType::Any => Self::Any(Box::new(Self::Number(0
+            ))),
         }
+    }
+}
+
+fn my_primitive_value_type_to_primitive_value(input: MyPrimitiveValueType) -> PrimitiveValue{
+    match input {
+        MyPrimitiveValueType::Number(text) => PrimitiveValue::Number(text),
+        MyPrimitiveValueType::Text(text) => PrimitiveValue::Text(text),
+        MyPrimitiveValueType::Embedding(embedding) => {
+            PrimitiveValue::Embedding(Embedding { vector: embedding })
+        }
+        MyPrimitiveValueType::Model(id) => PrimitiveValue::Model(ModelId { id }),
+        MyPrimitiveValueType::Database(id) => {
+            PrimitiveValue::Database(EmbeddingDbId { id })
+        }
+        MyPrimitiveValueType::ModelType(model_type) => {
+            PrimitiveValue::ModelType(model_type)
+        }
+        MyPrimitiveValueType::Boolean(model_type) => PrimitiveValue::Boolean(model_type),
+        MyPrimitiveValueType::Any(any) => my_primitive_value_type_to_primitive_value(*any),
     }
 }
 
 impl From<MyValueType> for Input {
     fn from(value: MyValueType) -> Self {
         match value {
-            MyValueType::Single(value) => Self::Single(match value {
-                MyPrimitiveValueType::Number(text) => PrimitiveValue::Number(text),
-                MyPrimitiveValueType::Text(text) => PrimitiveValue::Text(text),
-                MyPrimitiveValueType::Embedding(embedding) => {
-                    PrimitiveValue::Embedding(Embedding { vector: embedding })
-                }
-                MyPrimitiveValueType::Model(id) => PrimitiveValue::Model(ModelId { id }),
-                MyPrimitiveValueType::Database(id) => {
-                    PrimitiveValue::Database(EmbeddingDbId { id })
-                }
-                MyPrimitiveValueType::ModelType(model_type) => {
-                    PrimitiveValue::ModelType(model_type)
-                }
-                MyPrimitiveValueType::Boolean(model_type) => PrimitiveValue::Boolean(model_type),
-            }),
+            MyValueType::Single(value) => Self::Single(my_primitive_value_type_to_primitive_value(value)),
             MyValueType::List(values) => Self::Many(
                 values
                     .into_iter()
-                    .map(|value| match value {
-                        MyPrimitiveValueType::Number(text) => PrimitiveValue::Number(text),
-                        MyPrimitiveValueType::Text(text) => PrimitiveValue::Text(text),
-                        MyPrimitiveValueType::Embedding(embedding) => {
-                            PrimitiveValue::Embedding(Embedding { vector: embedding })
-                        }
-                        MyPrimitiveValueType::Model(id) => PrimitiveValue::Model(ModelId { id }),
-                        MyPrimitiveValueType::Database(id) => {
-                            PrimitiveValue::Database(EmbeddingDbId { id })
-                        }
-                        MyPrimitiveValueType::ModelType(model_type) => {
-                            PrimitiveValue::ModelType(model_type)
-                        }
-                        MyPrimitiveValueType::Boolean(bool) => PrimitiveValue::Boolean(bool),
-                    })
+                    .map(my_primitive_value_type_to_primitive_value)
                     .collect(),
             ),
             MyValueType::Unset => todo!(),
@@ -640,62 +728,12 @@ impl WidgetValueTrait for MyValueType {
             .show(ui, |ui| match self {
                 MyValueType::Single(value) => {
                     ui.label(param_name);
-                    match value {
-                        MyPrimitiveValueType::Text(value) => {
-                            ui.add(TextEdit::multiline(value));
-                        }
-                        MyPrimitiveValueType::Embedding(_) => {}
-                        MyPrimitiveValueType::Model(_) => {}
-                        MyPrimitiveValueType::Database(_) => {}
-                        MyPrimitiveValueType::Number(value) => {
-                            ui.add(DragValue::new(value));
-                        }
-                        MyPrimitiveValueType::ModelType(ty) => {
-                            let name = ty.name();
-                            ui.collapsing(name, |ui| {
-                                ui.vertical(|ui| {
-                                    for variant in ModelType::VARIANTS {
-                                        if ui.button(variant.name()).clicked() {
-                                            *ty = *variant;
-                                        }
-                                    }
-                                })
-                            });
-                        }
-                        MyPrimitiveValueType::Boolean(val) => {
-                            ui.checkbox(val, param_name);
-                        }
-                    }
+                    value.modify(param_name, ui);
                 }
                 MyValueType::List(values) => {
                     ui.label(param_name);
                     for value in values {
-                        match value {
-                            MyPrimitiveValueType::Text(value) => {
-                                ui.add(TextEdit::multiline(value));
-                            }
-                            MyPrimitiveValueType::Embedding(_) => {}
-                            MyPrimitiveValueType::Model(_) => {}
-                            MyPrimitiveValueType::Database(_) => {}
-                            MyPrimitiveValueType::Number(value) => {
-                                ui.add(DragValue::new(value));
-                            }
-                            MyPrimitiveValueType::ModelType(ty) => {
-                                let name = ty.name();
-                                ui.collapsing(name, |ui| {
-                                    ui.vertical(|ui| {
-                                        for varient in ModelType::VARIANTS {
-                                            if ui.button(varient.name()).clicked() {
-                                                *ty = *varient;
-                                            }
-                                        }
-                                    })
-                                });
-                            }
-                            MyPrimitiveValueType::Boolean(val) => {
-                                ui.label(format!("{val:?}"));
-                            }
-                        }
+                        value.modify(param_name, ui);
                     }
                 }
                 MyValueType::Unset => {}
@@ -779,54 +817,10 @@ impl NodeDataTrait for MyNodeData {
                                 .show(ui, |ui| {
                                     ui.label(format!("{name}:"));
                                     match &value {
-                                        MyValueType::Single(single) => match single {
-                                            MyPrimitiveValueType::Text(value) => {
-                                                ui.label(value);
-                                            }
-                                            MyPrimitiveValueType::Embedding(value) => {
-                                                ui.label(format!("{:?}", &value[..5]));
-                                            }
-                                            MyPrimitiveValueType::Model(id) => {
-                                                ui.label(format!("Model: {id:?}"));
-                                            }
-                                            MyPrimitiveValueType::Database(id) => {
-                                                ui.label(format!("Database: {id:?}"));
-                                            }
-                                            MyPrimitiveValueType::Number(value) => {
-                                                ui.label(format!("{:02}", value));
-                                            }
-                                            MyPrimitiveValueType::ModelType(ty) => {
-                                                ui.label(ty.name());
-                                            }
-                                            MyPrimitiveValueType::Boolean(val) => {
-                                                ui.label(format!("{val:?}"));
-                                            }
-                                        },
+                                        MyValueType::Single(single) => single.show( ui ),
                                         MyValueType::List(many) => {
                                             for value in many {
-                                                match value {
-                                                    MyPrimitiveValueType::Text(value) => {
-                                                        ui.label(value);
-                                                    }
-                                                    MyPrimitiveValueType::Embedding(value) => {
-                                                        ui.label(format!("{:?}", &value[..5]));
-                                                    }
-                                                    MyPrimitiveValueType::Model(id) => {
-                                                        ui.label(format!("Model: {id:?}"));
-                                                    }
-                                                    MyPrimitiveValueType::Database(id) => {
-                                                        ui.label(format!("Database: {id:?}"));
-                                                    }
-                                                    MyPrimitiveValueType::Number(value) => {
-                                                        ui.label(format!("{:02}", value));
-                                                    }
-                                                    MyPrimitiveValueType::ModelType(ty) => {
-                                                        ui.label(ty.name());
-                                                    }
-                                                    MyPrimitiveValueType::Boolean(val) => {
-                                                        ui.label(format!("{val:?}"));
-                                                    }
-                                                }
+                                                value.show( ui );
                                             }
                                         }
                                         MyValueType::Unset => {
