@@ -118,12 +118,19 @@ pub fn download(model_type: ModelType) -> Box<dyn Model> {
     };
 
     let handle = Handle::current();
-    let path = std::thread::spawn(move || {
-        // Using Handle::block_on to run async code in the new thread.
-        handle.block_on(async { download_model(url).await.unwrap() })
-    })
-    .join()
-    .unwrap();
+    let path = {
+        let path: PathBuf = format!("./{}", url.rsplit_once('/').unwrap().1).into();
+        if path.exists() {
+            path
+        } else {
+            std::thread::spawn(move || {
+                // Using Handle::block_on to run async code in the new thread.
+                handle.block_on(async { download_model(url, path).await.unwrap() })
+            })
+            .join()
+            .unwrap()
+        }
+    };
 
     let sp = Some(Spinner::new(Dots2, "Loading model...", None));
 
@@ -147,13 +154,13 @@ pub fn download(model_type: ModelType) -> Box<dyn Model> {
     .unwrap_or_else(|err| panic!("Failed to load model from {path:?}: {err}"))
 }
 
-async fn download_model(model_url: &str) -> Result<PathBuf, Box<dyn Error>> {
-    let path: PathBuf = format!("./{}", model_url.rsplit_once('/').unwrap().1).into();
-    if path.exists() {
-        return Ok(path);
-    }
+async fn download_model(model_url: &str, path: PathBuf) -> Result<PathBuf, Box<dyn Error>> {
     let response = reqwest::get(model_url).await?;
-    println!("downloading model. This will take several minutes");
+    let mut sp = Spinner::new(
+        Dots2,
+        "Downloading model this will take several minutes...",
+        None,
+    );
 
     let mut file = { File::create(&path).await? };
 
@@ -168,14 +175,14 @@ async fn download_model(model_url: &str) -> Result<PathBuf, Box<dyn Error>> {
         file.write_all(&chunk).await?;
         let new_precent = current_size * 100 / size;
         if old_precent != new_precent {
-            println!("{}%", new_precent);
+            sp.update(Dots2, format!("{}%", new_precent), None);
         }
         old_precent = new_precent;
     }
 
     file.flush().await?;
 
-    println!("Finished Downloading");
+    sp.success("Finished downloading model.");
 
     Ok(path)
 }

@@ -20,29 +20,53 @@ use std::{
 
 #[derive(Default)]
 pub struct InferenceSessions {
-    sessions: Slab<(Box<dyn Model>, llm::InferenceSession)>,
+    sessions: Slab<(Box<dyn Model>, llm::InferenceSession, ModelType)>,
+    // We keep the last session running if there are no other active sessions.
+    temp_retained_sessions: Option<ModelId>,
     embedding_cache: RwLock<Vec<HashMap<String, Embedding>>>,
 }
 
 impl InferenceSessions {
-    pub fn session_get(&self, id: ModelId) -> &(Box<dyn Model>, InferenceSession) {
+    pub fn session_get(&self, id: ModelId) -> &(Box<dyn Model>, InferenceSession, ModelType) {
         self.sessions.get(id.id as usize).unwrap()
     }
 
-    pub fn session_get_mut(&mut self, id: ModelId) -> &mut (Box<dyn Model>, InferenceSession) {
+    pub fn session_get_mut(
+        &mut self,
+        id: ModelId,
+    ) -> &mut (Box<dyn Model>, InferenceSession, ModelType) {
         self.sessions.get_mut(id.id as usize).unwrap()
     }
 
     pub fn create(&mut self, ty: ModelType) -> ModelId {
+        // Remove the temporary session if it exists.
+        if let Some(id) = self.temp_retained_sessions.take() {
+            let (_model, _session, _old_ty) = self.sessions.remove(id.id as usize);
+            // unwind the model
+            // todo: This currently causes an error in llm...
+            // let token_count = session.tokens().len();
+            // session.rewind(&*model, token_count).unwrap();
+
+            // // If the model type is the same, we can reuse the session.
+            // if cmp_model_types(old_ty, ty) {
+            //     return ModelId {
+            //         id: self.sessions.insert((model, session, ty)) as u32,
+            //     };
+            // }
+        }
         let model = download(ty);
         let session = model.start_session(Default::default());
         ModelId {
-            id: self.sessions.insert((model, session)) as u32,
+            id: self.sessions.insert((model, session, ty)) as u32,
         }
     }
 
     pub fn remove(&mut self, id: ModelId) {
-        self.sessions.remove(id.id as usize);
+        if self.sessions.len() == 1 {
+            self.temp_retained_sessions = Some(id);
+        } else {
+            self.sessions.remove(id.id as usize);
+        }
     }
 
     pub fn infer_validate<V: for<'a> Validate<'a> + Clone + Send + Sync + 'static>(
@@ -52,7 +76,7 @@ impl InferenceSessions {
         max_tokens: Option<u32>,
         validator: V,
     ) -> String {
-        let (model, session) = self.session_get_mut(id);
+        let (model, session, _) = self.session_get_mut(id);
 
         let tokens = model.tokenizer().tokenize(&prompt, false).unwrap();
 
@@ -125,7 +149,7 @@ impl InferenceSessions {
         max_tokens: Option<u32>,
         stop_on: Option<String>,
     ) -> String {
-        let (model, session) = self.session_get_mut(id);
+        let (model, session, _) = self.session_get_mut(id);
 
         let parmeters = Default::default();
 
@@ -164,7 +188,7 @@ impl InferenceSessions {
         if let Some(embedding) = cache.get(text) {
             embedding.clone()
         } else {
-            let (model, _session) = self.session_get(id);
+            let (model, _, _) = self.session_get(id);
             let inference_parameters = llm::InferenceParameters::default();
             let new_embedding = get_embeddings(model.as_ref(), &inference_parameters, text);
             cache.insert(text.to_string(), new_embedding.clone());
@@ -193,5 +217,24 @@ fn inference_callback(
         }
         InferenceResponse::EotToken => Ok(InferenceFeedback::Halt),
         _ => Ok(InferenceFeedback::Continue),
+    }
+}
+
+#[allow(unused)]
+fn cmp_model_types(first: ModelType, second: ModelType) -> bool {
+    match (first, second) {
+        (
+            crate::plugins::main::types::ModelType::Mpt(mpt1),
+            crate::plugins::main::types::ModelType::Mpt(mpt2),
+        ) => mpt1 == mpt2,
+        (
+            crate::plugins::main::types::ModelType::GptNeoX(neo1),
+            crate::plugins::main::types::ModelType::GptNeoX(neo2),
+        ) => neo1 == neo2,
+        (
+            crate::plugins::main::types::ModelType::Llama(llama1),
+            crate::plugins::main::types::ModelType::Llama(llama2),
+        ) => llama1 == llama2,
+        (_, _) => false,
     }
 }

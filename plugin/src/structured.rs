@@ -72,9 +72,7 @@ impl<V: for<'a> Validate<'a>> StructuredSampler<V> {
         let status = self.structure.validate(ParseStream::new(&borrowed));
 
         match status {
-            ParseStatus::Complete(Some(_)) => {
-                true
-            },
+            ParseStatus::Complete(Some(_)) => true,
             ParseStatus::Complete(None) => false,
             ParseStatus::Incomplete => new_token.is_empty(),
             ParseStatus::Invalid => true,

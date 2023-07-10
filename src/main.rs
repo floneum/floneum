@@ -18,6 +18,7 @@ use floneumite::FloneumPackageIndex;
 use log::LevelFilter;
 use once_cell::sync::Lazy;
 use pollster::FutureExt;
+use scoped_logger::add_logger;
 use serde::{Deserialize, Serialize};
 use std::{
     borrow::Cow,
@@ -28,6 +29,8 @@ use std::{
     path::PathBuf,
 };
 use tokio::sync::mpsc::{Receiver, Sender};
+
+mod scoped_logger;
 
 trait Variants: Sized + 'static {
     const VARIANTS: &'static [Self];
@@ -99,11 +102,12 @@ fn save_to_file<D: Serialize>(data: D) {
 
 #[tokio::main]
 async fn main() {
-    simple_logger::SimpleLogger::new()
-        .with_level(LevelFilter::Off)
-        .with_module_level("floneum", LevelFilter::Info)
-        .init()
-        .unwrap();
+    log::set_boxed_logger(Box::new(scoped_logger::ScopedLogger)).unwrap();
+    add_logger(
+        simple_logger::SimpleLogger::new()
+            .with_level(LevelFilter::Off)
+            .with_module_level("floneum", LevelFilter::Info),
+    );
 
     let mut current_dir = std::env::current_dir().unwrap();
     current_dir.push("save.bin");
