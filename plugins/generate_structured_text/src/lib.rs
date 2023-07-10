@@ -48,8 +48,6 @@ fn generate_structured_text(
     let mut responce = session.infer_structured("", max_output_length, structure);
     responce += "\n";
 
-    println!("{}", &responce);
-
     responce
 }
 

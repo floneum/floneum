@@ -3,7 +3,7 @@ use partial_sort::PartialSort;
 use rand::{distributions::WeightedIndex, prelude::Distribution};
 use std::fmt::Debug;
 
-use crate::structured_parser::{ParseStream, Validate};
+use crate::structured_parser::{ParseStatus, ParseStream, Validate};
 
 pub struct StructuredSampler<V: for<'a> Validate<'a>> {
     tokenizer: Tokenizer,
@@ -71,11 +71,14 @@ impl<V: for<'a> Validate<'a>> StructuredSampler<V> {
 
         let status = self.structure.validate(ParseStream::new(&borrowed));
 
-        if new_token.is_empty() && status.is_incomplete() {
-            return true;
+        match status {
+            ParseStatus::Complete(Some(_)) => {
+                true
+            },
+            ParseStatus::Complete(None) => false,
+            ParseStatus::Incomplete => new_token.is_empty(),
+            ParseStatus::Invalid => true,
         }
-
-        status.is_invalid()
     }
 }
 

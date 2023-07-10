@@ -56,7 +56,7 @@ impl InferenceSessions {
 
         let tokens = model.tokenizer().tokenize(&prompt, false).unwrap();
 
-        let parmeters = InferenceParameters {
+        let parameters = InferenceParameters {
             sampler: Arc::new(StructuredSampler::new(
                 match model.tokenizer() {
                     llm::Tokenizer::Embedded(embedded) => {
@@ -78,7 +78,7 @@ impl InferenceSessions {
         let mut result_tokens = Vec::new();
         let request = InferenceRequest {
             prompt: llm::Prompt::Tokens(&token_ids),
-            parameters: &parmeters,
+            parameters: &parameters,
             play_back_previous_tokens: false,
             maximum_token_count: max_tokens.map(|x| x as usize),
         };
