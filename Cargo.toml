@@ -49,6 +49,8 @@ members = [
     "plugins/embedding_db",
     "plugins/add_embedding",
     "plugins/search_engine",
+    "plugins/write_to_file",
+    "plugins/read_from_file",
     "plugins/if_statement",
     "plugins/contains",
 ]

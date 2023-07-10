@@ -15,6 +15,8 @@ async fn main() {
         "search_engine",
         "if_statement",
         "contains",
+        "write_to_file",
+        "read_from_file",
     ];
     // build the plugins
     for plugin in plugins {
