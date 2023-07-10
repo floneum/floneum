@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use eframe::egui::{DragValue, Margin, Visuals, Ui};
+use eframe::egui::{DragValue, Margin, Ui, Visuals};
 use eframe::epaint::{Stroke, Vec2};
 use eframe::{
     egui::{self, TextEdit},
@@ -218,7 +218,7 @@ pub enum MyPrimitiveDataType {
     Any,
 }
 
-impl MyPrimitiveDataType{
+impl MyPrimitiveDataType {
     const VARIANTS: &'static [Self] = &[
         Self::Number,
         Self::Text,
@@ -322,40 +322,38 @@ pub enum MyPrimitiveValueType {
     Database(u32),
     ModelType(#[serde(with = "ModelTypeDef")] ModelType),
     Boolean(bool),
-    Any(Box<MyPrimitiveValueType>)
+    Any(Box<MyPrimitiveValueType>),
 }
 
 impl MyPrimitiveValueType {
-fn show(&self, ui:&mut Ui){
-    match self {
-        MyPrimitiveValueType::Text(value) => {
-            ui.label(value);
-        }
-        MyPrimitiveValueType::Embedding(value) => {
-            ui.label(format!("{:?}", &value[..5]));
-        }
-        MyPrimitiveValueType::Model(id) => {
-            ui.label(format!("Model: {id:?}"));
-        }
-        MyPrimitiveValueType::Database(id) => {
-            ui.label(format!("Database: {id:?}"));
-        }
-        MyPrimitiveValueType::Number(value) => {
-            ui.label(format!("{:02}", value));
-        }
-        MyPrimitiveValueType::ModelType(ty) => {
-            ui.label(ty.name());
-        }
-        MyPrimitiveValueType::Boolean(val) => {
-            ui.label(format!("{val:?}"));
-        }
-        MyPrimitiveValueType::Any(val) => {
-            val.show(ui)
+    fn show(&self, ui: &mut Ui) {
+        match self {
+            MyPrimitiveValueType::Text(value) => {
+                ui.label(value);
+            }
+            MyPrimitiveValueType::Embedding(value) => {
+                ui.label(format!("{:?}", &value[..5]));
+            }
+            MyPrimitiveValueType::Model(id) => {
+                ui.label(format!("Model: {id:?}"));
+            }
+            MyPrimitiveValueType::Database(id) => {
+                ui.label(format!("Database: {id:?}"));
+            }
+            MyPrimitiveValueType::Number(value) => {
+                ui.label(format!("{:02}", value));
+            }
+            MyPrimitiveValueType::ModelType(ty) => {
+                ui.label(ty.name());
+            }
+            MyPrimitiveValueType::Boolean(val) => {
+                ui.label(format!("{val:?}"));
+            }
+            MyPrimitiveValueType::Any(val) => val.show(ui),
         }
     }
-}
 
-    fn modify(&mut self, param_name:&str, ui:&mut  egui::Ui) {
+    fn modify(&mut self, param_name: &str, ui: &mut egui::Ui) {
         match self {
             MyPrimitiveValueType::Text(value) => {
                 ui.add(TextEdit::multiline(value));
@@ -405,13 +403,12 @@ fn show(&self, ui:&mut Ui){
             MyPrimitiveDataType::Database => Self::Database(0),
             MyPrimitiveDataType::ModelType => Self::ModelType(ModelType::Llama(LlamaType::Vicuna)),
             MyPrimitiveDataType::Boolean => Self::Boolean(false),
-            MyPrimitiveDataType::Any => Self::Any(Box::new(Self::Number(0
-            ))),
+            MyPrimitiveDataType::Any => Self::Any(Box::new(Self::Number(0))),
         }
     }
 }
 
-fn my_primitive_value_type_to_primitive_value(input: MyPrimitiveValueType) -> PrimitiveValue{
+fn my_primitive_value_type_to_primitive_value(input: MyPrimitiveValueType) -> PrimitiveValue {
     match input {
         MyPrimitiveValueType::Number(text) => PrimitiveValue::Number(text),
         MyPrimitiveValueType::Text(text) => PrimitiveValue::Text(text),
@@ -419,12 +416,8 @@ fn my_primitive_value_type_to_primitive_value(input: MyPrimitiveValueType) -> Pr
             PrimitiveValue::Embedding(Embedding { vector: embedding })
         }
         MyPrimitiveValueType::Model(id) => PrimitiveValue::Model(ModelId { id }),
-        MyPrimitiveValueType::Database(id) => {
-            PrimitiveValue::Database(EmbeddingDbId { id })
-        }
-        MyPrimitiveValueType::ModelType(model_type) => {
-            PrimitiveValue::ModelType(model_type)
-        }
+        MyPrimitiveValueType::Database(id) => PrimitiveValue::Database(EmbeddingDbId { id }),
+        MyPrimitiveValueType::ModelType(model_type) => PrimitiveValue::ModelType(model_type),
         MyPrimitiveValueType::Boolean(model_type) => PrimitiveValue::Boolean(model_type),
         MyPrimitiveValueType::Any(any) => my_primitive_value_type_to_primitive_value(*any),
     }
@@ -433,7 +426,9 @@ fn my_primitive_value_type_to_primitive_value(input: MyPrimitiveValueType) -> Pr
 impl From<MyValueType> for Input {
     fn from(value: MyValueType) -> Self {
         match value {
-            MyValueType::Single(value) => Self::Single(my_primitive_value_type_to_primitive_value(value)),
+            MyValueType::Single(value) => {
+                Self::Single(my_primitive_value_type_to_primitive_value(value))
+            }
             MyValueType::List(values) => Self::Many(
                 values
                     .into_iter()
@@ -817,10 +812,10 @@ impl NodeDataTrait for MyNodeData {
                                 .show(ui, |ui| {
                                     ui.label(format!("{name}:"));
                                     match &value {
-                                        MyValueType::Single(single) => single.show( ui ),
+                                        MyValueType::Single(single) => single.show(ui),
                                         MyValueType::List(many) => {
                                             for value in many {
-                                                value.show( ui );
+                                                value.show(ui);
                                             }
                                         }
                                         MyValueType::Unset => {
