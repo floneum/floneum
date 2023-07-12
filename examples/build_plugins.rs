@@ -17,6 +17,7 @@ async fn main() {
         "contains",
         "write_to_file",
         "read_from_file",
+        "python",
     ];
     // build the plugins
     for plugin in plugins {

@@ -1,0 +1,13 @@
+[package]
+name = "floneum_python"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+floneum_rust = { path = "../../rust_adapter" }
+rustpython-vm = { git = "https://github.com/RustPython/RustPython", rev = "7e66db0d43b6fd93bc114773ac8e896b7eda62c9", no-default-features = true }
