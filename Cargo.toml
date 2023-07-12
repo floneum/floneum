@@ -53,6 +53,7 @@ members = [
     "plugins/read_from_file",
     "plugins/if_statement",
     "plugins/contains",
+    "plugins/python",
 ]
 
 # Config for 'cargo dist'
