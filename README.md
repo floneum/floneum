@@ -14,9 +14,9 @@ Floneum is a graph editor for AI workflows with a focus on community made plugin
 
 ## Documentation
 
-- If you are looking to use Floneum, you can read the [User Documentation](./user/index.md).
+- If you are looking to use Floneum, you can read the [User Documentation](https://floneum.com/docs/user/).
 
-- If you are looking to develop plugins for Floneum, you can read the [Developer Documentation](./developer/index.md)
+- If you are looking to develop plugins for Floneum, you can read the [Developer Documentation](https://floneum.com/docs/developer/)
 
 ## Community
 
