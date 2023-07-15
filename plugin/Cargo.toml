@@ -21,3 +21,6 @@ serde = { version = "1.0.163", features = ["derive"] }
 partial_sort = "0.2.0"
 once_cell = "1.18.0"
 pollster = "0.3.0"
+headless_chrome = {git = "https://github.com/atroche/rust-headless-chrome", features = ["fetch"]}
+url = "2.4.0"
+anyhow = "1.0.71"

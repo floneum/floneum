@@ -1,7 +1,7 @@
 package plugins:main
 
 interface imports {
-  use types.{embedding, structure, structure-id, model-id, model-type, embedding-db-id}
+  use types.{embedding, structure, structure-id, model-id, model-type, embedding-db-id, node-id}
 
   load-model: func(ty: model-type) -> model-id
   unload-model: func(id: model-id)
@@ -18,6 +18,24 @@ interface imports {
 
   create-structure: func(structure: structure) -> structure-id
   remove-structure: func(id: structure-id)
+
+  browse-to: func(url: string)
+
+  find-in-current-page: func(selector: string) -> node-id
+
+  get-element-text: func(id: node-id) -> string
+
+  click-element: func(id: node-id)
+
+  type-into-element: func(id: node-id, keys: string)
+
+  get-element-outer-html: func(id: node-id) -> string
+
+  screenshot-browser: func() -> list<u8>
+
+  screenshot-element: func(element: node-id) -> list<u8>
+
+  find-child-of-element: func(id: node-id, selector: string) -> node-id
 
   get-request: func(url: string, headers: list<header>) -> string
 
@@ -78,6 +96,10 @@ interface types {
   }
 
   record model-id {
+    id: u32,
+  }
+
+  record node-id {
     id: u32,
   }
 

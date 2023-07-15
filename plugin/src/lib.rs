@@ -25,6 +25,7 @@ use wasmtime::Store;
 use wasmtime::{Config, Error};
 use wit_component::ComponentEncoder;
 
+mod browse;
 mod download;
 mod embedding;
 mod sessions;
@@ -99,6 +100,7 @@ impl MultiPluginState {
 pub struct State {
     sessions: InferenceSessions,
     structures: Slab<Structure>,
+    browser: Option<browse::Browser>,
     table: preview2::Table,
     ctx: preview2::WasiCtx,
 }
@@ -124,6 +126,7 @@ impl Default for State {
         State {
             sessions: InferenceSessions::default(),
             structures: Slab::new(),
+            browser: None,
             table,
             ctx,
         }
@@ -149,6 +152,14 @@ impl WasiView for State {
 }
 
 impl State {
+    fn browser_mut(&mut self) -> Result<&mut browse::Browser, wasmtime::Error> {
+        if !self.browser.is_some() {
+            let browser = browse::Browser::new()?;
+            self.browser = Some(browser);
+        }
+        Ok(self.browser.as_mut().unwrap())
+    }
+
     fn decode_structure(&self, id: StructureId) -> StructureParser {
         match &self.structures[id.id as usize] {
             Structure::Literal(text) => StructureParser::Literal(text.clone()),
@@ -338,6 +349,63 @@ impl Host for State {
             .sessions
             .infer_validate(id, input, max_tokens, structure))
     }
+
+    async fn browse_to(&mut self, url: String) -> std::result::Result<(), wasmtime::Error> {
+        self.browser_mut()?.goto(&url)?;
+        Ok(())
+    }
+
+    async fn find_in_current_page(
+        &mut self,
+        query: String,
+    ) -> std::result::Result<NodeId, wasmtime::Error> {
+        Ok(self.browser_mut()?.find(&query)?)
+    }
+
+    async fn get_element_text(
+        &mut self,
+        id: NodeId,
+    ) -> std::result::Result<String, wasmtime::Error> {
+        Ok(self.browser_mut()?.get_text(id)?)
+    }
+
+    async fn click_element(&mut self, id: NodeId) -> std::result::Result<(), wasmtime::Error> {
+        Ok(self.browser_mut()?.click(id)?)
+    }
+
+    async fn type_into_element(
+        &mut self,
+        id: NodeId,
+        keys: String,
+    ) -> std::result::Result<(), wasmtime::Error> {
+        Ok(self.browser_mut()?.send_keys(id, &keys)?)
+    }
+
+    async fn get_element_outer_html(
+        &mut self,
+        id: NodeId,
+    ) -> std::result::Result<String, wasmtime::Error> {
+        Ok(self.browser_mut()?.outer_html(id)?)
+    }
+
+    async fn screenshot_browser(&mut self) -> std::result::Result<Vec<u8>, wasmtime::Error> {
+        Ok(self.browser_mut()?.screenshot()?)
+    }
+
+    async fn screenshot_element(
+        &mut self,
+        id: NodeId,
+    ) -> std::result::Result<Vec<u8>, wasmtime::Error> {
+        Ok(self.browser_mut()?.screenshot_of_id(id)?)
+    }
+
+    async fn find_child_of_element(
+        &mut self,
+        id: NodeId,
+        query: String,
+    ) -> std::result::Result<NodeId, wasmtime::Error> {
+        Ok(self.browser_mut()?.find_child(id, &query)?)
+    }
 }
 
 #[derive(Default)]
@@ -498,47 +566,43 @@ impl PluginInstance {
     }
 }
 
-#[test]
-fn load_plugin() {
-    let runtime = tokio::runtime::Handle::current();
+#[tokio::test]
+async fn load_plugin() {
+    // first build the plugin_demo
+    // cargo build --release --target wasm32-unknown-unknown
+    let command = std::process::Command::new("cargo")
+        .args(["build", "--release", "--target", "wasm32-unknown-unknown"])
+        .current_dir("./plugins/format")
+        .stdout(std::process::Stdio::inherit())
+        .output()
+        .unwrap();
 
-    runtime.block_on(async move {
-        // first build the plugin_demo
-        // cargo build --release --target wasm32-unknown-unknown
-        let command = std::process::Command::new("cargo")
-            .args(["build", "--release", "--target", "wasm32-unknown-unknown"])
-            .current_dir("../plugins/format")
-            .stdout(std::process::Stdio::inherit())
-            .output()
-            .unwrap();
+    println!("{:?}", command);
 
-        println!("{:?}", command);
+    let path = "./target/wasm32-unknown-unknown/release/plugin_format.wasm";
 
-        let path = "../target/wasm32-unknown-unknown/release/plugin_format.wasm";
+    let mut engine = PluginEngine::default();
 
-        let mut engine = PluginEngine::default();
+    let plugin = engine.load_plugin(&std::path::PathBuf::from(path)).await;
 
-        let plugin = engine.load_plugin(&std::path::PathBuf::from(path)).await;
+    let instance = plugin.instance().await;
 
-        let instance = plugin.instance().await;
+    let inputs = vec![
+        Input::Single(PrimitiveValue::Text("hello {}".to_string())),
+        Input::Single(PrimitiveValue::Text("world".to_string())),
+    ];
+    let outputs = instance.run(inputs).await.unwrap();
+    let outputs = outputs.as_deref().clone().unwrap();
+    println!("{:?}", outputs);
 
-        let inputs = vec![
-            Input::Single(PrimitiveValue::Text("hello {}".to_string())),
-            Input::Single(PrimitiveValue::Text("world".to_string())),
-        ];
-        let outputs = instance.run(inputs).await.unwrap();
-        let outputs = outputs.as_deref().clone().unwrap();
-        println!("{:?}", outputs);
-
-        assert_eq!(outputs.len(), 1);
-        let first = outputs.first().unwrap();
-        match first {
-            Output::Single(PrimitiveValue::Text(text)) => {
-                assert_eq!(text, "hello world");
-            }
-            _ => panic!("unexpected text output"),
+    assert_eq!(outputs.len(), 1);
+    let first = outputs.first().unwrap();
+    match first {
+        Output::Single(PrimitiveValue::Text(text)) => {
+            assert_eq!(text, "hello world");
         }
-    });
+        _ => panic!("unexpected text output"),
+    }
 }
 
 wasmtime::component::bindgen!({
