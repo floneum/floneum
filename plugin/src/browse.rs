@@ -1,153 +1,97 @@
-use fantoccini::elements::Element;
-use fantoccini::error::NewSessionError;
-use fantoccini::{Client, ClientBuilder, Locator};
-use slab::Slab;
-use std::time::Duration;
-use crate::ElementId;
-
-fn start_process() -> std::process::Child {
-    #[cfg(target_os = "macos")]
-    const CMD: &str = r#"/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=4444"#;
-    #[cfg(target_os = "linux")]
-    const CMD: &str = "chromium-browser --remote-debugging-port=4444";
-    #[cfg(target_os = "windows")]
-    const CMD: &str = "chrome.exe --remote-debugging-port=4444";
-
-    let child = std::process::Command::new("sh")
-        .arg("-c")
-        .arg(CMD)
-        .spawn()
-        .expect("failed to start chrome");
-    child
-}
+use crate::NodeId;
+use headless_chrome::{Browser as HeadlessBrowser, Element, LaunchOptions};
+use std::sync::Arc;
 
 pub struct Browser {
-    client: Client,
-    child: std::process::Child,
-    elements: Slab<Element>,
-}
-
-impl Drop for Browser {
-    fn drop(&mut self) {
-        self.child.kill().unwrap();
-    }
+    #[allow(unused)]
+    client: HeadlessBrowser,
+    tab: Arc<headless_chrome::Tab>,
 }
 
 impl Browser {
-    pub async fn new() -> Result<Self, NewSessionError> {
-        let client = ClientBuilder::native()
-            .connect("http://localhost:4444")
-            .await?;
-        let child = start_process();
+    pub fn new() -> wasmtime::Result<Self> {
+        let browser = HeadlessBrowser::new(
+            LaunchOptions::default_builder()
+                .build()
+                .expect("Could not find chrome-executable"),
+        )?;
+        let tab = browser.new_tab()?;
+
         Ok(Self {
-            client,
-            child,
-            elements: Slab::new(),
+            tab,
+            client: browser,
         })
     }
 
-    pub async fn goto(&mut self, url: &str) -> Result<(), wasmtime::Error> {
-        self.client.goto(url).await?;
-        self.client
-            .wait()
-            .at_most(Duration::from_secs(5))
-            .for_url(url::Url::parse(url)?)
-            .await?;
+    fn get_node(&self, node: NodeId) -> Result<Element, wasmtime::Error> {
+        Element::new(&self.tab, node.id)
+    }
+
+    pub fn goto(&mut self, url: &str) -> Result<(), wasmtime::Error> {
+        self.tab.navigate_to(url)?.wait_until_navigated()?;
         Ok(())
     }
 
-    pub async fn find(&mut self, selector: &str) -> Result<ElementId, wasmtime::Error> {
-        let element: Element = self
-            .client
-            .wait()
-            .at_most(Duration::from_secs(5))
-            .every(Duration::from_millis(100))
-            .for_element(Locator::Css(selector))
-            .await?;
+    pub fn find(&mut self, selector: &str) -> Result<NodeId, wasmtime::Error> {
+        let element = self.tab.wait_for_element(selector)?.node_id;
 
-        Ok(ElementId{
-            id: self.elements.insert(element) as u32})
+        Ok(NodeId { id: element })
     }
 
-    pub async fn get_text(&mut self, id: ElementId) -> Result<String, wasmtime::Error> {
-        let element = self.elements.get(id.id as usize).unwrap();
-        let text = element.text().await?;
+    pub fn get_text(&mut self, id: NodeId) -> Result<String, wasmtime::Error> {
+        let element = self.get_node(id)?;
+        let text = element.get_inner_text()?;
         Ok(text)
     }
-    pub async fn click(&mut self, id: ElementId) -> Result<(), wasmtime::Error> {
-        let element = self.elements.get(id.id as usize).unwrap();
-        element.click().await?;
+
+    pub fn click(&mut self, id: NodeId) -> Result<(), wasmtime::Error> {
+        let element = self.get_node(id)?;
+        element.click()?;
         Ok(())
     }
 
-    pub async fn send_keys(
-        &mut self,
-        id: ElementId,
-        keys: &str,
-    ) -> Result<(), wasmtime::Error> {
-        let element = self.elements.get(id.id as usize).unwrap();
-        element.send_keys(keys).await?;
+    pub fn send_keys(&mut self, id: NodeId, keys: &str) -> Result<(), wasmtime::Error> {
+        let element = self.get_node(id)?;
+        element.type_into(keys)?;
         Ok(())
     }
 
-    pub async fn inner_html(
-        &mut self,
-        id: ElementId,
-    ) -> Result<String, wasmtime::Error> {
-        let element = self.elements.get(id.id as usize).unwrap();
-        let html = element.html(true).await?;
+    pub fn outer_html(&mut self, id: NodeId) -> Result<String, wasmtime::Error> {
+        let element = self.get_node(id)?;
+        let html = element.get_content()?;
         Ok(html)
     }
 
-    pub async fn outer_html(
-        &mut self,
-        id: ElementId,
-    ) -> Result<String, wasmtime::Error> {
-        let element = self.elements.get(id.id as usize).unwrap();
-        let html = element.html(false).await?;
-        Ok(html)
-    }
-
-    pub async fn screenshot(&mut self) -> Result<Vec<u8>, wasmtime::Error> {
-        let bytes = self.client.screenshot().await?;
+    pub fn screenshot(&mut self) -> Result<Vec<u8>, wasmtime::Error> {
+        let bytes = self.tab.capture_screenshot(
+            headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Jpeg,
+            None,
+            None,
+            false,
+        )?;
         Ok(bytes)
     }
 
-    pub async fn screenshot_of_id(
-        &mut self,
-        id: ElementId,
-    ) -> Result<Vec<u8>, wasmtime::Error> {
-        let element = self.elements.get(id.id as usize).unwrap();
-        let bytes = element.screenshot().await?;
+    pub fn screenshot_of_id(&mut self, id: NodeId) -> Result<Vec<u8>, wasmtime::Error> {
+        let element = self.get_node(id)?;
+        let bytes = element.capture_screenshot(
+            headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Jpeg,
+        )?;
         Ok(bytes)
     }
 
-    pub async fn find_child(
-        &mut self,
-        id: ElementId,
-        selector: &str,
-    ) -> Result<ElementId, wasmtime::Error> {
-        let element = self.elements.get(id.id as usize).unwrap();
-        let child = element.find(Locator::Css(selector)).await?;
-        Ok(ElementId{
-            id:self.elements.insert(child) as u32})
-    }
-
-    pub fn drop_element(&mut self, id: ElementId) {
-        self.elements.remove(id.id as usize);
+    pub fn find_child(&mut self, id: NodeId, selector: &str) -> Result<NodeId, wasmtime::Error> {
+        let element = self.get_node(id)?;
+        let child = element.find_element(selector)?;
+        Ok(NodeId { id: child.node_id })
     }
 }
 
-#[tokio::test]
-async fn browse(){
-    use crate::browse::Browser;
-
-    let mut browser = Browser::new().await.unwrap();
-    let url = "https://www.google.com";
-    browser.goto(url).await.unwrap();
-    let id = browser.find("input[name=q]").await.unwrap();
-    browser.send_keys(id, "rust").await.unwrap();
-    browser.click(id).await.unwrap();
-    let id = browser.find("#search").await.unwrap();
-    
+#[test]
+fn browse() {
+    let mut browser = Browser::new().unwrap();
+    browser.goto("https://www.rust-lang.org/learn").unwrap();
+    let id = browser.find("h1").unwrap();
+    let text = browser.get_text(id).unwrap();
+    assert_eq!(text, "Learn Rust");
 }
