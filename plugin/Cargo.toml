@@ -21,3 +21,5 @@ serde = { version = "1.0.163", features = ["derive"] }
 partial_sort = "0.2.0"
 once_cell = "1.18.0"
 pollster = "0.3.0"
+fantoccini = "0.20.0-rc.4"
+url = "2.4.0"

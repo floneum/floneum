@@ -2,6 +2,7 @@
 // https://github.com/1rgs/jsonformer
 // https://github.com/bytecodealliance/wasmtime/issues/6074
 
+use fantoccini::error::NewSessionError;
 use once_cell::sync::Lazy;
 use plugins::main::types::Structure;
 use pollster::FutureExt;
@@ -25,6 +26,7 @@ use wasmtime::Store;
 use wasmtime::{Config, Error};
 use wit_component::ComponentEncoder;
 
+mod browse;
 mod download;
 mod embedding;
 mod sessions;
@@ -99,6 +101,7 @@ impl MultiPluginState {
 pub struct State {
     sessions: InferenceSessions,
     structures: Slab<Structure>,
+    browser: Option<browse::Browser>,
     table: preview2::Table,
     ctx: preview2::WasiCtx,
 }
@@ -124,6 +127,7 @@ impl Default for State {
         State {
             sessions: InferenceSessions::default(),
             structures: Slab::new(),
+            browser: None,
             table,
             ctx,
         }
@@ -149,6 +153,14 @@ impl WasiView for State {
 }
 
 impl State {
+    async fn browser_mut(&mut self) -> Result<&mut browse::Browser, NewSessionError> {
+        if !self.browser.is_some() {
+            let browser = browse::Browser::new().await?;
+            self.browser = Some(browser);
+        }
+        Ok(self.browser.as_mut().unwrap())
+    }
+
     fn decode_structure(&self, id: StructureId) -> StructureParser {
         match &self.structures[id.id as usize] {
             Structure::Literal(text) => StructureParser::Literal(text.clone()),
@@ -337,6 +349,83 @@ impl Host for State {
         Ok(self
             .sessions
             .infer_validate(id, input, max_tokens, structure))
+    }
+
+    async fn browse_to(&mut self, url: String) -> std::result::Result<(), wasmtime::Error> {
+        self.browser_mut().await?.goto(&url).await?;
+        Ok(())
+    }
+
+    async fn find_in_current_page(
+        &mut self,
+        query: String,
+    ) -> std::result::Result<ElementId, wasmtime::Error> {
+Ok(        self.browser_mut().await?.find(&query).await?)
+
+    }
+
+    async fn get_element_text(
+        &mut self,
+        id: ElementId,
+    ) -> std::result::Result<String, wasmtime::Error> {
+        Ok(self.browser_mut().await?.get_text(id).await?)
+    }
+    
+    async fn click_element(
+        &mut self,
+        id: ElementId,
+    ) -> std::result::Result<(), wasmtime::Error> {
+        Ok(self.browser_mut().await?.click(id).await?)
+    }
+
+    async fn send_keys_to_element(
+        &mut self,
+        id: ElementId,
+        keys: String,
+    ) -> std::result::Result<(), wasmtime::Error> {
+        Ok(self.browser_mut().await?.send_keys(id,& keys).await?)
+    }
+
+    async fn get_element_inner_html(
+        &mut self,
+        id: ElementId,
+    ) -> std::result::Result<String, wasmtime::Error> {
+        Ok(self.browser_mut().await?.inner_html(id).await?)
+    }
+
+    async fn get_element_outer_html(
+        &mut self,
+        id: ElementId,
+    ) -> std::result::Result<String, wasmtime::Error> {
+        Ok(self.browser_mut().await?.outer_html(id).await?)
+    }
+
+    async fn screenshot_browser(
+        &mut self,
+    ) -> std::result::Result<Vec<u8>, wasmtime::Error> {
+        Ok(self.browser_mut().await?.screenshot().await?)
+    }
+
+    async fn screenshot_element(
+        &mut self,
+        id: ElementId,
+    ) -> std::result::Result<Vec<u8>, wasmtime::Error> {
+        Ok(self.browser_mut().await?.screenshot_of_id(id).await?)
+    }
+
+    async fn find_child_of_element(
+        &mut self,
+        id: ElementId,
+        query: String,
+    ) -> std::result::Result<ElementId, wasmtime::Error> {
+        Ok(self.browser_mut().await?.find_child(id, &query).await?)
+    }
+
+    async fn drop_element(
+        &mut self,
+        id: ElementId,
+    ) -> std::result::Result<(), wasmtime::Error> {
+        Ok(self.browser_mut().await?.drop_element(id))
     }
 }
 
