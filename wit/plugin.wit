@@ -1,7 +1,7 @@
 package plugins:main
 
 interface imports {
-  use types.{embedding, structure, structure-id, model-id, model-type, embedding-db-id, node-id}
+  use types.{embedding, structure, structure-id, model-id, model-type, embedding-db-id, node-id, tab-id}
 
   load-model: func(ty: model-type) -> model-id
   unload-model: func(id: model-id)
@@ -19,23 +19,25 @@ interface imports {
   create-structure: func(structure: structure) -> structure-id
   remove-structure: func(id: structure-id)
 
-  browse-to: func(url: string)
+  new-tab: func(headless: bool) -> tab-id
 
-  find-in-current-page: func(selector: string) -> node-id
+  browse-to: func(tab: tab-id, url: string)
 
-  get-element-text: func(id: node-id) -> string
+  find-in-current-page: func(tab: tab-id, selector: string) -> node-id
 
-  click-element: func(id: node-id)
+  get-element-text: func(tab: tab-id, id: node-id) -> string
 
-  type-into-element: func(id: node-id, keys: string)
+  click-element: func(tab: tab-id, id: node-id)
 
-  get-element-outer-html: func(id: node-id) -> string
+  type-into-element: func(tab: tab-id, id: node-id, keys: string)
 
-  screenshot-browser: func() -> list<u8>
+  get-element-outer-html: func(tab: tab-id, id: node-id) -> string
 
-  screenshot-element: func(element: node-id) -> list<u8>
+  screenshot-browser: func(tab: tab-id, ) -> list<u8>
 
-  find-child-of-element: func(id: node-id, selector: string) -> node-id
+  screenshot-element: func(tab: tab-id, element: node-id) -> list<u8>
+
+  find-child-of-element: func(tab: tab-id, id: node-id, selector: string) -> node-id
 
   get-request: func(url: string, headers: list<header>) -> string
 
@@ -100,6 +102,10 @@ interface types {
   }
 
   record node-id {
+    id: u32,
+  }
+
+  record tab-id {
     id: u32,
   }
 
