@@ -11,7 +11,8 @@ use floneum_plugin::exports::plugins::main::definitions::{
     Embedding, Input, Output, PrimitiveValue, PrimitiveValueType, ValueType,
 };
 use floneum_plugin::plugins::main::types::{
-    EmbeddingDbId, GptNeoXType, LlamaType, ModelId, ModelType, MptType,
+    EmbeddingDbId, GptNeoXType, LlamaType, ModelId, ModelType, MptType, NodeId as FloneumNodeId,
+    TabId,
 };
 use floneum_plugin::{Plugin, PluginEngine, PluginInstance};
 use floneumite::FloneumPackageIndex;
@@ -190,6 +191,8 @@ impl From<ValueType> for MyDataType {
                 PrimitiveValueType::Model => Self::Single(MyPrimitiveDataType::Model),
                 PrimitiveValueType::ModelType => Self::Single(MyPrimitiveDataType::ModelType),
                 PrimitiveValueType::Boolean => Self::Single(MyPrimitiveDataType::Boolean),
+                PrimitiveValueType::Tab => Self::Single(MyPrimitiveDataType::Tab),
+                PrimitiveValueType::Node => Self::Single(MyPrimitiveDataType::Node),
                 PrimitiveValueType::Any => Self::Single(MyPrimitiveDataType::Any),
             },
             ValueType::Many(value) => match value {
@@ -200,6 +203,8 @@ impl From<ValueType> for MyDataType {
                 PrimitiveValueType::Model => Self::List(MyPrimitiveDataType::Model),
                 PrimitiveValueType::ModelType => Self::List(MyPrimitiveDataType::ModelType),
                 PrimitiveValueType::Boolean => Self::Single(MyPrimitiveDataType::Boolean),
+                PrimitiveValueType::Tab => Self::Single(MyPrimitiveDataType::Tab),
+                PrimitiveValueType::Node => Self::Single(MyPrimitiveDataType::Node),
                 PrimitiveValueType::Any => Self::Single(MyPrimitiveDataType::Any),
             },
         }
@@ -215,6 +220,8 @@ pub enum MyPrimitiveDataType {
     ModelType,
     Database,
     Boolean,
+    Tab,
+    Node,
     Any,
 }
 
@@ -238,6 +245,8 @@ impl MyPrimitiveDataType {
             Self::ModelType => "ModelType",
             Self::Database => "Database",
             Self::Boolean => "Boolean",
+            Self::Tab => "Tab",
+            Self::Node => "Node",
             Self::Any => "Any",
         }
     }
@@ -322,6 +331,8 @@ pub enum MyPrimitiveValueType {
     Database(u32),
     ModelType(#[serde(with = "ModelTypeDef")] ModelType),
     Boolean(bool),
+    Tab(u32),
+    Node { id: u32, tab: u32 },
     Any(Box<MyPrimitiveValueType>),
 }
 
@@ -348,6 +359,12 @@ impl MyPrimitiveValueType {
             }
             MyPrimitiveValueType::Boolean(val) => {
                 ui.label(format!("{val:?}"));
+            }
+            MyPrimitiveValueType::Tab(id) => {
+                ui.label(format!("Tab: {id:?}"));
+            }
+            MyPrimitiveValueType::Node { id, tab } => {
+                ui.label(format!("Node: {id:?} in tab {tab:?}"));
             }
             MyPrimitiveValueType::Any(val) => val.show(ui),
         }
@@ -379,6 +396,8 @@ impl MyPrimitiveValueType {
             MyPrimitiveValueType::Boolean(val) => {
                 ui.checkbox(val, param_name);
             }
+            MyPrimitiveValueType::Tab(_) => {}
+            MyPrimitiveValueType::Node { .. } => {}
             MyPrimitiveValueType::Any(any) => {
                 ui.collapsing("Change Type", |ui| {
                     ui.vertical(|ui| {
@@ -403,6 +422,8 @@ impl MyPrimitiveValueType {
             MyPrimitiveDataType::Database => Self::Database(0),
             MyPrimitiveDataType::ModelType => Self::ModelType(ModelType::Llama(LlamaType::Vicuna)),
             MyPrimitiveDataType::Boolean => Self::Boolean(false),
+            MyPrimitiveDataType::Tab => Self::Tab(0),
+            MyPrimitiveDataType::Node => Self::Node { id: 0, tab: 0 },
             MyPrimitiveDataType::Any => Self::Any(Box::new(Self::Number(0))),
         }
     }
@@ -419,6 +440,11 @@ fn my_primitive_value_type_to_primitive_value(input: MyPrimitiveValueType) -> Pr
         MyPrimitiveValueType::Database(id) => PrimitiveValue::Database(EmbeddingDbId { id }),
         MyPrimitiveValueType::ModelType(model_type) => PrimitiveValue::ModelType(model_type),
         MyPrimitiveValueType::Boolean(model_type) => PrimitiveValue::Boolean(model_type),
+        MyPrimitiveValueType::Tab(id) => PrimitiveValue::Tab(TabId { id }),
+        MyPrimitiveValueType::Node { id, tab } => PrimitiveValue::Node(FloneumNodeId {
+            id,
+            tab: TabId { id: tab },
+        }),
         MyPrimitiveValueType::Any(any) => my_primitive_value_type_to_primitive_value(*any),
     }
 }
@@ -454,6 +480,11 @@ impl From<Input> for MyValueType {
                 PrimitiveValue::ModelType(model_type) => {
                     MyPrimitiveValueType::ModelType(model_type)
                 }
+                PrimitiveValue::Tab(id) => MyPrimitiveValueType::Tab(id.id),
+                PrimitiveValue::Node(node) => MyPrimitiveValueType::Node {
+                    id: node.id,
+                    tab: node.tab.id,
+                },
                 PrimitiveValue::Boolean(bool) => MyPrimitiveValueType::Boolean(bool),
             }),
             Input::Many(values) => Self::List(
@@ -470,6 +501,11 @@ impl From<Input> for MyValueType {
                         PrimitiveValue::ModelType(model_type) => {
                             MyPrimitiveValueType::ModelType(model_type)
                         }
+                        PrimitiveValue::Tab(id) => MyPrimitiveValueType::Tab(id.id),
+                        PrimitiveValue::Node(node) => MyPrimitiveValueType::Node {
+                            id: node.id,
+                            tab: node.tab.id,
+                        },
                         PrimitiveValue::Boolean(bool) => MyPrimitiveValueType::Boolean(bool),
                     })
                     .collect(),
@@ -492,6 +528,11 @@ impl From<Output> for MyValueType {
                 PrimitiveValue::ModelType(model_type) => {
                     MyPrimitiveValueType::ModelType(model_type)
                 }
+                PrimitiveValue::Tab(id) => MyPrimitiveValueType::Tab(id.id),
+                PrimitiveValue::Node(node) => MyPrimitiveValueType::Node {
+                    id: node.id,
+                    tab: node.tab.id,
+                },
                 PrimitiveValue::Boolean(bool) => MyPrimitiveValueType::Boolean(bool),
             }),
             Output::Many(values) => Self::List(
@@ -508,6 +549,11 @@ impl From<Output> for MyValueType {
                         PrimitiveValue::ModelType(model_type) => {
                             MyPrimitiveValueType::ModelType(model_type)
                         }
+                        PrimitiveValue::Tab(id) => MyPrimitiveValueType::Tab(id.id),
+                        PrimitiveValue::Node(node) => MyPrimitiveValueType::Node {
+                            id: node.id,
+                            tab: node.tab.id,
+                        },
                         PrimitiveValue::Boolean(bool) => MyPrimitiveValueType::Boolean(bool),
                     })
                     .collect(),
@@ -566,6 +612,8 @@ impl DataTypeTrait<MyGraphState> for MyDataType {
             MyDataType::Single(MyPrimitiveDataType::Boolean) => {
                 egui::Color32::from_rgb(100, 100, 0)
             }
+            MyDataType::Single(MyPrimitiveDataType::Tab) => egui::Color32::from_rgb(100, 200, 200),
+            MyDataType::Single(MyPrimitiveDataType::Node) => egui::Color32::from_rgb(200, 200, 100),
             MyDataType::Single(MyPrimitiveDataType::Any) => egui::Color32::from_rgb(100, 100, 100),
             MyDataType::List(MyPrimitiveDataType::Text) => egui::Color32::from_rgb(38, 109, 211),
             MyDataType::List(MyPrimitiveDataType::Embedding) => {
@@ -580,6 +628,8 @@ impl DataTypeTrait<MyGraphState> for MyDataType {
                 egui::Color32::from_rgb(38, 50, 109)
             }
             MyDataType::List(MyPrimitiveDataType::Boolean) => egui::Color32::from_rgb(100, 100, 0),
+            MyDataType::List(MyPrimitiveDataType::Tab) => egui::Color32::from_rgb(100, 200, 200),
+            MyDataType::List(MyPrimitiveDataType::Node) => egui::Color32::from_rgb(200, 200, 100),
             MyDataType::List(MyPrimitiveDataType::Any) => egui::Color32::from_rgb(100, 100, 100),
         }
     }
@@ -593,6 +643,8 @@ impl DataTypeTrait<MyGraphState> for MyDataType {
             MyDataType::Single(MyPrimitiveDataType::Database) => Cow::Borrowed("database"),
             MyDataType::Single(MyPrimitiveDataType::ModelType) => Cow::Borrowed("model type"),
             MyDataType::Single(MyPrimitiveDataType::Boolean) => Cow::Borrowed("true/false"),
+            MyDataType::Single(MyPrimitiveDataType::Tab) => Cow::Borrowed("tab"),
+            MyDataType::Single(MyPrimitiveDataType::Node) => Cow::Borrowed("node"),
             MyDataType::Single(MyPrimitiveDataType::Any) => Cow::Borrowed("any"),
             MyDataType::List(MyPrimitiveDataType::Text) => Cow::Borrowed("list of texts"),
             MyDataType::List(MyPrimitiveDataType::Embedding) => Cow::Borrowed("list of embeddings"),
@@ -603,6 +655,8 @@ impl DataTypeTrait<MyGraphState> for MyDataType {
                 Cow::Borrowed("list of model types")
             }
             MyDataType::List(MyPrimitiveDataType::Boolean) => Cow::Borrowed("true/false"),
+            MyDataType::List(MyPrimitiveDataType::Tab) => Cow::Borrowed("list of tabs"),
+            MyDataType::List(MyPrimitiveDataType::Node) => Cow::Borrowed("list of nodes"),
             MyDataType::List(MyPrimitiveDataType::Any) => Cow::Borrowed("list of any"),
         }
     }

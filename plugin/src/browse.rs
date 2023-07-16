@@ -1,4 +1,4 @@
-use crate::{NodeId, TabId};
+use crate::plugins::main::imports::{NodeId, TabId};
 use headless_chrome::{Browser as HeadlessBrowser, Element, LaunchOptions};
 use once_cell::unsync::Lazy;
 use slab::Slab;
@@ -49,6 +49,11 @@ impl Browser {
         Ok(TabId { id: id as u32 })
     }
 
+    pub fn remove_tab(&mut self, tab: TabId) {
+        let tab = self.tabs.remove(tab.id as usize);
+        tab.close(true).unwrap();
+    }
+
     pub fn get_tab(&self, tab: TabId) -> Result<Arc<headless_chrome::Tab>, wasmtime::Error> {
         let tab = self
             .tabs
@@ -57,10 +62,10 @@ impl Browser {
         Ok(tab.clone())
     }
 
-    fn get_node(&self, tab: TabId, node: NodeId) -> Result<Element, wasmtime::Error> {
+    fn get_node(&self, node: NodeId) -> Result<Element, wasmtime::Error> {
         Element::new(
             self.tabs
-                .get(tab.id as usize)
+                .get(node.tab.id as usize)
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("Tab not found"))?,
             node.id,
@@ -77,29 +82,32 @@ impl Browser {
     pub fn find(&mut self, tab: TabId, selector: &str) -> Result<NodeId, wasmtime::Error> {
         let element = self.get_tab(tab)?.wait_for_element(selector)?.node_id;
 
-        Ok(NodeId { id: element })
+        Ok(NodeId {
+            tab: tab,
+            id: element,
+        })
     }
 
-    pub fn get_text(&mut self, tab: TabId, id: NodeId) -> Result<String, wasmtime::Error> {
-        let element = self.get_node(tab, id)?;
+    pub fn get_text(&mut self, id: NodeId) -> Result<String, wasmtime::Error> {
+        let element = self.get_node(id)?;
         let text = element.get_inner_text()?;
         Ok(text)
     }
 
-    pub fn click(&mut self, tab: TabId, id: NodeId) -> Result<(), wasmtime::Error> {
-        let element = self.get_node(tab, id)?;
+    pub fn click(&mut self, id: NodeId) -> Result<(), wasmtime::Error> {
+        let element = self.get_node(id)?;
         element.click()?;
         Ok(())
     }
 
-    pub fn send_keys(&mut self, tab: TabId, id: NodeId, keys: &str) -> Result<(), wasmtime::Error> {
-        let element = self.get_node(tab, id)?;
+    pub fn send_keys(&mut self, id: NodeId, keys: &str) -> Result<(), wasmtime::Error> {
+        let element = self.get_node(id)?;
         element.type_into(keys)?;
         Ok(())
     }
 
-    pub fn outer_html(&mut self, tab: TabId, id: NodeId) -> Result<String, wasmtime::Error> {
-        let element = self.get_node(tab, id)?;
+    pub fn outer_html(&mut self, id: NodeId) -> Result<String, wasmtime::Error> {
+        let element = self.get_node(id)?;
         let html = element.get_content()?;
         Ok(html)
     }
@@ -114,23 +122,21 @@ impl Browser {
         Ok(bytes)
     }
 
-    pub fn screenshot_of_id(&mut self, tab: TabId, id: NodeId) -> Result<Vec<u8>, wasmtime::Error> {
-        let element = self.get_node(tab, id)?;
+    pub fn screenshot_of_id(&mut self, id: NodeId) -> Result<Vec<u8>, wasmtime::Error> {
+        let element = self.get_node(id)?;
         let bytes = element.capture_screenshot(
             headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Jpeg,
         )?;
         Ok(bytes)
     }
 
-    pub fn find_child(
-        &mut self,
-        tab: TabId,
-        id: NodeId,
-        selector: &str,
-    ) -> Result<NodeId, wasmtime::Error> {
-        let element = self.get_node(tab, id)?;
+    pub fn find_child(&mut self, id: NodeId, selector: &str) -> Result<NodeId, wasmtime::Error> {
+        let element = self.get_node(id)?;
         let child = element.find_element(selector)?;
-        Ok(NodeId { id: child.node_id })
+        Ok(NodeId {
+            tab: id.tab,
+            id: child.node_id,
+        })
     }
 }
 

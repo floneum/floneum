@@ -54,6 +54,10 @@ members = [
     "plugins/if_statement",
     "plugins/contains",
     "plugins/python",
+    "plugins/create_tab",
+    "plugins/find_node",
+    "plugins/click_node",
+    "plugins/node_text",
 ]
 
 # Config for 'cargo dist'

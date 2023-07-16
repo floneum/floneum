@@ -2217,7 +2217,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "floneum_click_node"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+]
+
+[[package]]
 name = "floneum_contains"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+]
+
+[[package]]
+name = "floneum_create_tab"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
@@ -2232,6 +2246,13 @@ dependencies = [
 
 [[package]]
 name = "floneum_embedding_db"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+]
+
+[[package]]
+name = "floneum_find_node"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
@@ -2262,6 +2283,13 @@ dependencies = [
 
 [[package]]
 name = "floneum_if"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+]
+
+[[package]]
+name = "floneum_node_text"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
@@ -2313,6 +2341,7 @@ name = "floneum_rust"
 version = "0.1.0"
 dependencies = [
  "floneum_rust_macro",
+ "image",
  "wit-bindgen",
 ]
 

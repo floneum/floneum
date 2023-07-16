@@ -21,23 +21,25 @@ interface imports {
 
   new-tab: func(headless: bool) -> tab-id
 
+  remove-tab: func(tab: tab-id)
+
   browse-to: func(tab: tab-id, url: string)
 
   find-in-current-page: func(tab: tab-id, selector: string) -> node-id
 
-  get-element-text: func(tab: tab-id, id: node-id) -> string
+  get-element-text: func(id: node-id) -> string
 
-  click-element: func(tab: tab-id, id: node-id)
+  click-element: func(id: node-id)
 
-  type-into-element: func(tab: tab-id, id: node-id, keys: string)
+  type-into-element: func(id: node-id, keys: string)
 
-  get-element-outer-html: func(tab: tab-id, id: node-id) -> string
+  get-element-outer-html: func(id: node-id) -> string
 
-  screenshot-browser: func(tab: tab-id, ) -> list<u8>
+  screenshot-browser: func(tab: tab-id) -> list<u8>
 
-  screenshot-element: func(tab: tab-id, element: node-id) -> list<u8>
+  screenshot-element: func(id: node-id) -> list<u8>
 
-  find-child-of-element: func(tab: tab-id, id: node-id, selector: string) -> node-id
+  find-child-of-element: func(id: node-id, selector: string) -> node-id
 
   get-request: func(url: string, headers: list<header>) -> string
 
@@ -103,6 +105,7 @@ interface types {
 
   record node-id {
     id: u32,
+    tab: tab-id,
   }
 
   record tab-id {
@@ -116,7 +119,7 @@ interface types {
 }
 
 interface definitions {
-  use types.{embedding, model-id, embedding-db-id, model-type}
+  use types.{embedding, model-id, embedding-db-id, model-type, tab-id, node-id}
 
   record definition {
     name: string,
@@ -148,7 +151,9 @@ interface definitions {
     number(s64),
     text(string),
     embedding(embedding),
-    boolean(bool)
+    boolean(bool),
+    tab(tab-id),
+    node(node-id),
   }
 
   variant value-type {
@@ -164,6 +169,8 @@ interface definitions {
     model,
     model-type,
     boolean,
+    tab,
+    node,
     any
   }
 

@@ -350,13 +350,24 @@ impl Host for State {
             .infer_validate(id, input, max_tokens, structure))
     }
 
-    async fn new_tab(&mut self, headless: bool) -> std::result::Result<TabId, wasmtime::Error> {
+    async fn new_tab(
+        &mut self,
+        headless: bool,
+    ) -> std::result::Result<crate::plugins::main::imports::TabId, wasmtime::Error> {
         self.browser_mut()?.new_tab(headless)
+    }
+
+    async fn remove_tab(
+        &mut self,
+        tab: crate::plugins::main::imports::TabId,
+    ) -> std::result::Result<(), wasmtime::Error> {
+        self.browser_mut()?.remove_tab(tab);
+        Ok(())
     }
 
     async fn browse_to(
         &mut self,
-        tab: TabId,
+        tab: crate::plugins::main::imports::TabId,
         url: String,
     ) -> std::result::Result<(), wasmtime::Error> {
         self.browser_mut()?.goto(tab, &url)?;
@@ -365,67 +376,61 @@ impl Host for State {
 
     async fn find_in_current_page(
         &mut self,
-        tab: TabId,
+        tab: crate::plugins::main::imports::TabId,
         query: String,
-    ) -> std::result::Result<NodeId, wasmtime::Error> {
+    ) -> std::result::Result<crate::plugins::main::imports::NodeId, wasmtime::Error> {
         Ok(self.browser_mut()?.find(tab, &query)?)
     }
 
     async fn get_element_text(
         &mut self,
-        tab: TabId,
-        id: NodeId,
+        id: crate::plugins::main::imports::NodeId,
     ) -> std::result::Result<String, wasmtime::Error> {
-        Ok(self.browser_mut()?.get_text(tab, id)?)
+        Ok(self.browser_mut()?.get_text(id)?)
     }
 
     async fn click_element(
         &mut self,
-        tab: TabId,
-        id: NodeId,
+        id: crate::plugins::main::imports::NodeId,
     ) -> std::result::Result<(), wasmtime::Error> {
-        Ok(self.browser_mut()?.click(tab, id)?)
+        Ok(self.browser_mut()?.click(id)?)
     }
 
     async fn type_into_element(
         &mut self,
-        tab: TabId,
-        id: NodeId,
+        id: crate::plugins::main::imports::NodeId,
         keys: String,
     ) -> std::result::Result<(), wasmtime::Error> {
-        Ok(self.browser_mut()?.send_keys(tab, id, &keys)?)
+        Ok(self.browser_mut()?.send_keys(id, &keys)?)
     }
 
     async fn get_element_outer_html(
         &mut self,
-        tab: TabId,
-        id: NodeId,
+        id: crate::plugins::main::imports::NodeId,
     ) -> std::result::Result<String, wasmtime::Error> {
-        Ok(self.browser_mut()?.outer_html(tab, id)?)
+        Ok(self.browser_mut()?.outer_html(id)?)
     }
 
     async fn screenshot_browser(
         &mut self,
-        tab: TabId,
+        tab: crate::plugins::main::imports::TabId,
     ) -> std::result::Result<Vec<u8>, wasmtime::Error> {
         Ok(self.browser_mut()?.screenshot(tab)?)
     }
 
     async fn screenshot_element(
         &mut self,
-        tab: TabId,
-        id: NodeId,
+        id: crate::plugins::main::imports::NodeId,
     ) -> std::result::Result<Vec<u8>, wasmtime::Error> {
-        Ok(self.browser_mut()?.screenshot_of_id(tab, id)?)
+        Ok(self.browser_mut()?.screenshot_of_id(id)?)
     }
 
     async fn find_child_of_element(
         &mut self,
-        tab: TabId,
-        id: NodeId,
+        id: crate::plugins::main::imports::NodeId,
         query: String,
-    ) -> std::result::Result<NodeId, wasmtime::Error> {
-        Ok(self.browser_mut()?.find_child(tab, id, &query)?)
+    ) -> std::result::Result<crate::plugins::main::imports::NodeId, wasmtime::Error> {
+        Ok(self.browser_mut()?.find_child(id, &query)?)
     }
 }
 
