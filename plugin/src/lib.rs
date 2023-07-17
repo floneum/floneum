@@ -10,7 +10,7 @@ use std::path::Path;
 use std::sync::{Arc, RwLock};
 use wasmtime::component::__internal::async_trait;
 use wasmtime_wasi::preview2::{self, DirPerms, FilePerms, WasiView};
-use wasmtime_wasi::Dir;
+use wasmtime_wasi::{Dir};
 
 use crate::plugins::main::imports::*;
 use exports::plugins::main::definitions::*;
@@ -439,7 +439,7 @@ pub struct PluginEngine {}
 
 impl PluginEngine {
     pub async fn load_plugin(&mut self, path: &Path) -> Plugin {
-        println!("loading plugin");
+        println!("loading plugin {path:?}");
 
         // we first read the bytes of the wasm module.
         let module = std::fs::read(path).unwrap();

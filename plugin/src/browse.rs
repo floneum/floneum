@@ -145,9 +145,9 @@ fn browse() {
     let mut browser = Browser::new().unwrap();
     let tab = browser.new_tab(true).unwrap();
     browser
-        .goto(tab, "https://www.rust-lang.org/learn")
+        .goto( tab,"https://www.rust-lang.org/learn")
         .unwrap();
-    let id = browser.find(tab, "h1").unwrap();
-    let text = browser.get_text(tab, id).unwrap();
+    let id = browser.find(tab,"h1").unwrap();
+    let text = browser.get_text( id).unwrap();
     assert_eq!(text, "Learn Rust");
 }

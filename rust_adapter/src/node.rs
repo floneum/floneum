@@ -37,6 +37,10 @@ impl Node {
     pub fn text(&self) -> String {
         crate::plugins::main::imports::get_element_text(self.id)
     }
+
+    pub fn type_text(&self, text: &str) {
+        crate::plugins::main::imports::type_into_element(self.id, text);
+    }
 }
 
 impl IntoPrimitiveValue for Node {

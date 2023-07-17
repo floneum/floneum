@@ -18,6 +18,13 @@ async fn main() {
         "write_to_file",
         "read_from_file",
         "python",
+        "create_tab",
+        "find_node",
+        "find_child_node",
+        "click_node",
+        "node_text",
+        "type_in_node",
+        "navigate_to",
     ];
     // build the plugins
     for plugin in plugins {
