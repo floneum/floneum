@@ -10,7 +10,7 @@ use std::path::Path;
 use std::sync::{Arc, RwLock};
 use wasmtime::component::__internal::async_trait;
 use wasmtime_wasi::preview2::{self, DirPerms, FilePerms, WasiView};
-use wasmtime_wasi::{Dir};
+use wasmtime_wasi::Dir;
 
 use crate::plugins::main::imports::*;
 use exports::plugins::main::definitions::*;
@@ -65,6 +65,7 @@ static MULTI_PLUGIN_STATE: Lazy<RwLock<MultiPluginState>> = Lazy::new(Default::d
 #[derive(Default)]
 struct MultiPluginState {
     vector_dbs: Slab<VectorDB<String>>,
+    browser: browse::Browser,
 }
 
 impl MultiPluginState {
@@ -100,7 +101,6 @@ impl MultiPluginState {
 pub struct State {
     sessions: InferenceSessions,
     structures: Slab<Structure>,
-    browser: Option<browse::Browser>,
     table: preview2::Table,
     ctx: preview2::WasiCtx,
 }
@@ -126,7 +126,6 @@ impl Default for State {
         State {
             sessions: InferenceSessions::default(),
             structures: Slab::new(),
-            browser: None,
             table,
             ctx,
         }
@@ -152,14 +151,6 @@ impl WasiView for State {
 }
 
 impl State {
-    fn browser_mut(&mut self) -> Result<&mut browse::Browser, wasmtime::Error> {
-        if !self.browser.is_some() {
-            let browser = browse::Browser::new()?;
-            self.browser = Some(browser);
-        }
-        Ok(self.browser.as_mut().unwrap())
-    }
-
     fn decode_structure(&self, id: StructureId) -> StructureParser {
         match &self.structures[id.id as usize] {
             Structure::Literal(text) => StructureParser::Literal(text.clone()),
@@ -354,14 +345,22 @@ impl Host for State {
         &mut self,
         headless: bool,
     ) -> std::result::Result<crate::plugins::main::imports::TabId, wasmtime::Error> {
-        self.browser_mut()?.new_tab(headless)
+        MULTI_PLUGIN_STATE
+            .write()
+            .map_err(|e| wasmtime::Error::msg(format!("Failed to lock state: {}", e)))?
+            .browser
+            .new_tab(headless)
     }
 
     async fn remove_tab(
         &mut self,
         tab: crate::plugins::main::imports::TabId,
     ) -> std::result::Result<(), wasmtime::Error> {
-        self.browser_mut()?.remove_tab(tab);
+        MULTI_PLUGIN_STATE
+            .write()
+            .map_err(|e| wasmtime::Error::msg(format!("Failed to lock state: {}", e)))?
+            .browser
+            .remove_tab(tab);
         Ok(())
     }
 
@@ -370,7 +369,11 @@ impl Host for State {
         tab: crate::plugins::main::imports::TabId,
         url: String,
     ) -> std::result::Result<(), wasmtime::Error> {
-        self.browser_mut()?.goto(tab, &url)?;
+        MULTI_PLUGIN_STATE
+            .write()
+            .map_err(|e| wasmtime::Error::msg(format!("Failed to lock state: {}", e)))?
+            .browser
+            .goto(tab, &url)?;
         Ok(())
     }
 
@@ -379,21 +382,33 @@ impl Host for State {
         tab: crate::plugins::main::imports::TabId,
         query: String,
     ) -> std::result::Result<crate::plugins::main::imports::NodeId, wasmtime::Error> {
-        Ok(self.browser_mut()?.find(tab, &query)?)
+        Ok(MULTI_PLUGIN_STATE
+            .write()
+            .map_err(|e| wasmtime::Error::msg(format!("Failed to lock state: {}", e)))?
+            .browser
+            .find(tab, &query)?)
     }
 
     async fn get_element_text(
         &mut self,
         id: crate::plugins::main::imports::NodeId,
     ) -> std::result::Result<String, wasmtime::Error> {
-        Ok(self.browser_mut()?.get_text(id)?)
+        Ok(MULTI_PLUGIN_STATE
+            .write()
+            .map_err(|e| wasmtime::Error::msg(format!("Failed to lock state: {}", e)))?
+            .browser
+            .get_text(id)?)
     }
 
     async fn click_element(
         &mut self,
         id: crate::plugins::main::imports::NodeId,
     ) -> std::result::Result<(), wasmtime::Error> {
-        Ok(self.browser_mut()?.click(id)?)
+        Ok(MULTI_PLUGIN_STATE
+            .write()
+            .map_err(|e| wasmtime::Error::msg(format!("Failed to lock state: {}", e)))?
+            .browser
+            .click(id)?)
     }
 
     async fn type_into_element(
@@ -401,28 +416,44 @@ impl Host for State {
         id: crate::plugins::main::imports::NodeId,
         keys: String,
     ) -> std::result::Result<(), wasmtime::Error> {
-        Ok(self.browser_mut()?.send_keys(id, &keys)?)
+        Ok(MULTI_PLUGIN_STATE
+            .write()
+            .map_err(|e| wasmtime::Error::msg(format!("Failed to lock state: {}", e)))?
+            .browser
+            .send_keys(id, &keys)?)
     }
 
     async fn get_element_outer_html(
         &mut self,
         id: crate::plugins::main::imports::NodeId,
     ) -> std::result::Result<String, wasmtime::Error> {
-        Ok(self.browser_mut()?.outer_html(id)?)
+        Ok(MULTI_PLUGIN_STATE
+            .write()
+            .map_err(|e| wasmtime::Error::msg(format!("Failed to lock state: {}", e)))?
+            .browser
+            .outer_html(id)?)
     }
 
     async fn screenshot_browser(
         &mut self,
         tab: crate::plugins::main::imports::TabId,
     ) -> std::result::Result<Vec<u8>, wasmtime::Error> {
-        Ok(self.browser_mut()?.screenshot(tab)?)
+        Ok(MULTI_PLUGIN_STATE
+            .write()
+            .map_err(|e| wasmtime::Error::msg(format!("Failed to lock state: {}", e)))?
+            .browser
+            .screenshot(tab)?)
     }
 
     async fn screenshot_element(
         &mut self,
         id: crate::plugins::main::imports::NodeId,
     ) -> std::result::Result<Vec<u8>, wasmtime::Error> {
-        Ok(self.browser_mut()?.screenshot_of_id(id)?)
+        Ok(MULTI_PLUGIN_STATE
+            .write()
+            .map_err(|e| wasmtime::Error::msg(format!("Failed to lock state: {}", e)))?
+            .browser
+            .screenshot_of_id(id)?)
     }
 
     async fn find_child_of_element(
@@ -430,7 +461,11 @@ impl Host for State {
         id: crate::plugins::main::imports::NodeId,
         query: String,
     ) -> std::result::Result<crate::plugins::main::imports::NodeId, wasmtime::Error> {
-        Ok(self.browser_mut()?.find_child(id, &query)?)
+        Ok(MULTI_PLUGIN_STATE
+            .write()
+            .map_err(|e| wasmtime::Error::msg(format!("Failed to lock state: {}", e)))?
+            .browser
+            .find_child(id, &query)?)
     }
 }
 

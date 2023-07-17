@@ -1,6 +1,6 @@
 use crate::plugins::main::imports::{NodeId, TabId};
 use headless_chrome::{Browser as HeadlessBrowser, Element, LaunchOptions};
-use once_cell::unsync::Lazy;
+use once_cell::sync::Lazy;
 use slab::Slab;
 use std::sync::Arc;
 
@@ -8,6 +8,12 @@ pub struct Browser {
     headless_client: Lazy<Result<HeadlessBrowser, String>>,
     headfull_client: Lazy<Result<HeadlessBrowser, String>>,
     tabs: Slab<Arc<headless_chrome::Tab>>,
+}
+
+impl Default for Browser {
+    fn default() -> Self {
+        Self::new().unwrap()
+    }
 }
 
 impl Browser {
@@ -73,10 +79,24 @@ impl Browser {
     }
 
     pub fn goto(&mut self, tab: TabId, url: &str) -> Result<(), wasmtime::Error> {
-        self.get_tab(tab)?
-            .navigate_to(url)?
-            .wait_until_navigated()?;
-        Ok(())
+        pub fn goto_inner(
+            browser: &mut Browser,
+            tab: TabId,
+            url: &str,
+        ) -> Result<(), wasmtime::Error> {
+            browser
+                .get_tab(tab)?
+                .navigate_to(url)?
+                .wait_until_navigated()?;
+            Ok(())
+        }
+        match goto_inner(self, tab, url){
+            Ok(()) => Ok(()),
+            Err(err) => {
+                log::error!("Error: {:?}", err);
+                Err(err)
+            }
+        }
     }
 
     pub fn find(&mut self, tab: TabId, selector: &str) -> Result<NodeId, wasmtime::Error> {
@@ -145,9 +165,9 @@ fn browse() {
     let mut browser = Browser::new().unwrap();
     let tab = browser.new_tab(true).unwrap();
     browser
-        .goto( tab,"https://www.rust-lang.org/learn")
+        .goto(tab, "https://www.rust-lang.org/learn")
         .unwrap();
-    let id = browser.find(tab,"h1").unwrap();
-    let text = browser.get_text( id).unwrap();
+    let id = browser.find(tab, "h1").unwrap();
+    let text = browser.get_text(id).unwrap();
     assert_eq!(text, "Learn Rust");
 }

@@ -73,3 +73,9 @@ lto = true
 debug = false
 opt-level = 'z'
 codegen-units = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.dev.package.floneum_plugin]
+opt-level = 1
