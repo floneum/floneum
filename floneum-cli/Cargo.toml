@@ -12,3 +12,7 @@ floneum_plugin = { path = "../plugin" }
 tokio = { version = "1.29.1", features = ["full"] }
 cargo-manifest = "0.9.0"
 toml = "0.7.5"
+
+[[bin]]
+path = "src/main.rs"
+name = "floneum"

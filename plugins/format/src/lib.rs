@@ -1,4 +1,4 @@
-use floneum_rust::{plugins::main::imports::log_to_user, *};
+use floneum_rust::*;
 
 #[export_plugin]
 /// Formats some text by replacing any instances of {} in order with the texts passed in.
@@ -15,7 +15,6 @@ fn format(
     /// The inputs to the template
     input: Vec<String>,
 ) -> String {
-    log_to_user(&format!("template: {}", template));
     let mut input = input;
     let mut new_text = String::new();
     for section in template.split("{}") {

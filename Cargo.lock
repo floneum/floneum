@@ -2280,6 +2280,7 @@ name = "floneum_format"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "log",
 ]
 
 [[package]]
