@@ -140,6 +140,12 @@ fn download_url(ty: ModelType) -> &'static str {
         ModelType::Llama(LlamaType::Wizardlm) => {
             "https://huggingface.co/TehVenom/WizardLM-13B-Uncensored-Q5_1-GGML/blob/main/WizardML-Unc-13b-Q5_1.bin"
         }
+        ModelType::Llama(LlamaType::LlamaSevenChat) => {
+            "https://huggingface.co/localmodels/Llama-2-7B-Chat-ggml/resolve/main/llama-2-7b-chat.ggmlv3.q8_0.bin"
+        }
+        ModelType::Llama(LlamaType::LlamaThirteenChat) => {
+            "https://huggingface.co/localmodels/Llama-2-13B-Chat-ggml/resolve/main/llama-2-13b-chat.ggmlv3.q8_0.bin"
+        }
         ModelType::GptNeoX(GptNeoXType::Stablelm) => {
             "https://huggingface.co/cakewalk/ggml-q4_0-stablelm-tuned-alpha-7b/resolve/main/ggml-model-stablelm-tuned-alpha-7b-q4_0.bin"
         }
