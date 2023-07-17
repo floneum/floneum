@@ -8,6 +8,10 @@ fn navigate_to(
     /// The URL to navigate to
     url: String,
 ) -> Tab {
-    tab.goto(&url);
+    if url.starts_with("http://") || url.starts_with("https://") {
+        tab.goto(&url);
+    } else {
+        tab.goto(&format!("http://{}", url));
+    }
     tab
 }
