@@ -1,41 +1,91 @@
-use crate::NodeId;
+use crate::plugins::main::imports::{NodeId, TabId};
 use headless_chrome::{Browser as HeadlessBrowser, Element, LaunchOptions};
+use once_cell::unsync::Lazy;
+use slab::Slab;
 use std::sync::Arc;
 
 pub struct Browser {
-    #[allow(unused)]
-    client: HeadlessBrowser,
-    tab: Arc<headless_chrome::Tab>,
+    headless_client: Lazy<Result<HeadlessBrowser, String>>,
+    headfull_client: Lazy<Result<HeadlessBrowser, String>>,
+    tabs: Slab<Arc<headless_chrome::Tab>>,
 }
 
 impl Browser {
     pub fn new() -> wasmtime::Result<Self> {
-        let browser = HeadlessBrowser::new(
-            LaunchOptions::default_builder()
-                .build()
-                .expect("Could not find chrome-executable"),
-        )?;
-        let tab = browser.new_tab()?;
-
         Ok(Self {
-            tab,
-            client: browser,
+            tabs: Slab::new(),
+            headless_client: Lazy::new(|| {
+                let browser = HeadlessBrowser::new(
+                    LaunchOptions::default_builder()
+                        .headless(true)
+                        .build()
+                        .expect("Could not find chrome-executable"),
+                )
+                .map_err(|err| err.to_string())?;
+                Ok(browser)
+            }),
+            headfull_client: Lazy::new(|| {
+                let browser = HeadlessBrowser::new(
+                    LaunchOptions::default_builder()
+                        .headless(false)
+                        .build()
+                        .expect("Could not find chrome-executable"),
+                )
+                .map_err(|err| err.to_string())?;
+                Ok(browser)
+            }),
         })
     }
 
-    fn get_node(&self, node: NodeId) -> Result<Element, wasmtime::Error> {
-        Element::new(&self.tab, node.id)
+    pub fn new_tab(&mut self, headless: bool) -> Result<TabId, wasmtime::Error> {
+        let client = if headless {
+            &self.headless_client
+        } else {
+            &self.headfull_client
+        };
+        let browser = client.as_ref().map_err(|err| anyhow::anyhow!("{}", err))?;
+        let tab = browser.new_tab()?;
+        let id = self.tabs.insert(tab);
+        Ok(TabId { id: id as u32 })
     }
 
-    pub fn goto(&mut self, url: &str) -> Result<(), wasmtime::Error> {
-        self.tab.navigate_to(url)?.wait_until_navigated()?;
+    pub fn remove_tab(&mut self, tab: TabId) {
+        let tab = self.tabs.remove(tab.id as usize);
+        tab.close(true).unwrap();
+    }
+
+    pub fn get_tab(&self, tab: TabId) -> Result<Arc<headless_chrome::Tab>, wasmtime::Error> {
+        let tab = self
+            .tabs
+            .get(tab.id as usize)
+            .ok_or_else(|| anyhow::anyhow!("Tab not found"))?;
+        Ok(tab.clone())
+    }
+
+    fn get_node(&self, node: NodeId) -> Result<Element, wasmtime::Error> {
+        Element::new(
+            self.tabs
+                .get(node.tab.id as usize)
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Tab not found"))?,
+            node.id,
+        )
+    }
+
+    pub fn goto(&mut self, tab: TabId, url: &str) -> Result<(), wasmtime::Error> {
+        self.get_tab(tab)?
+            .navigate_to(url)?
+            .wait_until_navigated()?;
         Ok(())
     }
 
-    pub fn find(&mut self, selector: &str) -> Result<NodeId, wasmtime::Error> {
-        let element = self.tab.wait_for_element(selector)?.node_id;
+    pub fn find(&mut self, tab: TabId, selector: &str) -> Result<NodeId, wasmtime::Error> {
+        let element = self.get_tab(tab)?.wait_for_element(selector)?.node_id;
 
-        Ok(NodeId { id: element })
+        Ok(NodeId {
+            tab: tab,
+            id: element,
+        })
     }
 
     pub fn get_text(&mut self, id: NodeId) -> Result<String, wasmtime::Error> {
@@ -62,8 +112,8 @@ impl Browser {
         Ok(html)
     }
 
-    pub fn screenshot(&mut self) -> Result<Vec<u8>, wasmtime::Error> {
-        let bytes = self.tab.capture_screenshot(
+    pub fn screenshot(&mut self, tab: TabId) -> Result<Vec<u8>, wasmtime::Error> {
+        let bytes = self.get_tab(tab)?.capture_screenshot(
             headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Jpeg,
             None,
             None,
@@ -83,15 +133,21 @@ impl Browser {
     pub fn find_child(&mut self, id: NodeId, selector: &str) -> Result<NodeId, wasmtime::Error> {
         let element = self.get_node(id)?;
         let child = element.find_element(selector)?;
-        Ok(NodeId { id: child.node_id })
+        Ok(NodeId {
+            tab: id.tab,
+            id: child.node_id,
+        })
     }
 }
 
 #[test]
 fn browse() {
     let mut browser = Browser::new().unwrap();
-    browser.goto("https://www.rust-lang.org/learn").unwrap();
-    let id = browser.find("h1").unwrap();
-    let text = browser.get_text(id).unwrap();
+    let tab = browser.new_tab(true).unwrap();
+    browser
+        .goto( tab,"https://www.rust-lang.org/learn")
+        .unwrap();
+    let id = browser.find(tab,"h1").unwrap();
+    let text = browser.get_text( id).unwrap();
     assert_eq!(text, "Learn Rust");
 }

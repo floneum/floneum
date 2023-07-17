@@ -1,7 +1,7 @@
 package plugins:main
 
 interface imports {
-  use types.{embedding, structure, structure-id, model-id, model-type, embedding-db-id, node-id}
+  use types.{embedding, structure, structure-id, model-id, model-type, embedding-db-id, node-id, tab-id}
 
   load-model: func(ty: model-type) -> model-id
   unload-model: func(id: model-id)
@@ -19,9 +19,13 @@ interface imports {
   create-structure: func(structure: structure) -> structure-id
   remove-structure: func(id: structure-id)
 
-  browse-to: func(url: string)
+  new-tab: func(headless: bool) -> tab-id
 
-  find-in-current-page: func(selector: string) -> node-id
+  remove-tab: func(tab: tab-id)
+
+  browse-to: func(tab: tab-id, url: string)
+
+  find-in-current-page: func(tab: tab-id, selector: string) -> node-id
 
   get-element-text: func(id: node-id) -> string
 
@@ -31,9 +35,9 @@ interface imports {
 
   get-element-outer-html: func(id: node-id) -> string
 
-  screenshot-browser: func() -> list<u8>
+  screenshot-browser: func(tab: tab-id) -> list<u8>
 
-  screenshot-element: func(element: node-id) -> list<u8>
+  screenshot-element: func(id: node-id) -> list<u8>
 
   find-child-of-element: func(id: node-id, selector: string) -> node-id
 
@@ -101,6 +105,11 @@ interface types {
 
   record node-id {
     id: u32,
+    tab: tab-id,
+  }
+
+  record tab-id {
+    id: u32,
   }
 
   variant model-type { MPT(mpt-type), gpt-neo-x(gpt-neo-x-type), llama(llama-type) }
@@ -110,7 +119,7 @@ interface types {
 }
 
 interface definitions {
-  use types.{embedding, model-id, embedding-db-id, model-type}
+  use types.{embedding, model-id, embedding-db-id, model-type, tab-id, node-id}
 
   record definition {
     name: string,
@@ -142,7 +151,9 @@ interface definitions {
     number(s64),
     text(string),
     embedding(embedding),
-    boolean(bool)
+    boolean(bool),
+    tab(tab-id),
+    node(node-id),
   }
 
   variant value-type {
@@ -158,6 +169,8 @@ interface definitions {
     model,
     model-type,
     boolean,
+    tab,
+    node,
     any
   }
 

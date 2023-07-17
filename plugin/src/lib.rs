@@ -10,7 +10,7 @@ use std::path::Path;
 use std::sync::{Arc, RwLock};
 use wasmtime::component::__internal::async_trait;
 use wasmtime_wasi::preview2::{self, DirPerms, FilePerms, WasiView};
-use wasmtime_wasi::Dir;
+use wasmtime_wasi::{Dir};
 
 use crate::plugins::main::imports::*;
 use exports::plugins::main::definitions::*;
@@ -350,32 +350,55 @@ impl Host for State {
             .infer_validate(id, input, max_tokens, structure))
     }
 
-    async fn browse_to(&mut self, url: String) -> std::result::Result<(), wasmtime::Error> {
-        self.browser_mut()?.goto(&url)?;
+    async fn new_tab(
+        &mut self,
+        headless: bool,
+    ) -> std::result::Result<crate::plugins::main::imports::TabId, wasmtime::Error> {
+        self.browser_mut()?.new_tab(headless)
+    }
+
+    async fn remove_tab(
+        &mut self,
+        tab: crate::plugins::main::imports::TabId,
+    ) -> std::result::Result<(), wasmtime::Error> {
+        self.browser_mut()?.remove_tab(tab);
+        Ok(())
+    }
+
+    async fn browse_to(
+        &mut self,
+        tab: crate::plugins::main::imports::TabId,
+        url: String,
+    ) -> std::result::Result<(), wasmtime::Error> {
+        self.browser_mut()?.goto(tab, &url)?;
         Ok(())
     }
 
     async fn find_in_current_page(
         &mut self,
+        tab: crate::plugins::main::imports::TabId,
         query: String,
-    ) -> std::result::Result<NodeId, wasmtime::Error> {
-        Ok(self.browser_mut()?.find(&query)?)
+    ) -> std::result::Result<crate::plugins::main::imports::NodeId, wasmtime::Error> {
+        Ok(self.browser_mut()?.find(tab, &query)?)
     }
 
     async fn get_element_text(
         &mut self,
-        id: NodeId,
+        id: crate::plugins::main::imports::NodeId,
     ) -> std::result::Result<String, wasmtime::Error> {
         Ok(self.browser_mut()?.get_text(id)?)
     }
 
-    async fn click_element(&mut self, id: NodeId) -> std::result::Result<(), wasmtime::Error> {
+    async fn click_element(
+        &mut self,
+        id: crate::plugins::main::imports::NodeId,
+    ) -> std::result::Result<(), wasmtime::Error> {
         Ok(self.browser_mut()?.click(id)?)
     }
 
     async fn type_into_element(
         &mut self,
-        id: NodeId,
+        id: crate::plugins::main::imports::NodeId,
         keys: String,
     ) -> std::result::Result<(), wasmtime::Error> {
         Ok(self.browser_mut()?.send_keys(id, &keys)?)
@@ -383,27 +406,30 @@ impl Host for State {
 
     async fn get_element_outer_html(
         &mut self,
-        id: NodeId,
+        id: crate::plugins::main::imports::NodeId,
     ) -> std::result::Result<String, wasmtime::Error> {
         Ok(self.browser_mut()?.outer_html(id)?)
     }
 
-    async fn screenshot_browser(&mut self) -> std::result::Result<Vec<u8>, wasmtime::Error> {
-        Ok(self.browser_mut()?.screenshot()?)
+    async fn screenshot_browser(
+        &mut self,
+        tab: crate::plugins::main::imports::TabId,
+    ) -> std::result::Result<Vec<u8>, wasmtime::Error> {
+        Ok(self.browser_mut()?.screenshot(tab)?)
     }
 
     async fn screenshot_element(
         &mut self,
-        id: NodeId,
+        id: crate::plugins::main::imports::NodeId,
     ) -> std::result::Result<Vec<u8>, wasmtime::Error> {
         Ok(self.browser_mut()?.screenshot_of_id(id)?)
     }
 
     async fn find_child_of_element(
         &mut self,
-        id: NodeId,
+        id: crate::plugins::main::imports::NodeId,
         query: String,
-    ) -> std::result::Result<NodeId, wasmtime::Error> {
+    ) -> std::result::Result<crate::plugins::main::imports::NodeId, wasmtime::Error> {
         Ok(self.browser_mut()?.find_child(id, &query)?)
     }
 }
@@ -413,7 +439,7 @@ pub struct PluginEngine {}
 
 impl PluginEngine {
     pub async fn load_plugin(&mut self, path: &Path) -> Plugin {
-        println!("loading plugin");
+        println!("loading plugin {path:?}");
 
         // we first read the bytes of the wasm module.
         let module = std::fs::read(path).unwrap();

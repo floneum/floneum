@@ -31,7 +31,7 @@ toml = "0.7.5"
 pollster = "0.3.0"
 cargo-dist = "0.0.7"
 once_cell = "1.18.0"
-wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", rev = "2d34b4657aa5290948da9a07cb31764a12c12994", features = ['component-model'] }
+wasmtime = { version = "10", features = ['component-model'] }
 yazi = "0.1.6"
 
 [workspace]
@@ -54,6 +54,13 @@ members = [
     "plugins/if_statement",
     "plugins/contains",
     "plugins/python",
+    "plugins/create_tab",
+    "plugins/find_node",
+    "plugins/click_node",
+    "plugins/node_text",
+    "plugins/type_in_node",
+    "plugins/navigate_to",
+    "plugins/find_child_node",
 ]
 
 # Config for 'cargo dist'
@@ -73,3 +80,10 @@ installers = []
 [profile.dist]
 inherits = "release"
 lto = "thin"
+
+[profile.release]
+lto = true
+debug = true
+opt-level = 'z'
+strip = true
+codegen-units = 1

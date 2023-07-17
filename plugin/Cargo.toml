@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", rev = "2d34b4657aa5290948da9a07cb31764a12c12994", features = ['component-model'] }
-wasmtime-wasi = { git = "https://github.com/bytecodealliance/wasmtime", rev = "2d34b4657aa5290948da9a07cb31764a12c12994", features = ['preview2'] }
+wasmtime = { version = "10", features = ['component-model'] }
+wasmtime-wasi = { version = "10", features = ['preview2'] }
 wit-component = "0.11.0"
 bytesize = "1.2.0"
 futures-util = "0.3.28"

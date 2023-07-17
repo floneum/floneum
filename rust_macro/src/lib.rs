@@ -193,6 +193,12 @@ impl IoDefinitionType {
             PrimitiveValueType::Boolean => quote! {
                 PrimitiveValue::Boolean(inner)
             },
+            PrimitiveValueType::Tab => quote! {
+                PrimitiveValue::Tab(inner)
+            },
+            PrimitiveValueType::Node => quote! {
+                PrimitiveValue::Node(inner)
+            },
             PrimitiveValueType::Any => quote! {
                 inner
             },
@@ -212,13 +218,13 @@ impl IoDefinitionType {
         let get_return_value = match &self.value_type {
             ValueType::Single(_) => {
                 quote! {
-                    inner.clone()
+                    inner.clone().into()
                 }
             }
             ValueType::Many(_) => {
                 quote! {
                     inner.iter().map(|inner| match inner {
-                        #match_inner => inner.clone(),
+                        #match_inner => inner.clone().into(),
                         _ => panic!("unexpected input type {:?}", inner),
                     }).collect()
                 }
@@ -261,6 +267,12 @@ impl ToTokens for IoDefinitionType {
             },
             PrimitiveValueType::Boolean => quote! {
                 floneum_rust::PrimitiveValueType::Boolean
+            },
+            PrimitiveValueType::Tab => quote! {
+                floneum_rust::PrimitiveValueType::Tab
+            },
+            PrimitiveValueType::Node => quote! {
+                floneum_rust::PrimitiveValueType::Node
             },
             PrimitiveValueType::Any => quote! {
                 floneum_rust::PrimitiveValueType::Any
@@ -359,8 +371,12 @@ fn parse_primitive_value_type(ident: &Ident) -> syn::Result<PrimitiveValueType> 
         Ok(PrimitiveValueType::Boolean)
     } else if ident == "PrimitiveValue" {
         Ok(PrimitiveValueType::Any)
+    } else if ident == "Tab" {
+        Ok(PrimitiveValueType::Tab)
+    } else if ident == "Node" {
+        Ok(PrimitiveValueType::Node)
     } else {
-        let error = format!("type {} not allowed. Inputs and outputs must be one of i64, String, ModelInstance, VectorDatabase", ident.to_token_stream());
+        let error = format!("type {} not allowed. Inputs and outputs must be one of i64, String, ModelInstance, EmbeddingDbId, Embedding, ModelType, bool, PrimitiveValue, Tab, Node", ident);
         Err(Error::new_spanned(ident, error))
     }
 }
