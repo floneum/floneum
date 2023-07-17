@@ -191,5 +191,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           draft: false
+          name: Nightly
+          target_commitish: ${{ github.sha }}
           files: "floneum-*"
-          tag_name: ${{ github.sha }}
