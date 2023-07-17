@@ -5,6 +5,7 @@ use floneum_rust::*;
 fn click_node(
     /// The node to click
     node: Node,
-) {
-    node.click()
+) -> Node {
+    node.click();
+    node
 }

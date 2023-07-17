@@ -7,6 +7,7 @@ fn type_in_node(
     node: Node,
     /// The text to type
     text: String,
-) {
-    node.type_text(&text)
+) -> Node {
+    node.type_text(&text);
+    node
 }

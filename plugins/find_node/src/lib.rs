@@ -7,6 +7,7 @@ fn find_node(
     tab: Tab,
     /// The selector to find the element with
     selector: String,
-) -> Node {
-    tab.wait_for_element(&selector)
+) -> Tab {
+    tab.wait_for_element(&selector);
+    tab
 }

@@ -7,6 +7,7 @@ fn navigate_to(
     tab: Tab,
     /// The URL to navigate to
     url: String,
-) {
-    Tab::new(false).goto(&url)
+) -> Tab {
+    tab.goto(&url);
+    tab
 }

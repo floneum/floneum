@@ -5,6 +5,6 @@ use floneum_rust::*;
 fn click_node(
     /// The node to extract the text from
     node: Node,
-) -> String {
-    node.text()
+) -> (String, Node) {
+    (node.text(), node)
 }
