@@ -373,6 +373,8 @@ fn parse_primitive_value_type(ident: &Ident) -> syn::Result<PrimitiveValueType> 
         Ok(PrimitiveValueType::Any)
     } else if ident == "Tab" {
         Ok(PrimitiveValueType::Tab)
+    } else if ident == "TabId" {
+        Ok(PrimitiveValueType::Tab)
     } else if ident == "Node" {
         Ok(PrimitiveValueType::Node)
     } else {

@@ -5,7 +5,7 @@ pub use crate::exports::plugins::main::definitions::{
     ValueType,
 };
 pub use crate::plugins::main::imports::{get_request, Header};
-pub use crate::plugins::main::types::{EmbeddingDbId, GptNeoXType, LlamaType, ModelType, MptType};
+pub use crate::plugins::main::types::{EmbeddingDbId, GptNeoXType, LlamaType, ModelType, MptType, TabId};
 pub use floneum_rust_macro::export_plugin;
 pub use plugins::main::types::Embedding;
 

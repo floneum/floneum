@@ -8,5 +8,5 @@ fn navigate_to(
     /// The URL to navigate to
     url: String,
 ) {
-    tab.goto(&url)
+    Tab::new(false).goto(&url)
 }

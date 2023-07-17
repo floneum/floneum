@@ -5,6 +5,6 @@ use floneum_rust::*;
 fn create_browser(
     /// If the tab should be opened in a headless browser.
     headless: bool,
-) -> Tab {
-    Tab::new(headless)
+) -> TabId {
+    Tab::new(headless).leak()
 }

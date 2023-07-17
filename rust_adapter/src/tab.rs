@@ -10,24 +10,33 @@ use image::DynamicImage;
 #[derive(Debug, Clone)]
 pub struct Tab {
     id: TabId,
+    drop: bool,
 }
 
 impl From<TabId> for Tab {
     fn from(id: TabId) -> Self {
-        Tab { id }
+        Tab { id, drop: false }
     }
 }
 
 impl Drop for Tab {
     fn drop(&mut self) {
-        remove_tab(self.id);
+        if self.drop {
+            remove_tab(self.id);
+        }
     }
 }
 
 impl Tab {
     pub fn new(headless: bool) -> Self {
         let id = new_tab(headless);
-        Tab { id }
+        Tab { id, drop: true }
+    }
+
+    pub fn leak(self) -> TabId {
+        let id = self.id;
+        std::mem::forget(self);
+        id
     }
 
     pub fn id(&self) -> TabId {
@@ -51,5 +60,11 @@ impl Tab {
 impl IntoPrimitiveValue for Tab {
     fn into_primitive_value(self) -> PrimitiveValue {
         PrimitiveValue::Tab(self.id)
+    }
+}
+
+impl IntoPrimitiveValue for TabId {
+    fn into_primitive_value(self) -> PrimitiveValue {
+        PrimitiveValue::Tab(self)
     }
 }
