@@ -4,7 +4,7 @@ pub use crate::exports::plugins::main::definitions::{
     Definition, Definitions, Input, IoDefinition, Output, PrimitiveValue, PrimitiveValueType,
     ValueType,
 };
-pub use crate::plugins::main::imports::{get_request, Header};
+pub use crate::plugins::main::imports::{get_request, model_downloaded, Header};
 pub use crate::plugins::main::types::{
     EmbeddingDbId, GptNeoXType, LlamaType, ModelType, MptType, TabId,
 };
@@ -21,6 +21,8 @@ mod model_instance;
 pub use model_instance::ModelInstance;
 mod structured_inferance;
 pub use structured_inferance::Structured;
+mod logging;
+pub use logging::Logger;
 
 wit_bindgen::generate!({path: "../wit", macro_export});
 

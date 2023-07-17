@@ -2,12 +2,13 @@
 // https://github.com/1rgs/jsonformer
 // https://github.com/bytecodealliance/wasmtime/issues/6074
 
+use download::model_downloaded;
 use once_cell::sync::Lazy;
 use plugins::main::types::Structure;
 use pollster::FutureExt;
 use reqwest::header::{HeaderMap, HeaderName};
 use std::path::Path;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, LockResult, RwLock, RwLockReadGuard};
 use wasmtime::component::__internal::async_trait;
 use wasmtime_wasi::preview2::{self, DirPerms, FilePerms, WasiView};
 use wasmtime_wasi::Dir;
@@ -101,6 +102,7 @@ impl MultiPluginState {
 pub struct State {
     sessions: InferenceSessions,
     structures: Slab<Structure>,
+    logs: Arc<RwLock<Vec<String>>>,
     table: preview2::Table,
     ctx: preview2::WasiCtx,
 }
@@ -126,6 +128,7 @@ impl Default for State {
         State {
             sessions: InferenceSessions::default(),
             structures: Slab::new(),
+            logs: Default::default(),
             table,
             ctx,
         }
@@ -241,6 +244,13 @@ impl Host for State {
     ) -> std::result::Result<plugins::main::types::StructureId, wasmtime::Error> {
         let id = self.structures.insert(structure);
         Ok(plugins::main::types::StructureId { id: id as u32 })
+    }
+
+    async fn model_downloaded(
+        &mut self,
+        ty: exports::plugins::main::definitions::ModelType,
+    ) -> std::result::Result<bool, wasmtime::Error> {
+        Ok(model_downloaded(ty))
     }
 
     async fn load_model(
@@ -467,6 +477,18 @@ impl Host for State {
             .browser
             .find_child(id, &query)?)
     }
+
+    async fn log_to_user(&mut self, message: String) -> std::result::Result<(), wasmtime::Error> {
+        let mut logs = self
+            .logs
+            .write()
+            .map_err(|e| wasmtime::Error::msg(format!("Failed to lock logs: {}", e)))?;
+        if logs.len() >= 100 {
+            logs.remove(0);
+        }
+        logs.push(message);
+        Ok(())
+    }
 }
 
 #[derive(Default)]
@@ -543,7 +565,9 @@ impl<'de> Deserialize<'de> for Plugin {
 impl Plugin {
     pub async fn instance(&self) -> PluginInstance {
         // create the store of models
-        let mut store = Store::new(&ENGINE, State::default());
+        let state = State::default();
+        let logs = state.logs.clone();
+        let mut store = Store::new(&ENGINE, state);
         let (world, _instance) =
             PluginWorld::instantiate_async(&mut store, &self.component, &LINKER)
                 .await
@@ -568,6 +592,7 @@ impl Plugin {
             sender: input_sender,
             reciever: output_reciever,
             metadata: self.metadata.clone(),
+            logs,
         }
     }
 
@@ -583,6 +608,7 @@ impl Plugin {
 pub struct PluginInstance {
     source_bytes: Arc<Vec<u8>>,
     metadata: Definition,
+    logs: Arc<RwLock<Vec<String>>>,
     sender: broadcast::Sender<Vec<Input>>,
     reciever: broadcast::Receiver<Arc<Result<Vec<Output>, wasmtime::Error>>>,
 }
@@ -620,6 +646,10 @@ impl PluginInstance {
             let _ = sender.send(inputs);
             reciever.recv().await.ok()
         }
+    }
+
+    pub fn read_logs(&self) -> LockResult<RwLockReadGuard<Vec<String>>> {
+        self.logs.read()
     }
 
     pub fn metadata(&self) -> &Definition {

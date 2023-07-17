@@ -64,9 +64,70 @@ fn load_progress_callback(
     }
 }
 
+pub fn model_downloaded(model_type: ModelType) -> bool {
+    let url = download_url(model_type);
+    model_path(url).exists()
+}
+
+fn model_path(url: &str) -> PathBuf {
+    format!("./{}", url.rsplit_once('/').unwrap().1).into()
+}
+
 pub fn download(model_type: ModelType) -> Box<dyn Model> {
     // https://www.reddit.com/r/LocalLLaMA/wiki/models/
-    let url = match model_type {
+    let url = download_url(model_type);
+    let archetecture = match model_type {
+        ModelType::Llama(_) => ModelArchitecture::Llama,
+        ModelType::GptNeoX(_) => ModelArchitecture::GptNeoX,
+        ModelType::Mpt(_) => ModelArchitecture::Mpt,
+    };
+    let context_size = match model_type {
+        ModelType::Llama(_) => 2024,
+        ModelType::GptNeoX(GptNeoXType::Stablelm) => 4048,
+        ModelType::GptNeoX(_) => 2048,
+        ModelType::Mpt(MptType::Story) => 65_000,
+        ModelType::Mpt(_) => 2024,
+    };
+
+    let handle = Handle::current();
+    let path = {
+        let path = model_path(url);
+        if path.exists() {
+            path
+        } else {
+            std::thread::spawn(move || {
+                // Using Handle::block_on to run async code in the new thread.
+                handle.block_on(async { download_model(url, path).await.unwrap() })
+            })
+            .join()
+            .unwrap()
+        }
+    };
+
+    let sp = Some(Spinner::new(Dots2, "Loading model...", None));
+
+    let now = Instant::now();
+    let prev_load_time = now;
+
+    let model_params = llm::ModelParameters {
+        prefer_mmap: true,
+        context_size,
+        lora_adapters: None,
+        use_gpu: true,
+    };
+
+    llm::load_dynamic(
+        Some(archetecture),
+        &path,
+        llm::TokenizerSource::Embedded,
+        model_params,
+        load_progress_callback(sp, now, prev_load_time),
+    )
+    .unwrap_or_else(|err| panic!("Failed to load model from {path:?}: {err}"))
+}
+
+fn download_url(ty: ModelType) -> &'static str {
+    match ty {
         ModelType::Llama(LlamaType::Orca) => {
             "https://huggingface.co/TheBloke/orca_mini_v2_7B-GGML/resolve/main/orca-mini-v2_7b.ggmlv3.q8_0.bin"
         }
@@ -103,55 +164,7 @@ pub fn download(model_type: ModelType) -> Box<dyn Model> {
         ModelType::Mpt(MptType::Base) => {
             "https://huggingface.co/rustformers/mpt-7b-ggml/resolve/main/mpt-7b-q4_0.bin"
         }
-    };
-    let archetecture = match model_type {
-        ModelType::Llama(_) => ModelArchitecture::Llama,
-        ModelType::GptNeoX(_) => ModelArchitecture::GptNeoX,
-        ModelType::Mpt(_) => ModelArchitecture::Mpt,
-    };
-    let context_size = match model_type {
-        ModelType::Llama(_) => 2024,
-        ModelType::GptNeoX(GptNeoXType::Stablelm) => 4048,
-        ModelType::GptNeoX(_) => 2048,
-        ModelType::Mpt(MptType::Story) => 65_000,
-        ModelType::Mpt(_) => 2024,
-    };
-
-    let handle = Handle::current();
-    let path = {
-        let path: PathBuf = format!("./{}", url.rsplit_once('/').unwrap().1).into();
-        if path.exists() {
-            path
-        } else {
-            std::thread::spawn(move || {
-                // Using Handle::block_on to run async code in the new thread.
-                handle.block_on(async { download_model(url, path).await.unwrap() })
-            })
-            .join()
-            .unwrap()
-        }
-    };
-
-    let sp = Some(Spinner::new(Dots2, "Loading model...", None));
-
-    let now = Instant::now();
-    let prev_load_time = now;
-
-    let model_params = llm::ModelParameters {
-        prefer_mmap: true,
-        context_size,
-        lora_adapters: None,
-        use_gpu: true,
-    };
-
-    llm::load_dynamic(
-        Some(archetecture),
-        &path,
-        llm::TokenizerSource::Embedded,
-        model_params,
-        load_progress_callback(sp, now, prev_load_time),
-    )
-    .unwrap_or_else(|err| panic!("Failed to load model from {path:?}: {err}"))
+    }
 }
 
 async fn download_model(model_url: &str, path: PathBuf) -> Result<PathBuf, Box<dyn Error>> {

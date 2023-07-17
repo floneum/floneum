@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use eframe::egui::{DragValue, Margin, Ui, Visuals};
+use eframe::egui::{DragValue, Margin, ScrollArea, Ui, Visuals};
 use eframe::epaint::{Stroke, Vec2};
 use eframe::{
     egui::{self, TextEdit},
@@ -842,8 +842,19 @@ impl NodeDataTrait for MyNodeData {
             return vec![NodeResponse::User(MyResponse::ClearNode(node_id))];
         }
 
-        // Render the current output of the node
+        // Render any node logs
+        let node = &graph[node_id];
+        if let Ok(logs) = node.user_data.instance.read_logs() {
+            ScrollArea::vertical()
+                .id_source((node_id, "logs"))
+                .show(ui, move |ui| {
+                    for log in &*logs {
+                        ui.label(log);
+                    }
+                });
+        }
 
+        // Render the current output of the node
         match &node.user_data.error {
             Some(err) => {
                 egui::ScrollArea::vertical().show(ui, |ui| {

@@ -90,7 +90,7 @@ impl Browser {
                 .wait_until_navigated()?;
             Ok(())
         }
-        match goto_inner(self, tab, url){
+        match goto_inner(self, tab, url) {
             Ok(()) => Ok(()),
             Err(err) => {
                 log::error!("Error: {:?}", err);

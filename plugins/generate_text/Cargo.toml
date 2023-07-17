@@ -10,3 +10,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 floneum_rust = { path = "../../rust_adapter" }
+log = "0.4.19"
