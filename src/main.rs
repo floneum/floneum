@@ -43,6 +43,8 @@ impl Variants for ModelType {
         ModelType::Llama(LlamaType::Orca),
         ModelType::Llama(LlamaType::Vicuna),
         ModelType::Llama(LlamaType::Wizardlm),
+        ModelType::Llama(LlamaType::LlamaSevenChat),
+        ModelType::Llama(LlamaType::LlamaThirteenChat),
         ModelType::GptNeoX(GptNeoXType::TinyPythia),
         ModelType::GptNeoX(GptNeoXType::LargePythia),
         ModelType::GptNeoX(GptNeoXType::Stablelm),
@@ -65,6 +67,8 @@ impl Named for ModelType {
             ModelType::Llama(LlamaType::Orca) => "Orca",
             ModelType::Llama(LlamaType::Vicuna) => "Vicuna",
             ModelType::Llama(LlamaType::Wizardlm) => "Wizardlm",
+            ModelType::Llama(LlamaType::LlamaSevenChat) => "Llama Seven Chat",
+            ModelType::Llama(LlamaType::LlamaThirteenChat) => "Llama Thirteen Chat",
             ModelType::GptNeoX(GptNeoXType::TinyPythia) => "Tiny Pythia",
             ModelType::GptNeoX(GptNeoXType::LargePythia) => "Large Pythia",
             ModelType::GptNeoX(GptNeoXType::Stablelm) => "Stablelm",
@@ -320,6 +324,8 @@ enum LlamaTypeDef {
     Guanaco,
     Wizardlm,
     Orca,
+    LlamaSevenChat,
+    LlamaThirteenChat,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
