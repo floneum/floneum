@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use floneum_rust::*;
+use floneum_rust::{plugins::main::imports::log_to_user, *};
 
 #[export_plugin]
 /// Calls a large language model to generate text.
@@ -24,6 +24,10 @@ use floneum_rust::*;
 /// ### ASSISTANT
 ///
 fn generate_text(model: ModelType, input: String) -> String {
+    if !model_downloaded(model) {
+        log_to_user("downloading model... This could take several minutes");
+    }
+
     let session = ModelInstance::new(model);
 
     let mut responce = session.infer(&input, Some(100), None);

@@ -3,7 +3,7 @@
 use core::panic;
 use std::vec;
 
-use floneum_rust::*;
+use floneum_rust::{plugins::main::imports::log_to_user, *};
 use pest::{iterators::Pair, Parser};
 use pest_derive::Parser;
 
@@ -36,6 +36,10 @@ fn generate_structured_text(
     /// the maximum length of the output
     max_output_length: i64,
 ) -> String {
+    if !model_downloaded(model) {
+        log_to_user("downloading model... This could take several minutes");
+    }
+
     let structure = structured_from_string(&structure);
     let session = ModelInstance::new(model);
 

@@ -3,6 +3,7 @@ package plugins:main
 interface imports {
   use types.{embedding, structure, structure-id, model-id, model-type, embedding-db-id, node-id, tab-id}
 
+  model-downloaded: func(ty: model-type) -> bool
   load-model: func(ty: model-type) -> model-id
   unload-model: func(id: model-id)
   infer: func(id: model-id, input: string, max-tokens: option<u32>, stop-on: option<string>) -> string
@@ -47,6 +48,8 @@ interface imports {
     key: string,
     value: string,
   }
+
+  log-to-user: func(information: string)
 }
 
 interface types {
