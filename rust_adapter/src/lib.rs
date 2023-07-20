@@ -23,6 +23,8 @@ mod structured_inferance;
 pub use structured_inferance::Structured;
 mod logging;
 pub use logging::Logger;
+mod state;
+pub use state::*;
 
 wit_bindgen::generate!({path: "../wit", macro_export});
 

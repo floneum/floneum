@@ -49,6 +49,12 @@ interface imports {
     value: string,
   }
 
+  store: func(key: list<u8>, value: list<u8>)
+
+  load: func(key: list<u8>) -> list<u8>
+
+  unload: func(key: list<u8>)
+
   log-to-user: func(information: string)
 }
 
