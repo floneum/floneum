@@ -157,7 +157,7 @@ jobs:
           command: "build"
           target: ${{ matrix.platform.target }}
           toolchain: ${{ matrix.toolchain }}
-          args: "--locked --release"
+          args: "--release"
           strip: true
       - name: Run tests
         uses: houseabsolute/actions-rust-cross@v0
@@ -165,7 +165,7 @@ jobs:
           command: "test"
           target: ${{ matrix.platform.target }}
           toolchain: ${{ matrix.toolchain }}
-          args: "--locked --release"
+          args: "--release"
         if: ${{ !matrix.platform.skip_tests }}
       - name: Package as archive
         shell: bash
@@ -191,6 +191,10 @@ jobs:
           matrix.platform.os == 'macOS-latest' &&
           ( startsWith( github.ref, 'refs/tags/v' ) ||
             github.ref == 'refs/tags/test-release' )
+      - name: Generate release tag
+        id: tag
+        run: |
+          echo "::set-output name=release_tag::UserBuild_$(date +"%Y.%m.%d_%H-%M")"
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v1
         with:
@@ -198,3 +202,4 @@ jobs:
           name: Nightly
           target_commitish: ${{ github.sha }}
           files: "floneum-*"
+          tag_name: ${{ steps.tag.outputs.release_tag }}
