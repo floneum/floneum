@@ -2366,9 +2366,11 @@ dependencies = [
 name = "floneum_rust"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "floneum_rust_macro",
  "image",
  "log",
+ "serde",
  "wit-bindgen",
 ]
 

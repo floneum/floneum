@@ -2,28 +2,28 @@
 // https://github.com/1rgs/jsonformer
 // https://github.com/bytecodealliance/wasmtime/issues/6074
 
+use crate::plugins::main::imports::*;
 use download::model_downloaded;
+use exports::plugins::main::definitions::*;
+use futures_util::Future;
 use once_cell::sync::Lazy;
 use plugins::main::types::Structure;
 use pollster::FutureExt;
 use reqwest::header::{HeaderMap, HeaderName};
-use std::path::Path;
-use std::sync::{Arc, LockResult, RwLock, RwLockReadGuard};
-use wasmtime::component::__internal::async_trait;
-use wasmtime_wasi::preview2::{self, DirPerms, FilePerms, WasiView};
-use wasmtime_wasi::Dir;
-
-use crate::plugins::main::imports::*;
-use exports::plugins::main::definitions::*;
-use futures_util::Future;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use slab::Slab;
+use std::collections::HashMap;
+use std::path::Path;
+use std::sync::{Arc, LockResult, RwLock, RwLockReadGuard};
 use structured_parser::StructureParser;
 use tokio::sync::broadcast;
+use wasmtime::component::__internal::async_trait;
 use wasmtime::component::{Component, Linker};
 use wasmtime::Engine;
 use wasmtime::Store;
 use wasmtime::{Config, Error};
+use wasmtime_wasi::preview2::{self, DirPerms, FilePerms, WasiView};
+use wasmtime_wasi::Dir;
 use wit_component::ComponentEncoder;
 
 mod browse;
@@ -103,6 +103,7 @@ pub struct State {
     sessions: InferenceSessions,
     structures: Slab<Structure>,
     logs: Arc<RwLock<Vec<String>>>,
+    plugin_state: HashMap<Vec<u8>, Vec<u8>>,
     table: preview2::Table,
     ctx: preview2::WasiCtx,
 }
@@ -128,6 +129,7 @@ impl Default for State {
         State {
             sessions: InferenceSessions::default(),
             structures: Slab::new(),
+            plugin_state: Default::default(),
             logs: Default::default(),
             table,
             ctx,
@@ -487,6 +489,25 @@ impl Host for State {
             logs.remove(0);
         }
         logs.push(message);
+        Ok(())
+    }
+
+    async fn store(
+        &mut self,
+        key: Vec<u8>,
+        value: Vec<u8>,
+    ) -> std::result::Result<(), wasmtime::Error> {
+        self.plugin_state.insert(key, value);
+
+        Ok(())
+    }
+
+    async fn load(&mut self, key: Vec<u8>) -> std::result::Result<Vec<u8>, wasmtime::Error> {
+        Ok(self.plugin_state.get(&key).cloned().unwrap_or_default())
+    }
+
+    async fn unload(&mut self, key: Vec<u8>) -> std::result::Result<(), wasmtime::Error> {
+        self.plugin_state.remove(&key);
         Ok(())
     }
 }
