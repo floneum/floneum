@@ -196,10 +196,9 @@ jobs:
         run: |
           echo "::set-output name=release_tag::UserBuild_$(date +"%Y.%m.%d_%H-%M")"
       - name: Create/Update tag
-        uses: rickstaa/action-create-tag@v1.6.2
-        with:
-          tag: ${{ steps.tag.outputs.release_tag }}
-          message: "nightly release for ${{ steps.tag.outputs.release_tag }}"
+        run: |
+          git tag -a v${{ steps.tag.outputs.release_tag }} -m "Published version ${{ steps.tag.outputs.release_tag}}" ${{ github.sha }}
+          git push origin v${{ steps.tag.outputs.release_tag }}
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v1
         with:
