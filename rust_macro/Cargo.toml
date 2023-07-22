@@ -2,6 +2,7 @@
 name = "floneum_rust_macro"
 version = "0.1.0"
 edition = "2021"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 
 [lib]
 proc-macro = true

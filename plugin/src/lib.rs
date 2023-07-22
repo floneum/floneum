@@ -520,7 +520,8 @@ impl PluginEngine {
         println!("loading plugin {path:?}");
 
         // we first read the bytes of the wasm module.
-        let module = std::fs::read(path).unwrap();
+        let module = std::fs::read(path)
+            .unwrap_or_else(|e| panic!("Failed to read plugin {:?}: {}", path.display(), e));
         self.load_plugin_from_bytes(module).await
     }
 

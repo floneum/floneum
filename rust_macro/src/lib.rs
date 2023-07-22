@@ -29,17 +29,18 @@ pub fn export_plugin(args: TokenStream, input: TokenStream) -> TokenStream {
 
     let function_ident = input.sig.ident.clone();
     let function_name = function_ident.to_string();
-    let mut discription = String::new();
+    let mut description = String::new();
     for attr in &input.attrs {
         if attr.path().is_ident("doc") {
             if let Meta::NameValue(meta) = &attr.meta {
                 let value = &meta.value;
                 let lit: LitStr = try_parse_quote!(#value);
-                discription += &lit.value();
-                discription += "\n";
+                description += &lit.value().trim();
+                description += "\n";
             }
         }
     }
+    let description = description.trim();
 
     let mut input_names: Vec<String> = Vec::new();
     let mut input_idents: Vec<Ident> = Vec::new();
@@ -126,7 +127,7 @@ pub fn export_plugin(args: TokenStream, input: TokenStream) -> TokenStream {
             fn structure() -> floneum_rust::Definition {
                 floneum_rust::Definition {
                     name: #function_name.to_string(),
-                    description: #discription.to_string(),
+                    description: #description.to_string(),
                     inputs: vec![
                         #(
                             floneum_rust::IoDefinition {

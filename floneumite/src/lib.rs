@@ -8,33 +8,22 @@ use directories::BaseDirs;
 mod package;
 pub use package::PackageStructure;
 
+pub use crate::package::Config;
+
 #[derive(Default)]
 pub struct FloneumPackageIndex {
     entries: Vec<Package>,
 }
 
 impl FloneumPackageIndex {
-    pub fn fetch() -> anyhow::Result<Self> {
+    pub async fn fetch() -> anyhow::Result<Self> {
         let path = packages_path()?;
         if path.exists() {
             // remove the old packages
             // TODO: use git fetch to update the packages
             std::fs::remove_dir_all(&path)?;
         }
-        download_package_index(&path)?;
-
-        let entries = std::fs::read_dir(path)?
-            .filter_map(|entry| {
-                let entry = entry.ok()?;
-                let path = entry.path();
-                if path.is_dir() {
-                    Some(path)
-                } else {
-                    None
-                }
-            })
-            .filter_map(|path| Package::try_new(path).ok())
-            .collect();
+        let entries = download_package_index(&path).await?;
 
         Ok(Self { entries })
     }
@@ -51,13 +40,6 @@ pub struct Package {
 }
 
 impl Package {
-    fn try_new(path: std::path::PathBuf) -> anyhow::Result<Self> {
-        let toml_path = path.join("floneum.toml");
-        let structure = toml::from_str(&std::fs::read_to_string(toml_path)?)?;
-        let path = path.join("package.wasm");
-        Ok(Self { path, structure })
-    }
-
     pub fn name(&self) -> &str {
         &self.structure.name
     }
@@ -78,6 +60,10 @@ impl Package {
         &self.path
     }
 
+    pub fn wasm_path(&self) -> std::path::PathBuf {
+        self.path.join("package.wasm")
+    }
+
     pub fn load_wasm(&self) -> anyhow::Result<Vec<u8>> {
         let wasm_path = self.path.join("package.wasm");
         Ok(std::fs::read(wasm_path)?)
@@ -89,19 +75,77 @@ fn packages_path() -> anyhow::Result<std::path::PathBuf> {
     Ok(base_dirs.data_dir().join("floneum").join("packages"))
 }
 
-fn download_package_index(path: &Path) -> anyhow::Result<()> {
-    let repo_url = "https://github.com/floneum/floneum-packages";
+async fn download_package_index(path: &Path) -> anyhow::Result<Vec<Package>> {
+    if path.exists() {
+        // remove the old packages
+        // TODO: use git fetch to update the packages
+        std::fs::remove_dir_all(&path)?;
+    }
+    let instance = octocrab::instance();
+    let page = instance
+        .search()
+        .repositories("topic:floneum")
+        .sort("stars")
+        .order("desc")
+        .send()
+        .await?;
+    let mut combined_packages = Vec::new();
+    for item in page.items {
+        if let Some(author) = &item.owner {
+            let repo_handle = instance.repos(author.login.clone(), item.name.clone());
+            let commits = repo_handle
+                .list_commits()
+                .path("dist/floneum.toml")
+                .send()
+                .await?;
+            if let Some(last_commit) = commits.items.first() {
+                let file = repo_handle
+                    .raw_file(last_commit.sha.clone(), "dist/floneum.toml")
+                    .await?;
+                let body = file.into_body();
+                let bytes = hyper::body::to_bytes(body).await;
+                if let core::result::Result::Ok(as_str) = std::str::from_utf8(&bytes.unwrap()) {
+                    if let std::result::Result::Ok(package) = toml::from_str::<Config>(as_str) {
+                        println!("{:#?}", package);
+                        for package in package.packages() {
+                            let repo_path = format!("dist/{}/package.wasm", package.name);
+                            let repo_handle =
+                                instance.repos(author.login.clone(), item.name.clone());
+                            let file = repo_handle
+                                .raw_file(last_commit.sha.clone(), &repo_path)
+                                .await?;
+                            let body = file.into_body();
+                            if let std::result::Result::Ok(bytes) =
+                                hyper::body::to_bytes(body).await
+                            {
+                                let package_path = path.join(&package.name);
+                                std::fs::create_dir_all(&package_path)?;
+                                let wasm_path = package_path.join("package.wasm");
+                                std::fs::write(wasm_path, bytes)?;
+                                let package = Package {
+                                    path: package_path,
+                                    structure: package.clone(),
+                                };
+                                combined_packages.push(package);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(url) = item.clone_url {
+            println!("{}", url.to_string());
+        }
+    }
 
-    gix::interrupt::init_handler(|| {})?;
-    std::fs::create_dir_all(path)?;
-    let url = gix::url::parse(repo_url.into())?;
+    Ok(combined_packages)
+}
 
-    let mut prepare_clone = gix::prepare_clone(url, path)?;
-
-    let (mut prepare_checkout, _) = prepare_clone
-        .fetch_then_checkout(gix::progress::Discard, &gix::interrupt::IS_INTERRUPTED)?;
-
-    prepare_checkout.main_worktree(gix::progress::Discard, &gix::interrupt::IS_INTERRUPTED)?;
-
-    Ok(())
+#[tokio::test]
+async fn get_plugins() {
+    let path = packages_path().unwrap();
+    let packages = download_package_index(&path).await.unwrap();
+    for package in packages {
+        println!("{:#?}", package);
+    }
 }

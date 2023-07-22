@@ -2,6 +2,7 @@
 name = "floneum_plugin"
 version = "0.1.0"
 edition = "2021"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 
 [dependencies]
 wasmtime = { version = "10", features = ['component-model'] }

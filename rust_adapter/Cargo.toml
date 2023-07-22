@@ -2,6 +2,7 @@
 name = "floneum_rust"
 version = "0.1.0"
 edition = "2021"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 
 [dependencies]
 wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen", rev = "67e2d2228ae807c9a94c4018228b59d7040843bf" }
