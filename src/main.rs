@@ -17,7 +17,7 @@ use floneum_plugin::plugins::main::types::{
 use floneum_plugin::{Plugin, PluginEngine, PluginInstance};
 use floneumite::FloneumPackageIndex;
 use log::LevelFilter;
-use once_cell::sync::Lazy;
+use once_cell::sync::OnceCell;
 use pollster::FutureExt;
 use scoped_logger::add_logger;
 use serde::{Deserialize, Serialize};
@@ -904,14 +904,7 @@ impl NodeDataTrait for MyNodeData {
 
 type MyEditorState = GraphEditorState<MyNodeData, MyDataType, MyValueType, PluginId, MyGraphState>;
 
-static PACKAGE_MANAGER: Lazy<FloneumPackageIndex> =
-    Lazy::new(|| match FloneumPackageIndex::fetch() {
-        Ok(index) => index,
-        Err(err) => {
-            log::error!("Error creating index: {err}");
-            Default::default()
-        }
-    });
+static PACKAGE_MANAGER: OnceCell<FloneumPackageIndex> = OnceCell::new();
 
 #[derive(Serialize, Deserialize)]
 pub struct NodeGraphExample {
@@ -1096,8 +1089,23 @@ impl NodeGraphExample {
     async fn default() -> Self {
         let mut user_state = MyGraphState::default();
 
-        for package in PACKAGE_MANAGER.entries() {
-            let path = package.path();
+        let package_manager = match PACKAGE_MANAGER.get() {
+            Some(package_manager) => package_manager,
+            None => {
+                let package_manager = match FloneumPackageIndex::fetch().await {
+                    Ok(index) => index,
+                    Err(err) => {
+                        log::error!("Error creating index: {err}");
+                        Default::default()
+                    }
+                };
+                let _ = PACKAGE_MANAGER.set(package_manager);
+                PACKAGE_MANAGER.get().unwrap()
+            }
+        };
+
+        for package in package_manager.entries() {
+            let path = package.wasm_path();
             let plugin = user_state.plugin_engine.load_plugin(&path).await;
             let id = user_state.plugins.insert(plugin);
             user_state.all_plugins.insert(PluginId(id));
