@@ -60,7 +60,7 @@ fn structured_from_string(input: &str) -> Structured {
     match pattern {
         Ok(Some(pattern)) => multiple_structured_from_rule(pattern),
         Err(err) => {
-            println!("error parsing pattern: {:?}\n", err);
+            log::error!("error parsing pattern: {:?}\n", err);
             Structured::str()
         }
         _ => Structured::str(),

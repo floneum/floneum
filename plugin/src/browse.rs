@@ -10,6 +10,12 @@ pub struct Browser {
     tabs: Slab<Arc<headless_chrome::Tab>>,
 }
 
+impl std::fmt::Debug for Browser {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Browser").finish()
+    }
+}
+
 impl Default for Browser {
     fn default() -> Self {
         Self::new().unwrap()
@@ -43,6 +49,7 @@ impl Browser {
         })
     }
 
+    #[tracing::instrument]
     pub fn new_tab(&mut self, headless: bool) -> Result<TabId, wasmtime::Error> {
         let client = if headless {
             &self.headless_client
@@ -55,11 +62,13 @@ impl Browser {
         Ok(TabId { id: id as u32 })
     }
 
+    #[tracing::instrument]
     pub fn remove_tab(&mut self, tab: TabId) {
         let tab = self.tabs.remove(tab.id as usize);
         tab.close(true).unwrap();
     }
 
+    #[tracing::instrument]
     pub fn get_tab(&self, tab: TabId) -> Result<Arc<headless_chrome::Tab>, wasmtime::Error> {
         let tab = self
             .tabs
@@ -68,6 +77,7 @@ impl Browser {
         Ok(tab.clone())
     }
 
+    #[tracing::instrument]
     fn get_node(&self, node: NodeId) -> Result<Element, wasmtime::Error> {
         Element::new(
             self.tabs
@@ -78,6 +88,7 @@ impl Browser {
         )
     }
 
+    #[tracing::instrument]
     pub fn goto(&mut self, tab: TabId, url: &str) -> Result<(), wasmtime::Error> {
         pub fn goto_inner(
             browser: &mut Browser,
@@ -99,6 +110,7 @@ impl Browser {
         }
     }
 
+    #[tracing::instrument]
     pub fn find(&mut self, tab: TabId, selector: &str) -> Result<NodeId, wasmtime::Error> {
         let element = self.get_tab(tab)?.wait_for_element(selector)?.node_id;
 
@@ -108,30 +120,35 @@ impl Browser {
         })
     }
 
+    #[tracing::instrument]
     pub fn get_text(&mut self, id: NodeId) -> Result<String, wasmtime::Error> {
         let element = self.get_node(id)?;
         let text = element.get_inner_text()?;
         Ok(text)
     }
 
+    #[tracing::instrument]
     pub fn click(&mut self, id: NodeId) -> Result<(), wasmtime::Error> {
         let element = self.get_node(id)?;
         element.click()?;
         Ok(())
     }
 
+    #[tracing::instrument]
     pub fn send_keys(&mut self, id: NodeId, keys: &str) -> Result<(), wasmtime::Error> {
         let element = self.get_node(id)?;
         element.type_into(keys)?;
         Ok(())
     }
 
+    #[tracing::instrument]
     pub fn outer_html(&mut self, id: NodeId) -> Result<String, wasmtime::Error> {
         let element = self.get_node(id)?;
         let html = element.get_content()?;
         Ok(html)
     }
 
+    #[tracing::instrument]
     pub fn screenshot(&mut self, tab: TabId) -> Result<Vec<u8>, wasmtime::Error> {
         let bytes = self.get_tab(tab)?.capture_screenshot(
             headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Jpeg,
@@ -142,6 +159,7 @@ impl Browser {
         Ok(bytes)
     }
 
+    #[tracing::instrument]
     pub fn screenshot_of_id(&mut self, id: NodeId) -> Result<Vec<u8>, wasmtime::Error> {
         let element = self.get_node(id)?;
         let bytes = element.capture_screenshot(
@@ -150,6 +168,7 @@ impl Browser {
         Ok(bytes)
     }
 
+    #[tracing::instrument]
     pub fn find_child(&mut self, id: NodeId, selector: &str) -> Result<NodeId, wasmtime::Error> {
         let element = self.get_node(id)?;
         let child = element.find_element(selector)?;

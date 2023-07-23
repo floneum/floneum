@@ -512,12 +512,13 @@ impl Host for State {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct PluginEngine {}
 
 impl PluginEngine {
+    #[tracing::instrument]
     pub async fn load_plugin(&mut self, path: &Path) -> Plugin {
-        println!("loading plugin {path:?}");
+        log::info!("loading plugin {path:?}");
 
         // we first read the bytes of the wasm module.
         let module = std::fs::read(path)
@@ -527,7 +528,7 @@ impl PluginEngine {
 
     pub async fn load_plugin_from_bytes(&mut self, bytes: Vec<u8>) -> Plugin {
         let size = bytes.len();
-        println!("loaded plugin ({:01} mb)", size as f64 / (1024. * 1024.));
+        log::info!("loaded plugin ({:01} mb)", size as f64 / (1024. * 1024.));
         // then we transform module to compoennt.
         // remember to get wasi_snapshot_preview1.wasm first.
         let component = ComponentEncoder::default()
@@ -562,6 +563,14 @@ pub struct Plugin {
     bytes: Arc<Vec<u8>>,
     metadata: Definition,
     component: Component,
+}
+
+impl std::fmt::Debug for Plugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Plugin")
+            .field("metadata", &self.metadata)
+            .finish()
+    }
 }
 
 impl Serialize for Plugin {
@@ -635,6 +644,15 @@ pub struct PluginInstance {
     reciever: broadcast::Receiver<Arc<Result<Vec<Output>, wasmtime::Error>>>,
 }
 
+impl std::fmt::Debug for PluginInstance {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PluginInstance")
+            .field("metadata", &self.metadata)
+            .field("logs", &self.logs)
+            .finish()
+    }
+}
+
 impl Serialize for PluginInstance {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         // Just serialize the bytes
@@ -662,6 +680,7 @@ impl PluginInstance {
         &self,
         inputs: Vec<Input>,
     ) -> impl Future<Output = Option<Arc<Result<Vec<Output>, Error>>>> + 'static {
+        tracing::trace!("sending inputs to plugin: {inputs:?}");
         let sender = self.sender.clone();
         let mut reciever = self.reciever.resubscribe();
         async move {

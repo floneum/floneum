@@ -22,7 +22,7 @@ impl From<TabId> for Tab {
 impl Drop for Tab {
     fn drop(&mut self) {
         if self.drop {
-            println!("removing {:?}", self.id);
+            log::trace!("removing tab {:?}", self.id);
             remove_tab(self.id);
         }
     }

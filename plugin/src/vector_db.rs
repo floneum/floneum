@@ -9,7 +9,14 @@ pub struct VectorDB<T> {
     model: HnswMap<Point, T>,
 }
 
-impl<T: Clone + PartialEq> VectorDB<T> {
+impl<T> Debug for VectorDB<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VectorDB").finish()
+    }
+}
+
+impl<T: Clone + PartialEq + Debug> VectorDB<T> {
+    #[tracing::instrument]
     pub fn new(points: Vec<Embedding>, values: Vec<T>) -> Self {
         let points = points.into_iter().map(|e| Point(e.vector)).collect();
         let model = Builder::default().build(points, values);
@@ -17,6 +24,7 @@ impl<T: Clone + PartialEq> VectorDB<T> {
         VectorDB { model }
     }
 
+    #[tracing::instrument]
     pub fn add_embedding(&mut self, embedding: Embedding, value: T) {
         let already_exists = self
             .model
@@ -39,6 +47,7 @@ impl<T: Clone + PartialEq> VectorDB<T> {
         *self = Self::new(new_points, new_values);
     }
 
+    #[tracing::instrument]
     pub fn get_closest(&self, embedding: Embedding, n: usize) -> Vec<T> {
         let mut search = Search::default();
         self.model
@@ -48,6 +57,7 @@ impl<T: Clone + PartialEq> VectorDB<T> {
             .collect()
     }
 
+    #[tracing::instrument]
     pub fn get_within(&self, embedding: Embedding, distance: f32) -> Vec<T> {
         let mut search = Search::default();
         self.model

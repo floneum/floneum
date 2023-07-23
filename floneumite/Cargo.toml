@@ -11,7 +11,9 @@ anyhow = "1.0.71"
 directories = "5.0.1"
 gix = { git = "https://github.com/Byron/gitoxide", features = ["blocking-network-client", "blocking-http-transport-reqwest-rust-tls"], rev = "97f8e960ed52538bb55b72f9dfc5f9d144d72885" }
 hyper = "0.14.27"
+log = "0.4.19"
 octocrab = "0.28.0"
 serde = { version = "1.0.164", features = ["derive"] }
 tokio = { version = "1.29.1", features = ["full"] }
 toml = "0.7.4"
+tracing = "0.1.37"

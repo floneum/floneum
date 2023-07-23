@@ -16,10 +16,8 @@ use floneum_plugin::plugins::main::types::{
 };
 use floneum_plugin::{Plugin, PluginEngine, PluginInstance};
 use floneumite::FloneumPackageIndex;
-use log::LevelFilter;
 use once_cell::sync::OnceCell;
 use pollster::FutureExt;
-use scoped_logger::add_logger;
 use serde::{Deserialize, Serialize};
 use std::{
     borrow::Cow,
@@ -30,8 +28,9 @@ use std::{
     path::PathBuf,
 };
 use tokio::sync::mpsc::{Receiver, Sender};
-
-mod scoped_logger;
+use tracing_subscriber::filter::LevelFilter;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 trait Variants: Sized + 'static {
     const VARIANTS: &'static [Self];
@@ -107,12 +106,21 @@ fn save_to_file<D: Serialize>(data: D) {
 
 #[tokio::main]
 async fn main() {
-    log::set_boxed_logger(Box::new(scoped_logger::ScopedLogger)).unwrap();
-    add_logger(
-        simple_logger::SimpleLogger::new()
-            .with_level(LevelFilter::Off)
-            .with_module_level("floneum", LevelFilter::Info),
-    );
+    use tracing_subscriber::EnvFilter;
+
+    let file = File::create("debug.log").unwrap();
+    let debug_log = tracing_subscriber::fmt::layer().with_writer(std::sync::Arc::new(file));
+
+    let logger = tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::builder()
+                .with_default_directive(LevelFilter::INFO.into())
+                .from_env_lossy(),
+        )
+        .pretty()
+        .finish();
+
+    logger.with(debug_log).init();
 
     let mut current_dir = std::env::current_dir().unwrap();
     current_dir.push("save.bin");
@@ -1159,7 +1167,7 @@ impl eframe::App for NodeGraphExample {
     /// If the persistence function is enabled,
     /// Called by the frame work to save state before shutdown.
     fn save(&mut self, _: &mut dyn eframe::Storage) {
-        println!("Saving state");
+        log::info!("Saving state");
         save_to_file(self);
     }
     /// Called each time the UI needs repainting, which may be many times per second.
