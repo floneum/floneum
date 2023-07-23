@@ -16,7 +16,6 @@ pub fn search(
 ) -> String {
     let database = VectorDatabase::from_id(database);
     let nearest = database.find_closest_documents(&key, top_n.abs().try_into().unwrap());
-    println!("nearest: {:?}\n", nearest);
 
     let mut message = String::new();
     for embedding in &nearest {

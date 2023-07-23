@@ -61,7 +61,7 @@ impl VectorDatabase {
 impl Drop for VectorDatabase {
     fn drop(&mut self) {
         if self.drop {
-            println!("Dropping vector database {}", self.id.id);
+            log::trace!("Dropping vector database {}", self.id.id);
             remove_embedding_db(self.id);
         }
     }

@@ -12,6 +12,7 @@ use llm::{
     InferenceSessionConfig, Model,
 };
 use slab::Slab;
+use std::fmt::Debug;
 use std::{
     collections::HashMap,
     convert::Infallible,
@@ -26,6 +27,12 @@ pub struct InferenceSessions {
     embedding_cache: RwLock<Vec<HashMap<String, Embedding>>>,
 }
 
+impl Debug for InferenceSessions {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InferenceSessions").finish()
+    }
+}
+
 impl InferenceSessions {
     pub fn session_get(&self, id: ModelId) -> &(Box<dyn Model>, InferenceSession, ModelType) {
         self.sessions.get(id.id as usize).unwrap()
@@ -38,6 +45,7 @@ impl InferenceSessions {
         self.sessions.get_mut(id.id as usize).unwrap()
     }
 
+    #[tracing::instrument]
     pub fn create(&mut self, ty: ModelType) -> ModelId {
         // Remove the temporary session if it exists.
         if let Some(id) = self.temp_retained_sessions.take() {
@@ -64,6 +72,7 @@ impl InferenceSessions {
         }
     }
 
+    #[tracing::instrument]
     pub fn remove(&mut self, id: ModelId) {
         if self.sessions.len() == 1 {
             self.temp_retained_sessions = Some(id);
@@ -120,7 +129,6 @@ impl InferenceSessions {
                     let tokens = &mut result_tokens;
                     move |resp| match resp {
                         InferenceResponse::InferredToken(t) => {
-                            println!("token {}: {}", tokens.len(), t);
                             tokens.push(t);
                             let borrowed: Vec<_> = tokens.iter().map(|s| s.as_str()).collect();
                             match validator.validate(ParseStream::new(&borrowed)) {
@@ -145,6 +153,7 @@ impl InferenceSessions {
         result_tokens.join("")
     }
 
+    #[tracing::instrument]
     pub fn infer(
         &mut self,
         id: ModelId,
@@ -178,6 +187,7 @@ impl InferenceSessions {
         buf
     }
 
+    #[tracing::instrument]
     pub fn get_embedding(&self, id: ModelId, text: &str) -> Embedding {
         let mut write = self.embedding_cache.write().unwrap();
         let cache = if let Some(cache) = write.get_mut(id.id as usize) {
@@ -213,7 +223,6 @@ fn inference_callback(
                     return Ok(InferenceFeedback::Halt);
                 }
             }
-            println!("token {}: {}", buf.len(), t);
             buf.push_str(t.as_str());
 
             Ok(InferenceFeedback::Continue)

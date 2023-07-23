@@ -70,11 +70,13 @@ impl Package {
     }
 }
 
+#[tracing::instrument]
 fn packages_path() -> anyhow::Result<std::path::PathBuf> {
     let base_dirs = BaseDirs::new().ok_or_else(|| anyhow!("No home directory found"))?;
     Ok(base_dirs.data_dir().join("floneum").join("packages"))
 }
 
+#[tracing::instrument]
 async fn download_package_index(path: &Path) -> anyhow::Result<Vec<Package>> {
     if path.exists() {
         // remove the old packages
@@ -93,12 +95,15 @@ async fn download_package_index(path: &Path) -> anyhow::Result<Vec<Package>> {
     for item in page.items {
         if let Some(author) = &item.owner {
             let repo_handle = instance.repos(author.login.clone(), item.name.clone());
-            let commits = repo_handle
-                .list_commits()
-                .path("dist/floneum.toml")
-                .send()
-                .await?;
+            let commits = match repo_handle.list_commits().send().await {
+                std::result::Result::Ok(commits) => commits,
+                Err(err) => {
+                    log::error!("Error loading repo commits: {}", err);
+                    continue;
+                }
+            };
             if let Some(last_commit) = commits.items.first() {
+                log::trace!("found repo: user: {} repo: {}", author.login, item.name);
                 let file = repo_handle
                     .raw_file(last_commit.sha.clone(), "dist/floneum.toml")
                     .await?;
@@ -106,7 +111,7 @@ async fn download_package_index(path: &Path) -> anyhow::Result<Vec<Package>> {
                 let bytes = hyper::body::to_bytes(body).await;
                 if let core::result::Result::Ok(as_str) = std::str::from_utf8(&bytes.unwrap()) {
                     if let std::result::Result::Ok(package) = toml::from_str::<Config>(as_str) {
-                        println!("{:#?}", package);
+                        log::trace!("found package: {:#?}", package);
                         for package in package.packages() {
                             let repo_path = format!("dist/{}/package.wasm", package.name);
                             let repo_handle =
@@ -132,9 +137,6 @@ async fn download_package_index(path: &Path) -> anyhow::Result<Vec<Package>> {
                     }
                 }
             }
-        }
-        if let Some(url) = item.clone_url {
-            println!("{}", url.to_string());
         }
     }
 
