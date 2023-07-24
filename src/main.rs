@@ -32,6 +32,29 @@ use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
+const BUILT_IN_PLUGINS: &[&str] = &[
+            "add_embedding",
+            "embedding",
+            "embedding_db",
+            "format",
+            "generate_text",
+            "generate_structured_text",
+            "search",
+            "search_engine",
+            "if_statement",
+            "contains",
+            "write_to_file",
+            "read_from_file",
+            "run_python",
+            "create_browser",
+            "find_node",
+            "find_child_node",
+            "click_node",
+            "node_text",
+            "type_in_node",
+            "navigate_to",
+        ];
+
 trait Variants: Sized + 'static {
     const VARIANTS: &'static [Self];
 }
@@ -684,7 +707,13 @@ impl NodeTemplateTrait for PluginId {
     type CategoryType = &'static str;
 
     fn node_finder_label(&self, user_state: &mut Self::UserState) -> Cow<'_, str> {
-        Cow::Owned(user_state.get_plugin(*self).name())
+        
+        let name = user_state.get_plugin(*self).name();
+        if BUILT_IN_PLUGINS.contains(&&*name) {
+            Cow::Owned(format!("{name} (Official)"))
+        } else {
+            Cow::Owned(name.replace("(Official)", ""))
+        }
     }
 
     // this is what allows the library to show collapsible lists in the node finder.
@@ -1100,13 +1129,7 @@ impl NodeGraphExample {
         let package_manager = match PACKAGE_MANAGER.get() {
             Some(package_manager) => package_manager,
             None => {
-                let package_manager = match FloneumPackageIndex::fetch().await {
-                    Ok(index) => index,
-                    Err(err) => {
-                        log::error!("Error creating index: {err}");
-                        Default::default()
-                    }
-                };
+                let package_manager = FloneumPackageIndex::load().await;
                 let _ = PACKAGE_MANAGER.set(package_manager);
                 PACKAGE_MANAGER.get().unwrap()
             }
