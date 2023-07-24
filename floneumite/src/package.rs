@@ -6,6 +6,10 @@ pub struct Config {
 }
 
 impl Config {
+    pub fn new(packages: Vec<PackageStructure>) -> Self {
+        Self { packages }
+    }
+
     pub fn push(&mut self, package: PackageStructure) {
         self.packages.push(package);
     }
