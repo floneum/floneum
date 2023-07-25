@@ -104,8 +104,8 @@ async fn package_and_build(
         build_path = build_path
             .join(&this_package.name.replace('-', "_"))
             .with_extension("wasm");
-        let plugin = plugin_manager.load_plugin(&build_path).await;
-        let instance = plugin.instance().await;
+        let plugin = plugin_manager.load_plugin(&build_path);
+        let instance = plugin.instance().await.unwrap();
         let info = instance.metadata();
         let name = &info.name;
         let version = this_package.version.to_string();

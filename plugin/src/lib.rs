@@ -5,6 +5,7 @@
 use crate::plugins::main::imports::*;
 use download::model_downloaded;
 use exports::plugins::main::definitions::*;
+use floneumite::PackageIndexEntry;
 use futures_util::Future;
 use once_cell::sync::Lazy;
 use plugins::main::types::Structure;
@@ -517,18 +518,80 @@ pub struct PluginEngine {}
 
 impl PluginEngine {
     #[tracing::instrument]
-    pub async fn load_plugin(&mut self, path: &Path) -> Plugin {
+    pub fn load_plugin(&mut self, path: &Path) -> Plugin {
         log::info!("loading plugin {path:?}");
 
-        // we first read the bytes of the wasm module.
-        let module = std::fs::read(path)
-            .unwrap_or_else(|e| panic!("Failed to read plugin {:?}: {}", path.display(), e));
-        self.load_plugin_from_bytes(module).await
+        let module = PackageIndexEntry::new(path.into(), None, None);
+        self.load_plugin_from_source(module)
     }
 
-    pub async fn load_plugin_from_bytes(&mut self, bytes: Vec<u8>) -> Plugin {
+    pub fn load_plugin_from_source(&mut self, source: PackageIndexEntry) -> Plugin {
+        let md = once_cell::sync::OnceCell::new();
+        if let Some(metadata) = source.meta() {
+            let _ = md.set(PluginMetadata {
+                name: metadata.name.clone(),
+                description: metadata.description.clone(),
+            });
+        }
+
+        Plugin {
+            source,
+            component: once_cell::sync::OnceCell::new(),
+            definition: once_cell::sync::OnceCell::new(),
+            metadata: md,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PluginMetadata {
+    name: String,
+    description: String,
+}
+
+pub struct Plugin {
+    source: PackageIndexEntry,
+    component: once_cell::sync::OnceCell<Component>,
+    definition: once_cell::sync::OnceCell<Definition>,
+    metadata: once_cell::sync::OnceCell<PluginMetadata>,
+}
+
+impl std::fmt::Debug for Plugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Plugin")
+            .field("metadata", &self.metadata)
+            .finish()
+    }
+}
+
+impl Serialize for Plugin {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // Just serialize the source
+        self.source.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Plugin {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        // Just deserialize the source
+        let source = PackageIndexEntry::deserialize(deserializer)?;
+
+        Ok(async move {
+            let mut engine = PluginEngine::default();
+            engine.load_plugin_from_source(source)
+        }
+        .block_on())
+    }
+}
+
+impl Plugin {
+    async fn component(&self) -> anyhow::Result<&Component> {
+        if let Some(component) = self.component.get() {
+            return Ok(component);
+        }
+        let bytes = self.source.wasm_bytes().await?;
         let size = bytes.len();
-        log::info!("loaded plugin ({:01} mb)", size as f64 / (1024. * 1024.));
+        log::info!("read plugin ({:01} mb)", size as f64 / (1024. * 1024.));
         // then we transform module to compoennt.
         // remember to get wasi_snapshot_preview1.wasm first.
         let component = ComponentEncoder::default()
@@ -544,72 +607,58 @@ impl PluginEngine {
             .unwrap();
         let component = Component::from_binary(&ENGINE, &component).unwrap();
 
+        let _ = self.component.set(component);
+        log::info!("loaded plugin ({:01} mb)", size as f64 / (1024. * 1024.));
+
+        Ok(self.component.get().unwrap())
+    }
+
+    async fn definition(&self) -> anyhow::Result<&Definition> {
+        if let Some(metadata) = self.definition.get() {
+            return Ok(metadata);
+        }
         // then we get the structure of the plugin.
         let mut store = Store::new(&ENGINE, State::default());
+        let component = self.component().await?;
         let (world, _instance) = PluginWorld::instantiate_async(&mut store, &component, &*LINKER)
             .await
             .unwrap();
         let structure = world.interface0.call_structure(&mut store).await.unwrap();
 
-        Plugin {
-            bytes: Arc::new(bytes),
-            component,
-            metadata: structure,
+        let _ = self.definition.set(structure);
+
+        Ok(self.definition.get().unwrap())
+    }
+
+    async fn metadata(&self) -> anyhow::Result<&PluginMetadata> {
+        if let Some(metadata) = self.metadata.get() {
+            return Ok(metadata);
         }
+        let definition = self.definition().await?;
+        let _ = self.metadata.set(PluginMetadata {
+            name: definition.name.clone(),
+            description: definition.description.clone(),
+        });
+        Ok(self.metadata.get().unwrap())
     }
-}
 
-pub struct Plugin {
-    bytes: Arc<Vec<u8>>,
-    metadata: Definition,
-    component: Component,
-}
-
-impl std::fmt::Debug for Plugin {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Plugin")
-            .field("metadata", &self.metadata)
-            .finish()
-    }
-}
-
-impl Serialize for Plugin {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        // Just serialize the bytes
-        serializer.serialize_bytes(&self.bytes)
-    }
-}
-
-impl<'de> Deserialize<'de> for Plugin {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        // Just deserialize the bytes
-        let bytes = Vec::<u8>::deserialize(deserializer)?;
-
-        Ok(async move {
-            let mut engine = PluginEngine::default();
-            engine.load_plugin_from_bytes(bytes).await
-        }
-        .block_on())
-    }
-}
-
-impl Plugin {
-    pub async fn instance(&self) -> PluginInstance {
+    pub async fn instance(&self) -> anyhow::Result<PluginInstance> {
         // create the store of models
         let state = State::default();
         let logs = state.logs.clone();
         let mut store = Store::new(&ENGINE, state);
-        let (world, _instance) =
-            PluginWorld::instantiate_async(&mut store, &self.component, &LINKER)
-                .await
-                .unwrap();
+        let component = self.component().await?;
+        let definition = self.definition().await?;
+        let (world, _instance) = PluginWorld::instantiate_async(&mut store, &component, &LINKER)
+            .await
+            .unwrap();
 
-        let (input_sender, mut input_reciever) = broadcast::channel::<Vec<Input>>(100);
-        let (output_sender, output_reciever) = broadcast::channel(100);
+        let (input_sender, mut input_receiver) = broadcast::channel::<Vec<Input>>(100);
+        let (output_sender, output_receiver) = broadcast::channel(100);
 
         tokio::spawn(async move {
             loop {
-                let Ok(inputs) = input_reciever.recv().await else{break;};
+                let Ok(inputs) = input_receiver.recv().await else{break;};
                 let borrowed = inputs.iter().collect::<Vec<_>>();
                 let outputs = world.interface0.call_run(&mut store, &borrowed).await;
                 if output_sender.send(Arc::new(outputs)).is_err() {
@@ -618,30 +667,30 @@ impl Plugin {
             }
         });
 
-        PluginInstance {
-            source_bytes: self.bytes.clone(),
+        Ok(PluginInstance {
+            source: self.source.clone(),
             sender: input_sender,
-            reciever: output_reciever,
-            metadata: self.metadata.clone(),
+            receiver: output_receiver,
+            metadata: definition.clone(),
             logs,
-        }
+        })
     }
 
-    pub fn name(&self) -> String {
-        self.metadata.name.clone()
+    pub async fn name(&self) -> anyhow::Result<String> {
+        Ok(self.metadata().await?.name.clone())
     }
 
-    pub fn description(&self) -> String {
-        self.metadata.description.clone()
+    pub async fn description(&self) -> anyhow::Result<String> {
+        Ok(self.metadata().await?.description.clone())
     }
 }
 
 pub struct PluginInstance {
-    source_bytes: Arc<Vec<u8>>,
+    source: PackageIndexEntry,
     metadata: Definition,
     logs: Arc<RwLock<Vec<String>>>,
     sender: broadcast::Sender<Vec<Input>>,
-    reciever: broadcast::Receiver<Arc<Result<Vec<Output>, wasmtime::Error>>>,
+    receiver: broadcast::Receiver<Arc<Result<Vec<Output>, wasmtime::Error>>>,
 }
 
 impl std::fmt::Debug for PluginInstance {
@@ -655,21 +704,21 @@ impl std::fmt::Debug for PluginInstance {
 
 impl Serialize for PluginInstance {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        // Just serialize the bytes
-        serializer.serialize_bytes(&self.source_bytes)
+        // Just serialize the source
+        self.source.serialize(serializer)
     }
 }
 
 impl<'de> Deserialize<'de> for PluginInstance {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        // Just deserialize the bytes
-        let bytes = Vec::<u8>::deserialize(deserializer)?;
+        // Just deserialize the source
+        let source = PackageIndexEntry::deserialize(deserializer)?;
         Ok(async move {
             PluginEngine::default()
-                .load_plugin_from_bytes(bytes)
-                .await
+                .load_plugin_from_source(source)
                 .instance()
                 .await
+                .unwrap()
         }
         .block_on())
     }
@@ -682,10 +731,10 @@ impl PluginInstance {
     ) -> impl Future<Output = Option<Arc<Result<Vec<Output>, Error>>>> + 'static {
         tracing::trace!("sending inputs to plugin: {inputs:?}");
         let sender = self.sender.clone();
-        let mut reciever = self.reciever.resubscribe();
+        let mut receiver = self.receiver.resubscribe();
         async move {
             let _ = sender.send(inputs);
-            reciever.recv().await.ok()
+            receiver.recv().await.ok()
         }
     }
 
@@ -715,9 +764,9 @@ async fn load_plugin() {
 
     let mut engine = PluginEngine::default();
 
-    let plugin = engine.load_plugin(&std::path::PathBuf::from(path)).await;
+    let plugin = engine.load_plugin(&std::path::PathBuf::from(path));
 
-    let instance = plugin.instance().await;
+    let instance = plugin.instance().await.unwrap();
 
     let inputs = vec![
         Input::Single(PrimitiveValue::Text("hello {}".to_string())),

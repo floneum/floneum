@@ -33,27 +33,27 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
 const BUILT_IN_PLUGINS: &[&str] = &[
-            "add_embedding",
-            "embedding",
-            "embedding_db",
-            "format",
-            "generate_text",
-            "generate_structured_text",
-            "search",
-            "search_engine",
-            "if_statement",
-            "contains",
-            "write_to_file",
-            "read_from_file",
-            "run_python",
-            "create_browser",
-            "find_node",
-            "find_child_node",
-            "click_node",
-            "node_text",
-            "type_in_node",
-            "navigate_to",
-        ];
+    "add_embedding",
+    "embedding",
+    "embedding_db",
+    "format",
+    "generate_text",
+    "generate_structured_text",
+    "search",
+    "search_engine",
+    "if_statement",
+    "contains",
+    "write_to_file",
+    "read_from_file",
+    "run_python",
+    "create_browser",
+    "find_node",
+    "find_child_node",
+    "click_node",
+    "node_text",
+    "type_in_node",
+    "navigate_to",
+];
 
 trait Variants: Sized + 'static {
     const VARIANTS: &'static [Self];
@@ -707,8 +707,7 @@ impl NodeTemplateTrait for PluginId {
     type CategoryType = &'static str;
 
     fn node_finder_label(&self, user_state: &mut Self::UserState) -> Cow<'_, str> {
-        
-        let name = user_state.get_plugin(*self).name();
+        let name = user_state.get_plugin(*self).name().block_on().unwrap();
         if BUILT_IN_PLUGINS.contains(&&*name) {
             Cow::Owned(format!("{name} (Official)"))
         } else {
@@ -733,7 +732,7 @@ impl NodeTemplateTrait for PluginId {
             queued: false,
             error: None,
             run_count: 0,
-            instance: user_state.get_plugin(*self).instance().block_on(),
+            instance: user_state.get_plugin(*self).instance().block_on().unwrap(),
         }
     }
 
@@ -1136,8 +1135,7 @@ impl NodeGraphExample {
         };
 
         for package in package_manager.entries() {
-            let path = package.wasm_path();
-            let plugin = user_state.plugin_engine.load_plugin(&path).await;
+            let plugin = user_state.plugin_engine.load_plugin_from_source(package.clone());
             let id = user_state.plugins.insert(plugin);
             user_state.all_plugins.insert(PluginId(id));
         }
@@ -1248,7 +1246,7 @@ impl eframe::App for NodeGraphExample {
                 {
                     let path = PathBuf::from(&self.plugin_path_text);
                     if path.exists() {
-                        let plugin = self.user_state.plugin_engine.load_plugin(&path).block_on();
+                        let plugin = self.user_state.plugin_engine.load_plugin(&path);
                         let id = self.user_state.plugins.insert(plugin);
                         self.user_state.all_plugins.insert(PluginId(id));
                     }

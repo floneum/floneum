@@ -58,8 +58,8 @@ impl FloneumPackageIndex {
         std::fs::create_dir_all(&package_path)?;
         let wasm_path = package_path.join("package.wasm");
         std::fs::write(wasm_path, bytes)?;
-        let package =
-            PackageIndexEntry::new(package.clone(), package_path, repo, commit_sha.clone());
+        let remote = Remote::new(package.clone(), repo.clone(), commit_sha.clone());
+        let package = PackageIndexEntry::new(package_path, Some(package), Some(remote));
 
         Ok(package)
     }
@@ -176,7 +176,7 @@ impl FloneumPackageIndex {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RepoId {
     pub owner: String,
     pub name: String,
@@ -227,24 +227,17 @@ impl RepoId {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct PackageIndexEntry {
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Remote {
     last_fetched: u64,
     sha: String,
-    path: std::path::PathBuf,
     repo: RepoId,
     structure: package::PackageStructure,
 }
 
-impl PackageIndexEntry {
-    pub fn new(
-        structure: PackageStructure,
-        path: std::path::PathBuf,
-        repo: RepoId,
-        sha: String,
-    ) -> Self {
+impl Remote {
+    pub fn new(structure: PackageStructure, repo: RepoId, sha: String) -> Self {
         Self {
-            path,
             last_fetched: SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap()
@@ -275,9 +268,60 @@ impl PackageIndexEntry {
         }
         Ok(())
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PackageIndexEntry {
+    path: std::path::PathBuf,
+    meta: Option<PackageStructure>,
+    remote: Option<Remote>,
+}
+
+impl PackageIndexEntry {
+    pub fn new(
+        path: std::path::PathBuf,
+        meta: Option<PackageStructure>,
+        remote: Option<Remote>,
+    ) -> Self {
+        let path = if path.extension() == Some(std::ffi::OsStr::new("wasm")) {
+            path.parent().unwrap().to_path_buf()
+        } else {
+            path
+        };
+        log::info!("found: {}", path.display());
+        Self { path, remote, meta }
+    }
+
+    pub fn is_expired(&self) -> bool {
+        match &self.remote {
+            Some(remote) => remote.is_expired(),
+            None => false,
+        }
+    }
+
+    pub async fn update(&self) -> anyhow::Result<()> {
+        if let Some(remote) = &self.remote {
+            remote.update().await?;
+        }
+        Ok(())
+    }
+
+    pub fn path(&self) -> std::path::PathBuf {
+        self.path.clone()
+    }
 
     pub fn wasm_path(&self) -> std::path::PathBuf {
         self.path.join("package.wasm")
+    }
+
+    pub async fn wasm_bytes(&self) -> anyhow::Result<Vec<u8>> {
+        let wasm_path = self.wasm_path();
+        log::info!("loading wasm from {wasm_path:?}");
+        Ok(std::fs::read(wasm_path)?)
+    }
+
+    pub fn meta(&self) -> Option<&PackageStructure> {
+        self.meta.as_ref()
     }
 }
 

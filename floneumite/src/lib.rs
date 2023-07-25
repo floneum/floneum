@@ -7,7 +7,7 @@ mod package;
 pub use package::PackageStructure;
 
 mod index;
-pub use index::FloneumPackageIndex;
+pub use index::{FloneumPackageIndex, PackageIndexEntry};
 
 pub use crate::package::Config;
 
