@@ -21,15 +21,15 @@ impl Config {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PackageStructure {
-    pub(crate) name: String,
+    pub name: String,
     #[serde(default)]
-    pub(crate) authors: Vec<String>,
+    pub authors: Vec<String>,
     #[serde(default)]
-    pub(crate) description: String,
+    pub description: String,
     #[serde(default = "default_version")]
-    pub(crate) package_version: String,
+    pub package_version: String,
     #[serde(default = "default_binding_version")]
-    pub(crate) binding_version: String,
+    pub binding_version: String,
 }
 
 fn default_version() -> String {
