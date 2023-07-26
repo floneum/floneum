@@ -184,26 +184,3 @@ jobs:
         with:
           name: floneum-${{ matrix.platform.os_name }}
           path: "floneum-*"
-      - name: Generate SHA-256
-        run: shasum -a 256 ${{ matrix.platform.name }}
-        if: |
-          matrix.toolchain == 'stable' &&
-          matrix.platform.os == 'macOS-latest' &&
-          ( startsWith( github.ref, 'refs/tags/v' ) ||
-            github.ref == 'refs/tags/test-release' )
-      - name: Generate release tag
-        id: tag
-        run: |
-          echo "::set-output name=release_tag::UserBuild_$(date +"%Y.%m.%d_%H-%M")"
-      - name: Create/Update tag
-        run: |
-          git tag -a v${{ steps.tag.outputs.release_tag }} -m "Published version ${{ steps.tag.outputs.release_tag}}" ${{ github.sha }}
-          git push origin v${{ steps.tag.outputs.release_tag }}
-      - name: Publish GitHub release
-        uses: softprops/action-gh-release@v1
-        with:
-          draft: false
-          name: Nightly
-          target_commitish: ${{ github.sha }}
-          files: "floneum-*"
-          tag_name: ${{ steps.tag.outputs.release_tag }}
