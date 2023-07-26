@@ -1,0 +1,48 @@
+name: Rust CI
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - packages/**
+      - examples/**
+      - docs/guide/**
+      - src/**
+      - .github/**
+      - lib.rs
+      - Cargo.toml
+      - Makefile.toml
+      - playwright-tests/**
+
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - master
+    paths:
+      - packages/**
+      - examples/**
+      - src/**
+      - .github/**
+      - lib.rs
+      - Cargo.toml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.event.pull_request.draft == false
+    name: Build Plugins
+    runs-on: ubuntu-latest
+    steps:
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update
+      - run: sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev
+      - uses: browser-actions/setup-firefox@latest
+      - uses: jetli/wasm-pack-action@v0.4.0
+      - uses: actions/checkout@v3
+      - run: cargo install --path floneum-cli --debug
+      - run: floneum build --release --packages floneum_add_embedding,floneum_embedding,floneum_embedding_db,floneum_format,floneum_generate_text,floneum_generate_structured_text,floneum_search,floneum_search_engine,floneum_if,floneum_contains,floneum_write_to_file,floneum_read_from_file,floneum_python,floneum_create_tab,floneum_find_node,floneum_find_child_node,floneum_click_node,floneum_node_text,floneum_type_in_node,floneum_navigate_to
