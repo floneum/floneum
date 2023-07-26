@@ -110,18 +110,6 @@ jobs:
             bin: floneum
             name: floneum-NetBSD-x86_64.tar.gz
             skip_tests: true
-          - os_name: Windows-aarch64
-            os: windows-latest
-            target: aarch64-pc-windows-msvc
-            bin: floneum.exe
-            name: floneum-Windows-aarch64.zip
-            skip_tests: true
-          - os_name: Windows-i686
-            os: windows-latest
-            target: i686-pc-windows-msvc
-            bin: floneum.exe
-            name: floneum-Windows-i686.zip
-            skip_tests: true
           - os_name: Windows-x86_64
             os: windows-latest
             target: x86_64-pc-windows-msvc
@@ -150,6 +138,9 @@ jobs:
           git config --global user.name "J. Doe"
       - name: Install musl-tools on Linux
         run: sudo apt-get update --yes && sudo apt-get install --yes musl-tools
+        if: contains(matrix.platform.name, 'musl')
+      - name: Install openssl on Linux
+        run: sudo apt-get update --yes && sudo apt-get install --yes libssl-dev pkg-config
         if: contains(matrix.platform.name, 'musl')
       - name: Build binary
         uses: houseabsolute/actions-rust-cross@v0
