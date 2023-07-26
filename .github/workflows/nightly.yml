@@ -17,6 +17,8 @@ jobs:
   test:
     name: ${{ matrix.platform.os_name }} with rust ${{ matrix.toolchain }}
     runs-on: ${{ matrix.platform.os }}
+    env:
+      OPENSSL_DIR: /usr/include/openssl
     strategy:
       fail-fast: false
       matrix:
