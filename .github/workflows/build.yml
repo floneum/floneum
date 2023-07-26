@@ -5,26 +5,7 @@ on:
     branches:
       - master
     paths:
-      - packages/**
-      - examples/**
-      - docs/guide/**
       - src/**
-      - .github/**
-      - lib.rs
-      - Cargo.toml
-      - Makefile.toml
-      - playwright-tests/**
-
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    branches:
-      - master
-    paths:
-      - packages/**
-      - examples/**
-      - src/**
-      - .github/**
-      - lib.rs
       - Cargo.toml
 
 concurrency:
@@ -46,3 +27,15 @@ jobs:
       - uses: actions/checkout@v3
       - run: cargo install --path floneum-cli --debug
       - run: floneum build --release --packages floneum_add_embedding,floneum_embedding,floneum_embedding_db,floneum_format,floneum_generate_text,floneum_generate_structured_text,floneum_search,floneum_search_engine,floneum_if,floneum_contains,floneum_write_to_file,floneum_read_from_file,floneum_python,floneum_create_tab,floneum_find_node,floneum_find_child_node,floneum_click_node,floneum_node_text,floneum_type_in_node,floneum_navigate_to
+      - name: switching from HTTPS to SSH
+        run: git remote set-url origin ${{ secrets.ssh }}
+      - name: check for changes
+        run: git status
+      - name: stage changed files
+        run: git add .
+      - name: commit changed files
+        run: git commit -m "Auto updating plugin build"
+      - name: fetch from master
+        run: git fetch origin master
+      - name: push code to master
+        run: git push origin HEAD:master
