@@ -1,15 +1,12 @@
+use crate::structured_parser::{ParseStatus, ParseStream};
 use crate::{
-    download::download,
-    embedding::get_embeddings,
-    exports::plugins::main::definitions::Embedding,
-    exports::plugins::main::definitions::ModelId,
-    structured::StructuredSampler,
-    structured_parser::{ParseStream, Validate},
+    download::download, embedding::get_embeddings, exports::plugins::main::definitions::Embedding,
+    plugins::main::types::ModelId, structured::StructuredSampler, structured_parser::Validate,
     ModelType,
 };
 use llm::{
-    InferenceFeedback, InferenceParameters, InferenceRequest, InferenceResponse, InferenceSession,
-    InferenceSessionConfig, Model,
+    InferenceError, InferenceFeedback, InferenceParameters, InferenceRequest, InferenceResponse,
+    InferenceSession, InferenceSessionConfig, Model, OutputRequest, TokenUtf8Buffer,
 };
 use slab::Slab;
 use std::fmt::Debug;
@@ -92,21 +89,16 @@ impl InferenceSessions {
 
         let tokens = model.tokenizer().tokenize(&prompt, false).unwrap();
 
-        let parameters = InferenceParameters {
-            sampler: Arc::new(StructuredSampler::new(
-                match model.tokenizer() {
-                    llm::Tokenizer::Embedded(embedded) => {
-                        llm::Tokenizer::Embedded(embedded.clone())
-                    }
-                    llm::Tokenizer::HuggingFace(hugging_face) => {
-                        llm::Tokenizer::HuggingFace(hugging_face.clone())
-                    }
-                },
-                validator.clone(),
-                tokens.len() + 1,
-            )),
-            ..Default::default()
-        };
+        let sampler = Arc::new(StructuredSampler::new(
+            match model.tokenizer() {
+                llm::Tokenizer::Embedded(embedded) => llm::Tokenizer::Embedded(embedded.clone()),
+                llm::Tokenizer::HuggingFace(hugging_face) => {
+                    llm::Tokenizer::HuggingFace(hugging_face.clone())
+                }
+            },
+            validator.clone(),
+            tokens.len() + 1,
+        ));
 
         let token_ids = tokens.iter().map(|(_, id)| *id).collect::<Vec<_>>();
 
@@ -114,41 +106,92 @@ impl InferenceSessions {
         let mut result_tokens = Vec::new();
         let request = InferenceRequest {
             prompt: llm::Prompt::Tokens(&token_ids),
-            parameters: &parameters,
+            parameters: &Default::default(),
             play_back_previous_tokens: false,
             maximum_token_count: max_tokens.map(|x| x as usize),
         };
 
+        let maximum_token_count = request.maximum_token_count.unwrap_or(usize::MAX);
+
+        let parameters = request.parameters;
+        let mut output = OutputRequest::default();
+
+        // Feed the initial prompt through the transformer, to update its
+        // context window with new data.
         session
-            .infer(
-                model.as_ref(),
-                &mut rng,
-                &request,
-                &mut Default::default(),
-                {
-                    let tokens = &mut result_tokens;
-                    move |resp| match resp {
-                        InferenceResponse::InferredToken(t) => {
-                            tokens.push(t);
-                            let borrowed: Vec<_> = tokens.iter().map(|s| s.as_str()).collect();
-                            match validator.validate(ParseStream::new(&borrowed)) {
-                                crate::structured_parser::ParseStatus::Incomplete => {
-                                    Ok::<_, Infallible>(InferenceFeedback::Continue)
-                                }
-                                crate::structured_parser::ParseStatus::Complete(_) => {
-                                    Ok(InferenceFeedback::Halt)
-                                }
-                                crate::structured_parser::ParseStatus::Invalid => {
-                                    Ok(InferenceFeedback::Halt)
-                                }
-                            }
+            .feed_prompt(&**model, parameters, request.prompt, &mut output, |_| {
+                Result::<_, std::convert::Infallible>::Ok(InferenceFeedback::Continue)
+            })
+            .unwrap();
+
+        // After the prompt is consumed, sample tokens by repeatedly calling
+        // `infer_next_token`. We generate tokens until the model returns an
+        // EndOfText token, or we run out of space in the context window,
+        // or we reach the specified limit.
+        let mut tokens_processed = 0;
+        let mut token_utf8_buf = TokenUtf8Buffer::new();
+        while tokens_processed < maximum_token_count {
+            let parameters = &InferenceParameters {
+                sampler: sampler.clone(),
+                n_batch: 16,
+                n_threads: 12,
+            };
+
+            let token = match session.infer_next_token(&**model, parameters, &mut output, &mut rng)
+            {
+                Ok(token) => token,
+                Err(InferenceError::EndOfText) => break,
+                Err(e) => panic!("Error: {:?}", e),
+            };
+
+            // Buffer the token until it's valid UTF-8, then call the callback.
+            if let Some(token) = token_utf8_buf.push(&token) {
+                result_tokens.push(token);
+            }
+
+            tokens_processed += 1;
+
+            loop {
+                let borrowed = result_tokens.iter().map(|x| x.as_str()).collect::<Vec<_>>();
+                let status = sampler.structure.validate(ParseStream::new(&borrowed));
+                match status {
+                    ParseStatus::Incomplete {
+                        required_next: Some(required_next),
+                    } => {
+                        // feed the required next text
+                        let tokens = model.tokenizer().tokenize(&required_next, false).unwrap();
+                        let token_ids = tokens.iter().map(|(_, id)| *id).collect::<Vec<_>>();
+                        session
+                            .feed_prompt(
+                                &**model,
+                                parameters,
+                                llm::Prompt::Tokens(&token_ids),
+                                &mut output,
+                                |_| {
+                                    Result::<_, std::convert::Infallible>::Ok(
+                                        InferenceFeedback::Continue,
+                                    )
+                                },
+                            )
+                            .unwrap();
+                        let token = tokens
+                            .iter()
+                            .map(|(x, _)| x.iter().copied())
+                            .flatten()
+                            .collect::<Vec<u8>>();
+                        if let Some(token) = token_utf8_buf.push(&token) {
+                            result_tokens.push(token);
                         }
-                        InferenceResponse::EotToken => Ok(InferenceFeedback::Halt),
-                        _ => Ok(InferenceFeedback::Continue),
+
+                        tokens_processed += token_ids.len();
                     }
-                },
-            )
-            .unwrap_or_else(|e| panic!("{e}"));
+                    ParseStatus::Complete(..) => return result_tokens.join(""),
+                    _ => {
+                        break;
+                    }
+                }
+            }
+        }
 
         result_tokens.join("")
     }
