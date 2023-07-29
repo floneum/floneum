@@ -1135,7 +1135,9 @@ impl NodeGraphExample {
         };
 
         for package in package_manager.entries() {
-            let plugin = user_state.plugin_engine.load_plugin_from_source(package.clone());
+            let plugin = user_state
+                .plugin_engine
+                .load_plugin_from_source(package.clone());
             let id = user_state.plugins.insert(plugin);
             user_state.all_plugins.insert(PluginId(id));
         }

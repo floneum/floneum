@@ -72,10 +72,10 @@ inherits = "release"
 lto = "thin"
 
 [profile.release]
-lto = true
+# lto = true
 debug = false
 opt-level = 'z'
-codegen-units = 1
+# codegen-units = 1
 
 [profile.dev.package."*"]
 opt-level = 3

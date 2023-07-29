@@ -168,7 +168,9 @@ impl<'a> Validate<'a> for ValidateInt {
             let _ = iter.next();
         }
 
-        ParseStatus::Incomplete
+        ParseStatus::Incomplete {
+            required_next: None,
+        }
     }
 }
 
@@ -256,7 +258,9 @@ impl<'a> Validate<'a> for ValidateString {
             let _ = iter.next();
         }
 
-        ParseStatus::Incomplete
+        ParseStatus::Incomplete {
+            required_next: None,
+        }
     }
 }
 
@@ -274,7 +278,7 @@ fn test_validate_string() {
 
 #[derive(Debug, PartialEq)]
 pub enum ParseStatus<'a> {
-    Incomplete,
+    Incomplete { required_next: Option<String> },
     Complete(Option<ParseStream<'a>>),
     Invalid,
 }
@@ -290,7 +294,7 @@ impl ParseStatus<'_> {
     }
 
     pub fn is_incomplete(&self) -> bool {
-        matches!(self, ParseStatus::Incomplete)
+        matches!(self, ParseStatus::Incomplete { .. })
     }
 }
 
@@ -440,9 +444,11 @@ impl<'a, A: Validate<'a>, B: Validate<'a>> Validate<'a> for Then<'a, A, B> {
     fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
         match self.0.validate(tokens) {
             ParseStatus::Complete(Some(tokens)) => self.1.validate(tokens),
-            ParseStatus::Complete(None) => ParseStatus::Incomplete,
+            ParseStatus::Complete(None) => ParseStatus::Incomplete {
+                required_next: None,
+            },
             ParseStatus::Invalid => ParseStatus::Invalid,
-            ParseStatus::Incomplete => ParseStatus::Incomplete,
+            ParseStatus::Incomplete { required_next } => ParseStatus::Incomplete { required_next },
         }
     }
 }
@@ -454,7 +460,12 @@ impl<'a, A: Validate<'a>, B: Validate<'a>> Validate<'a> for Or<'a, A, B> {
         match self.0.validate(tokens) {
             ParseStatus::Complete(tokens) => ParseStatus::Complete(tokens),
             ParseStatus::Invalid => self.1.validate(tokens),
-            ParseStatus::Incomplete => ParseStatus::Incomplete,
+            ParseStatus::Incomplete { required_next } => match self.1.validate(tokens) {
+                ParseStatus::Invalid => ParseStatus::Incomplete { required_next },
+                _ => ParseStatus::Incomplete {
+                    required_next: None,
+                },
+            },
         }
     }
 }
@@ -471,14 +482,23 @@ impl<'a> Validate<'a> for &str {
         let mut chars = self.chars();
 
         let result = loop {
+            let next_char = match iter.peek() {
+                Some(c) => c,
+                None => {
+                    let remaining = chars.as_str().to_string();
+                    break if chars.next().is_none() {
+                        ParseStatus::Complete(None)
+                    } else {
+                        ParseStatus::Incomplete {
+                            required_next: (!remaining.is_empty()).then(|| remaining),
+                        }
+                    };
+                }
+            };
+
             let my_char = match chars.next() {
                 Some(c) => c,
                 None => break ParseStatus::Complete(iter.current()),
-            };
-
-            let next_char = match iter.peek() {
-                Some(c) => c,
-                None => break ParseStatus::Incomplete,
             };
 
             if my_char != next_char {
@@ -511,6 +531,7 @@ impl<'a, S: Validate<'a>, I: Validate<'a>, E: Validate<'a>> Between<'a, S, I, E>
 }
 
 impl<'a, S: Validate<'a>, I: Validate<'a>, E: Validate<'a>> Validate<'a> for Between<'a, S, I, E> {
+    #[tracing::instrument(skip(self), level = "info")]
     fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
         (&self.start)
             .then(&self.inner)
@@ -559,7 +580,9 @@ impl<'a, S: Validate<'a>, I: Validate<'a>> Validate<'a> for Seperated<'a, S, I> 
                             if count >= self.min {
                                 return ParseStatus::Complete(Some(tokens));
                             } else {
-                                return ParseStatus::Incomplete;
+                                return ParseStatus::Incomplete {
+                                    required_next: None,
+                                };
                             }
                         }
                         // if we get an invalid separator, then this is the end of the list
@@ -571,7 +594,9 @@ impl<'a, S: Validate<'a>, I: Validate<'a>> Validate<'a> for Seperated<'a, S, I> 
                             }
                         }
                         // if we get an incomplete separator, then we need to wait for more tokens
-                        ParseStatus::Incomplete => return ParseStatus::Incomplete,
+                        ParseStatus::Incomplete { required_next } => {
+                            return ParseStatus::Incomplete { required_next }
+                        }
                     }
                 }
                 ParseStatus::Complete(None) => {
@@ -583,7 +608,9 @@ impl<'a, S: Validate<'a>, I: Validate<'a>> Validate<'a> for Seperated<'a, S, I> 
                     }
                 }
                 ParseStatus::Invalid => return ParseStatus::Invalid,
-                ParseStatus::Incomplete => return ParseStatus::Incomplete,
+                ParseStatus::Incomplete { required_next } => {
+                    return ParseStatus::Incomplete { required_next }
+                }
             }
             count += 1;
         }

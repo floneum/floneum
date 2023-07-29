@@ -6,8 +6,8 @@ use std::fmt::Debug;
 use crate::structured_parser::{ParseStatus, ParseStream, Validate};
 
 pub struct StructuredSampler<V: for<'a> Validate<'a>> {
-    tokenizer: Tokenizer,
-    structure: V,
+    pub tokenizer: Tokenizer,
+    pub structure: V,
     /// The top K words by score are kept during sampling.
     top_k: usize,
     /// The cumulative probability after which no more words are kept for sampling.
@@ -22,7 +22,7 @@ pub struct StructuredSampler<V: for<'a> Validate<'a>> {
     bias_tokens: TokenBias,
     /// The number of tokens to consider for the repetition penalty.
     repetition_penalty_last_n: usize,
-    current_token_count: usize,
+    pub current_token_count: usize,
 }
 
 impl<V: for<'a> Validate<'a>> StructuredSampler<V> {
@@ -74,7 +74,7 @@ impl<V: for<'a> Validate<'a>> StructuredSampler<V> {
         match status {
             ParseStatus::Complete(Some(_)) => true,
             ParseStatus::Complete(None) => false,
-            ParseStatus::Incomplete => new_token.is_empty(),
+            ParseStatus::Incomplete { .. } => new_token.is_empty(),
             ParseStatus::Invalid => true,
         }
     }
