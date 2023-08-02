@@ -1,6 +1,7 @@
-use std::fmt::Debug;
+use std::{collections::HashSet, fmt::Debug};
 
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
+use floneum_plugin::exports::plugins::main::definitions::Input;
 use petgraph::{
     visit::{EdgeRef, IntoNodeIdentifiers},
     Graph,
@@ -85,6 +86,143 @@ impl VisualGraph {
                 evt.element_coordinates().y as f32,
             ),
         }));
+    }
+
+    fn should_run_node(&self, id: petgraph::graph::NodeIndex) -> bool {
+        log::info!("Checking if node {id:?} should run");
+        let graph = self.inner.read_silent();
+        // traverse back through inputs to see if any of those nodes are running
+        let mut visited: HashSet<petgraph::stable_graph::NodeIndex> = HashSet::default();
+        visited.insert(id);
+        let mut should_visit = Vec::new();
+        {
+            // first add all of the inputs to the current node
+            let node = &graph.graph[id].read_silent();
+            if node.running {
+                log::info!("Node {id:?} is running, so we shouldn't run it again");
+                return false;
+            }
+
+            for input in graph
+                .graph
+                .edges_directed(id, petgraph::Direction::Incoming)
+            {
+                let source = input.source();
+                should_visit.push(source);
+                visited.insert(source);
+            }
+        }
+
+        while let Some(new_id) = should_visit.pop() {
+            if new_id == id {
+                continue;
+            }
+            let node = graph.graph[new_id].read_silent();
+            if node.running || node.queued {
+                log::info!("Node {new_id:?} is running... we should wait until it's done");
+                return false;
+            }
+            for input in graph
+                .graph
+                .edges_directed(id, petgraph::Direction::Incoming)
+            {
+                let source = input.source();
+                if !visited.contains(&source) {
+                    should_visit.push(source);
+                    visited.insert(source);
+                }
+            }
+        }
+
+        true
+    }
+
+    fn run_node(&mut self, id: petgraph::graph::NodeIndex) {
+        if !self.should_run_node(id) {
+            log::info!(
+                "node {:?} has unresolved dependencies, skipping running",
+                id
+            );
+            return;
+        }
+        let graph = self.inner.read_silent();
+        let node = &graph.graph[id].read_silent();
+
+        let mut values: Vec<Input> = Vec::new();
+        for input in graph
+            .graph
+            .edges_directed(id, petgraph::Direction::Incoming)
+        {
+            let mut values = Vec::new();
+            for connection in connections {
+                let connection = self.state.graph.get_output(*connection);
+                let output_id = connection.id;
+                if let Some(value) = self.user_state.node_outputs.get(&output_id) {
+                    match value {
+                        MyValueType::List(items) => {
+                            for value in items {
+                                values.push(value.clone().into());
+                            }
+                        }
+                        MyValueType::Single(value) => {
+                            values.push(value.clone().into());
+                        }
+                        other => {
+                            log::error!("unexpected value type: {:?}", other);
+                            self.state.graph[id].user_data.running = false;
+                            self.state.graph[id].user_data.queued = false;
+                            return;
+                        }
+                    }
+                } else {
+                    log::error!("missing value for output: {:?}", output_id);
+                    self.state.graph[id].user_data.running = false;
+                    self.state.graph[id].user_data.queued = false;
+                    return;
+                }
+            }
+
+            match input.typ {
+                MyDataType::Single(_) => {
+                    if values.len() != 1 {
+                        log::error!("expected 1 value, got: {:?}", values);
+                        self.state.graph[id].user_data.running = false;
+                        self.state.graph[id].user_data.queued = false;
+                        return;
+                    }
+                    MyValueType::Single(values.pop().unwrap())
+                }
+                MyDataType::List(_) => {
+                    values.reverse();
+                    MyValueType::List(values)
+                }
+            }
+
+            match &value {
+                MyValueType::Unset => {
+                    self.state.graph[id].user_data.running = false;
+                    self.state.graph[id].user_data.queued = false;
+                    return;
+                }
+                _ => values.push(value.into()),
+            }
+        }
+
+        let fut = node.user_data.instance.run(values);
+        let sender = self.txrx.tx.clone();
+        self.state.graph[id].user_data.running = true;
+        self.state.graph[id].user_data.run_count += 1;
+
+        tokio::spawn(async move {
+            if let Some(outputs) = fut.await {
+                let _ = sender
+                    .send(SetOutputMessage {
+                        node_id: id,
+                        values: outputs,
+                    })
+                    .await;
+            }
+        });
     }
 }
 

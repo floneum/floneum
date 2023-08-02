@@ -1,14 +1,23 @@
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
+use floneum_plugin::PluginInstance;
 use petgraph::{graph::NodeIndex, stable_graph::DefaultIx};
+use serde::{Deserialize, Serialize};
 
 use crate::graph::CurrentlyDragging;
 use crate::{local_sub::LocalSubscription, Point, VisualGraph};
-use crate::{CurrentlyDraggingProps, DraggingIndex, Edge};
+use crate::{CurrentlyDraggingProps, DraggingIndex, Edge, Help};
 
 const SNAP_DISTANCE: f32 = 15.;
 
-#[derive(Clone, PartialEq)]
+#[derive(Serialize, Deserialize)]
 pub struct Node {
+    pub instance: PluginInstance,
+    #[serde(skip)]
+    pub running: bool,
+    #[serde(skip)]
+    pub queued: bool,
+    #[serde(skip)]
+    error: Option<String>,
     pub id: NodeIndex<DefaultIx>,
     pub position: Point,
     pub inputs: usize,
@@ -37,6 +46,10 @@ impl Node {
             self.position.y + ((index as f32 + 1.) * self.height / (self.outputs as f32 + 1.)),
         )
     }
+
+    pub fn help_text(&self) -> String {
+        self.instance.metadata().description.to_string()
+    }
 }
 
 #[derive(Props, PartialEq)]
@@ -52,6 +65,14 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
     let height = current_node.height;
     let pos = current_node.position;
     let node_size = 5.;
+
+    if current_node.running {
+        return render! {
+            div {
+                "Loading..."
+            }
+        };
+    }
 
     render! {
         // inputs
@@ -222,7 +243,20 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
             },
 
             div { style: "-webkit-user-select: none; -ms-user-select: none; user-select: none; display: flex; justify-content: center; align-items: center; width: 100%; height: 100%; text-align: center; background-color: rgba(0,0,0,0.1); border-radius: 5px;",
-                div { padding: "{node_size*2.}px", p { "{pos:?}" } }
+                div { padding: "{node_size*2.}px",
+                    Help {
+                        help_text: current_node.help_text(),
+                    }
+                    p { "{pos:?}" }
+                    div {
+                        color: "red",
+                        if let Some(error) = &current_node.error {
+                            rsx! {
+                                p { "{error}" }
+                            }
+                        }
+                    }
+                }
             }
         }
 

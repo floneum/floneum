@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
+#![allow(non_snake_case)]
 
+use dioxus::html::geometry::euclid::Point2D;
 use eframe::egui::{DragValue, Margin, ScrollArea, Ui, Visuals};
 use eframe::epaint::{Stroke, Vec2};
 use eframe::{
@@ -31,6 +33,21 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
+
+mod node;
+pub use node::Node;
+mod local_sub;
+pub use local_sub::{LocalSubscription, UseLocalSubscription};
+mod edge;
+pub use edge::Edge;
+mod graph;
+pub use graph::{CurrentlyDraggingProps, DraggingIndex, FlowView, VisualGraph, VisualGraphInner};
+mod connection;
+pub use connection::Connection;
+mod help;
+pub use help::Help;
+
+pub type Point = Point2D<f32, f32>;
 
 const BUILT_IN_PLUGINS: &[&str] = &[
     "add_embedding",

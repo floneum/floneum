@@ -47,9 +47,9 @@ impl<T> Clone for LocalSubscription<T> {
     }
 }
 
-impl<T: PartialEq> PartialEq for LocalSubscription<T> {
+impl<T> PartialEq for LocalSubscription<T> {
     fn eq(&self, other: &Self) -> bool {
-        *self.inner.borrow() == *other.inner.borrow()
+        Rc::ptr_eq(&self.inner, &other.inner)
     }
 }
 
@@ -84,6 +84,10 @@ impl<T: 'static> LocalSubscription<T> {
     }
 
     pub fn read(&self, _: &ScopeState) -> Ref<T> {
+        self.inner.borrow()
+    }
+
+    pub fn read_silent(&self) -> Ref<T> {
         self.inner.borrow()
     }
 }
