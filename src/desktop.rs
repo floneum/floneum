@@ -32,7 +32,8 @@ fn main() {
             </script>
         </body>
     </html>
-    "#)
+    "#
+            )
             .into(),
         ),
     );

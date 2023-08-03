@@ -46,6 +46,8 @@ mod connection;
 pub use connection::Connection;
 mod help;
 pub use help::Help;
+mod value;
+pub use value::*;
 
 pub type Point = Point2D<f32, f32>;
 
@@ -71,54 +73,6 @@ const BUILT_IN_PLUGINS: &[&str] = &[
     "type_in_node",
     "navigate_to",
 ];
-
-trait Variants: Sized + 'static {
-    const VARIANTS: &'static [Self];
-}
-
-impl Variants for ModelType {
-    const VARIANTS: &'static [Self] = &[
-        ModelType::Llama(LlamaType::Guanaco),
-        ModelType::Llama(LlamaType::Orca),
-        ModelType::Llama(LlamaType::Vicuna),
-        ModelType::Llama(LlamaType::Wizardlm),
-        ModelType::Llama(LlamaType::LlamaSevenChat),
-        ModelType::Llama(LlamaType::LlamaThirteenChat),
-        ModelType::GptNeoX(GptNeoXType::TinyPythia),
-        ModelType::GptNeoX(GptNeoXType::LargePythia),
-        ModelType::GptNeoX(GptNeoXType::Stablelm),
-        ModelType::GptNeoX(GptNeoXType::DollySevenB),
-        ModelType::Mpt(MptType::Base),
-        ModelType::Mpt(MptType::Chat),
-        ModelType::Mpt(MptType::Story),
-        ModelType::Mpt(MptType::Instruct),
-    ];
-}
-
-trait Named {
-    fn name(&self) -> &'static str;
-}
-
-impl Named for ModelType {
-    fn name(&self) -> &'static str {
-        match self {
-            ModelType::Llama(LlamaType::Guanaco) => "Guanaco",
-            ModelType::Llama(LlamaType::Orca) => "Orca",
-            ModelType::Llama(LlamaType::Vicuna) => "Vicuna",
-            ModelType::Llama(LlamaType::Wizardlm) => "Wizardlm",
-            ModelType::Llama(LlamaType::LlamaSevenChat) => "Llama Seven Chat",
-            ModelType::Llama(LlamaType::LlamaThirteenChat) => "Llama Thirteen Chat",
-            ModelType::GptNeoX(GptNeoXType::TinyPythia) => "Tiny Pythia",
-            ModelType::GptNeoX(GptNeoXType::LargePythia) => "Large Pythia",
-            ModelType::GptNeoX(GptNeoXType::Stablelm) => "Stablelm",
-            ModelType::GptNeoX(GptNeoXType::DollySevenB) => "Dolly",
-            ModelType::Mpt(MptType::Base) => "Mpt base",
-            ModelType::Mpt(MptType::Chat) => "Mpt chat",
-            ModelType::Mpt(MptType::Story) => "Mpt story",
-            ModelType::Mpt(MptType::Instruct) => "Mpt instruct",
-        }
-    }
-}
 
 fn save_to_file<D: Serialize>(data: D) {
     let mut current_dir = std::env::current_dir().unwrap();

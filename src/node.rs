@@ -67,11 +67,7 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
     let node_size = 5.;
 
     if current_node.running {
-        return render! {
-            div {
-                "Loading..."
-            }
-        };
+        return render! { div { "Loading..." } };
     }
 
     render! {
@@ -101,10 +97,11 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                 _ => return,
                             };
                             let start_id = currently_dragging.from.read(cx).id;
-                            let edge = LocalSubscription::new(Edge {
-                                start: start_index,
-                                end: i,
-                            });
+                            let edge = LocalSubscription::new(Edge::new(
+        start_index,
+        i,
+        
+                            ));
                             current_graph.graph.add_edge(start_id, current_node_id, edge);
                         }
                         graph.clear_dragging();
@@ -206,10 +203,7 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                 dist = combined.1;
                                 start_id = currently_dragging.from.read(cx).id;
                                 end_id = current_node_id;
-                                edge = LocalSubscription::new(Edge {
-                                    start: start_index,
-                                    end: input_idx,
-                                });
+                                edge = LocalSubscription::new(Edge::new(start_index, input_idx));
                             }
                             DraggingIndex::Input(start_index) => {
                                 let node = node.read();
@@ -228,10 +222,7 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                 dist = combined.1;
                                 end_id = currently_dragging.from.read(cx).id;
                                 start_id = current_node_id;
-                                edge = LocalSubscription::new(Edge {
-                                    start: output_idx,
-                                    end: start_index,
-                                });
+                                edge = LocalSubscription::new(Edge::new(output_idx, start_index));
                             }
                         }
                         if dist < SNAP_DISTANCE.powi(2) {
@@ -244,12 +235,9 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
 
             div { style: "-webkit-user-select: none; -ms-user-select: none; user-select: none; display: flex; justify-content: center; align-items: center; width: 100%; height: 100%; text-align: center; background-color: rgba(0,0,0,0.1); border-radius: 5px;",
                 div { padding: "{node_size*2.}px",
-                    Help {
-                        help_text: current_node.help_text(),
-                    }
+                    Help { help_text: current_node.help_text() }
                     p { "{pos:?}" }
-                    div {
-                        color: "red",
+                    div { color: "red",
                         if let Some(error) = &current_node.error {
                             rsx! {
                                 p { "{error}" }
@@ -287,10 +275,7 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                     _ => return,
                                 };
                                 let start_id = currently_dragging.from.read(cx).id;
-                                let edge = LocalSubscription::new(Edge {
-                                    start: i,
-                                    end: start_index,
-                                });
+                                let edge = LocalSubscription::new(Edge::new(i, start_index));
                                 current_graph.graph.add_edge(current_node_id, start_id, edge);
                             }
                         }

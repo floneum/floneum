@@ -137,92 +137,32 @@ impl VisualGraph {
         true
     }
 
-    fn run_node(&mut self, id: petgraph::graph::NodeIndex) {
+    fn get_node_inputs(&mut self, id: petgraph::graph::NodeIndex) -> Option<Vec<Input>> {
         if !self.should_run_node(id) {
             log::info!(
                 "node {:?} has unresolved dependencies, skipping running",
                 id
             );
-            return;
+            return None;
         }
         let graph = self.inner.read_silent();
-        let node = &graph.graph[id].read_silent();
 
         let mut values: Vec<Input> = Vec::new();
         for input in graph
             .graph
             .edges_directed(id, petgraph::Direction::Incoming)
         {
-            let mut values = Vec::new();
-            for connection in connections {
-                let connection = self.state.graph.get_output(*connection);
-                let output_id = connection.id;
-                if let Some(value) = self.user_state.node_outputs.get(&output_id) {
-                    match value {
-                        MyValueType::List(items) => {
-                            for value in items {
-                                values.push(value.clone().into());
-                            }
-                        }
-                        MyValueType::Single(value) => {
-                            values.push(value.clone().into());
-                        }
-                        other => {
-                            log::error!("unexpected value type: {:?}", other);
-                            self.state.graph[id].user_data.running = false;
-                            self.state.graph[id].user_data.queued = false;
-                            return;
-                        }
-                    }
-                } else {
-                    log::error!("missing value for output: {:?}", output_id);
-                    self.state.graph[id].user_data.running = false;
-                    self.state.graph[id].user_data.queued = false;
-                    return;
-                }
-            }
+            match &input.weight().read_silent().value {
+                Some(value) => values.push(value.read_silent().clone()),
+                None => {
+                    log::error!("missing value for output: {:?}", input.id());
 
-            match input.typ {
-                MyDataType::Single(_) => {
-                    if values.len() != 1 {
-                        log::error!("expected 1 value, got: {:?}", values);
-                        self.state.graph[id].user_data.running = false;
-                        self.state.graph[id].user_data.queued = false;
-                        return;
-                    }
-                    MyValueType::Single(values.pop().unwrap())
+                    return None;
                 }
-                MyDataType::List(_) => {
-                    values.reverse();
-                    MyValueType::List(values)
-                }
-            }
-
-            match &value {
-                MyValueType::Unset => {
-                    self.state.graph[id].user_data.running = false;
-                    self.state.graph[id].user_data.queued = false;
-                    return;
-                }
-                _ => values.push(value.into()),
             }
         }
 
-        let fut = node.user_data.instance.run(values);
-        let sender = self.txrx.tx.clone();
-        self.state.graph[id].user_data.running = true;
-        self.state.graph[id].user_data.run_count += 1;
-
-        tokio::spawn(async move {
-            if let Some(outputs) = fut.await {
-                let _ = sender
-                    .send(SetOutputMessage {
-                        node_id: id,
-                        values: outputs,
-                    })
-                    .await;
-            }
-        });
+        Some(values)
     }
 }
 
