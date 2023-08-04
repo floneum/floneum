@@ -1,4 +1,5 @@
 use dioxus::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::{
     cell::{Ref, RefCell, RefMut},
     rc::Rc,
@@ -36,6 +37,18 @@ pub struct LocalSubscription<T> {
     inner: Rc<RefCell<T>>,
     #[allow(clippy::type_complexity)]
     subscriptions: Rc<RefCell<Vec<(ScopeId, Arc<dyn Fn()>)>>>,
+}
+
+impl<T: Serialize> Serialize for LocalSubscription<T> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.inner.borrow().serialize(serializer)
+    }
+}
+
+impl<'a, T: Deserialize<'a> + 'static> Deserialize<'a> for LocalSubscription<T> {
+    fn deserialize<D: serde::Deserializer<'a>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(Self::new(T::deserialize(deserializer)?))
+    }
 }
 
 impl<T> Clone for LocalSubscription<T> {

@@ -98,9 +98,8 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                             };
                             let start_id = currently_dragging.from.read(cx).id;
                             let edge = LocalSubscription::new(Edge::new(
-        start_index,
-        i,
-        
+                                start_index,
+                                i,
                             ));
                             current_graph.graph.add_edge(start_id, current_node_id, edge);
                         }

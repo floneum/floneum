@@ -6,15 +6,17 @@ use petgraph::{
     visit::{EdgeRef, IntoNodeIdentifiers},
     Graph,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::{Connection, Edge, LocalSubscription, Node};
 
+#[derive(Serialize, Deserialize)]
 pub struct VisualGraphInner {
     pub graph: Graph<LocalSubscription<Node>, LocalSubscription<Edge>>,
     pub currently_dragging: Option<CurrentlyDragging>,
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Serialize, Deserialize)]
 pub enum CurrentlyDragging {
     Node(NodeDragInfo),
     Connection(CurrentlyDraggingProps),
@@ -29,26 +31,26 @@ impl Debug for CurrentlyDragging {
     }
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Serialize, Deserialize)]
 pub struct NodeDragInfo {
     pub element_offset: Point2D<f32, f32>,
     pub node: LocalSubscription<Node>,
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Serialize, Deserialize)]
 pub enum DraggingIndex {
     Input(usize),
     Output(usize),
 }
 
-#[derive(Props, PartialEq, Clone)]
+#[derive(Props, PartialEq, Clone, Serialize, Deserialize)]
 pub struct CurrentlyDraggingProps {
     pub from: LocalSubscription<Node>,
     pub index: DraggingIndex,
     pub to: LocalSubscription<Point2D<f32, f32>>,
 }
 
-#[derive(Props, Clone)]
+#[derive(Props, Clone, Serialize, Deserialize)]
 pub struct VisualGraph {
     pub inner: LocalSubscription<VisualGraphInner>,
 }

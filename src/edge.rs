@@ -1,11 +1,12 @@
 use crate::LocalSubscription;
 use floneum_plugin::exports::plugins::main::definitions::{Input, ValueType};
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Edge {
     pub start: usize,
     pub end: usize,
-    pub type_bounds: Option<ValueType>,
+    // pub type_bounds: Option<ValueType>,
     pub value: Option<LocalSubscription<Input>>,
 }
 
@@ -14,7 +15,7 @@ impl Edge {
         Self {
             start,
             end,
-            type_bounds: None,
+            // type_bounds: None,
             value: None,
         }
     }

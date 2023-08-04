@@ -30,6 +30,7 @@ use wit_component::ComponentEncoder;
 mod browse;
 mod download;
 mod embedding;
+mod proxies;
 mod sessions;
 mod structured;
 mod structured_parser;

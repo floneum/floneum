@@ -1,0 +1,23 @@
+
+const BUILT_IN_PLUGINS: &[&str] = &[
+    "add_embedding",
+    "embedding",
+    "embedding_db",
+    "format",
+    "generate_text",
+    "generate_structured_text",
+    "search",
+    "search_engine",
+    "if_statement",
+    "contains",
+    "write_to_file",
+    "read_from_file",
+    "run_python",
+    "create_browser",
+    "find_node",
+    "find_child_node",
+    "click_node",
+    "node_text",
+    "type_in_node",
+    "navigate_to",
+];
