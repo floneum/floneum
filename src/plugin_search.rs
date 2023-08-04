@@ -1,3 +1,6 @@
+use dioxus::prelude::*;
+
+use crate::use_package_manager;
 
 const BUILT_IN_PLUGINS: &[&str] = &[
     "add_embedding",
@@ -21,3 +24,40 @@ const BUILT_IN_PLUGINS: &[&str] = &[
     "type_in_node",
     "navigate_to",
 ];
+
+fn PluginSearch(cx: Scope) -> Element {
+    let plugins = use_package_manager(cx);
+
+    render! {
+        LoadLocalPlugin {}
+    }        
+}
+
+fn LoadLocalPlugin(cx: Scope) -> Element {
+    let plugins = use_package_manager(cx);
+    let search_text = use_state(cx, String::new);
+
+    render! {
+        div {
+            class: "flex flex-col",
+            "Load Plugin from File: "
+            input {
+                r#type: "file",
+                oninput: move |event| {
+                    search_text.set(event.value.clone());
+                },
+            }
+
+            button {
+                onclick: move |_| {
+                    let plugins = plugins.clone();
+                    let search_text = search_text.clone();
+                    cx.spawn(async move {
+                        
+                    });
+                },
+                "Load"
+            }
+        }
+    }        
+}

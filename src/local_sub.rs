@@ -39,6 +39,12 @@ pub struct LocalSubscription<T> {
     subscriptions: Rc<RefCell<Vec<(ScopeId, Arc<dyn Fn()>)>>>,
 }
 
+impl<T: Default + 'static> Default for LocalSubscription<T> {
+    fn default() -> Self {
+        Self::new(T::default())
+    }
+}
+
 impl<T: Serialize> Serialize for LocalSubscription<T> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.inner.borrow().serialize(serializer)

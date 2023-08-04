@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Connection, Edge, LocalSubscription, Node};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Default)]
 pub struct VisualGraphInner {
     pub graph: Graph<LocalSubscription<Node>, LocalSubscription<Edge>>,
     pub currently_dragging: Option<CurrentlyDragging>,
@@ -50,7 +50,7 @@ pub struct CurrentlyDraggingProps {
     pub to: LocalSubscription<Point2D<f32, f32>>,
 }
 
-#[derive(Props, Clone, Serialize, Deserialize)]
+#[derive(Props, Clone, Serialize, Deserialize, Default)]
 pub struct VisualGraph {
     pub inner: LocalSubscription<VisualGraphInner>,
 }

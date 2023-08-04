@@ -1,5 +1,5 @@
 use crate::LocalSubscription;
-use floneum_plugin::exports::plugins::main::definitions::{Input, ValueType};
+use floneum_plugin::exports::plugins::main::definitions::Input;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize)]
