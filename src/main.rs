@@ -1,10 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 #![allow(non_snake_case)]
 
+use anyhow::Result;
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
+use floneum_plugin::{Plugin, PluginInstance};
 use floneumite::FloneumPackageIndex;
 use serde::{Deserialize, Serialize};
-use std::{fs::File, io::Read, io::Write, rc::Rc};
+use std::{collections::HashMap, fs::File, io::Read, io::Write, rc::Rc};
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -24,6 +26,8 @@ pub use help::Help;
 mod value;
 pub use value::*;
 mod plugin_search;
+mod sidebar;
+use sidebar::Sidebar;
 
 pub type Point = Point2D<f32, f32>;
 
@@ -89,12 +93,59 @@ async fn main() {
         ApplicationState::default()
     };
 
-    dioxus_desktop::launch_with_props(App, AppProps { state }, Default::default());
+    dioxus_desktop::launch_with_props(
+        App,
+        AppProps {
+            state: RefCell::new(Some(state)),
+        },
+        make_config(),
+    );
 }
 
-#[derive(Serialize, Deserialize, Default, PartialEq)]
-struct ApplicationState {
+pub struct PluginId(usize);
+
+#[derive(Serialize, Deserialize, Default)]
+pub struct ApplicationState {
     graph: VisualGraph,
+    #[serde(skip)]
+    plugins: HashMap<String, Plugin>,
+}
+
+impl ApplicationState {
+    async fn insert_plugin(&mut self, name: &str) -> Result<()> {
+        match self.get_plugin(name) {
+            Some(plugin) => {
+                let instance = plugin.instance().await?;
+                self.graph.create_node(instance);
+                Ok(())
+            }
+            None => Err(anyhow::anyhow!("Plugin not found")),
+        }
+    }
+
+    async fn add_plugin(&mut self, plugin: Plugin) -> Result<()> {
+        let name = plugin.name().await?;
+        self.plugins.insert(name.clone(), plugin);
+
+        Ok(())
+    }
+
+    fn get_plugin(&self, name: &str) -> Option<&Plugin> {
+        self.plugins.get(name)
+    }
+
+    async fn instance_plugin(&mut self, name: &str) -> Result<PluginInstance> {
+        match self.get_plugin(name) {
+            Some(plugin) => plugin.instance().await,
+            None => Err(anyhow::anyhow!("Plugin not found")),
+        }
+    }
+}
+
+impl PartialEq for ApplicationState {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
 }
 
 impl Drop for ApplicationState {
@@ -103,14 +154,25 @@ impl Drop for ApplicationState {
     }
 }
 
+pub fn provide_application_state(cx: &ScopeState, state: impl FnOnce() -> ApplicationState) {
+    use_context_provider(cx, || LocalSubscription::new(state()));
+}
+
+pub fn use_application_state(cx: &ScopeState) -> &LocalSubscription<ApplicationState> {
+    use_context::<LocalSubscription<ApplicationState>>(cx).unwrap()
+}
+
 #[inline_props]
-fn App(cx: Scope, state: ApplicationState) -> Element {
+fn App(cx: Scope, state: RefCell<Option<ApplicationState>>) -> Element {
     use_package_manager_provider(cx);
+    provide_application_state(cx, || state.borrow_mut().take().unwrap());
+    let state = use_application_state(cx).use_(cx);
 
     render! {
         FlowView {
-            graph: state.graph.clone(),
+            graph: state.read().graph.clone(),
         }
+        Sidebar {}
     }
 }
 
@@ -124,7 +186,7 @@ fn use_package_manager_provider(cx: &ScopeState) {
     cx.use_hook(|| {
         let registry = provider.clone();
         cx.spawn(async move {
-            *registry.write() = Rc::new(FloneumPackageIndex::load().await);
+            *registry.write() = Some(Rc::new(FloneumPackageIndex::load().await));
         });
     });
 }
@@ -134,4 +196,31 @@ pub fn use_package_manager(cx: &ScopeState) -> Option<Rc<FloneumPackageIndex>> {
         .unwrap()
         .read()
         .clone()
+}
+
+
+fn make_config() -> dioxus_desktop::Config {
+    let tailwind = include_str!("../public/tailwind.css");
+    dioxus_desktop::Config::default()
+        .with_custom_head(
+            r#"
+<style type="text/css">
+    html, body {
+        height: 100%;
+        margin: 0;
+        overscroll-behavior-y: none;
+        overscroll-behavior-x: none;
+        overflow: hidden;
+    }
+    #main, #bodywrap {
+        height: 100%;
+        margin: 0;
+        overscroll-behavior-x: none;
+        overscroll-behavior-y: none;
+    }
+</style>
+<style type="text/css">
+"#
+            .to_owned() + tailwind + "</style>",
+        )
 }

@@ -324,10 +324,12 @@ impl Parse for IoDefinitionType {
             if let PathArguments::AngleBracketed(inner) = ident.arguments {
                 if let Some(GenericArgument::Type(Type::Path(item_type))) = inner.args.iter().next()
                 {
-                    let Some(ident) = item_type.path.get_ident()
-                        else{
-                            return Err(Error::new_spanned(item_type,"Vec missing Generics".to_string()))
-                        };
+                    let Some(ident) = item_type.path.get_ident() else {
+                        return Err(Error::new_spanned(
+                            item_type,
+                            "Vec missing Generics".to_string(),
+                        ));
+                    };
                     parse_primitive_value_type(ident)?
                 } else {
                     return Err(Error::new_spanned(

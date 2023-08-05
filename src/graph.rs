@@ -1,7 +1,7 @@
 use std::{collections::HashSet, fmt::Debug};
 
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
-use floneum_plugin::exports::plugins::main::definitions::Input;
+use floneum_plugin::{exports::plugins::main::definitions::Input, PluginInstance};
 use petgraph::{
     visit::{EdgeRef, IntoNodeIdentifiers},
     Graph,
@@ -56,6 +56,23 @@ pub struct VisualGraph {
 }
 
 impl VisualGraph {
+    pub fn create_node(&self, instance: PluginInstance) {
+        let mut inner = self.inner.write();
+        let node = LocalSubscription::new(Node {
+            instance,
+            position: Point2D::new(0.0, 0.0),
+            running: false,
+            queued: false,
+            error: None,
+            id: Default::default(),
+            inputs: 0,
+            outputs: 0,
+            width: 100.0,
+            height: 100.0,
+        });
+        inner.graph.add_node(node);
+    }
+
     pub fn clear_dragging(&self) {
         self.inner.write().currently_dragging = None;
     }
@@ -187,6 +204,8 @@ pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
 
     render! {
         div { position: "relative",
+            width: "100%",
+            height: "100%",
             svg {
                 width: "100%",
                 height: "100%",

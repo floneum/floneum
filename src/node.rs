@@ -17,7 +17,7 @@ pub struct Node {
     #[serde(skip)]
     pub queued: bool,
     #[serde(skip)]
-    error: Option<String>,
+    pub error: Option<String>,
     pub id: NodeIndex<DefaultIx>,
     pub position: Point,
     pub inputs: usize,
