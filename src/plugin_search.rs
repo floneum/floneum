@@ -68,8 +68,15 @@ fn LoadRegisteredPlugin(cx: Scope) -> Element {
                                     }
                                 },
                                 if let Some(meta) = entry.meta() {
+                                    let name = &meta.name;
+                                    let built_in = BUILT_IN_PLUGINS.contains(&name.as_str());
+                                    let extra = if built_in {
+                                        " (built-in)"
+                                    } else {
+                                        ""
+                                    };
                                     rsx! {
-                                        "{meta.name}"
+                                        "{name}{extra}"
                                     }
                                 } else {
                                     rsx! {
