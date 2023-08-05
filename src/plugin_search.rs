@@ -30,8 +30,11 @@ const BUILT_IN_PLUGINS: &[&str] = &[
 
 pub fn PluginSearch(cx: Scope) -> Element {
     render! {
-        LoadRegisteredPlugin {}
-        LoadLocalPlugin {}
+        div {
+            class: "flex flex-col",
+            LoadRegisteredPlugin {}
+            LoadLocalPlugin {}
+        }
     }
 }
 
@@ -93,7 +96,7 @@ fn LoadLocalPlugin(cx: Scope) -> Element {
 
     render! {
         div {
-            class: "flex flex-col",
+            class: "flex flex-col items-left",
             "Add Plugin from File: "
             input {
                 value: "{search_text}",

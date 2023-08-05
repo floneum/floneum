@@ -28,6 +28,8 @@ pub use value::*;
 mod plugin_search;
 mod sidebar;
 use sidebar::Sidebar;
+mod current_node;
+use current_node::CurrentNodeInfo;
 
 pub type Point = Point2D<f32, f32>;
 
@@ -108,6 +110,8 @@ pub struct PluginId(usize);
 pub struct ApplicationState {
     graph: VisualGraph,
     #[serde(skip)]
+    currently_focused: Option<LocalSubscription<Node>>,
+    #[serde(skip)]
     plugins: HashMap<String, Plugin>,
 }
 
@@ -154,7 +158,7 @@ impl Drop for ApplicationState {
     }
 }
 
-pub fn provide_application_state(cx: &ScopeState, state: impl FnOnce() -> ApplicationState) {
+pub fn use_provide_application_state(cx: &ScopeState, state: impl FnOnce() -> ApplicationState) {
     use_context_provider(cx, || LocalSubscription::new(state()));
 }
 
@@ -165,7 +169,7 @@ pub fn use_application_state(cx: &ScopeState) -> &LocalSubscription<ApplicationS
 #[inline_props]
 fn App(cx: Scope, state: RefCell<Option<ApplicationState>>) -> Element {
     use_package_manager_provider(cx);
-    provide_application_state(cx, || state.borrow_mut().take().unwrap());
+    use_provide_application_state(cx, || state.borrow_mut().take().unwrap());
     let state = use_application_state(cx).use_(cx);
 
     render! {
@@ -198,12 +202,10 @@ pub fn use_package_manager(cx: &ScopeState) -> Option<Rc<FloneumPackageIndex>> {
         .clone()
 }
 
-
 fn make_config() -> dioxus_desktop::Config {
     let tailwind = include_str!("../public/tailwind.css");
-    dioxus_desktop::Config::default()
-        .with_custom_head(
-            r#"
+    dioxus_desktop::Config::default().with_custom_head(
+        r#"
 <style type="text/css">
     html, body {
         height: 100%;
@@ -221,6 +223,8 @@ fn make_config() -> dioxus_desktop::Config {
 </style>
 <style type="text/css">
 "#
-            .to_owned() + tailwind + "</style>",
-        )
+        .to_owned()
+            + tailwind
+            + "</style>",
+    )
 }

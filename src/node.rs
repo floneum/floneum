@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::graph::CurrentlyDragging;
 use crate::{local_sub::LocalSubscription, Point, VisualGraph};
-use crate::{CurrentlyDraggingProps, DraggingIndex, Edge, Help};
+use crate::{use_application_state, CurrentlyDraggingProps, DraggingIndex, Edge, Help};
 
 const SNAP_DISTANCE: f32 = 15.;
 
@@ -58,6 +58,7 @@ pub struct NodeProps {
 }
 
 pub fn Node(cx: Scope<NodeProps>) -> Element {
+    let application = use_application_state(cx).use_(cx);
     let node = cx.props.node.use_(cx);
     let current_node = node.read();
     let current_node_id = current_node.id;
@@ -230,20 +231,19 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                     }
                 }
                 graph.clear_dragging();
+
+                // Focus or unfocus this node
+                let mut application = application.write();
+                if application.currently_focused.as_ref() == Some(&cx.props.node) {
+                    application.currently_focused = None;
+                }
+                else {
+                    application.currently_focused = Some(cx.props.node.clone());
+                }
             },
 
-            div { style: "-webkit-user-select: none; -ms-user-select: none; user-select: none; display: flex; justify-content: center; align-items: center; width: 100%; height: 100%; text-align: center; background-color: rgba(0,0,0,0.1); border-radius: 5px;",
-                div { padding: "{node_size*2.}px",
-                    Help { help_text: current_node.help_text() }
-                    p { "{pos:?}" }
-                    div { color: "red",
-                        if let Some(error) = &current_node.error {
-                            rsx! {
-                                p { "{error}" }
-                            }
-                        }
-                    }
-                }
+            CenterNodeUI {
+                node: cx.props.node.clone(),
             }
         }
 
@@ -287,5 +287,38 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                 }
             }
         })
+    }
+}
+
+fn CenterNodeUI(cx: Scope<NodeProps>) -> Element {
+    let application = use_application_state(cx).use_(cx);
+    let focused = application.read().currently_focused == Some(cx.props.node.clone());
+    let node = cx.props.node.use_(cx);
+    let current_node = node.read();
+    let name = &current_node.instance.metadata().name;
+    let node_size = 5.;
+    let focused_class = if focused {
+        "border-2 border-blue-500"
+    } else {
+        ""
+    };
+
+    render! {
+        div {
+            style: "-webkit-user-select: none; -ms-user-select: none; user-select: none;",
+            class: "flex flex-col justify-center items-center w-full h-full border rounded-md bg-slate-400 {focused_class}",
+            div { padding: "{node_size*2.}px",
+                p {
+                    "{name}"
+                }
+                div { color: "red",
+                    if let Some(error) = &current_node.error {
+                        rsx! {
+                            p { "{error}" }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

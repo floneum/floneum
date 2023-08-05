@@ -31,9 +31,10 @@ wasmtime = { version = "10", features = ['component-model'] }
 yazi = "0.1.6"
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
-dioxus = { git = "https://github.com/DioxusLabs/dioxus/" }
+dioxus = "0.4"
 petgraph = { version = "0.6.3", features = ["serde-1"] }
-dioxus-desktop = { git = "https://github.com/DioxusLabs/dioxus/" }
+dioxus-desktop = "0.4"
+dioxus-router = "0.4.1"
 
 [workspace]
 members = [
