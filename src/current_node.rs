@@ -1,18 +1,25 @@
 use crate::use_application_state;
 use dioxus::prelude::*;
-use crate::LocalSubscription;
-use crate::Node;
 
 pub fn CurrentNodeInfo(cx: Scope) -> Element {
-    let focused = &use_application_state(cx)
-        .read_silent()
-        .currently_focused;
+    let focused = &use_application_state(cx).use_(cx).read().currently_focused;
 
     match focused {
         Some(node) => {
+            let node = node.read(cx);
+            let md = node.instance.metadata();
+            let name = &md.name;
+            let description = &md.description;
+
             render! {
-                CurrentNodeInfoInner {
-                    node: node.clone(),
+                h1 {
+                    class: "text-2xl font-bold",
+                    "{name}"
+                }
+
+                div {
+                    class: "text-left",
+                    "{description}"
                 }
             }
         }
@@ -21,15 +28,5 @@ pub fn CurrentNodeInfo(cx: Scope) -> Element {
                 "Select a node to see its info"
             }
         }
-    }
-}
-
-#[inline_props]
-pub fn CurrentNodeInfoInner(cx: Scope, node: LocalSubscription<Node>) -> Element {
-    let node = node.use_(cx).read();
-    let name = &node.instance.metadata().name;
-
-    render! {
-        "{name}"
     }
 }

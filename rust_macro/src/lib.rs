@@ -25,10 +25,12 @@ macro_rules! try_parse_quote {
 
 #[proc_macro_attribute]
 pub fn export_plugin(args: TokenStream, input: TokenStream) -> TokenStream {
+    use convert_case::{Case, Casing};
+
     let mut input = parse_macro_input!(input as ItemFn);
 
     let function_ident = input.sig.ident.clone();
-    let function_name = function_ident.to_string();
+    let function_name = function_ident.to_string().to_case(Case::Title);
     let mut description = String::new();
     for attr in &input.attrs {
         if attr.path().is_ident("doc") {

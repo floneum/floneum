@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::graph::CurrentlyDragging;
 use crate::{local_sub::LocalSubscription, Point, VisualGraph};
-use crate::{use_application_state, CurrentlyDraggingProps, DraggingIndex, Edge, Help};
+use crate::{use_application_state, CurrentlyDraggingProps, DraggingIndex, Edge};
 
 const SNAP_DISTANCE: f32 = 15.;
 
@@ -24,6 +24,12 @@ pub struct Node {
     pub outputs: usize,
     pub width: f32,
     pub height: f32,
+}
+
+impl PartialEq for Node {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
 }
 
 impl Node {
@@ -234,11 +240,13 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
 
                 // Focus or unfocus this node
                 let mut application = application.write();
-                if application.currently_focused.as_ref() == Some(&cx.props.node) {
-                    application.currently_focused = None;
-                }
-                else {
-                    application.currently_focused = Some(cx.props.node.clone());
+                match &application.currently_focused {
+                    Some(currently_focused_node) if currently_focused_node == &cx.props.node => {
+                        application.currently_focused = None;
+                    }
+                    _ => {
+                        application.currently_focused = Some(cx.props.node.clone());
+                    }
                 }
             },
 
@@ -292,7 +300,7 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
 
 fn CenterNodeUI(cx: Scope<NodeProps>) -> Element {
     let application = use_application_state(cx).use_(cx);
-    let focused = application.read().currently_focused == Some(cx.props.node.clone());
+    let focused = &application.read().currently_focused == &Some(cx.props.node.clone());
     let node = cx.props.node.use_(cx);
     let current_node = node.read();
     let name = &current_node.instance.metadata().name;

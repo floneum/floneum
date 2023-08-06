@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::fmt::Debug;
 use std::{
     cell::{Ref, RefCell, RefMut},
     rc::Rc,
@@ -42,6 +43,12 @@ pub struct LocalSubscription<T> {
 impl<T: Default + 'static> Default for LocalSubscription<T> {
     fn default() -> Self {
         Self::new(T::default())
+    }
+}
+
+impl<T: Debug + 'static> Debug for LocalSubscription<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.inner.borrow().fmt(f)
     }
 }
 

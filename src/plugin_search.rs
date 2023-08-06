@@ -6,26 +6,26 @@ use floneum_plugin::{load_plugin, load_plugin_from_source};
 use crate::{use_application_state, use_package_manager};
 
 const BUILT_IN_PLUGINS: &[&str] = &[
-    "add_embedding",
-    "embedding",
-    "embedding_db",
-    "format",
-    "generate_text",
-    "generate_structured_text",
-    "search",
-    "search_engine",
-    "if_statement",
-    "contains",
-    "write_to_file",
-    "read_from_file",
-    "run_python",
-    "create_browser",
-    "find_node",
-    "find_child_node",
-    "click_node",
-    "node_text",
-    "type_in_node",
-    "navigate_to",
+    "Add Embedding",
+    "Embedding",
+    "Embedding Db",
+    "Format",
+    "Generate Text",
+    "Generate Structured Text",
+    "Search",
+    "Search Engine",
+    "If Statement",
+    "Contains",
+    "Write To File",
+    "Read From File",
+    "Run Python",
+    "Create Browser",
+    "Find Node",
+    "Find Child Node",
+    "Click Node",
+    "Node Text",
+    "Type In Node",
+    "Navigate To",
 ];
 
 pub fn PluginSearch(cx: Scope) -> Element {
@@ -41,16 +41,36 @@ pub fn PluginSearch(cx: Scope) -> Element {
 fn LoadRegisteredPlugin(cx: Scope) -> Element {
     let plugins = use_package_manager(cx);
     let application = use_application_state(cx);
+    let search_text = use_state(cx, || "".to_string());
+    let text_words: Vec<&str> = search_text.split_whitespace().collect();
 
     render! {
         div {
             class: "flex flex-col",
-            "Add Plugin:"
+            "Add Plugin"
+            input {
+                class: "border border-gray-400 rounded-md p-2 m-2",
+                r#type: "text",
+                oninput: {
+                    let search_text = search_text.clone();
+                    move |event| {
+                        search_text.set(event.value.clone());
+                    }
+                },
+            }
             match &plugins {
                 Some(plugins) => {
                     rsx! {
-                        for entry in plugins.entries() {
+                        for entry in plugins.entries().iter().filter(|entry| {
+                            if let Some(meta) = entry.meta(){
+                                text_words.iter().all(|word| meta.name.contains(word.trim()))
+                            }
+                            else {
+                                false
+                            }
+                        }) {
                             button {
+                                class: "hover:bg-gray-200 border border-gray-400 rounded-md p-2 m-2",
                                 onclick: {
                                     let entry = entry.clone();
                                     move |_| {
@@ -104,8 +124,9 @@ fn LoadLocalPlugin(cx: Scope) -> Element {
     render! {
         div {
             class: "flex flex-col items-left",
-            "Add Plugin from File: "
+            "Add Plugin from File"
             input {
+                class: "border border-gray-400 rounded-md p-2 m-2",
                 value: "{search_text}",
                 oninput: move |event| {
                     search_text.set(event.value.clone());
@@ -113,6 +134,7 @@ fn LoadLocalPlugin(cx: Scope) -> Element {
             }
 
             button {
+                class: "hover:bg-gray-200 border border-gray-400 rounded-md p-2 m-2",
                 onclick: move |_| {
                     let path = PathBuf::from(search_text.get());
                     let plugin = load_plugin(&path);

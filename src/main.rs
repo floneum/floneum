@@ -3,7 +3,7 @@
 
 use anyhow::Result;
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
-use floneum_plugin::{Plugin, PluginInstance};
+use floneum_plugin::Plugin;
 use floneumite::FloneumPackageIndex;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fs::File, io::Read, io::Write, rc::Rc};
@@ -21,8 +21,6 @@ mod graph;
 pub use graph::{CurrentlyDraggingProps, DraggingIndex, FlowView, VisualGraph, VisualGraphInner};
 mod connection;
 pub use connection::Connection;
-mod help;
-pub use help::Help;
 mod value;
 pub use value::*;
 mod plugin_search;
@@ -136,13 +134,6 @@ impl ApplicationState {
 
     fn get_plugin(&self, name: &str) -> Option<&Plugin> {
         self.plugins.get(name)
-    }
-
-    async fn instance_plugin(&mut self, name: &str) -> Result<PluginInstance> {
-        match self.get_plugin(name) {
-            Some(plugin) => plugin.instance().await,
-            None => Err(anyhow::anyhow!("Plugin not found")),
-        }
     }
 }
 
