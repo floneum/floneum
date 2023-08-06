@@ -3,12 +3,15 @@ use std::{collections::HashSet, fmt::Debug};
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
 use floneum_plugin::{exports::plugins::main::definitions::Input, PluginInstance};
 use petgraph::{
-    visit::{EdgeRef, IntoNodeIdentifiers, IntoEdgeReferences},
-     stable_graph::StableGraph,
+    stable_graph::StableGraph,
+    visit::{EdgeRef, IntoEdgeReferences, IntoNodeIdentifiers},
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{Connection, Edge, LocalSubscription, Node};
+use crate::{
+    node_value::{NodeInput, NodeOutput},
+    Connection, Edge, LocalSubscription, Node,
+};
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct VisualGraphInner {
@@ -58,16 +61,23 @@ pub struct VisualGraph {
 impl VisualGraph {
     pub fn create_node(&self, instance: PluginInstance) {
         let mut inner = self.inner.write();
+
         let mut inputs = Vec::new();
 
         for input in &instance.metadata().inputs {
-            inputs.push(input.ty.create());
+            inputs.push(LocalSubscription::new(NodeInput {
+                definition: input.clone(),
+                value: input.ty.create(),
+            }));
         }
 
         let mut outputs = Vec::new();
 
         for output in &instance.metadata().outputs {
-            outputs.push(output.ty.create_output());
+            outputs.push(LocalSubscription::new(NodeOutput {
+                definition: output.clone(),
+                value: output.ty.create_output(),
+            }));
         }
 
         let node = LocalSubscription::new(Node {

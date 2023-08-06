@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::exports::plugins::main::definitions::{
-    Input, Output, PrimitiveValue, PrimitiveValueType, ValueType,
+    Input, IoDefinition, Output, PrimitiveValue, PrimitiveValueType, ValueType,
 };
 use crate::plugins::main::types::{
     Embedding, EmbeddingDbId, GptNeoXType, LlamaType, ModelType, MptType,
@@ -12,80 +12,72 @@ use crate::plugins::main::{
 };
 
 #[derive(serde::Serialize, serde::Deserialize)]
-enum MyValueType {
+enum MyValue {
     Single(MyPrimitiveValue),
     List(Vec<MyPrimitiveValue>),
     Unset,
 }
 
-impl From<Input> for MyValueType {
+impl From<Input> for MyValue {
     fn from(value: Input) -> Self {
         match value {
-            Input::Single(value) => MyValueType::Single(value.into()),
-            Input::Many(values) => {
-                MyValueType::List(values.into_iter().map(|v| v.into()).collect())
-            }
+            Input::Single(value) => MyValue::Single(value.into()),
+            Input::Many(values) => MyValue::List(values.into_iter().map(|v| v.into()).collect()),
         }
     }
 }
 
-impl From<MyValueType> for Input {
-    fn from(value: MyValueType) -> Self {
+impl From<MyValue> for Input {
+    fn from(value: MyValue) -> Self {
         match value {
-            MyValueType::Single(value) => Input::Single(value.into()),
-            MyValueType::List(values) => {
-                Input::Many(values.into_iter().map(|v| v.into()).collect())
-            }
-            MyValueType::Unset => Input::Many(Vec::new()),
+            MyValue::Single(value) => Input::Single(value.into()),
+            MyValue::List(values) => Input::Many(values.into_iter().map(|v| v.into()).collect()),
+            MyValue::Unset => Input::Many(Vec::new()),
         }
     }
 }
 
 impl Serialize for Input {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        MyValueType::from(self.clone()).serialize(serializer)
+        MyValue::from(self.clone()).serialize(serializer)
     }
 }
 
 impl<'a> Deserialize<'a> for Input {
     fn deserialize<D: serde::Deserializer<'a>>(deserializer: D) -> Result<Self, D::Error> {
-        MyValueType::deserialize(deserializer).map(|v| v.into())
+        MyValue::deserialize(deserializer).map(|v| v.into())
     }
 }
 
-impl From<Output> for MyValueType {
+impl From<Output> for MyValue {
     fn from(output: Output) -> Self {
         match output {
-            Output::Single(value) => MyValueType::Single(value.into()),
-            Output::Many(values) => {
-                MyValueType::List(values.into_iter().map(|v| v.into()).collect())
-            }
-            Output::Halt => MyValueType::Unset,
+            Output::Single(value) => MyValue::Single(value.into()),
+            Output::Many(values) => MyValue::List(values.into_iter().map(|v| v.into()).collect()),
+            Output::Halt => MyValue::Unset,
         }
     }
 }
 
-impl From<MyValueType> for Output {
-    fn from(value: MyValueType) -> Self {
+impl From<MyValue> for Output {
+    fn from(value: MyValue) -> Self {
         match value {
-            MyValueType::Single(value) => Output::Single(value.into()),
-            MyValueType::List(values) => {
-                Output::Many(values.into_iter().map(|v| v.into()).collect())
-            }
-            MyValueType::Unset => Output::Halt,
+            MyValue::Single(value) => Output::Single(value.into()),
+            MyValue::List(values) => Output::Many(values.into_iter().map(|v| v.into()).collect()),
+            MyValue::Unset => Output::Halt,
         }
     }
 }
 
 impl Serialize for Output {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        MyValueType::from(self.clone()).serialize(serializer)
+        MyValue::from(self.clone()).serialize(serializer)
     }
 }
 
 impl<'a> Deserialize<'a> for Output {
     fn deserialize<D: serde::Deserializer<'a>>(deserializer: D) -> Result<Self, D::Error> {
-        MyValueType::deserialize(deserializer).map(|v| v.into())
+        MyValue::deserialize(deserializer).map(|v| v.into())
     }
 }
 
@@ -304,5 +296,149 @@ impl PrimitiveValueType {
             }),
             PrimitiveValueType::Any => PrimitiveValue::Number(0),
         }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct MyIoDefinition {
+    name: String,
+    ty: MyValueType,
+}
+
+impl Serialize for IoDefinition {
+    fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error>
+    where
+        S: Serializer,
+    {
+        let my_io_definition = MyIoDefinition {
+            name: self.name.clone(),
+            ty: self.ty.clone().into(),
+        };
+        my_io_definition.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for IoDefinition {
+    fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let my_io_definition = MyIoDefinition::deserialize(deserializer)?;
+        Ok(IoDefinition {
+            name: my_io_definition.name,
+            ty: my_io_definition.ty.into(),
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+enum MyValueType {
+    Single(MyPrimitiveValueType),
+    Many(MyPrimitiveValueType),
+}
+
+impl From<ValueType> for MyValueType {
+    fn from(value: ValueType) -> Self {
+        match value {
+            ValueType::Single(value) => MyValueType::Single(value.into()),
+            ValueType::Many(value) => MyValueType::Many(value.into()),
+        }
+    }
+}
+
+impl From<MyValueType> for ValueType {
+    fn from(value: MyValueType) -> Self {
+        match value {
+            MyValueType::Single(value) => ValueType::Single(value.into()),
+            MyValueType::Many(value) => ValueType::Many(value.into()),
+        }
+    }
+}
+
+impl Serialize for ValueType {
+    fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error>
+    where
+        S: Serializer,
+    {
+        let my_value_type = MyValueType::from(self.clone());
+        my_value_type.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ValueType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let my_value_type = MyValueType::deserialize(deserializer)?;
+        Ok(ValueType::from(my_value_type))
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+enum MyPrimitiveValueType {
+    Number,
+    Text,
+    Embedding,
+    Database,
+    Model,
+    ModelType,
+    Boolean,
+    Tab,
+    Node,
+    Any,
+}
+
+impl From<PrimitiveValueType> for MyPrimitiveValueType {
+    fn from(value: PrimitiveValueType) -> Self {
+        match value {
+            PrimitiveValueType::Number => MyPrimitiveValueType::Number,
+            PrimitiveValueType::Text => MyPrimitiveValueType::Text,
+            PrimitiveValueType::Embedding => MyPrimitiveValueType::Embedding,
+            PrimitiveValueType::Database => MyPrimitiveValueType::Database,
+            PrimitiveValueType::Model => MyPrimitiveValueType::Model,
+            PrimitiveValueType::ModelType => MyPrimitiveValueType::ModelType,
+            PrimitiveValueType::Boolean => MyPrimitiveValueType::Boolean,
+            PrimitiveValueType::Tab => MyPrimitiveValueType::Tab,
+            PrimitiveValueType::Node => MyPrimitiveValueType::Node,
+            PrimitiveValueType::Any => MyPrimitiveValueType::Any,
+        }
+    }
+}
+
+impl From<MyPrimitiveValueType> for PrimitiveValueType {
+    fn from(value: MyPrimitiveValueType) -> Self {
+        match value {
+            MyPrimitiveValueType::Number => PrimitiveValueType::Number,
+            MyPrimitiveValueType::Text => PrimitiveValueType::Text,
+            MyPrimitiveValueType::Embedding => PrimitiveValueType::Embedding,
+            MyPrimitiveValueType::Database => PrimitiveValueType::Database,
+            MyPrimitiveValueType::Model => PrimitiveValueType::Model,
+            MyPrimitiveValueType::ModelType => PrimitiveValueType::ModelType,
+            MyPrimitiveValueType::Boolean => PrimitiveValueType::Boolean,
+            MyPrimitiveValueType::Tab => PrimitiveValueType::Tab,
+            MyPrimitiveValueType::Node => PrimitiveValueType::Node,
+            MyPrimitiveValueType::Any => PrimitiveValueType::Any,
+        }
+    }
+}
+
+impl Serialize for PrimitiveValueType {
+    fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error>
+    where
+        S: Serializer,
+    {
+        let my_primitive_value_type = MyPrimitiveValueType::from(self.clone());
+        my_primitive_value_type.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for PrimitiveValueType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let my_primitive_value_type = MyPrimitiveValueType::deserialize(deserializer)?;
+        Ok(PrimitiveValueType::from(my_primitive_value_type))
     }
 }

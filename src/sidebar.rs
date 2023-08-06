@@ -4,12 +4,13 @@ use dioxus::prelude::*;
 use dioxus_router::prelude::*;
 
 #[derive(Routable, Clone)]
+#[rustfmt::skip]
 enum SidebarRoute {
     #[layout(Links)]
-    #[route("/")]
-    PluginSearch {},
-    #[route("/node")]
-    CurrentNodeInfo {},
+        #[route("/")]
+        PluginSearch {},
+        #[route("/node")]
+        CurrentNodeInfo {},
 }
 
 pub fn Sidebar(cx: Scope) -> Element {

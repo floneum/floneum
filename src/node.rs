@@ -1,10 +1,10 @@
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
-use floneum_plugin::exports::plugins::main::definitions::{Input, Output};
 use floneum_plugin::PluginInstance;
 use petgraph::{graph::NodeIndex, stable_graph::DefaultIx};
 use serde::{Deserialize, Serialize};
 
 use crate::graph::CurrentlyDragging;
+use crate::node_value::{NodeInput, NodeOutput};
 use crate::{local_sub::LocalSubscription, Point, VisualGraph};
 use crate::{use_application_state, CurrentlyDraggingProps, DraggingIndex, Edge};
 
@@ -21,8 +21,8 @@ pub struct Node {
     pub error: Option<String>,
     pub id: NodeIndex<DefaultIx>,
     pub position: Point,
-    pub inputs: Vec<Input>,
-    pub outputs: Vec<Output>,
+    pub inputs: Vec<LocalSubscription<NodeInput>>,
+    pub outputs: Vec<LocalSubscription<NodeOutput>>,
     pub width: f32,
     pub height: f32,
 }

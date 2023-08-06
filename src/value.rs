@@ -4,7 +4,7 @@ use floneum_plugin::{
     plugins::main::types::{GptNeoXType, LlamaType, ModelType, MptType},
 };
 
-use crate::LocalSubscription;
+use crate::{node_value::NodeInput, LocalSubscription};
 
 fn show_primitive_value<'a>(cx: &'a ScopeState, value: &PrimitiveValue) -> Element<'a> {
     match value {
@@ -39,16 +39,23 @@ fn show_primitive_value<'a>(cx: &'a ScopeState, value: &PrimitiveValue) -> Eleme
 }
 
 #[inline_props]
-fn ModifyInput(cx: &ScopeState, param_name: String, value: LocalSubscription<Input>) -> Element {
-    let current_value = value.use_(cx);
-    match &*current_value.read() {
+pub fn ModifyInput(cx: &ScopeState, value: LocalSubscription<NodeInput>) -> Element {
+    let node = value.use_(cx);
+    let current_value = node.read();
+    let name = &current_value.definition.name;
+    match &current_value.value {
         Input::Single(current_primitive) => match current_primitive {
             PrimitiveValue::Text(value) => {
                 render! {
-                    input {
-                        value: "{value}",
-                        oninput: |e| {
-                            *current_value.write() = Input::Single(PrimitiveValue::Text(e.value.to_string()));
+                    div {
+                        class: "flex flex-col",
+                        "{name}: "
+                        input {
+                            class: "border border-gray-400 rounded hover:border-gray-500 focus:outline-none focus:border-blue-500",
+                            value: "{value}",
+                            oninput: |e| {
+                                node.write().value = Input::Single(PrimitiveValue::Text(e.value.to_string()));
+                            }
                         }
                     }
                 }
@@ -60,32 +67,43 @@ fn ModifyInput(cx: &ScopeState, param_name: String, value: LocalSubscription<Inp
             | PrimitiveValue::Node { .. } => None,
             PrimitiveValue::Number(value) => {
                 render! {
-                    input {
-                        r#type: "number",
-                        value: "{value}",
-                        oninput: |e| {
-                            *current_value
-                                .write() = Input::Single(PrimitiveValue::Number(e.value.parse().unwrap_or(0)));
+                    div {
+                        class: "flex flex-col",
+                        "{name}: "
+                        input {
+                            class: "border border-gray-400 rounded hover:border-gray-500 focus:outline-none focus:border-blue-500",
+                            r#type: "number",
+                            value: "{value}",
+                            oninput: |e| {
+                                node
+                                    .write().value = Input::Single(PrimitiveValue::Number(e.value.parse().unwrap_or(0)));
+                            }
                         }
                     }
                 }
             }
             PrimitiveValue::ModelType(ty) => {
                 render! {
-                    select { onchange: |e| {
-                            *current_value
-                                .write() = Input::Single(
-                                PrimitiveValue::ModelType(
-                                    model_type_from_str(&e.value)
-                                        .unwrap_or(ModelType::Llama(LlamaType::LlamaThirteenChat)),
-                                ),
-                            );
-                        },
-                        for variant in ModelType::VARIANTS {
-                            option {
-                                value: "{variant.name()}",
-                                selected: "{variant.name() == ty.name()}",
-                                "{variant.name()}"
+                    div {
+                        class: "flex flex-col",
+                        "{name}: "
+                        select {
+                            class: "border border-gray-400 rounded hover:border-gray-500 focus:outline-none focus:border-blue-500",
+                            onchange: |e| {
+                                node
+                                    .write().value = Input::Single(
+                                    PrimitiveValue::ModelType(
+                                        model_type_from_str(&e.value)
+                                            .unwrap_or(ModelType::Llama(LlamaType::LlamaThirteenChat)),
+                                    ),
+                                );
+                            },
+                            for variant in ModelType::VARIANTS {
+                                option {
+                                    value: "{variant.name()}",
+                                    selected: "{variant.name() == ty.name()}",
+                                    "{variant.name()}"
+                                }
                             }
                         }
                     }
@@ -93,11 +111,16 @@ fn ModifyInput(cx: &ScopeState, param_name: String, value: LocalSubscription<Inp
             }
             PrimitiveValue::Boolean(val) => {
                 render! {
-                    input {
-                        r#type: "checkbox",
-                        checked: "{val}",
-                        onchange: |e| {
-                            *current_value.write() = Input::Single(PrimitiveValue::Boolean(e.value == "on"));
+                    div {
+                        class: "flex flex-col",
+                        "{name}: "
+                        input {
+                            class: "border border-gray-400 rounded hover:border-gray-500 focus:outline-none focus:border-blue-500",
+                            r#type: "checkbox",
+                            checked: "{val}",
+                            onchange: |e| {
+                                node.write().value = Input::Single(PrimitiveValue::Boolean(e.value == "on"));
+                            }
                         }
                     }
                 }
@@ -106,8 +129,12 @@ fn ModifyInput(cx: &ScopeState, param_name: String, value: LocalSubscription<Inp
         Input::Many(values) => {
             render! {
                 div {
-                    for value in values.iter() {
-                        div { show_primitive_value(cx, value) }
+                    div {
+                        class: "flex flex-col",
+                        "{name}: "
+                        for value in values.iter() {
+                            div { show_primitive_value(cx, value) }
+                        }
                     }
                 }
             }

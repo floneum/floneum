@@ -1,4 +1,4 @@
-use crate::use_application_state;
+use crate::{use_application_state, ModifyInput};
 use dioxus::prelude::*;
 
 pub fn CurrentNodeInfo(cx: Scope) -> Element {
@@ -12,14 +12,28 @@ pub fn CurrentNodeInfo(cx: Scope) -> Element {
             let description = &md.description;
 
             render! {
-                h1 {
-                    class: "text-2xl font-bold",
-                    "{name}"
-                }
-
                 div {
-                    class: "text-left",
-                    "{description}"
+                    class: "p-4",
+                    h1 {
+                        class: "text-2xl font-bold",
+                        "{name}"
+                    }
+
+                    // Inputs
+                    div {
+                        class: "text-left",
+                        for input in &node.inputs {
+                            ModifyInput {
+                                value: input.clone()
+                            }
+                        }
+                    }
+
+                    // Info
+                    div {
+                        class: "text-left",
+                        "{description}"
+                    }
                 }
             }
         }

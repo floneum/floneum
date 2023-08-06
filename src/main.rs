@@ -30,6 +30,7 @@ mod sidebar;
 use sidebar::Sidebar;
 mod current_node;
 use current_node::CurrentNodeInfo;
+mod node_value;
 
 pub type Point = Point2D<f32, f32>;
 
@@ -207,8 +208,10 @@ pub fn use_package_manager(cx: &ScopeState) -> Option<Rc<FloneumPackageIndex>> {
 
 fn make_config() -> dioxus_desktop::Config {
     let tailwind = include_str!("../public/tailwind.css");
-    dioxus_desktop::Config::default().with_window(WindowBuilder::new().with_title("Floneum")).with_custom_head(
-        r#"
+    dioxus_desktop::Config::default()
+        .with_window(WindowBuilder::new().with_title("Floneum"))
+        .with_custom_head(
+            r#"
 <style type="text/css">
     html, body {
         height: 100%;
@@ -226,8 +229,8 @@ fn make_config() -> dioxus_desktop::Config {
 </style>
 <style type="text/css">
 "#
-        .to_owned()
-            + tailwind
-            + "</style>",
-    )
+            .to_owned()
+                + tailwind
+                + "</style>",
+        )
 }
