@@ -1,4 +1,5 @@
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
+use floneum_plugin::exports::plugins::main::definitions::{Input, Output};
 use floneum_plugin::PluginInstance;
 use petgraph::{graph::NodeIndex, stable_graph::DefaultIx};
 use serde::{Deserialize, Serialize};
@@ -20,8 +21,8 @@ pub struct Node {
     pub error: Option<String>,
     pub id: NodeIndex<DefaultIx>,
     pub position: Point,
-    pub inputs: usize,
-    pub outputs: usize,
+    pub inputs: Vec<Input>,
+    pub outputs: Vec<Output>,
     pub width: f32,
     pub height: f32,
 }
@@ -42,14 +43,15 @@ impl Node {
     pub fn input_pos(&self, index: usize) -> Point2D<f32, f32> {
         Point2D::new(
             self.position.x - 1.,
-            self.position.y + ((index as f32 + 1.) * self.height / (self.inputs as f32 + 1.)),
+            self.position.y + ((index as f32 + 1.) * self.height / (self.inputs.len() as f32 + 1.)),
         )
     }
 
     pub fn output_pos(&self, index: usize) -> Point2D<f32, f32> {
         Point2D::new(
             self.position.x + self.width - 1.,
-            self.position.y + ((index as f32 + 1.) * self.height / (self.outputs as f32 + 1.)),
+            self.position.y
+                + ((index as f32 + 1.) * self.height / (self.outputs.len() as f32 + 1.)),
         )
     }
 
@@ -79,7 +81,7 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
 
     render! {
         // inputs
-        (0..current_node.inputs).map(|i| {
+        (0..current_node.inputs.len()).map(|i| {
             let pos = current_node.input_pos(i);
             rsx! {
                 circle {
@@ -131,7 +133,7 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                 {
                     let node = node.read();
                     if let Some((index, dist))
-                        = (0..node.inputs)
+                        = (0..node.inputs.len())
                             .map(|i| {
                                 let input_pos = node.input_pos(i);
                                 (
@@ -141,7 +143,7 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                 )
                             })
                             .chain(
-                                (0..node.outputs)
+                                (0..node.outputs.len())
                                     .map(|i| {
                                         let output_pos = node.output_pos(i);
                                         (
@@ -194,7 +196,7 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                         match currently_dragging.index {
                             DraggingIndex::Output(start_index) => {
                                 let node = node.read();
-                                let combined = (0..node.inputs)
+                                let combined = (0..node.inputs.len())
                                     .map(|i| {
                                         let input_pos = node.input_pos(i);
                                         (
@@ -213,7 +215,7 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                             }
                             DraggingIndex::Input(start_index) => {
                                 let node = node.read();
-                                let combined = (0..node.outputs)
+                                let combined = (0..node.outputs.len())
                                     .map(|i| {
                                         let output_pos = node.output_pos(i);
                                         (
@@ -256,7 +258,7 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
         }
 
         // outputs
-        (0..current_node.outputs).map(|i| {
+        (0..current_node.outputs.len()).map(|i| {
             let pos = current_node.output_pos(i);
             rsx! {
                 circle {
@@ -314,7 +316,7 @@ fn CenterNodeUI(cx: Scope<NodeProps>) -> Element {
     render! {
         div {
             style: "-webkit-user-select: none; -ms-user-select: none; user-select: none;",
-            class: "flex flex-col justify-center items-center w-full h-full border rounded-md bg-slate-400 {focused_class}",
+            class: "flex flex-col justify-center items-center w-full h-full border rounded-md {focused_class}",
             div { padding: "{node_size*2.}px",
                 p {
                     "{name}"

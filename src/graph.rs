@@ -58,6 +58,18 @@ pub struct VisualGraph {
 impl VisualGraph {
     pub fn create_node(&self, instance: PluginInstance) {
         let mut inner = self.inner.write();
+        let mut inputs = Vec::new();
+
+        for input in &instance.metadata().inputs {
+            inputs.push(input.ty.create());
+        }
+
+        let mut outputs = Vec::new();
+
+        for output in &instance.metadata().outputs {
+            outputs.push(output.ty.create_output());
+        }
+
         let node = LocalSubscription::new(Node {
             instance,
             position: Point2D::new(0.0, 0.0),
@@ -65,8 +77,8 @@ impl VisualGraph {
             queued: false,
             error: None,
             id: Default::default(),
-            inputs: 0,
-            outputs: 0,
+            inputs,
+            outputs,
             width: 100.0,
             height: 100.0,
         });

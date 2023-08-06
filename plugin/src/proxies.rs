@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize, Serializer};
 
-use crate::exports::plugins::main::definitions::{Input, Output, PrimitiveValue};
+use crate::exports::plugins::main::definitions::{
+    Input, Output, PrimitiveValue, PrimitiveValueType, ValueType,
+};
 use crate::plugins::main::types::{
     Embedding, EmbeddingDbId, GptNeoXType, LlamaType, ModelType, MptType,
 };
@@ -261,6 +263,46 @@ impl From<MyLlamaType> for LlamaType {
             MyLlamaType::Orca => LlamaType::Orca,
             MyLlamaType::LlamaSevenChat => LlamaType::LlamaSevenChat,
             MyLlamaType::LlamaThirteenChat => LlamaType::LlamaThirteenChat,
+        }
+    }
+}
+
+impl ValueType {
+    pub fn create(&self) -> Input {
+        match self {
+            ValueType::Single(single) => Input::Single(single.create()),
+            ValueType::Many(many) => Input::Many(vec![many.create()]),
+        }
+    }
+
+    pub fn create_output(&self) -> Output {
+        match self {
+            ValueType::Single(single) => Output::Single(single.create()),
+            ValueType::Many(many) => Output::Many(vec![many.create()]),
+        }
+    }
+}
+
+impl PrimitiveValueType {
+    pub fn create(&self) -> PrimitiveValue {
+        match self {
+            PrimitiveValueType::Number => PrimitiveValue::Number(0),
+            PrimitiveValueType::Text => PrimitiveValue::Text("".to_string()),
+            PrimitiveValueType::Embedding => {
+                PrimitiveValue::Embedding(Embedding { vector: vec![0.0] })
+            }
+            PrimitiveValueType::Database => PrimitiveValue::Database(EmbeddingDbId { id: 0 }),
+            PrimitiveValueType::Model => PrimitiveValue::Model(ModelId { id: 0 }),
+            PrimitiveValueType::ModelType => {
+                PrimitiveValue::ModelType(ModelType::Llama(LlamaType::LlamaSevenChat))
+            }
+            PrimitiveValueType::Boolean => PrimitiveValue::Boolean(false),
+            PrimitiveValueType::Tab => PrimitiveValue::Tab(TabId { id: 0 }),
+            PrimitiveValueType::Node => PrimitiveValue::Node(NodeId {
+                id: 0,
+                tab: TabId { id: 0 },
+            }),
+            PrimitiveValueType::Any => PrimitiveValue::Number(0),
         }
     }
 }
