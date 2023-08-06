@@ -69,7 +69,7 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
     let application = use_application_state(cx).use_(cx);
     let node = cx.props.node.use_(cx);
     let current_node = node.read();
-    let current_node_id = current_node.id;
+    let current_node_id = dbg!(current_node.id);
     let width = current_node.width;
     let height = current_node.height;
     let pos = current_node.position;
@@ -318,7 +318,14 @@ fn CenterNodeUI(cx: Scope<NodeProps>) -> Element {
             style: "-webkit-user-select: none; -ms-user-select: none; user-select: none;",
             class: "flex flex-col justify-center items-center w-full h-full border rounded-md {focused_class}",
             div { padding: "{node_size*2.}px",
-                p {
+                button {
+                    class: "fixed top-0 right-0",
+                    onclick: move |_| {
+                        application.write().remove(node.read().id)
+                    },
+                    "x"
+                }
+                h1 {
                     "{name}"
                 }
                 div { color: "red",

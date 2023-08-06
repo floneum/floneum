@@ -3,8 +3,8 @@ use std::{collections::HashSet, fmt::Debug};
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
 use floneum_plugin::{exports::plugins::main::definitions::Input, PluginInstance};
 use petgraph::{
-    visit::{EdgeRef, IntoNodeIdentifiers},
-    Graph,
+    visit::{EdgeRef, IntoNodeIdentifiers, IntoEdgeReferences},
+     stable_graph::StableGraph,
 };
 use serde::{Deserialize, Serialize};
 
@@ -12,7 +12,7 @@ use crate::{Connection, Edge, LocalSubscription, Node};
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct VisualGraphInner {
-    pub graph: Graph<LocalSubscription<Node>, LocalSubscription<Edge>>,
+    pub graph: StableGraph<LocalSubscription<Node>, LocalSubscription<Edge>>,
     pub currently_dragging: Option<CurrentlyDragging>,
 }
 
@@ -82,7 +82,8 @@ impl VisualGraph {
             width: 100.0,
             height: 100.0,
         });
-        inner.graph.add_node(node);
+        let idx = inner.graph.add_node(node);
+        inner.graph[idx].write().id = dbg!(idx);
     }
 
     pub fn clear_dragging(&self) {
@@ -241,16 +242,18 @@ pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
                     let end = current_graph.graph[end_id].clone();
                     rsx! {
                         NodeConnection {
+                            key: "{edge_ref.id():?}",
                             start: start,
                             connection: edge,
                             end: end,
                         }
                     }
                 }),
-                current_graph.graph.node_identifiers().map(|node|{
-                    let node = current_graph.graph[node].clone();
+                current_graph.graph.node_identifiers().map(|id|{
+                    let node = current_graph.graph[id].clone();
                     rsx! {
                         Node {
+                            key: "{id:?}",
                             node: node,
                         }
                     }

@@ -3,8 +3,10 @@
 
 use anyhow::Result;
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
+use dioxus_desktop::WindowBuilder;
 use floneum_plugin::Plugin;
 use floneumite::FloneumPackageIndex;
+use petgraph::stable_graph::{DefaultIx, NodeIndex};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fs::File, io::Read, io::Write, rc::Rc};
 use tracing_subscriber::filter::LevelFilter;
@@ -135,6 +137,16 @@ impl ApplicationState {
     fn get_plugin(&self, name: &str) -> Option<&Plugin> {
         self.plugins.get(name)
     }
+
+    fn remove(&mut self, node: NodeIndex<DefaultIx>) {
+        println!("removing {node:?}");
+        self.graph.inner.write().graph.remove_node(node);
+        if let Some(focused) = &self.currently_focused {
+            if focused.read_silent().id == node {
+                self.currently_focused = None;
+            }
+        }
+    }
 }
 
 impl PartialEq for ApplicationState {
@@ -195,7 +207,7 @@ pub fn use_package_manager(cx: &ScopeState) -> Option<Rc<FloneumPackageIndex>> {
 
 fn make_config() -> dioxus_desktop::Config {
     let tailwind = include_str!("../public/tailwind.css");
-    dioxus_desktop::Config::default().with_custom_head(
+    dioxus_desktop::Config::default().with_window(WindowBuilder::new().with_title("Floneum")).with_custom_head(
         r#"
 <style type="text/css">
     html, body {
