@@ -93,7 +93,7 @@ impl VisualGraph {
             height: 100.0,
         });
         let idx = inner.graph.add_node(node);
-        inner.graph[idx].write().id = dbg!(idx);
+        inner.graph[idx].write().id = idx;
     }
 
     pub fn clear_dragging(&self) {

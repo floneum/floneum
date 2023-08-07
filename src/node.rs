@@ -1,4 +1,4 @@
-use dioxus::{html::geometry::euclid::Point2D, prelude::*};
+use dioxus_free_icons::Icon;use dioxus::{html::geometry::euclid::Point2D, prelude::*};
 use floneum_plugin::PluginInstance;
 use petgraph::{graph::NodeIndex, stable_graph::DefaultIx};
 use serde::{Deserialize, Serialize};
@@ -9,6 +9,8 @@ use crate::{local_sub::LocalSubscription, Point, VisualGraph};
 use crate::{use_application_state, CurrentlyDraggingProps, DraggingIndex, Edge};
 
 const SNAP_DISTANCE: f32 = 15.;
+const NODE_KNOB_SIZE: f64 = 5.;
+const NODE_MARGIN: f64 = 2.;
 
 #[derive(Serialize, Deserialize)]
 pub struct Node {
@@ -69,11 +71,10 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
     let application = use_application_state(cx).use_(cx);
     let node = cx.props.node.use_(cx);
     let current_node = node.read();
-    let current_node_id = dbg!(current_node.id);
+    let current_node_id = current_node.id;
     let width = current_node.width;
     let height = current_node.height;
-    let pos = current_node.position;
-    let node_size = 5.;
+    let pos = current_node.position - Point::new(1., 0.);
 
     if current_node.running {
         return render! { div { "Loading..." } };
@@ -85,9 +86,9 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
             let pos = current_node.input_pos(i);
             rsx! {
                 circle {
-                    cx: pos.x as f64 + node_size,
+                    cx: pos.x as f64 + NODE_KNOB_SIZE + NODE_MARGIN,
                     cy: pos.y as f64,
-                    r: node_size,
+                    r: NODE_KNOB_SIZE,
                     onmousedown: move |evt| {
                         let graph: VisualGraph = cx.consume_context().unwrap();
                         graph.inner.write().currently_dragging = Some(CurrentlyDragging::Connection(CurrentlyDraggingProps {
@@ -262,9 +263,9 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
             let pos = current_node.output_pos(i);
             rsx! {
                 circle {
-                    cx: pos.x as f64 - node_size,
+                    cx: pos.x as f64 - NODE_KNOB_SIZE - NODE_MARGIN,
                     cy: pos.y as f64,
-                    r: node_size,
+                    r: NODE_KNOB_SIZE,
                     onmousedown: move |evt| {
                         let graph: VisualGraph = cx.consume_context().unwrap();
                         graph.inner.write().currently_dragging = Some(CurrentlyDragging::Connection(CurrentlyDraggingProps {
@@ -306,7 +307,6 @@ fn CenterNodeUI(cx: Scope<NodeProps>) -> Element {
     let node = cx.props.node.use_(cx);
     let current_node = node.read();
     let name = &current_node.instance.metadata().name;
-    let node_size = 5.;
     let focused_class = if focused {
         "border-2 border-blue-500"
     } else {
@@ -315,17 +315,23 @@ fn CenterNodeUI(cx: Scope<NodeProps>) -> Element {
 
     render! {
         div {
-            style: "-webkit-user-select: none; -ms-user-select: none; user-select: none;",
+            style: "-webkit-user-select: none; -ms-user-select: none; user-select: none; padding: {NODE_KNOB_SIZE*2.+2.}px;",
             class: "flex flex-col justify-center items-center w-full h-full border rounded-md {focused_class}",
-            div { padding: "{node_size*2.}px",
+            div {
                 button {
-                    class: "fixed top-0 right-0",
+                    class: "fixed p-2 top-0 right-0",
                     onclick: move |_| {
                         application.write().remove(node.read().id)
                     },
-                    "x"
+                    Icon {
+                        width: 15,
+                        height: 15,
+                        fill: "black",
+                        icon: dioxus_free_icons::icons::io_icons::IoTrashOutline,
+                    }
                 }
                 h1 {
+                    class: "text-md",
                     "{name}"
                 }
                 div { color: "red",

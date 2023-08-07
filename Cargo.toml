@@ -35,6 +35,7 @@ dioxus = "0.4"
 petgraph = { version = "0.6.3", features = ["serde-1"] }
 dioxus-desktop = "0.4"
 dioxus-router = "0.4.1"
+dioxus-free-icons = { version = "0.7.0", features = ["ionicons"] }
 
 [workspace]
 members = [

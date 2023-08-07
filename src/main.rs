@@ -140,7 +140,6 @@ impl ApplicationState {
     }
 
     fn remove(&mut self, node: NodeIndex<DefaultIx>) {
-        println!("removing {node:?}");
         self.graph.inner.write().graph.remove_node(node);
         if let Some(focused) = &self.currently_focused {
             if focused.read_silent().id == node {

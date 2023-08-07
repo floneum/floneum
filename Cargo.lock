@@ -1484,6 +1484,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "dioxus-free-icons"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba0f39d8cc51f55139246e3527a97153bbc6764bfe8ecf0b2505e7c6b7650580"
+dependencies = [
+ "dioxus",
+]
+
+[[package]]
 name = "dioxus-hooks"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1965,6 +1974,7 @@ dependencies = [
  "cargo-dist",
  "dioxus",
  "dioxus-desktop",
+ "dioxus-free-icons",
  "dioxus-router",
  "floneum_plugin",
  "floneumite",
