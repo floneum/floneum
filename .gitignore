@@ -7,3 +7,4 @@
 /docs/nightly
 /plugin/Cargo.lock
 debug.log
+workflow.toml

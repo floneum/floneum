@@ -1969,7 +1969,6 @@ name = "floneum"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bincode",
  "bytesize",
  "cargo-dist",
  "dioxus",
@@ -1994,7 +1993,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "wasmtime",
- "yazi",
 ]
 
 [[package]]
@@ -8627,12 +8625,6 @@ checksum = "388c44dc09d76f1536602ead6d325eb532f5c122f17782bd57fb47baeeb767e2"
 dependencies = [
  "lzma-sys",
 ]
-
-[[package]]
-name = "yazi"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c94451ac9513335b5e23d7a8a2b61a7102398b8cca5160829d313e84c9d98be1"
 
 [[package]]
 name = "zeroize"

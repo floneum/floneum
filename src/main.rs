@@ -32,20 +32,19 @@ mod current_node;
 use current_node::CurrentNodeInfo;
 mod node_value;
 
+const SAVE_NAME: &str = "workflow.toml";
+
 pub type Point = Point2D<f32, f32>;
 
 fn save_to_file<D: Serialize>(data: &D) {
     let mut current_dir = std::env::current_dir().unwrap();
-    current_dir.push("save.bin");
+    current_dir.push(SAVE_NAME);
     match File::create(current_dir) {
         Ok(mut file) => {
             log::info!("serializing");
-            match bincode::serialize(data) {
+            match toml::to_string(data) {
                 Ok(bytes) => {
-                    let compressed =
-                        yazi::compress(&bytes, yazi::Format::Zlib, yazi::CompressionLevel::Default)
-                            .unwrap();
-                    let _ = file.write_all(&compressed);
+                    let _ = file.write_all(bytes.as_bytes());
                 }
                 Err(err) => {
                     log::error!("{}", err)
@@ -77,16 +76,15 @@ async fn main() {
     logger.with(debug_log).init();
 
     let mut current_dir = std::env::current_dir().unwrap();
-    current_dir.push("save.bin");
+    current_dir.push(SAVE_NAME);
     let state: ApplicationState = if let Ok(mut file) = File::open(current_dir) {
         let mut buffer = Vec::new();
 
         if file.read_to_end(&mut buffer).is_err() {
             ApplicationState::default()
         } else {
-            let (uncompressed, _) = yazi::decompress(&buffer[..], yazi::Format::Zlib).unwrap();
-
-            if let Ok(from_storage) = bincode::deserialize(&uncompressed[..]) {
+            let as_str = std::str::from_utf8(&buffer).unwrap();
+            if let Ok(from_storage) = toml::from_str(as_str) {
                 from_storage
             } else {
                 ApplicationState::default()
