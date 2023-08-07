@@ -24,6 +24,7 @@ pub fn CurrentNodeInfo(cx: Scope) -> Element {
                         class: "text-left",
                         for input in &node.inputs {
                             ModifyInput {
+                                key: "{input.read(cx).definition.name}",
                                 value: input.clone()
                             }
                         }

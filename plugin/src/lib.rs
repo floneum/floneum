@@ -352,7 +352,7 @@ impl Host for State {
         let structure = self.decode_structure(structure);
         Ok(self
             .sessions
-            .infer_validate(id, input, max_tokens, dbg!(structure)))
+            .infer_validate(id, input, max_tokens, structure))
     }
 
     async fn new_tab(

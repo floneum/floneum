@@ -301,7 +301,6 @@ fn CurrentlyDragging(cx: Scope<CurrentlyDraggingProps>) -> Element {
         DraggingIndex::Output(index) => {
             color = current_start.output_color(index);
             start_pos = current_start.output_pos(index);
-            println!("color: {:?}", color);
         }
     };
     let end = cx.props.to.use_(cx);

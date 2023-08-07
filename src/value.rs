@@ -241,9 +241,8 @@ pub trait Colored {
 
 impl Colored for ValueType {
     fn color(&self) -> String {
-        let index = dbg!(Self::VARIANTS.iter().position(|v| v == self).unwrap());
+        let index = Self::VARIANTS.iter().position(|v| v == self).unwrap();
         let hue = index * 360 / Self::VARIANTS.len();
-        println!("hue: {}", hue);
         format!("hsl({hue}, 100%, 50%)")
     }
 }
