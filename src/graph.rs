@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     node_value::{NodeInput, NodeOutput},
-    Connection, Edge, LocalSubscription, Node,
+    Colored, Connection, Edge, LocalSubscription, Node,
 };
 
 #[derive(Serialize, Deserialize, Default)]
@@ -194,14 +194,11 @@ impl VisualGraph {
             .graph
             .edges_directed(id, petgraph::Direction::Incoming)
         {
-            match &input.weight().read_silent().value {
-                Some(value) => values.push(value.read_silent().clone()),
-                None => {
-                    log::error!("missing value for output: {:?}", input.id());
-
-                    return None;
-                }
-            }
+            let source = input.source();
+            let start_index = input.weight().read_silent().start;
+            let input = graph.graph[source].read_silent();
+            let value = input.inputs[start_index].read_silent().value.clone();
+            values.push(value);
         }
 
         Some(values)
@@ -293,14 +290,24 @@ struct ConnectionProps {
 
 fn CurrentlyDragging(cx: Scope<CurrentlyDraggingProps>) -> Element {
     let start = cx.props.from.use_(cx);
-    let start_pos = match cx.props.index {
-        DraggingIndex::Input(index) => start.read().input_pos(index),
-        DraggingIndex::Output(index) => start.read().output_pos(index),
+    let current_start = start.read();
+    let start_pos;
+    let color;
+    match cx.props.index {
+        DraggingIndex::Input(index) => {
+            color = current_start.input_color(index);
+            start_pos = current_start.input_pos(index);
+        }
+        DraggingIndex::Output(index) => {
+            color = current_start.output_color(index);
+            start_pos = current_start.output_pos(index);
+            println!("color: {:?}", color);
+        }
     };
     let end = cx.props.to.use_(cx);
     let end_pos = end.read();
 
-    render! { Connection { start_pos: start_pos, end_pos: *end_pos } }
+    render! { Connection { start_pos: start_pos, end_pos: *end_pos, color: color } }
 }
 
 fn NodeConnection(cx: Scope<ConnectionProps>) -> Element {
@@ -310,9 +317,13 @@ fn NodeConnection(cx: Scope<ConnectionProps>) -> Element {
 
     let current_connection = connection.read();
     let start_index = current_connection.start;
-    let start = start.read().input_pos(start_index);
+    let start_node = start.read();
+    let start = start_node.input_pos(start_index);
     let end_index = current_connection.end;
     let end = end.read().output_pos(end_index);
 
-    render! { Connection { start_pos: start, end_pos: end } }
+    let ty = start_node.input_type(start_index).unwrap();
+    let color = ty.color();
+
+    render! { Connection { start_pos: start, end_pos: end, color: color } }
 }

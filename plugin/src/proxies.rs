@@ -259,6 +259,16 @@ impl From<MyLlamaType> for LlamaType {
     }
 }
 
+impl PartialEq for ValueType {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (ValueType::Single(a), ValueType::Single(b)) => a == b,
+            (ValueType::Many(a), ValueType::Many(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
 impl ValueType {
     pub fn create(&self) -> Input {
         match self {

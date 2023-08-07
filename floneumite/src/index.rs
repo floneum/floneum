@@ -288,7 +288,7 @@ impl PackageIndexEntry {
         } else {
             path
         };
-        if let Ok(new) = path.strip_prefix(packages_path().unwrap()){
+        if let Ok(new) = path.strip_prefix(packages_path().unwrap()) {
             path = new.to_path_buf();
         }
         log::info!("found: {}", path.display());

@@ -1,4 +1,6 @@
-use dioxus_free_icons::Icon;use dioxus::{html::geometry::euclid::Point2D, prelude::*};
+use dioxus::{html::geometry::euclid::Point2D, prelude::*};
+use dioxus_free_icons::Icon;
+use floneum_plugin::exports::plugins::main::definitions::ValueType;
 use floneum_plugin::PluginInstance;
 use petgraph::{graph::NodeIndex, stable_graph::DefaultIx};
 use serde::{Deserialize, Serialize};
@@ -6,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::graph::CurrentlyDragging;
 use crate::node_value::{NodeInput, NodeOutput};
 use crate::{local_sub::LocalSubscription, Point, VisualGraph};
-use crate::{use_application_state, CurrentlyDraggingProps, DraggingIndex, Edge};
+use crate::{use_application_state, Colored, CurrentlyDraggingProps, DraggingIndex, Edge};
 
 const SNAP_DISTANCE: f32 = 15.;
 const NODE_KNOB_SIZE: f64 = 5.;
@@ -57,6 +59,32 @@ impl Node {
         )
     }
 
+    pub fn output_type(&self, index: usize) -> Option<ValueType> {
+        self.outputs
+            .get(index)
+            .map(|output| output.read_silent().definition.ty)
+    }
+
+    pub fn output_color(&self, index: usize) -> String {
+        match self.output_type(index) {
+            Some(ty) => ty.color(),
+            None => "black".to_string(),
+        }
+    }
+
+    pub fn input_type(&self, index: usize) -> Option<ValueType> {
+        self.inputs
+            .get(index)
+            .map(|input| input.read_silent().definition.ty)
+    }
+
+    pub fn input_color(&self, index: usize) -> String {
+        match self.input_type(index) {
+            Some(ty) => ty.color(),
+            None => "black".to_string(),
+        }
+    }
+
     pub fn help_text(&self) -> String {
         self.instance.metadata().description.to_string()
     }
@@ -84,11 +112,13 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
         // inputs
         (0..current_node.inputs.len()).map(|i| {
             let pos = current_node.input_pos(i);
+            let color = current_node.input_color(i);
             rsx! {
                 circle {
                     cx: pos.x as f64 + NODE_KNOB_SIZE + NODE_MARGIN,
                     cy: pos.y as f64,
                     r: NODE_KNOB_SIZE,
+                    fill: "{color}",
                     onmousedown: move |evt| {
                         let graph: VisualGraph = cx.consume_context().unwrap();
                         graph.inner.write().currently_dragging = Some(CurrentlyDragging::Connection(CurrentlyDraggingProps {
@@ -106,10 +136,14 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                 DraggingIndex::Output(index) => index,
                                 _ => return,
                             };
-                            let start_id = currently_dragging.from.read(cx).id;
+                            let start_node = currently_dragging.from.read(cx);
+                            let start_id = start_node.id;
+                            let ty = start_node.output_type(start_index).unwrap();
+                            drop(start_node);
                             let edge = LocalSubscription::new(Edge::new(
                                 start_index,
                                 i,
+                                ty,
                             ));
                             current_graph.graph.add_edge(start_id, current_node_id, edge);
                         }
@@ -210,9 +244,11 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                     .unwrap();
                                 let input_idx = combined.0;
                                 dist = combined.1;
-                                start_id = currently_dragging.from.read(cx).id;
+                                let start_node = currently_dragging.from.read(cx);
+                                start_id = start_node.id;
                                 end_id = current_node_id;
-                                edge = LocalSubscription::new(Edge::new(start_index, input_idx));
+                                let ty = start_node.output_type(start_index).unwrap();
+                                edge = LocalSubscription::new(Edge::new(start_index, input_idx, ty));
                             }
                             DraggingIndex::Input(start_index) => {
                                 let node = node.read();
@@ -229,9 +265,11 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                     .unwrap();
                                 let output_idx = combined.0;
                                 dist = combined.1;
-                                end_id = currently_dragging.from.read(cx).id;
+                                let start_node = currently_dragging.from.read(cx);
+                                end_id = start_node.id;
                                 start_id = current_node_id;
-                                edge = LocalSubscription::new(Edge::new(output_idx, start_index));
+                                let ty = start_node.output_type(output_idx).unwrap();
+                                edge = LocalSubscription::new(Edge::new(output_idx, start_index, ty));
                             }
                         }
                         if dist < SNAP_DISTANCE.powi(2) {
@@ -261,11 +299,14 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
         // outputs
         (0..current_node.outputs.len()).map(|i| {
             let pos = current_node.output_pos(i);
+            let color = current_node.output_color(i);
+            let ty = current_node.output_type(i).unwrap();
             rsx! {
                 circle {
                     cx: pos.x as f64 - NODE_KNOB_SIZE - NODE_MARGIN,
                     cy: pos.y as f64,
                     r: NODE_KNOB_SIZE,
+                    fill: "{color}",
                     onmousedown: move |evt| {
                         let graph: VisualGraph = cx.consume_context().unwrap();
                         graph.inner.write().currently_dragging = Some(CurrentlyDragging::Connection(CurrentlyDraggingProps {
@@ -285,7 +326,7 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                     _ => return,
                                 };
                                 let start_id = currently_dragging.from.read(cx).id;
-                                let edge = LocalSubscription::new(Edge::new(i, start_index));
+                                let edge = LocalSubscription::new(Edge::new(i, start_index, ty));
                                 current_graph.graph.add_edge(current_node_id, start_id, edge);
                             }
                         }

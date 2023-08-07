@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use floneum_plugin::{
-    exports::plugins::main::definitions::{Input, PrimitiveValue},
+    exports::plugins::main::definitions::{Input, PrimitiveValue, PrimitiveValueType, ValueType},
     plugins::main::types::{GptNeoXType, LlamaType, ModelType, MptType},
 };
 
@@ -165,6 +165,31 @@ impl Variants for ModelType {
     ];
 }
 
+impl Variants for ValueType {
+    const VARIANTS: &'static [Self] = &[
+        ValueType::Single(PrimitiveValueType::Text),
+        ValueType::Single(PrimitiveValueType::Number),
+        ValueType::Single(PrimitiveValueType::Boolean),
+        ValueType::Single(PrimitiveValueType::Embedding),
+        ValueType::Single(PrimitiveValueType::Model),
+        ValueType::Single(PrimitiveValueType::ModelType),
+        ValueType::Single(PrimitiveValueType::Database),
+        ValueType::Single(PrimitiveValueType::Tab),
+        ValueType::Single(PrimitiveValueType::Node),
+        ValueType::Single(PrimitiveValueType::Any),
+        ValueType::Many(PrimitiveValueType::Text),
+        ValueType::Many(PrimitiveValueType::Number),
+        ValueType::Many(PrimitiveValueType::Boolean),
+        ValueType::Many(PrimitiveValueType::Embedding),
+        ValueType::Many(PrimitiveValueType::Model),
+        ValueType::Many(PrimitiveValueType::ModelType),
+        ValueType::Many(PrimitiveValueType::Database),
+        ValueType::Many(PrimitiveValueType::Tab),
+        ValueType::Many(PrimitiveValueType::Node),
+        ValueType::Many(PrimitiveValueType::Any),
+    ];
+}
+
 pub trait Named {
     fn name(&self) -> &'static str;
 }
@@ -207,5 +232,18 @@ fn model_type_from_str(s: &str) -> Option<ModelType> {
         "mpt story" => Some(ModelType::Mpt(MptType::Story)),
         "mpt instruct" => Some(ModelType::Mpt(MptType::Instruct)),
         _ => None,
+    }
+}
+
+pub trait Colored {
+    fn color(&self) -> String;
+}
+
+impl Colored for ValueType {
+    fn color(&self) -> String {
+        let index = dbg!(Self::VARIANTS.iter().position(|v| v == self).unwrap());
+        let hue = index * 360 / Self::VARIANTS.len();
+        println!("hue: {}", hue);
+        format!("hsl({hue}, 100%, 50%)")
     }
 }
