@@ -67,7 +67,7 @@ async fn main() {
     let logger = tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::builder()
-                .with_default_directive(LevelFilter::INFO.into())
+                .with_default_directive(LevelFilter::TRACE.into())
                 .from_env_lossy(),
         )
         .pretty()

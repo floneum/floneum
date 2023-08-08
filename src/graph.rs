@@ -1,7 +1,7 @@
 use std::{collections::HashSet, fmt::Debug};
 
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
-use floneum_plugin::{exports::plugins::main::definitions::Input, PluginInstance};
+use floneum_plugin::PluginInstance;
 use petgraph::{
     stable_graph::StableGraph,
     visit::{EdgeRef, IntoEdgeReferences, IntoNodeIdentifiers},
@@ -89,8 +89,8 @@ impl VisualGraph {
             id: Default::default(),
             inputs,
             outputs,
-            width: 100.0,
-            height: 100.0,
+            width: 120.0,
+            height: 120.0,
         });
         let idx = inner.graph.add_node(node);
         inner.graph[idx].write().id = idx;
@@ -119,14 +119,14 @@ impl VisualGraph {
         }
     }
 
-    pub fn start_dragging_node(&self, evt: &MouseData, node: LocalSubscription<Node>) {
+    pub fn start_dragging_node(&self, _evt: &MouseData, node: LocalSubscription<Node>) {
         let mut inner = self.inner.write();
         inner.currently_dragging = Some(CurrentlyDragging::Node(NodeDragInfo {
+            element_offset: {
+                let current_node = node.read_silent();
+                Point2D::new(current_node.height / 2.0, current_node.width / 2.0)
+            },
             node,
-            element_offset: Point2D::new(
-                evt.element_coordinates().x as f32,
-                evt.element_coordinates().y as f32,
-            ),
         }));
     }
 
@@ -179,29 +179,31 @@ impl VisualGraph {
         true
     }
 
-    fn get_node_inputs(&mut self, id: petgraph::graph::NodeIndex) -> Option<Vec<Input>> {
+    pub fn set_input_nodes(&self, id: petgraph::graph::NodeIndex) -> bool {
         if !self.should_run_node(id) {
             log::info!(
                 "node {:?} has unresolved dependencies, skipping running",
                 id
             );
-            return None;
+            return false;
         }
         let graph = self.inner.read_silent();
 
-        let mut values: Vec<Input> = Vec::new();
+        let inputs = &graph.graph[id].read_silent().inputs;
         for input in graph
             .graph
             .edges_directed(id, petgraph::Direction::Incoming)
         {
             let source = input.source();
-            let start_index = input.weight().read_silent().start;
+            let edge = input.weight().read_silent();
+            let start_index = edge.start;
+            let end_index = edge.end;
             let input = graph.graph[source].read_silent();
             let value = input.inputs[start_index].read_silent().value.clone();
-            values.push(value);
+            inputs[end_index].write().value = value;
         }
 
-        Some(values)
+        true
     }
 }
 

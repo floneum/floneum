@@ -104,10 +104,6 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
     let height = current_node.height;
     let pos = current_node.position - Point::new(1., 0.);
 
-    if current_node.running {
-        return render! { div { "Loading..." } };
-    }
-
     render! {
         // inputs
         (0..current_node.inputs.len()).map(|i| {
@@ -347,6 +343,7 @@ fn CenterNodeUI(cx: Scope<NodeProps>) -> Element {
     let focused = &application.read().currently_focused == &Some(cx.props.node.clone());
     let node = cx.props.node.use_(cx);
     let current_node = node.read();
+    let current_node_id = current_node.id;
     let name = &current_node.instance.metadata().name;
     let focused_class = if focused {
         "border-2 border-blue-500"
@@ -357,7 +354,7 @@ fn CenterNodeUI(cx: Scope<NodeProps>) -> Element {
     render! {
         div {
             style: "-webkit-user-select: none; -ms-user-select: none; user-select: none; padding: {NODE_KNOB_SIZE*2.+2.}px;",
-            class: "flex flex-col justify-center items-center w-full h-full border rounded-md {focused_class}",
+            class: "flex flex-col justify-center items-center w-full h-full border rounded-md overflow-scroll {focused_class}",
             div {
                 button {
                     class: "fixed p-2 top-0 right-0",
@@ -374,6 +371,48 @@ fn CenterNodeUI(cx: Scope<NodeProps>) -> Element {
                 h1 {
                     class: "text-md",
                     "{name}"
+                }
+                if current_node.running {
+                    rsx! { div { "Loading..." } }
+                }
+                else {
+                    rsx! {
+                        button {
+                            class: "p-1 border rounded-md hover:bg-gray-200",
+                            onclick: move |_| {
+                                if application.read().graph.set_input_nodes(current_node_id) {
+                                    let mut current_node = cx.props.node.write();
+                                    let inputs = current_node.inputs.iter().map(|input| input.read_silent().value.clone()).collect();
+                                    log::trace!("Running node {:?} with inputs {:?}", current_node_id, inputs);
+                                    current_node.running = true;
+                                    current_node.queued = true;
+
+                                    let fut = current_node.instance.run(inputs);
+                                    let node = cx.props.node.clone();
+                                    cx.spawn(async move {
+                                        match fut.await.as_deref() {
+                                            Some(Ok(result)) => {
+                                                let current_node = node.read_silent();
+                                                for (out, current) in result.iter().zip(current_node.outputs.iter()) {
+                                                    current.write().value = out.clone();
+                                                }
+                                            }
+                                            Some(Err(err)) => {
+                                                log::error!("Error running node {:?}: {:?}", current_node_id, err);
+                                                let mut node_mut = node.write();
+                                                node_mut.error = Some(err.to_string());
+                                            }
+                                            None => {}
+                                        }
+                                        let mut current_node = node.write();
+                                        current_node.running = false;
+                                        current_node.queued = false;
+                                    });
+                                }
+                            },
+                            "Run"
+                        }
+                    }
                 }
                 div { color: "red",
                     if let Some(error) = &current_node.error {
