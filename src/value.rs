@@ -1,10 +1,45 @@
 use dioxus::prelude::*;
 use floneum_plugin::{
-    exports::plugins::main::definitions::{Input, PrimitiveValue, PrimitiveValueType, ValueType},
+    exports::plugins::main::definitions::{Input, PrimitiveValue, PrimitiveValueType, ValueType, Output},
     plugins::main::types::{GptNeoXType, LlamaType, ModelType, MptType},
 };
 
-use crate::{node_value::NodeInput, LocalSubscription};
+use crate::{node_value::{NodeInput, NodeOutput}, LocalSubscription};
+
+#[inline_props]
+pub fn ShowOutput(cx: Scope,  value: LocalSubscription<NodeOutput>) -> Element {
+    let output = value.use_(cx).read();
+    let key = &output.definition.name;
+    match &output.value {
+        Output::Single(value) => {
+            render! {
+                div {
+                    class: "flex flex-col",
+                    "{key}:"
+                    show_primitive_value(cx, value)
+                }
+            }
+        }
+        Output::Many(value) => {
+            render! {
+                div {
+                    class: "flex flex-col",
+                    "{key}:"
+                    for value in &value {
+                        show_primitive_value(cx, value)
+                    }
+                }
+            }
+        } _ => {
+            render!{
+                div {
+                    class: "flex flex-col",
+                    "{key}: Unset"
+                }
+            }
+        }
+    }
+}
 
 fn show_primitive_value<'a>(cx: &'a ScopeState, value: &PrimitiveValue) -> Element<'a> {
     match value {
