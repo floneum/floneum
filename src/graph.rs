@@ -124,7 +124,7 @@ impl VisualGraph {
         inner.currently_dragging = Some(CurrentlyDragging::Node(NodeDragInfo {
             element_offset: {
                 let current_node = node.read_silent();
-                Point2D::new(current_node.height / 2.0, current_node.width / 2.0)
+                Point2D::new(current_node.height / 2.0, current_node.width / 4.0)
             },
             node,
         }));
