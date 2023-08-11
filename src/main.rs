@@ -3,7 +3,8 @@
 
 use anyhow::Result;
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
-use dioxus_desktop::WindowBuilder;
+use dioxus_desktop::{tao::window::Icon, WindowBuilder};
+use dioxus_signals::*;
 use floneum_plugin::Plugin;
 use floneumite::FloneumPackageIndex;
 use petgraph::stable_graph::{DefaultIx, NodeIndex};
@@ -15,8 +16,6 @@ use tracing_subscriber::util::SubscriberInitExt;
 
 mod node;
 pub use node::Node;
-mod local_sub;
-pub use local_sub::{LocalSubscription, UseLocalSubscription};
 mod edge;
 pub use edge::Edge;
 mod graph;
@@ -67,7 +66,7 @@ async fn main() {
     let logger = tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::builder()
-                .with_default_directive(LevelFilter::TRACE.into())
+                .with_default_directive(LevelFilter::INFO.into())
                 .from_env_lossy(),
         )
         .pretty()
@@ -75,32 +74,7 @@ async fn main() {
 
     logger.with(debug_log).init();
 
-    let mut current_dir = std::env::current_dir().unwrap();
-    current_dir.push(SAVE_NAME);
-    let state: ApplicationState = if let Ok(mut file) = File::open(current_dir) {
-        let mut buffer = Vec::new();
-
-        if file.read_to_end(&mut buffer).is_err() {
-            ApplicationState::default()
-        } else {
-            let as_str = std::str::from_utf8(&buffer).unwrap();
-            if let Ok(from_storage) = toml::from_str(as_str) {
-                from_storage
-            } else {
-                ApplicationState::default()
-            }
-        }
-    } else {
-        ApplicationState::default()
-    };
-
-    dioxus_desktop::launch_with_props(
-        App,
-        AppProps {
-            state: RefCell::new(Some(state)),
-        },
-        make_config(),
-    );
+    dioxus_desktop::launch_with_props(App, (), make_config());
 }
 
 pub struct PluginId(usize);
@@ -109,7 +83,7 @@ pub struct PluginId(usize);
 pub struct ApplicationState {
     graph: VisualGraph,
     #[serde(skip)]
-    currently_focused: Option<LocalSubscription<Node>>,
+    currently_focused: Option<Signal<Node>>,
     #[serde(skip)]
     plugins: HashMap<String, Plugin>,
 }
@@ -140,7 +114,7 @@ impl ApplicationState {
     fn remove(&mut self, node: NodeIndex<DefaultIx>) {
         self.graph.inner.write().graph.remove_node(node);
         if let Some(focused) = &self.currently_focused {
-            if focused.read_silent().id == node {
+            if focused.read().id == node {
                 self.currently_focused = None;
             }
         }
@@ -159,23 +133,44 @@ impl Drop for ApplicationState {
     }
 }
 
-pub fn use_provide_application_state(cx: &ScopeState, state: impl FnOnce() -> ApplicationState) {
-    use_context_provider(cx, || LocalSubscription::new(state()));
+pub fn use_provide_application_state(cx: &ScopeState) -> Signal<ApplicationState> {
+    *use_context_provider(cx, || {
+        let mut current_dir = std::env::current_dir().unwrap();
+        current_dir.push(SAVE_NAME);
+        let state = if let Ok(mut file) = File::open(current_dir) {
+            let mut buffer = Vec::new();
+
+            if file.read_to_end(&mut buffer).is_err() {
+                ApplicationState::default()
+            } else {
+                let as_str = std::str::from_utf8(&buffer).unwrap();
+                if let Ok(from_storage) = toml::from_str(as_str) {
+                    from_storage
+                } else {
+                    ApplicationState::default()
+                }
+            }
+        } else {
+            ApplicationState::default()
+        };
+        Signal::new(state)
+    })
 }
 
-pub fn use_application_state(cx: &ScopeState) -> &LocalSubscription<ApplicationState> {
-    use_context::<LocalSubscription<ApplicationState>>(cx).unwrap()
+#[track_caller]
+pub fn use_application_state(cx: &ScopeState) -> Signal<ApplicationState> {
+    println!("calling from {}", std::panic::Location::caller());
+    *use_context::<Signal<ApplicationState>>(cx).unwrap()
 }
 
-#[inline_props]
-fn App(cx: Scope, state: RefCell<Option<ApplicationState>>) -> Element {
+fn App(cx: Scope) -> Element {
     use_package_manager_provider(cx);
-    use_provide_application_state(cx, || state.borrow_mut().take().unwrap());
-    let state = use_application_state(cx).use_(cx);
+    let state = use_provide_application_state(cx);
+    let graph = state.read().graph.clone();
 
     render! {
         FlowView {
-            graph: state.read().graph.clone(),
+            graph: graph,
         }
         Sidebar {}
     }
@@ -207,6 +202,7 @@ fn make_config() -> dioxus_desktop::Config {
     let tailwind = include_str!("../public/tailwind.css");
     dioxus_desktop::Config::default()
         .with_window(WindowBuilder::new().with_title("Floneum"))
+        .with_icon(Icon::from_rgba(include_bytes!("../public/Icon.rgba").to_vec(), 64, 64).unwrap())
         .with_custom_head(
             r#"
 <style type="text/css">

@@ -1,14 +1,19 @@
 use dioxus::prelude::*;
 use floneum_plugin::{
-    exports::plugins::main::definitions::{Input, PrimitiveValue, PrimitiveValueType, ValueType, Output},
+    exports::plugins::main::definitions::{
+        Input, Output, PrimitiveValue, PrimitiveValueType, ValueType,
+    },
     plugins::main::types::{GptNeoXType, LlamaType, ModelType, MptType},
 };
 
-use crate::{node_value::{NodeInput, NodeOutput}, LocalSubscription};
+use crate::{
+    node_value::{NodeInput, NodeOutput},
+    Signal,
+};
 
 #[inline_props]
-pub fn ShowOutput(cx: Scope,  value: LocalSubscription<NodeOutput>) -> Element {
-    let output = value.use_(cx).read();
+pub fn ShowOutput(cx: Scope, value: Signal<NodeOutput>) -> Element {
+    let output = value.read();
     let key = &output.definition.name;
     match &output.value {
         Output::Single(value) => {
@@ -30,8 +35,9 @@ pub fn ShowOutput(cx: Scope,  value: LocalSubscription<NodeOutput>) -> Element {
                     }
                 }
             }
-        } _ => {
-            render!{
+        }
+        _ => {
+            render! {
                 div {
                     class: "flex flex-col",
                     "{key}: Unset"
@@ -74,8 +80,8 @@ fn show_primitive_value<'a>(cx: &'a ScopeState, value: &PrimitiveValue) -> Eleme
 }
 
 #[inline_props]
-pub fn ModifyInput(cx: &ScopeState, value: LocalSubscription<NodeInput>) -> Element {
-    let node = value.use_(cx);
+pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
+    let node = value;
     let current_value = node.read();
     let name = &current_value.definition.name;
     match &current_value.value {

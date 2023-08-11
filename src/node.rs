@@ -7,8 +7,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::graph::CurrentlyDragging;
 use crate::node_value::{NodeInput, NodeOutput};
-use crate::{local_sub::LocalSubscription, Point, VisualGraph};
 use crate::{use_application_state, Colored, CurrentlyDraggingProps, DraggingIndex, Edge};
+use crate::{Point, VisualGraph};
+use dioxus_signals::*;
 
 const SNAP_DISTANCE: f32 = 15.;
 const NODE_KNOB_SIZE: f64 = 5.;
@@ -25,8 +26,8 @@ pub struct Node {
     pub error: Option<String>,
     pub id: NodeIndex<DefaultIx>,
     pub position: Point,
-    pub inputs: Vec<LocalSubscription<NodeInput>>,
-    pub outputs: Vec<LocalSubscription<NodeOutput>>,
+    pub inputs: Vec<Signal<NodeInput>>,
+    pub outputs: Vec<Signal<NodeOutput>>,
     pub width: f32,
     pub height: f32,
 }
@@ -62,7 +63,7 @@ impl Node {
     pub fn output_type(&self, index: usize) -> Option<ValueType> {
         self.outputs
             .get(index)
-            .map(|output| output.read_silent().definition.ty)
+            .map(|output| output.read().definition.ty)
     }
 
     pub fn output_color(&self, index: usize) -> String {
@@ -75,7 +76,7 @@ impl Node {
     pub fn input_type(&self, index: usize) -> Option<ValueType> {
         self.inputs
             .get(index)
-            .map(|input| input.read_silent().definition.ty)
+            .map(|input| input.read().definition.ty)
     }
 
     pub fn input_color(&self, index: usize) -> String {
@@ -92,12 +93,12 @@ impl Node {
 
 #[derive(Props, PartialEq)]
 pub struct NodeProps {
-    node: LocalSubscription<Node>,
+    node: Signal<Node>,
 }
 
 pub fn Node(cx: Scope<NodeProps>) -> Element {
-    let application = use_application_state(cx).use_(cx);
-    let node = cx.props.node.use_(cx);
+    let application = use_application_state(cx);
+    let node = cx.props.node;
     let current_node = node.read();
     let current_node_id = current_node.id;
     let width = current_node.width;
@@ -120,7 +121,7 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                         graph.inner.write().currently_dragging = Some(CurrentlyDragging::Connection(CurrentlyDraggingProps {
                             from: cx.props.node.clone(),
                             index: DraggingIndex::Input(i),
-                            to: LocalSubscription::new(Point2D::new(evt.page_coordinates().x as f32, evt.page_coordinates().y as f32)),
+                            to: Signal::new(Point2D::new(evt.page_coordinates().x as f32, evt.page_coordinates().y as f32)),
                         }));
                     },
                     onmouseup: move |_| {
@@ -132,11 +133,11 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                 DraggingIndex::Output(index) => index,
                                 _ => return,
                             };
-                            let start_node = currently_dragging.from.read(cx);
+                            let start_node = currently_dragging.from.read();
                             let start_id = start_node.id;
                             let ty = start_node.output_type(start_index).unwrap();
                             drop(start_node);
-                            let edge = LocalSubscription::new(Edge::new(
+                            let edge = Signal::new(Edge::new(
                                 start_index,
                                 i,
                                 ty,
@@ -193,7 +194,7 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                 CurrentlyDragging::Connection(CurrentlyDraggingProps {
                                     from: cx.props.node.clone(),
                                     index,
-                                    to: LocalSubscription::new(
+                                    to: Signal::new(
                                         Point2D::new(
                                             evt.page_coordinates().x as f32,
                                             evt.page_coordinates().y as f32,
@@ -240,11 +241,11 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                     .unwrap();
                                 let input_idx = combined.0;
                                 dist = combined.1;
-                                let start_node = currently_dragging.from.read(cx);
+                                let start_node = currently_dragging.from.read();
                                 start_id = start_node.id;
                                 end_id = current_node_id;
                                 let ty = start_node.output_type(start_index).unwrap();
-                                edge = LocalSubscription::new(Edge::new(start_index, input_idx, ty));
+                                edge = Signal::new(Edge::new(start_index, input_idx, ty));
                             }
                             DraggingIndex::Input(start_index) => {
                                 let node = node.read();
@@ -261,11 +262,11 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                     .unwrap();
                                 let output_idx = combined.0;
                                 dist = combined.1;
-                                let start_node = currently_dragging.from.read(cx);
+                                let start_node = currently_dragging.from.read();
                                 end_id = start_node.id;
                                 start_id = current_node_id;
                                 let ty = start_node.output_type(output_idx).unwrap();
-                                edge = LocalSubscription::new(Edge::new(output_idx, start_index, ty));
+                                edge = Signal::new(Edge::new(output_idx, start_index, ty));
                             }
                         }
                         if dist < SNAP_DISTANCE.powi(2) {
@@ -308,7 +309,7 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                         graph.inner.write().currently_dragging = Some(CurrentlyDragging::Connection(CurrentlyDraggingProps {
                             from: cx.props.node.clone(),
                             index: DraggingIndex::Output(i),
-                            to: LocalSubscription::new(Point2D::new(evt.page_coordinates().x as f32, evt.page_coordinates().y as f32)),
+                            to: Signal::new(Point2D::new(evt.page_coordinates().x as f32, evt.page_coordinates().y as f32)),
                         }));
                     },
                     onmouseup: move |_| {
@@ -321,8 +322,8 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                     DraggingIndex::Input(index) => index,
                                     _ => return,
                                 };
-                                let start_id = currently_dragging.from.read(cx).id;
-                                let edge = LocalSubscription::new(Edge::new(i, start_index, ty));
+                                let start_id = currently_dragging.from.read().id;
+                                let edge = Signal::new(Edge::new(i, start_index, ty));
                                 current_graph.graph.add_edge(current_node_id, start_id, edge);
                             }
                         }
@@ -339,9 +340,9 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
 }
 
 fn CenterNodeUI(cx: Scope<NodeProps>) -> Element {
-    let application = use_application_state(cx).use_(cx);
+    let application = use_application_state(cx);
     let focused = &application.read().currently_focused == &Some(cx.props.node.clone());
-    let node = cx.props.node.use_(cx);
+    let node = cx.props.node;
     let current_node = node.read();
     let current_node_id = current_node.id;
     let name = &current_node.instance.metadata().name;
@@ -382,7 +383,7 @@ fn CenterNodeUI(cx: Scope<NodeProps>) -> Element {
                             onclick: move |_| {
                                 if application.read().graph.set_input_nodes(current_node_id) {
                                     let mut current_node = cx.props.node.write();
-                                    let inputs = current_node.inputs.iter().map(|input| input.read_silent().value.clone()).collect();
+                                    let inputs = current_node.inputs.iter().map(|input| input.read().value.clone()).collect();
                                     log::trace!("Running node {:?} with inputs {:?}", current_node_id, inputs);
                                     current_node.running = true;
                                     current_node.queued = true;
@@ -392,7 +393,7 @@ fn CenterNodeUI(cx: Scope<NodeProps>) -> Element {
                                     cx.spawn(async move {
                                         match fut.await.as_deref() {
                                             Some(Ok(result)) => {
-                                                let current_node = node.read_silent();
+                                                let current_node = node.read();
                                                 for (out, current) in result.iter().zip(current_node.outputs.iter()) {
                                                     current.write().value = out.clone();
                                                 }

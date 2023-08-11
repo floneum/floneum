@@ -10,12 +10,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     node_value::{NodeInput, NodeOutput},
-    Colored, Connection, Edge, LocalSubscription, Node,
+    Colored, Connection, Edge, Node, Signal,
 };
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct VisualGraphInner {
-    pub graph: StableGraph<LocalSubscription<Node>, LocalSubscription<Edge>>,
+    pub graph: StableGraph<Signal<Node>, Signal<Edge>>,
     pub currently_dragging: Option<CurrentlyDragging>,
 }
 
@@ -37,7 +37,7 @@ impl Debug for CurrentlyDragging {
 #[derive(PartialEq, Clone, Serialize, Deserialize)]
 pub struct NodeDragInfo {
     pub element_offset: Point2D<f32, f32>,
-    pub node: LocalSubscription<Node>,
+    pub node: Signal<Node>,
 }
 
 #[derive(PartialEq, Clone, Serialize, Deserialize)]
@@ -48,14 +48,14 @@ pub enum DraggingIndex {
 
 #[derive(Props, PartialEq, Clone, Serialize, Deserialize)]
 pub struct CurrentlyDraggingProps {
-    pub from: LocalSubscription<Node>,
+    pub from: Signal<Node>,
     pub index: DraggingIndex,
-    pub to: LocalSubscription<Point2D<f32, f32>>,
+    pub to: Signal<Point2D<f32, f32>>,
 }
 
 #[derive(Props, Clone, Serialize, Deserialize, Default)]
 pub struct VisualGraph {
-    pub inner: LocalSubscription<VisualGraphInner>,
+    pub inner: Signal<VisualGraphInner>,
 }
 
 impl VisualGraph {
@@ -65,7 +65,7 @@ impl VisualGraph {
         let mut inputs = Vec::new();
 
         for input in &instance.metadata().inputs {
-            inputs.push(LocalSubscription::new(NodeInput {
+            inputs.push(Signal::new(NodeInput {
                 definition: input.clone(),
                 value: input.ty.create(),
             }));
@@ -74,13 +74,13 @@ impl VisualGraph {
         let mut outputs = Vec::new();
 
         for output in &instance.metadata().outputs {
-            outputs.push(LocalSubscription::new(NodeOutput {
+            outputs.push(Signal::new(NodeOutput {
                 definition: output.clone(),
                 value: output.ty.create_output(),
             }));
         }
 
-        let node = LocalSubscription::new(Node {
+        let node = Signal::new(Node {
             instance,
             position: Point2D::new(0.0, 0.0),
             running: false,
@@ -119,11 +119,11 @@ impl VisualGraph {
         }
     }
 
-    pub fn start_dragging_node(&self, _evt: &MouseData, node: LocalSubscription<Node>) {
+    pub fn start_dragging_node(&self, _evt: &MouseData, node: Signal<Node>) {
         let mut inner = self.inner.write();
         inner.currently_dragging = Some(CurrentlyDragging::Node(NodeDragInfo {
             element_offset: {
-                let current_node = node.read_silent();
+                let current_node = node.read();
                 Point2D::new(current_node.height / 2.0, current_node.width / 4.0)
             },
             node,
@@ -132,14 +132,14 @@ impl VisualGraph {
 
     fn should_run_node(&self, id: petgraph::graph::NodeIndex) -> bool {
         log::info!("Checking if node {id:?} should run");
-        let graph = self.inner.read_silent();
+        let graph = self.inner.read();
         // traverse back through inputs to see if any of those nodes are running
         let mut visited: HashSet<petgraph::stable_graph::NodeIndex> = HashSet::default();
         visited.insert(id);
         let mut should_visit = Vec::new();
         {
             // first add all of the inputs to the current node
-            let node = &graph.graph[id].read_silent();
+            let node = &graph.graph[id].read();
             if node.running {
                 log::info!("Node {id:?} is running, so we shouldn't run it again");
                 return false;
@@ -159,7 +159,7 @@ impl VisualGraph {
             if new_id == id {
                 continue;
             }
-            let node = graph.graph[new_id].read_silent();
+            let node = graph.graph[new_id].read();
             if node.running || node.queued {
                 log::info!("Node {new_id:?} is running... we should wait until it's done");
                 return false;
@@ -187,19 +187,19 @@ impl VisualGraph {
             );
             return false;
         }
-        let graph = self.inner.read_silent();
+        let graph = self.inner.read();
 
-        let inputs = &graph.graph[id].read_silent().inputs;
+        let inputs = &graph.graph[id].read().inputs;
         for input in graph
             .graph
             .edges_directed(id, petgraph::Direction::Incoming)
         {
             let source = input.source();
-            let edge = input.weight().read_silent();
+            let edge = input.weight().read();
             let start_index = edge.start;
             let end_index = edge.end;
-            let input = graph.graph[source].read_silent();
-            let value = input.inputs[start_index].read_silent().value.clone();
+            let input = graph.graph[source].read();
+            let value = input.inputs[start_index].read().value.clone();
             inputs[end_index].write().value = value;
         }
 
@@ -220,7 +220,7 @@ pub struct FlowViewProps {
 
 pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
     use_context_provider(cx, || cx.props.graph.clone());
-    let graph = cx.props.graph.inner.use_(cx);
+    let graph = cx.props.graph.inner;
     let current_graph = graph.read();
     let current_graph_dragging = current_graph.currently_dragging.clone();
 
@@ -285,13 +285,13 @@ pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
 
 #[derive(Props, PartialEq)]
 struct ConnectionProps {
-    start: LocalSubscription<Node>,
-    connection: LocalSubscription<Edge>,
-    end: LocalSubscription<Node>,
+    start: Signal<Node>,
+    connection: Signal<Edge>,
+    end: Signal<Node>,
 }
 
 fn CurrentlyDragging(cx: Scope<CurrentlyDraggingProps>) -> Element {
-    let start = cx.props.from.use_(cx);
+    let start = cx.props.from;
     let current_start = start.read();
     let start_pos;
     let color;
@@ -305,16 +305,16 @@ fn CurrentlyDragging(cx: Scope<CurrentlyDraggingProps>) -> Element {
             start_pos = current_start.output_pos(index);
         }
     };
-    let end = cx.props.to.use_(cx);
+    let end = cx.props.to;
     let end_pos = end.read();
 
     render! { Connection { start_pos: start_pos, end_pos: *end_pos, color: color } }
 }
 
 fn NodeConnection(cx: Scope<ConnectionProps>) -> Element {
-    let start = cx.props.start.use_(cx);
-    let connection = cx.props.connection.use_(cx);
-    let end = cx.props.end.use_(cx);
+    let start = cx.props.start;
+    let connection = cx.props.connection;
+    let end = cx.props.end;
 
     let current_connection = connection.read();
     let start_index = current_connection.start;

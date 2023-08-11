@@ -1,13 +1,13 @@
+use crate::ShowOutput;
 use crate::{use_application_state, ModifyInput};
 use dioxus::prelude::*;
-use crate::ShowOutput;
 
 pub fn CurrentNodeInfo(cx: Scope) -> Element {
-    let focused = &use_application_state(cx).use_(cx).read().currently_focused;
+    let focused = use_application_state(cx).read().currently_focused;
 
     match focused {
         Some(node) => {
-            let node = node.read(cx);
+            let node = node.read();
             let md = node.instance.metadata();
             let name = &md.name;
             let description = &md.description;
@@ -29,7 +29,7 @@ pub fn CurrentNodeInfo(cx: Scope) -> Element {
                         }
                         for input in &node.inputs {
                             ModifyInput {
-                                key: "{input.read(cx).definition.name}",
+                                key: "{input.read().definition.name}",
                                 value: input.clone()
                             }
                         }
@@ -44,7 +44,7 @@ pub fn CurrentNodeInfo(cx: Scope) -> Element {
                         }
                         for output in &node.outputs {
                             ShowOutput {
-                                key: "{output.read(cx).definition.name}",
+                                key: "{output.read().definition.name}",
                                 value: output.clone()
                             }
                         }
