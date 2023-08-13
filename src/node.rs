@@ -142,7 +142,7 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                 i,
                                 ty,
                             ));
-                            current_graph.graph.add_edge(start_id, current_node_id, edge);
+                            current_graph.graph.add_edge(current_node_id, start_id, edge);
                         }
                         graph.clear_dragging();
                     },
