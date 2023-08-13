@@ -1407,6 +1407,7 @@ dependencies = [
 [[package]]
 name = "dioxus"
 version = "0.4.1"
+source = "git+https://github.com/demonthos/dioxus?branch=fix-context-in-lists#39d4b08018dbc9a15e787cc87e926878ed19e348"
 dependencies = [
  "dioxus-core",
  "dioxus-core-macro",
@@ -1419,6 +1420,7 @@ dependencies = [
 [[package]]
 name = "dioxus-core"
 version = "0.4.1"
+source = "git+https://github.com/demonthos/dioxus?branch=fix-context-in-lists#39d4b08018dbc9a15e787cc87e926878ed19e348"
 dependencies = [
  "bumpalo",
  "futures-channel",
@@ -1434,6 +1436,7 @@ dependencies = [
 [[package]]
 name = "dioxus-core-macro"
 version = "0.4.1"
+source = "git+https://github.com/demonthos/dioxus?branch=fix-context-in-lists#39d4b08018dbc9a15e787cc87e926878ed19e348"
 dependencies = [
  "dioxus-rsx",
  "proc-macro2",
@@ -1450,6 +1453,7 @@ checksum = "2ea539174bb236e0e7dc9c12b19b88eae3cb574dedbd0252a2d43ea7e6de13e2"
 [[package]]
 name = "dioxus-desktop"
 version = "0.4.1"
+source = "git+https://github.com/demonthos/dioxus?branch=fix-context-in-lists#39d4b08018dbc9a15e787cc87e926878ed19e348"
 dependencies = [
  "async-trait",
  "core-foundation",
@@ -1487,6 +1491,7 @@ dependencies = [
 [[package]]
 name = "dioxus-hooks"
 version = "0.4.1"
+source = "git+https://github.com/demonthos/dioxus?branch=fix-context-in-lists#39d4b08018dbc9a15e787cc87e926878ed19e348"
 dependencies = [
  "dioxus-core",
  "dioxus-debug-cell",
@@ -1499,6 +1504,7 @@ dependencies = [
 [[package]]
 name = "dioxus-hot-reload"
 version = "0.4.1"
+source = "git+https://github.com/demonthos/dioxus?branch=fix-context-in-lists#39d4b08018dbc9a15e787cc87e926878ed19e348"
 dependencies = [
  "dioxus-core",
  "dioxus-html",
@@ -1511,6 +1517,7 @@ dependencies = [
 [[package]]
 name = "dioxus-html"
 version = "0.4.1"
+source = "git+https://github.com/demonthos/dioxus?branch=fix-context-in-lists#39d4b08018dbc9a15e787cc87e926878ed19e348"
 dependencies = [
  "async-channel",
  "async-trait",
@@ -1529,10 +1536,12 @@ dependencies = [
 [[package]]
 name = "dioxus-interpreter-js"
 version = "0.4.1"
+source = "git+https://github.com/demonthos/dioxus?branch=fix-context-in-lists#39d4b08018dbc9a15e787cc87e926878ed19e348"
 
 [[package]]
 name = "dioxus-router"
 version = "0.4.1"
+source = "git+https://github.com/demonthos/dioxus?branch=fix-context-in-lists#39d4b08018dbc9a15e787cc87e926878ed19e348"
 dependencies = [
  "anyhow",
  "dioxus",
@@ -1551,6 +1560,7 @@ dependencies = [
 [[package]]
 name = "dioxus-router-macro"
 version = "0.4.1"
+source = "git+https://github.com/demonthos/dioxus?branch=fix-context-in-lists#39d4b08018dbc9a15e787cc87e926878ed19e348"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1561,6 +1571,7 @@ dependencies = [
 [[package]]
 name = "dioxus-rsx"
 version = "0.4.1"
+source = "git+https://github.com/demonthos/dioxus?branch=fix-context-in-lists#39d4b08018dbc9a15e787cc87e926878ed19e348"
 dependencies = [
  "dioxus-core",
  "proc-macro2",
@@ -1571,6 +1582,7 @@ dependencies = [
 [[package]]
 name = "dioxus-signals"
 version = "0.0.0"
+source = "git+https://github.com/demonthos/dioxus?branch=fix-context-in-lists#39d4b08018dbc9a15e787cc87e926878ed19e348"
 dependencies = [
  "dioxus-core",
  "generational-box",
@@ -2499,6 +2511,7 @@ dependencies = [
 [[package]]
 name = "generational-box"
 version = "0.0.0"
+source = "git+https://github.com/demonthos/dioxus?branch=fix-context-in-lists#39d4b08018dbc9a15e787cc87e926878ed19e348"
 dependencies = [
  "bumpalo",
 ]
