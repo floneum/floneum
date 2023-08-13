@@ -127,24 +127,7 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                     onmouseup: move |_| {
                         // Set this as the end of the connection if we're currently dragging and this is the right type of connection
                         let graph: VisualGraph = cx.consume_context().unwrap();
-                        let mut current_graph = graph.inner.write();
-                        if let Some(CurrentlyDragging::Connection(currently_dragging)) = &current_graph.currently_dragging {
-                            let start_index = match currently_dragging.index {
-                                DraggingIndex::Output(index) => index,
-                                _ => return,
-                            };
-                            let start_node = currently_dragging.from.read();
-                            let start_id = start_node.id;
-                            let ty = start_node.output_type(start_index).unwrap();
-                            drop(start_node);
-                            let edge = Signal::new(Edge::new(
-                                start_index,
-                                i,
-                                ty,
-                            ));
-                            current_graph.graph.add_edge(current_node_id, start_id, edge);
-                        }
-                        graph.clear_dragging();
+                        graph.finish_connection(current_node_id, DraggingIndex::Input(i));
                     },
                     onmousemove: move |evt| {
                         let graph: VisualGraph = cx.consume_context().unwrap();
@@ -297,7 +280,6 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
         (0..current_node.outputs.len()).map(|i| {
             let pos = current_node.output_pos(i);
             let color = current_node.output_color(i);
-            let ty = current_node.output_type(i).unwrap();
             rsx! {
                 circle {
                     cx: pos.x as f64 - NODE_KNOB_SIZE - NODE_MARGIN,
@@ -315,19 +297,7 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                     onmouseup: move |_| {
                         // Set this as the end of the connection if we're currently dragging and this is the right type of connection
                         let graph: VisualGraph = cx.consume_context().unwrap();
-                        {
-                            let mut current_graph = graph.inner.write();
-                            if let Some(CurrentlyDragging::Connection(currently_dragging)) = &current_graph.currently_dragging {
-                                let start_index = match currently_dragging.index {
-                                    DraggingIndex::Input(index) => index,
-                                    _ => return,
-                                };
-                                let start_id = currently_dragging.from.read().id;
-                                let edge = Signal::new(Edge::new(i, start_index, ty));
-                                current_graph.graph.add_edge(current_node_id, start_id, edge);
-                            }
-                        }
-                        graph.clear_dragging();
+                        graph.finish_connection(current_node_id, DraggingIndex::Output(i));
                     },
                     onmousemove: move |evt| {
                         let graph: VisualGraph = cx.consume_context().unwrap();

@@ -40,7 +40,7 @@ pub struct NodeDragInfo {
     pub node: Signal<Node>,
 }
 
-#[derive(PartialEq, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
 pub enum DraggingIndex {
     Input(usize),
     Output(usize),
@@ -204,6 +204,27 @@ impl VisualGraph {
         }
 
         true
+    }
+
+    pub(crate)fn finish_connection(&self, node_id: petgraph::graph::NodeIndex, index: DraggingIndex) {
+        let mut current_graph = self.inner.write();
+        if let Some(CurrentlyDragging::Connection(currently_dragging)) = &current_graph.currently_dragging {
+            let ((input_id, input_index), (output_id, output_index)) = match (index, currently_dragging.index) {
+                (DraggingIndex::Input(input), DraggingIndex::Output(output)) => ((node_id, input), (currently_dragging.from.read().id, output)),
+                (DraggingIndex::Output(input), DraggingIndex::Input(output)) => ((currently_dragging.from.read().id, output), (node_id, input)),
+                _ => return,
+            };
+            let start_node = current_graph.graph[input_id].read();
+            let ty = start_node.output_type(output_index).unwrap();
+            drop(start_node);
+            let edge = Signal::new(Edge::new(
+                output_index,
+                input_index,
+                ty,
+            ));
+            current_graph.graph.add_edge(output_id,input_id, edge);
+        }
+        current_graph.currently_dragging = None;
     }
 }
 
