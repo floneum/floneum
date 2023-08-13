@@ -157,9 +157,7 @@ pub fn use_provide_application_state(cx: &ScopeState) -> Signal<ApplicationState
     })
 }
 
-#[track_caller]
 pub fn use_application_state(cx: &ScopeState) -> Signal<ApplicationState> {
-    println!("calling from {}", std::panic::Location::caller());
     *use_context::<Signal<ApplicationState>>(cx).unwrap()
 }
 

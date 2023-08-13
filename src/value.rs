@@ -53,7 +53,8 @@ fn show_primitive_value<'a>(cx: &'a ScopeState, value: &PrimitiveValue) -> Eleme
             render! {"{value}"}
         }
         PrimitiveValue::Embedding(value) => {
-            render! {"{&value.vector[..5]:?}"}
+            let first_five = value.vector.iter().take(5).collect::<Vec<_>>();
+            render! {"{first_five:?}"}
         }
         PrimitiveValue::Model(id) => {
             render! {"Model: {id:?}"}
