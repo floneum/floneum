@@ -1,7 +1,7 @@
 use std::{collections::HashSet, fmt::Debug};
 
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
-use floneum_plugin::PluginInstance;
+use floneum_plugin::{exports::plugins::main::definitions::Input, PluginInstance};
 use petgraph::{
     stable_graph::StableGraph,
     visit::{EdgeRef, IntoEdgeReferences, IntoNodeIdentifiers},
@@ -9,6 +9,7 @@ use petgraph::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    edge::ConnectionType,
     node_value::{NodeInput, NodeOutput},
     Colored, Connection, Edge, Node, Signal,
 };
@@ -43,7 +44,7 @@ pub struct NodeDragInfo {
 #[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
 pub enum DraggingIndex {
     Input(usize),
-    Output(usize),
+    Output(crate::edge::Connection),
 }
 
 #[derive(Props, PartialEq, Clone, Serialize, Deserialize)]
@@ -200,29 +201,62 @@ impl VisualGraph {
             let end_index = edge.end;
             let input = graph.graph[source].read();
             let value = input.inputs[start_index].read().value.clone();
-            inputs[end_index].write().value = value;
+            match end_index.ty {
+                ConnectionType::Single => {
+                    inputs[end_index.index].write().value = value;
+                }
+                ConnectionType::Element(idx) => {
+                    let mut input_mut = inputs[end_index.index].write();
+                    match &mut input_mut.value {
+                        Input::Single(_) => match value {
+                            Input::Single(value) => input_mut.value = Input::Many(vec![value; idx]),
+                            Input::Many(vec) => input_mut.value = Input::Many(vec),
+                        },
+                        Input::Many(vec) => match value {
+                            Input::Single(value) => {
+                                if vec.len() <= idx {
+                                    vec.resize(idx + 1, value);
+                                } else {
+                                    vec[idx] = value;
+                                }
+                            }
+                            Input::Many(_) => {
+                                todo!()
+                            }
+                        },
+                    }
+                }
+            }
         }
 
         true
     }
 
-    pub(crate)fn finish_connection(&self, node_id: petgraph::graph::NodeIndex, index: DraggingIndex) {
+    pub(crate) fn finish_connection(
+        &self,
+        node_id: petgraph::graph::NodeIndex,
+        index: DraggingIndex,
+    ) {
         let mut current_graph = self.inner.write();
-        if let Some(CurrentlyDragging::Connection(currently_dragging)) = &current_graph.currently_dragging {
-            let ((input_id, input_index), (output_id, output_index)) = match (index, currently_dragging.index) {
-                (DraggingIndex::Input(input), DraggingIndex::Output(output)) => ((node_id, input), (currently_dragging.from.read().id, output)),
-                (DraggingIndex::Output(input), DraggingIndex::Input(output)) => ((currently_dragging.from.read().id, output), (node_id, input)),
-                _ => return,
-            };
+        if let Some(CurrentlyDragging::Connection(currently_dragging)) =
+            &current_graph.currently_dragging
+        {
+            let currently_dragging_id = currently_dragging.from.read().id;
+            let ((input_id, input_index), (output_id, output_index)) =
+                match (index, currently_dragging.index) {
+                    (DraggingIndex::Input(input), DraggingIndex::Output(output)) => {
+                        ((node_id, input), (currently_dragging_id, output))
+                    }
+                    (DraggingIndex::Output(output), DraggingIndex::Input(input)) => {
+                        ((currently_dragging_id, input), (node_id, output))
+                    }
+                    _ => return,
+                };
             let start_node = current_graph.graph[input_id].read();
             let ty = start_node.output_type(output_index).unwrap();
             drop(start_node);
-            let edge = Signal::new(Edge::new(
-                output_index,
-                input_index,
-                ty,
-            ));
-            current_graph.graph.add_edge(output_id,input_id, edge);
+            let edge = Signal::new(Edge::new(input_index, output_index, ty));
+            current_graph.graph.add_edge(output_id, input_id, edge);
         }
         current_graph.currently_dragging = None;
     }

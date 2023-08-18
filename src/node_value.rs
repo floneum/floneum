@@ -7,6 +7,12 @@ pub struct NodeInput {
     pub value: Input,
 }
 
+impl NodeInput {
+    pub fn new(definition: IoDefinition, value: Input) -> Self {
+        Self { definition, value }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct NodeOutput {
     pub definition: IoDefinition,

@@ -5,15 +5,18 @@ use floneum_plugin::PluginInstance;
 use petgraph::{graph::NodeIndex, stable_graph::DefaultIx};
 use serde::{Deserialize, Serialize};
 
+use crate::edge::{Connection, ConnectionType};
 use crate::graph::CurrentlyDragging;
+use crate::input::Input;
 use crate::node_value::{NodeInput, NodeOutput};
+use crate::output::Output;
 use crate::{use_application_state, Colored, CurrentlyDraggingProps, DraggingIndex, Edge};
 use crate::{Point, VisualGraph};
 use dioxus_signals::*;
 
 const SNAP_DISTANCE: f32 = 15.;
-const NODE_KNOB_SIZE: f64 = 5.;
-const NODE_MARGIN: f64 = 2.;
+pub const NODE_KNOB_SIZE: f64 = 5.;
+pub const NODE_MARGIN: f64 = 2.;
 
 #[derive(Serialize, Deserialize)]
 pub struct Node {
@@ -45,41 +48,70 @@ impl Node {
             .to_point()
     }
 
-    pub fn input_pos(&self, index: usize) -> Point2D<f32, f32> {
+    pub fn output_pos(&self, index: usize) -> Point2D<f32, f32> {
         Point2D::new(
             self.position.x - 1.,
-            self.position.y + ((index as f32 + 1.) * self.height / (self.inputs.len() as f32 + 1.)),
+            self.position.y + ((index as f32 + 1.) * self.height / (self.outputs.len() as f32 + 1.)),
         )
     }
 
-    pub fn output_pos(&self, index: usize) -> Point2D<f32, f32> {
+    pub fn input_pos(&self, index: Connection) -> Point2D<f32, f32> {
+        match index.ty {
+            ConnectionType::Single => self.single_input_pos(index.index),
+            ConnectionType::Element(inner) => self.element_input_pos(index.index, inner),
+        }
+    }
+
+    fn single_input_pos(&self, index: usize) -> Point2D<f32, f32> {
         Point2D::new(
             self.position.x + self.width - 1.,
             self.position.y
-                + ((index as f32 + 1.) * self.height / (self.outputs.len() as f32 + 1.)),
+                + ((index as f32 + 1.) * self.height / (self.inputs.len() as f32 + 1.)),
         )
     }
 
-    pub fn output_type(&self, index: usize) -> Option<ValueType> {
-        self.outputs
-            .get(index)
-            .map(|output| output.read().definition.ty)
+    fn element_input_pos(&self, index: usize, inner: usize) -> Point2D<f32, f32> {
+        Point2D::new(
+            self.position.x + self.width + 10. - 1.,
+            self.position.y
+                + ((inner as f32 + index as f32 + 1.) * self.height
+                    / (self.inputs.len() as f32 + 1.)),
+        )
     }
 
-    pub fn output_color(&self, index: usize) -> String {
-        match self.output_type(index) {
+    pub fn input_type(&self, index: Connection) -> Option<ValueType> {
+        match index.ty {
+            ConnectionType::Single => self.inputs
+            .get(index.index)
+            .map(|input| input.read().definition.ty),
+            ConnectionType::Element(_) => self.element_input_type(index.index)
+        }
+        
+    }
+
+    pub fn element_input_type(&self, index: usize) -> Option<ValueType> {
+        self.inputs
+            .get(index)
+            .map(|input| match &input.read().definition.ty {
+                ValueType::Many(ty) => ValueType::Single(ty.clone()),
+                ValueType::Single(ty) => ValueType::Single(ty.clone()),
+            })
+    }
+
+    pub fn input_color(&self, index: Connection) -> String {
+        match self.input_type(index) {
             Some(ty) => ty.color(),
             None => "black".to_string(),
         }
     }
 
-    pub fn input_type(&self, index: usize) -> Option<ValueType> {
+    pub fn output_type(&self, index: usize) -> Option<ValueType> {
         self.inputs
             .get(index)
             .map(|input| input.read().definition.ty)
     }
 
-    pub fn input_color(&self, index: usize) -> String {
+    pub fn output_color(&self, index: usize) -> String {
         match self.input_type(index) {
             Some(ty) => ty.color(),
             None => "black".to_string(),
@@ -108,31 +140,10 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
     render! {
         // inputs
         (0..current_node.inputs.len()).map(|i| {
-            let pos = current_node.input_pos(i);
-            let color = current_node.input_color(i);
             rsx! {
-                circle {
-                    cx: pos.x as f64 + NODE_KNOB_SIZE + NODE_MARGIN,
-                    cy: pos.y as f64,
-                    r: NODE_KNOB_SIZE,
-                    fill: "{color}",
-                    onmousedown: move |evt| {
-                        let graph: VisualGraph = cx.consume_context().unwrap();
-                        graph.inner.write().currently_dragging = Some(CurrentlyDragging::Connection(CurrentlyDraggingProps {
-                            from: cx.props.node.clone(),
-                            index: DraggingIndex::Input(i),
-                            to: Signal::new(Point2D::new(evt.page_coordinates().x as f32, evt.page_coordinates().y as f32)),
-                        }));
-                    },
-                    onmouseup: move |_| {
-                        // Set this as the end of the connection if we're currently dragging and this is the right type of connection
-                        let graph: VisualGraph = cx.consume_context().unwrap();
-                        graph.finish_connection(current_node_id, DraggingIndex::Input(i));
-                    },
-                    onmousemove: move |evt| {
-                        let graph: VisualGraph = cx.consume_context().unwrap();
-                        graph.update_mouse(&**evt);
-                    },
+                Input {
+                    node: cx.props.node.clone(),
+                    index: i,
                 }
             }
         }),
@@ -160,9 +171,10 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                             .chain(
                                 (0..node.outputs.len())
                                     .map(|i| {
-                                        let output_pos = node.output_pos(i);
+                                        let connection = Connection{index:  i, ty: ConnectionType::Single};
+                                        let output_pos = node.output_pos(connection);
                                         (
-                                            DraggingIndex::Output(i),
+                                            DraggingIndex::Output(connection),
                                             (output_pos.x - evt.page_coordinates().x as f32).powi(2)
                                                 + (output_pos.y - evt.page_coordinates().y as f32).powi(2),
                                         )
@@ -228,13 +240,14 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                 start_id = start_node.id;
                                 end_id = current_node_id;
                                 let ty = start_node.output_type(start_index).unwrap();
-                                edge = Signal::new(Edge::new(start_index, input_idx, ty));
+                                edge = Signal::new(Edge::new(input_idx, start_index, ty));
                             }
                             DraggingIndex::Input(start_index) => {
                                 let node = node.read();
                                 let combined = (0..node.outputs.len())
                                     .map(|i| {
-                                        let output_pos = node.output_pos(i);
+                                        let connection = Connection{index:  i, ty: ConnectionType::Single};
+                                        let output_pos = node.output_pos(connection);
                                         (
                                             i,
                                             (output_pos.x - evt.page_coordinates().x as f32).powi(2)
@@ -244,12 +257,13 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                     .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
                                     .unwrap();
                                 let output_idx = combined.0;
+                                let output_idx = Connection{index: output_idx, ty: ConnectionType::Single};
                                 dist = combined.1;
                                 let start_node = currently_dragging.from.read();
                                 end_id = start_node.id;
                                 start_id = current_node_id;
                                 let ty = start_node.output_type(output_idx).unwrap();
-                                edge = Signal::new(Edge::new(output_idx, start_index, ty));
+                                edge = Signal::new(Edge::new(start_index, output_idx, ty));
                             }
                         }
                         if dist < SNAP_DISTANCE.powi(2) {
@@ -278,31 +292,11 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
 
         // outputs
         (0..current_node.outputs.len()).map(|i| {
-            let pos = current_node.output_pos(i);
-            let color = current_node.output_color(i);
+            let index = Connection{index: i, ty: ConnectionType::Single};
             rsx! {
-                circle {
-                    cx: pos.x as f64 - NODE_KNOB_SIZE - NODE_MARGIN,
-                    cy: pos.y as f64,
-                    r: NODE_KNOB_SIZE,
-                    fill: "{color}",
-                    onmousedown: move |evt| {
-                        let graph: VisualGraph = cx.consume_context().unwrap();
-                        graph.inner.write().currently_dragging = Some(CurrentlyDragging::Connection(CurrentlyDraggingProps {
-                            from: cx.props.node.clone(),
-                            index: DraggingIndex::Output(i),
-                            to: Signal::new(Point2D::new(evt.page_coordinates().x as f32, evt.page_coordinates().y as f32)),
-                        }));
-                    },
-                    onmouseup: move |_| {
-                        // Set this as the end of the connection if we're currently dragging and this is the right type of connection
-                        let graph: VisualGraph = cx.consume_context().unwrap();
-                        graph.finish_connection(current_node_id, DraggingIndex::Output(i));
-                    },
-                    onmousemove: move |evt| {
-                        let graph: VisualGraph = cx.consume_context().unwrap();
-                        graph.update_mouse(&**evt);
-                    },
+                Output {
+                    node: cx.props.node.clone(),
+                    index: index,
                 }
             }
         })

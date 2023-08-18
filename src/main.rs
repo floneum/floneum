@@ -29,7 +29,9 @@ mod sidebar;
 use sidebar::Sidebar;
 mod current_node;
 use current_node::CurrentNodeInfo;
+mod input;
 mod node_value;
+mod output;
 
 const SAVE_NAME: &str = "workflow.toml";
 
@@ -46,12 +48,12 @@ fn save_to_file<D: Serialize>(data: &D) {
                     let _ = file.write_all(bytes.as_bytes());
                 }
                 Err(err) => {
-                    log::error!("{}", err)
+                    log::error!("{}", err);
                 }
             }
         }
         Err(err) => {
-            log::error!("{}", err)
+            log::error!("{}", err);
         }
     }
 }
