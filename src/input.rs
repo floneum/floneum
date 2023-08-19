@@ -12,7 +12,10 @@ use crate::{
 #[inline_props]
 pub fn Input(cx: Scope, node: Signal<Node>, index: usize) -> Element {
     let index = *index;
-    let main_index = Connection { index: index, ty: crate::edge::ConnectionType::Single };
+    let main_index = Connection {
+        index,
+        ty: crate::edge::ConnectionType::Single,
+    };
     let node = node.read();
 
     render! {
@@ -22,12 +25,12 @@ pub fn Input(cx: Scope, node: Signal<Node>, index: usize) -> Element {
         }
         if let Some(ValueType::Many(_)) = node.input_type(main_index) {
             let inputs_len = node.inputs[index].read().value.len();
-            let plus_pos = node.input_pos(Connection { index: index, ty: crate::edge::ConnectionType::Element(inputs_len) });
+            let plus_pos = node.input_pos(Connection { index, ty: crate::edge::ConnectionType::Element(inputs_len) });
             rsx! {
                 for element_index in 0..inputs_len {
                     InputConnection {
                         node: cx.props.node,
-                        index: Connection { index: index, ty: crate::edge::ConnectionType::Element(element_index) },
+                        index: Connection { index, ty: crate::edge::ConnectionType::Element(element_index) },
                     }
                 }
                 path {
@@ -68,7 +71,7 @@ pub fn InputConnection(cx: Scope, node: Signal<Node>, index: Connection) -> Elem
             onmousedown: move |evt| {
                 let graph: VisualGraph = cx.consume_context().unwrap();
                 graph.inner.write().currently_dragging = Some(CurrentlyDragging::Connection(CurrentlyDraggingProps {
-                    from: cx.props.node.clone(),
+                    from: cx.props.node,
                     index: DraggingIndex::Input(index),
                     to: Signal::new(Point2D::new(evt.page_coordinates().x as f32, evt.page_coordinates().y as f32)),
                 }));
@@ -80,7 +83,7 @@ pub fn InputConnection(cx: Scope, node: Signal<Node>, index: Connection) -> Elem
             },
             onmousemove: move |evt| {
                 let graph: VisualGraph = cx.consume_context().unwrap();
-                graph.update_mouse(&**evt);
+                graph.update_mouse(&evt);
             },
         }
     }

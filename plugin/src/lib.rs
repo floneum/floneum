@@ -612,7 +612,7 @@ impl Plugin {
         // then we get the structure of the plugin.
         let mut store = Store::new(&ENGINE, State::default());
         let component = self.component().await?;
-        let (world, _instance) = PluginWorld::instantiate_async(&mut store, &component, &*LINKER)
+        let (world, _instance) = PluginWorld::instantiate_async(&mut store, component, &*LINKER)
             .await
             .unwrap();
         let structure = world.interface0.call_structure(&mut store).await.unwrap();
@@ -641,7 +641,7 @@ impl Plugin {
         let mut store = Store::new(&ENGINE, state);
         let component = self.component().await?;
         let definition = self.definition().await?;
-        let (world, _instance) = PluginWorld::instantiate_async(&mut store, &component, &LINKER)
+        let (world, _instance) = PluginWorld::instantiate_async(&mut store, component, &LINKER)
             .await
             .unwrap();
 
@@ -758,7 +758,7 @@ async fn test_load_plugin() {
         Input::Single(PrimitiveValue::Text("world".to_string())),
     ];
     let outputs = instance.run(inputs).await.unwrap();
-    let outputs = outputs.as_deref().clone().unwrap();
+    let outputs = outputs.as_deref().unwrap();
     println!("{:?}", outputs);
 
     assert_eq!(outputs.len(), 1);

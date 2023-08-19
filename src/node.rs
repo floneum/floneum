@@ -1,6 +1,6 @@
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
 use dioxus_free_icons::Icon;
-use floneum_plugin::exports::plugins::main::definitions::{Input, PrimitiveValue, ValueType};
+use floneum_plugin::exports::plugins::main::definitions::ValueType;
 use floneum_plugin::PluginInstance;
 use petgraph::{graph::NodeIndex, stable_graph::DefaultIx};
 use serde::{Deserialize, Serialize};
@@ -73,7 +73,8 @@ impl Node {
     fn element_input_pos(&self, index: usize, inner: usize) -> Point2D<f32, f32> {
         Point2D::new(
             self.position.x + 10. - 1.,
-            self.position.y  + 10.
+            self.position.y
+                + 10.
                 + ((inner as f32 + index as f32 + 1.) * self.height
                     / (self.inputs.len() as f32 + 1.)),
         )
@@ -93,7 +94,7 @@ impl Node {
         self.inputs
             .get(index)
             .and_then(|input| match &input.read().definition.ty {
-                ValueType::Many(ty) => Some(ValueType::Single(ty.clone())),
+                ValueType::Many(ty) => Some(ValueType::Single(*ty)),
                 ValueType::Single(_) => None,
             })
     }
@@ -188,7 +189,7 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                             current_graph
                                 .currently_dragging = Some(
                                 CurrentlyDragging::Connection(CurrentlyDraggingProps {
-                                    from: cx.props.node.clone(),
+                                    from: cx.props.node,
                                     index,
                                     to: Signal::new(
                                         Point2D::new(
@@ -199,16 +200,16 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                 }),
                             );
                         } else {
-                            graph.start_dragging_node(&*evt, cx.props.node.clone());
+                            graph.start_dragging_node(&evt, cx.props.node);
                         }
                     } else {
-                        graph.start_dragging_node(&*evt, cx.props.node.clone());
+                        graph.start_dragging_node(&evt, cx.props.node);
                     }
                 }
             },
             onmousemove: |evt| {
                 let graph: VisualGraph = cx.consume_context().unwrap();
-                graph.update_mouse(&**evt);
+                graph.update_mouse(&evt);
             },
             onmouseup: move |evt| {
                 let graph: VisualGraph = cx.consume_context().unwrap();
@@ -280,13 +281,13 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                         application.currently_focused = None;
                     }
                     _ => {
-                        application.currently_focused = Some(cx.props.node.clone());
+                        application.currently_focused = Some(cx.props.node);
                     }
                 }
             },
 
             CenterNodeUI {
-                node: cx.props.node.clone(),
+                node: cx.props.node,
             }
         }
 
@@ -294,7 +295,7 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
         (0..current_node.outputs.len()).map(|i| {
             rsx! {
                 Output {
-                    node: cx.props.node.clone(),
+                    node: cx.props.node,
                     index: i,
                 }
             }
@@ -304,7 +305,7 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
 
 fn CenterNodeUI(cx: Scope<NodeProps>) -> Element {
     let application = use_application_state(cx);
-    let focused = &application.read().currently_focused == &Some(cx.props.node.clone());
+    let focused = application.read().currently_focused == Some(cx.props.node);
     let node = cx.props.node;
     let current_node = node.read();
     let current_node_id = current_node.id;
@@ -352,7 +353,7 @@ fn CenterNodeUI(cx: Scope<NodeProps>) -> Element {
                                     current_node.queued = true;
 
                                     let fut = current_node.instance.run(inputs);
-                                    let node = cx.props.node.clone();
+                                    let node = cx.props.node;
                                     cx.spawn(async move {
                                         match fut.await.as_deref() {
                                             Some(Ok(result)) => {

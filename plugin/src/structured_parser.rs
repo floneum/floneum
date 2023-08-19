@@ -490,7 +490,7 @@ impl<'a> Validate<'a> for &str {
                         ParseStatus::Complete(None)
                     } else {
                         ParseStatus::Incomplete {
-                            required_next: (!remaining.is_empty()).then(|| remaining),
+                            required_next: (!remaining.is_empty()).then_some(remaining),
                         }
                     };
                 }

@@ -30,7 +30,7 @@ pub fn CurrentNodeInfo(cx: Scope) -> Element {
                         for input in &node.inputs {
                             ModifyInput {
                                 key: "{input.read().definition.name}",
-                                value: input.clone()
+                                value: *input
                             }
                         }
                     }
@@ -45,7 +45,7 @@ pub fn CurrentNodeInfo(cx: Scope) -> Element {
                         for output in &node.outputs {
                             ShowOutput {
                                 key: "{output.read().definition.name}",
-                                value: output.clone()
+                                value: *output
                             }
                         }
                     }

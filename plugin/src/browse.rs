@@ -90,11 +90,7 @@ impl Browser {
 
     #[tracing::instrument]
     pub fn goto(&mut self, tab: TabId, url: &str) -> Result<(), wasmtime::Error> {
-        pub fn goto_inner(
-            browser: &mut Browser,
-            tab: TabId,
-            url: &str,
-        ) -> Result<(), wasmtime::Error> {
+        pub fn goto_inner(browser: &Browser, tab: TabId, url: &str) -> Result<(), wasmtime::Error> {
             browser
                 .get_tab(tab)?
                 .navigate_to(url)?
@@ -114,10 +110,7 @@ impl Browser {
     pub fn find(&mut self, tab: TabId, selector: &str) -> Result<NodeId, wasmtime::Error> {
         let element = self.get_tab(tab)?.wait_for_element(selector)?.node_id;
 
-        Ok(NodeId {
-            tab: tab,
-            id: element,
-        })
+        Ok(NodeId { tab, id: element })
     }
 
     #[tracing::instrument]

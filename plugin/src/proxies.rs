@@ -322,7 +322,7 @@ impl Serialize for IoDefinition {
     {
         let my_io_definition = MyIoDefinition {
             name: self.name.clone(),
-            ty: self.ty.clone().into(),
+            ty: self.ty.into(),
         };
         my_io_definition.serialize(serializer)
     }
@@ -370,7 +370,7 @@ impl Serialize for ValueType {
     where
         S: Serializer,
     {
-        let my_value_type = MyValueType::from(self.clone());
+        let my_value_type = MyValueType::from(*self);
         my_value_type.serialize(serializer)
     }
 }
@@ -438,7 +438,7 @@ impl Serialize for PrimitiveValueType {
     where
         S: Serializer,
     {
-        let my_primitive_value_type = MyPrimitiveValueType::from(self.clone());
+        let my_primitive_value_type = MyPrimitiveValueType::from(*self);
         my_primitive_value_type.serialize(serializer)
     }
 }

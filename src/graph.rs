@@ -1,7 +1,7 @@
 use std::{collections::HashSet, fmt::Debug};
 
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
-use floneum_plugin::{exports::plugins::main::definitions::Input, PluginInstance};
+use floneum_plugin::PluginInstance;
 use petgraph::{
     stable_graph::StableGraph,
     visit::{EdgeRef, IntoEdgeReferences, IntoNodeIdentifiers},
@@ -9,9 +9,8 @@ use petgraph::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    edge::ConnectionType,
     node_value::{NodeInput, NodeOutput},
-    output, Colored, Connection, Edge, Node, Signal,
+    Colored, Connection, Edge, Node, Signal,
 };
 
 #[derive(Serialize, Deserialize, Default)]
@@ -274,15 +273,15 @@ pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
                     cx.props.graph.clear_dragging();
                 },
                 onmousemove: move |evt| {
-                    cx.props.graph.update_mouse(&**evt);
+                    cx.props.graph.update_mouse(&evt);
                 },
 
                 current_graph.graph.edge_references().map(|edge_ref|{
-                    let edge = current_graph.graph[edge_ref.id()].clone();
+                    let edge = current_graph.graph[edge_ref.id()];
                     let start_id = edge_ref.target();
-                    let start = current_graph.graph[start_id].clone();
+                    let start = current_graph.graph[start_id];
                     let end_id = edge_ref.source();
-                    let end = current_graph.graph[end_id].clone();
+                    let end = current_graph.graph[end_id];
                     rsx! {
                         NodeConnection {
                             key: "{edge_ref.id():?}",
@@ -293,7 +292,7 @@ pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
                     }
                 }),
                 current_graph.graph.node_identifiers().map(|id|{
-                    let node = current_graph.graph[id].clone();
+                    let node = current_graph.graph[id];
                     rsx! {
                         Node {
                             key: "{id:?}",

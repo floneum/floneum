@@ -24,7 +24,7 @@ pub fn Output(cx: Scope, node: Signal<Node>, index: usize) -> Element {
             onmousedown: move |evt| {
                 let graph: VisualGraph = cx.consume_context().unwrap();
                 graph.inner.write().currently_dragging = Some(CurrentlyDragging::Connection(CurrentlyDraggingProps {
-                    from: cx.props.node.clone(),
+                    from: cx.props.node,
                     index: DraggingIndex::Output(index),
                     to: Signal::new(Point2D::new(evt.page_coordinates().x as f32, evt.page_coordinates().y as f32)),
                 }));
@@ -36,7 +36,7 @@ pub fn Output(cx: Scope, node: Signal<Node>, index: usize) -> Element {
             },
             onmousemove: move |evt| {
                 let graph: VisualGraph = cx.consume_context().unwrap();
-                graph.update_mouse(&**evt);
+                graph.update_mouse(&evt);
             },
         }
     }

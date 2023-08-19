@@ -74,7 +74,7 @@ async fn package_and_build(
         Some(package) => workspace
             .packages
             .iter()
-            .find(|pkg| &pkg.name == package)
+            .find(|pkg| pkg.name == package)
             .unwrap_or_else(|| {
                 panic!(
                     "package {} not found in {:?}",
@@ -99,9 +99,9 @@ async fn package_and_build(
         build_path.join(relative_to_root)
     };
     if let Some(package_path) = into {
-        let mut build_path = std::path::PathBuf::from(build_path);
+        let mut build_path = build_path;
         build_path = build_path
-            .join(&this_package.name.replace('-', "_"))
+            .join(this_package.name.replace('-', "_"))
             .with_extension("wasm");
         let plugin = load_plugin(&build_path);
         let instance = plugin.instance().await.unwrap();
