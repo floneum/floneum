@@ -1,6 +1,6 @@
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
 use dioxus_free_icons::Icon;
-use floneum_plugin::exports::plugins::main::definitions::ValueType;
+use floneum_plugin::exports::plugins::main::definitions::{Input, PrimitiveValue, ValueType};
 use floneum_plugin::PluginInstance;
 use petgraph::{graph::NodeIndex, stable_graph::DefaultIx};
 use serde::{Deserialize, Serialize};
@@ -50,8 +50,9 @@ impl Node {
 
     pub fn output_pos(&self, index: usize) -> Point2D<f32, f32> {
         Point2D::new(
-            self.position.x - 1.,
-            self.position.y + ((index as f32 + 1.) * self.height / (self.outputs.len() as f32 + 1.)),
+            self.position.x + self.width - 1.,
+            self.position.y
+                + ((index as f32 + 1.) * self.height / (self.outputs.len() as f32 + 1.)),
         )
     }
 
@@ -64,16 +65,15 @@ impl Node {
 
     fn single_input_pos(&self, index: usize) -> Point2D<f32, f32> {
         Point2D::new(
-            self.position.x + self.width - 1.,
-            self.position.y
-                + ((index as f32 + 1.) * self.height / (self.inputs.len() as f32 + 1.)),
+            self.position.x - 1.,
+            self.position.y + ((index as f32 + 1.) * self.height / (self.inputs.len() as f32 + 1.)),
         )
     }
 
     fn element_input_pos(&self, index: usize, inner: usize) -> Point2D<f32, f32> {
         Point2D::new(
-            self.position.x + self.width + 10. - 1.,
-            self.position.y
+            self.position.x + 10. - 1.,
+            self.position.y  + 10.
                 + ((inner as f32 + index as f32 + 1.) * self.height
                     / (self.inputs.len() as f32 + 1.)),
         )
@@ -81,20 +81,20 @@ impl Node {
 
     pub fn input_type(&self, index: Connection) -> Option<ValueType> {
         match index.ty {
-            ConnectionType::Single => self.inputs
-            .get(index.index)
-            .map(|input| input.read().definition.ty),
-            ConnectionType::Element(_) => self.element_input_type(index.index)
+            ConnectionType::Single => self
+                .inputs
+                .get(index.index)
+                .map(|input| input.read().definition.ty),
+            ConnectionType::Element(_) => self.element_input_type(index.index),
         }
-        
     }
 
     pub fn element_input_type(&self, index: usize) -> Option<ValueType> {
         self.inputs
             .get(index)
-            .map(|input| match &input.read().definition.ty {
-                ValueType::Many(ty) => ValueType::Single(ty.clone()),
-                ValueType::Single(ty) => ValueType::Single(ty.clone()),
+            .and_then(|input| match &input.read().definition.ty {
+                ValueType::Many(ty) => Some(ValueType::Single(ty.clone())),
+                ValueType::Single(_) => None,
             })
     }
 
@@ -106,13 +106,13 @@ impl Node {
     }
 
     pub fn output_type(&self, index: usize) -> Option<ValueType> {
-        self.inputs
+        self.outputs
             .get(index)
             .map(|input| input.read().definition.ty)
     }
 
     pub fn output_color(&self, index: usize) -> String {
-        match self.input_type(index) {
+        match self.output_type(index) {
             Some(ty) => ty.color(),
             None => "black".to_string(),
         }
@@ -139,11 +139,12 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
 
     render! {
         // inputs
-        (0..current_node.inputs.len()).map(|i| {
+        (0..current_node.inputs.len()).map(|index| {
+
             rsx! {
                 Input {
-                    node: cx.props.node.clone(),
-                    index: i,
+                    node: cx.props.node,
+                    index: index,
                 }
             }
         }),
@@ -161,9 +162,10 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                     if let Some((index, dist))
                         = (0..node.inputs.len())
                             .map(|i| {
-                                let input_pos = node.input_pos(i);
+                                let index = Connection{index: i, ty: ConnectionType::Single};
+                                let input_pos = node.input_pos(index);
                                 (
-                                    DraggingIndex::Input(i),
+                                    DraggingIndex::Input(index),
                                     (input_pos.x - evt.page_coordinates().x as f32).powi(2)
                                         + (input_pos.y - evt.page_coordinates().y as f32).powi(2),
                                 )
@@ -171,10 +173,9 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                             .chain(
                                 (0..node.outputs.len())
                                     .map(|i| {
-                                        let connection = Connection{index:  i, ty: ConnectionType::Single};
-                                        let output_pos = node.output_pos(connection);
+                                        let output_pos = node.output_pos(i);
                                         (
-                                            DraggingIndex::Output(connection),
+                                            DraggingIndex::Output(i),
                                             (output_pos.x - evt.page_coordinates().x as f32).powi(2)
                                                 + (output_pos.y - evt.page_coordinates().y as f32).powi(2),
                                         )
@@ -225,9 +226,10 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                 let node = node.read();
                                 let combined = (0..node.inputs.len())
                                     .map(|i| {
-                                        let input_pos = node.input_pos(i);
+                                        let index = Connection{index: i, ty: ConnectionType::Single};
+                                        let input_pos = node.input_pos(index);
                                         (
-                                            i,
+                                            index,
                                             (input_pos.x - evt.page_coordinates().x as f32).powi(2)
                                                 + (input_pos.y - evt.page_coordinates().y as f32).powi(2),
                                         )
@@ -240,14 +242,13 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                 start_id = start_node.id;
                                 end_id = current_node_id;
                                 let ty = start_node.output_type(start_index).unwrap();
-                                edge = Signal::new(Edge::new(input_idx, start_index, ty));
+                                edge = Signal::new(Edge::new(start_index, input_idx, ty));
                             }
                             DraggingIndex::Input(start_index) => {
                                 let node = node.read();
                                 let combined = (0..node.outputs.len())
                                     .map(|i| {
-                                        let connection = Connection{index:  i, ty: ConnectionType::Single};
-                                        let output_pos = node.output_pos(connection);
+                                        let output_pos = node.output_pos(i);
                                         (
                                             i,
                                             (output_pos.x - evt.page_coordinates().x as f32).powi(2)
@@ -257,13 +258,12 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                     .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
                                     .unwrap();
                                 let output_idx = combined.0;
-                                let output_idx = Connection{index: output_idx, ty: ConnectionType::Single};
                                 dist = combined.1;
                                 let start_node = currently_dragging.from.read();
                                 end_id = start_node.id;
                                 start_id = current_node_id;
                                 let ty = start_node.output_type(output_idx).unwrap();
-                                edge = Signal::new(Edge::new(start_index, output_idx, ty));
+                                edge = Signal::new(Edge::new(output_idx, start_index, ty));
                             }
                         }
                         if dist < SNAP_DISTANCE.powi(2) {
@@ -292,11 +292,10 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
 
         // outputs
         (0..current_node.outputs.len()).map(|i| {
-            let index = Connection{index: i, ty: ConnectionType::Single};
             rsx! {
                 Output {
                     node: cx.props.node.clone(),
-                    index: index,
+                    index: i,
                 }
             }
         })
@@ -347,7 +346,7 @@ fn CenterNodeUI(cx: Scope<NodeProps>) -> Element {
                             onclick: move |_| {
                                 if application.read().graph.set_input_nodes(current_node_id) {
                                     let mut current_node = cx.props.node.write();
-                                    let inputs = current_node.inputs.iter().map(|input| input.read().value.clone()).collect();
+                                    let inputs = current_node.inputs.iter().map(|input| input.read().value()).collect();
                                     log::trace!("Running node {:?} with inputs {:?}", current_node_id, inputs);
                                     current_node.running = true;
                                     current_node.queued = true;

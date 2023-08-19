@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     edge::ConnectionType,
     node_value::{NodeInput, NodeOutput},
-    Colored, Connection, Edge, Node, Signal,
+    output, Colored, Connection, Edge, Node, Signal,
 };
 
 #[derive(Serialize, Deserialize, Default)]
@@ -43,8 +43,8 @@ pub struct NodeDragInfo {
 
 #[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
 pub enum DraggingIndex {
-    Input(usize),
-    Output(crate::edge::Connection),
+    Input(crate::edge::Connection),
+    Output(usize),
 }
 
 #[derive(Props, PartialEq, Clone, Serialize, Deserialize)]
@@ -66,10 +66,10 @@ impl VisualGraph {
         let mut inputs = Vec::new();
 
         for input in &instance.metadata().inputs {
-            inputs.push(Signal::new(NodeInput {
-                definition: input.clone(),
-                value: input.ty.create(),
-            }));
+            inputs.push(Signal::new(NodeInput::new(
+                input.clone(),
+                input.ty.create(),
+            )));
         }
 
         let mut outputs = Vec::new();
@@ -200,32 +200,11 @@ impl VisualGraph {
             let start_index = edge.start;
             let end_index = edge.end;
             let input = graph.graph[source].read();
-            let value = input.inputs[start_index].read().value.clone();
-            match end_index.ty {
-                ConnectionType::Single => {
-                    inputs[end_index.index].write().value = value;
-                }
-                ConnectionType::Element(idx) => {
-                    let mut input_mut = inputs[end_index.index].write();
-                    match &mut input_mut.value {
-                        Input::Single(_) => match value {
-                            Input::Single(value) => input_mut.value = Input::Many(vec![value; idx]),
-                            Input::Many(vec) => input_mut.value = Input::Many(vec),
-                        },
-                        Input::Many(vec) => match value {
-                            Input::Single(value) => {
-                                if vec.len() <= idx {
-                                    vec.resize(idx + 1, value);
-                                } else {
-                                    vec[idx] = value;
-                                }
-                            }
-                            Input::Many(_) => {
-                                todo!()
-                            }
-                        },
-                    }
-                }
+            let value = input.outputs[start_index].read().as_input();
+            if let Some(value) = value {
+                let input = inputs[end_index.index];
+                let mut input = input.write();
+                input.set_connection(end_index.ty, value);
             }
         }
 
@@ -255,7 +234,7 @@ impl VisualGraph {
             let start_node = current_graph.graph[input_id].read();
             let ty = start_node.output_type(output_index).unwrap();
             drop(start_node);
-            let edge = Signal::new(Edge::new(input_index, output_index, ty));
+            let edge = Signal::new(Edge::new(output_index, input_index, ty));
             current_graph.graph.add_edge(output_id, input_id, edge);
         }
         current_graph.currently_dragging = None;
@@ -372,10 +351,10 @@ fn NodeConnection(cx: Scope<ConnectionProps>) -> Element {
     let end = cx.props.end;
 
     let current_connection = connection.read();
-    let start_index = current_connection.start;
+    let start_index = current_connection.end;
     let start_node = start.read();
     let start = start_node.input_pos(start_index);
-    let end_index = current_connection.end;
+    let end_index = current_connection.start;
     let end = end.read().output_pos(end_index);
 
     let ty = start_node.input_type(start_index).unwrap();

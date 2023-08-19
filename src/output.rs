@@ -2,14 +2,13 @@ use dioxus::{html::geometry::euclid::Point2D, prelude::*};
 use dioxus_signals::*;
 
 use crate::{
-    edge::Connection,
     graph::CurrentlyDragging,
     node::{NODE_KNOB_SIZE, NODE_MARGIN},
     CurrentlyDraggingProps, DraggingIndex, Node, VisualGraph,
 };
 
 #[inline_props]
-pub fn Output(cx: Scope, node: Signal<Node>, index: Connection) -> Element {
+pub fn Output(cx: Scope, node: Signal<Node>, index: usize) -> Element {
     let index = *index;
     let current_node = node.read();
     let current_node_id = current_node.id;

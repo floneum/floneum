@@ -85,7 +85,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
     let node = value;
     let current_value = node.read();
     let name = &current_value.definition.name;
-    match &current_value.value {
+    match current_value.value() {
         Input::Single(current_primitive) => match current_primitive {
             PrimitiveValue::Text(value) => {
                 render! {
@@ -96,7 +96,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                             class: "border border-gray-400 rounded hover:border-gray-500 focus:outline-none focus:border-blue-500",
                             value: "{value}",
                             oninput: |e| {
-                                node.write().value = Input::Single(PrimitiveValue::Text(e.value.to_string()));
+                                node.write().value = vec![Input::Single(PrimitiveValue::Text(e.value.to_string()))];
                             }
                         }
                     }
@@ -118,7 +118,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                             value: "{value}",
                             oninput: |e| {
                                 node
-                                    .write().value = Input::Single(PrimitiveValue::Number(e.value.parse().unwrap_or(0)));
+                                    .write().value = vec![Input::Single(PrimitiveValue::Number(e.value.parse().unwrap_or(0)))];
                             }
                         }
                     }
@@ -133,12 +133,12 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                             class: "border border-gray-400 rounded hover:border-gray-500 focus:outline-none focus:border-blue-500",
                             onchange: |e| {
                                 node
-                                    .write().value = Input::Single(
+                                    .write().value = vec![Input::Single(
                                     PrimitiveValue::ModelType(
                                         model_type_from_str(&e.value)
                                             .unwrap_or(ModelType::Llama(LlamaType::LlamaThirteenChat)),
                                     ),
-                                );
+                                )];
                             },
                             for variant in ModelType::VARIANTS {
                                 option {
@@ -161,7 +161,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                             r#type: "checkbox",
                             checked: "{val}",
                             onchange: |e| {
-                                node.write().value = Input::Single(PrimitiveValue::Boolean(e.value == "on"));
+                                node.write().value = vec![Input::Single(PrimitiveValue::Boolean(e.value == "on"))];
                             }
                         }
                     }
