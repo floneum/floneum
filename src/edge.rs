@@ -1,7 +1,7 @@
 use floneum_plugin::exports::plugins::main::definitions::ValueType;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Edge {
     pub start: usize,
     pub end: Connection,
@@ -14,13 +14,13 @@ impl Edge {
     }
 }
 
-#[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
+#[derive(PartialEq, Clone, Copy, Serialize, Deserialize, Debug)]
 pub struct Connection {
     pub index: usize,
     pub ty: ConnectionType,
 }
 
-#[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
+#[derive(PartialEq, Clone, Copy, Serialize, Deserialize, Debug)]
 pub enum ConnectionType {
     Single,
     Element(usize),

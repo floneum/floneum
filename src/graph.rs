@@ -19,7 +19,7 @@ pub struct VisualGraphInner {
     pub currently_dragging: Option<CurrentlyDragging>,
 }
 
-#[derive(PartialEq, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
 pub enum CurrentlyDragging {
     Node(NodeDragInfo),
     Connection(CurrentlyDraggingProps),
@@ -34,7 +34,7 @@ impl Debug for CurrentlyDragging {
     }
 }
 
-#[derive(PartialEq, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
 pub struct NodeDragInfo {
     pub element_offset: Point2D<f32, f32>,
     pub node: Signal<Node>,
@@ -46,7 +46,7 @@ pub enum DraggingIndex {
     Output(usize),
 }
 
-#[derive(Props, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(Props, PartialEq, Clone, Copy, Serialize, Deserialize)]
 pub struct CurrentlyDraggingProps {
     pub from: Signal<Node>,
     pub index: DraggingIndex,
@@ -210,6 +210,30 @@ impl VisualGraph {
         true
     }
 
+    pub fn connect(
+        &self,
+        input_id: petgraph::graph::NodeIndex,
+        output_id: petgraph::graph::NodeIndex,
+        edge: Signal<Edge>,
+    ) {
+        let mut current_graph = self.inner.write();
+        // remove any existing connections to this input
+        let mut edges_to_remove = Vec::new();
+        let input_index = edge.read().end;
+        for edge in current_graph
+            .graph
+            .edges_directed(input_id, petgraph::Direction::Incoming)
+        {
+            if edge.weight().read().end == input_index {
+                edges_to_remove.push(edge.id());
+            }
+        }
+        for edge in edges_to_remove {
+            current_graph.graph.remove_edge(edge);
+        }
+        current_graph.graph.add_edge(output_id, input_id, edge);
+    }
+
     pub(crate) fn finish_connection(
         &self,
         node_id: petgraph::graph::NodeIndex,
@@ -234,7 +258,7 @@ impl VisualGraph {
             let ty = start_node.output_type(output_index).unwrap();
             drop(start_node);
             let edge = Signal::new(Edge::new(output_index, input_index, ty));
-            current_graph.graph.add_edge(output_id, input_id, edge);
+            self.connect(input_id, output_id, edge);
         }
         current_graph.currently_dragging = None;
     }

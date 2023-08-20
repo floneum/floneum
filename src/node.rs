@@ -48,7 +48,7 @@ impl Node {
             .to_point()
     }
 
-    fn input_connections(&self) ->impl Iterator<Item=Connection> + '_ {
+    fn input_connections(&self) -> impl Iterator<Item = Connection> + '_ {
         (0..self.inputs.len())
             .filter_map(|index| {
                 let input = self.inputs[index].read();
@@ -61,21 +61,18 @@ impl Node {
                     None
                 }
             })
-            .chain(
-                (0..self.inputs.len())
-                    .flat_map(|index| {
-                        let input = self.inputs[index].read();
-                        let indexes = if let ValueType::Many(_) = input.definition.ty {
-                            0..input.value.len()
-                        } else {
-                            0..0
-                        };
-                        indexes.map(move |inner| Connection {
-                            index,
-                            ty: ConnectionType::Element(inner),
-                        })
-                    })
-            )
+            .chain((0..self.inputs.len()).flat_map(|index| {
+                let input = self.inputs[index].read();
+                let indexes = if let ValueType::Many(_) = input.definition.ty {
+                    0..input.value.len()
+                } else {
+                    0..0
+                };
+                indexes.map(move |inner| Connection {
+                    index,
+                    ty: ConnectionType::Element(inner),
+                })
+            }))
     }
 
     pub fn output_pos(&self, index: usize) -> Point2D<f32, f32> {
@@ -89,7 +86,7 @@ impl Node {
     pub fn input_array_add_element_pos(&self, index: usize) -> Point2D<f32, f32> {
         self.input_pos(Connection {
             index,
-            ty: ConnectionType::Single
+            ty: ConnectionType::Single,
         })
     }
 
@@ -109,7 +106,8 @@ impl Node {
     fn single_input_pos(&self, index: usize) -> Point2D<f32, f32> {
         Point2D::new(
             self.position.x - 1.,
-            self.position.y + ((index as f32 + 1.) * self.height / (self.input_count() as f32 + 1.)),
+            self.position.y
+                + ((index as f32 + 1.) * self.height / (self.input_count() as f32 + 1.)),
         )
     }
 
@@ -308,9 +306,13 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
             onmouseup: move |evt| {
                 let graph: VisualGraph = cx.consume_context().unwrap();
                 {
-                    let mut current_graph = graph.inner.write();
                     if let Some(CurrentlyDragging::Connection(currently_dragging))
-                        = &current_graph.currently_dragging
+                        = {
+                            let current_graph = graph.inner.read();
+                            let val = current_graph.currently_dragging;
+                            drop(current_graph);
+                            val
+                        }
                     {
                         let dist;
                         let edge;
@@ -361,7 +363,7 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                             }
                         }
                         if dist < SNAP_DISTANCE.powi(2) {
-                            current_graph.graph.add_edge(start_id, end_id, edge);
+                            graph.connect(end_id, start_id, edge);
                         }
                     }
                 }
