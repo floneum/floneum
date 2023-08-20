@@ -48,12 +48,55 @@ impl Node {
             .to_point()
     }
 
+    fn input_connections(&self) ->impl Iterator<Item=Connection> + '_ {
+        (0..self.inputs.len())
+            .filter_map(|index| {
+                let input = self.inputs[index].read();
+                if let ValueType::Single(_) = input.definition.ty {
+                    Some(Connection {
+                        index,
+                        ty: ConnectionType::Single,
+                    })
+                } else {
+                    None
+                }
+            })
+            .chain(
+                (0..self.inputs.len())
+                    .flat_map(|index| {
+                        let input = self.inputs[index].read();
+                        let indexes = if let ValueType::Many(_) = input.definition.ty {
+                            0..input.value.len()
+                        } else {
+                            0..0
+                        };
+                        indexes.map(move |inner| Connection {
+                            index,
+                            ty: ConnectionType::Element(inner),
+                        })
+                    })
+            )
+    }
+
     pub fn output_pos(&self, index: usize) -> Point2D<f32, f32> {
         Point2D::new(
             self.position.x + self.width - 1.,
             self.position.y
                 + ((index as f32 + 1.) * self.height / (self.outputs.len() as f32 + 1.)),
         )
+    }
+
+    pub fn input_array_add_element_pos(&self, index: usize) -> Point2D<f32, f32> {
+        self.input_pos(Connection {
+            index,
+            ty: ConnectionType::Single
+        })
+    }
+
+    pub fn input_array_remove_element_pos(&self, index: usize) -> Point2D<f32, f32> {
+        let mut pos = self.input_array_add_element_pos(index);
+        pos.x += 14.;
+        pos
     }
 
     pub fn input_pos(&self, index: Connection) -> Point2D<f32, f32> {
@@ -66,7 +109,7 @@ impl Node {
     fn single_input_pos(&self, index: usize) -> Point2D<f32, f32> {
         Point2D::new(
             self.position.x - 1.,
-            self.position.y + ((index as f32 + 1.) * self.height / (self.inputs.len() as f32 + 1.)),
+            self.position.y + ((index as f32 + 1.) * self.height / (self.input_count() as f32 + 1.)),
         )
     }
 
@@ -74,10 +117,22 @@ impl Node {
         Point2D::new(
             self.position.x + 10. - 1.,
             self.position.y
-                + 10.
-                + ((inner as f32 + index as f32 + 1.) * self.height
-                    / (self.inputs.len() as f32 + 1.)),
+                + ((inner as f32 + index as f32 + 2.) * self.height
+                    / (self.input_count() as f32 + 1.)),
         )
+    }
+
+    fn input_count(&self) -> usize {
+        let mut inputs = self.inputs.len();
+        for input_idx in 0..self.inputs.len() {
+            if let Some(ValueType::Many(_)) = self.input_type(Connection {
+                index: input_idx,
+                ty: ConnectionType::Single,
+            }) {
+                inputs += self.inputs[input_idx].read().value.len();
+            }
+        }
+        inputs
     }
 
     pub fn input_type(&self, index: Connection) -> Option<ValueType> {
@@ -141,7 +196,6 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
     render! {
         // inputs
         (0..current_node.inputs.len()).map(|index| {
-
             rsx! {
                 Input {
                     node: cx.props.node,
@@ -160,23 +214,49 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                 let graph: VisualGraph = cx.consume_context().unwrap();
                 {
                     let node = node.read();
-                    if let Some((index, dist))
-                        = (0..node.inputs.len())
-                            .map(|i| {
-                                let index = Connection{index: i, ty: ConnectionType::Single};
+                    enum Action {
+                        Snap(DraggingIndex),
+                        IncreaseArray(usize),
+                        DecreaseArray(usize),
+                    }
+                    if let Some((action, dist))
+                        = node.input_connections()
+                            .map(|index| {
                                 let input_pos = node.input_pos(index);
                                 (
-                                    DraggingIndex::Input(index),
+                                    Action::Snap(DraggingIndex::Input(index)),
                                     (input_pos.x - evt.page_coordinates().x as f32).powi(2)
                                         + (input_pos.y - evt.page_coordinates().y as f32).powi(2),
                                 )
                             })
                             .chain(
+                                (0..node.inputs.len())
+                                    .map(|i| {
+                                        let output_pos = node.input_array_add_element_pos(i);
+                                        (
+                                            Action::IncreaseArray(i),
+                                            (output_pos.x - evt.page_coordinates().x as f32).powi(2)
+                                                + (output_pos.y - evt.page_coordinates().y as f32).powi(2),
+                                        )
+                                    })
+                            )
+                            .chain(
+                                (0..node.inputs.len())
+                                    .map(|i| {
+                                        let output_pos = node.input_array_remove_element_pos(i);
+                                        (
+                                            Action::DecreaseArray(i),
+                                            (output_pos.x - evt.page_coordinates().x as f32).powi(2)
+                                                + (output_pos.y - evt.page_coordinates().y as f32).powi(2),
+                                        )
+                                    })
+                            )
+                            .chain(
                                 (0..node.outputs.len())
                                     .map(|i| {
                                         let output_pos = node.output_pos(i);
                                         (
-                                            DraggingIndex::Output(i),
+                                            Action::Snap(DraggingIndex::Output(i)),
                                             (output_pos.x - evt.page_coordinates().x as f32).powi(2)
                                                 + (output_pos.y - evt.page_coordinates().y as f32).powi(2),
                                         )
@@ -185,20 +265,34 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                             .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
                     {
                         if dist < SNAP_DISTANCE.powi(2) {
-                            let mut current_graph = graph.inner.write();
-                            current_graph
-                                .currently_dragging = Some(
-                                CurrentlyDragging::Connection(CurrentlyDraggingProps {
-                                    from: cx.props.node,
-                                    index,
-                                    to: Signal::new(
-                                        Point2D::new(
-                                            evt.page_coordinates().x as f32,
-                                            evt.page_coordinates().y as f32,
-                                        ),
-                                    ),
-                                }),
-                            );
+                            match action {
+                                Action::Snap(index) => {
+                                    let mut current_graph = graph.inner.write();
+                                    current_graph
+                                        .currently_dragging = Some(
+                                        CurrentlyDragging::Connection(CurrentlyDraggingProps {
+                                            from: cx.props.node,
+                                            index,
+                                            to: Signal::new(
+                                                Point2D::new(
+                                                    evt.page_coordinates().x as f32,
+                                                    evt.page_coordinates().y as f32,
+                                                ),
+                                            ),
+                                        }),
+                                    );
+                                }
+                                Action::IncreaseArray(index) => {
+                                    drop(node);
+                                    let node = cx.props.node.write();
+                                    node.inputs[index].write().push_default_value();
+                                }
+                                Action::DecreaseArray(index) => {
+                                    drop(node);
+                                    let node = cx.props.node.write();
+                                    node.inputs[index].write().pop_value();
+                                }
+                            }
                         } else {
                             graph.start_dragging_node(&evt, cx.props.node);
                         }
@@ -225,9 +319,8 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                         match currently_dragging.index {
                             DraggingIndex::Output(start_index) => {
                                 let node = node.read();
-                                let combined = (0..node.inputs.len())
-                                    .map(|i| {
-                                        let index = Connection{index: i, ty: ConnectionType::Single};
+                                let combined = node.input_connections()
+                                    .map(|index| {
                                         let input_pos = node.input_pos(index);
                                         (
                                             index,
@@ -319,7 +412,7 @@ fn CenterNodeUI(cx: Scope<NodeProps>) -> Element {
     render! {
         div {
             style: "-webkit-user-select: none; -ms-user-select: none; user-select: none; padding: {NODE_KNOB_SIZE*2.+2.}px;",
-            class: "flex flex-col justify-center items-center w-full h-full border rounded-md overflow-scroll {focused_class}",
+            class: "flex flex-col justify-center items-center w-full h-full border rounded-md {focused_class}",
             div {
                 button {
                     class: "fixed p-2 top-0 right-0",
