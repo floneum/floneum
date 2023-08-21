@@ -1,6 +1,9 @@
 use std::{collections::HashSet, fmt::Debug};
 
-use dioxus::{html::geometry::euclid::Point2D, prelude::*};
+use dioxus::{
+    html::geometry::euclid::Point2D,
+    prelude::{SvgAttributes, *},
+};
 use floneum_plugin::PluginInstance;
 use petgraph::{
     stable_graph::StableGraph,
@@ -214,11 +217,14 @@ impl VisualGraph {
         &self,
         input_id: petgraph::graph::NodeIndex,
         output_id: petgraph::graph::NodeIndex,
-        edge: Signal<Edge>
+        edge: Signal<Edge>,
     ) -> bool {
         let edge = edge.read();
         let graph = self.inner.read();
-        let input = graph.graph[input_id].read().output_type(edge.start).unwrap();
+        let input = graph.graph[input_id]
+            .read()
+            .output_type(edge.start)
+            .unwrap();
         let output = graph.graph[output_id].read().input_type(edge.end).unwrap();
         input == output
     }
@@ -296,11 +302,48 @@ pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
     let graph = cx.props.graph.inner;
     let current_graph = graph.read();
     let current_graph_dragging = current_graph.currently_dragging.clone();
+    let drag_start_pos = use_state(cx, || Option::<Point2D<f32, f32>>::None);
+    let drag_pan_pos = use_state(cx, || Option::<Point2D<f32, f32>>::None);
+    let pan_pos = use_state(cx, || Point2D::<f32, f32>::new(0.0, 0.0));
+    let zoom = use_state(cx, || 1.0);
+    let mut transform_matrix = [1., 0., 0., 1., 0., 0.];
+    transform_matrix[4] = pan_pos.x;
+    transform_matrix[5] = pan_pos.y;
+    for i in &mut transform_matrix {
+        *i *= **zoom;
+    }
+
+    let transform = format!(
+        "matrix({} {} {} {} {} {})",
+        transform_matrix[0],
+        transform_matrix[1],
+        transform_matrix[2],
+        transform_matrix[3],
+        transform_matrix[4],
+        transform_matrix[5]
+    );
 
     render! {
         div { position: "relative",
             width: "100%",
             height: "100%",
+            div {
+                position: "absolute",
+                top: "0",
+                left: "0",
+                button {
+                    onclick: move |_| {
+                        zoom.set(zoom.get() * 1.1);
+                    },
+                    "+"
+                }
+                button {
+                    onclick: move |_| {
+                        zoom.set(zoom.get() * 0.9);
+                    },
+                    "-"
+                }
+            }
             svg {
                 width: "100%",
                 height: "100%",
@@ -309,45 +352,63 @@ pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
                         cx.props.graph.clear_dragging();
                     }
                 },
+                onmousedown: move |evt| {
+                    let pos = evt.element_coordinates();
+                    drag_start_pos.set(Some(Point2D::new(pos.x as f32, pos.y as f32)));
+                    drag_pan_pos.set(Some(*pan_pos.current()));
+                },
                 onmouseup: move |_| {
+                    drag_start_pos.set(None);
                     cx.props.graph.clear_dragging();
                 },
                 onmousemove: move |evt| {
+                    if let (Some(drag_start_pos), Some(drag_pan_pos)) = (*drag_start_pos.current(), *drag_pan_pos.current()) {
+                        let pos = evt.element_coordinates();
+                        let end_pos = Point2D::new(pos.x as f32, pos.y as f32);
+                        let diff = end_pos - drag_start_pos;
+                        pan_pos.with_mut(|pan_pos| {
+                            pan_pos.x = drag_pan_pos.x + diff.x;
+                            pan_pos.y = drag_pan_pos.y + diff.y;
+                        });
+                    }
                     cx.props.graph.update_mouse(&evt);
                 },
 
-                current_graph.graph.edge_references().map(|edge_ref|{
-                    let edge = current_graph.graph[edge_ref.id()];
-                    let start_id = edge_ref.target();
-                    let start = current_graph.graph[start_id];
-                    let end_id = edge_ref.source();
-                    let end = current_graph.graph[end_id];
-                    rsx! {
-                        NodeConnection {
-                            key: "{edge_ref.id():?}",
-                            start: start,
-                            connection: edge,
-                            end: end,
+                g {
+                    transform: "{transform}",
+                    current_graph.graph.edge_references().map(|edge_ref|{
+                        let edge = current_graph.graph[edge_ref.id()];
+                        let start_id = edge_ref.target();
+                        let start = current_graph.graph[start_id];
+                        let end_id = edge_ref.source();
+                        let end = current_graph.graph[end_id];
+                        rsx! {
+                            NodeConnection {
+                                key: "{edge_ref.id():?}",
+                                start: start,
+                                connection: edge,
+                                end: end,
+                            }
                         }
-                    }
-                }),
-                current_graph.graph.node_identifiers().map(|id|{
-                    let node = current_graph.graph[id];
-                    rsx! {
-                        Node {
-                            key: "{id:?}",
-                            node: node,
+                    }),
+                    current_graph.graph.node_identifiers().map(|id|{
+                        let node = current_graph.graph[id];
+                        rsx! {
+                            Node {
+                                key: "{id:?}",
+                                node: node,
+                            }
                         }
-                    }
-                }),
+                    }),
 
-                if let Some(CurrentlyDragging::Connection(current_graph_dragging)) = &current_graph_dragging {
-                    let current_graph_dragging = current_graph_dragging.clone();
-                    rsx! {
-                        CurrentlyDragging {
-                            from: current_graph_dragging.from,
-                            index: current_graph_dragging.index,
-                            to: current_graph_dragging.to,
+                    if let Some(CurrentlyDragging::Connection(current_graph_dragging)) = &current_graph_dragging {
+                        let current_graph_dragging = current_graph_dragging.clone();
+                        rsx! {
+                            CurrentlyDragging {
+                                from: current_graph_dragging.from,
+                                index: current_graph_dragging.index,
+                                to: current_graph_dragging.to,
+                            }
                         }
                     }
                 }

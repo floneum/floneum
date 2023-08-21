@@ -466,7 +466,7 @@ impl PrimitiveValue {
             (PrimitiveValue::Tab(_), PrimitiveValueType::Tab) => true,
             (PrimitiveValue::Node(_), PrimitiveValueType::Node) => true,
             _ => false,
-        }   
+        }
     }
 }
 
