@@ -210,12 +210,28 @@ impl VisualGraph {
         true
     }
 
+    pub fn check_connection_validity(
+        &self,
+        input_id: petgraph::graph::NodeIndex,
+        output_id: petgraph::graph::NodeIndex,
+        edge: Signal<Edge>
+    ) -> bool {
+        let edge = edge.read();
+        let graph = self.inner.read();
+        let input = graph.graph[input_id].read().output_type(edge.start).unwrap();
+        let output = graph.graph[output_id].read().input_type(edge.end).unwrap();
+        input == output
+    }
+
     pub fn connect(
         &self,
         input_id: petgraph::graph::NodeIndex,
         output_id: petgraph::graph::NodeIndex,
         edge: Signal<Edge>,
     ) {
+        if self.check_connection_validity(input_id, output_id, edge) {
+            return;
+        }
         let mut current_graph = self.inner.write();
         // remove any existing connections to this input
         let mut edges_to_remove = Vec::new();

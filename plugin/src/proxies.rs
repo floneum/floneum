@@ -452,3 +452,44 @@ impl<'de> Deserialize<'de> for PrimitiveValueType {
         Ok(PrimitiveValueType::from(my_primitive_value_type))
     }
 }
+
+impl PrimitiveValue {
+    pub fn is_of_type(&self, ty: PrimitiveValueType) -> bool {
+        match (self, ty) {
+            (PrimitiveValue::Number(_), PrimitiveValueType::Number) => true,
+            (PrimitiveValue::Text(_), PrimitiveValueType::Text) => true,
+            (PrimitiveValue::Embedding(_), PrimitiveValueType::Embedding) => true,
+            (PrimitiveValue::Database(_), PrimitiveValueType::Database) => true,
+            (PrimitiveValue::Model(_), PrimitiveValueType::Model) => true,
+            (PrimitiveValue::ModelType(_), PrimitiveValueType::ModelType) => true,
+            (PrimitiveValue::Boolean(_), PrimitiveValueType::Boolean) => true,
+            (PrimitiveValue::Tab(_), PrimitiveValueType::Tab) => true,
+            (PrimitiveValue::Node(_), PrimitiveValueType::Node) => true,
+            _ => false,
+        }   
+    }
+}
+
+impl Input {
+    pub fn is_of_type(&self, ty: ValueType) -> bool {
+        match (self, ty) {
+            (Input::Single(value), ValueType::Single(ty)) => value.is_of_type(ty),
+            (Input::Many(values), ValueType::Many(ty)) => {
+                values.iter().all(|value| value.is_of_type(ty))
+            }
+            _ => false,
+        }
+    }
+}
+
+impl Output {
+    pub fn is_of_type(&self, ty: ValueType) -> bool {
+        match (self, ty) {
+            (Output::Single(value), ValueType::Single(ty)) => value.is_of_type(ty),
+            (Output::Many(values), ValueType::Many(ty)) => {
+                values.iter().all(|value| value.is_of_type(ty))
+            }
+            _ => false,
+        }
+    }
+}
