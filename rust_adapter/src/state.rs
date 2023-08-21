@@ -58,11 +58,18 @@ pub struct Cache<K: Serialize + DeserializeOwned, T: Serialize + DeserializeOwne
     phantom: std::marker::PhantomData<(K, T)>,
 }
 
+impl<K: Serialize + DeserializeOwned, T: Serialize + DeserializeOwned> Default for Cache<K, T> {
+    #[track_caller]
+    fn default() -> Self {
+        let path = std::panic::Location::caller().to_string();
+        Self::new_with_key(&path)
+    }
+}
+
 impl<K: Serialize + DeserializeOwned, T: Serialize + DeserializeOwned> Cache<K, T> {
     #[track_caller]
     pub fn new() -> Self {
-        let path = std::panic::Location::caller().to_string();
-        Self::new_with_key(&path)
+        Default::default()
     }
 
     pub fn new_with_key(path: &str) -> Self {

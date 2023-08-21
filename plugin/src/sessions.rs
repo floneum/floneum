@@ -176,8 +176,7 @@ impl InferenceSessions {
                             .unwrap();
                         let token = tokens
                             .iter()
-                            .map(|(x, _)| x.iter().copied())
-                            .flatten()
+                            .flat_map(|(x, _)| x.iter().copied())
                             .collect::<Vec<u8>>();
                         if let Some(token) = token_utf8_buf.push(&token) {
                             result_tokens.push(token);
@@ -253,6 +252,8 @@ impl InferenceSessions {
     }
 }
 
+/// buf is used here...
+#[allow(clippy::needless_pass_by_ref_mut)]
 fn inference_callback(
     stop_sequence: Option<String>,
     buf: &mut String,

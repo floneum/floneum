@@ -44,7 +44,7 @@ impl<V: for<'a> Validate<'a>> StructuredSampler<V> {
         let mut tokens = Vec::new();
         for token in &previous_tokens[self.current_token_count.saturating_sub(1)..] {
             let token = self.tokenizer.token(*token as usize);
-            let Ok(token) = String::from_utf8(token) else{
+            let Ok(token) = String::from_utf8(token) else {
                 return true;
             };
             if !token.is_ascii() {
@@ -56,7 +56,7 @@ impl<V: for<'a> Validate<'a>> StructuredSampler<V> {
         let mut borrowed = tokens.iter().map(|x| x.as_str()).collect::<Vec<_>>();
 
         let new_token = self.tokenizer.token(new_token as usize);
-        let Ok(new_token) = String::from_utf8(new_token) else{
+        let Ok(new_token) = String::from_utf8(new_token) else {
             return true;
         };
         if !new_token.is_ascii() {

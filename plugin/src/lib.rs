@@ -30,6 +30,7 @@ use wit_component::ComponentEncoder;
 mod browse;
 mod download;
 mod embedding;
+mod proxies;
 mod sessions;
 mod structured;
 mod structured_parser;
@@ -351,7 +352,7 @@ impl Host for State {
         let structure = self.decode_structure(structure);
         Ok(self
             .sessions
-            .infer_validate(id, input, max_tokens, dbg!(structure)))
+            .infer_validate(id, input, max_tokens, structure))
     }
 
     async fn new_tab(
@@ -513,33 +514,28 @@ impl Host for State {
     }
 }
 
-#[derive(Default, Debug)]
-pub struct PluginEngine {}
+#[tracing::instrument]
+pub fn load_plugin(path: &Path) -> Plugin {
+    log::info!("loading plugin {path:?}");
 
-impl PluginEngine {
-    #[tracing::instrument]
-    pub fn load_plugin(&mut self, path: &Path) -> Plugin {
-        log::info!("loading plugin {path:?}");
+    let module = PackageIndexEntry::new(path.into(), None, None);
+    load_plugin_from_source(module)
+}
 
-        let module = PackageIndexEntry::new(path.into(), None, None);
-        self.load_plugin_from_source(module)
+pub fn load_plugin_from_source(source: PackageIndexEntry) -> Plugin {
+    let md = once_cell::sync::OnceCell::new();
+    if let Some(metadata) = source.meta() {
+        let _ = md.set(PluginMetadata {
+            name: metadata.name.clone(),
+            description: metadata.description.clone(),
+        });
     }
 
-    pub fn load_plugin_from_source(&mut self, source: PackageIndexEntry) -> Plugin {
-        let md = once_cell::sync::OnceCell::new();
-        if let Some(metadata) = source.meta() {
-            let _ = md.set(PluginMetadata {
-                name: metadata.name.clone(),
-                description: metadata.description.clone(),
-            });
-        }
-
-        Plugin {
-            source,
-            component: once_cell::sync::OnceCell::new(),
-            definition: once_cell::sync::OnceCell::new(),
-            metadata: md,
-        }
+    Plugin {
+        source,
+        component: once_cell::sync::OnceCell::new(),
+        definition: once_cell::sync::OnceCell::new(),
+        metadata: md,
     }
 }
 
@@ -576,11 +572,7 @@ impl<'de> Deserialize<'de> for Plugin {
         // Just deserialize the source
         let source = PackageIndexEntry::deserialize(deserializer)?;
 
-        Ok(async move {
-            let mut engine = PluginEngine::default();
-            engine.load_plugin_from_source(source)
-        }
-        .block_on())
+        Ok(async move { load_plugin_from_source(source) }.block_on())
     }
 }
 
@@ -620,7 +612,7 @@ impl Plugin {
         // then we get the structure of the plugin.
         let mut store = Store::new(&ENGINE, State::default());
         let component = self.component().await?;
-        let (world, _instance) = PluginWorld::instantiate_async(&mut store, &component, &*LINKER)
+        let (world, _instance) = PluginWorld::instantiate_async(&mut store, component, &*LINKER)
             .await
             .unwrap();
         let structure = world.interface0.call_structure(&mut store).await.unwrap();
@@ -649,7 +641,7 @@ impl Plugin {
         let mut store = Store::new(&ENGINE, state);
         let component = self.component().await?;
         let definition = self.definition().await?;
-        let (world, _instance) = PluginWorld::instantiate_async(&mut store, &component, &LINKER)
+        let (world, _instance) = PluginWorld::instantiate_async(&mut store, component, &LINKER)
             .await
             .unwrap();
 
@@ -658,7 +650,9 @@ impl Plugin {
 
         tokio::spawn(async move {
             loop {
-                let Ok(inputs) = input_receiver.recv().await else{break;};
+                let Ok(inputs) = input_receiver.recv().await else {
+                    break;
+                };
                 let borrowed = inputs.iter().collect::<Vec<_>>();
                 let outputs = world.interface0.call_run(&mut store, &borrowed).await;
                 if output_sender.send(Arc::new(outputs)).is_err() {
@@ -713,14 +707,7 @@ impl<'de> Deserialize<'de> for PluginInstance {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         // Just deserialize the source
         let source = PackageIndexEntry::deserialize(deserializer)?;
-        Ok(async move {
-            PluginEngine::default()
-                .load_plugin_from_source(source)
-                .instance()
-                .await
-                .unwrap()
-        }
-        .block_on())
+        Ok(async move { load_plugin_from_source(source).instance().await.unwrap() }.block_on())
     }
 }
 
@@ -748,7 +735,7 @@ impl PluginInstance {
 }
 
 #[tokio::test]
-async fn load_plugin() {
+async fn test_load_plugin() {
     // first build the plugin_demo
     // cargo build --release --target wasm32-unknown-unknown
     let command = std::process::Command::new("cargo")
@@ -762,9 +749,7 @@ async fn load_plugin() {
 
     let path = "./target/wasm32-unknown-unknown/release/plugin_format.wasm";
 
-    let mut engine = PluginEngine::default();
-
-    let plugin = engine.load_plugin(&std::path::PathBuf::from(path));
+    let plugin = load_plugin(&std::path::PathBuf::from(path));
 
     let instance = plugin.instance().await.unwrap();
 
@@ -773,7 +758,7 @@ async fn load_plugin() {
         Input::Single(PrimitiveValue::Text("world".to_string())),
     ];
     let outputs = instance.run(inputs).await.unwrap();
-    let outputs = outputs.as_deref().clone().unwrap();
+    let outputs = outputs.as_deref().unwrap();
     println!("{:?}", outputs);
 
     assert_eq!(outputs.len(), 1);

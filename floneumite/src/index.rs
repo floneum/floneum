@@ -283,11 +283,14 @@ impl PackageIndexEntry {
         meta: Option<PackageStructure>,
         remote: Option<Remote>,
     ) -> Self {
-        let path = if path.extension() == Some(std::ffi::OsStr::new("wasm")) {
+        let mut path = if path.extension() == Some(std::ffi::OsStr::new("wasm")) {
             path.parent().unwrap().to_path_buf()
         } else {
             path
         };
+        if let Ok(new) = path.strip_prefix(packages_path().unwrap()) {
+            path = new.to_path_buf();
+        }
         log::info!("found: {}", path.display());
         Self { path, remote, meta }
     }
@@ -307,11 +310,11 @@ impl PackageIndexEntry {
     }
 
     pub fn path(&self) -> std::path::PathBuf {
-        self.path.clone()
+        packages_path().unwrap().join(&self.path)
     }
 
     pub fn wasm_path(&self) -> std::path::PathBuf {
-        self.path.join("package.wasm")
+        self.path().join("package.wasm")
     }
 
     pub async fn wasm_bytes(&self) -> anyhow::Result<Vec<u8>> {

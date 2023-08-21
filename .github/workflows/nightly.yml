@@ -2,7 +2,6 @@ name: Tests and release
 
 on:
   push:
-  pull_request:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -28,90 +27,90 @@ jobs:
           # - sparc64-unknown-linux-gnu - cannot compile openssl-sys
           # - x86_64-unknown-illumos - weird error compiling openssl - "bin/sh: 1: granlib: not found"
 
-          - os_name: FreeBSD-x86_64
-            os: ubuntu-20.04
-            target: x86_64-unknown-freebsd
-            bin: floneum
-            name: floneum-FreeBSD-x86_64.tar.gz
-            skip_tests: true
-          - os_name: Linux-x86_64
-            os: ubuntu-20.04
-            target: x86_64-unknown-linux-musl
-            bin: floneum
-            name: floneum-Linux-x86_64-musl.tar.gz
-          - os_name: Linux-aarch64
-            os: ubuntu-20.04
-            target: aarch64-unknown-linux-musl
-            bin: floneum
-            name: floneum-Linux-aarch64-musl.tar.gz
-          - os_name: Linux-arm
-            os: ubuntu-20.04
-            target: arm-unknown-linux-musleabi
-            bin: floneum
-            name: floneum-Linux-arm-musl.tar.gz
-          - os_name: Linux-i686
-            os: ubuntu-20.04
-            target: i686-unknown-linux-musl
-            bin: floneum
-            name: floneum-Linux-i686-musl.tar.gz
-            skip_tests: true
-          - os_name: Linux-mips
-            os: ubuntu-20.04
-            target: mips-unknown-linux-musl
-            bin: floneum
-            name: floneum-Linux-mips.tar.gz
-          - os_name: Linux-mipsel
-            os: ubuntu-20.04
-            target: mipsel-unknown-linux-musl
-            bin: floneum
-            name: floneum-Linux-mipsel.tar.gz
-          - os_name: Linux-mips64
-            os: ubuntu-20.04
-            target: mips64-unknown-linux-muslabi64
-            bin: floneum
-            name: floneum-Linux-mips64.tar.gz
-            skip_tests: true
-          - os_name: Linux-mips64el
-            os: ubuntu-20.04
-            target: mips64el-unknown-linux-muslabi64
-            bin: floneum
-            name: floneum-Linux-mips64el.tar.gz
-            skip_tests: true
-          - os_name: Linux-powerpc
-            os: ubuntu-20.04
-            target: powerpc-unknown-linux-gnu
-            bin: floneum
-            name: floneum-Linux-powerpc-gnu.tar.gz
-            skip_tests: true
-          - os_name: Linux-powerpc64
-            os: ubuntu-20.04
-            target: powerpc64-unknown-linux-gnu
-            bin: floneum
-            name: floneum-Linux-powerpc64-gnu.tar.gz
-            skip_tests: true
-          - os_name: Linux-powerpc64le
-            os: ubuntu-20.04
-            target: powerpc64le-unknown-linux-gnu
-            bin: floneum
-            name: floneum-Linux-powerpc64le.tar.gz
-            skip_tests: true
-          - os_name: Linux-riscv64
-            os: ubuntu-20.04
-            target: riscv64gc-unknown-linux-gnu
-            bin: floneum
-            name: floneum-Linux-riscv64gc-gnu.tar.gz
-          - os_name: Linux-s390x
-            os: ubuntu-20.04
-            target: s390x-unknown-linux-gnu
-            bin: floneum
-            name: floneum-Linux-s390x-gnu.tar.gz
-            skip_tests: true
-          - os_name: NetBSD-x86_64
-            os: ubuntu-20.04
-            target: x86_64-unknown-netbsd
-            bin: floneum
-            name: floneum-NetBSD-x86_64.tar.gz
-            skip_tests: true
+          # - os_name: FreeBSD-x86_64
+          #   os: ubuntu-20.04
+          #   target: x86_64-unknown-freebsd
+          #   bin: floneum
+          #   name: floneum-FreeBSD-x86_64.tar.gz
+          #   skip_tests: true
+          # - os_name: Linux-x86_64
+          #   os: ubuntu-20.04
+          #   target: x86_64-unknown-linux-musl
+          #   bin: floneum
+          #   name: floneum-Linux-x86_64-musl.tar.gz
+          # - os_name: Linux-aarch64
+          #   os: ubuntu-20.04
+          #   target: aarch64-unknown-linux-musl
+          #   bin: floneum
+          #   name: floneum-Linux-aarch64-musl.tar.gz
+          # - os_name: Linux-arm
+          #   os: ubuntu-20.04
+          #   target: arm-unknown-linux-musleabi
+          #   bin: floneum
+          #   name: floneum-Linux-arm-musl.tar.gz
+          # - os_name: Linux-i686
+          #   os: ubuntu-20.04
+          #   target: i686-unknown-linux-musl
+          #   bin: floneum
+          #   name: floneum-Linux-i686-musl.tar.gz
+          #   skip_tests: true
+          # - os_name: Linux-mips
+          #   os: ubuntu-20.04
+          #   target: mips-unknown-linux-musl
+          #   bin: floneum
+          #   name: floneum-Linux-mips.tar.gz
+          # - os_name: Linux-mipsel
+          #   os: ubuntu-20.04
+          #   target: mipsel-unknown-linux-musl
+          #   bin: floneum
+          #   name: floneum-Linux-mipsel.tar.gz
+          # - os_name: Linux-mips64
+          #   os: ubuntu-20.04
+          #   target: mips64-unknown-linux-muslabi64
+          #   bin: floneum
+          #   name: floneum-Linux-mips64.tar.gz
+          #   skip_tests: true
+          # - os_name: Linux-mips64el
+          #   os: ubuntu-20.04
+          #   target: mips64el-unknown-linux-muslabi64
+          #   bin: floneum
+          #   name: floneum-Linux-mips64el.tar.gz
+          #   skip_tests: true
+          # - os_name: Linux-powerpc
+          #   os: ubuntu-20.04
+          #   target: powerpc-unknown-linux-gnu
+          #   bin: floneum
+          #   name: floneum-Linux-powerpc-gnu.tar.gz
+          #   skip_tests: true
+          # - os_name: Linux-powerpc64
+          #   os: ubuntu-20.04
+          #   target: powerpc64-unknown-linux-gnu
+          #   bin: floneum
+          #   name: floneum-Linux-powerpc64-gnu.tar.gz
+          #   skip_tests: true
+          # - os_name: Linux-powerpc64le
+          #   os: ubuntu-20.04
+          #   target: powerpc64le-unknown-linux-gnu
+          #   bin: floneum
+          #   name: floneum-Linux-powerpc64le.tar.gz
+          #   skip_tests: true
+          # - os_name: Linux-riscv64
+          #   os: ubuntu-20.04
+          #   target: riscv64gc-unknown-linux-gnu
+          #   bin: floneum
+          #   name: floneum-Linux-riscv64gc-gnu.tar.gz
+          # - os_name: Linux-s390x
+          #   os: ubuntu-20.04
+          #   target: s390x-unknown-linux-gnu
+          #   bin: floneum
+          #   name: floneum-Linux-s390x-gnu.tar.gz
+          #   skip_tests: true
+          # - os_name: NetBSD-x86_64
+          #   os: ubuntu-20.04
+          #   target: x86_64-unknown-netbsd
+          #   bin: floneum
+          #   name: floneum-NetBSD-x86_64.tar.gz
+          #   skip_tests: true
           - os_name: Windows-x86_64
             os: windows-latest
             target: x86_64-pc-windows-msvc

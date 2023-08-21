@@ -8,9 +8,9 @@ use nipper::Document;
 fn search_engine(query: String) -> String {
     let url = format!(
         "https://en.wikipedia.org/w/index.php?search={}",
-        query.replace(" ", "+")
+        query.replace(' ', "+")
     );
-    let html = get_request(&url, &vec![]);
+    let html = get_request(&url, &[]);
 
     let document = Document::from(&html);
     let mut results = String::new();
@@ -22,12 +22,12 @@ fn search_engine(query: String) -> String {
                 if article_count > 5 {
                     return;
                 }
-                let href = if href.starts_with("/") {
+                let href = if href.starts_with('/') {
                     format!("https://en.wikipedia.org{}", href)
                 } else {
                     href.to_string()
                 };
-                let request = get_request(&href, &vec![]);
+                let request = get_request(&href, &[]);
 
                 document.select("p").iter().for_each(|paragragh| {
                     let html = paragragh.text();

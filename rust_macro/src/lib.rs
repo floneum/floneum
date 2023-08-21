@@ -25,10 +25,12 @@ macro_rules! try_parse_quote {
 
 #[proc_macro_attribute]
 pub fn export_plugin(args: TokenStream, input: TokenStream) -> TokenStream {
+    use convert_case::{Case, Casing};
+
     let mut input = parse_macro_input!(input as ItemFn);
 
     let function_ident = input.sig.ident.clone();
-    let function_name = function_ident.to_string();
+    let function_name = function_ident.to_string().to_case(Case::Title);
     let mut description = String::new();
     for attr in &input.attrs {
         if attr.path().is_ident("doc") {
@@ -324,10 +326,12 @@ impl Parse for IoDefinitionType {
             if let PathArguments::AngleBracketed(inner) = ident.arguments {
                 if let Some(GenericArgument::Type(Type::Path(item_type))) = inner.args.iter().next()
                 {
-                    let Some(ident) = item_type.path.get_ident()
-                        else{
-                            return Err(Error::new_spanned(item_type,"Vec missing Generics".to_string()))
-                        };
+                    let Some(ident) = item_type.path.get_ident() else {
+                        return Err(Error::new_spanned(
+                            item_type,
+                            "Vec missing Generics".to_string(),
+                        ));
+                    };
                     parse_primitive_value_type(ident)?
                 } else {
                     return Err(Error::new_spanned(
@@ -372,9 +376,7 @@ fn parse_primitive_value_type(ident: &Ident) -> syn::Result<PrimitiveValueType> 
         Ok(PrimitiveValueType::Boolean)
     } else if ident == "PrimitiveValue" {
         Ok(PrimitiveValueType::Any)
-    } else if ident == "Tab" {
-        Ok(PrimitiveValueType::Tab)
-    } else if ident == "TabId" {
+    } else if ident == "Tab" || ident == "TabId" {
         Ok(PrimitiveValueType::Tab)
     } else if ident == "Node" {
         Ok(PrimitiveValueType::Node)

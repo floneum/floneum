@@ -15,11 +15,11 @@ fn format(
     /// The inputs to the template
     input: Vec<String>,
 ) -> String {
-    let mut input = input;
     let mut new_text = String::new();
+    let mut input_iter = input.into_iter();
     for section in template.split("{}") {
         new_text.push_str(section);
-        if let Some(text) = input.pop() {
+        if let Some(text) = input_iter.next() {
             new_text.push_str(&text);
         }
     }

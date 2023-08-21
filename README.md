@@ -1,12 +1,12 @@
 # Floneum
 
-Floneum is a graph editor for AI workflows with a focus on community made plugins, local AI and safety.
+Floneum is a graph editor for AI workflows with a focus on community-made plugins, local AI and safety.
 
 <img width="1512" alt="Screenshot 2023-06-18 at 4 26 11 PM" src="https://github.com/Demonthos/floneum/assets/66571940/c60d621d-72b9-423c-b1d5-57cdb737e449">
 
 ## Features
 
-- Visual interface: You can use Floneum without any knowledge of programming. The visual graph editor makes it easy to combine community made plugins with local AI models
+- Visual interface: You can use Floneum without any knowledge of programming. The visual graph editor makes it easy to combine community-made plugins with local AI models
 - Instantly run local large language models: Floneum does not require any external dependencies or even a GPU to run. It uses [llm](https://github.com/rustformers/llm) to run large language models locally. Because of this, you can run Floneum with your data without worrying about privacy
 - Plugins: By combining large language models with plugins, you can improve their performance and make models work better for your specific use case. All plugins run in an isolated environment so you don't need to trust any plugins you load. Plugins can only interact with their environment in a safe way
 - Multi-language plugins: Plugins can use in any language that supports web assembly. In addition to the API that can be accessed in any language, Floneum has a rust wrapper with ergonomic macros that make it simple to create plugins
@@ -32,4 +32,11 @@ If you are interested in Floneum, you can join the [discord](https://discord.gg/
 
 ```sh
 floneum build --release --packages floneum_add_embedding,floneum_embedding,floneum_embedding_db,floneum_format,floneum_generate_text,floneum_generate_structured_text,floneum_search,floneum_search_engine,floneum_if,floneum_contains,floneum_write_to_file,floneum_read_from_file,floneum_python,floneum_create_tab,floneum_find_node,floneum_find_child_node,floneum_click_node,floneum_node_text,floneum_type_in_node,floneum_navigate_to
+```
+
+## Building the UI
+
+```
+npx tailwindcss -i ./input.css -o ./public/tailwind.css --watch
+cargo run
 ```
