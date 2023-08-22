@@ -2073,6 +2073,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "floneum_get_article"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+ "readability",
+ "url",
+]
+
+[[package]]
 name = "floneum_if"
 version = "0.1.0"
 dependencies = [
@@ -3963,6 +3972,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "markup5ever_rcdom"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f015da43bcd8d4f144559a3423f4591d69b8ce0652c905374da7205df336ae2b"
+dependencies = [
+ "html5ever",
+ "markup5ever",
+ "tendril",
+ "xml5ever",
+]
+
+[[package]]
 name = "matchers"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5183,6 +5204,19 @@ dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
  "num_cpus",
+]
+
+[[package]]
+name = "readability"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7843b159286299dd2b90f06d904ae1a8017a650d88d716c85dd6f123947f399"
+dependencies = [
+ "html5ever",
+ "lazy_static",
+ "markup5ever_rcdom",
+ "regex",
+ "url",
 ]
 
 [[package]]
@@ -8675,6 +8709,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4686009f71ff3e5c4dbcf1a282d0a44db3f021ba69350cd42086b3e5f1c6985"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "xml5ever"
+version = "0.16.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9234163818fd8e2418fcde330655e757900d4236acd8cc70fef345ef91f6d865"
+dependencies = [
+ "log",
+ "mac",
+ "markup5ever",
+ "time 0.1.45",
 ]
 
 [[package]]
