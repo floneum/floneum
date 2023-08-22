@@ -68,6 +68,7 @@ members = [
     "plugins/type_in_node",
     "plugins/navigate_to",
     "plugins/find_child_node",
+    "plugins/get_article",
 ]
 
 # The profile that 'cargo dist' will build with
