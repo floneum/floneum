@@ -5,8 +5,9 @@ edition = "2021"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 
 [dependencies]
-wasmtime = { version = "10", features = ['component-model'] }
-wasmtime-wasi = { version = "10", features = ['preview2'] }
+wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", features = ['component-model'] }
+wasmtime-wasi-http = { git = "https://github.com/bytecodealliance/wasmtime" }
+wasmtime-wasi = { git = "https://github.com/bytecodealliance/wasmtime" , features = ['preview2'] }
 wit-component = "0.11.0"
 bytesize = "1.2.0"
 futures-util = "0.3.28"
