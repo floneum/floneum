@@ -25,6 +25,7 @@ use wasmtime::Store;
 use wasmtime::{Config, Error};
 use wasmtime_wasi::preview2::{self, DirPerms, FilePerms, WasiView};
 use wasmtime_wasi::Dir;
+use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpView};
 use wit_component::ComponentEncoder;
 
 mod browse;
@@ -43,19 +44,20 @@ static LINKER: Lazy<Linker<State>> = Lazy::new(|| {
     let mut linker = Linker::new(&ENGINE);
     let l = &mut linker;
     PluginWorld::add_to_linker(l, |x| x).unwrap();
-    preview2::wasi::clocks::wall_clock::add_to_linker(l, |t| t).unwrap();
-    preview2::wasi::clocks::monotonic_clock::add_to_linker(l, |t| t).unwrap();
-    preview2::wasi::clocks::timezone::add_to_linker(l, |t| t).unwrap();
-    preview2::wasi::filesystem::filesystem::add_to_linker(l, |t| t).unwrap();
-    preview2::wasi::poll::poll::add_to_linker(l, |t| t).unwrap();
-    preview2::wasi::io::streams::add_to_linker(l, |t| t).unwrap();
-    preview2::wasi::random::random::add_to_linker(l, |t| t).unwrap();
-    preview2::wasi::cli_base::exit::add_to_linker(l, |t| t).unwrap();
-    preview2::wasi::cli_base::environment::add_to_linker(l, |t| t).unwrap();
-    preview2::wasi::cli_base::preopens::add_to_linker(l, |t| t).unwrap();
-    preview2::wasi::cli_base::stdin::add_to_linker(l, |t| t).unwrap();
-    preview2::wasi::cli_base::stdout::add_to_linker(l, |t| t).unwrap();
-    preview2::wasi::cli_base::stderr::add_to_linker(l, |t| t).unwrap();
+    preview2::bindings::clocks::wall_clock::add_to_linker(l, |t| t).unwrap();
+    preview2::bindings::clocks::monotonic_clock::add_to_linker(l, |t| t).unwrap();
+    preview2::bindings::clocks::timezone::add_to_linker(l, |t| t).unwrap();
+    preview2::bindings::poll::poll::add_to_linker(l, |t| t).unwrap();
+    preview2::bindings::io::streams::add_to_linker(l, |t| t).unwrap();
+    preview2::bindings::random::random::add_to_linker(l, |t| t).unwrap();
+    preview2::bindings::filesystem::types::add_to_linker(l, |t| t).unwrap();
+    preview2::bindings::filesystem::preopens::add_to_linker(l, |t| t).unwrap();
+    preview2::bindings::cli::exit::add_to_linker(l, |t| t).unwrap();
+    preview2::bindings::cli::environment::add_to_linker(l, |t| t).unwrap();
+    preview2::bindings::cli::stdin::add_to_linker(l, |t| t).unwrap();
+    preview2::bindings::cli::stdout::add_to_linker(l, |t| t).unwrap();
+    preview2::bindings::cli::stderr::add_to_linker(l, |t| t).unwrap();
+    wasmtime_wasi_http::add_to_component_linker(l).unwrap();
     linker
 });
 static ENGINE: Lazy<Engine> = Lazy::new(|| {
@@ -108,24 +110,34 @@ pub struct State {
     plugin_state: HashMap<Vec<u8>, Vec<u8>>,
     table: preview2::Table,
     ctx: preview2::WasiCtx,
+    http: WasiHttpCtx,
+}
+
+impl WasiHttpView for State {
+    fn http_ctx(&self) -> &WasiHttpCtx {
+        &self.http
+    }
+    fn http_ctx_mut(&mut self) -> &mut WasiHttpCtx {
+        &mut self.http
+    }
 }
 
 impl Default for State {
     fn default() -> Self {
         let sandbox = Path::new("./sandbox");
         std::fs::create_dir_all(sandbox).unwrap();
-        let ctx_builder = preview2::WasiCtxBuilder::new()
+        let mut ctx = preview2::WasiCtxBuilder::new();
+        let ctx_builder = ctx
             .inherit_stderr()
             .inherit_stdin()
             .inherit_stdio()
             .inherit_stdout()
-            .push_preopened_dir(
+            .preopened_dir(
                 Dir::open_ambient_dir(sandbox, wasmtime_wasi::sync::ambient_authority()).unwrap(),
                 DirPerms::all(),
                 FilePerms::all(),
                 ".",
-            )
-            .set_clocks(wasmtime_wasi::preview2::clocks::host::clocks_ctx());
+            );
         let mut table = preview2::Table::new();
         let ctx = ctx_builder.build(&mut table).unwrap();
         State {
@@ -135,6 +147,7 @@ impl Default for State {
             logs: Default::default(),
             table,
             ctx,
+            http: WasiHttpCtx::new(),
         }
     }
 }
@@ -653,8 +666,7 @@ impl Plugin {
                 let Ok(inputs) = input_receiver.recv().await else {
                     break;
                 };
-                let borrowed = inputs.iter().collect::<Vec<_>>();
-                let outputs = world.interface0.call_run(&mut store, &borrowed).await;
+                let outputs = world.interface0.call_run(&mut store, &inputs).await;
                 if output_sender.send(Arc::new(outputs)).is_err() {
                     break;
                 }
