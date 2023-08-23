@@ -83,7 +83,9 @@ fn LoadRegisteredPlugin(cx: Scope) -> Element {
                                                 let _ = application.add_plugin(plugin).await;
                                             }
 
-                                            application.insert_plugin(&name).await.unwrap();
+                                            if let Err(err) = application.insert_plugin(&name).await {
+                                                log::error!("Failed to insert plugin: {}", err);
+                                            }
                                         }
                                     }
                                 },

@@ -597,20 +597,18 @@ impl Plugin {
         let bytes = self.source.wasm_bytes().await?;
         let size = bytes.len();
         log::info!("read plugin ({:01} mb)", size as f64 / (1024. * 1024.));
-        // then we transform module to compoennt.
+        // then we transform module to component.
         // remember to get wasi_snapshot_preview1.wasm first.
         let component = ComponentEncoder::default()
-            .module(bytes.as_slice())
-            .unwrap()
+            .module(bytes.as_slice())?
             .validate(true)
             .adapter(
                 "wasi_snapshot_preview1",
                 include_bytes!("../wasi_snapshot_preview1.wasm",),
             )
             .unwrap()
-            .encode()
-            .unwrap();
-        let component = Component::from_binary(&ENGINE, &component).unwrap();
+            .encode()?;
+        let component = Component::from_binary(&ENGINE, &component)?;
 
         let _ = self.component.set(component);
         log::info!("loaded plugin ({:01} mb)", size as f64 / (1024. * 1024.));
