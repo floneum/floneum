@@ -10,6 +10,7 @@ use llm::{
 };
 use slab::Slab;
 use std::fmt::Debug;
+use std::sync::Mutex;
 use std::{
     collections::HashMap,
     convert::Infallible,
@@ -61,7 +62,6 @@ impl InferenceSessions {
         }
         let model = download(ty);
         let session = model.start_session(InferenceSessionConfig {
-            use_gpu: true,
             ..Default::default()
         });
         ModelId {
@@ -89,7 +89,7 @@ impl InferenceSessions {
 
         let tokens = model.tokenizer().tokenize(&prompt, false).unwrap();
 
-        let sampler = Arc::new(StructuredSampler::new(
+        let sampler = Arc::new(Mutex::new(StructuredSampler::new(
             match model.tokenizer() {
                 llm::Tokenizer::Embedded(embedded) => llm::Tokenizer::Embedded(embedded.clone()),
                 llm::Tokenizer::HuggingFace(hugging_face) => {
@@ -98,7 +98,7 @@ impl InferenceSessions {
             },
             validator.clone(),
             tokens.len() + 1,
-        ));
+        )));
 
         let token_ids = tokens.iter().map(|(_, id)| *id).collect::<Vec<_>>();
 
@@ -113,13 +113,12 @@ impl InferenceSessions {
 
         let maximum_token_count = request.maximum_token_count.unwrap_or(usize::MAX);
 
-        let parameters = request.parameters;
         let mut output = OutputRequest::default();
 
         // Feed the initial prompt through the transformer, to update its
         // context window with new data.
         session
-            .feed_prompt(&**model, parameters, request.prompt, &mut output, |_| {
+            .feed_prompt(&**model, request.prompt, &mut output, |_| {
                 Result::<_, std::convert::Infallible>::Ok(InferenceFeedback::Continue)
             })
             .unwrap();
@@ -133,8 +132,6 @@ impl InferenceSessions {
         while tokens_processed < maximum_token_count {
             let parameters = &InferenceParameters {
                 sampler: sampler.clone(),
-                n_batch: 16,
-                n_threads: 12,
             };
 
             let token = match session.infer_next_token(&**model, parameters, &mut output, &mut rng)
@@ -153,7 +150,7 @@ impl InferenceSessions {
 
             loop {
                 let borrowed = result_tokens.iter().map(|x| x.as_str()).collect::<Vec<_>>();
-                let status = sampler.structure.validate(ParseStream::new(&borrowed));
+                let status = sampler.lock().unwrap().structure.validate(ParseStream::new(&borrowed));
                 match status {
                     ParseStatus::Incomplete {
                         required_next: Some(required_next),
@@ -164,7 +161,6 @@ impl InferenceSessions {
                         session
                             .feed_prompt(
                                 &**model,
-                                parameters,
                                 llm::Prompt::Tokens(&token_ids),
                                 &mut output,
                                 |_| {
@@ -244,8 +240,7 @@ impl InferenceSessions {
             embedding.clone()
         } else {
             let (model, _, _) = self.session_get(id);
-            let inference_parameters = llm::InferenceParameters::default();
-            let new_embedding = get_embeddings(model.as_ref(), &inference_parameters, text);
+            let new_embedding = get_embeddings(model.as_ref(), text);
             cache.insert(text.to_string(), new_embedding.clone());
             new_embedding
         }
