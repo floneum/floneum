@@ -1,6 +1,5 @@
-use llm::{Sampler, TokenBias, TokenId, Tokenizer};
-use partial_sort::PartialSort;
-use rand::{distributions::WeightedIndex, prelude::Distribution};
+use llm::{TokenBias, TokenId, Tokenizer};
+use llm_samplers::types::{HasSamplerResources, Logits};
 use std::fmt::Debug;
 
 use crate::structured_parser::{ParseStatus, ParseStream, Validate};
@@ -93,108 +92,17 @@ impl<V: for<'a> Validate<'a>> Debug for StructuredSampler<V> {
     }
 }
 
-impl<V: for<'a> Validate<'a> + Send + Sync> Sampler for StructuredSampler<V> {
-    fn sample(
-        &self,
-        previous_tokens: &[TokenId],
-        logits: &[f32],
-        rng: &mut dyn rand::RngCore,
-    ) -> TokenId {
-        let Self {
-            top_k,
-            top_p,
-            repeat_penalty,
-            temperature,
-            repetition_penalty_last_n,
-            ..
-        } = *self;
-        let bias_tokens = &self.bias_tokens;
-
-        let n_logits = logits.len();
-        let mut logits_id = Vec::<(f32, TokenId)>::with_capacity(n_logits);
-
-        // TODO: consider if this can be modularized and this sampler can be composed out of multiple pieces,
-        // instead of having this monolithic function that embeds the repetition penalty and token bias
-        {
-            let scale = 1.0 / temperature;
-            for (i, &logit) in logits.iter().enumerate() {
-                let tid = i as TokenId;
-
-                let val = if self.invalid_token(previous_tokens, tid) {
-                    continue;
-                } else if let Some(logit_override) = bias_tokens.get(tid) {
-                    logit_override
-                } else if previous_tokens[previous_tokens
-                    .len()
-                    .saturating_sub(repetition_penalty_last_n)..]
-                    .contains(&(i as TokenId))
-                {
-                    // repetition penalty from CTRL paper (https://arxiv.org/abs/1909.05858)
-                    // credit https://github.com/facebookresearch/llama/compare/main...shawwn:llama:main
-
-                    // if score < 0 then repetition penalty has to multiplied to reduce the previous token probability
-                    if logits[i] < 0.0 {
-                        logit * scale * repeat_penalty
-                    } else {
-                        logit * scale / repeat_penalty
-                    }
-                } else {
-                    logit * scale
-                };
-                logits_id.push((val, tid));
-            }
-        }
-
-        // find the top K tokens
-        {
-            let logits_id_len = logits_id.len();
-            logits_id.partial_sort(top_k.min(logits_id_len), |a, b| {
-                // Sort descending
-                b.0.total_cmp(&a.0)
-            });
-            logits_id.truncate(top_k);
-        }
-
-        let maxl = logits_id
-            .iter()
-            .map(|x| x.0)
-            .max_by(f32::total_cmp)
-            .unwrap();
-
-        // compute probs for the top K tokens
-        let mut probs: Vec<f32> = logits_id
-            .iter()
-            .copied()
-            .map(|(k, _)| (k - maxl).exp())
-            .collect();
-        let sum: f32 = probs.iter().copied().sum();
-
-        // Normalize the probs
-        for p in probs.iter_mut() {
-            *p /= sum;
-        }
-
-        // Top p sampling
-        if top_p < 1.0 {
-            let mut cumsum = 0.0;
-            for i in 0..probs.len() {
-                cumsum += probs[i];
-                if cumsum >= top_p {
-                    probs.truncate(i + 1);
-                    logits_id.truncate(i + 1);
-                    break;
-                }
-            }
-
-            cumsum = 1.0 / cumsum;
-            for p in probs.iter_mut() {
-                *p *= cumsum;
-            }
-        }
-
-        let dist = WeightedIndex::new(&probs).expect("WeightedIndex error");
-        let idx = dist.sample(rng);
-
-        logits_id[idx].1
+impl<V: for<'a> Validate<'a> + Send + Sync> llm_samplers::prelude::Sampler<TokenId, f32>
+    for StructuredSampler<V>
+{
+    fn sample<'a>(
+        &mut self,
+        res: &mut dyn HasSamplerResources<TokenId = TokenId>,
+        logits: &'a mut Logits<TokenId, f32>,
+    ) -> anyhow::Result<&'a mut Logits<TokenId, f32>> {
+        res.with_last_tokens(&mut |previous_tokens| {
+            logits.retain(|tid| !self.invalid_token(previous_tokens, tid.token_id))
+        })?;
+        Ok(logits)
     }
 }

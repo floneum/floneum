@@ -2137,6 +2137,7 @@ dependencies = [
  "headless_chrome",
  "instant-distance",
  "llm",
+ "llm-samplers",
  "log",
  "once_cell",
  "partial_sort",
@@ -2568,7 +2569,7 @@ dependencies = [
 [[package]]
 name = "ggml"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm?rev=7f13bb90f678e2bdf70d221f1b790fab55cb4d7f#7f13bb90f678e2bdf70d221f1b790fab55cb4d7f"
+source = "git+https://github.com/rustformers/llm#2f6ffd4435799ceaa1d1bcb5a8790e5b3e0c5663"
 dependencies = [
  "ggml-sys",
  "memmap2",
@@ -2578,7 +2579,7 @@ dependencies = [
 [[package]]
 name = "ggml-sys"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm?rev=7f13bb90f678e2bdf70d221f1b790fab55cb4d7f#7f13bb90f678e2bdf70d221f1b790fab55cb4d7f"
+source = "git+https://github.com/rustformers/llm#2f6ffd4435799ceaa1d1bcb5a8790e5b3e0c5663"
 dependencies = [
  "cc",
 ]
@@ -3761,7 +3762,7 @@ checksum = "57bcfdad1b858c2db7c38303a6d2ad4dfaf5eb53dfeb0910128b2c26d6158503"
 [[package]]
 name = "llm"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm?rev=7f13bb90f678e2bdf70d221f1b790fab55cb4d7f#7f13bb90f678e2bdf70d221f1b790fab55cb4d7f"
+source = "git+https://github.com/rustformers/llm#2f6ffd4435799ceaa1d1bcb5a8790e5b3e0c5663"
 dependencies = [
  "llm-base",
  "llm-bloom",
@@ -3771,16 +3772,18 @@ dependencies = [
  "llm-llama",
  "llm-mpt",
  "serde",
+ "tracing",
 ]
 
 [[package]]
 name = "llm-base"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm?rev=7f13bb90f678e2bdf70d221f1b790fab55cb4d7f#7f13bb90f678e2bdf70d221f1b790fab55cb4d7f"
+source = "git+https://github.com/rustformers/llm#2f6ffd4435799ceaa1d1bcb5a8790e5b3e0c5663"
 dependencies = [
  "bytemuck",
  "ggml",
  "half 2.3.1",
+ "llm-samplers",
  "memmap2",
  "partial_sort",
  "rand 0.8.5",
@@ -3789,12 +3792,13 @@ dependencies = [
  "serde_bytes",
  "thiserror",
  "tokenizers",
+ "tracing",
 ]
 
 [[package]]
 name = "llm-bloom"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm?rev=7f13bb90f678e2bdf70d221f1b790fab55cb4d7f#7f13bb90f678e2bdf70d221f1b790fab55cb4d7f"
+source = "git+https://github.com/rustformers/llm#2f6ffd4435799ceaa1d1bcb5a8790e5b3e0c5663"
 dependencies = [
  "llm-base",
 ]
@@ -3802,7 +3806,7 @@ dependencies = [
 [[package]]
 name = "llm-gpt2"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm?rev=7f13bb90f678e2bdf70d221f1b790fab55cb4d7f#7f13bb90f678e2bdf70d221f1b790fab55cb4d7f"
+source = "git+https://github.com/rustformers/llm#2f6ffd4435799ceaa1d1bcb5a8790e5b3e0c5663"
 dependencies = [
  "bytemuck",
  "llm-base",
@@ -3811,7 +3815,7 @@ dependencies = [
 [[package]]
 name = "llm-gptj"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm?rev=7f13bb90f678e2bdf70d221f1b790fab55cb4d7f#7f13bb90f678e2bdf70d221f1b790fab55cb4d7f"
+source = "git+https://github.com/rustformers/llm#2f6ffd4435799ceaa1d1bcb5a8790e5b3e0c5663"
 dependencies = [
  "llm-base",
 ]
@@ -3819,7 +3823,7 @@ dependencies = [
 [[package]]
 name = "llm-gptneox"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm?rev=7f13bb90f678e2bdf70d221f1b790fab55cb4d7f#7f13bb90f678e2bdf70d221f1b790fab55cb4d7f"
+source = "git+https://github.com/rustformers/llm#2f6ffd4435799ceaa1d1bcb5a8790e5b3e0c5663"
 dependencies = [
  "llm-base",
 ]
@@ -3827,17 +3831,30 @@ dependencies = [
 [[package]]
 name = "llm-llama"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm?rev=7f13bb90f678e2bdf70d221f1b790fab55cb4d7f#7f13bb90f678e2bdf70d221f1b790fab55cb4d7f"
+source = "git+https://github.com/rustformers/llm#2f6ffd4435799ceaa1d1bcb5a8790e5b3e0c5663"
 dependencies = [
  "llm-base",
+ "tracing",
 ]
 
 [[package]]
 name = "llm-mpt"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm?rev=7f13bb90f678e2bdf70d221f1b790fab55cb4d7f#7f13bb90f678e2bdf70d221f1b790fab55cb4d7f"
+source = "git+https://github.com/rustformers/llm#2f6ffd4435799ceaa1d1bcb5a8790e5b3e0c5663"
 dependencies = [
  "llm-base",
+]
+
+[[package]]
+name = "llm-samplers"
+version = "0.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7553f60d113c9cdc6a5402456a31cd9a273bef79f6f16d8a4f7b4bedf5f754b2"
+dependencies = [
+ "anyhow",
+ "num-traits",
+ "rand 0.8.5",
+ "thiserror",
 ]
 
 [[package]]
