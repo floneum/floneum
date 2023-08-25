@@ -283,11 +283,7 @@ impl PackageIndexEntry {
         meta: Option<PackageStructure>,
         remote: Option<Remote>,
     ) -> Self {
-        let mut path = if path.extension() == Some(std::ffi::OsStr::new("wasm")) {
-            path.parent().unwrap().to_path_buf()
-        } else {
-            path
-        };
+        let mut path = path;
         if let Ok(new) = path.strip_prefix(packages_path().unwrap()) {
             path = new.to_path_buf();
         }
@@ -314,7 +310,11 @@ impl PackageIndexEntry {
     }
 
     pub fn wasm_path(&self) -> std::path::PathBuf {
-        self.path().join("package.wasm")
+        let path = self.path();
+        if let Some("wasm") = path.extension().and_then(|ext| ext.to_str()) {
+            return path;
+        }
+        path.join("package.wasm")
     }
 
     pub async fn wasm_bytes(&self) -> anyhow::Result<Vec<u8>> {
