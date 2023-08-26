@@ -325,6 +325,7 @@ pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
 
     render! {
         div { position: "relative",
+            style: "-webkit-user-select: none; -ms-user-select: none; user-select: none;",
             width: "100%",
             height: "100%",
             div {
