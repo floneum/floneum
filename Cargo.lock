@@ -2198,10 +2198,12 @@ dependencies = [
  "hyper",
  "log",
  "octocrab",
+ "once_cell",
  "serde",
  "tokio",
  "toml 0.7.6",
  "tracing",
+ "urlencoding",
 ]
 
 [[package]]

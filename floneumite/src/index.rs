@@ -1,6 +1,7 @@
 use crate::{package, packages_path, Config, PackageStructure};
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, time::SystemTime};
+use crate::OCTOCRAB;
 
 const PACKAGE_INDEX_TIMEOUT: u64 = 60 * 60 * 24 * 3; // 3 days
 
@@ -51,7 +52,7 @@ impl FloneumPackageIndex {
         package: PackageStructure,
     ) -> anyhow::Result<PackageIndexEntry> {
         log::info!("found: {}", package.name);
-        let repo_path = format!("dist/{}/package.wasm", package.name);
+        let repo_path = format!("dist/{}/package.wasm", urlencoding::encode(&package.name));
         let bytes = repo.get_file(&repo_path).await?;
 
         let package_path = path.join(&package.name).join(&package.package_version);
@@ -68,7 +69,7 @@ impl FloneumPackageIndex {
         item: octocrab::models::Repository,
         path: PathBuf,
     ) -> anyhow::Result<Vec<PackageIndexEntry>> {
-        let instance = octocrab::instance();
+        let instance = &*OCTOCRAB;
         let mut combined_packages = Vec::new();
 
         if let Some(author) = &item.owner {
@@ -109,7 +110,7 @@ impl FloneumPackageIndex {
     pub async fn fetch() -> anyhow::Result<Self> {
         let path = packages_path()?;
 
-        let instance = octocrab::instance();
+        let instance = &*OCTOCRAB;
         let page = instance
             .search()
             .repositories("topic:floneum")
@@ -188,7 +189,7 @@ impl RepoId {
     }
 
     pub async fn get_file(&self, path: &str) -> anyhow::Result<Vec<u8>> {
-        let instance = octocrab::instance();
+        let instance = &*OCTOCRAB;
         let repo_handle = instance.repos(self.owner.clone(), self.name.clone());
         let commits = repo_handle.list_commits().send().await?;
         if let Some(last_commit) = commits.items.first() {
@@ -202,7 +203,7 @@ impl RepoId {
     }
 
     pub async fn update(&self, name: &str, version: &str, old_sha: &str) -> anyhow::Result<()> {
-        let instance = octocrab::instance();
+        let instance = &*OCTOCRAB;
         let repo_handle = instance.repos(self.owner.clone(), self.name.clone());
         let commits = repo_handle.list_commits().send().await?;
         if let Some(last_commit) = commits.items.first() {
