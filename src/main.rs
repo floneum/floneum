@@ -3,8 +3,8 @@
 
 use anyhow::Result;
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
+use dioxus_desktop::tao::menu::{MenuBar, MenuItem};
 use dioxus_desktop::{tao::window::Icon, WindowBuilder};
-use dioxus_desktop::tao::menu::{MenuItem, MenuBar};
 use dioxus_signals::*;
 use floneum_plugin::Plugin;
 use floneumite::FloneumPackageIndex;
@@ -212,7 +212,7 @@ fn make_config() -> dioxus_desktop::Config {
     edit_menu.add_native_item(MenuItem::Copy);
     edit_menu.add_native_item(MenuItem::Paste);
     edit_menu.add_native_item(MenuItem::SelectAll);
-    
+
     window_menu.add_native_item(MenuItem::Quit);
     window_menu.add_native_item(MenuItem::Minimize);
     window_menu.add_native_item(MenuItem::Zoom);
@@ -227,7 +227,11 @@ fn make_config() -> dioxus_desktop::Config {
 
     let tailwind = include_str!("../public/tailwind.css");
     dioxus_desktop::Config::default()
-        .with_window(WindowBuilder::new().with_title("Floneum").with_menu(main_menu))
+        .with_window(
+            WindowBuilder::new()
+                .with_title("Floneum")
+                .with_menu(main_menu),
+        )
         .with_icon(Icon::from_rgba(include_bytes!("../public/Icon.rgba").to_vec(), 64, 64).unwrap())
         .with_custom_head(
             r#"
