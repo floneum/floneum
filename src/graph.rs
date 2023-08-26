@@ -68,22 +68,22 @@ impl VisualGraph {
         let mut inputs = Vec::new();
 
         for input in &instance.metadata().inputs {
-            inputs.push(Signal::new(NodeInput::new(
+            inputs.push(Signal::new_in_scope(NodeInput::new(
                 input.clone(),
                 input.ty.create(),
-            )));
+            ), self.inner.origin_scope()));
         }
 
         let mut outputs = Vec::new();
 
         for output in &instance.metadata().outputs {
-            outputs.push(Signal::new(NodeOutput {
+            outputs.push(Signal::new_in_scope(NodeOutput {
                 definition: output.clone(),
                 value: output.ty.create_output(),
-            }));
+            }, self.inner.origin_scope()));
         }
 
-        let node = Signal::new(Node {
+        let node = Signal::new_in_scope(Node {
             instance,
             position: Point2D::new(0.0, 0.0),
             running: false,
@@ -94,7 +94,7 @@ impl VisualGraph {
             outputs,
             width: 120.0,
             height: 120.0,
-        });
+        }, self.inner.origin_scope());
         let idx = inner.graph.add_node(node);
         inner.graph[idx].write().id = idx;
     }
