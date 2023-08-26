@@ -150,7 +150,11 @@ impl InferenceSessions {
 
             loop {
                 let borrowed = result_tokens.iter().map(|x| x.as_str()).collect::<Vec<_>>();
-                let status = sampler.lock().unwrap().structure.validate(ParseStream::new(&borrowed));
+                let status = sampler
+                    .lock()
+                    .unwrap()
+                    .structure
+                    .validate(ParseStream::new(&borrowed));
                 match status {
                     ParseStatus::Incomplete {
                         required_next: Some(required_next),

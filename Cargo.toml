@@ -70,6 +70,7 @@ members = [
     "plugins/find_child_node",
     "plugins/get_article",
 ]
+exclude = ["wasmtime"]
 
 # The profile that 'cargo dist' will build with
 [profile.dist]
