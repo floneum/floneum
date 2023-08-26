@@ -64,7 +64,7 @@ fn LoadRegisteredPlugin(cx: Scope) -> Element {
                     rsx! {
                         for entry in plugins.entries().iter().filter(|entry| {
                             if let Some(meta) = entry.meta(){
-                                text_words.iter().all(|word| meta.name.contains(word.trim()))
+                                text_words.iter().all(|word| meta.name.to_lowercase().contains(&word.trim().to_lowercase()))
                             }
                             else {
                                 false
