@@ -92,7 +92,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                     div {
                         class: "flex flex-col",
                         "{name}: "
-                        input {
+                        textarea {
                             class: "border border-gray-400 rounded hover:border-gray-500 focus:outline-none focus:border-blue-500",
                             value: "{value}",
                             oninput: |e| {

@@ -54,11 +54,6 @@ pub(crate) fn make_config() -> dioxus_desktop::Config {
         .with_icon(Icon::from_rgba(include_bytes!("../public/Icon.rgba").to_vec(), 64, 64).unwrap())
         .with_custom_head(
             r#"
-<script>
-window.addEventListener('scroll', () => {
-document.body.style.setProperty('--scroll', window.pageYOffset / (document.body.offsetHeight - window.innerHeight));
-}, false);
-</script>
 <style type="text/css">
     html, body {
         height: 100%;
