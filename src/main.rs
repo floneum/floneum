@@ -3,14 +3,12 @@
 
 use anyhow::Result;
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
-use dioxus_desktop::tao::menu::{MenuBar, MenuItem};
-use dioxus_desktop::{tao::window::Icon, WindowBuilder};
 use dioxus_signals::*;
 use floneum_plugin::Plugin;
 use floneumite::FloneumPackageIndex;
 use petgraph::stable_graph::{DefaultIx, NodeIndex};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fs::File, io::Read, io::Write, rc::Rc};
+use std::{collections::HashMap, fs::File, io::Read, rc::Rc};
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -30,34 +28,16 @@ mod sidebar;
 use sidebar::Sidebar;
 mod current_node;
 use current_node::CurrentNodeInfo;
+
+use crate::window::{make_config, use_apply_menu_event};
 mod input;
 mod node_value;
 mod output;
+mod window;
 
 const SAVE_NAME: &str = "workflow.toml";
 
 pub type Point = Point2D<f32, f32>;
-
-fn save_to_file<D: Serialize>(data: &D) {
-    let mut current_dir = std::env::current_dir().unwrap();
-    current_dir.push(SAVE_NAME);
-    match File::create(current_dir) {
-        Ok(mut file) => {
-            log::info!("serializing");
-            match toml::to_string(data) {
-                Ok(bytes) => {
-                    let _ = file.write_all(bytes.as_bytes());
-                }
-                Err(err) => {
-                    log::error!("{}", err);
-                }
-            }
-        }
-        Err(err) => {
-            log::error!("{}", err);
-        }
-    }
-}
 
 #[tokio::main]
 async fn main() {
@@ -130,12 +110,6 @@ impl PartialEq for ApplicationState {
     }
 }
 
-impl Drop for ApplicationState {
-    fn drop(&mut self) {
-        save_to_file(self);
-    }
-}
-
 pub fn use_provide_application_state(cx: &ScopeState) -> Signal<ApplicationState> {
     *use_context_provider(cx, || {
         let mut current_dir = std::env::current_dir().unwrap();
@@ -168,6 +142,7 @@ fn App(cx: Scope) -> Element {
     use_package_manager_provider(cx);
     let state = use_provide_application_state(cx);
     let graph = state.read().graph.clone();
+    use_apply_menu_event(cx, state);
 
     render! {
         FlowView {
@@ -197,63 +172,4 @@ pub fn use_package_manager(cx: &ScopeState) -> Option<Rc<FloneumPackageIndex>> {
         .unwrap()
         .read()
         .clone()
-}
-
-fn make_config() -> dioxus_desktop::Config {
-    // Add a bunch of built-in menu items
-    let mut main_menu = MenuBar::new();
-    let mut edit_menu = MenuBar::new();
-    let mut window_menu = MenuBar::new();
-
-    edit_menu.add_native_item(MenuItem::Undo);
-    edit_menu.add_native_item(MenuItem::Redo);
-    edit_menu.add_native_item(MenuItem::Separator);
-    edit_menu.add_native_item(MenuItem::Cut);
-    edit_menu.add_native_item(MenuItem::Copy);
-    edit_menu.add_native_item(MenuItem::Paste);
-    edit_menu.add_native_item(MenuItem::SelectAll);
-
-    window_menu.add_native_item(MenuItem::Quit);
-    window_menu.add_native_item(MenuItem::Minimize);
-    window_menu.add_native_item(MenuItem::Zoom);
-    window_menu.add_native_item(MenuItem::Separator);
-    window_menu.add_native_item(MenuItem::ShowAll);
-    window_menu.add_native_item(MenuItem::EnterFullScreen);
-    window_menu.add_native_item(MenuItem::Separator);
-    window_menu.add_native_item(MenuItem::CloseWindow);
-
-    main_menu.add_submenu("Edit", true, edit_menu);
-    main_menu.add_submenu("Window", true, window_menu);
-
-    let tailwind = include_str!("../public/tailwind.css");
-    dioxus_desktop::Config::default()
-        .with_window(
-            WindowBuilder::new()
-                .with_title("Floneum")
-                .with_menu(main_menu),
-        )
-        .with_icon(Icon::from_rgba(include_bytes!("../public/Icon.rgba").to_vec(), 64, 64).unwrap())
-        .with_custom_head(
-            r#"
-<style type="text/css">
-    html, body {
-        height: 100%;
-        margin: 0;
-        overscroll-behavior-y: none;
-        overscroll-behavior-x: none;
-        overflow: hidden;
-    }
-    #main, #bodywrap {
-        height: 100%;
-        margin: 0;
-        overscroll-behavior-x: none;
-        overscroll-behavior-y: none;
-    }
-</style>
-<style type="text/css">
-"#
-            .to_owned()
-                + tailwind
-                + "</style>",
-        )
 }

@@ -7,8 +7,8 @@ pub struct Edge {
 }
 
 impl Edge {
-    pub fn new(start: usize, end: Connection,) -> Self {
-        Self { start, end,}
+    pub fn new(start: usize, end: Connection) -> Self {
+        Self { start, end }
     }
 }
 
