@@ -127,7 +127,8 @@ async fn package_and_build(
             floneumite::PackageStructure::new(name, &version, description, &binding_version)
                 .with_authors(authors);
 
-        let package_path = package_path.join(name);
+        // Normalize case to lowercase for github
+        let package_path = package_path.join(name.to_lowercase());
         std::fs::create_dir_all(&package_path).unwrap();
 
         let wasm_path = package_path.join("package.wasm");

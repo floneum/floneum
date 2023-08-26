@@ -716,7 +716,11 @@ impl<'de> Deserialize<'de> for PluginInstance {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         // Just deserialize the source
         let source = PackageIndexEntry::deserialize(deserializer)?;
-        Ok(async move { load_plugin_from_source(source).instance().await.unwrap() }.block_on())
+        Ok(
+            async move { load_plugin_from_source(source).instance().await }
+                .block_on()
+                .unwrap(),
+        )
     }
 }
 

@@ -52,7 +52,11 @@ impl FloneumPackageIndex {
         package: PackageStructure,
     ) -> anyhow::Result<PackageIndexEntry> {
         log::info!("found: {}", package.name);
-        let repo_path = format!("dist/{}/package.wasm", urlencoding::encode(&package.name));
+        // We need to normalize the case and url encode the package name before sending it to github
+        let repo_path = format!(
+            "dist/{}/package.wasm",
+            urlencoding::encode(&package.name.to_lowercase())
+        );
         let bytes = repo.get_file(&repo_path).await?;
 
         let package_path = path.join(&package.name).join(&package.package_version);
@@ -196,6 +200,10 @@ impl RepoId {
             let file = repo_handle.raw_file(last_commit.sha.clone(), path).await?;
             let body = file.into_body();
             let bytes = hyper::body::to_bytes(body).await?;
+            if bytes.len() < 5000usize {
+                log::error!("fetched file is suspiciously small");
+                log::error!("File contents: {:?}", bytes);
+            }
             Ok(bytes.to_vec())
         } else {
             Err(anyhow::anyhow!("No commits found"))
