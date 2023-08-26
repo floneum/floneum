@@ -4,6 +4,7 @@
 use anyhow::Result;
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
 use dioxus_desktop::{tao::window::Icon, WindowBuilder};
+use dioxus_desktop::tao::menu::{MenuItem, MenuBar};
 use dioxus_signals::*;
 use floneum_plugin::Plugin;
 use floneumite::FloneumPackageIndex;
@@ -199,9 +200,34 @@ pub fn use_package_manager(cx: &ScopeState) -> Option<Rc<FloneumPackageIndex>> {
 }
 
 fn make_config() -> dioxus_desktop::Config {
+    // Add a bunch of built-in menu items
+    let mut main_menu = MenuBar::new();
+    let mut edit_menu = MenuBar::new();
+    let mut window_menu = MenuBar::new();
+
+    edit_menu.add_native_item(MenuItem::Undo);
+    edit_menu.add_native_item(MenuItem::Redo);
+    edit_menu.add_native_item(MenuItem::Separator);
+    edit_menu.add_native_item(MenuItem::Cut);
+    edit_menu.add_native_item(MenuItem::Copy);
+    edit_menu.add_native_item(MenuItem::Paste);
+    edit_menu.add_native_item(MenuItem::SelectAll);
+    
+    window_menu.add_native_item(MenuItem::Quit);
+    window_menu.add_native_item(MenuItem::Minimize);
+    window_menu.add_native_item(MenuItem::Zoom);
+    window_menu.add_native_item(MenuItem::Separator);
+    window_menu.add_native_item(MenuItem::ShowAll);
+    window_menu.add_native_item(MenuItem::EnterFullScreen);
+    window_menu.add_native_item(MenuItem::Separator);
+    window_menu.add_native_item(MenuItem::CloseWindow);
+
+    main_menu.add_submenu("Edit", true, edit_menu);
+    main_menu.add_submenu("Window", true, window_menu);
+
     let tailwind = include_str!("../public/tailwind.css");
     dioxus_desktop::Config::default()
-        .with_window(WindowBuilder::new().with_title("Floneum"))
+        .with_window(WindowBuilder::new().with_title("Floneum").with_menu(main_menu))
         .with_icon(Icon::from_rgba(include_bytes!("../public/Icon.rgba").to_vec(), 64, 64).unwrap())
         .with_custom_head(
             r#"
