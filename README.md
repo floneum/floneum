@@ -38,5 +38,5 @@ floneum build --release --packages floneum_add_embedding,floneum_embedding,flone
 
 ```
 npx tailwindcss -i ./input.css -o ./public/tailwind.css --watch
-cargo run
+cargo run --release --target aarch64-apple-darwin # Or whatever the target triple for your current device is
 ```

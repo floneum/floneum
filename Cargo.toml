@@ -79,8 +79,9 @@ lto = "thin"
 
 [profile.release]
 lto = true
-debug = false
+panic = "abort"
 opt-level = 'z'
+strip = true
 codegen-units = 1
 
 [profile.dev.package."*"]

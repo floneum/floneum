@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use cargo_metadata::{Metadata, MetadataCommand};
 use clap::{Parser, Subcommand};
 use floneum_plugin::*;
-use floneumite::{Config, PackageStructure};
+use floneumite::{Config, PackageStructure, packages_path};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -15,12 +15,15 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Build a Floneum plugin(s)
     Build {
         #[arg(short, long, value_delimiter = ',')]
         packages: Vec<String>,
         #[arg(short, long)]
         release: bool,
     },
+    /// Cleans the packages that have been fetched from github. By default, this will be refreshed every three days.
+    Clean {}
 }
 
 #[tokio::main]
@@ -30,6 +33,10 @@ async fn main() {
     match args.command {
         Commands::Build { release, packages } => {
             build(release, packages, Some(&PathBuf::from("dist"))).await;
+        }
+        Commands::Clean {} => {
+            let path = packages_path().unwrap();
+            std::fs::remove_dir_all(path).unwrap();
         }
     }
 }
