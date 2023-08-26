@@ -35,6 +35,7 @@ dioxus-desktop = { git = "https://github.com/ealmloff/dioxus", branch = "improve
 dioxus-router = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
 dioxus-signals = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals", features = ["serialize"] }
 dioxus-free-icons = { version = "0.7.0", features = ["ionicons"] }
+rfd = "0.11.4"
 
 [patch.crates-io]
 dioxus-core = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
