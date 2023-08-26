@@ -29,17 +29,17 @@ once_cell = "1.18.0"
 wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", features = ['component-model'] }
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
-dioxus = { git = "https://github.com/dioxuslabs/dioxus" }
+dioxus = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
 petgraph = { version = "0.6.3", features = ["serde-1"] }
-dioxus-desktop = { git = "https://github.com/dioxuslabs/dioxus" }
-dioxus-router = { git = "https://github.com/dioxuslabs/dioxus" }
-dioxus-signals = { git = "https://github.com/dioxuslabs/dioxus", features = ["serialize"] }
+dioxus-desktop = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
+dioxus-router = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
+dioxus-signals = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals", features = ["serialize"] }
 dioxus-free-icons = { version = "0.7.0", features = ["ionicons"] }
 
 [patch.crates-io]
-dioxus-core = { git = "https://github.com/dioxuslabs/dioxus" }
-dioxus-rsx = { git = "https://github.com/dioxuslabs/dioxus" }
-dioxus = { git = "https://github.com/dioxuslabs/dioxus" }
+dioxus-core = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
+dioxus-rsx = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
+dioxus = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
 
 [workspace]
 members = [
@@ -70,7 +70,6 @@ members = [
     "plugins/find_child_node",
     "plugins/get_article",
 ]
-exclude = ["wasmtime"]
 
 # The profile that 'cargo dist' will build with
 [profile.dist]
@@ -79,9 +78,10 @@ lto = "thin"
 
 [profile.release]
 lto = true
-panic = "abort"
+# panic = "abort"
 opt-level = 'z'
-strip = true
+# strip = true
+debug = true
 codegen-units = 1
 
 [profile.dev.package."*"]

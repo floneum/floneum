@@ -43,7 +43,7 @@ pub struct NodeDragInfo {
     pub node: Signal<Node>,
 }
 
-#[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
+#[derive(PartialEq, Clone, Copy, Serialize, Deserialize, Debug)]
 pub enum DraggingIndex {
     Input(crate::edge::Connection),
     Output(usize),
@@ -235,25 +235,27 @@ impl VisualGraph {
         output_id: petgraph::graph::NodeIndex,
         edge: Signal<Edge>,
     ) {
-        if self.check_connection_validity(input_id, output_id, edge) {
+        if !self.check_connection_validity(input_id, output_id, edge) {
             return;
         }
         let mut current_graph = self.inner.write();
         // remove any existing connections to this input
         let mut edges_to_remove = Vec::new();
-        let input_index = edge.read().end;
-        for edge in current_graph
-            .graph
-            .edges_directed(input_id, petgraph::Direction::Incoming)
         {
-            if edge.weight().read().end == input_index {
-                edges_to_remove.push(edge.id());
+            let input_index = edge.read().end;
+            for edge in current_graph
+                .graph
+                .edges_directed(output_id, petgraph::Direction::Incoming)
+            {
+                if edge.weight().read().end == input_index {
+                    edges_to_remove.push(edge.id());
+                }
+            }
+            for edge in edges_to_remove {
+                current_graph.graph.remove_edge(edge);
             }
         }
-        for edge in edges_to_remove {
-            current_graph.graph.remove_edge(edge);
-        }
-        current_graph.graph.add_edge(output_id, input_id, edge);
+        current_graph.graph.add_edge(input_id, output_id, edge);
     }
 
     pub(crate) fn finish_connection(
@@ -261,12 +263,15 @@ impl VisualGraph {
         node_id: petgraph::graph::NodeIndex,
         index: DraggingIndex,
     ) {
-        let mut current_graph = self.inner.write();
+        let current_graph = self.inner.read();
         if let Some(CurrentlyDragging::Connection(currently_dragging)) =
             &current_graph.currently_dragging
         {
-            let currently_dragging_id = currently_dragging.from.read().id;
-            let ((input_id, input_index), (output_id, output_index)) =
+            let currently_dragging_id = {
+                let from = currently_dragging.from.read();
+                from.id
+            };
+            let ((output_id, output_index), (input_id, input_index)) =
                 match (index, currently_dragging.index) {
                     (DraggingIndex::Input(input), DraggingIndex::Output(output)) => {
                         ((node_id, input), (currently_dragging_id, output))
@@ -276,13 +281,13 @@ impl VisualGraph {
                     }
                     _ => return,
                 };
-            let start_node = current_graph.graph[input_id].read();
-            let ty = start_node.output_type(output_index).unwrap();
-            drop(start_node);
-            let edge = Signal::new(Edge::new(output_index, input_index, ty));
+            drop(current_graph);
+            let edge = Signal::new(Edge::new(input_index, output_index,));
             self.connect(input_id, output_id, edge);
+        } else {
+            drop(current_graph);
         }
-        current_graph.currently_dragging = None;
+        self.inner.write().currently_dragging = None;
     }
 }
 

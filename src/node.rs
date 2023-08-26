@@ -319,7 +319,7 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                         let start_id;
                         let end_id;
                         match currently_dragging.index {
-                            DraggingIndex::Output(start_index) => {
+                            DraggingIndex::Output(input_node_idx) => {
                                 let node = node.read();
                                 let combined = node.input_connections()
                                     .map(|index| {
@@ -332,15 +332,14 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                     })
                                     .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
                                     .unwrap();
-                                let input_idx = combined.0;
+                                let output_node_idx = combined.0;
                                 dist = combined.1;
                                 let start_node = currently_dragging.from.read();
                                 start_id = start_node.id;
                                 end_id = current_node_id;
-                                let ty = start_node.output_type(start_index).unwrap();
-                                edge = Signal::new(Edge::new(start_index, input_idx, ty));
+                                edge = Signal::new(Edge::new(input_node_idx, output_node_idx));
                             }
-                            DraggingIndex::Input(start_index) => {
+                            DraggingIndex::Input(output_node_idx) => {
                                 let node = node.read();
                                 let combined = (0..node.outputs.len())
                                     .map(|i| {
@@ -353,17 +352,16 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                     })
                                     .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
                                     .unwrap();
-                                let output_idx = combined.0;
+                                let input_node_idx = combined.0;
                                 dist = combined.1;
                                 let start_node = currently_dragging.from.read();
-                                end_id = start_node.id;
                                 start_id = current_node_id;
-                                let ty = start_node.output_type(output_idx).unwrap();
-                                edge = Signal::new(Edge::new(output_idx, start_index, ty));
+                                end_id = start_node.id;
+                                edge = Signal::new(Edge::new(input_node_idx, output_node_idx));
                             }
                         }
                         if dist < SNAP_DISTANCE.powi(2) {
-                            graph.connect(end_id, start_id, edge);
+                            graph.connect(start_id, end_id, edge);
                         }
                     }
                 }

@@ -1,7 +1,7 @@
+use crate::OCTOCRAB;
 use crate::{package, packages_path, Config, PackageStructure};
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, time::SystemTime};
-use crate::OCTOCRAB;
 
 const PACKAGE_INDEX_TIMEOUT: u64 = 60 * 60 * 24 * 3; // 3 days
 

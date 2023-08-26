@@ -1,16 +1,14 @@
-use floneum_plugin::exports::plugins::main::definitions::ValueType;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Edge {
     pub start: usize,
     pub end: Connection,
-    pub ty: ValueType,
 }
 
 impl Edge {
-    pub fn new(start: usize, end: Connection, ty: ValueType) -> Self {
-        Self { start, end, ty }
+    pub fn new(start: usize, end: Connection,) -> Self {
+        Self { start, end,}
     }
 }
 

@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use cargo_metadata::{Metadata, MetadataCommand};
 use clap::{Parser, Subcommand};
 use floneum_plugin::*;
-use floneumite::{Config, PackageStructure, packages_path};
+use floneumite::{packages_path, Config, PackageStructure};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -23,7 +23,7 @@ enum Commands {
         release: bool,
     },
     /// Cleans the packages that have been fetched from github. By default, this will be refreshed every three days.
-    Clean {}
+    Clean {},
 }
 
 #[tokio::main]

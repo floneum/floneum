@@ -1,7 +1,6 @@
-
-use once_cell::sync::Lazy;
 use anyhow::anyhow;
 use directories::BaseDirs;
+use once_cell::sync::Lazy;
 
 mod package;
 pub use package::PackageStructure;
@@ -20,18 +19,13 @@ pub fn packages_path() -> anyhow::Result<std::path::PathBuf> {
     Ok(path)
 }
 
-static OCTOCRAB: Lazy<octocrab::Octocrab> = Lazy::new(|| {
-    match std::env::var("GITHUB_TOKEN"){
-        Ok(token) => octocrab::OctocrabBuilder::new()
-            .personal_token(token)
-            .build()
-            .unwrap(),
-        Err(_) => {
-            tracing::warn!("No GITHUB_TOKEN found, using unauthenticated requests. If you are hitting the rate limit, you can set a GITHUB_TOKEN to increase the rate limit.");
-            octocrab::OctocrabBuilder::new()
-            .build()
-            .unwrap()
-        },
+static OCTOCRAB: Lazy<octocrab::Octocrab> = Lazy::new(|| match std::env::var("GITHUB_TOKEN") {
+    Ok(token) => octocrab::OctocrabBuilder::new()
+        .personal_token(token)
+        .build()
+        .unwrap(),
+    Err(_) => {
+        tracing::warn!("No GITHUB_TOKEN found, using unauthenticated requests. If you are hitting the rate limit, you can set a GITHUB_TOKEN to increase the rate limit.");
+        octocrab::OctocrabBuilder::new().build().unwrap()
     }
-}
-);
+});
