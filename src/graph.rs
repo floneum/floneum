@@ -219,6 +219,60 @@ impl VisualGraph {
         true
     }
 
+    pub fn run_node(&self, cx: &ScopeState, node: Signal<Node>) {
+        let current_node_id = {
+            let current = node.read();
+            current.id
+        };
+        if self.set_input_nodes(current_node_id) {
+            let mut current_node = node.write();
+            let inputs = current_node
+                .inputs
+                .iter()
+                .map(|input| input.read().value())
+                .collect();
+            log::trace!(
+                "Running node {:?} with inputs {:?}",
+                current_node_id,
+                inputs
+            );
+            current_node.running = true;
+            current_node.queued = true;
+
+            let fut = current_node.instance.run(inputs);
+            let graph = self.inner;
+            cx.spawn(async move {
+                match fut.await.as_deref() {
+                    Some(Ok(result)) => {
+                        let current_node = node.read();
+                        for (out, current) in result.iter().zip(current_node.outputs.iter()) {
+                            current.write().value = out.clone();
+                        }
+
+                        let current_graph = graph.read();
+                        for edge in current_graph
+                            .graph
+                            .edges_directed(current_node_id, petgraph::Direction::Outgoing)
+                        {
+                            let new_node_id = edge.target();
+                            let node = current_graph.graph[new_node_id].clone();
+                            node.write().queued = true;
+                        }
+                    }
+                    Some(Err(err)) => {
+                        log::error!("Error running node {:?}: {:?}", current_node_id, err);
+                        let mut node_mut = node.write();
+                        node_mut.error = Some(err.to_string());
+                    }
+                    None => {}
+                }
+                let mut current_node = node.write();
+                current_node.running = false;
+                current_node.queued = false;
+            });
+        }
+    }
+
     pub fn check_connection_validity(
         &self,
         input_id: petgraph::graph::NodeIndex,

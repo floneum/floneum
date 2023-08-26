@@ -400,8 +400,19 @@ fn CenterNodeUI(cx: Scope<NodeProps>) -> Element {
     let application = use_application_state(cx);
     let focused = application.read().currently_focused == Some(cx.props.node);
     let node = cx.props.node;
+    {
+        let current_node = node.read();
+        if current_node.queued {
+            drop(current_node);
+            {
+                let mut node = node.write();
+                node.queued = false;
+            }
+            let application = application.write();
+            application.graph.run_node(cx, node);
+        }
+    }
     let current_node = node.read();
-    let current_node_id = current_node.id;
     let name = &current_node.instance.metadata().name;
     let focused_class = if focused {
         "border-2 border-blue-500"
@@ -438,35 +449,7 @@ fn CenterNodeUI(cx: Scope<NodeProps>) -> Element {
                         button {
                             class: "p-1 border rounded-md hover:bg-gray-200",
                             onclick: move |_| {
-                                if application.read().graph.set_input_nodes(current_node_id) {
-                                    let mut current_node = cx.props.node.write();
-                                    let inputs = current_node.inputs.iter().map(|input| input.read().value()).collect();
-                                    log::trace!("Running node {:?} with inputs {:?}", current_node_id, inputs);
-                                    current_node.running = true;
-                                    current_node.queued = true;
-
-                                    let fut = current_node.instance.run(inputs);
-                                    let node = cx.props.node;
-                                    cx.spawn(async move {
-                                        match fut.await.as_deref() {
-                                            Some(Ok(result)) => {
-                                                let current_node = node.read();
-                                                for (out, current) in result.iter().zip(current_node.outputs.iter()) {
-                                                    current.write().value = out.clone();
-                                                }
-                                            }
-                                            Some(Err(err)) => {
-                                                log::error!("Error running node {:?}: {:?}", current_node_id, err);
-                                                let mut node_mut = node.write();
-                                                node_mut.error = Some(err.to_string());
-                                            }
-                                            None => {}
-                                        }
-                                        let mut current_node = node.write();
-                                        current_node.running = false;
-                                        current_node.queued = false;
-                                    });
-                                }
+                                node.write().queued = true;
                             },
                             "Run"
                         }
