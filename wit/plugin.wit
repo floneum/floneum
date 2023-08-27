@@ -159,6 +159,8 @@ interface definitions {
     database(embedding-db-id),
     number(s64),
     text(string),
+    file(string),
+    folder(string),
     embedding(embedding),
     boolean(bool),
     tab(tab-id),
@@ -173,6 +175,8 @@ interface definitions {
   enum primitive-value-type {
     number,
     text,
+    file,
+    folder,
     embedding,
     database,
     model,

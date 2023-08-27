@@ -181,6 +181,12 @@ impl IoDefinitionType {
             PrimitiveValueType::Text => quote! {
                 PrimitiveValue::Text(inner)
             },
+            PrimitiveValueType::File => quote! {
+                PrimitiveValue::File(inner)
+            },
+            PrimitiveValueType::Folder => quote! {
+                PrimitiveValue::Folder(inner)
+            },
             PrimitiveValueType::Embedding => quote! {
                 PrimitiveValue::Embedding(inner)
             },
@@ -255,6 +261,12 @@ impl ToTokens for IoDefinitionType {
             },
             PrimitiveValueType::Text => quote! {
                 floneum_rust::PrimitiveValueType::Text
+            },
+            PrimitiveValueType::File => quote! {
+                floneum_rust::PrimitiveValueType::File
+            },
+            PrimitiveValueType::Folder => quote! {
+                floneum_rust::PrimitiveValueType::Folder
             },
             PrimitiveValueType::Embedding => quote! {
                 floneum_rust::PrimitiveValueType::Embedding
@@ -374,6 +386,10 @@ fn parse_primitive_value_type(ident: &Ident) -> syn::Result<PrimitiveValueType> 
         Ok(PrimitiveValueType::ModelType)
     } else if ident == "bool" {
         Ok(PrimitiveValueType::Boolean)
+    } else if ident == "File" {
+        Ok(PrimitiveValueType::File)
+    } else if ident == "Folder" {
+        Ok(PrimitiveValueType::Folder)
     } else if ident == "PrimitiveValue" {
         Ok(PrimitiveValueType::Any)
     } else if ident == "Tab" || ident == "TabId" {
