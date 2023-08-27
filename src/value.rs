@@ -246,6 +246,8 @@ impl Variants for ModelType {
 impl Variants for ValueType {
     const VARIANTS: &'static [Self] = &[
         ValueType::Single(PrimitiveValueType::Text),
+        ValueType::Single(PrimitiveValueType::File),
+        ValueType::Single(PrimitiveValueType::Folder),
         ValueType::Single(PrimitiveValueType::Number),
         ValueType::Single(PrimitiveValueType::Boolean),
         ValueType::Single(PrimitiveValueType::Embedding),
@@ -256,6 +258,8 @@ impl Variants for ValueType {
         ValueType::Single(PrimitiveValueType::Node),
         ValueType::Single(PrimitiveValueType::Any),
         ValueType::Many(PrimitiveValueType::Text),
+        ValueType::Many(PrimitiveValueType::File),
+        ValueType::Many(PrimitiveValueType::Folder),
         ValueType::Many(PrimitiveValueType::Number),
         ValueType::Many(PrimitiveValueType::Boolean),
         ValueType::Many(PrimitiveValueType::Embedding),
