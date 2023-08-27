@@ -82,7 +82,7 @@ lto = true
 panic = "abort"
 opt-level = 'z'
 strip = true
-debug = true
+# debug = true
 codegen-units = 1
 
 [profile.dev.package."*"]

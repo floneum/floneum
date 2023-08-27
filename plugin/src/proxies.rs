@@ -85,6 +85,8 @@ impl<'a> Deserialize<'a> for Output {
 enum MyPrimitiveValue {
     Number(i64),
     Text(String),
+    File(String),
+    Folder(String),
     Embedding(Vec<f32>),
     Model(u32),
     Database(u32),
@@ -99,6 +101,8 @@ impl From<PrimitiveValue> for MyPrimitiveValue {
         match value {
             PrimitiveValue::Number(value) => MyPrimitiveValue::Number(value),
             PrimitiveValue::Text(value) => MyPrimitiveValue::Text(value),
+            PrimitiveValue::File(value) => MyPrimitiveValue::File(value),
+            PrimitiveValue::Folder(value) => MyPrimitiveValue::Folder(value),
             PrimitiveValue::Embedding(value) => MyPrimitiveValue::Embedding(value.vector),
             PrimitiveValue::Model(value) => MyPrimitiveValue::Model(value.id),
             PrimitiveValue::Database(value) => MyPrimitiveValue::Database(value.id),
@@ -118,6 +122,8 @@ impl From<MyPrimitiveValue> for PrimitiveValue {
         match value {
             MyPrimitiveValue::Number(value) => PrimitiveValue::Number(value),
             MyPrimitiveValue::Text(value) => PrimitiveValue::Text(value),
+            MyPrimitiveValue::File(value) => PrimitiveValue::File(value),
+            MyPrimitiveValue::Folder(value) => PrimitiveValue::Folder(value),
             MyPrimitiveValue::Embedding(value) => {
                 PrimitiveValue::Embedding(Embedding { vector: value })
             }
@@ -290,6 +296,8 @@ impl PrimitiveValueType {
         match self {
             PrimitiveValueType::Number => PrimitiveValue::Number(0),
             PrimitiveValueType::Text => PrimitiveValue::Text("".to_string()),
+            PrimitiveValueType::File => PrimitiveValue::File("".to_string()),
+            PrimitiveValueType::Folder => PrimitiveValue::Folder("".to_string()),
             PrimitiveValueType::Embedding => {
                 PrimitiveValue::Embedding(Embedding { vector: vec![0.0] })
             }
@@ -389,6 +397,8 @@ impl<'de> Deserialize<'de> for ValueType {
 enum MyPrimitiveValueType {
     Number,
     Text,
+    File,
+    Folder,
     Embedding,
     Database,
     Model,
@@ -404,6 +414,8 @@ impl From<PrimitiveValueType> for MyPrimitiveValueType {
         match value {
             PrimitiveValueType::Number => MyPrimitiveValueType::Number,
             PrimitiveValueType::Text => MyPrimitiveValueType::Text,
+            PrimitiveValueType::File => MyPrimitiveValueType::File,
+            PrimitiveValueType::Folder => MyPrimitiveValueType::Folder,
             PrimitiveValueType::Embedding => MyPrimitiveValueType::Embedding,
             PrimitiveValueType::Database => MyPrimitiveValueType::Database,
             PrimitiveValueType::Model => MyPrimitiveValueType::Model,
@@ -421,6 +433,8 @@ impl From<MyPrimitiveValueType> for PrimitiveValueType {
         match value {
             MyPrimitiveValueType::Number => PrimitiveValueType::Number,
             MyPrimitiveValueType::Text => PrimitiveValueType::Text,
+            MyPrimitiveValueType::File => PrimitiveValueType::File,
+            MyPrimitiveValueType::Folder => PrimitiveValueType::Folder,
             MyPrimitiveValueType::Embedding => PrimitiveValueType::Embedding,
             MyPrimitiveValueType::Database => PrimitiveValueType::Database,
             MyPrimitiveValueType::Model => PrimitiveValueType::Model,

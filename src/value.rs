@@ -49,7 +49,9 @@ pub fn ShowOutput(cx: Scope, value: Signal<NodeOutput>) -> Element {
 
 fn show_primitive_value<'a>(cx: &'a ScopeState, value: &PrimitiveValue) -> Element<'a> {
     match value {
-        PrimitiveValue::Text(value) => {
+        PrimitiveValue::Text(value)
+        | PrimitiveValue::File(value)
+        | PrimitiveValue::Folder(value) => {
             render! {"{value}"}
         }
         PrimitiveValue::Embedding(value) => {
@@ -102,11 +104,45 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                     }
                 }
             }
+            PrimitiveValue::File(file) => {
+                render! {
+                    button {
+                        class: "border border-gray-400 rounded hover:border-gray-500 focus:outline-none focus:border-blue-500",
+                        onclick: |_| {
+                            node.write().value = rfd::FileDialog::new()
+                                .set_file_name("Floneum")
+                                .set_title("Select File")
+                                .pick_file()
+                                .map(|path| vec![Input::Single(PrimitiveValue::File(path.to_string_lossy().to_string()))])
+                                .unwrap_or_else(|| vec![Input::Single(PrimitiveValue::File("".to_string()))]);
+                        },
+                        "Select File"
+                    }
+                    "{file}"
+                }
+            }
+            PrimitiveValue::Folder(folder) => {
+                render! {
+                    button {
+                        class: "border border-gray-400 rounded hover:border-gray-500 focus:outline-none focus:border-blue-500",
+                        onclick: |_| {
+                            node.write().value = rfd::FileDialog::new()
+                                .set_file_name("Floneum")
+                                .set_title("Select Folder")
+                                .pick_folder()
+                                .map(|path| vec![Input::Single(PrimitiveValue::File(path.to_string_lossy().to_string()))])
+                                .unwrap_or_else(|| vec![Input::Single(PrimitiveValue::File("".to_string()))]);
+                        },
+                        "Select Folder"
+                    }
+                    "{folder}"
+                }
+            }
             PrimitiveValue::Embedding(_)
             | PrimitiveValue::Model(_)
             | PrimitiveValue::Database(_)
             | PrimitiveValue::Tab(_)
-            | PrimitiveValue::Node { .. } => None,
+            | PrimitiveValue::Node { .. } => show_primitive_value(cx, &current_primitive),
             PrimitiveValue::Number(value) => {
                 render! {
                     div {

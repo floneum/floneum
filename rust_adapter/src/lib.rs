@@ -25,6 +25,8 @@ mod logging;
 pub use logging::Logger;
 mod state;
 pub use state::*;
+mod filesystem;
+pub use filesystem::*;
 
 wit_bindgen::generate!({path: "../wit", macro_export});
 

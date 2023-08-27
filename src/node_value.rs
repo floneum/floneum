@@ -55,6 +55,8 @@ impl NodeInput {
                 })),
                 PrimitiveValueType::Number => Input::Single(PrimitiveValue::Number(0)),
                 PrimitiveValueType::Text => Input::Single(PrimitiveValue::Text("".to_string())),
+                PrimitiveValueType::File => Input::Single(PrimitiveValue::File("".to_string())),
+                PrimitiveValueType::Folder => Input::Single(PrimitiveValue::Folder("".to_string())),
                 PrimitiveValueType::Embedding => {
                     Input::Single(PrimitiveValue::Embedding(Embedding { vector: Vec::new() }))
                 }
