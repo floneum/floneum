@@ -27,6 +27,7 @@ const BUILT_IN_PLUGINS: &[&str] = &[
     "Type In Node",
     "Navigate To",
     "Get Article",
+    "Read Rss Stream",
 ];
 
 pub fn PluginSearch(cx: Scope) -> Element {
