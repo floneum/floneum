@@ -231,7 +231,7 @@ impl VisualGraph {
                 .iter()
                 .map(|input| input.read().value())
                 .collect();
-            log::trace!(
+            log::info!(
                 "Running node {:?} with inputs {:?}",
                 current_node_id,
                 inputs

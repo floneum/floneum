@@ -1,0 +1,16 @@
+[package]
+name = "floneum_read_rss"
+version = "0.1.0"
+edition = "2021"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+publish = false
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+floneum_rust = { path = "../../rust_adapter" }
+rss = "2.0.6"
+readability = { version = "0.2.0", default_features = false }
+url = "2.4.0"

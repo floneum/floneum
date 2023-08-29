@@ -70,6 +70,7 @@ members = [
     "plugins/navigate_to",
     "plugins/find_child_node",
     "plugins/get_article",
+    "plugins/read_rss",
 ]
 
 # The profile that 'cargo dist' will build with
@@ -80,6 +81,7 @@ lto = "thin"
 [profile.release]
 lto = true
 # panic = "abort"
+# opt-level = 3
 opt-level = 'z'
 # strip = true
 # debug = true
