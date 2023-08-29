@@ -19,8 +19,8 @@ pub fn ShowOutput(cx: Scope, value: Signal<NodeOutput>) -> Element {
         Output::Single(value) => {
             render! {
                 div {
-                    class: "flex flex-col",
-                    "{key}:"
+                    class: "flex flex-col whitespace-pre-line",
+                    "{key}:\n"
                     show_primitive_value(cx, value)
                 }
             }
@@ -31,7 +31,10 @@ pub fn ShowOutput(cx: Scope, value: Signal<NodeOutput>) -> Element {
                     class: "flex flex-col",
                     "{key}:"
                     for value in &value {
-                        show_primitive_value(cx, value)
+                        div {
+                            class: "whitespace-pre-line",
+                            show_primitive_value(cx, value)
+                        }
                     }
                 }
             }
@@ -211,7 +214,10 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                         class: "flex flex-col",
                         "{name}: "
                         for value in values.iter() {
-                            div { show_primitive_value(cx, value) }
+                            div {
+                                class: "whitespace-pre-line",
+                                show_primitive_value(cx, value)
+                            }
                         }
                     }
                 }

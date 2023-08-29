@@ -612,6 +612,10 @@ video {
   overflow-x: scroll;
 }
 
+.whitespace-pre-line {
+  white-space: pre-line;
+}
+
 .rounded {
   border-radius: 0.25rem;
 }

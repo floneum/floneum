@@ -202,3 +202,10 @@ authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Read an article from a URL"
 package_version = "0.1.0"
 binding_version = "*"
+
+[[packages]]
+name = "Read Rss Stream"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Reads a rss stream from a url"
+package_version = "0.1.0"
+binding_version = "*"

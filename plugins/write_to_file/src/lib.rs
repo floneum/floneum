@@ -8,9 +8,8 @@ pub fn write_to_file(
     /// The text to write to the file
     text: String,
     /// The path to the file to write to
-    file_path: String,
+    file_path: File,
 ) {
-    let file_path = std::path::PathBuf::from(file_path);
-    let mut file = std::fs::File::create(file_path).unwrap();
+    let mut file = std::fs::File::create(&*file_path).unwrap();
     file.write_all(text.as_bytes()).unwrap();
 }
