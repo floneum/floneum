@@ -457,7 +457,7 @@ pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
                             }
                         }
                     }),
-                    current_graph.graph.node_identifiers().map(|id|{
+                    current_graph.graph.node_identifiers().map(|id| {
                         let node = current_graph.graph[id];
                         rsx! {
                             Node {
@@ -468,7 +468,6 @@ pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
                     }),
 
                     if let Some(CurrentlyDragging::Connection(current_graph_dragging)) = &current_graph_dragging {
-                        let current_graph_dragging = current_graph_dragging.clone();
                         rsx! {
                             CurrentlyDragging {
                                 from: current_graph_dragging.from,

@@ -1425,7 +1425,7 @@ dependencies = [
 [[package]]
 name = "dioxus"
 version = "0.4.2"
-source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#1882d5818c83cd07735a97a3769ff599a84ca631"
+source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#4e68055ded244820ee000999c60168fe2deb797b"
 dependencies = [
  "dioxus-core",
  "dioxus-core-macro",
@@ -1438,7 +1438,7 @@ dependencies = [
 [[package]]
 name = "dioxus-core"
 version = "0.4.2"
-source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#1882d5818c83cd07735a97a3769ff599a84ca631"
+source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#4e68055ded244820ee000999c60168fe2deb797b"
 dependencies = [
  "bumpalo",
  "futures-channel",
@@ -1454,7 +1454,7 @@ dependencies = [
 [[package]]
 name = "dioxus-core-macro"
 version = "0.4.2"
-source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#1882d5818c83cd07735a97a3769ff599a84ca631"
+source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#4e68055ded244820ee000999c60168fe2deb797b"
 dependencies = [
  "dioxus-rsx",
  "proc-macro2",
@@ -1471,7 +1471,7 @@ checksum = "2ea539174bb236e0e7dc9c12b19b88eae3cb574dedbd0252a2d43ea7e6de13e2"
 [[package]]
 name = "dioxus-desktop"
 version = "0.4.2"
-source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#1882d5818c83cd07735a97a3769ff599a84ca631"
+source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#4e68055ded244820ee000999c60168fe2deb797b"
 dependencies = [
  "async-trait",
  "core-foundation",
@@ -1509,7 +1509,7 @@ dependencies = [
 [[package]]
 name = "dioxus-hooks"
 version = "0.4.2"
-source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#1882d5818c83cd07735a97a3769ff599a84ca631"
+source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#4e68055ded244820ee000999c60168fe2deb797b"
 dependencies = [
  "dioxus-core",
  "dioxus-debug-cell",
@@ -1522,7 +1522,7 @@ dependencies = [
 [[package]]
 name = "dioxus-hot-reload"
 version = "0.4.2"
-source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#1882d5818c83cd07735a97a3769ff599a84ca631"
+source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#4e68055ded244820ee000999c60168fe2deb797b"
 dependencies = [
  "dioxus-core",
  "dioxus-html",
@@ -1535,7 +1535,7 @@ dependencies = [
 [[package]]
 name = "dioxus-html"
 version = "0.4.2"
-source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#1882d5818c83cd07735a97a3769ff599a84ca631"
+source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#4e68055ded244820ee000999c60168fe2deb797b"
 dependencies = [
  "async-channel",
  "async-trait",
@@ -1554,12 +1554,12 @@ dependencies = [
 [[package]]
 name = "dioxus-interpreter-js"
 version = "0.4.2"
-source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#1882d5818c83cd07735a97a3769ff599a84ca631"
+source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#4e68055ded244820ee000999c60168fe2deb797b"
 
 [[package]]
 name = "dioxus-router"
 version = "0.4.2"
-source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#1882d5818c83cd07735a97a3769ff599a84ca631"
+source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#4e68055ded244820ee000999c60168fe2deb797b"
 dependencies = [
  "anyhow",
  "dioxus",
@@ -1578,7 +1578,7 @@ dependencies = [
 [[package]]
 name = "dioxus-router-macro"
 version = "0.4.2"
-source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#1882d5818c83cd07735a97a3769ff599a84ca631"
+source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#4e68055ded244820ee000999c60168fe2deb797b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1589,7 +1589,7 @@ dependencies = [
 [[package]]
 name = "dioxus-rsx"
 version = "0.4.2"
-source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#1882d5818c83cd07735a97a3769ff599a84ca631"
+source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#4e68055ded244820ee000999c60168fe2deb797b"
 dependencies = [
  "dioxus-core",
  "proc-macro2",
@@ -1600,7 +1600,7 @@ dependencies = [
 [[package]]
 name = "dioxus-signals"
 version = "0.0.0"
-source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#1882d5818c83cd07735a97a3769ff599a84ca631"
+source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#4e68055ded244820ee000999c60168fe2deb797b"
 dependencies = [
  "dioxus-core",
  "generational-box",
@@ -2528,7 +2528,7 @@ dependencies = [
 [[package]]
 name = "generational-box"
 version = "0.0.0"
-source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#1882d5818c83cd07735a97a3769ff599a84ca631"
+source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#4e68055ded244820ee000999c60168fe2deb797b"
 dependencies = [
  "bumpalo",
 ]
