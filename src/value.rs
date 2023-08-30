@@ -115,7 +115,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                             node.write().value = rfd::FileDialog::new()
                                 .set_file_name("Floneum")
                                 .set_title("Select File")
-                                .pick_file()
+                                .save_file()
                                 .map(|path| vec![Input::Single(PrimitiveValue::File(path.to_string_lossy().to_string()))])
                                 .unwrap_or_else(|| vec![Input::Single(PrimitiveValue::File("".to_string()))]);
                         },

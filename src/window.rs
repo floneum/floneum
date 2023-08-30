@@ -95,7 +95,7 @@ pub fn use_apply_menu_event(cx: &ScopeState, state: Signal<ApplicationState>) {
 
     if let Some(buffer) = open_application.take() {
         let as_str = std::str::from_utf8(&buffer).unwrap();
-        if let Ok(from_storage) = toml::from_str(as_str) {
+        if let Ok(from_storage) = serde_json::from_str(as_str) {
             state.set(from_storage);
         }
     }
@@ -161,7 +161,7 @@ impl SaveAsMenuItem {
         if let Some(save_location) = rfd::FileDialog::new()
             .set_file_name("Floneum")
             .set_title("Save Location")
-            .add_filter("Toml", &["toml"])
+            .add_filter("Json", &["json"])
             .save_file()
         {
             save_to_file(state, save_location);
@@ -217,7 +217,7 @@ fn save_to_file<D: Serialize>(data: &D, file: PathBuf) {
     match File::create(file) {
         Ok(mut file) => {
             log::info!("serializing");
-            match toml::to_string(data) {
+            match serde_json::to_string(data) {
                 Ok(bytes) => {
                     let _ = file.write_all(bytes.as_bytes());
                 }

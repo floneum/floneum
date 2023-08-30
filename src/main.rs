@@ -35,7 +35,7 @@ mod node_value;
 mod output;
 mod window;
 
-const SAVE_NAME: &str = "workflow.toml";
+const SAVE_NAME: &str = "workflow.json";
 
 pub type Point = Point2D<f32, f32>;
 
@@ -121,10 +121,12 @@ pub fn use_provide_application_state(cx: &ScopeState) -> Signal<ApplicationState
                 ApplicationState::default()
             } else {
                 let as_str = std::str::from_utf8(&buffer).unwrap();
-                if let Ok(from_storage) = toml::from_str(as_str) {
-                    from_storage
-                } else {
-                    ApplicationState::default()
+                match serde_json::from_str(as_str){
+                    Ok(from_storage) => from_storage,
+                    Err(err) => {
+                        tracing::error!("Failed to deserialize state: {}", err);
+                        ApplicationState::default()
+                    }
                 }
             }
         } else {
