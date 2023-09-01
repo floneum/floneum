@@ -23,14 +23,14 @@ use floneum_rust::{plugins::main::imports::log_to_user, *};
 /// **your real question**
 /// ### ASSISTANT
 ///
-fn generate_text(model: ModelType, input: String) -> String {
+fn generate_text(model: ModelType, text: String, max_size: i64) -> String {
     if !model_downloaded(model) {
         log_to_user("downloading model... This could take several minutes");
     }
 
     let session = ModelInstance::new(model);
 
-    let mut responce = session.infer(&input, Some(100), None);
+    let mut responce = session.infer(&text, (max_size != 0).then(|| max_size as u32), None);
     responce += "\n";
 
     responce
