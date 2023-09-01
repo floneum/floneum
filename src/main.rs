@@ -9,9 +9,6 @@ use floneumite::FloneumPackageIndex;
 use petgraph::stable_graph::{DefaultIx, NodeIndex};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fs::File, io::Read, rc::Rc};
-use tracing_subscriber::filter::LevelFilter;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::util::SubscriberInitExt;
 
 mod node;
 pub use node::Node;
@@ -41,21 +38,24 @@ pub type Point = Point2D<f32, f32>;
 
 #[tokio::main]
 async fn main() {
-    use tracing_subscriber::EnvFilter;
+    // use tracing_subscriber::filter::LevelFilter;
+    // use tracing_subscriber::layer::SubscriberExt;
+    // use tracing_subscriber::util::SubscriberInitExt;
+    // use tracing_subscriber::EnvFilter;
 
-    let file = File::create("debug.log").unwrap();
-    let debug_log = tracing_subscriber::fmt::layer().with_writer(std::sync::Arc::new(file));
+    // let file = File::create("debug.log").unwrap();
+    // let debug_log = tracing_subscriber::fmt::layer().with_writer(std::sync::Arc::new(file));
 
-    let logger = tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::builder()
-                .with_default_directive(LevelFilter::INFO.into())
-                .from_env_lossy(),
-        )
-        .pretty()
-        .finish();
+    // let logger = tracing_subscriber::fmt()
+    //     .with_env_filter(
+    //         EnvFilter::builder()
+    //             .with_default_directive(LevelFilter::INFO.into())
+    //             .from_env_lossy(),
+    //     )
+    //     .pretty()
+    //     .finish();
 
-    logger.with(debug_log).init();
+    // logger.with(debug_log).init();
 
     dioxus_desktop::launch_with_props(App, (), make_config());
 }
@@ -121,7 +121,7 @@ pub fn use_provide_application_state(cx: &ScopeState) -> Signal<ApplicationState
                 ApplicationState::default()
             } else {
                 let as_str = std::str::from_utf8(&buffer).unwrap();
-                match serde_json::from_str(as_str){
+                match serde_json::from_str(as_str) {
                     Ok(from_storage) => from_storage,
                     Err(err) => {
                         tracing::error!("Failed to deserialize state: {}", err);
