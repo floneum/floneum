@@ -10,7 +10,9 @@ pub fn write_to_file(
     /// The path to the file to write to
     file_path: File,
 ) {
-    std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+    if let Some(parent) = file_path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
     let mut file = std::fs::File::create(&*file_path).unwrap();
     file.write_all(text.as_bytes()).unwrap();
 }

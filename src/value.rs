@@ -113,6 +113,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                         class: "border border-gray-400 rounded hover:border-gray-500 focus:outline-none focus:border-blue-500",
                         onclick: |_| {
                             node.write().value = rfd::FileDialog::new()
+                                .set_directory("./sandbox")
                                 .set_file_name("Floneum")
                                 .set_title("Select File")
                                 .save_file()
@@ -130,6 +131,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                         class: "border border-gray-400 rounded hover:border-gray-500 focus:outline-none focus:border-blue-500",
                         onclick: |_| {
                             node.write().value = rfd::FileDialog::new()
+                                .set_directory("./sandbox")
                                 .set_file_name("Floneum")
                                 .set_title("Select Folder")
                                 .pick_folder()
