@@ -27,4 +27,5 @@ headless_chrome = {git = "https://github.com/atroche/rust-headless-chrome", feat
 url = "2.4.0"
 anyhow = "1.0.71"
 tracing = "0.1.37"
+num_cpus = "1.16.0"
 floneumite = { path = "../floneumite" }

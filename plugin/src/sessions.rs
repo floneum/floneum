@@ -62,6 +62,8 @@ impl InferenceSessions {
         }
         let model = download(ty);
         let session = model.start_session(InferenceSessionConfig {
+            n_batch: 64,
+            n_threads: num_cpus::get(),
             ..Default::default()
         });
         ModelId {
@@ -216,15 +218,15 @@ impl InferenceSessions {
             maximum_token_count: max_tokens.map(|x| x as usize),
         };
 
-        session
-            .infer(
-                model.as_ref(),
-                &mut rng,
-                &request,
-                &mut Default::default(),
-                inference_callback(stop_on, &mut buf),
-            )
-            .unwrap_or_else(|e| panic!("{e}"));
+        if let Err(err) = session.infer(
+            model.as_ref(),
+            &mut rng,
+            &request,
+            &mut Default::default(),
+            inference_callback(stop_on, &mut buf),
+        ) {
+            log::error!("{err}")
+        }
 
         buf
     }
