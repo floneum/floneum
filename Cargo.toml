@@ -91,3 +91,6 @@ opt-level = 3
 
 [profile.dev.package.floneum_plugin]
 opt-level = 1
+
+[features]
+metal = ["floneum_plugin/metal"]
