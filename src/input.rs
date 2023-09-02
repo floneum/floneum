@@ -1,4 +1,4 @@
-use dioxus::{html::geometry::euclid::Point2D, prelude::*};
+use dioxus::prelude::*;
 use dioxus_signals::*;
 use floneum_plugin::exports::plugins::main::definitions::ValueType;
 
@@ -101,11 +101,12 @@ pub fn InputConnection(cx: Scope, node: Signal<Node>, index: Connection) -> Elem
             fill: "{color}",
             onmousedown: move |evt| {
                 let graph: VisualGraph = cx.consume_context().unwrap();
-                graph.inner.write().currently_dragging = Some(CurrentlyDragging::Connection(CurrentlyDraggingProps {
+                let new_connection = Some(CurrentlyDragging::Connection(CurrentlyDraggingProps {
                     from: cx.props.node,
                     index: DraggingIndex::Input(index),
-                    to: Signal::new(Point2D::new(evt.page_coordinates().x as f32, evt.page_coordinates().y as f32)),
+                    to: Signal::new(graph.scale_screen_pos(evt.page_coordinates())),
                 }));
+                graph.inner.write().currently_dragging = new_connection;
             },
             onmouseup: move |_| {
                 // Set this as the end of the connection if we're currently dragging and this is the right type of connection

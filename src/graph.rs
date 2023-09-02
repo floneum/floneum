@@ -1,7 +1,8 @@
+use crate::{theme::Theme, Color};
 use std::{collections::HashSet, fmt::Debug};
 
 use dioxus::{
-    html::geometry::euclid::Point2D,
+    html::geometry::{euclid::Point2D, PagePoint},
     prelude::{SvgAttributes, *},
 };
 use floneum_plugin::PluginInstance;
@@ -16,10 +17,23 @@ use crate::{
     Colored, Connection, Edge, Node, Signal,
 };
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize)]
 pub struct VisualGraphInner {
     pub graph: StableGraph<Signal<Node>, Signal<Edge>>,
     pub currently_dragging: Option<CurrentlyDragging>,
+    pub pan_pos: Point2D<f32, f32>,
+    pub zoom: f32,
+}
+
+impl Default for VisualGraphInner {
+    fn default() -> Self {
+        Self {
+            graph: StableGraph::default(),
+            currently_dragging: None,
+            pan_pos: Point2D::new(0.0, 0.0),
+            zoom: 1.0,
+        }
+    }
 }
 
 #[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
@@ -63,6 +77,7 @@ pub struct VisualGraph {
 
 impl VisualGraph {
     pub fn create_node(&self, instance: PluginInstance) {
+        let position = self.scale_screen_pos(PagePoint::new(0., 0.));
         let mut inner = self.inner.write();
 
         let mut inputs = Vec::new();
@@ -89,7 +104,7 @@ impl VisualGraph {
         let node = Signal::new_in_scope(
             Node {
                 instance,
-                position: Point2D::new(0.0, 0.0),
+                position,
                 running: false,
                 queued: false,
                 error: None,
@@ -105,24 +120,32 @@ impl VisualGraph {
         inner.graph[idx].write().id = idx;
     }
 
+    pub fn scale_screen_pos(&self, pos: PagePoint) -> Point2D<f32, f32> {
+        let graph = self.inner.read();
+        let mut pos = Point2D::new(pos.x as f32, pos.y as f32);
+        pos.x /= graph.zoom;
+        pos.y /= graph.zoom;
+        pos.x -= graph.pan_pos.x;
+        pos.y -= graph.pan_pos.y;
+        pos
+    }
+
     pub fn clear_dragging(&self) {
         self.inner.write().currently_dragging = None;
     }
 
     pub fn update_mouse(&self, evt: &MouseData) {
+        let new_pos = self.scale_screen_pos(evt.page_coordinates());
         let mut inner = self.inner.write();
         match &mut inner.currently_dragging {
             Some(CurrentlyDragging::Connection(current_graph_dragging)) => {
                 let mut to = current_graph_dragging.to.write();
-                to.x = evt.page_coordinates().x as f32;
-                to.y = evt.page_coordinates().y as f32;
+                *to = new_pos;
             }
             Some(CurrentlyDragging::Node(current_graph_dragging)) => {
                 let mut node = current_graph_dragging.node.write();
-                node.position.x =
-                    evt.page_coordinates().x as f32 - current_graph_dragging.element_offset.x;
-                node.position.y =
-                    evt.page_coordinates().y as f32 - current_graph_dragging.element_offset.y;
+                node.position.x = new_pos.x as f32 - current_graph_dragging.element_offset.x;
+                node.position.y = new_pos.y as f32 - current_graph_dragging.element_offset.y;
             }
             _ => {}
         }
@@ -364,18 +387,19 @@ pub struct FlowViewProps {
 
 pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
     use_context_provider(cx, || cx.props.graph.clone());
+    let theme = Theme::current();
     let graph = cx.props.graph.inner;
     let current_graph = graph.read();
     let current_graph_dragging = current_graph.currently_dragging.clone();
     let drag_start_pos = use_state(cx, || Option::<Point2D<f32, f32>>::None);
     let drag_pan_pos = use_state(cx, || Option::<Point2D<f32, f32>>::None);
-    let pan_pos = use_state(cx, || Point2D::<f32, f32>::new(0.0, 0.0));
-    let zoom = use_state(cx, || 1.0);
+    let pan_pos = current_graph.pan_pos;
+    let zoom = current_graph.zoom;
     let mut transform_matrix = [1., 0., 0., 1., 0., 0.];
     transform_matrix[4] = pan_pos.x;
     transform_matrix[5] = pan_pos.y;
     for i in &mut transform_matrix {
-        *i *= **zoom;
+        *i *= zoom;
     }
 
     let transform = format!(
@@ -393,21 +417,48 @@ pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
             style: "-webkit-user-select: none; -ms-user-select: none; user-select: none;",
             width: "100%",
             height: "100%",
+            class: "{Color::text_color()}",
             div {
                 position: "absolute",
                 top: "0",
                 left: "0",
                 button {
                     onclick: move |_| {
-                        zoom.set(zoom.get() * 1.1);
+                        let new_zoom = zoom * 1.1;
+                        graph.with_mut(|graph| {
+                            graph.zoom = new_zoom;
+                        });
                     },
                     "+"
                 }
                 button {
                     onclick: move |_| {
-                        zoom.set(zoom.get() * 0.9);
+                        let new_zoom = zoom * 0.9;
+                        graph.with_mut(|graph| {
+                            graph.zoom = new_zoom;
+                        });
                     },
                     "-"
+                }
+                if *theme.read() == Theme::DARK {
+                    rsx! {
+                        button {
+                            onclick: move |_| {
+                                theme.set(Theme::WHITE);
+                            },
+                            "🌞"
+                        }
+                    }
+                }
+                else {
+                    rsx! {
+                        button {
+                            onclick: move |_| {
+                                theme.set(Theme::DARK);
+                            },
+                            "🌙"
+                        }
+                    }
                 }
             }
             svg {
@@ -421,7 +472,7 @@ pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
                 onmousedown: move |evt| {
                     let pos = evt.element_coordinates();
                     drag_start_pos.set(Some(Point2D::new(pos.x as f32, pos.y as f32)));
-                    drag_pan_pos.set(Some(*pan_pos.current()));
+                    drag_pan_pos.set(Some(pan_pos));
                 },
                 onmouseup: move |_| {
                     drag_start_pos.set(None);
@@ -432,13 +483,18 @@ pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
                         let pos = evt.element_coordinates();
                         let end_pos = Point2D::new(pos.x as f32, pos.y as f32);
                         let diff = end_pos - drag_start_pos;
-                        pan_pos.with_mut(|pan_pos| {
-                            pan_pos.x = drag_pan_pos.x + diff.x;
-                            pan_pos.y = drag_pan_pos.y + diff.y;
+                        graph.with_mut(|graph| {
+                            graph.pan_pos.x = drag_pan_pos.x + diff.x;
+                            graph.pan_pos.y = drag_pan_pos.y + diff.y;
                         });
                     }
                     cx.props.graph.update_mouse(&evt);
                 },
+                rect {
+                    width: "100%",
+                    height: "100%",
+                    class: "{Color::background_color()}",
+                }
 
                 g {
                     transform: "{transform}",

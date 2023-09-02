@@ -1,5 +1,4 @@
-use std::path::PathBuf;
-
+use crate::Color;
 use dioxus::prelude::*;
 use floneum_plugin::{
     exports::plugins::main::definitions::{
@@ -7,6 +6,7 @@ use floneum_plugin::{
     },
     plugins::main::types::{GptNeoXType, LlamaType, ModelType, MptType},
 };
+use std::path::PathBuf;
 
 use crate::{
     node_value::{NodeInput, NodeOutput},
@@ -100,7 +100,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                         class: "flex flex-col",
                         "{name}: "
                         textarea {
-                            class: "border border-gray-400 rounded hover:border-gray-500 focus:outline-none focus:border-blue-500",
+                            class: "border {Color::outline_color()} {Color::foreground_color()} rounded hover:border-gray-500 focus:outline-none focus:border-blue-500",
                             value: "{value}",
                             oninput: |e| {
                                 node.write().value = vec![Input::Single(PrimitiveValue::Text(e.value.to_string()))];
@@ -112,7 +112,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
             PrimitiveValue::File(file) => {
                 render! {
                     button {
-                        class: "border border-gray-400 rounded hover:border-gray-500 focus:outline-none focus:border-blue-500",
+                        class: "border {Color::outline_color()} rounded hover:border-gray-500 focus:outline-none focus:border-blue-500",
                         onclick: |_| {
                             node.write().value = rfd::FileDialog::new()
                                 .set_directory("./sandbox")
@@ -130,7 +130,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
             PrimitiveValue::Folder(folder) => {
                 render! {
                     button {
-                        class: "border border-gray-400 rounded hover:border-gray-500 focus:outline-none focus:border-blue-500",
+                        class: "border {Color::outline_color()} rounded hover:border-gray-500 focus:outline-none focus:border-blue-500",
                         onclick: |_| {
                             node.write().value = rfd::FileDialog::new()
                                 .set_directory("./sandbox")
@@ -156,7 +156,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                         class: "flex flex-col",
                         "{name}: "
                         input {
-                            class: "border border-gray-400 rounded hover:border-gray-500 focus:outline-none focus:border-blue-500",
+                            class: "border {Color::outline_color()} {Color::foreground_color()} rounded hover:border-gray-500 focus:outline-none focus:border-blue-500",
                             r#type: "number",
                             value: "{value}",
                             oninput: |e| {
@@ -173,7 +173,8 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                         class: "flex flex-col",
                         "{name}: "
                         select {
-                            class: "border border-gray-400 rounded hover:border-gray-500 focus:outline-none focus:border-blue-500",
+                            class: "border {Color::outline_color()} {Color::foreground_color()} rounded hover:border-gray-500 focus:outline-none focus:border-blue-500",
+                            style: "-webkit-appearance:none; -moz-appearance:none; -ms-appearance:none; appearance: none;",
                             onchange: |e| {
                                 node
                                     .write().value = vec![Input::Single(
@@ -200,7 +201,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                         class: "flex flex-col",
                         "{name}: "
                         input {
-                            class: "border border-gray-400 rounded hover:border-gray-500 focus:outline-none focus:border-blue-500",
+                            class: "border {Color::outline_color()} {Color::foreground_color()} rounded hover:border-gray-500 focus:outline-none focus:border-blue-500",
                             r#type: "checkbox",
                             checked: "{val}",
                             onchange: |e| {

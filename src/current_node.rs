@@ -1,5 +1,4 @@
-use crate::ShowOutput;
-use crate::{use_application_state, ModifyInput};
+use crate::{use_application_state, Color, ModifyInput, ShowOutput};
 use dioxus::prelude::*;
 
 pub fn CurrentNodeInfo(cx: Scope) -> Element {
@@ -22,7 +21,7 @@ pub fn CurrentNodeInfo(cx: Scope) -> Element {
 
                     // Inputs
                     div {
-                        class: "text-left bg-slate-200 rounded-md m-2 p-2",
+                        class: "text-left {Color::foreground_color()} rounded-md m-2 p-2",
                         h2 {
                             class: "text-xl font-bold",
                             "inputs:"
@@ -37,7 +36,7 @@ pub fn CurrentNodeInfo(cx: Scope) -> Element {
 
                     // Outputs
                     div {
-                        class: "text-left bg-slate-200 rounded-md m-2 p-2",
+                        class: "text-left {Color::foreground_color()} rounded-md m-2 p-2",
                         h2 {
                             class: "text-xl font-bold",
                             "outputs:"

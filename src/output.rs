@@ -1,4 +1,4 @@
-use dioxus::{html::geometry::euclid::Point2D, prelude::*};
+use dioxus::prelude::*;
 use dioxus_signals::*;
 
 use crate::{
@@ -23,10 +23,11 @@ pub fn Output(cx: Scope, node: Signal<Node>, index: usize) -> Element {
             fill: "{color}",
             onmousedown: move |evt| {
                 let graph: VisualGraph = cx.consume_context().unwrap();
+                let scaled_pos = graph.scale_screen_pos(evt.page_coordinates());
                 graph.inner.write().currently_dragging = Some(CurrentlyDragging::Connection(CurrentlyDraggingProps {
                     from: cx.props.node,
                     index: DraggingIndex::Output(index),
-                    to: Signal::new(Point2D::new(evt.page_coordinates().x as f32, evt.page_coordinates().y as f32)),
+                    to: Signal::new(scaled_pos),
                 }));
             },
             onmouseup: move |_| {
