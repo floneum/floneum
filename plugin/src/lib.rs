@@ -87,15 +87,15 @@ impl MultiPluginState {
     fn vector_db_get(
         &self,
         id: exports::plugins::main::definitions::EmbeddingDbId,
-    ) -> &VectorDB<String> {
-        self.vector_dbs.get(id.id as usize).unwrap()
+    ) -> Option<&VectorDB<String>> {
+        self.vector_dbs.get(id.id as usize)
     }
 
     fn vector_db_get_mut(
         &mut self,
         id: exports::plugins::main::definitions::EmbeddingDbId,
-    ) -> &mut VectorDB<String> {
-        self.vector_dbs.get_mut(id.id as usize).unwrap()
+    ) -> Option<&mut VectorDB<String>> {
+        self.vector_dbs.get_mut(id.id as usize)
     }
 
     pub fn create_db(
@@ -204,12 +204,11 @@ impl State {
         id: exports::plugins::main::definitions::EmbeddingDbId,
         embedding: exports::plugins::main::definitions::Embedding,
         n: usize,
-    ) -> Vec<String> {
+    ) -> Option<Vec<String>> {
         MULTI_PLUGIN_STATE
             .read()
             .unwrap()
-            .vector_db_get(id)
-            .get_closest(embedding, n)
+            .vector_db_get(id).map(|db| db.get_closest(embedding, n))
     }
 
     pub fn get_within(
@@ -217,12 +216,12 @@ impl State {
         id: exports::plugins::main::definitions::EmbeddingDbId,
         embedding: exports::plugins::main::definitions::Embedding,
         distance: f32,
-    ) -> Vec<String> {
+    ) -> Option<Vec<String>> {
         MULTI_PLUGIN_STATE
             .read()
             .unwrap()
-            .vector_db_get(id)
-            .get_within(embedding, distance)
+            .vector_db_get(id).map(|db| db
+            .get_within(embedding, distance))
     }
 }
 
@@ -313,7 +312,7 @@ impl Host for State {
         MULTI_PLUGIN_STATE
             .write()
             .unwrap()
-            .vector_db_get_mut(id)
+            .vector_db_get_mut(id).ok_or(wasmtime::Error::msg("Invalid embedding db id"))?
             .add_embedding(embedding, document);
         Ok(())
     }
@@ -332,7 +331,7 @@ impl Host for State {
         search: plugins::main::types::Embedding,
         count: u32,
     ) -> std::result::Result<Vec<String>, wasmtime::Error> {
-        Ok(self.get_closest(id, search, count as usize))
+        self.get_closest(id, search, count as usize).ok_or(wasmtime::Error::msg("Invalid embedding db id"))
     }
 
     async fn find_documents_within(
@@ -341,7 +340,7 @@ impl Host for State {
         search: plugins::main::types::Embedding,
         distance: f32,
     ) -> std::result::Result<Vec<String>, wasmtime::Error> {
-        Ok(self.get_within(id, search, distance))
+        self.get_within(id, search, distance).ok_or(wasmtime::Error::msg("Invalid embedding db id"))
     }
 
     async fn infer(
