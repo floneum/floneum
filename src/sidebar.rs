@@ -21,9 +21,32 @@ pub fn Sidebar(cx: Scope) -> Element {
 }
 
 fn Links(cx: Scope) -> Element {
+    let script = r##"
+const BORDER_SIZE = 4;
+const panel = document.getElementById("left_panel");
+
+let m_pos;
+function resize(e){
+    const dx = m_pos - e.x;
+    m_pos = e.x;
+    panel.style.width = (parseInt(getComputedStyle(panel, '').width) + dx) + "px";
+}
+
+panel.addEventListener("mousedown", function(e){
+    if (e.offsetX < BORDER_SIZE) {
+    m_pos = e.x;
+    document.addEventListener("mousemove", resize, false);
+    }
+}, false);
+
+document.addEventListener("mouseup", function(){
+    document.removeEventListener("mousemove", resize, false);
+}, false);
+"##;
     render! {
         div {
-            class: "h-full w-64 {Color::foreground_color()} {Color::text_color()} border-l {Color::outline_color()} top-0 bottom-0 right-0 z-10 fixed overflow-scroll text-center",
+            id: "left_panel",
+            class: "h-full w-64 {Color::foreground_color()} {Color::text_color()} border-l-4 {Color::outline_color()} top-0 bottom-0 right-0 z-10 fixed overflow-scroll text-center",
             div {
                 class: "flex flex-row overflow-x-scroll divide-x border-b {Color::outline_color()}",
                 Link {
@@ -38,6 +61,9 @@ fn Links(cx: Scope) -> Element {
                 }
             }
             Outlet::<SidebarRoute> {}
+        }
+        script {
+            dangerous_inner_html: script
         }
     }
 }
