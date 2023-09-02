@@ -27,9 +27,11 @@ pub fn CurrentNodeInfo(cx: Scope) -> Element {
                             "inputs:"
                         }
                         for input in &node.inputs {
-                            ModifyInput {
-                                key: "{input.read().definition.name}",
-                                value: *input
+                            div {
+                                ModifyInput {
+                                    key: "{input.read().definition.name}",
+                                    value: *input
+                                }
                             }
                         }
                     }
@@ -42,9 +44,11 @@ pub fn CurrentNodeInfo(cx: Scope) -> Element {
                             "outputs:"
                         }
                         for output in &node.outputs {
-                            ShowOutput {
-                                key: "{output.read().definition.name}",
-                                value: *output
+                            div {
+                                ShowOutput {
+                                    key: "{output.read().definition.name}",
+                                    value: *output
+                                }
                             }
                         }
                     }
