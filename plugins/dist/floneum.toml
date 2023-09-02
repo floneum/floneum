@@ -1,0 +1,211 @@
+[[packages]]
+name = "Add Embedding"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Adds a embedding to a database. The model used to generate the embedding and the model type used to create the database must be the same."
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Embedding"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = """
+Creates embeddings for some text.
+
+An embedding is a representation of something like the \"meaning\" of some text. You can use embeddings with embedding databases to find documents similar to anther document."""
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Embedding Db"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = """
+Creates a database of embeddings. (A database is just a different way to store information, in this cases this stores documents in a way that makes it easy to find other documents with similar meanings)
+
+When using this embedding database, you must use the same model to generate the embeddings you insert into this database."""
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Format"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = """
+Formats some text by replacing any instances of {} in order with the texts passed in.
+
+Example:
+
+template: \"Who is {}?\"
+inputs: \"queen of england\"
+
+result: Who is the queen of england?"""
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Generate Text"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = """
+Calls a large language model to generate text.
+
+It is important to keep in mind that the language model is just generating text. Because the model is merely continuing the text you give it, the formatting of that text can be important.
+
+It is commonly helpful to provide a few examples to the model before your new data so that the model can pick up on the pattern of the text
+
+Example:
+The following is a chat between a user and an assistant. The assistant helpfully and succinctly answers questions posed by the user.
+### USER
+Where is Paris.
+### ASSISTANT
+Paris is in France. France is in Europe.
+### USER
+What is 1 + 1?
+### ASSISTANT
+2
+### USER
+**your real question**
+### ASSISTANT"""
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Generate Structured Text"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = """
+Calls a large language model to generate structured text. You can create a template for the language model to fill in. The model will fill in any segments that contain {**type**} where **type** is \"\", bool, or #
+
+It is important to keep in mind that the language model is just generating text. Because the model is merely continuing the text you give it, the formatting of that text can be important.
+
+It is commonly helpful to provide a few examples to the model before your new data so that the model can pick up on the pattern of the text
+
+Example:
+The following is a chat between a user and an assistant. The assistant helpfully and succinctly answers questions posed by the user.
+### USER
+What is 3 + 6?
+### ASSISTANT
+9
+### USER
+What is 1 + 1?
+### ASSISTANT
+2
+### USER
+**your real question**
+### ASSISTANT
+{#}"""
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Search"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = """
+Searches an embedding database for the closest embedding
+
+This node requires that the Embedding Database and the Embedding use the same model.
+
+Returns text with documents separated with newlines."""
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Search Engine"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Searches wikipedia, fetches the top article from wikipedia, and returns it as text"
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "If Statement"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Switch between two values based on a condition"
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Contains"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Checks if some text contains some other text. Returns true if the first text contains the second text."
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Write To File"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Writes some text to a file at the given path (in the /sandbox directory)"
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Read From File"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Reads some text from a file at the given path (in the /sandbox directory)"
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Run Python"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Runs a python script. Returns the value in the last line"
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Create Browser"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Creates a browser tab."
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Find Node"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Finds a node in a tab"
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Find Child Node"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Finds a node in a tab"
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Click Node"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Clicks a node in a tab"
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Node Text"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Gets the text of a node"
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Type In Node"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Types some text in a node"
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Navigate To"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Navigate a tab to a URL"
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Get Article"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Read an article from a URL"
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Read Rss Stream"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Reads a rss stream from a url"
+package_version = "0.1.0"
+binding_version = "*"

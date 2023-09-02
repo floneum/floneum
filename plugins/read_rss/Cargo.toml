@@ -11,6 +11,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 floneum_rust = { path = "../../rust_adapter" }
-rss = "2.0.6"
+rss = { version = "2.0.6", features = ["atom"] }
 readability = { version = "0.2.0", default_features = false }
 url = "2.4.0"
