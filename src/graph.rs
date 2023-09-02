@@ -123,10 +123,10 @@ impl VisualGraph {
     pub fn scale_screen_pos(&self, pos: PagePoint) -> Point2D<f32, f32> {
         let graph = self.inner.read();
         let mut pos = Point2D::new(pos.x as f32, pos.y as f32);
-        pos.x /= graph.zoom;
-        pos.y /= graph.zoom;
         pos.x -= graph.pan_pos.x;
         pos.y -= graph.pan_pos.y;
+        pos.x /= graph.zoom;
+        pos.y /= graph.zoom;
         pos
     }
 
@@ -396,11 +396,11 @@ pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
     let pan_pos = current_graph.pan_pos;
     let zoom = current_graph.zoom;
     let mut transform_matrix = [1., 0., 0., 1., 0., 0.];
-    transform_matrix[4] = pan_pos.x;
-    transform_matrix[5] = pan_pos.y;
     for i in &mut transform_matrix {
         *i *= zoom;
     }
+    transform_matrix[4] = pan_pos.x;
+    transform_matrix[5] = pan_pos.y;
 
     let transform = format!(
         "matrix({} {} {} {} {} {})",
