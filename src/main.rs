@@ -127,6 +127,7 @@ pub fn use_provide_application_state(cx: &ScopeState) -> Signal<ApplicationState
                     Ok(from_storage) => from_storage,
                     Err(err) => {
                         tracing::error!("Failed to deserialize state: {}", err);
+                        eprintln!("Failed to deserialize state: {}", err);
                         ApplicationState::default()
                     }
                 }

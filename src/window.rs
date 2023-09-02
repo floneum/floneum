@@ -193,7 +193,7 @@ impl OpenMenuItem {
         if let Some(open_location) = rfd::FileDialog::new()
             .set_file_name("Floneum")
             .set_title("Open Location")
-            .add_filter("Toml", &["toml"])
+            .add_filter("Json", &["json"])
             .pick_file()
         {
             if let Ok(mut file) = File::open(open_location) {
