@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 #![allow(non_snake_case)]
 
+use crate::theme::Color;
 use anyhow::Result;
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
 use dioxus_signals::*;
@@ -30,6 +31,7 @@ use crate::window::{make_config, use_apply_menu_event};
 mod input;
 mod node_value;
 mod output;
+mod theme;
 mod window;
 
 const SAVE_NAME: &str = "workflow.json";

@@ -1,7 +1,7 @@
-use std::path::PathBuf;
-
+use crate::Color;
 use dioxus::prelude::*;
 use floneum_plugin::{load_plugin, load_plugin_from_source};
+use std::path::PathBuf;
 
 use crate::{use_application_state, use_package_manager};
 
@@ -51,7 +51,7 @@ fn LoadRegisteredPlugin(cx: Scope) -> Element {
             class: "flex flex-col",
             "Add Plugin"
             input {
-                class: "border border-gray-400 rounded-md p-2 m-2",
+                class: "border {Color::outline_color()} {Color::foreground_color()} rounded-md p-2 m-2",
                 r#type: "text",
                 oninput: {
                     let search_text = search_text.clone();
@@ -72,7 +72,7 @@ fn LoadRegisteredPlugin(cx: Scope) -> Element {
                             }
                         }) {
                             button {
-                                class: "hover:bg-gray-200 border border-gray-400 rounded-md p-2 m-2",
+                                class: "{Color::foreground_hover()} border {Color::outline_color()} rounded-md p-2 m-2",
                                 onclick: {
                                     let entry = entry.clone();
                                     move |_| {
@@ -130,7 +130,7 @@ fn LoadLocalPlugin(cx: Scope) -> Element {
             class: "flex flex-col items-left",
             "Add Plugin from File"
             input {
-                class: "border border-gray-400 rounded-md p-2 m-2",
+                class: "border {Color::outline_color()} {Color::foreground_color()} rounded-md p-2 m-2",
                 value: "{search_text}",
                 oninput: move |event| {
                     search_text.set(event.value.clone());
@@ -138,7 +138,7 @@ fn LoadLocalPlugin(cx: Scope) -> Element {
             }
 
             button {
-                class: "hover:bg-gray-200 border border-gray-400 rounded-md p-2 m-2",
+                class: "{Color::foreground_hover()} border {Color::outline_color()} rounded-md p-2 m-2",
                 onclick: move |_| {
                     let path = PathBuf::from(search_text.get());
                     let plugin = load_plugin(&path);

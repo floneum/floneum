@@ -1,3 +1,4 @@
+use crate::Color;
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
 use dioxus_free_icons::Icon;
 use floneum_plugin::exports::plugins::main::definitions::ValueType;
@@ -192,16 +193,6 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
     let pos = current_node.position - Point::new(1., 0.);
 
     render! {
-        // inputs
-        (0..current_node.inputs.len()).map(|index| {
-            rsx! {
-                Input {
-                    node: cx.props.node,
-                    index: index,
-                }
-            }
-        }),
-
         // center UI/Configuration
         foreignObject {
             x: "{pos.x}",
@@ -210,6 +201,7 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
             height: height as f64,
             onmousedown: move |evt| {
                 let graph: VisualGraph = cx.consume_context().unwrap();
+                let scaled_pos = graph.scale_screen_pos(evt.page_coordinates());
                 {
                     let node = node.read();
                     enum Action {
@@ -223,8 +215,8 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                 let input_pos = node.input_pos(index);
                                 (
                                     Action::Snap(DraggingIndex::Input(index)),
-                                    (input_pos.x - evt.page_coordinates().x as f32).powi(2)
-                                        + (input_pos.y - evt.page_coordinates().y as f32).powi(2),
+                                    (input_pos.x - scaled_pos.x as f32).powi(2)
+                                        + (input_pos.y - scaled_pos.y as f32).powi(2),
                                 )
                             })
                             .chain(
@@ -233,8 +225,8 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                         let output_pos = node.input_array_add_element_pos(i);
                                         (
                                             Action::IncreaseArray(i),
-                                            (output_pos.x - evt.page_coordinates().x as f32).powi(2)
-                                                + (output_pos.y - evt.page_coordinates().y as f32).powi(2),
+                                            (output_pos.x - scaled_pos.x as f32).powi(2)
+                                                + (output_pos.y - scaled_pos.y as f32).powi(2),
                                         )
                                     })
                             )
@@ -244,8 +236,8 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                         let output_pos = node.input_array_remove_element_pos(i);
                                         (
                                             Action::DecreaseArray(i),
-                                            (output_pos.x - evt.page_coordinates().x as f32).powi(2)
-                                                + (output_pos.y - evt.page_coordinates().y as f32).powi(2),
+                                            (output_pos.x - scaled_pos.x as f32).powi(2)
+                                                + (output_pos.y - scaled_pos.y as f32).powi(2),
                                         )
                                     })
                             )
@@ -255,8 +247,8 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                         let output_pos = node.output_pos(i);
                                         (
                                             Action::Snap(DraggingIndex::Output(i)),
-                                            (output_pos.x - evt.page_coordinates().x as f32).powi(2)
-                                                + (output_pos.y - evt.page_coordinates().y as f32).powi(2),
+                                            (output_pos.x - scaled_pos.x as f32).powi(2)
+                                                + (output_pos.y - scaled_pos.y as f32).powi(2),
                                         )
                                     }),
                             )
@@ -273,8 +265,8 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                             index,
                                             to: Signal::new(
                                                 Point2D::new(
-                                                    evt.page_coordinates().x as f32,
-                                                    evt.page_coordinates().y as f32,
+                                                    scaled_pos.x as f32,
+                                                    scaled_pos.y as f32,
                                                 ),
                                             ),
                                         }),
@@ -305,6 +297,7 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
             },
             onmouseup: move |evt| {
                 let graph: VisualGraph = cx.consume_context().unwrap();
+                let scaled_pos = graph.scale_screen_pos(evt.page_coordinates());
                 {
                     if let Some(CurrentlyDragging::Connection(currently_dragging))
                         = {
@@ -326,8 +319,8 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                         let input_pos = node.input_pos(index);
                                         (
                                             index,
-                                            (input_pos.x - evt.page_coordinates().x as f32).powi(2)
-                                                + (input_pos.y - evt.page_coordinates().y as f32).powi(2),
+                                            (input_pos.x - scaled_pos.x as f32).powi(2)
+                                                + (input_pos.y - scaled_pos.y as f32).powi(2),
                                         )
                                     })
                                     .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
@@ -346,8 +339,8 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                         let output_pos = node.output_pos(i);
                                         (
                                             i,
-                                            (output_pos.x - evt.page_coordinates().x as f32).powi(2)
-                                                + (output_pos.y - evt.page_coordinates().y as f32).powi(2),
+                                            (output_pos.x - scaled_pos.x as f32).powi(2)
+                                                + (output_pos.y - scaled_pos.y as f32).powi(2),
                                         )
                                     })
                                     .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
@@ -384,6 +377,16 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
             }
         }
 
+        // inputs
+        (0..current_node.inputs.len()).map(|index| {
+            rsx! {
+                Input {
+                    node: cx.props.node,
+                    index: index,
+                }
+            }
+        }),
+
         // outputs
         (0..current_node.outputs.len()).map(|i| {
             rsx! {
@@ -415,15 +418,15 @@ fn CenterNodeUI(cx: Scope<NodeProps>) -> Element {
     let current_node = node.read();
     let name = &current_node.instance.metadata().name;
     let focused_class = if focused {
-        "border-2 border-blue-500"
+        "border-2 border-blue-500".into()
     } else {
-        ""
+        format!("border {}", Color::outline_color())
     };
 
     render! {
         div {
             style: "-webkit-user-select: none; -ms-user-select: none; user-select: none; padding: {NODE_KNOB_SIZE*2.+2.}px;",
-            class: "flex flex-col justify-center items-center w-full h-full border rounded-md {focused_class}",
+            class: "flex flex-col justify-center items-center w-full h-full rounded-md {Color::foreground_color()} {focused_class}",
             div {
                 button {
                     class: "fixed p-2 top-0 right-0",
@@ -433,7 +436,6 @@ fn CenterNodeUI(cx: Scope<NodeProps>) -> Element {
                     Icon {
                         width: 15,
                         height: 15,
-                        fill: "black",
                         icon: dioxus_free_icons::icons::io_icons::IoTrashOutline,
                     }
                 }
@@ -447,7 +449,7 @@ fn CenterNodeUI(cx: Scope<NodeProps>) -> Element {
                 else {
                     rsx! {
                         button {
-                            class: "p-1 border rounded-md hover:bg-gray-200",
+                            class: "p-1 border {Color::outline_color()} rounded-md {Color::foreground_hover()}",
                             onclick: move |_| {
                                 node.write().queued = true;
                             },

@@ -1,4 +1,5 @@
 use crate::plugin_search::PluginSearch;
+use crate::Color;
 use crate::CurrentNodeInfo;
 use dioxus::prelude::*;
 use dioxus_router::prelude::*;
@@ -22,16 +23,16 @@ pub fn Sidebar(cx: Scope) -> Element {
 fn Links(cx: Scope) -> Element {
     render! {
         div {
-            class: "h-full w-64 bg-white border-l top-0 bottom-0 right-0 z-10 fixed overflow-scroll text-center",
+            class: "h-full w-64 {Color::foreground_color()} {Color::text_color()} border-l {Color::outline_color()} top-0 bottom-0 right-0 z-10 fixed overflow-scroll text-center",
             div {
-                class: "flex flex-row overflow-x-scroll divide-x border-b",
+                class: "flex flex-row overflow-x-scroll divide-x border-b {Color::outline_color()}",
                 Link {
-                    class: "hover:bg-gray-200 px-3 py-2 text-sm font-medium",
+                    class: "{Color::foreground_hover()} px-3 py-2 text-sm font-medium {Color::outline_color()}",
                     to: SidebarRoute::PluginSearch {},
                     "Plugin Search"
                 }
                 Link {
-                    class: "hover:bg-gray-200 px-3 py-2 text-sm font-medium",
+                    class: "{Color::foreground_hover()} px-3 py-2 text-sm font-medium {Color::outline_color()}",
                     to: SidebarRoute::CurrentNodeInfo {},
                     "Current Node"
                 }
