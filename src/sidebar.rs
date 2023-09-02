@@ -27,12 +27,12 @@ fn Links(cx: Scope) -> Element {
             div {
                 class: "flex flex-row overflow-x-scroll divide-x border-b {Color::outline_color()}",
                 Link {
-                    class: "{Color::foreground_hover()} px-3 py-2 text-sm font-medium {Color::outline_color()}",
+                    class: "{Color::foreground_hover()} {Color::outline_color()} px-3 py-2 text-sm font-medium w-full",
                     to: SidebarRoute::PluginSearch {},
                     "Plugin Search"
                 }
                 Link {
-                    class: "{Color::foreground_hover()} px-3 py-2 text-sm font-medium {Color::outline_color()}",
+                    class: "{Color::foreground_hover()} {Color::outline_color()} px-3 py-2 text-sm font-medium w-full",
                     to: SidebarRoute::CurrentNodeInfo {},
                     "Current Node"
                 }
