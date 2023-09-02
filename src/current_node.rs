@@ -51,7 +51,7 @@ pub fn CurrentNodeInfo(cx: Scope) -> Element {
 
                     // Info
                     div {
-                        class: "text-left",
+                        class: "text-left whitespace-pre-line",
                         "{description}"
                     }
                 }
