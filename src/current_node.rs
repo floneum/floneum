@@ -30,7 +30,7 @@ pub fn CurrentNodeInfo(cx: Scope) -> Element {
                     if let Some(example_index) = node_info.active_example_index {
                         rsx! {
                             button {
-                                class: "text-xl font-bold",
+                                class: "text-xl font-bold m-2 rounded-md p-2 border-2 {Color::outline_color()}",
                                 onclick: move |_| {
                                     if let Some(focused) = &mut application.write().currently_focused {
                                         focused.active_example_index = None;
@@ -116,20 +116,10 @@ pub fn CurrentNodeInfo(cx: Scope) -> Element {
                     // Examples
                     for (i, example) in md.examples.iter().enumerate() {
                         button {
-                            class: "text-xl font-bold",
+                            class: "text-xl font-bold m-2 rounded-md p-2 border-2 {Color::outline_color()}",
                             onclick: move |_| {
                                 if let Some(focused) = &mut application.write().currently_focused {
                                     focused.active_example_index = Some(i);
-                                }
-                            },
-                            onmouseenter: move |_| {
-                                if let Some(focused) = &mut application.write().currently_focused {
-                                    focused.active_example_index = Some(i);
-                                }
-                            },
-                            onmouseleave: move |_| {
-                                if let Some(focused) = &mut application.write().currently_focused {
-                                    focused.active_example_index = None;
                                 }
                             },
                             "{example.name}"
