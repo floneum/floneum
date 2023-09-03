@@ -28,10 +28,7 @@ binding_version = "*"
 [[packages]]
 name = "Format"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
-description = """
-Formats some text by replacing any instances of {} in order with the texts passed in.
-
-///"""
+description = "Formats some text by replacing any instances of {} in order with the texts passed in."
 package_version = "0.1.0"
 binding_version = "*"
 
