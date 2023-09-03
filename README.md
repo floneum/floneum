@@ -31,7 +31,7 @@ If you are interested in Floneum, you can join the [discord](https://discord.gg/
 ## Building default plugins
 
 ```sh
-floneum build --release --packages floneum_add_embedding,floneum_embedding,floneum_embedding_db,floneum_format,floneum_generate_text,floneum_generate_structured_text,floneum_search,floneum_search_engine,floneum_if,floneum_contains,floneum_write_to_file,floneum_read_from_file,floneum_python,floneum_create_tab,floneum_find_node,floneum_find_child_node,floneum_click_node,floneum_node_text,floneum_type_in_node,floneum_navigate_to,floneum_get_article,floneum_read_rss,floneum_split,floneum_slice,floneum_join
+floneum build --release --packages floneum_add_embedding,floneum_embedding,floneum_embedding_db,floneum_format,floneum_generate_text,floneum_generate_structured_text,floneum_search,floneum_search_engine,floneum_if,floneum_contains,floneum_write_to_file,floneum_read_from_file,floneum_python,floneum_create_tab,floneum_find_node,floneum_find_child_node,floneum_click_node,floneum_node_text,floneum_type_in_node,floneum_navigate_to,floneum_get_article,floneum_read_rss,floneum_split,floneum_slice,floneum_join,floneum_add_to_list,floneum_new_list
 ```
 
 ## Building the UI

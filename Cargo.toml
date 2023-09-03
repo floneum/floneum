@@ -73,6 +73,8 @@ members = [
     "plugins/split",
     "plugins/join",
     "plugins/slice",
+    "plugins/add_to_list",
+    "plugins/new_list",
 ]
 
 # The profile that 'cargo dist' will build with

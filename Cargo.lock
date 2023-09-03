@@ -2012,6 +2012,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "floneum_add_to_list"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+]
+
+[[package]]
 name = "floneum_click_node"
 version = "0.1.0"
 dependencies = [
@@ -2110,6 +2117,13 @@ dependencies = [
 
 [[package]]
 name = "floneum_navigate_to"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+]
+
+[[package]]
+name = "floneum_new_list"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",

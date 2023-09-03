@@ -193,3 +193,17 @@ authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Join multiple strings into one string separated by a separator"
 package_version = "0.1.0"
 binding_version = "*"
+
+[[packages]]
+name = "Add To List"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Add an element to a list"
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "New List"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Create an empty list"
+package_version = "0.1.0"
+binding_version = "*"
