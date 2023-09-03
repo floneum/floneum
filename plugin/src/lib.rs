@@ -238,6 +238,14 @@ impl Host for State {
         let client = reqwest::Client::new();
         let mut header_map = HeaderMap::new();
 
+        header_map.append(
+            reqwest::header::USER_AGENT,
+            // Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:47.0) Gecko/20100101 Firefox/47.0
+            "Floneum/0.1.0 (Unknown; Unknown; Unknown; Unknown) Floneum/0.1.0 Floneum/0.1.0"
+                .parse()
+                .unwrap(),
+        );
+
         for header in headers {
             header_map.append(HeaderName::try_from(&header.key)?, header.value.parse()?);
         }
