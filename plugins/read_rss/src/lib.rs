@@ -20,7 +20,14 @@ pub fn read_rss_stream(
     items: i64,
 ) -> String {
     let xml = get_request(&url, &[]);
-    let channel = Channel::read_from(xml.as_bytes()).unwrap();
+    let channel = match Channel::read_from(xml.as_bytes()) {
+        Ok(channel) => channel,
+        Err(err) => {
+            println!("{}", xml);
+            println!("{}", err);
+            return String::new();
+        }
+    };
     channel
         .items()
         .iter()
