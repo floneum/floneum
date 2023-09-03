@@ -135,6 +135,12 @@ interface definitions {
     description: string,
     inputs: list<io-definition>,
     outputs: list<io-definition>,
+    examples: list<example>
+  }
+
+  record example {
+    inputs: list<input>,
+    outputs: list<output>,
   }
 
   record io-definition {

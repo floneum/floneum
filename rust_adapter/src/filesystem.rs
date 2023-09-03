@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use crate::{IntoPrimitiveValue, PrimitiveValue};
+
 /// A wrapper around a file path.
 pub struct File(PathBuf);
 
@@ -23,6 +25,12 @@ impl From<String> for File {
     }
 }
 
+impl IntoPrimitiveValue for File {
+    fn into_primitive_value(self) -> PrimitiveValue {
+        PrimitiveValue::File(self.0.display().to_string())
+    }
+}
+
 /// A wrapper around a folder path.
 pub struct Folder(PathBuf);
 
@@ -43,5 +51,11 @@ impl From<PathBuf> for Folder {
 impl From<String> for Folder {
     fn from(path: String) -> Self {
         Self(PathBuf::from(path))
+    }
+}
+
+impl IntoPrimitiveValue for Folder {
+    fn into_primitive_value(self) -> PrimitiveValue {
+        PrimitiveValue::Folder(self.0.display().to_string())
     }
 }

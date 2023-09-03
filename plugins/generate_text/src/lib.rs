@@ -9,20 +9,13 @@ use floneum_rust::{plugins::main::imports::log_to_user, *};
 ///
 /// It is commonly helpful to provide a few examples to the model before your new data so that the model can pick up on the pattern of the text
 ///
-/// Example:
-/// The following is a chat between a user and an assistant. The assistant helpfully and succinctly answers questions posed by the user.
-/// ### USER
-/// Where is Paris.
-/// ### ASSISTANT
-/// Paris is in France. France is in Europe.
-/// ### USER
-/// What is 1 + 1?
-/// ### ASSISTANT
-/// 2
-/// ### USER
-/// **your real question**
-/// ### ASSISTANT
-///
+/// ### Examples
+/// vec![
+///     Example {
+///         inputs: vec![ModelType::Llama(LlamaType::LlamaSevenChat).into_input_value(), String::from("The following is a chat between a user and an assistant. The assistant helpfully and succinctly answers questions posed by the user.\n### USER\nWhat is 3 + 6?\n### ASSISTANT\n9\n### USER\nWhat is 1 + 1?\n### ASSISTANT\n2\n### USER\nWhat is 2 + 8?\n### ASSISTANT\n{#}").into_input_value()],
+///         outputs: vec![String::from("ten").into_return_value()],
+///     },
+/// ]
 fn generate_text(model: ModelType, text: String, max_size: i64) -> String {
     if !model_downloaded(model) {
         log_to_user("downloading model... This could take several minutes");

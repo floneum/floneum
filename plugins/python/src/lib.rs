@@ -3,6 +3,14 @@ use rustpython_vm::{builtins, stdlib::get_module_inits, Interpreter};
 
 #[export_plugin]
 /// Runs a python script. Returns the value in the last line
+/// 
+/// ### Examples
+/// vec![
+///     Example {
+///         inputs: vec![String::from("1 + 2 * 2").into_input_value()],
+///         outputs: vec![String::from("5").into_return_value()],
+///     },
+/// ]
 pub fn run_python(
     /// The python script to run
     source: String,

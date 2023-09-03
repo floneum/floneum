@@ -48,3 +48,9 @@ impl IntoPrimitiveValue for Node {
         PrimitiveValue::Node(self.id)
     }
 }
+
+impl IntoPrimitiveValue for NodeId {
+    fn into_primitive_value(self) -> PrimitiveValue {
+        PrimitiveValue::Node(self)
+    }
+}

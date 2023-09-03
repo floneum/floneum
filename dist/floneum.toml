@@ -1,7 +1,16 @@
 [[packages]]
 name = "Add Embedding"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
-description = "Adds a embedding to a database. The model used to generate the embedding and the model type used to create the database must be the same."
+description = """
+Adds a embedding to a database. The model used to generate the embedding and the model type used to create the database must be the same.
+
+### Example
+vec![
+Example {
+inputs: vec![EmbeddingDbId(0).into(), Embedding(vec![0.0, 0.0, 0.0]).into(), \"Text to embed\".into()],
+outputs: vec![],
+},
+]"""
 package_version = "0.1.0"
 binding_version = "*"
 
@@ -122,7 +131,16 @@ binding_version = "*"
 [[packages]]
 name = "Contains"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
-description = "Checks if some text contains some other text. Returns true if the first text contains the second text."
+description = """
+Checks if some text contains some other text. Returns true if the first text contains the second text.
+
+### Example
+vec![
+Example {
+inputs: vec![String::from(\"Hello World\"), String::from(\"World\")],
+outputs: vec![],
+},
+]"""
 package_version = "0.1.0"
 binding_version = "*"
 
@@ -171,7 +189,16 @@ binding_version = "*"
 [[packages]]
 name = "Click Node"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
-description = "Clicks a node in a tab"
+description = """
+Clicks a node in a tab
+
+### Example
+vec![
+Example {
+inputs: vec![NodeId(0).into()],
+outputs: vec![NodeId(0).into()],
+},
+]"""
 package_version = "0.1.0"
 binding_version = "*"
 

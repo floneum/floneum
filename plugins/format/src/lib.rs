@@ -2,13 +2,14 @@ use floneum_rust::*;
 
 #[export_plugin]
 /// Formats some text by replacing any instances of {} in order with the texts passed in.
-///
-/// Example:
-///
-/// template: "Who is {}?"
-/// inputs: "queen of england"
-///
-/// result: Who is the queen of england?
+/// 
+/// /// ### Examples
+/// vec![
+///     Example {
+///         inputs: vec![String::from("Who is {}?").into_input_value(), String::from("the queen of england").into_input_value()],
+///         outputs: vec![String::from("Who is the queen of england?").into_return_value()],
+///     },
+/// ]
 fn format(
     /// The template to format text with
     template: String,

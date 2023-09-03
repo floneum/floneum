@@ -208,7 +208,8 @@ impl State {
         MULTI_PLUGIN_STATE
             .read()
             .unwrap()
-            .vector_db_get(id).map(|db| db.get_closest(embedding, n))
+            .vector_db_get(id)
+            .map(|db| db.get_closest(embedding, n))
     }
 
     pub fn get_within(
@@ -220,8 +221,8 @@ impl State {
         MULTI_PLUGIN_STATE
             .read()
             .unwrap()
-            .vector_db_get(id).map(|db| db
-            .get_within(embedding, distance))
+            .vector_db_get(id)
+            .map(|db| db.get_within(embedding, distance))
     }
 }
 
@@ -312,7 +313,8 @@ impl Host for State {
         MULTI_PLUGIN_STATE
             .write()
             .unwrap()
-            .vector_db_get_mut(id).ok_or(wasmtime::Error::msg("Invalid embedding db id"))?
+            .vector_db_get_mut(id)
+            .ok_or(wasmtime::Error::msg("Invalid embedding db id"))?
             .add_embedding(embedding, document);
         Ok(())
     }
@@ -331,7 +333,8 @@ impl Host for State {
         search: plugins::main::types::Embedding,
         count: u32,
     ) -> std::result::Result<Vec<String>, wasmtime::Error> {
-        self.get_closest(id, search, count as usize).ok_or(wasmtime::Error::msg("Invalid embedding db id"))
+        self.get_closest(id, search, count as usize)
+            .ok_or(wasmtime::Error::msg("Invalid embedding db id"))
     }
 
     async fn find_documents_within(
@@ -340,7 +343,8 @@ impl Host for State {
         search: plugins::main::types::Embedding,
         distance: f32,
     ) -> std::result::Result<Vec<String>, wasmtime::Error> {
-        self.get_within(id, search, distance).ok_or(wasmtime::Error::msg("Invalid embedding db id"))
+        self.get_within(id, search, distance)
+            .ok_or(wasmtime::Error::msg("Invalid embedding db id"))
     }
 
     async fn infer(
@@ -623,7 +627,7 @@ impl Plugin {
         let component = self.component().await?;
         let (world, _instance) = PluginWorld::instantiate_async(&mut store, component, &*LINKER)
             .await
-            .unwrap();
+            ?;
         let structure = world.interface0.call_structure(&mut store).await.unwrap();
 
         let _ = self.definition.set(structure);
