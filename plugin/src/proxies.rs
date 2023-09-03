@@ -276,6 +276,14 @@ impl PartialEq for ValueType {
 }
 
 impl ValueType {
+    pub fn compatible(&self, other: &Self) -> bool {
+        match (self, other) {
+            (ValueType::Single(a), ValueType::Single(b)) => a.compatible(b),
+            (ValueType::Many(a), ValueType::Many(b)) => a.compatible(b),
+            _ => false,
+        }
+    }
+
     pub fn create(&self) -> Input {
         match self {
             ValueType::Single(single) => Input::Single(single.create()),
@@ -313,6 +321,25 @@ impl PrimitiveValueType {
                 tab: TabId { id: 0 },
             }),
             PrimitiveValueType::Any => PrimitiveValue::Number(0),
+        }
+    }
+
+    pub fn compatible(&self, other: &Self) -> bool {
+        match (self, other) {
+            (PrimitiveValueType::Number, PrimitiveValueType::Number) => true,
+            (PrimitiveValueType::Text, PrimitiveValueType::Text) => true,
+            (PrimitiveValueType::File, PrimitiveValueType::File) => true,
+            (PrimitiveValueType::Folder, PrimitiveValueType::Folder) => true,
+            (PrimitiveValueType::Embedding, PrimitiveValueType::Embedding) => true,
+            (PrimitiveValueType::Database, PrimitiveValueType::Database) => true,
+            (PrimitiveValueType::Model, PrimitiveValueType::Model) => true,
+            (PrimitiveValueType::ModelType, PrimitiveValueType::ModelType) => true,
+            (PrimitiveValueType::Boolean, PrimitiveValueType::Boolean) => true,
+            (PrimitiveValueType::Tab, PrimitiveValueType::Tab) => true,
+            (PrimitiveValueType::Node, PrimitiveValueType::Node) => true,
+            (PrimitiveValueType::Any, _) => true,
+            (_, PrimitiveValueType::Any) => true,
+            _ => false,
         }
     }
 }

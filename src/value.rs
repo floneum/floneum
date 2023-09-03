@@ -253,7 +253,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                             r#type: "checkbox",
                             checked: "{val}",
                             onchange: |e| {
-                                node.write().value = vec![Input::Single(PrimitiveValue::Boolean(e.value == "on"))];
+                                node.write().value = vec![Input::Single(PrimitiveValue::Boolean(dbg!(e.value == "on")))];
                             }
                         }
                     }
@@ -299,6 +299,23 @@ impl Variants for ModelType {
         ModelType::Mpt(MptType::Chat),
         ModelType::Mpt(MptType::Story),
         ModelType::Mpt(MptType::Instruct),
+    ];
+}
+
+impl Variants for PrimitiveValueType {
+    const VARIANTS: &'static [Self] = &[
+        PrimitiveValueType::Text,
+        PrimitiveValueType::File,
+        PrimitiveValueType::Folder,
+        PrimitiveValueType::Number,
+        PrimitiveValueType::Boolean,
+        PrimitiveValueType::Embedding,
+        PrimitiveValueType::Model,
+        PrimitiveValueType::ModelType,
+        PrimitiveValueType::Database,
+        PrimitiveValueType::Tab,
+        PrimitiveValueType::Node,
+        PrimitiveValueType::Any,
     ];
 }
 
@@ -381,6 +398,15 @@ pub trait Colored {
 }
 
 impl Colored for ValueType {
+    fn color(&self) -> String {
+        match self {
+            ValueType::Single(ty) => ty.color(),
+            ValueType::Many(ty) => ty.color(),
+        }
+    }
+}
+
+impl Colored for PrimitiveValueType {
     fn color(&self) -> String {
         let index = Self::VARIANTS.iter().position(|v| v == self).unwrap();
         let hue = index * 360 / Self::VARIANTS.len();

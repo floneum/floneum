@@ -92,6 +92,7 @@ pub fn InputConnection(cx: Scope, node: Signal<Node>, index: Connection) -> Elem
     let current_node_id = current_node.id;
     let pos = current_node.input_pos(index);
     let color = current_node.input_color(index);
+    let is_list = current_node.input_is_list(index);
 
     render! {
         circle {
@@ -117,6 +118,16 @@ pub fn InputConnection(cx: Scope, node: Signal<Node>, index: Connection) -> Elem
                 let graph: VisualGraph = cx.consume_context().unwrap();
                 graph.update_mouse(&evt);
             },
+        }
+        if is_list {
+            rsx! {
+                circle {
+                    cx: pos.x as f64 + NODE_KNOB_SIZE * 1.5 + NODE_MARGIN,
+                    cy: pos.y as f64 + NODE_KNOB_SIZE * 0.5,
+                    r: NODE_KNOB_SIZE,
+                    fill: "black",
+                }
+            }
         }
     }
 }

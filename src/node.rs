@@ -161,10 +161,24 @@ impl Node {
         }
     }
 
+    pub fn input_is_list(&self, index: Connection) -> bool {
+        match self.input_type(index) {
+            Some(ValueType::Many(_)) => true,
+            _ => false,
+        }
+    }
+
     pub fn output_type(&self, index: usize) -> Option<ValueType> {
         self.outputs
             .get(index)
             .map(|input| input.read().definition.ty)
+    }
+
+    pub fn output_is_list(&self, index: usize) -> bool {
+        match self.output_type(index) {
+            Some(ValueType::Many(_)) => true,
+            _ => false,
+        }
     }
 
     pub fn output_color(&self, index: usize) -> String {

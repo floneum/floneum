@@ -172,3 +172,24 @@ authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Reads a rss stream from a url"
 package_version = "0.1.0"
 binding_version = "*"
+
+[[packages]]
+name = "Split"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Split a string into multiple strings separated by a separator"
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Slice"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Take a slice of an list between two positions in the list. The start index is inclusive and the end index is exclusive."
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Join"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Join multiple strings into one string separated by a separator"
+package_version = "0.1.0"
+binding_version = "*"

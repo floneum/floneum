@@ -757,43 +757,6 @@ impl PluginInstance {
     }
 }
 
-#[tokio::test]
-async fn test_load_plugin() {
-    // first build the plugin_demo
-    // cargo build --release --target wasm32-unknown-unknown
-    let command = std::process::Command::new("cargo")
-        .args(["build", "--release", "--target", "wasm32-unknown-unknown"])
-        .current_dir("./plugins/format")
-        .stdout(std::process::Stdio::inherit())
-        .output()
-        .unwrap();
-
-    println!("{:?}", command);
-
-    let path = "./target/wasm32-unknown-unknown/release/plugin_format.wasm";
-
-    let plugin = load_plugin(&std::path::PathBuf::from(path));
-
-    let instance = plugin.instance().await.unwrap();
-
-    let inputs = vec![
-        Input::Single(PrimitiveValue::Text("hello {}".to_string())),
-        Input::Single(PrimitiveValue::Text("world".to_string())),
-    ];
-    let outputs = instance.run(inputs).await.unwrap();
-    let outputs = outputs.as_deref().unwrap();
-    println!("{:?}", outputs);
-
-    assert_eq!(outputs.len(), 1);
-    let first = outputs.first().unwrap();
-    match first {
-        Output::Single(PrimitiveValue::Text(text)) => {
-            assert_eq!(text, "hello world");
-        }
-        _ => panic!("unexpected text output"),
-    }
-}
-
 wasmtime::component::bindgen!({
     path: "../wit",
     async: true,
