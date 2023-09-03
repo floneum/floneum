@@ -1,12 +1,12 @@
 #![allow(unused_macros)]
 
 pub use crate::exports::plugins::main::definitions::{
-    Definition, Definitions, Input, IoDefinition, Output, PrimitiveValue, PrimitiveValueType,
-    ValueType,
+    Definition, Definitions, Example, Input, IoDefinition, Output, PrimitiveValue,
+    PrimitiveValueType, ValueType,
 };
 pub use crate::plugins::main::imports::{get_request, model_downloaded, Header};
 pub use crate::plugins::main::types::{
-    EmbeddingDbId, GptNeoXType, LlamaType, ModelType, MptType, TabId,
+    EmbeddingDbId, GptNeoXType, LlamaType, ModelType, MptType, NodeId, TabId,
 };
 pub use floneum_rust_macro::export_plugin;
 pub use plugins::main::types::Embedding;
@@ -30,7 +30,11 @@ pub use filesystem::*;
 
 wit_bindgen::generate!({path: "../wit", macro_export});
 
-trait IntoReturnValue<T = ()> {
+pub trait IntoInputValue<T = ()> {
+    fn into_input_value(self) -> Input;
+}
+
+pub trait IntoReturnValue<T = ()> {
     fn into_return_value(self) -> Output;
 }
 
@@ -52,12 +56,24 @@ impl<T: IntoPrimitiveValue> IntoReturnValue for T {
     }
 }
 
+impl<T: IntoPrimitiveValue> IntoInputValue for T {
+    fn into_input_value(self) -> Input {
+        Input::Single(self.into_primitive_value())
+    }
+}
+
 #[doc(hidden)]
 pub struct VecMarker;
 
 impl<T: IntoPrimitiveValue> IntoReturnValue<VecMarker> for Vec<T> {
     fn into_return_value(self) -> Output {
         Output::Many(self.into_iter().map(|x| x.into_primitive_value()).collect())
+    }
+}
+
+impl<T: IntoPrimitiveValue> IntoInputValue for Vec<T> {
+    fn into_input_value(self) -> Input {
+        Input::Many(self.into_iter().map(|x| x.into_primitive_value()).collect())
     }
 }
 
@@ -68,6 +84,12 @@ trait IntoPrimitiveValue {
 impl IntoPrimitiveValue for PrimitiveValue {
     fn into_primitive_value(self) -> PrimitiveValue {
         self
+    }
+}
+
+impl IntoPrimitiveValue for ModelType {
+    fn into_primitive_value(self) -> PrimitiveValue {
+        PrimitiveValue::ModelType(self)
     }
 }
 

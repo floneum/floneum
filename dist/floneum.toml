@@ -31,12 +31,7 @@ authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = """
 Formats some text by replacing any instances of {} in order with the texts passed in.
 
-Example:
-
-template: \"Who is {}?\"
-inputs: \"queen of england\"
-
-result: Who is the queen of england?"""
+///"""
 package_version = "0.1.0"
 binding_version = "*"
 
@@ -48,21 +43,7 @@ Calls a large language model to generate text.
 
 It is important to keep in mind that the language model is just generating text. Because the model is merely continuing the text you give it, the formatting of that text can be important.
 
-It is commonly helpful to provide a few examples to the model before your new data so that the model can pick up on the pattern of the text
-
-Example:
-The following is a chat between a user and an assistant. The assistant helpfully and succinctly answers questions posed by the user.
-### USER
-Where is Paris.
-### ASSISTANT
-Paris is in France. France is in Europe.
-### USER
-What is 1 + 1?
-### ASSISTANT
-2
-### USER
-**your real question**
-### ASSISTANT"""
+It is commonly helpful to provide a few examples to the model before your new data so that the model can pick up on the pattern of the text"""
 package_version = "0.1.0"
 binding_version = "*"
 
@@ -74,22 +55,7 @@ Calls a large language model to generate structured text. You can create a templ
 
 It is important to keep in mind that the language model is just generating text. Because the model is merely continuing the text you give it, the formatting of that text can be important.
 
-It is commonly helpful to provide a few examples to the model before your new data so that the model can pick up on the pattern of the text
-
-Example:
-The following is a chat between a user and an assistant. The assistant helpfully and succinctly answers questions posed by the user.
-### USER
-What is 3 + 6?
-### ASSISTANT
-9
-### USER
-What is 1 + 1?
-### ASSISTANT
-2
-### USER
-**your real question**
-### ASSISTANT
-{#}"""
+It is commonly helpful to provide a few examples to the model before your new data so that the model can pick up on the pattern of the text"""
 package_version = "0.1.0"
 binding_version = "*"
 

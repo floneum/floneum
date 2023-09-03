@@ -6,6 +6,15 @@ use floneum_rust::*;
 /// This node requires that the Embedding Database and the Embedding use the same model.
 ///
 /// Returns text with documents separated with newlines.
+///
+/// ### Examples
+/// vec![
+///     Example {
+///         name: "example".into(),
+///         inputs: vec![Embedding { vector: vec![0.0, 0.0, 0.0] }.into_input_value(), EmbeddingDbId { id: 0 }.into_input_value(), 10.into_input_value()],
+///         outputs: vec![String::from("Document 1\nDocument 2\nDocument 3\nDocument 4\nDocument 5\nDocument 6\nDocument 7\nDocument 8\nDocument 9\nDocument 10\n").into_return_value()],
+///     },
+/// ]
 pub fn search(
     /// the embedding to search for
     key: Embedding,

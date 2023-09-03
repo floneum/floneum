@@ -633,9 +633,8 @@ impl Plugin {
         // then we get the structure of the plugin.
         let mut store = Store::new(&ENGINE, State::default());
         let component = self.component().await?;
-        let (world, _instance) = PluginWorld::instantiate_async(&mut store, component, &*LINKER)
-            .await
-            .unwrap();
+        let (world, _instance) =
+            PluginWorld::instantiate_async(&mut store, component, &*LINKER).await?;
         let structure = world.interface0.call_structure(&mut store).await.unwrap();
 
         let _ = self.definition.set(structure);

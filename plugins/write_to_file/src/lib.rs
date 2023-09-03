@@ -4,6 +4,15 @@ use floneum_rust::*;
 
 #[export_plugin]
 /// Writes some text to a file at the given path (in the /sandbox directory)
+///
+/// ### Examples
+/// vec![
+///     Example {
+///         name: "example".into(),
+///         inputs: vec![String::from("Hello World!").into_input_value(), File::from(std::path::PathBuf::from("hello_world.txt")).into_input_value()],
+///         outputs: vec![],
+///     },
+/// ]
 pub fn write_to_file(
     /// The text to write to the file
     text: String,

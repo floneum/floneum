@@ -1,5 +1,5 @@
 use proc_macro::TokenStream;
-use proc_macro2::Ident;
+use proc_macro2::{Ident, Span};
 use quote::{quote, ToTokens};
 use syn::{
     parse::Parse, parse_macro_input, parse_quote, Error, FnArg, GenericArgument, ItemFn, LitStr,
@@ -42,7 +42,27 @@ pub fn export_plugin(args: TokenStream, input: TokenStream) -> TokenStream {
             }
         }
     }
-    let description = description.trim();
+    let mut examples: Option<proc_macro2::TokenStream> = None;
+    let mut description = description.trim();
+    if let Some((before, examples_code)) = description.split_once("### Examples") {
+        examples = match examples_code.parse::<proc_macro2::TokenStream>() {
+            Ok(examples) => Some(quote! {
+                {
+                    #examples
+                }.into()
+            }),
+            Err(err) => {
+                return syn::Error::new(
+                    Span::call_site(),
+                    format!("Failed to parse examples. Examples must be valid rust code {err}"),
+                )
+                .into_compile_error()
+                .into();
+            }
+        };
+        description = before.trim();
+    }
+    let examples = examples.unwrap_or_else(|| quote! {Vec::new()});
 
     let mut input_names: Vec<String> = Vec::new();
     let mut input_idents: Vec<Ident> = Vec::new();
@@ -146,6 +166,7 @@ pub fn export_plugin(args: TokenStream, input: TokenStream) -> TokenStream {
                             },
                         )*
                     ],
+                    examples: #examples,
                 }
             }
 
