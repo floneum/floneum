@@ -8,22 +8,29 @@ use floneum_plugin::{
 };
 use std::path::PathBuf;
 
-use crate::{
-    node_value::{NodeInput, NodeOutput},
-    Signal,
-};
+use crate::{node_value::NodeInput, Signal};
 
-#[inline_props]
-pub fn ShowOutput(cx: Scope, value: Signal<NodeOutput>) -> Element {
-    let output = value.read();
-    let key = &output.definition.name;
-    match &output.value {
+#[derive(Props)]
+pub struct ShowOutputProps {
+    name: String,
+    value: Output,
+}
+
+impl PartialEq for ShowOutputProps {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
+pub fn ShowOutput(cx: Scope<ShowOutputProps>) -> Element {
+    let ShowOutputProps { name, value } = &cx.props;
+    match value {
         Output::Single(value) => {
             render! {
                 div {
                     class: "flex flex-col whitespace-pre-line",
-                    "{key}:\n"
-                    show_primitive_value(cx, value)
+                    "{name}:\n"
+                    show_primitive_value(cx, &value)
                 }
             }
         }
@@ -31,7 +38,7 @@ pub fn ShowOutput(cx: Scope, value: Signal<NodeOutput>) -> Element {
             render! {
                 div {
                     class: "flex flex-col",
-                    "{key}:"
+                    "{name}:"
                     for value in &value {
                         div {
                             class: "whitespace-pre-line",
@@ -45,7 +52,7 @@ pub fn ShowOutput(cx: Scope, value: Signal<NodeOutput>) -> Element {
             render! {
                 div {
                     class: "flex flex-col",
-                    "{key}: Unset"
+                    "{name}: Unset"
                 }
             }
         }
@@ -87,6 +94,47 @@ fn show_primitive_value<'a>(cx: &'a ScopeState, value: &PrimitiveValue) -> Eleme
     }
 }
 
+#[derive(Props)]
+pub struct ShowInputProps {
+    label: String,
+    value: Input,
+}
+
+impl PartialEq for ShowInputProps {
+    fn eq(&self, other: &Self) -> bool {
+        self.label == other.label
+    }
+}
+
+pub fn ShowInput(cx: Scope<ShowInputProps>) -> Element {
+    let ShowInputProps { label, value } = &cx.props;
+    match value {
+        Input::Single(value) => {
+            render! {
+                div {
+                    class: "flex flex-col whitespace-pre-line",
+                    "{label}:\n"
+                    show_primitive_value(cx, &value)
+                }
+            }
+        }
+        Input::Many(value) => {
+            render! {
+                div {
+                    class: "flex flex-col",
+                    "{label}:"
+                    for value in &value {
+                        div {
+                            class: "whitespace-pre-line",
+                            show_primitive_value(cx, value)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[inline_props]
 pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
     let node = value;
@@ -119,7 +167,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                                 .set_file_name("Floneum")
                                 .set_title("Select File")
                                 .save_file()
-                                .map(|path| vec![Input::Single(PrimitiveValue::File(path.strip_prefix(PathBuf::from("./sandbox").canonicalize().unwrap()).unwrap().to_string_lossy().to_string()))])
+                                .map(|path| vec![Input::Single(PrimitiveValue::File(path.strip_prefix(PathBuf::from("./sandbox").canonicalize().unwrap()).unwrap_or(&path).to_string_lossy().to_string()))])
                                 .unwrap_or_else(|| vec![Input::Single(PrimitiveValue::File("".to_string()))])
                         },
                         "Select File"
@@ -137,7 +185,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                                 .set_file_name("Floneum")
                                 .set_title("Select Folder")
                                 .pick_folder()
-                                .map(|path| vec![Input::Single(PrimitiveValue::File(path.strip_prefix(PathBuf::from("./sandbox").canonicalize().unwrap()).unwrap().to_string_lossy().to_string()))])
+                                .map(|path| vec![Input::Single(PrimitiveValue::File(path.strip_prefix(PathBuf::from("./sandbox").canonicalize().unwrap()).unwrap_or(&path).to_string_lossy().to_string()))])
                                 .unwrap_or_else(|| vec![Input::Single(PrimitiveValue::File("".to_string()))]);
                         },
                         "Select Folder"

@@ -2,10 +2,11 @@ use floneum_rust::*;
 
 #[export_plugin]
 /// Creates a browser tab.
-/// 
+///
 /// ### Examples
 /// vec![
 ///     Example {
+///         name: "example".into(),
 ///         inputs: vec![true.into_input_value()],
 ///         outputs: vec![TabId { id: 0 }.into_return_value()]
 ///     },

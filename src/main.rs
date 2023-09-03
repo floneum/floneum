@@ -25,7 +25,7 @@ mod plugin_search;
 mod sidebar;
 use sidebar::Sidebar;
 mod current_node;
-use current_node::CurrentNodeInfo;
+use current_node::{CurrentNodeInfo, FocusedNodeInfo};
 
 use crate::window::{make_config, use_apply_menu_event};
 mod input;
@@ -68,7 +68,7 @@ pub struct PluginId(usize);
 pub struct ApplicationState {
     graph: VisualGraph,
     #[serde(skip)]
-    currently_focused: Option<Signal<Node>>,
+    currently_focused: Option<FocusedNodeInfo>,
     #[serde(skip)]
     plugins: HashMap<String, Plugin>,
 }
@@ -99,7 +99,7 @@ impl ApplicationState {
     fn remove(&mut self, node: NodeIndex<DefaultIx>) {
         self.graph.inner.write().graph.remove_node(node);
         if let Some(focused) = &self.currently_focused {
-            if focused.read().id == node {
+            if focused.node.read().id == node {
                 self.currently_focused = None;
             }
         }

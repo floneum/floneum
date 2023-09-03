@@ -139,6 +139,7 @@ interface definitions {
   }
 
   record example {
+    name: string,
     inputs: list<input>,
     outputs: list<output>,
   }

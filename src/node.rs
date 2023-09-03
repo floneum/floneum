@@ -1,3 +1,4 @@
+use crate::current_node::FocusedNodeInfo;
 use crate::Color;
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
 use dioxus_free_icons::Icon;
@@ -363,11 +364,14 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                 // Focus or unfocus this node
                 let mut application = application.write();
                 match &application.currently_focused {
-                    Some(currently_focused_node) if currently_focused_node == &cx.props.node => {
+                    Some(currently_focused_node) if currently_focused_node.node == cx.props.node => {
                         application.currently_focused = None;
                     }
                     _ => {
-                        application.currently_focused = Some(cx.props.node);
+                        application.currently_focused = Some(FocusedNodeInfo{
+                            node: cx.props.node,
+                            active_example_index: None,
+                        } );
                     }
                 }
             },
@@ -401,7 +405,7 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
 
 fn CenterNodeUI(cx: Scope<NodeProps>) -> Element {
     let application = use_application_state(cx);
-    let focused = application.read().currently_focused == Some(cx.props.node);
+    let focused = application.read().currently_focused.map(|n| n.node) == Some(cx.props.node);
     let node = cx.props.node;
     {
         let current_node = node.read();
