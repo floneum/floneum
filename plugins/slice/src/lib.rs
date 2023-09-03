@@ -32,6 +32,6 @@ fn slice(
 
     let min_index = start_index.min(end_index);
     let max_index = start_index.max(end_index);
-    
+
     list[min_index..max_index].to_vec()
 }

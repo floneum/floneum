@@ -75,6 +75,13 @@ members = [
     "plugins/slice",
     "plugins/add_to_list",
     "plugins/new_list",
+    "plugins/length",
+    "plugins/more_than",
+    "plugins/less_than",
+    "plugins/equals",
+    "plugins/and",
+    "plugins/or",
+    "plugins/not",
 ]
 
 # The profile that 'cargo dist' will build with

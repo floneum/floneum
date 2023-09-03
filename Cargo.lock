@@ -2019,6 +2019,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "floneum_and"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+]
+
+[[package]]
 name = "floneum_click_node"
 version = "0.1.0"
 dependencies = [
@@ -2048,6 +2055,13 @@ dependencies = [
 
 [[package]]
 name = "floneum_embedding_db"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+]
+
+[[package]]
+name = "floneum_equals"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
@@ -2116,6 +2130,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "floneum_length"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+]
+
+[[package]]
+name = "floneum_less_than"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+]
+
+[[package]]
+name = "floneum_more_than"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+]
+
+[[package]]
 name = "floneum_navigate_to"
 version = "0.1.0"
 dependencies = [
@@ -2131,6 +2166,20 @@ dependencies = [
 
 [[package]]
 name = "floneum_node_text"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+]
+
+[[package]]
+name = "floneum_not"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+]
+
+[[package]]
+name = "floneum_or"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
