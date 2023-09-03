@@ -309,7 +309,7 @@ impl VisualGraph {
             .output_type(edge.start)
             .unwrap();
         let output = graph.graph[output_id].read().input_type(edge.end).unwrap();
-        input == output
+        input.compatible(&output)
     }
 
     pub fn connect(
@@ -422,7 +422,9 @@ pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
                 position: "absolute",
                 top: "0",
                 left: "0",
+                class: "{Color::text_color()} {Color::foreground_color()} {Color::outline_color()} border-b-2 border-r-2 rounded-br-md p-2",
                 button {
+                    class: "m-1",
                     onclick: move |_| {
                         let new_zoom = zoom * 1.1;
                         graph.with_mut(|graph| {
@@ -432,6 +434,7 @@ pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
                     "+"
                 }
                 button {
+                    class: "m-1",
                     onclick: move |_| {
                         let new_zoom = zoom * 0.9;
                         graph.with_mut(|graph| {
@@ -443,6 +446,7 @@ pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
                 if *theme.read() == Theme::DARK {
                     rsx! {
                         button {
+                            class: "m-1",
                             onclick: move |_| {
                                 theme.set(Theme::WHITE);
                             },
