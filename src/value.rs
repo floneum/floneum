@@ -119,7 +119,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                                 .set_file_name("Floneum")
                                 .set_title("Select File")
                                 .save_file()
-                                .map(|path| vec![Input::Single(PrimitiveValue::File(path.strip_prefix(PathBuf::from("./sandbox").canonicalize().unwrap()).unwrap().to_string_lossy().to_string()))])
+                                .map(|path| vec![Input::Single(PrimitiveValue::File(path.strip_prefix(PathBuf::from("./sandbox").canonicalize().unwrap()).unwrap_or(&path).to_string_lossy().to_string()))])
                                 .unwrap_or_else(|| vec![Input::Single(PrimitiveValue::File("".to_string()))])
                         },
                         "Select File"
@@ -137,7 +137,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                                 .set_file_name("Floneum")
                                 .set_title("Select Folder")
                                 .pick_folder()
-                                .map(|path| vec![Input::Single(PrimitiveValue::File(path.strip_prefix(PathBuf::from("./sandbox").canonicalize().unwrap()).unwrap().to_string_lossy().to_string()))])
+                                .map(|path| vec![Input::Single(PrimitiveValue::File(path.strip_prefix(PathBuf::from("./sandbox").canonicalize().unwrap()).unwrap_or(&path).to_string_lossy().to_string()))])
                                 .unwrap_or_else(|| vec![Input::Single(PrimitiveValue::File("".to_string()))]);
                         },
                         "Select Folder"
