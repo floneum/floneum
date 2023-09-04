@@ -11,7 +11,7 @@ use floneum_rust::*;
 ///         outputs: vec![6.into_return_value()]
 ///     },
 /// ]
-fn add(
+fn multiply(
     /// the fist number
     first: i64,
     /// the second number

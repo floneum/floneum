@@ -11,7 +11,7 @@ use floneum_rust::*;
 ///         outputs: vec![4.into_return_value()]
 ///     },
 /// ]
-fn add(
+fn power(
     /// the number
     number: i64,
     /// the power

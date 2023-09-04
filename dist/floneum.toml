@@ -265,28 +265,28 @@ package_version = "0.1.0"
 binding_version = "*"
 
 [[packages]]
-name = "Add"
+name = "Subtract"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Subtract the second number from the first number"
 package_version = "0.1.0"
 binding_version = "*"
 
 [[packages]]
-name = "Add"
+name = "Multiply"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Multiplies two numbers"
 package_version = "0.1.0"
 binding_version = "*"
 
 [[packages]]
-name = "Add"
+name = "Divide"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Divide one number by another"
 package_version = "0.1.0"
 binding_version = "*"
 
 [[packages]]
-name = "Add"
+name = "Power"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Takes one number to the power of another number"
 package_version = "0.1.0"

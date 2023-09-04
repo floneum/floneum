@@ -22,12 +22,12 @@ fn slice(
     let start_index = if start >= 0 {
         start as usize - 1
     } else {
-        list.len() + (start.abs() as usize)
+        (list.len() as i64 + start) as usize
     };
     let end_index = if end >= 0 {
         end as usize - 1
     } else {
-        list.len() + (end.abs() as usize)
+        (list.len() as i64 + end) as usize
     };
 
     let min_index = start_index.min(end_index);
