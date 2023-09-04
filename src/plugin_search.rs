@@ -28,6 +28,18 @@ const BUILT_IN_PLUGINS: &[&str] = &[
     "Navigate To",
     "Get Article",
     "Read Rss Stream",
+    "Split",
+    "Slice",
+    "Join",
+    "Add To List",
+    "New List",
+    "Length",
+    "More Than",
+    "Less Than",
+    "Equals",
+    "And",
+    "Or",
+    "Not",
 ];
 
 pub fn PluginSearch(cx: Scope) -> Element {
