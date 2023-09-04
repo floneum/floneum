@@ -2005,6 +2005,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "floneum_add"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+]
+
+[[package]]
 name = "floneum_add_embedding"
 version = "0.1.0"
 dependencies = [
@@ -2041,6 +2048,13 @@ dependencies = [
 
 [[package]]
 name = "floneum_create_tab"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+]
+
+[[package]]
+name = "floneum_divide"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
@@ -2151,6 +2165,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "floneum_multiply"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+]
+
+[[package]]
 name = "floneum_navigate_to"
 version = "0.1.0"
 dependencies = [
@@ -2173,6 +2194,13 @@ dependencies = [
 
 [[package]]
 name = "floneum_not"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+]
+
+[[package]]
+name = "floneum_number"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
@@ -2213,6 +2241,13 @@ dependencies = [
  "wasmtime",
  "wasmtime-wasi",
  "wit-component 0.11.0",
+]
+
+[[package]]
+name = "floneum_power"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
 ]
 
 [[package]]
@@ -2287,6 +2322,20 @@ dependencies = [
 
 [[package]]
 name = "floneum_split"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+]
+
+[[package]]
+name = "floneum_string"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+]
+
+[[package]]
+name = "floneum_subtract"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
