@@ -207,3 +207,52 @@ authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Create an empty list"
 package_version = "0.1.0"
 binding_version = "*"
+
+[[packages]]
+name = "Length"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Get the number of elements in a list"
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "More Than"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Check if a number is greater than another number"
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Less Than"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Check if a number is less than another number"
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Equals"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Check if a number is equal to another number"
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "And"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Check if both inputs are true"
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Or"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Check if either input is true"
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Not"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Return the opposite of the input"
+package_version = "0.1.0"
+binding_version = "*"

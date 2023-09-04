@@ -11,6 +11,11 @@ use floneum_rust::*;
 ///         outputs: vec![true.into_return_value()],
 ///     },
 /// ]
-fn contains(value: String, contains: String) -> bool {
+fn contains(
+    /// the text to check
+    value: String,
+    /// the text to check for
+    contains: String,
+) -> bool {
     value.contains(&contains)
 }

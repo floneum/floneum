@@ -2,7 +2,7 @@ use floneum_rust::*;
 
 #[export_plugin]
 /// Create an empty list
-/// 
+///
 /// ### Examples
 /// vec![
 ///     Example {
