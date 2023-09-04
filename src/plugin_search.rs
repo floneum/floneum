@@ -40,6 +40,13 @@ const BUILT_IN_PLUGINS: &[&str] = &[
     "And",
     "Or",
     "Not",
+    "Number",
+    "String",
+    "Add",
+    "Subtract",
+    "Multiply",
+    "Divide",
+    "Power",
 ];
 
 pub fn PluginSearch(cx: Scope) -> Element {

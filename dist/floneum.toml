@@ -256,3 +256,52 @@ authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Return the opposite of the input"
 package_version = "0.1.0"
 binding_version = "*"
+
+[[packages]]
+name = "Add"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Adds two numbers"
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Add"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Subtract the second number from the first number"
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Add"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Multiplies two numbers"
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Add"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Divide one number by another"
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Add"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Takes one number to the power of another number"
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "Number"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Takes a number and returns the number"
+package_version = "0.1.0"
+binding_version = "*"
+
+[[packages]]
+name = "String"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+description = "Takes a string and returns the string"
+package_version = "0.1.0"
+binding_version = "*"
