@@ -30,9 +30,7 @@ impl NodeInput {
     }
 
     pub fn set_value(&mut self, index: usize, value: Input) {
-        if let ValueType::Many(_) = self.definition.ty {
-            self.value[index] = value;
-        }
+        self.value[index] = value;
     }
 
     pub fn push_value(&mut self, value: Input) {

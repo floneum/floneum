@@ -109,7 +109,12 @@ impl Node {
         Point2D::new(
             self.position.x - 1.,
             self.position.y
-                + ((index as f32 + 1.) * self.height / (self.input_count() as f32 + 1.)),
+                + ((self.inputs_before_connection(Connection {
+                    index,
+                    ty: ConnectionType::Single,
+                }) as f32)
+                    * self.height
+                    / (self.input_count() as f32 + 1.)),
         )
     }
 
@@ -117,9 +122,43 @@ impl Node {
         Point2D::new(
             self.position.x + 10. - 1.,
             self.position.y
-                + ((inner as f32 + index as f32 + 2.) * self.height
+                + ((self.inputs_before_connection(Connection {
+                    index,
+                    ty: ConnectionType::Element(inner),
+                }) as f32
+                    + 1.)
+                    * self.height
                     / (self.input_count() as f32 + 1.)),
         )
+    }
+
+    fn inputs_before_connection(&self, index: Connection) -> usize {
+        let mut current = 0;
+        let last_input_index = index.index;
+        for input_idx in 0..self.inputs.len() {
+            current += 1;
+            if let ConnectionType::Single = index.ty {
+                if input_idx == last_input_index {
+                    break;
+                }
+            }
+            if let Some(ValueType::Many(_)) = self.input_type(Connection {
+                index: input_idx,
+                ty: ConnectionType::Single,
+            }) {
+                let len = self.inputs[input_idx].read().value.len();
+                if let ConnectionType::Element(inner) = index.ty {
+                    if input_idx == last_input_index {
+                        if inner < len {
+                            current += inner;
+                            break;
+                        }
+                    }
+                }
+                current += len;
+            }
+        }
+        current
     }
 
     fn input_count(&self) -> usize {
@@ -149,7 +188,7 @@ impl Node {
         self.inputs
             .get(index)
             .and_then(|input| match &input.read().definition.ty {
-                ValueType::Many(ty) => Some(ValueType::Single(*ty)),
+                ValueType::Many(ty) => Some(ValueType::Many(*ty)),
                 ValueType::Single(_) => None,
             })
     }

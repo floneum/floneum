@@ -91,7 +91,7 @@ impl<'a> Deserialize<'a> for Output {
     }
 }
 
-impl PartialEq for Output{
+impl PartialEq for Output {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Output::Single(a), Output::Single(b)) => a == b,
@@ -114,7 +114,9 @@ impl PartialEq for PrimitiveValue {
             (PrimitiveValue::ModelType(a), PrimitiveValue::ModelType(b)) => a == b,
             (PrimitiveValue::Boolean(a), PrimitiveValue::Boolean(b)) => a == b,
             (PrimitiveValue::Tab(a), PrimitiveValue::Tab(b)) => a.id == b.id,
-            (PrimitiveValue::Node(a), PrimitiveValue::Node(b)) => a.id == b.id && a.tab.id == b.tab.id,
+            (PrimitiveValue::Node(a), PrimitiveValue::Node(b)) => {
+                a.id == b.id && a.tab.id == b.tab.id
+            }
             _ => false,
         }
     }
@@ -330,6 +332,7 @@ impl ValueType {
         match (self, other) {
             (ValueType::Single(a), ValueType::Single(b)) => a.compatible(b),
             (ValueType::Many(a), ValueType::Many(b)) => a.compatible(b),
+            (ValueType::Single(a), ValueType::Many(b)) => a.compatible(b),
             _ => false,
         }
     }
