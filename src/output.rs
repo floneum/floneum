@@ -44,10 +44,28 @@ pub fn Output(cx: Scope, node: Signal<Node>, index: usize) -> Element {
         if is_list {
             rsx! {
                 circle {
-                    cx: pos.x as f64 - NODE_KNOB_SIZE * 1.5 - NODE_MARGIN,
-                    cy: pos.y as f64 + NODE_KNOB_SIZE * 0.5,
-                    r: NODE_KNOB_SIZE,
+                    cx: pos.x as f64 - NODE_KNOB_SIZE - NODE_MARGIN,
+                    cy: pos.y as f64,
+                    r: NODE_KNOB_SIZE / 2.0,
                     fill: "black",
+                    onmousedown: move |evt| {
+                        let graph: VisualGraph = cx.consume_context().unwrap();
+                        let scaled_pos = graph.scale_screen_pos(evt.page_coordinates());
+                        graph.inner.write().currently_dragging = Some(CurrentlyDragging::Connection(CurrentlyDraggingProps {
+                            from: cx.props.node,
+                            index: DraggingIndex::Output(index),
+                            to: Signal::new(scaled_pos),
+                        }));
+                    },
+                    onmouseup: move |_| {
+                        // Set this as the end of the connection if we're currently dragging and this is the right type of connection
+                        let graph: VisualGraph = cx.consume_context().unwrap();
+                        graph.finish_connection(current_node_id, DraggingIndex::Output(index));
+                    },
+                    onmousemove: move |evt| {
+                        let graph: VisualGraph = cx.consume_context().unwrap();
+                        graph.update_mouse(&evt);
+                    },
                 }
             }
         }

@@ -49,6 +49,16 @@ impl<'a> Deserialize<'a> for Input {
     }
 }
 
+impl PartialEq for Input {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Input::Single(a), Input::Single(b)) => a == b,
+            (Input::Many(a), Input::Many(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
 impl From<Output> for MyValue {
     fn from(output: Output) -> Self {
         match output {
@@ -78,6 +88,35 @@ impl Serialize for Output {
 impl<'a> Deserialize<'a> for Output {
     fn deserialize<D: serde::Deserializer<'a>>(deserializer: D) -> Result<Self, D::Error> {
         MyValue::deserialize(deserializer).map(|v| v.into())
+    }
+}
+
+impl PartialEq for Output{
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Output::Single(a), Output::Single(b)) => a == b,
+            (Output::Many(a), Output::Many(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+impl PartialEq for PrimitiveValue {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (PrimitiveValue::Number(a), PrimitiveValue::Number(b)) => a == b,
+            (PrimitiveValue::Text(a), PrimitiveValue::Text(b)) => a == b,
+            (PrimitiveValue::File(a), PrimitiveValue::File(b)) => a == b,
+            (PrimitiveValue::Folder(a), PrimitiveValue::Folder(b)) => a == b,
+            (PrimitiveValue::Embedding(a), PrimitiveValue::Embedding(b)) => a.vector == b.vector,
+            (PrimitiveValue::Database(a), PrimitiveValue::Database(b)) => a.id == b.id,
+            (PrimitiveValue::Model(a), PrimitiveValue::Model(b)) => a.id == b.id,
+            (PrimitiveValue::ModelType(a), PrimitiveValue::ModelType(b)) => a == b,
+            (PrimitiveValue::Boolean(a), PrimitiveValue::Boolean(b)) => a == b,
+            (PrimitiveValue::Tab(a), PrimitiveValue::Tab(b)) => a.id == b.id,
+            (PrimitiveValue::Node(a), PrimitiveValue::Node(b)) => a.id == b.id && a.tab.id == b.tab.id,
+            _ => false,
+        }
     }
 }
 
@@ -165,6 +204,17 @@ impl From<MyModelType> for ModelType {
             MyModelType::Mpt(value) => ModelType::Mpt(value.into()),
             MyModelType::GptNeoX(value) => ModelType::GptNeoX(value.into()),
             MyModelType::Llama(value) => ModelType::Llama(value.into()),
+        }
+    }
+}
+
+impl PartialEq for ModelType {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (ModelType::Mpt(a), ModelType::Mpt(b)) => a == b,
+            (ModelType::GptNeoX(a), ModelType::GptNeoX(b)) => a == b,
+            (ModelType::Llama(a), ModelType::Llama(b)) => a == b,
+            _ => false,
         }
     }
 }

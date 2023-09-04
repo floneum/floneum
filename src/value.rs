@@ -10,16 +10,10 @@ use std::path::PathBuf;
 
 use crate::{node_value::NodeInput, Signal};
 
-#[derive(Props)]
+#[derive(Props, PartialEq)]
 pub struct ShowOutputProps {
     name: String,
     value: Output,
-}
-
-impl PartialEq for ShowOutputProps {
-    fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
-    }
 }
 
 pub fn ShowOutput(cx: Scope<ShowOutputProps>) -> Element {
@@ -94,16 +88,10 @@ fn show_primitive_value<'a>(cx: &'a ScopeState, value: &PrimitiveValue) -> Eleme
     }
 }
 
-#[derive(Props)]
+#[derive(Props, PartialEq)]
 pub struct ShowInputProps {
     label: String,
     value: Input,
-}
-
-impl PartialEq for ShowInputProps {
-    fn eq(&self, other: &Self) -> bool {
-        self.label == other.label
-    }
 }
 
 pub fn ShowInput(cx: Scope<ShowInputProps>) -> Element {
