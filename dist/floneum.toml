@@ -207,6 +207,7 @@ authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Create an empty list"
 package_version = "0.1.0"
 binding_version = "*"
+<<<<<<< HEAD
 
 [[packages]]
 name = "Length"
@@ -256,3 +257,5 @@ authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Return the opposite of the input"
 package_version = "0.1.0"
 binding_version = "*"
+=======
+>>>>>>> master
