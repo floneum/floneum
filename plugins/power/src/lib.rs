@@ -2,7 +2,7 @@ use floneum_rust::*;
 
 #[export_plugin]
 /// Takes one number to the power of another number
-/// 
+///
 /// ### Examples
 /// vec![
 ///     Example {

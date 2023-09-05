@@ -2,7 +2,7 @@ use floneum_rust::*;
 
 #[export_plugin]
 /// Divide one number by another
-/// 
+///
 /// ### Examples
 /// vec![
 ///     Example {

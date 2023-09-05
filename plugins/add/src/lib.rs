@@ -2,7 +2,7 @@ use floneum_rust::*;
 
 #[export_plugin]
 /// Adds two numbers
-/// 
+///
 /// ### Examples
 /// vec![
 ///     Example {

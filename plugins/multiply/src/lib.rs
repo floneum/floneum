@@ -2,7 +2,7 @@ use floneum_rust::*;
 
 #[export_plugin]
 /// Multiplies two numbers
-/// 
+///
 /// ### Examples
 /// vec![
 ///     Example {

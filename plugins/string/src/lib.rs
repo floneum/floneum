@@ -2,7 +2,7 @@ use floneum_rust::*;
 
 #[export_plugin]
 /// Takes a string and returns the string
-/// 
+///
 /// ### Examples
 /// vec![
 ///     Example {

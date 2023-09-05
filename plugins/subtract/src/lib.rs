@@ -2,7 +2,7 @@ use floneum_rust::*;
 
 #[export_plugin]
 /// Subtract the second number from the first number
-/// 
+///
 /// ### Examples
 /// vec![
 ///     Example {
