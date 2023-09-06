@@ -1,4 +1,5 @@
 use crate::plugin_search::PluginSearch;
+use crate::share::SaveMenu;
 use crate::Color;
 use crate::CurrentNodeInfo;
 use dioxus::prelude::*;
@@ -12,6 +13,8 @@ enum SidebarRoute {
         PluginSearch {},
         #[route("/node")]
         CurrentNodeInfo {},
+        #[route("/save")]
+        SaveMenu {}
 }
 
 pub fn Sidebar(cx: Scope) -> Element {
@@ -58,6 +61,11 @@ document.addEventListener("mouseup", function(){
                     class: "{Color::foreground_hover()} {Color::outline_color()} px-3 py-2 text-sm font-medium w-full",
                     to: SidebarRoute::CurrentNodeInfo {},
                     "Current Node"
+                }
+                Link {
+                    class: "{Color::foreground_hover()} {Color::outline_color()} px-3 py-2 text-sm font-medium w-full",
+                    to: SidebarRoute::SaveMenu {},
+                    "Save/Load Cloud"
                 }
             }
             Outlet::<SidebarRoute> {}

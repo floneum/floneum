@@ -26,6 +26,7 @@ mod sidebar;
 use sidebar::Sidebar;
 mod current_node;
 use current_node::{CurrentNodeInfo, FocusedNodeInfo};
+mod share;
 
 use crate::window::{make_config, use_apply_menu_event};
 mod input;
@@ -71,6 +72,8 @@ pub struct ApplicationState {
     currently_focused: Option<FocusedNodeInfo>,
     #[serde(skip)]
     plugins: HashMap<String, Plugin>,
+    #[serde(skip)]
+    last_save_id: Option<share::StorageId<ApplicationState>>,
 }
 
 impl ApplicationState {
