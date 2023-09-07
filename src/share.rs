@@ -1,4 +1,4 @@
-use crate::Color;
+use crate::{Color, DeserializeApplicationState};
 use dioxus::prelude::*;
 use dioxus_signals::use_signal;
 use std::{fmt::Display, str::FromStr};
@@ -8,6 +8,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use crate::use_application_state;
 
 pub(crate) fn SaveMenu(cx: Scope) -> Element {
+    let set_application_state: &Coroutine<DeserializeApplicationState> = use_coroutine_handle(cx).unwrap();
     let application = use_application_state(cx);
     let current_application = application.read();
     let current_save_id = &current_application.last_save_id;
@@ -79,18 +80,15 @@ pub(crate) fn SaveMenu(cx: Scope) -> Element {
             button {
                 class: "border-2 rounded-md p-2 {Color::outline_color()}",
                 onclick: move |_| {
+                    to_owned![set_application_state];
                     async move {
-                        let mut application = application.write();
-                        if let Some(id) = application.last_save_id.clone() {
-                            match id.load().await{
-                                Ok(loaded) => {
-                                    *application = loaded;
-                                    application.last_save_id = Some(id);
-                                }
-                                Err(err) => {
-                                    *error.write() = Some(err.to_string());
-                                }
-                            }
+                        let last_save_id = {
+                            application.read().last_save_id.clone()
+                        };
+                        if let Some(id) = last_save_id {
+                            set_application_state.send(DeserializeApplicationState {
+                                new_state: id,
+                            });
                         }
                     }
                 },

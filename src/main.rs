@@ -2,6 +2,7 @@
 #![allow(non_snake_case)]
 
 use crate::theme::Color;
+use futures_util::stream::StreamExt;
 use anyhow::Result;
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
 use dioxus_signals::*;
@@ -9,6 +10,7 @@ use floneum_plugin::Plugin;
 use floneumite::FloneumPackageIndex;
 use petgraph::stable_graph::{DefaultIx, NodeIndex};
 use serde::{Deserialize, Serialize};
+use share::StorageId;
 use std::{collections::HashMap, fs::File, io::Read, rc::Rc};
 
 mod node;
@@ -146,9 +148,20 @@ pub fn use_application_state(cx: &ScopeState) -> Signal<ApplicationState> {
     *use_context::<Signal<ApplicationState>>(cx).unwrap()
 }
 
+struct DeserializeApplicationState {
+    new_state: StorageId<ApplicationState>,
+}
+
 fn App(cx: Scope) -> Element {
     use_package_manager_provider(cx);
     let state = use_provide_application_state(cx);
+    use_coroutine(cx, |mut channel| async move {
+        while let Some(DeserializeApplicationState { new_state }) = channel.next().await {
+            let mut application = state.write();
+            *application = new_state.load().await.unwrap();
+            application.last_save_id = Some(new_state);
+        }
+    });
     let graph = state.read().graph.clone();
     use_apply_menu_event(cx, state);
 

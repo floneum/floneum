@@ -496,9 +496,9 @@ checksum = "a3e2c3daef883ecc1b5d58c15adae93470a91d425f3532ba1695849656af3fc1"
 
 [[package]]
 name = "bytemuck"
-version = "1.13.1"
+version = "1.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17febce684fd15d89027105661fec94afb475cb995fbc59d2865198446ba2eea"
+checksum = "374d28ec25809ee0e23827c2ab573d729e293f281dfe393500e7ad618baa61c6"
 
 [[package]]
 name = "byteorder"
@@ -508,9 +508,9 @@ checksum = "14c189c53d098945499cdfa7ecc63567cf3886b3332b312a5b4585d8d3a6a610"
 
 [[package]]
 name = "bytes"
-version = "1.4.0"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89b2fd2a0dcf38d7971e2194b6b6eebab45ae01067456a7fd93d5547a61b70be"
+checksum = "a2bd12c1caf447e69cd4528f47f94d203fd2582878ecb9e9465484c4148a8223"
 
 [[package]]
 name = "bytesize"
@@ -802,16 +802,15 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "chrono"
-version = "0.4.28"
+version = "0.4.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95ed24df0632f708f5f6d8082675bef2596f7084dee3dd55f632290bf35bfe0f"
+checksum = "defd4e7873dbddba6c7c91e199c7fcb946abc4a6a4ac3195400bcfb01b5de877"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
  "js-sys",
  "num-traits",
  "serde",
- "time 0.1.45",
  "wasm-bindgen",
  "windows-targets 0.48.5",
 ]
@@ -1078,16 +1077,16 @@ dependencies = [
 
 [[package]]
 name = "cranelift-bforest"
-version = "0.100.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "0.101.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "cranelift-entity",
 ]
 
 [[package]]
 name = "cranelift-codegen"
-version = "0.100.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "0.101.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "bumpalo",
  "cranelift-bforest",
@@ -1106,29 +1105,29 @@ dependencies = [
 
 [[package]]
 name = "cranelift-codegen-meta"
-version = "0.100.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "0.101.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "cranelift-codegen-shared",
 ]
 
 [[package]]
 name = "cranelift-codegen-shared"
-version = "0.100.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "0.101.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 
 [[package]]
 name = "cranelift-control"
-version = "0.100.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "0.101.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "arbitrary",
 ]
 
 [[package]]
 name = "cranelift-entity"
-version = "0.100.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "0.101.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "serde",
  "serde_derive",
@@ -1136,8 +1135,8 @@ dependencies = [
 
 [[package]]
 name = "cranelift-frontend"
-version = "0.100.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "0.101.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "cranelift-codegen",
  "log",
@@ -1147,13 +1146,13 @@ dependencies = [
 
 [[package]]
 name = "cranelift-isle"
-version = "0.100.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "0.101.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 
 [[package]]
 name = "cranelift-native"
-version = "0.100.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "0.101.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "cranelift-codegen",
  "libc",
@@ -1162,8 +1161,8 @@ dependencies = [
 
 [[package]]
 name = "cranelift-wasm"
-version = "0.100.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "0.101.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "cranelift-codegen",
  "cranelift-entity",
@@ -1448,7 +1447,7 @@ dependencies = [
 [[package]]
 name = "dioxus"
 version = "0.4.2"
-source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#4e68055ded244820ee000999c60168fe2deb797b"
+source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#ba6ffd3a2cd045d31eb6a4e91c73c17d079ac3a5"
 dependencies = [
  "dioxus-core",
  "dioxus-core-macro",
@@ -1461,23 +1460,23 @@ dependencies = [
 [[package]]
 name = "dioxus-core"
 version = "0.4.2"
-source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#4e68055ded244820ee000999c60168fe2deb797b"
+source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#ba6ffd3a2cd045d31eb6a4e91c73c17d079ac3a5"
 dependencies = [
  "bumpalo",
  "futures-channel",
  "futures-util",
- "log",
  "longest-increasing-subsequence",
  "rustc-hash",
  "serde",
  "slab",
  "smallbox",
+ "tracing",
 ]
 
 [[package]]
 name = "dioxus-core-macro"
 version = "0.4.2"
-source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#4e68055ded244820ee000999c60168fe2deb797b"
+source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#ba6ffd3a2cd045d31eb6a4e91c73c17d079ac3a5"
 dependencies = [
  "dioxus-rsx",
  "proc-macro2",
@@ -1494,7 +1493,7 @@ checksum = "2ea539174bb236e0e7dc9c12b19b88eae3cb574dedbd0252a2d43ea7e6de13e2"
 [[package]]
 name = "dioxus-desktop"
 version = "0.4.2"
-source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#4e68055ded244820ee000999c60168fe2deb797b"
+source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#ba6ffd3a2cd045d31eb6a4e91c73c17d079ac3a5"
 dependencies = [
  "async-trait",
  "core-foundation",
@@ -1506,7 +1505,6 @@ dependencies = [
  "futures-channel",
  "futures-util",
  "infer",
- "log",
  "objc",
  "objc_id",
  "rfd",
@@ -1515,6 +1513,7 @@ dependencies = [
  "slab",
  "thiserror",
  "tokio",
+ "tracing",
  "urlencoding",
  "webbrowser",
  "wry",
@@ -1532,20 +1531,20 @@ dependencies = [
 [[package]]
 name = "dioxus-hooks"
 version = "0.4.2"
-source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#4e68055ded244820ee000999c60168fe2deb797b"
+source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#ba6ffd3a2cd045d31eb6a4e91c73c17d079ac3a5"
 dependencies = [
  "dioxus-core",
  "dioxus-debug-cell",
  "futures-channel",
- "log",
  "slab",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]
 name = "dioxus-hot-reload"
 version = "0.4.2"
-source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#4e68055ded244820ee000999c60168fe2deb797b"
+source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#ba6ffd3a2cd045d31eb6a4e91c73c17d079ac3a5"
 dependencies = [
  "dioxus-core",
  "dioxus-html",
@@ -1558,7 +1557,7 @@ dependencies = [
 [[package]]
 name = "dioxus-html"
 version = "0.4.2"
-source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#4e68055ded244820ee000999c60168fe2deb797b"
+source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#ba6ffd3a2cd045d31eb6a4e91c73c17d079ac3a5"
 dependencies = [
  "async-channel",
  "async-trait",
@@ -1577,12 +1576,12 @@ dependencies = [
 [[package]]
 name = "dioxus-interpreter-js"
 version = "0.4.2"
-source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#4e68055ded244820ee000999c60168fe2deb797b"
+source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#ba6ffd3a2cd045d31eb6a4e91c73c17d079ac3a5"
 
 [[package]]
 name = "dioxus-router"
 version = "0.4.2"
-source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#4e68055ded244820ee000999c60168fe2deb797b"
+source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#ba6ffd3a2cd045d31eb6a4e91c73c17d079ac3a5"
 dependencies = [
  "anyhow",
  "dioxus",
@@ -1591,9 +1590,10 @@ dependencies = [
  "gloo",
  "gloo-utils",
  "js-sys",
- "log",
  "thiserror",
+ "tracing",
  "url",
+ "urlencoding",
  "wasm-bindgen",
  "web-sys",
 ]
@@ -1601,7 +1601,7 @@ dependencies = [
 [[package]]
 name = "dioxus-router-macro"
 version = "0.4.2"
-source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#4e68055ded244820ee000999c60168fe2deb797b"
+source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#ba6ffd3a2cd045d31eb6a4e91c73c17d079ac3a5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1612,7 +1612,7 @@ dependencies = [
 [[package]]
 name = "dioxus-rsx"
 version = "0.4.2"
-source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#4e68055ded244820ee000999c60168fe2deb797b"
+source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#ba6ffd3a2cd045d31eb6a4e91c73c17d079ac3a5"
 dependencies = [
  "dioxus-core",
  "proc-macro2",
@@ -1623,13 +1623,13 @@ dependencies = [
 [[package]]
 name = "dioxus-signals"
 version = "0.0.0"
-source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#4e68055ded244820ee000999c60168fe2deb797b"
+source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#ba6ffd3a2cd045d31eb6a4e91c73c17d079ac3a5"
 dependencies = [
  "dioxus-core",
  "generational-box",
- "log",
  "serde",
  "simple_logger",
+ "tracing",
 ]
 
 [[package]]
@@ -2713,7 +2713,7 @@ dependencies = [
 [[package]]
 name = "generational-box"
 version = "0.0.0"
-source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#4e68055ded244820ee000999c60168fe2deb797b"
+source = "git+https://github.com/ealmloff/dioxus?branch=improved-signals#ba6ffd3a2cd045d31eb6a4e91c73c17d079ac3a5"
 dependencies = [
  "bumpalo",
 ]
@@ -4753,9 +4753,9 @@ checksum = "ff011a302c396a5197692431fc1948019154afc178baf7d8e37367442a4601cf"
 
 [[package]]
 name = "openssl-sys"
-version = "0.9.92"
+version = "0.9.93"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db7e971c2c2bba161b2d2fdf37080177eff520b3bc044787c7f1f5f9e78d869b"
+checksum = "db4d56a4c0478783083cfafcc42493dd4a981d41669da64b4572a2a089b51b1d"
 dependencies = [
  "cc",
  "libc",
@@ -7641,9 +7641,9 @@ checksum = "9d5b2c62b4012a3e1eca5a7e077d13b3bf498c4073e33ccd58626607748ceeca"
 
 [[package]]
 name = "walkdir"
-version = "2.3.3"
+version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36df944cda56c7d8d8b7496af378e6b16de9284591917d307c9b4d313c44e698"
+checksum = "d71d857dc86794ca4c280d616f7da00d2dbfd8cd788846559a6813e6aa4b54ee"
 dependencies = [
  "same-file",
  "winapi-util",
@@ -7678,8 +7678,8 @@ checksum = "9c8d87e72b64a3b4db28d11ce29237c246188f4f51057d65a7eab63b7987e423"
 
 [[package]]
 name = "wasi-cap-std-sync"
-version = "13.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "14.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7701,8 +7701,8 @@ dependencies = [
 
 [[package]]
 name = "wasi-common"
-version = "13.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "14.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "anyhow",
  "bitflags 2.4.0",
@@ -7894,8 +7894,8 @@ dependencies = [
 
 [[package]]
 name = "wasmtime"
-version = "13.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "14.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7933,16 +7933,16 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-asm-macros"
-version = "13.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "14.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "cfg-if",
 ]
 
 [[package]]
 name = "wasmtime-cache"
-version = "13.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "14.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "anyhow",
  "base64 0.21.3",
@@ -7960,8 +7960,8 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-component-macro"
-version = "13.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "14.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "anyhow",
  "proc-macro2",
@@ -7974,13 +7974,13 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-component-util"
-version = "13.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "14.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 
 [[package]]
 name = "wasmtime-cranelift"
-version = "13.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "14.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "anyhow",
  "cfg-if",
@@ -8003,8 +8003,8 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-cranelift-shared"
-version = "13.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "14.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
@@ -8018,8 +8018,8 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-environ"
-version = "13.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "14.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "anyhow",
  "cranelift-entity",
@@ -8040,8 +8040,8 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-fiber"
-version = "13.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "14.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "cc",
  "cfg-if",
@@ -8053,8 +8053,8 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-jit"
-version = "13.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "14.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "addr2line",
  "anyhow",
@@ -8079,8 +8079,8 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-jit-debug"
-version = "13.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "14.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "object",
  "once_cell",
@@ -8090,8 +8090,8 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-jit-icache-coherence"
-version = "13.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "14.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "cfg-if",
  "libc",
@@ -8100,8 +8100,8 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-runtime"
-version = "13.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "14.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "anyhow",
  "cc",
@@ -8129,8 +8129,8 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-types"
-version = "13.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "14.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "cranelift-entity",
  "serde",
@@ -8141,8 +8141,8 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-versioned-export-macros"
-version = "13.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "14.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -8151,8 +8151,8 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-wasi"
-version = "13.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "14.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8184,8 +8184,8 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-winch"
-version = "13.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "14.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
@@ -8200,8 +8200,8 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-wit-bindgen"
-version = "13.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "14.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "anyhow",
  "heck",
@@ -8211,8 +8211,8 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-wmemcheck"
-version = "13.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "14.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 
 [[package]]
 name = "wast"
@@ -8443,13 +8443,14 @@ checksum = "9193164d4de03a926d909d3bc7c30543cecb35400c02114792c2cae20d5e2dbb"
 
 [[package]]
 name = "which"
-version = "4.4.0"
+version = "4.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2441c784c52b289a054b7201fc93253e288f094e2f4be9058343127c4226a269"
+checksum = "87ba24419a2078cd2b0f2ede2691b6c66d8e47836da3b6db8265ebad47afbfc7"
 dependencies = [
  "either",
- "libc",
+ "home",
  "once_cell",
+ "rustix 0.38.11",
 ]
 
 [[package]]
@@ -8460,8 +8461,8 @@ checksum = "17882f045410753661207383517a6f62ec3dbeb6a4ed2acce01f0728238d1983"
 
 [[package]]
 name = "wiggle"
-version = "13.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "14.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8474,8 +8475,8 @@ dependencies = [
 
 [[package]]
 name = "wiggle-generate"
-version = "13.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "14.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "anyhow",
  "heck",
@@ -8488,8 +8489,8 @@ dependencies = [
 
 [[package]]
 name = "wiggle-macro"
-version = "13.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "14.0.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -8539,8 +8540,8 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 
 [[package]]
 name = "winch-codegen"
-version = "0.11.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+version = "0.12.0"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
@@ -8981,7 +8982,7 @@ dependencies = [
 [[package]]
 name = "witx"
 version = "0.9.1"
-source = "git+https://github.com/bytecodealliance/wasmtime#f10d665bb9cacceee6051989e99c0934c542ad84"
+source = "git+https://github.com/bytecodealliance/wasmtime#181d005c45965b580b05df7bdaa29a8a4b4e5827"
 dependencies = [
  "anyhow",
  "log",
