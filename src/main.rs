@@ -44,24 +44,24 @@ pub type Point = Point2D<f32, f32>;
 
 #[tokio::main]
 async fn main() {
-    use tracing_subscriber::filter::LevelFilter;
-    use tracing_subscriber::layer::SubscriberExt;
-    use tracing_subscriber::util::SubscriberInitExt;
-    use tracing_subscriber::EnvFilter;
+    // use tracing_subscriber::filter::LevelFilter;
+    // use tracing_subscriber::layer::SubscriberExt;
+    // use tracing_subscriber::util::SubscriberInitExt;
+    // use tracing_subscriber::EnvFilter;
 
-    let file = File::create("debug.log").unwrap();
-    let debug_log = tracing_subscriber::fmt::layer().with_writer(std::sync::Arc::new(file));
+    // let file = File::create("debug.log").unwrap();
+    // let debug_log = tracing_subscriber::fmt::layer().with_writer(std::sync::Arc::new(file));
 
-    let logger = tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::builder()
-                .with_default_directive(LevelFilter::TRACE.into())
-                .from_env_lossy(),
-        )
-        .pretty()
-        .finish();
+    // let logger = tracing_subscriber::fmt()
+    //     .with_env_filter(
+    //         EnvFilter::builder()
+    //             .with_default_directive(LevelFilter::DEBUG.into())
+    //             .from_env_lossy(),
+    //     )
+    //     .pretty()
+    //     .finish();
 
-    logger.with(debug_log).init();
+    // logger.with(debug_log).init();
 
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
