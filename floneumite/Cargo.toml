@@ -11,7 +11,7 @@ anyhow = "1.0.71"
 directories = "5.0.1"
 hyper = "0.14.27"
 log = "0.4.19"
-octocrab = "0.28.0"
+octocrab = "0.30.1"
 once_cell = "1.18.0"
 serde = { version = "1.0.164", features = ["derive"] }
 tokio = { version = "1.29.1", features = ["full"] }

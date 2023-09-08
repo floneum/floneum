@@ -1,11 +1,13 @@
 use crate::OCTOCRAB;
 use crate::{package, packages_path, Config, PackageStructure};
+use octocrab::models::repos::RepoCommit;
+use octocrab::Page;
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, time::SystemTime};
 
 const PACKAGE_INDEX_TIMEOUT: u64 = 60 * 60 * 24 * 3; // 3 days
 
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Default, Deserialize, Serialize, Debug)]
 pub struct FloneumPackageIndex {
     fetch_successful: bool,
     last_fetched: u64,
@@ -40,9 +42,9 @@ impl FloneumPackageIndex {
         let path = packages_path()?;
         let index_path = path.join("index.toml");
         log::info!("loading index from {index_path:?}");
-        Ok(toml::from_str::<Self>(&std::fs::read_to_string(
-            index_path,
-        )?)?)
+        Ok(toml::from_str::<Self>(
+            &tokio::fs::read_to_string(index_path).await?,
+        )?)
     }
 
     async fn fetch_package_entry(
@@ -50,6 +52,7 @@ impl FloneumPackageIndex {
         commit_sha: String,
         repo: RepoId,
         package: PackageStructure,
+        commit: &Page<RepoCommit>,
     ) -> anyhow::Result<PackageIndexEntry> {
         log::info!("found: {}", package.name);
         // We need to normalize the case and url encode the package name before sending it to github
@@ -57,12 +60,12 @@ impl FloneumPackageIndex {
             "dist/{}/package.wasm",
             urlencoding::encode(&package.name.to_lowercase())
         );
-        let bytes = repo.get_file(&repo_path).await?;
+        let bytes = repo.get_file(&repo_path, commit).await?;
 
         let package_path = path.join(&package.name).join(&package.package_version);
-        std::fs::create_dir_all(&package_path)?;
+        tokio::fs::create_dir_all(&package_path).await?;
         let wasm_path = package_path.join("package.wasm");
-        std::fs::write(wasm_path, bytes)?;
+        tokio::fs::write(wasm_path, bytes).await?;
         let remote = Remote::new(package.clone(), repo.clone(), commit_sha.clone());
         let package = PackageIndexEntry::new(package_path, Some(package), Some(remote));
 
@@ -96,6 +99,7 @@ impl FloneumPackageIndex {
                                 commit_sha.clone(),
                                 RepoId::new(author.login.clone(), item.name.clone()),
                                 package.clone(),
+                                &commits,
                             )
                             .await
                             {
@@ -148,7 +152,7 @@ impl FloneumPackageIndex {
         };
         let index = toml::to_string(&config)?;
         log::info!("saved index @{index_path:?}");
-        std::fs::write(index_path, index)?;
+        tokio::fs::write(index_path, index).await?;
 
         Ok(config)
     }
@@ -179,6 +183,10 @@ impl FloneumPackageIndex {
     pub fn entries(&self) -> &[PackageIndexEntry] {
         &self.entries
     }
+
+    pub fn push_entry(&mut self, entry: PackageIndexEntry) {
+        self.entries.push(entry);
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -192,10 +200,13 @@ impl RepoId {
         Self { owner, name }
     }
 
-    pub async fn get_file(&self, path: &str) -> anyhow::Result<Vec<u8>> {
+    pub async fn get_file(
+        &self,
+        path: &str,
+        commits: &Page<RepoCommit>,
+    ) -> anyhow::Result<Vec<u8>> {
         let instance = &*OCTOCRAB;
         let repo_handle = instance.repos(self.owner.clone(), self.name.clone());
-        let commits = repo_handle.list_commits().send().await?;
         if let Some(last_commit) = commits.items.first() {
             let file = repo_handle.raw_file(last_commit.sha.clone(), path).await?;
             let body = file.into_body();
@@ -227,9 +238,9 @@ impl RepoId {
             let body = file.into_body();
             if let std::result::Result::Ok(bytes) = hyper::body::to_bytes(body).await {
                 let package_path = packages_path()?.join(name).join(version);
-                std::fs::create_dir_all(&package_path)?;
+                tokio::fs::create_dir_all(&package_path).await?;
                 let wasm_path = package_path.join("package.wasm");
-                std::fs::write(wasm_path, bytes)?;
+                tokio::fs::write(wasm_path, bytes).await?;
             }
         }
         Ok(())
@@ -329,7 +340,7 @@ impl PackageIndexEntry {
     pub async fn wasm_bytes(&self) -> anyhow::Result<Vec<u8>> {
         let wasm_path = self.wasm_path();
         log::info!("loading wasm from {wasm_path:?}");
-        Ok(std::fs::read(wasm_path)?)
+        Ok(tokio::fs::read(wasm_path).await?)
     }
 
     pub fn meta(&self) -> Option<&PackageStructure> {
@@ -341,4 +352,11 @@ impl PackageIndexEntry {
 pub struct Package {
     pub path: std::path::PathBuf,
     pub structure: package::PackageStructure,
+}
+
+#[tokio::test]
+async fn fetch_registry() -> anyhow::Result<()> {
+    let index = FloneumPackageIndex::fetch().await?;
+    println!("{:#?}", index);
+    Ok(())
 }

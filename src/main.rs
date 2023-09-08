@@ -2,16 +2,17 @@
 #![allow(non_snake_case)]
 
 use crate::theme::Color;
-use futures_util::stream::StreamExt;
 use anyhow::Result;
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
 use dioxus_signals::*;
 use floneum_plugin::Plugin;
 use floneumite::FloneumPackageIndex;
+use futures_util::stream::StreamExt;
 use petgraph::stable_graph::{DefaultIx, NodeIndex};
 use serde::{Deserialize, Serialize};
 use share::StorageId;
 use std::{collections::HashMap, fs::File, io::Read, rc::Rc};
+use tokio::sync::oneshot::Receiver;
 
 mod node;
 pub use node::Node;
@@ -43,26 +44,37 @@ pub type Point = Point2D<f32, f32>;
 
 #[tokio::main]
 async fn main() {
-    // use tracing_subscriber::filter::LevelFilter;
-    // use tracing_subscriber::layer::SubscriberExt;
-    // use tracing_subscriber::util::SubscriberInitExt;
-    // use tracing_subscriber::EnvFilter;
+    use tracing_subscriber::filter::LevelFilter;
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
+    use tracing_subscriber::EnvFilter;
 
-    // let file = File::create("debug.log").unwrap();
-    // let debug_log = tracing_subscriber::fmt::layer().with_writer(std::sync::Arc::new(file));
+    let file = File::create("debug.log").unwrap();
+    let debug_log = tracing_subscriber::fmt::layer().with_writer(std::sync::Arc::new(file));
 
-    // let logger = tracing_subscriber::fmt()
-    //     .with_env_filter(
-    //         EnvFilter::builder()
-    //             .with_default_directive(LevelFilter::INFO.into())
-    //             .from_env_lossy(),
-    //     )
-    //     .pretty()
-    //     .finish();
+    let logger = tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::builder()
+                .with_default_directive(LevelFilter::TRACE.into())
+                .from_env_lossy(),
+        )
+        .pretty()
+        .finish();
 
-    // logger.with(debug_log).init();
+    logger.with(debug_log).init();
 
-    dioxus_desktop::launch_with_props(App, (), make_config());
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        tx.send(FloneumPackageIndex::load().await).unwrap();
+    });
+
+    dioxus_desktop::launch_with_props(
+        App,
+        AppProps {
+            channel: RefCell::new(Some(rx)),
+        },
+        make_config(),
+    );
 }
 
 pub struct PluginId(usize);
@@ -152,9 +164,30 @@ struct DeserializeApplicationState {
     new_state: StorageId<ApplicationState>,
 }
 
-fn App(cx: Scope) -> Element {
+#[derive(Props)]
+pub struct AppProps {
+    #[props(into)]
+    channel: RefCell<Option<Receiver<FloneumPackageIndex>>>,
+}
+
+impl PartialEq for AppProps {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+fn App(cx: Scope<AppProps>) -> Element {
     use_package_manager_provider(cx);
+    let package_manager = use_shared_state::<Option<Rc<FloneumPackageIndex>>>(cx).unwrap();
     let state = use_provide_application_state(cx);
+    cx.use_hook(|| {
+        let channel = cx.props.channel.borrow_mut().take().unwrap();
+        to_owned![package_manager];
+        cx.spawn(async move {
+            let new_package_manager = channel.await;
+            *package_manager.write() = Some(Rc::new(new_package_manager.unwrap()));
+        });
+    });
     use_coroutine(cx, |mut channel| async move {
         while let Some(DeserializeApplicationState { new_state }) = channel.next().await {
             let mut application = state.write();
@@ -177,14 +210,6 @@ fn use_package_manager_provider(cx: &ScopeState) {
     use_shared_state_provider(cx, || {
         let state: Option<Rc<FloneumPackageIndex>> = None;
         state
-    });
-    let provider = use_shared_state(cx).unwrap();
-
-    cx.use_hook(|| {
-        let registry = provider.clone();
-        cx.spawn(async move {
-            *registry.write() = Some(Rc::new(FloneumPackageIndex::load().await));
-        });
     });
 }
 

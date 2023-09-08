@@ -8,7 +8,8 @@ use serde::{de::DeserializeOwned, Serialize};
 use crate::use_application_state;
 
 pub(crate) fn SaveMenu(cx: Scope) -> Element {
-    let set_application_state: &Coroutine<DeserializeApplicationState> = use_coroutine_handle(cx).unwrap();
+    let set_application_state: &Coroutine<DeserializeApplicationState> =
+        use_coroutine_handle(cx).unwrap();
     let application = use_application_state(cx);
     let current_application = application.read();
     let current_save_id = &current_application.last_save_id;
@@ -31,7 +32,7 @@ pub(crate) fn SaveMenu(cx: Scope) -> Element {
                         application.write().last_save_id = event.value.parse().ok();
                     },
                 }
-    
+
                 button {
                     class: "p-2 {Color::foreground_color()} {Color::text_color()}",
                     onclick: move |_| {
@@ -146,13 +147,12 @@ impl<T: Serialize + DeserializeOwned> StorageId<T> {
             .send()
             .await?;
 
-        Ok(
-            res.headers()
-                .get("Location")
-                .ok_or_else(|| anyhow::anyhow!("No location header"))?
-                .to_str()?
-                .parse()?
-        )
+        Ok(res
+            .headers()
+            .get("Location")
+            .ok_or_else(|| anyhow::anyhow!("No location header"))?
+            .to_str()?
+            .parse()?)
     }
 
     pub async fn load(&self) -> anyhow::Result<T> {
