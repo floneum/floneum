@@ -70,7 +70,7 @@ pub struct CurrentlyDraggingProps {
     pub to: Signal<Point2D<f32, f32>>,
 }
 
-#[derive(Props, Clone, Serialize, Deserialize, Default)]
+#[derive(Props, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct VisualGraph {
     pub inner: Signal<VisualGraphInner>,
 }
@@ -371,12 +371,6 @@ impl VisualGraph {
             drop(current_graph);
         }
         self.inner.write().currently_dragging = None;
-    }
-}
-
-impl PartialEq for VisualGraph {
-    fn eq(&self, _: &Self) -> bool {
-        false
     }
 }
 
