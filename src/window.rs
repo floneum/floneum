@@ -18,6 +18,7 @@ pub(crate) fn make_config() -> dioxus_desktop::Config {
     let mut edit_menu = MenuBar::new();
     let mut window_menu = MenuBar::new();
     let mut application_menu = MenuBar::new();
+    let mut examples_menu = MenuBar::new();
 
     edit_menu.add_native_item(MenuItem::Undo);
     edit_menu.add_native_item(MenuItem::Redo);
@@ -40,9 +41,14 @@ pub(crate) fn make_config() -> dioxus_desktop::Config {
     application_menu.add_item(SaveAsMenuItem::item());
     application_menu.add_item(OpenMenuItem::item());
 
+    examples_menu.add_item(QAndAMenuItem::item());
+    examples_menu.add_item(StarRepoMenuItem::item());
+    examples_menu.add_item(SummarizeNewsMenuItem::item());
+
     main_menu.add_submenu("Floneum", true, application_menu);
     main_menu.add_submenu("Edit", true, edit_menu);
     main_menu.add_submenu("Window", true, window_menu);
+    main_menu.add_submenu("Examples", true, examples_menu);
 
     let tailwind = include_str!("../public/tailwind.css");
     dioxus_desktop::Config::default()
@@ -88,6 +94,12 @@ pub fn use_apply_menu_event(cx: &ScopeState, state: Signal<ApplicationState>) {
                 SaveAsMenuItem::save(&state.read());
             } else if menu_id == OpenMenuItem::id() {
                 OpenMenuItem::open(open_application);
+            } else if menu_id == QAndAMenuItem::id() {
+                QAndAMenuItem::open(open_application);
+            } else if menu_id == StarRepoMenuItem::id() {
+                StarRepoMenuItem::open(open_application);
+            } else if menu_id == SummarizeNewsMenuItem::id() {
+                SummarizeNewsMenuItem::open(open_application);
             }
         }
         _ => {}
@@ -204,6 +216,76 @@ impl OpenMenuItem {
                 }
             }
         }
+    }
+}
+
+
+struct QAndAMenuItem;
+
+impl QAndAMenuItem {
+    fn name() -> &'static str {
+        "Open Q&A Example"
+    }
+
+    pub fn id() -> MenuId {
+        MenuId::new(Self::name())
+    }
+
+    pub fn item() -> MenuItemAttributes<'static> {
+        MenuItemAttributes::new(Self::name())
+            .with_id(Self::id())
+            
+    }
+
+    pub fn open(state: Signal<Option<Vec<u8>>>) {
+        let bytes = include_bytes!("../example_workflows/Q&A.json");
+        state.set(Some(bytes.to_vec()));
+    }
+}
+
+struct StarRepoMenuItem;
+
+impl StarRepoMenuItem {
+    fn name() -> &'static str {
+        "Open Star Repo Example"
+    }
+
+    pub fn id() -> MenuId {
+        MenuId::new(Self::name())
+    }
+
+    pub fn item() -> MenuItemAttributes<'static> {
+        MenuItemAttributes::new(Self::name())
+            .with_id(Self::id())
+            
+    }
+
+    pub fn open(state: Signal<Option<Vec<u8>>>) {
+        let bytes = include_bytes!("../example_workflows/StarRepo.json");
+        state.set(Some(bytes.to_vec()));
+    }
+}
+
+struct SummarizeNewsMenuItem;
+
+impl SummarizeNewsMenuItem {
+    fn name() -> &'static str {
+        "Open Summarize News Example"
+    }
+
+    pub fn id() -> MenuId {
+        MenuId::new(Self::name())
+    }
+
+    pub fn item() -> MenuItemAttributes<'static> {
+        MenuItemAttributes::new(Self::name())
+            .with_id(Self::id())
+            
+    }
+
+    pub fn open(state: Signal<Option<Vec<u8>>>) {
+        let bytes = include_bytes!("../example_workflows/SummarizeNews.json");
+        state.set(Some(bytes.to_vec()));
     }
 }
 
