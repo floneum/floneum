@@ -3,7 +3,7 @@ name = "Add Embedding"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Adds a embedding to a database. The model used to generate the embedding and the model type used to create the database must be the same."
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Embedding"
@@ -13,7 +13,7 @@ Creates embeddings for some text.
 
 An embedding is a representation of something like the \"meaning\" of some text. You can use embeddings with embedding databases to find documents similar to anther document."""
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Embedding Db"
@@ -23,14 +23,14 @@ Creates a database of embeddings. (A database is just a different way to store i
 
 When using this embedding database, you must use the same model to generate the embeddings you insert into this database."""
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Format"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Formats some text by replacing any instances of {} in order with the texts passed in."
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Generate Text"
@@ -42,7 +42,7 @@ It is important to keep in mind that the language model is just generating text.
 
 It is commonly helpful to provide a few examples to the model before your new data so that the model can pick up on the pattern of the text"""
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Generate Structured Text"
@@ -54,7 +54,7 @@ It is important to keep in mind that the language model is just generating text.
 
 It is commonly helpful to provide a few examples to the model before your new data so that the model can pick up on the pattern of the text"""
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Search"
@@ -66,242 +66,242 @@ This node requires that the Embedding Database and the Embedding use the same mo
 
 Returns text with documents separated with newlines."""
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Search Engine"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Searches wikipedia, fetches the top article from wikipedia, and returns it as text"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "If Statement"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Switch between two values based on a condition"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Contains"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Checks if some text contains some other text. Returns true if the first text contains the second text."
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Write To File"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Writes some text to a file at the given path (in the /sandbox directory)"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Read From File"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Reads some text from a file at the given path (in the /sandbox directory)"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Run Python"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Runs a python script. Returns the value in the last line"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Create Browser"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Creates a browser tab."
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Find Node"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Finds a node in a tab"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Find Child Node"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Finds a node in a tab"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Click Node"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Clicks a node in a tab"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Node Text"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Gets the text of a node"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Type In Node"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Types some text in a node"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Navigate To"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Navigate a tab to a URL"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Get Article"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Read an article from a URL"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Read Rss Stream"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Reads a rss stream from a url"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Split"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Split a string into multiple strings separated by a separator"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Slice"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Take a slice of an list between two positions in the list. The start index is inclusive and the end index is exclusive."
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Join"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Join multiple strings into one string separated by a separator"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Add To List"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Add an element to a list"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "New List"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Create an empty list"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Length"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Get the number of elements in a list"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "More Than"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Check if a number is greater than another number"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Less Than"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Check if a number is less than another number"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Equals"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Check if a number is equal to another number"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "And"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Check if both inputs are true"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Or"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Check if either input is true"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Not"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Return the opposite of the input"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Add"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Adds two numbers"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Subtract"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Subtract the second number from the first number"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Multiply"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Multiplies two numbers"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Divide"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Divide one number by another"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Power"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Takes one number to the power of another number"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "Number"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Takes a number and returns the number"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"
 
 [[packages]]
 name = "String"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Takes a string and returns the string"
 package_version = "0.1.0"
-binding_version = "*"
+binding_version = "^0.1.0"

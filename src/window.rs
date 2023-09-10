@@ -219,7 +219,6 @@ impl OpenMenuItem {
     }
 }
 
-
 struct QAndAMenuItem;
 
 impl QAndAMenuItem {
@@ -232,9 +231,7 @@ impl QAndAMenuItem {
     }
 
     pub fn item() -> MenuItemAttributes<'static> {
-        MenuItemAttributes::new(Self::name())
-            .with_id(Self::id())
-            
+        MenuItemAttributes::new(Self::name()).with_id(Self::id())
     }
 
     pub fn open(state: Signal<Option<Vec<u8>>>) {
@@ -255,9 +252,7 @@ impl StarRepoMenuItem {
     }
 
     pub fn item() -> MenuItemAttributes<'static> {
-        MenuItemAttributes::new(Self::name())
-            .with_id(Self::id())
-            
+        MenuItemAttributes::new(Self::name()).with_id(Self::id())
     }
 
     pub fn open(state: Signal<Option<Vec<u8>>>) {
@@ -278,9 +273,7 @@ impl SummarizeNewsMenuItem {
     }
 
     pub fn item() -> MenuItemAttributes<'static> {
-        MenuItemAttributes::new(Self::name())
-            .with_id(Self::id())
-            
+        MenuItemAttributes::new(Self::name()).with_id(Self::id())
     }
 
     pub fn open(state: Signal<Option<Vec<u8>>>) {

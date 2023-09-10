@@ -94,6 +94,18 @@ impl FloneumPackageIndex {
                     if let std::result::Result::Ok(package) = toml::from_str::<Config>(as_str) {
                         log::trace!("found package: {:#?}", package);
                         for package in package.packages() {
+                            let binding_version = &package.binding_version;
+                            if binding_version == "*" {
+                                println!("Warning: the exact version of floneum_rust is not specified in Cargo.toml. This may cause issues loading the plugin if the floneum_rust API changes.")
+                            } else if binding_version != env!("CARGO_PKG_VERSION") {
+                                log::info!(
+                                    "skipping package: {} binding version: {} != {}",
+                                    package.name,
+                                    binding_version,
+                                    env!("CARGO_PKG_VERSION")
+                                );
+                                continue;
+                            }
                             match Self::fetch_package_entry(
                                 path.clone(),
                                 commit_sha.clone(),

@@ -31,7 +31,7 @@ jobs:
       - run: cargo install --path floneum-cli --debug
       - run: floneum build --release --packages floneum_add_embedding,floneum_embedding,floneum_embedding_db,floneum_format,floneum_generate_text,floneum_generate_structured_text,floneum_search,floneum_search_engine,floneum_if,floneum_contains,floneum_write_to_file,floneum_read_from_file,floneum_python,floneum_create_tab,floneum_find_node,floneum_find_child_node,floneum_click_node,floneum_node_text,floneum_type_in_node,floneum_navigate_to
       - name: check for changes
-        run: git status
+        run: git status && git config --global user.email "bot@github.com" & git config --global user.name "Build Bot"
       - name: stage changed files
         run: git add .
       - name: commit changed files

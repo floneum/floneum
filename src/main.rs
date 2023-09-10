@@ -125,7 +125,7 @@ impl ApplicationState {
 
 impl PartialEq for ApplicationState {
     fn eq(&self, other: &Self) -> bool {
-        self.graph == other.graph 
+        self.graph == other.graph
     }
 }
 

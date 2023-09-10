@@ -10,5 +10,5 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-floneum_rust = { path = "../../rust_adapter" }
+floneum_rust = { path = "../../rust_adapter", version = "0.1.0" }
 
