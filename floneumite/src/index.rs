@@ -2,6 +2,7 @@ use crate::OCTOCRAB;
 use crate::{package, packages_path, Config, PackageStructure};
 use octocrab::models::repos::RepoCommit;
 use octocrab::Page;
+use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, time::SystemTime};
 
@@ -96,8 +97,11 @@ impl FloneumPackageIndex {
                         for package in package.packages() {
                             let binding_version = &package.binding_version;
                             if binding_version == "*" {
-                                println!("Warning: the exact version of floneum_rust is not specified in Cargo.toml. This may cause issues loading the plugin if the floneum_rust API changes.")
-                            } else if binding_version != env!("CARGO_PKG_VERSION") {
+                                log::warn!("The exact version of floneum_rust is not specified in Cargo.toml. This may cause issues loading the plugin if the floneum_rust API changes.")
+                            } else if !VersionReq::parse(binding_version)
+                                .unwrap()
+                                .matches(&Version::parse(env!("CARGO_PKG_VERSION")).unwrap())
+                            {
                                 log::info!(
                                     "skipping package: {} binding version: {} != {}",
                                     package.name,
