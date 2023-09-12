@@ -190,3 +190,38 @@ pub fn device(cpu: bool) -> anyhow::Result<Device> {
         Ok(device)
     }
 }
+
+#[test]
+fn embed_sentences() -> anyhow::Result<()> {
+    let bert = Bert::new(BertSource::default())?;
+    let mut bert = bert.load(BertInferenceOptions::default())?;
+    let sentences = vec![
+        "Cats are cool",
+        "The geopolitical situation is dire",
+        "Pets are great",
+        "Napoleon was a tyrant",
+        "Napoleon was a great general"
+    ];
+    let embeddings = bert.embed(&sentences)?;
+    println!("embeddings {:?}", embeddings);
+
+    // Find the cosine similarity between the first two sentences
+    let mut similarities = vec![];
+    let n_sentences = sentences.len();
+    for (i, e_i) in embeddings.iter().enumerate() {
+        for j in (i + 1)..n_sentences {
+            let e_j = embeddings.get(j).unwrap();
+            let sum_ij = (e_i * e_j)?.sum_all()?.to_scalar::<f32>()?;
+            let sum_i2 = (e_i * e_i)?.sum_all()?.to_scalar::<f32>()?;
+            let sum_j2 = (e_j * e_j)?.sum_all()?.to_scalar::<f32>()?;
+            let cosine_similarity = sum_ij / (sum_i2 * sum_j2).sqrt();
+            similarities.push((cosine_similarity, i, j))
+        }
+    }
+    similarities.sort_by(|u, v| v.0.total_cmp(&u.0));
+    for &(score, i, j) in similarities.iter() {
+        println!("score: {score:.2} '{}' '{}'", sentences[i], sentences[j])
+    }
+
+    Ok(())
+}
