@@ -49,6 +49,7 @@ members = [
     "rust_macro",
     "floneumite",
     "floneum-cli",
+    "rbert",
     "plugins/generate_text",
     "plugins/generate_structured_text",
     "plugins/format",
