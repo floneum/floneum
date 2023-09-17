@@ -199,9 +199,7 @@ fn App(cx: Scope<AppProps>) -> Element {
     use_apply_menu_event(cx, state);
 
     render! {
-        FlowView {
-            graph: graph,
-        }
+        FlowView { graph: graph }
         Sidebar {}
     }
 }

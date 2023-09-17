@@ -32,3 +32,4 @@ floneumite = { path = "../floneumite" }
 
 [features]
 metal = ["llm/metal"]
+cublas = ["llm/cublas"]

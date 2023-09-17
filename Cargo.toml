@@ -115,3 +115,4 @@ opt-level = 1
 
 [features]
 metal = ["floneum_plugin/metal"]
+cublas = ["floneum_plugin/cublas"]
