@@ -124,7 +124,6 @@ impl GenerationParameters {
     pub fn max_length(&self) -> u32 {
         self.max_length
     }
-
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]

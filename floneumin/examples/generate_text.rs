@@ -12,8 +12,10 @@ async fn main() {
     let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
     print!("{}", prompt);
 
-    let mut stream = llm.stream_text(prompt, GenerationParameters::default().with_max_length(300))
-        .await.unwrap();
+    let mut stream = llm
+        .stream_text(prompt, GenerationParameters::default().with_max_length(300))
+        .await
+        .unwrap();
 
     while let Some(text) = stream.next().await {
         print!("{}", text);

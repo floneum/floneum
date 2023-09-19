@@ -1,4 +1,5 @@
 pub mod browse;
+pub mod context;
 pub mod download;
 pub mod embedding;
 pub mod local;
