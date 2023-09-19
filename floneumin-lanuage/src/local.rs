@@ -1,14 +1,14 @@
+use crate::embedding::VectorSpace;
 use crate::structured_parser::{ParseStatus, ParseStream};
 use crate::{
-    download::download, embedding::get_embeddings, exports::plugins::main::definitions::Embedding,
-    plugins::main::types::ModelId, structured::StructuredSampler, structured_parser::Validate,
-    ModelType,
+    download::download, embedding::get_embeddings, embedding::Embedding, model::*,
+    structured::StructuredSampler, structured_parser::Validate,
 };
 use llm::{
     InferenceError, InferenceFeedback, InferenceParameters, InferenceRequest, InferenceResponse,
-    InferenceSession, InferenceSessionConfig, Model, OutputRequest, TokenUtf8Buffer,
+    InferenceSessionConfig, Model, OutputRequest, TokenUtf8Buffer,
 };
-use slab::Slab;
+use once_cell::sync::Lazy;
 use std::fmt::Debug;
 use std::sync::Mutex;
 use std::{
@@ -17,79 +17,109 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-#[derive(Default)]
-pub struct InferenceSessions {
-    sessions: Slab<(Box<dyn Model>, llm::InferenceSession, ModelType)>,
-    // We keep the last session running if there are no other active sessions.
-    temp_retained_sessions: Option<ModelId>,
-    embedding_cache: RwLock<Vec<HashMap<String, Embedding>>>,
+static MODELS: Lazy<RwLock<HashMap<ModelType, Box<dyn Model>>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
+
+pub struct LocalSession<S: VectorSpace> {
+    model: Box<dyn Model>,
+    session: llm::InferenceSession,
+    embedding_cache: RwLock<HashMap<String, Embedding<S>>>,
 }
 
-impl Debug for InferenceSessions {
+trait LocalModelType {
+    fn model_type() -> ModelType;
+}
+
+macro_rules! local_model {
+    ($ty: expr, $space: ident) => {
+        impl LocalModelType for LocalSession<$space> {
+            fn model_type() -> ModelType {
+                $ty
+            }
+        }
+
+        impl Default for LocalSession<$space> {
+            fn default() -> Self {
+                use crate::model::Model;
+                Self::start()
+            }
+        }
+
+        impl crate::model::Model<$space> for LocalSession<$space> {
+            fn start() -> Self {
+                let model = download(Self::model_type());
+                let session = model.start_session(InferenceSessionConfig {
+                    n_batch: 64,
+                    n_threads: num_cpus::get(),
+                    ..Default::default()
+                });
+
+                LocalSession {
+                    model,
+                    session,
+                    embedding_cache: Default::default(),
+                }
+            }
+
+            fn embed(input: &str) -> anyhow::Result<Embedding<$space>> {
+                Self::start()._get_embedding(input)
+            }
+
+            fn generate_text(
+                &mut self,
+                prompt: &str,
+                _generation_parameters: crate::model::GenerationParameters,
+            ) -> anyhow::Result<String> {
+                self._infer(prompt.to_string(), None, None)
+            }
+        }
+    };
+}
+
+local_model!(ModelType::Llama(LlamaType::Vicuna), VicunaSpace);
+local_model!(ModelType::Llama(LlamaType::Guanaco), GuanacoSpace);
+local_model!(ModelType::Llama(LlamaType::WizardLm), WizardLmSpace);
+local_model!(ModelType::Llama(LlamaType::Orca), OrcaSpace);
+local_model!(
+    ModelType::Llama(LlamaType::LlamaSevenChat),
+    LlamaSevenChatSpace
+);
+local_model!(
+    ModelType::Llama(LlamaType::LlamaThirteenChat),
+    LlamaThirteenChatSpace
+);
+local_model!(ModelType::Mpt(MptType::Base), BaseSpace);
+local_model!(ModelType::Mpt(MptType::Story), StorySpace);
+local_model!(ModelType::Mpt(MptType::Instruct), InstructSpace);
+local_model!(ModelType::Mpt(MptType::Chat), ChatSpace);
+local_model!(
+    ModelType::GptNeoX(GptNeoXType::LargePythia),
+    LargePythiaSpace
+);
+local_model!(ModelType::GptNeoX(GptNeoXType::TinyPythia), TinyPythiaSpace);
+local_model!(
+    ModelType::GptNeoX(GptNeoXType::DollySevenB),
+    DollySevenBSpace
+);
+local_model!(ModelType::GptNeoX(GptNeoXType::StableLm), StableLmSpace);
+
+impl<S: VectorSpace> Debug for LocalSession<S> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("InferenceSessions").finish()
+        f.debug_struct("LocalSession").finish()
     }
 }
 
-impl InferenceSessions {
-    pub fn session_get(&self, id: ModelId) -> &(Box<dyn Model>, InferenceSession, ModelType) {
-        self.sessions.get(id.id as usize).unwrap()
-    }
-
-    pub fn session_get_mut(
+impl<S: VectorSpace> LocalSession<S> {
+    pub fn _infer_validate<V: for<'a> Validate<'a> + Clone + Send + Sync + 'static>(
         &mut self,
-        id: ModelId,
-    ) -> &mut (Box<dyn Model>, InferenceSession, ModelType) {
-        self.sessions.get_mut(id.id as usize).unwrap()
-    }
-
-    #[tracing::instrument]
-    pub fn create(&mut self, ty: ModelType) -> ModelId {
-        // Remove the temporary session if it exists.
-        if let Some(id) = self.temp_retained_sessions.take() {
-            let (_model, _session, _old_ty) = self.sessions.remove(id.id as usize);
-            // unwind the model
-            // todo: This currently causes an error in llm...
-            // let token_count = session.tokens().len();
-            // session.rewind(&*model, token_count).unwrap();
-
-            // // If the model type is the same, we can reuse the session.
-            // if cmp_model_types(old_ty, ty) {
-            //     return ModelId {
-            //         id: self.sessions.insert((model, session, ty)) as u32,
-            //     };
-            // }
-        }
-        let model = download(ty);
-        let session = model.start_session(InferenceSessionConfig {
-            n_batch: 64,
-            n_threads: num_cpus::get(),
-            ..Default::default()
-        });
-        ModelId {
-            id: self.sessions.insert((model, session, ty)) as u32,
-        }
-    }
-
-    #[tracing::instrument]
-    pub fn remove(&mut self, id: ModelId) {
-        if self.sessions.len() == 1 {
-            self.temp_retained_sessions = Some(id);
-        } else {
-            self.sessions.remove(id.id as usize);
-        }
-    }
-
-    pub fn infer_validate<V: for<'a> Validate<'a> + Clone + Send + Sync + 'static>(
-        &mut self,
-        id: ModelId,
         prompt: String,
         max_tokens: Option<u32>,
         validator: V,
-    ) -> String {
-        let (model, session, _) = self.session_get_mut(id);
+    ) -> anyhow::Result<String> {
+        let session = &mut self.session;
+        let model = &mut *self.model;
 
-        let tokens = model.tokenizer().tokenize(&prompt, false).unwrap();
+        let tokens = model.tokenizer().tokenize(&prompt, false)?;
 
         let sampler = Arc::new(Mutex::new(StructuredSampler::new(
             match model.tokenizer() {
@@ -119,11 +149,9 @@ impl InferenceSessions {
 
         // Feed the initial prompt through the transformer, to update its
         // context window with new data.
-        session
-            .feed_prompt(&**model, request.prompt, &mut output, |_| {
-                Result::<_, std::convert::Infallible>::Ok(InferenceFeedback::Continue)
-            })
-            .unwrap();
+        session.feed_prompt(&*model, request.prompt, &mut output, |_| {
+            Result::<_, std::convert::Infallible>::Ok(InferenceFeedback::Continue)
+        })?;
 
         // After the prompt is consumed, sample tokens by repeatedly calling
         // `infer_next_token`. We generate tokens until the model returns an
@@ -136,8 +164,7 @@ impl InferenceSessions {
                 sampler: sampler.clone(),
             };
 
-            let token = match session.infer_next_token(&**model, parameters, &mut output, &mut rng)
-            {
+            let token = match session.infer_next_token(&*model, parameters, &mut output, &mut rng) {
                 Ok(token) => token,
                 Err(InferenceError::EndOfText) => break,
                 Err(e) => panic!("Error: {:?}", e),
@@ -162,20 +189,18 @@ impl InferenceSessions {
                         required_next: Some(required_next),
                     } => {
                         // feed the required next text
-                        let tokens = model.tokenizer().tokenize(&required_next, false).unwrap();
+                        let tokens = model.tokenizer().tokenize(&required_next, false)?;
                         let token_ids = tokens.iter().map(|(_, id)| *id).collect::<Vec<_>>();
-                        session
-                            .feed_prompt(
-                                &**model,
-                                llm::Prompt::Tokens(&token_ids),
-                                &mut output,
-                                |_| {
-                                    Result::<_, std::convert::Infallible>::Ok(
-                                        InferenceFeedback::Continue,
-                                    )
-                                },
-                            )
-                            .unwrap();
+                        session.feed_prompt(
+                            &*model,
+                            llm::Prompt::Tokens(&token_ids),
+                            &mut output,
+                            |_| {
+                                Result::<_, std::convert::Infallible>::Ok(
+                                    InferenceFeedback::Continue,
+                                )
+                            },
+                        )?;
                         let token = tokens
                             .iter()
                             .flat_map(|(x, _)| x.iter().copied())
@@ -186,7 +211,7 @@ impl InferenceSessions {
 
                         tokens_processed += token_ids.len();
                     }
-                    ParseStatus::Complete(..) => return result_tokens.join(""),
+                    ParseStatus::Complete(..) => return Ok(result_tokens.join("")),
                     _ => {
                         break;
                     }
@@ -194,18 +219,18 @@ impl InferenceSessions {
             }
         }
 
-        result_tokens.join("")
+        Ok(result_tokens.join(""))
     }
 
     #[tracing::instrument]
-    pub fn infer(
+    pub fn _infer(
         &mut self,
-        id: ModelId,
         prompt: String,
         max_tokens: Option<u32>,
         stop_on: Option<String>,
-    ) -> String {
-        let (model, session, _) = self.session_get_mut(id);
+    ) -> anyhow::Result<String> {
+        let session = &mut self.session;
+        let model = &mut *self.model;
 
         let parmeters = Default::default();
 
@@ -219,7 +244,7 @@ impl InferenceSessions {
         };
 
         if let Err(err) = session.infer(
-            model.as_ref(),
+            model,
             &mut rng,
             &request,
             &mut Default::default(),
@@ -228,28 +253,21 @@ impl InferenceSessions {
             log::error!("{err}")
         }
 
-        buf
+        Ok(buf)
     }
 
     #[tracing::instrument]
-    pub fn get_embedding(&self, id: ModelId, text: &str) -> Embedding {
+    fn _get_embedding(&self, text: &str) -> anyhow::Result<Embedding<S>> {
         let mut write = self.embedding_cache.write().unwrap();
-        let cache = if let Some(cache) = write.get_mut(id.id as usize) {
-            cache
-        } else {
-            if id.id as usize >= write.len() {
-                write.resize_with(id.id as usize + 1, Default::default);
-            }
-            &mut write[id.id as usize]
-        };
-        if let Some(embedding) = cache.get(text) {
+        let cache = &mut *write;
+        Ok(if let Some(embedding) = cache.get(text) {
             embedding.clone()
         } else {
-            let (model, _, _) = self.session_get(id);
-            let new_embedding = get_embeddings(model.as_ref(), text);
+            let model = self.model.as_ref();
+            let new_embedding = get_embeddings(model, text);
             cache.insert(text.to_string(), new_embedding.clone());
             new_embedding
-        }
+        })
     }
 }
 
@@ -274,24 +292,5 @@ fn inference_callback(
         }
         InferenceResponse::EotToken => Ok(InferenceFeedback::Halt),
         _ => Ok(InferenceFeedback::Continue),
-    }
-}
-
-#[allow(unused)]
-fn cmp_model_types(first: ModelType, second: ModelType) -> bool {
-    match (first, second) {
-        (
-            crate::plugins::main::types::ModelType::Mpt(mpt1),
-            crate::plugins::main::types::ModelType::Mpt(mpt2),
-        ) => mpt1 == mpt2,
-        (
-            crate::plugins::main::types::ModelType::GptNeoX(neo1),
-            crate::plugins::main::types::ModelType::GptNeoX(neo2),
-        ) => neo1 == neo2,
-        (
-            crate::plugins::main::types::ModelType::Llama(llama1),
-            crate::plugins::main::types::ModelType::Llama(llama2),
-        ) => llama1 == llama2,
-        (_, _) => false,
     }
 }

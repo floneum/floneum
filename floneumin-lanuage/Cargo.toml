@@ -1,0 +1,35 @@
+[package]
+name = "floneumin-lanuage"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bytesize = "1.2.0"
+futures-util = "0.3.28"
+llm = { git = "https://github.com/rustformers/llm" }
+llm-samplers = "=0.0.6"
+log = "0.4.17"
+rand = "0.8.5"
+reqwest = { version = "0.11.18", features = ["stream"] }
+spinoff = "0.7.0"
+tokio = { version = "1.28.1", features = ["full"] }
+slab = { version = "0.4.8", features = ["serde"] }
+instant-distance = { version = "0.6.0", features = ["with-serde"] }
+serde = { version = "1.0.163", features = ["derive"] }
+partial_sort = "0.2.0"
+once_cell = "1.18.0"
+pollster = "0.3.0"
+headless_chrome = {git = "https://github.com/atroche/rust-headless-chrome", features = ["fetch"]}
+url = "2.4.0"
+anyhow = "1.0.71"
+tracing = "0.1.37"
+num_cpus = "1.16.0"
+candle-core = { git = "https://github.com/huggingface/candle" }
+floneumite = { path = "../floneumite" }
+async-openai = "0.14.2"
+
+[features]
+metal = ["llm/metal"]
+cublas = ["llm/cublas"]

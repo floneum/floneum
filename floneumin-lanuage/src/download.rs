@@ -3,8 +3,9 @@ use llm::{LoadProgress, Model, ModelArchitecture};
 use spinoff::{spinners::Dots2, Spinner};
 use std::{error::Error, path::PathBuf, time::Instant};
 use tokio::{fs::File, io::AsyncWriteExt, runtime::Handle};
+use url::Url;
 
-use crate::plugins::main::types::{GptNeoXType, LlamaType, ModelType, MptType};
+use crate::model::{GptNeoXType, LlamaType, ModelType, MptType};
 
 fn load_progress_callback(
     mut sp: Option<Spinner>,
@@ -64,26 +65,26 @@ fn load_progress_callback(
     }
 }
 
-pub fn model_downloaded(model_type: ModelType) -> bool {
+pub fn model_downloaded(model_type: &ModelType) -> bool {
     let url = download_url(model_type);
-    model_path(url).exists()
+    model_path(&url).exists()
 }
 
-fn model_path(url: &str) -> PathBuf {
-    format!("./{}", url.rsplit_once('/').unwrap().1).into()
+fn model_path(url: &Url) -> PathBuf {
+    format!("./{}", url.path_segments().unwrap().last().unwrap()).into()
 }
 
 pub fn download(model_type: ModelType) -> Box<dyn Model> {
     // https://www.reddit.com/r/LocalLLaMA/wiki/models/
-    let url = download_url(model_type);
-    let archetecture = match model_type {
+    let url = download_url(&model_type);
+    let architecture = match &model_type {
         ModelType::Llama(_) => ModelArchitecture::Llama,
         ModelType::GptNeoX(_) => ModelArchitecture::GptNeoX,
         ModelType::Mpt(_) => ModelArchitecture::Mpt,
     };
-    let context_size = match model_type {
+    let context_size = match &model_type {
         ModelType::Llama(_) => 2024,
-        ModelType::GptNeoX(GptNeoXType::Stablelm) => 4048,
+        ModelType::GptNeoX(GptNeoXType::StableLm) => 4048,
         ModelType::GptNeoX(_) => 2048,
         ModelType::Mpt(MptType::Story) => 65_000,
         ModelType::Mpt(_) => 2024,
@@ -91,7 +92,7 @@ pub fn download(model_type: ModelType) -> Box<dyn Model> {
 
     let handle = Handle::current();
     let path = {
-        let path = model_path(url);
+        let path = model_path(&url);
         if path.exists() {
             path
         } else {
@@ -117,7 +118,7 @@ pub fn download(model_type: ModelType) -> Box<dyn Model> {
     };
 
     llm::load_dynamic(
-        Some(archetecture),
+        Some(architecture),
         &path,
         llm::TokenizerSource::Embedded,
         model_params,
@@ -126,54 +127,57 @@ pub fn download(model_type: ModelType) -> Box<dyn Model> {
     .unwrap_or_else(|err| panic!("Failed to load model from {path:?}: {err}"))
 }
 
-fn download_url(ty: ModelType) -> &'static str {
+fn download_url(ty: &ModelType) -> Url {
     match ty {
         ModelType::Llama(LlamaType::Orca) => {
-            "https://huggingface.co/TheBloke/orca_mini_v2_7B-GGML/resolve/main/orca-mini-v2_7b.ggmlv3.q8_0.bin"
+            "https://huggingface.co/TheBloke/orca_mini_v2_7B-GGML/resolve/main/orca-mini-v2_7b.ggmlv3.q8_0.bin".parse().unwrap()
         }
         ModelType::Llama(LlamaType::Vicuna) => {
-            "https://huggingface.co/CRD716/ggml-vicuna-1.1-quantized/resolve/main/ggml-vicuna-13B-1.1-q4_0.bin"
+            "https://huggingface.co/CRD716/ggml-vicuna-1.1-quantized/resolve/main/ggml-vicuna-13B-1.1-q4_0.bin".parse().unwrap()
         }
         ModelType::Llama(LlamaType::Guanaco) => {
-            "https://huggingface.co/TheBloke/guanaco-7B-GGML/resolve/main/guanaco-7B.ggmlv3.q4_0.bin"
+            "https://huggingface.co/TheBloke/guanaco-7B-GGML/resolve/main/guanaco-7B.ggmlv3.q4_0.bin".parse().unwrap()
         }
-        ModelType::Llama(LlamaType::Wizardlm) => {
-            "https://huggingface.co/TehVenom/WizardLM-13B-Uncensored-Q5_1-GGML/blob/main/WizardML-Unc-13b-Q5_1.bin"
+        ModelType::Llama(LlamaType::WizardLm) => {
+            "https://huggingface.co/TehVenom/WizardLM-13B-Uncensored-Q5_1-GGML/blob/main/WizardML-Unc-13b-Q5_1.bin".parse().unwrap()
         }
         ModelType::Llama(LlamaType::LlamaSevenChat) => {
-            "https://huggingface.co/localmodels/Llama-2-7B-Chat-ggml/resolve/main/llama-2-7b-chat.ggmlv3.q8_0.bin"
+            "https://huggingface.co/localmodels/Llama-2-7B-Chat-ggml/resolve/main/llama-2-7b-chat.ggmlv3.q8_0.bin".parse().unwrap()
         }
         ModelType::Llama(LlamaType::LlamaThirteenChat) => {
-            "https://huggingface.co/localmodels/Llama-2-13B-Chat-ggml/resolve/main/llama-2-13b-chat.ggmlv3.q8_0.bin"
+            "https://huggingface.co/localmodels/Llama-2-13B-Chat-ggml/resolve/main/llama-2-13b-chat.ggmlv3.q8_0.bin".parse().unwrap()
         }
-        ModelType::GptNeoX(GptNeoXType::Stablelm) => {
-            "https://huggingface.co/cakewalk/ggml-q4_0-stablelm-tuned-alpha-7b/resolve/main/ggml-model-stablelm-tuned-alpha-7b-q4_0.bin"
+        ModelType::Llama(LlamaType::Custom(url)) => url.clone(),
+        ModelType::GptNeoX(GptNeoXType::StableLm) => {
+            "https://huggingface.co/cakewalk/ggml-q4_0-stablelm-tuned-alpha-7b/resolve/main/ggml-model-stablelm-tuned-alpha-7b-q4_0.bin".parse().unwrap()
         }
         ModelType::GptNeoX(GptNeoXType::DollySevenB) => {
-            "https://huggingface.co/mverrilli/dolly-v2-7b-ggml/resolve/main/ggml-model-f16.bin"
+            "https://huggingface.co/mverrilli/dolly-v2-7b-ggml/resolve/main/ggml-model-f16.bin".parse().unwrap()
         }
         ModelType::GptNeoX(GptNeoXType::TinyPythia) => {
-            "https://huggingface.co/rustformers/pythia-ggml/resolve/main/pythia-70m-q4_0.bin"
+            "https://huggingface.co/rustformers/pythia-ggml/resolve/main/pythia-70m-q4_0.bin".parse().unwrap()
         }
         ModelType::GptNeoX(GptNeoXType::LargePythia) => {
-            "https://huggingface.co/rustformers/pythia-ggml/resolve/main/pythia-2.8b-q4_0.bin"
+            "https://huggingface.co/rustformers/pythia-ggml/resolve/main/pythia-2.8b-q4_0.bin".parse().unwrap()
         }
+        ModelType::GptNeoX(GptNeoXType::Custom(url)) => url.clone(),
         ModelType::Mpt(MptType::Chat) => {
-            "https://huggingface.co/rustformers/mpt-7b-ggml/resolve/main/mpt-7b-chat-q4_0.bin"
+            "https://huggingface.co/rustformers/mpt-7b-ggml/resolve/main/mpt-7b-chat-q4_0.bin".parse().unwrap()
         }
         ModelType::Mpt(MptType::Story) => {
-            "https://huggingface.co/rustformers/mpt-7b-ggml/resolve/main/mpt-7b-storywriter-q4_0.bin"
+            "https://huggingface.co/rustformers/mpt-7b-ggml/resolve/main/mpt-7b-storywriter-q4_0.bin".parse().unwrap()
         }
         ModelType::Mpt(MptType::Instruct) => {
-            "https://huggingface.co/rustformers/mpt-7b-ggml/resolve/main/mpt-7b-instruct-q4_0.bin"
+            "https://huggingface.co/rustformers/mpt-7b-ggml/resolve/main/mpt-7b-instruct-q4_0.bin".parse().unwrap()
         }
         ModelType::Mpt(MptType::Base) => {
-            "https://huggingface.co/rustformers/mpt-7b-ggml/resolve/main/mpt-7b-q4_0.bin"
+            "https://huggingface.co/rustformers/mpt-7b-ggml/resolve/main/mpt-7b-q4_0.bin".parse().unwrap()
         }
+        ModelType::Mpt(MptType::Custom(url)) => url.clone(),
     }
 }
 
-async fn download_model(model_url: &str, path: PathBuf) -> Result<PathBuf, Box<dyn Error>> {
+async fn download_model(model_url: Url, path: PathBuf) -> Result<PathBuf, Box<dyn Error>> {
     let response = reqwest::get(model_url).await?;
     let mut sp = Spinner::new(
         Dots2,

@@ -1,7 +1,3 @@
-// Ideas:
-// https://github.com/1rgs/jsonformer
-// https://github.com/bytecodealliance/wasmtime/issues/6074
-
 use crate::plugins::main::imports::*;
 use download::model_downloaded;
 use exports::plugins::main::definitions::*;
@@ -27,14 +23,7 @@ use wasmtime_wasi::preview2::{self, DirPerms, FilePerms, WasiView};
 use wasmtime_wasi::Dir;
 use wit_component::ComponentEncoder;
 
-mod browse;
-mod download;
-mod embedding;
 mod proxies;
-mod sessions;
-mod structured;
-mod structured_parser;
-mod vector_db;
 
 use crate::sessions::InferenceSessions;
 use crate::{exports::plugins::main::definitions::ModelType, vector_db::VectorDB};
