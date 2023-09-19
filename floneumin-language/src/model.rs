@@ -38,13 +38,13 @@ pub trait Model<S: VectorSpace>: 'static {
 }
 
 pub struct GenerationParameters {
-    pub temperature: f32,
-    pub top_k: u32,
-    pub top_p: f32,
-    pub repetition_penalty: f32,
-    pub repetition_penalty_range: u32,
-    pub repetition_penalty_slope: f32,
-    pub max_length: u32,
+    temperature: f32,
+    top_k: u32,
+    top_p: f32,
+    repetition_penalty: f32,
+    repetition_penalty_range: u32,
+    repetition_penalty_slope: f32,
+    max_length: u32,
 }
 
 impl Default for GenerationParameters {
@@ -59,6 +59,72 @@ impl Default for GenerationParameters {
             max_length: 128,
         }
     }
+}
+
+impl GenerationParameters {
+    pub fn with_temperature(mut self, temperature: f32) -> Self {
+        self.temperature = temperature;
+        self
+    }
+
+    pub fn with_top_k(mut self, top_k: u32) -> Self {
+        self.top_k = top_k;
+        self
+    }
+
+    pub fn with_top_p(mut self, top_p: f32) -> Self {
+        self.top_p = top_p;
+        self
+    }
+
+    pub fn with_repetition_penalty(mut self, repetition_penalty: f32) -> Self {
+        self.repetition_penalty = repetition_penalty;
+        self
+    }
+
+    pub fn with_repetition_penalty_range(mut self, repetition_penalty_range: u32) -> Self {
+        self.repetition_penalty_range = repetition_penalty_range;
+        self
+    }
+
+    pub fn with_repetition_penalty_slope(mut self, repetition_penalty_slope: f32) -> Self {
+        self.repetition_penalty_slope = repetition_penalty_slope;
+        self
+    }
+
+    pub fn with_max_length(mut self, max_length: u32) -> Self {
+        self.max_length = max_length;
+        self
+    }
+
+    pub fn temperature(&self) -> f32 {
+        self.temperature
+    }
+
+    pub fn top_k(&self) -> u32 {
+        self.top_k
+    }
+
+    pub fn top_p(&self) -> f32 {
+        self.top_p
+    }
+
+    pub fn repetition_penalty(&self) -> f32 {
+        self.repetition_penalty
+    }
+
+    pub fn repetition_penalty_range(&self) -> u32 {
+        self.repetition_penalty_range
+    }
+
+    pub fn repetition_penalty_slope(&self) -> f32 {
+        self.repetition_penalty_slope
+    }
+
+    pub fn max_length(&self) -> u32 {
+        self.max_length
+    }
+
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]

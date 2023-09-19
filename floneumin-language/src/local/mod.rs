@@ -64,7 +64,7 @@ macro_rules! local_model {
                 prompt: &str,
                 generation_parameters: crate::model::GenerationParameters,
             ) -> anyhow::Result<Self::TextStream> {
-                let max_tokens = generation_parameters.max_length;
+                let max_tokens = generation_parameters.max_length();
                 Ok(self.infer(prompt.to_string(), Some(max_tokens), None).await)
             }
         }
