@@ -403,7 +403,7 @@ pub trait Validate<'a> {
     }
 }
 
-pub struct BoxedValidate<'a>(Box<dyn Validate<'a> + 'a>);
+pub struct BoxedValidate<'a>(pub(crate) Box<dyn Validate<'a> + 'a>);
 
 impl<'a> Validate<'a> for BoxedValidate<'a> {
     fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {

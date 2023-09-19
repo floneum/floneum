@@ -98,15 +98,9 @@ impl<S: VectorSpace> Point<S> {
 }
 
 fn cosine_similarity(v1: &Tensor, v2: &Tensor) -> anyhow::Result<f32> {
-    let sum_ij = (v1 * v2)?
-            .sum_all()?
-            .to_scalar::<f32>()?;
-        let sum_i2 = (v1 * v1)?
-            .sum_all()?
-            .to_scalar::<f32>()?;
-        let sum_j2 = (v2 * v2)?
-            .sum_all()?
-            .to_scalar::<f32>()?;
-        let cosine_similarity = sum_ij / (sum_i2 * sum_j2).sqrt();
-        Ok(1. - cosine_similarity)
+    let sum_ij = (v1 * v2)?.sum_all()?.to_scalar::<f32>()?;
+    let sum_i2 = (v1 * v1)?.sum_all()?.to_scalar::<f32>()?;
+    let sum_j2 = (v2 * v2)?.sum_all()?.to_scalar::<f32>()?;
+    let cosine_similarity = sum_ij / (sum_i2 * sum_j2).sqrt();
+    Ok(1. - cosine_similarity)
 }

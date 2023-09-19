@@ -2,7 +2,7 @@ use futures_util::StreamExt;
 use llm::{LoadProgress, Model, ModelArchitecture};
 use spinoff::{spinners::Dots2, Spinner};
 use std::{error::Error, path::PathBuf, time::Instant};
-use tokio::{fs::File, io::AsyncWriteExt, runtime::Handle};
+use tokio::{fs::File, io::AsyncWriteExt};
 use url::Url;
 
 use crate::model::{GptNeoXType, LlamaType, ModelType, MptType};
@@ -74,7 +74,7 @@ fn model_path(url: &Url) -> PathBuf {
     format!("./{}", url.path_segments().unwrap().last().unwrap()).into()
 }
 
-pub fn download(model_type: ModelType) -> Box<dyn Model> {
+pub async fn download(model_type: ModelType) -> Box<dyn Model> {
     // https://www.reddit.com/r/LocalLLaMA/wiki/models/
     let url = download_url(&model_type);
     let architecture = match &model_type {
@@ -90,18 +90,12 @@ pub fn download(model_type: ModelType) -> Box<dyn Model> {
         ModelType::Mpt(_) => 2024,
     };
 
-    let handle = Handle::current();
     let path = {
         let path = model_path(&url);
         if path.exists() {
             path
         } else {
-            std::thread::spawn(move || {
-                // Using Handle::block_on to run async code in the new thread.
-                handle.block_on(async { download_model(url, path).await.unwrap() })
-            })
-            .join()
-            .unwrap()
+            download_model(url, path).await.unwrap()
         }
     };
 

@@ -2,26 +2,32 @@ use crate::{
     embedding::{Embedding, VectorSpace},
     structured_parser::Validate,
 };
+use futures_util::Stream;
 use url::Url;
 
-/// A type-erased model to allow for interacting with a model without knowing
-/// its hyperparameters.
+#[async_trait::async_trait]
 pub trait Model<S: VectorSpace>: 'static {
-    fn start() -> Self;
+    type TextStream: Stream<Item = String> + Send + Sync + Unpin + 'static;
 
-    fn embed(input: &str) -> anyhow::Result<Embedding<S>>;
+    async fn start() -> Self;
 
-    fn embed_batch(inputs: &[&str]) -> anyhow::Result<Vec<Embedding<S>>> {
-        inputs.iter().map(|input| Self::embed(input)).collect()
-    }
+    async fn embed(input: &str) -> anyhow::Result<Embedding<S>>;
 
-    fn generate_text(
+    async fn embed_batch(inputs: &[&str]) -> anyhow::Result<Vec<Embedding<S>>>;
+
+    async fn generate_text(
         &mut self,
         prompt: &str,
         generation_parameters: GenerationParameters,
     ) -> anyhow::Result<String>;
 
-    fn infer_validate<V: for<'a> Validate<'a> + Clone + Send + Sync + 'static>(
+    async fn stream_text(
+        &mut self,
+        prompt: &str,
+        generation_parameters: crate::model::GenerationParameters,
+    ) -> anyhow::Result<Self::TextStream>;
+
+    async fn infer_validate<V: for<'a> Validate<'a> + Clone + Send + Sync + 'static>(
         &mut self,
         _prompt: String,
         _max_tokens: Option<u32>,
@@ -32,13 +38,13 @@ pub trait Model<S: VectorSpace>: 'static {
 }
 
 pub struct GenerationParameters {
-    temperature: f32,
-    top_k: u32,
-    top_p: f32,
-    repetition_penalty: f32,
-    repetition_penalty_range: u32,
-    repetition_penalty_slope: f32,
-    max_length: u32,
+    pub temperature: f32,
+    pub top_k: u32,
+    pub top_p: f32,
+    pub repetition_penalty: f32,
+    pub repetition_penalty_range: u32,
+    pub repetition_penalty_slope: f32,
+    pub max_length: u32,
 }
 
 impl Default for GenerationParameters {
@@ -55,14 +61,14 @@ impl Default for GenerationParameters {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum ModelType {
     Mpt(MptType),
     GptNeoX(GptNeoXType),
     Llama(LlamaType),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum LlamaType {
     Vicuna,
     Guanaco,
@@ -73,7 +79,7 @@ pub enum LlamaType {
     Custom(Url),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum MptType {
     Base,
     Story,
@@ -82,7 +88,7 @@ pub enum MptType {
     Custom(Url),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum GptNeoXType {
     LargePythia,
     TinyPythia,

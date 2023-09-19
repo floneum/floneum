@@ -2594,7 +2594,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bytesize",
- "floneumin-lanuage",
+ "floneumin-language",
  "floneumite",
  "futures-util",
  "log",
@@ -2726,11 +2726,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "floneumin-lanuage"
+name = "floneumin"
+version = "0.1.0"
+dependencies = [
+ "floneumin-language",
+ "futures-util",
+ "tokio",
+]
+
+[[package]]
+name = "floneumin-language"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-openai",
+ "async-trait",
  "bytesize",
  "candle-core",
  "floneumite",
@@ -2752,6 +2762,17 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "floneumin-sound"
+version = "0.1.0"
+
+[[package]]
+name = "floneumin-vision"
+version = "0.1.0"
+dependencies = [
+ "image",
 ]
 
 [[package]]

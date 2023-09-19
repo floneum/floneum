@@ -200,7 +200,7 @@ fn embed_sentences() -> anyhow::Result<()> {
         "The geopolitical situation is dire",
         "Pets are great",
         "Napoleon was a tyrant",
-        "Napoleon was a great general"
+        "Napoleon was a great general",
     ];
     let embeddings = bert.embed(&sentences)?;
     println!("embeddings {:?}", embeddings);
