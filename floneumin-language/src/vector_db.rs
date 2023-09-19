@@ -19,7 +19,7 @@ impl<T, S: VectorSpace> std::fmt::Debug for VectorDB<T, S> {
 
 impl<T: Clone + PartialEq + Debug, S: VectorSpace + Sync> VectorDB<T, S>
 where
-    Self: Clone + Sync + Send,
+    Self: Sync + Send,
 {
     #[tracing::instrument]
     pub fn new(points: Vec<Embedding<S>>, values: Vec<T>) -> Self {

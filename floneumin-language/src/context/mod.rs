@@ -1,4 +1,6 @@
-mod document;
-mod search;
+pub mod document;
+pub mod search;
 
-trait Context {}
+trait Context {
+    fn prompt(&self) -> String;
+}
