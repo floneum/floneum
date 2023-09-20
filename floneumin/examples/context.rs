@@ -1,7 +1,8 @@
 use floneumin_language::{
-    context::document::{Document, DocumentDatabase},
+    context::document::Document,
+    index::{vector::DocumentDatabase, SearchIndex},
     local::LocalSession,
-    model::{LlamaSevenChatSpace, Model},
+    model::LlamaSevenChatSpace,
 };
 use std::io::Write;
 
@@ -72,31 +73,23 @@ async fn main() {
     
     If you have any questions, feel free to join the Floneum Discord and ask away!";
 
-    let document = Document::new::<LocalSession<LlamaSevenChatSpace>>(
-        document.into(),
-        floneumin_language::context::document::ChunkStrategy::Paragraph{
-            paragraph_count: 3,
-            overlap: 1
-        }
-    )
-    .await
-    .unwrap();
-    let mut database = DocumentDatabase::new();
-    database.add(document);
+    let document = Document::new("Demo".into(), document.into());
+    let mut database =
+        DocumentDatabase::<LlamaSevenChatSpace, LocalSession<LlamaSevenChatSpace>>::new();
+    database.add(document).await;
 
     loop {
         print!("Query: ");
         std::io::stdout().flush().unwrap();
         let mut user_question = String::new();
         std::io::stdin().read_line(&mut user_question).unwrap();
-        let embedding = LocalSession::<LlamaSevenChatSpace>::embed(&user_question)
-            .await
-            .unwrap();
 
         println!(
             "{:?}",
             database
-                .search(embedding, 5)
+                .search(&user_question, 5)
+                .await
+                .iter()
                 .map(|s| s.to_string())
                 .collect::<Vec<_>>()
         );
