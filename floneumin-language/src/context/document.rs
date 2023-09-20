@@ -9,53 +9,84 @@ use crate::{
 };
 
 pub enum ChunkStrategy {
-    Paragraph,
-    Sentence,
-    Words(usize),
+    Paragraph {
+        paragraph_count: usize,
+        overlap: usize,
+    },
+    Sentence {
+        sentence_count: usize,
+        overlap: usize,
+    },
+    Words {
+        word_count: usize,
+        overlap: usize,
+    },
 }
 
 impl ChunkStrategy {
     pub fn chunk(&self, string: &str) -> Vec<Range<usize>> {
         match self {
-            Self::Paragraph => {
+            Self::Paragraph {
+                paragraph_count,
+                overlap,
+            } => {
                 let mut chunks = Vec::new();
                 let mut start = 0;
+                let mut newline_indexes = Vec::new();
                 for (i, c) in string.char_indices() {
                     if c == '\n' {
-                        if !string[start..i].trim().is_empty() {
-                            chunks.push(start..i);
-                        }
-                        start = i + 1;
-                    }
-                }
-                chunks
-            }
-            Self::Sentence => {
-                let mut chunks = Vec::new();
-                let mut start = 0;
-                for (i, c) in string.char_indices() {
-                    if c == '.' {
-                        if !string[start..i].trim().is_empty() {
-                            chunks.push(start..i);
-                        }
-                        start = i + 1;
-                    }
-                }
-                chunks
-            }
-            Self::Words(n) => {
-                let mut chunks = Vec::new();
-                let mut start = 0;
-                let mut count = 0;
-                for (i, c) in string.char_indices() {
-                    if c == ' ' {
-                        count += 1;
-                        if count >= *n {
+                        newline_indexes.push(i);
+                        if newline_indexes.len() >= *paragraph_count {
                             if !string[start..i].trim().is_empty() {
                                 chunks.push(start..i);
                             }
-                            start = i + 1;
-                            count = 0;
+                            for _ in 0..*overlap {
+                                start = newline_indexes.remove(0);
+                            }
+                        }
+                    }
+                }
+                chunks
+            }
+            Self::Sentence {
+                sentence_count,
+                overlap,
+            } => {
+                let mut chunks = Vec::new();
+                let mut start = 0;
+                let mut sentance_start_indexes = Vec::new();
+                for (i, c) in string.char_indices() {
+                    if c == '.' {
+                        sentance_start_indexes.push(i);
+                        if sentance_start_indexes.len() >= *sentence_count {
+                            if !string[start..i].trim().is_empty() {
+                                chunks.push(start..i);
+                            }
+                            for _ in 0..*overlap {
+                                start = sentance_start_indexes.remove(0);
+                            }
+                        }
+                    }
+                }
+                chunks
+            }
+            Self::Words {
+                word_count,
+                overlap,
+            } => {
+                let mut chunks = Vec::new();
+                let mut start = 0;
+                let mut word_start_indexes = Vec::new();
+                for (i, c) in string.char_indices() {
+                    if c == ' ' {
+                        word_start_indexes.push(i);
+                        if word_start_indexes.len() >= *word_count {
+                            if !string[start..i].trim().is_empty() {
+                                chunks.push(start..i);
+                            }
+                            for _ in 0..*overlap {
+                                start = word_start_indexes.remove(0);
+                            }
                         }
                     }
                 }

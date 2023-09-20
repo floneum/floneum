@@ -3,6 +3,7 @@ use floneumin_language::{
     local::LocalSession,
     model::{LlamaSevenChatSpace, Model},
 };
+use std::io::Write;
 
 #[tokio::main]
 async fn main() {
@@ -73,7 +74,10 @@ async fn main() {
 
     let document = Document::new::<LocalSession<LlamaSevenChatSpace>>(
         document.into(),
-        floneumin_language::context::document::ChunkStrategy::Paragraph,
+        floneumin_language::context::document::ChunkStrategy::Paragraph{
+            paragraph_count: 3,
+            overlap: 1
+        }
     )
     .await
     .unwrap();
@@ -88,7 +92,7 @@ async fn main() {
         let embedding = LocalSession::<LlamaSevenChatSpace>::embed(&user_question)
             .await
             .unwrap();
-    
+
         println!(
             "{:?}",
             database
