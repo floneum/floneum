@@ -94,7 +94,6 @@ async fn main() {
                 .search(&user_question, 5)
                 .await
                 .iter()
-                .map(|s| s.to_string())
                 .collect::<Vec<_>>()
         );
         println!(
@@ -103,7 +102,6 @@ async fn main() {
                 .search(&user_question, 5)
                 .await
                 .iter()
-                .map(|s| s.to_string())
                 .collect::<Vec<_>>()
         );
     }

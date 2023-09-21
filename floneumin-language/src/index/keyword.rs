@@ -63,14 +63,15 @@ impl super::SearchIndex for FuzzySearchIndex {
         };
 
         let mut results = Vec::new();
-        for (_, doc_address) in top_docs {
+        for (score, doc_address) in top_docs {
             let retrieved_doc = searcher.doc(doc_address).unwrap();
             let body: Cow<str> = retrieved_doc
                 .get_first(self.body)
-                .map(|v| dbg!(v).as_text().unwrap().to_string().into())
+                .map(|v| v.as_text().unwrap().to_string().into())
                 .unwrap_or_default();
 
             results.push(super::DocumentSnippetRef {
+                score,
                 title: retrieved_doc
                     .get_first(self.title)
                     .map(|v| v.as_text().unwrap().to_string().into())

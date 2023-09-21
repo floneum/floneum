@@ -33,6 +33,8 @@ pub struct DocumentId(usize);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DocumentSnippetRef<'a> {
+    /// A score between 0 and 1
+    score: f32,
     title: Cow<'a, str>,
     body: Cow<'a, str>,
     byte_range: Range<usize>,

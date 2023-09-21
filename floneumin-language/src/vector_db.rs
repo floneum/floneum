@@ -54,21 +54,23 @@ where
     }
 
     #[tracing::instrument]
-    pub fn get_closest(&self, embedding: Embedding<S>, n: usize) -> Vec<T> {
+    pub fn get_closest(&self, embedding: Embedding<S>, n: usize) -> Vec<(f32, T)> {
         let mut search = Search::default();
         self.model
             .search(&Point(embedding), &mut search)
             .take(n)
-            .map(|result| result.value.clone())
+            .map(|result| (result.distance, result.value.clone()))
             .collect()
     }
 
     #[tracing::instrument]
-    pub fn get_within(&self, embedding: Embedding<S>, distance: f32) -> Vec<T> {
+    pub fn get_within(&self, embedding: Embedding<S>, distance: f32) -> Vec<(f32, T)> {
         let mut search = Search::default();
         self.model
             .search(&Point(embedding), &mut search)
-            .map_while(|result| (result.distance < distance).then(|| result.value.clone()))
+            .map_while(|result| {
+                (result.distance < distance).then(|| (result.distance, result.value.clone()))
+            })
             .collect()
     }
 }

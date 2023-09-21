@@ -174,9 +174,10 @@ impl<M: Model<S>, S: VectorSpace + Sync + Send> DocumentDatabase<S, M> {
         self.database
             .get_closest(embedding, n)
             .into_iter()
-            .map(|snippet| {
+            .map(|(score, snippet)| {
                 let document = &self.documents[snippet.document_id.0];
                 DocumentSnippetRef {
+                    score,
                     title: document.title().into(),
                     body: document.body().into(),
                     byte_range: snippet.byte_range.clone(),
@@ -192,9 +193,10 @@ impl<M: Model<S>, S: VectorSpace + Sync + Send> DocumentDatabase<S, M> {
         self.database
             .get_within(embedding, distance)
             .into_iter()
-            .map(|snippet| {
+            .map(|(score, snippet)| {
                 let document = &self.documents[snippet.document_id.0];
                 DocumentSnippetRef {
+                    score,
                     title: document.title().into(),
                     body: document.body().into(),
                     byte_range: snippet.byte_range.clone(),
