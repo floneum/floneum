@@ -1,5 +1,40 @@
 use url::Url;
 
+use crate::index::IntoDocuments;
+
+use super::{page::get_article, document::Document};
+
+pub struct SearchQuery{
+    query: String,
+    api_key: String,
+}
+
+impl SearchQuery {
+    pub fn new(query: String, api_key: String) -> Self {
+        Self {
+            query,
+            api_key,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl IntoDocuments for SearchQuery {
+    async fn into_documents(self) -> anyhow::Result<Vec<Document>> {
+        let search_results = search(&self.api_key, self.query).await?;
+
+        let mut documents = vec![];
+
+        for result in search_results.organic{
+            if let Some(link) = &result.link{
+                documents.push(get_article(Url::parse(link)?).await?);
+            }
+        }
+
+        Ok(documents)
+    }
+}
+
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct SearchResult {
     pub knowledge_graph: Option<KnowledgeGraph>,

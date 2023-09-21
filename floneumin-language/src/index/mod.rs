@@ -3,7 +3,6 @@ use std::{
     ops::{Deref, Range},
 };
 
-
 use crate::{
     context::document::{Document, IntoDocument},
     embedding::{Embedding, VectorSpace},
