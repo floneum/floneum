@@ -2798,6 +2798,7 @@ dependencies = [
  "rand 0.8.5",
  "readability",
  "reqwest",
+ "rss",
  "serde",
  "serde_json",
  "slab",

@@ -3,8 +3,9 @@ use std::{
     ops::{Deref, Range},
 };
 
+
 use crate::{
-    context::document::Document,
+    context::document::{Document, IntoDocument},
     embedding::{Embedding, VectorSpace},
 };
 
@@ -12,8 +13,34 @@ pub mod keyword;
 pub mod vector;
 
 #[async_trait::async_trait]
+pub trait IntoDocuments {
+    async fn into_documents(self) -> anyhow::Result<Vec<Document>>;
+}
+
+#[async_trait::async_trait]
+impl<T: IntoDocument + Send + Sync, I> IntoDocuments for I
+where
+    I: IntoIterator<Item = T> + Send + Sync,
+    <I as IntoIterator>::IntoIter: Send + Sync,
+{
+    async fn into_documents(self) -> anyhow::Result<Vec<Document>> {
+        let mut documents = Vec::new();
+        for document in self {
+            documents.push(document.into_document().await?);
+        }
+        Ok(documents)
+    }
+}
+
+#[async_trait::async_trait]
 pub trait SearchIndex {
-    async fn add(&mut self, document: Document);
+    async fn extend(&mut self, document: impl IntoDocuments + Send + Sync) -> anyhow::Result<()> {
+        for document in document.into_documents().await? {
+            self.add(document).await?;
+        }
+        Ok(())
+    }
+    async fn add(&mut self, document: impl IntoDocument + Send + Sync) -> anyhow::Result<()>;
     async fn search(&self, query: &str, top_n: usize) -> Vec<DocumentSnippetRef>;
 }
 

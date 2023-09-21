@@ -1,4 +1,4 @@
-use crate::index::Chunk;
+use crate::{context::document::IntoDocument, index::Chunk};
 use std::ops::Range;
 
 use slab::Slab;
@@ -131,12 +131,13 @@ pub struct DocumentDatabase<S: VectorSpace, M: Model<S>> {
 impl<M: Model<S> + Send + Sync, S: VectorSpace + Sync + Send> SearchIndex
     for DocumentDatabase<S, M>
 {
-    async fn add(&mut self, document: Document) {
+    async fn add(&mut self, document: impl IntoDocument + Send + Sync) -> anyhow::Result<()> {
+        let document = document.into_document().await?;
         let embedded = EmbeddedDocument::<S>::new::<M>(
             document,
-            ChunkStrategy::Paragraph {
-                paragraph_count: 2,
-                overlap: 1,
+            ChunkStrategy::Sentence {
+                sentence_count: 5,
+                overlap: 2,
             },
         )
         .await
@@ -149,6 +150,8 @@ impl<M: Model<S> + Send + Sync, S: VectorSpace + Sync + Send> SearchIndex
             };
             self.database.add_embedding(chunk.embedding, snippet);
         }
+
+        Ok(())
     }
 
     async fn search(&self, query: &str, top_n: usize) -> Vec<DocumentSnippetRef> {
