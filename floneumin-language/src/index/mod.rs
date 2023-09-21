@@ -10,6 +10,7 @@ use crate::{
 
 pub mod keyword;
 pub mod vector;
+pub mod weighted;
 
 #[async_trait::async_trait]
 pub trait IntoDocuments {
@@ -59,7 +60,6 @@ pub struct DocumentId(usize);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DocumentSnippetRef<'a> {
-    /// A score between 0 and 1
     score: f32,
     title: Cow<'a, str>,
     body: Cow<'a, str>,
@@ -73,6 +73,10 @@ impl DocumentSnippetRef<'_> {
 
     pub fn body(&self) -> &str {
         &*self.body
+    }
+
+    pub fn score(&self) -> f32 {
+        self.score
     }
 
     pub fn byte_range(&self) -> Range<usize> {

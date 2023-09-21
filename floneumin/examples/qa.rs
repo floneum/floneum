@@ -1,6 +1,6 @@
 use floneumin_language::{
     context::{rss::RssFeed, Url},
-    index::{keyword::FuzzySearchIndex,  SearchIndex},
+    index::{keyword::FuzzySearchIndex, SearchIndex},
     local::LocalSession,
     model::{GenerationParameters, LlamaSevenChatSpace, Model},
 };
@@ -32,8 +32,7 @@ async fn main() {
             .join("\n");
 
         let prompt = format!(
-            "
-# Question:
+            "# Question:
 {user_question}
 # Context:
 {context}

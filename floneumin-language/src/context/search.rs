@@ -2,19 +2,16 @@ use url::Url;
 
 use crate::index::IntoDocuments;
 
-use super::{page::get_article, document::Document};
+use super::{document::Document, page::get_article};
 
-pub struct SearchQuery{
+pub struct SearchQuery {
     query: String,
     api_key: String,
 }
 
 impl SearchQuery {
     pub fn new(query: String, api_key: String) -> Self {
-        Self {
-            query,
-            api_key,
-        }
+        Self { query, api_key }
     }
 }
 
@@ -25,8 +22,8 @@ impl IntoDocuments for SearchQuery {
 
         let mut documents = vec![];
 
-        for result in search_results.organic{
-            if let Some(link) = &result.link{
+        for result in search_results.organic {
+            if let Some(link) = &result.link {
                 documents.push(get_article(Url::parse(link)?).await?);
             }
         }
