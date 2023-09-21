@@ -1,6 +1,6 @@
 use floneumin_language::{
     context::document::Document,
-    index::{vector::DocumentDatabase, SearchIndex},
+    index::{keyword::FuzzySearchIndex, vector::DocumentDatabase, SearchIndex},
     local::LocalSession,
     model::LlamaSevenChatSpace,
 };
@@ -8,6 +8,8 @@ use std::io::Write;
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt::init();
+
     let document = "Floneum 0.2 is here with improvements ranging from UI improvements and workflow sharing to web scraping and plugin distribution!
     Floneum is a visual editor for AI workflows packaged as an easy to install application with no external dependencies. It makes it easy to build workflows that use large language models like Llama 2. The best part is, Floneum is fully open source and local. You control your data and your workflows.
     What is new in 0.2?
@@ -76,7 +78,9 @@ async fn main() {
     let document = Document::new("Demo".into(), document.into());
     let mut database =
         DocumentDatabase::<LlamaSevenChatSpace, LocalSession<LlamaSevenChatSpace>>::new();
-    database.add(document).await;
+    database.add(document.clone()).await;
+    let mut fuzzy = FuzzySearchIndex::default();
+    fuzzy.add(document).await;
 
     loop {
         print!("Query: ");
@@ -85,8 +89,17 @@ async fn main() {
         std::io::stdin().read_line(&mut user_question).unwrap();
 
         println!(
-            "{:?}",
+            "vector: {:?}",
             database
+                .search(&user_question, 5)
+                .await
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+        );
+        println!(
+            "fuzzy: {:?}",
+            fuzzy
                 .search(&user_question, 5)
                 .await
                 .iter()

@@ -9,3 +9,6 @@ edition = "2021"
 floneumin-language = { path = "../floneumin-language" }
 tokio = { version = "1.32.0", features = ["full"] }
 futures-util = "0.3.28"
+
+[dev-dependencies]
+tracing-subscriber = "0.2"
