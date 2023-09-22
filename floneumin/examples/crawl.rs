@@ -1,45 +1,49 @@
+use floneumin_language::context::page::BrowserMode;
 use floneumin_language::context::page::Page;
+use floneumin_language::context::page::CrawlFeedback;
 use floneumin_language::context::Url;
-use std::cell::Cell;
-use std::rc::Rc;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() {
-    let nyt = Page::new(
+    let count = Arc::new(AtomicUsize::new(0));
+    let real_visited = Arc::new(AtomicUsize::new(0));
+    Page::crawl(
         Url::parse("https://www.nytimes.com/live/2023/09/21/world/zelensky-russia-ukraine-news")
             .unwrap(),
-        false,
-        false,
-    )
-    .await
-    .unwrap();
-
-    let count = Rc::new(Cell::new(0));
-    nyt.crawl(
-        move |page| {
+        BrowserMode::Static,
+        move |page: Page| {
             let count = count.clone();
+            let real_visited = real_visited.clone();
             Box::pin(async move {
-                println!("Page: {}", page.url());
-                if count.get() > 15 {
-                    return false;
+                real_visited.fetch_add(1, Ordering::SeqCst);
+                let current_count = count.load(Ordering::SeqCst);
+                if current_count > 1000 {
+                    return CrawlFeedback::Stop;
                 }
 
-                println!("Title: {}", page.title().await.unwrap());
-                let page = page.article().await.unwrap();
+                let Ok(page) = page.article().await else {
+                    return CrawlFeedback::DontFollow;
+                };
+
                 let body = page.body();
-                println!("Article:\n{}", body);
 
                 if body.len() < 100 {
-                    return false;
+                    return CrawlFeedback::DontFollow;
                 }
 
-                count.set(count.get() + 1);
+                println!("Title: {}", page.title());
+                println!("Article:\n{}", body);
 
-                true
-            })
+                count.fetch_add(1, Ordering::SeqCst);
+
+                CrawlFeedback::Continue
+            }) as Pin<Box<dyn Future<Output = CrawlFeedback>>>
         },
-        false,
-        false,
     )
     .await
     .unwrap();

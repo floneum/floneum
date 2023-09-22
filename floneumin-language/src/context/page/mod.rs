@@ -1,13 +1,15 @@
 use self::browse::Tab;
 use super::document::Document;
-use async_recursion::async_recursion;
-use once_cell::unsync::OnceCell;
+pub use crate::context::page::crawl::CrawlFeedback;
+use crate::context::page::crawl::Crawler;
+pub use crate::context::page::crawl::CrawlingCallback;
+use once_cell::sync::OnceCell;
 use scraper::{Html, Selector};
-use std::future::Future;
-use std::pin::Pin;
+use tokio::time::Instant;
 use url::Url;
 
 pub mod browse;
+mod crawl;
 
 #[derive(Debug, Clone)]
 pub enum Page {
@@ -16,11 +18,19 @@ pub enum Page {
 }
 
 impl Page {
-    pub async fn new(url: Url, headless: bool, headfull: bool) -> anyhow::Result<Self> {
-        if headless {
-            Ok(Self::Dynamic(Tab::new(url, !headfull)?))
-        } else {
-            Ok(Self::Static(StaticPage::new(url).await?))
+    pub fn new(url: Url, mode: BrowserMode) -> anyhow::Result<Self> {
+        match mode {
+            BrowserMode::Static => Ok(Self::Static(StaticPage::new(url)?)),
+            BrowserMode::Headless => Ok(Self::Dynamic(Tab::new(url, true)?)),
+            BrowserMode::Headfull => Ok(Self::Dynamic(Tab::new(url, false)?)),
+        }
+    }
+
+    fn new_wait_until(url: Url, mode: BrowserMode, wait_until: Instant) -> anyhow::Result<Self> {
+        match mode {
+            BrowserMode::Static => Ok(Self::Static(StaticPage::new_wait_until(url, wait_until)?)),
+            BrowserMode::Headless => Ok(Self::Dynamic(Tab::new(url, true)?)),
+            BrowserMode::Headfull => Ok(Self::Dynamic(Tab::new(url, false)?)),
         }
     }
 
@@ -70,43 +80,41 @@ impl Page {
         Ok(links)
     }
 
-    #[async_recursion(?Send)]
-    async fn crawl_inner<'a>(
-        &self,
-        visit: &mut (impl FnMut(Self) -> Pin<Box<dyn Future<Output = bool>>> + 'async_recursion),
-        headless: bool,
-        headfull: bool,
-    ) -> anyhow::Result<()> {
-        if !visit(self.clone()).await {
-            return Ok(());
-        }
-        let links = self.links().await?;
-        for link in links {
-            let tab = Self::new(link, headless, headfull).await?;
-            tab.crawl_inner(visit, headless, headfull).await?;
-        }
-        Ok(())
-    }
-
     pub async fn crawl(
-        &self,
-        mut visit: impl FnMut(Self) -> Pin<Box<dyn Future<Output = bool>>>,
-        headless: bool,
-        headfull: bool,
+        start: Url,
+        mode: BrowserMode,
+        visit: impl CrawlingCallback,
     ) -> anyhow::Result<()> {
-        self.crawl_inner(&mut visit, headless, headfull).await
+        Crawler::new(mode, visit).crawl(start).await
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum BrowserMode {
+    Static,
+    Headless,
+    Headfull,
 }
 
 #[derive(Debug, Clone)]
 pub struct StaticPage {
+    wait_until: Instant,
     url: Url,
     html: OnceCell<Html>,
 }
 
 impl StaticPage {
-    pub async fn new(url: Url) -> anyhow::Result<Self> {
+    pub fn new(url: Url) -> anyhow::Result<Self> {
         Ok(Self {
+            wait_until: Instant::now(),
+            url: url.clone(),
+            html: OnceCell::new(),
+        })
+    }
+
+    fn new_wait_until(url: Url, wait_until: Instant) -> anyhow::Result<Self> {
+        Ok(Self {
+            wait_until,
             url: url.clone(),
             html: OnceCell::new(),
         })
@@ -120,6 +128,7 @@ impl StaticPage {
         match self.html.get() {
             Some(html) => Ok(html),
             None => {
+                tokio::time::sleep_until(self.wait_until).await;
                 let html = reqwest::get(self.url.clone()).await?.text().await?;
                 let html = Html::parse_document(&html);
                 self.html.set(html).unwrap();

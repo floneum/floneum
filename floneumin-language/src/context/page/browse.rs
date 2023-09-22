@@ -123,7 +123,7 @@ impl Tab {
 impl Drop for Tab {
     #[tracing::instrument]
     fn drop(&mut self) {
-        self.inner.close(true).unwrap();
+        let _ = self.inner.close(true);
     }
 }
 
