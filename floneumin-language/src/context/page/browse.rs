@@ -66,6 +66,7 @@ impl Browser {
     }
 }
 
+#[derive(Clone)]
 pub struct Tab {
     inner: Arc<headless_chrome::Tab>,
 }

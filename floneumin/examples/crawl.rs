@@ -1,5 +1,7 @@
 use floneumin_language::context::page::Page;
 use floneumin_language::context::Url;
+use std::cell::Cell;
+use std::rc::Rc;
 
 #[tokio::main]
 async fn main() {
@@ -12,26 +14,29 @@ async fn main() {
     .await
     .unwrap();
 
-    let mut count = 0;
+    let count = Rc::new(Cell::new(0));
     nyt.crawl(
         move |page| {
-            if count > 5 {
-                return false;
-            }
+            let count = count.clone();
+            Box::pin(async move {
+                println!("Page: {}", page.url());
+                if count.get() > 15 {
+                    return false;
+                }
 
-            println!("Page: {}", page.url());
-            println!("Title: {}", page.title().unwrap());
-            let page = page.article().unwrap();
-            let body = page.body();
-            println!("Article:\n{}", body);
+                println!("Title: {}", page.title().await.unwrap());
+                let page = page.article().await.unwrap();
+                let body = page.body();
+                println!("Article:\n{}", body);
 
-            if body.len() < 100 {
-                return false;
-            }
+                if body.len() < 100 {
+                    return false;
+                }
 
-            count += 1;
+                count.set(count.get() + 1);
 
-            true
+                true
+            })
         },
         false,
         false,

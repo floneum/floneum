@@ -1,11 +1,15 @@
 use self::browse::Tab;
 use super::document::Document;
 use async_recursion::async_recursion;
+use once_cell::unsync::OnceCell;
 use scraper::{Html, Selector};
+use std::future::Future;
+use std::pin::Pin;
 use url::Url;
 
 pub mod browse;
 
+#[derive(Debug, Clone)]
 pub enum Page {
     Static(StaticPage),
     Dynamic(Tab),
@@ -27,30 +31,31 @@ impl Page {
         }
     }
 
-    pub fn article(&self) -> anyhow::Result<Document> {
+    pub async fn article(&self) -> anyhow::Result<Document> {
         match self {
-            Self::Static(page) => page.article(),
+            Self::Static(page) => page.article().await,
             Self::Dynamic(page) => page.article(),
         }
     }
 
-    pub fn title(&self) -> Option<String> {
+    pub async fn title(&self) -> Option<String> {
         match self {
-            Self::Static(page) => page.title(),
+            Self::Static(page) => page.title().await,
             Self::Dynamic(page) => page.title(),
         }
     }
 
-    pub fn html(&self) -> anyhow::Result<Html> {
+    pub async fn html(&self) -> anyhow::Result<Html> {
         match self {
-            Self::Static(page) => Ok(page.html()),
+            Self::Static(page) => page.html().await,
             Self::Dynamic(page) => page.html(),
         }
     }
 
-    pub fn links(&self) -> anyhow::Result<Vec<Url>> {
+    pub async fn links(&self) -> anyhow::Result<Vec<Url>> {
         let mut links: Vec<_> = self
-            .html()?
+            .html()
+            .await?
             .select(&Selector::parse("a").unwrap())
             .filter_map(|e| {
                 let href = e.value().attr("href")?;
@@ -66,16 +71,16 @@ impl Page {
     }
 
     #[async_recursion(?Send)]
-    async fn crawl_inner(
+    async fn crawl_inner<'a>(
         &self,
-        visit: &mut (impl FnMut(&Self) -> bool + 'async_recursion),
+        visit: &mut (impl FnMut(Self) -> Pin<Box<dyn Future<Output = bool>>> + 'async_recursion),
         headless: bool,
         headfull: bool,
     ) -> anyhow::Result<()> {
-        if !visit(self) {
+        if !visit(self.clone()).await {
             return Ok(());
         }
-        let links = self.links()?;
+        let links = self.links().await?;
         for link in links {
             let tab = Self::new(link, headless, headfull).await?;
             tab.crawl_inner(visit, headless, headfull).await?;
@@ -85,7 +90,7 @@ impl Page {
 
     pub async fn crawl(
         &self,
-        mut visit: impl FnMut(&Self) -> bool,
+        mut visit: impl FnMut(Self) -> Pin<Box<dyn Future<Output = bool>>>,
         headless: bool,
         headfull: bool,
     ) -> anyhow::Result<()> {
@@ -93,33 +98,52 @@ impl Page {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct StaticPage {
     url: Url,
-    html: Html,
+    html: OnceCell<Html>,
 }
 
 impl StaticPage {
     pub async fn new(url: Url) -> anyhow::Result<Self> {
-        let html = reqwest::get(url.clone()).await?.text().await?;
-        let parsed = Html::parse_document(&html);
-        Ok(Self { url, html: parsed })
+        Ok(Self {
+            url: url.clone(),
+            html: OnceCell::new(),
+        })
     }
 
     pub fn url(&self) -> Url {
         self.url.clone()
     }
 
-    pub fn html(&self) -> Html {
-        self.html.clone()
+    pub async fn html_ref(&self) -> anyhow::Result<&Html> {
+        match self.html.get() {
+            Some(html) => Ok(html),
+            None => {
+                let html = reqwest::get(self.url.clone()).await?.text().await?;
+                let html = Html::parse_document(&html);
+                self.html.set(html).unwrap();
+                Ok(self.html.get().unwrap())
+            }
+        }
     }
 
-    pub fn article(&self) -> anyhow::Result<Document> {
-        extract_article(&self.html.html())
+    pub async fn html(&self) -> anyhow::Result<Html> {
+        Ok(self.html_ref().await?.clone())
     }
 
-    pub fn title(&self) -> Option<String> {
+    pub async fn article(&self) -> anyhow::Result<Document> {
+        extract_article(&self.html_ref().await?.html())
+    }
+
+    pub async fn title(&self) -> Option<String> {
         let selector = Selector::parse("title").ok()?;
-        self.html.select(&selector).next().map(|e| e.inner_html())
+        self.html_ref()
+            .await
+            .ok()?
+            .select(&selector)
+            .next()
+            .map(|e| e.inner_html())
     }
 }
 
