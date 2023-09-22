@@ -8,7 +8,6 @@ edition = "2021"
 [dependencies]
 bytesize = "1.2.0"
 futures-util = "0.3.28"
-llm = { git = "https://github.com/rustformers/llm" }
 llm-samplers = "=0.0.6"
 log = "0.4.17"
 rand = "0.8.5"
@@ -21,21 +20,24 @@ serde = { version = "1.0.163", features = ["derive"] }
 partial_sort = "0.2.0"
 once_cell = "1.18.0"
 pollster = "0.3.0"
-headless_chrome = {git = "https://github.com/atroche/rust-headless-chrome", features = ["fetch"]}
 url = "2.4.0"
 anyhow = "1.0.71"
 tracing = "0.1.37"
 num_cpus = "1.16.0"
-candle-core = { git = "https://github.com/huggingface/candle" }
 async-openai = "0.14.2"
 async-trait = "0.1.73"
-floneumite = { path = "../floneumite" }
 serde_json = "1.0.107"
 chrono = "0.4.31"
 readability = { version = "0.2.0", default_features = false }
 tantivy = "0.21.0"
 tempfile = "3.8.0"
 rss = { version = "2.0.6", features = ["atom"] }
+scraper = "0.17.1"
+llm = { git = "https://github.com/rustformers/llm" }
+floneumite = { path = "../floneumite" }
+headless_chrome = {git = "https://github.com/atroche/rust-headless-chrome", features = ["fetch"]}
+candle-core = { git = "https://github.com/huggingface/candle" }
+async-recursion = "1.0.5"
 
 [features]
 metal = ["llm/metal"]

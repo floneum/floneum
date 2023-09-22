@@ -1,6 +1,13 @@
 use headless_chrome::{Browser as HeadlessBrowser, Element, LaunchOptions};
 use once_cell::sync::Lazy;
+use scraper::Html;
 use std::sync::Arc;
+use url::Url;
+
+use super::extract_article;
+use crate::context::document::Document;
+
+static BROWSER: Browser = Browser::new();
 
 pub struct Browser {
     headless_client: Lazy<Result<HeadlessBrowser, String>>,
@@ -15,13 +22,13 @@ impl std::fmt::Debug for Browser {
 
 impl Default for Browser {
     fn default() -> Self {
-        Self::new().unwrap()
+        Self::new()
     }
 }
 
 impl Browser {
-    pub fn new() -> anyhow::Result<Self> {
-        Ok(Self {
+    pub const fn new() -> Self {
+        Self {
             headless_client: Lazy::new(|| {
                 let browser = HeadlessBrowser::new(
                     LaunchOptions::default_builder()
@@ -42,11 +49,11 @@ impl Browser {
                 .map_err(|err| err.to_string())?;
                 Ok(browser)
             }),
-        })
+        }
     }
 
     #[tracing::instrument]
-    pub fn new_tab(&mut self, headless: bool) -> Result<Tab, anyhow::Error> {
+    pub fn new_tab(&self, headless: bool) -> Result<Tab, anyhow::Error> {
         let client = if headless {
             &self.headless_client
         } else {
@@ -59,11 +66,17 @@ impl Browser {
     }
 }
 
-struct Tab {
+pub struct Tab {
     inner: Arc<headless_chrome::Tab>,
 }
 
 impl Tab {
+    pub fn new(url: Url, headless: bool) -> Result<Self, anyhow::Error> {
+        let tab = BROWSER.new_tab(headless)?;
+        tab.goto(&url.to_string())?;
+        Ok(tab)
+    }
+
     #[tracing::instrument]
     pub fn goto(&self, url: &str) -> Result<(), anyhow::Error> {
         self.inner.navigate_to(url)?.wait_until_navigated()?;
@@ -86,6 +99,23 @@ impl Tab {
             false,
         )?;
         Ok(bytes)
+    }
+
+    pub fn url(&self) -> Url {
+        self.inner.get_url().parse().unwrap()
+    }
+
+    pub fn article(&self) -> anyhow::Result<Document> {
+        let html = self.inner.get_content()?;
+        extract_article(&html)
+    }
+
+    pub fn title(&self) -> Option<String> {
+        self.inner.get_title().ok()
+    }
+
+    pub fn html(&self) -> anyhow::Result<Html> {
+        Ok(Html::parse_document(&self.inner.get_content()?))
     }
 }
 
