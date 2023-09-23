@@ -1,16 +1,17 @@
-use std::{fmt::Display, io::Read};
+use rodio::{source::UniformSourceIterator, Decoder as AudioDecoder, Source};
+use std::fmt::Display;
 
 use anyhow::{Error as E, Result};
 use candle_core::{Device, IndexOp, Tensor};
 use candle_nn::{ops::softmax, VarBuilder};
 use hf_hub::{api::sync::Api, Repo, RepoType};
-use hound::WavReader;
-use itertools::Itertools;
 use rand::{distributions::Distribution, SeedableRng};
 use tokenizers::Tokenizer;
 
 use candle_transformers::models::whisper::{self as m, audio, model};
 use model::{Config, Whisper};
+
+use crate::source::AudioBuffer;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
@@ -203,7 +204,7 @@ impl Decoder {
                     }
                 }
                 Err(err) => {
-                    println!("Error running at {t}: {err}")
+                    tracing::error!("Error running at {t}: {err}")
                 }
             }
         }
@@ -222,7 +223,7 @@ impl Decoder {
             let dr = self.decode_with_fallback(&mel_segment, task)?;
             seek += segment_size;
             if dr.no_speech_prob > m::NO_SPEECH_THRESHOLD && dr.avg_logprob < m::LOGPROB_THRESHOLD {
-                println!("no speech detected, skipping {seek} {dr:?}");
+                tracing::trace!("no speech detected, skipping {seek} {dr:?}");
                 continue;
             }
             let segment = Segment {
@@ -231,12 +232,6 @@ impl Decoder {
                 result: dr,
             };
 
-            println!(
-                "{:.1}s -- {:.1}s: {}",
-                segment.start,
-                segment.start + segment.duration,
-                segment.result.text,
-            );
             segments.push(segment)
         }
         Ok(segments)
@@ -598,18 +593,14 @@ impl WhisperModel {
         let vb = VarBuilder::from_safetensors(vec![weights], m::DTYPE, &device);
         let config: Config = serde_json::from_str(&std::fs::read_to_string(config_filename)?)?;
         let model = Whisper::load(&vb, config)?;
-        let language_token = match (settings.model.is_multilingual(), &settings.language) {
-            (false, None) => None,
-            (true, _) => {
-                let language = settings.language.unwrap_or(WhisperLanguage::English);
-                match token_id(&tokenizer, &format!("<|{language}|>")) {
-                    Ok(token_id) => Some(token_id),
-                    Err(_) => anyhow::bail!("language {language} is not supported"),
-                }
+        let language_token = if settings.model.is_multilingual() {
+            let language = settings.language.unwrap_or(WhisperLanguage::English);
+            match token_id(&tokenizer, &format!("<|{language}|>")) {
+                Ok(token_id) => Some(token_id),
+                Err(_) => anyhow::bail!("language {language} is not supported"),
             }
-            (false, Some(_)) => {
-                anyhow::bail!("a language cannot be set for non-multilingual models")
-            }
+        } else {
+            None
         };
         let decoder = Decoder::new(model, tokenizer, 0, &device, language_token)?;
 
@@ -620,13 +611,9 @@ impl WhisperModel {
         })
     }
 
-    pub fn transcribe<R: Read>(&mut self, mut input: WavReader<R>) -> Result<Vec<Segment>> {
-        let header = input.spec();
-        let data: Vec<_> = input.samples::<i16>().try_collect()?;
-        let pcm_data: Vec<_> = data[..data.len() / header.channels as usize]
-            .iter()
-            .map(|v| *v as f32 / i16::MAX as f32)
-            .collect();
+    pub fn transcribe(&mut self, input: AudioBuffer) -> Result<Vec<Segment>> {
+        let bytes = input.into_data();
+        let pcm_data: Vec<_> = normalize_audio(bytes)?;
 
         let mel = audio::pcm_to_mel(&pcm_data, &self.mel_filters);
         let mel_len = mel.len();
@@ -642,10 +629,20 @@ pub fn device(cpu: bool) -> anyhow::Result<Device> {
     } else {
         let device = Device::cuda_if_available(0)?;
         if !device.is_cuda() {
-            println!("Running on CPU, to run on GPU, build this example with `--features cuda`");
+            tracing::warn!("Running on CPU, to run on GPU, build this example with `--features cuda`");
         }
         Ok(device)
     }
+}
+
+pub fn normalize_audio(input: Vec<u8>) -> anyhow::Result<Vec<f32>> {
+    let source = AudioDecoder::new(std::io::Cursor::new(input)).unwrap();
+    let resample = UniformSourceIterator::new(source, 1, 16000);
+    let pass_filter = resample.low_pass(3000).high_pass(200).convert_samples();
+
+    let samples = pass_filter.collect::<Vec<f32>>();
+
+    Ok(samples)
 }
 
 #[test]
@@ -658,10 +655,6 @@ fn record() -> Result<(), anyhow::Error> {
     println!("recording");
     let input =
         MicInput::default().record_until_blocking(Instant::now() + Duration::from_secs(20))?;
-    let duration_seconds = input.duration() / input.spec().sample_rate;
-    println!("recording length: {}s", duration_seconds);
-    assert!(duration_seconds > 15 && duration_seconds < 25);
-    println!("recording done {:?}", input.spec());
 
     let transcribed = model.transcribe(input)?;
 

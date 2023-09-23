@@ -1,13 +1,11 @@
-//! Records a WAV file (roughly 3 seconds long) using the default input device and config.
-//!
-//! The input data is recorded to "$CARGO_MANIFEST_DIR/recorded.wav".
-
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, Sample};
 
 use std::io::{Cursor, Seek, SeekFrom, Write};
 use std::sync::{Arc, Mutex};
 use tokio::time::Instant;
+
+use super::AudioBuffer;
 
 pub struct MicInput {
     #[allow(dead_code)]
@@ -34,12 +32,9 @@ impl Default for MicInput {
 }
 
 impl MicInput {
-    pub async fn record_until(
-        &self,
-        deadline: Instant,
-    ) -> Result<hound::WavReader<Cursor<Vec<u8>>>, anyhow::Error> {
-        tokio::time::sleep_until(deadline).await;
+    pub async fn record_until(&self, deadline: Instant) -> Result<AudioBuffer, anyhow::Error> {
         let stream = self.stream()?;
+        tokio::time::sleep_until(deadline).await;
         let bytes = stream.finalize()?;
         Ok(bytes)
     }
@@ -47,7 +42,7 @@ impl MicInput {
     pub fn record_until_blocking(
         &self,
         deadline: std::time::Instant,
-    ) -> Result<hound::WavReader<Cursor<Vec<u8>>>, anyhow::Error> {
+    ) -> Result<AudioBuffer, anyhow::Error> {
         let stream = self.stream()?;
         std::thread::sleep(deadline - std::time::Instant::now());
         let bytes = stream.finalize()?;
@@ -136,13 +131,14 @@ pub struct AudioStream {
 }
 
 impl AudioStream {
-    pub fn finalize(self) -> Result<hound::WavReader<Cursor<Vec<u8>>>, anyhow::Error> {
+    pub fn finalize(self) -> Result<AudioBuffer, anyhow::Error> {
         drop(self.stream);
 
         self.writer.lock().unwrap().take().unwrap().finalize()?;
-        let bytes = self.buf.buf.lock().unwrap().get_ref().clone();
-        let reader = hound::WavReader::new(Cursor::new(bytes))?;
-        Ok(reader)
+        let old = std::mem::take(&mut *self.buf.buf.lock().unwrap());
+        Ok(AudioBuffer {
+            data: old.into_inner(),
+        })
     }
 }
 
@@ -186,6 +182,6 @@ fn record() -> Result<(), anyhow::Error> {
     let stream = input.stream()?;
     std::thread::sleep(std::time::Duration::from_secs(3));
     let bytes = stream.finalize()?;
-    println!("Got {} bytes", bytes.len());
+    println!("Got {} bytes", bytes.data().len());
     Ok(())
 }

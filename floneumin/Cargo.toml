@@ -10,6 +10,7 @@ floneumin-language = { path = "../floneumin-language" }
 floneumin-sound = { path = "../floneumin-sound" }
 tokio = { version = "1.32.0", features = ["full"] }
 futures-util = "0.3.28"
+anyhow = "1.0.75"
 
 [dev-dependencies]
 tracing-subscriber = "0.2"
