@@ -2946,6 +2946,7 @@ name = "floneumin"
 version = "0.1.0"
 dependencies = [
  "floneumin-language",
+ "floneumin-sound",
  "futures-util",
  "tokio",
  "tracing-subscriber 0.2.25",
@@ -2996,9 +2997,20 @@ name = "floneumin-sound"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "byteorder",
+ "candle-core",
+ "candle-nn",
+ "candle-transformers",
  "cpal",
+ "hf-hub",
+ "hound",
  "itertools 0.10.5",
+ "rand 0.8.5",
  "ringbuf",
+ "serde_json",
+ "tokenizers 0.14.0",
+ "tokio",
+ "wav",
  "webrtc-vad",
  "whisper-rs",
 ]
@@ -3969,6 +3981,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "hound"
+version = "3.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d13cdbd5dbb29f9c88095bbdc2590c9cba0d0a1269b983fef6b2cdd7e9f4db1"
+
+[[package]]
 name = "html5ever"
 version = "0.25.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4748,7 +4766,7 @@ dependencies = [
  "serde",
  "serde_bytes",
  "thiserror",
- "tokenizers",
+ "tokenizers 0.13.4",
  "tracing",
 ]
 
@@ -6532,7 +6550,7 @@ dependencies = [
  "hf-hub",
  "intel-mkl-src",
  "serde_json",
- "tokenizers",
+ "tokenizers 0.13.4",
  "tracing",
 ]
 
@@ -8438,6 +8456,39 @@ dependencies = [
  "regex",
  "regex-syntax 0.7.5",
  "reqwest",
+ "serde",
+ "serde_json",
+ "spm_precompiled",
+ "thiserror",
+ "unicode-normalization-alignments",
+ "unicode-segmentation",
+ "unicode_categories",
+]
+
+[[package]]
+name = "tokenizers"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12b515a66453a4d68f03398054f7204fd0dde6b93d3f20ea90b08025ab49b499"
+dependencies = [
+ "aho-corasick 0.7.20",
+ "clap",
+ "derive_builder 0.12.0",
+ "esaxx-rs",
+ "getrandom 0.2.10",
+ "indicatif 0.15.0",
+ "itertools 0.9.0",
+ "lazy_static",
+ "log",
+ "macro_rules_attribute",
+ "monostate",
+ "onig",
+ "paste",
+ "rand 0.8.5",
+ "rayon",
+ "rayon-cond",
+ "regex",
+ "regex-syntax 0.7.5",
  "serde",
  "serde_json",
  "spm_precompiled",

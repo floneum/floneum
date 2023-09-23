@@ -9,6 +9,17 @@ edition = "2021"
 anyhow = "1.0.70"
 cpal = "0.15.1"
 itertools = "0.10.5"
+rand = "0.8.5"
 ringbuf = "0.3.2"
 webrtc-vad = "0.4"
 whisper-rs = { git = "https://github.com/tazz4843/whisper-rs", branch = "whisper-8e46ba8" }
+candle-core = { git = "https://github.com/huggingface/candle" }
+candle-nn = { git = "https://github.com/huggingface/candle" }
+candle-transformers = { git = "https://github.com/huggingface/candle" }
+byteorder = "1.4.3"
+hf-hub = "0.3.1"
+tokenizers = "0.14.0"
+serde_json = "1.0.107"
+wav = "1.0.0"
+hound = "3.5.0"
+tokio = { version = "1.32.0", features = ["full"] }
