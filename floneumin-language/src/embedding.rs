@@ -52,6 +52,13 @@ impl<S: VectorSpace, I: IntoIterator<Item = f32>> From<I> for Embedding<S> {
 }
 
 impl<S: VectorSpace> Embedding<S> {
+    pub fn new(embedding: Tensor) -> Self {
+        Embedding {
+            embedding,
+            model: PhantomData,
+        }
+    }
+
     pub fn vector(&self) -> &Tensor {
         &self.embedding
     }

@@ -6,14 +6,17 @@ use futures_util::Stream;
 use url::Url;
 
 #[async_trait::async_trait]
+pub trait Embedder<S: VectorSpace>: 'static {
+    async fn embed(input: &str) -> anyhow::Result<Embedding<S>>;
+
+    async fn embed_batch(inputs: &[&str]) -> anyhow::Result<Vec<Embedding<S>>>;
+}
+
+#[async_trait::async_trait]
 pub trait Model<S: VectorSpace>: 'static {
     type TextStream: Stream<Item = String> + Send + Sync + Unpin + 'static;
 
     async fn start() -> Self;
-
-    async fn embed(input: &str) -> anyhow::Result<Embedding<S>>;
-
-    async fn embed_batch(inputs: &[&str]) -> anyhow::Result<Vec<Embedding<S>>>;
 
     async fn generate_text(
         &mut self,

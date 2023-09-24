@@ -1,8 +1,9 @@
+use floneumin_language::index::vector::ChunkStrategy;
+use floneumin_language::local::BertSpace;
+use floneumin_language::local::LocalBert;
 use floneumin_language::{
     context::{rss::RssFeed, Url},
     index::{keyword::FuzzySearchIndex, vector::DocumentDatabase, SearchIndex},
-    local::LocalSession,
-    model::LlamaSevenChatSpace,
 };
 use std::io::Write;
 
@@ -13,8 +14,10 @@ async fn main() {
     let nyt =
         RssFeed::new(Url::parse("https://rss.nytimes.com/services/xml/rss/nyt/US.xml").unwrap());
 
-    let mut database =
-        DocumentDatabase::<LlamaSevenChatSpace, LocalSession<LlamaSevenChatSpace>>::new();
+    let mut database = DocumentDatabase::<BertSpace, LocalBert>::new(ChunkStrategy::Sentence {
+        sentence_count: 1,
+        overlap: 0,
+    });
     database.extend(nyt.clone()).await.unwrap();
     let mut fuzzy = FuzzySearchIndex::default();
     fuzzy.extend(nyt).await.unwrap();

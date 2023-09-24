@@ -629,7 +629,9 @@ pub fn device(cpu: bool) -> anyhow::Result<Device> {
     } else {
         let device = Device::cuda_if_available(0)?;
         if !device.is_cuda() {
-            tracing::warn!("Running on CPU, to run on GPU, build this example with `--features cuda`");
+            tracing::warn!(
+                "Running on CPU, to run on GPU, build this example with `--features cuda`"
+            );
         }
         Ok(device)
     }

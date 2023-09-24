@@ -54,6 +54,29 @@ where
     }
 
     #[tracing::instrument]
+    pub fn add_embeddings(&mut self, embeddings: Vec<Embedding<S>>, values: Vec<T>) {
+        let mut new_points = Vec::with_capacity(embeddings.len());
+        let mut new_values = Vec::with_capacity(values.len());
+        for (embedding, value) in embeddings.into_iter().zip(values.into_iter()) {
+            if self
+            .model
+            .search(&Point(embedding.clone()), &mut Search::default())
+            .next()
+            .filter(|result| result.distance < f32::EPSILON && result.value == &value)
+            .is_none(){
+                new_points.push(embedding);
+                new_values.push(value);
+            }
+        }
+        for (value_id, point) in self.model.iter() {
+            new_points.push(point.0.clone());
+            let value = self.model.values[value_id.into_inner() as usize].clone();
+            new_values.push(value);
+        }
+        *self = Self::new(new_points, new_values);
+    }
+
+    #[tracing::instrument]
     pub fn get_closest(&self, embedding: Embedding<S>, n: usize) -> Vec<(f32, T)> {
         let mut search = Search::default();
         self.model

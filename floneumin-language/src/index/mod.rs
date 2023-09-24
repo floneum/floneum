@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    ops::{Deref, Range},
+    ops::{Deref, Range}, fmt::Debug,
 };
 
 use crate::{
@@ -44,9 +44,19 @@ pub trait SearchIndex {
     async fn search(&self, query: &str, top_n: usize) -> Vec<DocumentSnippetRef>;
 }
 
+#[derive(Clone)]
 pub struct Chunk<S: VectorSpace> {
     byte_range: Range<usize>,
     embedding: Embedding<S>,
+}
+
+impl<S: VectorSpace> Debug for Chunk<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Chunk")
+            .field("byte_range", &self.byte_range)
+            .field("embedding", &self.embedding)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

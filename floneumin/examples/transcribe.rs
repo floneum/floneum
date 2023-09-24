@@ -22,7 +22,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 }
             })
     });
-    
+
     let mut current_time_stamp = 0.0;
 
     println!("starting transcription loop");
@@ -37,12 +37,12 @@ async fn main() -> Result<(), anyhow::Error> {
                 let start = current_time_stamp + transcribed.start();
                 let end = start + transcribed.duration();
                 next_time_stamp = end;
-                
+
                 let text = transcribed.text();
                 println!("({:01} - {:01}): {}", start, end, text);
             }
         }
-        
+
         current_time_stamp = next_time_stamp;
     }
 }

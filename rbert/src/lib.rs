@@ -134,6 +134,15 @@ pub struct BertInstance {
 
 impl BertInstance {
     pub fn embed(&mut self, sentences: &[&str]) -> anyhow::Result<Vec<Tensor>> {
+        let mut combined = Vec::new();
+        for batch in sentences.chunks(4) {
+            let embeddings = self.embed_batch(batch)?;
+            combined.extend(embeddings);
+        }
+        Ok(combined)
+    }
+
+    pub fn embed_batch(&mut self, sentences: &[&str]) -> anyhow::Result<Vec<Tensor>> {
         let device = &self.model.device;
 
         let n_sentences = sentences.len();
@@ -160,15 +169,11 @@ impl BertInstance {
 
         let token_ids = Tensor::stack(&token_ids, 0)?;
         let token_type_ids = token_ids.zeros_like()?;
-        println!("running inference on batch {:?}", token_ids.shape());
         let embeddings = self.model.forward(&token_ids, &token_type_ids)?;
-        println!("generated embeddings {:?}", embeddings.shape());
         // Apply some avg-pooling by taking the mean embedding value for all tokens (including padding)
         let (_n_sentence, n_tokens, _hidden_size) = embeddings.dims3()?;
         let embeddings = (embeddings.sum(1)? / (n_tokens as f64))?;
         let embeddings = normalize_l2(&embeddings)?;
-        println!("pooled embeddings {:?}", embeddings.shape());
-
         let embeddings = embeddings.chunk(n_sentences, 0)?;
 
         Ok(embeddings)
@@ -185,7 +190,9 @@ pub fn device(cpu: bool) -> anyhow::Result<Device> {
     } else {
         let device = Device::cuda_if_available(0)?;
         if !device.is_cuda() {
-            println!("Running on CPU, to run on GPU, build this example with `--features cuda`");
+            tracing::warn!(
+                "Running on CPU, to run on GPU, build this example with `--features cuda`"
+            );
         }
         Ok(device)
     }

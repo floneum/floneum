@@ -2989,6 +2989,7 @@ dependencies = [
  "partial_sort",
  "pollster",
  "rand 0.8.5",
+ "rbert",
  "readability",
  "reqwest",
  "rss",

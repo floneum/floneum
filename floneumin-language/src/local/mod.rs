@@ -1,12 +1,14 @@
+pub use crate::local::bert::{BertSpace, LocalBert};
 use crate::local::session::LLMStream;
 pub use crate::local::session::LocalSession;
 use crate::{download::download, embedding::Embedding, model::*};
 use futures_util::StreamExt;
 use llm::InferenceSessionConfig;
 
+mod bert;
 mod session;
 
-trait LocalModelType {
+pub(crate) trait LocalModelType {
     fn model_type() -> ModelType;
 }
 
@@ -33,19 +35,6 @@ macro_rules! local_model {
                 LocalSession::new(model, session)
             }
 
-            async fn embed(input: &str) -> anyhow::Result<Embedding<$space>> {
-                Self::start().await.get_embedding(input).await
-            }
-
-            async fn embed_batch(inputs: &[&str]) -> anyhow::Result<Vec<Embedding<$space>>> {
-                let session = Self::start().await;
-                let mut result = Vec::new();
-                for input in inputs {
-                    result.push(session.get_embedding(input).await?);
-                }
-                Ok(result)
-            }
-
             async fn generate_text(
                 &mut self,
                 prompt: &str,
@@ -66,6 +55,22 @@ macro_rules! local_model {
             ) -> anyhow::Result<Self::TextStream> {
                 let max_tokens = generation_parameters.max_length();
                 Ok(self.infer(prompt.to_string(), Some(max_tokens), None).await)
+            }
+        }
+
+        #[async_trait::async_trait]
+        impl crate::model::Embedder<$space> for LocalSession<$space> {
+            async fn embed(input: &str) -> anyhow::Result<Embedding<$space>> {
+                Self::start().await.get_embedding(input).await
+            }
+
+            async fn embed_batch(inputs: &[&str]) -> anyhow::Result<Vec<Embedding<$space>>> {
+                let session = Self::start().await;
+                let mut result = Vec::new();
+                for input in inputs {
+                    result.push(session.get_embedding(input).await?);
+                }
+                Ok(result)
             }
         }
     };
