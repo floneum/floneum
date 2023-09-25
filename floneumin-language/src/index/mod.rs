@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
-    ops::{Deref, Range}, fmt::Debug,
+    fmt::Debug,
+    ops::{Deref, Range},
 };
 
 use crate::{

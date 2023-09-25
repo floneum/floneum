@@ -59,11 +59,12 @@ where
         let mut new_values = Vec::with_capacity(values.len());
         for (embedding, value) in embeddings.into_iter().zip(values.into_iter()) {
             if self
-            .model
-            .search(&Point(embedding.clone()), &mut Search::default())
-            .next()
-            .filter(|result| result.distance < f32::EPSILON && result.value == &value)
-            .is_none(){
+                .model
+                .search(&Point(embedding.clone()), &mut Search::default())
+                .next()
+                .filter(|result| result.distance < f32::EPSILON && result.value == &value)
+                .is_none()
+            {
                 new_points.push(embedding);
                 new_values.push(value);
             }

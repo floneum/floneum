@@ -3,16 +3,14 @@ use tokio::time::{Duration, Instant};
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    let mut model = WhisperBuilder::default()
-        .model(WhichModel::LargeV2)
-        .build()?;
+    let mut model = WhisperBuilder::default().build()?;
 
     let (tx, mut rx) = tokio::sync::mpsc::channel(5);
     std::thread::spawn(move || {
         tokio::runtime::Runtime::new()
             .unwrap()
             .block_on(async move {
-                let recording_time = Duration::from_secs(10);
+                let recording_time = Duration::from_secs(30);
                 loop {
                     let input = floneumin_sound::source::mic::MicInput::default()
                         .record_until(Instant::now() + recording_time)
