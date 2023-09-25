@@ -3,7 +3,9 @@ use tokio::time::{Duration, Instant};
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    let mut model = WhisperBuilder::default().build()?;
+    let mut model = WhisperBuilder::default()
+        .model(WhichModel::SmallEn)
+        .build()?;
 
     let (tx, mut rx) = tokio::sync::mpsc::channel(5);
     std::thread::spawn(move || {
