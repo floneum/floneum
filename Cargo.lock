@@ -6993,6 +6993,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "rphi"
+version = "0.1.0"
+dependencies = [
+ "accelerate-src",
+ "anyhow",
+ "candle-core",
+ "candle-nn",
+ "candle-transformers",
+ "cudarc",
+ "half 2.3.1",
+ "hf-hub",
+ "intel-mkl-src",
+ "rand 0.8.5",
+ "serde_json",
+ "tokenizers 0.13.4",
+ "tracing",
+]
+
+[[package]]
 name = "rss"
 version = "2.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
