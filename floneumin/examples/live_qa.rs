@@ -31,7 +31,7 @@ async fn main() -> Result<(), anyhow::Error> {
                             .await
                             .unwrap();
 
-                        if let Ok(transcribed) = model.transcribe(input) {
+                        if let Ok(transcribed) = model.transcribe(input).await {
                             for transcribed in transcribed {
                                 if transcribed.probability_of_no_speech() < 0.90 {
                                     let text = transcribed.text();
@@ -51,7 +51,7 @@ async fn main() -> Result<(), anyhow::Error> {
         let mut user_question = String::new();
         std::io::stdin().read_line(&mut user_question).unwrap();
         let engine = document_engine.read().unwrap();
-        
+
         let mut llm = LocalSession::<LlamaSevenChatSpace>::start().await;
         
         let context = {

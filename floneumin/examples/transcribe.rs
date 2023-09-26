@@ -30,7 +30,7 @@ async fn main() -> Result<(), anyhow::Error> {
         let mut next_time_stamp = current_time_stamp;
         let input = rx.recv().await.unwrap();
 
-        let transcribed = model.transcribe(input)?;
+        let transcribed = model.transcribe(input).await?;
 
         for transcribed in transcribed {
             if transcribed.probability_of_no_speech() < 0.90 {

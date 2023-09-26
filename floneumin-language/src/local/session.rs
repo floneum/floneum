@@ -354,9 +354,15 @@ fn inference_callback() -> (
     let stream = LLMStream { receiver };
     let callback = move |resp| match resp {
         InferenceResponse::InferredToken(t) => {
-            sender.send(t).unwrap();
-
-            Ok(InferenceFeedback::Continue)
+            match sender.send(t){
+                Ok(_) => {
+                    Ok(InferenceFeedback::Continue)
+                }
+                Err(_) => {
+                    log::error!("Failed to send token");
+                    Ok(InferenceFeedback::Halt)
+                }
+            }
         }
         InferenceResponse::EotToken => Ok(InferenceFeedback::Halt),
         _ => Ok(InferenceFeedback::Continue),

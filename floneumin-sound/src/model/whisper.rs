@@ -316,7 +316,30 @@ impl Default for WhisperBuilder {
 
 impl WhisperBuilder {
     pub fn build(self) -> anyhow::Result<WhisperModel> {
-        WhisperModel::new(self)
+        let (rx, tx) = std::sync::mpsc::channel();
+        let thread = std::thread::spawn(move || {
+            tokio::runtime::Builder::new_current_thread()
+                .build()
+                .unwrap()
+                .block_on(async move {
+                    let mut model = WhisperModelInner::new(self).unwrap();
+                    while let Ok(message) = tx.recv() {
+                        match message {
+                            WhisperMessage::Kill => return,
+                            WhisperMessage::Transcribe(input, result) => {
+                                if result.send(model.transcribe(input)).is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                });
+        });
+
+        Ok(WhisperModel {
+            thread: Some(thread),
+            sender: rx,
+        })
     }
 
     pub fn cpu(mut self, cpu: bool) -> Self {
@@ -545,9 +568,8 @@ impl Display for WhisperLanguage {
 }
 
 pub struct WhisperModel {
-    mel_filters: Vec<f32>,
-    device: Device,
-    decoder: Decoder,
+    thread: Option<std::thread::JoinHandle<()>>,
+    sender: std::sync::mpsc::Sender<WhisperMessage>,
 }
 
 impl WhisperModel {
@@ -555,6 +577,35 @@ impl WhisperModel {
         WhisperBuilder::default()
     }
 
+    pub async fn transcribe(&mut self, input: AudioBuffer) -> Result<Vec<Segment>> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.sender.send(WhisperMessage::Transcribe(input, tx))?;
+        Ok(rx.await??)
+    }
+}
+
+impl Drop for WhisperModel {
+    fn drop(&mut self) {
+        self.sender.send(WhisperMessage::Kill).unwrap();
+        self.thread.take().unwrap().join().unwrap();
+    }
+}
+
+enum WhisperMessage {
+    Kill,
+    Transcribe(
+        AudioBuffer,
+        tokio::sync::oneshot::Sender<Result<Vec<Segment>>>,
+    ),
+}
+
+struct WhisperModelInner {
+    mel_filters: Vec<f32>,
+    device: Device,
+    decoder: Decoder,
+}
+
+impl WhisperModelInner {
     fn new(settings: WhisperBuilder) -> anyhow::Result<Self> {
         let device = device(settings.cpu)?;
         let (default_model, _) = settings.model.model_and_revision();
@@ -588,9 +639,8 @@ impl WhisperModel {
             &mut mel_filters,
         );
 
-        let weights = unsafe { candle_core::safetensors::MmapedFile::new(weights_filename)? };
-        let weights = weights.deserialize()?;
-        let vb = VarBuilder::from_safetensors(vec![weights], m::DTYPE, &device);
+        let vb =
+            unsafe { VarBuilder::from_mmaped_safetensors(&[weights_filename], m::DTYPE, &device)? };
         let config: Config = serde_json::from_str(&std::fs::read_to_string(config_filename)?)?;
         let model = Whisper::load(&vb, config)?;
         let language_token = if settings.model.is_multilingual() {
@@ -611,7 +661,7 @@ impl WhisperModel {
         })
     }
 
-    pub fn transcribe(&mut self, input: AudioBuffer) -> Result<Vec<Segment>> {
+    fn transcribe(&mut self, input: AudioBuffer) -> Result<Vec<Segment>> {
         let bytes = input.into_data();
         let pcm_data: Vec<_> = normalize_audio(bytes)?;
 
@@ -639,28 +689,10 @@ pub fn device(cpu: bool) -> anyhow::Result<Device> {
 
 pub fn normalize_audio(input: Vec<u8>) -> anyhow::Result<Vec<f32>> {
     let source = AudioDecoder::new(std::io::Cursor::new(input)).unwrap();
-    let resample = UniformSourceIterator::new(source, 1, 16000);
+    let resample = UniformSourceIterator::new(source, 1, m::SAMPLE_RATE as u32);
     let pass_filter = resample.low_pass(3000).high_pass(200).convert_samples();
 
     let samples = pass_filter.collect::<Vec<f32>>();
 
     Ok(samples)
-}
-
-#[test]
-fn record() -> Result<(), anyhow::Error> {
-    use crate::source::mic::MicInput;
-    use std::time::{Duration, Instant};
-
-    let mut model = WhisperBuilder::default().build()?;
-
-    println!("recording");
-    let input =
-        MicInput::default().record_until_blocking(Instant::now() + Duration::from_secs(20))?;
-
-    let transcribed = model.transcribe(input)?;
-
-    println!("transcribed: {:?}", transcribed);
-
-    Ok(())
 }
