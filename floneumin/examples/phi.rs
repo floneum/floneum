@@ -4,8 +4,8 @@ use floneumin_language::{
     local::Phi,
     model::{GenerationParameters, Model},
 };
-use futures_util::stream::StreamExt;
 use floneumin_streams::text_stream::TextStream;
+use futures_util::stream::StreamExt;
 
 #[tokio::main]
 async fn main() {
