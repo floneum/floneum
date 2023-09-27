@@ -28,6 +28,13 @@ async fn main() -> Result<(), anyhow::Error> {
         if transcribed.probability_of_no_speech() < 0.90 {
             let text = transcribed.text();
             println!("({:01} - {:01}): {}", start, end, text);
+        } else {
+            println!(
+                "({:01} - {:01}): <no speech> ({})",
+                start,
+                end,
+                transcribed.text()
+            );
         }
         current_time_stamp = end;
     }

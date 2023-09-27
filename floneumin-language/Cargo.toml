@@ -44,6 +44,13 @@ rbert = { path = "../rbert" }
 rphi = { path = "../rphi" }
 pin-project = "1"
 floneumin-streams = { path = "../floneumin-streams" }
+pulldown-cmark = "0.9.3"
+docx-rs = "0.4.7"
+pdf = { git = "https://github.com/pdf-rs/pdf" }
+pdf_text = { git = "https://github.com/pdf-rs/pdf_text" }
+convert_case = "0.6.0"
+itertools = "0.11.0"
+async-recursion = "1.0.5"
 
 [features]
 metal = ["llm/metal", "rphi/accelerate", "rbert/accelerate"]
