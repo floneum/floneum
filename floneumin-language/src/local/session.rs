@@ -4,7 +4,7 @@ use crate::{
     embedding::get_embeddings, embedding::Embedding, structured::StructuredSampler,
     structured_parser::Validate,
 };
-use futures_util::Stream;
+use floneumin_streams::sender::ChannelTextStream;
 
 use llm::{
     InferenceError, InferenceFeedback, InferenceParameters, InferenceRequest, InferenceResponse,
@@ -113,7 +113,7 @@ impl<S: VectorSpace + Send + Sync + 'static> LocalSession<S> {
         prompt: String,
         max_tokens: Option<u32>,
         stop_on: Option<String>,
-    ) -> LLMStream {
+    ) -> ChannelTextStream<String> {
         let (sender, receiver) = tokio::sync::oneshot::channel();
         self.task_sender
             .send(Task::Infer {
@@ -156,7 +156,7 @@ enum Task<S: VectorSpace> {
         prompt: String,
         max_tokens: Option<u32>,
         stop_on: Option<String>,
-        sender: tokio::sync::oneshot::Sender<LLMStream>,
+        sender: tokio::sync::oneshot::Sender<ChannelTextStream<String>>,
     },
     InferValidate {
         prompt: String,
@@ -301,7 +301,7 @@ impl<S: VectorSpace> LocalSessionInner<S> {
         prompt: String,
         max_tokens: Option<u32>,
         stop_on: Option<String>,
-        out: tokio::sync::oneshot::Sender<LLMStream>,
+        out: tokio::sync::oneshot::Sender<ChannelTextStream<String>>,
     ) {
         let session = &mut self.session;
         let model = &mut *self.model;
@@ -348,10 +348,10 @@ impl<S: VectorSpace> LocalSessionInner<S> {
 #[allow(clippy::needless_pass_by_ref_mut)]
 fn inference_callback() -> (
     impl FnMut(InferenceResponse) -> Result<InferenceFeedback, Infallible>,
-    LLMStream,
+    ChannelTextStream<String>,
 ) {
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
-    let stream = LLMStream { receiver };
+    let stream = receiver.into();
     let callback = move |resp| match resp {
         InferenceResponse::InferredToken(t) => match sender.send(t) {
             Ok(_) => Ok(InferenceFeedback::Continue),
@@ -364,31 +364,4 @@ fn inference_callback() -> (
         _ => Ok(InferenceFeedback::Continue),
     };
     (callback, stream)
-}
-
-pub struct LLMStream {
-    receiver: tokio::sync::mpsc::UnboundedReceiver<String>,
-}
-
-impl From<tokio::sync::mpsc::UnboundedReceiver<String>> for LLMStream {
-    fn from(receiver: tokio::sync::mpsc::UnboundedReceiver<String>) -> Self {
-        Self { receiver }
-    }
-}
-
-impl LLMStream {
-    pub fn new(receiver: tokio::sync::mpsc::UnboundedReceiver<String>) -> Self {
-        Self { receiver }
-    }
-}
-
-impl Stream for LLMStream {
-    type Item = String;
-
-    fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> core::task::Poll<Option<Self::Item>> {
-        self.receiver.poll_recv(cx)
-    }
 }

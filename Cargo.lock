@@ -3041,6 +3041,7 @@ dependencies = [
  "anyhow",
  "floneumin-language",
  "floneumin-sound",
+ "floneumin-streams",
  "futures-util",
  "tokio",
  "tracing-subscriber 0.2.25",
@@ -3058,6 +3059,7 @@ dependencies = [
  "chrono",
  "crossbeam",
  "dashmap",
+ "floneumin-streams",
  "floneumite",
  "futures-util",
  "headless_chrome",
@@ -3099,6 +3101,7 @@ dependencies = [
  "candle-nn",
  "candle-transformers",
  "cpal",
+ "floneumin-streams",
  "futures-util",
  "hf-hub",
  "hound",
@@ -3114,6 +3117,17 @@ dependencies = [
  "tts",
  "webrtc-vad",
  "whisper-rs",
+]
+
+[[package]]
+name = "floneumin-streams"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures-util",
+ "pin-project",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

@@ -6,12 +6,12 @@ use futures_util::StreamExt;
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     let mut model = WhisperBuilder::default()
-        .model(WhichModel::SmallEn)
+        .model(WhichModel::TinyEn)
         .build()?;
 
     let input = floneumin_sound::source::mic::MicInput::default();
     let stream = input.stream()?;
-    let mut chunks = stream.stream().subscribe_stream(Duration::from_secs(10));
+    let mut chunks = stream.stream().subscribe_stream(Duration::from_secs(30));
 
     let mut current_time_stamp = 0.0;
 
@@ -23,9 +23,9 @@ async fn main() -> Result<(), anyhow::Error> {
             .await
             .ok_or_else(|| anyhow::anyhow!("no more chunks"))?;
 
-        let transcribed = model.transcribe(input).await?;
+        let mut transcribed = model.transcribe(input).await?;
 
-        for transcribed in transcribed {
+        while let Some(transcribed) = transcribed.next().await {
             if transcribed.probability_of_no_speech() < 0.90 {
                 let start = current_time_stamp + transcribed.start();
                 let end = start + transcribed.duration();

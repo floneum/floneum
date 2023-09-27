@@ -3,9 +3,9 @@ use std::io::Write;
 use floneumin_language::{
     local::Phi,
     model::{GenerationParameters, Model},
-    text_stream::TextStream,
 };
 use futures_util::stream::StreamExt;
+use floneumin_streams::text_stream::TextStream;
 
 #[tokio::main]
 async fn main() {

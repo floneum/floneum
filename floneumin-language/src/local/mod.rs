@@ -2,6 +2,7 @@ pub use crate::local::bert::*;
 pub use crate::local::phi::*;
 pub use crate::local::session::*;
 use crate::{download::download, embedding::Embedding, model::*};
+use floneumin_streams::sender::ChannelTextStream;
 use futures_util::StreamExt;
 use llm::InferenceSessionConfig;
 
@@ -23,7 +24,7 @@ macro_rules! local_model {
 
         #[async_trait::async_trait]
         impl crate::model::Model for LocalSession<$space> {
-            type TextStream = LLMStream;
+            type TextStream = ChannelTextStream<String>;
 
             async fn start() -> Self {
                 let model = download(Self::model_type()).await;

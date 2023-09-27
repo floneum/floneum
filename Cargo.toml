@@ -61,6 +61,7 @@ members = [
     "floneumin-language",
     "floneumin-vision",
     "floneumin-sound",
+    "floneumin-streams",
     "plugins/generate_text",
     "plugins/generate_structured_text",
     "plugins/format",

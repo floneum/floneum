@@ -6,5 +6,4 @@ pub mod local;
 pub mod model;
 pub mod structured;
 pub mod structured_parser;
-pub mod text_stream;
 pub mod vector_db;

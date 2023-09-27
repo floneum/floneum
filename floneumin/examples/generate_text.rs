@@ -3,8 +3,9 @@ use std::io::Write;
 use floneumin_language::{
     local::LocalSession,
     model::{GenerationParameters, LlamaSevenChatSpace, Model},
-    text_stream::TextStream,
+    
 };
+use floneumin_streams::text_stream::TextStream;
 use futures_util::stream::StreamExt;
 
 #[tokio::main]

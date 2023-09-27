@@ -1,4 +1,5 @@
 use cpal::FromSample;
+use floneumin_streams::sender::ChannelTextStream;
 use rodio::{source::UniformSourceIterator, Source};
 use std::fmt::Display;
 
@@ -46,6 +47,12 @@ impl Segment {
 
     pub fn duration(&self) -> f64 {
         self.duration
+    }
+}
+
+impl AsRef<str> for Segment {
+    fn as_ref(&self) -> &str {
+        self.text()
     }
 }
 
@@ -210,16 +217,20 @@ impl Decoder {
         unreachable!()
     }
 
-    fn run(&mut self, mel: &Tensor, task: Task) -> Result<Vec<Segment>> {
-        let (_, _, content_frames) = mel.dims3()?;
+    fn run(
+        &mut self,
+        mel: &Tensor,
+        task: Task,
+        result: tokio::sync::mpsc::UnboundedSender<Segment>,
+    ) {
+        let (_, _, content_frames) = mel.dims3().unwrap();
         let mut seek = 0;
-        let mut segments = vec![];
         while seek < content_frames {
             let time_offset = (seek * m::HOP_LENGTH) as f64 / m::SAMPLE_RATE as f64;
             let segment_size = usize::min(content_frames - seek, m::N_FRAMES);
-            let mel_segment = mel.narrow(2, seek, segment_size)?;
+            let mel_segment = mel.narrow(2, seek, segment_size).unwrap();
             let segment_duration = (segment_size * m::HOP_LENGTH) as f64 / m::SAMPLE_RATE as f64;
-            let dr = self.decode_with_fallback(&mel_segment, task)?;
+            let dr = self.decode_with_fallback(&mel_segment, task).unwrap();
             seek += segment_size;
             if dr.no_speech_prob > m::NO_SPEECH_THRESHOLD && dr.avg_logprob < m::LOGPROB_THRESHOLD {
                 tracing::trace!("no speech detected, skipping {seek} {dr:?}");
@@ -231,9 +242,11 @@ impl Decoder {
                 result: dr,
             };
 
-            segments.push(segment)
+            if let Err(err) = result.send(segment) {
+                tracing::error!("Error sending segment: {err}");
+                break;
+            }
         }
-        Ok(segments)
     }
 }
 
@@ -326,7 +339,9 @@ impl WhisperBuilder {
                         match message {
                             WhisperMessage::Kill => return,
                             WhisperMessage::Transcribe(input, result) => {
-                                if result.send(model.transcribe(input)).is_err() {
+                                let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+                                model.transcribe(input, tx);
+                                if result.send(rx).is_err() {
                                     break;
                                 }
                             }
@@ -576,7 +591,7 @@ impl WhisperModel {
         WhisperBuilder::default()
     }
 
-    pub async fn transcribe<S: Source>(&mut self, input: S) -> Result<Vec<Segment>>
+    pub async fn transcribe<S: Source>(&mut self, input: S) -> Result<ChannelTextStream<Segment>>
     where
         <S as Iterator>::Item: rodio::Sample,
         f32: FromSample<<S as Iterator>::Item>,
@@ -584,7 +599,7 @@ impl WhisperModel {
         let (tx, rx) = tokio::sync::oneshot::channel();
         let pcm_data: Vec<_> = normalize_audio(input)?;
         self.sender.send(WhisperMessage::Transcribe(pcm_data, tx))?;
-        Ok(rx.await??)
+        Ok(rx.await?.into())
     }
 }
 
@@ -597,7 +612,10 @@ impl Drop for WhisperModel {
 
 enum WhisperMessage {
     Kill,
-    Transcribe(Vec<f32>, tokio::sync::oneshot::Sender<Result<Vec<Segment>>>),
+    Transcribe(
+        Vec<f32>,
+        tokio::sync::oneshot::Sender<tokio::sync::mpsc::UnboundedReceiver<Segment>>,
+    ),
 }
 
 struct WhisperModelInner {
@@ -662,12 +680,16 @@ impl WhisperModelInner {
         })
     }
 
-    fn transcribe(&mut self, pcm_data: Vec<f32>) -> Result<Vec<Segment>> {
+    fn transcribe(
+        &mut self,
+        pcm_data: Vec<f32>,
+        result: tokio::sync::mpsc::UnboundedSender<Segment>,
+    ) {
         let mel = audio::pcm_to_mel(&pcm_data, &self.mel_filters);
         let mel_len = mel.len();
-        let mel = Tensor::from_vec(mel, (1, m::N_MELS, mel_len / m::N_MELS), &self.device)?;
+        let mel = Tensor::from_vec(mel, (1, m::N_MELS, mel_len / m::N_MELS), &self.device).unwrap();
 
-        self.decoder.run(&mel, Task::Transcribe)
+        self.decoder.run(&mel, Task::Transcribe, result);
     }
 }
 

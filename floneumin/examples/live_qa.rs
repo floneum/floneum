@@ -31,8 +31,8 @@ async fn main() -> Result<(), anyhow::Error> {
                             .await
                             .unwrap();
 
-                        if let Ok(transcribed) = model.transcribe(input).await {
-                            for transcribed in transcribed {
+                        if let Ok(mut transcribed) = model.transcribe(input).await {
+                            while let Some(transcribed) = transcribed.next().await {
                                 if transcribed.probability_of_no_speech() < 0.90 {
                                     let text = transcribed.text();
                                     document_engine.write().unwrap().add(text).await.unwrap();

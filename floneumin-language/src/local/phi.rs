@@ -1,12 +1,11 @@
 use crate::embedding::VectorSpace;
+use floneumin_streams::sender::ChannelTextStream;
 use rphi::InferenceSettings;
 pub use rphi::{self, Phi};
 
-use super::session::LLMStream;
-
 #[async_trait::async_trait]
 impl crate::model::Model for Phi {
-    type TextStream = LLMStream;
+    type TextStream = ChannelTextStream<String>;
 
     async fn start() -> Self {
         Phi::default()
@@ -30,7 +29,7 @@ impl crate::model::Model for Phi {
                 .with_repeat_penalty(repetition_penalty)
                 .with_repeat_last_n(repetition_penalty_range as usize),
         )
-        .map(|s| LLMStream::new(s))
+        .map(Into::into)
     }
 }
 
