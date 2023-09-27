@@ -1,6 +1,6 @@
 use crate::embedding::VectorSpace;
-use rphi::{InferenceSettings};
-pub use rphi::{Phi, self};
+use rphi::InferenceSettings;
+pub use rphi::{self, Phi};
 
 use super::session::LLMStream;
 

@@ -1,5 +1,7 @@
+use std::time::Duration;
+
 use floneumin_sound::model::whisper::*;
-use tokio::time::{Duration, Instant};
+use futures_util::StreamExt;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
@@ -7,28 +9,19 @@ async fn main() -> Result<(), anyhow::Error> {
         .model(WhichModel::SmallEn)
         .build()?;
 
-    let (tx, mut rx) = tokio::sync::mpsc::channel(5);
-    std::thread::spawn(move || {
-        tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(async move {
-                let recording_time = Duration::from_secs(30);
-                loop {
-                    let input = floneumin_sound::source::mic::MicInput::default()
-                        .record_until(Instant::now() + recording_time)
-                        .await
-                        .unwrap();
-                    tx.send(input).await.unwrap();
-                }
-            })
-    });
+    let input = floneumin_sound::source::mic::MicInput::default();
+    let stream = input.stream()?;
+    let mut chunks = stream.stream().subscribe_stream(Duration::from_secs(10));
 
     let mut current_time_stamp = 0.0;
 
     println!("starting transcription loop");
     loop {
         let mut next_time_stamp = current_time_stamp;
-        let input = rx.recv().await.unwrap();
+        let input = chunks
+            .next()
+            .await
+            .ok_or_else(|| anyhow::anyhow!("no more chunks"))?;
 
         let transcribed = model.transcribe(input).await?;
 

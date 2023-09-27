@@ -1,4 +1,5 @@
-use rodio::{source::UniformSourceIterator, Decoder as AudioDecoder, Source};
+use cpal::FromSample;
+use rodio::{source::UniformSourceIterator, Source};
 use std::fmt::Display;
 
 use anyhow::{Error as E, Result};
@@ -10,8 +11,6 @@ use tokenizers::Tokenizer;
 
 use candle_transformers::models::whisper::{self as m, audio, model};
 use model::{Config, Whisper};
-
-use crate::source::AudioBuffer;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
@@ -577,9 +576,14 @@ impl WhisperModel {
         WhisperBuilder::default()
     }
 
-    pub async fn transcribe(&mut self, input: AudioBuffer) -> Result<Vec<Segment>> {
+    pub async fn transcribe<S: Source>(&mut self, input: S) -> Result<Vec<Segment>>
+    where
+        <S as Iterator>::Item: rodio::Sample,
+        f32: FromSample<<S as Iterator>::Item>,
+    {
         let (tx, rx) = tokio::sync::oneshot::channel();
-        self.sender.send(WhisperMessage::Transcribe(input, tx))?;
+        let pcm_data: Vec<_> = normalize_audio(input)?;
+        self.sender.send(WhisperMessage::Transcribe(pcm_data, tx))?;
         Ok(rx.await??)
     }
 }
@@ -593,10 +597,7 @@ impl Drop for WhisperModel {
 
 enum WhisperMessage {
     Kill,
-    Transcribe(
-        AudioBuffer,
-        tokio::sync::oneshot::Sender<Result<Vec<Segment>>>,
-    ),
+    Transcribe(Vec<f32>, tokio::sync::oneshot::Sender<Result<Vec<Segment>>>),
 }
 
 struct WhisperModelInner {
@@ -661,10 +662,7 @@ impl WhisperModelInner {
         })
     }
 
-    fn transcribe(&mut self, input: AudioBuffer) -> Result<Vec<Segment>> {
-        let bytes = input.into_data();
-        let pcm_data: Vec<_> = normalize_audio(bytes)?;
-
+    fn transcribe(&mut self, pcm_data: Vec<f32>) -> Result<Vec<Segment>> {
         let mel = audio::pcm_to_mel(&pcm_data, &self.mel_filters);
         let mel_len = mel.len();
         let mel = Tensor::from_vec(mel, (1, m::N_MELS, mel_len / m::N_MELS), &self.device)?;
@@ -687,9 +685,12 @@ pub fn device(cpu: bool) -> anyhow::Result<Device> {
     }
 }
 
-pub fn normalize_audio(input: Vec<u8>) -> anyhow::Result<Vec<f32>> {
-    let source = AudioDecoder::new(std::io::Cursor::new(input)).unwrap();
-    let resample = UniformSourceIterator::new(source, 1, m::SAMPLE_RATE as u32);
+pub fn normalize_audio<S: Source>(input: S) -> Result<Vec<f32>>
+where
+    <S as Iterator>::Item: rodio::Sample,
+    f32: FromSample<<S as Iterator>::Item>,
+{
+    let resample = UniformSourceIterator::new(input, 1, m::SAMPLE_RATE as u32);
     let pass_filter = resample.low_pass(3000).high_pass(200).convert_samples();
 
     let samples = pass_filter.collect::<Vec<f32>>();

@@ -1,9 +1,9 @@
 pub use crate::local::bert::*;
+pub use crate::local::phi::*;
 pub use crate::local::session::*;
 use crate::{download::download, embedding::Embedding, model::*};
 use futures_util::StreamExt;
 use llm::InferenceSessionConfig;
-pub use crate::local::phi::*;
 
 mod bert;
 mod phi;

@@ -3099,6 +3099,7 @@ dependencies = [
  "candle-nn",
  "candle-transformers",
  "cpal",
+ "futures-util",
  "hf-hub",
  "hound",
  "itertools 0.10.5",

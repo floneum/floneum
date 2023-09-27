@@ -1,7 +1,7 @@
 use std::io::Write;
 
 use floneumin_language::{
-    local::{ Phi},
+    local::Phi,
     model::{GenerationParameters, Model},
     text_stream::TextStream,
 };
