@@ -13,8 +13,8 @@ use tokio::time::{Duration, Instant};
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    let mut model = WhisperBuilder::default()
-        .model(WhichModel::SmallEn)
+    let model = WhisperBuilder::default()
+        .model(WhisperModelSource::SmallEn)
         .build()?;
 
     let document_engine = Arc::new(RwLock::new(FuzzySearchIndex::default()));
@@ -31,7 +31,7 @@ async fn main() -> Result<(), anyhow::Error> {
                             .await
                             .unwrap();
 
-                        if let Ok(mut transcribed) = model.transcribe(input).await {
+                        if let Ok(mut transcribed) = model.transcribe(input) {
                             while let Some(transcribed) = transcribed.next().await {
                                 if transcribed.probability_of_no_speech() < 0.90 {
                                     let text = transcribed.text();

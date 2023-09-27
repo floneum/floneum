@@ -13,48 +13,7 @@ use tokenizers::Tokenizer;
 use candle_transformers::models::whisper::{self as m, audio, model};
 use model::{Config, Whisper};
 
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-struct DecodingResult {
-    tokens: Vec<u32>,
-    text: String,
-    avg_logprob: f64,
-    no_speech_prob: f64,
-    temperature: f64,
-    compression_ratio: f64,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub struct Segment {
-    start: f64,
-    duration: f64,
-    result: DecodingResult,
-}
-
-impl Segment {
-    pub fn probability_of_no_speech(&self) -> f64 {
-        self.result.no_speech_prob
-    }
-
-    pub fn text(&self) -> &str {
-        &self.result.text
-    }
-
-    pub fn start(&self) -> f64 {
-        self.start
-    }
-
-    pub fn duration(&self) -> f64 {
-        self.duration
-    }
-}
-
-impl AsRef<str> for Segment {
-    fn as_ref(&self) -> &str {
-        self.text()
-    }
-}
+use super::{DecodingResult, Segment};
 
 struct Decoder {
     model: Whisper,
@@ -185,11 +144,9 @@ impl Decoder {
         let avg_logprob = sum_logprob / tokens.len() as f64;
 
         Ok(DecodingResult {
-            tokens,
             text,
             avg_logprob,
             no_speech_prob,
-            temperature: t,
             compression_ratio: f64::NAN,
         })
     }
@@ -265,7 +222,7 @@ enum Task {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum WhichModel {
+pub enum WhisperModelSource {
     Tiny,
     TinyEn,
     Base,
@@ -278,7 +235,7 @@ pub enum WhichModel {
     LargeV2,
 }
 
-impl WhichModel {
+impl WhisperModelSource {
     pub fn is_multilingual(&self) -> bool {
         match self {
             Self::Tiny | Self::Base | Self::Small | Self::Medium | Self::Large | Self::LargeV2 => {
@@ -310,7 +267,7 @@ pub struct WhisperBuilder {
     cpu: bool,
 
     /// The model to be used, can be tiny, small, medium.
-    model: WhichModel,
+    model: WhisperModelSource,
 
     /// Language.
     language: Option<WhisperLanguage>,
@@ -320,7 +277,7 @@ impl Default for WhisperBuilder {
     fn default() -> Self {
         Self {
             cpu: false,
-            model: WhichModel::LargeV2,
+            model: WhisperModelSource::LargeV2,
             language: Some(WhisperLanguage::English),
         }
     }
@@ -339,11 +296,7 @@ impl WhisperBuilder {
                         match message {
                             WhisperMessage::Kill => return,
                             WhisperMessage::Transcribe(input, result) => {
-                                let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-                                model.transcribe(input, tx);
-                                if result.send(rx).is_err() {
-                                    break;
-                                }
+                                model.transcribe(input, result);
                             }
                         }
                     }
@@ -361,7 +314,7 @@ impl WhisperBuilder {
         self
     }
 
-    pub fn model(mut self, model: WhichModel) -> Self {
+    pub fn model(mut self, model: WhisperModelSource) -> Self {
         self.model = model;
         self
     }
@@ -586,20 +539,41 @@ pub struct WhisperModel {
     sender: std::sync::mpsc::Sender<WhisperMessage>,
 }
 
+impl Default for WhisperModel {
+    fn default() -> Self {
+        Self::builder().build().unwrap()
+    }
+}
+
 impl WhisperModel {
     pub fn builder() -> WhisperBuilder {
         WhisperBuilder::default()
     }
 
-    pub async fn transcribe<S: Source>(&mut self, input: S) -> Result<ChannelTextStream<Segment>>
+    pub fn transcribe<S: Source>(&self, input: S) -> Result<ChannelTextStream<Segment>>
     where
         <S as Iterator>::Item: rodio::Sample,
         f32: FromSample<<S as Iterator>::Item>,
     {
-        let (tx, rx) = tokio::sync::oneshot::channel();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let pcm_data: Vec<_> = normalize_audio(input)?;
         self.sender.send(WhisperMessage::Transcribe(pcm_data, tx))?;
-        Ok(rx.await?.into())
+        Ok(rx.into())
+    }
+
+    pub fn transcribe_into<S: Source>(
+        &mut self,
+        input: S,
+        sender: tokio::sync::mpsc::UnboundedSender<Segment>,
+    ) -> Result<()>
+    where
+        <S as Iterator>::Item: rodio::Sample,
+        f32: FromSample<<S as Iterator>::Item>,
+    {
+        let pcm_data: Vec<_> = normalize_audio(input)?;
+        self.sender
+            .send(WhisperMessage::Transcribe(pcm_data, sender))?;
+        Ok(())
     }
 }
 
@@ -612,10 +586,7 @@ impl Drop for WhisperModel {
 
 enum WhisperMessage {
     Kill,
-    Transcribe(
-        Vec<f32>,
-        tokio::sync::oneshot::Sender<tokio::sync::mpsc::UnboundedReceiver<Segment>>,
-    ),
+    Transcribe(Vec<f32>, tokio::sync::mpsc::UnboundedSender<Segment>),
 }
 
 struct WhisperModelInner {

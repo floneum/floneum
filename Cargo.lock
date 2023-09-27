@@ -3096,6 +3096,7 @@ name = "floneumin-sound"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "byteorder",
  "candle-core",
  "candle-nn",
