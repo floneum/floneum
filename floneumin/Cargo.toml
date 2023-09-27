@@ -14,3 +14,7 @@ anyhow = "1.0.75"
 
 [dev-dependencies]
 tracing-subscriber = "0.2"
+
+[features]
+metal = ["floneumin-language/metal"]
+cublas = ["floneumin-language/cublas"]

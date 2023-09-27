@@ -1,11 +1,12 @@
-pub use crate::local::bert::{BertSpace, LocalBert};
-use crate::local::session::LLMStream;
-pub use crate::local::session::LocalSession;
+pub use crate::local::bert::*;
+pub use crate::local::session::*;
 use crate::{download::download, embedding::Embedding, model::*};
 use futures_util::StreamExt;
 use llm::InferenceSessionConfig;
+pub use crate::local::phi::*;
 
 mod bert;
+mod phi;
 mod session;
 
 pub(crate) trait LocalModelType {
@@ -21,7 +22,7 @@ macro_rules! local_model {
         }
 
         #[async_trait::async_trait]
-        impl crate::model::Model<$space> for LocalSession<$space> {
+        impl crate::model::Model for LocalSession<$space> {
             type TextStream = LLMStream;
 
             async fn start() -> Self {

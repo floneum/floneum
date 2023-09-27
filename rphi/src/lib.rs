@@ -4,22 +4,37 @@ extern crate intel_mkl_src;
 #[cfg(feature = "accelerate")]
 extern crate accelerate_src;
 
+mod model;
 mod source;
 
-use anyhow::{Error as E, Result};
+use anyhow::Error as E;
 
 use candle_transformers::models::mixformer::Config;
 use candle_transformers::models::quantized_mixformer::MixFormerSequentialForCausalLM as QMixFormer;
 
-use candle_core::{DType, Device, Tensor};
-use candle_transformers::generation::LogitsProcessor;
+use candle_core::Device;
 use hf_hub::{api::sync::Api, Repo, RepoType};
+use model::PhiInner;
 use tokenizers::Tokenizer;
 
+enum Task {
+    Kill,
+    Infer {
+        settings: InferenceSettings,
+        sender: tokio::sync::mpsc::UnboundedSender<String>,
+    },
+}
+
 pub struct Phi {
-    model: QMixFormer,
-    device: Device,
-    tokenizer: Tokenizer,
+    task_sender: tokio::sync::mpsc::UnboundedSender<Task>,
+    thread_handle: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Drop for Phi {
+    fn drop(&mut self) {
+        self.task_sender.send(Task::Kill).unwrap();
+        self.thread_handle.take().unwrap().join().unwrap();
+    }
 }
 
 impl Default for Phi {
@@ -34,75 +49,41 @@ impl Phi {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn new(model: QMixFormer, tokenizer: Tokenizer, device: &Device) -> Self {
+    fn new(model: QMixFormer, tokenizer: Tokenizer, device: Device) -> Self {
+        let (task_sender, mut task_receiver) = tokio::sync::mpsc::unbounded_channel();
+
+        let thread_handle = std::thread::spawn(move || {
+            let mut inner = PhiInner::new(model, tokenizer, device);
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(async move {
+                    while let Some(task) = task_receiver.recv().await {
+                        match task {
+                            Task::Kill => break,
+                            Task::Infer { settings, sender } => {
+                                inner._infer(&settings, sender).await.unwrap();
+                            }
+                        }
+                    }
+                })
+        });
         Self {
-            model,
-            tokenizer,
-            device: device.clone(),
+            task_sender,
+            thread_handle: Some(thread_handle),
         }
     }
 
-    pub fn run(&mut self, inference_settings: &InferenceSettings) -> Result<()> {
-        use std::io::Write;
-
-        let InferenceSettings {
-            prompt,
-            temperature,
-            top_p,
-            seed,
-            sample_len,
-            repeat_penalty,
-            repeat_last_n,
-            ..
-        } = inference_settings;
-
-        let mut logits_processor = LogitsProcessor::new(*seed, *temperature, *top_p);
-        let mut tokens = self
-            .tokenizer
-            .encode(*prompt, true)
-            .map_err(E::msg)?
-            .get_ids()
-            .to_vec();
-
-        let mut new_tokens = vec![];
-        let eos_token = match self.tokenizer.get_vocab(true).get("<|endoftext|>") {
-            Some(token) => *token,
-            None => anyhow::bail!("cannot find the endoftext token"),
-        };
-        let start_gen = std::time::Instant::now();
-        for index in 0..*sample_len {
-            let context_size = if index > 0 { 1 } else { tokens.len() };
-            let ctxt = &tokens[tokens.len().saturating_sub(context_size)..];
-            let input = Tensor::new(ctxt, &self.device)?.unsqueeze(0)?;
-            let logits = self.model.forward(&input)?;
-            let logits = logits.squeeze(0)?.to_dtype(DType::F32)?;
-            let logits = if *repeat_penalty == 1. {
-                logits
-            } else {
-                let start_at = tokens.len().saturating_sub(*repeat_last_n);
-                candle_transformers::utils::apply_repeat_penalty(
-                    &logits,
-                    *repeat_penalty,
-                    &tokens[start_at..],
-                )?
-            };
-
-            let next_token = logits_processor.sample(&logits)?;
-            tokens.push(next_token);
-            new_tokens.push(next_token);
-            if next_token == eos_token {
-                break;
-            }
-            let token = self.tokenizer.decode(&[next_token], true).map_err(E::msg)?;
-            print!("{token}");
-            std::io::stdout().flush()?;
-        }
-        let dt = start_gen.elapsed();
-        println!(
-            "\n{sample_len} tokens generated ({:.2} token/s)",
-            *sample_len as f64 / dt.as_secs_f64(),
-        );
-        Ok(())
+    pub fn run(
+        &mut self,
+        settings: InferenceSettings,
+    ) -> anyhow::Result<tokio::sync::mpsc::UnboundedReceiver<String>> {
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        self.task_sender
+            .send(Task::Infer { settings, sender })
+            .unwrap();
+        Ok(receiver)
     }
 }
 
@@ -146,7 +127,7 @@ impl PhiBuilder {
             (model, device(self.cpu)?)
         };
 
-        Ok(Phi::new(model, tokenizer, &device))
+        Ok(Phi::new(model, tokenizer, device))
     }
 }
 
@@ -165,8 +146,8 @@ pub fn device(cpu: bool) -> anyhow::Result<Device> {
 }
 
 #[derive(Debug)]
-pub struct InferenceSettings<'a> {
-    prompt: &'a str,
+pub struct InferenceSettings {
+    prompt: String,
 
     /// The temperature used to generate samples.
     temperature: Option<f64>,
@@ -187,10 +168,10 @@ pub struct InferenceSettings<'a> {
     repeat_last_n: usize,
 }
 
-impl<'a> InferenceSettings<'a> {
-    pub fn new(prompt: &'a str) -> Self {
+impl InferenceSettings {
+    pub fn new(prompt: impl Into<String>) -> Self {
         Self {
-            prompt,
+            prompt: prompt.into(),
             temperature: None,
             top_p: None,
             seed: rand::random(),
@@ -231,8 +212,8 @@ impl<'a> InferenceSettings<'a> {
     }
 }
 
-#[test]
-fn generate() -> Result<()> {
+#[tokio::test]
+async fn generate() -> anyhow::Result<()> {
     println!(
         "avx: {}, neon: {}, simd128: {}, f16c: {}",
         candle_core::utils::with_avx(),
@@ -243,7 +224,7 @@ fn generate() -> Result<()> {
 
     let mut phi = Phi::default();
 
-    phi.run(&InferenceSettings::new("The quick brown fox "))?;
+    phi.run(InferenceSettings::new("The quick brown fox "))?;
 
     Ok(())
 }

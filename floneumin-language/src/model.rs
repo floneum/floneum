@@ -2,7 +2,7 @@ use crate::{
     embedding::{Embedding, VectorSpace},
     structured_parser::Validate,
 };
-use futures_util::Stream;
+use futures_util::{Stream, StreamExt};
 use url::Url;
 
 #[async_trait::async_trait]
@@ -13,7 +13,7 @@ pub trait Embedder<S: VectorSpace>: 'static {
 }
 
 #[async_trait::async_trait]
-pub trait Model<S: VectorSpace>: 'static {
+pub trait Model: 'static {
     type TextStream: Stream<Item = String> + Send + Sync + Unpin + 'static;
 
     async fn start() -> Self;
@@ -22,7 +22,15 @@ pub trait Model<S: VectorSpace>: 'static {
         &mut self,
         prompt: &str,
         generation_parameters: GenerationParameters,
-    ) -> anyhow::Result<String>;
+    ) -> anyhow::Result<String> {
+        let mut text = String::new();
+
+        let mut stream = self.stream_text(prompt, generation_parameters).await?;
+        while let Some(new) = stream.next().await {
+            text.push_str(&new);
+        }
+        Ok(text)
+    }
 
     async fn stream_text(
         &mut self,

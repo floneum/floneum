@@ -99,7 +99,9 @@ impl Bert {
 
     pub fn load(&self, options: BertInferenceOptions) -> anyhow::Result<BertInstance> {
         let device = device(options.cpu)?;
-        let vb =unsafe {VarBuilder::from_mmaped_safetensors(&[&self.weights_filename], DTYPE, &device)?};
+        let vb = unsafe {
+            VarBuilder::from_mmaped_safetensors(&[&self.weights_filename], DTYPE, &device)?
+        };
         let model = BertModel::load(vb, &self.config)?;
         let tokenizer =
             Tokenizer::from_file(&self.tokenizer_filename).map_err(anyhow::Error::msg)?;

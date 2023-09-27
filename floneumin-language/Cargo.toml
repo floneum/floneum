@@ -41,8 +41,9 @@ tokio-util = { version = "0.7.9", features = ["rt"] }
 crossbeam = "0.8.2"
 dashmap = "5.5.3"
 rbert = { path = "../rbert" }
+rphi = { path = "../rphi" }
 pin-project = "1"
 
 [features]
-metal = ["llm/metal"]
+metal = ["llm/metal", "rphi/accelerate", "rbert/accelerate"]
 cublas = ["llm/cublas"]

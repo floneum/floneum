@@ -53,15 +53,15 @@ async fn main() -> Result<(), anyhow::Error> {
         let engine = document_engine.read().unwrap();
 
         let mut llm = LocalSession::<LlamaSevenChatSpace>::start().await;
-        
+
         let context = {
             let context = engine.search(&user_question, 5).await;
             context
-            .iter()
-            .take(2)
-            .map(|x| x.to_string())
-            .collect::<Vec<_>>()
-            .join("\n")
+                .iter()
+                .take(2)
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>()
+                .join("\n")
         };
 
         let prompt = format!(

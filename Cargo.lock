@@ -3074,6 +3074,7 @@ dependencies = [
  "rbert",
  "readability",
  "reqwest",
+ "rphi",
  "rss",
  "scraper",
  "serde",
@@ -7008,6 +7009,7 @@ dependencies = [
  "rand 0.8.5",
  "serde_json",
  "tokenizers 0.13.4",
+ "tokio",
  "tracing",
 ]
 

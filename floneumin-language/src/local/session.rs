@@ -353,17 +353,13 @@ fn inference_callback() -> (
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
     let stream = LLMStream { receiver };
     let callback = move |resp| match resp {
-        InferenceResponse::InferredToken(t) => {
-            match sender.send(t){
-                Ok(_) => {
-                    Ok(InferenceFeedback::Continue)
-                }
-                Err(_) => {
-                    log::error!("Failed to send token");
-                    Ok(InferenceFeedback::Halt)
-                }
+        InferenceResponse::InferredToken(t) => match sender.send(t) {
+            Ok(_) => Ok(InferenceFeedback::Continue),
+            Err(_) => {
+                log::error!("Failed to send token");
+                Ok(InferenceFeedback::Halt)
             }
-        }
+        },
         InferenceResponse::EotToken => Ok(InferenceFeedback::Halt),
         _ => Ok(InferenceFeedback::Continue),
     };
@@ -372,6 +368,18 @@ fn inference_callback() -> (
 
 pub struct LLMStream {
     receiver: tokio::sync::mpsc::UnboundedReceiver<String>,
+}
+
+impl From<tokio::sync::mpsc::UnboundedReceiver<String>> for LLMStream {
+    fn from(receiver: tokio::sync::mpsc::UnboundedReceiver<String>) -> Self {
+        Self { receiver }
+    }
+}
+
+impl LLMStream {
+    pub fn new(receiver: tokio::sync::mpsc::UnboundedReceiver<String>) -> Self {
+        Self { receiver }
+    }
 }
 
 impl Stream for LLMStream {
