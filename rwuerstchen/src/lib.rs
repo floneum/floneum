@@ -447,12 +447,22 @@ impl Wuerstchen {
                         .unwrap())
                 .unwrap();
                 latents = prior_scheduler.step(&noise_pred, t, &latents).unwrap();
+                tracing::trace!(
+                    "generating embeddings t: {}, noise_pred: {:?}",
+                    t,
+                    noise_pred
+                );
             }
             ((latents * 42.).unwrap() - 1.).unwrap()
         };
 
         let mut images = Vec::new();
         for _ in 0..settings.num_samples {
+            tracing::trace!(
+                "Generating image {}/{}",
+                images.len() + 1,
+                settings.num_samples
+            );
             // https://huggingface.co/warp-ai/wuerstchen/blob/main/model_index.json
             let latent_height =
                 (image_embeddings.dim(2).unwrap() as f64 * LATENT_DIM_SCALE) as usize;
@@ -477,6 +487,7 @@ impl Wuerstchen {
                     .forward(&latents, &ratio, &image_embeddings, Some(&text_embeddings))
                     .unwrap();
                 latents = scheduler.step(&noise_pred, t, &latents).unwrap();
+                tracing::trace!("t: {}, noise_pred: {:?}", t, noise_pred)
             }
             let img_tensor = self.vqgan.decode(&(&latents * 0.3764).unwrap()).unwrap();
             // TODO: Add the clamping between 0 and 1.

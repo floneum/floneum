@@ -1,5 +1,5 @@
 [package]
-name = "rwuerstchen"
+name = "segment-anything-rs"
 version = "0.1.0"
 edition = "2021"
 
@@ -20,6 +20,7 @@ half = { version = "2.3.1", features = ["num-traits", "use-intrinsics", "rand_di
 anyhow = "1.0.75"
 tracing = "0.1.37"
 image = "0.24.7"
+imageproc = "0.23.0"
 
 [features]
 flash = ["candle-transformers/flash-attn"]
