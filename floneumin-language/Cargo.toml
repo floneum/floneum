@@ -42,6 +42,7 @@ crossbeam = "0.8.2"
 dashmap = "5.5.3"
 rbert = { path = "../rbert" }
 rphi = { path = "../rphi" }
+rmistral = { path = "../rmistral" }
 pin-project = "1"
 floneumin-streams = { path = "../floneumin-streams" }
 pulldown-cmark = "0.9.3"

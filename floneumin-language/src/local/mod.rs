@@ -1,5 +1,6 @@
 pub use crate::local::bert::*;
 pub use crate::local::phi::*;
+pub use crate::local::mistral::*;
 pub use crate::local::session::*;
 use crate::{download::download, embedding::Embedding, model::*};
 use floneumin_streams::sender::ChannelTextStream;
@@ -8,6 +9,7 @@ use llm::InferenceSessionConfig;
 
 mod bert;
 mod phi;
+mod mistral;
 mod session;
 
 pub(crate) trait LocalModelType {

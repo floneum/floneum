@@ -25,25 +25,25 @@ enum Task {
     },
 }
 
-pub struct Phi {
+pub struct Mistral {
     task_sender: tokio::sync::mpsc::UnboundedSender<Task>,
     thread_handle: Option<std::thread::JoinHandle<()>>,
 }
 
-impl Drop for Phi {
+impl Drop for Mistral {
     fn drop(&mut self) {
         self.task_sender.send(Task::Kill).unwrap();
         self.thread_handle.take().unwrap().join().unwrap();
     }
 }
 
-impl Default for Phi {
+impl Default for Mistral {
     fn default() -> Self {
-        Phi::builder().build().unwrap()
+        Mistral::builder().build().unwrap()
     }
 }
 
-impl Phi {
+impl Mistral {
     pub fn builder() -> PhiBuilder {
         PhiBuilder::default()
     }
@@ -106,7 +106,7 @@ impl PhiBuilder {
         self
     }
 
-    pub fn build(self) -> anyhow::Result<Phi> {
+    pub fn build(self) -> anyhow::Result<Mistral> {
         let api = Api::new()?;
         let repo = api.repo(Repo::with_revision(
             self.source.model_id,
@@ -131,7 +131,7 @@ impl PhiBuilder {
         let vb = unsafe { VarBuilder::from_mmaped_safetensors(&filepaths, dtype, &device)? };
         let model = Model::new(&config, vb)?;
 
-        Ok(Phi::new(model, tokenizer, device))
+        Ok(Mistral::new(model, tokenizer, device))
     }
 }
 
@@ -226,9 +226,9 @@ async fn generate() -> anyhow::Result<()> {
         candle_core::utils::with_f16c()
     );
 
-    let mut phi = Phi::default();
+    let mut Mistral = Mistral::default();
 
-    phi.run(InferenceSettings::new("The quick brown fox "))?;
+    Mistral.run(InferenceSettings::new("The quick brown fox "))?;
 
     Ok(())
 }
