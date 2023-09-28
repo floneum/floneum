@@ -1,10 +1,8 @@
 use floneumin_language::context::io::DocumentFolder;
 use floneumin_language::index::vector::ChunkStrategy;
+use floneumin_language::index::{keyword::FuzzySearchIndex, vector::DocumentDatabase, SearchIndex};
 use floneumin_language::local::BertSpace;
 use floneumin_language::local::LocalBert;
-use floneumin_language::{
-    index::{keyword::FuzzySearchIndex, vector::DocumentDatabase, SearchIndex},
-};
 use std::io::Write;
 use std::path::PathBuf;
 

@@ -1,5 +1,6 @@
-use crate::index::IntoDocuments;use crate::context::document::Document;
+use crate::context::document::Document;
 use crate::context::document::IntoDocument;
+use crate::index::IntoDocuments;
 use std::path::PathBuf;
 use tokio::task::JoinSet;
 mod docx;

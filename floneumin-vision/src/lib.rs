@@ -1,3 +1,2 @@
-fn main() {
-    println!("Hello, world!");
-}
+pub use screenshots::Screen;
+use std::time::Instant;

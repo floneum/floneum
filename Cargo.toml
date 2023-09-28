@@ -57,6 +57,7 @@ members = [
     "floneum-cli",
     "rbert",
     "rphi",
+    "rwuerstchen",
     "floneumin",
     "floneumin-language",
     "floneumin-vision",
