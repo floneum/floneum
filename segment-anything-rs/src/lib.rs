@@ -228,7 +228,7 @@ impl SegmentAnything {
             /* crop_n_points_downscale_factor */ 1,
         )?;
         let mut masks = Vec::new();
-        for  bbox in bboxes {
+        for bbox in bboxes {
             let mask = (&bbox.data.to_dtype(DType::U8)? * 255.)?;
             let (h, w) = mask.dims2()?;
             let mask = mask.broadcast_as((3, h, w))?;

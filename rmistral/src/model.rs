@@ -49,18 +49,13 @@ impl PhiInner {
             .to_vec();
 
         let mut new_tokens = vec![];
-        let eos_token = match self.tokenizer.get_vocab(true).get("<|endoftext|>") {
-            Some(token) => *token,
-            None => anyhow::bail!("cannot find the endoftext token"),
-        };
         for index in 0..*sample_len {
             let context_size = if index > 0 { 1 } else { tokens.len() };
-            let ctxt = &tokens[tokens.len().saturating_sub(context_size)..];
-            let input = Tensor::new(ctxt, &self.device)?.unsqueeze(0)?;
-            let context_size = if index > 0 { 1 } else { tokens.len() };
             let start_pos = tokens.len().saturating_sub(context_size);
+            let ctxt = &tokens[start_pos..];
+            let input = Tensor::new(ctxt, &self.device)?.unsqueeze(0)?;
             let logits = self.model.forward(&input, start_pos)?;
-            let logits = logits.squeeze(0)?.to_dtype(DType::F32)?;
+            let logits = logits.squeeze(0)?.squeeze(0)?.to_dtype(DType::F32)?;
             let logits = if *repeat_penalty == 1. {
                 logits
             } else {
@@ -75,10 +70,8 @@ impl PhiInner {
             let next_token = logits_processor.sample(&logits)?;
             tokens.push(next_token);
             new_tokens.push(next_token);
-            if next_token == eos_token {
-                break;
-            }
             let token = self.tokenizer.decode(&[next_token], true).map_err(E::msg)?;
+            println!("{}", token);
             out.send(token).unwrap();
         }
 

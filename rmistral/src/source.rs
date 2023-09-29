@@ -35,8 +35,8 @@ impl PhiSource {
 impl Default for PhiSource {
     fn default() -> Self {
         Self {
-            model_id: "microsoft/Mistral-1_5".to_string(),
-            revision: "refs/pr/18".to_string(),
+            model_id: "lmz/candle-mistral".to_string(),
+            revision: "main".to_string(),
             weight_files: vec![
                 "pytorch_model-00001-of-00002.safetensors".to_string(),
                 "pytorch_model-00002-of-00002.safetensors".to_string(),
