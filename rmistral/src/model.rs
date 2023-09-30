@@ -40,6 +40,11 @@ impl MistralInner {
             ..
         } = inference_settings;
 
+        let eos_token = match self.tokenizer.get_vocab(true).get("</s>") {
+            Some(token) => *token,
+            None => anyhow::bail!("cannot find the </s> token"),
+        };
+
         let mut logits_processor = LogitsProcessor::new(*seed, *temperature, *top_p);
         let mut tokens = self
             .tokenizer
@@ -48,7 +53,9 @@ impl MistralInner {
             .get_ids()
             .to_vec();
 
-        let mut new_tokens = vec![];
+            let mut prev_index = 0;
+            let mut current_index = 0;
+
         for index in 0..*sample_len {
             let context_size = if index > 0 { 1 } else { tokens.len() };
             let start_pos = tokens.len().saturating_sub(context_size);
@@ -69,12 +76,34 @@ impl MistralInner {
 
             let next_token = logits_processor.sample(&logits)?;
             tokens.push(next_token);
-            new_tokens.push(next_token);
-            let token = self.tokenizer.decode(&[next_token], true).map_err(E::msg)?;
-            println!("{}", token);
-            out.send(token).unwrap();
+            if next_token == eos_token {
+                break;
+            }
+            let prev_text = if tokens.is_empty() {
+                String::new()
+            } else {
+                let tokens = &tokens[prev_index..current_index];
+                self.tokenizer.decode(tokens, true).map_err(E::msg)?
+            };
+            let text = self.tokenizer.decode(&tokens[prev_index..], true).map_err(E::msg)?;
+            if text.len() > prev_text.len() && text.chars().last().unwrap().is_ascii() {
+                let text = text.split_at(prev_text.len());
+                prev_index = current_index;
+                current_index = tokens.len();
+                let token = text.1.to_string();
+                if let Err(_) =out.send(token){
+                    return Ok(());
+                }
+            } 
+        }
+
+        // send the rest of the tokens
+        let token = self.tokenizer.decode(&tokens[prev_index..], true).map_err(E::msg)?;
+        if let Err(_) =out.send(token){
+            return Ok(());
         }
 
         Ok(())
     }
 }
+

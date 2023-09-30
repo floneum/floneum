@@ -30,12 +30,14 @@ impl<V: for<'a> Validate<'a>> StructuredSampler<V> {
 
     fn invalid_token(&mut self, previous_tokens: &[u32], new_token: u32) -> bool {
         let tokens = &previous_tokens[self.current_token_count.saturating_sub(1)..];
-        let tokens = self.cache.entry(tokens.to_vec()).or_insert_with(|| {
-             match self.tokenizer.decode(tokens) {
+        let tokens = self
+            .cache
+            .entry(tokens.to_vec())
+            .or_insert_with(|| match self.tokenizer.decode(tokens) {
                 Ok(tokens) => tokens,
                 Err(_) => String::new(),
-            }
-        }).as_str();
+            })
+            .as_str();
 
         let mut borrowed = vec![tokens];
 
