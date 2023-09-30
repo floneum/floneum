@@ -1,4 +1,6 @@
 use crate::embedding::VectorSpace;
+use crate::local::Arc;
+use crate::sample::Tokenizer;
 use floneumin_streams::sender::ChannelTextStream;
 use rmistral::InferenceSettings;
 pub use rmistral::{self, Mistral};
@@ -9,6 +11,10 @@ impl crate::model::Model for Mistral {
 
     async fn start() -> Self {
         Mistral::default()
+    }
+
+    fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
+        self.get_tokenizer() as Arc<dyn Tokenizer + Send + Sync>
     }
 
     async fn stream_text(

@@ -1,8 +1,9 @@
-use crate::{
-    embedding::{Embedding, VectorSpace},
-    structured_parser::Validate,
-};
+use crate::embedding::{Embedding, VectorSpace};
+use crate::sample::Tokenizer;
 use futures_util::{Stream, StreamExt};
+use llm_samplers::prelude::Sampler;
+use std::sync::Arc;
+use std::sync::Mutex;
 use url::Url;
 
 #[async_trait::async_trait]
@@ -18,6 +19,25 @@ pub trait Model: 'static {
 
     async fn start() -> Self;
 
+    fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync>;
+
+    async fn generate_text_with_sampler(
+        &mut self,
+        prompt: &str,
+        max_tokens: Option<u32>,
+        sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
+    ) -> anyhow::Result<String> {
+        let mut text = String::new();
+
+        let mut stream = self
+            .stream_text_with_sampler(prompt, max_tokens, sampler)
+            .await?;
+        while let Some(new) = stream.next().await {
+            text.push_str(&new);
+        }
+        Ok(text)
+    }
+
     async fn generate_text(
         &mut self,
         prompt: &str,
@@ -32,41 +52,40 @@ pub trait Model: 'static {
         Ok(text)
     }
 
+    async fn stream_text_with_sampler(
+        &mut self,
+        _prompt: &str,
+        _max_tokens: Option<u32>,
+        _sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
+    ) -> anyhow::Result<Self::TextStream> {
+        Err(anyhow::Error::msg("Not implemented"))
+    }
+
     async fn stream_text(
         &mut self,
         prompt: &str,
         generation_parameters: crate::model::GenerationParameters,
     ) -> anyhow::Result<Self::TextStream>;
-
-    async fn infer_validate<V: for<'a> Validate<'a> + Clone + Send + Sync + 'static>(
-        &mut self,
-        _prompt: String,
-        _max_tokens: Option<u32>,
-        _validator: V,
-    ) -> String {
-        panic!("{}", std::any::type_name::<Self>())
-    }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GenerationParameters {
-    temperature: f32,
-    top_k: u32,
-    top_p: f32,
-    repetition_penalty: f32,
-    repetition_penalty_range: u32,
-    repetition_penalty_slope: f32,
-    max_length: u32,
+    pub(crate) temperature: f32,
+    pub(crate) top_k: u32,
+    pub(crate) top_p: f32,
+    pub(crate) repetition_penalty: f32,
+    pub(crate) repetition_penalty_range: u32,
+    pub(crate) max_length: u32,
 }
 
 impl Default for GenerationParameters {
     fn default() -> Self {
         Self {
-            temperature: 1.0,
-            top_k: 0,
-            top_p: 0.9,
-            repetition_penalty: 1.0,
-            repetition_penalty_range: 0,
-            repetition_penalty_slope: 0.0,
+            temperature: 0.8,
+            top_k: 40,
+            top_p: 0.95,
+            repetition_penalty: 1.3,
+            repetition_penalty_range: 64,
             max_length: 128,
         }
     }
@@ -98,11 +117,6 @@ impl GenerationParameters {
         self
     }
 
-    pub fn with_repetition_penalty_slope(mut self, repetition_penalty_slope: f32) -> Self {
-        self.repetition_penalty_slope = repetition_penalty_slope;
-        self
-    }
-
     pub fn with_max_length(mut self, max_length: u32) -> Self {
         self.max_length = max_length;
         self
@@ -126,10 +140,6 @@ impl GenerationParameters {
 
     pub fn repetition_penalty_range(&self) -> u32 {
         self.repetition_penalty_range
-    }
-
-    pub fn repetition_penalty_slope(&self) -> f32 {
-        self.repetition_penalty_slope
     }
 
     pub fn max_length(&self) -> u32 {

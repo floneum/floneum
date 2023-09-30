@@ -8,13 +8,12 @@ mod model;
 mod source;
 
 use anyhow::Error as E;
-
+use candle_core::{DType, Device};
 use candle_nn::VarBuilder;
 use candle_transformers::models::mistral::{Config, Model};
-
-use candle_core::{DType, Device};
 use hf_hub::{api::sync::Api, Repo, RepoType};
 use model::PhiInner;
+use std::sync::Arc;
 use tokenizers::Tokenizer;
 
 enum Task {
@@ -28,6 +27,7 @@ enum Task {
 pub struct Mistral {
     task_sender: tokio::sync::mpsc::UnboundedSender<Task>,
     thread_handle: Option<std::thread::JoinHandle<()>>,
+    tokenizer: Arc<Tokenizer>,
 }
 
 impl Drop for Mistral {
@@ -51,6 +51,7 @@ impl Mistral {
     #[allow(clippy::too_many_arguments)]
     fn new(model: Model, tokenizer: Tokenizer, device: Device) -> Self {
         let (task_sender, mut task_receiver) = tokio::sync::mpsc::unbounded_channel();
+        let arc_tokenizer = Arc::new(tokenizer.clone());
 
         let thread_handle = std::thread::spawn(move || {
             let mut inner = PhiInner::new(model, tokenizer, device);
@@ -72,7 +73,12 @@ impl Mistral {
         Self {
             task_sender,
             thread_handle: Some(thread_handle),
+            tokenizer: arc_tokenizer,
         }
+    }
+
+    pub fn get_tokenizer(&self) -> Arc<Tokenizer> {
+        self.tokenizer.clone()
     }
 
     pub fn run(

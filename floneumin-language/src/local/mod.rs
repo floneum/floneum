@@ -2,10 +2,16 @@ pub use crate::local::bert::*;
 pub use crate::local::mistral::*;
 pub use crate::local::phi::*;
 pub use crate::local::session::*;
+use crate::sample::Tokenizer;
 use crate::{download::download, embedding::Embedding, model::*};
 use floneumin_streams::sender::ChannelTextStream;
 use futures_util::StreamExt;
 use llm::InferenceSessionConfig;
+use llm_samplers::configure::SamplerChainBuilder;
+use llm_samplers::prelude::Sampler;
+use llm_samplers::prelude::*;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 mod bert;
 mod mistral;
@@ -39,6 +45,10 @@ macro_rules! local_model {
                 LocalSession::new(model, session)
             }
 
+            fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
+                self.get_tokenizer() as Arc<dyn Tokenizer + Send + Sync>
+            }
+
             async fn generate_text(
                 &mut self,
                 prompt: &str,
@@ -57,8 +67,18 @@ macro_rules! local_model {
                 prompt: &str,
                 generation_parameters: crate::model::GenerationParameters,
             ) -> anyhow::Result<Self::TextStream> {
-                let max_tokens = generation_parameters.max_length();
-                Ok(self.infer(prompt.to_string(), Some(max_tokens), None).await)
+                Ok(self.infer(prompt.to_string(), generation_parameters).await)
+            }
+
+            async fn stream_text_with_sampler(
+                &mut self,
+                prompt: &str,
+                max_tokens: Option<u32>,
+                sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
+            ) -> anyhow::Result<Self::TextStream> {
+                Ok(self
+                    .infer_sampler(prompt.to_string(), max_tokens, sampler)
+                    .await)
             }
         }
 
@@ -106,3 +126,83 @@ local_model!(
     DollySevenBSpace
 );
 local_model!(ModelType::GptNeoX(GptNeoXType::StableLm), StableLmSpace);
+
+impl crate::model::GenerationParameters {
+    pub fn sampler(self) -> SamplerChain {
+        use llm_samplers::configure::SamplerSlot;
+        let GenerationParameters {
+            temperature,
+            top_k,
+            top_p,
+            repetition_penalty,
+            repetition_penalty_range,
+            max_length: _,
+        } = self;
+        SamplerChainBuilder::from([
+            (
+                "repetition",
+                SamplerSlot::new_chain(
+                    move || {
+                        Box::new(
+                            SampleRepetition::default()
+                                .penalty(repetition_penalty as f32)
+                                .last_n(repetition_penalty_range as usize),
+                        )
+                    },
+                    [],
+                ),
+            ),
+            (
+                "freqpresence",
+                SamplerSlot::new_chain(
+                    move || Box::new(SampleFreqPresence::default().last_n(64)),
+                    [],
+                ),
+            ),
+            (
+                "seqrepetition",
+                SamplerSlot::new_chain(move || Box::<SampleSeqRepetition>::default(), []),
+            ),
+            (
+                "topk",
+                SamplerSlot::new_single(
+                    move || Box::new(SampleTopK::default().k(top_k as usize)),
+                    Option::<SampleTopK>::None,
+                ),
+            ),
+            (
+                "tailfree",
+                SamplerSlot::new_single(
+                    move || Box::<SampleTailFree>::default(),
+                    Option::<SampleTailFree>::None,
+                ),
+            ),
+            (
+                "locallytypical",
+                SamplerSlot::new_single(
+                    move || Box::<SampleLocallyTypical>::default(),
+                    Option::<SampleLocallyTypical>::None,
+                ),
+            ),
+            (
+                "topp",
+                SamplerSlot::new_single(
+                    move || Box::new(SampleTopP::default().p(top_p)),
+                    Option::<SampleTopP>::None,
+                ),
+            ),
+            (
+                "temperature",
+                SamplerSlot::new_single(
+                    move || Box::new(SampleTemperature::default().temperature(temperature)),
+                    Option::<SampleTemperature>::None,
+                ),
+            ),
+            (
+                "randdistrib",
+                SamplerSlot::new_static(|| Box::<SampleRandDistrib>::default()),
+            ),
+        ])
+        .into_chain()
+    }
+}

@@ -1,15 +1,14 @@
 use crate::embedding::VectorSpace;
-use crate::structured_parser::{ParseStatus, ParseStream};
 use crate::{
-    embedding::get_embeddings, embedding::Embedding, structured::StructuredSampler,
-    structured_parser::Validate,
+    embedding::get_embeddings,
+    embedding::Embedding,
+    sample::structured_parser::{ParseStatus, ParseStream, Validate},
 };
 use floneumin_streams::sender::ChannelTextStream;
+use llm::Tokenizer;
+use llm_samplers::prelude::*;
 
-use llm::{
-    InferenceError, InferenceFeedback, InferenceParameters, InferenceRequest, InferenceResponse,
-    Model, OutputRequest, TokenUtf8Buffer,
-};
+use llm::{InferenceFeedback, InferenceParameters, InferenceRequest, InferenceResponse, Model};
 use std::fmt::Debug;
 use std::sync::Mutex;
 use std::{
@@ -21,6 +20,7 @@ use std::{
 pub struct LocalSession<S: VectorSpace> {
     task_sender: tokio::sync::mpsc::UnboundedSender<Task<S>>,
     thread_handle: Option<std::thread::JoinHandle<()>>,
+    tokenizer: Arc<Tokenizer>,
 }
 
 impl<S: VectorSpace> Drop for LocalSession<S> {
@@ -39,6 +39,12 @@ impl<S: VectorSpace> Debug for LocalSession<S> {
 impl<S: VectorSpace + Send + Sync + 'static> LocalSession<S> {
     pub fn new(model: Box<dyn Model>, session: llm::InferenceSession) -> Self {
         let (task_sender, mut task_receiver) = tokio::sync::mpsc::unbounded_channel();
+        let arc_tokenizer = Arc::new(match model.tokenizer() {
+            llm::Tokenizer::Embedded(embedded) => llm::Tokenizer::Embedded(embedded.clone()),
+            llm::Tokenizer::HuggingFace(hugging_face) => {
+                llm::Tokenizer::HuggingFace(hugging_face.clone())
+            }
+        });
 
         let thread_handle = std::thread::spawn(move || {
             let mut inner = LocalSessionInner {
@@ -56,22 +62,18 @@ impl<S: VectorSpace + Send + Sync + 'static> LocalSession<S> {
                             Task::Kill => break,
                             Task::Infer {
                                 prompt,
-                                max_tokens,
-                                stop_on,
+                                generation_parameters,
                                 sender,
                             } => {
-                                inner._infer(prompt, max_tokens, stop_on, sender);
+                                inner._infer(prompt, generation_parameters, sender);
                             }
-                            Task::InferValidate {
+                            Task::InferSampler {
                                 prompt,
                                 max_tokens,
-                                validator,
+                                sampler,
                                 sender,
                             } => {
-                                let result = inner
-                                    ._infer_validate(prompt, max_tokens, validator)
-                                    .unwrap();
-                                sender.send(Ok(result)).unwrap();
+                                inner._infer_sampler(prompt, max_tokens, sampler, sender);
                             }
                             Task::GetEmbedding { text, sender } => {
                                 let result = inner._get_embedding(&text).unwrap();
@@ -84,42 +86,42 @@ impl<S: VectorSpace + Send + Sync + 'static> LocalSession<S> {
         Self {
             task_sender,
             thread_handle: Some(thread_handle),
+            tokenizer: arc_tokenizer,
         }
     }
 
-    pub(crate) async fn infer_validate<V: for<'a> Validate<'a> + Clone + Send + Sync + 'static>(
-        &mut self,
-        prompt: String,
-        max_tokens: Option<u32>,
-        validator: V,
-    ) -> anyhow::Result<String> {
-        let (sender, receiver) = tokio::sync::oneshot::channel();
-        self.task_sender
-            .send(Task::InferValidate {
-                prompt,
-                max_tokens,
-                validator: ArcValidate(Arc::new(validator)),
-                sender,
-            })
-            .unwrap();
-        receiver
-            .await
-            .unwrap()
-            .map_err(|_| anyhow::anyhow!("Failed to receive result"))
+    pub fn get_tokenizer(&self) -> Arc<Tokenizer> {
+        self.tokenizer.clone()
     }
 
     pub(crate) async fn infer(
         &mut self,
         prompt: String,
-        max_tokens: Option<u32>,
-        stop_on: Option<String>,
+        generation_parameters: crate::model::GenerationParameters,
     ) -> ChannelTextStream<String> {
         let (sender, receiver) = tokio::sync::oneshot::channel();
         self.task_sender
             .send(Task::Infer {
                 prompt,
+                generation_parameters,
+                sender,
+            })
+            .unwrap();
+        receiver.await.unwrap()
+    }
+
+    pub(crate) async fn infer_sampler(
+        &mut self,
+        prompt: String,
+        max_tokens: Option<u32>,
+        sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
+    ) -> ChannelTextStream<String> {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        self.task_sender
+            .send(Task::InferSampler {
+                prompt,
                 max_tokens,
-                stop_on,
+                sampler,
                 sender,
             })
             .unwrap();
@@ -154,15 +156,14 @@ enum Task<S: VectorSpace> {
     Kill,
     Infer {
         prompt: String,
-        max_tokens: Option<u32>,
-        stop_on: Option<String>,
+        generation_parameters: crate::model::GenerationParameters,
         sender: tokio::sync::oneshot::Sender<ChannelTextStream<String>>,
     },
-    InferValidate {
+    InferSampler {
         prompt: String,
         max_tokens: Option<u32>,
-        validator: ArcValidate,
-        sender: tokio::sync::oneshot::Sender<anyhow::Result<String>>,
+        sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
+        sender: tokio::sync::oneshot::Sender<ChannelTextStream<String>>,
     },
     GetEmbedding {
         text: String,
@@ -183,130 +184,17 @@ impl<S: VectorSpace> Debug for LocalSessionInner<S> {
 }
 
 impl<S: VectorSpace> LocalSessionInner<S> {
-    fn _infer_validate<V: for<'a> Validate<'a> + Clone + Send + Sync + 'static>(
+    fn _infer_sampler(
         &mut self,
         prompt: String,
         max_tokens: Option<u32>,
-        validator: V,
-    ) -> anyhow::Result<String> {
-        let session = &mut self.session;
-        let model = &mut *self.model;
-
-        let tokens = model.tokenizer().tokenize(&prompt, false)?;
-
-        let sampler = Arc::new(Mutex::new(StructuredSampler::new(
-            match model.tokenizer() {
-                llm::Tokenizer::Embedded(embedded) => llm::Tokenizer::Embedded(embedded.clone()),
-                llm::Tokenizer::HuggingFace(hugging_face) => {
-                    llm::Tokenizer::HuggingFace(hugging_face.clone())
-                }
-            },
-            validator.clone(),
-            tokens.len() + 1,
-        )));
-
-        let token_ids = tokens.iter().map(|(_, id)| *id).collect::<Vec<_>>();
-
-        let mut rng = rand::thread_rng();
-        let mut result_tokens = Vec::new();
-        let request = InferenceRequest {
-            prompt: llm::Prompt::Tokens(&token_ids),
-            parameters: &Default::default(),
-            play_back_previous_tokens: false,
-            maximum_token_count: max_tokens.map(|x| x as usize),
-        };
-
-        let maximum_token_count = request.maximum_token_count.unwrap_or(usize::MAX);
-
-        let mut output = OutputRequest::default();
-
-        // Feed the initial prompt through the transformer, to update its
-        // context window with new data.
-        session.feed_prompt(&*model, request.prompt, &mut output, |_| {
-            Result::<_, std::convert::Infallible>::Ok(InferenceFeedback::Continue)
-        })?;
-
-        // After the prompt is consumed, sample tokens by repeatedly calling
-        // `infer_next_token`. We generate tokens until the model returns an
-        // EndOfText token, or we run out of space in the context window,
-        // or we reach the specified limit.
-        let mut tokens_processed = 0;
-        let mut token_utf8_buf = TokenUtf8Buffer::new();
-        while tokens_processed < maximum_token_count {
-            let parameters = &InferenceParameters {
-                sampler: sampler.clone(),
-            };
-
-            let token = match session.infer_next_token(&*model, parameters, &mut output, &mut rng) {
-                Ok(token) => token,
-                Err(InferenceError::EndOfText) => break,
-                Err(e) => panic!("Error: {:?}", e),
-            };
-
-            // Buffer the token until it's valid UTF-8, then call the callback.
-            if let Some(token) = token_utf8_buf.push(&token) {
-                result_tokens.push(token);
-            }
-
-            tokens_processed += 1;
-
-            loop {
-                let borrowed = result_tokens.iter().map(|x| x.as_str()).collect::<Vec<_>>();
-                let status = sampler
-                    .lock()
-                    .unwrap()
-                    .structure
-                    .validate(ParseStream::new(&borrowed));
-                match status {
-                    ParseStatus::Incomplete {
-                        required_next: Some(required_next),
-                    } => {
-                        // feed the required next text
-                        let tokens = model.tokenizer().tokenize(&required_next, false)?;
-                        let token_ids = tokens.iter().map(|(_, id)| *id).collect::<Vec<_>>();
-                        session.feed_prompt(
-                            &*model,
-                            llm::Prompt::Tokens(&token_ids),
-                            &mut output,
-                            |_| {
-                                Result::<_, std::convert::Infallible>::Ok(
-                                    InferenceFeedback::Continue,
-                                )
-                            },
-                        )?;
-                        let token = tokens
-                            .iter()
-                            .flat_map(|(x, _)| x.iter().copied())
-                            .collect::<Vec<u8>>();
-                        if let Some(token) = token_utf8_buf.push(&token) {
-                            result_tokens.push(token);
-                        }
-
-                        tokens_processed += token_ids.len();
-                    }
-                    ParseStatus::Complete(..) => return Ok(result_tokens.join("")),
-                    _ => {
-                        break;
-                    }
-                }
-            }
-        }
-
-        Ok(result_tokens.join(""))
-    }
-
-    #[tracing::instrument(skip(out))]
-    fn _infer(
-        &mut self,
-        prompt: String,
-        max_tokens: Option<u32>,
-        stop_on: Option<String>,
+        sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
         out: tokio::sync::oneshot::Sender<ChannelTextStream<String>>,
     ) {
         let session = &mut self.session;
         let model = &mut *self.model;
 
-        let parameters = Default::default();
+        let parameters = InferenceParameters { sampler };
 
         let (callback, stream) = inference_callback();
         if let Err(_) = out.send(stream) {
@@ -321,6 +209,44 @@ impl<S: VectorSpace> LocalSessionInner<S> {
             parameters: &parameters,
             play_back_previous_tokens: false,
             maximum_token_count: max_tokens.map(|x| x as usize),
+        };
+
+        if let Err(err) =
+            session.infer(model, &mut rng, &request, &mut Default::default(), callback)
+        {
+            log::error!("{err}")
+        }
+    }
+
+    #[tracing::instrument(skip(out))]
+    fn _infer(
+        &mut self,
+        prompt: String,
+        generation_parameters: crate::model::GenerationParameters,
+        out: tokio::sync::oneshot::Sender<ChannelTextStream<String>>,
+    ) {
+        let session = &mut self.session;
+        let model = &mut *self.model;
+
+        let maximum_token_count = Some(generation_parameters.max_length as usize);
+
+        let parameters = InferenceParameters {
+            sampler: Arc::new(Mutex::new(generation_parameters.sampler())),
+        };
+
+        let (callback, stream) = inference_callback();
+        if let Err(_) = out.send(stream) {
+            log::error!("Failed to send stream");
+            return;
+        }
+
+        let mut rng = rand::thread_rng();
+
+        let request = InferenceRequest {
+            prompt: (&prompt).into(),
+            parameters: &parameters,
+            play_back_previous_tokens: false,
+            maximum_token_count,
         };
 
         if let Err(err) =
@@ -345,7 +271,6 @@ impl<S: VectorSpace> LocalSessionInner<S> {
     }
 }
 
-#[allow(clippy::needless_pass_by_ref_mut)]
 fn inference_callback() -> (
     impl FnMut(InferenceResponse) -> Result<InferenceFeedback, Infallible>,
     ChannelTextStream<String>,

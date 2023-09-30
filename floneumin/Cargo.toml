@@ -15,6 +15,7 @@ floneumin-streams = { path = "../floneumin-streams" }
 
 [dev-dependencies]
 tracing-subscriber = "0.2"
+llm-samplers = "=0.0.6"
 
 [features]
 metal = ["floneumin-language/metal"]

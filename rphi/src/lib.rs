@@ -9,12 +9,14 @@ mod source;
 
 use anyhow::Error as E;
 
+use candle_core::Device;
 use candle_transformers::models::mixformer::Config;
 use candle_transformers::models::quantized_mixformer::MixFormerSequentialForCausalLM as QMixFormer;
-
-use candle_core::Device;
 use hf_hub::{api::sync::Api, Repo, RepoType};
+use llm_samplers::prelude::Sampler;
 use model::PhiInner;
+use std::sync::Arc;
+use std::sync::Mutex;
 use tokenizers::Tokenizer;
 
 enum Task {
@@ -22,12 +24,14 @@ enum Task {
     Infer {
         settings: InferenceSettings,
         sender: tokio::sync::mpsc::UnboundedSender<String>,
+        sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
     },
 }
 
 pub struct Phi {
     task_sender: tokio::sync::mpsc::UnboundedSender<Task>,
     thread_handle: Option<std::thread::JoinHandle<()>>,
+    tokenizer: Arc<Tokenizer>,
 }
 
 impl Drop for Phi {
@@ -51,6 +55,7 @@ impl Phi {
     #[allow(clippy::too_many_arguments)]
     fn new(model: QMixFormer, tokenizer: Tokenizer, device: Device) -> Self {
         let (task_sender, mut task_receiver) = tokio::sync::mpsc::unbounded_channel();
+        let arc_tokenizer = Arc::new(tokenizer.clone());
 
         let thread_handle = std::thread::spawn(move || {
             let mut inner = PhiInner::new(model, tokenizer, device);
@@ -62,8 +67,12 @@ impl Phi {
                     while let Some(task) = task_receiver.recv().await {
                         match task {
                             Task::Kill => break,
-                            Task::Infer { settings, sender } => {
-                                inner._infer(&settings, sender).await.unwrap();
+                            Task::Infer {
+                                settings,
+                                sender,
+                                sampler,
+                            } => {
+                                inner._infer(settings, sampler, sender).unwrap();
                             }
                         }
                     }
@@ -72,16 +81,26 @@ impl Phi {
         Self {
             task_sender,
             thread_handle: Some(thread_handle),
+            tokenizer: arc_tokenizer,
         }
+    }
+
+    pub fn get_tokenizer(&self) -> Arc<Tokenizer> {
+        self.tokenizer.clone()
     }
 
     pub fn run(
         &mut self,
         settings: InferenceSettings,
+        sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
     ) -> anyhow::Result<tokio::sync::mpsc::UnboundedReceiver<String>> {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         self.task_sender
-            .send(Task::Infer { settings, sender })
+            .send(Task::Infer {
+                settings,
+                sender,
+                sampler,
+            })
             .unwrap();
         Ok(receiver)
     }
@@ -149,46 +168,20 @@ pub fn device(cpu: bool) -> anyhow::Result<Device> {
 pub struct InferenceSettings {
     prompt: String,
 
-    /// The temperature used to generate samples.
-    temperature: Option<f64>,
-
-    /// Nucleus sampling probability cutoff.
-    top_p: Option<f64>,
-
     /// The seed to use when generating random samples.
     seed: u64,
 
     /// The length of the sample to generate (in tokens).
     sample_len: usize,
-
-    /// Penalty to be applied for repeating tokens, 1. means no penalty.
-    repeat_penalty: f32,
-
-    /// The context size to consider for the repeat penalty.
-    repeat_last_n: usize,
 }
 
 impl InferenceSettings {
     pub fn new(prompt: impl Into<String>) -> Self {
         Self {
             prompt: prompt.into(),
-            temperature: None,
-            top_p: None,
             seed: rand::random(),
             sample_len: 100,
-            repeat_penalty: 1.1,
-            repeat_last_n: 64,
         }
-    }
-
-    pub fn with_temperature(mut self, temperature: f64) -> Self {
-        self.temperature = Some(temperature);
-        self
-    }
-
-    pub fn with_top_p(mut self, top_p: f64) -> Self {
-        self.top_p = Some(top_p);
-        self
     }
 
     pub fn with_seed(mut self, seed: u64) -> Self {
@@ -198,16 +191,6 @@ impl InferenceSettings {
 
     pub fn with_sample_len(mut self, sample_len: usize) -> Self {
         self.sample_len = sample_len;
-        self
-    }
-
-    pub fn with_repeat_penalty(mut self, repeat_penalty: f32) -> Self {
-        self.repeat_penalty = repeat_penalty;
-        self
-    }
-
-    pub fn with_repeat_last_n(mut self, repeat_last_n: usize) -> Self {
-        self.repeat_last_n = repeat_last_n;
         self
     }
 }
