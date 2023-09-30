@@ -1,6 +1,6 @@
 use super::structured_parser::{ParseStatus, ParseStream, Validate};
-use crate::sample::DynTokenizer;
-use crate::sample::Tokenizer;
+use crate::DynTokenizer;
+use crate::Tokenizer;
 use llm_samplers::prelude::Sampler;
 use llm_samplers::types::{HasSamplerResources, Logits};
 use std::fmt::Debug;
@@ -24,30 +24,6 @@ impl<V: for<'a> Validate<'a>> StructuredSampler<V> {
             tokenizer,
         }
     }
-
-    fn invalid_token(&mut self, start: &str, new_token: u32) -> bool {
-        let mut borrowed = vec![start];
-
-        let new_token = match self.tokenizer.decode(&[new_token]) {
-            Ok(tokens) => tokens,
-            Err(_) => return true,
-        };
-
-        borrowed.push(new_token.as_str());
-
-        if borrowed.iter().all(|s| s.is_empty()) {
-            return true;
-        }
-
-        let status = self.structure.validate(ParseStream::new(&borrowed));
-
-        match status {
-            ParseStatus::Complete(Some(_)) => true,
-            ParseStatus::Complete(None) => false,
-            ParseStatus::Incomplete { .. } => new_token.is_empty(),
-            ParseStatus::Invalid => true,
-        }
-    }
 }
 
 impl<V: for<'a> Validate<'a>> Debug for StructuredSampler<V> {
@@ -66,9 +42,34 @@ impl<V: for<'a> Validate<'a> + Send + Sync> Sampler<u32, f32> for StructuredSamp
             let tokens = &previous_tokens[self.current_token_count.saturating_sub(1)..];
             let tokens = match self.tokenizer.decode(tokens) {
                 Ok(tokens) => tokens,
-                Err(_) => String::new(),
+                Err(_) => String::new().into(),
             };
-            logits.retain(|tid| !self.invalid_token(tokens.as_str(), tid.token_id))
+
+            let single_tokens = logits.iter().map(|tid| [tid.token_id]).collect::<Vec<_>>();
+            let single_tokens_ref = single_tokens
+                .iter()
+                .map(|v| v.as_slice())
+                .collect::<Vec<_>>();
+            let new_tokens = self.tokenizer.decode_batch(&*single_tokens_ref).unwrap();
+            let mut new_tokens = new_tokens.into_iter();
+
+            logits.retain(|_| {
+                let new_token = new_tokens.next().unwrap();
+                let borrowed = [&*tokens, &*new_token];
+
+                if borrowed.iter().all(|s| s.is_empty()) {
+                    return true;
+                }
+
+                let status = self.structure.validate(ParseStream::new(&borrowed));
+
+                match status {
+                    ParseStatus::Complete(Some(_)) => false,
+                    ParseStatus::Complete(None) => true,
+                    ParseStatus::Incomplete { .. } => !new_token.is_empty(),
+                    ParseStatus::Invalid => false,
+                }
+            });
         })?;
         Ok(logits)
     }

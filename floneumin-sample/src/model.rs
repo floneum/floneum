@@ -1,5 +1,5 @@
 use crate::embedding::{Embedding, VectorSpace};
-use floneumin_sample::Tokenizer;
+use crate::sample::Tokenizer;
 use futures_util::{Stream, StreamExt};
 use llm_samplers::prelude::Sampler;
 use std::sync::Arc;

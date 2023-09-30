@@ -54,6 +54,7 @@ itertools = "0.11.0"
 async-recursion = "1.0.5"
 tokenizers = { version = "0.13.4" }
 rustc-hash = "1.1.0"
+floneumin-sample = { path = "../floneumin-sample" }
 
 [features]
 metal = ["llm/metal", "rphi/accelerate", "rbert/accelerate"]

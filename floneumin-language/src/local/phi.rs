@@ -13,8 +13,8 @@ impl crate::model::Model for Phi {
         Phi::default()
     }
 
-    fn tokenizer(&self) -> Arc<dyn crate::sample::Tokenizer + Send + Sync> {
-        self.get_tokenizer() as Arc<dyn crate::sample::Tokenizer + Send + Sync>
+    fn tokenizer(&self) -> Arc<dyn floneumin_sample::Tokenizer + Send + Sync> {
+        self.get_tokenizer() as Arc<dyn floneumin_sample::Tokenizer + Send + Sync>
     }
 
     async fn stream_text(

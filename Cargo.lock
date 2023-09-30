@@ -826,7 +826,7 @@ dependencies = [
 [[package]]
 name = "candle-core"
 version = "0.2.3"
-source = "git+https://github.com/huggingface/candle#deee7612da7dcda1aa1cfd4237f4858d9f5ed8c7"
+source = "git+https://github.com/huggingface/candle#4e55aaa51f61a2472c24c52d7b3596f4d0bca4f7"
 dependencies = [
  "accelerate-src",
  "byteorder",
@@ -851,7 +851,7 @@ dependencies = [
 [[package]]
 name = "candle-flash-attn"
 version = "0.2.3"
-source = "git+https://github.com/huggingface/candle#deee7612da7dcda1aa1cfd4237f4858d9f5ed8c7"
+source = "git+https://github.com/huggingface/candle#4e55aaa51f61a2472c24c52d7b3596f4d0bca4f7"
 dependencies = [
  "anyhow",
  "candle-core",
@@ -988,7 +988,7 @@ dependencies = [
 [[package]]
 name = "candle-kernels"
 version = "0.2.3"
-source = "git+https://github.com/huggingface/candle#deee7612da7dcda1aa1cfd4237f4858d9f5ed8c7"
+source = "git+https://github.com/huggingface/candle#4e55aaa51f61a2472c24c52d7b3596f4d0bca4f7"
 dependencies = [
  "glob",
  "rayon",
@@ -997,7 +997,7 @@ dependencies = [
 [[package]]
 name = "candle-nn"
 version = "0.2.3"
-source = "git+https://github.com/huggingface/candle#deee7612da7dcda1aa1cfd4237f4858d9f5ed8c7"
+source = "git+https://github.com/huggingface/candle#4e55aaa51f61a2472c24c52d7b3596f4d0bca4f7"
 dependencies = [
  "accelerate-src",
  "candle-core",
@@ -1013,7 +1013,7 @@ dependencies = [
 [[package]]
 name = "candle-transformers"
 version = "0.2.3"
-source = "git+https://github.com/huggingface/candle#deee7612da7dcda1aa1cfd4237f4858d9f5ed8c7"
+source = "git+https://github.com/huggingface/candle#4e55aaa51f61a2472c24c52d7b3596f4d0bca4f7"
 dependencies = [
  "accelerate-src",
  "candle-core",
@@ -3354,6 +3354,7 @@ dependencies = [
  "crossbeam",
  "dashmap",
  "docx-rs",
+ "floneumin-sample",
  "floneumin-streams",
  "floneumite",
  "futures-util",
@@ -3391,6 +3392,20 @@ dependencies = [
  "tokio-util",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "floneumin-sample"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "candle-core",
+ "llm",
+ "llm-samplers",
+ "rand 0.8.5",
+ "rustc-hash",
+ "tokenizers 0.13.4",
+ "tracing",
 ]
 
 [[package]]
@@ -7882,6 +7897,7 @@ dependencies = [
  "candle-nn",
  "candle-transformers",
  "cudarc",
+ "floneumin-sample",
  "half 2.3.1",
  "hf-hub",
  "intel-mkl-src",

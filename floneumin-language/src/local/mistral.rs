@@ -1,6 +1,6 @@
 use crate::embedding::VectorSpace;
 use crate::local::Arc;
-use crate::sample::Tokenizer;
+use floneumin_sample::Tokenizer;
 use floneumin_streams::sender::ChannelTextStream;
 use rmistral::InferenceSettings;
 pub use rmistral::{self, Mistral};

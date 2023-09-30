@@ -12,6 +12,7 @@ use anyhow::Error as E;
 use candle_core::Device;
 use candle_transformers::models::mixformer::Config;
 use candle_transformers::models::quantized_mixformer::MixFormerSequentialForCausalLM as QMixFormer;
+use floneumin_sample::FasterHuggingFaceTokenizer;
 use hf_hub::{api::sync::Api, Repo, RepoType};
 use llm_samplers::prelude::Sampler;
 use model::PhiInner;
@@ -31,7 +32,7 @@ enum Task {
 pub struct Phi {
     task_sender: tokio::sync::mpsc::UnboundedSender<Task>,
     thread_handle: Option<std::thread::JoinHandle<()>>,
-    tokenizer: Arc<Tokenizer>,
+    tokenizer: Arc<FasterHuggingFaceTokenizer>,
 }
 
 impl Drop for Phi {
@@ -55,7 +56,7 @@ impl Phi {
     #[allow(clippy::too_many_arguments)]
     fn new(model: QMixFormer, tokenizer: Tokenizer, device: Device) -> Self {
         let (task_sender, mut task_receiver) = tokio::sync::mpsc::unbounded_channel();
-        let arc_tokenizer = Arc::new(tokenizer.clone());
+        let arc_tokenizer = Arc::new(FasterHuggingFaceTokenizer::new(tokenizer.clone()));
 
         let thread_handle = std::thread::spawn(move || {
             let mut inner = PhiInner::new(model, tokenizer, device);
@@ -85,7 +86,7 @@ impl Phi {
         }
     }
 
-    pub fn get_tokenizer(&self) -> Arc<Tokenizer> {
+    pub fn get_tokenizer(&self) -> Arc<FasterHuggingFaceTokenizer> {
         self.tokenizer.clone()
     }
 

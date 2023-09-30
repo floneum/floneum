@@ -1,7 +1,8 @@
+use floneumin_language::floneumin_sample;
 use floneumin_language::model::GenerationParameters;
-use floneumin_language::sample::structured::StructuredSampler;
-use floneumin_language::sample::structured_parser::StructureParser;
 use floneumin_language::{local::Phi, model::Model};
+use floneumin_sample::structured::StructuredSampler;
+use floneumin_sample::structured_parser::StructureParser;
 use floneumin_streams::text_stream::TextStream;
 use futures_util::stream::StreamExt;
 use llm_samplers::prelude::SamplerChain;
@@ -18,7 +19,7 @@ async fn main() {
     let structured = StructuredSampler::new(
         StructureParser::String {
             min_len: 1,
-            max_len: 10,
+            max_len: 100,
         },
         0,
         llm.tokenizer(),

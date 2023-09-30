@@ -62,6 +62,7 @@ members = [
     "segment-anything-rs",
     "floneumin",
     "floneumin-language",
+    "floneumin-sample",
     "floneumin-vision",
     "floneumin-sound",
     "floneumin-streams",
