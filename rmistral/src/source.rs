@@ -1,17 +1,17 @@
-pub struct PhiSource {
+pub struct MistralSource {
     /// The model to use, check out available models: https://huggingface.co/models?library=sentence-transformers&sort=trending
     pub(crate) model_id: String,
     pub(crate) revision: String,
-    pub(crate) weight_files: Vec<String>,
+    pub(crate) gguf_file: String,
     pub(crate) tokenizer_file: String,
 }
 
-impl PhiSource {
-    pub fn new(model_id: String, weight_files: Vec<String>, tokenizer_file: String) -> Self {
+impl MistralSource {
+    pub fn new(model_id: String, gguf_file: String, tokenizer_file: String) -> Self {
         Self {
             model_id,
             revision: "main".to_string(),
-            weight_files,
+            gguf_file,
             tokenizer_file,
         }
     }
@@ -26,21 +26,18 @@ impl PhiSource {
         self
     }
 
-    pub fn with_weight_files(mut self, weight_files: Vec<String>) -> Self {
-        self.weight_files = weight_files;
+    pub fn with_gguf_file(mut self, gguf_file: String) -> Self {
+        self.gguf_file = gguf_file;
         self
     }
 }
 
-impl Default for PhiSource {
+impl Default for MistralSource {
     fn default() -> Self {
         Self {
             model_id: "lmz/candle-mistral".to_string(),
             revision: "main".to_string(),
-            weight_files: vec![
-                "pytorch_model-00001-of-00002.safetensors".to_string(),
-                "pytorch_model-00002-of-00002.safetensors".to_string(),
-            ],
+            gguf_file: "model-q4k.gguf".into(),
             tokenizer_file: "tokenizer.json".to_string(),
         }
     }

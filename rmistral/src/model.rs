@@ -1,6 +1,6 @@
 use anyhow::{Error as E, Result};
 
-use candle_transformers::models::mistral::Model;
+use candle_transformers::models::quantized_mistral::Model;
 
 use candle_core::{DType, Device, Tensor};
 use candle_transformers::generation::LogitsProcessor;
@@ -8,13 +8,13 @@ use tokenizers::Tokenizer;
 
 use crate::InferenceSettings;
 
-pub(crate) struct PhiInner {
+pub(crate) struct MistralInner {
     model: Model,
     device: Device,
     tokenizer: Tokenizer,
 }
 
-impl PhiInner {
+impl MistralInner {
     #[allow(clippy::too_many_arguments)]
     pub fn new(model: Model, tokenizer: Tokenizer, device: Device) -> Self {
         Self {

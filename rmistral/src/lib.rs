@@ -8,11 +8,10 @@ mod model;
 mod source;
 
 use anyhow::Error as E;
-use candle_core::{DType, Device};
-use candle_nn::VarBuilder;
-use candle_transformers::models::mistral::{Config, Model};
+use candle_core::Device;
+use candle_transformers::models::quantized_mistral::{Config, Model};
 use hf_hub::{api::sync::Api, Repo, RepoType};
-use model::PhiInner;
+use model::MistralInner;
 use std::sync::Arc;
 use tokenizers::Tokenizer;
 
@@ -44,8 +43,8 @@ impl Default for Mistral {
 }
 
 impl Mistral {
-    pub fn builder() -> PhiBuilder {
-        PhiBuilder::default()
+    pub fn builder() -> MistralBuilder {
+        MistralBuilder::default()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -54,7 +53,7 @@ impl Mistral {
         let arc_tokenizer = Arc::new(tokenizer.clone());
 
         let thread_handle = std::thread::spawn(move || {
-            let mut inner = PhiInner::new(model, tokenizer, device);
+            let mut inner = MistralInner::new(model, tokenizer, device);
             tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
@@ -94,21 +93,28 @@ impl Mistral {
 }
 
 #[derive(Default)]
-pub struct PhiBuilder {
+pub struct MistralBuilder {
     /// Run on CPU rather than on GPU.
     cpu: bool,
 
-    source: source::PhiSource,
+    source: source::MistralSource,
+
+    flash_attn: bool,
 }
 
-impl PhiBuilder {
+impl MistralBuilder {
     pub fn with_cpu(mut self, cpu: bool) -> Self {
         self.cpu = cpu;
         self
     }
 
-    pub fn with_source(mut self, source: source::PhiSource) -> Self {
+    pub fn with_source(mut self, source: source::MistralSource) -> Self {
         self.source = source;
+        self
+    }
+
+    pub fn with_flash_attn(mut self, use_flash_attn: bool) -> Self {
+        self.flash_attn = use_flash_attn;
         self
     }
 
@@ -122,19 +128,10 @@ impl PhiBuilder {
         let tokenizer_filename = repo.get(&self.source.tokenizer_file)?;
         let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(E::msg)?;
 
-        let device = device(self.cpu)?;
-        let config = Config::config_7b_v0_1();
-        let dtype = if device.is_cuda() {
-            DType::BF16
-        } else {
-            DType::F32
-        };
-        let mut filepaths = Vec::new();
-        for file in self.source.weight_files {
-            let file = repo.get(&file)?;
-            filepaths.push(file);
-        }
-        let vb = unsafe { VarBuilder::from_mmaped_safetensors(&filepaths, dtype, &device)? };
+        let device = Device::Cpu;
+        let config = Config::config_7b_v0_1(self.flash_attn);
+        let filename = repo.get(&self.source.gguf_file)?;
+        let vb = candle_transformers::quantized_var_builder::VarBuilder::from_gguf(filename)?;
         let model = Model::new(&config, vb)?;
 
         Ok(Mistral::new(model, tokenizer, device))
