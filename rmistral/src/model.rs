@@ -53,8 +53,8 @@ impl MistralInner {
             .get_ids()
             .to_vec();
 
-            let mut prev_index = 0;
-            let mut current_index = 0;
+        let mut prev_index = 0;
+        let mut current_index = 0;
 
         for index in 0..*sample_len {
             let context_size = if index > 0 { 1 } else { tokens.len() };
@@ -85,25 +85,30 @@ impl MistralInner {
                 let tokens = &tokens[prev_index..current_index];
                 self.tokenizer.decode(tokens, true).map_err(E::msg)?
             };
-            let text = self.tokenizer.decode(&tokens[prev_index..], true).map_err(E::msg)?;
+            let text = self
+                .tokenizer
+                .decode(&tokens[prev_index..], true)
+                .map_err(E::msg)?;
             if text.len() > prev_text.len() && text.chars().last().unwrap().is_ascii() {
                 let text = text.split_at(prev_text.len());
                 prev_index = current_index;
                 current_index = tokens.len();
                 let token = text.1.to_string();
-                if let Err(_) =out.send(token){
+                if let Err(_) = out.send(token) {
                     return Ok(());
                 }
-            } 
+            }
         }
 
         // send the rest of the tokens
-        let token = self.tokenizer.decode(&tokens[prev_index..], true).map_err(E::msg)?;
-        if let Err(_) =out.send(token){
+        let token = self
+            .tokenizer
+            .decode(&tokens[prev_index..], true)
+            .map_err(E::msg)?;
+        if let Err(_) = out.send(token) {
             return Ok(());
         }
 
         Ok(())
     }
 }
-
