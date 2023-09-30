@@ -3,12 +3,14 @@ use crate::sample::DynTokenizer;
 use crate::sample::Tokenizer;
 use llm_samplers::prelude::Sampler;
 use llm_samplers::types::{HasSamplerResources, Logits};
+use rustc_hash::FxHashMap;
 use std::fmt::Debug;
 
 pub struct StructuredSampler<V: for<'a> Validate<'a>> {
     pub(crate) structure: V,
     pub(crate) current_token_count: usize,
     pub(crate) tokenizer: DynTokenizer,
+    cache: FxHashMap<Vec<u32>, String>,
 }
 
 impl<V: for<'a> Validate<'a>> StructuredSampler<V> {
@@ -22,24 +24,22 @@ impl<V: for<'a> Validate<'a>> StructuredSampler<V> {
             structure,
             current_token_count,
             tokenizer,
+            cache: FxHashMap::default(),
         }
     }
 
-    fn invalid_token<T: Tokenizer + ?Sized>(
-        &self,
-        tokenizer: &T,
-        previous_tokens: &[u32],
-        new_token: u32,
-    ) -> bool {
+    fn invalid_token(&mut self, previous_tokens: &[u32], new_token: u32) -> bool {
         let tokens = &previous_tokens[self.current_token_count.saturating_sub(1)..];
-        let tokens = match tokenizer.decode(tokens) {
-            Ok(tokens) => tokens,
-            Err(_) => return true,
-        };
+        let tokens = self.cache.entry(tokens.to_vec()).or_insert_with(|| {
+             match self.tokenizer.decode(tokens) {
+                Ok(tokens) => tokens,
+                Err(_) => String::new(),
+            }
+        }).as_str();
 
-        let mut borrowed = vec![tokens.as_str()];
+        let mut borrowed = vec![tokens];
 
-        let new_token = match tokenizer.decode(&[new_token]) {
+        let new_token = match self.tokenizer.decode(&[new_token]) {
             Ok(tokens) => tokens,
             Err(_) => return true,
         };
@@ -74,7 +74,7 @@ impl<V: for<'a> Validate<'a> + Send + Sync> Sampler<u32, f32> for StructuredSamp
         logits: &'a mut Logits<u32, f32>,
     ) -> anyhow::Result<&'a mut Logits<u32, f32>> {
         res.with_last_tokens(&mut |previous_tokens| {
-            logits.retain(|tid| !self.invalid_token(&self.tokenizer, previous_tokens, tid.token_id))
+            logits.retain(|tid| !self.invalid_token(previous_tokens, tid.token_id))
         })?;
         Ok(logits)
     }

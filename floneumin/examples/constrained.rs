@@ -4,8 +4,8 @@ use floneumin_language::sample::structured_parser::StructureParser;
 use floneumin_language::{local::Phi, model::Model};
 use floneumin_streams::text_stream::TextStream;
 use futures_util::stream::StreamExt;
-use std::io::Write;
 use llm_samplers::prelude::SamplerChain;
+use std::io::Write;
 use std::sync::Arc;
 use std::sync::Mutex;
 
