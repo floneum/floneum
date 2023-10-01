@@ -153,8 +153,9 @@ impl Tokenizer for FasterHuggingFaceTokenizer {
             tokens.push_str(
                 self.single_token_map
                     .get(id)
-                    .clone().map(|s| &**s)
-                    .unwrap_or_else(|| "".into())
+                    .clone()
+                    .map(|s| &**s)
+                    .unwrap_or_else(|| "".into()),
             );
         }
         Ok(tokens.into())
@@ -172,11 +173,11 @@ impl Tokenizer for FasterHuggingFaceTokenizer {
             let mut token = String::new();
             for id in *id {
                 token.push_str(
-                    self
-                        .single_token_map
+                    self.single_token_map
                         .get(id)
-                        .clone().map(|s| &**s)
-                        .unwrap_or( "")
+                        .clone()
+                        .map(|s| &**s)
+                        .unwrap_or(""),
                 );
             }
             tokens.push(token.into());

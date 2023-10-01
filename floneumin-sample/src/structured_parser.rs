@@ -1,5 +1,6 @@
+use std::iter::Peekable;use std::str::Chars;
 use std::{
-    cell::{Cell, RefCell},
+    cell::{ RefCell},
     ops::Deref,
 };
 
@@ -89,7 +90,7 @@ impl<'a> Validate<'a> for ValidateInt {
         let mut current_number = 0.;
         let mut decimal_place = 0.0;
 
-        let is_negative = iter.peek() == Some('-');
+        let is_negative = iter.peek().copied() == Some('-');
         if is_negative {
             let _ = iter.next();
         }
@@ -146,7 +147,7 @@ impl<'a> Validate<'a> for ValidateInt {
                             if real_number > max || real_number < min {
                                 return ParseStatus::Invalid;
                             }
-                            return ParseStatus::Complete(iter.current());
+                            return ParseStatus::Complete(Some(iter.into()))
                         } else {
                             return ParseStatus::Invalid;
                         }
@@ -159,7 +160,7 @@ impl<'a> Validate<'a> for ValidateInt {
                         if real_number > max || real_number < min {
                             return ParseStatus::Invalid;
                         }
-                        return ParseStatus::Complete(iter.current());
+                        return ParseStatus::Complete(Some(iter.into()))
                     } else {
                         return ParseStatus::Invalid;
                     }
@@ -222,7 +223,7 @@ impl<'a> Validate<'a> for ValidateString {
         let mut iter = tokens.iter();
         let mut escape = false;
 
-        if iter.peek() != Some('"') {
+        if iter.peek().copied() != Some('"') {
             return ParseStatus::Invalid;
         }
         let _ = iter.next();
@@ -244,7 +245,7 @@ impl<'a> Validate<'a> for ValidateString {
                             return ParseStatus::Invalid;
                         }
                         let _ = iter.next();
-                        return ParseStatus::Complete(iter.current());
+                        return ParseStatus::Complete(Some(iter.into()));
                     }
                     string_length += 1;
                 }
@@ -276,7 +277,7 @@ fn test_validate_string() {
     assert!(ValidateString(5, 5).validate(tokens).is_invalid());
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum ParseStatus<'a> {
     Incomplete { required_next: Option<String> },
     Complete(Option<ParseStream<'a>>),
@@ -298,83 +299,26 @@ impl ParseStatus<'_> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct ParseStream<'a> {
-    tokens: &'a [&'a str],
-    token_index: usize,
-    char_index: usize,
+    chars:Peekable< Chars<'a>>,
+}
+
+impl<'a> From<Peekable<Chars<'a>>> for ParseStream<'a> {
+    fn from(chars: Peekable<Chars<'a>>) -> Self {
+        Self { chars }
+    }
 }
 
 impl<'a> ParseStream<'a> {
-    pub fn new(tokens: &'a [&'a str]) -> Self {
+    pub fn new(token: &'a str) -> Self {
         Self {
-            tokens,
-            token_index: 0,
-            char_index: 0,
+            chars: token.chars().peekable(),
         }
     }
 
-    fn iter(&self) -> ParseStreamIter<'a> {
-        ParseStreamIter {
-            stream: Cell::new(Some(*self)),
-        }
-    }
-
-    fn peek(self) -> Option<char> {
-        let token_index = self.token_index;
-        let char_index = self.char_index;
-        if let Some(c) = self.tokens.get(token_index) {
-            if let Some(c) = c.chars().nth(char_index) {
-                return Some(c);
-            }
-        }
-        None
-    }
-
-    fn take(self) -> Option<ParseStream<'a>> {
-        let mut token_index = self.token_index;
-        let mut char_index = self.char_index + 1;
-        loop {
-            if let Some(c) = self.tokens.get(token_index) {
-                if c.chars().nth(char_index).is_some() {
-                    return Some(ParseStream {
-                        tokens: self.tokens,
-                        token_index,
-                        char_index,
-                    });
-                } else {
-                    token_index += 1;
-                    char_index = 0;
-                }
-            } else {
-                return None;
-            }
-        }
-    }
-}
-
-struct ParseStreamIter<'a> {
-    stream: Cell<Option<ParseStream<'a>>>,
-}
-
-impl<'a> ParseStreamIter<'a> {
-    fn peek(&self) -> Option<char> {
-        self.stream.get()?.peek()
-    }
-
-    fn current(&self) -> Option<ParseStream<'a>> {
-        self.stream.get()
-    }
-}
-
-impl<'a> Iterator for ParseStreamIter<'a> {
-    type Item = char;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let stream = self.stream.get()?;
-        let next = stream.peek();
-        self.stream.set(stream.take());
-        next
+    fn iter(&self) -> Peekable<Chars<'a>> {
+        self.chars.clone()
     }
 }
 
@@ -457,7 +401,7 @@ pub struct Or<'a, A: Validate<'a>, B: Validate<'a>>(A, B, std::marker::PhantomDa
 
 impl<'a, A: Validate<'a>, B: Validate<'a>> Validate<'a> for Or<'a, A, B> {
     fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
-        match self.0.validate(tokens) {
+        match self.0.validate(tokens.clone()) {
             ParseStatus::Complete(tokens) => ParseStatus::Complete(tokens),
             ParseStatus::Invalid => self.1.validate(tokens),
             ParseStatus::Incomplete { required_next } => match self.1.validate(tokens) {
@@ -498,10 +442,10 @@ impl<'a> Validate<'a> for &str {
 
             let my_char = match chars.next() {
                 Some(c) => c,
-                None => break ParseStatus::Complete(iter.current()),
+                None => break ParseStatus::Complete(Some(iter.into())),
             };
 
-            if my_char != next_char {
+            if my_char != *next_char {
                 break ParseStatus::Invalid;
             }
 
@@ -569,10 +513,10 @@ impl<'a, S: Validate<'a>, I: Validate<'a>> Validate<'a> for Seperated<'a, S, I> 
                 return ParseStatus::Complete(Some(tokens));
             }
             // first parse an item
-            match self.inner.validate(tokens) {
+            match self.inner.validate(tokens.clone()) {
                 // if we get a complete item, then we can parse a separator
                 ParseStatus::Complete(Some(new_tokens)) => {
-                    match self.separator.validate(new_tokens) {
+                    match self.separator.validate(new_tokens.clone()) {
                         // if we get a complete separator, then we can parse another item
                         ParseStatus::Complete(Some(new_tokens)) => tokens = new_tokens,
                         // if we get a complete separator with no tokens, then we are done

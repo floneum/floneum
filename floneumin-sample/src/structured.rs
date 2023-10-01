@@ -55,13 +55,13 @@ impl<V: for<'a> Validate<'a> + Send + Sync> Sampler<u32, f32> for StructuredSamp
 
             logits.retain(|_| {
                 let new_token = new_tokens.next().unwrap();
-                let borrowed = [&*tokens, &*new_token];
+                let string = tokens.to_string() + &new_token;
 
-                if borrowed.iter().all(|s| s.is_empty()) {
+                if string.is_empty() {
                     return true;
                 }
 
-                let status = self.structure.validate(ParseStream::new(&borrowed));
+                let status = self.structure.validate(ParseStream::new(&string));
 
                 match status {
                     ParseStatus::Complete(Some(_)) => false,
