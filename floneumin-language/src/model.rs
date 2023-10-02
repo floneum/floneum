@@ -25,12 +25,13 @@ pub trait Model: 'static {
         &mut self,
         prompt: &str,
         max_tokens: Option<u32>,
+        stop_on: Option<&'static str>,
         sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
     ) -> anyhow::Result<String> {
         let mut text = String::new();
 
         let mut stream = self
-            .stream_text_with_sampler(prompt, max_tokens, sampler)
+            .stream_text_with_sampler(prompt, max_tokens, stop_on, sampler)
             .await?;
         while let Some(new) = stream.next().await {
             text.push_str(&new);
@@ -56,6 +57,7 @@ pub trait Model: 'static {
         &mut self,
         _prompt: &str,
         _max_tokens: Option<u32>,
+        _stop_on: Option<&'static str>,
         _sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
     ) -> anyhow::Result<Self::TextStream> {
         Err(anyhow::Error::msg("Not implemented"))
@@ -76,6 +78,7 @@ pub struct GenerationParameters {
     pub(crate) repetition_penalty: f32,
     pub(crate) repetition_penalty_range: u32,
     pub(crate) max_length: u32,
+    pub(crate) stop_on: Option<&'static str>,
 }
 
 impl Default for GenerationParameters {
@@ -87,11 +90,24 @@ impl Default for GenerationParameters {
             repetition_penalty: 1.3,
             repetition_penalty_range: 64,
             max_length: 128,
+            stop_on: None,
         }
     }
 }
 
 impl GenerationParameters {
+    pub fn greedy() -> Self {
+        Self {
+            temperature: 0.8,
+            top_k: 1,
+            top_p: 0.95,
+            repetition_penalty: 1.3,
+            repetition_penalty_range: 64,
+            max_length: 128,
+            stop_on: None,
+        }
+    }
+
     pub fn with_temperature(mut self, temperature: f32) -> Self {
         self.temperature = temperature;
         self
@@ -122,6 +138,11 @@ impl GenerationParameters {
         self
     }
 
+    pub fn with_stop_on(mut self, stop_on: impl Into<Option<&'static str>>) -> Self {
+        self.stop_on = stop_on.into();
+        self
+    }
+
     pub fn temperature(&self) -> f32 {
         self.temperature
     }
@@ -144,6 +165,10 @@ impl GenerationParameters {
 
     pub fn max_length(&self) -> u32 {
         self.max_length
+    }
+
+    pub fn stop_on(&self) -> Option<&'static str> {
+        self.stop_on
     }
 }
 

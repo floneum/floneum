@@ -73,7 +73,9 @@ impl Phi {
                                 sender,
                                 sampler,
                             } => {
-                                inner._infer(settings, sampler, sender).unwrap();
+                                if let Err(err) = inner._infer(settings, sampler, sender) {
+                                    tracing::trace!("Error in PhiInner::_infer: {}", err);
+                                }
                             }
                         }
                     }
@@ -174,6 +176,9 @@ pub struct InferenceSettings {
 
     /// The length of the sample to generate (in tokens).
     sample_len: usize,
+
+    /// The token to stop on.
+    stop_on: Option<&'static str>,
 }
 
 impl InferenceSettings {
@@ -182,6 +187,7 @@ impl InferenceSettings {
             prompt: prompt.into(),
             seed: rand::random(),
             sample_len: 100,
+            stop_on: None,
         }
     }
 
@@ -194,18 +200,15 @@ impl InferenceSettings {
         self.sample_len = sample_len;
         self
     }
+
+    pub fn with_stop_on(mut self, stop_on: Option<&'static str>) -> Self {
+        self.stop_on = stop_on;
+        self
+    }
 }
 
 #[tokio::test]
 async fn generate() -> anyhow::Result<()> {
-    println!(
-        "avx: {}, neon: {}, simd128: {}, f16c: {}",
-        candle_core::utils::with_avx(),
-        candle_core::utils::with_neon(),
-        candle_core::utils::with_simd128(),
-        candle_core::utils::with_f16c()
-    );
-
     let mut phi = Phi::default();
 
     phi.run(InferenceSettings::new("The quick brown fox "))?;

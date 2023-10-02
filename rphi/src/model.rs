@@ -37,6 +37,7 @@ impl PhiInner {
             prompt,
             sample_len,
             seed,
+            stop_on,
         } = settings;
 
         let mut tokens = self
@@ -52,6 +53,7 @@ impl PhiInner {
             None => anyhow::bail!("cannot find the endoftext token"),
         };
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        let mut text = String::new();
         for index in 0..sample_len as usize {
             let context_size = if index > 0 { 1 } else { tokens.len() };
             let ctxt = &tokens[tokens.len().saturating_sub(context_size)..];
@@ -66,7 +68,19 @@ impl PhiInner {
                 break;
             }
             let token = self.tokenizer.decode(&[next_token], true).map_err(E::msg)?;
+            let mut should_stop = false;
+            // We only need to keep as many bytes as the stop_on string
+            if let Some(stop_on) = &stop_on {
+                text.push_str(&token);
+                if text.len() > stop_on.len() {
+                    text.drain(..text.len() - stop_on.len());
+                }
+                should_stop = stop_on == &text;
+            }
             out.send(token).unwrap();
+            if should_stop {
+                break;
+            }
         }
 
         Ok(())

@@ -24,7 +24,9 @@ impl crate::model::Model for Phi {
     ) -> anyhow::Result<Self::TextStream> {
         let max_length = generation_parameters.max_length();
         self.run(
-            InferenceSettings::new(prompt).with_sample_len(max_length as usize),
+            InferenceSettings::new(prompt)
+                .with_sample_len(max_length as usize)
+                .with_stop_on(generation_parameters.stop_on()),
             Arc::new(Mutex::new(generation_parameters.sampler())),
         )
         .map(Into::into)
@@ -34,11 +36,14 @@ impl crate::model::Model for Phi {
         &mut self,
         prompt: &str,
         max_tokens: Option<u32>,
+        stop_on: Option<&'static str>,
         sampler: Arc<Mutex<dyn llm_samplers::prelude::Sampler<u32, f32>>>,
     ) -> anyhow::Result<Self::TextStream> {
         let max_length = max_tokens.unwrap_or(64);
         self.run(
-            InferenceSettings::new(prompt).with_sample_len(max_length as usize),
+            InferenceSettings::new(prompt)
+                .with_sample_len(max_length as usize)
+                .with_stop_on(stop_on),
             sampler,
         )
         .map(Into::into)

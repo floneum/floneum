@@ -69,8 +69,9 @@ impl<S: VectorSpace + Send + Sync + 'static> LocalSession<S> {
                                 max_tokens,
                                 sampler,
                                 sender,
+                                stop_on,
                             } => {
-                                inner._infer_sampler(prompt, max_tokens, sampler, sender);
+                                inner._infer_sampler(prompt, max_tokens, stop_on, sampler, sender);
                             }
                             Task::GetEmbedding { text, sender } => {
                                 let result = inner._get_embedding(&text).unwrap();
@@ -111,6 +112,7 @@ impl<S: VectorSpace + Send + Sync + 'static> LocalSession<S> {
         &mut self,
         prompt: String,
         max_tokens: Option<u32>,
+        stop_on: Option<&'static str>,
         sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
     ) -> ChannelTextStream<String> {
         let (sender, receiver) = tokio::sync::oneshot::channel();
@@ -118,6 +120,7 @@ impl<S: VectorSpace + Send + Sync + 'static> LocalSession<S> {
             .send(Task::InferSampler {
                 prompt,
                 max_tokens,
+                stop_on,
                 sampler,
                 sender,
             })
@@ -159,6 +162,7 @@ enum Task<S: VectorSpace> {
     InferSampler {
         prompt: String,
         max_tokens: Option<u32>,
+        stop_on: Option<&'static str>,
         sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
         sender: tokio::sync::oneshot::Sender<ChannelTextStream<String>>,
     },
@@ -185,6 +189,7 @@ impl<S: VectorSpace> LocalSessionInner<S> {
         &mut self,
         prompt: String,
         max_tokens: Option<u32>,
+        stop_on: Option<&'static str>,
         sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
         out: tokio::sync::oneshot::Sender<ChannelTextStream<String>>,
     ) {
@@ -193,7 +198,7 @@ impl<S: VectorSpace> LocalSessionInner<S> {
 
         let parameters = InferenceParameters { sampler };
 
-        let (callback, stream) = inference_callback();
+        let (callback, stream) = inference_callback(stop_on);
         if let Err(_) = out.send(stream) {
             log::error!("Failed to send stream");
             return;
@@ -231,7 +236,7 @@ impl<S: VectorSpace> LocalSessionInner<S> {
             sampler: Arc::new(Mutex::new(generation_parameters.sampler())),
         };
 
-        let (callback, stream) = inference_callback();
+        let (callback, stream) = inference_callback(generation_parameters.stop_on());
         if let Err(_) = out.send(stream) {
             log::error!("Failed to send stream");
             return;
@@ -268,20 +273,40 @@ impl<S: VectorSpace> LocalSessionInner<S> {
     }
 }
 
-fn inference_callback() -> (
+fn inference_callback(
+    stop_on: Option<&'static str>,
+) -> (
     impl FnMut(InferenceResponse) -> Result<InferenceFeedback, Infallible>,
     ChannelTextStream<String>,
 ) {
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
     let stream = receiver.into();
+    let mut text = String::new();
     let callback = move |resp| match resp {
-        InferenceResponse::InferredToken(t) => match sender.send(t) {
-            Ok(_) => Ok(InferenceFeedback::Continue),
-            Err(_) => {
-                log::error!("Failed to send token");
-                Ok(InferenceFeedback::Halt)
+        InferenceResponse::InferredToken(t) => {
+            let mut stop_token = false;
+            if let Some(stop_on) = stop_on {
+                text.push_str(&t);
+                // We only need to keep as many tokens as the stop_on string is long
+                if text.len() > stop_on.len() {
+                    text.drain(..text.len() - stop_on.len());
+                }
+                stop_token = text == stop_on;
             }
-        },
+            match sender.send(t) {
+                Ok(_) => {
+                    if stop_token {
+                        Ok(InferenceFeedback::Halt)
+                    } else {
+                        Ok(InferenceFeedback::Continue)
+                    }
+                }
+                Err(_) => {
+                    log::error!("Failed to send token");
+                    Ok(InferenceFeedback::Halt)
+                }
+            }
+        }
         InferenceResponse::EotToken => Ok(InferenceFeedback::Halt),
         _ => Ok(InferenceFeedback::Continue),
     };

@@ -110,7 +110,7 @@ pub struct FasterHuggingFaceTokenizer {
 
 impl FasterHuggingFaceTokenizer {
     pub fn new(tokenizer: tokenizers::Tokenizer) -> Self {
-        let single_token_map = tokenizer
+        let single_token_map: FxHashMap<_, _> = tokenizer
             .get_vocab(true)
             .into_iter()
             .map(|(string, token_id)| {

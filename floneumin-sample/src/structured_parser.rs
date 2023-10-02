@@ -1,8 +1,6 @@
-use std::iter::Peekable;use std::str::Chars;
-use std::{
-    cell::{ RefCell},
-    ops::Deref,
-};
+use std::iter::Peekable;
+use std::str::Chars;
+use std::{cell::RefCell, ops::Deref};
 
 #[derive(Debug, Clone)]
 pub enum StructureParser {
@@ -42,16 +40,14 @@ impl<'a> Validate<'a> for StructureParser {
                 min_len,
                 max_len,
             } => {
-                let parse_sequence = Seperated::new(
+                let parse_sequence = Separated::new(
                     item.as_ref(),
                     separator.as_ref(),
                     *min_len as usize,
                     *max_len as usize,
                 );
 
-                let parse_array = Between::new("[", parse_sequence, "]");
-
-                parse_array.validate(tokens)
+                parse_sequence.validate(tokens)
             }
             StructureParser::Num { min, max, integer } => {
                 let parse_int = ValidateInt {
@@ -147,7 +143,7 @@ impl<'a> Validate<'a> for ValidateInt {
                             if real_number > max || real_number < min {
                                 return ParseStatus::Invalid;
                             }
-                            return ParseStatus::Complete(Some(iter.into()))
+                            return ParseStatus::Complete(Some(iter.into()));
                         } else {
                             return ParseStatus::Invalid;
                         }
@@ -160,7 +156,7 @@ impl<'a> Validate<'a> for ValidateInt {
                         if real_number > max || real_number < min {
                             return ParseStatus::Invalid;
                         }
-                        return ParseStatus::Complete(Some(iter.into()))
+                        return ParseStatus::Complete(Some(iter.into()));
                     } else {
                         return ParseStatus::Invalid;
                     }
@@ -177,7 +173,7 @@ impl<'a> Validate<'a> for ValidateInt {
 
 #[test]
 fn test_parse_num() {
-    let tokens = ParseStream::new(&["-1234 "]);
+    let tokens = ParseStream::new("-1234 ");
     assert!(ValidateInt {
         min: -2000.,
         max: 2000.,
@@ -186,7 +182,7 @@ fn test_parse_num() {
     .validate(tokens)
     .is_complete());
 
-    let tokens = ParseStream::new(&["1234hello"]);
+    let tokens = ParseStream::new("1234hello");
     assert!(ValidateInt {
         min: -2000.,
         max: 2000.,
@@ -195,7 +191,7 @@ fn test_parse_num() {
     .validate(tokens)
     .is_complete());
 
-    let tokens = ParseStream::new(&["1234.0 "]);
+    let tokens = ParseStream::new("1234.0 ");
     assert!(ValidateInt {
         min: -2000.,
         max: 2000.,
@@ -204,7 +200,7 @@ fn test_parse_num() {
     .validate(tokens)
     .is_complete());
 
-    let tokens = ParseStream::new(&["1234.0.0"]);
+    let tokens = ParseStream::new("1234.0.0");
     assert!(ValidateInt {
         min: -2000.,
         max: 2000.,
@@ -223,21 +219,21 @@ impl<'a> Validate<'a> for ValidateString {
         let mut iter = tokens.iter();
         let mut escape = false;
 
-        if iter.peek().copied() != Some('"') {
+        if iter.next() != Some('"') {
             return ParseStatus::Invalid;
         }
-        let _ = iter.next();
         let mut string_length = 0;
 
         while let Some(c) = iter.peek() {
-            if escape {
-                escape = false;
-                continue;
-            }
-
             match c {
                 '\\' => {
-                    escape = true;
+                    if string_length >= max_len {
+                        return ParseStatus::Invalid;
+                    }
+                    if escape {
+                        string_length += 1;
+                    }
+                    escape = !escape;
                 }
                 '"' => {
                     if !escape {
@@ -245,12 +241,14 @@ impl<'a> Validate<'a> for ValidateString {
                             return ParseStatus::Invalid;
                         }
                         let _ = iter.next();
-                        return ParseStatus::Complete(Some(iter.into()));
+                        return ParseStatus::Complete(iter.peek().is_some().then(|| iter.into()));
                     }
                     string_length += 1;
+                    escape = false;
                 }
                 _ => {
                     string_length += 1;
+                    escape = false;
                 }
             }
             if string_length > max_len {
@@ -267,14 +265,55 @@ impl<'a> Validate<'a> for ValidateString {
 
 #[test]
 fn test_validate_string() {
-    let tokens = ParseStream::new(&["\"hello", "\""]);
+    let tokens = ParseStream::new("\"hello\"");
     assert!(ValidateString(5, 5).validate(tokens).is_complete());
 
-    let tokens = ParseStream::new(&["\"hello", "world"]);
+    let tokens = ParseStream::new("\"hello world");
     assert!(ValidateString(5, 50).validate(tokens).is_incomplete());
 
-    let tokens = ParseStream::new(&["hello", "\""]);
+    let tokens = ParseStream::new("hello\"");
     assert!(ValidateString(5, 5).validate(tokens).is_invalid());
+    let tokens = ParseStream::new("\"\"");
+    assert!(StructureParser::String {
+        min_len: 1,
+        max_len: 5,
+    }
+    .validate(tokens)
+    .is_invalid());
+    let tokens = ParseStream::new("\"光");
+    assert!(StructureParser::String {
+        min_len: 1,
+        max_len: 5,
+    }
+    .validate(tokens)
+    .is_incomplete());
+    let tokens = ParseStream::new("\"hello ");
+    assert!(StructureParser::String {
+        min_len: 1,
+        max_len: 5,
+    }
+    .validate(tokens)
+    .is_invalid());
+    let tokens = ParseStream::new("\"\ndef!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    assert!(StructureParser::String {
+        min_len: 1,
+        max_len: 5,
+    }
+    .validate(tokens)
+    .is_invalid());
+
+    // Test escaping
+    let stream = ParseStream::new("\"hello \\\"world\\\"\"");
+    assert!(ValidateString(14, 14).validate(stream.clone()).is_invalid());
+    assert!(ValidateString(13, 13)
+        .validate(stream.clone())
+        .is_complete());
+    assert!(ValidateString(12, 12).validate(stream).is_invalid());
+    let stream = ParseStream::new("\"hello \\");
+    assert!(ValidateString(6, 6).validate(stream.clone()).is_invalid());
+    assert!(ValidateString(7, 7)
+        .validate(stream.clone())
+        .is_incomplete());
 }
 
 #[derive(Debug)]
@@ -301,7 +340,7 @@ impl ParseStatus<'_> {
 
 #[derive(Debug, Clone)]
 pub struct ParseStream<'a> {
-    chars:Peekable< Chars<'a>>,
+    chars: Peekable<Chars<'a>>,
 }
 
 impl<'a> From<Peekable<Chars<'a>>> for ParseStream<'a> {
@@ -317,8 +356,12 @@ impl<'a> ParseStream<'a> {
         }
     }
 
-    fn iter(&self) -> Peekable<Chars<'a>> {
+    pub fn iter(&self) -> Peekable<Chars<'a>> {
         self.chars.clone()
+    }
+
+    pub fn is_empty(&mut self) -> bool {
+        self.chars.peek().is_none()
     }
 }
 
@@ -456,7 +499,7 @@ impl<'a> Validate<'a> for &str {
     }
 }
 
-struct Between<'a, S: Validate<'a>, I: Validate<'a>, E: Validate<'a>> {
+pub struct Between<'a, S: Validate<'a>, I: Validate<'a>, E: Validate<'a>> {
     start: S,
     inner: I,
     end: E,
@@ -464,7 +507,7 @@ struct Between<'a, S: Validate<'a>, I: Validate<'a>, E: Validate<'a>> {
 }
 
 impl<'a, S: Validate<'a>, I: Validate<'a>, E: Validate<'a>> Between<'a, S, I, E> {
-    fn new(start: S, inner: I, end: E) -> Self {
+    pub fn new(start: S, inner: I, end: E) -> Self {
         Between {
             start,
             inner,
@@ -484,7 +527,7 @@ impl<'a, S: Validate<'a>, I: Validate<'a>, E: Validate<'a>> Validate<'a> for Bet
     }
 }
 
-struct Seperated<'a, S: Validate<'a>, I: Validate<'a>> {
+struct Separated<'a, S: Validate<'a>, I: Validate<'a>> {
     inner: I,
     separator: S,
     min: usize,
@@ -492,9 +535,9 @@ struct Seperated<'a, S: Validate<'a>, I: Validate<'a>> {
     _phantom: std::marker::PhantomData<&'a ()>,
 }
 
-impl<'a, S: Validate<'a>, I: Validate<'a>> Seperated<'a, S, I> {
+impl<'a, S: Validate<'a>, I: Validate<'a>> Separated<'a, S, I> {
     fn new(inner: I, separator: S, min: usize, max: usize) -> Self {
-        Seperated {
+        Separated {
             inner,
             separator,
             min,
@@ -504,7 +547,7 @@ impl<'a, S: Validate<'a>, I: Validate<'a>> Seperated<'a, S, I> {
     }
 }
 
-impl<'a, S: Validate<'a>, I: Validate<'a>> Validate<'a> for Seperated<'a, S, I> {
+impl<'a, S: Validate<'a>, I: Validate<'a>> Validate<'a> for Separated<'a, S, I> {
     fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
         let mut tokens = tokens;
         let mut count = 0;
@@ -516,6 +559,7 @@ impl<'a, S: Validate<'a>, I: Validate<'a>> Validate<'a> for Seperated<'a, S, I> 
             match self.inner.validate(tokens.clone()) {
                 // if we get a complete item, then we can parse a separator
                 ParseStatus::Complete(Some(new_tokens)) => {
+                    count += 1;
                     match self.separator.validate(new_tokens.clone()) {
                         // if we get a complete separator, then we can parse another item
                         ParseStatus::Complete(Some(new_tokens)) => tokens = new_tokens,
@@ -544,6 +588,7 @@ impl<'a, S: Validate<'a>, I: Validate<'a>> Validate<'a> for Seperated<'a, S, I> 
                     }
                 }
                 ParseStatus::Complete(None) => {
+                    count += 1;
                     if count >= self.min {
                         // if we get a complete item with no tokens and enough items, then we are done
                         return ParseStatus::Complete(None);
@@ -551,83 +596,43 @@ impl<'a, S: Validate<'a>, I: Validate<'a>> Validate<'a> for Seperated<'a, S, I> 
                         return ParseStatus::Invalid;
                     }
                 }
-                ParseStatus::Invalid => return ParseStatus::Invalid,
+                ParseStatus::Invalid => {
+                    return ParseStatus::Invalid;
+                }
                 ParseStatus::Incomplete { required_next } => {
                     return ParseStatus::Incomplete { required_next }
                 }
             }
-            count += 1;
         }
     }
 }
 
 #[test]
-fn test_parse_stream() {
-    let tokens = &["abc", "def", "ghi"];
-    let stream = ParseStream {
-        tokens,
-        token_index: 0,
-        char_index: 0,
-    };
-
-    let mut iter = stream.iter();
-    assert_eq!(iter.next(), Some('a'));
-    assert_eq!(iter.next(), Some('b'));
-    assert_eq!(iter.next(), Some('c'));
-    assert_eq!(iter.next(), Some('d'));
-    assert_eq!(iter.next(), Some('e'));
-    assert_eq!(iter.next(), Some('f'));
-    assert_eq!(iter.next(), Some('g'));
-    assert_eq!(iter.next(), Some('h'));
-    assert_eq!(iter.next(), Some('i'));
-    assert_eq!(iter.next(), None);
-}
-
-#[test]
 fn test_string() {
     {
-        let tokens = &["abc", "def", "ghiw"];
-        let stream = ParseStream {
-            tokens,
-            token_index: 0,
-            char_index: 0,
-        };
+        let tokens = "abcdefghiw";
+        let stream = ParseStream::new(tokens);
 
         let string = "abc";
         assert!(string.validate(stream).is_complete());
     }
 
     {
-        let tokens = &["d", "ef"];
-        let stream = ParseStream {
-            tokens,
-            token_index: 0,
-            char_index: 0,
-        };
+        let stream = ParseStream::new("def");
 
         let string = "def";
         assert!(string.validate(stream).is_complete());
     }
 
     {
-        let tokens = &["d", "ef"];
-        let stream = ParseStream {
-            tokens,
-            token_index: 0,
-            char_index: 0,
-        };
+        let stream = ParseStream::new("def");
 
         let string = "definition";
         assert!(string.validate(stream).is_incomplete());
     }
 
     {
-        let tokens = &["dfe"];
-        let stream = ParseStream {
-            tokens,
-            token_index: 0,
-            char_index: 0,
-        };
+        let stream = ParseStream::new("dfe");
 
         let string = "defin";
         assert!(string.validate(stream).is_invalid());
@@ -635,23 +640,52 @@ fn test_string() {
 }
 
 #[test]
-fn test_seperated() {
-    let should_parse = [&["a,a,a"], &["a,a,"], &["a,"]];
-    for tokens in should_parse {
-        let stream = ParseStream {
-            tokens,
-            token_index: 0,
-            char_index: 0,
-        };
+fn test_separated() {
+    let should_parse = [(3, "a,a,a"), (2, "a,a,"), (1, "a,")];
+    for (count, tokens) in should_parse {
+        let stream = ParseStream::new(tokens);
 
-        let seperated = Seperated {
+        let separated = Separated {
             inner: "a",
             separator: ",",
-            min: 6,
-            max: 6,
+            min: count,
+            max: count,
             _phantom: std::marker::PhantomData,
         };
 
-        assert!(seperated.validate(stream).is_complete());
+        assert!(dbg!(separated.validate(dbg!(stream))).is_complete());
+    }
+}
+
+#[test]
+fn test_separated_string() {
+    let should_parse = [(3, "\"a\",\"a\",\"a\""), (2, "\"a\",\"a\","), (1, "\"a\",")];
+    for (count, tokens) in should_parse {
+        let stream = ParseStream::new(tokens);
+
+        let separated = Separated {
+            inner: ValidateString(1, 3),
+            separator: ",",
+            min: count,
+            max: count,
+            _phantom: std::marker::PhantomData,
+        };
+
+        assert!(dbg!(separated.validate(dbg!(stream))).is_complete());
+    }
+
+    let should_be_incomplete = [(3, "\"a\",\"a\",\"a"), (2, "\"a\",\"a"), (1, "\"_")];
+    for (count, tokens) in should_be_incomplete {
+        let stream = ParseStream::new(tokens);
+
+        let separated = Separated {
+            inner: ValidateString(1, 3),
+            separator: ",",
+            min: count,
+            max: count,
+            _phantom: std::marker::PhantomData,
+        };
+
+        assert!(dbg!(separated.validate(dbg!(stream))).is_incomplete());
     }
 }

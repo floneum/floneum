@@ -74,10 +74,11 @@ macro_rules! local_model {
                 &mut self,
                 prompt: &str,
                 max_tokens: Option<u32>,
+                stop_on: Option<&'static str>,
                 sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
             ) -> anyhow::Result<Self::TextStream> {
                 Ok(self
-                    .infer_sampler(prompt.to_string(), max_tokens, sampler)
+                    .infer_sampler(prompt.to_string(), max_tokens, stop_on, sampler)
                     .await)
             }
         }
@@ -137,6 +138,7 @@ impl crate::model::GenerationParameters {
             repetition_penalty,
             repetition_penalty_range,
             max_length: _,
+            stop_on: _,
         } = self;
         SamplerChainBuilder::from([
             (

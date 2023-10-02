@@ -1,4 +1,4 @@
-use super::structured_parser::{ParseStatus, ParseStream, Validate};
+use llm_samplers::prelude::Logit;use super::structured_parser::{ParseStatus, ParseStream, Validate};
 use crate::DynTokenizer;
 use crate::Tokenizer;
 use llm_samplers::prelude::Sampler;
@@ -9,6 +9,7 @@ pub struct StructuredSampler<V: for<'a> Validate<'a>> {
     pub(crate) structure: V,
     pub(crate) current_token_count: usize,
     pub(crate) tokenizer: DynTokenizer,
+    pub(crate) sampled: Option<Logit>,
 }
 
 impl<V: for<'a> Validate<'a>> StructuredSampler<V> {
@@ -22,6 +23,7 @@ impl<V: for<'a> Validate<'a>> StructuredSampler<V> {
             structure,
             current_token_count,
             tokenizer,
+            sampled: None,
         }
     }
 }
@@ -38,6 +40,8 @@ impl<V: for<'a> Validate<'a> + Send + Sync> Sampler<u32, f32> for StructuredSamp
         res: &mut dyn HasSamplerResources<TokenId = u32>,
         logits: &'a mut Logits<u32, f32>,
     ) -> anyhow::Result<&'a mut Logits<u32, f32>> {
+        let mut valid_tokens = 0;
+        let mut best_token: Option<Logit> = None;
         res.with_last_tokens(&mut |previous_tokens| {
             let tokens = &previous_tokens[self.current_token_count.saturating_sub(1)..];
             let tokens = match self.tokenizer.decode(tokens) {
@@ -53,24 +57,42 @@ impl<V: for<'a> Validate<'a> + Send + Sync> Sampler<u32, f32> for StructuredSamp
             let new_tokens = self.tokenizer.decode_batch(&*single_tokens_ref).unwrap();
             let mut new_tokens = new_tokens.into_iter();
 
-            logits.retain(|_| {
+            for logit in logits.iter_mut() {
                 let new_token = new_tokens.next().unwrap();
-                let string = tokens.to_string() + &new_token;
-
-                if string.is_empty() {
-                    return true;
+                if new_token.is_empty() {
+                    logit.logit = 0.0;
+                    continue;
                 }
+                let string = tokens.to_string() + &new_token;
 
                 let status = self.structure.validate(ParseStream::new(&string));
 
                 match status {
-                    ParseStatus::Complete(Some(_)) => false,
-                    ParseStatus::Complete(None) => true,
-                    ParseStatus::Incomplete { .. } => !new_token.is_empty(),
-                    ParseStatus::Invalid => false,
+                    ParseStatus::Complete(Some(mut tok)) => {
+                        assert!(!tok.is_empty());
+                        logit.logit = 0.0;
+                    }
+                    ParseStatus::Invalid => {
+                        logit.logit = 0.0;
+                    }
+                    ParseStatus::Incomplete { .. } | ParseStatus::Complete(None) => {
+                        valid_tokens += 1;
+                        if best_token.is_none() || logit.logit > best_token.as_ref().unwrap().logit {
+                            best_token = Some(logit.clone());
+                        }
+                    }
                 }
-            });
+            }
         })?;
-        Ok(logits)
+        self.sampled = best_token;
+        if valid_tokens == 0 {
+            Err(anyhow::anyhow!("No valid tokens"))
+        } else {
+            Ok(logits)
+        }
+    }
+
+    fn sampled_token_id(&self) -> Option<u32>{
+        self.sampled.as_ref().map(|l| l.token_id)
     }
 }
