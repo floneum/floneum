@@ -1,6 +1,7 @@
-use llm_samplers::prelude::Logit;use super::structured_parser::{ParseStatus, ParseStream, Validate};
+use super::structured_parser::{ParseStatus, ParseStream, Validate};
 use crate::DynTokenizer;
 use crate::Tokenizer;
+use llm_samplers::prelude::Logit;
 use llm_samplers::prelude::Sampler;
 use llm_samplers::types::{HasSamplerResources, Logits};
 use std::fmt::Debug;
@@ -77,7 +78,8 @@ impl<V: for<'a> Validate<'a> + Send + Sync> Sampler<u32, f32> for StructuredSamp
                     }
                     ParseStatus::Incomplete { .. } | ParseStatus::Complete(None) => {
                         valid_tokens += 1;
-                        if best_token.is_none() || logit.logit > best_token.as_ref().unwrap().logit {
+                        if best_token.is_none() || logit.logit > best_token.as_ref().unwrap().logit
+                        {
                             best_token = Some(logit.clone());
                         }
                     }
@@ -92,7 +94,7 @@ impl<V: for<'a> Validate<'a> + Send + Sync> Sampler<u32, f32> for StructuredSamp
         }
     }
 
-    fn sampled_token_id(&self) -> Option<u32>{
+    fn sampled_token_id(&self) -> Option<u32> {
         self.sampled.as_ref().map(|l| l.token_id)
     }
 }
