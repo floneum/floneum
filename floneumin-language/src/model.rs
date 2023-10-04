@@ -19,6 +19,8 @@ pub trait Model: 'static {
 
     async fn start() -> Self;
 
+    fn requires_download() -> bool;
+
     fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync>;
 
     async fn generate_text_with_sampler(

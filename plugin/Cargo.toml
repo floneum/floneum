@@ -23,8 +23,8 @@ url = "2.4.0"
 anyhow = "1.0.71"
 tracing = "0.1.37"
 floneumite = { path = "../floneumite" }
-floneumin-language = { path = "../floneumin-language" }
+floneumin = { path = "../floneumin" }
 
 [features]
-metal = ["floneumin-language/metal"]
-cublas = ["floneumin-language/cublas"]
+metal = ["floneumin/metal"]
+cublas = ["floneumin/cublas"]

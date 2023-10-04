@@ -10,8 +10,8 @@ use hf_hub::{api::sync::Api, Repo, RepoType};
 use rand::{distributions::Distribution, SeedableRng};
 use tokenizers::Tokenizer;
 
-use candle_transformers::models::whisper::{self as m, audio, model};
-use model::{Config, Whisper};
+use candle_transformers::models::whisper::{self as m, audio, model, Config};
+use model::Whisper;
 
 use super::{DecodingResult, Segment};
 

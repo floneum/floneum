@@ -28,7 +28,7 @@ async fn main() {
         max_len: 2,
     };
     let structured = StructuredSampler::new(validator.clone(), 0, llm.tokenizer());
-    let chain = SamplerChain::new() + structured ;
+    let chain = SamplerChain::new() + structured;
     let mut words = llm
         .stream_text_with_sampler(prompt, Some(300), None, Arc::new(Mutex::new(chain)))
         .await

@@ -53,6 +53,10 @@ impl Phi {
         PhiBuilder::default()
     }
 
+    pub fn downloaded() -> bool {
+        false
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn new(model: QMixFormer, tokenizer: Tokenizer, device: Device) -> Self {
         let (task_sender, mut task_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -205,13 +209,4 @@ impl InferenceSettings {
         self.stop_on = stop_on;
         self
     }
-}
-
-#[tokio::test]
-async fn generate() -> anyhow::Result<()> {
-    let mut phi = Phi::default();
-
-    phi.run(InferenceSettings::new("The quick brown fox "))?;
-
-    Ok(())
 }

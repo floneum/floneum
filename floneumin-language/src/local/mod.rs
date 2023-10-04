@@ -2,7 +2,7 @@ pub use crate::local::bert::*;
 pub use crate::local::mistral::*;
 pub use crate::local::phi::*;
 pub use crate::local::session::*;
-use crate::{download::download, embedding::Embedding, model::*};
+use crate::{embedding::Embedding, model::*};
 use floneumin_sample::Tokenizer;
 use floneumin_streams::sender::ChannelTextStream;
 use futures_util::StreamExt;
@@ -35,7 +35,7 @@ macro_rules! local_model {
             type TextStream = ChannelTextStream<String>;
 
             async fn start() -> Self {
-                let model = download(Self::model_type()).await;
+                let model = Self::model_type().download().await;
                 let session = model.start_session(InferenceSessionConfig {
                     n_batch: 64,
                     n_threads: num_cpus::get(),
@@ -43,6 +43,10 @@ macro_rules! local_model {
                 });
 
                 LocalSession::new(model, session)
+            }
+
+            fn requires_download() -> bool {
+                Self::model_type().requires_download()
             }
 
             fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {

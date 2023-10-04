@@ -13,6 +13,10 @@ impl crate::model::Model for Phi {
         Phi::default()
     }
 
+    fn requires_download() -> bool {
+        !Phi::downloaded()
+    }
+
     fn tokenizer(&self) -> Arc<dyn floneumin_sample::Tokenizer + Send + Sync> {
         self.get_tokenizer() as Arc<dyn floneumin_sample::Tokenizer + Send + Sync>
     }

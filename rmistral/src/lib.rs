@@ -47,6 +47,10 @@ impl Mistral {
         MistralBuilder::default()
     }
 
+    pub fn downloaded() -> bool {
+        false
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn new(model: Model, tokenizer: Tokenizer, device: Device) -> Self {
         let (task_sender, mut task_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -229,9 +233,9 @@ async fn generate() -> anyhow::Result<()> {
         candle_core::utils::with_f16c()
     );
 
-    let mut Mistral = Mistral::default();
+    let mut mistral = Mistral::default();
 
-    Mistral.run(InferenceSettings::new("The quick brown fox "))?;
+    mistral.run(InferenceSettings::new("The quick brown fox "))?;
 
     Ok(())
 }

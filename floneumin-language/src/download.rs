@@ -74,7 +74,17 @@ fn model_path(url: &Url) -> PathBuf {
     format!("./{}", url.path_segments().unwrap().last().unwrap()).into()
 }
 
-pub async fn download(model_type: ModelType) -> Box<dyn Model> {
+impl ModelType {
+    pub async fn download(&self) -> Box<dyn Model> {
+        download(self.clone()).await
+    }
+
+    pub fn requires_download(&self) -> bool {
+        !model_downloaded(self)
+    }
+}
+
+async fn download(model_type: ModelType) -> Box<dyn Model> {
     // https://www.reddit.com/r/LocalLLaMA/wiki/models/
     let url = download_url(&model_type);
     let architecture = match &model_type {

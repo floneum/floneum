@@ -1,4 +1,5 @@
-use crate::floneumin_sample::structured_parser::StructureParser;use crate::context::search::SearchQuery;
+use crate::context::search::SearchQuery;
+use crate::floneumin_sample::structured_parser::StructureParser;
 use crate::index::IntoDocuments;
 use crate::tool::Tool;
 
@@ -16,14 +17,11 @@ impl Tool for WebSearchTool {
 
     fn constraints(&self) -> StructureParser {
         StructureParser::Then {
-            first: Box::new(StructureParser::Literal (
-                "Search Query".to_string()
-            )),
-            second:
-            Box::new(StructureParser::String {
+            first: Box::new(StructureParser::Literal("Search Query".to_string())),
+            second: Box::new(StructureParser::String {
                 min_len: 1,
                 max_len: 100,
-            })
+            }),
         }
     }
 

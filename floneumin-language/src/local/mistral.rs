@@ -13,6 +13,10 @@ impl crate::model::Model for Mistral {
         Mistral::default()
     }
 
+    fn requires_download() -> bool {
+        !Mistral::downloaded()
+    }
+
     fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
         self.get_tokenizer() as Arc<dyn Tokenizer + Send + Sync>
     }
