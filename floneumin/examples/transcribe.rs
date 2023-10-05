@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use floneumin_sound::model::{
-    whisper::{WhisperModel, WhisperModelSource},
+    whisper::{WhisperModel},
     TranscribeAudioStreamExt,
 };
 use futures_util::StreamExt;
@@ -10,8 +10,7 @@ use futures_util::StreamExt;
 async fn main() -> Result<(), anyhow::Error> {
     let input = floneumin_sound::source::mic::MicInput::default();
     let stream = input.stream()?;
-    let model = WhisperModel::builder()
-        .build()?;
+    let model = WhisperModel::builder().build()?;
     let mut transcribed = stream
         .stream()
         .subscribe_stream(Duration::from_secs(30))

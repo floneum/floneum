@@ -62,7 +62,10 @@ pub struct InferenceSettings {
     threshold: f32,
 
     /// List of x,y coordinates, between 0 and 1 (0.5 is at the middle of the image).
-    points: Vec<(f64, f64)>,
+    goal_points: Vec<(f64, f64)>,
+
+    /// List of x,y coordinates, between 0 and 1 (0.5 is at the middle of the image).
+    avoid_points: Vec<(f64, f64)>,
 
     image: ImageBuffer<image::Rgba<u8>, Vec<u8>>,
 }
@@ -73,7 +76,8 @@ impl InferenceSettings {
         image.copy_from(&input, 0, 0)?;
         Ok(Self {
             threshold: 0.,
-            points: Vec::new(),
+            goal_points: Vec::new(),
+            avoid_points: Vec::new(),
             image,
         })
     }
@@ -88,13 +92,23 @@ impl InferenceSettings {
     }
 
     /// Add a point to the list of points to segment.
-    pub fn add_point(&mut self, x: f64, y: f64) {
-        self.points.push((x, y));
+    pub fn add_goal_points(&mut self, x: f64, y: f64) {
+        self.goal_points.push((x, y));
     }
 
     /// Set the list of points to segment.
-    pub fn set_points(&mut self, points: Vec<(f64, f64)>) {
-        self.points = points;
+    pub fn set_goal_points(&mut self, points: Vec<(f64, f64)>) {
+        self.goal_points = points;
+    }
+
+    /// Add a point to the list of points to avoid.
+    pub fn add_avoid_points(&mut self, x: f64, y: f64) {
+        self.avoid_points.push((x, y));
+    }
+
+    /// Set the list of points to avoid.
+    pub fn set_avoid_points(&mut self, points: Vec<(f64, f64)>) {
+        self.avoid_points = points;
     }
 
     /// Set the image to segment.
@@ -150,7 +164,8 @@ impl SegmentAnything {
     pub fn segment_from_points(&self, settings: InferenceSettings) -> anyhow::Result<()> {
         let InferenceSettings {
             threshold,
-            points,
+            goal_points,
+            avoid_points,
             image,
         } = settings;
 
@@ -158,6 +173,17 @@ impl SegmentAnything {
 
         let mut output_image = image.clone();
         let image_tensor = self.image_to_tensor(image)?;
+
+        let points = {
+            let mut points = Vec::new();
+            for (x, y) in goal_points {
+                points.push((x, y, true));
+            }
+            for (x, y) in avoid_points {
+                points.push((x, y, false));
+            }
+            points
+        };
 
         let (mask, _iou_predictions) = self.sam.forward(&image_tensor, &*points, false)?;
 

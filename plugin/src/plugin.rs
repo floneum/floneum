@@ -1,5 +1,7 @@
-use crate::host::LINKER;use wit_component::ComponentEncoder;use crate::host::ENGINE;use crate::exports::plugins::main::definitions::*;
+use crate::exports::plugins::main::definitions::*;
 use crate::host::State;
+use crate::host::ENGINE;
+use crate::host::LINKER;
 use crate::PluginWorld;
 use anyhow::Error;
 use floneumite::PackageIndexEntry;
@@ -17,6 +19,7 @@ use std::sync::RwLockReadGuard;
 use tokio::sync::broadcast;
 use wasmtime::component::Component;
 use wasmtime::Store;
+use wit_component::ComponentEncoder;
 
 #[tracing::instrument]
 pub fn load_plugin(path: &Path) -> Plugin {

@@ -26,7 +26,6 @@ use wasmtime_wasi::preview2::{self, DirPerms, FilePerms, WasiView};
 use wasmtime_wasi::Dir;
 use wit_component::ComponentEncoder;
 
-
 pub(crate) static LINKER: Lazy<Linker<State>> = Lazy::new(|| {
     let mut linker = Linker::new(&ENGINE);
     let l = &mut linker;
@@ -79,14 +78,14 @@ impl MultiPluginState {
     fn vector_db_get(
         &self,
         id: exports::plugins::main::definitions::EmbeddingDbId,
-    ) -> Option<&VectorDB<String>> {
+    ) -> Option<&VectorDB<String, UnknownVectorSpace>> {
         self.vector_dbs.get(id.id as usize)
     }
 
     fn vector_db_get_mut(
         &mut self,
         id: exports::plugins::main::definitions::EmbeddingDbId,
-    ) -> Option<&mut VectorDB<String>> {
+    ) -> Option<&mut VectorDB<String, UnknownVectorSpace>> {
         self.vector_dbs.get_mut(id.id as usize)
     }
 
