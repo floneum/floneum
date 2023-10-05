@@ -11,7 +11,6 @@ async fn main() -> Result<(), anyhow::Error> {
     let input = floneumin_sound::source::mic::MicInput::default();
     let stream = input.stream()?;
     let model = WhisperModel::builder()
-        .model(WhisperModelSource::TinyEn)
         .build()?;
     let mut transcribed = stream
         .stream()
