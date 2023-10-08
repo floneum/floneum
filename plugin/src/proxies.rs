@@ -577,3 +577,62 @@ impl Output {
         }
     }
 }
+
+impl Clone for Definition{
+    fn clone(&self) -> Self {
+        Definition {
+            name: self.name.clone(),
+            description: self.description.clone(),
+            inputs: self.inputs.clone(),
+            outputs: self.outputs.clone(),
+            examples: self.examples.clone(),
+        }
+    }
+}
+
+impl Clone for Example{
+    fn clone(&self) -> Self {
+        Example {
+            name: self.name.clone(),
+            inputs: self.inputs.clone(),
+            outputs: self.outputs.clone(),
+        }
+    }
+}
+
+impl Clone for Input {
+    fn clone(&self) -> Self {
+        match self {
+            Input::Single(value) => Input::Single(value.clone()),
+            Input::Many(values) => Input::Many(values.clone()),
+        }
+    }
+}
+
+impl Clone for Output {
+    fn clone(&self) -> Self {
+        match self {
+            Output::Single(value) => Output::Single(value.clone()),
+            Output::Many(values) => Output::Many(values.clone()),
+            Output::Halt => Output::Halt,
+        }
+    }
+}
+
+impl Clone for PrimitiveValue {
+    fn clone(&self) -> Self {
+        match self {
+            PrimitiveValue::Number(value) => PrimitiveValue::Number(value.clone()),
+            PrimitiveValue::Text(value) => PrimitiveValue::Text(value.clone()),
+            PrimitiveValue::File(value) => PrimitiveValue::File(value.clone()),
+            PrimitiveValue::Folder(value) => PrimitiveValue::Folder(value.clone()),
+            PrimitiveValue::Embedding(value) => PrimitiveValue::Embedding(value.clone()),
+            PrimitiveValue::Database(value) => PrimitiveValue::Database(Resource::new_borrow(value.rep())),
+            PrimitiveValue::Model(value) => PrimitiveValue::Model(Resource::new_borrow(value.rep())),
+            PrimitiveValue::ModelType(value) => PrimitiveValue::ModelType(value.clone()),
+            PrimitiveValue::Boolean(value) => PrimitiveValue::Boolean(value.clone()),
+            PrimitiveValue::Page(value) => PrimitiveValue::Page(Resource::new_borrow(value.rep())),
+            PrimitiveValue::Node(value) => PrimitiveValue::Node(Resource::new_borrow(value.rep())),
+        }
+    }
+}

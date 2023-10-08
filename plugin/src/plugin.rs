@@ -1,8 +1,8 @@
+use crate::Both;
 use crate::exports::plugins::main::definitions::*;
 use crate::host::State;
 use crate::host::ENGINE;
 use crate::host::LINKER;
-use crate::PluginWorld;
 use anyhow::Error;
 use floneumite::PackageIndexEntry;
 use pollster::FutureExt;
@@ -50,6 +50,16 @@ pub fn load_plugin_from_source(source: PackageIndexEntry) -> Plugin {
 pub struct PluginMetadata {
     name: String,
     description: String,
+}
+
+impl PluginMetadata {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn description(&self) -> &str {
+        &self.description
+    }
 }
 
 pub struct Plugin {
@@ -118,7 +128,7 @@ impl Plugin {
         let mut store = Store::new(&ENGINE, State::default());
         let component = self.component().await?;
         let (world, _instance) =
-            PluginWorld::instantiate_async(&mut store, component, &*LINKER).await?;
+            Both::instantiate_async(&mut store, component, &*LINKER).await?;
         let structure = world.interface0.call_structure(&mut store).await.unwrap();
 
         let _ = self.definition.set(structure);
@@ -126,7 +136,7 @@ impl Plugin {
         Ok(self.definition.get().unwrap())
     }
 
-    async fn metadata(&self) -> anyhow::Result<&PluginMetadata> {
+    pub async fn metadata(&self) -> anyhow::Result<&PluginMetadata> {
         if let Some(metadata) = self.metadata.get() {
             return Ok(metadata);
         }
@@ -145,7 +155,7 @@ impl Plugin {
         let mut store = Store::new(&ENGINE, state);
         let component = self.component().await?;
         let definition = self.definition().await?;
-        let (world, _instance) = PluginWorld::instantiate_async(&mut store, component, &LINKER)
+        let (world, _instance) = Both::instantiate_async(&mut store, component, &LINKER)
             .await
             .unwrap();
 

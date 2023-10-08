@@ -1,5 +1,6 @@
 mod host;
-// mod plugin;
+mod plugin;
+pub use plugin::*;
 mod embedding_db;
 mod llm;
 mod node;
