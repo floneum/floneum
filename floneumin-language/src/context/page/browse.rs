@@ -75,7 +75,7 @@ pub struct Tab {
 impl Tab {
     pub fn new(url: Url, headless: bool) -> Result<Self, anyhow::Error> {
         let tab = BROWSER.new_tab(headless)?;
-        tab.goto(&url.to_string())?;
+        tab.goto(url.as_ref())?;
         Ok(tab)
     }
 

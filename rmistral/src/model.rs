@@ -19,7 +19,7 @@ impl MistralInner {
     pub fn new(model: Model, tokenizer: Tokenizer, device: Device) -> Self {
         Self {
             model,
-            device: device,
+            device,
             tokenizer,
         }
     }
@@ -94,7 +94,7 @@ impl MistralInner {
                 prev_index = current_index;
                 current_index = tokens.len();
                 let token = text.1.to_string();
-                if let Err(_) = out.send(token) {
+                if out.send(token).is_err() {
                     return Ok(());
                 }
             }
@@ -105,7 +105,7 @@ impl MistralInner {
             .tokenizer
             .decode(&tokens[prev_index..], true)
             .map_err(E::msg)?;
-        if let Err(_) = out.send(token) {
+        if out.send(token).is_err() {
             return Ok(());
         }
 

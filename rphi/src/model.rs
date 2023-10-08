@@ -22,7 +22,7 @@ impl PhiInner {
     pub fn new(model: QMixFormer, tokenizer: Tokenizer, device: Device) -> Self {
         Self {
             model,
-            device: device,
+            device,
             tokenizer,
         }
     }
@@ -54,7 +54,7 @@ impl PhiInner {
         };
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
         let mut text = String::new();
-        for index in 0..sample_len as usize {
+        for index in 0..sample_len {
             let context_size = if index > 0 { 1 } else { tokens.len() };
             let ctxt = &tokens[tokens.len().saturating_sub(context_size)..];
             let input = Tensor::new(ctxt, &self.device)?.unsqueeze(0)?;
@@ -129,7 +129,7 @@ pub fn sample_token(
     previous_tokens: &[u32],
     last_logits: impl IntoIterator<Item = f32>,
 ) -> anyhow::Result<u32> {
-    Ok(Logits::try_from_iter(last_logits.into_iter())?
+    Logits::try_from_iter(last_logits.into_iter())?
         .sample_token(
             &mut SamplerResources {
                 previous_tokens,
@@ -137,5 +137,5 @@ pub fn sample_token(
             },
             sampler,
         )?
-        .ok_or_else(|| anyhow::anyhow!("No token sampled"))?)
+        .ok_or_else(|| anyhow::anyhow!("No token sampled"))
 }

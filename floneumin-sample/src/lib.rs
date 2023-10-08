@@ -96,10 +96,10 @@ where
     D: Decoder,
 {
     fn decode(&self, ids: &[u32]) -> anyhow::Result<Cow<'_, str>> {
-        Ok(self
-            .decode(ids.into(), false)
+        self
+            .decode(ids, false)
             .map(|s| s.into())
-            .map_err(|e| anyhow::anyhow!(e))?)
+            .map_err(|e| anyhow::anyhow!(e))
     }
 }
 
@@ -153,9 +153,8 @@ impl Tokenizer for FasterHuggingFaceTokenizer {
             tokens.push_str(
                 self.single_token_map
                     .get(id)
-                    .clone()
                     .map(|s| &**s)
-                    .unwrap_or_else(|| "".into()),
+                    .unwrap_or_else(|| ""),
             );
         }
         Ok(tokens.into())
@@ -175,7 +174,6 @@ impl Tokenizer for FasterHuggingFaceTokenizer {
                 token.push_str(
                     self.single_token_map
                         .get(id)
-                        .clone()
                         .map(|s| &**s)
                         .unwrap_or(""),
                 );
@@ -194,9 +192,9 @@ impl Tokenizer for tokenizers::Tokenizer {
             PreTokenizerWrapper,
             PostProcessorWrapper,
             DecoderWrapper,
-        > = &*self;
+        > = self;
         Ok(as_impl
-            .decode(ids.into(), false)
+            .decode(ids, false)
             .map_err(|e| anyhow::anyhow!(e))?
             .into())
     }

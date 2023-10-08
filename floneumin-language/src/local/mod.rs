@@ -153,7 +153,7 @@ impl crate::model::GenerationParameters {
                     move || {
                         Box::new(
                             SampleRepetition::default()
-                                .penalty(repetition_penalty as f32)
+                                .penalty(repetition_penalty)
                                 .last_n(repetition_penalty_range as usize),
                         )
                     },

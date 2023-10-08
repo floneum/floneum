@@ -51,14 +51,14 @@ impl Page {
                     .html_ref()
                     .await?
                     .select(&selector)
-                    .map(|e| Node::Static(e))
+                    .map(Node::Static)
                     .collect())
             }
             Self::Dynamic(page) => Ok(page
                 .inner
                 .wait_for_elements(selector)?
                 .into_iter()
-                .map(|e| Node::Dynamic(e))
+                .map(Node::Dynamic)
                 .collect()),
         }
     }

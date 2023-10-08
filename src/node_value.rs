@@ -1,4 +1,3 @@
-
 use floneum_plugin::plugins::main::types::*;
 use serde::{Deserialize, Serialize};
 

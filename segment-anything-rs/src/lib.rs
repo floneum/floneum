@@ -72,7 +72,7 @@ pub struct InferenceSettings {
 
 impl InferenceSettings {
     pub fn new<I: GenericImageView<Pixel = Rgba<u8>>>(input: I) -> anyhow::Result<Self> {
-        let mut image = ImageBuffer::new(input.width() as u32, input.height() as u32);
+        let mut image = ImageBuffer::new(input.width(), input.height());
         image.copy_from(&input, 0, 0)?;
         Ok(Self {
             threshold: 0.,
@@ -116,7 +116,7 @@ impl InferenceSettings {
         &mut self,
         image: I,
     ) -> anyhow::Result<()> {
-        self.image = ImageBuffer::new(image.width() as u32, image.height() as u32);
+        self.image = ImageBuffer::new(image.width(), image.height());
         Ok(self.image.copy_from(&image, 0, 0)?)
     }
 }
@@ -185,7 +185,7 @@ impl SegmentAnything {
             points
         };
 
-        let (mask, _iou_predictions) = self.sam.forward(&image_tensor, &*points, false)?;
+        let (mask, _iou_predictions) = self.sam.forward(&image_tensor, &points, false)?;
 
         let mask = (mask.ge(threshold)? * 255.)?;
         let (_one, h, w) = mask.dims3()?;

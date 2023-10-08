@@ -1,10 +1,8 @@
 use crate::Color;
 use dioxus::prelude::*;
 use floneum_plugin::{
-    exports::plugins::main::definitions::{
-        Input, Output, 
-    },
-    plugins::main::types::*
+    exports::plugins::main::definitions::{Input, Output},
+    plugins::main::types::*,
 };
 use std::path::PathBuf;
 

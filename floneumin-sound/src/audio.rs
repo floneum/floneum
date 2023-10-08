@@ -28,7 +28,7 @@ impl From<&cpal::SupportedStreamConfig> for AudioSpec {
             sample_rate: config.sample_rate().0,
             bits_per_sample: config.sample_format().sample_size() as u16 * 8,
             float: config.sample_format().is_float(),
-            channels: config.channels() as u16,
+            channels: config.channels(),
         }
     }
 }
@@ -93,7 +93,7 @@ where
             .map(|s| s.to_float_sample().into())
             .collect();
         let buffer = rodio::buffer::SamplesBuffer::new(
-            self.spec.channels as u16,
+            self.spec.channels,
             self.spec.sample_rate,
             samples,
         );
@@ -144,7 +144,7 @@ where
             .map(|s| s.to_float_sample().into())
             .collect();
         Ok(rodio::buffer::SamplesBuffer::new(
-            self.spec.channels as u16,
+            self.spec.channels,
             self.spec.sample_rate,
             samples,
         ))

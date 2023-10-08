@@ -70,7 +70,7 @@ impl ActiveLinks {
     }
 
     async fn wait(&self) {
-        (&*self).await;
+        self.await;
     }
 }
 

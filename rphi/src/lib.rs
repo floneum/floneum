@@ -147,7 +147,7 @@ impl PhiBuilder {
 
         let config = Config::v1_5();
         let (model, device) = {
-            let vb = candle_transformers::quantized_var_builder::VarBuilder::from_gguf(&filename)?;
+            let vb = candle_transformers::quantized_var_builder::VarBuilder::from_gguf(filename)?;
             let model = QMixFormer::new(&config, vb)?;
 
             (model, device(self.cpu)?)

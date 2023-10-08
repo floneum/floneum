@@ -96,10 +96,8 @@ impl DocumentFolder {
                 if let Ok(folder) = DocumentFolder::try_from(path) {
                     folder.start_into_documents(set).await?;
                 }
-            } else {
-                if let Ok(document) = FsDocument::try_from(path) {
-                    set.spawn(document.into_document());
-                }
+            } else if let Ok(document) = FsDocument::try_from(path) {
+                set.spawn(document.into_document());
             }
         }
         Ok(())

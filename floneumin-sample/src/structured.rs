@@ -55,7 +55,7 @@ impl<V: for<'a> Validate<'a> + Send + Sync> Sampler<u32, f32> for StructuredSamp
                 .iter()
                 .map(|v| v.as_slice())
                 .collect::<Vec<_>>();
-            let new_tokens = self.tokenizer.decode_batch(&*single_tokens_ref).unwrap();
+            let new_tokens = self.tokenizer.decode_batch(&single_tokens_ref).unwrap();
             let mut new_tokens = new_tokens.into_iter();
 
             for logit in logits.iter_mut() {

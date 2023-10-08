@@ -47,7 +47,7 @@ impl<S: Stream<Item = I>, I: TimeStamped + Clone> Stream for WindowedStream<S, I
             .window
             .back()
             .map(|e| e.start())
-            .unwrap_or_else(|| std::time::Instant::now());
+            .unwrap_or_else(std::time::Instant::now);
         let window_end_time = window_start_time + *self_.duration;
         loop {
             // First poll the backing stream

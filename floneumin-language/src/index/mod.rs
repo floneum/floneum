@@ -79,11 +79,11 @@ pub struct DocumentSnippetRef<'a> {
 
 impl DocumentSnippetRef<'_> {
     pub fn title(&self) -> &str {
-        &*self.title
+        &self.title
     }
 
     pub fn body(&self) -> &str {
-        &*self.body
+        &self.body
     }
 
     pub fn score(&self) -> f32 {

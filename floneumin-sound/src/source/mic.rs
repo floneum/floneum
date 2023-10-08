@@ -36,7 +36,7 @@ impl MicInput {
     ) -> Result<SamplesBuffer<f32>, anyhow::Error> {
         let stream = self.stream()?;
         tokio::time::sleep_until(deadline).await;
-        Ok(stream.stream().reader()?)
+        stream.stream().reader()
     }
 
     pub fn record_until_blocking(
@@ -45,7 +45,7 @@ impl MicInput {
     ) -> Result<SamplesBuffer<f32>, anyhow::Error> {
         let stream = self.stream()?;
         std::thread::sleep(deadline - std::time::Instant::now());
-        Ok(stream.stream().reader()?)
+        stream.stream().reader()
     }
 
     pub fn stream(&self) -> Result<MicStream, anyhow::Error> {

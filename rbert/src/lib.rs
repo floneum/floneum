@@ -114,15 +114,12 @@ impl Bert {
     }
 }
 
+#[derive(Default)]
 pub struct BertInferenceOptions {
     cpu: bool,
 }
 
-impl Default for BertInferenceOptions {
-    fn default() -> Self {
-        Self { cpu: false }
-    }
-}
+
 
 impl BertInferenceOptions {
     pub fn with_cpu(mut self, cpu: bool) -> Self {

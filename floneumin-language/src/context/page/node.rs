@@ -69,7 +69,7 @@ impl<'a> Node<'a> {
                         .ok_or_else(|| anyhow::anyhow!("No child found"))?,
                 ))
             }
-            Self::Dynamic(node) => Ok(Self::Dynamic(node.find_element(&query)?)),
+            Self::Dynamic(node) => Ok(Self::Dynamic(node.find_element(query)?)),
         }
     }
 }

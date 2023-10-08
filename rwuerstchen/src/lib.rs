@@ -271,7 +271,7 @@ impl Wuerstchen {
         let clip_config = stable_diffusion::clip::Config::wuerstchen();
         let clip = stable_diffusion::build_clip_transformer(
             &clip_config,
-            &clip_weights,
+            clip_weights,
             &device,
             DType::F32,
         )?;
@@ -279,7 +279,7 @@ impl Wuerstchen {
         let prior_clip_config = stable_diffusion::clip::Config::wuerstchen_prior();
         let prior_clip = stable_diffusion::build_clip_transformer(
             &prior_clip_config,
-            &prior_clip_weights,
+            prior_clip_weights,
             &device,
             DType::F32,
         )?;
