@@ -32,10 +32,10 @@ readability = { version = "0.2.0", default_features = false }
 tantivy = "0.21.0"
 tempfile = "3.8.0"
 rss = { version = "2.0.6", features = ["atom"] }
-scraper = "0.17.1"
+scraper = { git = "https://github.com/causal-agent/scraper", features = ["atomic"] }
 llm = { git = "https://github.com/rustformers/llm" }
 floneumite = { path = "../floneumite" }
-headless_chrome = {git = "https://github.com/atroche/rust-headless-chrome", features = ["fetch"]}
+headless_chrome = { git = "https://github.com/atroche/rust-headless-chrome", features = ["fetch"] }
 candle-core = { git = "https://github.com/huggingface/candle" }
 tokio-util = { version = "0.7.9", features = ["rt"] }
 crossbeam = "0.8.2"
@@ -55,6 +55,8 @@ async-recursion = "1.0.5"
 tokenizers = { version = "0.13.4" }
 rustc-hash = "1.1.0"
 floneumin-sample = { path = "../floneumin-sample" }
+ego-tree = "0.6.2"
+image = "0.24.7"
 
 [features]
 metal = ["llm/metal", "rphi/accelerate", "rbert/accelerate"]

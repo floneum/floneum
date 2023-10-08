@@ -1,4 +1,5 @@
 use headless_chrome::{Browser as HeadlessBrowser, Element, LaunchOptions};
+use image::{DynamicImage, RgbaImage};
 use once_cell::sync::Lazy;
 use scraper::Html;
 use std::sync::Arc;
@@ -68,7 +69,7 @@ impl Browser {
 
 #[derive(Clone)]
 pub struct Tab {
-    inner: Arc<headless_chrome::Tab>,
+    pub(crate) inner: Arc<headless_chrome::Tab>,
 }
 
 impl Tab {
@@ -76,6 +77,10 @@ impl Tab {
         let tab = BROWSER.new_tab(headless)?;
         tab.goto(&url.to_string())?;
         Ok(tab)
+    }
+
+    pub fn inner(&self) -> Arc<headless_chrome::Tab> {
+        self.inner.clone()
     }
 
     #[tracing::instrument]
@@ -92,14 +97,15 @@ impl Tab {
     }
 
     #[tracing::instrument]
-    pub fn screenshot(&self) -> Result<Vec<u8>, anyhow::Error> {
+    pub fn screenshot(&self) -> Result<DynamicImage, anyhow::Error> {
         let bytes = self.inner.capture_screenshot(
             headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Jpeg,
             None,
             None,
             false,
         )?;
-        Ok(bytes)
+        let image = image::load_from_memory(&bytes)?;
+        Ok(image)
     }
 
     pub fn url(&self) -> Url {

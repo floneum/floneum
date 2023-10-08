@@ -14,7 +14,6 @@ interface imports {
 
 interface types {
   enum browser-mode {
-    html,
     headless,
     headfull,
   }

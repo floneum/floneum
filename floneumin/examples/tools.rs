@@ -21,7 +21,7 @@ async fn main() {
             &prompt,
             GenerationParameters::default()
                 .with_max_length(300)
-                .with_stop_on("Action:"),
+                .with_stop_on("Action:".to_string()),
         )
         .await
         .unwrap();

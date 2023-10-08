@@ -6,8 +6,10 @@ use crate::plugins::main::types::{
 use crate::Exports;
 use floneumin::floneumin_language::context::document::Document;
 
+use floneumin::floneumin_language::context::page::DynamicNodeId;
 use floneumin::floneumin_language::model::*;
 use floneumin::floneumin_language::vector_db::VectorDB;
+use headless_chrome::Tab;
 use once_cell::sync::Lazy;
 
 use slab::Slab;
@@ -67,12 +69,20 @@ pub(crate) enum StructureType {
     Sequence(SequenceParameters),
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct AnyNodeRef {
+    pub(crate) node_id: DynamicNodeId,
+    pub(crate) page_id: usize,
+}
+
 pub struct State {
     pub(crate) logs: Arc<RwLock<Vec<String>>>,
     pub(crate) structures: Slab<StructureType>,
     pub(crate) models: Slab<DynModel>,
     pub(crate) embedders: Slab<DynEmbedder>,
     pub(crate) embedding_dbs: Slab<VectorDB<Document>>,
+    pub(crate) nodes: Slab<AnyNodeRef>,
+    pub(crate) pages: Slab<Arc<Tab>>,
     pub(crate) plugin_state: HashMap<Vec<u8>, Vec<u8>>,
     pub(crate) table: preview2::Table,
     pub(crate) ctx: preview2::WasiCtx,
@@ -101,6 +111,8 @@ impl Default for State {
             embedders: Default::default(),
             models: Default::default(),
             embedding_dbs: Default::default(),
+            nodes: Default::default(),
+            pages: Default::default(),
             logs: Default::default(),
             table,
             ctx,
