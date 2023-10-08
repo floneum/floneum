@@ -2,13 +2,7 @@ package plugins:main
 
 interface imports {
   use types.{embedding, structure, model, model-type, embedding-db, node, page}
-  get-request: func(url: string, headers: list<header>) -> string
-
-  record header {
-    key: string,
-    value: string,
-  }
-
+  
   store: func(key: list<u8>, value: list<u8>)
 
   load: func(key: list<u8>) -> list<u8>
