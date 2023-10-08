@@ -3,7 +3,8 @@ use crate::plugins::main::imports::{self};
 use crate::plugins::main::types::{
     EitherStructure, NumberParameters, SequenceParameters, ThenStructure, UnsignedRange,
 };
-use crate::Exports;
+use crate::Both;
+
 use floneumin::floneumin_language::context::document::Document;
 
 use floneumin::floneumin_language::context::page::DynamicNodeId;
@@ -26,7 +27,7 @@ use wasmtime_wasi::Dir;
 pub(crate) static LINKER: Lazy<Linker<State>> = Lazy::new(|| {
     let mut linker = Linker::new(&ENGINE);
     let l = &mut linker;
-    Exports::add_to_linker(l, |x| x).unwrap();
+    Both::add_to_linker(l, |x| x).unwrap();
     preview2::command::add_to_linker(l).unwrap();
     // preview2::bindings::filesystem::types::add_to_linker(&mut linker, |x| x).unwrap();
     // preview2::bindings::filesystem::preopens::add_to_linker(&mut linker, |x| x).unwrap();

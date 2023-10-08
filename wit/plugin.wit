@@ -180,3 +180,8 @@ world exports {
 world plugin-world {
   export definitions
 }
+
+world both {
+  import imports
+  export definitions
+}
