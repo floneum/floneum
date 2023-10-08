@@ -1,5 +1,5 @@
 use headless_chrome::{Browser as HeadlessBrowser, Element, LaunchOptions};
-use image::{DynamicImage, RgbaImage};
+use image::DynamicImage;
 use once_cell::sync::Lazy;
 use scraper::Html;
 use std::sync::Arc;

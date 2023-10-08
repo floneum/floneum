@@ -157,15 +157,11 @@ impl From<MyPrimitiveValue> for PrimitiveValue {
                 PrimitiveValue::Embedding(Embedding { vector: value })
             }
             MyPrimitiveValue::Model(value) => PrimitiveValue::Model(Resource::new_own(value)),
-            MyPrimitiveValue::Database(value) => {
-                PrimitiveValue::Database(Resource::new_own(value))
-            }
+            MyPrimitiveValue::Database(value) => PrimitiveValue::Database(Resource::new_own(value)),
             MyPrimitiveValue::ModelType(value) => PrimitiveValue::ModelType(value.into()),
             MyPrimitiveValue::Boolean(value) => PrimitiveValue::Boolean(value),
             MyPrimitiveValue::Page(value) => PrimitiveValue::Page(Resource::new_own(value)),
-            MyPrimitiveValue::Node(value) => PrimitiveValue::Node(Resource::new_own(
-                value
-            )),
+            MyPrimitiveValue::Node(value) => PrimitiveValue::Node(Resource::new_own(value)),
         }
     }
 }
@@ -253,7 +249,7 @@ enum MyGptNeoXType {
 }
 
 impl From<&GptNeoXType> for MyGptNeoXType {
-    fn from(value:& GptNeoXType) -> Self {
+    fn from(value: &GptNeoXType) -> Self {
         match value {
             GptNeoXType::LargePythia => MyGptNeoXType::LargePythia,
             GptNeoXType::TinyPythia => MyGptNeoXType::TinyPythia,
@@ -578,7 +574,7 @@ impl Output {
     }
 }
 
-impl Clone for Definition{
+impl Clone for Definition {
     fn clone(&self) -> Self {
         Definition {
             name: self.name.clone(),
@@ -590,7 +586,7 @@ impl Clone for Definition{
     }
 }
 
-impl Clone for Example{
+impl Clone for Example {
     fn clone(&self) -> Self {
         Example {
             name: self.name.clone(),
@@ -627,8 +623,12 @@ impl Clone for PrimitiveValue {
             PrimitiveValue::File(value) => PrimitiveValue::File(value.clone()),
             PrimitiveValue::Folder(value) => PrimitiveValue::Folder(value.clone()),
             PrimitiveValue::Embedding(value) => PrimitiveValue::Embedding(value.clone()),
-            PrimitiveValue::Database(value) => PrimitiveValue::Database(Resource::new_borrow(value.rep())),
-            PrimitiveValue::Model(value) => PrimitiveValue::Model(Resource::new_borrow(value.rep())),
+            PrimitiveValue::Database(value) => {
+                PrimitiveValue::Database(Resource::new_borrow(value.rep()))
+            }
+            PrimitiveValue::Model(value) => {
+                PrimitiveValue::Model(Resource::new_borrow(value.rep()))
+            }
             PrimitiveValue::ModelType(value) => PrimitiveValue::ModelType(value.clone()),
             PrimitiveValue::Boolean(value) => PrimitiveValue::Boolean(value.clone()),
             PrimitiveValue::Page(value) => PrimitiveValue::Page(Resource::new_borrow(value.rep())),

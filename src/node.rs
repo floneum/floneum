@@ -2,8 +2,8 @@ use crate::current_node::FocusedNodeInfo;
 use crate::Color;
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
 use dioxus_free_icons::Icon;
-use floneum_plugin::exports::plugins::main::definitions::ValueType;
 use floneum_plugin::PluginInstance;
+use floneum_plugin::plugins::main::types::ValueType;
 use petgraph::{graph::NodeIndex, stable_graph::DefaultIx};
 use serde::{Deserialize, Serialize};
 

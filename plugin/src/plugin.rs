@@ -1,8 +1,8 @@
-use crate::Both;
 use crate::exports::plugins::main::definitions::*;
 use crate::host::State;
 use crate::host::ENGINE;
 use crate::host::LINKER;
+use crate::Both;
 use anyhow::Error;
 use floneumite::PackageIndexEntry;
 use pollster::FutureExt;
@@ -127,8 +127,7 @@ impl Plugin {
         // then we get the structure of the plugin.
         let mut store = Store::new(&ENGINE, State::default());
         let component = self.component().await?;
-        let (world, _instance) =
-            Both::instantiate_async(&mut store, component, &*LINKER).await?;
+        let (world, _instance) = Both::instantiate_async(&mut store, component, &*LINKER).await?;
         let structure = world.interface0.call_structure(&mut store).await.unwrap();
 
         let _ = self.definition.set(structure);

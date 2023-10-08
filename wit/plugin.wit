@@ -175,6 +175,7 @@ interface definitions {
 
 world exports {
   import imports
+  import types
 }
 
 world plugin-world {

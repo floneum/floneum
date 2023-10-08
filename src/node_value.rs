@@ -1,7 +1,5 @@
-use floneum_plugin::exports::plugins::main::definitions::{
-    Embedding, EmbeddingDbId, Input, IoDefinition, ModelId, Output, PrimitiveValue,
-    PrimitiveValueType, TabId, ValueType,
-};
+
+use floneum_plugin::plugins::main::types::*;
 use serde::{Deserialize, Serialize};
 
 use crate::edge::ConnectionType;
@@ -41,41 +39,7 @@ impl NodeInput {
 
     pub fn push_default_value(&mut self) {
         if let ValueType::Many(values) = self.definition.ty {
-            let value = match values {
-                PrimitiveValueType::Boolean => Input::Single(PrimitiveValue::Boolean(false)),
-                PrimitiveValueType::Database => {
-                    Input::Single(PrimitiveValue::Database(EmbeddingDbId {
-                        id: Default::default(),
-                    }))
-                }
-                PrimitiveValueType::Tab => Input::Single(PrimitiveValue::Tab(TabId {
-                    id: Default::default(),
-                })),
-                PrimitiveValueType::Number => Input::Single(PrimitiveValue::Number(0)),
-                PrimitiveValueType::Text => Input::Single(PrimitiveValue::Text("".to_string())),
-                PrimitiveValueType::File => Input::Single(PrimitiveValue::File("".to_string())),
-                PrimitiveValueType::Folder => Input::Single(PrimitiveValue::Folder("".to_string())),
-                PrimitiveValueType::Embedding => {
-                    Input::Single(PrimitiveValue::Embedding(Embedding { vector: Vec::new() }))
-                }
-                PrimitiveValueType::Model => Input::Single(PrimitiveValue::Model(ModelId {
-                    id: Default::default(),
-                })),
-                PrimitiveValueType::ModelType => Input::Single(PrimitiveValue::ModelType(
-                    floneum_plugin::plugins::main::types::ModelType::Llama(
-                        floneum_plugin::plugins::main::types::LlamaType::LlamaSevenChat,
-                    ),
-                )),
-                PrimitiveValueType::Node => Input::Single(PrimitiveValue::Node(
-                    floneum_plugin::plugins::main::types::NodeId {
-                        id: Default::default(),
-                        tab: TabId {
-                            id: Default::default(),
-                        },
-                    },
-                )),
-                PrimitiveValueType::Any => Input::Single(PrimitiveValue::Number(0)),
-            };
+            let value = Input::Single(values.create());
             self.value.push(value);
         }
     }

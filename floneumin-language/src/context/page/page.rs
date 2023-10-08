@@ -4,7 +4,7 @@ use super::{extract_article, Node};
 pub use crate::context::page::crawl::CrawlFeedback;
 use crate::context::page::crawl::Crawler;
 pub use crate::context::page::crawl::CrawlingCallback;
-use image::{DynamicImage, RgbaImage};
+use image::DynamicImage;
 use once_cell::sync::OnceCell;
 use scraper::{Html, Selector};
 use tokio::time::Instant;

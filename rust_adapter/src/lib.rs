@@ -1,26 +1,8 @@
 #![allow(unused_macros)]
 
-pub use crate::exports::plugins::main::definitions::{
-    Definition, Definitions, Example, Input, IoDefinition, Output, PrimitiveValue,
-    PrimitiveValueType, ValueType,
-};
-pub use crate::plugins::main::imports::{get_request, model_downloaded, Header};
-pub use crate::plugins::main::types::{
-    EmbeddingDbId, GptNeoXType, LlamaType, ModelType, MptType, NodeId, TabId,
-};
 pub use floneum_rust_macro::export_plugin;
-pub use plugins::main::types::Embedding;
 
-mod tab;
-pub use tab::Tab;
-mod node;
-mod vector_db;
-pub use node::Node;
-pub use vector_db::VectorDatabase;
-mod model_instance;
-pub use model_instance::ModelInstance;
-mod structured_inferance;
-pub use structured_inferance::Structured;
+use plugins::main::types::*;
 mod logging;
 pub use logging::Logger;
 mod state;
@@ -28,7 +10,10 @@ pub use state::*;
 mod filesystem;
 pub use filesystem::*;
 
-wit_bindgen::generate!({path: "../wit", macro_export});
+wit_bindgen::generate!({
+    path: "../wit",
+    world: "exports",
+});
 
 pub trait IntoInputValue<T = ()> {
     fn into_input_value(self) -> Input;
