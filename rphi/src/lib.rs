@@ -182,7 +182,7 @@ pub struct InferenceSettings {
     sample_len: usize,
 
     /// The token to stop on.
-    stop_on: Option<&'static str>,
+    stop_on: Option<String>,
 }
 
 impl InferenceSettings {
@@ -205,8 +205,8 @@ impl InferenceSettings {
         self
     }
 
-    pub fn with_stop_on(mut self, stop_on: Option<&'static str>) -> Self {
-        self.stop_on = stop_on;
+    pub fn with_stop_on(mut self, stop_on: impl Into<Option<String>>) -> Self {
+        self.stop_on = stop_on.into();
         self
     }
 }

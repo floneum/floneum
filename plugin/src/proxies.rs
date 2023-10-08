@@ -3,13 +3,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::exports::plugins::main::definitions::{
     Input, IoDefinition, Output, PrimitiveValue, PrimitiveValueType, ValueType,
 };
-use crate::plugins::main::types::{
-    Embedding, EmbeddingDbId, GptNeoXType, LlamaType, ModelType, MptType,
-};
-use crate::plugins::main::{
-    imports::TabId,
-    types::{ModelId, NodeId},
-};
+use crate::plugins::main::types::{Embedding, GptNeoXType, LlamaType, ModelType, MptType};
 
 #[derive(serde::Serialize, serde::Deserialize)]
 enum MyValue {
@@ -109,14 +103,12 @@ impl PartialEq for PrimitiveValue {
             (PrimitiveValue::File(a), PrimitiveValue::File(b)) => a == b,
             (PrimitiveValue::Folder(a), PrimitiveValue::Folder(b)) => a == b,
             (PrimitiveValue::Embedding(a), PrimitiveValue::Embedding(b)) => a.vector == b.vector,
-            (PrimitiveValue::Database(a), PrimitiveValue::Database(b)) => a.id == b.id,
-            (PrimitiveValue::Model(a), PrimitiveValue::Model(b)) => a.id == b.id,
-            (PrimitiveValue::ModelType(a), PrimitiveValue::ModelType(b)) => a == b,
+            (PrimitiveValue::Database(a), PrimitiveValue::Database(b)) => a.rep() == b.rep(),
+            (PrimitiveValue::Model(a), PrimitiveValue::Model(b)) => a.rep() == b.rep(),
+            (PrimitiveValue::ModelType(a), PrimitiveValue::ModelType(b)) => a.rep() == b.rep(),
             (PrimitiveValue::Boolean(a), PrimitiveValue::Boolean(b)) => a == b,
-            (PrimitiveValue::Tab(a), PrimitiveValue::Tab(b)) => a.id == b.id,
-            (PrimitiveValue::Node(a), PrimitiveValue::Node(b)) => {
-                a.id == b.id && a.tab.id == b.tab.id
-            }
+            (PrimitiveValue::Tab(a), PrimitiveValue::Tab(b)) => a.rep() == b.rep(),
+            (PrimitiveValue::Node(a), PrimitiveValue::Node(b)) => a.rep() == b.rep(),
             _ => false,
         }
     }
@@ -129,7 +121,7 @@ enum MyPrimitiveValue {
     File(String),
     Folder(String),
     Embedding(Vec<f32>),
-    Model(u32),
+    Model(ModelType),
     Database(u32),
     ModelType(MyModelType),
     Boolean(bool),
@@ -145,15 +137,12 @@ impl From<PrimitiveValue> for MyPrimitiveValue {
             PrimitiveValue::File(value) => MyPrimitiveValue::File(value),
             PrimitiveValue::Folder(value) => MyPrimitiveValue::Folder(value),
             PrimitiveValue::Embedding(value) => MyPrimitiveValue::Embedding(value.vector),
-            PrimitiveValue::Model(value) => MyPrimitiveValue::Model(value.id),
-            PrimitiveValue::Database(value) => MyPrimitiveValue::Database(value.id),
+            PrimitiveValue::Model(value) => MyPrimitiveValue::Model(value),
+            PrimitiveValue::Database(value) => MyPrimitiveValue::Database(value),
             PrimitiveValue::ModelType(value) => MyPrimitiveValue::ModelType(value.into()),
             PrimitiveValue::Boolean(value) => MyPrimitiveValue::Boolean(value),
-            PrimitiveValue::Tab(value) => MyPrimitiveValue::Tab(value.id),
-            PrimitiveValue::Node(value) => MyPrimitiveValue::Node {
-                id: value.id,
-                tab_id: value.tab.id,
-            },
+            PrimitiveValue::Tab(value) => MyPrimitiveValue::Tab(value),
+            PrimitiveValue::Node(value) => MyPrimitiveValue::Node (value)
         }
     }
 }

@@ -71,7 +71,13 @@ impl<S: VectorSpace + Send + Sync + 'static> LocalSession<S> {
                                 sender,
                                 stop_on,
                             } => {
-                                inner._infer_sampler(prompt, max_tokens, stop_on, sampler, sender);
+                                inner._infer_sampler(
+                                    prompt,
+                                    max_tokens,
+                                    stop_on.as_deref(),
+                                    sampler,
+                                    sender,
+                                );
                             }
                             Task::GetEmbedding { text, sender } => {
                                 let result = inner._get_embedding(&text).unwrap();
@@ -112,7 +118,7 @@ impl<S: VectorSpace + Send + Sync + 'static> LocalSession<S> {
         &mut self,
         prompt: String,
         max_tokens: Option<u32>,
-        stop_on: Option<&'static str>,
+        stop_on: Option<&str>,
         sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
     ) -> ChannelTextStream<String> {
         let (sender, receiver) = tokio::sync::oneshot::channel();
@@ -120,7 +126,7 @@ impl<S: VectorSpace + Send + Sync + 'static> LocalSession<S> {
             .send(Task::InferSampler {
                 prompt,
                 max_tokens,
-                stop_on,
+                stop_on: stop_on.map(|s| s.to_string()),
                 sampler,
                 sender,
             })
@@ -162,7 +168,7 @@ enum Task<S: VectorSpace> {
     InferSampler {
         prompt: String,
         max_tokens: Option<u32>,
-        stop_on: Option<&'static str>,
+        stop_on: Option<String>,
         sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
         sender: tokio::sync::oneshot::Sender<ChannelTextStream<String>>,
     },
@@ -189,7 +195,7 @@ impl<S: VectorSpace> LocalSessionInner<S> {
         &mut self,
         prompt: String,
         max_tokens: Option<u32>,
-        stop_on: Option<&'static str>,
+        stop_on: Option<&str>,
         sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
         out: tokio::sync::oneshot::Sender<ChannelTextStream<String>>,
     ) {
@@ -198,7 +204,7 @@ impl<S: VectorSpace> LocalSessionInner<S> {
 
         let parameters = InferenceParameters { sampler };
 
-        let (callback, stream) = inference_callback(stop_on);
+        let (callback, stream) = inference_callback(stop_on.map(|s| s.to_string()));
         if let Err(_) = out.send(stream) {
             log::error!("Failed to send stream");
             return;
@@ -232,11 +238,13 @@ impl<S: VectorSpace> LocalSessionInner<S> {
 
         let maximum_token_count = Some(generation_parameters.max_length as usize);
 
+        let stop_on = generation_parameters.stop_on().map(|s| s.to_string());
+
         let parameters = InferenceParameters {
             sampler: Arc::new(Mutex::new(generation_parameters.sampler())),
         };
 
-        let (callback, stream) = inference_callback(generation_parameters.stop_on());
+        let (callback, stream) = inference_callback(stop_on);
         if let Err(_) = out.send(stream) {
             log::error!("Failed to send stream");
             return;
@@ -274,7 +282,7 @@ impl<S: VectorSpace> LocalSessionInner<S> {
 }
 
 fn inference_callback(
-    stop_on: Option<&'static str>,
+    stop_on: Option<String>,
 ) -> (
     impl FnMut(InferenceResponse) -> Result<InferenceFeedback, Infallible>,
     ChannelTextStream<String>,
@@ -285,13 +293,13 @@ fn inference_callback(
     let callback = move |resp| match resp {
         InferenceResponse::InferredToken(t) => {
             let mut stop_token = false;
-            if let Some(stop_on) = stop_on {
+            if let Some(stop_on) = &stop_on {
                 text.push_str(&t);
                 // We only need to keep as many tokens as the stop_on string is long
                 if text.len() > stop_on.len() {
                     text.drain(..text.len() - stop_on.len());
                 }
-                stop_token = text == stop_on;
+                stop_token = &text == stop_on;
             }
             match sender.send(t) {
                 Ok(_) => {

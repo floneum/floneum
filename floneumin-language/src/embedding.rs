@@ -71,6 +71,10 @@ impl<S: VectorSpace> Embedding<S> {
     pub fn vector(&self) -> &Tensor {
         &self.embedding
     }
+
+    pub fn to_vec(&self) -> Vec<f32> {
+        self.embedding.to_vec1::<f32>().unwrap()
+    }
 }
 
 pub fn get_embeddings<S: VectorSpace>(model: &dyn llm::Model, embed: &str) -> Embedding<S> {

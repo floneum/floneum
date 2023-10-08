@@ -125,8 +125,9 @@ impl<S: VectorSpace> std::fmt::Debug for EmbeddedDocument<S> {
     }
 }
 
-impl<S: VectorSpace> EmbeddedDocument<S> {
+impl<S: VectorSpace + Send + Sync + 'static> EmbeddedDocument<S> {
     pub async fn new<M: Embedder<S>>(
+        embedder: &M,
         raw: Document,
         strategy: ChunkStrategy,
     ) -> anyhow::Result<Self> {
@@ -137,7 +138,7 @@ impl<S: VectorSpace> EmbeddedDocument<S> {
         for byte_range in &chunk_ranges {
             documents.push(&raw.body()[byte_range.clone()]);
         }
-        let embeddings = M::embed_batch(&documents).await?;
+        let embeddings = embedder.embed_batch(&documents).await?;
         for (byte_range, embedding) in chunk_ranges.into_iter().zip(embeddings) {
             chunks.push(Chunk {
                 byte_range,
@@ -148,6 +149,7 @@ impl<S: VectorSpace> EmbeddedDocument<S> {
     }
 
     pub async fn batch_new<M: Embedder<S>>(
+        embedder: &M,
         raw: Vec<Document>,
         strategy: ChunkStrategy,
     ) -> anyhow::Result<Vec<Self>> {
@@ -162,7 +164,7 @@ impl<S: VectorSpace> EmbeddedDocument<S> {
             chunks.push(chunk);
         }
 
-        let mut embeddings = M::embed_batch(&documents).await?;
+        let mut embeddings = embedder.embed_batch(&documents).await?;
         let mut embeddings = embeddings.drain(..).rev();
         let mut documents = Vec::new();
 
@@ -185,20 +187,20 @@ impl<S: VectorSpace> EmbeddedDocument<S> {
     }
 }
 
-pub struct DocumentDatabase<S: VectorSpace, M: Embedder<S>> {
+pub struct DocumentDatabase<S: VectorSpace + Send + Sync + 'static, M: Embedder<S>> {
+    embedder: M,
     documents: Slab<Document>,
     database: VectorDB<DocumentSnippet, S>,
     strategy: ChunkStrategy,
-    phantom: std::marker::PhantomData<M>,
 }
 
 #[async_trait::async_trait]
-impl<M: Embedder<S> + Send + Sync, S: VectorSpace + Sync + Send> SearchIndex
+impl<M: Embedder<S> + Send + Sync + 'static, S: VectorSpace + Sync + Send + 'static> SearchIndex
     for DocumentDatabase<S, M>
 {
     async fn add(&mut self, document: impl IntoDocument + Send + Sync) -> anyhow::Result<()> {
         let document = document.into_document().await?;
-        let embedded = EmbeddedDocument::<S>::new::<M>(document, self.strategy)
+        let embedded = EmbeddedDocument::<S>::new(&self.embedder, document, self.strategy)
             .await
             .unwrap();
         let id = self.documents.insert(embedded.raw);
@@ -215,7 +217,7 @@ impl<M: Embedder<S> + Send + Sync, S: VectorSpace + Sync + Send> SearchIndex
 
     async fn extend(&mut self, documents: impl IntoDocuments + Send + Sync) -> anyhow::Result<()> {
         let documents = documents.into_documents().await?;
-        let embedded = EmbeddedDocument::<S>::batch_new::<M>(documents, self.strategy)
+        let embedded = EmbeddedDocument::<S>::batch_new(&self.embedder, documents, self.strategy)
             .await
             .unwrap();
         let mut embeddings = Vec::new();
@@ -237,18 +239,18 @@ impl<M: Embedder<S> + Send + Sync, S: VectorSpace + Sync + Send> SearchIndex
     }
 
     async fn search(&self, query: &str, top_n: usize) -> Vec<DocumentSnippetRef> {
-        let embedding = M::embed(query).await.unwrap();
+        let embedding = self.embedder.embed(query).await.unwrap();
         self.search_iter(embedding, top_n).collect()
     }
 }
 
-impl<M: Embedder<S>, S: VectorSpace + Sync + Send> DocumentDatabase<S, M> {
-    pub fn new(chunk_strategy: ChunkStrategy) -> Self {
+impl<M: Embedder<S>, S: VectorSpace + Sync + Send + 'static> DocumentDatabase<S, M> {
+    pub fn new(embedder: M, chunk_strategy: ChunkStrategy) -> Self {
         Self {
             documents: Slab::new(),
             database: VectorDB::new(Vec::new(), Vec::new()),
             strategy: chunk_strategy,
-            phantom: std::marker::PhantomData,
+            embedder,
         }
     }
 

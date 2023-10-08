@@ -1,14 +1,23 @@
 use crate::embedding::VectorSpace;
 use crate::local::Embedding;
-use crate::model::Embedder;
-use rbert::Bert;
-
-pub struct LocalBert {}
+use crate::model::{CreateModel, Embedder};
+pub use rbert::Bert;
 
 #[async_trait::async_trait]
-impl Embedder<BertSpace> for LocalBert {
-    async fn embed(input: &str) -> anyhow::Result<Embedding<BertSpace>> {
-        let tensor = Bert::new(Default::default())?
+impl CreateModel for Bert {
+    async fn start() -> Self {
+        Self::new(Default::default()).unwrap()
+    }
+
+    fn requires_download() -> bool {
+        !Bert::downloaded()
+    }
+}
+
+#[async_trait::async_trait]
+impl Embedder<BertSpace> for Bert {
+    async fn embed(&self, input: &str) -> anyhow::Result<Embedding<BertSpace>> {
+        let tensor = self
             .load(Default::default())?
             .embed(&[input])?
             .pop()
@@ -16,7 +25,7 @@ impl Embedder<BertSpace> for LocalBert {
         Ok(Embedding::new(tensor))
     }
 
-    async fn embed_batch(inputs: &[&str]) -> anyhow::Result<Vec<Embedding<BertSpace>>> {
+    async fn embed_batch(&self, inputs: &[&str]) -> anyhow::Result<Vec<Embedding<BertSpace>>> {
         let tensors = Bert::new(Default::default())?
             .load(Default::default())?
             .embed(inputs)?;

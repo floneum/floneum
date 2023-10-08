@@ -31,9 +31,7 @@ macro_rules! local_model {
         }
 
         #[async_trait::async_trait]
-        impl crate::model::Model for LocalSession<$space> {
-            type TextStream = ChannelTextStream<String>;
-
+        impl crate::model::CreateModel for LocalSession<$space> {
             async fn start() -> Self {
                 let model = Self::model_type().download().await;
                 let session = model.start_session(InferenceSessionConfig {
@@ -48,6 +46,11 @@ macro_rules! local_model {
             fn requires_download() -> bool {
                 Self::model_type().requires_download()
             }
+        }
+
+        #[async_trait::async_trait]
+        impl crate::model::Model for LocalSession<$space> {
+            type TextStream = ChannelTextStream<String>;
 
             fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
                 self.get_tokenizer() as Arc<dyn Tokenizer + Send + Sync>
@@ -78,7 +81,7 @@ macro_rules! local_model {
                 &mut self,
                 prompt: &str,
                 max_tokens: Option<u32>,
-                stop_on: Option<&'static str>,
+                stop_on: Option<&str>,
                 sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
             ) -> anyhow::Result<Self::TextStream> {
                 Ok(self
@@ -89,15 +92,14 @@ macro_rules! local_model {
 
         #[async_trait::async_trait]
         impl crate::model::Embedder<$space> for LocalSession<$space> {
-            async fn embed(input: &str) -> anyhow::Result<Embedding<$space>> {
-                Self::start().await.get_embedding(input).await
+            async fn embed(&self, input: &str) -> anyhow::Result<Embedding<$space>> {
+                self.get_embedding(input).await
             }
 
-            async fn embed_batch(inputs: &[&str]) -> anyhow::Result<Vec<Embedding<$space>>> {
-                let session = Self::start().await;
+            async fn embed_batch(&self, inputs: &[&str]) -> anyhow::Result<Vec<Embedding<$space>>> {
                 let mut result = Vec::new();
                 for input in inputs {
-                    result.push(session.get_embedding(input).await?);
+                    result.push(self.get_embedding(input).await?);
                 }
                 Ok(result)
             }
@@ -117,10 +119,10 @@ local_model!(
     ModelType::Llama(LlamaType::LlamaThirteenChat),
     LlamaThirteenChatSpace
 );
-local_model!(ModelType::Mpt(MptType::Base), BaseSpace);
-local_model!(ModelType::Mpt(MptType::Story), StorySpace);
-local_model!(ModelType::Mpt(MptType::Instruct), InstructSpace);
-local_model!(ModelType::Mpt(MptType::Chat), ChatSpace);
+local_model!(ModelType::Mpt(MptType::Base), MptBaseSpace);
+local_model!(ModelType::Mpt(MptType::Story), MptStorySpace);
+local_model!(ModelType::Mpt(MptType::Instruct), MptInstructSpace);
+local_model!(ModelType::Mpt(MptType::Chat), MptChatSpace);
 local_model!(
     ModelType::GptNeoX(GptNeoXType::LargePythia),
     LargePythiaSpace

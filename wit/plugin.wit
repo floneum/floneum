@@ -1,47 +1,7 @@
 package plugins:main
 
 interface imports {
-  use types.{embedding, structure, structure-id, model-id, model-type, embedding-db-id, node-id, tab-id}
-
-  model-downloaded: func(ty: model-type) -> bool
-  load-model: func(ty: model-type) -> model-id
-  unload-model: func(id: model-id)
-  infer: func(id: model-id, input: string, max-tokens: option<u32>, stop-on: option<string>) -> string
-  infer-structured: func(id: model-id, input: string, max-tokens: option<u32>, structure: structure-id) -> string
-
-  get-embedding: func(id: model-id, document: string) -> embedding
-
-  create-embedding-db: func(embeddings: list<embedding>, documents: list<string>) -> embedding-db-id
-  add-embedding: func(id: embedding-db-id, embedding: embedding, documents: string)
-  remove-embedding-db: func(id: embedding-db-id)
-  find-closest-documents: func(id: embedding-db-id, search: embedding, count: u32) -> list<string>
-  find-documents-within: func(id: embedding-db-id, search: embedding, within: float32) -> list<string>
-
-  create-structure: func(structure: structure) -> structure-id
-  remove-structure: func(id: structure-id)
-
-  new-tab: func(headless: bool) -> tab-id
-
-  remove-tab: func(tab: tab-id)
-
-  browse-to: func(tab: tab-id, url: string)
-
-  find-in-current-page: func(tab: tab-id, selector: string) -> node-id
-
-  get-element-text: func(id: node-id) -> string
-
-  click-element: func(id: node-id)
-
-  type-into-element: func(id: node-id, keys: string)
-
-  get-element-outer-html: func(id: node-id) -> string
-
-  screenshot-browser: func(tab: tab-id) -> list<u8>
-
-  screenshot-element: func(id: node-id) -> list<u8>
-
-  find-child-of-element: func(id: node-id, selector: string) -> node-id
-
+  use types.{embedding, structure, model, model-type, embedding-db, node, page}
   get-request: func(url: string, headers: list<header>) -> string
 
   record header {
@@ -59,32 +19,73 @@ interface imports {
 }
 
 interface types {
+  enum browser-mode {
+    html,
+    headless,
+    headfull,
+  }
+
+  resource page {
+    constructor(mode: browser-mode, url: string)
+    find-in-current-page: func(selector: string) -> node
+    screenshot-browser: func() -> list<u8>
+  }
+
+  resource node {
+    get-element-text: func() -> string
+    click-element: func()
+    type-into-element: func(keys: string)
+    get-element-outer-html: func() -> string
+    screenshot-element: func() -> list<u8>
+    find-child-of-element: func(selector: string) -> node
+  }
+
+  resource embedding-db {
+    constructor(embeddings: list<embedding>, documents: list<string>)
+    add-embedding: func(embedding: embedding, documents: string)
+    find-closest-documents: func(search: embedding, count: u32) -> list<string>
+    find-documents-within: func(search: embedding, within: float32) -> list<string>
+  }
+
+  resource model {
+    constructor(ty: model-type)
+    model-downloaded: static func(ty: model-type) -> bool
+    infer: func(input: string, max-tokens: option<u32>, stop-on: option<string>) -> string
+    infer-structured: func(input: string, max-tokens: option<u32>, structure: structure) -> string
+  }
+
+  resource embedding-model {
+    constructor(ty: embedding-model-type)
+    model-downloaded: static func(ty: embedding-model-type) -> bool
+    get-embedding: func(document: string) -> embedding
+  }
+
+  resource structure {
+    num: static func(num: number-parameters) -> structure
+    str: static func(str: unsigned-range) -> structure
+    literal: static func(literal: string) -> structure
+    or: static func(or: either-structure) -> structure
+    then: static func(then: then-structure) -> structure
+    sequence: static func(sequence: sequence-parameters) -> structure
+  }
+
   record embedding {
     vector: list<float32>
   }
 
-  variant structure {
-    num(number-parameters),
-    str(unsigned-range),
-    literal(string),
-    or(either-structure),
-    then(then-structure),
-    sequence(sequence-parameters),
-  }
-
   record then-structure {
-    first: structure-id,
-    second: structure-id,
+    first: structure,
+    second: structure,
   }
 
   record either-structure {
-    first: structure-id,
-    second: structure-id,
+    first: structure,
+    second: structure,
   }
 
   record sequence-parameters {
-    item: structure-id,
-    separator: structure-id,
+    item: structure,
+    separator: structure,
     min-len: u64,
     max-len: u64,
   }
@@ -100,35 +101,39 @@ interface types {
     max: u64,
   }
 
-  record structure-id {
-    id: u32
+  variant primitive-value {
+    model(model),
+    model-type(model-type),
+    database(embedding-db),
+    number(s64),
+    text(string),
+    file(string),
+    folder(string),
+    embedding(embedding),
+    boolean(bool),
+    page(page),
+    node(node),
   }
 
-  record embedding-db-id {
-    id: u32,
+  variant value-type {
+    single(primitive-value-type),
+    many(primitive-value-type),
   }
 
-  record model-id {
-    id: u32,
+  enum primitive-value-type {
+    number,
+    text,
+    file,
+    folder,
+    embedding,
+    database,
+    model,
+    model-type,
+    boolean,
+    page,
+    node,
+    any
   }
-
-  record node-id {
-    id: u32,
-    tab: tab-id,
-  }
-
-  record tab-id {
-    id: u32,
-  }
-
-  variant model-type { MPT(mpt-type), gpt-neo-x(gpt-neo-x-type), llama(llama-type) }
-  enum llama-type { vicuna, guanaco, wizardlm, orca, llama-seven-chat, llama-thirteen-chat }
-  enum mpt-type { base, story, instruct, chat }
-  enum gpt-neo-x-type { large-pythia, tiny-pythia, dolly-seven-b, stablelm }
-}
-
-interface definitions {
-  use types.{embedding, model-id, embedding-db-id, model-type, tab-id, node-id}
 
   record definition {
     name: string,
@@ -160,46 +165,25 @@ interface definitions {
     halt,
   }
 
-  variant primitive-value {
-    model(model-id),
-    model-type(model-type),
-    database(embedding-db-id),
-    number(s64),
-    text(string),
-    file(string),
-    folder(string),
-    embedding(embedding),
-    boolean(bool),
-    tab(tab-id),
-    node(node-id),
-  }
+  variant model-type { MPT(mpt-type), gpt-neo-x(gpt-neo-x-type), llama(llama-type), phi, mistral }
+  variant embedding-model-type { MPT(mpt-type), gpt-neo-x(gpt-neo-x-type), llama(llama-type), bert }
+  enum llama-type { vicuna, guanaco, wizardlm, orca, llama-seven-chat, llama-thirteen-chat }
+  enum mpt-type { base, story, instruct, chat }
+  enum gpt-neo-x-type { large-pythia, tiny-pythia, dolly-seven-b, stablelm }
+}
 
-  variant value-type {
-    single(primitive-value-type),
-    many(primitive-value-type),
-  }
-
-  enum primitive-value-type {
-    number,
-    text,
-    file,
-    folder,
-    embedding,
-    database,
-    model,
-    model-type,
-    boolean,
-    tab,
-    node,
-    any
-  }
+interface definitions {
+  use types.{definition, input, output}
 
   structure: func() -> definition
 
   run: func(inputs: list<input>) -> list<output>
 }
 
-world plugin-world {
+world exports {
   import imports
+}
+
+world plugin-world {
   export definitions
 }

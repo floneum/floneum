@@ -97,6 +97,10 @@ impl Bert {
         })
     }
 
+    pub fn downloaded() -> bool {
+        false
+    }
+
     pub fn load(&self, options: BertInferenceOptions) -> anyhow::Result<BertInstance> {
         let device = device(options.cpu)?;
         let vb = unsafe {

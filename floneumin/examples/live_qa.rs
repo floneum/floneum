@@ -1,7 +1,7 @@
 use floneumin_language::{
     index::{keyword::FuzzySearchIndex, SearchIndex},
     local::LocalSession,
-    model::{GenerationParameters, LlamaSevenChatSpace, Model},
+    model::{CreateModel, GenerationParameters, LlamaSevenChatSpace, Model},
 };
 use floneumin_sound::model::whisper::*;
 use futures_util::StreamExt;
@@ -35,6 +35,7 @@ async fn main() -> Result<(), anyhow::Error> {
                             while let Some(transcribed) = transcribed.next().await {
                                 if transcribed.probability_of_no_speech() < 0.90 {
                                     let text = transcribed.text();
+                                    println!("Adding to context: {}", text);
                                     document_engine.write().unwrap().add(text).await.unwrap();
                                 }
                             }
@@ -58,7 +59,7 @@ async fn main() -> Result<(), anyhow::Error> {
             let context = engine.search(&user_question, 5).await;
             context
                 .iter()
-                .take(2)
+                .take(5)
                 .map(|x| x.to_string())
                 .collect::<Vec<_>>()
                 .join("\n")

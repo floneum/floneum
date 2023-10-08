@@ -2,7 +2,7 @@ use floneumin_language::{
     context::{rss::RssFeed, Url},
     index::{keyword::FuzzySearchIndex, SearchIndex},
     local::LocalSession,
-    model::{GenerationParameters, LlamaSevenChatSpace, Model},
+    model::{CreateModel, GenerationParameters, LlamaSevenChatSpace, Model},
 };
 use futures_util::StreamExt;
 use std::io::Write;

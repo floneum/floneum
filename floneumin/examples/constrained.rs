@@ -1,4 +1,5 @@
 use floneumin_language::floneumin_sample;
+use floneumin_language::model::CreateModel;
 use floneumin_language::{local::Phi, model::Model};
 use floneumin_sample::structured::StructuredSampler;
 use floneumin_sample::structured_parser::StructureParser;

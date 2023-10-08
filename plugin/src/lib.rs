@@ -1,8 +1,3 @@
 mod host;
-mod plugin;
-mod proxies;
-
-wasmtime::component::bindgen!({
-    path: "../wit",
-    async: true,
-});
+// mod plugin;
+// mod proxies;

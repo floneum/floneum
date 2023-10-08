@@ -8,9 +8,21 @@ use syn::{
 
 #[allow(unused_macros)]
 mod inner {
-    wit_bindgen::generate!({path: "../wit"});
+    wit_bindgen::generate!({
+        path: "../wit",
+        // the name of the world in the `*.wit` input file
+        world: "exports",
+
+        // For all exported worlds, interfaces, and resources, this specifies what
+        // type they're corresponding to in this module. In this case the `MyHost`
+        // struct defined below is going to define the exports of the `world`,
+        // namely the `run` function.
+        exports: {
+            world: MyHost,
+        },
+    });
 }
-use inner::exports::plugins::main::definitions::{PrimitiveValueType, ValueType};
+use inner::plugins::main::types::{PrimitiveValueType, ValueType};
 
 macro_rules! try_parse_quote {
     ($($tokens:tt)*) => {

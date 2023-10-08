@@ -1,14 +1,27 @@
 use std::fmt::Debug;
 
-use crate::embedding::{Embedding, VectorSpace};
+use crate::{
+    context::document::Document,
+    embedding::{Embedding, VectorSpace},
+    model::UnknownVectorSpace,
+};
 use candle_core::Tensor;
 use instant_distance::{Builder, HnswMap, Search};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize)]
-pub struct VectorDB<T, S: VectorSpace> {
+pub struct VectorDB<T = Document, S: VectorSpace = UnknownVectorSpace> {
     model: HnswMap<Point<S>, T>,
     _phantom: std::marker::PhantomData<S>,
+}
+
+impl<T: Clone + PartialEq + Debug, S: VectorSpace + Sync> Default for VectorDB<T, S>
+where
+    Self: Sync + Send,
+{
+    fn default() -> Self {
+        VectorDB::new(Vec::new(), Vec::new())
+    }
 }
 
 impl<T, S: VectorSpace> std::fmt::Debug for VectorDB<T, S> {
