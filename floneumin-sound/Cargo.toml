@@ -29,4 +29,4 @@ ringbuffer = "0.15.0"
 futures-util = "0.3.28"
 async-trait = "0.1.73"
 floneumin-streams = { path = "../floneumin-streams" }
-
+rwhisper ={ path = "../rwhisper" }

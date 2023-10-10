@@ -1,15 +1,11 @@
 use crate::index::IntoDocuments;
-use crate::model::Embedder;
 use crate::{context::document::IntoDocument, index::Chunk};
 use std::ops::Range;
 
+use floneumin_language_model::*;
 use slab::Slab;
 
-use crate::{
-    context::document::Document,
-    embedding::{Embedding, VectorSpace},
-    vector_db::VectorDB,
-};
+use crate::{context::document::Document, vector_db::VectorDB};
 
 use super::{DocumentId, DocumentSnippet, DocumentSnippetRef, SearchIndex};
 

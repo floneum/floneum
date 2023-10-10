@@ -2,30 +2,50 @@ use std::iter::Peekable;
 use std::str::Chars;
 use std::{cell::RefCell, ops::Deref};
 
+/// A validator for a string
 #[derive(Debug, Clone)]
 pub enum StructureParser {
+    /// A literal string
     Literal(String),
+    /// A sequence of items separated by a separator
     Sequence {
+        /// The item to parse
         item: Box<StructureParser>,
+        /// The separator to parse
         separator: Box<StructureParser>,
+        /// The minimum number of items to parse
         min_len: u64,
+        /// The maximum number of items to parse
         max_len: u64,
     },
+    /// A number
     Num {
+        /// The minimum value of the number
         min: f64,
+        /// The maximum value of the number
         max: f64,
+        /// If the number must be an integer
         integer: bool,
     },
+    /// A string
     String {
+        /// The minimum length of the string
         min_len: u64,
+        /// The maximum length of the string
         max_len: u64,
     },
+    /// Either the first or the second parser
     Either {
+        /// The first parser
         first: Box<StructureParser>,
+        /// The second parser
         second: Box<StructureParser>,
     },
+    /// The first parser, then the second parser
     Then {
+        /// The first parser
         first: Box<StructureParser>,
+        /// The second parser
         second: Box<StructureParser>,
     },
 }
@@ -316,28 +336,39 @@ fn test_validate_string() {
         .is_incomplete());
 }
 
+/// The status of a the parser.
 #[derive(Debug)]
 pub enum ParseStatus<'a> {
-    Incomplete { required_next: Option<String> },
+    /// The parser is incomplete, but valid so far
+    Incomplete {
+        /// The next token that is required to complete the parser.
+        required_next: Option<String>,
+    },
+    /// The parser is complete with the given tokens left over.
     Complete(Option<ParseStream<'a>>),
+    /// The parser is invalid.
     Invalid,
 }
 
 #[allow(unused)]
 impl ParseStatus<'_> {
+    /// Check if this status is complete.
     pub fn is_complete(&self) -> bool {
         matches!(self, ParseStatus::Complete(_))
     }
 
+    /// Check if this status is invalid.
     pub fn is_invalid(&self) -> bool {
         matches!(self, ParseStatus::Invalid)
     }
 
+    /// Check if this status is incomplete.
     pub fn is_incomplete(&self) -> bool {
         matches!(self, ParseStatus::Incomplete { .. })
     }
 }
 
+/// A stream of tokens that can be parsed.
 #[derive(Debug, Clone)]
 pub struct ParseStream<'a> {
     chars: Peekable<Chars<'a>>,
@@ -350,24 +381,30 @@ impl<'a> From<Peekable<Chars<'a>>> for ParseStream<'a> {
 }
 
 impl<'a> ParseStream<'a> {
+    /// Create a new `ParseStream` from a string.
     pub fn new(token: &'a str) -> Self {
         Self {
             chars: token.chars().peekable(),
         }
     }
 
+    /// Get an iterator over the remaining characters.
     pub fn iter(&self) -> Peekable<Chars<'a>> {
         self.chars.clone()
     }
 
+    /// Check if this stream is empty.
     pub fn is_empty(&mut self) -> bool {
         self.chars.peek().is_none()
     }
 }
 
+/// A struct that checks if a set of tokens can be parsed.
 pub trait Validate<'a> {
+    /// Check if this parser can parse the given tokens.
     fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a>;
 
+    /// Parse this parser, or another other parser.
     fn or<V: Validate<'a>>(self, other: V) -> Or<'a, Self, V>
     where
         Self: Sized,
@@ -375,6 +412,7 @@ pub trait Validate<'a> {
         Or(self, other, std::marker::PhantomData)
     }
 
+    /// Parse this parser, then the other parser.
     fn then<V: Validate<'a>>(self, other: V) -> Then<'a, Self, V>
     where
         Self: Sized,
@@ -382,6 +420,7 @@ pub trait Validate<'a> {
         Then(self, other, std::marker::PhantomData)
     }
 
+    /// Erase the type of this parser and return a boxed dynamic parser.
     fn boxed(self) -> BoxedValidate<'a>
     where
         Self: Sized + 'a,
@@ -390,6 +429,7 @@ pub trait Validate<'a> {
     }
 }
 
+/// A boxed dynamic Validater.
 pub struct BoxedValidate<'a>(pub(crate) Box<dyn Validate<'a> + 'a>);
 
 impl<'a> Validate<'a> for BoxedValidate<'a> {
@@ -425,6 +465,7 @@ where
     }
 }
 
+/// A parser that will parse the first parser, then the second parser.
 pub struct Then<'a, A: Validate<'a>, B: Validate<'a>>(A, B, std::marker::PhantomData<&'a ()>);
 
 impl<'a, A: Validate<'a>, B: Validate<'a>> Validate<'a> for Then<'a, A, B> {
@@ -440,6 +481,7 @@ impl<'a, A: Validate<'a>, B: Validate<'a>> Validate<'a> for Then<'a, A, B> {
     }
 }
 
+/// A parser that will parse either the first or the second parser.
 pub struct Or<'a, A: Validate<'a>, B: Validate<'a>>(A, B, std::marker::PhantomData<&'a ()>);
 
 impl<'a, A: Validate<'a>, B: Validate<'a>> Validate<'a> for Or<'a, A, B> {
@@ -499,6 +541,7 @@ impl<'a> Validate<'a> for &str {
     }
 }
 
+/// A parser that will parse an item surrounded by a start and end.
 pub struct Between<'a, S: Validate<'a>, I: Validate<'a>, E: Validate<'a>> {
     start: S,
     inner: I,
@@ -507,6 +550,7 @@ pub struct Between<'a, S: Validate<'a>, I: Validate<'a>, E: Validate<'a>> {
 }
 
 impl<'a, S: Validate<'a>, I: Validate<'a>, E: Validate<'a>> Between<'a, S, I, E> {
+    /// Create a new `Between` parser. This parser will parse the start, then the inner, then the end.
     pub fn new(start: S, inner: I, end: E) -> Self {
         Between {
             start,

@@ -92,11 +92,8 @@ where
             .take(sample_size_bytes)
             .map(|s| s.to_float_sample().into())
             .collect();
-        let buffer = rodio::buffer::SamplesBuffer::new(
-            self.spec.channels,
-            self.spec.sample_rate,
-            samples,
-        );
+        let buffer =
+            rodio::buffer::SamplesBuffer::new(self.spec.channels, self.spec.sample_rate, samples);
 
         subscriber.senders.send(buffer).unwrap();
 

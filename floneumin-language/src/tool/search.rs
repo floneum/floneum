@@ -1,5 +1,5 @@
 use crate::context::search::SearchQuery;
-use crate::floneumin_sample::structured_parser::StructureParser;
+use crate::floneumin_sample::StructureParser;
 use crate::index::IntoDocuments;
 use crate::tool::Tool;
 

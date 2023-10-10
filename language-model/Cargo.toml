@@ -1,5 +1,5 @@
 [package]
-name = "floneumin-language"
+name = "floneumin-language-model"
 version = "0.1.0"
 edition = "2021"
 
@@ -35,15 +35,12 @@ rss = { version = "2.0.6", features = ["atom"] }
 scraper = { git = "https://github.com/causal-agent/scraper", features = ["atomic"] }
 llm = { git = "https://github.com/rustformers/llm" }
 floneumite = { path = "../floneumite" }
-floneumin-language-model = { path = "../language-model" }
 headless_chrome = { git = "https://github.com/atroche/rust-headless-chrome", features = ["fetch"] }
 candle-core = { git = "https://github.com/huggingface/candle" }
 tokio-util = { version = "0.7.9", features = ["rt"] }
 crossbeam = "0.8.2"
 dashmap = "5.5.3"
 rbert = { path = "../rbert" }
-rphi = { path = "../rphi" }
-rmistral = { path = "../rmistral" }
 pin-project = "1"
 floneumin-streams = { path = "../floneumin-streams" }
 pulldown-cmark = "0.9.3"
@@ -60,5 +57,5 @@ ego-tree = "0.6.2"
 image = "0.24.7"
 
 [features]
-metal = ["llm/metal", "rphi/accelerate", "rbert/accelerate"]
+metal = ["llm/metal", "rbert/accelerate"]
 cublas = ["llm/cublas"]

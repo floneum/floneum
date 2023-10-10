@@ -12,7 +12,7 @@ async fn main() {
     let documents = DocumentFolder::try_from(PathBuf::from("./documents")).unwrap();
 
     let mut database = DocumentDatabase::new(
-        Bert::new(Default::default()).unwrap(),
+        Bert::builder().build().unwrap(),
         ChunkStrategy::Sentence {
             sentence_count: 1,
             overlap: 0,

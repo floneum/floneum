@@ -1,4 +1,4 @@
-use floneumin_sample::structured_parser::StructureParser;
+use floneumin_sample::StructureParser;
 mod search;
 pub use search::*;
 

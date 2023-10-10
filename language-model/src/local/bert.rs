@@ -6,7 +6,7 @@ pub use rbert::Bert;
 #[async_trait::async_trait]
 impl CreateModel for Bert {
     async fn start() -> Self {
-        Self::new(Default::default()).unwrap()
+        Self::default()
     }
 
     fn requires_download() -> bool {
@@ -26,7 +26,8 @@ impl Embedder<BertSpace> for Bert {
     }
 
     async fn embed_batch(&self, inputs: &[&str]) -> anyhow::Result<Vec<Embedding<BertSpace>>> {
-        let tensors = Bert::new(Default::default())?
+        let tensors = Bert::builder()
+            .build()?
             .load(Default::default())?
             .embed(inputs)?;
 

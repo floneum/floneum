@@ -6,6 +6,7 @@ use llm_samplers::prelude::Sampler;
 use llm_samplers::types::{HasSamplerResources, Logits};
 use std::fmt::Debug;
 
+/// A sampler that enforces the given validator. Any tokens that form an invalid sequence will have a probability of 0
 pub struct StructuredSampler<V: for<'a> Validate<'a>> {
     pub(crate) structure: V,
     pub(crate) current_token_count: usize,
@@ -14,6 +15,8 @@ pub struct StructuredSampler<V: for<'a> Validate<'a>> {
 }
 
 impl<V: for<'a> Validate<'a>> StructuredSampler<V> {
+    /// Create a new structured sampler that starts validating tokens at the given token count.
+    // TODO: improve the current_token_count API
     pub fn new(
         structure: V,
         current_token_count: usize,

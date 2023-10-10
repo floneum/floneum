@@ -1,11 +1,8 @@
 use std::fmt::Debug;
 
-use crate::{
-    context::document::Document,
-    embedding::{Embedding, VectorSpace},
-    model::UnknownVectorSpace,
-};
+use crate::context::document::Document;
 use candle_core::Tensor;
+use floneumin_language_model::*;
 use instant_distance::{Builder, HnswMap, Search};
 use serde::{Deserialize, Serialize};
 

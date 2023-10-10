@@ -14,7 +14,7 @@ async fn main() {
         RssFeed::new(Url::parse("https://rss.nytimes.com/services/xml/rss/nyt/US.xml").unwrap());
 
     let mut database = DocumentDatabase::new(
-        Bert::new(Default::default()).unwrap(),
+        Bert::builder().build().unwrap(),
         ChunkStrategy::Sentence {
             sentence_count: 1,
             overlap: 0,

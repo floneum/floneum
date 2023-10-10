@@ -2,7 +2,7 @@
 
 pub use floneum_rust_macro::export_plugin;
 
-use plugins::main::types::*;
+pub use plugins::main::types::*;
 mod logging;
 pub use logging::Logger;
 mod state;

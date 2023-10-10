@@ -1,12 +1,12 @@
-use crate::embedding::VectorSpace;
+use crate::InferenceSettings;
+pub use crate::Phi;
+use floneumin_language_model::*;
 use floneumin_streams::sender::ChannelTextStream;
-use rphi::InferenceSettings;
-pub use rphi::{self, Phi};
 use std::sync::Arc;
 use std::sync::Mutex;
 
 #[async_trait::async_trait]
-impl crate::model::CreateModel for Phi {
+impl CreateModel for Phi {
     async fn start() -> Self {
         Phi::default()
     }
@@ -17,26 +17,27 @@ impl crate::model::CreateModel for Phi {
 }
 
 #[async_trait::async_trait]
-impl crate::model::Model for Phi {
+impl Model for Phi {
     type TextStream = ChannelTextStream<String>;
 
     fn tokenizer(&self) -> Arc<dyn floneumin_sample::Tokenizer + Send + Sync> {
         self.get_tokenizer() as Arc<dyn floneumin_sample::Tokenizer + Send + Sync>
     }
 
-    async fn stream_text(
-        &mut self,
-        prompt: &str,
-        generation_parameters: crate::model::GenerationParameters,
-    ) -> anyhow::Result<Self::TextStream> {
-        let max_length = generation_parameters.max_length();
-        self.run(
-            InferenceSettings::new(prompt)
-                .with_sample_len(max_length as usize)
-                .with_stop_on(generation_parameters.stop_on().map(|s| s.to_string())),
-            Arc::new(Mutex::new(generation_parameters.sampler())),
-        )
-        .map(Into::into)
+    fn stream_text<'a>(&'a mut self, prompt: &'a str) -> StreamTextBuilder<'a, Self> {
+        StreamTextBuilder::new(prompt, self, |self_, prompt, generation_parameters| {
+            Box::pin(async move {
+                let max_length = generation_parameters.max_length();
+                self_
+                    .run(
+                        InferenceSettings::new(prompt)
+                            .with_sample_len(max_length as usize)
+                            .with_stop_on(generation_parameters.stop_on().map(|s| s.to_string())),
+                        Arc::new(Mutex::new(generation_parameters.sampler())),
+                    )
+                    .map(Into::into)
+            })
+        })
     }
 
     async fn stream_text_with_sampler(

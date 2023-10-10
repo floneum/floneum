@@ -1,3 +1,10 @@
+//! # floneumin-sample
+//! This is a sampling library for Floneumin.
+//!
+//! It handles choosing a token from a probability distribution. Samplers can be used to constrain the generation of text for example you can use a sampler to prevent the model from generating the same word twice in a row. Or you could only allow the model to generate a list of single digit numbers.
+
+#![warn(missing_docs)]
+
 use rustc_hash::FxHashMap;
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -13,9 +20,12 @@ use tokenizers::PreTokenizer;
 use tokenizers::PreTokenizerWrapper;
 use tokenizers::TokenizerImpl;
 
-pub mod structured;
-pub mod structured_parser;
+mod structured;
+pub use structured::*;
+mod structured_parser;
+pub use structured_parser::*;
 
+/// A type erased wrapper for a tokenizer.
 pub struct DynTokenizer {
     tokenizer: Arc<dyn Tokenizer + Send + Sync>,
 }
@@ -59,6 +69,7 @@ impl From<&llm::Tokenizer> for DynTokenizer {
 }
 
 impl DynTokenizer {
+    /// Create a new `DynTokenizer` from a `Tokenizer`.
     pub fn new<T: Tokenizer + Send + Sync + 'static>(tokenizer: T) -> Self {
         Self {
             tokenizer: Arc::new(tokenizer),
@@ -72,9 +83,12 @@ impl Tokenizer for DynTokenizer {
     }
 }
 
+/// A tokenizer is a type that can decode a list of token ids into a string.
 pub trait Tokenizer {
+    /// Decode a list of token ids into a string.
     fn decode(&self, ids: &[u32]) -> anyhow::Result<Cow<'_, str>>;
 
+    /// Decode a list of a list of token ids into a string.
     fn decode_batch(&self, ids: &[&[u32]]) -> anyhow::Result<Vec<Cow<'_, str>>> {
         ids.iter().map(|id| self.decode(id)).collect()
     }
@@ -96,19 +110,20 @@ where
     D: Decoder,
 {
     fn decode(&self, ids: &[u32]) -> anyhow::Result<Cow<'_, str>> {
-        self
-            .decode(ids, false)
+        self.decode(ids, false)
             .map(|s| s.into())
             .map_err(|e| anyhow::anyhow!(e))
     }
 }
 
+/// A tokenizer that uses the HuggingFace tokenizer with a cache for single tokens.
 pub struct FasterHuggingFaceTokenizer {
     inner: tokenizers::Tokenizer,
     single_token_map: FxHashMap<u32, Cow<'static, str>>,
 }
 
 impl FasterHuggingFaceTokenizer {
+    /// Create a new `FasterHuggingFaceTokenizer` from a `tokenizers::Tokenizer`.
     pub fn new(tokenizer: tokenizers::Tokenizer) -> Self {
         let single_token_map: FxHashMap<_, _> = tokenizer
             .get_vocab(true)
@@ -128,14 +143,17 @@ impl FasterHuggingFaceTokenizer {
         }
     }
 
+    /// Get the inner tokenizer.
     pub fn tokenizer(&self) -> &tokenizers::Tokenizer {
         &self.inner
     }
 
+    /// Get the inner tokenizer mutably.
     pub fn tokenizer_mut(&mut self) -> &mut tokenizers::Tokenizer {
         &mut self.inner
     }
 
+    /// Consume the `FasterHuggingFaceTokenizer` and return the inner tokenizer.
     pub fn into_tokenizer(self) -> tokenizers::Tokenizer {
         self.inner
     }
@@ -171,12 +189,7 @@ impl Tokenizer for FasterHuggingFaceTokenizer {
             }
             let mut token = String::new();
             for id in *id {
-                token.push_str(
-                    self.single_token_map
-                        .get(id)
-                        .map(|s| &**s)
-                        .unwrap_or(""),
-                );
+                token.push_str(self.single_token_map.get(id).map(|s| &**s).unwrap_or(""));
             }
             tokens.push(token.into());
         }

@@ -1,3 +1,5 @@
+#![warn(missing_docs)]
+
 #[cfg(feature = "mkl")]
 extern crate intel_mkl_src;
 
@@ -54,14 +56,46 @@ impl Default for BertSource {
     }
 }
 
+pub struct BertBuilder {
+    source: Option<BertSource>,
+}
+
+impl Default for BertBuilder {
+    fn default() -> Self {
+        Self { source: None }
+    }
+}
+
+impl BertBuilder {
+    pub fn source(mut self, source: BertSource) -> Self {
+        self.source = Some(source);
+        self
+    }
+
+    pub fn build(self) -> anyhow::Result<Bert> {
+        let source = self.source.unwrap_or_default();
+        Bert::builder().build()
+    }
+}
+
 pub struct Bert {
     weights_filename: PathBuf,
     tokenizer_filename: PathBuf,
     config: Config,
 }
 
+impl Default for Bert {
+    fn default() -> Self {
+        Self::builder().build().unwrap()
+    }
+}
+
 impl Bert {
-    pub fn new(source: BertSource) -> anyhow::Result<Self> {
+    pub fn builder() -> BertBuilder {
+        BertBuilder::default()
+    }
+
+    fn new(source: BertSource) -> anyhow::Result<Self> {
         let BertSource { model_id, revision } = source;
 
         let repo = Repo::with_revision(model_id, RepoType::Model, revision);
@@ -118,8 +152,6 @@ impl Bert {
 pub struct BertInferenceOptions {
     cpu: bool,
 }
-
-
 
 impl BertInferenceOptions {
     pub fn with_cpu(mut self, cpu: bool) -> Self {
@@ -201,7 +233,7 @@ pub fn device(cpu: bool) -> anyhow::Result<Device> {
 
 #[test]
 fn embed_sentences() -> anyhow::Result<()> {
-    let bert = Bert::new(BertSource::default())?;
+    let bert = Bert::builder().build()?;
     let mut bert = bert.load(BertInferenceOptions::default())?;
     let sentences = vec![
         "Cats are cool",

@@ -71,9 +71,7 @@ impl main::types::HostEmbeddingModel for State {
                         .into_any_embedder()
                 }
             },
-            main::types::EmbeddingModelType::Bert => {
-                Bert::new(Default::default())?.into_any_embedder()
-            }
+            main::types::EmbeddingModelType::Bert => Bert::builder().build()?.into_any_embedder(),
         };
         let idx = self.embedders.insert(model);
 

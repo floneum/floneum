@@ -1,11 +1,8 @@
 pub use crate::local::bert::*;
-pub use crate::local::mistral::*;
-pub use crate::local::phi::*;
 pub use crate::local::session::*;
 use crate::{embedding::Embedding, model::*};
 use floneumin_sample::Tokenizer;
 use floneumin_streams::sender::ChannelTextStream;
-use futures_util::StreamExt;
 use llm::InferenceSessionConfig;
 use llm_samplers::configure::SamplerChainBuilder;
 use llm_samplers::prelude::Sampler;
@@ -14,8 +11,6 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 mod bert;
-mod mistral;
-mod phi;
 mod session;
 
 pub(crate) trait LocalModelType {
@@ -56,25 +51,12 @@ macro_rules! local_model {
                 self.get_tokenizer() as Arc<dyn Tokenizer + Send + Sync>
             }
 
-            async fn generate_text(
-                &mut self,
-                prompt: &str,
-                generation_parameters: crate::model::GenerationParameters,
-            ) -> anyhow::Result<String> {
-                let mut text = String::new();
-                let mut stream = self.stream_text(prompt, generation_parameters).await?;
-                while let Some(new) = stream.next().await {
-                    text.push_str(&new);
-                }
-                Ok(text)
-            }
-
-            async fn stream_text(
-                &mut self,
-                prompt: &str,
-                generation_parameters: crate::model::GenerationParameters,
-            ) -> anyhow::Result<Self::TextStream> {
-                Ok(self.infer(prompt.to_string(), generation_parameters).await)
+            fn stream_text<'a>(&'a mut self, prompt: &'a str) -> StreamTextBuilder<'a, Self> {
+                StreamTextBuilder::new(prompt, self, |self_, prompt, generation_parameters| {
+                    Box::pin(async {
+                        Ok(self_.infer(prompt.to_string(), generation_parameters).await)
+                    })
+                })
             }
 
             async fn stream_text_with_sampler(

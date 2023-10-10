@@ -1,3 +1,5 @@
+#![warn(missing_docs)]
+
 //! SAM: Segment Anything Model
 //! https://github.com/facebookresearch/segment-anything
 

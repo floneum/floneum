@@ -1,12 +1,9 @@
+use crate::context::document::{Document, IntoDocument};
+use floneumin_language_model::*;
 use std::{
     borrow::Cow,
     fmt::Debug,
     ops::{Deref, Range},
-};
-
-use crate::{
-    context::document::{Document, IntoDocument},
-    embedding::{Embedding, VectorSpace},
 };
 
 pub mod keyword;

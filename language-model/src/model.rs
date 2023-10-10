@@ -2,7 +2,9 @@ use crate::embedding::{Embedding, VectorSpace};
 use floneumin_sample::Tokenizer;
 use futures_util::{Stream, StreamExt};
 use llm_samplers::prelude::Sampler;
+use std::future::IntoFuture;
 use std::marker::PhantomData;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
 use url::Url;
@@ -58,8 +60,185 @@ pub trait CreateModel {
     fn requires_download() -> bool;
 }
 
+pub struct StreamTextBuilder<'a, M: Model> {
+    self_: &'a mut M,
+    prompt: &'a str,
+    parameters: GenerationParameters,
+    future: fn(
+        &'a mut M,
+        &'a str,
+        GenerationParameters,
+    ) -> Pin<
+        Box<dyn std::future::Future<Output = anyhow::Result<M::TextStream>> + Send + 'a>,
+    >,
+}
+
+impl<'a, M: Model> StreamTextBuilder<'a, M> {
+    pub fn new(
+        prompt: &'a str,
+        self_: &'a mut M,
+        future: fn(
+            &'a mut M,
+            &'a str,
+            GenerationParameters,
+        ) -> Pin<
+            Box<dyn std::future::Future<Output = anyhow::Result<M::TextStream>> + Send + 'a>,
+        >,
+    ) -> Self {
+        Self {
+            self_,
+            prompt,
+            parameters: GenerationParameters::default(),
+            future,
+        }
+    }
+
+    pub fn with_generation_parameters(mut self, parameters: GenerationParameters) -> Self {
+        self.parameters = parameters;
+        self
+    }
+
+    pub fn with_temperature(mut self, temperature: f32) -> Self {
+        self.parameters.temperature = temperature;
+        self
+    }
+
+    pub fn with_top_k(mut self, top_k: u32) -> Self {
+        self.parameters.top_k = top_k;
+        self
+    }
+
+    pub fn with_top_p(mut self, top_p: f32) -> Self {
+        self.parameters.top_p = top_p;
+        self
+    }
+
+    pub fn with_repetition_penalty(mut self, repetition_penalty: f32) -> Self {
+        self.parameters.repetition_penalty = repetition_penalty;
+        self
+    }
+
+    pub fn with_repetition_penalty_range(mut self, repetition_penalty_range: u32) -> Self {
+        self.parameters.repetition_penalty_range = repetition_penalty_range;
+        self
+    }
+
+    pub fn with_max_length(mut self, max_length: u32) -> Self {
+        self.parameters.max_length = max_length;
+        self
+    }
+
+    pub fn with_stop_on(mut self, stop_on: impl Into<Option<String>>) -> Self {
+        self.parameters.stop_on = stop_on.into();
+        self
+    }
+}
+
+impl<'a, M: Model> IntoFuture for StreamTextBuilder<'a, M> {
+    type Output = anyhow::Result<M::TextStream>;
+    type IntoFuture = Pin<Box<dyn std::future::Future<Output = Self::Output> + Send + 'a>>;
+
+    fn into_future(self) -> Self::IntoFuture {
+        let Self {
+            self_,
+            prompt,
+            parameters,
+            future,
+        } = self;
+        future(self_, prompt, parameters)
+    }
+}
+
+pub struct GenerateTextBuilder<'a, M: Model> {
+    self_: &'a mut M,
+    prompt: &'a str,
+    parameters: GenerationParameters,
+    future: fn(
+        &'a mut M,
+        &'a str,
+        GenerationParameters,
+    )
+        -> Pin<Box<dyn std::future::Future<Output = anyhow::Result<String>> + Send + 'a>>,
+}
+
+impl<'a, M: Model> GenerateTextBuilder<'a, M> {
+    pub fn new(
+        prompt: &'a str,
+        self_: &'a mut M,
+        future: fn(
+            &'a mut M,
+            &'a str,
+            GenerationParameters,
+        ) -> Pin<
+            Box<dyn std::future::Future<Output = anyhow::Result<String>> + Send + 'a>,
+        >,
+    ) -> Self {
+        Self {
+            self_,
+            prompt,
+            parameters: GenerationParameters::default(),
+            future,
+        }
+    }
+
+    pub fn with_generation_parameters(mut self, parameters: GenerationParameters) -> Self {
+        self.parameters = parameters;
+        self
+    }
+
+    pub fn with_temperature(mut self, temperature: f32) -> Self {
+        self.parameters.temperature = temperature;
+        self
+    }
+
+    pub fn with_top_k(mut self, top_k: u32) -> Self {
+        self.parameters.top_k = top_k;
+        self
+    }
+
+    pub fn with_top_p(mut self, top_p: f32) -> Self {
+        self.parameters.top_p = top_p;
+        self
+    }
+
+    pub fn with_repetition_penalty(mut self, repetition_penalty: f32) -> Self {
+        self.parameters.repetition_penalty = repetition_penalty;
+        self
+    }
+
+    pub fn with_repetition_penalty_range(mut self, repetition_penalty_range: u32) -> Self {
+        self.parameters.repetition_penalty_range = repetition_penalty_range;
+        self
+    }
+
+    pub fn with_max_length(mut self, max_length: u32) -> Self {
+        self.parameters.max_length = max_length;
+        self
+    }
+
+    pub fn with_stop_on(mut self, stop_on: impl Into<Option<String>>) -> Self {
+        self.parameters.stop_on = stop_on.into();
+        self
+    }
+}
+
+impl<'a, M: Model> IntoFuture for GenerateTextBuilder<'a, M> {
+    type Output = anyhow::Result<String>;
+    type IntoFuture = Pin<Box<dyn std::future::Future<Output = Self::Output> + Send + 'a>>;
+
+    fn into_future(self) -> Self::IntoFuture {
+        let Self {
+            self_,
+            prompt,
+            parameters,
+            future,
+        } = self;
+        future(self_, prompt, parameters)
+    }
+}
+
 #[async_trait::async_trait]
-pub trait Model: 'static {
+pub trait Model: Send + 'static {
     type TextStream: Stream<Item = String> + Send + Sync + Unpin + 'static;
 
     fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync>;
@@ -82,18 +261,21 @@ pub trait Model: 'static {
         Ok(text)
     }
 
-    async fn generate_text(
-        &mut self,
-        prompt: &str,
-        generation_parameters: GenerationParameters,
-    ) -> anyhow::Result<String> {
-        let mut text = String::new();
+    fn generate_text<'a>(&'a mut self, prompt: &'a str) -> GenerateTextBuilder<'a, Self>
+    where
+        Self: Sized + Send + Sync,
+    {
+        GenerateTextBuilder::new(prompt, self, |self_, prompt, generation_parameters| {
+            Box::pin(async {
+                let mut text = String::new();
 
-        let mut stream = self.stream_text(prompt, generation_parameters).await?;
-        while let Some(new) = stream.next().await {
-            text.push_str(&new);
-        }
-        Ok(text)
+                let mut stream = self_.stream_text(prompt).await?;
+                while let Some(new) = stream.next().await {
+                    text.push_str(&new);
+                }
+                Ok(text)
+            })
+        })
     }
 
     async fn stream_text_with_sampler(
@@ -106,11 +288,9 @@ pub trait Model: 'static {
         Err(anyhow::Error::msg("Not implemented"))
     }
 
-    async fn stream_text(
-        &mut self,
-        prompt: &str,
-        generation_parameters: crate::model::GenerationParameters,
-    ) -> anyhow::Result<Self::TextStream>;
+    fn stream_text<'a>(&'a mut self, prompt: &'a str) -> StreamTextBuilder<'a, Self>
+    where
+        Self: Sized;
 
     fn into_any_model(self) -> DynModel
     where
@@ -140,15 +320,17 @@ where
         self.0.tokenizer()
     }
 
-    async fn stream_text(
-        &mut self,
-        prompt: &str,
-        generation_parameters: crate::model::GenerationParameters,
-    ) -> anyhow::Result<Self::TextStream> {
-        self.0
-            .stream_text(prompt, generation_parameters)
-            .await
-            .map(|s| Box::new(s) as Box<dyn Stream<Item = String> + Send + Sync + Unpin>)
+    fn stream_text<'a>(&'a mut self, prompt: &'a str) -> StreamTextBuilder<'a, Self> {
+        StreamTextBuilder::new(prompt, self, |self_, prompt, generation_parameters| {
+            Box::pin(async {
+                self_
+                    .0
+                    .stream_text(prompt)
+                    .with_generation_parameters(generation_parameters)
+                    .await
+                    .map(|s| Box::new(s) as Box<dyn Stream<Item = String> + Send + Sync + Unpin>)
+            })
+        })
     }
 
     async fn stream_text_with_sampler(

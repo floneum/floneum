@@ -1,11 +1,40 @@
+//! # RMistral
+//!
+//! RMistral is a Rust implementation of the quantized [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) language model.
+//!
+//! Mistral 7B is a very small but performant language model that can be easily run on your local machine.
+//!
+//! This library uses [Candle](https://github.com/huggingface/candle) to run Mistral.
+//!
+//! ## Usage
+//!
+//! ```rust
+//! use mitral::prelude::*;
+//! #[tokio::main]
+//! async fn main() {
+//!     let mut model = Mistral::default();
+//!     let prompt = "The capital of France is ";
+//!     let mut result = model.stream_text(prompt).await.unwrap();
+//!
+//!     print!("{prompt}");
+//!     while let Some(token) = result.next().await {
+//!         print!("{token}");
+//!     }
+//! }
+//! ```
+
+#![warn(missing_docs)]
+
 #[cfg(feature = "mkl")]
 extern crate intel_mkl_src;
 
 #[cfg(feature = "accelerate")]
 extern crate accelerate_src;
 
+mod language_model;
 mod model;
 mod source;
+pub use source::*;
 
 use anyhow::Error as E;
 use candle_core::Device;
@@ -15,6 +44,12 @@ use model::MistralInner;
 use std::sync::Arc;
 use tokenizers::Tokenizer;
 
+/// A prelude of commonly used items in RPhi.
+pub mod prelude {
+    pub use crate::{Mistral, MistralBuilder, MistralSource};
+    pub use floneumin_language_model::*;
+}
+
 enum Task {
     Kill,
     Infer {
@@ -23,6 +58,7 @@ enum Task {
     },
 }
 
+/// A quantized Mistral language model with support for streaming generation.
 pub struct Mistral {
     task_sender: tokio::sync::mpsc::UnboundedSender<Task>,
     thread_handle: Option<std::thread::JoinHandle<()>>,
@@ -43,11 +79,13 @@ impl Default for Mistral {
 }
 
 impl Mistral {
+    /// Create a new builder for a Mistral model.
     pub fn builder() -> MistralBuilder {
         MistralBuilder::default()
     }
 
-    pub fn downloaded() -> bool {
+    /// Check if the model has been downloaded.
+    pub(crate) fn downloaded() -> bool {
         false
     }
 
@@ -80,11 +118,12 @@ impl Mistral {
         }
     }
 
-    pub fn get_tokenizer(&self) -> Arc<Tokenizer> {
+    /// Get a reference to the tokenizer.
+    pub(crate) fn get_tokenizer(&self) -> Arc<Tokenizer> {
         self.tokenizer.clone()
     }
 
-    pub fn run(
+    pub(crate) fn run(
         &mut self,
         settings: InferenceSettings,
     ) -> anyhow::Result<tokio::sync::mpsc::UnboundedReceiver<String>> {
@@ -96,6 +135,7 @@ impl Mistral {
     }
 }
 
+/// A builder with configuration for a Mistral model.
 #[derive(Default)]
 pub struct MistralBuilder {
     /// Run on CPU rather than on GPU.
@@ -107,21 +147,25 @@ pub struct MistralBuilder {
 }
 
 impl MistralBuilder {
+    /// Set whether to run on CPU rather than on GPU.
     pub fn with_cpu(mut self, cpu: bool) -> Self {
         self.cpu = cpu;
         self
     }
 
+    /// Set the source for the model.
     pub fn with_source(mut self, source: source::MistralSource) -> Self {
         self.source = source;
         self
     }
 
+    /// Set whether to use Flash Attention.
     pub fn with_flash_attn(mut self, use_flash_attn: bool) -> Self {
         self.flash_attn = use_flash_attn;
         self
     }
 
+    /// Build the model (this will download the model if it is not already downloaded)
     pub fn build(self) -> anyhow::Result<Mistral> {
         let api = Api::new()?;
         let repo = api.repo(Repo::with_revision(
@@ -142,22 +186,8 @@ impl MistralBuilder {
     }
 }
 
-pub fn device(cpu: bool) -> anyhow::Result<Device> {
-    if cpu {
-        Ok(Device::Cpu)
-    } else {
-        let device = Device::cuda_if_available(0)?;
-        if !device.is_cuda() {
-            tracing::warn!(
-                "Running on CPU, to run on GPU, build this example with `--features cuda`"
-            );
-        }
-        Ok(device)
-    }
-}
-
 #[derive(Debug)]
-pub struct InferenceSettings {
+pub(crate) struct InferenceSettings {
     prompt: String,
 
     /// The temperature used to generate samples.
@@ -199,11 +229,6 @@ impl InferenceSettings {
 
     pub fn with_top_p(mut self, top_p: f64) -> Self {
         self.top_p = Some(top_p);
-        self
-    }
-
-    pub fn with_seed(mut self, seed: u64) -> Self {
-        self.seed = seed;
         self
     }
 

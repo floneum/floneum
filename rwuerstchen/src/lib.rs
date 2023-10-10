@@ -1,3 +1,5 @@
+#![warn(missing_docs)]
+
 #[cfg(feature = "accelerate")]
 extern crate accelerate_src;
 

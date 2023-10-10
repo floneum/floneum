@@ -1,11 +1,47 @@
+//! # RPhi
+//!
+//! RPhi is a Rust implementation of the quantized [Phi 1.5](https://huggingface.co/microsoft/phi-1_5) language model.
+//!
+//! Phi-1.5 is a very small but performant language model that can be easily run on your local machine.
+//!
+//! This library uses Quantized Mixformer from [Candle](https://github.com/huggingface/candle) to run Phi-1.5.
+//!
+//! ## Usage
+//!
+//! ```rust
+//! use rphi::prelude::*;
+//! #[tokio::main]
+//! async fn main() {
+//!     let mut model = Phi::default();
+//!     let prompt = "The capital of France is ";
+//!     let mut result = model.stream_text(prompt).await.unwrap();
+//!
+//!     print!("{prompt}");
+//!     while let Some(token) = result.next().await {
+//!         print!("{token}");
+//!     }
+//! }
+//! ```
+
+#![warn(missing_docs)]
+
 #[cfg(feature = "mkl")]
 extern crate intel_mkl_src;
 
 #[cfg(feature = "accelerate")]
 extern crate accelerate_src;
 
+mod lanuage_model;
 mod model;
 mod source;
+pub use floneumin_language_model;
+pub use source::*;
+
+/// A prelude of commonly used items in RPhi.
+pub mod prelude {
+    pub use crate::{Phi, PhiBuilder, PhiSource};
+    pub use floneumin_language_model::*;
+}
 
 use anyhow::Error as E;
 
@@ -29,6 +65,7 @@ enum Task {
     },
 }
 
+/// A quantized Phi-1.5 language model with support for streaming generation.
 pub struct Phi {
     task_sender: tokio::sync::mpsc::UnboundedSender<Task>,
     thread_handle: Option<std::thread::JoinHandle<()>>,
@@ -49,11 +86,13 @@ impl Default for Phi {
 }
 
 impl Phi {
+    /// Create a builder for a Phi model.
     pub fn builder() -> PhiBuilder {
         PhiBuilder::default()
     }
 
-    pub fn downloaded() -> bool {
+    /// Check if the model has been downloaded.
+    pub(crate) fn downloaded() -> bool {
         false
     }
 
@@ -92,11 +131,12 @@ impl Phi {
         }
     }
 
-    pub fn get_tokenizer(&self) -> Arc<FasterHuggingFaceTokenizer> {
+    /// Get the tokenizer used by this model.
+    pub(crate) fn get_tokenizer(&self) -> Arc<FasterHuggingFaceTokenizer> {
         self.tokenizer.clone()
     }
 
-    pub fn run(
+    fn run(
         &mut self,
         settings: InferenceSettings,
         sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
@@ -113,36 +153,41 @@ impl Phi {
     }
 }
 
+/// A builder with configuration for a Phi model.
 #[derive(Default)]
 pub struct PhiBuilder {
     /// Run on CPU rather than on GPU.
     cpu: bool,
 
+    /// The source to use for the model.
     source: source::PhiSource,
 }
 
 impl PhiBuilder {
+    /// Set whether to run on CPU rather than on GPU.
     pub fn with_cpu(mut self, cpu: bool) -> Self {
         self.cpu = cpu;
         self
     }
 
+    /// Set the source to use for the model.
     pub fn with_source(mut self, source: source::PhiSource) -> Self {
         self.source = source;
         self
     }
 
+    /// Build the model (this will download the model if it is not already downloaded)
     pub fn build(self) -> anyhow::Result<Phi> {
         let api = Api::new()?;
         let repo = api.repo(Repo::with_revision(
-            self.source.model_id,
+            "microsoft/phi-1_5".to_string(),
             RepoType::Model,
-            self.source.revision,
+            "refs/pr/18".to_string(),
         ));
         let tokenizer_filename = repo.get("tokenizer.json")?;
         let filename = api
-            .model("lmz/candle-quantized-phi".to_string())
-            .get("model-q4k.gguf")?;
+            .model(self.source.model_id.clone())
+            .get(&self.source.model_file)?;
         let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(E::msg)?;
 
         let config = Config::v1_5();
@@ -157,7 +202,7 @@ impl PhiBuilder {
     }
 }
 
-pub fn device(cpu: bool) -> anyhow::Result<Device> {
+pub(crate) fn device(cpu: bool) -> anyhow::Result<Device> {
     if cpu {
         Ok(Device::Cpu)
     } else {
@@ -172,7 +217,7 @@ pub fn device(cpu: bool) -> anyhow::Result<Device> {
 }
 
 #[derive(Debug)]
-pub struct InferenceSettings {
+pub(crate) struct InferenceSettings {
     prompt: String,
 
     /// The seed to use when generating random samples.
@@ -193,11 +238,6 @@ impl InferenceSettings {
             sample_len: 100,
             stop_on: None,
         }
-    }
-
-    pub fn with_seed(mut self, seed: u64) -> Self {
-        self.seed = seed;
-        self
     }
 
     pub fn with_sample_len(mut self, sample_len: usize) -> Self {

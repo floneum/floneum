@@ -1,3 +1,5 @@
+
+/// A source for the Mistral model.
 pub struct MistralSource {
     /// The model to use, check out available models: https://huggingface.co/models?library=sentence-transformers&sort=trending
     pub(crate) model_id: String,
@@ -7,6 +9,7 @@ pub struct MistralSource {
 }
 
 impl MistralSource {
+    /// Create a new source for the Mistral model.
     pub fn new(model_id: String, gguf_file: String, tokenizer_file: String) -> Self {
         Self {
             model_id,
@@ -16,17 +19,20 @@ impl MistralSource {
         }
     }
 
+    /// Set the revision of the model to use.
     pub fn with_revision(mut self, revision: String) -> Self {
         self.revision = revision;
         self
     }
 
+    /// Set the tokenizer file to use.
     pub fn with_tokenizer_file(mut self, tokenizer_file: String) -> Self {
         self.tokenizer_file = tokenizer_file;
         self
     }
 
-    pub fn with_gguf_file(mut self, gguf_file: String) -> Self {
+    /// Set the model (gguf) file to use.
+    pub fn with_model_file(mut self, gguf_file: String) -> Self {
         self.gguf_file = gguf_file;
         self
     }
