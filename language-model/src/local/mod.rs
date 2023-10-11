@@ -118,6 +118,7 @@ local_model!(
 local_model!(ModelType::GptNeoX(GptNeoXType::StableLm), StableLmSpace);
 
 impl crate::model::GenerationParameters {
+    /// Create a sampler chain from the generation parameters.
     pub fn sampler(self) -> SamplerChain {
         use llm_samplers::configure::SamplerSlot;
         let GenerationParameters {

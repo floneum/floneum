@@ -75,11 +75,11 @@ fn model_path(url: &Url) -> PathBuf {
 }
 
 impl ModelType {
-    pub async fn download(&self) -> Box<dyn Model> {
+    pub(crate) async fn download(&self) -> Box<dyn Model> {
         download(self.clone()).await
     }
 
-    pub fn requires_download(&self) -> bool {
+    pub(crate) fn requires_download(&self) -> bool {
         !model_downloaded(self)
     }
 }

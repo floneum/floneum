@@ -14,6 +14,7 @@ trait AudioData {
     fn read(&mut self) -> anyhow::Result<u8>;
 }
 
+/// The specification of an audio stream.
 #[derive(Clone)]
 pub struct AudioSpec {
     sample_rate: u32,
@@ -34,18 +35,22 @@ impl From<&cpal::SupportedStreamConfig> for AudioSpec {
 }
 
 impl AudioSpec {
+    /// The sample size in bytes.
     pub fn sample_size_bytes(&self) -> u16 {
         self.bits_per_sample / 8
     }
 
+    /// The sample rate in Hz.
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
     }
 
+    /// If the sample is a float.
     pub fn float(&self) -> bool {
         self.float
     }
 
+    /// The number of channels.
     pub fn channels(&self) -> u16 {
         self.channels
     }
@@ -69,6 +74,7 @@ impl<S: Sample> AudioStream<S>
 where
     <S as cpal::Sample>::Float: Into<f32>,
 {
+    /// Create a new audio stream.
     pub fn new(seconds: f32, spec: impl Into<AudioSpec>) -> Self {
         let spec = spec.into();
         Self {
@@ -80,6 +86,7 @@ where
         }
     }
 
+    /// Get the specification of the audio stream.
     pub fn spec(&self) -> &AudioSpec {
         &self.spec
     }
@@ -133,6 +140,7 @@ where
         }
     }
 
+    /// Get a reader for the audio stream.
     pub fn reader(&self) -> anyhow::Result<rodio::buffer::SamplesBuffer<f32>> {
         let samples: Vec<_> = self
             .buffer
@@ -149,6 +157,7 @@ where
     }
 }
 
+/// A stream of audio chunks.
 pub struct AudioChunkStream {
     receiver: tokio::sync::mpsc::UnboundedReceiver<rodio::buffer::SamplesBuffer<f32>>,
 }
@@ -161,6 +170,7 @@ impl Stream for AudioChunkStream {
     }
 }
 
+/// A single channel buffer of audio data.
 pub struct AudioBuffer {
     data: Vec<u8>,
 }
@@ -172,22 +182,17 @@ impl From<Vec<u8>> for AudioBuffer {
 }
 
 impl AudioBuffer {
+    /// Create a new audio buffer.
     pub fn new(data: Vec<u8>) -> Self {
         Self { data }
     }
 
+    /// Open an audio buffer from a file.
     pub fn open<P: AsRef<std::path::Path>>(path: P) -> Result<Self, anyhow::Error> {
         Ok(Self::new(std::fs::read(path)?))
     }
 
-    pub fn data(&self) -> &[u8] {
-        &self.data
-    }
-
-    pub fn into_data(self) -> Vec<u8> {
-        self.data
-    }
-
+    /// Get a reader for the audio buffer.
     pub fn into_reader(self) -> Result<hound::WavReader<Cursor<Vec<u8>>>, anyhow::Error> {
         Ok(hound::WavReader::new(Cursor::new(self.data))?)
     }

@@ -1,6 +1,11 @@
+//! # Floneumin Sound
+//! 
+//! This crate is a collection of audio utilities for the Floneumin project.
+
 #![warn(missing_docs)]
 
 mod audio;
 pub use audio::*;
-pub mod model;
-pub mod source;
+mod source;
+pub use source::*;
+pub use rwhisper;

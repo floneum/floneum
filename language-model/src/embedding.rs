@@ -88,6 +88,7 @@ impl<S: VectorSpace, I: IntoIterator<Item = f32>> From<I> for Embedding<S> {
 }
 
 impl<S1: VectorSpace> Embedding<S1> {
+    /// Cast this embedding to a different vector space.
     pub fn cast<S2: VectorSpace>(self) -> Embedding<S2> {
         Embedding {
             embedding: self.embedding,
@@ -97,6 +98,7 @@ impl<S1: VectorSpace> Embedding<S1> {
 }
 
 impl<S: VectorSpace> Embedding<S> {
+    /// Create a new embedding from a tensor.
     pub fn new(embedding: Tensor) -> Self {
         Embedding {
             embedding,
@@ -104,16 +106,18 @@ impl<S: VectorSpace> Embedding<S> {
         }
     }
 
+    /// Get the tensor that represents this embedding.
     pub fn vector(&self) -> &Tensor {
         &self.embedding
     }
 
+    /// Get the tensor that represents this embedding as a Vec of floats.
     pub fn to_vec(&self) -> Vec<f32> {
         self.embedding.to_vec1::<f32>().unwrap()
     }
 }
 
-pub fn get_embeddings<S: VectorSpace>(model: &dyn llm::Model, embed: &str) -> Embedding<S> {
+pub(crate) fn get_embeddings<S: VectorSpace>(model: &dyn llm::Model, embed: &str) -> Embedding<S> {
     let mut session = model.start_session(Default::default());
     let mut output_request = llm::OutputRequest {
         all_logits: None,

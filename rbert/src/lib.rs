@@ -7,7 +7,7 @@
 //! ```rust
 //! use floneumin_language_model::Embedder;
 //! use rbert::*;
-//! 
+//!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
 //!     let mut bert = Bert::builder().build()?;
@@ -20,7 +20,7 @@
 //!     ];
 //!     let embeddings = bert.embed_batch(&sentences).await?;
 //!     println!("embeddings {:?}", embeddings);
-//! 
+//!
 //!     // Find the cosine similarity between the first two sentences
 //!     let mut similarities = vec![];
 //!     let n_sentences = sentences.len();
@@ -35,11 +35,10 @@
 //!     for &(score, i, j) in similarities.iter() {
 //!         println!("score: {score:.2} '{}' '{}'", sentences[i], sentences[j])
 //!     }
-//! 
+//!
 //!     Ok(())
 //! }
 //! ```
-
 
 #![warn(missing_docs)]
 

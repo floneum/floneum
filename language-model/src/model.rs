@@ -512,6 +512,8 @@ impl GenerationParameters {
     }
 }
 
+/// The type of model to use.
+#[allow(missing_docs)]
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum ModelType {
     Mpt(MptType),
@@ -519,6 +521,8 @@ pub enum ModelType {
     Llama(LlamaType),
 }
 
+/// The type of Llama model to use.
+#[allow(missing_docs)]
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum LlamaType {
     Vicuna,
@@ -530,6 +534,8 @@ pub enum LlamaType {
     Custom(Url),
 }
 
+/// The type of MPT model to use.
+#[allow(missing_docs)]
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum MptType {
     Base,
@@ -539,6 +545,8 @@ pub enum MptType {
     Custom(Url),
 }
 
+/// The type of GPT-NeoX model to use.
+#[allow(missing_docs)]
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum GptNeoXType {
     LargePythia,
@@ -550,6 +558,9 @@ pub enum GptNeoXType {
 
 macro_rules! embedding {
     ($ty: ident) => {
+        #[doc = "A vector space for the "]
+        #[doc = stringify!($ty)]
+        #[doc = " model."]
         pub struct $ty;
 
         impl VectorSpace for $ty {}
