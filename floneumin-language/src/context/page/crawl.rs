@@ -33,10 +33,10 @@ pub enum CrawlFeedback {
 /// # Example
 /// 
 /// ```rust
-/// /// use floneumin_language::context::page::BrowserMode;
-/// use floneumin_language::context::page::CrawlFeedback;
-/// use floneumin_language::context::page::Page;
-/// use floneumin_language::context::Url;
+/// use floneumin_language::BrowserMode;
+/// use floneumin_language::CrawlFeedback;
+/// use floneumin_language::Page;
+/// use floneumin_language::Url;
 /// use std::future::Future;
 /// use std::pin::Pin;
 /// use std::sync::atomic::AtomicUsize;

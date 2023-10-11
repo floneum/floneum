@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 /// # Example
 ///
 /// ```rust
+/// use floneumin_language::VectorDB;
 /// use floneumin_language_model::Embedder;
 /// use rbert::*;
 ///
@@ -32,7 +33,8 @@ use serde::{Deserialize, Serialize};
 ///     // Create a vector database from the embeddings
 ///     let mut db = VectorDB::new(embeddings, sentences);
 ///     // Find the closest sentence to "Cats are good"
-///     let closest = db.get_closest("Cats are good", 1);
+///     let embedding = bert.embed("Cats are good").await?;
+///     let closest = db.get_closest(embedding, 1);
 ///     println!("closest: {:?}", closest);
 ///
 ///     Ok(())

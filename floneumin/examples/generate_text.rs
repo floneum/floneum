@@ -1,10 +1,10 @@
 use std::io::Write;
 
 use floneumin_language::{
-    local::LocalSession,
-    model::{CreateModel, GenerationParameters, LlamaThirteenChatSpace, Model},
+LocalSession,
+    CreateModel, GenerationParameters, LlamaThirteenChatSpace, Model
 };
-use floneumin_streams::text_stream::TextStream;
+use floneumin_streams::TextStream;
 use futures_util::stream::StreamExt;
 
 #[tokio::main]

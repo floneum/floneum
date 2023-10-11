@@ -6,6 +6,20 @@ use crate::index::IntoDocuments;
 use super::document::Document;
 
 /// A RSS feed that can be used to add documents to a search index.
+/// 
+/// # Example
+/// ```rust
+/// use floneumin_language::RssFeed;
+/// 
+/// #[tokio::main]
+/// async fn main() {
+///     let feed = RssFeed::new(
+///        url::Url::parse("https://www.nytimes.com/services/xml/rss/nyt/HomePage.xml").unwrap(),
+///     );
+///     let documents = feed.read_top_n(5).await.unwrap();
+///     println!("Documents: {:?}", documents);
+/// }
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct RssFeed(Url);
 

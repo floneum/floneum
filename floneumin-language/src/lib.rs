@@ -13,3 +13,6 @@ pub use tool::*;
 mod vector_db;
 pub use floneumin_sample;
 pub use vector_db::*;
+pub use rphi::{Phi, PhiBuilder, PhiSource};
+pub use rmistral::{Mistral, MistralBuilder, MistralSource};
+pub use rbert::{Bert, BertBuilder, BertSource};

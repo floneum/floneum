@@ -1,7 +1,7 @@
 use floneumin_language::{
-    index::{keyword::FuzzySearchIndex, SearchIndex},
-    local::LocalSession,
-    model::{CreateModel, GenerationParameters, LlamaSevenChatSpace, Model},
+    FuzzySearchIndex, SearchIndex,
+    LocalSession,
+    CreateModel, GenerationParameters, LlamaSevenChatSpace, Model,
 };
 use floneumin_sound::model::whisper::*;
 use futures_util::StreamExt;

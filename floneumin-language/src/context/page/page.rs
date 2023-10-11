@@ -15,17 +15,21 @@ use url::Url;
 /// # Example
 /// 
 /// ```rust
-/// use floneumin_language::context::page::BrowserMode;
-/// use floneumin_language::context::page::CrawlFeedback;
-/// use floneumin_language::context::page::Page;
+/// use floneumin_language::BrowserMode;
+/// use floneumin_language::CrawlFeedback;
+/// use floneumin_language::Page;
+/// use floneumin_language::Url;
 /// 
-/// let page = Page::new(
-///     Url::parse("https://www.nytimes.com/live/2023/09/21/world/zelensky-russia-ukraine-news").unwrap(),
-///     BrowserMode::Static,
-/// );
-/// let document = page.article().await.unwrap();
-/// println!("Title: {}", document.title);
-/// println!("Body: {}", document.body);
+/// #[tokio::main]
+/// async fn main() {
+///     let page = Page::new(
+///         Url::parse("https://www.nytimes.com/live/2023/09/21/world/zelensky-russia-ukraine-news").unwrap(),
+///         BrowserMode::Static,
+///     ).unwrap();
+///     let document = page.article().await.unwrap();
+///     println!("Title: {}", document.title());
+///     println!("Body: {}", document.body());
+/// }
 /// ```
 #[derive(Debug, Clone)]
 pub enum Page {

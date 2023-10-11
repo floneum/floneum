@@ -17,18 +17,16 @@ pub use txt::*;
 /// A document that can be read from the file system.
 /// 
 /// # Example
-/// ```rust
-/// use floneumin_language::context::io::DocumentFolder;
-/// use floneumin_language::index::vector::ChunkStrategy;
-/// use floneumin_language::index::{keyword::FuzzySearchIndex, vector::DocumentDatabase, SearchIndex};
-/// use floneumin_language::local::Bert;
+/// ```rust, no_run
+/// use floneumin_language::DocumentFolder;
+/// use floneumin_language::ChunkStrategy;
+/// use floneumin_language::{FuzzySearchIndex, DocumentDatabase, SearchIndex};
+/// use floneumin_language::Bert;
 /// use std::io::Write;
 /// use std::path::PathBuf;
 /// 
 /// #[tokio::main]
 /// async fn main() {
-///     tracing_subscriber::fmt::init();
-/// 
 ///     let documents = DocumentFolder::try_from(PathBuf::from("./documents")).unwrap();
 /// 
 ///     let mut database = DocumentDatabase::new(
