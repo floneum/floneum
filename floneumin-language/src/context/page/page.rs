@@ -11,6 +11,22 @@ use tokio::time::Instant;
 use url::Url;
 
 /// A page that is either static or dynamic.
+/// 
+/// # Example
+/// 
+/// ```rust
+/// use floneumin_language::context::page::BrowserMode;
+/// use floneumin_language::context::page::CrawlFeedback;
+/// use floneumin_language::context::page::Page;
+/// 
+/// let page = Page::new(
+///     Url::parse("https://www.nytimes.com/live/2023/09/21/world/zelensky-russia-ukraine-news").unwrap(),
+///     BrowserMode::Static,
+/// );
+/// let document = page.article().await.unwrap();
+/// println!("Title: {}", document.title);
+/// println!("Body: {}", document.body);
+/// ```
 #[derive(Debug, Clone)]
 pub enum Page {
     /// A page of static HTML.
