@@ -5,6 +5,7 @@ use crate::index::IntoDocuments;
 
 use super::document::Document;
 
+/// A RSS feed that can be used to add documents to a search index.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RssFeed(Url);
 
@@ -22,14 +23,17 @@ impl IntoDocuments for RssFeed {
 }
 
 impl RssFeed {
+    /// Create a new RSS feed from the given URL.
     pub fn new(url: Url) -> Self {
         Self(url)
     }
 
+    /// Get the URL of the RSS feed.
     pub fn url(&self) -> &Url {
         &self.0
     }
 
+    /// Read the top N documents from the RSS feed.
     pub async fn read_top_n(&self, top_n: usize) -> anyhow::Result<Vec<Document>> {
         let xml = reqwest::get(self.0.clone()).await?.text().await?;
         let channel = Channel::read_from(xml.as_bytes())?;

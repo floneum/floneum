@@ -18,13 +18,19 @@ use url::Url;
 
 const COOLDOWN: Duration = Duration::from_secs(5);
 
+/// Feedback that can be given to the crawler after visiting a page.
 pub enum CrawlFeedback {
+    /// Continue crawling from this page.
     Continue,
+    /// Dont follow any links on this page.
     DontFollow,
+    /// Stop the entire crawler
     Stop,
 }
 
+/// Trait for a callback that is called when a page is visited.
 pub trait CrawlingCallback: Send + Sync + 'static {
+    /// The function that is called when a page is visited.
     fn visit(&self, page: Page) -> Pin<Box<dyn Future<Output = CrawlFeedback>>>;
 }
 

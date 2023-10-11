@@ -1,31 +1,44 @@
 use crate::index::IntoDocuments;
-use crate::{context::document::IntoDocument, index::Chunk};
+use crate::{context::IntoDocument, index::Chunk};
 use std::ops::Range;
 
 use floneumin_language_model::*;
 use slab::Slab;
 
-use crate::{context::document::Document, vector_db::VectorDB};
+use crate::{context::Document, vector_db::VectorDB};
 
 use super::{DocumentId, DocumentSnippet, DocumentSnippetRef, SearchIndex};
 
+/// A strategy for chunking a document into smaller pieces.
+///
+/// This is used to split a document into smaller pieces to generate embeddings for each piece.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ChunkStrategy {
+    /// Split the document into paragraphs.
     Paragraph {
+        /// The number of paragraphs to include in each chunk.
         paragraph_count: usize,
+        /// The number of paragraphs to overlap between chunks.
         overlap: usize,
     },
+    /// Split the document into sentences.
     Sentence {
+        /// The number of sentences to include in each chunk.
         sentence_count: usize,
+        /// The number of sentences to overlap between chunks.
         overlap: usize,
     },
+    /// Split the document into words.
     Words {
+        /// The number of words to include in each chunk.
         word_count: usize,
+        /// The number of words to overlap between chunks.
         overlap: usize,
     },
 }
 
 impl ChunkStrategy {
+    /// Chunk a string into smaller ranges.
     pub fn chunk(&self, string: &str) -> Vec<Range<usize>> {
         match self {
             Self::Paragraph {
@@ -107,6 +120,7 @@ impl Default for ChunkStrategy {
     }
 }
 
+/// A document that has been split into smaller chunks and embedded.
 pub struct EmbeddedDocument<S: VectorSpace> {
     raw: Document,
     chunks: Vec<Chunk<S>>,
@@ -122,8 +136,9 @@ impl<S: VectorSpace> std::fmt::Debug for EmbeddedDocument<S> {
 }
 
 impl<S: VectorSpace + Send + Sync + 'static> EmbeddedDocument<S> {
+    /// Create a new embedded document.
     pub async fn new<M: Embedder<S>>(
-        embedder: &M,
+        embedder: &mut M,
         raw: Document,
         strategy: ChunkStrategy,
     ) -> anyhow::Result<Self> {
@@ -144,8 +159,9 @@ impl<S: VectorSpace + Send + Sync + 'static> EmbeddedDocument<S> {
         Ok(Self { raw, chunks })
     }
 
+    /// Create a batch of embedded documents.
     pub async fn batch_new<M: Embedder<S>>(
-        embedder: &M,
+        embedder: &mut M,
         raw: Vec<Document>,
         strategy: ChunkStrategy,
     ) -> anyhow::Result<Vec<Self>> {
@@ -183,6 +199,9 @@ impl<S: VectorSpace + Send + Sync + 'static> EmbeddedDocument<S> {
     }
 }
 
+/// A document database that stores documents in a [`VectorDB`] in [`Chunk`]s.
+///
+/// The documents can be searched using the [`SearchIndex`] trait. This database will search based on each chunks embedding to find documents with a similar meaning.
 pub struct DocumentDatabase<S: VectorSpace + Send + Sync + 'static, M: Embedder<S>> {
     embedder: M,
     documents: Slab<Document>,
@@ -196,7 +215,7 @@ impl<M: Embedder<S> + Send + Sync + 'static, S: VectorSpace + Sync + Send + 'sta
 {
     async fn add(&mut self, document: impl IntoDocument + Send + Sync) -> anyhow::Result<()> {
         let document = document.into_document().await?;
-        let embedded = EmbeddedDocument::<S>::new(&self.embedder, document, self.strategy)
+        let embedded = EmbeddedDocument::<S>::new(&mut self.embedder, document, self.strategy)
             .await
             .unwrap();
         let id = self.documents.insert(embedded.raw);
@@ -213,9 +232,10 @@ impl<M: Embedder<S> + Send + Sync + 'static, S: VectorSpace + Sync + Send + 'sta
 
     async fn extend(&mut self, documents: impl IntoDocuments + Send + Sync) -> anyhow::Result<()> {
         let documents = documents.into_documents().await?;
-        let embedded = EmbeddedDocument::<S>::batch_new(&self.embedder, documents, self.strategy)
-            .await
-            .unwrap();
+        let embedded =
+            EmbeddedDocument::<S>::batch_new(&mut self.embedder, documents, self.strategy)
+                .await
+                .unwrap();
         let mut embeddings = Vec::new();
         let mut values = Vec::new();
         for embedded in embedded {
@@ -234,13 +254,14 @@ impl<M: Embedder<S> + Send + Sync + 'static, S: VectorSpace + Sync + Send + 'sta
         Ok(())
     }
 
-    async fn search(&self, query: &str, top_n: usize) -> Vec<DocumentSnippetRef> {
+    async fn search(&mut self, query: &str, top_n: usize) -> Vec<DocumentSnippetRef> {
         let embedding = self.embedder.embed(query).await.unwrap();
         self.search_iter(embedding, top_n).collect()
     }
 }
 
 impl<M: Embedder<S>, S: VectorSpace + Sync + Send + 'static> DocumentDatabase<S, M> {
+    /// Create a new document database.
     pub fn new(embedder: M, chunk_strategy: ChunkStrategy) -> Self {
         Self {
             documents: Slab::new(),
@@ -250,6 +271,7 @@ impl<M: Embedder<S>, S: VectorSpace + Sync + Send + 'static> DocumentDatabase<S,
         }
     }
 
+    /// Find the closest documents to a given embedding.
     pub fn search_iter(
         &self,
         embedding: Embedding<S>,
@@ -269,6 +291,7 @@ impl<M: Embedder<S>, S: VectorSpace + Sync + Send + 'static> DocumentDatabase<S,
             })
     }
 
+    /// Find the documents within a given distance of an embedding.
     pub fn get_within_iter(
         &self,
         embedding: Embedding<S>,

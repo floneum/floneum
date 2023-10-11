@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 use pdf::file::FileOptions;
 
+/// A pdf document that can be read from the file system.
 #[derive(Debug, Clone)]
 pub struct PdfDocument {
     path: PathBuf,

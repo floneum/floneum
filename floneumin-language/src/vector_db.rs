@@ -1,10 +1,43 @@
 use std::fmt::Debug;
 
-use crate::context::document::Document;
+use crate::context::Document;
 use candle_core::Tensor;
 use floneumin_language_model::*;
 use instant_distance::{Builder, HnswMap, Search};
 use serde::{Deserialize, Serialize};
+
+/// A vector database that can be used to store embeddings and search for similar embeddings.
+///
+/// It uses an in memory database with fast lookups for nearest neighbors and points within a certain distance.
+///
+/// # Example
+///
+/// ```rust
+/// use floneumin_language_model::Embedder;
+/// use rbert::*;
+///
+/// #[tokio::main]
+/// async fn main() -> anyhow::Result<()> {
+///     let mut bert = Bert::builder().build()?;
+///     let sentences = vec![
+///         "Cats are cool",
+///         "The geopolitical situation is dire",
+///         "Pets are great",
+///         "Napoleon was a tyrant",
+///         "Napoleon was a great general",
+///     ];
+///     let embeddings = bert.embed_batch(&sentences).await?;
+///     println!("embeddings {:?}", embeddings);
+///
+///     // Create a vector database from the embeddings
+///     let mut db = VectorDB::new(embeddings, sentences);
+///     // Find the closest sentence to "Cats are good"
+///     let closest = db.get_closest("Cats are good", 1);
+///     println!("closest: {:?}", closest);
+///
+///     Ok(())
+/// }
+/// ```
 
 #[derive(Deserialize, Serialize)]
 pub struct VectorDB<T = Document, S: VectorSpace = UnknownVectorSpace> {
@@ -31,6 +64,7 @@ impl<T: Clone + PartialEq + Debug, S: VectorSpace + Sync> VectorDB<T, S>
 where
     Self: Sync + Send,
 {
+    /// Create a new vector database from a list of embeddings and values.
     #[tracing::instrument]
     pub fn new(points: Vec<Embedding<S>>, values: Vec<T>) -> Self {
         let points = points.into_iter().map(|e| Point(e)).collect();
@@ -42,6 +76,9 @@ where
         }
     }
 
+    /// Add a new embedding to the database.
+    ///
+    /// Note: This will currently rebuild the entire database. If possible, you should add a batch of embeddings at once with `add_embeddings` instead.
     #[tracing::instrument]
     pub fn add_embedding(&mut self, embedding: Embedding<S>, value: T) {
         let already_exists = self
@@ -63,6 +100,7 @@ where
         *self = Self::new(new_points, new_values);
     }
 
+    /// Add a list of new embeddings to the database.
     #[tracing::instrument]
     pub fn add_embeddings(&mut self, embeddings: Vec<Embedding<S>>, values: Vec<T>) {
         let mut new_points = Vec::with_capacity(embeddings.len());
@@ -87,6 +125,7 @@ where
         *self = Self::new(new_points, new_values);
     }
 
+    /// Get the closest N embeddings to the given embedding.
     #[tracing::instrument]
     pub fn get_closest(&self, embedding: Embedding<S>, n: usize) -> Vec<(f32, T)> {
         let mut search = Search::default();
@@ -97,6 +136,7 @@ where
             .collect()
     }
 
+    /// Get all embeddings within a certain distance of the given embedding.
     #[tracing::instrument]
     pub fn get_within(&self, embedding: Embedding<S>, distance: f32) -> Vec<(f32, T)> {
         let mut search = Search::default();
@@ -109,8 +149,9 @@ where
     }
 }
 
+/// A point in the vector database.
 #[derive(Debug, Deserialize, Serialize)]
-pub struct Point<S: VectorSpace>(Embedding<S>);
+pub(crate) struct Point<S: VectorSpace>(Embedding<S>);
 
 impl<S: VectorSpace> Clone for Point<S> {
     fn clone(&self) -> Self {

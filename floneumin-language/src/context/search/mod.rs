@@ -1,15 +1,19 @@
+#![allow(missing_docs)]
+
 use url::Url;
 
 use crate::index::IntoDocuments;
 
 use super::{document::Document, page::get_article};
 
+/// A search query that can be used to search for documents on the web.
 pub struct SearchQuery {
     query: String,
     api_key: String,
 }
 
 impl SearchQuery {
+    /// Create a new search query.
     pub fn new(query: String, api_key: String) -> Self {
         Self { query, api_key }
     }
@@ -32,6 +36,7 @@ impl IntoDocuments for SearchQuery {
     }
 }
 
+
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct SearchResult {
     pub knowledge_graph: Option<KnowledgeGraph>,
@@ -41,6 +46,7 @@ pub struct SearchResult {
     #[serde(default)]
     pub related_searches: Vec<RelatedSearches>,
 }
+
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct KnowledgeGraph {

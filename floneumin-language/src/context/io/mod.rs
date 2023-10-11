@@ -14,12 +14,18 @@ pub use pdf::*;
 mod txt;
 pub use txt::*;
 
+/// A document that can be read from the file system.
 #[derive(Debug, Clone)]
 pub enum FsDocument {
+    /// A docx document.
     Docx(DocxDocument),
+    /// An html document.
     Html(HtmlDocument),
+    /// A markdown document.
     Md(MdDocument),
+    /// A pdf document.
     Pdf(PdfDocument),
+    /// A text document.
     Txt(TextDocument),
 }
 
@@ -54,6 +60,7 @@ impl IntoDocument for FsDocument {
     }
 }
 
+/// A folder full of documents.
 #[derive(Debug, Clone)]
 pub struct DocumentFolder {
     path: PathBuf,

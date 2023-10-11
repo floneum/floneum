@@ -1,10 +1,11 @@
-use crate::index::IntoDocument;
 use std::borrow::Cow;
 use tantivy::collector::TopDocs;
 use tantivy::query::QueryParser;
 use tantivy::schema::*;
 use tantivy::{doc, Index};
+use crate::IntoDocument;
 
+/// A fuzzy keyword search index that can be used to search for documents.
 pub struct FuzzySearchIndex {
     title: Field,
     body: Field,
@@ -37,7 +38,7 @@ impl super::SearchIndex for FuzzySearchIndex {
         Ok(())
     }
 
-    async fn search(&self, query_str: &str, top_n: usize) -> Vec<super::DocumentSnippetRef> {
+    async fn search(&mut self, query_str: &str, top_n: usize) -> Vec<super::DocumentSnippetRef> {
         let reader = self.index.reader().unwrap();
 
         let searcher = reader.searcher();

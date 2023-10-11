@@ -7,6 +7,7 @@ use crate::context::{
     page::extract_article,
 };
 
+/// An html document that can be read from the file system.
 #[derive(Debug, Clone)]
 pub struct HtmlDocument {
     path: PathBuf,

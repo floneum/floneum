@@ -5,6 +5,7 @@ use std::fs::File;
 
 use crate::context::document::{Document, IntoDocument};
 
+/// A docx document that can be read from the file system.
 #[derive(Debug, Clone)]
 pub struct DocxDocument {
     path: PathBuf,

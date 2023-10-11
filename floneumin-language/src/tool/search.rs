@@ -1,8 +1,9 @@
-use crate::context::search::SearchQuery;
+use crate::context::SearchQuery;
 use crate::floneumin_sample::StructureParser;
 use crate::index::IntoDocuments;
 use crate::tool::Tool;
 
+/// A tool that can search the web
 pub struct WebSearchTool;
 
 #[async_trait::async_trait]

@@ -2,14 +2,21 @@ use floneumin_sample::StructureParser;
 mod search;
 pub use search::*;
 
+/// A tool that can be used by a [`floneumin_language_model::Model`]
+// TODO: Add example
 #[async_trait::async_trait]
 pub trait Tool {
+    /// The name of the tool
     fn name(&self) -> String;
+    /// A description of the tool
     fn description(&self) -> String;
+    /// The constraints to use when filling in the parameters for the tool
     fn constraints(&self) -> StructureParser;
+    /// Run the tool with the given arguments
     async fn run(&self, args: Vec<String>) -> String;
 }
 
+/// A set of tools that can be used by a [`floneumin_language_model::Model`]
 #[derive(Default)]
 pub struct ToolManager {
     tools: Vec<Box<dyn Tool>>,
@@ -27,24 +34,29 @@ impl std::fmt::Debug for ToolManager {
 }
 
 impl ToolManager {
+    /// Create a new tool empty manager
     pub fn new() -> Self {
         Self { tools: Vec::new() }
     }
 
+    /// Add a tool to the manager
     pub fn with_tool(self, tool: impl Tool + 'static) -> Self {
         let mut tools = self.tools;
         tools.push(Box::new(tool));
         Self { tools }
     }
 
+    /// Add a tool to the manager
     pub fn add_tool(&mut self, tool: impl Tool + 'static) {
         self.tools.push(Box::new(tool));
     }
 
+    /// Get the tools in the manager
     pub fn get_tools(&self) -> &[Box<dyn Tool>] {
         &self.tools
     }
 
+    /// Get a prompt for the tools in the manager
     pub fn prompt(&self, question: impl std::fmt::Display) -> String {
         let mut tools = String::new();
         let mut tool_names = String::new();

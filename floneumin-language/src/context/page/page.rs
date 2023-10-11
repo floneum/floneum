@@ -1,6 +1,6 @@
 use super::browse::Tab;
 use super::{super::document::Document, NodeRef};
-use super::{extract_article, Node};
+use super::{extract_article, AnyNode};
 pub use crate::context::page::crawl::CrawlFeedback;
 use crate::context::page::crawl::Crawler;
 pub use crate::context::page::crawl::CrawlingCallback;
@@ -10,13 +10,17 @@ use scraper::{Html, Selector};
 use tokio::time::Instant;
 use url::Url;
 
+/// A page that is either static or dynamic.
 #[derive(Debug, Clone)]
 pub enum Page {
+    /// A page of static HTML.
     Static(StaticPage),
+    /// A page in a headless browser.
     Dynamic(Tab),
 }
 
 impl Page {
+    /// Create a new page at the given URL.
     pub fn new(url: Url, mode: BrowserMode) -> anyhow::Result<Self> {
         match mode {
             BrowserMode::Static => Ok(Self::Static(StaticPage::new(url)?)),
@@ -25,25 +29,27 @@ impl Page {
         }
     }
 
-    pub async fn get_node(&self, node_ref: NodeRef) -> anyhow::Result<Node<'_>> {
+    /// Get the node with the given ID.
+    pub async fn get_node(&self, node_ref: NodeRef) -> anyhow::Result<AnyNode<'_>> {
         match (self, node_ref) {
             (Self::Static(page), NodeRef::Static(node_id)) => {
                 let html = page.html_ref().await?;
-                Ok(Node::Static(
+                Ok(AnyNode::Static(
                     scraper::ElementRef::wrap(html.tree.get(node_id).ok_or_else(|| {
                         anyhow::anyhow!("Could not find node with id: {:?}", node_id)
                     })?)
                     .ok_or_else(|| anyhow::anyhow!("Could not find node with id: {:?}", node_id))?,
                 ))
             }
-            (Self::Dynamic(page), NodeRef::Dynamic(node_id)) => Ok(Node::Dynamic(
+            (Self::Dynamic(page), NodeRef::Dynamic(node_id)) => Ok(AnyNode::Dynamic(
                 headless_chrome::Element::new(&page.inner, node_id)?,
             )),
             _ => Err(anyhow::anyhow!("Invalid node reference")),
         }
     }
 
-    pub async fn select_elements(&self, selector: &str) -> anyhow::Result<Vec<Node<'_>>> {
+    /// Find all elements matching the given selector.
+    pub async fn select_elements(&self, selector: &str) -> anyhow::Result<Vec<AnyNode<'_>>> {
         match self {
             Self::Static(page) => {
                 let selector = Selector::parse(selector).map_err(|e| anyhow::anyhow!("{}", e))?;
@@ -51,14 +57,14 @@ impl Page {
                     .html_ref()
                     .await?
                     .select(&selector)
-                    .map(Node::Static)
+                    .map(AnyNode::Static)
                     .collect())
             }
             Self::Dynamic(page) => Ok(page
                 .inner
                 .wait_for_elements(selector)?
                 .into_iter()
-                .map(Node::Dynamic)
+                .map(AnyNode::Dynamic)
                 .collect()),
         }
     }
@@ -75,6 +81,7 @@ impl Page {
         }
     }
 
+    /// Take a screenshot of the page if it is in a headless browser.
     pub fn screenshot(&self) -> anyhow::Result<DynamicImage> {
         match self {
             Self::Static(_) => Err(anyhow::anyhow!("Cannot take screenshot of static page")),
@@ -82,6 +89,7 @@ impl Page {
         }
     }
 
+    /// Get the URL of the page.
     pub fn url(&self) -> Url {
         match self {
             Self::Static(page) => page.url().clone(),
@@ -89,6 +97,7 @@ impl Page {
         }
     }
 
+    /// Extract the article from the page.
     pub async fn article(&self) -> anyhow::Result<Document> {
         match self {
             Self::Static(page) => page.article().await,
@@ -96,6 +105,7 @@ impl Page {
         }
     }
 
+    /// Get the title of the page.
     pub async fn title(&self) -> Option<String> {
         match self {
             Self::Static(page) => page.title().await,
@@ -103,6 +113,7 @@ impl Page {
         }
     }
 
+    /// Get the HTML of the page.
     pub async fn html(&self) -> anyhow::Result<Html> {
         match self {
             Self::Static(page) => page.html().await,
@@ -110,6 +121,7 @@ impl Page {
         }
     }
 
+    /// Get all the links from the page.
     pub async fn links(&self) -> anyhow::Result<Vec<Url>> {
         let mut links: Vec<_> = self
             .html()
@@ -128,6 +140,7 @@ impl Page {
         Ok(links)
     }
 
+    /// Start crawling from this page.
     pub async fn crawl(
         start: Url,
         mode: BrowserMode,
@@ -137,13 +150,18 @@ impl Page {
     }
 }
 
+/// The mode of the browser.
 #[derive(Debug, Clone, Copy)]
 pub enum BrowserMode {
+    /// A static browser that just downloads the HTML.
     Static,
+    /// A headless browser.
     Headless,
+    /// A browser with a visible GUI.
     Headfull,
 }
 
+/// A static page that lazily fetches the HTML from a page.
 #[derive(Debug, Clone)]
 pub struct StaticPage {
     wait_until: Instant,
@@ -152,6 +170,7 @@ pub struct StaticPage {
 }
 
 impl StaticPage {
+    /// Create a new static page at the given URL.
     pub fn new(url: Url) -> anyhow::Result<Self> {
         Ok(Self {
             wait_until: Instant::now(),
@@ -168,10 +187,12 @@ impl StaticPage {
         })
     }
 
+    /// Get the URL of the page.
     pub fn url(&self) -> Url {
         self.url.clone()
     }
 
+    /// Get the HTML of the page.
     pub async fn html_ref(&self) -> anyhow::Result<&Html> {
         match self.html.get() {
             Some(html) => Ok(html),
@@ -185,14 +206,17 @@ impl StaticPage {
         }
     }
 
+    /// Get the HTML of the page.
     pub async fn html(&self) -> anyhow::Result<Html> {
         Ok(self.html_ref().await?.clone())
     }
 
+    /// Extract the article from the page.
     pub async fn article(&self) -> anyhow::Result<Document> {
         extract_article(&self.html_ref().await?.html())
     }
 
+    /// Get the title of the page.
     pub async fn title(&self) -> Option<String> {
         let selector = Selector::parse("title").ok()?;
         self.html_ref()

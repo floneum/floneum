@@ -7,6 +7,7 @@ use crate::context::{
     page::extract_article,
 };
 
+/// A markdown document that can be read from the file system.
 #[derive(Debug, Clone)]
 pub struct MdDocument {
     path: PathBuf,

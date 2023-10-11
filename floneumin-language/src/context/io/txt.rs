@@ -5,6 +5,7 @@ use tokio::{fs::File, io::AsyncReadExt};
 
 use crate::context::document::{Document, IntoDocument};
 
+/// A text document that can be read from the file system.
 #[derive(Debug, Clone)]
 pub struct TextDocument {
     path: PathBuf,

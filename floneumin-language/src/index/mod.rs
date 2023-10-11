@@ -1,4 +1,4 @@
-use crate::context::document::{Document, IntoDocument};
+use crate::{IntoDocument, Document};
 use floneumin_language_model::*;
 use std::{
     borrow::Cow,
@@ -6,12 +6,17 @@ use std::{
     ops::{Deref, Range},
 };
 
-pub mod keyword;
-pub mod vector;
-pub mod weighted;
+mod keyword;
+pub use keyword::*;
+mod vector;
+pub use vector::*;
+mod weighted;
+pub use weighted::*;
 
+/// A document that can be added to a search index.
 #[async_trait::async_trait]
 pub trait IntoDocuments {
+    /// Convert the document into a [`Document`]
     async fn into_documents(self) -> anyhow::Result<Vec<Document>>;
 }
 
@@ -30,18 +35,23 @@ where
     }
 }
 
+/// A search index that can be used to search for documents.
 #[async_trait::async_trait]
 pub trait SearchIndex {
+    /// Add a set of documents to the index
     async fn extend(&mut self, document: impl IntoDocuments + Send + Sync) -> anyhow::Result<()> {
         for document in document.into_documents().await? {
             self.add(document).await?;
         }
         Ok(())
     }
+    /// Add a document to the index
     async fn add(&mut self, document: impl IntoDocument + Send + Sync) -> anyhow::Result<()>;
-    async fn search(&self, query: &str, top_n: usize) -> Vec<DocumentSnippetRef>;
+    /// Search the index for the given query
+    async fn search(&mut self, query: &str, top_n: usize) -> Vec<DocumentSnippetRef>;
 }
 
+/// A document snippet that can be used to display a snippet of a document.
 #[derive(Clone)]
 pub struct Chunk<S: VectorSpace> {
     byte_range: Range<usize>,
@@ -57,15 +67,18 @@ impl<S: VectorSpace> Debug for Chunk<S> {
     }
 }
 
+/// A snippet within a larger document.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DocumentSnippet {
     document_id: DocumentId,
     byte_range: Range<usize>,
 }
 
+/// The id of a document.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DocumentId(usize);
 
+/// A reference to a snippet within a larger document.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DocumentSnippetRef<'a> {
     score: f32,
@@ -75,18 +88,22 @@ pub struct DocumentSnippetRef<'a> {
 }
 
 impl DocumentSnippetRef<'_> {
+    /// Get the title of the document
     pub fn title(&self) -> &str {
         &self.title
     }
 
+    /// Get the body of the document
     pub fn body(&self) -> &str {
         &self.body
     }
 
+    /// Get the score of the document
     pub fn score(&self) -> f32 {
         self.score
     }
 
+    /// Get the byte range this snippet covers in the original document body
     pub fn byte_range(&self) -> Range<usize> {
         self.byte_range.clone()
     }

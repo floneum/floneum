@@ -1,8 +1,9 @@
 use crate::index::DocumentSnippetRef;
-use crate::index::IntoDocument;
+use crate::IntoDocument;
 use crate::index::IntoDocuments;
 use crate::index::SearchIndex;
 
+/// A weighted index that combines two indexes with a weight. This allows you to combine two indexes with different strategies like the [`crate::index::keyword::FuzzySearchIndex`] and a [`crate::index::vector::DocumentDatabase`].
 pub struct WeightedIndex<First, Second> {
     first: First,
     first_weight: f32,
@@ -28,7 +29,7 @@ impl<First: SearchIndex + Send + Sync, Second: SearchIndex + Send + Sync> Search
         Ok(())
     }
 
-    async fn search(&self, query: &str, top_n: usize) -> Vec<DocumentSnippetRef> {
+    async fn search(&mut self, query: &str, top_n: usize) -> Vec<DocumentSnippetRef> {
         let mut first = self.first.search(query, top_n).await;
         let mut second = self.second.search(query, top_n).await;
         let mut result = Vec::new();
