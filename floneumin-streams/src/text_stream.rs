@@ -7,14 +7,9 @@ use std::{
 
 use futures_util::Stream;
 
+/// A stream of text. This is automatically implemented for all streams of something that acts like a string (String, &str).
 pub trait TextStream<I: AsRef<str>>: Stream<Item = I> {
-    fn sentences(self) -> SentenceStream<Self, I>
-    where
-        Self: Sized,
-    {
-        SentenceStream::new(self)
-    }
-
+    /// Split the stream into words.
     fn words(self) -> WordStream<Self, I>
     where
         Self: Sized,
@@ -22,6 +17,15 @@ pub trait TextStream<I: AsRef<str>>: Stream<Item = I> {
         WordStream::new(self)
     }
 
+    /// Split the stream into sentences.
+    fn sentences(self) -> SentenceStream<Self, I>
+    where
+        Self: Sized,
+    {
+        SentenceStream::new(self)
+    }
+
+    /// Split the stream into paragraphs.
     fn paragraphs(self) -> ParagraphStream<Self, I>
     where
         Self: Sized,
@@ -32,10 +36,13 @@ pub trait TextStream<I: AsRef<str>>: Stream<Item = I> {
 
 impl<S: Stream<Item = I>, I: AsRef<str>> TextStream<I> for S {}
 
+/// A pattern that matches a character.
 pub trait Pattern {
+    /// Check if a character matches the pattern.
     fn matches(&self, char: char) -> bool;
 }
 
+/// A stream that output segments of text at a time.
 #[pin_project]
 pub struct SegmentedStream<S: Stream<Item = I>, I: AsRef<str>, P: Pattern> {
     #[pin]
@@ -46,7 +53,8 @@ pub struct SegmentedStream<S: Stream<Item = I>, I: AsRef<str>, P: Pattern> {
 }
 
 impl<S: Stream<Item = I>, I: AsRef<str>, P: Pattern> SegmentedStream<S, I, P> {
-    pub fn new(backing: S, pattern: P) -> Self {
+    /// Create a new segmented stream from a stream of text and a pattern that separates segments
+    fn new(backing: S, pattern: P) -> Self {
         Self {
             backing,
             queue: Default::default(),
@@ -113,6 +121,7 @@ impl Pattern for SentencePattern {
     }
 }
 
+/// A stream that output sentences of text at a time.
 #[pin_project]
 pub struct SentenceStream<S: Stream<Item = I>, I: AsRef<str>> {
     #[pin]
@@ -120,7 +129,8 @@ pub struct SentenceStream<S: Stream<Item = I>, I: AsRef<str>> {
 }
 
 impl<S: Stream<Item = I>, I: AsRef<str>> SentenceStream<S, I> {
-    pub fn new(backing: S) -> Self {
+    /// Create a new sentence stream from a stream of text
+    fn new(backing: S) -> Self {
         Self {
             segmented: SegmentedStream::new(backing, SentencePattern),
         }
@@ -135,6 +145,7 @@ impl<S: Stream<Item = I>, I: AsRef<str>> Stream for SentenceStream<S, I> {
     }
 }
 
+/// A stream that output words of text at a time.
 #[pin_project]
 pub struct WordStream<S: Stream<Item = I>, I: AsRef<str>> {
     #[pin]
@@ -142,7 +153,8 @@ pub struct WordStream<S: Stream<Item = I>, I: AsRef<str>> {
 }
 
 impl<S: Stream<Item = I>, I: AsRef<str>> WordStream<S, I> {
-    pub fn new(backing: S) -> Self {
+    /// Create a new word stream from a stream of text
+    fn new(backing: S) -> Self {
         Self {
             segmented: SegmentedStream::new(backing, WordPattern),
         }
@@ -165,6 +177,7 @@ impl Pattern for WordPattern {
     }
 }
 
+/// A stream that output paragraphs of text at a time.
 #[pin_project]
 pub struct ParagraphStream<S: Stream<Item = I>, I: AsRef<str>> {
     #[pin]
@@ -172,6 +185,7 @@ pub struct ParagraphStream<S: Stream<Item = I>, I: AsRef<str>> {
 }
 
 impl<S: Stream<Item = I>, I: AsRef<str>> ParagraphStream<S, I> {
+    /// Create a new paragraph stream from a stream of text
     pub fn new(backing: S) -> Self {
         Self {
             segmented: SegmentedStream::new(backing, ParagraphPattern),

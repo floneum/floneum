@@ -1,7 +1,7 @@
 use crate::InferenceSettings;
 pub use crate::Phi;
 use floneumin_language_model::*;
-use floneumin_streams::sender::ChannelTextStream;
+use floneumin_streams::ChannelTextStream;
 use std::sync::Arc;
 use std::sync::Mutex;
 

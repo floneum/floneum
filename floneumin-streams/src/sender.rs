@@ -1,5 +1,6 @@
 use futures_util::Stream;
 
+/// A stream of text from a tokio channel.
 pub struct ChannelTextStream<S: AsRef<str>> {
     receiver: tokio::sync::mpsc::UnboundedReceiver<S>,
 }

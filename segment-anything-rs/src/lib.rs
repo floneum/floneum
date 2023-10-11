@@ -1,8 +1,22 @@
+//! # Segment Anything RS
+//! A rust wrapper for [Segment Anything](https://segment-anything.com/)
+//!
+//! ## Usage
+//!
+//! ```rust
+//! use segment_anything_rs::*;
+//!
+//! fn main() {
+//!     let model = SegmentAnything::builder().build().unwrap();
+//!     let image = image::open("examples/landscape.jpg").unwrap();
+//!     let images = model.segment_everything(image).unwrap();
+//!     for (i, img) in images.iter().enumerate() {
+//!         img.save(&format!("{}.png", i)).unwrap();
+//!     }
+//! }
+//! ```
+
 #![warn(missing_docs)]
-
-//! SAM: Segment Anything Model
-//! https://github.com/facebookresearch/segment-anything
-
 #[cfg(feature = "mkl")]
 extern crate intel_mkl_src;
 
@@ -15,52 +29,71 @@ use candle_nn::VarBuilder;
 use candle_transformers::models::segment_anything::sam::{self, Sam};
 use image::{DynamicImage, GenericImage, GenericImageView, ImageBuffer, Rgba};
 
+/// A builder for [`SegmentAnything`].
+#[derive(Default)]
 pub struct SegmentAnythingBuilder {
-    source: Option<SegmentAnythingSource>,
+    source: SegmentAnythingSource,
 
     cpu: bool,
-
-    /// Use the TinyViT based models from MobileSAM
-    use_tiny: bool,
-}
-
-impl Default for SegmentAnythingBuilder {
-    fn default() -> Self {
-        Self {
-            source: None,
-            cpu: false,
-            use_tiny: true,
-        }
-    }
 }
 
 impl SegmentAnythingBuilder {
+    /// Sets the source of the model.
     pub fn source(mut self, source: SegmentAnythingSource) -> Self {
-        self.source = Some(source);
+        self.source = source;
         self
     }
 
+    /// Set to true to run the model on CPU.
     pub fn cpu(mut self, cpu: bool) -> Self {
         self.cpu = cpu;
         self
     }
 
-    pub fn use_tiny(mut self, use_tiny: bool) -> Self {
-        self.use_tiny = use_tiny;
-        self
-    }
-
+    /// Builds the [`SegmentAnything`] model.
     pub fn build(self) -> anyhow::Result<SegmentAnything> {
         SegmentAnything::new(self)
     }
 }
 
+/// The source of the model.
 pub struct SegmentAnythingSource {
     model: String,
     filename: String,
+    tiny: bool,
 }
 
-pub struct InferenceSettings {
+impl SegmentAnythingSource {
+    /// Creates a new [`SegmentAnythingSource`].
+    pub fn new(model: impl Into<String>, filename: impl Into<String>) -> Self {
+        Self {
+            model: model.into(),
+            filename: filename.into(),
+            tiny: false,
+        }
+    }
+
+    /// Create the tiny SAM model source.
+    pub fn tiny() -> Self {
+        let mut self_ = Self::new("lmz/candle-sam", "mobile_sam-tiny-vitt.safetensors");
+        self_.tiny = true;
+        self_
+    }
+
+    /// Create a normal sized model source.
+    pub fn medium() -> Self {
+        Self::new("lmz/candle-sam", "sam_vit_b_01ec64.safetensors")
+    }
+}
+
+impl Default for SegmentAnythingSource {
+    fn default() -> Self {
+        Self::tiny()
+    }
+}
+
+/// Settings for running inference on [`SegmentAnything`].
+pub struct SegmentAnythingInferenceSettings {
     threshold: f32,
 
     /// List of x,y coordinates, between 0 and 1 (0.5 is at the middle of the image).
@@ -72,7 +105,8 @@ pub struct InferenceSettings {
     image: ImageBuffer<image::Rgba<u8>, Vec<u8>>,
 }
 
-impl InferenceSettings {
+impl SegmentAnythingInferenceSettings {
+    /// Creates a new [`SegmentAnythingInferenceSettings`] from an image.
     pub fn new<I: GenericImageView<Pixel = Rgba<u8>>>(input: I) -> anyhow::Result<Self> {
         let mut image = ImageBuffer::new(input.width(), input.height());
         image.copy_from(&input, 0, 0)?;
@@ -83,71 +117,64 @@ impl InferenceSettings {
             image,
         })
     }
-}
 
-impl InferenceSettings {
     /// Sets the detection threshold for the mask, 0 is the default value.
     /// - A negative values makes the model return a larger mask.
     /// - A positive makes the model return a smaller mask.
-    pub fn set_threshold(&mut self, threshold: f32) {
+    pub fn set_threshold(mut self, threshold: f32) -> Self {
         self.threshold = threshold;
+        self
     }
 
     /// Add a point to the list of points to segment.
-    pub fn add_goal_points(&mut self, x: f64, y: f64) {
-        self.goal_points.push((x, y));
+    pub fn add_goal_point(mut self, x: impl Into<f64>, y: impl Into<f64>) -> Self {
+        self.goal_points.push((x.into(), y.into()));
+        self
     }
 
     /// Set the list of points to segment.
-    pub fn set_goal_points(&mut self, points: Vec<(f64, f64)>) {
+    pub fn set_goal_points(mut self, points: Vec<(f64, f64)>) -> Self {
         self.goal_points = points;
+        self
     }
 
     /// Add a point to the list of points to avoid.
-    pub fn add_avoid_points(&mut self, x: f64, y: f64) {
-        self.avoid_points.push((x, y));
+    pub fn add_avoid_points(mut self, x: impl Into<f64>, y: impl Into<f64>) -> Self {
+        self.avoid_points.push((x.into(), y.into()));
+        self
     }
 
     /// Set the list of points to avoid.
-    pub fn set_avoid_points(&mut self, points: Vec<(f64, f64)>) {
+    pub fn set_avoid_points(mut self, points: Vec<(f64, f64)>) -> Self {
         self.avoid_points = points;
+        self
     }
 
     /// Set the image to segment.
     pub fn set_image<I: GenericImageView<Pixel = Rgba<u8>>>(
-        &mut self,
+        mut self,
         image: I,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Self> {
         self.image = ImageBuffer::new(image.width(), image.height());
-        Ok(self.image.copy_from(&image, 0, 0)?)
+        self.image.copy_from(&image, 0, 0)?;
+        Ok(self)
     }
 }
 
+/// The [segment anything](https://segment-anything.com/) model.
 pub struct SegmentAnything {
     device: Device,
     sam: Sam,
 }
 
 impl SegmentAnything {
+    /// Creates a new [`SegmentAnythingBuilder`].
     pub fn builder() -> SegmentAnythingBuilder {
         SegmentAnythingBuilder::default()
     }
 
     fn new(settings: SegmentAnythingBuilder) -> anyhow::Result<Self> {
-        let SegmentAnythingBuilder {
-            source,
-            cpu,
-            use_tiny,
-        } = settings;
-        let source = source.unwrap_or_else(|| SegmentAnythingSource {
-            model: "lmz/candle-sam".into(),
-            filename: if use_tiny {
-                "mobile_sam-tiny-vitt.safetensors"
-            } else {
-                "sam_vit_b_01ec64.safetensors"
-            }
-            .into(),
-        });
+        let SegmentAnythingBuilder { source, cpu } = settings;
         let model = {
             let api = hf_hub::api::sync::Api::new()?;
             let api = api.model(source.model);
@@ -155,7 +182,7 @@ impl SegmentAnything {
         };
         let device = device(cpu)?;
         let vb = unsafe { VarBuilder::from_mmaped_safetensors(&[model], DType::F32, &device)? };
-        let sam = if use_tiny {
+        let sam = if source.tiny {
             sam::Sam::new_tiny(vb)? // tiny vit_t
         } else {
             sam::Sam::new(768, 12, 12, &[2, 5, 8, 11], vb)? // sam_vit_b
@@ -163,8 +190,33 @@ impl SegmentAnything {
         Ok(Self { device, sam })
     }
 
-    pub fn segment_from_points(&self, settings: InferenceSettings) -> anyhow::Result<()> {
-        let InferenceSettings {
+    /// Segment an image from a list of points. Returns a [`DynamicImage`] mask.
+    ///
+    /// # Example
+    /// ```rust
+    /// use segment_anything_rs::*;
+    ///
+    /// fn main() {
+    ///     let model = SegmentAnything::builder().build().unwrap();
+    ///     let image = image::open("examples/landscape.jpg").unwrap();
+    ///     let x = image.width() / 2;
+    ///     let y = image.height() / 4;
+    ///     let images = model
+    ///         .segment_from_points(
+    ///             SegmentAnythingInferenceSettings::new(image)
+    ///                 .unwrap()
+    ///                 .add_goal_point(x, y),
+    ///         )
+    ///         .unwrap();
+    ///     
+    ///         images.save("out.png").unwrap();
+    /// }
+    /// ```
+    pub fn segment_from_points(
+        &self,
+        settings: SegmentAnythingInferenceSettings,
+    ) -> anyhow::Result<DynamicImage> {
+        let SegmentAnythingInferenceSettings {
             threshold,
             goal_points,
             avoid_points,
@@ -172,8 +224,9 @@ impl SegmentAnything {
         } = settings;
 
         let image = image::DynamicImage::ImageRgba8(image);
+        let image_width = image.width();
+        let image_height = image.height();
 
-        let mut output_image = image.clone();
         let image_tensor = self.image_to_tensor(image)?;
 
         let points = {
@@ -199,25 +252,12 @@ impl SegmentAnything {
                 Some(image) => image,
                 None => anyhow::bail!("error saving merged image"),
             };
-        let mask_img = image::DynamicImage::from(mask_img).resize_to_fill(
-            output_image.width(),
-            output_image.height(),
-            image::imageops::FilterType::CatmullRom,
-        );
-        for x in 0..output_image.width() {
-            for y in 0..output_image.height() {
-                let mask_p = imageproc::drawing::Canvas::get_pixel(&mask_img, x, y);
-                if mask_p.0[0] > 100 {
-                    let mut img_p = imageproc::drawing::Canvas::get_pixel(&output_image, x, y);
-                    img_p.0[2] = 255 - (255 - img_p.0[2]) / 2;
-                    img_p.0[1] /= 2;
-                    img_p.0[0] /= 2;
-                    imageproc::drawing::Canvas::draw_pixel(&mut output_image, x, y, img_p)
-                }
-            }
-        }
 
-        Ok(())
+        Ok(image::DynamicImage::from(mask_img).resize_to_fill(
+            image_width,
+            image_height,
+            image::imageops::FilterType::CatmullRom,
+        ))
     }
 
     fn image_to_tensor(&self, image: DynamicImage) -> anyhow::Result<Tensor> {
@@ -244,17 +284,26 @@ impl SegmentAnything {
         Ok(image)
     }
 
+    /// Segment everything in an image. Returns a list of [`DynamicImage`] masks.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use segment_anything_rs::*;
+    ///
+    /// fn main() {
+    ///     let model = SegmentAnything::builder().build().unwrap();
+    ///     let image = image::open("examples/landscape.jpg").unwrap();
+    ///     let images = model.segment_everything(image).unwrap();
+    ///     for (i, img) in images.iter().enumerate() {
+    ///         img.save(&format!("{}.png", i)).unwrap();
+    ///     }
+    /// }
+    /// ```
     pub fn segment_everything(&self, image: DynamicImage) -> anyhow::Result<Vec<DynamicImage>> {
         let image = self.image_to_tensor(image)?;
 
-        // Default options similar to the Python version.
-        let bboxes = self.sam.generate_masks(
-            &image,
-            /* points_per_side */ 32,
-            /* crop_n_layer */ 0,
-            /* crop_overlap_ratio */ 512. / 1500.,
-            /* crop_n_points_downscale_factor */ 1,
-        )?;
+        let bboxes = self.sam.generate_masks(&image, 32, 0, 512. / 1500., 1)?;
         let mut masks = Vec::new();
         for bbox in bboxes {
             let mask = (&bbox.data.to_dtype(DType::U8)? * 255.)?;

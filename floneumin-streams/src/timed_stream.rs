@@ -3,12 +3,17 @@ use std::collections::VecDeque;
 use futures_util::Stream;
 use pin_project::pin_project;
 
+/// Something that has a timestamp attached to it.
 pub trait TimeStamped {
+    /// Get the start time of the timestamp.
     fn start(&self) -> std::time::Instant;
+    /// Get the end time of the timestamp.
     fn end(&self) -> std::time::Instant;
 }
 
+/// A stream of time series data.
 pub trait TimeSeriesStream<I: TimeStamped>: Stream<Item = I> {
+    /// Split the stream into windows of a given duration.
     fn window(self, duration: std::time::Duration) -> WindowedStream<Self, I>
     where
         Self: Sized,
@@ -17,6 +22,7 @@ pub trait TimeSeriesStream<I: TimeStamped>: Stream<Item = I> {
     }
 }
 
+/// A stream of time series data chunked into windows of a certain duration.
 #[pin_project]
 pub struct WindowedStream<S: Stream<Item = I>, I: TimeStamped> {
     #[pin]

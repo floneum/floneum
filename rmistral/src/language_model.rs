@@ -4,7 +4,7 @@ use crate::InferenceSettings;
 pub use crate::Mistral;
 use floneumin_language_model::{CreateModel, Model, StreamTextBuilder, VectorSpace};
 use floneumin_sample::Tokenizer;
-use floneumin_streams::sender::ChannelTextStream;
+use floneumin_streams::ChannelTextStream;
 
 #[async_trait::async_trait]
 impl CreateModel for Mistral {

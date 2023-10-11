@@ -1,3 +1,27 @@
+//! # RWuerstchen
+//!
+//! RWuerstchen is a rust wrapper for library for [Wuerstchen](https://huggingface.co/papers/2306.00637) implemented in the [Candle](https://github.com/huggingface/candle) ML framework.
+//!
+//! RWuerstchen generates images efficiently from text prompts.
+//!
+//! ## Usage
+//!
+//! ```rust
+//! use rwuerstchen::*;
+//!
+//! fn main() {
+//!     let model = Wuerstchen::builder().build().unwrap();
+//!     let settings = WuerstchenInferenceSettings::new(
+//!         "a cute cat with a hat in a room covered with fur with incredible detail",
+//!     )
+//!     .with_n_steps(2);
+//!     let images = model.run(settings).unwrap();
+//!     for (i, img) in images.iter().enumerate() {
+//!         img.save(&format!("{}.png", i)).unwrap();
+//!     }
+//! }
+//! ```
+
 #![warn(missing_docs)]
 
 #[cfg(feature = "accelerate")]
@@ -24,6 +48,7 @@ const LATENT_DIM_SCALE: f64 = 10.67;
 const PRIOR_CIN: usize = 16;
 const DECODER_CIN: usize = 4;
 
+/// A builder for the Wuerstchen model.
 pub struct WuerstchenBuilder {
     /// Run on CPU rather than on GPU.
     cpu: bool,
@@ -69,57 +94,68 @@ impl Default for WuerstchenBuilder {
 }
 
 impl WuerstchenBuilder {
+    /// Set whether to run on CPU rather than on GPU.
     pub fn with_cpu(mut self, cpu: bool) -> Self {
         self.cpu = cpu;
         self
     }
 
+    /// Set whether to use the Flash Attention implementation.
     pub fn with_flash_attn(mut self, use_flash_attn: bool) -> Self {
         self.use_flash_attn = use_flash_attn;
         self
     }
 
+    /// Set the decoder weight file, in .safetensors format.
     pub fn with_decoder_weights(mut self, decoder_weights: impl Into<String>) -> Self {
         self.decoder_weights = Some(decoder_weights.into());
         self
     }
 
+    /// Set the CLIP weight file, in .safetensors format.
     pub fn with_clip_weights(mut self, clip_weights: impl Into<String>) -> Self {
         self.clip_weights = Some(clip_weights.into());
         self
     }
 
+    /// Set the CLIP weight file used by the prior model, in .safetensors format.
     pub fn with_prior_clip_weights(mut self, prior_clip_weights: impl Into<String>) -> Self {
         self.prior_clip_weights = Some(prior_clip_weights.into());
         self
     }
 
+    /// Set the prior weight file, in .safetensors format.
     pub fn with_prior_weights(mut self, prior_weights: impl Into<String>) -> Self {
         self.prior_weights = Some(prior_weights.into());
         self
     }
 
+    /// Set the VQGAN weight file, in .safetensors format.
     pub fn with_vqgan_weights(mut self, vqgan_weights: impl Into<String>) -> Self {
         self.vqgan_weights = Some(vqgan_weights.into());
         self
     }
 
+    /// Set the file specifying the tokenizer to used for tokenization.
     pub fn with_tokenizer(mut self, tokenizer: impl Into<String>) -> Self {
         self.tokenizer = Some(tokenizer.into());
         self
     }
 
+    /// Set the file specifying the tokenizer to used for prior tokenization.
     pub fn with_prior_tokenizer(mut self, prior_tokenizer: impl Into<String>) -> Self {
         self.prior_tokenizer = Some(prior_tokenizer.into());
         self
     }
 
+    /// Build the model.
     pub fn build(self) -> Result<Wuerstchen> {
         Wuerstchen::new(self)
     }
 }
 
-pub struct InferenceSettings {
+/// Settings for running inference with the Wuerstchen model.
+pub struct WuerstchenInferenceSettings {
     /// The prompt to be used for image generation.
     prompt: String,
 
@@ -141,7 +177,8 @@ pub struct InferenceSettings {
     num_samples: i64,
 }
 
-impl InferenceSettings {
+impl WuerstchenInferenceSettings {
+    /// Create a new settings object with the given prompt.
     pub fn new(prompt: impl Into<String>) -> Self {
         Self {
             prompt: prompt.into(),
@@ -165,31 +202,37 @@ impl InferenceSettings {
         }
     }
 
-    pub fn with_uncond_prompt(mut self, uncond_prompt: impl Into<String>) -> Self {
+    /// Set the negative prompt to be used for image generation.
+    pub fn with_negative_prompt(mut self, uncond_prompt: impl Into<String>) -> Self {
         self.uncond_prompt = uncond_prompt.into();
         self
     }
 
+    /// Set the height in pixels of the generated image.
     pub fn with_height(mut self, height: usize) -> Self {
         self.height = height;
         self
     }
 
+    /// Set the width in pixels of the generated image.
     pub fn with_width(mut self, width: usize) -> Self {
         self.width = width;
         self
     }
 
+    /// Set the size of the sliced attention or 0 for automatic slicing (disabled by default)
     pub fn with_sliced_attention_size(mut self, sliced_attention_size: usize) -> Self {
         self.sliced_attention_size = Some(sliced_attention_size);
         self
     }
 
+    /// Set the number of steps to run the diffusion for.
     pub fn with_n_steps(mut self, n_steps: usize) -> Self {
         self.n_steps = n_steps;
         self
     }
 
+    /// Set the number of samples to generate.
     pub fn with_num_samples(mut self, num_samples: i64) -> Self {
         self.num_samples = num_samples;
         self
@@ -231,6 +274,7 @@ impl ModelFile {
     }
 }
 
+/// The Wuerstchen model.
 pub struct Wuerstchen {
     clip: ClipTextTransformer,
     clip_config: stable_diffusion::clip::Config,
@@ -245,6 +289,7 @@ pub struct Wuerstchen {
 }
 
 impl Wuerstchen {
+    /// Create a new builder for the Wuerstchen model.
     pub fn builder() -> WuerstchenBuilder {
         WuerstchenBuilder::default()
     }
@@ -389,9 +434,10 @@ impl Wuerstchen {
         }
     }
 
+    /// Run inference with the given settings.
     pub fn run(
         &self,
-        settings: InferenceSettings,
+        settings: WuerstchenInferenceSettings,
     ) -> Result<Vec<ImageBuffer<image::Rgb<u8>, Vec<u8>>>> {
         let height = settings.height;
         let width = settings.width;

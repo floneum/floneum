@@ -1,8 +1,7 @@
-pub use crate::local::bert::*;
 pub use crate::local::session::*;
 use crate::{embedding::Embedding, model::*};
 use floneumin_sample::Tokenizer;
-use floneumin_streams::sender::ChannelTextStream;
+use floneumin_streams::ChannelTextStream;
 use llm::InferenceSessionConfig;
 use llm_samplers::configure::SamplerChainBuilder;
 use llm_samplers::prelude::Sampler;
@@ -10,7 +9,6 @@ use llm_samplers::prelude::*;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-mod bert;
 mod session;
 
 pub(crate) trait LocalModelType {
@@ -74,11 +72,14 @@ macro_rules! local_model {
 
         #[async_trait::async_trait]
         impl crate::model::Embedder<$space> for LocalSession<$space> {
-            async fn embed(&self, input: &str) -> anyhow::Result<Embedding<$space>> {
+            async fn embed(&mut self, input: &str) -> anyhow::Result<Embedding<$space>> {
                 self.get_embedding(input).await
             }
 
-            async fn embed_batch(&self, inputs: &[&str]) -> anyhow::Result<Vec<Embedding<$space>>> {
+            async fn embed_batch(
+                &mut self,
+                inputs: &[&str],
+            ) -> anyhow::Result<Vec<Embedding<$space>>> {
                 let mut result = Vec::new();
                 for input in inputs {
                     result.push(self.get_embedding(input).await?);

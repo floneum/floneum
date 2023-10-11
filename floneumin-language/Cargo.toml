@@ -36,7 +36,7 @@ scraper = { git = "https://github.com/causal-agent/scraper", features = ["atomic
 llm = { git = "https://github.com/rustformers/llm" }
 floneumite = { path = "../floneumite" }
 floneumin-language-model = { path = "../language-model" }
-headless_chrome = { git = "https://github.com/atroche/rust-headless-chrome", features = ["fetch"] }
+headless_chrome = { git = "https://github.com/atroche/rust-headless-chrome", rev = "6bbefaf04a4906420bf21de25ae8d0c1bc70721c", features = ["fetch"] }
 candle-core = { git = "https://github.com/huggingface/candle" }
 tokio-util = { version = "0.7.9", features = ["rt"] }
 crossbeam = "0.8.2"

@@ -1,4 +1,5 @@
 use crate::embedding::{Embedding, VectorSpace};
+use crate::UnknownVectorSpace;
 use floneumin_sample::Tokenizer;
 use futures_util::{Stream, StreamExt};
 use llm_samplers::prelude::Sampler;
@@ -9,16 +10,22 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use url::Url;
 
-pub struct UnknownVectorSpace;
-
-impl VectorSpace for UnknownVectorSpace {}
-
+/// A model that can be used to embed text.
 #[async_trait::async_trait]
 pub trait Embedder<S: VectorSpace + Send + Sync + 'static>: Send + Sync + 'static {
-    async fn embed(&self, input: &str) -> anyhow::Result<Embedding<S>>;
+    /// Embed a single string.
+    async fn embed(&mut self, input: &str) -> anyhow::Result<Embedding<S>>;
 
-    async fn embed_batch(&self, inputs: &[&str]) -> anyhow::Result<Vec<Embedding<S>>>;
+    /// Embed a batch of strings.
+    async fn embed_batch(&mut self, inputs: &[&str]) -> anyhow::Result<Vec<Embedding<S>>> {
+        let mut embeddings = Vec::with_capacity(inputs.len());
+        for input in inputs {
+            embeddings.push(self.embed(input).await?);
+        }
+        Ok(embeddings)
+    }
 
+    /// Convert this embedder into an embedder trait object.
     fn into_any_embedder(self) -> DynEmbedder
     where
         Self: Sized,
@@ -27,6 +34,7 @@ pub trait Embedder<S: VectorSpace + Send + Sync + 'static>: Send + Sync + 'stati
     }
 }
 
+/// A trait object for an embedder.
 pub type DynEmbedder = Box<dyn Embedder<UnknownVectorSpace>>;
 
 struct AnyEmbedder<S: VectorSpace + Send + Sync + 'static, E: Embedder<S> + Send + Sync + 'static>(
@@ -38,12 +46,12 @@ struct AnyEmbedder<S: VectorSpace + Send + Sync + 'static, E: Embedder<S> + Send
 impl<S: VectorSpace + Send + Sync + 'static, E: Embedder<S> + Send + Sync + 'static>
     Embedder<UnknownVectorSpace> for AnyEmbedder<S, E>
 {
-    async fn embed(&self, input: &str) -> anyhow::Result<Embedding<UnknownVectorSpace>> {
+    async fn embed(&mut self, input: &str) -> anyhow::Result<Embedding<UnknownVectorSpace>> {
         self.0.embed(input).await.map(|e| e.cast())
     }
 
     async fn embed_batch(
-        &self,
+        &mut self,
         inputs: &[&str],
     ) -> anyhow::Result<Vec<Embedding<UnknownVectorSpace>>> {
         self.0
@@ -53,13 +61,19 @@ impl<S: VectorSpace + Send + Sync + 'static, E: Embedder<S> + Send + Sync + 'sta
     }
 }
 
+/// A model that can be created asynchronously.
 #[async_trait::async_trait]
 pub trait CreateModel {
+    /// Start the model.
     async fn start() -> Self;
 
-    fn requires_download() -> bool;
+    /// Check if the model will need to be downloaded before use (default: false)
+    fn requires_download() -> bool {
+        false
+    }
 }
 
+/// A builder for the [`Model::stream_text`] method.
 pub struct StreamTextBuilder<'a, M: Model> {
     self_: &'a mut M,
     prompt: &'a str,
@@ -74,6 +88,7 @@ pub struct StreamTextBuilder<'a, M: Model> {
 }
 
 impl<'a, M: Model> StreamTextBuilder<'a, M> {
+    /// Create a new builder to return from the [`Model::stream_text`] method.
     pub fn new(
         prompt: &'a str,
         self_: &'a mut M,
@@ -93,41 +108,49 @@ impl<'a, M: Model> StreamTextBuilder<'a, M> {
         }
     }
 
+    /// Set the generation parameters to use when generating text. This will override any parameters set by other methods.
     pub fn with_generation_parameters(mut self, parameters: GenerationParameters) -> Self {
         self.parameters = parameters;
         self
     }
 
+    /// Set the temperature to use when generating text.
     pub fn with_temperature(mut self, temperature: f32) -> Self {
         self.parameters.temperature = temperature;
         self
     }
 
+    /// Set the top-k to use when generating text.
     pub fn with_top_k(mut self, top_k: u32) -> Self {
         self.parameters.top_k = top_k;
         self
     }
 
+    /// Set the top-p to use when generating text.
     pub fn with_top_p(mut self, top_p: f32) -> Self {
         self.parameters.top_p = top_p;
         self
     }
 
+    /// Set the repetition penalty to use when generating text.
     pub fn with_repetition_penalty(mut self, repetition_penalty: f32) -> Self {
         self.parameters.repetition_penalty = repetition_penalty;
         self
     }
 
+    /// Set the repetition penalty range to use when generating text.
     pub fn with_repetition_penalty_range(mut self, repetition_penalty_range: u32) -> Self {
         self.parameters.repetition_penalty_range = repetition_penalty_range;
         self
     }
 
+    /// Set the maximum length to use when generating text.
     pub fn with_max_length(mut self, max_length: u32) -> Self {
         self.parameters.max_length = max_length;
         self
     }
 
+    /// Set the string to stop on when generating text.
     pub fn with_stop_on(mut self, stop_on: impl Into<Option<String>>) -> Self {
         self.parameters.stop_on = stop_on.into();
         self
@@ -149,6 +172,7 @@ impl<'a, M: Model> IntoFuture for StreamTextBuilder<'a, M> {
     }
 }
 
+/// A builder for the [`Model::generate_text`] method.
 pub struct GenerateTextBuilder<'a, M: Model> {
     self_: &'a mut M,
     prompt: &'a str,
@@ -162,6 +186,7 @@ pub struct GenerateTextBuilder<'a, M: Model> {
 }
 
 impl<'a, M: Model> GenerateTextBuilder<'a, M> {
+    /// Create a new builder to return from the [`Model::generate_text`] method.
     pub fn new(
         prompt: &'a str,
         self_: &'a mut M,
@@ -181,41 +206,49 @@ impl<'a, M: Model> GenerateTextBuilder<'a, M> {
         }
     }
 
+    /// Set the generation parameters to use when generating text. This will override any parameters set by other methods.
     pub fn with_generation_parameters(mut self, parameters: GenerationParameters) -> Self {
         self.parameters = parameters;
         self
     }
 
+    /// Set the temperature to use when generating text.
     pub fn with_temperature(mut self, temperature: f32) -> Self {
         self.parameters.temperature = temperature;
         self
     }
 
+    /// Set the top-k to use when generating text.
     pub fn with_top_k(mut self, top_k: u32) -> Self {
         self.parameters.top_k = top_k;
         self
     }
 
+    /// Set the top-p to use when generating text.
     pub fn with_top_p(mut self, top_p: f32) -> Self {
         self.parameters.top_p = top_p;
         self
     }
 
+    /// Set the repetition penalty to use when generating text.
     pub fn with_repetition_penalty(mut self, repetition_penalty: f32) -> Self {
         self.parameters.repetition_penalty = repetition_penalty;
         self
     }
 
+    /// Set the repetition penalty range to use when generating text.
     pub fn with_repetition_penalty_range(mut self, repetition_penalty_range: u32) -> Self {
         self.parameters.repetition_penalty_range = repetition_penalty_range;
         self
     }
 
+    /// Set the maximum length to use when generating text.
     pub fn with_max_length(mut self, max_length: u32) -> Self {
         self.parameters.max_length = max_length;
         self
     }
 
+    /// Set the string to stop on when generating text.
     pub fn with_stop_on(mut self, stop_on: impl Into<Option<String>>) -> Self {
         self.parameters.stop_on = stop_on.into();
         self
@@ -237,12 +270,18 @@ impl<'a, M: Model> IntoFuture for GenerateTextBuilder<'a, M> {
     }
 }
 
+/// A model that can be used to generate text with an associated tokenizer.
+///
+/// The model may support using a custom sampler. If a specific model does not support a specific method, it will return an error.
 #[async_trait::async_trait]
 pub trait Model: Send + 'static {
+    /// The type of stream that this model generates.
     type TextStream: Stream<Item = String> + Send + Sync + Unpin + 'static;
 
+    /// Get the tokenizer associated with this model to use for constrained generation.
     fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync>;
 
+    /// Generate text with the given prompt.
     async fn generate_text_with_sampler(
         &mut self,
         prompt: &str,
@@ -261,6 +300,7 @@ pub trait Model: Send + 'static {
         Ok(text)
     }
 
+    /// Generate text with the given prompt.
     fn generate_text<'a>(&'a mut self, prompt: &'a str) -> GenerateTextBuilder<'a, Self>
     where
         Self: Sized + Send + Sync,
@@ -269,7 +309,10 @@ pub trait Model: Send + 'static {
             Box::pin(async {
                 let mut text = String::new();
 
-                let mut stream = self_.stream_text(prompt).await?;
+                let mut stream = self_
+                    .stream_text(prompt)
+                    .with_generation_parameters(generation_parameters)
+                    .await?;
                 while let Some(new) = stream.next().await {
                     text.push_str(&new);
                 }
@@ -278,6 +321,7 @@ pub trait Model: Send + 'static {
         })
     }
 
+    /// Generate text with the given prompt.
     async fn stream_text_with_sampler(
         &mut self,
         _prompt: &str,
@@ -288,10 +332,12 @@ pub trait Model: Send + 'static {
         Err(anyhow::Error::msg("Not implemented"))
     }
 
+    /// Generate text with the given prompt.
     fn stream_text<'a>(&'a mut self, prompt: &'a str) -> StreamTextBuilder<'a, Self>
     where
         Self: Sized;
 
+    /// Convert this model into a model trait object.
     fn into_any_model(self) -> DynModel
     where
         Self: Send + Sync + Sized,
@@ -300,6 +346,7 @@ pub trait Model: Send + 'static {
     }
 }
 
+/// A trait object for a model.
 pub type DynModel =
     Box<dyn Model<TextStream = Box<dyn Stream<Item = String> + Send + Sync + Unpin>> + Send + Sync>;
 
@@ -347,6 +394,7 @@ where
     }
 }
 
+/// Parameters to use when generating text.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GenerationParameters {
     pub(crate) temperature: f32,
@@ -373,6 +421,7 @@ impl Default for GenerationParameters {
 }
 
 impl GenerationParameters {
+    /// Create a gready generation configuration that will always return the most likely token.
     pub fn greedy() -> Self {
         Self {
             temperature: 0.8,
@@ -385,65 +434,79 @@ impl GenerationParameters {
         }
     }
 
+    /// Set the temperature to use when generating text.
     pub fn with_temperature(mut self, temperature: f32) -> Self {
         self.temperature = temperature;
         self
     }
 
+    /// Set the top-k to use when generating text.
     pub fn with_top_k(mut self, top_k: u32) -> Self {
         self.top_k = top_k;
         self
     }
 
+    /// Set the top-p to use when generating text.
     pub fn with_top_p(mut self, top_p: f32) -> Self {
         self.top_p = top_p;
         self
     }
 
+    /// Set the repetition penalty to use when generating text.
     pub fn with_repetition_penalty(mut self, repetition_penalty: f32) -> Self {
         self.repetition_penalty = repetition_penalty;
         self
     }
 
+    /// Set the repetition penalty range to use when generating text.
     pub fn with_repetition_penalty_range(mut self, repetition_penalty_range: u32) -> Self {
         self.repetition_penalty_range = repetition_penalty_range;
         self
     }
 
+    /// Set the maximum length to use when generating text.
     pub fn with_max_length(mut self, max_length: u32) -> Self {
         self.max_length = max_length;
         self
     }
 
+    /// Set the string to stop on when generating text.
     pub fn with_stop_on(mut self, stop_on: impl Into<Option<String>>) -> Self {
         self.stop_on = stop_on.into();
         self
     }
 
+    /// Get the temperature to use when generating text.
     pub fn temperature(&self) -> f32 {
         self.temperature
     }
 
+    /// Get the top-k to use when generating text.
     pub fn top_k(&self) -> u32 {
         self.top_k
     }
 
+    /// Get the top-p to use when generating text.
     pub fn top_p(&self) -> f32 {
         self.top_p
     }
 
+    /// Get the repetition penalty to use when generating text.
     pub fn repetition_penalty(&self) -> f32 {
         self.repetition_penalty
     }
 
+    /// Get the repetition penalty range to use when generating text.
     pub fn repetition_penalty_range(&self) -> u32 {
         self.repetition_penalty_range
     }
 
+    /// Get the maximum length to use when generating text.
     pub fn max_length(&self) -> u32 {
         self.max_length
     }
 
+    /// Get the string to stop on when generating text.
     pub fn stop_on(&self) -> Option<&str> {
         self.stop_on.as_deref()
     }
@@ -507,7 +570,3 @@ embedding!(LargePythiaSpace);
 embedding!(TinyPythiaSpace);
 embedding!(DollySevenBSpace);
 embedding!(StableLmSpace);
-
-struct CustomSpace<const URL: u128>;
-
-impl<const URL: u128> VectorSpace for CustomSpace<URL> {}

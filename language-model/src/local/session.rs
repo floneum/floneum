@@ -1,7 +1,7 @@
 use crate::embedding::VectorSpace;
 use crate::{embedding::get_embeddings, embedding::Embedding};
 use floneumin_sample::{ParseStatus, ParseStream, Validate};
-use floneumin_streams::sender::ChannelTextStream;
+use floneumin_streams::ChannelTextStream;
 use llm::Tokenizer;
 use llm_samplers::prelude::*;
 

@@ -1,5 +1,5 @@
 //! # rwhisper
-//! A rust wrapper for [whisper](https://openai.com/research/whisper)
+//! A Rust wrapper for [whisper](https://openai.com/research/whisper)
 //!
 //! ## Usage
 //!
@@ -7,33 +7,32 @@
 //! use futures_util::StreamExt;
 //! use rwhisper::*;
 //! use tokio::time::Duration;
-//! 
+//!
 //! #[tokio::main]
 //! async fn main() -> Result<(), anyhow::Error> {
 //!     let model = WhisperBuilder::default()
 //!         .with_source(WhisperSource::SmallEn)
 //!         .build()?;
-//! 
+//!
 //!     let mut text = floneumin_sound::source::mic::MicInput::default()
 //!         .stream()
 //!         .unwrap()
 //!         .subscribe_stream(Duration::from_secs(30))
 //!         .text(model);
-//! 
+//!
 //!     while let Some(transcribed) = text.next().await {
 //!         let text = transcribed.text();
 //!         print!("{}", text);
 //!     }
-//! 
+//!
 //!     Ok(())
 //! }
 //! ```
 
-
 #![warn(missing_docs)]
 
 use cpal::FromSample;
-use floneumin_streams::sender::ChannelTextStream;
+use floneumin_streams::ChannelTextStream;
 use model::WhisperInner;
 use rodio::{source::UniformSourceIterator, Source};
 use std::fmt::Display;
