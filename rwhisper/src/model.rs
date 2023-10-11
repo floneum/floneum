@@ -12,13 +12,13 @@ use crate::{Task, WhisperBuilder, WhisperLanguage};
 
 use super::{DecodingResult, Segment};
 
-pub(crate) struct WhisperModelInner {
+pub(crate) struct WhisperInner {
     mel_filters: Vec<f32>,
     device: Device,
     decoder: Decoder,
 }
 
-impl WhisperModelInner {
+impl WhisperInner {
     pub(crate) fn new(settings: WhisperBuilder) -> anyhow::Result<Self> {
         let device = device(settings.cpu)?;
         let (default_model, _) = settings.model.model_and_revision();

@@ -1,18 +1,30 @@
+/// The source whisper model to use.
 #[derive(Clone, Copy, Debug)]
-pub enum WhisperModelSource {
+pub enum WhisperSource {
+    /// The tiny model.
     Tiny,
+    /// The tiny model with only English support.
     TinyEn,
+    /// The base model.
     Base,
+    /// The base model with only English support.
     BaseEn,
+    /// The small model.
     Small,
+    /// The small model with only English support.
     SmallEn,
+    /// The medium model.
     Medium,
+    /// The medium model with only English support.
     MediumEn,
+    /// The large model.
     Large,
+    /// The large model with only English support.
     LargeV2,
 }
 
-impl WhisperModelSource {
+impl WhisperSource {
+    /// Check if the model is multilingual.
     pub fn is_multilingual(&self) -> bool {
         match self {
             Self::Tiny | Self::Base | Self::Small | Self::Medium | Self::Large | Self::LargeV2 => {

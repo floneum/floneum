@@ -12,7 +12,6 @@ itertools = "0.10.5"
 rand = "0.8.5"
 ringbuf = "0.3.2"
 webrtc-vad = "0.4"
-whisper-rs = { git = "https://github.com/tazz4843/whisper-rs", branch = "whisper-8e46ba8" }
 candle-core = { git = "https://github.com/huggingface/candle" }
 candle-nn = { git = "https://github.com/huggingface/candle" }
 candle-transformers = { git = "https://github.com/huggingface/candle" }
@@ -32,6 +31,9 @@ accelerate-src = { version = "0.3.2", optional = true }
 intel-mkl-src = { version = "0.8.1", features = ["mkl-static-lp64-iomp"], optional = true }
 cudarc = { version = "0.9.14", features = ["f16"], optional = true }
 half = { version = "2.3.1", features = ["num-traits", "use-intrinsics", "rand_distr"], optional = true }
+
+[dev-dependencies]
+floneumin-sound = { path = "../floneumin-sound" }
 
 [features]
 accelerate = ["dep:accelerate-src", "candle-core/accelerate", "candle-nn/accelerate", "candle-transformers/accelerate"]

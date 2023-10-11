@@ -1,11 +1,40 @@
 //! # rwhisper
 //! A rust wrapper for [whisper](https://openai.com/research/whisper)
+//!
+//! ## Usage
+//!
+//! ```rust
+//! use futures_util::StreamExt;
+//! use rwhisper::*;
+//! use tokio::time::Duration;
+//! 
+//! #[tokio::main]
+//! async fn main() -> Result<(), anyhow::Error> {
+//!     let model = WhisperBuilder::default()
+//!         .with_source(WhisperSource::SmallEn)
+//!         .build()?;
+//! 
+//!     let mut text = floneumin_sound::source::mic::MicInput::default()
+//!         .stream()
+//!         .unwrap()
+//!         .subscribe_stream(Duration::from_secs(30))
+//!         .text(model);
+//! 
+//!     while let Some(transcribed) = text.next().await {
+//!         let text = transcribed.text();
+//!         print!("{}", text);
+//!     }
+//! 
+//!     Ok(())
+//! }
+//! ```
+
 
 #![warn(missing_docs)]
 
 use cpal::FromSample;
 use floneumin_streams::sender::ChannelTextStream;
-use model::WhisperModelInner;
+use model::WhisperInner;
 use rodio::{source::UniformSourceIterator, Source};
 use std::fmt::Display;
 
@@ -27,6 +56,7 @@ struct DecodingResult {
     compression_ratio: f64,
 }
 
+/// A transcribed segment of audio.
 #[derive(Debug, Clone)]
 pub struct Segment {
     start: f64,
@@ -35,18 +65,22 @@ pub struct Segment {
 }
 
 impl Segment {
+    /// Get the probability of no speech.
     pub fn probability_of_no_speech(&self) -> f64 {
         self.result.no_speech_prob
     }
 
+    /// Get the text of the segment.
     pub fn text(&self) -> &str {
         &self.result.text
     }
 
+    /// Get the start timestamp of the segment.
     pub fn start(&self) -> f64 {
         self.start
     }
 
+    /// Get the duration of the segment.
     pub fn duration(&self) -> f64 {
         self.duration
     }
@@ -58,24 +92,10 @@ impl AsRef<str> for Segment {
     }
 }
 
-#[async_trait::async_trait(?Send)]
-pub trait TranscribeAudioSourceExt {
-    fn text(self, model: WhisperModel) -> Result<ChannelTextStream<Segment>>;
-}
-
-#[async_trait::async_trait(?Send)]
-impl<S: Source> TranscribeAudioSourceExt for S
-where
-    <S as Iterator>::Item: rodio::Sample,
-    f32: FromSample<<S as Iterator>::Item>,
-{
-    fn text(self, model: WhisperModel) -> Result<ChannelTextStream<Segment>> {
-        model.transcribe(self)
-    }
-}
-
+/// An extension trait for transcribing audio streams.
 pub trait TranscribeAudioStreamExt {
-    fn text(self, model: WhisperModel) -> ChannelTextStream<Segment>;
+    /// Transcribe the audio stream.
+    fn text(self, model: Whisper) -> ChannelTextStream<Segment>;
 }
 
 impl<S> TranscribeAudioStreamExt for S
@@ -85,7 +105,7 @@ where
     <<S as Stream>::Item as Iterator>::Item: rodio::Sample,
     f32: FromSample<<<S as Stream>::Item as Iterator>::Item>,
 {
-    fn text(self, model: WhisperModel) -> ChannelTextStream<Segment> {
+    fn text(self, model: Whisper) -> ChannelTextStream<Segment> {
         let mut stream = self;
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         tokio::spawn(async move {
@@ -114,13 +134,14 @@ enum Task {
     Translate,
 }
 
+/// A builder with configuration for a Whisper model.
 #[derive(Debug)]
 pub struct WhisperBuilder {
     /// Run on CPU rather than on GPU.
     cpu: bool,
 
     /// The model to be used, can be tiny, small, medium.
-    model: WhisperModelSource,
+    model: WhisperSource,
 
     /// Language.
     language: Option<WhisperLanguage>,
@@ -130,21 +151,22 @@ impl Default for WhisperBuilder {
     fn default() -> Self {
         Self {
             cpu: false,
-            model: WhisperModelSource::LargeV2,
+            model: WhisperSource::LargeV2,
             language: Some(WhisperLanguage::English),
         }
     }
 }
 
 impl WhisperBuilder {
-    pub fn build(self) -> anyhow::Result<WhisperModel> {
+    /// Build the model.
+    pub fn build(self) -> anyhow::Result<Whisper> {
         let (rx, tx) = std::sync::mpsc::channel();
         let thread = std::thread::spawn(move || {
             tokio::runtime::Builder::new_current_thread()
                 .build()
                 .unwrap()
                 .block_on(async move {
-                    let mut model = WhisperModelInner::new(self).unwrap();
+                    let mut model = WhisperInner::new(self).unwrap();
                     while let Ok(message) = tx.recv() {
                         match message {
                             WhisperMessage::Kill => return,
@@ -156,28 +178,33 @@ impl WhisperBuilder {
                 });
         });
 
-        Ok(WhisperModel {
+        Ok(Whisper {
             thread: Some(thread),
             sender: rx,
         })
     }
 
-    pub fn cpu(mut self, cpu: bool) -> Self {
+    /// Set if the model should run on CPU rather than on GPU.
+    pub fn with_cpu(mut self, cpu: bool) -> Self {
         self.cpu = cpu;
         self
     }
 
-    pub fn model(mut self, model: WhisperModelSource) -> Self {
+    /// Set the model to be used.
+    pub fn with_source(mut self, model: WhisperSource) -> Self {
         self.model = model;
         self
     }
 
-    pub fn language(mut self, language: Option<WhisperLanguage>) -> Self {
+    /// Set the language to be used.
+    pub fn with_language(mut self, language: Option<WhisperLanguage>) -> Self {
         self.language = language;
         self
     }
 }
 
+/// A language whisper can use
+#[allow(missing_docs)]
 #[derive(Debug, Clone, Copy)]
 pub enum WhisperLanguage {
     English,
@@ -387,35 +414,38 @@ impl Display for WhisperLanguage {
     }
 }
 
-pub struct WhisperModel {
+/// A quantized whisper audio transcription model.
+pub struct Whisper {
     thread: Option<std::thread::JoinHandle<()>>,
     sender: std::sync::mpsc::Sender<WhisperMessage>,
 }
 
-impl Default for WhisperModel {
+impl Default for Whisper {
     fn default() -> Self {
         Self::builder().build().unwrap()
     }
 }
 
-impl WhisperModel {
+impl Whisper {
+    /// Create a builder for a Whisper model.
     pub fn builder() -> WhisperBuilder {
         WhisperBuilder::default()
     }
 
+    /// Transcribe some audio into text.
     pub fn transcribe<S: Source>(&self, input: S) -> Result<ChannelTextStream<Segment>>
     where
         <S as Iterator>::Item: rodio::Sample,
         f32: FromSample<<S as Iterator>::Item>,
     {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        let pcm_data: Vec<_> = normalize_audio(input)?;
-        self.sender.send(WhisperMessage::Transcribe(pcm_data, tx))?;
-        Ok(rx.into())
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        self.transcribe_into(input, sender)?;
+        Ok(ChannelTextStream::from(receiver))
     }
 
+    /// Transcribe some audio into a steam of text
     pub fn transcribe_into<S: Source>(
-        &mut self,
+        &self,
         input: S,
         sender: tokio::sync::mpsc::UnboundedSender<Segment>,
     ) -> Result<()>
@@ -430,7 +460,7 @@ impl WhisperModel {
     }
 }
 
-impl Drop for WhisperModel {
+impl Drop for Whisper {
     fn drop(&mut self) {
         self.sender.send(WhisperMessage::Kill).unwrap();
         self.thread.take().unwrap().join().unwrap();
@@ -442,7 +472,7 @@ enum WhisperMessage {
     Transcribe(Vec<f32>, tokio::sync::mpsc::UnboundedSender<Segment>),
 }
 
-pub fn normalize_audio<S: Source>(input: S) -> Result<Vec<f32>>
+pub(crate) fn normalize_audio<S: Source>(input: S) -> Result<Vec<f32>>
 where
     <S as Iterator>::Item: rodio::Sample,
     f32: FromSample<<S as Iterator>::Item>,

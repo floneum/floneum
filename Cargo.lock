@@ -570,28 +570,6 @@ dependencies = [
 
 [[package]]
 name = "bindgen"
-version = "0.64.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4243e6031260db77ede97ad86c27e501d646a27ab57b59a574f725d98ab1fb4"
-dependencies = [
- "bitflags 1.3.2",
- "cexpr",
- "clang-sys",
- "lazy_static",
- "lazycell",
- "log",
- "peeking_take_while",
- "proc-macro2",
- "quote",
- "regex",
- "rustc-hash",
- "shlex",
- "syn 1.0.109",
- "which",
-]
-
-[[package]]
-name = "bindgen"
 version = "0.68.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "726e4313eb6ec35d2730258ad4e15b547ee75d6afaa1361a922e78e59b7d8078"
@@ -1591,7 +1569,7 @@ version = "0.2.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8478e5bdad14dce236b9898ea002eabfa87cbe14f0aa538dbe3b6a4bec4332d"
 dependencies = [
- "bindgen 0.68.1",
+ "bindgen",
 ]
 
 [[package]]
@@ -3483,7 +3461,6 @@ dependencies = [
  "tracing",
  "tts",
  "webrtc-vad",
- "whisper-rs",
 ]
 
 [[package]]
@@ -8422,6 +8399,7 @@ dependencies = [
  "candle-transformers",
  "cpal",
  "cudarc",
+ "floneumin-sound",
  "floneumin-streams",
  "futures-util",
  "half 2.3.1",
@@ -8437,7 +8415,6 @@ dependencies = [
  "tokio",
  "tracing",
  "webrtc-vad",
- "whisper-rs",
 ]
 
 [[package]]
@@ -9139,7 +9116,7 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c3e8acdf2b1f4bb13f1813b40b52f3edf4cc94d8a55fe713a584f672a10388d"
 dependencies = [
- "bindgen 0.68.1",
+ "bindgen",
 ]
 
 [[package]]
@@ -11525,23 +11502,6 @@ dependencies = [
  "home",
  "once_cell",
  "rustix 0.38.17",
-]
-
-[[package]]
-name = "whisper-rs"
-version = "0.9.0-rc.1"
-source = "git+https://github.com/tazz4843/whisper-rs?branch=whisper-8e46ba8#fa997b5d3e3bb04dd63a0d97ab50013a1490c8c8"
-dependencies = [
- "whisper-rs-sys",
-]
-
-[[package]]
-name = "whisper-rs-sys"
-version = "0.6.1"
-source = "git+https://github.com/tazz4843/whisper-rs?branch=whisper-8e46ba8#fa997b5d3e3bb04dd63a0d97ab50013a1490c8c8"
-dependencies = [
- "bindgen 0.64.0",
- "cfg-if 1.0.0",
 ]
 
 [[package]]

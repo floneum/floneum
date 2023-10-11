@@ -1,3 +1,5 @@
+use std::ops::{Deref, DerefMut};
+
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rodio::buffer::SamplesBuffer;
 
@@ -36,7 +38,7 @@ impl MicInput {
     ) -> Result<SamplesBuffer<f32>, anyhow::Error> {
         let stream = self.stream()?;
         tokio::time::sleep_until(deadline).await;
-        stream.stream().reader()
+        stream.reader()
     }
 
     pub fn record_until_blocking(
@@ -45,7 +47,7 @@ impl MicInput {
     ) -> Result<SamplesBuffer<f32>, anyhow::Error> {
         let stream = self.stream()?;
         std::thread::sleep(deadline - std::time::Instant::now());
-        stream.stream().reader()
+        stream.reader()
     }
 
     pub fn stream(&self) -> Result<MicStream, anyhow::Error> {
@@ -101,10 +103,16 @@ pub struct MicStream {
     writer: AudioStream<u16>,
 }
 
-impl MicStream {
-    pub fn stream(&self) -> &AudioStream<u16> {
+impl Deref for MicStream {
+    type Target = AudioStream<u16>;
+
+    fn deref(&self) -> &Self::Target {
         &self.writer
     }
+}
 
-    pub fn stop(self) {}
+impl DerefMut for MicStream {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.writer
+    }
 }

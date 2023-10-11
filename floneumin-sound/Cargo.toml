@@ -12,7 +12,6 @@ itertools = "0.10.5"
 rand = "0.8.5"
 ringbuf = "0.3.2"
 webrtc-vad = "0.4"
-whisper-rs = { git = "https://github.com/tazz4843/whisper-rs", branch = "whisper-8e46ba8" }
 candle-core = { git = "https://github.com/huggingface/candle" }
 candle-nn = { git = "https://github.com/huggingface/candle" }
 candle-transformers = { git = "https://github.com/huggingface/candle" }

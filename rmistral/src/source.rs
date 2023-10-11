@@ -1,4 +1,3 @@
-
 /// A source for the Mistral model.
 pub struct MistralSource {
     /// The model to use, check out available models: https://huggingface.co/models?library=sentence-transformers&sort=trending
