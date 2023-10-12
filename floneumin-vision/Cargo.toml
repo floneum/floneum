@@ -1,0 +1,12 @@
+[package]
+name = "floneumin-vision"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+image = "0.24.7"
+screenshots = "0.8.3"
+rwuerstchen = { path = "../rwuerstchen" }
+segment-anything-rs = { path = "../segment-anything-rs" }

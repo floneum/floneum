@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 
 [dependencies]
-wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen", rev = "67e2d2228ae807c9a94c4018228b59d7040843bf" }
+wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen" }
 floneum_rust_macro = { path = "../rust_macro" }
 image = "0.24.6"
 log = {version = "0.4", features = ["std"]}

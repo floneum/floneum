@@ -11,5 +11,5 @@ proc-macro = true
 syn = { version = "2.0.18", features = ["full"] }
 proc-macro2 = "1"
 quote = "1"
-wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen", rev = "67e2d2228ae807c9a94c4018228b59d7040843bf" }
+wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen" }
 convert_case = "0.6.0"

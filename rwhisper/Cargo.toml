@@ -1,0 +1,43 @@
+[package]
+name = "rwhisper"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.70"
+cpal = "0.15.1"
+itertools = "0.10.5"
+rand = "0.8.5"
+ringbuf = "0.3.2"
+webrtc-vad = "0.4"
+candle-core = { git = "https://github.com/huggingface/candle" }
+candle-nn = { git = "https://github.com/huggingface/candle" }
+candle-transformers = { git = "https://github.com/huggingface/candle" }
+byteorder = "1.4.3"
+hf-hub = "0.3.1"
+tokenizers = "0.14.0"
+serde_json = "1.0.107"
+hound = "3.5"
+rodio = "0.17.1"
+tokio = { version = "1.32.0", features = ["full"] }
+tracing = "0.1.37"
+futures-util = "0.3.28"
+async-trait = "0.1.73"
+floneumin-streams = { path = "../floneumin-streams" }
+
+accelerate-src = { version = "0.3.2", optional = true }
+intel-mkl-src = { version = "0.8.1", features = ["mkl-static-lp64-iomp"], optional = true }
+cudarc = { version = "0.9.14", features = ["f16"], optional = true }
+half = { version = "2.3.1", features = ["num-traits", "use-intrinsics", "rand_distr"], optional = true }
+
+[dev-dependencies]
+floneumin-sound = { path = "../floneumin-sound" }
+
+[features]
+accelerate = ["dep:accelerate-src", "candle-core/accelerate", "candle-nn/accelerate", "candle-transformers/accelerate"]
+cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
+cudnn = ["candle-core/cudnn"]
+mkl = ["dep:intel-mkl-src", "candle-core/mkl", "candle-nn/mkl", "candle-transformers/mkl"]
+nccl = ["cuda", "cudarc/nccl", "dep:half"]

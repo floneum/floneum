@@ -1,10 +1,8 @@
 use crate::Color;
 use dioxus::prelude::*;
 use floneum_plugin::{
-    exports::plugins::main::definitions::{
-        Input, Output, PrimitiveValue, PrimitiveValueType, ValueType,
-    },
-    plugins::main::types::{GptNeoXType, LlamaType, ModelType, MptType},
+    exports::plugins::main::definitions::{Input, Output},
+    plugins::main::types::*,
 };
 use std::path::PathBuf;
 
@@ -79,8 +77,8 @@ fn show_primitive_value<'a>(cx: &'a ScopeState, value: &PrimitiveValue) -> Eleme
         PrimitiveValue::Boolean(val) => {
             render! {"{val:?}"}
         }
-        PrimitiveValue::Tab(id) => {
-            render! {"Tab: {id:?}"}
+        PrimitiveValue::Page(id) => {
+            render! {"Page: {id:?}"}
         }
         PrimitiveValue::Node(id) => {
             render! {"Node: {id:?}"}
@@ -184,7 +182,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
             PrimitiveValue::Embedding(_)
             | PrimitiveValue::Model(_)
             | PrimitiveValue::Database(_)
-            | PrimitiveValue::Tab(_)
+            | PrimitiveValue::Page(_)
             | PrimitiveValue::Node { .. } => show_primitive_value(cx, &current_primitive),
             PrimitiveValue::Number(value) => {
                 render! {
@@ -301,7 +299,7 @@ impl Variants for PrimitiveValueType {
         PrimitiveValueType::Model,
         PrimitiveValueType::ModelType,
         PrimitiveValueType::Database,
-        PrimitiveValueType::Tab,
+        PrimitiveValueType::Page,
         PrimitiveValueType::Node,
         PrimitiveValueType::Any,
     ];
@@ -318,7 +316,7 @@ impl Variants for ValueType {
         ValueType::Single(PrimitiveValueType::Model),
         ValueType::Single(PrimitiveValueType::ModelType),
         ValueType::Single(PrimitiveValueType::Database),
-        ValueType::Single(PrimitiveValueType::Tab),
+        ValueType::Single(PrimitiveValueType::Page),
         ValueType::Single(PrimitiveValueType::Node),
         ValueType::Single(PrimitiveValueType::Any),
         ValueType::Many(PrimitiveValueType::Text),
@@ -330,7 +328,7 @@ impl Variants for ValueType {
         ValueType::Many(PrimitiveValueType::Model),
         ValueType::Many(PrimitiveValueType::ModelType),
         ValueType::Many(PrimitiveValueType::Database),
-        ValueType::Many(PrimitiveValueType::Tab),
+        ValueType::Many(PrimitiveValueType::Page),
         ValueType::Many(PrimitiveValueType::Node),
         ValueType::Many(PrimitiveValueType::Any),
     ];
@@ -357,6 +355,8 @@ impl Named for ModelType {
             ModelType::Mpt(MptType::Chat) => "Mpt chat",
             ModelType::Mpt(MptType::Story) => "Mpt story",
             ModelType::Mpt(MptType::Instruct) => "Mpt instruct",
+            ModelType::Phi => "Phi",
+            ModelType::Mistral => "Mistral",
         }
     }
 }

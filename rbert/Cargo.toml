@@ -20,6 +20,10 @@ half = { version = "2.3.1", features = ["num-traits", "use-intrinsics", "rand_di
 anyhow = "1.0.75"
 tracing = "0.1.37"
 serde_json = "1.0.106"
+async-trait = "0.1.73"
+tokio = { version = "1.33.0", features = ["full"] }
+
+floneumin-language-model = { path = "../language-model" }
 
 [features]
 accelerate = ["dep:accelerate-src", "candle-core/accelerate", "candle-nn/accelerate", "candle-transformers/accelerate"]

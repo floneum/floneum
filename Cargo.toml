@@ -25,17 +25,23 @@ simple_logger = "4.1.0"
 pollster = "0.3.0"
 cargo-dist = "0.0.7"
 once_cell = "1.18.0"
-wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", features = ['component-model'] }
+wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", features = [
+    'component-model',
+] }
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 dioxus = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
 petgraph = { version = "0.6.4", features = ["serde-1"] }
 dioxus-desktop = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
 dioxus-router = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
-dioxus-signals = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals", features = ["serialize"] }
+dioxus-signals = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals", features = [
+    "serialize",
+] }
 dioxus-free-icons = { version = "0.7.0", features = ["ionicons"] }
 rfd = "0.11.4"
-dioxus-std = { git = "https://github.com/DioxusLabs/dioxus-std/", version = "0.4.0", features = ["clipboard"] }
+dioxus-std = { git = "https://github.com/DioxusLabs/dioxus-std/", version = "0.4.0", features = [
+    "clipboard",
+] }
 
 [patch.crates-io]
 dioxus-core = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
@@ -50,6 +56,18 @@ members = [
     "floneumite",
     "floneum-cli",
     "rbert",
+    "rphi",
+    "rwhisper",
+    "rmistral",
+    "rwuerstchen",
+    "segment-anything-rs",
+    "floneumin",
+    "floneumin-language",
+    "language-model",
+    "floneumin-sample",
+    "floneumin-vision",
+    "floneumin-sound",
+    "floneumin-streams",
     "plugins/generate_text",
     "plugins/generate_structured_text",
     "plugins/format",
@@ -109,9 +127,6 @@ codegen-units = 1
 
 [profile.dev.package."*"]
 opt-level = 3
-
-[profile.dev.package.floneum_plugin]
-opt-level = 1
 
 [features]
 metal = ["floneum_plugin/metal"]

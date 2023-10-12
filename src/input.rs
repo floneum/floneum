@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use dioxus_signals::*;
-use floneum_plugin::exports::plugins::main::definitions::ValueType;
+use floneum_plugin::plugins::main::types::ValueType;
 
 use crate::{
     edge::Connection,

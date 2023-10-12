@@ -8,9 +8,21 @@ use syn::{
 
 #[allow(unused_macros)]
 mod inner {
-    wit_bindgen::generate!({path: "../wit"});
+    wit_bindgen::generate!({
+        path: "../wit",
+        // the name of the world in the `*.wit` input file
+        world: "exports",
+
+        // For all exported worlds, interfaces, and resources, this specifies what
+        // type they're corresponding to in this module. In this case the `MyHost`
+        // struct defined below is going to define the exports of the `world`,
+        // namely the `run` function.
+        exports: {
+            world: MyHost,
+        },
+    });
 }
-use inner::exports::plugins::main::definitions::{PrimitiveValueType, ValueType};
+use inner::plugins::main::types::{PrimitiveValueType, ValueType};
 
 macro_rules! try_parse_quote {
     ($($tokens:tt)*) => {
@@ -223,8 +235,8 @@ impl IoDefinitionType {
             PrimitiveValueType::Boolean => quote! {
                 PrimitiveValue::Boolean(inner)
             },
-            PrimitiveValueType::Tab => quote! {
-                PrimitiveValue::Tab(inner)
+            PrimitiveValueType::Page => quote! {
+                PrimitiveValue::Page(inner)
             },
             PrimitiveValueType::Node => quote! {
                 PrimitiveValue::Node(inner)
@@ -304,8 +316,8 @@ impl ToTokens for IoDefinitionType {
             PrimitiveValueType::Boolean => quote! {
                 floneum_rust::PrimitiveValueType::Boolean
             },
-            PrimitiveValueType::Tab => quote! {
-                floneum_rust::PrimitiveValueType::Tab
+            PrimitiveValueType::Page => quote! {
+                floneum_rust::PrimitiveValueType::Page
             },
             PrimitiveValueType::Node => quote! {
                 floneum_rust::PrimitiveValueType::Node
@@ -413,12 +425,12 @@ fn parse_primitive_value_type(ident: &Ident) -> syn::Result<PrimitiveValueType> 
         Ok(PrimitiveValueType::Folder)
     } else if ident == "PrimitiveValue" {
         Ok(PrimitiveValueType::Any)
-    } else if ident == "Tab" || ident == "TabId" {
-        Ok(PrimitiveValueType::Tab)
+    } else if ident == "Page" || ident == "PageId" {
+        Ok(PrimitiveValueType::Page)
     } else if ident == "Node" {
         Ok(PrimitiveValueType::Node)
     } else {
-        let error = format!("type {} not allowed. Inputs and outputs must be one of i64, String, ModelInstance, EmbeddingDbId, Embedding, ModelType, bool, PrimitiveValue, Tab, Node", ident);
+        let error = format!("type {} not allowed. Inputs and outputs must be one of i64, String, ModelInstance, EmbeddingDbId, Embedding, ModelType, bool, PrimitiveValue, Page, Node", ident);
         Err(Error::new_spanned(ident, error))
     }
 }

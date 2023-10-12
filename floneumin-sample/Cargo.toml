@@ -1,0 +1,16 @@
+[package]
+name = "floneumin-sample"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+llm-samplers = "=0.0.6"
+rand = "0.8.5"
+anyhow = "1.0.71"
+tracing = "0.1.37"
+llm = { git = "https://github.com/rustformers/llm" }
+candle-core = { git = "https://github.com/huggingface/candle" }
+tokenizers = { version = "0.13.4" }
+rustc-hash = "1.1.0"
