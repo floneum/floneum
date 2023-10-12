@@ -11,15 +11,15 @@ use tokio::time::Instant;
 use url::Url;
 
 /// A page that is either static or dynamic.
-/// 
+///
 /// # Example
-/// 
+///
 /// ```rust
 /// use floneumin_language::BrowserMode;
 /// use floneumin_language::CrawlFeedback;
 /// use floneumin_language::Page;
 /// use floneumin_language::Url;
-/// 
+///
 /// #[tokio::main]
 /// async fn main() {
 ///     let page = Page::new(

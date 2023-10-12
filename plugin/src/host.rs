@@ -5,11 +5,11 @@ use crate::plugins::main::types::{
 };
 use crate::Both;
 
-use floneumin::floneumin_language::context::document::Document;
+use floneumin::floneumin_language::Document;
 
-use floneumin::floneumin_language::context::page::DynamicNodeId;
-use floneumin::floneumin_language::model::*;
-use floneumin::floneumin_language::vector_db::VectorDB;
+use floneumin::floneumin_language::DynamicNodeId;
+use floneumin::floneumin_language::VectorDB;
+use floneumin::floneumin_language::*;
 use headless_chrome::Tab;
 use once_cell::sync::Lazy;
 

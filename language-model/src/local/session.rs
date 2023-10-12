@@ -14,6 +14,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+/// A local session backed by llama.cpp that can be used to generate text.
 pub struct LocalSession<S: VectorSpace> {
     task_sender: tokio::sync::mpsc::UnboundedSender<Task<S>>,
     thread_handle: Option<std::thread::JoinHandle<()>>,
@@ -34,6 +35,7 @@ impl<S: VectorSpace> Debug for LocalSession<S> {
 }
 
 impl<S: VectorSpace + Send + Sync + 'static> LocalSession<S> {
+    /// Create a new local session
     pub fn new(model: Box<dyn Model>, session: llm::InferenceSession) -> Self {
         let (task_sender, mut task_receiver) = tokio::sync::mpsc::unbounded_channel();
         let arc_tokenizer = Arc::new(match model.tokenizer() {
@@ -94,7 +96,8 @@ impl<S: VectorSpace + Send + Sync + 'static> LocalSession<S> {
         }
     }
 
-    pub fn get_tokenizer(&self) -> Arc<Tokenizer> {
+    /// Get the tokenizer used by this session
+    pub(crate) fn get_tokenizer(&self) -> Arc<Tokenizer> {
         self.tokenizer.clone()
     }
 
@@ -149,6 +152,7 @@ impl<S: VectorSpace + Send + Sync + 'static> LocalSession<S> {
     }
 }
 
+/// A wrapper around a [`Validate`] trait object that implements [`Clone`].
 #[derive(Clone)]
 pub struct ArcValidate(pub(crate) Arc<dyn for<'a> Validate<'a> + Send + Sync + 'static>);
 

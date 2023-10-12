@@ -30,3 +30,4 @@ pub use model::*;
 mod download;
 mod local;
 pub use futures_util::StreamExt;
+pub use local::*;

@@ -1,12 +1,10 @@
+use floneumin::floneumin_language::Model as _;use crate::llm::floneumin_sample::StructuredSampler;
 use crate::host::State;
 use crate::plugins::main;
 
 use crate::plugins::main::types::{Embedding, EmbeddingModel, Model, Structure};
 
-use floneumin::floneumin_language::floneumin_sample::structured::StructuredSampler;
-
-use floneumin::floneumin_language::local::{Bert, LocalSession, Mistral, Phi};
-use floneumin::floneumin_language::model::{Model as _, *};
+use floneumin::floneumin_language::*;
 
 use std::sync::{Arc, Mutex};
 
@@ -263,11 +261,10 @@ impl main::types::HostModel for State {
         max_tokens: Option<u32>,
         stop_on: Option<String>,
     ) -> wasmtime::Result<String> {
-        let parameters = GenerationParameters::default()
-            .with_max_length(max_tokens.unwrap_or(u32::MAX))
-            .with_stop_on(stop_on);
         Ok(self.models[self_.rep() as usize]
-            .generate_text(&input, parameters)
+            .generate_text(&input)
+            .with_max_length(max_tokens.unwrap_or(u32::MAX))
+            .with_stop_on(stop_on)
             .await?)
     }
 

@@ -1,6 +1,6 @@
 /// A source for the Mistral model.
 pub struct MistralSource {
-    /// The model to use, check out available models: https://huggingface.co/models?library=sentence-transformers&sort=trending
+    /// The model to use, check out available models: <https://huggingface.co/models?library=sentence-transformers&sort=trending>
     pub(crate) model_id: String,
     pub(crate) revision: String,
     pub(crate) gguf_file: String,

@@ -77,7 +77,7 @@ pub struct BertSource {
 }
 
 impl BertSource {
-    /// Set the model to use, check out available models: https://huggingface.co/models?library=sentence-transformers&sort=trending
+    /// Set the model to use, check out available models: <https://huggingface.co/models?library=sentence-transformers&sort=trending>
     pub fn with_model_id(mut self, model_id: String) -> Self {
         self.model_id = model_id;
         self

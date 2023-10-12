@@ -1,5 +1,5 @@
 /// A PhiSource is the source to fetch a Phi-1.5 model from.
-/// The model to use, check out available models: https://huggingface.co/models?other=mixformer-sequential&sort=trending&search=phi
+/// The model to use, check out available models: <https://huggingface.co/models?other=mixformer-sequential&sort=trending&search=phi>
 /// The model must have a quantized version available with a safetensors file. (for example lmz/candle-quantized-phi)
 pub struct PhiSource {
     pub(crate) model_id: String,

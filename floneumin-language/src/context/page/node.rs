@@ -71,8 +71,8 @@ impl<'a> AnyNode<'a> {
     pub fn find_child(&self, selector: &str) -> anyhow::Result<Self> {
         match self {
             Self::Static(node) => {
-                let query =
-                    Selector::parse(selector).map_err(|e| anyhow::anyhow!("Invalid query: {}", e))?;
+                let query = Selector::parse(selector)
+                    .map_err(|e| anyhow::anyhow!("Invalid query: {}", e))?;
                 Ok(Self::Static(
                     node.select(&query)
                         .next()

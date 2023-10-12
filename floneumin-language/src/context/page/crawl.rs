@@ -29,9 +29,9 @@ pub enum CrawlFeedback {
 }
 
 /// Trait for a callback that is called when a page is visited.
-/// 
+///
 /// # Example
-/// 
+///
 /// ```rust
 /// use floneumin_language::BrowserMode;
 /// use floneumin_language::CrawlFeedback;
@@ -42,7 +42,7 @@ pub enum CrawlFeedback {
 /// use std::sync::atomic::AtomicUsize;
 /// use std::sync::atomic::Ordering;
 /// use std::sync::Arc;
-/// 
+///
 /// #[tokio::main]
 /// async fn main() {
 ///     let count = Arc::new(AtomicUsize::new(0));
@@ -60,22 +60,22 @@ pub enum CrawlFeedback {
 ///                 if current_count > 1000 {
 ///                     return CrawlFeedback::Stop;
 ///                 }
-/// 
+///
 ///                 let Ok(page) = page.article().await else {
 ///                     return CrawlFeedback::DontFollow;
 ///                 };
-/// 
+///
 ///                 let body = page.body();
-/// 
+///
 ///                 if body.len() < 100 {
 ///                     return CrawlFeedback::DontFollow;
 ///                 }
-/// 
+///
 ///                 println!("Title: {}", page.title());
 ///                 println!("Article:\n{}", body);
-/// 
+///
 ///                 count.fetch_add(1, Ordering::SeqCst);
-/// 
+///
 ///                 CrawlFeedback::Continue
 ///             }) as Pin<Box<dyn Future<Output = CrawlFeedback>>>
 ///         },

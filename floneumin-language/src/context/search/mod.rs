@@ -36,7 +36,6 @@ impl IntoDocuments for SearchQuery {
     }
 }
 
-
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct SearchResult {
     pub knowledge_graph: Option<KnowledgeGraph>,
@@ -46,7 +45,6 @@ pub struct SearchResult {
     #[serde(default)]
     pub related_searches: Vec<RelatedSearches>,
 }
-
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct KnowledgeGraph {

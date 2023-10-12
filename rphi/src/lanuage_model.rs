@@ -24,20 +24,16 @@ impl Model for Phi {
         self.get_tokenizer() as Arc<dyn floneumin_sample::Tokenizer + Send + Sync>
     }
 
-    fn stream_text<'a>(&'a mut self, prompt: &'a str) -> StreamTextBuilder<'a, Self> {
-        StreamTextBuilder::new(prompt, self, |self_, prompt, generation_parameters| {
-            Box::pin(async move {
-                let max_length = generation_parameters.max_length();
-                self_
-                    .run(
-                        InferenceSettings::new(prompt)
-                            .with_sample_len(max_length as usize)
-                            .with_stop_on(generation_parameters.stop_on().map(|s| s.to_string())),
-                        Arc::new(Mutex::new(generation_parameters.sampler())),
-                    )
-                    .map(Into::into)
-            })
-        })
+    async fn stream_text_inner(&mut self, prompt: &str, generation_parameters: GenerationParameters) -> anyhow::Result<Self::TextStream> {
+        let max_length = generation_parameters.max_length();
+        self
+            .run(
+                InferenceSettings::new(prompt)
+                    .with_sample_len(max_length as usize)
+                    .with_stop_on(generation_parameters.stop_on().map(|s| s.to_string())),
+                Arc::new(Mutex::new(generation_parameters.sampler())),
+            )
+            .map(Into::into)
     }
 
     async fn stream_text_with_sampler(

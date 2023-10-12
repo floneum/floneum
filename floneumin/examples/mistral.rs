@@ -1,8 +1,7 @@
 use std::io::Write;
 
 use floneumin_language::{
-    Mistral,
-    {CreateModel, GenerationParameters, Model},
+    Mistral, {CreateModel, GenerationParameters, Model},
 };
 use floneumin_streams::text_stream::TextStream;
 use futures_util::stream::StreamExt;

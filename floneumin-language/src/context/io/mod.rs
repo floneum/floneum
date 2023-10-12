@@ -15,7 +15,7 @@ mod txt;
 pub use txt::*;
 
 /// A document that can be read from the file system.
-/// 
+///
 /// # Example
 /// ```rust, no_run
 /// use floneumin_language::DocumentFolder;
@@ -24,11 +24,11 @@ pub use txt::*;
 /// use floneumin_language::Bert;
 /// use std::io::Write;
 /// use std::path::PathBuf;
-/// 
+///
 /// #[tokio::main]
 /// async fn main() {
 ///     let documents = DocumentFolder::try_from(PathBuf::from("./documents")).unwrap();
-/// 
+///
 ///     let mut database = DocumentDatabase::new(
 ///         Bert::builder().build().unwrap(),
 ///         ChunkStrategy::Sentence {
@@ -39,13 +39,13 @@ pub use txt::*;
 ///     database.extend(documents.clone()).await.unwrap();
 ///     let mut fuzzy = FuzzySearchIndex::default();
 ///     fuzzy.extend(documents).await.unwrap();
-/// 
+///
 ///     loop {
 ///         print!("Query: ");
 ///         std::io::stdout().flush().unwrap();
 ///         let mut user_question = String::new();
 ///         std::io::stdin().read_line(&mut user_question).unwrap();
-/// 
+///
 ///         println!(
 ///             "vector: {:?}",
 ///             database
@@ -65,7 +65,6 @@ pub use txt::*;
 ///     }
 /// }
 /// ```
-
 #[derive(Debug, Clone)]
 pub enum FsDocument {
     /// A docx document.

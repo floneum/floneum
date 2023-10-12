@@ -1,4 +1,4 @@
-use crate::{IntoDocument, Document};
+use crate::{Document, IntoDocument};
 use floneumin_language_model::*;
 use std::{
     borrow::Cow,
