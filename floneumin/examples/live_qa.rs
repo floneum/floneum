@@ -1,8 +1,7 @@
 use floneumin_language::{
-    CreateModel, FuzzySearchIndex, GenerationParameters, LlamaSevenChatSpace, LocalSession, Model,
-    SearchIndex,
+    CreateModel, FuzzySearchIndex, LlamaSevenChatSpace, LocalSession, ModelExt, SearchIndex,
 };
-use floneumin_sound::model::whisper::*;
+use floneumin_sound::*;
 use futures_util::StreamExt;
 use std::{
     io::Write,
@@ -13,7 +12,7 @@ use tokio::time::{Duration, Instant};
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     let model = WhisperBuilder::default()
-        .model(WhisperModelSource::SmallEn)
+        .with_source(WhisperSource::SmallEn)
         .build()?;
 
     let document_engine = Arc::new(RwLock::new(FuzzySearchIndex::default()));
@@ -25,7 +24,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 .block_on(async move {
                     let recording_time = Duration::from_secs(30);
                     loop {
-                        let input = floneumin_sound::source::mic::MicInput::default()
+                        let input = floneumin_sound::MicInput::default()
                             .record_until(Instant::now() + recording_time)
                             .await
                             .unwrap();
@@ -50,7 +49,7 @@ async fn main() -> Result<(), anyhow::Error> {
         std::io::stdout().flush().unwrap();
         let mut user_question = String::new();
         std::io::stdin().read_line(&mut user_question).unwrap();
-        let engine = document_engine.read().unwrap();
+        let mut engine = document_engine.write().unwrap();
 
         let mut llm = LocalSession::<LlamaSevenChatSpace>::start().await;
 
@@ -75,13 +74,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
         println!("{}", prompt);
 
-        let mut stream = llm
-            .stream_text(
-                &prompt,
-                GenerationParameters::default().with_max_length(300),
-            )
-            .await
-            .unwrap();
+        let mut stream = llm.stream_text(&prompt).with_max_length(300).await.unwrap();
 
         loop {
             // set up a CTRL-C handler to stop the stream

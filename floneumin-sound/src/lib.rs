@@ -7,5 +7,5 @@
 mod audio;
 pub use audio::*;
 mod source;
-pub use rwhisper;
+pub use rwhisper::*;
 pub use source::*;

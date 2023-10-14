@@ -1,9 +1,4 @@
-use floneumin_language::{
-    context::{rss::RssFeed, Url},
-    index::{keyword::FuzzySearchIndex, SearchIndex},
-    local::LocalSession,
-    model::{CreateModel, GenerationParameters, LlamaSevenChatSpace, Model},
-};
+use floneumin_language::*;
 use futures_util::StreamExt;
 use std::io::Write;
 
@@ -40,13 +35,7 @@ async fn main() {
 "
         );
 
-        let mut stream = llm
-            .stream_text(
-                &prompt,
-                GenerationParameters::default().with_max_length(300),
-            )
-            .await
-            .unwrap();
+        let mut stream = llm.stream_text(&prompt).with_max_length(300).await.unwrap();
 
         while let Some(text) = stream.next().await {
             print!("{}", text);

@@ -1,3 +1,5 @@
+// You must set the environment variable OPENAI_API_KEY (https://platform.openai.com/account/api-keys) to run this example.
+
 use std::io::Write;
 
 use floneumin_language::*;
@@ -6,7 +8,9 @@ use futures_util::stream::StreamExt;
 
 #[tokio::main]
 async fn main() {
-    let mut llm = Mistral::start().await;
+    tracing_subscriber::fmt::init();
+
+    let mut llm = Gpt4::start().await;
     let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
     print!("{}", prompt);
 

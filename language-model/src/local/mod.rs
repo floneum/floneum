@@ -49,7 +49,11 @@ macro_rules! local_model {
                 self.get_tokenizer() as Arc<dyn Tokenizer + Send + Sync>
             }
 
-            async fn stream_text_inner(&mut self, prompt: &str, generation_parameters: GenerationParameters) -> anyhow::Result<Self::TextStream> {
+            async fn stream_text_inner(
+                &mut self,
+                prompt: &str,
+                generation_parameters: GenerationParameters,
+            ) -> anyhow::Result<Self::TextStream> {
                 Ok(self.infer(prompt.to_string(), generation_parameters).await)
             }
 

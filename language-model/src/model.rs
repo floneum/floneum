@@ -274,32 +274,26 @@ impl<'a, M: Model> IntoFuture for GenerateTextBuilder<'a, M> {
 #[async_trait::async_trait]
 pub trait ModelExt: Model + Send + 'static {
     /// Generate text with the given prompt.
-    fn generate_text<'a>(
-        &'a mut self,
-        prompt: &'a str,
-    ) -> GenerateTextBuilder<'a, Self>
+    fn generate_text<'a>(&'a mut self, prompt: &'a str) -> GenerateTextBuilder<'a, Self>
     where
         Self: Sized,
     {
         GenerateTextBuilder::new(prompt, self, |self_, prompt, generation_parameters| {
             Box::pin(async move {
-                self_.generate_text_inner(prompt, generation_parameters).await
+                self_
+                    .generate_text_inner(prompt, generation_parameters)
+                    .await
             })
         })
     }
 
     /// Generate text with the given prompt.
-    fn stream_text<'a>(
-        &'a mut self,
-        prompt: &'a str,
-    ) -> StreamTextBuilder<'a, Self>
+    fn stream_text<'a>(&'a mut self, prompt: &'a str) -> StreamTextBuilder<'a, Self>
     where
         Self: Sized,
     {
         StreamTextBuilder::new(prompt, self, |self_, prompt, generation_parameters| {
-            Box::pin(async move {
-                self_.stream_text_inner(prompt, generation_parameters).await
-            })
+            Box::pin(async move { self_.stream_text_inner(prompt, generation_parameters).await })
         })
     }
 }
@@ -312,7 +306,7 @@ impl<M: Model + Send + 'static> ModelExt for M {}
 #[async_trait::async_trait]
 pub trait Model: Send + 'static {
     /// The type of stream that this model generates.
-    type TextStream: Stream<Item = String> + Send + Sync + Unpin + 'static;
+    type TextStream: Stream<Item = String> + Send + Unpin + 'static;
 
     /// Get the tokenizer associated with this model to use for constrained generation.
     fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync>;
@@ -337,13 +331,14 @@ pub trait Model: Send + 'static {
     }
 
     /// Generate text with the given prompt.
-    async fn generate_text_inner(&mut self, prompt: &str,parameters: GenerationParameters) -> anyhow::Result<String>
-    {
+    async fn generate_text_inner(
+        &mut self,
+        prompt: &str,
+        parameters: GenerationParameters,
+    ) -> anyhow::Result<String> {
         let mut text = String::new();
 
-        let mut stream = self
-            .stream_text_inner(prompt, parameters)
-            .await?;
+        let mut stream = self.stream_text_inner(prompt, parameters).await?;
         while let Some(new) = stream.next().await {
             text.push_str(&new);
         }
@@ -362,12 +357,16 @@ pub trait Model: Send + 'static {
     }
 
     /// Generate text with the given prompt.
-    async fn stream_text_inner(&mut self, prompt: &str, parameters: GenerationParameters) -> anyhow::Result<Self::TextStream>;
+    async fn stream_text_inner(
+        &mut self,
+        prompt: &str,
+        parameters: GenerationParameters,
+    ) -> anyhow::Result<Self::TextStream>;
 
     /// Convert this model into a model trait object.
     fn into_any_model(self) -> DynModel
     where
-        Self: Send + Sync + Sized,
+        Self: Send + Sized,
     {
         Box::new(AnyModel(self, PhantomData))
     }
@@ -375,46 +374,55 @@ pub trait Model: Send + 'static {
 
 #[async_trait::async_trait]
 impl Model for DynModel {
-    type TextStream = Box<dyn Stream<Item = String> + Send + Sync + Unpin>;
+    type TextStream = Box<dyn Stream<Item = String> + Send + Unpin>;
 
-    fn tokenizer(&self) -> Arc<dyn Tokenizer+Send+Sync>  {
-        let self_ref:&(dyn Model<TextStream = Box<dyn Stream<Item = String> + Send + Sync + Unpin>> + Send + Sync) = self.as_ref();
+    fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
+        let self_ref: &(dyn Model<TextStream = Box<dyn Stream<Item = String> + Send + Unpin>>
+              + Send) = self.as_ref();
         self_ref.tokenizer()
     }
 
-    async fn stream_text_inner(&mut self, prompt: &str, parameters: GenerationParameters) -> anyhow::Result<Self::TextStream> {
-        let self_ref:&mut (dyn Model<TextStream = Box<dyn Stream<Item = String> + Send + Sync + Unpin>> + Send + Sync) = self.as_mut();
+    async fn stream_text_inner(
+        &mut self,
+        prompt: &str,
+        parameters: GenerationParameters,
+    ) -> anyhow::Result<Self::TextStream> {
+        let self_ref: &mut (dyn Model<TextStream = Box<dyn Stream<Item = String> + Send + Unpin>>
+                  + Send) = self.as_mut();
         self_ref.stream_text_inner(prompt, parameters).await
     }
 }
 
 /// A trait object for a model.
 pub type DynModel =
-    Box<dyn Model<TextStream = Box<dyn Stream<Item = String> + Send + Sync + Unpin>> + Send + Sync>;
+    Box<dyn Model<TextStream = Box<dyn Stream<Item = String> + Send + Unpin>> + Send>;
 
-struct AnyModel<
-    M: Model<TextStream = S> + Send + Sync,
-    S: Stream<Item = String> + Send + Sync + Unpin + 'static,
->(M, PhantomData<S>);
+struct AnyModel<M: Model<TextStream = S> + Send, S: Stream<Item = String> + Send + Unpin + 'static>(
+    M,
+    PhantomData<S>,
+);
 
 #[async_trait::async_trait]
 impl<M, S> Model for AnyModel<M, S>
 where
-    S: Stream<Item = String> + Send + Sync + Unpin + 'static,
-    M: Model<TextStream = S> + Send + Sync,
+    S: Stream<Item = String> + Send + Unpin + 'static,
+    M: Model<TextStream = S> + Send,
 {
-    type TextStream = Box<dyn Stream<Item = String> + Send + Sync + Unpin>;
+    type TextStream = Box<dyn Stream<Item = String> + Send + Unpin>;
 
     fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
         self.0.tokenizer()
     }
 
-    async fn stream_text_inner(&mut self, prompt: &str, params: GenerationParameters) -> anyhow::Result<Self::TextStream> {
-        self
-                .0
-                .stream_text_inner(prompt, params)
-                .await
-                .map(|s| Box::new(s) as Box<dyn Stream<Item = String> + Send + Sync + Unpin>)
+    async fn stream_text_inner(
+        &mut self,
+        prompt: &str,
+        params: GenerationParameters,
+    ) -> anyhow::Result<Self::TextStream> {
+        self.0
+            .stream_text_inner(prompt, params)
+            .await
+            .map(|s| Box::new(s) as Box<dyn Stream<Item = String> + Send + Unpin>)
     }
 
     async fn stream_text_with_sampler(
@@ -427,7 +435,7 @@ where
         self.0
             .stream_text_with_sampler(prompt, max_tokens, stop_on, sampler)
             .await
-            .map(|s| Box::new(s) as Box<dyn Stream<Item = String> + Send + Sync + Unpin>)
+            .map(|s| Box::new(s) as Box<dyn Stream<Item = String> + Send + Unpin>)
     }
 }
 

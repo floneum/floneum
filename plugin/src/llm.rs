@@ -1,6 +1,7 @@
-use floneumin::floneumin_language::Model as _;use crate::llm::floneumin_sample::StructuredSampler;
 use crate::host::State;
+use crate::llm::floneumin_sample::StructuredSampler;
 use crate::plugins::main;
+use floneumin::floneumin_language::Model as _;
 
 use crate::plugins::main::types::{Embedding, EmbeddingModel, Model, Structure};
 

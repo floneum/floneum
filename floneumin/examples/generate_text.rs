@@ -1,8 +1,6 @@
 use std::io::Write;
 
-use floneumin_language::{
-    CreateModel, GenerationParameters, LlamaThirteenChatSpace, LocalSession, Model,
-};
+use floneumin_language::*;
 use floneumin_streams::TextStream;
 use futures_util::stream::StreamExt;
 
@@ -12,7 +10,8 @@ async fn main() {
     let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
     let mut words = LocalSession::<LlamaThirteenChatSpace>::start()
         .await
-        .stream_text(prompt, GenerationParameters::default().with_max_length(300))
+        .stream_text(prompt)
+        .with_max_length(300)
         .await
         .unwrap()
         .words();
