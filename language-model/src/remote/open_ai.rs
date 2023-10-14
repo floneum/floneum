@@ -138,7 +138,8 @@ impl CreateModel for AdaEmbedder {
     }
 }
 
-struct AdaEmbedding;
+/// A vector space for the Ada embedding model.
+pub struct AdaEmbedding;
 
 impl VectorSpace for AdaEmbedding {}
 
