@@ -56,9 +56,11 @@ where
     }
 }
 
-impl<T, S: VectorSpace> std::fmt::Debug for VectorDB<T, S> {
+impl<T: Debug, S: VectorSpace> std::fmt::Debug for VectorDB<T, S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("VectorDB").finish()
+        f.debug_struct("VectorDB")
+            .field("model", &self.model.values)
+            .finish()
     }
 }
 

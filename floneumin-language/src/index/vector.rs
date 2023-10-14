@@ -1,5 +1,6 @@
 use crate::index::IntoDocuments;
 use crate::{context::IntoDocument, index::Chunk};
+use std::fmt::Formatter;
 use std::ops::Range;
 
 use floneumin_language_model::*;
@@ -207,6 +208,18 @@ pub struct DocumentDatabase<S: VectorSpace + Send + Sync + 'static, M: Embedder<
     documents: Slab<Document>,
     database: VectorDB<DocumentSnippet, S>,
     strategy: ChunkStrategy,
+}
+
+impl<S: VectorSpace + Send + Sync + 'static, M: Embedder<S>> std::fmt::Debug
+    for DocumentDatabase<S, M>
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DocumentDatabase")
+            .field("documents", &self.documents)
+            .field("database", &self.database)
+            .field("strategy", &self.strategy)
+            .finish()
+    }
 }
 
 #[async_trait::async_trait]
