@@ -1,22 +1,16 @@
 use std::time::Duration;
 
-use floneumin_sound::model::{
-    whisper::{WhisperModel, WhisperModelSource},
-    TranscribeAudioStreamExt,
-};
+use floneumin_sound::*;
 use futures_util::StreamExt;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    let input = floneumin_sound::source::mic::MicInput::default();
+    let input = floneumin_sound::MicInput::default();
     let stream = input.stream()?;
-    let model = WhisperModel::builder()
-        .model(WhisperModelSource::SmallEn)
+    let model = Whisper::builder()
+        .with_source(WhisperSource::SmallEn)
         .build()?;
-    let mut transcribed = stream
-        .stream()
-        .subscribe_stream(Duration::from_secs(30))
-        .text(model);
+    let mut transcribed = stream.subscribe_stream(Duration::from_secs(30)).text(model);
 
     let mut current_time_stamp = 0.0;
 

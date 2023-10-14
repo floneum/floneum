@@ -1,10 +1,5 @@
-use floneumin_language::model::CreateModel;
-use floneumin_language::tool::*;
-use floneumin_language::{
-    local::Phi,
-    model::{GenerationParameters, Model},
-};
-use floneumin_streams::text_stream::TextStream;
+use floneumin_language::*;
+use floneumin_streams::TextStream;
 use futures_util::stream::StreamExt;
 use std::io::Write;
 
@@ -17,12 +12,9 @@ async fn main() {
     let mut current_text = String::new();
 
     let stream = llm
-        .stream_text(
-            &prompt,
-            GenerationParameters::default()
-                .with_max_length(300)
-                .with_stop_on("Action:".to_string()),
-        )
+        .stream_text(&prompt)
+        .with_max_length(300)
+        .with_stop_on("Action:".to_string())
         .await
         .unwrap();
 

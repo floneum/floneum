@@ -1,11 +1,11 @@
-use std::sync::Arc;
-
+use async_openai::types::CreateEmbeddingRequestArgs;
 use async_openai::{
     types::{CompletionResponseStream, CreateCompletionRequestArgs},
     Client,
 };
 use floneumin_sample::Tokenizer;
 use futures_util::Stream;
+use std::sync::Arc;
 
 use crate::{CreateModel, Embedder, Embedding, GenerationParameters, VectorSpace};
 
@@ -58,7 +58,13 @@ macro_rules! openai_model {
                     .frequency_penalty(generation_parameters.repetition_penalty)
                     .temperature(generation_parameters.temperature)
                     .top_p(generation_parameters.top_p)
-                    .stop(vec!["\n".to_string()])
+                    .stop(
+                        generation_parameters
+                            .stop_on
+                            .iter()
+                            .cloned()
+                            .collect::<Vec<String>>(),
+                    )
                     .max_tokens(generation_parameters.max_length as u16)
                     .build()?;
 
@@ -71,7 +77,7 @@ macro_rules! openai_model {
 }
 
 openai_model!(Gpt3_5, "gpt-3.5-turbo");
-openai_model!(Gpt4, "gpt-4");
+openai_model!(Gpt4, "text-davinci-003");
 
 /// A stream of text from OpenAI's API.
 #[pin_project::pin_project]
@@ -106,10 +112,7 @@ impl Stream for MappedResponseStream {
     }
 }
 
-use std::error::Error;
-
-use async_openai::types::CreateEmbeddingRequestArgs;
-
+/// An embedder that uses OpenAI's API for the Ada embedding model.
 #[derive(Debug)]
 pub struct AdaEmbedder {
     client: Client<async_openai::config::OpenAIConfig>,
@@ -154,33 +157,4 @@ impl Embedder<AdaEmbedding> for AdaEmbedder {
 
         Ok(embedding)
     }
-}
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    let client = Client::new();
-
-    // An embedding is a vector (list) of floating point numbers.
-    // The distance between two vectors measures their relatedness.
-    // Small distances suggest high relatedness and large distances suggest low relatedness.
-
-    let request = CreateEmbeddingRequestArgs::default()
-        .model("text-embedding-ada-002")
-        .input([
-            "Why do programmers hate nature? It has too many bugs.",
-            "Why was the computer cold? It left its Windows open.",
-        ])
-        .build()?;
-
-    let response = client.embeddings().create(request).await?;
-
-    for data in response.data {
-        println!(
-            "[{}]: has embedding of length {}",
-            data.index,
-            data.embedding.len()
-        )
-    }
-
-    Ok(())
 }
