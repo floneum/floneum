@@ -150,7 +150,7 @@ impl Embedder<AdaEmbedding> for AdaEmbedder {
 
         let response = self.client.embeddings().create(request).await?;
 
-        let embedding = Embedding::from(&response.data[0].embedding);
+        let embedding = Embedding::from(response.data[0].embedding.iter().copied());
 
         Ok(embedding)
     }
