@@ -7,7 +7,7 @@ use async_openai::{
 use floneumin_sample::Tokenizer;
 use futures_util::Stream;
 
-use crate::{CreateModel, GenerationParameters};
+use crate::{CreateModel, Embedder, Embedding, GenerationParameters, VectorSpace};
 
 macro_rules! openai_model {
     ($ty: ident, $model: literal) => {
@@ -104,4 +104,83 @@ impl Stream for MappedResponseStream {
             })
         })
     }
+}
+
+use std::error::Error;
+
+use async_openai::types::CreateEmbeddingRequestArgs;
+
+#[derive(Debug)]
+pub struct AdaEmbedder {
+    client: Client<async_openai::config::OpenAIConfig>,
+}
+
+impl Default for AdaEmbedder {
+    fn default() -> Self {
+        Self {
+            client: Client::new(),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl CreateModel for AdaEmbedder {
+    async fn start() -> Self {
+        let client = Client::new();
+        AdaEmbedder { client }
+    }
+
+    fn requires_download() -> bool {
+        false
+    }
+}
+
+struct AdaEmbedding;
+
+impl VectorSpace for AdaEmbedding {}
+
+#[async_trait::async_trait]
+impl Embedder<AdaEmbedding> for AdaEmbedder {
+    /// Embed a single string.
+    async fn embed(&mut self, input: &str) -> anyhow::Result<Embedding<AdaEmbedding>> {
+        let request = CreateEmbeddingRequestArgs::default()
+            .model("text-embedding-ada-002")
+            .input([input])
+            .build()?;
+
+        let response = self.client.embeddings().create(request).await?;
+
+        let embedding = Embedding::from(&response.data[0].embedding);
+
+        Ok(embedding)
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    let client = Client::new();
+
+    // An embedding is a vector (list) of floating point numbers.
+    // The distance between two vectors measures their relatedness.
+    // Small distances suggest high relatedness and large distances suggest low relatedness.
+
+    let request = CreateEmbeddingRequestArgs::default()
+        .model("text-embedding-ada-002")
+        .input([
+            "Why do programmers hate nature? It has too many bugs.",
+            "Why was the computer cold? It left its Windows open.",
+        ])
+        .build()?;
+
+    let response = client.embeddings().create(request).await?;
+
+    for data in response.data {
+        println!(
+            "[{}]: has embedding of length {}",
+            data.index,
+            data.embedding.len()
+        )
+    }
+
+    Ok(())
 }
