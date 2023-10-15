@@ -3,7 +3,6 @@
 use std::io::Write;
 
 use floneumin_language::*;
-use floneumin_streams::TextStream;
 use futures_util::stream::StreamExt;
 
 #[tokio::main]

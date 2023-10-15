@@ -117,7 +117,7 @@ impl Phi {
                                 sampler,
                             } => {
                                 if let Err(err) = inner._infer(settings, sampler, sender) {
-                                    tracing::trace!("Error in PhiInner::_infer: {}", err);
+                                    tracing::error!("Error in PhiInner::_infer: {}", err);
                                 }
                             }
                         }

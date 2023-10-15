@@ -1,32 +1,38 @@
 #![allow(missing_docs)]
 
+use rand::seq::SliceRandom;
 use url::Url;
 
 use crate::index::IntoDocuments;
-
 use super::{document::Document, page::get_article};
 
 /// A search query that can be used to search for documents on the web.
-pub struct SearchQuery {
-    query: String,
-    api_key: String,
+pub struct SearchQuery<'a> {
+    query: &'a str,
+    api_key: &'a str,
+    top: usize,
 }
 
-impl SearchQuery {
+impl<'a> SearchQuery<'a> {
     /// Create a new search query.
-    pub fn new(query: String, api_key: String) -> Self {
-        Self { query, api_key }
+    pub fn new(query: &'a str, api_key: &'a str, top_n: usize) -> Self {
+        Self {
+            query,
+            api_key,
+            top: top_n,
+        }
     }
 }
 
 #[async_trait::async_trait]
-impl IntoDocuments for SearchQuery {
+impl IntoDocuments for SearchQuery<'_> {
     async fn into_documents(self) -> anyhow::Result<Vec<Document>> {
-        let search_results = search(&self.api_key, self.query).await?;
+        let mut search_results = search(self.api_key, self.query).await?;
 
         let mut documents = vec![];
-
-        for result in search_results.organic {
+        search_results.organic.shuffle(&mut rand::thread_rng());
+        
+        for result in search_results.organic.into_iter().take(self.top) {
             if let Some(link) = &result.link {
                 documents.push(get_article(Url::parse(link)?).await?);
             }
@@ -95,7 +101,7 @@ pub struct RelatedSearches {
     pub query: String,
 }
 
-pub async fn search(api_key: &str, query: String) -> Result<SearchResult, reqwest::Error> {
+pub async fn search(api_key: &str, query: &str) -> Result<SearchResult, reqwest::Error> {
     let url = Url::parse("https://google.serper.dev/search").unwrap();
     let client = reqwest::Client::new();
     let res = client
@@ -119,7 +125,7 @@ pub fn prompt_search_query(question: &str) -> String {
 #[tokio::test]
 async fn search_result() {
     if let Some(key) = option_env!("SERPER_API_KEY") {
-        let result = search(key, "apple inc".to_string()).await.unwrap();
+        let result = search(key, "apple inc").await.unwrap();
         println!("{:#?}", result);
     }
 }

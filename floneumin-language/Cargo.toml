@@ -57,6 +57,7 @@ rustc-hash = "1.1.0"
 floneumin-sample = { path = "../floneumin-sample" }
 ego-tree = "0.6.2"
 image = "0.24.7"
+meval = "0.2.0"
 
 [features]
 metal = ["llm/metal", "rphi/accelerate", "rbert/accelerate"]
