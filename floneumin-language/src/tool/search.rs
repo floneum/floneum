@@ -41,7 +41,7 @@ impl Tool for WebSearchTool {
         let documents = search_query.into_documents().await.unwrap();
         let mut text = String::new();
         for document in documents {
-            for word in document.body().split(' ').take(100){
+            for word in document.body().split(' ').take(300){
                 text.push_str(word);
                 text.push(' ');
             }

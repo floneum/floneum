@@ -1,9 +1,9 @@
 #![allow(missing_docs)]
 
+use rand::seq::SliceRandom;
 use url::Url;
 
 use crate::index::IntoDocuments;
-
 use super::{document::Document, page::get_article};
 
 /// A search query that can be used to search for documents on the web.
@@ -27,10 +27,11 @@ impl<'a> SearchQuery<'a> {
 #[async_trait::async_trait]
 impl IntoDocuments for SearchQuery<'_> {
     async fn into_documents(self) -> anyhow::Result<Vec<Document>> {
-        let search_results = search(self.api_key, self.query).await?;
+        let mut search_results = search(self.api_key, self.query).await?;
 
         let mut documents = vec![];
-
+        search_results.organic.shuffle(&mut rand::thread_rng());
+        
         for result in search_results.organic.into_iter().take(self.top) {
             if let Some(link) = &result.link {
                 documents.push(get_article(Url::parse(link)?).await?);

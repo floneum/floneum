@@ -8,12 +8,12 @@ use std::{
 
 #[tokio::main]
 async fn main() {
-    let question = "Summarize market research on llm libraries in rust";
+    let question = "Find the top five most popular programming languages on GitHub.";
     let tools = ToolManager::default().with_tool(WebSearchTool::new(1));
 
     let mut current_text = tools.prompt(question);
     print!("{}", current_text);
-    loop {
+    for _ in 0..4 {
         // TODO: There seems to be a bug in candle that causes reusing the session to fail here
         let mut llm = Phi::start().await;
         let validator = tools.any_action_constraint();
@@ -50,5 +50,21 @@ async fn main() {
                 current_text.push_str("\n");
             }
         }
+    }
+    // TODO: There seems to be a bug in candle that causes reusing the session to fail here
+    let mut llm = Phi::start().await;
+    let validator = tools.answer_constraints();
+    let token_count = llm.tokenizer().encode(&current_text).unwrap().len();
+    let structured = StructuredSampler::new(validator, token_count, llm.tokenizer());
+    let chain = SamplerChain::new() + structured;
+    let mut words = llm
+        .stream_text_with_sampler(&current_text, Some(300), None, Arc::new(Mutex::new(chain)))
+        .await
+        .unwrap();
+
+    while let Some(text) = words.next().await {
+        print!("{}", text);
+        current_text.push_str(&text);
+        std::io::stdout().flush().unwrap();
     }
 }
