@@ -10,14 +10,11 @@ use std::sync::Mutex;
 async fn main() {
     tracing_subscriber::fmt::init();
     let mut llm = Phi::start().await;
-    let prompt = "\"";
+    let prompt = "";
     print!("{}", prompt);
 
     let validator = StructureParser::Sequence {
-        item: Box::new(StructureParser::String {
-            min_len: 1,
-            max_len: 5,
-        }),
+        item: Box::new(StructureParser::Literal("Web Search".into())),
         separator: Box::new(StructureParser::Literal(", ".into())),
         min_len: 1,
         max_len: 2,

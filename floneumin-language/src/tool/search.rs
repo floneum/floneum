@@ -4,7 +4,16 @@ use crate::index::IntoDocuments;
 use crate::tool::Tool;
 
 /// A tool that can search the web
-pub struct WebSearchTool;
+pub struct WebSearchTool {
+    top_n: usize,
+}
+
+impl WebSearchTool {
+    /// Create a new web search tool
+    pub fn new(top_n: usize) -> Self {
+        Self { top_n }
+    }
+}
 
 #[async_trait::async_trait]
 impl Tool for WebSearchTool {
@@ -26,14 +35,16 @@ impl Tool for WebSearchTool {
         }
     }
 
-    async fn run(&self, args: Vec<String>) -> String {
-        let query = args.join(" ");
-        let api_key = std::env::var("GOOGLE_API_KEY").unwrap();
-        let search_query = SearchQuery::new(query, api_key);
+    async fn run(&self, query: &str) -> String {
+        let api_key = std::env::var("SERPER_API_KEY").unwrap();
+        let search_query = SearchQuery::new(query, &api_key, self.top_n);
         let documents = search_query.into_documents().await.unwrap();
         let mut text = String::new();
         for document in documents {
-            text.push_str(document.body());
+            for word in document.body().split(' ').take(100){
+                text.push_str(word);
+                text.push(' ');
+            }
             text.push('\n');
         }
         text

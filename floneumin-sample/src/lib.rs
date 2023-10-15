@@ -7,6 +7,7 @@
 
 use rustc_hash::FxHashMap;
 use std::borrow::Cow;
+use std::ops::Deref;
 use std::sync::Arc;
 use tokenizers::Decoder;
 use tokenizers::DecoderWrapper;
@@ -78,6 +79,10 @@ impl DynTokenizer {
 }
 
 impl Tokenizer for DynTokenizer {
+    fn encode(&self, text: &str) -> anyhow::Result<Vec<u32>> {
+        self.tokenizer.encode(text)
+    }
+
     fn decode(&self, ids: &[u32]) -> anyhow::Result<Cow<'_, str>> {
         self.tokenizer.decode(ids)
     }
@@ -85,6 +90,14 @@ impl Tokenizer for DynTokenizer {
 
 /// A tokenizer is a type that can decode a list of token ids into a string.
 pub trait Tokenizer {
+    /// Encode a string into a list of token ids.
+    fn encode(&self, text: &str) -> anyhow::Result<Vec<u32>>;
+
+    /// Encode a list of strings into a list of token ids.
+    fn encode_batch(&self, text: &[&str]) -> anyhow::Result<Vec<Vec<u32>>> {
+        text.iter().map(|text| self.encode(text)).collect()
+    }
+
     /// Decode a list of token ids into a string.
     fn decode(&self, ids: &[u32]) -> anyhow::Result<Cow<'_, str>>;
 
@@ -95,6 +108,14 @@ pub trait Tokenizer {
 }
 
 impl Tokenizer for llm::Tokenizer {
+    fn encode(&self, text: &str) -> anyhow::Result<Vec<u32>> {
+        Ok(self
+            .tokenize(text, false)?
+            .into_iter()
+            .map(|token| token.1)
+            .collect())
+    }
+
     fn decode(&self, ids: &[u32]) -> anyhow::Result<Cow<'_, str>> {
         let bytes = self.decode(ids.into(), false);
         Ok(String::from_utf8(bytes)?.into())
@@ -109,6 +130,14 @@ where
     PP: PostProcessor,
     D: Decoder,
 {
+    fn encode(&self, text: &str) -> anyhow::Result<Vec<u32>> {
+        Ok(self
+            .encode(text, true)
+            .map_err(|e| anyhow::anyhow!(e))?
+            .get_ids()
+            .to_vec())
+    }
+
     fn decode(&self, ids: &[u32]) -> anyhow::Result<Cow<'_, str>> {
         self.decode(ids, false)
             .map(|s| s.into())
@@ -160,6 +189,10 @@ impl FasterHuggingFaceTokenizer {
 }
 
 impl Tokenizer for FasterHuggingFaceTokenizer {
+    fn encode(&self, text: &str) -> anyhow::Result<Vec<u32>> {
+        self.inner.encode(text)
+    }
+
     fn decode(&self, ids: &[u32]) -> anyhow::Result<Cow<'_, str>> {
         if ids.len() == 1 {
             if let Some(token) = self.single_token_map.get(&ids[0]) {
@@ -198,6 +231,15 @@ impl Tokenizer for FasterHuggingFaceTokenizer {
 }
 
 impl Tokenizer for tokenizers::Tokenizer {
+    fn encode(&self, text: &str) -> anyhow::Result<Vec<u32>> {
+        let deref = self.deref();
+        Ok(deref
+            .encode(text, true)
+            .map_err(|e| anyhow::anyhow!(e))?
+            .get_ids()
+            .to_vec())
+    }
+
     fn decode(&self, ids: &[u32]) -> anyhow::Result<Cow<'_, str>> {
         let as_impl: &TokenizerImpl<
             ModelWrapper,

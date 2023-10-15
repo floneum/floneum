@@ -154,10 +154,10 @@ impl<S: VectorSpace + Send + Sync + 'static> LocalSession<S> {
 
 /// A wrapper around a [`Validate`] trait object that implements [`Clone`].
 #[derive(Clone)]
-pub struct ArcValidate(pub(crate) Arc<dyn for<'a> Validate<'a> + Send + Sync + 'static>);
+pub struct ArcValidate(pub(crate) Arc<dyn Validate + Send + Sync + 'static>);
 
-impl<'a> Validate<'a> for ArcValidate {
-    fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
+impl Validate for ArcValidate {
+    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
         self.0.validate(tokens)
     }
 }

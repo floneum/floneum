@@ -1,4 +1,4 @@
-use floneumin_sample::StructureParser;
+use floneumin_sample::{ParseStatus, ParseStream, StructureParser, Validate};
 mod search;
 pub use search::*;
 
@@ -13,7 +13,7 @@ pub trait Tool {
     /// The constraints to use when filling in the parameters for the tool
     fn constraints(&self) -> StructureParser;
     /// Run the tool with the given arguments
-    async fn run(&self, args: Vec<String>) -> String;
+    async fn run(&self, args: &str) -> String;
 }
 
 /// A set of tools that can be used by a [`floneumin_language_model::Model`]
@@ -56,12 +56,17 @@ impl ToolManager {
         &self.tools
     }
 
+    /// Get a tool by name
+    pub fn get_tool(&self, name: &str) -> Option<&dyn Tool> {
+        self.tools.iter().find(|t| t.name() == name).map(|t| &**t)
+    }
+
     /// Get a prompt for the tools in the manager
     pub fn prompt(&self, question: impl std::fmt::Display) -> String {
         let mut tools = String::new();
         let mut tool_names = String::new();
-        for (i, tool) in self.tools.iter().enumerate() {
-            tools.push_str(&format!("{}: {}\n{}", i, tool.name(), tool.description()));
+        for tool in self.tools.iter() {
+            tools.push_str(&format!("# {}\n{}", tool.name(), tool.description()));
             tool_names.push_str(&format!("'{}'", tool.name()));
         }
         format!(
@@ -83,8 +88,77 @@ Final Answer: the final answer to the original input question
 Begin!
 
 Question: {question}
-Thought:"#
+"#
         )
+    }
+
+    /// Get the constraints for the tools in the manager
+    pub fn tool_choices(&self) -> Option<StructureParser> {
+        let mut choices: Option<StructureParser> = None;
+        for tool in self.tools.iter() {
+            if let Some(current_choices) = choices.take() {
+                choices = Some(StructureParser::Either {
+                    first: Box::new(current_choices),
+                    second: Box::new(StructureParser::Literal(tool.name())),
+                });
+            } else {
+                choices = Some(StructureParser::Literal(tool.name()));
+            }
+        }
+        choices
+    }
+
+    /// Get the constraints for the thought action
+    pub fn thought_constraints(&self) -> impl Validate + Send + Sync {
+        let constraints = "Thought: ";
+        let constraints = constraints.then(OneLine);
+        constraints
+    }
+
+    /// Get the constraints for the action action
+    pub fn action_constraints(&self) -> impl Validate + Send + Sync {
+        let constraints = "Action: ";
+        let constraints = constraints.then(self.tool_choices().unwrap());
+        let constraints = constraints.then(StructureParser::Literal("\nAction Input: ".into()));
+        let constraints = constraints.then(OneLine);
+        constraints
+    }
+
+    /// Get the constraints for the answer action
+    pub fn answer_constraints(&self) -> impl Validate + Send + Sync {
+        let constraints = "Final Answer: ";
+        let constraints = constraints.then(OneLine);
+        constraints
+    }
+
+    /// Get the constraints for any action
+    pub fn any_action_constraint(&self) -> impl Validate + Send + Sync {
+        self.thought_constraints()
+            .or(self.action_constraints())
+            .or(self.answer_constraints())
+    }
+}
+
+struct OneLine;
+
+impl Validate for OneLine {
+    fn validate<'a>(&self, mut stream: ParseStream<'a>) -> ParseStatus<'a> {
+        if stream.is_empty() {
+            return ParseStatus::Incomplete {
+                required_next: None,
+            };
+        }
+        let mut iter = stream.iter();
+        while let Some(c) = iter.next() {
+            if c == '\n' {
+                return ParseStatus::Complete(
+                    iter.peek().is_some().then(|| ParseStream::from(iter)),
+                );
+            }
+        }
+        ParseStatus::Incomplete {
+            required_next: None,
+        }
     }
 }
 

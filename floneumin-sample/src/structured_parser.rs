@@ -50,8 +50,8 @@ pub enum StructureParser {
     },
 }
 
-impl<'a> Validate<'a> for StructureParser {
-    fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
+impl Validate for StructureParser {
+    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
         match self {
             StructureParser::Literal(text) => text.validate(tokens),
             StructureParser::Sequence {
@@ -98,8 +98,8 @@ struct ValidateInt {
     integer: bool,
 }
 
-impl<'a> Validate<'a> for ValidateInt {
-    fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
+impl Validate for ValidateInt {
+    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
         let ValidateInt { min, max, integer } = *self;
         let max_negative = max < 0.;
         let mut iter = tokens.iter();
@@ -232,8 +232,8 @@ fn test_parse_num() {
 
 struct ValidateString(u64, u64);
 
-impl<'a> Validate<'a> for ValidateString {
-    fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
+impl Validate for ValidateString {
+    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
         let min_len = self.0;
         let max_len = self.1;
         let mut iter = tokens.iter();
@@ -400,28 +400,28 @@ impl<'a> ParseStream<'a> {
 }
 
 /// A struct that checks if a set of tokens can be parsed.
-pub trait Validate<'a> {
+pub trait Validate {
     /// Check if this parser can parse the given tokens.
-    fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a>;
+    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a>;
 
     /// Parse this parser, or another other parser.
-    fn or<V: Validate<'a>>(self, other: V) -> Or<'a, Self, V>
+    fn or<V: Validate>(self, other: V) -> Or<Self, V>
     where
         Self: Sized,
     {
-        Or(self, other, std::marker::PhantomData)
+        Or(self, other)
     }
 
     /// Parse this parser, then the other parser.
-    fn then<V: Validate<'a>>(self, other: V) -> Then<'a, Self, V>
+    fn then<V: Validate>(self, other: V) -> Then<Self, V>
     where
         Self: Sized,
     {
-        Then(self, other, std::marker::PhantomData)
+        Then(self, other)
     }
 
     /// Erase the type of this parser and return a boxed dynamic parser.
-    fn boxed(self) -> BoxedValidate<'a>
+    fn boxed<'a>(self) -> BoxedValidate<'a>
     where
         Self: Sized + 'a,
     {
@@ -430,16 +430,16 @@ pub trait Validate<'a> {
 }
 
 /// A boxed dynamic Validater.
-pub struct BoxedValidate<'a>(pub(crate) Box<dyn Validate<'a> + 'a>);
+pub struct BoxedValidate<'a>(pub(crate) Box<dyn Validate + 'a>);
 
-impl<'a> Validate<'a> for BoxedValidate<'a> {
-    fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
+impl<'j> Validate for BoxedValidate<'j> {
+    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
         self.0.validate(tokens)
     }
 }
 
-impl<'a, V: Validate<'a>> Validate<'a> for &V {
-    fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
+impl<V: Validate> Validate for &V {
+    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
         (*self).validate(tokens)
     }
 }
@@ -456,20 +456,20 @@ where
     }
 }
 
-impl<'a, F> Validate<'a> for Anonymous<F>
+impl<F> Validate for Anonymous<F>
 where
-    F: FnMut(ParseStream<'a>) -> ParseStatus<'a>,
+    F: for<'a> FnMut(ParseStream<'a>) -> ParseStatus<'a>,
 {
-    fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
+    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
         (self.0.borrow_mut())(tokens)
     }
 }
 
 /// A parser that will parse the first parser, then the second parser.
-pub struct Then<'a, A: Validate<'a>, B: Validate<'a>>(A, B, std::marker::PhantomData<&'a ()>);
+pub struct Then<A: Validate, B: Validate>(A, B);
 
-impl<'a, A: Validate<'a>, B: Validate<'a>> Validate<'a> for Then<'a, A, B> {
-    fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
+impl<A: Validate, B: Validate> Validate for Then<A, B> {
+    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
         match self.0.validate(tokens) {
             ParseStatus::Complete(Some(tokens)) => self.1.validate(tokens),
             ParseStatus::Complete(None) => ParseStatus::Incomplete {
@@ -482,10 +482,10 @@ impl<'a, A: Validate<'a>, B: Validate<'a>> Validate<'a> for Then<'a, A, B> {
 }
 
 /// A parser that will parse either the first or the second parser.
-pub struct Or<'a, A: Validate<'a>, B: Validate<'a>>(A, B, std::marker::PhantomData<&'a ()>);
+pub struct Or<A: Validate, B: Validate>(A, B);
 
-impl<'a, A: Validate<'a>, B: Validate<'a>> Validate<'a> for Or<'a, A, B> {
-    fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
+impl<A: Validate, B: Validate> Validate for Or<A, B> {
+    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
         match self.0.validate(tokens.clone()) {
             ParseStatus::Complete(tokens) => ParseStatus::Complete(tokens),
             ParseStatus::Invalid => self.1.validate(tokens),
@@ -499,14 +499,14 @@ impl<'a, A: Validate<'a>, B: Validate<'a>> Validate<'a> for Or<'a, A, B> {
     }
 }
 
-impl<'a> Validate<'a> for String {
-    fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
+impl Validate for String {
+    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
         self.as_str().validate(tokens)
     }
 }
 
-impl<'a> Validate<'a> for &str {
-    fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
+impl Validate for &str {
+    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
         let mut iter = tokens.iter();
         let mut chars = self.chars();
 
@@ -542,28 +542,22 @@ impl<'a> Validate<'a> for &str {
 }
 
 /// A parser that will parse an item surrounded by a start and end.
-pub struct Between<'a, S: Validate<'a>, I: Validate<'a>, E: Validate<'a>> {
+pub struct Between<S: Validate, I: Validate, E: Validate> {
     start: S,
     inner: I,
     end: E,
-    _phantom: std::marker::PhantomData<&'a ()>,
 }
 
-impl<'a, S: Validate<'a>, I: Validate<'a>, E: Validate<'a>> Between<'a, S, I, E> {
+impl<S: Validate, I: Validate, E: Validate> Between<S, I, E> {
     /// Create a new `Between` parser. This parser will parse the start, then the inner, then the end.
     pub fn new(start: S, inner: I, end: E) -> Self {
-        Between {
-            start,
-            inner,
-            end,
-            _phantom: std::marker::PhantomData,
-        }
+        Between { start, inner, end }
     }
 }
 
-impl<'a, S: Validate<'a>, I: Validate<'a>, E: Validate<'a>> Validate<'a> for Between<'a, S, I, E> {
+impl<S: Validate, I: Validate, E: Validate> Validate for Between<S, I, E> {
     #[tracing::instrument(skip(self), level = "info")]
-    fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
+    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
         (&self.start)
             .then(&self.inner)
             .then(&self.end)
@@ -571,28 +565,26 @@ impl<'a, S: Validate<'a>, I: Validate<'a>, E: Validate<'a>> Validate<'a> for Bet
     }
 }
 
-struct Separated<'a, S: Validate<'a>, I: Validate<'a>> {
+struct Separated<S: Validate, I: Validate> {
     inner: I,
     separator: S,
     min: usize,
     max: usize,
-    _phantom: std::marker::PhantomData<&'a ()>,
 }
 
-impl<'a, S: Validate<'a>, I: Validate<'a>> Separated<'a, S, I> {
+impl<S: Validate, I: Validate> Separated<S, I> {
     fn new(inner: I, separator: S, min: usize, max: usize) -> Self {
         Separated {
             inner,
             separator,
             min,
             max,
-            _phantom: std::marker::PhantomData,
         }
     }
 }
 
-impl<'a, S: Validate<'a>, I: Validate<'a>> Validate<'a> for Separated<'a, S, I> {
-    fn validate(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
+impl<S: Validate, I: Validate> Validate for Separated<S, I> {
+    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
         let mut tokens = tokens;
         let mut count = 0;
         loop {
@@ -694,7 +686,6 @@ fn test_separated() {
             separator: ",",
             min: count,
             max: count,
-            _phantom: std::marker::PhantomData,
         };
 
         assert!(dbg!(separated.validate(dbg!(stream))).is_complete());
@@ -712,7 +703,6 @@ fn test_separated_string() {
             separator: ",",
             min: count,
             max: count,
-            _phantom: std::marker::PhantomData,
         };
 
         assert!(dbg!(separated.validate(dbg!(stream))).is_complete());
@@ -727,7 +717,6 @@ fn test_separated_string() {
             separator: ",",
             min: count,
             max: count,
-            _phantom: std::marker::PhantomData,
         };
 
         assert!(dbg!(separated.validate(dbg!(stream))).is_incomplete());

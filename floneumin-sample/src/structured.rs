@@ -7,14 +7,14 @@ use llm_samplers::types::{HasSamplerResources, Logits};
 use std::fmt::Debug;
 
 /// A sampler that enforces the given validator. Any tokens that form an invalid sequence will have a probability of 0
-pub struct StructuredSampler<V: for<'a> Validate<'a>> {
+pub struct StructuredSampler<V: Validate> {
     pub(crate) structure: V,
     pub(crate) current_token_count: usize,
     pub(crate) tokenizer: DynTokenizer,
     pub(crate) sampled: Option<Logit>,
 }
 
-impl<V: for<'a> Validate<'a>> StructuredSampler<V> {
+impl<V: Validate> StructuredSampler<V> {
     /// Create a new structured sampler that starts validating tokens at the given token count.
     // TODO: improve the current_token_count API
     pub fn new(
@@ -32,13 +32,13 @@ impl<V: for<'a> Validate<'a>> StructuredSampler<V> {
     }
 }
 
-impl<V: for<'a> Validate<'a>> Debug for StructuredSampler<V> {
+impl<V: Validate> Debug for StructuredSampler<V> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("StructuredSampler").finish()
     }
 }
 
-impl<V: for<'a> Validate<'a> + Send + Sync> Sampler<u32, f32> for StructuredSampler<V> {
+impl<V: Validate + Send + Sync> Sampler<u32, f32> for StructuredSampler<V> {
     fn sample<'a>(
         &mut self,
         res: &mut dyn HasSamplerResources<TokenId = u32>,
@@ -47,7 +47,7 @@ impl<V: for<'a> Validate<'a> + Send + Sync> Sampler<u32, f32> for StructuredSamp
         let mut valid_tokens = 0;
         let mut best_token: Option<Logit> = None;
         res.with_last_tokens(&mut |previous_tokens| {
-            let tokens = &previous_tokens[self.current_token_count.saturating_sub(1)..];
+            let tokens = &previous_tokens[self.current_token_count..];
             let tokens = match self.tokenizer.decode(tokens) {
                 Ok(tokens) => tokens,
                 Err(_) => String::new().into(),
