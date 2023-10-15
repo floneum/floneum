@@ -27,7 +27,7 @@ impl Tool for CalculatorTool {
     async fn run(&mut self, expr: &str) -> String {
         match meval::eval_str(expr){
             Ok(result) => result.to_string(),
-            Err(e) => e.to_string()
+            Err(e) => format!("Input was invalid, try again making sure to only use numbers and one of the prebuilt math functions. {e}"),
         }
     }
 }
