@@ -1,6 +1,10 @@
 use floneumin_sample::{ParseStatus, ParseStream, StructureParser, Validate};
 mod search;
 pub use search::*;
+mod calculator;
+pub use calculator::*;
+mod document;
+pub use document::*;
 
 /// A tool that can be used by a [`floneumin_language_model::Model`]
 // TODO: Add example
@@ -13,7 +17,7 @@ pub trait Tool {
     /// The constraints to use when filling in the parameters for the tool
     fn constraints(&self) -> StructureParser;
     /// Run the tool with the given arguments
-    async fn run(&self, args: &str) -> String;
+    async fn run(&mut self, args: &str) -> String;
 }
 
 /// A set of tools that can be used by a [`floneumin_language_model::Model`]
@@ -59,6 +63,16 @@ impl ToolManager {
     /// Get a tool by name
     pub fn get_tool(&self, name: &str) -> Option<&dyn Tool> {
         self.tools.iter().find(|t| t.name() == name).map(|t| &**t)
+    }
+
+    /// Get a tool mutably by name
+    pub fn get_tool_mut<'a>(&'a mut self, name: &str) -> Option<&'a mut dyn Tool> {
+        for tool in &mut self.tools{
+            if tool.name() == name{
+                return Some(&mut **tool);
+            }
+        }
+        None
     }
 
     /// Get a prompt for the tools in the manager

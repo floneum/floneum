@@ -8,8 +8,8 @@ use std::{
 
 #[tokio::main]
 async fn main() {
-    let question = "Find the top five most popular programming languages on GitHub.";
-    let tools = ToolManager::default().with_tool(WebSearchTool::new(1));
+    let question = "Find the average of 5, 6, 7, and 123";
+    let mut tools = ToolManager::default().with_tool(WebSearchTool::new(1)).with_tool(CalculatorTool);
 
     let mut current_text = tools.prompt(question);
     print!("{}", current_text);
@@ -41,7 +41,7 @@ async fn main() {
                 let action_line = lines.next().unwrap();
                 let tool = action_line.rsplit_once("Action: ").unwrap().1;
                 let tool_input = last_line.rsplit_once("Action Input: ").unwrap().1;
-                let tool = tools.get_tool(tool).unwrap();
+                let tool = tools.get_tool_mut(tool).unwrap();
                 let output = tool.run(tool_input).await;
                 let observation = format!("Observation: {}", output);
                 println!("{}", observation);
