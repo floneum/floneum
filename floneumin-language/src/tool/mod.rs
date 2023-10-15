@@ -67,8 +67,8 @@ impl ToolManager {
 
     /// Get a tool mutably by name
     pub fn get_tool_mut<'a>(&'a mut self, name: &str) -> Option<&'a mut dyn Tool> {
-        for tool in &mut self.tools{
-            if tool.name() == name{
+        for tool in &mut self.tools {
+            if tool.name() == name {
                 return Some(&mut **tool);
             }
         }

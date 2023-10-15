@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use floneum_rust::{plugins::main::imports::get_request, *};
+use floneum_rust::*;
 use nipper::Document;
 
 #[export_plugin]

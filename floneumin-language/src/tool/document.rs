@@ -1,16 +1,16 @@
-use floneumin_language_model::{VectorSpace, Embedder};
+use floneumin_language_model::{Embedder, VectorSpace};
 
-use crate::{DocumentDatabase, SearchIndex};
 use crate::floneumin_sample::StructureParser;
 use crate::tool::Tool;
+use crate::{DocumentDatabase, SearchIndex};
 
 /// A tool that can search the web
-pub struct DocumentSearchTool<S: VectorSpace + Send + Sync +'static, M: Embedder<S>> {
+pub struct DocumentSearchTool<S: VectorSpace + Send + Sync + 'static, M: Embedder<S>> {
     database: DocumentDatabase<S, M>,
     top_n: usize,
 }
 
-impl<S: VectorSpace + Send + Sync+'static, M: Embedder<S>> DocumentSearchTool<S, M> {
+impl<S: VectorSpace + Send + Sync + 'static, M: Embedder<S>> DocumentSearchTool<S, M> {
     /// Create a new web search tool
     pub fn new(database: DocumentDatabase<S, M>, top_n: usize) -> Self {
         Self { database, top_n }
@@ -18,7 +18,7 @@ impl<S: VectorSpace + Send + Sync+'static, M: Embedder<S>> DocumentSearchTool<S,
 }
 
 #[async_trait::async_trait]
-impl<S: VectorSpace + Send + Sync+'static, M: Embedder<S>> Tool for DocumentSearchTool<S, M> {
+impl<S: VectorSpace + Send + Sync + 'static, M: Embedder<S>> Tool for DocumentSearchTool<S, M> {
     fn name(&self) -> String {
         "Local Search".to_string()
     }
@@ -41,7 +41,7 @@ impl<S: VectorSpace + Send + Sync+'static, M: Embedder<S>> Tool for DocumentSear
         let documents = self.database.search(query, self.top_n).await;
         let mut text = String::new();
         for document in documents {
-            for word in document.body().split(' ').take(300){
+            for word in document.body().split(' ').take(300) {
                 text.push_str(word);
                 text.push(' ');
             }

@@ -9,7 +9,9 @@ use std::{
 #[tokio::main]
 async fn main() {
     let question = "Find the average of 5, 6, 7, and 123";
-    let mut tools = ToolManager::default().with_tool(WebSearchTool::new(1)).with_tool(CalculatorTool);
+    let mut tools = ToolManager::default()
+        .with_tool(WebSearchTool::new(1))
+        .with_tool(CalculatorTool);
 
     let mut current_text = tools.prompt(question);
     print!("{}", current_text);

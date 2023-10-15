@@ -30,12 +30,12 @@ fn generate_structured_text(
     /// the maximum length of the output
     max_output_length: i64,
 ) -> String {
-    if !model_downloaded(model) {
+    if !Model::model_downloaded(model) {
         log_to_user("downloading model... This could take several minutes");
     }
 
     let structure = structured_from_string(&structure);
-    let session = ModelInstance::new(model);
+    let session = Model::new(model);
 
     let max_output_length = if max_output_length == 0 {
         None
@@ -49,19 +49,19 @@ fn generate_structured_text(
     responce
 }
 
-fn structured_from_string(input: &str) -> Structured {
+fn structured_from_string(input: &str) -> Structure {
     let pattern = StructuredParser::parse(Rule::format, input).map(|mut iter| iter.next());
     match pattern {
         Ok(Some(pattern)) => multiple_structured_from_rule(pattern),
         Err(err) => {
             log::error!("error parsing pattern: {:?}\n", err);
-            Structured::str()
+            Structure::str(..)
         }
-        _ => Structured::str(),
+        _ => Structure::str(..),
     }
 }
 
-fn multiple_structured_from_rule(rule: Pair<Rule>) -> Structured {
+fn multiple_structured_from_rule(rule: Pair<Rule>) -> Structure {
     let mut iter = rule.into_inner();
     let mut current = structured_from_rule(iter.next().unwrap());
     for item in iter {
@@ -70,12 +70,12 @@ fn multiple_structured_from_rule(rule: Pair<Rule>) -> Structured {
     current
 }
 
-fn structured_from_rule(rule: Pair<Rule>) -> Structured {
+fn structured_from_rule(rule: Pair<Rule>) -> Structure {
     match rule.as_rule() {
-        Rule::literal => Structured::literal(rule.as_str()),
-        Rule::string => Structured::str(),
-        Rule::boolean => Structured::boolean(),
-        Rule::hashtag => Structured::float(),
+        Rule::literal => Structure::literal(rule.as_str()),
+        Rule::string => Structure::str(..),
+        Rule::boolean => Structure::boolean(),
+        Rule::hashtag => Structure::float(),
         Rule::either => {
             let mut iter = rule.into_inner();
             let mut current = structured_from_rule(iter.next().unwrap());
@@ -87,7 +87,7 @@ fn structured_from_rule(rule: Pair<Rule>) -> Structured {
         Rule::array => {
             let mut iter = rule.into_inner();
             let item = multiple_structured_from_rule(iter.next().unwrap());
-            let separator = Structured::literal(",");
+            let separator = Structure::literal(",");
             let range = if let Some(rule) = iter.next().filter(|pair| pair.as_rule() == Rule::range)
             {
                 let mut iter = rule.into_inner();
@@ -97,7 +97,7 @@ fn structured_from_rule(rule: Pair<Rule>) -> Structured {
             } else {
                 0..=u64::MAX
             };
-            Structured::sequence_of(item, separator, range)
+            Structure::sequence_of(item, separator, range)
         }
         _ => {
             let error = format!("unexpected rule: {:?}\n", rule);

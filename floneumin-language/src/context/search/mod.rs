@@ -3,8 +3,8 @@
 use rand::seq::SliceRandom;
 use url::Url;
 
-use crate::index::IntoDocuments;
 use super::{document::Document, page::get_article};
+use crate::index::IntoDocuments;
 
 /// A search query that can be used to search for documents on the web.
 pub struct SearchQuery<'a> {
@@ -31,7 +31,7 @@ impl IntoDocuments for SearchQuery<'_> {
 
         let mut documents = vec![];
         search_results.organic.shuffle(&mut rand::thread_rng());
-        
+
         for result in search_results.organic.into_iter().take(self.top) {
             if let Some(link) = &result.link {
                 documents.push(get_article(Url::parse(link)?).await?);
