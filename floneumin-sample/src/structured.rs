@@ -1,5 +1,5 @@
-use super::structured_parser::{ParseStatus, ParseStream, Validate};
 use crate::DynTokenizer;
+use crate::Parser;
 use crate::Tokenizer;
 use llm_samplers::prelude::Logit;
 use llm_samplers::prelude::Sampler;
@@ -7,14 +7,14 @@ use llm_samplers::types::{HasSamplerResources, Logits};
 use std::fmt::Debug;
 
 /// A sampler that enforces the given validator. Any tokens that form an invalid sequence will have a probability of 0
-pub struct StructuredSampler<V: Validate> {
+pub struct StructuredSampler<V: Parser<Error = E, Output = O, PartialState = PA>, E, O, PA> {
     pub(crate) structure: V,
     pub(crate) current_token_count: usize,
     pub(crate) tokenizer: DynTokenizer,
     pub(crate) sampled: Option<Logit>,
 }
 
-impl<V: Validate> StructuredSampler<V> {
+impl<V: Parser<Error = E, Output = O, PartialState = PA>, E, O, PA> StructuredSampler<V, E, O, PA> {
     /// Create a new structured sampler that starts validating tokens at the given token count.
     // TODO: improve the current_token_count API
     pub fn new(
@@ -32,13 +32,17 @@ impl<V: Validate> StructuredSampler<V> {
     }
 }
 
-impl<V: Validate> Debug for StructuredSampler<V> {
+impl<V: Parser<Error = E, Output = O, PartialState = PA>, E, O, PA> Debug
+    for StructuredSampler<V, E, O, PA>
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("StructuredSampler").finish()
     }
 }
 
-impl<V: Validate + Send + Sync> Sampler<u32, f32> for StructuredSampler<V> {
+impl<V: Parser<Error = E, Output = O, PartialState = PA> + Send + Sync, E, O, PA: Default>
+    Sampler<u32, f32> for StructuredSampler<V, E, O, PA>
+{
     fn sample<'a>(
         &mut self,
         res: &mut dyn HasSamplerResources<TokenId = u32>,
@@ -69,22 +73,23 @@ impl<V: Validate + Send + Sync> Sampler<u32, f32> for StructuredSampler<V> {
                 }
                 let string = tokens.to_string() + &new_token;
 
-                let status = self.structure.validate(ParseStream::new(&string));
+                let status = self.structure.parse(&PA::default(), string.as_bytes());
 
                 match status {
-                    ParseStatus::Complete(Some(mut tok)) => {
-                        assert!(!tok.is_empty());
-                        logit.logit = 0.0;
+                    Ok(crate::ParseResult::Finished { remaining, .. }) => {
+                        if !remaining.is_empty() {
+                            logit.logit = 0.0;
+                        }
                     }
-                    ParseStatus::Invalid => {
-                        logit.logit = 0.0;
-                    }
-                    ParseStatus::Incomplete { .. } | ParseStatus::Complete(None) => {
+                    Ok(crate::ParseResult::Incomplete(_)) => {
                         valid_tokens += 1;
                         if best_token.is_none() || logit.logit > best_token.as_ref().unwrap().logit
                         {
                             best_token = Some(logit.clone());
                         }
+                    }
+                    Err(_) => {
+                        logit.logit = 0.0;
                     }
                 }
             }

@@ -1,4 +1,3 @@
-use floneumin_sample::{ParseStatus, ParseStream, StructureParser, Validate};
 mod search;
 pub use search::*;
 mod calculator;
@@ -14,8 +13,6 @@ pub trait Tool {
     fn name(&self) -> String;
     /// A description of the tool
     fn description(&self) -> String;
-    /// The constraints to use when filling in the parameters for the tool
-    fn constraints(&self) -> StructureParser;
     /// Run the tool with the given arguments
     async fn run(&mut self, args: &str) -> String;
 }
