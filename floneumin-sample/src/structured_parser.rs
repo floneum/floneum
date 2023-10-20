@@ -731,7 +731,7 @@ impl<P1: Default, P2: Default, E> Default for ChoiceParserState<P1, P2, E> {
 }
 
 /// A parser for a choice of two parsers.
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone, Default)]
 pub struct ChoiceParser<P1, P2> {
     parser1: P1,
     parser2: P2,

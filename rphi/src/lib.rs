@@ -51,7 +51,7 @@ use candle_transformers::models::quantized_mixformer::MixFormerSequentialForCaus
 use floneumin_sample::FasterHuggingFaceTokenizer;
 use hf_hub::{api::sync::Api, Repo, RepoType};
 use llm_samplers::prelude::Sampler;
-use model::PhiInner;
+use model::PhiModel;
 use std::sync::Arc;
 use std::sync::Mutex;
 use tokenizers::Tokenizer;
@@ -62,6 +62,9 @@ enum Task {
         settings: InferenceSettings,
         sender: tokio::sync::mpsc::UnboundedSender<String>,
         sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
+    },
+    RunSync {
+        callback: Box<dyn FnOnce(&mut PhiModel) + Send>,
     },
 }
 
@@ -102,7 +105,7 @@ impl Phi {
         let arc_tokenizer = Arc::new(FasterHuggingFaceTokenizer::new(tokenizer.clone()));
 
         let thread_handle = std::thread::spawn(move || {
-            let mut inner = PhiInner::new(model, tokenizer, device);
+            let mut inner = PhiModel::new(model, tokenizer, device);
             tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
@@ -117,8 +120,11 @@ impl Phi {
                                 sampler,
                             } => {
                                 if let Err(err) = inner._infer(settings, sampler, sender) {
-                                    tracing::error!("Error in PhiInner::_infer: {}", err);
+                                    tracing::error!("Error in PhiModel::_infer: {}", err);
                                 }
+                            }
+                            Task::RunSync { callback } => {
+                                callback(&mut inner);
                             }
                         }
                     }

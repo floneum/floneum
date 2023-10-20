@@ -3,6 +3,7 @@ use crate::UnknownVectorSpace;
 use floneumin_sample::Tokenizer;
 use futures_util::{Stream, StreamExt};
 use llm_samplers::prelude::Sampler;
+use llm_samplers::types::Logits;
 use std::future::IntoFuture;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -300,6 +301,28 @@ pub trait ModelExt: Model + Send + 'static {
 
 impl<M: Model + Send + 'static> ModelExt for M {}
 
+/// A raw interface for a model that can be used to generate text synchronously
+pub trait SyncModel {
+    /// Run the model synchronously.
+    fn run(&mut self, prompt: &str) -> anyhow::Result<Logits<u32, f32>>;
+
+    /// Get the token ID that represents the end of a sequence.
+    fn stop_token(&self) -> anyhow::Result<u32>;
+}
+
+/// A marker type for models that do not support synchronous generation.
+pub struct SyncModelNotSupported;
+
+impl SyncModel for SyncModelNotSupported {
+    fn run(&mut self, _prompt: &str) -> anyhow::Result<Logits<u32, f32>> {
+        Err(anyhow::Error::msg("Not implemented"))
+    }
+
+    fn stop_token(&self) -> anyhow::Result<u32> {
+        Err(anyhow::Error::msg("Not implemented"))
+    }
+}
+
 /// A model that can be used to generate text with an associated tokenizer.
 ///
 /// The model may support using a custom sampler. If a specific model does not support a specific method, it will return an error.
@@ -310,6 +333,17 @@ pub trait Model: Send + 'static {
 
     /// Get the tokenizer associated with this model to use for constrained generation.
     fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync>;
+
+    /// The raw sync model that backs this model.
+    type SyncModel: SyncModel;
+
+    /// Run some code synchronously with the model.
+    async fn run_sync(
+        &mut self,
+        _f: Box<dyn for<'a> FnOnce(&'a mut Self::SyncModel) + Send>,
+    ) -> anyhow::Result<()> {
+        Err(anyhow::Error::msg("Not implemented"))
+    }
 
     /// Generate text with the given prompt.
     async fn generate_text_with_sampler(
@@ -372,13 +406,24 @@ pub trait Model: Send + 'static {
     }
 }
 
+/// A trait object for a model.
+pub type DynModel = Box<
+    dyn Model<
+            TextStream = Box<dyn Stream<Item = String> + Send + Unpin>,
+            SyncModel = BoxedSyncModel,
+        > + Send,
+>;
+
 #[async_trait::async_trait]
 impl Model for DynModel {
     type TextStream = Box<dyn Stream<Item = String> + Send + Unpin>;
+    type SyncModel = BoxedSyncModel;
 
     fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
-        let self_ref: &(dyn Model<TextStream = Box<dyn Stream<Item = String> + Send + Unpin>>
-              + Send) = self.as_ref();
+        let self_ref: &(dyn Model<
+            TextStream = Box<dyn Stream<Item = String> + Send + Unpin>,
+            SyncModel = BoxedSyncModel,
+        > + Send) = self.as_ref();
         self_ref.tokenizer()
     }
 
@@ -387,15 +432,28 @@ impl Model for DynModel {
         prompt: &str,
         parameters: GenerationParameters,
     ) -> anyhow::Result<Self::TextStream> {
-        let self_ref: &mut (dyn Model<TextStream = Box<dyn Stream<Item = String> + Send + Unpin>>
-                  + Send) = self.as_mut();
+        let self_ref: &mut (dyn Model<
+            TextStream = Box<dyn Stream<Item = String> + Send + Unpin>,
+            SyncModel = BoxedSyncModel,
+        > + Send) = self.as_mut();
         self_ref.stream_text_inner(prompt, parameters).await
     }
 }
 
-/// A trait object for a model.
-pub type DynModel =
-    Box<dyn Model<TextStream = Box<dyn Stream<Item = String> + Send + Unpin>> + Send>;
+/// A trait object for a sync model.
+pub type BoxedSyncModel = Box<dyn SyncModel>;
+
+impl SyncModel for BoxedSyncModel {
+    fn run(&mut self, prompt: &str) -> anyhow::Result<Logits<u32, f32>> {
+        let self_ref: &mut (dyn SyncModel) = self.as_mut();
+        self_ref.run(prompt)
+    }
+
+    fn stop_token(&self) -> anyhow::Result<u32> {
+        let self_ref: &(dyn SyncModel) = self.as_ref();
+        self_ref.stop_token()
+    }
+}
 
 struct AnyModel<M: Model<TextStream = S> + Send, S: Stream<Item = String> + Send + Unpin + 'static>(
     M,
@@ -409,6 +467,7 @@ where
     M: Model<TextStream = S> + Send,
 {
     type TextStream = Box<dyn Stream<Item = String> + Send + Unpin>;
+    type SyncModel = BoxedSyncModel;
 
     fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
         self.0.tokenizer()

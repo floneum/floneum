@@ -7971,6 +7971,7 @@ dependencies = [
  "half 2.3.1",
  "hf-hub",
  "intel-mkl-src",
+ "llm-samplers",
  "rand 0.8.5",
  "serde_json",
  "tokenizers 0.13.4",

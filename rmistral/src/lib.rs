@@ -34,14 +34,15 @@ extern crate accelerate_src;
 mod language_model;
 mod model;
 mod source;
+use llm_samplers::types::Sampler;
 pub use source::*;
 
 use anyhow::Error as E;
 use candle_core::Device;
 use candle_transformers::models::quantized_mistral::{Config, Model};
 use hf_hub::{api::sync::Api, Repo, RepoType};
-use model::MistralInner;
-use std::sync::Arc;
+use model::MistralModel;
+use std::sync::{Arc, Mutex};
 use tokenizers::Tokenizer;
 
 /// A prelude of commonly used items in RPhi.
@@ -55,6 +56,10 @@ enum Task {
     Infer {
         settings: InferenceSettings,
         sender: tokio::sync::mpsc::UnboundedSender<String>,
+        sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
+    },
+    RunSync {
+        callback: Box<dyn FnOnce(&mut MistralModel) + Send>,
     },
 }
 
@@ -95,7 +100,7 @@ impl Mistral {
         let arc_tokenizer = Arc::new(tokenizer.clone());
 
         let thread_handle = std::thread::spawn(move || {
-            let mut inner = MistralInner::new(model, tokenizer, device);
+            let mut inner = MistralModel::new(model, tokenizer, device);
             tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
@@ -104,8 +109,17 @@ impl Mistral {
                     while let Some(task) = task_receiver.recv().await {
                         match task {
                             Task::Kill => break,
-                            Task::Infer { settings, sender } => {
-                                inner._infer(&settings, sender).await.unwrap();
+                            Task::Infer {
+                                settings,
+                                sender,
+                                sampler,
+                            } => {
+                                if let Err(err) = inner._infer(settings, sampler, sender){
+                                    eprintln!("Error: {}", err);
+                                }
+                            }
+                            Task::RunSync { callback } => {
+                                callback(&mut inner);
                             }
                         }
                     }
@@ -123,13 +137,18 @@ impl Mistral {
         self.tokenizer.clone()
     }
 
-    pub(crate) fn run(
+    fn run(
         &mut self,
         settings: InferenceSettings,
+        sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
     ) -> anyhow::Result<tokio::sync::mpsc::UnboundedReceiver<String>> {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         self.task_sender
-            .send(Task::Infer { settings, sender })
+            .send(Task::Infer {
+                settings,
+                sender,
+                sampler,
+            })
             .unwrap();
         Ok(receiver)
     }
@@ -190,46 +209,24 @@ impl MistralBuilder {
 pub(crate) struct InferenceSettings {
     prompt: String,
 
-    /// The temperature used to generate samples.
-    temperature: Option<f64>,
-
-    /// Nucleus sampling probability cutoff.
-    top_p: Option<f64>,
-
     /// The seed to use when generating random samples.
     seed: u64,
 
     /// The length of the sample to generate (in tokens).
     sample_len: usize,
 
-    /// Penalty to be applied for repeating tokens, 1. means no penalty.
-    repeat_penalty: f32,
-
-    /// The context size to consider for the repeat penalty.
-    repeat_last_n: usize,
+    /// The token to stop on.
+    stop_on: Option<String>,
 }
 
 impl InferenceSettings {
     pub fn new(prompt: impl Into<String>) -> Self {
         Self {
             prompt: prompt.into(),
-            temperature: None,
-            top_p: None,
             seed: rand::random(),
             sample_len: 100,
-            repeat_penalty: 1.1,
-            repeat_last_n: 64,
+            stop_on: None,
         }
-    }
-
-    pub fn with_temperature(mut self, temperature: f64) -> Self {
-        self.temperature = Some(temperature);
-        self
-    }
-
-    pub fn with_top_p(mut self, top_p: f64) -> Self {
-        self.top_p = Some(top_p);
-        self
     }
 
     pub fn with_sample_len(mut self, sample_len: usize) -> Self {
@@ -237,30 +234,8 @@ impl InferenceSettings {
         self
     }
 
-    pub fn with_repeat_penalty(mut self, repeat_penalty: f32) -> Self {
-        self.repeat_penalty = repeat_penalty;
+    pub fn with_stop_on(mut self, stop_on: impl Into<Option<String>>) -> Self {
+        self.stop_on = stop_on.into();
         self
     }
-
-    pub fn with_repeat_last_n(mut self, repeat_last_n: usize) -> Self {
-        self.repeat_last_n = repeat_last_n;
-        self
-    }
-}
-
-#[tokio::test]
-async fn generate() -> anyhow::Result<()> {
-    println!(
-        "avx: {}, neon: {}, simd128: {}, f16c: {}",
-        candle_core::utils::with_avx(),
-        candle_core::utils::with_neon(),
-        candle_core::utils::with_simd128(),
-        candle_core::utils::with_f16c()
-    );
-
-    let mut mistral = Mistral::default();
-
-    mistral.run(InferenceSettings::new("The quick brown fox "))?;
-
-    Ok(())
 }

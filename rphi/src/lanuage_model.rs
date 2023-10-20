@@ -1,5 +1,7 @@
+use crate::model::PhiModel;
 use crate::InferenceSettings;
 pub use crate::Phi;
+use crate::Task;
 use floneumin_language_model::*;
 use floneumin_streams::ChannelTextStream;
 use std::sync::Arc;
@@ -19,9 +21,20 @@ impl CreateModel for Phi {
 #[async_trait::async_trait]
 impl Model for Phi {
     type TextStream = ChannelTextStream<String>;
+    type SyncModel = PhiModel;
 
     fn tokenizer(&self) -> Arc<dyn floneumin_sample::Tokenizer + Send + Sync> {
         self.get_tokenizer() as Arc<dyn floneumin_sample::Tokenizer + Send + Sync>
+    }
+
+    async fn run_sync(
+        &mut self,
+        f: Box<dyn for<'a> FnOnce(&'a mut Self::SyncModel) + Send>,
+    ) -> anyhow::Result<()> {
+        match self.task_sender.send(Task::RunSync { callback: f }) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(anyhow::anyhow!("Failed to send task to Phi thread")),
+        }
     }
 
     async fn stream_text_inner(

@@ -1,4 +1,5 @@
 use anyhow::{Error as E, Result};
+use floneumin_language_model::SyncModel;
 use llm_samplers::prelude::*;
 use rand::SeedableRng;
 use std::fmt::Debug;
@@ -11,15 +12,50 @@ use tokenizers::Tokenizer;
 
 use crate::InferenceSettings;
 
-pub(crate) struct PhiInner {
+/// The inner, synchronous Phi-1.5 model.
+pub struct PhiModel {
     model: QMixFormer,
     device: Device,
     tokenizer: Tokenizer,
 }
 
-impl PhiInner {
+impl SyncModel for PhiModel {
+    fn run(&mut self, prompt: &str) -> anyhow::Result<Logits<u32, f32>> {
+        let tokens = self
+            .tokenizer
+            .encode(&*prompt, true)
+            .map_err(E::msg)?
+            .get_ids()
+            .to_vec();
+
+        self.forward(&tokens, 0)
+    }
+
+    fn stop_token(&self) -> anyhow::Result<u32> {
+        let eos_token = match self.tokenizer.get_vocab(true).get("<|endoftext|>") {
+            Some(token) => *token,
+            None => anyhow::bail!("cannot find the endoftext token"),
+        };
+        Ok(eos_token)
+    }
+}
+
+impl PhiModel {
+    fn forward(&mut self, mut tokens: &[u32], index: usize) -> anyhow::Result<Logits<u32, f32>> {
+        if tokens.len() > 4096 {
+            tokens = &tokens[tokens.len() - 4096..];
+        }
+        let context_size = if index > 0 { 1 } else { tokens.len() };
+        let ctxt = &tokens[tokens.len().saturating_sub(context_size)..];
+        let input = Tensor::new(ctxt, &self.device)?.unsqueeze(0)?;
+        let logits = self.model.forward(&input)?;
+        let logits = logits.squeeze(0)?.to_dtype(DType::F32)?;
+        let logits: Vec<f32> = logits.to_vec1()?;
+        Ok(Logits::try_from_iter(logits)?)
+    }
+
     #[allow(clippy::too_many_arguments)]
-    pub fn new(model: QMixFormer, tokenizer: Tokenizer, device: Device) -> Self {
+    pub(crate) fn new(model: QMixFormer, tokenizer: Tokenizer, device: Device) -> Self {
         Self {
             model,
             device,
@@ -27,7 +63,7 @@ impl PhiInner {
         }
     }
 
-    pub fn _infer(
+    pub(crate) fn _infer(
         &mut self,
         settings: InferenceSettings,
         mut sampler: std::sync::Arc<std::sync::Mutex<dyn llm_samplers::prelude::Sampler<u32, f32>>>,
@@ -48,22 +84,11 @@ impl PhiInner {
             .to_vec();
 
         let mut new_tokens = vec![];
-        let eos_token = match self.tokenizer.get_vocab(true).get("<|endoftext|>") {
-            Some(token) => *token,
-            None => anyhow::bail!("cannot find the endoftext token"),
-        };
+        let eos_token = self.stop_token()?;
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
         let mut text = String::new();
         for index in 0..sample_len {
-            if tokens.len() > 4096 {
-                tokens = tokens[tokens.len() - 4096..].to_vec();
-            }
-            let context_size = if index > 0 { 1 } else { tokens.len() };
-            let ctxt = &tokens[tokens.len().saturating_sub(context_size)..];
-            let input = Tensor::new(ctxt, &self.device)?.unsqueeze(0)?;
-            let logits = self.model.forward(&input)?;
-            let logits = logits.squeeze(0)?.to_dtype(DType::F32)?;
-            let logits: Vec<f32> = logits.to_vec1()?;
+            let logits = self.forward(&tokens, index)?;
             let next_token = sample_token(
                 &mut sampler,
                 &mut rng,
@@ -138,7 +163,7 @@ pub fn sample_token(
     sampler: &mut impl Sampler<u32, f32>,
     rng: &mut impl rand::Rng,
     previous_tokens: &[u32],
-    last_logits: impl IntoIterator<Item = f32>,
+    mut last_logits: Logits<u32, f32>,
     stop_on: Option<&str>,
     tokenizer: &Tokenizer,
 ) -> anyhow::Result<u32> {
@@ -158,21 +183,18 @@ pub fn sample_token(
             }
         }
     }
-    let last_logits = last_logits.into_iter().enumerate().map(|(tid, prob)| {
+    for logit in last_logits.iter_mut() {
+        let tid = logit.token_id;
         if let Some(stop_on) = stop_on {
             let token = tokenizer.decode(&[tid as u32], true).unwrap();
             let combined = end_tokens.clone() + &token;
             if combined.contains(stop_on) && !combined.ends_with(stop_on) {
                 // if the token contains a stop_on token, but not the end of the string, set the probability to 0
-                0.0
-            } else {
-                prob
+                logit.prob = 0.0;
             }
-        } else {
-            prob
         }
-    });
-    Logits::try_from_iter(last_logits)?
+    }
+    last_logits
         .sample_token(
             &mut SamplerResources {
                 previous_tokens,

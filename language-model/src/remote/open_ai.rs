@@ -40,6 +40,7 @@ macro_rules! openai_model {
         #[async_trait::async_trait]
         impl crate::model::Model for $ty {
             type TextStream = MappedResponseStream;
+            type SyncModel = crate::SyncModelNotSupported;
 
             fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
                 panic!("OpenAI does not expose tokenization")

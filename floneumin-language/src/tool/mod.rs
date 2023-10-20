@@ -1,4 +1,5 @@
 mod search;
+use floneumin_sample::{ChoiceParser, LiteralParser, ParseResult, Parser};
 pub use search::*;
 mod calculator;
 pub use calculator::*;
@@ -108,10 +109,7 @@ Question: {question}
         let mut choices: Option<StructureParser> = None;
         for tool in self.tools.iter() {
             if let Some(current_choices) = choices.take() {
-                choices = Some(StructureParser::Either {
-                    first: Box::new(current_choices),
-                    second: Box::new(StructureParser::Literal(tool.name())),
-                });
+                choices = Some(current_choices.or(StructureParser::Literal(tool.name())));
             } else {
                 choices = Some(StructureParser::Literal(tool.name()));
             }
@@ -122,22 +120,22 @@ Question: {question}
     /// Get the constraints for the thought action
     pub fn thought_constraints(&self) -> impl Validate + Send + Sync {
         let constraints = "Thought: ";
-        let constraints = constraints.then(OneLine);
+        let constraints = LiteralParser::from(constraints).then(OneLine);
         constraints
     }
 
     /// Get the constraints for the action action
     pub fn action_constraints(&self) -> impl Validate + Send + Sync {
-        let constraints = "Action: ";
+        let constraints = LiteralParser::from("Action: ");
         let constraints = constraints.then(self.tool_choices().unwrap());
-        let constraints = constraints.then(StructureParser::Literal("\nAction Input: ".into()));
+        let constraints = constraints.then(LiteralParser::from("\nAction Input: ".into()));
         let constraints = constraints.then(OneLine);
         constraints
     }
 
     /// Get the constraints for the answer action
     pub fn answer_constraints(&self) -> impl Validate + Send + Sync {
-        let constraints = "Final Answer: ";
+        let constraints = LiteralParser::from("Final Answer: ");
         let constraints = constraints.then(OneLine);
         constraints
     }
@@ -152,24 +150,31 @@ Question: {question}
 
 struct OneLine;
 
-impl Validate for OneLine {
-    fn validate<'a>(&self, mut stream: ParseStream<'a>) -> ParseStatus<'a> {
-        if stream.is_empty() {
-            return ParseStatus::Incomplete {
-                required_next: None,
-            };
+impl Parser for OneLine {
+    type Error = ();
+    type Output = ();
+    type PartialState = ();
+
+    fn parse<'a>(
+        &self,
+        state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> Result<floneumin_sample::ParseResult<'a, Self::PartialState, Self::Output>, Self::Error>
+    where
+        Self: Sized,
+    {
+        if input.is_empty() {
+            return Ok(ParseResult::Incomplete(()));
         }
-        let mut iter = stream.iter();
+        let mut iter = input.iter();
         while let Some(c) = iter.next() {
             if c == '\n' {
-                return ParseStatus::Complete(
-                    iter.peek().is_some().then(|| ParseStream::from(iter)),
+                return ParseResult::Complete(
+                    iter.peek().is_some().then(|| ParseResult::from(iter)),
                 );
             }
         }
-        ParseStatus::Incomplete {
-            required_next: None,
-        }
+        Ok(ParseResult::Incomplete(()))
     }
 }
 

@@ -44,6 +44,7 @@ macro_rules! local_model {
         #[async_trait::async_trait]
         impl crate::model::Model for LocalSession<$space> {
             type TextStream = ChannelTextStream<String>;
+            type SyncModel = crate::SyncModelNotSupported;
 
             fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
                 self.get_tokenizer() as Arc<dyn Tokenizer + Send + Sync>
