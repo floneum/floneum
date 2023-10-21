@@ -1,5 +1,8 @@
 mod search;
-use floneumin_sample::{ChoiceParser, LiteralParser, ParseResult, Parser};
+use floneumin_sample::{
+    ChoiceParser, CreateParserState, LiteralParser, LiteralParserOffset, ParseResult, Parser,
+    SequenceParser, SequenceParserState,
+};
 pub use search::*;
 mod calculator;
 pub use calculator::*;
@@ -105,50 +108,218 @@ Question: {question}
     }
 
     /// Get the constraints for the tools in the manager
-    pub fn tool_choices(&self) -> Option<StructureParser> {
-        let mut choices: Option<StructureParser> = None;
+    pub fn tool_choices(
+        &self,
+    ) -> Option<
+        impl Parser<
+                Error = (),
+                Output = usize,
+                PartialState = IndexParserState<LiteralParserOffset, ()>,
+            > + CreateParserState
+            + Send
+            + Sync,
+    > {
+        let mut choices: Vec<LiteralParser<_>> = Vec::with_capacity(self.tools.len());
         for tool in self.tools.iter() {
-            if let Some(current_choices) = choices.take() {
-                choices = Some(current_choices.or(StructureParser::Literal(tool.name())));
-            } else {
-                choices = Some(StructureParser::Literal(tool.name()));
-            }
+            choices.push(LiteralParser::from(tool.name()));
         }
-        choices
+        if choices.is_empty() {
+            None
+        } else {
+            Some(IndexParser { parsers: choices })
+        }
     }
 
     /// Get the constraints for the thought action
-    pub fn thought_constraints(&self) -> impl Validate + Send + Sync {
+    pub fn thought_constraints(
+        &self,
+    ) -> impl Parser<
+        Error = (),
+        Output = ((), ()),
+        PartialState = SequenceParserState<LiteralParserOffset, (), ()>,
+    > + CreateParserState
+           + Send
+           + Sync {
         let constraints = "Thought: ";
         let constraints = LiteralParser::from(constraints).then(OneLine);
         constraints
     }
 
     /// Get the constraints for the action action
-    pub fn action_constraints(&self) -> impl Validate + Send + Sync {
+    pub fn action_constraints(
+        &self,
+    ) -> SequenceParser<
+        SequenceParser<
+            SequenceParser<
+                LiteralParser<&'static str>,
+                impl Parser<
+                        Error = (),
+                        Output = usize,
+                        PartialState = IndexParserState<LiteralParserOffset, ()>,
+                    > + CreateParserState
+                    + Send
+                    + Sync,
+            >,
+            LiteralParser<&'static str>,
+        >,
+        OneLine,
+    > {
         let constraints = LiteralParser::from("Action: ");
         let constraints = constraints.then(self.tool_choices().unwrap());
-        let constraints = constraints.then(LiteralParser::from("\nAction Input: ".into()));
+        let constraints = constraints.then(LiteralParser::from("\nAction Input: "));
         let constraints = constraints.then(OneLine);
         constraints
     }
 
     /// Get the constraints for the answer action
-    pub fn answer_constraints(&self) -> impl Validate + Send + Sync {
+    pub fn answer_constraints(
+        &self,
+    ) -> impl Parser<
+        Error = (),
+        Output = ((), ()),
+        PartialState = SequenceParserState<LiteralParserOffset, (), ()>,
+    > + CreateParserState
+           + Send
+           + Sync {
         let constraints = LiteralParser::from("Final Answer: ");
         let constraints = constraints.then(OneLine);
         constraints
     }
 
     /// Get the constraints for any action
-    pub fn any_action_constraint(&self) -> impl Validate + Send + Sync {
+    pub fn any_action_constraint(
+        &self,
+    ) -> ChoiceParser<
+        ChoiceParser<
+            impl Parser<
+                    Error = (),
+                    Output = ((), ()),
+                    PartialState = SequenceParserState<LiteralParserOffset, (), ()>,
+                > + CreateParserState
+                + Send
+                + Sync,
+            SequenceParser<
+                SequenceParser<
+                    SequenceParser<
+                        LiteralParser<&str>,
+                        impl Parser<
+                                Error = (),
+                                Output = usize,
+                                PartialState = IndexParserState<LiteralParserOffset, ()>,
+                            > + CreateParserState
+                            + Send
+                            + Sync,
+                    >,
+                    LiteralParser<&str>,
+                >,
+                OneLine,
+            >,
+        >,
+        impl Parser<
+                Error = (),
+                Output = ((), ()),
+                PartialState = SequenceParserState<LiteralParserOffset, (), ()>,
+            > + CreateParserState
+            + Send
+            + Sync,
+    > {
         self.thought_constraints()
             .or(self.action_constraints())
             .or(self.answer_constraints())
     }
 }
 
-struct OneLine;
+#[derive(Debug, Clone)]
+pub struct IndexParserState<PA, E> {
+    states: Vec<Result<PA, E>>,
+}
+
+pub struct IndexParser<S: Parser<Error = E, Output = (), PartialState = PA>, E, PA> {
+    parsers: Vec<S>,
+}
+
+impl<S, E, PA> CreateParserState for IndexParser<S, E, PA>
+where
+    S: Parser<Error = E, Output = (), PartialState = PA> + CreateParserState,
+    E: Clone,
+    PA: Clone,
+{
+    fn create_parser_state(&self) -> Self::PartialState {
+        IndexParserState {
+            states: self
+                .parsers
+                .iter()
+                .map(|s| Ok(s.create_parser_state()))
+                .collect(),
+        }
+    }
+}
+
+impl<S, E, PA> Parser for IndexParser<S, E, PA>
+where
+    S: Parser<Error = E, Output = (), PartialState = PA>,
+    E: Clone,
+    PA: Clone,
+{
+    type Error = E;
+    type Output = usize;
+    type PartialState = IndexParserState<PA, E>;
+
+    fn parse<'a>(
+        &self,
+        state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> Result<floneumin_sample::ParseResult<'a, Self::PartialState, Self::Output>, Self::Error>
+    where
+        Self: Sized,
+    {
+        let mut states = state.states.clone();
+        let mut has_incomplete_option = false;
+        let last_index = self.parsers.len() - 1;
+        for (i, parser) in self.parsers.iter().enumerate() {
+            match &states[i] {
+                Ok(state) => {
+                    let result = parser.parse(state, input);
+                    match result {
+                        Ok(ParseResult::Finished {
+                            result: _,
+                            remaining: r,
+                        }) => {
+                            return Ok(ParseResult::Finished {
+                                result: i,
+                                remaining: r,
+                            })
+                        }
+                        Ok(ParseResult::Incomplete(s)) => {
+                            states[i] = Ok(s);
+                            has_incomplete_option = true;
+                        }
+                        Err(e) => {
+                            if has_incomplete_option && i == last_index {
+                                return Err(e);
+                            }
+                            states[i] = Err(e);
+                        }
+                    }
+                }
+                Err(err) => {
+                    if has_incomplete_option && i == last_index {
+                        return Err(err.clone());
+                    }
+                }
+            }
+        }
+        Ok(ParseResult::Incomplete(IndexParserState { states }))
+    }
+}
+
+pub struct OneLine;
+
+impl CreateParserState for OneLine {
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState {
+        ()
+    }
+}
 
 impl Parser for OneLine {
     type Error = ();
@@ -167,11 +338,12 @@ impl Parser for OneLine {
             return Ok(ParseResult::Incomplete(()));
         }
         let mut iter = input.iter();
-        while let Some(c) = iter.next() {
-            if c == '\n' {
-                return ParseResult::Complete(
-                    iter.peek().is_some().then(|| ParseResult::from(iter)),
-                );
+        while let Some(&c) = iter.next() {
+            if c == b'\n' {
+                return Ok(ParseResult::Finished {
+                    result: (),
+                    remaining: iter.as_slice(),
+                });
             }
         }
         Ok(ParseResult::Incomplete(()))

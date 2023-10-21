@@ -1,8 +1,8 @@
 use std::sync::{Arc, Mutex};
 
-use crate::{InferenceSettings, Task};
 pub use crate::Mistral;
 use crate::MistralModel;
+use crate::{InferenceSettings, Task};
 use floneumin_language_model::{CreateModel, GenerationParameters, Model, VectorSpace};
 use floneumin_streams::ChannelTextStream;
 
@@ -18,7 +18,7 @@ impl CreateModel for Mistral {
 }
 
 #[async_trait::async_trait]
-impl Model for Mistral{
+impl Model for Mistral {
     type TextStream = ChannelTextStream<String>;
     type SyncModel = MistralModel;
 

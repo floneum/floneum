@@ -1,5 +1,11 @@
 use std::ops::RangeInclusive;
 
+/// A trait for a parser with a default state.
+pub trait CreateParserState: Parser {
+    /// Create the default state of the parser.
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState;
+}
+
 /// An incremental parser for a structured input.
 pub trait Parser {
     /// The error type of the parser.
@@ -7,7 +13,7 @@ pub trait Parser {
     /// The output of the parser.
     type Output;
     /// The state of the parser.
-    type PartialState: Default;
+    type PartialState;
 
     /// Parse the given input.
     fn parse<'a>(
@@ -111,12 +117,18 @@ impl<'a, P, R> ParseResult<'a, P, R> {
 
 /// A parser for a literal.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub struct LiteralParser<'a> {
-    literal: &'a str,
+pub struct LiteralParser<S: AsRef<str>> {
+    literal: S,
 }
 
-impl<'a> From<&'a str> for LiteralParser<'a> {
-    fn from(literal: &'a str) -> Self {
+impl<S: AsRef<str>> CreateParserState for LiteralParser<S> {
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState {
+        LiteralParserOffset::default()
+    }
+}
+
+impl<S: AsRef<str>> From<S> for LiteralParser<S> {
+    fn from(literal: S) -> Self {
         Self { literal }
     }
 }
@@ -127,7 +139,7 @@ pub struct LiteralParserOffset {
     offset: usize,
 }
 
-impl Parser for LiteralParser<'_> {
+impl<S: AsRef<str>> Parser for LiteralParser<S> {
     type Error = ();
     type Output = ();
     type PartialState = LiteralParserOffset;
@@ -141,7 +153,7 @@ impl Parser for LiteralParser<'_> {
 
         for (input_byte, literal_byte) in input
             .iter()
-            .zip(self.literal.as_bytes()[state.offset..].iter())
+            .zip(self.literal.as_ref().as_bytes()[state.offset..].iter())
         {
             if input_byte != literal_byte {
                 return Err(());
@@ -149,7 +161,7 @@ impl Parser for LiteralParser<'_> {
             bytes_consumed += 1;
         }
 
-        if state.offset + bytes_consumed == self.literal.len() {
+        if state.offset + bytes_consumed == self.literal.as_ref().len() {
             Ok(ParseResult::Finished {
                 result: (),
                 remaining: &input[bytes_consumed..],
@@ -199,6 +211,12 @@ fn literal_parser() {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct IntegerParser {
     range: RangeInclusive<i64>,
+}
+
+impl CreateParserState for IntegerParser {
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState {
+        IntegerParserState::default()
+    }
 }
 
 impl IntegerParser {
@@ -399,6 +417,12 @@ impl Default for FloatParserState {
 #[derive(Debug, PartialEq, Clone)]
 pub struct FloatParser {
     range: RangeInclusive<f64>,
+}
+
+impl CreateParserState for FloatParser {
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState {
+        FloatParserState::default()
+    }
 }
 
 impl FloatParser {
@@ -606,6 +630,21 @@ impl<P1: Default, P2, O1> Default for SequenceParserState<P1, P2, O1> {
     }
 }
 
+impl<
+        E,
+        O1: Clone,
+        O2,
+        PA1,
+        PA2,
+        P1: Parser<Error = E, Output = O1, PartialState = PA1> + CreateParserState,
+        P2: Parser<Error = E, Output = O2, PartialState = PA2> + CreateParserState,
+    > CreateParserState for SequenceParser<P1, P2>
+{
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState {
+        SequenceParserState::FirstParser(self.parser1.create_parser_state())
+    }
+}
+
 /// A parser for a sequence of two parsers.
 #[derive(Default, Debug, PartialEq, Eq, Copy, Clone)]
 pub struct SequenceParser<P1, P2> {
@@ -617,10 +656,10 @@ impl<
         E,
         O1: Clone,
         O2,
-        PA1: Default,
-        PA2: Default,
+        PA1,
+        PA2,
         P1: Parser<Error = E, Output = O1, PartialState = PA1>,
-        P2: Parser<Error = E, Output = O2, PartialState = PA2>,
+        P2: Parser<Error = E, Output = O2, PartialState = PA2> + CreateParserState,
     > Parser for SequenceParser<P1, P2>
 {
     type Error = E;
@@ -640,7 +679,8 @@ impl<
                         result: o1,
                         remaining,
                     } => {
-                        let result = self.parser2.parse(&PA2::default(), remaining)?;
+                        let second_parser_state = self.parser2.create_parser_state();
+                        let result = self.parser2.parse(&second_parser_state, remaining)?;
                         match result {
                             ParseResult::Finished { result, remaining } => {
                                 Ok(ParseResult::Finished {
@@ -683,7 +723,7 @@ fn sequence_parser() {
         parser1: LiteralParser { literal: "Hello, " },
         parser2: LiteralParser { literal: "world!" },
     };
-    let state = SequenceParserState::default();
+    let state = SequenceParserState::FirstParser(LiteralParserOffset::default());
     assert_eq!(
         parser.parse(&state, b"Hello, world!"),
         Ok(ParseResult::Finished {
@@ -737,6 +777,24 @@ pub struct ChoiceParser<P1, P2> {
     parser2: P2,
 }
 
+impl<
+        E: Clone,
+        O1,
+        O2,
+        PA1,
+        PA2,
+        P1: Parser<Error = E, Output = O1, PartialState = PA1> + CreateParserState,
+        P2: Parser<Error = E, Output = O2, PartialState = PA2> + CreateParserState,
+    > CreateParserState for ChoiceParser<P1, P2>
+{
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState {
+        ChoiceParserState {
+            state1: Ok(self.parser1.create_parser_state()),
+            state2: Ok(self.parser2.create_parser_state()),
+        }
+    }
+}
+
 /// A value that can be one of two types.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum Either<L, R> {
@@ -750,8 +808,8 @@ impl<
         E: Clone,
         O1,
         O2,
-        PA1: Default,
-        PA2: Default,
+        PA1,
+        PA2,
         P1: Parser<Error = E, Output = O1, PartialState = PA1>,
         P2: Parser<Error = E, Output = O2, PartialState = PA2>,
     > Parser for ChoiceParser<P1, P2>

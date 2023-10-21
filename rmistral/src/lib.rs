@@ -114,7 +114,7 @@ impl Mistral {
                                 sender,
                                 sampler,
                             } => {
-                                if let Err(err) = inner._infer(settings, sampler, sender){
+                                if let Err(err) = inner._infer(settings, sampler, sender) {
                                     eprintln!("Error: {}", err);
                                 }
                             }
