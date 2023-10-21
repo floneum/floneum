@@ -4,6 +4,8 @@ use floneumin_language::{floneumin_sample::StructuredSampler, *};
 use futures_util::stream::StreamExt;
 use llm_samplers::types::SamplerChain;
 use rand::Rng;
+use std::cell::OnceCell;
+use std::sync::atomic::AtomicUsize;
 use std::{
     io::Write,
     sync::{Arc, Mutex, RwLock},
@@ -23,6 +25,8 @@ async fn main() {
 
     let current_text = Arc::new(RwLock::new(tools.read().unwrap().prompt(question)));
     print!("{}", current_text.read().unwrap());
+    let current_tool_index = Arc::new(AtomicUsize::new(0));
+    let current_tool_input = Arc::new(Mutex::new(Some(String::new())));
     for _ in 0..4 {
         // TODO: There seems to be a bug in candle that causes reusing the session to fail here
         let mut llm = Phi::start().await;
@@ -34,6 +38,8 @@ async fn main() {
         let tokenizer = llm.tokenizer();
         llm.run_sync(Box::new({
             let current_text = current_text.clone();
+            let current_tool_index = current_tool_index.clone();
+            let current_tool_input = current_tool_input.clone();
             move |llm| {
                 let mut parser_state = parser.create_parser_state();
                 loop {
@@ -59,7 +65,20 @@ async fn main() {
                                 floneumin_sample::ParseResult::Finished { result, .. } => {
                                     print!("{}", new_text);
                                     std::io::stdout().flush().unwrap();
-                                    println!("\nResult: {:?}", result);
+                                    if let floneumin_sample::Either::Left(
+                                        floneumin_sample::Either::Right((
+                                            (((), tool_index), ()),
+                                            input,
+                                        )),
+                                    ) = result
+                                    {
+                                        current_tool_index.store(
+                                            tool_index,
+                                            std::sync::atomic::Ordering::Relaxed,
+                                        );
+                                        *current_tool_input.lock().unwrap() = Some(input);
+                                    }
+
                                     return;
                                 }
                             }
@@ -93,26 +112,21 @@ async fn main() {
         .await
         .unwrap();
 
-        let mut current_text = current_text.write().unwrap();
-        let mut lines = current_text.lines().rev();
-        let last_line = lines.next();
-        if let Some(last_line) = last_line {
-            if last_line.starts_with("Final Answer: ") {
-                break;
-            }
-            if last_line.starts_with("Action Input: ") {
-                let action_line = lines.next().unwrap();
-                let tool = action_line.rsplit_once("Action: ").unwrap().1;
-                let tool_input = last_line.rsplit_once("Action Input: ").unwrap().1;
-                let mut tools = tools.write().unwrap();
-                let tool = tools.get_tool_mut(tool).unwrap();
-                let output = tool.run(tool_input).await;
-                let observation = format!("Observation: {}", output);
-                println!("{}", observation);
-                current_text.push_str(&observation);
+        let tool_input = {
+            let mut tool_input = current_tool_input.lock().unwrap();
+            tool_input.take()
+        };
+        if let Some(tool_input) = tool_input {
+            let tool = current_tool_index.load(std::sync::atomic::Ordering::Relaxed);
+            let mut tools = tools.write().unwrap();
+            let tool = tools.get_tool_mut_by_index(tool).unwrap();
+            let output = tool.run(&tool_input).await;
+            let observation = format!("Observation: {}", output);
+            println!("{}", observation);
+            let mut current_text = current_text.write().unwrap();
+            current_text.push_str(&observation);
 
-                current_text.push_str("\n");
-            }
+            current_text.push_str("\n");
         }
     }
     let mut current_text = current_text.write().unwrap();

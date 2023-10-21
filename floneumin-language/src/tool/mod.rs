@@ -76,6 +76,19 @@ impl ToolManager {
         None
     }
 
+    /// Get a tool by index
+    pub fn get_tool_by_index(&self, index: usize) -> Option<&dyn Tool> {
+        self.tools.get(index).map(|t| &**t)
+    }
+
+    /// Get a tool mutably by index
+    pub fn get_tool_mut_by_index<'a>(&'a mut self, index: usize) -> Option<&'a mut dyn Tool> {
+        match self.tools.get_mut(index) {
+            Some(tool) => Some(&mut **tool),
+            None => None,
+        }
+    }
+
     /// Get a prompt for the tools in the manager
     pub fn prompt(&self, question: impl std::fmt::Display) -> String {
         let mut tools = String::new();
@@ -136,7 +149,7 @@ Question: {question}
         &self,
     ) -> impl Parser<
         Error = (),
-        Output = ((), ()),
+        Output = ((), String),
         PartialState = SequenceParserState<LiteralParserOffset, OneLineState, ()>,
     > + CreateParserState
            + Send
@@ -179,7 +192,7 @@ Question: {question}
         &self,
     ) -> impl Parser<
         Error = (),
-        Output = ((), ()),
+        Output = ((), String),
         PartialState = SequenceParserState<LiteralParserOffset, OneLineState, ()>,
     > + CreateParserState
            + Send
@@ -197,11 +210,12 @@ Question: {question}
         ChoiceParser<
             impl Parser<
                     Error = (),
-                    Output = ((), ()),
+                    Output = ((), String),
                     PartialState = SequenceParserState<LiteralParserOffset, OneLineState, ()>,
                 > + CreateParserState
                 + Send
-                + Sync+ 'static,
+                + Sync
+                + 'static,
             SequenceParser<
                 SequenceParser<
                     SequenceParser<
@@ -212,7 +226,8 @@ Question: {question}
                                 PartialState = IndexParserState<LiteralParserOffset, ()>,
                             > + CreateParserState
                             + Send
-                            + Sync + 'static,
+                            + Sync
+                            + 'static,
                     >,
                     LiteralParser<&'static str>,
                 >,
@@ -221,11 +236,12 @@ Question: {question}
         >,
         impl Parser<
                 Error = (),
-                Output = ((), ()),
+                Output = ((), String),
                 PartialState = SequenceParserState<LiteralParserOffset, OneLineState, ()>,
             > + CreateParserState
             + Send
-            + Sync+ 'static,
+            + Sync
+            + 'static,
     > {
         self.thought_constraints()
             .or(self.action_constraints())
@@ -322,19 +338,21 @@ pub struct OneLine;
 #[derive(Debug, Clone)]
 pub struct OneLineState {
     all_whitespace: bool,
+    bytes: Vec<u8>,
 }
 
 impl CreateParserState for OneLine {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState {
         OneLineState {
             all_whitespace: true,
+            bytes: Vec::new(),
         }
     }
 }
 
 impl Parser for OneLine {
     type Error = ();
-    type Output = ();
+    type Output = String;
     type PartialState = OneLineState;
 
     fn parse<'a>(
@@ -355,12 +373,11 @@ impl Parser for OneLine {
         let mut state = state.clone();
         let mut iter = input.iter();
         while let Some(&c) = iter.next() {
-            if state.all_whitespace{
+            if state.all_whitespace {
                 if c != b' ' && c != b'\t' {
                     state.all_whitespace = false;
-                }
-                else {
-                    return Err(())
+                } else {
+                    return Err(());
                 }
             }
             if c == b'\n' {
@@ -368,11 +385,12 @@ impl Parser for OneLine {
                     return Err(());
                 } else {
                     return Ok(ParseResult::Finished {
-                        result: (),
+                        result: String::from_utf8_lossy(&state.bytes).to_string(),
                         remaining: iter.as_slice(),
                     });
                 }
             }
+            state.bytes.push(c);
         }
         Ok(ParseResult::Incomplete(state))
     }

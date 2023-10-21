@@ -45,6 +45,7 @@ impl IntoDocuments for SearchQuery<'_> {
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct SearchResult {
     pub knowledge_graph: Option<KnowledgeGraph>,
+    #[serde(default)]
     pub organic: Vec<Organic>,
     #[serde(default)]
     pub people_also_ask: Vec<PeopleAlsoAsk>,
