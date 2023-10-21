@@ -304,7 +304,10 @@ impl<M: Model + Send + 'static> ModelExt for M {}
 /// A raw interface for a model that can be used to generate text synchronously
 pub trait SyncModel {
     /// Run the model synchronously.
-    fn run(&mut self, prompt: &str) -> anyhow::Result<Logits<u32, f32>>;
+    fn feed_text(&mut self, prompt: &str) -> anyhow::Result<Logits<u32, f32>>;
+
+    /// Reset the model.
+    fn reset(&mut self);
 
     /// Get the token ID that represents the end of a sequence.
     fn stop_token(&self) -> anyhow::Result<u32>;
@@ -314,8 +317,12 @@ pub trait SyncModel {
 pub struct SyncModelNotSupported;
 
 impl SyncModel for SyncModelNotSupported {
-    fn run(&mut self, _prompt: &str) -> anyhow::Result<Logits<u32, f32>> {
+    fn feed_text(&mut self, _prompt: &str) -> anyhow::Result<Logits<u32, f32>> {
         Err(anyhow::Error::msg("Not implemented"))
+    }
+
+    fn reset(&mut self) {
+        unimplemented!()
     }
 
     fn stop_token(&self) -> anyhow::Result<u32> {
@@ -340,7 +347,7 @@ pub trait Model: Send + 'static {
     /// Run some code synchronously with the model.
     async fn run_sync(
         &mut self,
-        _f: Box<dyn for<'a> FnOnce(&'a mut Self::SyncModel) + Send>,
+        _f: Box<dyn for<'a> FnOnce(&'a mut Self::SyncModel) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> + Send>,
     ) -> anyhow::Result<()> {
         Err(anyhow::Error::msg("Not implemented"))
     }
@@ -444,9 +451,14 @@ impl Model for DynModel {
 pub type BoxedSyncModel = Box<dyn SyncModel>;
 
 impl SyncModel for BoxedSyncModel {
-    fn run(&mut self, prompt: &str) -> anyhow::Result<Logits<u32, f32>> {
+fn feed_text(&mut self, prompt: &str) -> anyhow::Result<Logits<u32, f32>> {
         let self_ref: &mut (dyn SyncModel) = self.as_mut();
-        self_ref.run(prompt)
+        self_ref.feed_text(prompt)
+    }
+
+    fn reset(&mut self) {
+        let self_ref: &mut (dyn SyncModel) = self.as_mut();
+        self_ref.reset()
     }
 
     fn stop_token(&self) -> anyhow::Result<u32> {

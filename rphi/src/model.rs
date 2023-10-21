@@ -20,7 +20,7 @@ pub struct PhiModel {
 }
 
 impl SyncModel for PhiModel {
-    fn run(&mut self, prompt: &str) -> anyhow::Result<Logits<u32, f32>> {
+    fn feed_text(&mut self, prompt: &str) -> anyhow::Result<Logits<u32, f32>> {
         let tokens = self
             .tokenizer
             .encode(&*prompt, true)
@@ -28,7 +28,11 @@ impl SyncModel for PhiModel {
             .get_ids()
             .to_vec();
 
-        self.forward(&tokens, tokens.len() - 1)
+        self.forward(&tokens)
+    }
+
+    fn reset(&mut self) {
+        self.model.clear_kv_cache();
     }
 
     fn stop_token(&self) -> anyhow::Result<u32> {
@@ -41,7 +45,7 @@ impl SyncModel for PhiModel {
 }
 
 impl PhiModel {
-    fn forward(&mut self, mut tokens: &[u32], index: usize) -> anyhow::Result<Logits<u32, f32>> {
+    fn forward(&mut self, mut tokens: &[u32]) -> anyhow::Result<Logits<u32, f32>> {
         if tokens.is_empty() {
             return Err(anyhow::anyhow!("Cannot run model on empty input"));
         }
@@ -49,8 +53,8 @@ impl PhiModel {
         if tokens.len() > 4096 {
             tokens = &tokens[tokens.len() - 4096..];
         }
-        let context_size = if index > 0 { 1 } else { tokens.len() };
-        let ctxt = &tokens[tokens.len().saturating_sub(context_size)..];
+
+        let ctxt = tokens;
         let input = Tensor::new(ctxt, &self.device)?.unsqueeze(0)?;
         let logits = self.model.forward(&input)?;
         let logits = logits.squeeze(0)?.to_dtype(DType::F32)?;
@@ -92,7 +96,9 @@ impl PhiModel {
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
         let mut text = String::new();
         for index in 0..sample_len {
-            let logits = self.forward(&tokens, index)?;
+            let context_size = if index > 0 { 1 } else { tokens.len() };
+            let ctxt = &tokens[tokens.len().saturating_sub(context_size)..];
+            let logits = self.forward(ctxt)?;
             let next_token = sample_token(
                 &mut sampler,
                 &mut rng,
@@ -122,6 +128,8 @@ impl PhiModel {
                 break;
             }
         }
+
+        self.model.clear_kv_cache();
 
         Ok(())
     }

@@ -15,6 +15,8 @@ pub use document::*;
 pub trait Tool {
     /// The name of the tool
     fn name(&self) -> String;
+    /// The prompt for the input to the tool
+    fn input_prompt(&self) -> String;
     /// A description of the tool
     fn description(&self) -> String;
     /// Run the tool with the given arguments
@@ -24,7 +26,7 @@ pub trait Tool {
 /// A set of tools that can be used by a [`floneumin_language_model::Model`]
 #[derive(Default)]
 pub struct ToolManager {
-    tools: Vec<Box<dyn Tool>>,
+    tools: Vec<Box<dyn Tool + Send + Sync>>,
 }
 
 impl std::fmt::Debug for ToolManager {
@@ -45,29 +47,29 @@ impl ToolManager {
     }
 
     /// Add a tool to the manager
-    pub fn with_tool(self, tool: impl Tool + 'static) -> Self {
+    pub fn with_tool(self, tool: impl Tool + Send + Sync + 'static) -> Self {
         let mut tools = self.tools;
         tools.push(Box::new(tool));
         Self { tools }
     }
 
     /// Add a tool to the manager
-    pub fn add_tool(&mut self, tool: impl Tool + 'static) {
+    pub fn add_tool(&mut self, tool: impl Tool + Send + Sync + 'static) {
         self.tools.push(Box::new(tool));
     }
 
     /// Get the tools in the manager
-    pub fn get_tools(&self) -> &[Box<dyn Tool>] {
+    pub fn get_tools(&self) -> &[Box<dyn Tool + Send + Sync>] {
         &self.tools
     }
 
     /// Get a tool by name
-    pub fn get_tool(&self, name: &str) -> Option<&dyn Tool> {
+    pub fn get_tool(&self, name: &str) -> Option<&(dyn Tool + Send + Sync)> {
         self.tools.iter().find(|t| t.name() == name).map(|t| &**t)
     }
 
     /// Get a tool mutably by name
-    pub fn get_tool_mut<'a>(&'a mut self, name: &str) -> Option<&'a mut dyn Tool> {
+    pub fn get_tool_mut<'a>(&'a mut self, name: &str) -> Option<&'a mut (dyn Tool + Send + Sync)> {
         for tool in &mut self.tools {
             if tool.name() == name {
                 return Some(&mut **tool);
@@ -77,12 +79,15 @@ impl ToolManager {
     }
 
     /// Get a tool by index
-    pub fn get_tool_by_index(&self, index: usize) -> Option<&dyn Tool> {
+    pub fn get_tool_by_index(&self, index: usize) -> Option<&(dyn Tool + Send + Sync)> {
         self.tools.get(index).map(|t| &**t)
     }
 
     /// Get a tool mutably by index
-    pub fn get_tool_mut_by_index<'a>(&'a mut self, index: usize) -> Option<&'a mut dyn Tool> {
+    pub fn get_tool_mut_by_index<'a>(
+        &'a mut self,
+        index: usize,
+    ) -> Option<&'a mut (dyn Tool + Send + Sync)> {
         match self.tools.get_mut(index) {
             Some(tool) => Some(&mut **tool),
             None => None,
@@ -98,22 +103,22 @@ impl ToolManager {
             tool_names.push_str(&format!("'{}'", tool.name()));
         }
         format!(
-            r#"Answer the following questions as best you can. You have access to the following tools:
-
-{tools}
-
-Use the following format:
+            r#"Use the following format:
 
 Question: the input question you must answer
 Thought: you should always think about what to do
 Action: the action to take, should be one of [{tool_names}]
-Action Input: the input to the action
+Input: the input to the action
 Observation: the result of the action
-... (this Thought/Action/Action Input/Observation can repeat N times)
+... (this Thought/Action/Input/Observation can repeat N times)
 Thought: I now know the final answer
 Final Answer: the final answer to the original input question
 
-While you use tools keep in mind that duplicating a question will end the game. Begin!
+You have access to the following tools:
+
+{tools}
+
+Begin!
 
 Question: {question}
 "#
@@ -135,7 +140,9 @@ Question: {question}
     > {
         let mut choices: Vec<LiteralParser<_>> = Vec::with_capacity(self.tools.len());
         for tool in self.tools.iter() {
-            choices.push(LiteralParser::from(tool.name()));
+            let name = tool.name();
+            let prompt = tool.input_prompt();
+            choices.push(LiteralParser::from(format!("{name}\n{prompt}")));
         }
         if choices.is_empty() {
             None
@@ -165,24 +172,20 @@ Question: {question}
         &self,
     ) -> SequenceParser<
         SequenceParser<
-            SequenceParser<
-                LiteralParser<&'static str>,
-                impl Parser<
-                        Error = (),
-                        Output = usize,
-                        PartialState = IndexParserState<LiteralParserOffset, ()>,
-                    > + CreateParserState
-                    + Send
-                    + Sync
-                    + 'static,
-            >,
             LiteralParser<&'static str>,
+            impl Parser<
+                    Error = (),
+                    Output = usize,
+                    PartialState = IndexParserState<LiteralParserOffset, ()>,
+                > + CreateParserState
+                + Send
+                + Sync
+                + 'static,
         >,
         OneLine,
     > {
         let constraints = LiteralParser::from("Action: ");
         let constraints = constraints.then(self.tool_choices().unwrap());
-        let constraints = constraints.then(LiteralParser::from("\nAction Input: "));
         let constraints = constraints.then(OneLine);
         constraints
     }
@@ -218,18 +221,15 @@ Question: {question}
                 + 'static,
             SequenceParser<
                 SequenceParser<
-                    SequenceParser<
-                        LiteralParser<&'static str>,
-                        impl Parser<
-                                Error = (),
-                                Output = usize,
-                                PartialState = IndexParserState<LiteralParserOffset, ()>,
-                            > + CreateParserState
-                            + Send
-                            + Sync
-                            + 'static,
-                    >,
                     LiteralParser<&'static str>,
+                    impl Parser<
+                            Error = (),
+                            Output = usize,
+                            PartialState = IndexParserState<LiteralParserOffset, ()>,
+                        > + CreateParserState
+                        + Send
+                        + Sync
+                        + 'static,
                 >,
                 OneLine,
             >,
@@ -249,11 +249,13 @@ Question: {question}
     }
 }
 
+/// The state of the [`IndexParser`] parser
 #[derive(Debug, Clone)]
 pub struct IndexParserState<PA, E> {
     states: Vec<Result<PA, E>>,
 }
 
+/// A parser that parses a sequence of parsers and returns the index of the first parser that succeeds
 pub struct IndexParser<S: Parser<Error = E, Output = (), PartialState = PA>, E, PA> {
     parsers: Vec<S>,
 }
@@ -333,8 +335,10 @@ where
     }
 }
 
+/// One line of text with some non-whitespace characters
 pub struct OneLine;
 
+/// The state of the [`OneLine`] parser
 #[derive(Debug, Clone)]
 pub struct OneLineState {
     all_whitespace: bool,
@@ -374,13 +378,13 @@ impl Parser for OneLine {
         let mut iter = input.iter();
         while let Some(&c) = iter.next() {
             if state.all_whitespace {
-                if c != b' ' && c != b'\t' {
-                    state.all_whitespace = false;
-                } else {
-                    return Err(());
+                if let Ok(c) = char::try_from(c) {
+                    if !c.is_whitespace(){
+                        state.all_whitespace = false;
+                    }
                 }
             }
-            if c == b'\n' {
+            if c == b'\n' || c == b'\r' {
                 if state.all_whitespace {
                     return Err(());
                 } else {
@@ -399,7 +403,7 @@ impl Parser for OneLine {
 macro_rules! impl_from_tool_tuple {
     ($($name:ident),*) => {
         #[allow(non_snake_case)]
-        impl<$($name: Tool + 'static),*> From<($($name,)*)> for ToolManager {
+        impl<$($name: Tool + Send + Sync + 'static),*> From<($($name,)*)> for ToolManager {
             fn from(tools: ($($name,)*)) -> Self {
                 let ($($name,)*) = tools;
                 Self::new()$(.with_tool($name))*

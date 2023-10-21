@@ -22,7 +22,7 @@ pub struct MistralModel {
 }
 
 impl SyncModel for MistralModel {
-    fn run(&mut self, prompt: &str) -> anyhow::Result<Logits<u32, f32>> {
+    fn feed_text(&mut self, prompt: &str) -> anyhow::Result<Logits<u32, f32>> {
         let tokens = self
             .tokenizer
             .encode(&*prompt, true)
@@ -30,7 +30,11 @@ impl SyncModel for MistralModel {
             .get_ids()
             .to_vec();
 
-        self.forward(&tokens, 0)
+        self.forward(&tokens)
+    }
+
+    fn reset(&mut self) {
+        todo!()
     }
 
     fn stop_token(&self) -> anyhow::Result<u32> {
@@ -43,19 +47,13 @@ impl SyncModel for MistralModel {
 }
 
 impl MistralModel {
-    fn forward(&mut self, mut tokens: &[u32], index: usize) -> anyhow::Result<Logits<u32, f32>> {
+    fn forward(&mut self, tokens: &[u32]) -> anyhow::Result<Logits<u32, f32>> {
         if tokens.is_empty() {
             return Err(anyhow::anyhow!("Cannot run model on empty input"));
         }
 
-        if tokens.len() > 4096 {
-            tokens = &tokens[tokens.len() - 4096..];
-        }
-        let context_size = if index > 0 { 1 } else { tokens.len() };
-        let start_pos = tokens.len().saturating_sub(context_size);
-        let ctxt = &tokens[start_pos..];
-        let input = Tensor::new(ctxt, &self.device)?.unsqueeze(0)?;
-        let logits = self.model.forward(&input, start_pos)?;
+        let input = Tensor::new(tokens, &self.device)?.unsqueeze(0)?;
+        let logits = self.model.forward(&input, todo!())?;
         let logits = logits.squeeze(0)?.squeeze(0)?.to_dtype(DType::F32)?;
         let logits: Vec<f32> = logits.to_vec1()?;
         Ok(Logits::try_from_iter(logits)?)
@@ -96,7 +94,10 @@ impl MistralModel {
         let mut prev_index = 0;
         let mut current_index = 0;
         for index in 0..sample_len {
-            let logits = self.forward(&tokens, index)?;
+            let context_size = if index > 0 { 1 } else { tokens.len() };
+            let start_pos = tokens.len().saturating_sub(context_size);
+            let ctxt = &tokens[start_pos..];
+            let logits = self.forward(&ctxt)?;
             let next_token = sample_token(
                 &mut sampler,
                 &mut rng,

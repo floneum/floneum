@@ -94,6 +94,17 @@ pub enum ParseResult<'a, P, R> {
 }
 
 impl<'a, P, R> ParseResult<'a, P, R> {
+    /// Take the remaining bytes from the parser.
+    pub fn without_remaining(self) -> ParseResult<'static, P, R> {
+        match self {
+            ParseResult::Finished { result, .. } => ParseResult::Finished {
+                result,
+                remaining: &[],
+            },
+            ParseResult::Incomplete(parser) => ParseResult::Incomplete(parser),
+        }
+    }
+
     /// Unwrap the parser to a finished result.
     pub fn unwrap_finished(self) -> R {
         match self {

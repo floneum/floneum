@@ -64,7 +64,13 @@ enum Task {
         sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
     },
     RunSync {
-        callback: Box<dyn FnOnce(&mut PhiModel) + Send>,
+        callback: Box<
+            dyn for<'a> FnOnce(
+                    &'a mut PhiModel,
+                )
+                    -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>>
+                + Send,
+        >,
     },
 }
 
@@ -124,7 +130,7 @@ impl Phi {
                                 }
                             }
                             Task::RunSync { callback } => {
-                                callback(&mut inner);
+                                callback(&mut inner).await;
                             }
                         }
                     }

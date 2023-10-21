@@ -28,7 +28,13 @@ impl Model for Mistral {
 
     async fn run_sync(
         &mut self,
-        f: Box<dyn for<'a> FnOnce(&'a mut Self::SyncModel) + Send>,
+        f: Box<
+            dyn for<'a> FnOnce(
+                    &'a mut Self::SyncModel,
+                )
+                    -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>>
+                + Send,
+        >,
     ) -> anyhow::Result<()> {
         match self.task_sender.send(Task::RunSync { callback: f }) {
             Ok(_) => Ok(()),

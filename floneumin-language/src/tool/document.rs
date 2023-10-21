@@ -22,8 +22,12 @@ impl<S: VectorSpace + Send + Sync + 'static, M: Embedder<S>> Tool for DocumentSe
         "Local Search".to_string()
     }
 
+    fn input_prompt(&self) -> String {
+        "Search query: ".to_string()
+    }
+
     fn description(&self) -> String {
-        "Search local documents for a query.\nUse tool with:\nAction: Local Search\nAction Input: the search query\nExample:\n\nQuestion: What is Floneum?\nThought: I don't remember what Floneum is. I should search for it.\nAction: Local Search\nAction Input: What is Floneum?\nObservation: Floneum is a visual editor for AI workflows.\nThought: I now know that Floneum is a visual editor for AI workflows.\nFinal Answer: Floneum is a visual editor for AI workflows.".to_string()
+        "Search local documents for a query.\nUse tool with:\nAction: Local Search\nSearch query: the search query\nExample:\n\nQuestion: What is Floneum?\nThought: I don't remember what Floneum is. I should search for it.\nAction: Local Search\nAction Input: What is Floneum?\nObservation: Floneum is a visual editor for AI workflows.\nThought: I now know that Floneum is a visual editor for AI workflows.\nFinal Answer: Floneum is a visual editor for AI workflows.".to_string()
     }
 
     async fn run(&mut self, query: &str) -> String {
