@@ -3215,6 +3215,7 @@ dependencies = [
  "floneumin-streams",
  "futures-util",
  "llm-samplers",
+ "rand 0.8.5",
  "tokio",
  "tracing-subscriber 0.2.25",
 ]

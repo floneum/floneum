@@ -44,6 +44,10 @@ impl SyncModel for MistralModel {
 
 impl MistralModel {
     fn forward(&mut self, mut tokens: &[u32], index: usize) -> anyhow::Result<Logits<u32, f32>> {
+        if tokens.is_empty() {
+            return Err(anyhow::anyhow!("Cannot run model on empty input"));
+        }
+
         if tokens.len() > 4096 {
             tokens = &tokens[tokens.len() - 4096..];
         }
@@ -89,8 +93,8 @@ impl MistralModel {
         let eos_token = self.stop_token()?;
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
         let mut text = String::new();
-        let mut  prev_index= 0;
-        let mut current_index=0;
+        let mut prev_index = 0;
+        let mut current_index = 0;
         for index in 0..sample_len {
             let logits = self.forward(&tokens, index)?;
             let next_token = sample_token(
@@ -111,8 +115,13 @@ impl MistralModel {
                 self.tokenizer.decode(tokens, true).map_err(E::msg)?
             };
             tokens.push(next_token);
-            let token_text = self.tokenizer.decode(&tokens[prev_index..], true).map_err(E::msg)? ;
-            let token = if token_text.len() > prev_text.len() && token_text.chars().last().unwrap().is_ascii() {
+            let token_text = self
+                .tokenizer
+                .decode(&tokens[prev_index..], true)
+                .map_err(E::msg)?;
+            let token = if token_text.len() > prev_text.len()
+                && token_text.chars().last().unwrap().is_ascii()
+            {
                 let text = token_text.split_at(prev_text.len());
                 prev_index = current_index;
                 current_index = tokens.len();

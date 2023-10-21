@@ -28,7 +28,7 @@ impl SyncModel for PhiModel {
             .get_ids()
             .to_vec();
 
-        self.forward(&tokens, 0)
+        self.forward(&tokens, tokens.len() - 1)
     }
 
     fn stop_token(&self) -> anyhow::Result<u32> {
@@ -42,6 +42,10 @@ impl SyncModel for PhiModel {
 
 impl PhiModel {
     fn forward(&mut self, mut tokens: &[u32], index: usize) -> anyhow::Result<Logits<u32, f32>> {
+        if tokens.is_empty() {
+            return Err(anyhow::anyhow!("Cannot run model on empty input"));
+        }
+
         if tokens.len() > 4096 {
             tokens = &tokens[tokens.len() - 4096..];
         }

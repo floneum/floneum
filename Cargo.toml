@@ -119,10 +119,10 @@ lto = "thin"
 [profile.release]
 lto = true
 # panic = "abort"
-# opt-level = 3
-opt-level = 'z'
+opt-level = 3
+# opt-level = 'z'
 # strip = true
-# debug = true
+debug = true
 codegen-units = 1
 
 [profile.dev.package."*"]

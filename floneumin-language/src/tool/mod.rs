@@ -117,7 +117,8 @@ Question: {question}
                 PartialState = IndexParserState<LiteralParserOffset, ()>,
             > + CreateParserState
             + Send
-            + Sync,
+            + Sync
+            + 'static,
     > {
         let mut choices: Vec<LiteralParser<_>> = Vec::with_capacity(self.tools.len());
         for tool in self.tools.iter() {
@@ -136,10 +137,11 @@ Question: {question}
     ) -> impl Parser<
         Error = (),
         Output = ((), ()),
-        PartialState = SequenceParserState<LiteralParserOffset, (), ()>,
+        PartialState = SequenceParserState<LiteralParserOffset, OneLineState, ()>,
     > + CreateParserState
            + Send
-           + Sync {
+           + Sync
+           + 'static {
         let constraints = "Thought: ";
         let constraints = LiteralParser::from(constraints).then(OneLine);
         constraints
@@ -158,7 +160,8 @@ Question: {question}
                         PartialState = IndexParserState<LiteralParserOffset, ()>,
                     > + CreateParserState
                     + Send
-                    + Sync,
+                    + Sync
+                    + 'static,
             >,
             LiteralParser<&'static str>,
         >,
@@ -177,10 +180,11 @@ Question: {question}
     ) -> impl Parser<
         Error = (),
         Output = ((), ()),
-        PartialState = SequenceParserState<LiteralParserOffset, (), ()>,
+        PartialState = SequenceParserState<LiteralParserOffset, OneLineState, ()>,
     > + CreateParserState
            + Send
-           + Sync {
+           + Sync
+           + 'static {
         let constraints = LiteralParser::from("Final Answer: ");
         let constraints = constraints.then(OneLine);
         constraints
@@ -194,23 +198,23 @@ Question: {question}
             impl Parser<
                     Error = (),
                     Output = ((), ()),
-                    PartialState = SequenceParserState<LiteralParserOffset, (), ()>,
+                    PartialState = SequenceParserState<LiteralParserOffset, OneLineState, ()>,
                 > + CreateParserState
                 + Send
-                + Sync,
+                + Sync+ 'static,
             SequenceParser<
                 SequenceParser<
                     SequenceParser<
-                        LiteralParser<&str>,
+                        LiteralParser<&'static str>,
                         impl Parser<
                                 Error = (),
                                 Output = usize,
                                 PartialState = IndexParserState<LiteralParserOffset, ()>,
                             > + CreateParserState
                             + Send
-                            + Sync,
+                            + Sync + 'static,
                     >,
-                    LiteralParser<&str>,
+                    LiteralParser<&'static str>,
                 >,
                 OneLine,
             >,
@@ -218,10 +222,10 @@ Question: {question}
         impl Parser<
                 Error = (),
                 Output = ((), ()),
-                PartialState = SequenceParserState<LiteralParserOffset, (), ()>,
+                PartialState = SequenceParserState<LiteralParserOffset, OneLineState, ()>,
             > + CreateParserState
             + Send
-            + Sync,
+            + Sync+ 'static,
     > {
         self.thought_constraints()
             .or(self.action_constraints())
@@ -295,7 +299,7 @@ where
                             has_incomplete_option = true;
                         }
                         Err(e) => {
-                            if has_incomplete_option && i == last_index {
+                            if !has_incomplete_option && i == last_index {
                                 return Err(e);
                             }
                             states[i] = Err(e);
@@ -303,7 +307,7 @@ where
                     }
                 }
                 Err(err) => {
-                    if has_incomplete_option && i == last_index {
+                    if !has_incomplete_option && i == last_index {
                         return Err(err.clone());
                     }
                 }
@@ -315,16 +319,23 @@ where
 
 pub struct OneLine;
 
+#[derive(Debug, Clone)]
+pub struct OneLineState {
+    all_whitespace: bool,
+}
+
 impl CreateParserState for OneLine {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState {
-        ()
+        OneLineState {
+            all_whitespace: true,
+        }
     }
 }
 
 impl Parser for OneLine {
     type Error = ();
     type Output = ();
-    type PartialState = ();
+    type PartialState = OneLineState;
 
     fn parse<'a>(
         &self,
@@ -335,18 +346,35 @@ impl Parser for OneLine {
         Self: Sized,
     {
         if input.is_empty() {
-            return Ok(ParseResult::Incomplete(()));
-        }
-        let mut iter = input.iter();
-        while let Some(&c) = iter.next() {
-            if c == b'\n' {
-                return Ok(ParseResult::Finished {
-                    result: (),
-                    remaining: iter.as_slice(),
-                });
+            if state.all_whitespace {
+                return Err(());
+            } else {
+                return Ok(ParseResult::Incomplete(state.clone()));
             }
         }
-        Ok(ParseResult::Incomplete(()))
+        let mut state = state.clone();
+        let mut iter = input.iter();
+        while let Some(&c) = iter.next() {
+            if state.all_whitespace{
+                if c != b' ' && c != b'\t' {
+                    state.all_whitespace = false;
+                }
+                else {
+                    return Err(())
+                }
+            }
+            if c == b'\n' {
+                if state.all_whitespace {
+                    return Err(());
+                } else {
+                    return Ok(ParseResult::Finished {
+                        result: (),
+                        remaining: iter.as_slice(),
+                    });
+                }
+            }
+        }
+        Ok(ParseResult::Incomplete(state))
     }
 }
 
