@@ -86,10 +86,11 @@ impl MistralModel {
             .get_ids()
             .to_vec();
 
-        let mut new_tokens = vec![];
         let eos_token = self.stop_token()?;
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
         let mut text = String::new();
+        let mut  prev_index= 0;
+        let mut current_index=0;
         for index in 0..sample_len {
             let logits = self.forward(&tokens, index)?;
             let next_token = sample_token(
@@ -100,12 +101,26 @@ impl MistralModel {
                 stop_on.as_deref(),
                 &self.tokenizer,
             )?;
-            tokens.push(next_token);
-            new_tokens.push(next_token);
             if next_token == eos_token {
                 break;
             }
-            let token = self.tokenizer.decode(&[next_token], true).map_err(E::msg)?;
+            let prev_text = if tokens.is_empty() {
+                String::new()
+            } else {
+                let tokens = &tokens[prev_index..current_index];
+                self.tokenizer.decode(tokens, true).map_err(E::msg)?
+            };
+            tokens.push(next_token);
+            let token_text = self.tokenizer.decode(&tokens[prev_index..], true).map_err(E::msg)? ;
+            let token = if token_text.len() > prev_text.len() && token_text.chars().last().unwrap().is_ascii() {
+                let text = token_text.split_at(prev_text.len());
+                prev_index = current_index;
+                current_index = tokens.len();
+                text.1.to_string()
+            } else {
+                continue;
+            };
+
             let mut should_stop = false;
             // We only need to keep as many bytes as the stop_on string
             if let Some(stop_on) = &stop_on {
