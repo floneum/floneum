@@ -124,7 +124,9 @@ impl crate::model::GenerationParameters {
         use llm_samplers::configure::SamplerSlot;
         let GenerationParameters {
             temperature,
-            tau,eta,mu,
+            tau,
+            eta,
+            mu,
             repetition_penalty,
             repetition_penalty_range,
             max_length: _,

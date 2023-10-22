@@ -379,7 +379,7 @@ impl Parser for OneLine {
         while let Some(&c) = iter.next() {
             if state.all_whitespace {
                 if let Ok(c) = char::try_from(c) {
-                    if !c.is_whitespace(){
+                    if !c.is_whitespace() {
                         state.all_whitespace = false;
                     }
                 }

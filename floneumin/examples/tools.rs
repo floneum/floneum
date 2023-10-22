@@ -30,7 +30,7 @@ async fn main() {
                     let mut parser_state = parser.create_parser_state();
                     loop {
                         let mut logits = llm.feed_text(current_text.split_at(bytes_fed).1).unwrap();
-                        bytes_fed =current_text.len();
+                        bytes_fed = current_text.len();
                         logits.ensure_sorted().unwrap();
                         let min_prob = logits.last().unwrap().logit;
                         for logit in logits.iter_mut() {
@@ -41,7 +41,7 @@ async fn main() {
                         let mut total_prob = 0.0;
                         for logit in logits.iter() {
                             let new_text = tokenizer.decode(&[logit.token_id]).unwrap();
-                            if new_text.is_empty() || logit.logit == 0.0{
+                            if new_text.is_empty() || logit.logit == 0.0 {
                                 continue;
                             }
                             if let Ok(result) = parser.parse(&parser_state, new_text.as_bytes()) {
@@ -90,7 +90,10 @@ async fn main() {
                                         return;
                                     }
                                     floneumin_sample::Either::Left(
-                                        floneumin_sample::Either::Right((((), tool_index), tool_input)),
+                                        floneumin_sample::Either::Right((
+                                            ((), tool_index),
+                                            tool_input,
+                                        )),
                                     ) => {
                                         let tool = tools.get_tool_mut_by_index(tool_index).unwrap();
                                         let output = tool.run(&tool_input).await;
@@ -98,9 +101,8 @@ async fn main() {
                                         println!("{}", observation);
                                         current_text.push_str(&observation);
                                         current_text.push_str("\n");
-                                        
                                     }
-                                    _=> {}
+                                    _ => {}
                                 }
                                 break;
                             }

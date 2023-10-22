@@ -359,7 +359,13 @@ pub trait Model: Send + 'static {
     /// Run some code synchronously with the model.
     async fn run_sync(
         &mut self,
-        _f: Box<dyn for<'a> FnOnce(&'a mut Self::SyncModel) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> + Send>,
+        _f: Box<
+            dyn for<'a> FnOnce(
+                    &'a mut Self::SyncModel,
+                )
+                    -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>>
+                + Send,
+        >,
     ) -> anyhow::Result<()> {
         Err(anyhow::Error::msg("Not implemented"))
     }
@@ -463,7 +469,7 @@ impl Model for DynModel {
 pub type BoxedSyncModel = Box<dyn SyncModel>;
 
 impl SyncModel for BoxedSyncModel {
-fn feed_text(&mut self, prompt: &str) -> anyhow::Result<Logits<u32, f32>> {
+    fn feed_text(&mut self, prompt: &str) -> anyhow::Result<Logits<u32, f32>> {
         let self_ref: &mut (dyn SyncModel) = self.as_mut();
         self_ref.feed_text(prompt)
     }
@@ -527,8 +533,8 @@ where
 pub struct GenerationParameters {
     pub(crate) temperature: f32,
     pub(crate) tau: f32,
-pub(crate) eta: f32,
-pub(crate) mu: f32,
+    pub(crate) eta: f32,
+    pub(crate) mu: f32,
     pub(crate) repetition_penalty: f32,
     pub(crate) repetition_penalty_range: u32,
     pub(crate) max_length: u32,
