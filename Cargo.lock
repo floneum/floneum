@@ -827,7 +827,7 @@ dependencies = [
 [[package]]
 name = "candle-core"
 version = "0.3.0"
-source = "git+https://github.com/huggingface/candle#3115fe42e4b203b02219eaf85b749f6710d0de3e"
+source = "git+https://github.com/huggingface/candle#a11af79e23179ccdd52fb97873c1bfa7b979edb4"
 dependencies = [
  "accelerate-src",
  "byteorder",
@@ -852,7 +852,7 @@ dependencies = [
 [[package]]
 name = "candle-flash-attn"
 version = "0.3.0"
-source = "git+https://github.com/huggingface/candle#3115fe42e4b203b02219eaf85b749f6710d0de3e"
+source = "git+https://github.com/huggingface/candle#a11af79e23179ccdd52fb97873c1bfa7b979edb4"
 dependencies = [
  "anyhow",
  "candle-core",
@@ -864,7 +864,7 @@ dependencies = [
 [[package]]
 name = "candle-kernels"
 version = "0.3.0"
-source = "git+https://github.com/huggingface/candle#3115fe42e4b203b02219eaf85b749f6710d0de3e"
+source = "git+https://github.com/huggingface/candle#a11af79e23179ccdd52fb97873c1bfa7b979edb4"
 dependencies = [
  "anyhow",
  "glob",
@@ -874,7 +874,7 @@ dependencies = [
 [[package]]
 name = "candle-nn"
 version = "0.3.0"
-source = "git+https://github.com/huggingface/candle#3115fe42e4b203b02219eaf85b749f6710d0de3e"
+source = "git+https://github.com/huggingface/candle#a11af79e23179ccdd52fb97873c1bfa7b979edb4"
 dependencies = [
  "accelerate-src",
  "candle-core",
@@ -890,7 +890,7 @@ dependencies = [
 [[package]]
 name = "candle-transformers"
 version = "0.3.0"
-source = "git+https://github.com/huggingface/candle#3115fe42e4b203b02219eaf85b749f6710d0de3e"
+source = "git+https://github.com/huggingface/candle#a11af79e23179ccdd52fb97873c1bfa7b979edb4"
 dependencies = [
  "accelerate-src",
  "candle-core",
@@ -5011,9 +5011,9 @@ checksum = "bffb4def18c48926ccac55c1223e02865ce1a821751a95920448662696e7472c"
 
 [[package]]
 name = "ipnet"
-version = "2.8.0"
+version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28b29a3cd74f0f4598934efe3aeba42bae0eb4680554128851ebbecb02af14e6"
+checksum = "8f518f335dce6725a761382244631d86cf0ccb2863413590b31338feb467f9c3"
 
 [[package]]
 name = "is-macro"
@@ -5555,8 +5555,7 @@ dependencies = [
 [[package]]
 name = "llm-samplers"
 version = "0.0.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7553f60d113c9cdc6a5402456a31cd9a273bef79f6f16d8a4f7b4bedf5f754b2"
+source = "git+https://github.com/ealmloff/llm-samplers#01be52ec1b7066e3ddac60c0aac1a83b5de82cb2"
 dependencies = [
  "anyhow",
  "num-traits",

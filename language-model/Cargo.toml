@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 bytesize = "1.2.0"
 futures-util = "0.3.28"
-llm-samplers = "=0.0.6"
+llm-samplers = { git = "https://github.com/ealmloff/llm-samplers" }
 log = "0.4.17"
 rand = "0.8.5"
 reqwest = { version = "0.11.18", features = ["stream", "json"] }

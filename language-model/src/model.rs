@@ -121,15 +121,21 @@ impl<'a, M: Model> StreamTextBuilder<'a, M> {
         self
     }
 
-    /// Set the top-k to use when generating text.
-    pub fn with_top_k(mut self, top_k: u32) -> Self {
-        self.parameters.top_k = top_k;
+    /// Set the mu to use when generating text.
+    pub fn with_mu(mut self, mu: f32) -> Self {
+        self.parameters.mu = mu;
         self
     }
 
-    /// Set the top-p to use when generating text.
-    pub fn with_top_p(mut self, top_p: f32) -> Self {
-        self.parameters.top_p = top_p;
+    /// Set the tau to use when generating text.
+    pub fn with_tau(mut self, tau: f32) -> Self {
+        self.parameters.tau = tau;
+        self
+    }
+
+    /// Set the eta to use when generating text.
+    pub fn with_eta(mut self, eta: f32) -> Self {
+        self.parameters.eta = eta;
         self
     }
 
@@ -219,15 +225,21 @@ impl<'a, M: Model> GenerateTextBuilder<'a, M> {
         self
     }
 
-    /// Set the top-k to use when generating text.
-    pub fn with_top_k(mut self, top_k: u32) -> Self {
-        self.parameters.top_k = top_k;
+    /// Set the mu to use when generating text.
+    pub fn with_mu(mut self, mu: f32) -> Self {
+        self.parameters.mu = mu;
         self
     }
 
-    /// Set the top-p to use when generating text.
-    pub fn with_top_p(mut self, top_p: f32) -> Self {
-        self.parameters.top_p = top_p;
+    /// Set the tau to use when generating text.
+    pub fn with_tau(mut self, tau: f32) -> Self {
+        self.parameters.tau = tau;
+        self
+    }
+
+    /// Set the eta to use when generating text.
+    pub fn with_eta(mut self, eta: f32) -> Self {
+        self.parameters.eta = eta;
         self
     }
 
@@ -514,8 +526,9 @@ where
 #[derive(Debug, Clone, PartialEq)]
 pub struct GenerationParameters {
     pub(crate) temperature: f32,
-    pub(crate) top_k: u32,
-    pub(crate) top_p: f32,
+    pub(crate) tau: f32,
+pub(crate) eta: f32,
+pub(crate) mu: f32,
     pub(crate) repetition_penalty: f32,
     pub(crate) repetition_penalty_range: u32,
     pub(crate) max_length: u32,
@@ -526,8 +539,9 @@ impl Default for GenerationParameters {
     fn default() -> Self {
         Self {
             temperature: 0.8,
-            top_k: 40,
-            top_p: 0.95,
+            eta: 0.1,
+            tau: 5.,
+            mu: 10.,
             repetition_penalty: 1.3,
             repetition_penalty_range: 64,
             max_length: 128,
@@ -537,34 +551,27 @@ impl Default for GenerationParameters {
 }
 
 impl GenerationParameters {
-    /// Create a gready generation configuration that will always return the most likely token.
-    pub fn greedy() -> Self {
-        Self {
-            temperature: 0.8,
-            top_k: 1,
-            top_p: 0.95,
-            repetition_penalty: 1.3,
-            repetition_penalty_range: 64,
-            max_length: 128,
-            stop_on: None,
-        }
-    }
-
     /// Set the temperature to use when generating text.
     pub fn with_temperature(mut self, temperature: f32) -> Self {
         self.temperature = temperature;
         self
     }
 
-    /// Set the top-k to use when generating text.
-    pub fn with_top_k(mut self, top_k: u32) -> Self {
-        self.top_k = top_k;
+    /// Set the tau to use when generating text.
+    pub fn with_tau(mut self, tau: f32) -> Self {
+        self.tau = tau;
         self
     }
 
-    /// Set the top-p to use when generating text.
-    pub fn with_top_p(mut self, top_p: f32) -> Self {
-        self.top_p = top_p;
+    /// Set the eta to use when generating text.
+    pub fn with_eta(mut self, eta: f32) -> Self {
+        self.eta = eta;
+        self
+    }
+
+    /// Set the mu to use when generating text.
+    pub fn with_mu(mut self, mu: f32) -> Self {
+        self.mu = mu;
         self
     }
 
@@ -597,14 +604,19 @@ impl GenerationParameters {
         self.temperature
     }
 
-    /// Get the top-k to use when generating text.
-    pub fn top_k(&self) -> u32 {
-        self.top_k
+    /// Get the tau to use when generating text.
+    pub fn tau(&self) -> f32 {
+        self.tau
     }
 
-    /// Get the top-p to use when generating text.
-    pub fn top_p(&self) -> f32 {
-        self.top_p
+    /// Get the eta to use when generating text.
+    pub fn eta(&self) -> f32 {
+        self.eta
+    }
+
+    /// Get the mu to use when generating text.
+    pub fn mu(&self) -> f32 {
+        self.mu
     }
 
     /// Get the repetition penalty to use when generating text.

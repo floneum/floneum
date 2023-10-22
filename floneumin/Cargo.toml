@@ -16,7 +16,7 @@ rand = "0.8.5"
 
 [dev-dependencies]
 tracing-subscriber = "0.2"
-llm-samplers = "=0.0.6"
+llm-samplers = { git = "https://github.com/ealmloff/llm-samplers" }
 
 [features]
 metal = ["floneumin-language/metal"]

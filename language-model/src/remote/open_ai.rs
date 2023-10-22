@@ -57,9 +57,7 @@ macro_rules! openai_model {
                     .prompt(prompt)
                     .stream(true)
                     .frequency_penalty(generation_parameters.repetition_penalty)
-                    .temperature(generation_parameters.temperature)
-                    .top_p(generation_parameters.top_p)
-                    .stop(
+                    .temperature(generation_parameters.temperature)                    .stop(
                         generation_parameters
                             .stop_on
                             .iter()

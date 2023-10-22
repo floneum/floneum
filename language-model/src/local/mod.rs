@@ -124,8 +124,7 @@ impl crate::model::GenerationParameters {
         use llm_samplers::configure::SamplerSlot;
         let GenerationParameters {
             temperature,
-            top_k,
-            top_p,
+            tau,eta,mu,
             repetition_penalty,
             repetition_penalty_range,
             max_length: _,
@@ -157,31 +156,10 @@ impl crate::model::GenerationParameters {
                 SamplerSlot::new_chain(move || Box::<SampleSeqRepetition>::default(), []),
             ),
             (
-                "topk",
+                "mirostat2",
                 SamplerSlot::new_single(
-                    move || Box::new(SampleTopK::default().k(top_k as usize)),
+                    move || Box::new(SampleMirostat2::default().tau(tau).eta(eta).mu(mu)),
                     Option::<SampleTopK>::None,
-                ),
-            ),
-            (
-                "tailfree",
-                SamplerSlot::new_single(
-                    move || Box::<SampleTailFree>::default(),
-                    Option::<SampleTailFree>::None,
-                ),
-            ),
-            (
-                "locallytypical",
-                SamplerSlot::new_single(
-                    move || Box::<SampleLocallyTypical>::default(),
-                    Option::<SampleLocallyTypical>::None,
-                ),
-            ),
-            (
-                "topp",
-                SamplerSlot::new_single(
-                    move || Box::new(SampleTopP::default().p(top_p)),
-                    Option::<SampleTopP>::None,
                 ),
             ),
             (
