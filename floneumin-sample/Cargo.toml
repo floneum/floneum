@@ -11,6 +11,6 @@ rand = "0.8.5"
 anyhow = "1.0.71"
 tracing = "0.1.37"
 llm = { git = "https://github.com/rustformers/llm" }
-candle-core = { git = "https://github.com/huggingface/candle" }
+candle-core.workspace = true
 tokenizers = { version = "0.13.4" }
 rustc-hash = "1.1.0"

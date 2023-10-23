@@ -112,6 +112,11 @@ members = [
     "plugins/string",
 ]
 
+[workspace.dependencies]
+candle-core = { git = "https://github.com/huggingface/candle" }
+candle-nn = { git = "https://github.com/huggingface/candle" }
+candle-transformers = { git = "https://github.com/huggingface/candle" }
+
 # The profile that 'cargo dist' will build with
 [profile.dist]
 inherits = "release"

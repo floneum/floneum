@@ -12,9 +12,9 @@ itertools = "0.10.5"
 rand = "0.8.5"
 ringbuf = "0.3.2"
 webrtc-vad = "0.4"
-candle-core = { git = "https://github.com/huggingface/candle" }
-candle-nn = { git = "https://github.com/huggingface/candle" }
-candle-transformers = { git = "https://github.com/huggingface/candle" }
+candle-core.workspace = true
+candle-nn.workspace = true
+candle-transformers.workspace = true
 byteorder = "1.4.3"
 hf-hub = "0.3.1"
 tokenizers = "0.14.0"
