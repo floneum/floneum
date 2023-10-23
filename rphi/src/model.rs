@@ -17,6 +17,7 @@ pub struct PhiModel {
     model: QMixFormer,
     device: Device,
     tokenizer: Tokenizer,
+    current_tokens: Vec<u32>,
 }
 
 impl SyncModel for PhiModel {
@@ -27,12 +28,19 @@ impl SyncModel for PhiModel {
             .map_err(E::msg)?
             .get_ids()
             .to_vec();
+        self.current_tokens.extend(tokens.iter().copied());
 
-        self.forward(&tokens)
+        if tokens.len() > 1 {
+            self.model.clear_kv_cache();
+            Self::forward(&mut self.model, &self.device, &self.current_tokens)
+        } else {
+            Self::forward(&mut self.model, &self.device, &tokens)
+        }
     }
 
     fn reset(&mut self) {
         self.model.clear_kv_cache();
+        self.current_tokens.clear();
     }
 
     fn stop_token(&self) -> anyhow::Result<u32> {
@@ -45,7 +53,11 @@ impl SyncModel for PhiModel {
 }
 
 impl PhiModel {
-    fn forward(&mut self, mut tokens: &[u32]) -> anyhow::Result<Logits<u32, f32>> {
+    fn forward(
+        model: &mut QMixFormer,
+        device: &Device,
+        mut tokens: &[u32],
+    ) -> anyhow::Result<Logits<u32, f32>> {
         if tokens.is_empty() {
             return Err(anyhow::anyhow!("Cannot run model on empty input"));
         }
@@ -55,8 +67,8 @@ impl PhiModel {
         }
 
         let ctxt = tokens;
-        let input = Tensor::new(ctxt, &self.device)?.unsqueeze(0)?;
-        let logits = self.model.forward(&input)?;
+        let input = Tensor::new(ctxt, &device)?.unsqueeze(0)?;
+        let logits = model.forward(&input)?;
         let logits = logits.squeeze(0)?.to_dtype(DType::F32)?;
         let logits: Vec<f32> = logits.to_vec1()?;
         Ok(Logits::try_from_iter(logits)?)
@@ -68,6 +80,7 @@ impl PhiModel {
             model,
             device,
             tokenizer,
+            current_tokens: vec![],
         }
     }
 
@@ -98,7 +111,7 @@ impl PhiModel {
         for index in 0..sample_len {
             let context_size = if index > 0 { 1 } else { tokens.len() };
             let ctxt = &tokens[tokens.len().saturating_sub(context_size)..];
-            let logits = self.forward(ctxt)?;
+            let logits = Self::forward(&mut self.model, &self.device, ctxt)?;
             let next_token = sample_token(
                 &mut sampler,
                 &mut rng,
@@ -129,7 +142,7 @@ impl PhiModel {
             }
         }
 
-        self.model.clear_kv_cache();
+        self.reset();
 
         Ok(())
     }
