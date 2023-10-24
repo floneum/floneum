@@ -1,23 +1,1015 @@
-use std::iter::Peekable;
-use std::str::Chars;
-use std::{cell::RefCell, ops::Deref};
+use std::ops::RangeInclusive;
+
+/// A trait for a parser with a default state.
+pub trait CreateParserState: Parser {
+    /// Create the default state of the parser.
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState;
+}
+
+impl<P: CreateParserState> CreateParserState for &P {
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState {
+        (*self).create_parser_state()
+    }
+}
+
+impl<P: CreateParserState> CreateParserState for Box<P> {
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState {
+        (**self).create_parser_state()
+    }
+}
+
+/// An incremental parser for a structured input.
+pub trait Parser {
+    /// The error type of the parser.
+    type Error;
+    /// The output of the parser.
+    type Output;
+    /// The state of the parser.
+    type PartialState;
+
+    /// Parse the given input.
+    fn parse<'a>(
+        &self,
+        state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error>
+    where
+        Self: Sized;
+
+    /// Parse this parser, or another other parser.
+    fn or<V: Parser<Error = E, Output = O, PartialState = PA>, E, O, PA>(
+        self,
+        other: V,
+    ) -> ChoiceParser<Self, V>
+    where
+        Self: Sized,
+    {
+        ChoiceParser {
+            parser1: self,
+            parser2: other,
+        }
+    }
+
+    /// Parse this parser, then the other parser.
+    fn then<V: Parser<Error = E, Output = O, PartialState = PA>, E, O, PA>(
+        self,
+        other: V,
+    ) -> SequenceParser<Self, V>
+    where
+        Self: Sized,
+    {
+        SequenceParser {
+            parser1: self,
+            parser2: other,
+        }
+    }
+}
+
+impl<P: Parser> Parser for &P {
+    type Error = P::Error;
+    type Output = P::Output;
+    type PartialState = P::PartialState;
+
+    fn parse<'a>(
+        &self,
+        state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+        (*self).parse(state, input)
+    }
+}
+
+impl<P: Parser> Parser for Box<P> {
+    type Error = P::Error;
+    type Output = P::Output;
+    type PartialState = P::PartialState;
+
+    fn parse<'a>(
+        &self,
+        state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+        let _self: &P = &*self;
+        _self.parse(state, input)
+    }
+}
+
+/// A parser for a choice between two parsers.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum OwnedParseResult<P, R> {
+    /// The parser is incomplete.
+    Incomplete(P),
+    /// The parser is finished.
+    Finished {
+        /// The result of the parser.
+        result: R,
+        /// The remaining input.
+        remaining: Vec<u8>,
+    },
+}
+
+impl<P, R> From<ParseResult<'_, P, R>> for OwnedParseResult<P, R> {
+    fn from(result: ParseResult<P, R>) -> Self {
+        match result {
+            ParseResult::Incomplete(parser) => OwnedParseResult::Incomplete(parser),
+            ParseResult::Finished { result, remaining } => OwnedParseResult::Finished {
+                result,
+                remaining: remaining.to_vec(),
+            },
+        }
+    }
+}
+
+/// The state of a parser.
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+pub enum ParseResult<'a, P, R> {
+    /// The parser is incomplete.
+    Incomplete(P),
+    /// The parser is finished.
+    Finished {
+        /// The result of the parser.
+        result: R,
+        /// The remaining input.
+        remaining: &'a [u8],
+    },
+}
+
+impl<'a, P, R> ParseResult<'a, P, R> {
+    /// Take the remaining bytes from the parser.
+    pub fn without_remaining(self) -> ParseResult<'static, P, R> {
+        match self {
+            ParseResult::Finished { result, .. } => ParseResult::Finished {
+                result,
+                remaining: &[],
+            },
+            ParseResult::Incomplete(parser) => ParseResult::Incomplete(parser),
+        }
+    }
+
+    /// Unwrap the parser to a finished result.
+    pub fn unwrap_finished(self) -> R {
+        match self {
+            ParseResult::Finished { result, .. } => result,
+            ParseResult::Incomplete(_) => {
+                panic!("called `ParseResult::unwrap_finished()` on an `Incomplete` value")
+            }
+        }
+    }
+
+    /// Unwrap the parser to an incomplete result.
+    pub fn unwrap_incomplete(self) -> P {
+        match self {
+            ParseResult::Finished { .. } => {
+                panic!("called `ParseResult::unwrap_incomplete()` on a `Finished` value")
+            }
+            ParseResult::Incomplete(parser) => parser,
+        }
+    }
+}
+
+/// A parser for a literal.
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+pub struct LiteralParser<S: AsRef<str>> {
+    literal: S,
+}
+
+impl<S: AsRef<str>> CreateParserState for LiteralParser<S> {
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState {
+        LiteralParserOffset::default()
+    }
+}
+
+impl<S: AsRef<str>> From<S> for LiteralParser<S> {
+    fn from(literal: S) -> Self {
+        Self { literal }
+    }
+}
+
+/// The state of a literal parser.
+#[derive(Default, Debug, PartialEq, Eq, Copy, Clone)]
+pub struct LiteralParserOffset {
+    offset: usize,
+}
+
+impl<S: AsRef<str>> Parser for LiteralParser<S> {
+    type Error = ();
+    type Output = ();
+    type PartialState = LiteralParserOffset;
+
+    fn parse<'a>(
+        &self,
+        state: &LiteralParserOffset,
+        input: &'a [u8],
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+        let mut bytes_consumed = 0;
+
+        for (input_byte, literal_byte) in input
+            .iter()
+            .zip(self.literal.as_ref().as_bytes()[state.offset..].iter())
+        {
+            if input_byte != literal_byte {
+                return Err(());
+            }
+            bytes_consumed += 1;
+        }
+
+        if state.offset + bytes_consumed == self.literal.as_ref().len() {
+            Ok(ParseResult::Finished {
+                result: (),
+                remaining: &input[bytes_consumed..],
+            })
+        } else {
+            Ok(ParseResult::Incomplete(LiteralParserOffset {
+                offset: state.offset + bytes_consumed,
+            }))
+        }
+    }
+}
+
+#[test]
+fn literal_parser() {
+    let parser = LiteralParser {
+        literal: "Hello, world!",
+    };
+    let state = LiteralParserOffset { offset: 0 };
+    assert_eq!(
+        parser.parse(&state, b"Hello, world!"),
+        Ok(ParseResult::Finished {
+            result: (),
+            remaining: &[]
+        })
+    );
+    assert_eq!(
+        parser.parse(&state, b"Hello, "),
+        Ok(ParseResult::Incomplete(LiteralParserOffset { offset: 7 }))
+    );
+    assert_eq!(
+        parser.parse(
+            &parser
+                .parse(&state, b"Hello, ")
+                .unwrap()
+                .unwrap_incomplete(),
+            b"world!"
+        ),
+        Ok(ParseResult::Finished {
+            result: (),
+            remaining: &[]
+        })
+    );
+    assert_eq!(parser.parse(&state, b"Goodbye, world!"), Err(()));
+}
+
+/// A parser for an integer.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct IntegerParser {
+    range: RangeInclusive<i64>,
+}
+
+impl CreateParserState for IntegerParser {
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState {
+        IntegerParserState::default()
+    }
+}
+
+impl IntegerParser {
+    fn sign_valid(&self, positive: bool) -> bool {
+        if positive {
+            *self.range.start() >= 0
+        } else {
+            *self.range.end() <= 0
+        }
+    }
+
+    fn is_number_valid(&self, value: i64) -> bool {
+        self.range.contains(&value)
+    }
+
+    fn could_number_become_valid(&self, value: i64) -> bool {
+        if value < 0 {
+            *self.range.start() <= value
+        } else {
+            *self.range.end() >= value
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Copy, Clone, Default)]
+enum IntegerParserProgress {
+    #[default]
+    Initial,
+    AfterSign,
+    AfterDigit,
+}
+
+impl IntegerParserProgress {
+    fn is_after_digit(&self) -> bool {
+        matches!(self, IntegerParserProgress::AfterDigit)
+    }
+}
+
+/// The state of an integer parser.
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+pub struct IntegerParserState {
+    state: IntegerParserProgress,
+    value: u64,
+    positive: bool,
+}
+
+impl Default for IntegerParserState {
+    fn default() -> Self {
+        IntegerParserState {
+            state: IntegerParserProgress::Initial,
+            value: 0,
+            positive: true,
+        }
+    }
+}
+
+impl Parser for IntegerParser {
+    type Error = ();
+    type Output = i64;
+    type PartialState = IntegerParserState;
+
+    fn parse<'a>(
+        &self,
+        state: &IntegerParserState,
+        input: &'a [u8],
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+        let mut value = state.value;
+        let mut positive = state.positive;
+        let mut state = state.state;
+
+        for index in 0..input.len() {
+            let input_byte = input[index];
+            let digit = match input_byte {
+                b'0'..=b'9' => input_byte - b'0',
+                b'+' | b'-' => {
+                    if state == IntegerParserProgress::Initial {
+                        state = IntegerParserProgress::AfterSign;
+                        positive = input_byte == b'+';
+                        if !self.sign_valid(positive) {
+                            return Err(());
+                        }
+                        continue;
+                    } else {
+                        return Err(());
+                    }
+                }
+                _ => {
+                    if state.is_after_digit() {
+                        let result = value as i64 * if positive { 1 } else { -1 };
+                        if self.is_number_valid(result) {
+                            return Ok(ParseResult::Finished {
+                                result,
+                                remaining: &input[index..],
+                            });
+                        }
+                        return Err(());
+                    } else {
+                        return Err(());
+                    }
+                }
+            };
+
+            state = IntegerParserProgress::AfterDigit;
+            match value.checked_mul(10) {
+                Some(v) => value = v + u64::from(digit),
+                None => {
+                    return Err(());
+                }
+            }
+
+            if !self.could_number_become_valid(value as i64 * if positive { 1 } else { -1 }) {
+                return Err(());
+            }
+        }
+
+        Ok(ParseResult::Incomplete(IntegerParserState {
+            state,
+            value,
+            positive,
+        }))
+    }
+}
+
+#[test]
+fn integer_parser() {
+    for _ in 0..100 {
+        let random_number = rand::random::<i64>();
+
+        let parser = IntegerParser {
+            range: random_number - rand::random::<u8>() as i64
+                ..=random_number + rand::random::<u8>() as i64,
+        };
+        let mut state = IntegerParserState::default();
+
+        let mut as_string = random_number.to_string();
+        let cap_string = rand::random::<char>().to_string();
+        as_string += &cap_string;
+        let mut bytes = as_string.as_bytes().to_vec();
+        loop {
+            let take_count = rand::random::<usize>() % bytes.len();
+            let taken = bytes.drain(..take_count).collect::<Vec<_>>();
+            match parser.parse(&state, &taken) {
+                Ok(result) => match result {
+                    ParseResult::Incomplete(new_state) => {
+                        state = new_state;
+                    }
+                    ParseResult::Finished { result, remaining } => {
+                        assert_eq!(result, random_number);
+                        assert!(cap_string.as_bytes().starts_with(remaining));
+                        break;
+                    }
+                },
+                Err(_) => panic!("should parse correctly failed to parse {:?}", as_string),
+            }
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Default, Copy, Clone)]
+enum FloatParserProgress {
+    #[default]
+    Initial,
+    AfterSign,
+    AfterDigit,
+    AfterDecimalPoint {
+        digits_after_decimal_point: u32,
+    },
+}
+
+impl FloatParserProgress {
+    fn is_after_digit(&self) -> bool {
+        matches!(
+            self,
+            FloatParserProgress::AfterDigit | FloatParserProgress::AfterDecimalPoint { .. }
+        )
+    }
+}
+
+/// The state of an integer parser.
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub struct FloatParserState {
+    state: FloatParserProgress,
+    value: f64,
+    positive: bool,
+}
+
+impl Default for FloatParserState {
+    fn default() -> Self {
+        Self {
+            state: FloatParserProgress::Initial,
+            value: 0.0,
+            positive: true,
+        }
+    }
+}
+
+/// A parser for a float.
+#[derive(Debug, PartialEq, Clone)]
+pub struct FloatParser {
+    range: RangeInclusive<f64>,
+}
+
+impl CreateParserState for FloatParser {
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState {
+        FloatParserState::default()
+    }
+}
+
+impl FloatParser {
+    fn sign_valid(&self, positive: bool) -> bool {
+        if positive {
+            *self.range.start() >= 0.0
+        } else {
+            *self.range.end() <= 0.0
+        }
+    }
+
+    fn is_number_valid(&self, value: f64) -> bool {
+        self.range.contains(&value)
+    }
+
+    fn could_number_become_valid_before_decimal(&self, value: f64) -> bool {
+        if value < 0.0 {
+            *self.range.start() <= value
+        } else {
+            *self.range.end() >= value
+        }
+    }
+
+    fn could_number_become_valid_after_decimal(
+        &self,
+        value: f64,
+        digits_after_decimal_point: u32,
+    ) -> bool {
+        let distance = if value < 0.0 {
+            *self.range.start() - value
+        } else {
+            *self.range.end() - value
+        };
+
+        if distance < 10.0_f64.powi(-(digits_after_decimal_point as i32)) {
+            true
+        } else {
+            false
+        }
+    }
+}
+
+impl Parser for FloatParser {
+    type Error = ();
+    type Output = f64;
+    type PartialState = FloatParserState;
+
+    fn parse<'a>(
+        &self,
+        state: &FloatParserState,
+        input: &'a [u8],
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+        let mut value = state.value;
+        let mut positive = state.positive;
+        let mut state = state.state;
+
+        for index in 0..input.len() {
+            let input_byte = input[index];
+            let digit = match input_byte {
+                b'0'..=b'9' => input_byte - b'0',
+                b'.' => {
+                    if state == FloatParserProgress::AfterDigit {
+                        state = FloatParserProgress::AfterDecimalPoint {
+                            digits_after_decimal_point: 0,
+                        };
+                        continue;
+                    } else {
+                        return Err(());
+                    }
+                }
+                b'+' | b'-' => {
+                    if state == FloatParserProgress::Initial {
+                        state = FloatParserProgress::AfterSign;
+                        positive = input_byte == b'+';
+
+                        if !self.sign_valid(positive) {
+                            return Err(());
+                        }
+                        continue;
+                    } else {
+                        return Err(());
+                    }
+                }
+                _ => {
+                    if state.is_after_digit() {
+                        let result = value * if positive { 1.0 } else { -1.0 };
+                        if self.is_number_valid(result) {
+                            return Ok(ParseResult::Finished {
+                                result,
+                                remaining: &input[index..],
+                            });
+                        }
+                        return Ok(ParseResult::Finished {
+                            result,
+                            remaining: &input[index..],
+                        });
+                    } else {
+                        return Err(());
+                    }
+                }
+            };
+
+            match &mut state {
+                FloatParserProgress::Initial => {
+                    state = FloatParserProgress::AfterDigit;
+                    value = f64::from(digit);
+                }
+                FloatParserProgress::AfterSign => {
+                    state = FloatParserProgress::AfterDigit;
+                    value = f64::from(digit);
+                }
+                FloatParserProgress::AfterDigit => {
+                    value = value * 10.0 + f64::from(digit);
+
+                    if !self.could_number_become_valid_before_decimal(
+                        value * if positive { 1.0 } else { -1.0 },
+                    ) {
+                        return Err(());
+                    }
+                }
+                FloatParserProgress::AfterDecimalPoint {
+                    digits_after_decimal_point,
+                } => {
+                    value = value
+                        + f64::from(digit) / 10.0_f64.powi(*digits_after_decimal_point as i32 + 1);
+                    *digits_after_decimal_point += 1;
+
+                    if !self.could_number_become_valid_after_decimal(
+                        value * if positive { 1.0 } else { -1.0 },
+                        *digits_after_decimal_point,
+                    ) {
+                        return Err(());
+                    }
+                }
+            }
+        }
+
+        Ok(ParseResult::Incomplete(FloatParserState {
+            state,
+            value,
+            positive,
+        }))
+    }
+}
+
+#[test]
+fn float_parser() {
+    let parser = FloatParser {
+        range: -100.0..=100.0,
+    };
+    let state = FloatParserState::default();
+    assert_eq!(
+        parser.parse(&state, b"123"),
+        Ok(ParseResult::Incomplete(FloatParserState {
+            state: FloatParserProgress::AfterDigit,
+            value: 123.0,
+            positive: true
+        }))
+    );
+    assert_eq!(
+        parser.parse(&state, b"123.456"),
+        Ok(ParseResult::Incomplete(FloatParserState {
+            state: FloatParserProgress::AfterDecimalPoint {
+                digits_after_decimal_point: 3
+            },
+            value: 123.456,
+            positive: true
+        }))
+    );
+    assert_eq!(
+        parser.parse(
+            &parser
+                .parse(&state, b"123.456")
+                .unwrap()
+                .unwrap_incomplete(),
+            b"789x"
+        ),
+        Ok(ParseResult::Finished {
+            result: 123.456789,
+            remaining: b"x"
+        })
+    );
+    assert_eq!(
+        parser.parse(&state, b"123.456x"),
+        Ok(ParseResult::Finished {
+            result: 123.456,
+            remaining: b"x"
+        })
+    );
+    assert_eq!(parser.parse(&state, b"abc"), Err(()));
+}
+
+/// State of a sequence parser.
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+pub enum SequenceParserState<P1, P2, O1> {
+    /// The first parser is incomplete.
+    FirstParser(P1),
+    /// The first parser is finished, and the second parser is incomplete.
+    SecondParser(P2, O1),
+}
+
+impl<P1: Default, P2, O1> Default for SequenceParserState<P1, P2, O1> {
+    fn default() -> Self {
+        SequenceParserState::FirstParser(Default::default())
+    }
+}
+
+impl<
+        E,
+        O1: Clone,
+        O2,
+        PA1,
+        PA2,
+        P1: Parser<Error = E, Output = O1, PartialState = PA1> + CreateParserState,
+        P2: Parser<Error = E, Output = O2, PartialState = PA2> + CreateParserState,
+    > CreateParserState for SequenceParser<P1, P2>
+{
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState {
+        SequenceParserState::FirstParser(self.parser1.create_parser_state())
+    }
+}
+
+/// A parser for a sequence of two parsers.
+#[derive(Default, Debug, PartialEq, Eq, Copy, Clone)]
+pub struct SequenceParser<P1, P2> {
+    parser1: P1,
+    parser2: P2,
+}
+
+impl<
+        E,
+        O1: Clone,
+        O2,
+        PA1,
+        PA2,
+        P1: Parser<Error = E, Output = O1, PartialState = PA1>,
+        P2: Parser<Error = E, Output = O2, PartialState = PA2> + CreateParserState,
+    > Parser for SequenceParser<P1, P2>
+{
+    type Error = E;
+    type Output = (O1, O2);
+    type PartialState = SequenceParserState<PA1, PA2, O1>;
+
+    fn parse<'a>(
+        &self,
+        state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+        match state {
+            SequenceParserState::FirstParser(p1) => {
+                let result = self.parser1.parse(p1, input)?;
+                match result {
+                    ParseResult::Finished {
+                        result: o1,
+                        remaining,
+                    } => {
+                        let second_parser_state = self.parser2.create_parser_state();
+                        let result = self.parser2.parse(&second_parser_state, remaining)?;
+                        match result {
+                            ParseResult::Finished { result, remaining } => {
+                                Ok(ParseResult::Finished {
+                                    result: (o1, result),
+                                    remaining,
+                                })
+                            }
+                            ParseResult::Incomplete(p2) => {
+                                let new_state = SequenceParserState::SecondParser(p2, o1);
+                                Ok(ParseResult::Incomplete(new_state))
+                            }
+                        }
+                    }
+                    ParseResult::Incomplete(p1) => {
+                        let new_state = SequenceParserState::FirstParser(p1);
+                        Ok(ParseResult::Incomplete(new_state))
+                    }
+                }
+            }
+            SequenceParserState::SecondParser(p2, o1) => {
+                let result = self.parser2.parse(p2, input)?;
+                match result {
+                    ParseResult::Finished { result, remaining } => Ok(ParseResult::Finished {
+                        result: (o1.clone(), result),
+                        remaining,
+                    }),
+                    ParseResult::Incomplete(p2) => {
+                        let new_state = SequenceParserState::SecondParser(p2, o1.clone());
+                        Ok(ParseResult::Incomplete(new_state))
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn sequence_parser() {
+    let parser = SequenceParser {
+        parser1: LiteralParser { literal: "Hello, " },
+        parser2: LiteralParser { literal: "world!" },
+    };
+    let state = SequenceParserState::FirstParser(LiteralParserOffset::default());
+    assert_eq!(
+        parser.parse(&state, b"Hello, world!"),
+        Ok(ParseResult::Finished {
+            result: ((), ()),
+            remaining: &[]
+        })
+    );
+    assert_eq!(
+        parser.parse(&state, b"Hello, "),
+        Ok(ParseResult::Incomplete(SequenceParserState::SecondParser(
+            LiteralParserOffset { offset: 0 },
+            ()
+        )))
+    );
+    assert_eq!(
+        parser.parse(
+            &parser
+                .parse(&state, b"Hello, ")
+                .unwrap()
+                .unwrap_incomplete(),
+            b"world!"
+        ),
+        Ok(ParseResult::Finished {
+            result: ((), ()),
+            remaining: &[]
+        })
+    );
+    assert_eq!(parser.parse(&state, b"Goodbye, world!"), Err(()));
+}
+
+/// State of a choice parser.
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+pub struct ChoiceParserState<P1, P2, E> {
+    state1: Result<P1, E>,
+    state2: Result<P2, E>,
+}
+
+impl<P1: Default, P2: Default, E> Default for ChoiceParserState<P1, P2, E> {
+    fn default() -> Self {
+        ChoiceParserState {
+            state1: Ok(Default::default()),
+            state2: Ok(Default::default()),
+        }
+    }
+}
+
+/// A parser for a choice of two parsers.
+#[derive(Debug, PartialEq, Eq, Copy, Clone, Default)]
+pub struct ChoiceParser<P1, P2> {
+    parser1: P1,
+    parser2: P2,
+}
+
+impl<
+        E: Clone,
+        O1,
+        O2,
+        PA1,
+        PA2,
+        P1: Parser<Error = E, Output = O1, PartialState = PA1> + CreateParserState,
+        P2: Parser<Error = E, Output = O2, PartialState = PA2> + CreateParserState,
+    > CreateParserState for ChoiceParser<P1, P2>
+{
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState {
+        ChoiceParserState {
+            state1: Ok(self.parser1.create_parser_state()),
+            state2: Ok(self.parser2.create_parser_state()),
+        }
+    }
+}
+
+/// A value that can be one of two types.
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+pub enum Either<L, R> {
+    /// The value is the left type.
+    Left(L),
+    /// The value is the right type.
+    Right(R),
+}
+
+impl<
+        E: Clone,
+        O1,
+        O2,
+        PA1,
+        PA2,
+        P1: Parser<Error = E, Output = O1, PartialState = PA1>,
+        P2: Parser<Error = E, Output = O2, PartialState = PA2>,
+    > Parser for ChoiceParser<P1, P2>
+{
+    type Error = E;
+    type Output = Either<O1, O2>;
+    type PartialState = ChoiceParserState<PA1, PA2, E>;
+
+    fn parse<'a>(
+        &self,
+        state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+        match (&state.state1, &state.state2) {
+            (Ok(p1), Ok(p2)) => {
+                match (self.parser1.parse(p1, input), self.parser2.parse(p2, input)) {
+                    // If one parser finishes, we return the result of that parser
+                    (Ok(ParseResult::Finished { result, remaining }), _) => {
+                        Ok(ParseResult::Finished {
+                            result: Either::Left(result),
+                            remaining,
+                        })
+                    }
+                    (_, Ok(ParseResult::Finished { result, remaining })) => {
+                        Ok(ParseResult::Finished {
+                            result: Either::Right(result),
+                            remaining,
+                        })
+                    }
+                    // If either parser is incomplete, we return the incomplete state
+                    (Ok(ParseResult::Incomplete(p1)), Ok(ParseResult::Incomplete(p2))) => {
+                        let new_state = ChoiceParserState {
+                            state1: Ok(p1),
+                            state2: Ok(p2),
+                        };
+                        Ok(ParseResult::Incomplete(new_state))
+                    }
+                    (Ok(ParseResult::Incomplete(p1)), Err(err2)) => {
+                        let new_state = ChoiceParserState {
+                            state1: Ok(p1),
+                            state2: Err(err2),
+                        };
+                        Ok(ParseResult::Incomplete(new_state))
+                    }
+                    (Err(err1), Ok(ParseResult::Incomplete(p2))) => {
+                        let new_state = ChoiceParserState {
+                            state1: Err(err1),
+                            state2: Ok(p2),
+                        };
+                        Ok(ParseResult::Incomplete(new_state))
+                    }
+
+                    // If both parsers fail, we return the error from the first parser
+                    (Err(err1), Err(_)) => Err(err1),
+                }
+            }
+            (Ok(p1), Err(err2)) => {
+                let result = self.parser1.parse(p1, input)?;
+                match result {
+                    ParseResult::Finished { result, remaining } => Ok(ParseResult::Finished {
+                        result: Either::Left(result),
+                        remaining,
+                    }),
+                    ParseResult::Incomplete(p1) => {
+                        let new_state = ChoiceParserState {
+                            state1: Ok(p1),
+                            state2: Err(err2.clone()),
+                        };
+                        Ok(ParseResult::Incomplete(new_state))
+                    }
+                }
+            }
+            (Err(err1), Ok(p2)) => {
+                let result = self.parser2.parse(p2, input)?;
+                match result {
+                    ParseResult::Finished { result, remaining } => Ok(ParseResult::Finished {
+                        result: Either::Right(result),
+                        remaining,
+                    }),
+                    ParseResult::Incomplete(p2) => {
+                        let new_state = ChoiceParserState {
+                            state1: Err(err1.clone()),
+                            state2: Ok(p2),
+                        };
+                        Ok(ParseResult::Incomplete(new_state))
+                    }
+                }
+            }
+            (Err(_), Err(_)) => {
+                unreachable!()
+            }
+        }
+    }
+}
+
+#[test]
+fn choice_parser() {
+    let parser = ChoiceParser {
+        parser1: LiteralParser { literal: "Hello, " },
+        parser2: LiteralParser { literal: "world!" },
+    };
+    let state = ChoiceParserState::default();
+    assert_eq!(
+        parser.parse(&state, b"Hello, "),
+        Ok(ParseResult::Finished {
+            result: Either::Left(()),
+            remaining: &[]
+        })
+    );
+    assert_eq!(
+        parser.parse(&state, b"Hello, "),
+        Ok(ParseResult::Finished {
+            result: Either::Left(()),
+            remaining: &[]
+        })
+    );
+    assert_eq!(
+        parser.parse(&state, b"world!"),
+        Ok(ParseResult::Finished {
+            result: Either::Right(()),
+            remaining: &[]
+        })
+    );
+    assert_eq!(parser.parse(&state, b"Goodbye, world!"), Err(()));
+
+    let parser = ChoiceParser {
+        parser1: LiteralParser {
+            literal: "This isn't a test",
+        },
+        parser2: LiteralParser {
+            literal: "This is a test",
+        },
+    };
+    let state = ChoiceParserState::default();
+    assert_eq!(
+        parser.parse(&state, b"This isn"),
+        Ok(ParseResult::Incomplete(ChoiceParserState {
+            state1: Ok(LiteralParserOffset { offset: 8 }),
+            state2: Err(()),
+        }))
+    );
+}
 
 /// A validator for a string
 #[derive(Debug, Clone)]
 pub enum StructureParser {
     /// A literal string
     Literal(String),
-    /// A sequence of items separated by a separator
-    Sequence {
-        /// The item to parse
-        item: Box<StructureParser>,
-        /// The separator to parse
-        separator: Box<StructureParser>,
-        /// The minimum number of items to parse
-        min_len: u64,
-        /// The maximum number of items to parse
-        max_len: u64,
-    },
     /// A number
     Num {
         /// The minimum value of the number
@@ -26,13 +1018,6 @@ pub enum StructureParser {
         max: f64,
         /// If the number must be an integer
         integer: bool,
-    },
-    /// A string
-    String {
-        /// The minimum length of the string
-        min_len: u64,
-        /// The maximum length of the string
-        max_len: u64,
     },
     /// Either the first or the second parser
     Either {
@@ -50,675 +1035,173 @@ pub enum StructureParser {
     },
 }
 
-impl Validate for StructureParser {
-    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
-        match self {
-            StructureParser::Literal(text) => text.validate(tokens),
-            StructureParser::Sequence {
-                item,
-                separator,
-                min_len,
-                max_len,
-            } => {
-                let parse_sequence = Separated::new(
-                    item.as_ref(),
-                    separator.as_ref(),
-                    *min_len as usize,
-                    *max_len as usize,
-                );
+/// The state of a structure parser.
+#[allow(missing_docs)]
+#[derive(Debug, PartialEq, Clone)]
+pub enum StructureParserState {
+    Literal(LiteralParserOffset),
+    NumInt(IntegerParserState),
+    Num(FloatParserState),
+    Either(ChoiceParserState<Box<StructureParserState>, Box<StructureParserState>, ()>),
+    Then(SequenceParserState<Box<StructureParserState>, Box<StructureParserState>, ()>),
+}
 
-                parse_sequence.validate(tokens)
+impl CreateParserState for StructureParser {
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState {
+        match self {
+            StructureParser::Literal(literal) => {
+                StructureParserState::Literal(LiteralParser::from(literal).create_parser_state())
             }
             StructureParser::Num { min, max, integer } => {
-                let parse_int = ValidateInt {
-                    min: *min,
-                    max: *max,
-                    integer: *integer,
-                };
-                parse_int.validate(tokens)
-            }
-            StructureParser::String { min_len, max_len } => {
-                let parse_string = ValidateString(*min_len, *max_len);
-                parse_string.validate(tokens)
+                if *integer {
+                    StructureParserState::NumInt(
+                        IntegerParser {
+                            range: *min as i64..=*max as i64,
+                        }
+                        .create_parser_state(),
+                    )
+                } else {
+                    StructureParserState::Num(
+                        FloatParser { range: *min..=*max }.create_parser_state(),
+                    )
+                }
             }
             StructureParser::Either { first, second } => {
-                first.deref().or(second.deref()).validate(tokens)
+                StructureParserState::Either(ChoiceParserState {
+                    state1: Ok(Box::new(first.create_parser_state())),
+                    state2: Ok(Box::new(second.create_parser_state())),
+                })
             }
-            StructureParser::Then { first, second } => {
-                first.deref().then(second.deref()).validate(tokens)
-            }
+            StructureParser::Then { first, .. } => StructureParserState::Then(
+                SequenceParserState::FirstParser(Box::new(first.create_parser_state())),
+            ),
         }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct ValidateInt {
-    min: f64,
-    max: f64,
-    integer: bool,
-}
+impl Parser for StructureParser {
+    type Error = ();
+    type Output = ();
+    type PartialState = StructureParserState;
 
-impl Validate for ValidateInt {
-    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
-        let ValidateInt { min, max, integer } = *self;
-        let max_negative = max < 0.;
-        let mut iter = tokens.iter();
-        let mut current_number = 0.;
-        let mut decimal_place = 0.0;
-
-        let is_negative = iter.peek().copied() == Some('-');
-        if is_negative {
-            let _ = iter.next();
-        }
-        if !is_negative && max_negative {
-            return ParseStatus::Invalid;
-        }
-
-        fn is_invalid(max: f64, min: f64, real_number: f64, decimal_place: f64) -> bool {
-            // check if we've gone over the max and more digits would not shift the number enough
-            if real_number > max && real_number - max > decimal_place {
-                return true;
-            }
-            // check if we've gone under the min and more digits would not shift the number enough
-            if real_number < min && min - real_number > decimal_place {
-                return true;
-            }
-            false
-        }
-
-        let mut has_decimal = false;
-        let mut has_digits = false;
-
-        while let Some(c) = iter.peek() {
-            let real_number = if is_negative {
-                -current_number
-            } else {
-                current_number
-            };
-            match c {
-                '0'..='9' => {
-                    has_digits = true;
-                    let digit = c.to_digit(10).unwrap() as i64;
-                    if has_decimal {
-                        current_number += digit as f64 * decimal_place;
-                        decimal_place *= 0.1;
-                    } else {
-                        current_number = current_number * 10. + digit as f64;
-                    }
-                    let real_number = if is_negative {
-                        -current_number
-                    } else {
-                        current_number
-                    };
-                    if is_invalid(max, min, real_number, decimal_place) {
-                        return ParseStatus::Invalid;
-                    }
-                }
-                '.' => {
-                    if integer {
-                        return ParseStatus::Invalid;
-                    }
-                    if has_decimal {
-                        if has_digits {
-                            if real_number > max || real_number < min {
-                                return ParseStatus::Invalid;
-                            }
-                            return ParseStatus::Complete(Some(iter.into()));
-                        } else {
-                            return ParseStatus::Invalid;
-                        }
-                    }
-                    has_decimal = true;
-                    decimal_place = 0.1;
-                }
-                _ => {
-                    if has_digits {
-                        if real_number > max || real_number < min {
-                            return ParseStatus::Invalid;
-                        }
-                        return ParseStatus::Complete(Some(iter.into()));
-                    } else {
-                        return ParseStatus::Invalid;
-                    }
-                }
-            }
-            let _ = iter.next();
-        }
-
-        ParseStatus::Incomplete {
-            required_next: None,
-        }
-    }
-}
-
-#[test]
-fn test_parse_num() {
-    let tokens = ParseStream::new("-1234 ");
-    assert!(ValidateInt {
-        min: -2000.,
-        max: 2000.,
-        integer: true,
-    }
-    .validate(tokens)
-    .is_complete());
-
-    let tokens = ParseStream::new("1234hello");
-    assert!(ValidateInt {
-        min: -2000.,
-        max: 2000.,
-        integer: true,
-    }
-    .validate(tokens)
-    .is_complete());
-
-    let tokens = ParseStream::new("1234.0 ");
-    assert!(ValidateInt {
-        min: -2000.,
-        max: 2000.,
-        integer: false,
-    }
-    .validate(tokens)
-    .is_complete());
-
-    let tokens = ParseStream::new("1234.0.0");
-    assert!(ValidateInt {
-        min: -2000.,
-        max: 2000.,
-        integer: false,
-    }
-    .validate(tokens)
-    .is_complete());
-}
-
-struct ValidateString(u64, u64);
-
-impl Validate for ValidateString {
-    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
-        let min_len = self.0;
-        let max_len = self.1;
-        let mut iter = tokens.iter();
-        let mut escape = false;
-
-        if iter.next() != Some('"') {
-            return ParseStatus::Invalid;
-        }
-        let mut string_length = 0;
-
-        while let Some(c) = iter.peek() {
-            match c {
-                '\\' => {
-                    if string_length >= max_len {
-                        return ParseStatus::Invalid;
-                    }
-                    if escape {
-                        string_length += 1;
-                    }
-                    escape = !escape;
-                }
-                '"' => {
-                    if !escape {
-                        if string_length < min_len {
-                            return ParseStatus::Invalid;
-                        }
-                        let _ = iter.next();
-                        return ParseStatus::Complete(iter.peek().is_some().then(|| iter.into()));
-                    }
-                    string_length += 1;
-                    escape = false;
-                }
-                _ => {
-                    string_length += 1;
-                    escape = false;
-                }
-            }
-            if string_length > max_len {
-                return ParseStatus::Invalid;
-            }
-            let _ = iter.next();
-        }
-
-        ParseStatus::Incomplete {
-            required_next: None,
-        }
-    }
-}
-
-#[test]
-fn test_validate_string() {
-    let tokens = ParseStream::new("\"hello\"");
-    assert!(ValidateString(5, 5).validate(tokens).is_complete());
-
-    let tokens = ParseStream::new("\"hello world");
-    assert!(ValidateString(5, 50).validate(tokens).is_incomplete());
-
-    let tokens = ParseStream::new("hello\"");
-    assert!(ValidateString(5, 5).validate(tokens).is_invalid());
-    let tokens = ParseStream::new("\"\"");
-    assert!(StructureParser::String {
-        min_len: 1,
-        max_len: 5,
-    }
-    .validate(tokens)
-    .is_invalid());
-    let tokens = ParseStream::new("\"光");
-    assert!(StructureParser::String {
-        min_len: 1,
-        max_len: 5,
-    }
-    .validate(tokens)
-    .is_incomplete());
-    let tokens = ParseStream::new("\"hello ");
-    assert!(StructureParser::String {
-        min_len: 1,
-        max_len: 5,
-    }
-    .validate(tokens)
-    .is_invalid());
-    let tokens = ParseStream::new("\"\ndef!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-    assert!(StructureParser::String {
-        min_len: 1,
-        max_len: 5,
-    }
-    .validate(tokens)
-    .is_invalid());
-
-    // Test escaping
-    let stream = ParseStream::new("\"hello \\\"world\\\"\"");
-    assert!(ValidateString(14, 14).validate(stream.clone()).is_invalid());
-    assert!(ValidateString(13, 13)
-        .validate(stream.clone())
-        .is_complete());
-    assert!(ValidateString(12, 12).validate(stream).is_invalid());
-    let stream = ParseStream::new("\"hello \\");
-    assert!(ValidateString(6, 6).validate(stream.clone()).is_invalid());
-    assert!(ValidateString(7, 7)
-        .validate(stream.clone())
-        .is_incomplete());
-}
-
-/// The status of a the parser.
-#[derive(Debug)]
-pub enum ParseStatus<'a> {
-    /// The parser is incomplete, but valid so far
-    Incomplete {
-        /// The next token that is required to complete the parser.
-        required_next: Option<String>,
-    },
-    /// The parser is complete with the given tokens left over.
-    Complete(Option<ParseStream<'a>>),
-    /// The parser is invalid.
-    Invalid,
-}
-
-#[allow(unused)]
-impl ParseStatus<'_> {
-    /// Check if this status is complete.
-    pub fn is_complete(&self) -> bool {
-        matches!(self, ParseStatus::Complete(_))
-    }
-
-    /// Check if this status is invalid.
-    pub fn is_invalid(&self) -> bool {
-        matches!(self, ParseStatus::Invalid)
-    }
-
-    /// Check if this status is incomplete.
-    pub fn is_incomplete(&self) -> bool {
-        matches!(self, ParseStatus::Incomplete { .. })
-    }
-}
-
-/// A stream of tokens that can be parsed.
-#[derive(Debug, Clone)]
-pub struct ParseStream<'a> {
-    chars: Peekable<Chars<'a>>,
-}
-
-impl<'a> From<Peekable<Chars<'a>>> for ParseStream<'a> {
-    fn from(chars: Peekable<Chars<'a>>) -> Self {
-        Self { chars }
-    }
-}
-
-impl<'a> ParseStream<'a> {
-    /// Create a new `ParseStream` from a string.
-    pub fn new(token: &'a str) -> Self {
-        Self {
-            chars: token.chars().peekable(),
-        }
-    }
-
-    /// Get an iterator over the remaining characters.
-    pub fn iter(&self) -> Peekable<Chars<'a>> {
-        self.chars.clone()
-    }
-
-    /// Check if this stream is empty.
-    pub fn is_empty(&mut self) -> bool {
-        self.chars.peek().is_none()
-    }
-}
-
-/// A struct that checks if a set of tokens can be parsed.
-pub trait Validate {
-    /// Check if this parser can parse the given tokens.
-    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a>;
-
-    /// Parse this parser, or another other parser.
-    fn or<V: Validate>(self, other: V) -> Or<Self, V>
+    fn parse<'a>(
+        &self,
+        state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error>
     where
         Self: Sized,
     {
-        Or(self, other)
-    }
-
-    /// Parse this parser, then the other parser.
-    fn then<V: Validate>(self, other: V) -> Then<Self, V>
-    where
-        Self: Sized,
-    {
-        Then(self, other)
-    }
-
-    /// Erase the type of this parser and return a boxed dynamic parser.
-    fn boxed<'a>(self) -> BoxedValidate<'a>
-    where
-        Self: Sized + 'a,
-    {
-        BoxedValidate(Box::new(self))
-    }
-}
-
-/// A boxed dynamic Validater.
-pub struct BoxedValidate<'a>(pub(crate) Box<dyn Validate + 'a>);
-
-impl<'j> Validate for BoxedValidate<'j> {
-    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
-        self.0.validate(tokens)
-    }
-}
-
-impl<V: Validate> Validate for &V {
-    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
-        (*self).validate(tokens)
-    }
-}
-
-struct Anonymous<F>(RefCell<F>);
-
-#[allow(unused)]
-impl<'a, F> Anonymous<F>
-where
-    F: FnMut(ParseStream<'a>) -> ParseStatus<'a>,
-{
-    fn new(f: F) -> Self {
-        Self(RefCell::new(f))
-    }
-}
-
-impl<F> Validate for Anonymous<F>
-where
-    F: for<'a> FnMut(ParseStream<'a>) -> ParseStatus<'a>,
-{
-    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
-        (self.0.borrow_mut())(tokens)
-    }
-}
-
-/// A parser that will parse the first parser, then the second parser.
-pub struct Then<A: Validate, B: Validate>(A, B);
-
-impl<A: Validate, B: Validate> Validate for Then<A, B> {
-    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
-        match self.0.validate(tokens) {
-            ParseStatus::Complete(Some(tokens)) => self.1.validate(tokens),
-            ParseStatus::Complete(None) => ParseStatus::Incomplete {
-                required_next: None,
-            },
-            ParseStatus::Invalid => ParseStatus::Invalid,
-            ParseStatus::Incomplete { required_next } => ParseStatus::Incomplete { required_next },
-        }
-    }
-}
-
-/// A parser that will parse either the first or the second parser.
-pub struct Or<A: Validate, B: Validate>(A, B);
-
-impl<A: Validate, B: Validate> Validate for Or<A, B> {
-    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
-        match self.0.validate(tokens.clone()) {
-            ParseStatus::Complete(tokens) => ParseStatus::Complete(tokens),
-            ParseStatus::Invalid => self.1.validate(tokens),
-            ParseStatus::Incomplete { required_next } => match self.1.validate(tokens) {
-                ParseStatus::Invalid => ParseStatus::Incomplete { required_next },
-                _ => ParseStatus::Incomplete {
-                    required_next: None,
+        match (self, state) {
+            (StructureParser::Literal(lit_parser), StructureParserState::Literal(state)) => {
+                LiteralParser::from(lit_parser)
+                    .parse(state, input)
+                    .map(|result| match result {
+                        ParseResult::Finished { result, remaining } => {
+                            ParseResult::Finished { result, remaining }
+                        }
+                        ParseResult::Incomplete(parser) => {
+                            ParseResult::Incomplete(StructureParserState::Literal(parser))
+                        }
+                    })
+            }
+            (
+                StructureParser::Num {
+                    min,
+                    max,
+                    integer: false,
                 },
-            },
-        }
-    }
-}
-
-impl Validate for String {
-    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
-        self.as_str().validate(tokens)
-    }
-}
-
-impl Validate for &str {
-    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
-        let mut iter = tokens.iter();
-        let mut chars = self.chars();
-
-        let result = loop {
-            let next_char = match iter.peek() {
-                Some(c) => c,
-                None => {
-                    let remaining = chars.as_str().to_string();
-                    break if chars.next().is_none() {
-                        ParseStatus::Complete(None)
-                    } else {
-                        ParseStatus::Incomplete {
-                            required_next: (!remaining.is_empty()).then_some(remaining),
+                StructureParserState::Num(state),
+            ) => {
+                FloatParser { range: *min..=*max }
+                    .parse(state, input)
+                    .map(|result| match result {
+                        ParseResult::Finished { remaining, .. } => ParseResult::Finished {
+                            result: (),
+                            remaining,
+                        },
+                        ParseResult::Incomplete(parser) => {
+                            ParseResult::Incomplete(StructureParserState::Num(parser))
                         }
-                    };
+                    })
+            }
+            (
+                StructureParser::Num {
+                    min,
+                    max,
+                    integer: true,
+                },
+                StructureParserState::NumInt(int),
+            ) => IntegerParser {
+                range: *min as i64..=*max as i64,
+            }
+            .parse(int, input)
+            .map(|result| match result {
+                ParseResult::Finished { remaining, .. } => ParseResult::Finished {
+                    result: (),
+                    remaining,
+                },
+                ParseResult::Incomplete(parser) => {
+                    ParseResult::Incomplete(StructureParserState::NumInt(parser))
                 }
-            };
-
-            let my_char = match chars.next() {
-                Some(c) => c,
-                None => break ParseStatus::Complete(Some(iter.into())),
-            };
-
-            if my_char != *next_char {
-                break ParseStatus::Invalid;
+            }),
+            (StructureParser::Either { first, second }, StructureParserState::Either(state)) => {
+                let state = ChoiceParserState {
+                    state1: match &state.state1 {
+                        Ok(state) => Ok((**state).clone()),
+                        Err(()) => Err(()),
+                    },
+                    state2: match &state.state2 {
+                        Ok(state) => Ok((**state).clone()),
+                        Err(()) => Err(()),
+                    },
+                };
+                let parser = ChoiceParser {
+                    parser1: first.clone(),
+                    parser2: second.clone(),
+                };
+                match parser.parse(&state, input) {
+                    Ok(ParseResult::Incomplete(state)) => Ok(ParseResult::Incomplete(
+                        StructureParserState::Either(ChoiceParserState {
+                            state1: state.state1.map(Box::new),
+                            state2: state.state2.map(Box::new),
+                        }),
+                    )),
+                    Ok(ParseResult::Finished { remaining, .. }) => Ok(ParseResult::Finished {
+                        result: (),
+                        remaining,
+                    }),
+                    Err(_) => Err(()),
+                }
             }
-
-            let _ = iter.next();
-        };
-
-        result
-    }
-}
-
-/// A parser that will parse an item surrounded by a start and end.
-pub struct Between<S: Validate, I: Validate, E: Validate> {
-    start: S,
-    inner: I,
-    end: E,
-}
-
-impl<S: Validate, I: Validate, E: Validate> Between<S, I, E> {
-    /// Create a new `Between` parser. This parser will parse the start, then the inner, then the end.
-    pub fn new(start: S, inner: I, end: E) -> Self {
-        Between { start, inner, end }
-    }
-}
-
-impl<S: Validate, I: Validate, E: Validate> Validate for Between<S, I, E> {
-    #[tracing::instrument(skip(self), level = "info")]
-    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
-        (&self.start)
-            .then(&self.inner)
-            .then(&self.end)
-            .validate(tokens)
-    }
-}
-
-struct Separated<S: Validate, I: Validate> {
-    inner: I,
-    separator: S,
-    min: usize,
-    max: usize,
-}
-
-impl<S: Validate, I: Validate> Separated<S, I> {
-    fn new(inner: I, separator: S, min: usize, max: usize) -> Self {
-        Separated {
-            inner,
-            separator,
-            min,
-            max,
-        }
-    }
-}
-
-impl<S: Validate, I: Validate> Validate for Separated<S, I> {
-    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
-        let mut tokens = tokens;
-        let mut count = 0;
-        loop {
-            if count >= self.max {
-                return ParseStatus::Complete(Some(tokens));
-            }
-            // first parse an item
-            match self.inner.validate(tokens.clone()) {
-                // if we get a complete item, then we can parse a separator
-                ParseStatus::Complete(Some(new_tokens)) => {
-                    count += 1;
-                    match self.separator.validate(new_tokens.clone()) {
-                        // if we get a complete separator, then we can parse another item
-                        ParseStatus::Complete(Some(new_tokens)) => tokens = new_tokens,
-                        // if we get a complete separator with no tokens, then we are done
-                        ParseStatus::Complete(None) => {
-                            if count >= self.min {
-                                return ParseStatus::Complete(Some(tokens));
-                            } else {
-                                return ParseStatus::Incomplete {
-                                    required_next: None,
-                                };
+            (StructureParser::Then { first, second }, StructureParserState::Then(state)) => {
+                let state = SequenceParserState::FirstParser(match &state {
+                    SequenceParserState::FirstParser(state) => (**state).clone(),
+                    SequenceParserState::SecondParser(state, _) => (**state).clone(),
+                });
+                let parser = SequenceParser {
+                    parser1: first.clone(),
+                    parser2: second.clone(),
+                };
+                match parser.parse(&state, input) {
+                    Ok(ParseResult::Incomplete(state)) => Ok(ParseResult::Incomplete(
+                        StructureParserState::Then(match state {
+                            SequenceParserState::FirstParser(state) => {
+                                SequenceParserState::FirstParser(Box::new(state))
                             }
-                        }
-                        // if we get an invalid separator, then this is the end of the list
-                        ParseStatus::Invalid => {
-                            if count >= self.min {
-                                return ParseStatus::Complete(Some(new_tokens));
-                            } else {
-                                return ParseStatus::Invalid;
+                            SequenceParserState::SecondParser(state, _) => {
+                                SequenceParserState::SecondParser(Box::new(state), ())
                             }
-                        }
-                        // if we get an incomplete separator, then we need to wait for more tokens
-                        ParseStatus::Incomplete { required_next } => {
-                            return ParseStatus::Incomplete { required_next }
-                        }
-                    }
-                }
-                ParseStatus::Complete(None) => {
-                    count += 1;
-                    if count >= self.min {
-                        // if we get a complete item with no tokens and enough items, then we are done
-                        return ParseStatus::Complete(None);
-                    } else {
-                        return ParseStatus::Invalid;
-                    }
-                }
-                ParseStatus::Invalid => {
-                    return ParseStatus::Invalid;
-                }
-                ParseStatus::Incomplete { required_next } => {
-                    return ParseStatus::Incomplete { required_next }
+                        }),
+                    )),
+                    Ok(ParseResult::Finished { remaining, .. }) => Ok(ParseResult::Finished {
+                        result: (),
+                        remaining,
+                    }),
+                    Err(_) => Err(()),
                 }
             }
+            _ => unreachable!(),
         }
-    }
-}
-
-#[test]
-fn test_string() {
-    {
-        let tokens = "abcdefghiw";
-        let stream = ParseStream::new(tokens);
-
-        let string = "abc";
-        assert!(string.validate(stream).is_complete());
-    }
-
-    {
-        let stream = ParseStream::new("def");
-
-        let string = "def";
-        assert!(string.validate(stream).is_complete());
-    }
-
-    {
-        let stream = ParseStream::new("def");
-
-        let string = "definition";
-        assert!(string.validate(stream).is_incomplete());
-    }
-
-    {
-        let stream = ParseStream::new("dfe");
-
-        let string = "defin";
-        assert!(string.validate(stream).is_invalid());
-    }
-}
-
-#[test]
-fn test_separated() {
-    let should_parse = [(3, "a,a,a"), (2, "a,a,"), (1, "a,")];
-    for (count, tokens) in should_parse {
-        let stream = ParseStream::new(tokens);
-
-        let separated = Separated {
-            inner: "a",
-            separator: ",",
-            min: count,
-            max: count,
-        };
-
-        assert!(dbg!(separated.validate(dbg!(stream))).is_complete());
-    }
-}
-
-#[test]
-fn test_separated_string() {
-    let should_parse = [(3, "\"a\",\"a\",\"a\""), (2, "\"a\",\"a\","), (1, "\"a\",")];
-    for (count, tokens) in should_parse {
-        let stream = ParseStream::new(tokens);
-
-        let separated = Separated {
-            inner: ValidateString(1, 3),
-            separator: ",",
-            min: count,
-            max: count,
-        };
-
-        assert!(dbg!(separated.validate(dbg!(stream))).is_complete());
-    }
-
-    let should_be_incomplete = [(3, "\"a\",\"a\",\"a"), (2, "\"a\",\"a"), (1, "\"_")];
-    for (count, tokens) in should_be_incomplete {
-        let stream = ParseStream::new(tokens);
-
-        let separated = Separated {
-            inner: ValidateString(1, 3),
-            separator: ",",
-            min: count,
-            max: count,
-        };
-
-        assert!(dbg!(separated.validate(dbg!(stream))).is_incomplete());
     }
 }

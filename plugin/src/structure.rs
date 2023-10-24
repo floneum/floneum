@@ -18,10 +18,6 @@ impl State {
                 max: num.max,
                 integer: num.integer,
             }),
-            StructureType::Str(str) => Some(StructureParser::String {
-                min_len: str.min,
-                max_len: str.max,
-            }),
             StructureType::Literal(literal) => Some(StructureParser::Literal(literal.clone())),
             StructureType::Or(or) => Some(StructureParser::Either {
                 first: Box::new(self.get_full_structured_parser(&or.first)?),
@@ -30,12 +26,6 @@ impl State {
             StructureType::Then(then) => Some(StructureParser::Then {
                 first: Box::new(self.get_full_structured_parser(&then.first)?),
                 second: Box::new(self.get_full_structured_parser(&then.second)?),
-            }),
-            StructureType::Sequence(sequence) => Some(StructureParser::Sequence {
-                item: Box::new(self.get_full_structured_parser(&sequence.item)?),
-                separator: Box::new(self.get_full_structured_parser(&sequence.separator)?),
-                min_len: sequence.min_len,
-                max_len: sequence.max_len,
             }),
         }
     }
@@ -48,14 +38,6 @@ impl main::types::HostStructure for State {
         num: main::types::NumberParameters,
     ) -> wasmtime::Result<wasmtime::component::Resource<Structure>> {
         let idx = self.structures.insert(StructureType::Num(num));
-        Ok(wasmtime::component::Resource::new_own(idx as u32))
-    }
-
-    async fn str(
-        &mut self,
-        str: main::types::UnsignedRange,
-    ) -> wasmtime::Result<wasmtime::component::Resource<Structure>> {
-        let idx = self.structures.insert(StructureType::Str(str));
         Ok(wasmtime::component::Resource::new_own(idx as u32))
     }
 
@@ -80,14 +62,6 @@ impl main::types::HostStructure for State {
         then: main::types::ThenStructure,
     ) -> wasmtime::Result<wasmtime::component::Resource<Structure>> {
         let idx = self.structures.insert(StructureType::Then(then));
-        Ok(wasmtime::component::Resource::new_own(idx as u32))
-    }
-
-    async fn sequence(
-        &mut self,
-        sequence: main::types::SequenceParameters,
-    ) -> wasmtime::Result<wasmtime::component::Resource<Structure>> {
-        let idx = self.structures.insert(StructureType::Sequence(sequence));
         Ok(wasmtime::component::Resource::new_own(idx as u32))
     }
 

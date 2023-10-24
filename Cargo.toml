@@ -47,6 +47,7 @@ dioxus-std = { git = "https://github.com/DioxusLabs/dioxus-std/", version = "0.4
 dioxus-core = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
 dioxus-rsx = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
 dioxus = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
+llm-samplers = { git = "https://github.com/ealmloff/llm-samplers" }
 
 [workspace]
 members = [
@@ -111,6 +112,11 @@ members = [
     "plugins/string",
 ]
 
+[workspace.dependencies]
+candle-core = { git = "https://github.com/huggingface/candle" }
+candle-nn = { git = "https://github.com/huggingface/candle" }
+candle-transformers = { git = "https://github.com/huggingface/candle" }
+
 # The profile that 'cargo dist' will build with
 [profile.dist]
 inherits = "release"
@@ -119,10 +125,10 @@ lto = "thin"
 [profile.release]
 lto = true
 # panic = "abort"
-# opt-level = 3
-opt-level = 'z'
+opt-level = 3
+# opt-level = 'z'
 # strip = true
-# debug = true
+debug = true
 codegen-units = 1
 
 [profile.dev.package."*"]

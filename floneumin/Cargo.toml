@@ -12,10 +12,11 @@ tokio = { version = "1.32.0", features = ["full"] }
 futures-util = "0.3.28"
 anyhow = "1.0.75"
 floneumin-streams = { path = "../floneumin-streams" }
+rand = "0.8.5"
 
 [dev-dependencies]
 tracing-subscriber = "0.2"
-llm-samplers = "=0.0.6"
+llm-samplers = { git = "https://github.com/ealmloff/llm-samplers" }
 
 [features]
 metal = ["floneumin-language/metal"]

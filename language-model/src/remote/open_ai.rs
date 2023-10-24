@@ -40,6 +40,7 @@ macro_rules! openai_model {
         #[async_trait::async_trait]
         impl crate::model::Model for $ty {
             type TextStream = MappedResponseStream;
+            type SyncModel = crate::SyncModelNotSupported;
 
             fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
                 panic!("OpenAI does not expose tokenization")
@@ -57,7 +58,6 @@ macro_rules! openai_model {
                     .stream(true)
                     .frequency_penalty(generation_parameters.repetition_penalty)
                     .temperature(generation_parameters.temperature)
-                    .top_p(generation_parameters.top_p)
                     .stop(
                         generation_parameters
                             .stop_on

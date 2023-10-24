@@ -6,9 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-candle-core = { git = "https://github.com/huggingface/candle" }
-candle-nn = { git = "https://github.com/huggingface/candle" }
-candle-transformers = { git = "https://github.com/huggingface/candle" }
+candle-core.workspace = true
+candle-nn.workspace = true
+candle-transformers.workspace = true
 tokenizers = { version = "0.13.4" }
 hf-hub = "0.3.0"
 
@@ -22,7 +22,7 @@ tracing = "0.1.37"
 serde_json = "1.0.106"
 rand = "0.8.5"
 tokio = { version = "1.32.0", features = ["full"] }
-llm-samplers = "=0.0.6"
+llm-samplers = { git = "https://github.com/ealmloff/llm-samplers" }
 async-trait = "0.1.73"
 floneumin-sample = { path = "../floneumin-sample" }
 floneumin-language-model = { path = "../language-model" }

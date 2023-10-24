@@ -1,5 +1,4 @@
 use crate::context::SearchQuery;
-use crate::floneumin_sample::StructureParser;
 use crate::index::IntoDocuments;
 use crate::tool::Tool;
 
@@ -21,18 +20,12 @@ impl Tool for WebSearchTool {
         "Web Search".to_string()
     }
 
-    fn description(&self) -> String {
-        "Search the web for a query.\nUse tool with:\nAction: Web Search\nAction Input: the search query\nExample:\n\nQuestion: What is Floneum?\nThought: I don't remember what Floneum is. I should search the web for it.\nAction: Web Search\nAction Input: What is Floneum?\nObservation: Floneum is a visual editor for AI workflows.\nThought: I now know that Floneum is a visual editor for AI workflows.\nFinal Answer: Floneum is a visual editor for AI workflows.".to_string()
+    fn input_prompt(&self) -> String {
+        "Search query: ".to_string()
     }
 
-    fn constraints(&self) -> StructureParser {
-        StructureParser::Then {
-            first: Box::new(StructureParser::Literal("Search Query".to_string())),
-            second: Box::new(StructureParser::String {
-                min_len: 1,
-                max_len: 100,
-            }),
-        }
+    fn description(&self) -> String {
+        "Search the web for a query.\nUse tool with:\nAction: Web Search\nSearch query: the search query\nExample:\n\nQuestion: What is Floneum?\nThought: I don't remember what Floneum is. I should search the web for it.\nAction: Web Search\nAction Input: What is Floneum?\nObservation: Floneum is a visual editor for AI workflows.\nThought: I now know that Floneum is a visual editor for AI workflows.\nFinal Answer: Floneum is a visual editor for AI workflows.".to_string()
     }
 
     async fn run(&mut self, query: &str) -> String {

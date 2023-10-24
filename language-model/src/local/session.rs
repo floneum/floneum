@@ -1,6 +1,5 @@
 use crate::embedding::VectorSpace;
 use crate::{embedding::get_embeddings, embedding::Embedding};
-use floneumin_sample::{ParseStatus, ParseStream, Validate};
 use floneumin_streams::ChannelTextStream;
 use llm::Tokenizer;
 use llm_samplers::prelude::*;
@@ -151,17 +150,6 @@ impl<S: VectorSpace + Send + Sync + 'static> LocalSession<S> {
             .map_err(|_| anyhow::anyhow!("Failed to receive result"))
     }
 }
-
-/// A wrapper around a [`Validate`] trait object that implements [`Clone`].
-#[derive(Clone)]
-pub struct ArcValidate(pub(crate) Arc<dyn Validate + Send + Sync + 'static>);
-
-impl Validate for ArcValidate {
-    fn validate<'a>(&self, tokens: ParseStream<'a>) -> ParseStatus<'a> {
-        self.0.validate(tokens)
-    }
-}
-
 enum Task<S: VectorSpace> {
     Kill,
     Infer {

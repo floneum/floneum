@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 bytesize = "1.2.0"
 futures-util = "0.3.28"
-llm-samplers = "=0.0.6"
+llm-samplers = { git = "https://github.com/ealmloff/llm-samplers" }
 log = "0.4.17"
 rand = "0.8.5"
 reqwest = { version = "0.11.18", features = ["stream", "json"] }
@@ -36,7 +36,7 @@ llm = { git = "https://github.com/rustformers/llm" }
 floneumite = { path = "../floneumite" }
 floneumin-language-model = { path = "../language-model" }
 headless_chrome = { git = "https://github.com/atroche/rust-headless-chrome", rev = "6bbefaf04a4906420bf21de25ae8d0c1bc70721c", features = ["fetch"] }
-candle-core = { git = "https://github.com/huggingface/candle" }
+candle-core.workspace = true
 tokio-util = { version = "0.7.9", features = ["rt"] }
 crossbeam = "0.8.2"
 dashmap = "5.5.3"

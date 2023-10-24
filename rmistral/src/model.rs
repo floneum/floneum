@@ -1,22 +1,66 @@
 use anyhow::{Error as E, Result};
+use llm_samplers::{
+    prelude::Logits,
+    types::{HasSamplerResources, Sampler, SamplerError},
+};
+use std::fmt::{Debug, Formatter};
 
 use candle_transformers::models::quantized_mistral::Model;
 
 use candle_core::{DType, Device, Tensor};
-use candle_transformers::generation::LogitsProcessor;
+use floneumin_language_model::SyncModel;
+use rand::SeedableRng;
 use tokenizers::Tokenizer;
 
 use crate::InferenceSettings;
 
-pub(crate) struct MistralInner {
+/// The inner, synchronous Mistral model.
+pub struct MistralModel {
     model: Model,
     device: Device,
     tokenizer: Tokenizer,
 }
 
-impl MistralInner {
+impl SyncModel for MistralModel {
+    fn feed_text(&mut self, prompt: &str) -> anyhow::Result<Logits<u32, f32>> {
+        let tokens = self
+            .tokenizer
+            .encode(&*prompt, true)
+            .map_err(E::msg)?
+            .get_ids()
+            .to_vec();
+
+        self.forward(&tokens)
+    }
+
+    fn reset(&mut self) {
+        todo!()
+    }
+
+    fn stop_token(&self) -> anyhow::Result<u32> {
+        let eos_token = match self.tokenizer.get_vocab(true).get("</s>") {
+            Some(token) => *token,
+            None => anyhow::bail!("cannot find the </s> token"),
+        };
+        Ok(eos_token)
+    }
+}
+
+impl MistralModel {
+    fn forward(&mut self, tokens: &[u32]) -> anyhow::Result<Logits<u32, f32>> {
+        if tokens.is_empty() {
+            return Err(anyhow::anyhow!("Cannot run model on empty input"));
+        }
+
+        let input = Tensor::new(tokens, &self.device)?.unsqueeze(0)?;
+        let logits = self.model.forward(&input, todo!())?;
+        let logits = logits.squeeze(0)?.squeeze(0)?.to_dtype(DType::F32)?;
+        let logits: Vec<f32> = logits.to_vec1()?;
+        Ok(Logits::try_from_iter(logits)?)
+    }
+
     #[allow(clippy::too_many_arguments)]
-    pub fn new(model: Model, tokenizer: Tokenizer, device: Device) -> Self {
+    pub(crate) fn new(model: Model, tokenizer: Tokenizer, device: Device) -> Self {
         Self {
             model,
             device,
@@ -24,58 +68,44 @@ impl MistralInner {
         }
     }
 
-    pub async fn _infer(
+    pub(crate) fn _infer(
         &mut self,
-        inference_settings: &InferenceSettings,
+        settings: InferenceSettings,
+        mut sampler: std::sync::Arc<std::sync::Mutex<dyn llm_samplers::prelude::Sampler<u32, f32>>>,
         out: tokio::sync::mpsc::UnboundedSender<String>,
     ) -> Result<()> {
         let InferenceSettings {
             prompt,
-            temperature,
-            top_p,
-            seed,
             sample_len,
-            repeat_penalty,
-            repeat_last_n,
-            ..
-        } = inference_settings;
+            seed,
+            stop_on,
+        } = settings;
 
-        let eos_token = match self.tokenizer.get_vocab(true).get("</s>") {
-            Some(token) => *token,
-            None => anyhow::bail!("cannot find the </s> token"),
-        };
-
-        let mut logits_processor = LogitsProcessor::new(*seed, *temperature, *top_p);
         let mut tokens = self
             .tokenizer
-            .encode(&**prompt, true)
+            .encode(&*prompt, true)
             .map_err(E::msg)?
             .get_ids()
             .to_vec();
 
+        let eos_token = self.stop_token()?;
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        let mut text = String::new();
         let mut prev_index = 0;
         let mut current_index = 0;
-
-        for index in 0..*sample_len {
+        for index in 0..sample_len {
             let context_size = if index > 0 { 1 } else { tokens.len() };
             let start_pos = tokens.len().saturating_sub(context_size);
             let ctxt = &tokens[start_pos..];
-            let input = Tensor::new(ctxt, &self.device)?.unsqueeze(0)?;
-            let logits = self.model.forward(&input, start_pos)?;
-            let logits = logits.squeeze(0)?.squeeze(0)?.to_dtype(DType::F32)?;
-            let logits = if *repeat_penalty == 1. {
-                logits
-            } else {
-                let start_at = tokens.len().saturating_sub(*repeat_last_n);
-                candle_transformers::utils::apply_repeat_penalty(
-                    &logits,
-                    *repeat_penalty,
-                    &tokens[start_at..],
-                )?
-            };
-
-            let next_token = logits_processor.sample(&logits)?;
-            tokens.push(next_token);
+            let logits = self.forward(&ctxt)?;
+            let next_token = sample_token(
+                &mut sampler,
+                &mut rng,
+                &tokens,
+                logits,
+                stop_on.as_deref(),
+                &self.tokenizer,
+            )?;
             if next_token == eos_token {
                 break;
             }
@@ -85,30 +115,120 @@ impl MistralInner {
                 let tokens = &tokens[prev_index..current_index];
                 self.tokenizer.decode(tokens, true).map_err(E::msg)?
             };
-            let text = self
+            tokens.push(next_token);
+            let token_text = self
                 .tokenizer
                 .decode(&tokens[prev_index..], true)
                 .map_err(E::msg)?;
-            if text.len() > prev_text.len() && text.chars().last().unwrap().is_ascii() {
-                let text = text.split_at(prev_text.len());
+            let token = if token_text.len() > prev_text.len()
+                && token_text.chars().last().unwrap().is_ascii()
+            {
+                let text = token_text.split_at(prev_text.len());
                 prev_index = current_index;
                 current_index = tokens.len();
-                let token = text.1.to_string();
-                if out.send(token).is_err() {
-                    return Ok(());
+                text.1.to_string()
+            } else {
+                continue;
+            };
+
+            let mut should_stop = false;
+            // We only need to keep as many bytes as the stop_on string
+            if let Some(stop_on) = &stop_on {
+                text.push_str(&token);
+                should_stop = text.ends_with(stop_on);
+
+                if text.len() > stop_on.len() {
+                    text = text[text.len() - stop_on.len()..].to_string();
                 }
             }
-        }
-
-        // send the rest of the tokens
-        let token = self
-            .tokenizer
-            .decode(&tokens[prev_index..], true)
-            .map_err(E::msg)?;
-        if out.send(token).is_err() {
-            return Ok(());
+            out.send(token).unwrap();
+            if should_stop {
+                break;
+            }
         }
 
         Ok(())
     }
+}
+
+struct SamplerResources<'a, 'b, R: rand::Rng> {
+    rng: &'a mut R,
+    previous_tokens: &'b [u32],
+}
+
+impl<R> Debug for SamplerResources<'_, '_, R>
+where
+    R: rand::Rng,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SamplerResources")
+            .field("previous_tokens", &self.previous_tokens)
+            .finish()
+    }
+}
+
+impl<R> HasSamplerResources for SamplerResources<'_, '_, R>
+where
+    R: rand::Rng,
+{
+    type TokenId = u32;
+
+    fn with_rng_mut(
+        &mut self,
+        fun: &mut dyn FnMut(&mut dyn rand::RngCore),
+    ) -> Result<(), SamplerError> {
+        fun(self.rng);
+        Ok(())
+    }
+
+    fn with_last_tokens(&self, fun: &mut dyn FnMut(&[Self::TokenId])) -> Result<(), SamplerError> {
+        fun(self.previous_tokens);
+        Ok(())
+    }
+}
+
+pub fn sample_token(
+    sampler: &mut impl Sampler<u32, f32>,
+    rng: &mut impl rand::Rng,
+    previous_tokens: &[u32],
+    mut last_logits: Logits<u32, f32>,
+    stop_on: Option<&str>,
+    tokenizer: &Tokenizer,
+) -> anyhow::Result<u32> {
+    let mut end_tokens = String::new();
+    // grab as many characters as the stop_on string has from the end of the previous tokens
+    if let Some(stop_on) = stop_on {
+        let required_len = stop_on.len();
+        let mut previous_token_iter = previous_tokens.iter().rev();
+        while end_tokens.len() < required_len {
+            match previous_token_iter.next() {
+                Some(token) => {
+                    end_tokens = tokenizer.decode(&[*token], true).map_err(E::msg)? + &end_tokens;
+                }
+                None => {
+                    break;
+                }
+            }
+        }
+    }
+    for logit in last_logits.iter_mut() {
+        let tid = logit.token_id;
+        if let Some(stop_on) = stop_on {
+            let token = tokenizer.decode(&[tid as u32], true).unwrap();
+            let combined = end_tokens.clone() + &token;
+            if combined.contains(stop_on) && !combined.ends_with(stop_on) {
+                // if the token contains a stop_on token, but not the end of the string, set the probability to 0
+                logit.prob = 0.0;
+            }
+        }
+    }
+    last_logits
+        .sample_token(
+            &mut SamplerResources {
+                previous_tokens,
+                rng,
+            },
+            sampler,
+        )?
+        .ok_or_else(|| anyhow::anyhow!("No token sampled"))
 }

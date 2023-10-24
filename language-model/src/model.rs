@@ -3,6 +3,7 @@ use crate::UnknownVectorSpace;
 use floneumin_sample::Tokenizer;
 use futures_util::{Stream, StreamExt};
 use llm_samplers::prelude::Sampler;
+use llm_samplers::types::Logits;
 use std::future::IntoFuture;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -120,15 +121,21 @@ impl<'a, M: Model> StreamTextBuilder<'a, M> {
         self
     }
 
-    /// Set the top-k to use when generating text.
-    pub fn with_top_k(mut self, top_k: u32) -> Self {
-        self.parameters.top_k = top_k;
+    /// Set the mu to use when generating text.
+    pub fn with_mu(mut self, mu: f32) -> Self {
+        self.parameters.mu = mu;
         self
     }
 
-    /// Set the top-p to use when generating text.
-    pub fn with_top_p(mut self, top_p: f32) -> Self {
-        self.parameters.top_p = top_p;
+    /// Set the tau to use when generating text.
+    pub fn with_tau(mut self, tau: f32) -> Self {
+        self.parameters.tau = tau;
+        self
+    }
+
+    /// Set the eta to use when generating text.
+    pub fn with_eta(mut self, eta: f32) -> Self {
+        self.parameters.eta = eta;
         self
     }
 
@@ -218,15 +225,21 @@ impl<'a, M: Model> GenerateTextBuilder<'a, M> {
         self
     }
 
-    /// Set the top-k to use when generating text.
-    pub fn with_top_k(mut self, top_k: u32) -> Self {
-        self.parameters.top_k = top_k;
+    /// Set the mu to use when generating text.
+    pub fn with_mu(mut self, mu: f32) -> Self {
+        self.parameters.mu = mu;
         self
     }
 
-    /// Set the top-p to use when generating text.
-    pub fn with_top_p(mut self, top_p: f32) -> Self {
-        self.parameters.top_p = top_p;
+    /// Set the tau to use when generating text.
+    pub fn with_tau(mut self, tau: f32) -> Self {
+        self.parameters.tau = tau;
+        self
+    }
+
+    /// Set the eta to use when generating text.
+    pub fn with_eta(mut self, eta: f32) -> Self {
+        self.parameters.eta = eta;
         self
     }
 
@@ -300,6 +313,35 @@ pub trait ModelExt: Model + Send + 'static {
 
 impl<M: Model + Send + 'static> ModelExt for M {}
 
+/// A raw interface for a model that can be used to generate text synchronously
+pub trait SyncModel {
+    /// Run the model synchronously.
+    fn feed_text(&mut self, prompt: &str) -> anyhow::Result<Logits<u32, f32>>;
+
+    /// Reset the model.
+    fn reset(&mut self);
+
+    /// Get the token ID that represents the end of a sequence.
+    fn stop_token(&self) -> anyhow::Result<u32>;
+}
+
+/// A marker type for models that do not support synchronous generation.
+pub struct SyncModelNotSupported;
+
+impl SyncModel for SyncModelNotSupported {
+    fn feed_text(&mut self, _prompt: &str) -> anyhow::Result<Logits<u32, f32>> {
+        Err(anyhow::Error::msg("Not implemented"))
+    }
+
+    fn reset(&mut self) {
+        unimplemented!()
+    }
+
+    fn stop_token(&self) -> anyhow::Result<u32> {
+        Err(anyhow::Error::msg("Not implemented"))
+    }
+}
+
 /// A model that can be used to generate text with an associated tokenizer.
 ///
 /// The model may support using a custom sampler. If a specific model does not support a specific method, it will return an error.
@@ -310,6 +352,23 @@ pub trait Model: Send + 'static {
 
     /// Get the tokenizer associated with this model to use for constrained generation.
     fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync>;
+
+    /// The raw sync model that backs this model.
+    type SyncModel: SyncModel;
+
+    /// Run some code synchronously with the model.
+    async fn run_sync(
+        &mut self,
+        _f: Box<
+            dyn for<'a> FnOnce(
+                    &'a mut Self::SyncModel,
+                )
+                    -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>>
+                + Send,
+        >,
+    ) -> anyhow::Result<()> {
+        Err(anyhow::Error::msg("Not implemented"))
+    }
 
     /// Generate text with the given prompt.
     async fn generate_text_with_sampler(
@@ -372,13 +431,24 @@ pub trait Model: Send + 'static {
     }
 }
 
+/// A trait object for a model.
+pub type DynModel = Box<
+    dyn Model<
+            TextStream = Box<dyn Stream<Item = String> + Send + Unpin>,
+            SyncModel = BoxedSyncModel,
+        > + Send,
+>;
+
 #[async_trait::async_trait]
 impl Model for DynModel {
     type TextStream = Box<dyn Stream<Item = String> + Send + Unpin>;
+    type SyncModel = BoxedSyncModel;
 
     fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
-        let self_ref: &(dyn Model<TextStream = Box<dyn Stream<Item = String> + Send + Unpin>>
-              + Send) = self.as_ref();
+        let self_ref: &(dyn Model<
+            TextStream = Box<dyn Stream<Item = String> + Send + Unpin>,
+            SyncModel = BoxedSyncModel,
+        > + Send) = self.as_ref();
         self_ref.tokenizer()
     }
 
@@ -387,15 +457,33 @@ impl Model for DynModel {
         prompt: &str,
         parameters: GenerationParameters,
     ) -> anyhow::Result<Self::TextStream> {
-        let self_ref: &mut (dyn Model<TextStream = Box<dyn Stream<Item = String> + Send + Unpin>>
-                  + Send) = self.as_mut();
+        let self_ref: &mut (dyn Model<
+            TextStream = Box<dyn Stream<Item = String> + Send + Unpin>,
+            SyncModel = BoxedSyncModel,
+        > + Send) = self.as_mut();
         self_ref.stream_text_inner(prompt, parameters).await
     }
 }
 
-/// A trait object for a model.
-pub type DynModel =
-    Box<dyn Model<TextStream = Box<dyn Stream<Item = String> + Send + Unpin>> + Send>;
+/// A trait object for a sync model.
+pub type BoxedSyncModel = Box<dyn SyncModel>;
+
+impl SyncModel for BoxedSyncModel {
+    fn feed_text(&mut self, prompt: &str) -> anyhow::Result<Logits<u32, f32>> {
+        let self_ref: &mut (dyn SyncModel) = self.as_mut();
+        self_ref.feed_text(prompt)
+    }
+
+    fn reset(&mut self) {
+        let self_ref: &mut (dyn SyncModel) = self.as_mut();
+        self_ref.reset()
+    }
+
+    fn stop_token(&self) -> anyhow::Result<u32> {
+        let self_ref: &(dyn SyncModel) = self.as_ref();
+        self_ref.stop_token()
+    }
+}
 
 struct AnyModel<M: Model<TextStream = S> + Send, S: Stream<Item = String> + Send + Unpin + 'static>(
     M,
@@ -409,6 +497,7 @@ where
     M: Model<TextStream = S> + Send,
 {
     type TextStream = Box<dyn Stream<Item = String> + Send + Unpin>;
+    type SyncModel = BoxedSyncModel;
 
     fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
         self.0.tokenizer()
@@ -443,8 +532,9 @@ where
 #[derive(Debug, Clone, PartialEq)]
 pub struct GenerationParameters {
     pub(crate) temperature: f32,
-    pub(crate) top_k: u32,
-    pub(crate) top_p: f32,
+    pub(crate) tau: f32,
+    pub(crate) eta: f32,
+    pub(crate) mu: f32,
     pub(crate) repetition_penalty: f32,
     pub(crate) repetition_penalty_range: u32,
     pub(crate) max_length: u32,
@@ -455,8 +545,9 @@ impl Default for GenerationParameters {
     fn default() -> Self {
         Self {
             temperature: 0.8,
-            top_k: 40,
-            top_p: 0.95,
+            eta: 0.1,
+            tau: 5.,
+            mu: 10.,
             repetition_penalty: 1.3,
             repetition_penalty_range: 64,
             max_length: 128,
@@ -466,34 +557,27 @@ impl Default for GenerationParameters {
 }
 
 impl GenerationParameters {
-    /// Create a gready generation configuration that will always return the most likely token.
-    pub fn greedy() -> Self {
-        Self {
-            temperature: 0.8,
-            top_k: 1,
-            top_p: 0.95,
-            repetition_penalty: 1.3,
-            repetition_penalty_range: 64,
-            max_length: 128,
-            stop_on: None,
-        }
-    }
-
     /// Set the temperature to use when generating text.
     pub fn with_temperature(mut self, temperature: f32) -> Self {
         self.temperature = temperature;
         self
     }
 
-    /// Set the top-k to use when generating text.
-    pub fn with_top_k(mut self, top_k: u32) -> Self {
-        self.top_k = top_k;
+    /// Set the tau to use when generating text.
+    pub fn with_tau(mut self, tau: f32) -> Self {
+        self.tau = tau;
         self
     }
 
-    /// Set the top-p to use when generating text.
-    pub fn with_top_p(mut self, top_p: f32) -> Self {
-        self.top_p = top_p;
+    /// Set the eta to use when generating text.
+    pub fn with_eta(mut self, eta: f32) -> Self {
+        self.eta = eta;
+        self
+    }
+
+    /// Set the mu to use when generating text.
+    pub fn with_mu(mut self, mu: f32) -> Self {
+        self.mu = mu;
         self
     }
 
@@ -526,14 +610,19 @@ impl GenerationParameters {
         self.temperature
     }
 
-    /// Get the top-k to use when generating text.
-    pub fn top_k(&self) -> u32 {
-        self.top_k
+    /// Get the tau to use when generating text.
+    pub fn tau(&self) -> f32 {
+        self.tau
     }
 
-    /// Get the top-p to use when generating text.
-    pub fn top_p(&self) -> f32 {
-        self.top_p
+    /// Get the eta to use when generating text.
+    pub fn eta(&self) -> f32 {
+        self.eta
+    }
+
+    /// Get the mu to use when generating text.
+    pub fn mu(&self) -> f32 {
+        self.mu
     }
 
     /// Get the repetition penalty to use when generating text.
