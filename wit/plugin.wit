@@ -55,11 +55,9 @@ interface types {
 
   resource structure {
     num: static func(num: number-parameters) -> structure
-    str: static func(str: unsigned-range) -> structure
     literal: static func(literal: string) -> structure
     or: static func(or: either-structure) -> structure
     then: static func(then: then-structure) -> structure
-    sequence: static func(sequence: sequence-parameters) -> structure
   }
 
   record embedding {

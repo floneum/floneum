@@ -1,3 +1,4 @@
+use crate::CreateParserState;
 use crate::DynTokenizer;
 use crate::Parser;
 use crate::Tokenizer;
@@ -40,7 +41,7 @@ impl<V: Parser<Error = E, Output = O, PartialState = PA>, E, O, PA> Debug
     }
 }
 
-impl<V: Parser<Error = E, Output = O, PartialState = PA> + Send + Sync, E, O, PA: Default>
+impl<V: Parser<Error = E, Output = O, PartialState = PA> +CreateParserState+ Send + Sync, E, O, PA>
     Sampler<u32, f32> for StructuredSampler<V, E, O, PA>
 {
     fn sample<'a>(
@@ -73,7 +74,7 @@ impl<V: Parser<Error = E, Output = O, PartialState = PA> + Send + Sync, E, O, PA
                 }
                 let string = tokens.to_string() + &new_token;
 
-                let status = self.structure.parse(&PA::default(), string.as_bytes());
+                let status = self.structure.parse(&self.structure.create_parser_state(), string.as_bytes());
 
                 match status {
                     Ok(crate::ParseResult::Finished { remaining, .. }) => {

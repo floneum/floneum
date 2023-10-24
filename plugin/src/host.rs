@@ -1,7 +1,7 @@
 use crate::plugins::main;
 use crate::plugins::main::imports::{self};
 use crate::plugins::main::types::{
-    EitherStructure, NumberParameters, SequenceParameters, ThenStructure, UnsignedRange,
+    EitherStructure, NumberParameters,  ThenStructure,
 };
 use crate::Both;
 
@@ -63,11 +63,9 @@ pub(crate) static ENGINE: Lazy<Engine> = Lazy::new(|| {
 
 pub(crate) enum StructureType {
     Num(NumberParameters),
-    Str(UnsignedRange),
     Literal(String),
     Or(EitherStructure),
     Then(ThenStructure),
-    Sequence(SequenceParameters),
 }
 
 #[derive(Clone, Copy)]

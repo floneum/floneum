@@ -6,6 +6,18 @@ pub trait CreateParserState: Parser {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState;
 }
 
+impl<P: CreateParserState> CreateParserState for &P {
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState {
+        (*self).create_parser_state()
+    }
+}
+
+impl<P: CreateParserState> CreateParserState for Box<P> {
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState {
+        (**self).create_parser_state()
+    }
+}
+
 /// An incremental parser for a structured input.
 pub trait Parser {
     /// The error type of the parser.
@@ -50,6 +62,35 @@ pub trait Parser {
             parser1: self,
             parser2: other,
         }
+    }
+}
+
+impl<P: Parser> Parser for &P {
+    type Error = P::Error;
+    type Output = P::Output;
+    type PartialState = P::PartialState;
+
+    fn parse<'a>(
+        &self,
+        state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+        (*self).parse(state, input)
+    }
+}
+
+impl<P: Parser> Parser for Box<P> {
+    type Error = P::Error;
+    type Output = P::Output;
+    type PartialState = P::PartialState;
+
+    fn parse<'a>(
+        &self,
+        state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+        let _self: &P = &*self;
+        _self.parse(state, input)
     }
 }
 
@@ -962,4 +1003,205 @@ fn choice_parser() {
             state2: Err(()),
         }))
     );
+}
+
+/// A validator for a string
+#[derive(Debug, Clone)]
+pub enum StructureParser {
+    /// A literal string
+    Literal(String),
+    /// A number
+    Num {
+        /// The minimum value of the number
+        min: f64,
+        /// The maximum value of the number
+        max: f64,
+        /// If the number must be an integer
+        integer: bool,
+    },
+    /// Either the first or the second parser
+    Either {
+        /// The first parser
+        first: Box<StructureParser>,
+        /// The second parser
+        second: Box<StructureParser>,
+    },
+    /// The first parser, then the second parser
+    Then {
+        /// The first parser
+        first: Box<StructureParser>,
+        /// The second parser
+        second: Box<StructureParser>,
+    },
+}
+
+/// The state of a structure parser.
+#[allow(missing_docs)]
+#[derive(Debug, PartialEq, Clone)]
+pub enum StructureParserState {
+    Literal(LiteralParserOffset),
+    NumInt(IntegerParserState),
+    Num(FloatParserState),
+    Either(ChoiceParserState<Box<StructureParserState>, Box<StructureParserState>, ()>),
+    Then(SequenceParserState<Box<StructureParserState>, Box<StructureParserState>, ()>),
+}
+
+impl CreateParserState for StructureParser {
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState {
+        match self {
+            StructureParser::Literal(literal) => {
+                StructureParserState::Literal(LiteralParser::from(literal).create_parser_state())
+            }
+            StructureParser::Num { min, max, integer } => {
+                if *integer {
+                    StructureParserState::NumInt(
+                        IntegerParser {
+                            range: *min as i64..=*max as i64,
+                        }
+                        .create_parser_state(),
+                    )
+                } else {
+                    StructureParserState::Num(
+                        FloatParser { range: *min..=*max }.create_parser_state(),
+                    )
+                }
+            }
+            StructureParser::Either { first, second } => {
+                StructureParserState::Either(ChoiceParserState {
+                    state1: Ok(Box::new(first.create_parser_state())),
+                    state2: Ok(Box::new(second.create_parser_state())),
+                })
+            }
+            StructureParser::Then { first, .. } => StructureParserState::Then(
+                SequenceParserState::FirstParser(Box::new(first.create_parser_state())),
+            ),
+        }
+    }
+}
+
+impl Parser for StructureParser {
+    type Error = ();
+    type Output = ();
+    type PartialState = StructureParserState;
+
+    fn parse<'a>(
+        &self,
+        state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error>
+    where
+        Self: Sized,
+    {
+        match (self, state) {
+            (StructureParser::Literal(lit_parser), StructureParserState::Literal(state)) => {
+                LiteralParser::from(lit_parser)
+                    .parse(state, input)
+                    .map(|result| match result {
+                        ParseResult::Finished { result, remaining } => {
+                            ParseResult::Finished { result, remaining }
+                        }
+                        ParseResult::Incomplete(parser) => {
+                            ParseResult::Incomplete(StructureParserState::Literal(parser))
+                        }
+                    })
+            }
+            (
+                StructureParser::Num {
+                    min,
+                    max,
+                    integer: false,
+                },
+                StructureParserState::Num(state),
+            ) => {
+                FloatParser { range: *min..=*max }
+                    .parse(state, input)
+                    .map(|result| match result {
+                        ParseResult::Finished { remaining, .. } => ParseResult::Finished {
+                            result: (),
+                            remaining,
+                        },
+                        ParseResult::Incomplete(parser) => {
+                            ParseResult::Incomplete(StructureParserState::Num(parser))
+                        }
+                    })
+            }
+            (
+                StructureParser::Num {
+                    min,
+                    max,
+                    integer: true,
+                },
+                StructureParserState::NumInt(int),
+            ) => IntegerParser {
+                range: *min as i64..=*max as i64,
+            }
+            .parse(int, input)
+            .map(|result| match result {
+                ParseResult::Finished { remaining, .. } => ParseResult::Finished {
+                    result: (),
+                    remaining,
+                },
+                ParseResult::Incomplete(parser) => {
+                    ParseResult::Incomplete(StructureParserState::NumInt(parser))
+                }
+            }),
+            (StructureParser::Either { first, second }, StructureParserState::Either(state)) => {
+                let state = ChoiceParserState {
+                    state1: match &state.state1 {
+                        Ok(state) => Ok((**state).clone()),
+                        Err(()) => Err(()),
+                    },
+                    state2: match &state.state2 {
+                        Ok(state) => Ok((**state).clone()),
+                        Err(()) => Err(()),
+                    },
+                };
+                let parser = ChoiceParser {
+                    parser1: first.clone(),
+                    parser2: second.clone(),
+                };
+                match parser.parse(&state, input) {
+                    Ok(ParseResult::Incomplete(state)) => Ok(ParseResult::Incomplete(
+                        StructureParserState::Either(ChoiceParserState {
+                            state1: state.state1.map(Box::new),
+                            state2: state.state2.map(Box::new),
+                        }),
+                    )),
+                    Ok(ParseResult::Finished { remaining, .. }) => Ok(ParseResult::Finished {
+                        result: (),
+                        remaining,
+                    }),
+                    Err(_) => Err(()),
+                }
+            }
+            (StructureParser::Then { first, second }, StructureParserState::Then(state)) => {
+                let state = SequenceParserState::FirstParser(match &state {
+                    SequenceParserState::FirstParser(state) => (**state).clone(),
+                    SequenceParserState::SecondParser(state, _) => (**state).clone(),
+                });
+                let parser = SequenceParser {
+                    parser1: first.clone(),
+                    parser2: second.clone(),
+                };
+                match parser.parse(&state, input) {
+                    Ok(ParseResult::Incomplete(state)) => Ok(ParseResult::Incomplete(
+                        StructureParserState::Then(match state {
+                            SequenceParserState::FirstParser(state) => {
+                                SequenceParserState::FirstParser(Box::new(state))
+                            }
+                            SequenceParserState::SecondParser(state, _) => {
+                                SequenceParserState::SecondParser(Box::new(state), ())
+                            }
+                        }),
+                    )),
+                    Ok(ParseResult::Finished { remaining, .. }) => Ok(ParseResult::Finished {
+                        result: (),
+                        remaining,
+                    }),
+                    Err(_) => Err(()),
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
 }
