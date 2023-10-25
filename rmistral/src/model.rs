@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 
 use candle_core::{DType, Device, Tensor};
-use floneumin_language_model::SyncModel;
+use kalosm_language_model::SyncModel;
 use rand::SeedableRng;
 use tokenizers::Tokenizer;
 

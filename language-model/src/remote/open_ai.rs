@@ -3,7 +3,7 @@ use async_openai::{
     types::{CompletionResponseStream, CreateCompletionRequestArgs},
     Client,
 };
-use floneumin_sample::Tokenizer;
+use kalosm_sample::Tokenizer;
 use futures_util::Stream;
 use std::sync::Arc;
 

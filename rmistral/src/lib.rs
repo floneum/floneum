@@ -50,7 +50,7 @@ use tokenizers::Tokenizer;
 /// A prelude of commonly used items in RPhi.
 pub mod prelude {
     pub use crate::{Mistral, MistralBuilder, MistralSource};
-    pub use floneumin_language_model::*;
+    pub use kalosm_language_model::*;
 }
 
 enum Task {

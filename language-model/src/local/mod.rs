@@ -1,7 +1,7 @@
 pub use crate::local::session::*;
 use crate::{embedding::Embedding, model::*};
-use floneumin_sample::Tokenizer;
-use floneumin_streams::ChannelTextStream;
+use kalosm_sample::Tokenizer;
+use kalosm_streams::ChannelTextStream;
 use llm::InferenceSessionConfig;
 use llm_samplers::configure::SamplerChainBuilder;
 use llm_samplers::prelude::Sampler;

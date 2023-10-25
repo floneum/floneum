@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 pub use crate::Mistral;
 use crate::MistralModel;
 use crate::{InferenceSettings, Task};
-use floneumin_language_model::{CreateModel, GenerationParameters, Model, VectorSpace};
-use floneumin_streams::ChannelTextStream;
+use kalosm_language_model::{CreateModel, GenerationParameters, Model, VectorSpace};
+use kalosm_streams::ChannelTextStream;
 
 #[async_trait::async_trait]
 impl CreateModel for Mistral {
@@ -22,8 +22,8 @@ impl Model for Mistral {
     type TextStream = ChannelTextStream<String>;
     type SyncModel = MistralModel;
 
-    fn tokenizer(&self) -> Arc<dyn floneumin_sample::Tokenizer + Send + Sync> {
-        self.get_tokenizer() as Arc<dyn floneumin_sample::Tokenizer + Send + Sync>
+    fn tokenizer(&self) -> Arc<dyn kalosm_sample::Tokenizer + Send + Sync> {
+        self.get_tokenizer() as Arc<dyn kalosm_sample::Tokenizer + Send + Sync>
     }
 
     async fn run_sync(

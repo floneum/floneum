@@ -1,5 +1,5 @@
 use anyhow::{Error as E, Result};
-use floneumin_language_model::SyncModel;
+use kalosm_language_model::SyncModel;
 use llm_samplers::prelude::*;
 use rand::SeedableRng;
 use std::collections::HashMap;

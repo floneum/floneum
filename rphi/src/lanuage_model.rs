@@ -2,8 +2,8 @@ use crate::model::PhiModel;
 use crate::InferenceSettings;
 pub use crate::Phi;
 use crate::Task;
-use floneumin_language_model::*;
-use floneumin_streams::ChannelTextStream;
+use kalosm_language_model::*;
+use kalosm_streams::ChannelTextStream;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -23,8 +23,8 @@ impl Model for Phi {
     type TextStream = ChannelTextStream<String>;
     type SyncModel = PhiModel;
 
-    fn tokenizer(&self) -> Arc<dyn floneumin_sample::Tokenizer + Send + Sync> {
-        self.get_tokenizer() as Arc<dyn floneumin_sample::Tokenizer + Send + Sync>
+    fn tokenizer(&self) -> Arc<dyn kalosm_sample::Tokenizer + Send + Sync> {
+        self.get_tokenizer() as Arc<dyn kalosm_sample::Tokenizer + Send + Sync>
     }
 
     async fn run_sync(

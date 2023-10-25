@@ -35,14 +35,14 @@ mod lanuage_model;
 mod model;
 mod raw;
 mod source;
-pub use floneumin_language_model;
+pub use kalosm_language_model;
 use raw::PhiCache;
 pub use source::*;
 
 /// A prelude of commonly used items in RPhi.
 pub mod prelude {
     pub use crate::{Phi, PhiBuilder, PhiSource};
-    pub use floneumin_language_model::*;
+    pub use kalosm_language_model::*;
 }
 
 use anyhow::Error as E;
@@ -50,7 +50,7 @@ use anyhow::Error as E;
 use crate::raw::Config;
 use crate::raw::MixFormerSequentialForCausalLM as QMixFormer;
 use candle_core::Device;
-use floneumin_sample::FasterHuggingFaceTokenizer;
+use kalosm_sample::FasterHuggingFaceTokenizer;
 use hf_hub::{api::sync::Api, Repo, RepoType};
 use llm_samplers::prelude::Sampler;
 use model::PhiModel;

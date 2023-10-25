@@ -1,6 +1,6 @@
 use crate::embedding::VectorSpace;
 use crate::{embedding::get_embeddings, embedding::Embedding};
-use floneumin_streams::ChannelTextStream;
+use kalosm_streams::ChannelTextStream;
 use llm::Tokenizer;
 use llm_samplers::prelude::*;
 

@@ -30,6 +30,6 @@ mod download;
 mod local;
 pub use local::*;
 mod remote;
-pub use floneumin_sample;
+pub use kalosm_sample;
 pub use futures_util::StreamExt;
 pub use remote::*;

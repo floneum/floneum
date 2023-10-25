@@ -1,5 +1,5 @@
 [package]
-name = "floneumin-language-model"
+name = "kalosm-language-model"
 version = "0.1.0"
 edition = "2021"
 
@@ -41,7 +41,7 @@ tokio-util = { version = "0.7.9", features = ["rt"] }
 crossbeam = "0.8.2"
 dashmap = "5.5.3"
 pin-project = "1"
-floneumin-streams = { path = "../floneumin-streams" }
+kalosm-streams = { path = "../kalosm-streams" }
 pulldown-cmark = "0.9.3"
 docx-rs = "0.4.7"
 pdf = { git = "https://github.com/pdf-rs/pdf" }
@@ -51,7 +51,7 @@ itertools = "0.11.0"
 async-recursion = "1.0.5"
 tokenizers = { version = "0.13.4" }
 rustc-hash = "1.1.0"
-floneumin-sample = { path = "../floneumin-sample" }
+kalosm-sample = { path = "../kalosm-sample" }
 ego-tree = "0.6.2"
 image = "0.24.7"
 

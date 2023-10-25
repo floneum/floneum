@@ -1,11 +1,11 @@
 use crate::host::State;
-use crate::llm::floneumin_sample::StructuredSampler;
+use crate::llm::kalosm_sample::StructuredSampler;
 use crate::plugins::main;
-use floneumin::floneumin_language::Model as _;
+use kalosm::kalosm_language::Model as _;
 
 use crate::plugins::main::types::{Embedding, EmbeddingModel, Model, Structure};
 
-use floneumin::floneumin_language::*;
+use kalosm::kalosm_language::*;
 
 use std::sync::{Arc, Mutex};
 

@@ -25,7 +25,7 @@ tokio = { version = "1.32.0", features = ["full"] }
 tracing = "0.1.37"
 futures-util = "0.3.28"
 async-trait = "0.1.73"
-floneumin-streams = { path = "../floneumin-streams" }
+kalosm-streams = { path = "../kalosm-streams" }
 
 accelerate-src = { version = "0.3.2", optional = true }
 intel-mkl-src = { version = "0.8.1", features = ["mkl-static-lp64-iomp"], optional = true }
@@ -33,7 +33,7 @@ cudarc = { version = "0.9.14", features = ["f16"], optional = true }
 half = { version = "2.3.1", features = ["num-traits", "use-intrinsics", "rand_distr"], optional = true }
 
 [dev-dependencies]
-floneumin-sound = { path = "../floneumin-sound" }
+kalosm-sound = { path = "../kalosm-sound" }
 
 [features]
 accelerate = ["dep:accelerate-src", "candle-core/accelerate", "candle-nn/accelerate", "candle-transformers/accelerate"]

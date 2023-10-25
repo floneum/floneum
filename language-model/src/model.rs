@@ -1,6 +1,6 @@
 use crate::embedding::{Embedding, VectorSpace};
 use crate::UnknownVectorSpace;
-use floneumin_sample::Tokenizer;
+use kalosm_sample::Tokenizer;
 use futures_util::{Stream, StreamExt};
 use llm_samplers::prelude::Sampler;
 use llm_samplers::types::Logits;
