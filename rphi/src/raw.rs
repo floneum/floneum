@@ -388,10 +388,9 @@ impl MixFormerSequentialForCausalLM {
         let _enter = self.span.enter();
         let (_b_size, seq_len) = xs.dims2()?;
         let mut xs = xs.apply(&self.embedding)?;
-        let mask = if seq_len <= 1 {
-            None
-        } else {
-            Some(get_mask(seq_len, xs.device())?)
+        let mask = match cache {
+            None => Some(get_mask(seq_len, xs.device())?),
+            Some(_) => None,
         };
         for (i, block) in self.blocks.iter_mut().enumerate() {
             xs = block.forward(&xs, mask.as_ref(), cache.as_mut().map(|c| &mut c.blocks[i]))?;

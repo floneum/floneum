@@ -1,7 +1,7 @@
 use crate::embedding::{Embedding, VectorSpace};
 use crate::UnknownVectorSpace;
-use kalosm_sample::Tokenizer;
 use futures_util::{Stream, StreamExt};
+use kalosm_sample::Tokenizer;
 use llm_samplers::prelude::Sampler;
 use llm_samplers::types::Logits;
 use std::any::Any;

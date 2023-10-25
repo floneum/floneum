@@ -1,7 +1,7 @@
 use std::time::Duration;
 
-use kalosm_sound::*;
 use futures_util::StreamExt;
+use kalosm_sound::*;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {

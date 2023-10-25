@@ -1,6 +1,6 @@
+use futures_util::stream::StreamExt;
 use kalosm_language::*;
 use kalosm_sample::*;
-use futures_util::stream::StreamExt;
 use llm_samplers::prelude::SamplerChain;
 use std::io::Write;
 use std::sync::Arc;

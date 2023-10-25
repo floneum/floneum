@@ -3,8 +3,8 @@ use async_openai::{
     types::{CompletionResponseStream, CreateCompletionRequestArgs},
     Client,
 };
-use kalosm_sample::Tokenizer;
 use futures_util::Stream;
+use kalosm_sample::Tokenizer;
 use std::sync::Arc;
 
 use crate::{CreateModel, Embedder, Embedding, GenerationParameters, VectorSpace};

@@ -1,8 +1,8 @@
+use futures_util::StreamExt;
 use kalosm_language::{
     CreateModel, FuzzySearchIndex, LlamaSevenChatSpace, LocalSession, ModelExt, SearchIndex,
 };
 use kalosm_sound::*;
-use futures_util::StreamExt;
 use std::{
     io::Write,
     sync::{Arc, RwLock},

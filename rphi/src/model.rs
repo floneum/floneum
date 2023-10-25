@@ -78,21 +78,12 @@ impl SyncModel for PhiModel {
             .to_vec();
         session.current_tokens.extend(tokens.iter().copied());
 
-        if tokens.len() > 1 {
-            Self::forward(
-                &mut self.model,
-                &self.device,
-                &session.current_tokens,
-                Some(&mut session.cache),
-            )
-        } else {
-            Self::forward(
-                &mut self.model,
-                &self.device,
-                &tokens,
-                Some(&mut session.cache),
-            )
-        }
+        Self::forward(
+            &mut self.model,
+            &self.device,
+            &tokens,
+            Some(&mut session.cache),
+        )
     }
 
     fn stop_token(&self) -> anyhow::Result<u32> {
@@ -119,9 +110,8 @@ impl PhiModel {
             tokens = &tokens[tokens.len() - 4096..];
         }
 
-        let ctxt = tokens;
-        let input = Tensor::new(ctxt, &device)?.unsqueeze(0)?;
-        let logits = model.forward(&input, cache)?;
+        let input = Tensor::new(tokens, &device)?.unsqueeze(0)?;
+        let logits =model.forward(&input, cache)?;
         let logits = logits.squeeze(0)?.to_dtype(DType::F32)?;
         let logits: Vec<f32> = logits.to_vec1()?;
         Ok(Logits::try_from_iter(logits)?)

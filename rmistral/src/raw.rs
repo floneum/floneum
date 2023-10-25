@@ -362,11 +362,12 @@ impl Model {
         mut cache: Option<&mut MistralCache>,
     ) -> Result<Tensor> {
         let (b_size, seq_len) = input_ids.dims2()?;
-        let attention_mask = if seq_len <= 1 {
-            None
-        } else {
-            let mask = self.prepare_decoder_attention_mask(b_size, seq_len, seqlen_offset)?;
-            Some(mask)
+        let attention_mask = match cache {
+            None => {
+                let mask = self.prepare_decoder_attention_mask(b_size, seq_len, seqlen_offset)?;
+                Some(mask)
+            }
+            Some(_) => None,
         };
         let mut xs = self.embed_tokens.forward(input_ids)?;
         for (i, layer) in self.layers.iter_mut().enumerate() {

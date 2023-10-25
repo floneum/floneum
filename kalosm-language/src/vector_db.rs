@@ -2,8 +2,8 @@ use std::fmt::Debug;
 
 use crate::context::Document;
 use candle_core::Tensor;
-use kalosm_language_model::*;
 use instant_distance::{Builder, HnswMap, Search};
+use kalosm_language_model::*;
 use serde::{Deserialize, Serialize};
 
 /// A vector database that can be used to store embeddings and search for similar embeddings.

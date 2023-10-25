@@ -20,6 +20,8 @@ async fn main() {
                     // .with_tool(WebSearchTool::new(1))
                     .with_tool(CalculatorTool);
 
+                let mut session = llm.new_session().unwrap();
+
                 let mut current_text = tools.prompt(question);
                 let mut bytes_fed = 0;
                 print!("{}", current_text);
@@ -29,7 +31,9 @@ async fn main() {
                 for _ in 0..5 {
                     let mut parser_state = parser.create_parser_state();
                     loop {
-                        let mut logits = llm.feed_text(current_text.split_at(bytes_fed).1).unwrap();
+                        let mut logits = llm
+                            .feed_text(&mut session, current_text.split_at(bytes_fed).1)
+                            .unwrap();
                         bytes_fed = current_text.len();
                         logits.ensure_sorted().unwrap();
                         let min_prob = logits.last().unwrap().logit;
@@ -89,12 +93,9 @@ async fn main() {
                                         println!("\n\n\n\n\nfinal result is {result}");
                                         return;
                                     }
-                                    kalosm_sample::Either::Left(
-                                        kalosm_sample::Either::Right((
-                                            ((), tool_index),
-                                            tool_input,
-                                        )),
-                                    ) => {
+                                    kalosm_sample::Either::Left(kalosm_sample::Either::Right(
+                                        (((), tool_index), tool_input),
+                                    )) => {
                                         let tool = tools.get_tool_mut_by_index(tool_index).unwrap();
                                         let output = tool.run(&tool_input).await;
                                         let observation = format!("Observation: {}", output);

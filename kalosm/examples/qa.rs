@@ -1,5 +1,5 @@
-use kalosm_language::*;
 use futures_util::StreamExt;
+use kalosm_language::*;
 use std::io::Write;
 
 #[tokio::main]
