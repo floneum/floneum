@@ -1,40 +1,88 @@
+use crate::raw::{MistralCache, Model};
 use anyhow::{Error as E, Result};
 use llm_samplers::{
     prelude::Logits,
     types::{HasSamplerResources, Sampler, SamplerError},
 };
+use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 
-use candle_transformers::models::quantized_mistral::Model;
-
 use candle_core::{DType, Device, Tensor};
-use floneumin_language_model::SyncModel;
+use kalosm_language_model::SyncModel;
 use rand::SeedableRng;
 use tokenizers::Tokenizer;
 
 use crate::InferenceSettings;
+
+/// A Mistral-1.5 session.
+pub struct MistralSession {
+    cache: MistralCache,
+    current_tokens: Vec<u32>,
+}
+
+impl MistralSession {
+    /// Export the current cache tensor map.
+    pub fn get_tensor_map(&self) -> HashMap<String, Tensor> {
+        self.cache.get_tensor_map()
+    }
+
+    /// Import a cache tensor map.
+    pub fn set_tensor_map(&mut self, map: HashMap<String, Tensor>) {
+        self.cache = MistralCache::from_tensor_map(map);
+    }
+
+    /// Create a cache from a tensor map. This can be used to load a cache from disk.
+    pub fn from_tensor_map(map: HashMap<String, Tensor>, current_tokens: Vec<u32>) -> Self {
+        Self {
+            cache: MistralCache::from_tensor_map(map),
+            current_tokens,
+        }
+    }
+
+    /// Get the current tokens.
+    pub fn get_current_tokens(&self) -> &[u32] {
+        &self.current_tokens
+    }
+}
 
 /// The inner, synchronous Mistral model.
 pub struct MistralModel {
     model: Model,
     device: Device,
     tokenizer: Tokenizer,
+    cache: MistralCache,
 }
 
 impl SyncModel for MistralModel {
-    fn feed_text(&mut self, prompt: &str) -> anyhow::Result<Logits<u32, f32>> {
-        let tokens = self
-            .tokenizer
-            .encode(&*prompt, true)
-            .map_err(E::msg)?
-            .get_ids()
-            .to_vec();
+    type Session = MistralSession;
 
-        self.forward(&tokens)
+    fn new_session(&self) -> anyhow::Result<Self::Session> {
+        let mut cache = self.cache.clone();
+        cache.clear();
+        Ok(Self::Session {
+            cache,
+            current_tokens: Vec::new(),
+        })
     }
 
-    fn reset(&mut self) {
-        todo!()
+    fn feed_text(
+        &mut self,
+        session: &mut Self::Session,
+        prompt: &str,
+    ) -> anyhow::Result<Logits<u32, f32>> {
+        let encoded = self.tokenizer.encode(&*prompt, true).map_err(E::msg)?;
+        let tokens = encoded.get_ids();
+        let token_count = tokens.len();
+
+        session.current_tokens.extend(tokens);
+
+        Self::forward(
+            &mut self.model,
+            &self.device,
+            &tokens,
+            session.current_tokens.len() - token_count,
+            Some(&mut session.cache),
+        )
     }
 
     fn stop_token(&self) -> anyhow::Result<u32> {
@@ -47,21 +95,33 @@ impl SyncModel for MistralModel {
 }
 
 impl MistralModel {
-    fn forward(&mut self, tokens: &[u32]) -> anyhow::Result<Logits<u32, f32>> {
+    fn forward(
+        model: &mut Model,
+        device: &Device,
+        tokens: &[u32],
+        seqlen_offset: usize,
+        cache: Option<&mut MistralCache>,
+    ) -> anyhow::Result<Logits<u32, f32>> {
         if tokens.is_empty() {
             return Err(anyhow::anyhow!("Cannot run model on empty input"));
         }
 
-        let input = Tensor::new(tokens, &self.device)?.unsqueeze(0)?;
-        let logits = self.model.forward(&input, todo!())?;
+        let input = Tensor::new(tokens, &device)?.unsqueeze(0)?;
+        let logits = model.forward(&input, seqlen_offset, cache)?;
         let logits = logits.squeeze(0)?.squeeze(0)?.to_dtype(DType::F32)?;
         let logits: Vec<f32> = logits.to_vec1()?;
         Ok(Logits::try_from_iter(logits)?)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new(model: Model, tokenizer: Tokenizer, device: Device) -> Self {
+    pub(crate) fn new(
+        model: Model,
+        tokenizer: Tokenizer,
+        device: Device,
+        cache: MistralCache,
+    ) -> Self {
         Self {
+            cache,
             model,
             device,
             tokenizer,
@@ -81,6 +141,8 @@ impl MistralModel {
             stop_on,
         } = settings;
 
+        self.cache.clear();
+
         let mut tokens = self
             .tokenizer
             .encode(&*prompt, true)
@@ -97,7 +159,13 @@ impl MistralModel {
             let context_size = if index > 0 { 1 } else { tokens.len() };
             let start_pos = tokens.len().saturating_sub(context_size);
             let ctxt = &tokens[start_pos..];
-            let logits = self.forward(&ctxt)?;
+            let logits = Self::forward(
+                &mut self.model,
+                &self.device,
+                &ctxt,
+                start_pos,
+                Some(&mut self.cache),
+            )?;
             let next_token = sample_token(
                 &mut sampler,
                 &mut rng,

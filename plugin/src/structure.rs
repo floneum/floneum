@@ -3,7 +3,7 @@ use crate::plugins::main;
 
 use crate::plugins::main::types::Structure;
 
-use floneumin::floneumin_language::floneumin_sample::StructureParser;
+use kalosm::kalosm_language::kalosm_sample::StructureParser;
 
 use wasmtime::component::__internal::async_trait;
 

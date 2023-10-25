@@ -14,7 +14,7 @@
 //!         .with_source(WhisperSource::SmallEn)
 //!         .build()?;
 //!
-//!     let mut text = floneumin_sound::source::mic::MicInput::default()
+//!     let mut text = kalosm_sound::source::mic::MicInput::default()
 //!         .stream()
 //!         .unwrap()
 //!         .subscribe_stream(Duration::from_secs(30))
@@ -32,7 +32,7 @@
 #![warn(missing_docs)]
 
 use cpal::FromSample;
-use floneumin_streams::ChannelTextStream;
+use kalosm_streams::ChannelTextStream;
 use model::WhisperInner;
 use rodio::{source::UniformSourceIterator, Source};
 use std::fmt::Display;

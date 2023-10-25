@@ -33,13 +33,15 @@ extern crate accelerate_src;
 
 mod language_model;
 mod model;
+mod raw;
 mod source;
 use llm_samplers::types::Sampler;
+use raw::MistralCache;
 pub use source::*;
 
+use crate::raw::{Config, Model};
 use anyhow::Error as E;
 use candle_core::Device;
-use candle_transformers::models::quantized_mistral::{Config, Model};
 use hf_hub::{api::sync::Api, Repo, RepoType};
 use model::MistralModel;
 use std::sync::{Arc, Mutex};
@@ -48,7 +50,7 @@ use tokenizers::Tokenizer;
 /// A prelude of commonly used items in RPhi.
 pub mod prelude {
     pub use crate::{Mistral, MistralBuilder, MistralSource};
-    pub use floneumin_language_model::*;
+    pub use kalosm_language_model::*;
 }
 
 enum Task {
@@ -101,12 +103,12 @@ impl Mistral {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn new(model: Model, tokenizer: Tokenizer, device: Device) -> Self {
+    fn new(model: Model, tokenizer: Tokenizer, device: Device, cache: MistralCache) -> Self {
         let (task_sender, mut task_receiver) = tokio::sync::mpsc::unbounded_channel();
         let arc_tokenizer = Arc::new(tokenizer.clone());
 
         let thread_handle = std::thread::spawn(move || {
-            let mut inner = MistralModel::new(model, tokenizer, device);
+            let mut inner = MistralModel::new(model, tokenizer, device, cache);
             tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
@@ -206,8 +208,9 @@ impl MistralBuilder {
         let filename = repo.get(&self.source.gguf_file)?;
         let vb = candle_transformers::quantized_var_builder::VarBuilder::from_gguf(filename)?;
         let model = Model::new(&config, vb)?;
+        let cache = MistralCache::new(&config);
 
-        Ok(Mistral::new(model, tokenizer, device))
+        Ok(Mistral::new(model, tokenizer, device, cache))
     }
 }
 

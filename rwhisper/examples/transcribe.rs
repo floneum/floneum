@@ -8,7 +8,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .with_source(WhisperSource::SmallEn)
         .build()?;
 
-    let mut text = floneumin_sound::MicInput::default()
+    let mut text = kalosm_sound::MicInput::default()
         .stream()
         .unwrap()
         .subscribe_stream(Duration::from_secs(30))

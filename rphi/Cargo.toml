@@ -24,9 +24,9 @@ rand = "0.8.5"
 tokio = { version = "1.32.0", features = ["full"] }
 llm-samplers = { git = "https://github.com/ealmloff/llm-samplers" }
 async-trait = "0.1.73"
-floneumin-sample = { path = "../floneumin-sample" }
-floneumin-language-model = { path = "../language-model" }
-floneumin-streams = { path = "../floneumin-streams" }
+kalosm-sample = { path = "../kalosm-sample" }
+kalosm-language-model = { path = "../language-model" }
+kalosm-streams = { path = "../kalosm-streams" }
 
 [features]
 accelerate = ["dep:accelerate-src", "candle-core/accelerate", "candle-nn/accelerate", "candle-transformers/accelerate"]

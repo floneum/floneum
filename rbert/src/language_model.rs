@@ -1,7 +1,7 @@
 pub use crate::Bert;
-use floneumin_language_model::Embedding;
-use floneumin_language_model::VectorSpace;
-use floneumin_language_model::{CreateModel, Embedder};
+use kalosm_language_model::Embedding;
+use kalosm_language_model::VectorSpace;
+use kalosm_language_model::{CreateModel, Embedder};
 
 #[async_trait::async_trait]
 impl CreateModel for Bert {

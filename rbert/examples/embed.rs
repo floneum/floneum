@@ -1,4 +1,4 @@
-use floneumin_language_model::Embedder;
+use kalosm_language_model::Embedder;
 use rbert::*;
 
 #[tokio::main]

@@ -239,7 +239,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                             r#type: "checkbox",
                             checked: "{val}",
                             onchange: |e| {
-                                node.write().value = vec![Input::Single(PrimitiveValue::Boolean(dbg!(e.value == "on")))];
+                                node.write().value = vec![Input::Single(PrimitiveValue::Boolean(e.value == "on"))];
                             }
                         }
                     }

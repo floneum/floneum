@@ -3073,10 +3073,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bytesize",
- "floneumin",
  "floneumite",
  "futures-util",
  "headless_chrome",
+ "kalosm",
  "log",
  "once_cell",
  "pollster",
@@ -3203,197 +3203,6 @@ name = "floneum_write_to_file"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
-]
-
-[[package]]
-name = "floneumin"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "floneumin-language",
- "floneumin-sound",
- "floneumin-streams",
- "futures-util",
- "llm-samplers",
- "rand 0.8.5",
- "tokio",
- "tracing-subscriber 0.2.25",
-]
-
-[[package]]
-name = "floneumin-language"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-recursion",
- "async-trait",
- "bytesize",
- "candle-core",
- "chrono",
- "convert_case 0.6.0",
- "crossbeam",
- "dashmap",
- "docx-rs",
- "ego-tree",
- "floneumin-language-model",
- "floneumin-sample",
- "floneumin-streams",
- "floneumite",
- "futures-util",
- "headless_chrome",
- "image 0.24.7",
- "instant-distance",
- "itertools 0.11.0",
- "llm",
- "llm-samplers",
- "log",
- "meval",
- "num_cpus",
- "once_cell",
- "partial_sort",
- "pdf",
- "pdf_text",
- "pin-project",
- "pollster",
- "pulldown-cmark 0.9.3",
- "rand 0.8.5",
- "rbert",
- "readability",
- "reqwest",
- "rmistral",
- "rphi",
- "rss",
- "rustc-hash",
- "scraper",
- "serde",
- "serde_json",
- "slab",
- "spinoff",
- "tantivy",
- "tempfile",
- "tokenizers 0.13.4",
- "tokio",
- "tokio-util",
- "tracing",
- "url",
-]
-
-[[package]]
-name = "floneumin-language-model"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-openai",
- "async-recursion",
- "async-trait",
- "bytesize",
- "candle-core",
- "chrono",
- "convert_case 0.6.0",
- "crossbeam",
- "dashmap",
- "docx-rs",
- "ego-tree",
- "floneumin-sample",
- "floneumin-streams",
- "floneumite",
- "futures-util",
- "headless_chrome",
- "image 0.24.7",
- "instant-distance",
- "itertools 0.11.0",
- "llm",
- "llm-samplers",
- "log",
- "num_cpus",
- "once_cell",
- "partial_sort",
- "pdf",
- "pdf_text",
- "pin-project",
- "pollster",
- "pulldown-cmark 0.9.3",
- "rand 0.8.5",
- "readability",
- "reqwest",
- "rss",
- "rustc-hash",
- "scraper",
- "serde",
- "serde_json",
- "slab",
- "spinoff",
- "tantivy",
- "tempfile",
- "tokenizers 0.13.4",
- "tokio",
- "tokio-util",
- "tracing",
- "url",
-]
-
-[[package]]
-name = "floneumin-sample"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "candle-core",
- "llm",
- "llm-samplers",
- "rand 0.8.5",
- "rustc-hash",
- "tokenizers 0.13.4",
- "tracing",
-]
-
-[[package]]
-name = "floneumin-sound"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "byteorder",
- "candle-core",
- "candle-nn",
- "candle-transformers",
- "cpal",
- "floneumin-streams",
- "futures-util",
- "hf-hub",
- "hound",
- "itertools 0.10.5",
- "rand 0.8.5",
- "ringbuf",
- "ringbuffer",
- "rodio",
- "rwhisper",
- "serde_json",
- "tokenizers 0.14.1",
- "tokio",
- "tracing",
- "tts",
- "webrtc-vad",
-]
-
-[[package]]
-name = "floneumin-streams"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "futures-util",
- "pin-project",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "floneumin-vision"
-version = "0.1.0"
-dependencies = [
- "image 0.24.7",
- "rwuerstchen",
- "screenshots",
- "segment-anything-rs",
 ]
 
 [[package]]
@@ -5242,6 +5051,197 @@ dependencies = [
  "serde",
  "serde_json",
  "simple_asn1",
+]
+
+[[package]]
+name = "kalosm"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures-util",
+ "kalosm-language",
+ "kalosm-sound",
+ "kalosm-streams",
+ "llm-samplers",
+ "rand 0.8.5",
+ "tokio",
+ "tracing-subscriber 0.2.25",
+]
+
+[[package]]
+name = "kalosm-language"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-recursion",
+ "async-trait",
+ "bytesize",
+ "candle-core",
+ "chrono",
+ "convert_case 0.6.0",
+ "crossbeam",
+ "dashmap",
+ "docx-rs",
+ "ego-tree",
+ "floneumite",
+ "futures-util",
+ "headless_chrome",
+ "image 0.24.7",
+ "instant-distance",
+ "itertools 0.11.0",
+ "kalosm-language-model",
+ "kalosm-sample",
+ "kalosm-streams",
+ "llm",
+ "llm-samplers",
+ "log",
+ "meval",
+ "num_cpus",
+ "once_cell",
+ "partial_sort",
+ "pdf",
+ "pdf_text",
+ "pin-project",
+ "pollster",
+ "pulldown-cmark 0.9.3",
+ "rand 0.8.5",
+ "rbert",
+ "readability",
+ "reqwest",
+ "rmistral",
+ "rphi",
+ "rss",
+ "rustc-hash",
+ "scraper",
+ "serde",
+ "serde_json",
+ "slab",
+ "spinoff",
+ "tantivy",
+ "tempfile",
+ "tokenizers 0.13.4",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "kalosm-language-model"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-openai",
+ "async-recursion",
+ "async-trait",
+ "bytesize",
+ "candle-core",
+ "chrono",
+ "convert_case 0.6.0",
+ "crossbeam",
+ "dashmap",
+ "docx-rs",
+ "ego-tree",
+ "floneumite",
+ "futures-util",
+ "headless_chrome",
+ "image 0.24.7",
+ "instant-distance",
+ "itertools 0.11.0",
+ "kalosm-sample",
+ "kalosm-streams",
+ "llm",
+ "llm-samplers",
+ "log",
+ "num_cpus",
+ "once_cell",
+ "partial_sort",
+ "pdf",
+ "pdf_text",
+ "pin-project",
+ "pollster",
+ "pulldown-cmark 0.9.3",
+ "rand 0.8.5",
+ "readability",
+ "reqwest",
+ "rss",
+ "rustc-hash",
+ "scraper",
+ "serde",
+ "serde_json",
+ "slab",
+ "spinoff",
+ "tantivy",
+ "tempfile",
+ "tokenizers 0.13.4",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "kalosm-sample"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "candle-core",
+ "llm",
+ "llm-samplers",
+ "rand 0.8.5",
+ "rustc-hash",
+ "tokenizers 0.13.4",
+ "tracing",
+]
+
+[[package]]
+name = "kalosm-sound"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "byteorder",
+ "candle-core",
+ "candle-nn",
+ "candle-transformers",
+ "cpal",
+ "futures-util",
+ "hf-hub",
+ "hound",
+ "itertools 0.10.5",
+ "kalosm-streams",
+ "rand 0.8.5",
+ "ringbuf",
+ "ringbuffer",
+ "rodio",
+ "rwhisper",
+ "serde_json",
+ "tokenizers 0.14.1",
+ "tokio",
+ "tracing",
+ "tts",
+ "webrtc-vad",
+]
+
+[[package]]
+name = "kalosm-streams"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures-util",
+ "pin-project",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "kalosm-vision"
+version = "0.1.0"
+dependencies = [
+ "image 0.24.7",
+ "rwuerstchen",
+ "screenshots",
+ "segment-anything-rs",
 ]
 
 [[package]]
@@ -7771,10 +7771,10 @@ dependencies = [
  "candle-nn",
  "candle-transformers",
  "cudarc",
- "floneumin-language-model",
  "half 2.3.1",
  "hf-hub",
  "intel-mkl-src",
+ "kalosm-language-model",
  "serde_json",
  "tokenizers 0.13.4",
  "tokio",
@@ -8063,12 +8063,12 @@ dependencies = [
  "candle-nn",
  "candle-transformers",
  "cudarc",
- "floneumin-language-model",
- "floneumin-sample",
- "floneumin-streams",
  "half 2.3.1",
  "hf-hub",
  "intel-mkl-src",
+ "kalosm-language-model",
+ "kalosm-sample",
+ "kalosm-streams",
  "llm-samplers",
  "rand 0.8.5",
  "serde_json",
@@ -8101,12 +8101,12 @@ dependencies = [
  "candle-nn",
  "candle-transformers",
  "cudarc",
- "floneumin-language-model",
- "floneumin-sample",
- "floneumin-streams",
  "half 2.3.1",
  "hf-hub",
  "intel-mkl-src",
+ "kalosm-language-model",
+ "kalosm-sample",
+ "kalosm-streams",
  "llm-samplers",
  "rand 0.8.5",
  "serde_json",
@@ -8542,14 +8542,14 @@ dependencies = [
  "candle-transformers",
  "cpal",
  "cudarc",
- "floneumin-sound",
- "floneumin-streams",
  "futures-util",
  "half 2.3.1",
  "hf-hub",
  "hound",
  "intel-mkl-src",
  "itertools 0.10.5",
+ "kalosm-sound",
+ "kalosm-streams",
  "rand 0.8.5",
  "ringbuf",
  "rodio",

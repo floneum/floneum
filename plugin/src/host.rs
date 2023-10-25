@@ -1,16 +1,14 @@
 use crate::plugins::main;
 use crate::plugins::main::imports::{self};
-use crate::plugins::main::types::{
-    EitherStructure, NumberParameters,  ThenStructure,
-};
+use crate::plugins::main::types::{EitherStructure, NumberParameters, ThenStructure};
 use crate::Both;
 
-use floneumin::floneumin_language::Document;
+use kalosm::kalosm_language::Document;
 
-use floneumin::floneumin_language::DynamicNodeId;
-use floneumin::floneumin_language::VectorDB;
-use floneumin::floneumin_language::*;
 use headless_chrome::Tab;
+use kalosm::kalosm_language::DynamicNodeId;
+use kalosm::kalosm_language::VectorDB;
+use kalosm::kalosm_language::*;
 use once_cell::sync::Lazy;
 
 use slab::Slab;

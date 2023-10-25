@@ -3,9 +3,9 @@ use crate::plugins::main;
 
 use crate::plugins::main::types::{Embedding, EmbeddingDb};
 
-use floneumin::floneumin_language::Document;
+use kalosm::kalosm_language::Document;
 
-use floneumin::floneumin_language::VectorDB;
+use kalosm::kalosm_language::VectorDB;
 
 use wasmtime::component::__internal::async_trait;
 
