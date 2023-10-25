@@ -2,45 +2,97 @@ use anyhow::{Error as E, Result};
 use floneumin_language_model::SyncModel;
 use llm_samplers::prelude::*;
 use rand::SeedableRng;
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::fmt::Formatter;
 
-use candle_transformers::models::quantized_mixformer::MixFormerSequentialForCausalLM as QMixFormer;
+use crate::raw::MixFormerSequentialForCausalLM as QMixFormer;
+use crate::raw::PhiCache;
 
 use candle_core::{DType, Device, Tensor};
 use tokenizers::Tokenizer;
 
 use crate::InferenceSettings;
 
-/// The inner, synchronous Phi-1.5 model.
-pub struct PhiModel {
-    model: QMixFormer,
-    device: Device,
-    tokenizer: Tokenizer,
+/// A Phi-1.5 session.
+pub struct PhiSession {
+    cache: PhiCache,
     current_tokens: Vec<u32>,
 }
 
+impl PhiSession {
+    /// Export the current cache tensor map.
+    pub fn get_tensor_map(&self) -> HashMap<String, Tensor> {
+        self.cache.get_tensor_map()
+    }
+
+    /// Import a cache tensor map.
+    pub fn set_tensor_map(&mut self, map: HashMap<String, Tensor>) {
+        self.cache = PhiCache::from_tensor_map(map);
+    }
+
+    /// Create a cache from a tensor map. This can be used to load a cache from disk.
+    pub fn from_tensor_map(map: HashMap<String, Tensor>, current_tokens: Vec<u32>) -> Self {
+        Self {
+            cache: PhiCache::from_tensor_map(map),
+            current_tokens,
+        }
+    }
+
+    /// Get the current tokens.
+    pub fn get_current_tokens(&self) -> &[u32] {
+        &self.current_tokens
+    }
+}
+
+/// The inner, synchronous Phi-1.5 model.
+pub struct PhiModel {
+    cache: PhiCache,
+    model: QMixFormer,
+    device: Device,
+    tokenizer: Tokenizer,
+}
+
 impl SyncModel for PhiModel {
-    fn feed_text(&mut self, prompt: &str) -> anyhow::Result<Logits<u32, f32>> {
+    type Session = PhiSession;
+
+    fn new_session(&self) -> anyhow::Result<Self::Session> {
+        let mut cache = self.cache.clone();
+        cache.clear();
+        Ok(PhiSession {
+            cache,
+            current_tokens: vec![],
+        })
+    }
+
+    fn feed_text(
+        &mut self,
+        session: &mut Self::Session,
+        prompt: &str,
+    ) -> anyhow::Result<Logits<u32, f32>> {
         let tokens = self
             .tokenizer
             .encode(&*prompt, true)
             .map_err(E::msg)?
             .get_ids()
             .to_vec();
-        self.current_tokens.extend(tokens.iter().copied());
+        session.current_tokens.extend(tokens.iter().copied());
 
         if tokens.len() > 1 {
-            self.model.clear_kv_cache();
-            Self::forward(&mut self.model, &self.device, &self.current_tokens)
+            Self::forward(
+                &mut self.model,
+                &self.device,
+                &session.current_tokens,
+                Some(&mut session.cache),
+            )
         } else {
-            Self::forward(&mut self.model, &self.device, &tokens)
+            Self::forward(
+                &mut self.model,
+                &self.device,
+                &tokens,
+                Some(&mut session.cache),
+            )
         }
-    }
-
-    fn reset(&mut self) {
-        self.model.clear_kv_cache();
-        self.current_tokens.clear();
     }
 
     fn stop_token(&self) -> anyhow::Result<u32> {
@@ -57,6 +109,7 @@ impl PhiModel {
         model: &mut QMixFormer,
         device: &Device,
         mut tokens: &[u32],
+        cache: Option<&mut PhiCache>,
     ) -> anyhow::Result<Logits<u32, f32>> {
         if tokens.is_empty() {
             return Err(anyhow::anyhow!("Cannot run model on empty input"));
@@ -68,19 +121,24 @@ impl PhiModel {
 
         let ctxt = tokens;
         let input = Tensor::new(ctxt, &device)?.unsqueeze(0)?;
-        let logits = model.forward(&input)?;
+        let logits = model.forward(&input, cache)?;
         let logits = logits.squeeze(0)?.to_dtype(DType::F32)?;
         let logits: Vec<f32> = logits.to_vec1()?;
         Ok(Logits::try_from_iter(logits)?)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new(model: QMixFormer, tokenizer: Tokenizer, device: Device) -> Self {
+    pub(crate) fn new(
+        model: QMixFormer,
+        tokenizer: Tokenizer,
+        device: Device,
+        cache: PhiCache,
+    ) -> Self {
         Self {
             model,
             device,
             tokenizer,
-            current_tokens: vec![],
+            cache,
         }
     }
 
@@ -97,6 +155,7 @@ impl PhiModel {
             stop_on,
         } = settings;
 
+        self.cache.clear();
         let mut tokens = self
             .tokenizer
             .encode(&*prompt, true)
@@ -111,7 +170,7 @@ impl PhiModel {
         for index in 0..sample_len {
             let context_size = if index > 0 { 1 } else { tokens.len() };
             let ctxt = &tokens[tokens.len().saturating_sub(context_size)..];
-            let logits = Self::forward(&mut self.model, &self.device, ctxt)?;
+            let logits = Self::forward(&mut self.model, &self.device, ctxt, Some(&mut self.cache))?;
             let next_token = sample_token(
                 &mut sampler,
                 &mut rng,
@@ -141,8 +200,6 @@ impl PhiModel {
                 break;
             }
         }
-
-        self.reset();
 
         Ok(())
     }

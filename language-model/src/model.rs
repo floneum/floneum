@@ -4,6 +4,7 @@ use floneumin_sample::Tokenizer;
 use futures_util::{Stream, StreamExt};
 use llm_samplers::prelude::Sampler;
 use llm_samplers::types::Logits;
+use std::any::Any;
 use std::future::IntoFuture;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -315,11 +316,18 @@ impl<M: Model + Send + 'static> ModelExt for M {}
 
 /// A raw interface for a model that can be used to generate text synchronously
 pub trait SyncModel {
-    /// Run the model synchronously.
-    fn feed_text(&mut self, prompt: &str) -> anyhow::Result<Logits<u32, f32>>;
+    /// The session type for this model.
+    type Session;
 
-    /// Reset the model.
-    fn reset(&mut self);
+    /// Create a new session for this model.
+    fn new_session(&self) -> anyhow::Result<Self::Session>;
+
+    /// Run the model synchronously.
+    fn feed_text(
+        &mut self,
+        session: &mut Self::Session,
+        prompt: &str,
+    ) -> anyhow::Result<Logits<u32, f32>>;
 
     /// Get the token ID that represents the end of a sequence.
     fn stop_token(&self) -> anyhow::Result<u32>;
@@ -329,12 +337,14 @@ pub trait SyncModel {
 pub struct SyncModelNotSupported;
 
 impl SyncModel for SyncModelNotSupported {
-    fn feed_text(&mut self, _prompt: &str) -> anyhow::Result<Logits<u32, f32>> {
+    type Session = ();
+
+    fn new_session(&self) -> anyhow::Result<Self::Session> {
         Err(anyhow::Error::msg("Not implemented"))
     }
 
-    fn reset(&mut self) {
-        unimplemented!()
+    fn feed_text(&mut self, _session: &mut (), _prompt: &str) -> anyhow::Result<Logits<u32, f32>> {
+        Err(anyhow::Error::msg("Not implemented"))
     }
 
     fn stop_token(&self) -> anyhow::Result<u32> {
@@ -466,22 +476,61 @@ impl Model for DynModel {
 }
 
 /// A trait object for a sync model.
-pub type BoxedSyncModel = Box<dyn SyncModel>;
+pub type BoxedSyncModel = Box<dyn SyncModel<Session = Box<dyn Any>>>;
 
 impl SyncModel for BoxedSyncModel {
-    fn feed_text(&mut self, prompt: &str) -> anyhow::Result<Logits<u32, f32>> {
-        let self_ref: &mut (dyn SyncModel) = self.as_mut();
-        self_ref.feed_text(prompt)
+    type Session = Box<dyn Any>;
+
+    fn new_session(&self) -> anyhow::Result<Self::Session> {
+        let self_ref: &(dyn SyncModel<Session = Box<dyn Any>>) = self.as_ref();
+        self_ref.new_session()
     }
 
-    fn reset(&mut self) {
-        let self_ref: &mut (dyn SyncModel) = self.as_mut();
-        self_ref.reset()
+    fn feed_text(
+        &mut self,
+        session: &mut Self::Session,
+        prompt: &str,
+    ) -> anyhow::Result<Logits<u32, f32>> {
+        let self_ref: &mut (dyn SyncModel<Session = Box<dyn Any>>) = self.as_mut();
+        self_ref.feed_text(session, prompt)
     }
 
     fn stop_token(&self) -> anyhow::Result<u32> {
-        let self_ref: &(dyn SyncModel) = self.as_ref();
+        let self_ref: &(dyn SyncModel<Session = Box<dyn Any>>) = self.as_ref();
         self_ref.stop_token()
+    }
+}
+
+struct AnySyncModel<M: SyncModel<Session = S>, S: Any>(M, PhantomData<S>);
+
+impl<M: SyncModel<Session = S>, S: Any> SyncModel for AnySyncModel<M, S> {
+    type Session = Box<dyn Any>;
+
+    fn new_session(&self) -> anyhow::Result<Self::Session> {
+        self.0.new_session().map(|s| Box::new(s) as Box<dyn Any>)
+    }
+
+    fn feed_text(
+        &mut self,
+        session: &mut Self::Session,
+        prompt: &str,
+    ) -> anyhow::Result<Logits<u32, f32>> {
+        self.0.feed_text(
+            match session.downcast_mut() {
+                Some(s) => s,
+                None => {
+                    return Err(anyhow::Error::msg(format!(
+                        "Invalid session type expected {:?}",
+                        std::any::type_name::<S>()
+                    )))
+                }
+            },
+            prompt,
+        )
+    }
+
+    fn stop_token(&self) -> anyhow::Result<u32> {
+        self.0.stop_token()
     }
 }
 

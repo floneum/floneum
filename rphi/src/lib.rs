@@ -33,8 +33,10 @@ extern crate accelerate_src;
 
 mod lanuage_model;
 mod model;
+mod raw;
 mod source;
 pub use floneumin_language_model;
+use raw::PhiCache;
 pub use source::*;
 
 /// A prelude of commonly used items in RPhi.
@@ -45,9 +47,9 @@ pub mod prelude {
 
 use anyhow::Error as E;
 
+use crate::raw::Config;
+use crate::raw::MixFormerSequentialForCausalLM as QMixFormer;
 use candle_core::Device;
-use candle_transformers::models::mixformer::Config;
-use candle_transformers::models::quantized_mixformer::MixFormerSequentialForCausalLM as QMixFormer;
 use floneumin_sample::FasterHuggingFaceTokenizer;
 use hf_hub::{api::sync::Api, Repo, RepoType};
 use llm_samplers::prelude::Sampler;
@@ -106,12 +108,12 @@ impl Phi {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn new(model: QMixFormer, tokenizer: Tokenizer, device: Device) -> Self {
+    fn new(model: QMixFormer, tokenizer: Tokenizer, device: Device, cache: PhiCache) -> Self {
         let (task_sender, mut task_receiver) = tokio::sync::mpsc::unbounded_channel();
         let arc_tokenizer = Arc::new(FasterHuggingFaceTokenizer::new(tokenizer.clone()));
 
         let thread_handle = std::thread::spawn(move || {
-            let mut inner = PhiModel::new(model, tokenizer, device);
+            let mut inner = PhiModel::new(model, tokenizer, device, cache);
             tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
@@ -210,7 +212,9 @@ impl PhiBuilder {
             (model, device(self.cpu)?)
         };
 
-        Ok(Phi::new(model, tokenizer, device))
+        let cache = PhiCache::new(&config);
+
+        Ok(Phi::new(model, tokenizer, device, cache))
     }
 }
 

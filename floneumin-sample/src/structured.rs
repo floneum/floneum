@@ -41,8 +41,12 @@ impl<V: Parser<Error = E, Output = O, PartialState = PA>, E, O, PA> Debug
     }
 }
 
-impl<V: Parser<Error = E, Output = O, PartialState = PA> +CreateParserState+ Send + Sync, E, O, PA>
-    Sampler<u32, f32> for StructuredSampler<V, E, O, PA>
+impl<
+        V: Parser<Error = E, Output = O, PartialState = PA> + CreateParserState + Send + Sync,
+        E,
+        O,
+        PA,
+    > Sampler<u32, f32> for StructuredSampler<V, E, O, PA>
 {
     fn sample<'a>(
         &mut self,
@@ -74,7 +78,9 @@ impl<V: Parser<Error = E, Output = O, PartialState = PA> +CreateParserState+ Sen
                 }
                 let string = tokens.to_string() + &new_token;
 
-                let status = self.structure.parse(&self.structure.create_parser_state(), string.as_bytes());
+                let status = self
+                    .structure
+                    .parse(&self.structure.create_parser_state(), string.as_bytes());
 
                 match status {
                     Ok(crate::ParseResult::Finished { remaining, .. }) => {

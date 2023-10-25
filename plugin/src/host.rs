@@ -1,8 +1,6 @@
 use crate::plugins::main;
 use crate::plugins::main::imports::{self};
-use crate::plugins::main::types::{
-    EitherStructure, NumberParameters,  ThenStructure,
-};
+use crate::plugins::main::types::{EitherStructure, NumberParameters, ThenStructure};
 use crate::Both;
 
 use floneumin::floneumin_language::Document;
