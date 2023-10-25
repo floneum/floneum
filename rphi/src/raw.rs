@@ -272,15 +272,24 @@ impl MHA {
         // In the python implementation, a single tensor is returned with the third axis of size 3.
         let (q, k, v) = self.rotary_emb.apply_rotary_emb_qkv(&qkv, seqlen_offset)?;
         let (k, v) = match cache {
-            Some(ParallelBlockCache(Some(ParallelBlockCacheValue { key, value }))) => {
-                let k = Tensor::cat(&[&*key, &k], 1)?;
-                let v = Tensor::cat(&[&*value, &v], 1)?;
+            Some(ParallelBlockCache(cache)) => match cache {
+                Some(ParallelBlockCacheValue { key, value }) => {
+                    let k = Tensor::cat(&[&*key, &k], 1)?;
+                    let v = Tensor::cat(&[&*value, &v], 1)?;
 
-                *key = k.clone();
-                *value = v.clone();
+                    *key = k.clone();
+                    *value = v.clone();
 
-                (k, v)
-            }
+                    (k, v)
+                }
+                None => {
+                    *cache = Some(ParallelBlockCacheValue {
+                        key: k.clone(),
+                        value: v.clone(),
+                    });
+                    (k, v)
+                }
+            },
             _ => (k, v),
         };
         // scores = torch.einsum('bthd,bshd->bhts', q, k * softmax_scale)
