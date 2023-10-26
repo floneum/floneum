@@ -55,6 +55,10 @@ kalosm-sample = { path = "../kalosm-sample" }
 ego-tree = "0.6.2"
 image = "0.24.7"
 
+[dev-dependencies]
+rphi = { path = "../rphi" }
+rbert = { path = "../rbert" }
+
 [features]
 metal = ["llm/metal"]
 cublas = ["llm/cublas"]

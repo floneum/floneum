@@ -5,6 +5,7 @@ use kalosm_sample::Tokenizer;
 use llm_samplers::prelude::Sampler;
 use llm_samplers::types::Logits;
 use std::any::Any;
+use std::future::Future;
 use std::future::IntoFuture;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -12,7 +13,27 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use url::Url;
 
-/// A model that can be used to embed text.
+/// A model that can be used to embed text. This trait is generic over the vector space that the model uses to help keep track of what embeddings came from which model.
+///
+/// # Example
+///
+/// ```rust
+/// use kalosm_language_model::Embedder;
+/// use rbert::*;
+///
+/// // Bert implements Embedder
+/// let mut bert = Bert::builder().build()?;
+/// let sentences = vec![
+///     "Cats are cool",
+///     "The geopolitical situation is dire",
+///     "Pets are great",
+///     "Napoleon was a tyrant",
+///     "Napoleon was a great general",
+/// ];
+/// // Embed a batch of documents into the bert vector space
+/// let embeddings = bert.embed_batch(&sentences).await?;
+/// println!("embeddings {:?}", embeddings);
+/// ```
 #[async_trait::async_trait]
 pub trait Embedder<S: VectorSpace + Send + Sync + 'static>: Send + Sync + 'static {
     /// Embed a single string.
@@ -64,6 +85,14 @@ impl<S: VectorSpace + Send + Sync + 'static, E: Embedder<S> + Send + Sync + 'sta
 }
 
 /// A model that can be created asynchronously.
+///
+/// # Example
+/// ```rust
+/// use kalosm_language_model::model::CreateModel;
+/// use rbert::Bert;
+///
+/// let mut bert = Bert::start().await;
+/// ```
 #[async_trait::async_trait]
 pub trait CreateModel {
     /// Start the model.
@@ -75,7 +104,7 @@ pub trait CreateModel {
     }
 }
 
-/// A builder for the [`Model::stream_text`] method.
+/// A builder for the [`ModelExt::stream_text`] method.
 pub struct StreamTextBuilder<'a, M: Model> {
     self_: &'a mut M,
     prompt: &'a str,
@@ -90,7 +119,7 @@ pub struct StreamTextBuilder<'a, M: Model> {
 }
 
 impl<'a, M: Model> StreamTextBuilder<'a, M> {
-    /// Create a new builder to return from the [`Model::stream_text`] method.
+    /// Create a new builder to return from the [`ModelExt::stream_text`] method.
     pub fn new(
         prompt: &'a str,
         self_: &'a mut M,
@@ -180,7 +209,7 @@ impl<'a, M: Model> IntoFuture for StreamTextBuilder<'a, M> {
     }
 }
 
-/// A builder for the [`Model::generate_text`] method.
+/// A builder for the [`ModelExt::generate_text`] method.
 pub struct GenerateTextBuilder<'a, M: Model> {
     self_: &'a mut M,
     prompt: &'a str,
@@ -194,7 +223,7 @@ pub struct GenerateTextBuilder<'a, M: Model> {
 }
 
 impl<'a, M: Model> GenerateTextBuilder<'a, M> {
-    /// Create a new builder to return from the [`Model::generate_text`] method.
+    /// Create a new builder to return from the [`ModelExt::generate_text`] method.
     pub fn new(
         prompt: &'a str,
         self_: &'a mut M,
@@ -287,7 +316,18 @@ impl<'a, M: Model> IntoFuture for GenerateTextBuilder<'a, M> {
 /// An extension trait for models.
 #[async_trait::async_trait]
 pub trait ModelExt: Model + Send + 'static {
-    /// Generate text with the given prompt.
+    /// Generate text with the given prompt. This function generates a builder with extra parameters that can be set. To execute the builder, just call `await` on it.
+    ///
+    /// ```rust
+    /// use rphi::prelude::*;
+    /// use std::io::Write;
+    ///
+    /// let mut model = Phi::default();
+    /// let prompt = "The capital of France is";
+    /// let mut result = model.generate_text(prompt).with_max_length(300).await.unwrap();
+    ///
+    /// println!("{prompt}{result}");
+    /// ```
     fn generate_text<'a>(&'a mut self, prompt: &'a str) -> GenerateTextBuilder<'a, Self>
     where
         Self: Sized,
@@ -301,7 +341,22 @@ pub trait ModelExt: Model + Send + 'static {
         })
     }
 
-    /// Generate text with the given prompt.
+    /// Generate text with the given prompt. This function generates a builder with extra parameters that can be set. To execute the builder, just call `await` on it.
+    ///
+    /// ```rust
+    /// use rphi::prelude::*;
+    /// use std::io::Write;
+    ///
+    /// let mut model = Phi::default();
+    /// let prompt = "The capital of France is";
+    /// let mut result = model.stream_text(prompt).with_max_length(300).await.unwrap();
+    ///
+    /// print!("{prompt}");
+    /// while let Some(token) = result.next().await {
+    ///     print!("{token}");
+    ///     std::io::stdout().flush().unwrap();
+    /// }
+    /// ```
     fn stream_text<'a>(&'a mut self, prompt: &'a str) -> StreamTextBuilder<'a, Self>
     where
         Self: Sized,
@@ -310,11 +365,102 @@ pub trait ModelExt: Model + Send + 'static {
             Box::pin(async move { self_.stream_text_inner(prompt, generation_parameters).await })
         })
     }
+
+    /// Run some code synchronously with the model.
+    ///
+    /// # Example
+    /// ```rust
+    /// use kalosm_language::*;
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let mut llm = Phi::start().await;
+    ///
+    ///     let tokenizer = llm.tokenizer();
+    ///     // Start a sync task on the model
+    ///     llm.run_sync(move |llm: &mut Phi::SyncModel| {
+    ///         async move {
+    ///             let question = "What is 10 + 10?";
+    ///
+    ///             // Create a new session of the model
+    ///             let mut session = llm.new_session().unwrap();
+    ///
+    ///             // Feed the question into the model
+    ///             let mut logits = llm.feed_text(&mut session, question).unwrap();
+    ///
+    ///             println!("logits: {:?}", logits);
+    ///         }
+    ///     })
+    ///     .await
+    ///     .unwrap();
+    /// }
+    /// ```
+    async fn run_sync<F: std::future::Future<Output = ()>>(
+        &mut self,
+        f: impl for<'a> AsyncFnOnce<&'a mut Self::SyncModel, Output = ()> + Send + 'static,
+    ) -> anyhow::Result<()> {
+        self.run_sync_raw(Box::new(|llm| Box::pin(async move { f.call(llm).await })))
+            .await
+    }
+}
+
+/// A trait for a function that can be called asynchronously.
+///
+/// This is automatically implemented for any closure that implements [`FnOnce`] and returns a [`Future`] with the correct output.
+pub trait AsyncFnOnce<T> {
+    /// The future type that this function returns.
+    type Fut: Future<Output = Self::Output>;
+    /// The output type that this function returns.
+    type Output;
+
+    /// Call the function.
+    fn call(self, arg: T) -> Self::Fut;
+}
+
+impl<F, Fut, T> AsyncFnOnce<T> for F
+where
+    F: FnOnce(T) -> Fut,
+    Fut: Future,
+{
+    type Fut = Fut;
+    type Output = Fut::Output;
+
+    fn call(self, arg: T) -> Fut {
+        (self)(arg)
+    }
 }
 
 impl<M: Model + Send + 'static> ModelExt for M {}
 
-/// A raw interface for a model that can be used to generate text synchronously
+/// A raw interface for a model that can be used to generate text synchronously. This provides a very low level interface to a model's session:
+///
+/// # Example
+/// ```rust
+/// use kalosm_language::*;
+///
+/// #[tokio::main]
+/// async fn main() {
+///     let mut llm = Phi::start().await;
+///
+///     let tokenizer = llm.tokenizer();
+///     // Start a sync task on the model
+///     llm.run_sync(move |llm: &mut Phi::SyncModel| {
+///         async move {
+///             let question = "What is 10 + 10?";
+///
+///             // Create a new session of the model
+///             let mut session = llm.new_session().unwrap();
+///
+///             // Feed the question into the model
+///             let mut logits = llm.feed_text(&mut session, question).unwrap();
+///
+///             println!("logits: {:?}", logits);
+///         }
+///     })
+///     .await
+///     .unwrap();
+/// }
+/// ```
 pub trait SyncModel {
     /// The session type for this model.
     type Session;
@@ -367,7 +513,9 @@ pub trait Model: Send + 'static {
     type SyncModel: SyncModel;
 
     /// Run some code synchronously with the model.
-    async fn run_sync(
+    /// 
+    /// See [`ModelExt::run_sync`] for nicer API with an example.
+    async fn run_sync_raw(
         &mut self,
         _f: Box<
             dyn for<'a> FnOnce(
@@ -400,6 +548,8 @@ pub trait Model: Send + 'static {
     }
 
     /// Generate text with the given prompt.
+    /// 
+    /// See [`ModelExt::generate_text`] for nicer API with an example.
     async fn generate_text_inner(
         &mut self,
         prompt: &str,
@@ -426,6 +576,8 @@ pub trait Model: Send + 'static {
     }
 
     /// Generate text with the given prompt.
+    /// 
+    /// See [`ModelExt::stream_text`] for nicer API with an example.
     async fn stream_text_inner(
         &mut self,
         prompt: &str,
