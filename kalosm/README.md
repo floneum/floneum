@@ -22,19 +22,16 @@ use futures_util::stream::StreamExt;
 use kalosm::language::*;
 use kalosm::::TextStream;
 
-#[tokio::main]
-async fn main() {
-    let mut llm = Phi::start().await;
-    let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
-    print!("{}", prompt);
+let mut llm = Phi::start().await;
+let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
+print!("{}", prompt);
 
-    let stream = llm.stream_text(prompt).with_max_length(1000).await.unwrap();
+let stream = llm.stream_text(prompt).with_max_length(1000).await.unwrap();
 
-    let mut sentences = stream.words();
-    while let Some(text) = sentences.next().await {
-        print!("{}", text);
-        std::io::stdout().flush().unwrap();
-    }
+let mut sentences = stream.words();
+while let Some(text) = sentences.next().await {
+    print!("{}", text);
+    std::io::stdout().flush().unwrap();
 }
 ```
 
@@ -49,21 +46,16 @@ use std::io::Write;
 use futures_util::stream::StreamExt;
 use kalosm::{language::*, TextStream};
 
-#[tokio::main]
-async fn main() {
-    tracing_subscriber::fmt::init();
+let mut llm = Gpt4::start().await;
+let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
+print!("{}", prompt);
 
-    let mut llm = Gpt4::start().await;
-    let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
-    print!("{}", prompt);
+let stream = llm.stream_text(prompt).with_max_length(300).await.unwrap();
 
-    let stream = llm.stream_text(prompt).with_max_length(300).await.unwrap();
-
-    let mut sentences = stream.words();
-    while let Some(text) = sentences.next().await {
-        print!("{}", text);
-        std::io::stdout().flush().unwrap();
-    }
+let mut sentences = stream.words();
+while let Some(text) = sentences.next().await {
+    print!("{}", text);
+    std::io::stdout().flush().unwrap();
 }
 ```
 
@@ -86,6 +78,7 @@ let document = page.article().await.unwrap();
 println!("Title: {}", document.title());
 println!("Body: {}", document.body());
 // Read pages from a search engine (You must have the SERPER_API_KEY environment variable set to run this example)
+let query = "What is the capital of France?";
 let api_key = std::env::var("SERPER_API_KEY").unwrap();
 let search_query = SearchQuery::new(query, &api_key, self.top_n);
 let documents = search_query.into_documents().await.unwrap();
@@ -109,46 +102,41 @@ use kalosm::language::*;
 use std::io::Write;
 use std::path::PathBuf;
 
-#[tokio::main]
-async fn main() {
-    tracing_subscriber::fmt::init();
+let documents = DocumentFolder::try_from(PathBuf::from("./documents")).unwrap();
 
-    let documents = DocumentFolder::try_from(PathBuf::from("./documents")).unwrap();
+let mut database = DocumentDatabase::new(
+    Bert::builder().build().unwrap(),
+    ChunkStrategy::Sentence {
+        sentence_count: 1,
+        overlap: 0,
+    },
+);
+database.extend(documents.clone()).await.unwrap();
+let mut fuzzy = FuzzySearchIndex::default();
+fuzzy.extend(documents).await.unwrap();
 
-    let mut database = DocumentDatabase::new(
-        Bert::builder().build().unwrap(),
-        ChunkStrategy::Sentence {
-            sentence_count: 1,
-            overlap: 0,
-        },
+loop {
+    print!("Query: ");
+    std::io::stdout().flush().unwrap();
+    let mut user_question = String::new();
+    std::io::stdin().read_line(&mut user_question).unwrap();
+
+    println!(
+        "vector: {:?}",
+        database
+            .search(&user_question, 5)
+            .await
+            .iter()
+            .collect::<Vec<_>>()
     );
-    database.extend(documents.clone()).await.unwrap();
-    let mut fuzzy = FuzzySearchIndex::default();
-    fuzzy.extend(documents).await.unwrap();
-
-    loop {
-        print!("Query: ");
-        std::io::stdout().flush().unwrap();
-        let mut user_question = String::new();
-        std::io::stdin().read_line(&mut user_question).unwrap();
-
-        println!(
-            "vector: {:?}",
-            database
-                .search(&user_question, 5)
-                .await
-                .iter()
-                .collect::<Vec<_>>()
-        );
-        println!(
-            "fuzzy: {:?}",
-            fuzzy
-                .search(&user_question, 5)
-                .await
-                .iter()
-                .collect::<Vec<_>>()
-        );
-    }
+    println!(
+        "fuzzy: {:?}",
+        fuzzy
+            .search(&user_question, 5)
+            .await
+            .iter()
+            .collect::<Vec<_>>()
+    );
 }
 ```
 
@@ -217,92 +205,89 @@ use std::{
 };
 use tokio::time::{Duration, Instant};
 
-#[tokio::main]
-async fn main() -> Result<(), anyhow::Error> {
-    let model = WhisperBuilder::default()
-        .with_source(WhisperSource::SmallEn)
-        .build()?;
+let model = WhisperBuilder::default()
+    .with_source(WhisperSource::SmallEn)
+    .build()?;
 
-    let document_engine = Arc::new(RwLock::new(FuzzySearchIndex::default()));
-    {
-        let document_engine = document_engine.clone();
-        std::thread::spawn(move || {
-            tokio::runtime::Runtime::new()
-                .unwrap()
-                .block_on(async move {
-                    let recording_time = Duration::from_secs(30);
-                    loop {
-                        let input = kalosm::sound::MicInput::default()
-                            .record_until(Instant::now() + recording_time)
-                            .await
-                            .unwrap();
+let document_engine = Arc::new(RwLock::new(FuzzySearchIndex::default()));
+{
+    let document_engine = document_engine.clone();
+    std::thread::spawn(move || {
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(async move {
+                let recording_time = Duration::from_secs(30);
+                loop {
+                    let input = kalosm::sound::MicInput::default()
+                        .record_until(Instant::now() + recording_time)
+                        .await
+                        .unwrap();
 
-                        if let Ok(mut transcribed) = model.transcribe(input) {
-                            while let Some(transcribed) = transcribed.next().await {
-                                if transcribed.probability_of_no_speech() < 0.90 {
-                                    let text = transcribed.text();
-                                    println!("Adding to context: {}", text);
-                                    document_engine.write().unwrap().add(text).await.unwrap();
-                                }
+                    if let Ok(mut transcribed) = model.transcribe(input) {
+                        while let Some(transcribed) = transcribed.next().await {
+                            if transcribed.probability_of_no_speech() < 0.90 {
+                                let text = transcribed.text();
+                                println!("Adding to context: {}", text);
+                                document_engine.write().unwrap().add(text).await.unwrap();
                             }
                         }
                     }
-                })
-        });
-    }
+                }
+            })
+    });
+}
+
+loop {
+    println!();
+    print!("Query: ");
+    std::io::stdout().flush().unwrap();
+    let mut user_question = String::new();
+    std::io::stdin().read_line(&mut user_question).unwrap();
+    let mut engine = document_engine.write().unwrap();
+
+    let mut llm = LocalSession::<LlamaSevenChatSpace>::start().await;
+
+    let context = {
+        let context = engine.search(&user_question, 5).await;
+        context
+            .iter()
+            .take(5)
+            .map(|x| x.to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    let prompt = format!(
+        "# Question:
+{user_question}
+# Context:
+{context}
+# Answer:
+"
+    );
+
+    println!("{}", prompt);
+
+    let mut stream = llm.stream_text(&prompt).with_max_length(300).await.unwrap();
 
     loop {
-        println!();
-        print!("Query: ");
-        std::io::stdout().flush().unwrap();
-        let mut user_question = String::new();
-        std::io::stdin().read_line(&mut user_question).unwrap();
-        let mut engine = document_engine.write().unwrap();
-
-        let mut llm = LocalSession::<LlamaSevenChatSpace>::start().await;
-
-        let context = {
-            let context = engine.search(&user_question, 5).await;
-            context
-                .iter()
-                .take(5)
-                .map(|x| x.to_string())
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
-
-        let prompt = format!(
-            "# Question:
-    {user_question}
-    # Context:
-    {context}
-    # Answer:
-    "
-        );
-
-        println!("{}", prompt);
-
-        let mut stream = llm.stream_text(&prompt).with_max_length(300).await.unwrap();
-
-        loop {
-            // set up a CTRL-C handler to stop the stream
-            let quit_stream = tokio::signal::ctrl_c();
-            tokio::select! {
-                text = stream.next() => {
-                    match text{
-                        Some(text) => {
-                            print!("{}", text);
-                            std::io::stdout().flush().unwrap();
-                        },
-                        None => {
-                            break;
-                        }
+        // set up a CTRL-C handler to stop the stream
+        let quit_stream = tokio::signal::ctrl_c();
+        tokio::select! {
+            text = stream.next() => {
+                match text{
+                    Some(text) => {
+                        print!("{}", text);
+                        std::io::stdout().flush().unwrap();
+                    },
+                    None => {
+                        break;
                     }
-                },
-                _ = quit_stream => {
-                    println!("Stopping stream...");
-                    break;
                 }
+            },
+            _ = quit_stream => {
+                println!("Stopping stream...");
+                break;
             }
         }
     }
@@ -316,16 +301,14 @@ In addition to language, audio, and embedding models, Kalosm also supports image
 ```rust
 use kalosm::vision::*;
 
-fn main() {
-    let model = Wuerstchen::builder().build().unwrap();
-    let settings = WuerstchenInferenceSettings::new(
-        "a cute cat with a hat in a room covered with fur with incredible detail",
-    )
-    .with_n_steps(2);
-    let images = model.run(settings).unwrap();
-    for (i, img) in images.iter().enumerate() {
-        img.save(&format!("{}.png", i)).unwrap();
-    }
+let model = Wuerstchen::builder().build().unwrap();
+let settings = WuerstchenInferenceSettings::new(
+    "a cute cat with a hat in a room covered with fur with incredible detail",
+)
+.with_n_steps(2);
+let images = model.run(settings).unwrap();
+for (i, img) in images.iter().enumerate() {
+    img.save(&format!("{}.png", i)).unwrap();
 }
 ```
 
@@ -336,12 +319,10 @@ Kalosm also supports image segmentation with the segment-anything model:
 ```rust
 use kalosm::vision::*;
 
-fn main() {
-    let model = SegmentAnything::builder().build().unwrap();
-    let image = image::open("examples/landscape.jpg").unwrap();
-    let images = model.segment_everything(image).unwrap();
-    for (i, img) in images.iter().enumerate() {
-        img.save(&format!("{}.png", i)).unwrap();
-    }
+let model = SegmentAnything::builder().build().unwrap();
+let image = image::open("examples/landscape.jpg").unwrap();
+let images = model.segment_everything(image).unwrap();
+for (i, img) in images.iter().enumerate() {
+    img.save(&format!("{}.png", i)).unwrap();
 }
 ```
