@@ -3,9 +3,9 @@
 Kalosm is a simple interface for pre-trained models in rust. It makes it easy to interact with pre-trained, language, audio, and image models.
 
 There are three different packages in Kalosm:
-- `kalosm_language` - A simple interface for text generation and embedding models and surrounding tools. It includes support for search databases, and text collection from websites, RSS feeds, and search engines.
-- `kalosm_sound` - A simple interface for audio transcription and surrounding tools. It includes support for microphone input and the `whisper` model.
-- `kalosm_vision` - A simple interface for image generation and segmentation models and surrounding tools. It includes support for the `wuerstchen` and `segment-anything` models and integration with the [image](https://docs.rs/image/latest/image/) crate.
+- `kalosm::language` - A simple interface for text generation and embedding models and surrounding tools. It includes support for search databases, and text collection from websites, RSS feeds, and search engines.
+- `kalosm::sound` - A simple interface for audio transcription and surrounding tools. It includes support for microphone input and the `whisper` model.
+- `kalosm::vision` - A simple interface for image generation and segmentation models and surrounding tools. It includes support for the `wuerstchen` and `segment-anything` models and integration with the [image](https://docs.rs/image/latest/image/) crate.
 
 ## What can you build with Kalosm?
 
@@ -19,8 +19,8 @@ The simplest way to use Kalosm is to pull in one of the local large language mod
 use std::io::Write;
 
 use futures_util::stream::StreamExt;
-use kalosm_language::*;
-use kalosm_streams::TextStream;
+use kalosm::language::*;
+use kalosm::::TextStream;
 
 #[tokio::main]
 async fn main() {
@@ -158,7 +158,7 @@ A large part of making modern LLMs performant is curating the context the models
 
 ```rust
 use futures_util::StreamExt;
-use kalosm_language::*;
+use kalosm::language::*;
 use std::io::Write;
 
 let nyt =
@@ -207,10 +207,10 @@ Kalosm makes it easy to build up context about the world around your application
 
 ```rust
 use futures_util::StreamExt;
-use kalosm_language::{
+use kalosm::language::{
     CreateModel, FuzzySearchIndex, LlamaSevenChatSpace, LocalSession, ModelExt, SearchIndex,
 };
-use kalosm_sound::*;
+use kalosm::sound::*;
 use std::{
     io::Write,
     sync::{Arc, RwLock},
@@ -232,7 +232,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 .block_on(async move {
                     let recording_time = Duration::from_secs(30);
                     loop {
-                        let input = kalosm_sound::MicInput::default()
+                        let input = kalosm::sound::MicInput::default()
                             .record_until(Instant::now() + recording_time)
                             .await
                             .unwrap();
