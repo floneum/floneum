@@ -78,6 +78,6 @@ impl IntoDocument for DocxDocument {
                 docx_rs::DocumentChild::TableOfContents(_) => {}
             }
         }
-        Ok(Document::from_parts(Default::default(), text))
+        Ok(Document::from_parts("", text))
     }
 }

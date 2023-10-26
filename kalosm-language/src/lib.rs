@@ -1,8 +1,8 @@
 #![warn(missing_docs)]
 
-//! # Floneumin Language
+//! # Kalosm Language
 //!
-//! This crate is a collection of language processing utilities for the Floneumin project.
+//! This crate is a collection of language processing utilities for the Kalosm project.
 //!
 //! There are two main traits in this crate: [`ModelExt`] for large language model (that implement [`Model`]) and [`Embedder`] for text embedding model.
 //!
