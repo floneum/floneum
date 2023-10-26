@@ -13,12 +13,7 @@ async fn main() {
     let prompt = "";
     print!("{}", prompt);
 
-    let validator = StructureParser::Sequence {
-        item: Box::new(StructureParser::Literal("Web Search".into())),
-        separator: Box::new(StructureParser::Literal(", ".into())),
-        min_len: 1,
-        max_len: 2,
-    };
+    let validator = LiteralParser::from("Web Search: ").then(IntegerParser::new(0..=10));
     let structured = StructuredSampler::new(validator.clone(), 0, llm.tokenizer());
     let chain = SamplerChain::new() + structured;
     let mut words = llm

@@ -1,4 +1,4 @@
-use kalosm_language::*;
+use kalosm::language::*;
 use std::io::Write;
 use std::path::PathBuf;
 

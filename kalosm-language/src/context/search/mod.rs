@@ -7,6 +7,23 @@ use super::{document::Document, page::get_article};
 use crate::index::IntoDocuments;
 
 /// A search query that can be used to search for documents on the web.
+///
+/// # Example
+/// ```rust
+/// // You must have the SERPER_API_KEY environment variable set to run this example.
+/// let api_key = std::env::var("SERPER_API_KEY").unwrap();
+/// let search_query = SearchQuery::new(query, &api_key, self.top_n);
+/// let documents = search_query.into_documents().await.unwrap();
+/// let mut text = String::new();
+/// for document in documents {
+///     for word in document.body().split(' ').take(300) {
+///         text.push_str(word);
+///         text.push(' ');
+///     }
+///     text.push('\n');
+/// }
+/// println!("{}", text);
+/// ```
 pub struct SearchQuery<'a> {
     query: &'a str,
     api_key: &'a str,

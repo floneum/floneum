@@ -265,6 +265,13 @@ pub struct IntegerParser {
     range: RangeInclusive<i64>,
 }
 
+impl IntegerParser {
+    /// Create a new integer parser.
+    pub fn new(range: RangeInclusive<i64>) -> Self {
+        Self { range }
+    }
+}
+
 impl CreateParserState for IntegerParser {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState {
         IntegerParserState::default()
