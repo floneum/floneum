@@ -6,6 +6,21 @@ use tantivy::schema::*;
 use tantivy::{doc, Index};
 
 /// A fuzzy keyword search index that can be used to search for documents.
+///
+/// # Example
+/// ```rust
+/// use kalosm_language::*;
+///
+/// #[tokio::main]
+/// async fn main() {
+///     let mut fuzzy = FuzzySearchIndex::default();
+///     fuzzy.add(Document::from_parts("title", "This is a test of fuzzy search")).await.unwrap();
+///
+///     let results = fuzzy.search("fuzzy", 1).await;
+///     assert_eq!(results.len(), 1);
+///     assert_eq!(results[0].body(), "This is a test of fuzzy search");
+/// }
+/// ```
 pub struct FuzzySearchIndex {
     title: Field,
     body: Field,

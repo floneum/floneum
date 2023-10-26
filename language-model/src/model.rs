@@ -513,7 +513,7 @@ pub trait Model: Send + 'static {
     type SyncModel: SyncModel;
 
     /// Run some code synchronously with the model.
-    /// 
+    ///
     /// See [`ModelExt::run_sync`] for nicer API with an example.
     async fn run_sync_raw(
         &mut self,
@@ -548,7 +548,7 @@ pub trait Model: Send + 'static {
     }
 
     /// Generate text with the given prompt.
-    /// 
+    ///
     /// See [`ModelExt::generate_text`] for nicer API with an example.
     async fn generate_text_inner(
         &mut self,
@@ -576,7 +576,7 @@ pub trait Model: Send + 'static {
     }
 
     /// Generate text with the given prompt.
-    /// 
+    ///
     /// See [`ModelExt::stream_text`] for nicer API with an example.
     async fn stream_text_inner(
         &mut self,

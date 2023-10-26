@@ -14,8 +14,11 @@ impl Document {
     }
 
     /// Create a new document from the raw parts.
-    pub fn from_parts(title: String, body: String) -> Self {
-        Self { title, body }
+    pub fn from_parts(title: impl Into<String>, body: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            body: body.into(),
+        }
     }
 
     /// Get the title of the document.
@@ -39,14 +42,14 @@ pub trait IntoDocument {
 #[async_trait::async_trait]
 impl IntoDocument for String {
     async fn into_document(self) -> anyhow::Result<Document> {
-        Ok(Document::from_parts(Default::default(), self))
+        Ok(Document::from_parts("", self))
     }
 }
 
 #[async_trait::async_trait]
 impl IntoDocument for &str {
     async fn into_document(self) -> anyhow::Result<Document> {
-        Ok(Document::from_parts(Default::default(), self.to_string()))
+        Ok(Document::from_parts("", self.to_string()))
     }
 }
 
