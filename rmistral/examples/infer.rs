@@ -1,4 +1,5 @@
 use rmistral::prelude::*;
+use std::io::Write;
 
 #[tokio::main]
 async fn main() {
@@ -9,5 +10,6 @@ async fn main() {
     print!("{prompt}");
     while let Some(token) = result.next().await {
         print!("{token}");
+        std::io::stdout().flush().unwrap();
     }
 }

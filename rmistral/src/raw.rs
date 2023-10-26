@@ -362,12 +362,16 @@ impl Model {
         mut cache: Option<&mut MistralCache>,
     ) -> Result<Tensor> {
         let (b_size, seq_len) = input_ids.dims2()?;
-        let attention_mask = match cache {
-            None => {
-                let mask = self.prepare_decoder_attention_mask(b_size, seq_len, seqlen_offset)?;
-                Some(mask)
+        let attention_mask = match &mut cache {
+            Some(cache) => {
+                if cache.first_token {
+                    cache.first_token = false;
+                    Some(self.prepare_decoder_attention_mask(b_size, seq_len, seqlen_offset)?)
+                } else {
+                    None
+                }
             }
-            Some(_) => None,
+            _ => Some(self.prepare_decoder_attention_mask(b_size, seq_len, seqlen_offset)?),
         };
         let mut xs = self.embed_tokens.forward(input_ids)?;
         for (i, layer) in self.layers.iter_mut().enumerate() {
@@ -387,6 +391,7 @@ impl Model {
 /// A cache for Mistral inference. This cache will speed up generation of sequential text significantly.
 #[derive(Debug, Clone)]
 pub struct MistralCache {
+    first_token: bool,
     blocks: Vec<AttentionCache>,
 }
 
@@ -397,7 +402,10 @@ impl MistralCache {
         for _ in 0..config.num_hidden_layers {
             blocks.push(AttentionCache(None))
         }
-        Self { blocks }
+        Self {
+            blocks,
+            first_token: true,
+        }
     }
 
     /// Clear the cache.
@@ -458,7 +466,10 @@ impl MistralCache {
                 }
             }
         }
-        Self { blocks }
+        Self {
+            blocks,
+            first_token: true,
+        }
     }
 }
 

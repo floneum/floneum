@@ -388,9 +388,16 @@ impl MixFormerSequentialForCausalLM {
         let _enter = self.span.enter();
         let (_b_size, seq_len) = xs.dims2()?;
         let mut xs = xs.apply(&self.embedding)?;
-        let mask = match cache {
-            None => Some(get_mask(seq_len, xs.device())?),
-            Some(_) => None,
+        let mask = match &mut cache {
+            Some(cache) => {
+                if cache.first_token {
+                    cache.first_token = false;
+                    Some(get_mask(seq_len, xs.device())?)
+                } else {
+                    None
+                }
+            }
+            _ => Some(get_mask(seq_len, xs.device())?),
         };
         for (i, block) in self.blocks.iter_mut().enumerate() {
             xs = block.forward(&xs, mask.as_ref(), cache.as_mut().map(|c| &mut c.blocks[i]))?;
@@ -402,6 +409,7 @@ impl MixFormerSequentialForCausalLM {
 /// A cache for phi inference. This cache will speed up generation of sequential text significantly.
 #[derive(Debug, Clone)]
 pub struct PhiCache {
+    first_token: bool,
     blocks: Vec<ParallelBlockCache>,
 }
 
@@ -412,7 +420,10 @@ impl PhiCache {
         for _ in 0..config.n_layer {
             blocks.push(ParallelBlockCache(None))
         }
-        Self { blocks }
+        Self {
+            blocks,
+            first_token: true,
+        }
     }
 
     /// Clear the cache.
@@ -479,7 +490,10 @@ impl PhiCache {
                 }
             }
         }
-        Self { blocks }
+        Self {
+            blocks,
+            first_token: true,
+        }
     }
 }
 

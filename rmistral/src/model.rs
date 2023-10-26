@@ -153,8 +153,8 @@ impl MistralModel {
         let eos_token = self.stop_token()?;
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
         let mut text = String::new();
-        let mut prev_index = 0;
-        let mut current_index = 0;
+        let mut prev_index = tokens.len();
+        let mut current_index = tokens.len();
         for index in 0..sample_len {
             let context_size = if index > 0 { 1 } else { tokens.len() };
             let start_pos = tokens.len().saturating_sub(context_size);
