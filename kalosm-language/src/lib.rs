@@ -1,3 +1,5 @@
+#![warn(missing_docs)]
+
 //! # Floneumin Language
 //!
 //! This crate is a collection of language processing utilities for the Floneumin project.
@@ -14,8 +16,6 @@
 //! Those documents can then be inserted into a search index:
 //! - [`FuzzySearchIndex`]: A search index that performs in memory fuzzy search
 //! - [`DocumentDatabase`]: A search index that performs in memory vector based search
-
-#![warn(missing_docs)]
 
 mod context;
 pub use context::*;
