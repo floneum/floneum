@@ -2,7 +2,7 @@
 
 Floneum is a graph editor for AI workflows with a focus on community-made plugins, local AI and safety.
 
-<img width="1512" alt="Screenshot 2023-06-18 at 4 26 11 PM" src="https://github.com/Demonthos/floneum/assets/66571940/c60d621d-72b9-423c-b1d5-57cdb737e449">
+<img width="1512" alt="Screenshot 2023-06-18 at 4 26 11 PM" src="https://floneum.com/assets/question_answer_example.png">
 
 ## Features
 
