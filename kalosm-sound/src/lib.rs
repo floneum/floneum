@@ -15,3 +15,4 @@ pub use audio::*;
 mod source;
 pub use rwhisper::*;
 pub use source::*;
+pub use rodio;
