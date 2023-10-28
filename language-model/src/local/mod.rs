@@ -117,9 +117,10 @@ local_model!(
 );
 local_model!(ModelType::GptNeoX(GptNeoXType::StableLm), StableLmSpace);
 
-
-
-pub(crate) fn get_embeddings<S: crate::VectorSpace>(model: &dyn llm::Model, embed: &str) -> Embedding<S> {
+pub(crate) fn get_embeddings<S: crate::VectorSpace>(
+    model: &dyn llm::Model,
+    embed: &str,
+) -> Embedding<S> {
     let mut session = model.start_session(Default::default());
     let mut output_request = llm::OutputRequest {
         all_logits: None,

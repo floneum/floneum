@@ -106,21 +106,6 @@ where
         subscriber.time_since_last_sample = 0;
     }
 
-    // TODO: This doesn't seem to work correctly
-    // pub fn subscribe_stream(&self, chunk_duration: std::time::Duration) -> AudioChunkStream {
-    //     let chunk_duration_seconds = chunk_duration.as_secs_f32();
-    //     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
-    //     let samples_per_duration = (chunk_duration_seconds * self.spec.sample_rate as f32) as u64;
-    //     let subscriber = StreamSubscriber {
-    //         time_since_last_sample: 0,
-    //         sample_duration: samples_per_duration,
-    //         senders: sender,
-    //     };
-    //     self.subscribers.write().unwrap().push(subscriber);
-
-    //     AudioChunkStream { receiver }
-    // }
-
     pub(crate) fn write<U: cpal::Sample>(&self, data: &[U])
     where
         S: FromSample<U>,

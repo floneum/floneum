@@ -1,5 +1,5 @@
 use crate::embedding::VectorSpace;
-use crate::{local::get_embeddings, embedding::Embedding};
+use crate::{embedding::Embedding, local::get_embeddings};
 use kalosm_streams::ChannelTextStream;
 use llm::Tokenizer;
 use llm_samplers::prelude::*;
