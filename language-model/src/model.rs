@@ -781,10 +781,6 @@ impl crate::model::GenerationParameters {
                 ),
             ),
             (
-                "randdistrib",
-                SamplerSlot::new_static(|| Box::<SampleRandDistrib>::default()),
-            ),
-            (
                 "mirostat2",
                 SamplerSlot::new_single(
                     move || Box::new(SampleMirostat2::default().tau(tau).eta(eta).mu(mu)),
