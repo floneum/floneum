@@ -25,7 +25,7 @@ mod structured;
 pub use structured::*;
 mod structured_parser;
 pub use structured_parser::*;
-// mod llm;
+mod llm;
 
 /// A type erased wrapper for a tokenizer.
 pub struct DynTokenizer {

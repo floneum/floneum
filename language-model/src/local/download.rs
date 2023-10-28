@@ -54,7 +54,7 @@ fn load_progress_callback(
             file_size,
             tensor_count,
         } => {
-            if let Some(sp) = sp.take() {
+            if let Some(mut sp) = sp.take() {
                 sp.success(&format!(
                     "Loaded {tensor_count} tensors ({}) after {}ms",
                     bytesize::to_string(file_size, false),

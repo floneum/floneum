@@ -9,6 +9,7 @@ edition = "2021"
 bytesize = "1.2.0"
 futures-util = "0.3.28"
 llm-samplers = { version = "0.0.6" }
+llm = { git = "https://github.com/rustformers/llm" }
 log = "0.4.17"
 rand = "0.8.5"
 reqwest = { version = "0.11.18", features = ["stream", "json"] }
@@ -45,8 +46,8 @@ pin-project = "1"
 kalosm-streams.workspace = true
 pulldown-cmark = "0.9.3"
 docx-rs = "0.4.7"
-# pdf = { git = "https://github.com/pdf-rs/pdf" }
-# pdf_text = { git = "https://github.com/pdf-rs/pdf_text" }
+pdf = { git = "https://github.com/pdf-rs/pdf" }
+pdf_text = { git = "https://github.com/pdf-rs/pdf_text" }
 convert_case = "0.6.0"
 itertools = "0.11.0"
 async-recursion = "1.0.5"
@@ -58,7 +59,5 @@ image = "0.24.7"
 meval = "0.2.0"
 
 [features]
-metal = ["rphi/accelerate", "rbert/accelerate"]
-# metal = ["llm/metal", "rphi/accelerate", "rbert/accelerate"]
-cublas = []
-# cublas = ["llm/cublas"]
+metal = ["llm/metal", "rphi/accelerate", "rbert/accelerate"]
+cublas = ["llm/cublas"]
