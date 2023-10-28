@@ -272,8 +272,7 @@ impl IntegerParser {
             Self {
                 range: *range.end()..=*range.start(),
             }
-        }
-        else {
+        } else {
             Self { range }
         }
     }
@@ -302,35 +301,40 @@ impl IntegerParser {
         if self.is_number_valid(value) {
             true
         } else {
-            let  start_value = *self.range.start();
-            let  end_value = *self.range.end();
+            let start_value = *self.range.start();
+            let end_value = *self.range.end();
             let positive = value >= 0;
             // Check if adding a digit would make the number invalid
-            if positive{
-                if value*10 > end_value {
+            if positive {
+                if value * 10 > end_value {
                     return false;
                 }
             } else {
-                if value*10 < start_value {
+                if value * 10 < start_value {
                     return false;
                 }
             }
 
             // Check if the digits are within the range so far
             let digits = value.abs().checked_ilog10().map(|x| x + 1).unwrap_or(1);
-            let start_digits = start_value.abs().checked_ilog10().map(|x| x + 1).unwrap_or(1);
+            let start_digits = start_value
+                .abs()
+                .checked_ilog10()
+                .map(|x| x + 1)
+                .unwrap_or(1);
             let end_digits = end_value.abs().checked_ilog10().map(|x| x + 1).unwrap_or(1);
-            for digit in 1..(digits+1) {
-                let selected_digit = value/(10_i64.pow(digits - digit)) % 10;
-                let selected_start_digit = start_value/(10_i64.pow(start_digits - digit)) % 10;
-                let selected_end_digit = end_value/(10_i64.pow(end_digits - digit)) % 10;
+            for digit in 1..(digits + 1) {
+                let selected_digit = value / (10_i64.pow(digits - digit)) % 10;
+                let selected_start_digit = start_value / (10_i64.pow(start_digits - digit)) % 10;
+                let selected_end_digit = end_value / (10_i64.pow(end_digits - digit)) % 10;
                 if positive {
-                    if selected_digit > selected_end_digit  || selected_digit < selected_start_digit {
+                    if selected_digit > selected_end_digit || selected_digit < selected_start_digit
+                    {
                         return false;
                     }
-                }
-                else {
-                    if selected_digit < selected_end_digit  || selected_digit > selected_start_digit {
+                } else {
+                    if selected_digit < selected_end_digit || selected_digit > selected_start_digit
+                    {
                         return false;
                     }
                 }
@@ -525,8 +529,7 @@ impl FloatParser {
             Self {
                 range: *range.end()..=*range.start(),
             }
-        }
-        else {
+        } else {
             Self { range }
         }
     }
@@ -551,37 +554,42 @@ impl FloatParser {
         self.range.contains(&value)
     }
 
-    fn could_number_become_valid_before_decimal(&self, value: f64, state: FloatParserProgress) -> bool {
+    fn could_number_become_valid_before_decimal(
+        &self,
+        value: f64,
+        state: FloatParserProgress,
+    ) -> bool {
         if self.is_number_valid(value) {
             true
         } else {
             let num_with_extra_digit = value * 10.;
             if value < 0. {
-                if *self.range.start() > num_with_extra_digit{
+                if *self.range.start() > num_with_extra_digit {
                     return false;
                 }
             } else {
-                if *self.range.end() < num_with_extra_digit{
+                if *self.range.end() < num_with_extra_digit {
                     return false;
                 }
             }
             let value_string = value.abs().to_string();
             let start_value_string = self.range.start().abs().to_string();
             let end_value_string = self.range.end().abs().to_string();
-            match state{
-                FloatParserProgress::AfterDigit| FloatParserProgress::AfterSign => 
-                  {
+            match state {
+                FloatParserProgress::AfterDigit | FloatParserProgress::AfterSign => {
                     // Check if the digits are within the range so far
                     let digits = value_string.chars();
                     let start_digits = start_value_string.chars();
                     let end_digits = end_value_string.chars();
-                    for (digit, (start_digit, end_digit)) in digits.zip(start_digits.zip(end_digits)) {
+                    for (digit, (start_digit, end_digit)) in
+                        digits.zip(start_digits.zip(end_digits))
+                    {
                         if digit < start_digit || digit > end_digit {
                             return false;
                         }
                     }
-                },
-                _ =>{}
+                }
+                _ => {}
             }
             true
         }
@@ -632,8 +640,7 @@ impl Parser for FloatParser {
                         if value_digits > end_digits {
                             return Err(());
                         }
-                    }
-                    else {
+                    } else {
                         if value_digits > start_digits {
                             return Err(());
                         }
