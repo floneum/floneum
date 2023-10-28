@@ -185,19 +185,14 @@ impl WuerstchenInferenceSettings {
 
             uncond_prompt: String::new(),
 
-            /// The height in pixels of the generated image.
             height: 1024,
 
-            /// The width in pixels of the generated image.
             width: 1024,
 
-            /// The size of the sliced attention or 0 for automatic slicing (disabled by default)
             sliced_attention_size: None,
 
-            /// The number of steps to run the diffusion for.
             n_steps: 30,
 
-            /// The number of samples to generate.
             num_samples: 1,
         }
     }
