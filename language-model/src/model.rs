@@ -751,7 +751,7 @@ impl crate::model::GenerationParameters {
         SamplerChainBuilder::from([
             (
                 "repetition",
-                SamplerSlot::new_chain(
+                SamplerSlot::new_static(
                     move || {
                         Box::new(
                             SampleRepetition::default()
@@ -759,32 +759,28 @@ impl crate::model::GenerationParameters {
                                 .last_n(repetition_penalty_range as usize),
                         )
                     },
-                    [],
                 ),
             ),
             (
                 "freqpresence",
-                SamplerSlot::new_chain(
+                SamplerSlot::new_static(
                     move || Box::new(SampleFreqPresence::default().last_n(64)),
-                    [],
                 ),
             ),
             (
                 "seqrepetition",
-                SamplerSlot::new_chain(move || Box::<SampleSeqRepetition>::default(), []),
+                SamplerSlot::new_static(move || Box::<SampleSeqRepetition>::default(),),
             ),
             (
                 "temperature",
-                SamplerSlot::new_single(
+                SamplerSlot::new_static(
                     move || Box::new(SampleTemperature::default().temperature(temperature)),
-                    Option::<SampleTemperature>::None,
                 ),
             ),
             (
                 "mirostat2",
-                SamplerSlot::new_single(
+                SamplerSlot::new_static(
                     move || Box::new(SampleMirostat2::default().tau(tau).eta(eta).mu(mu)),
-                    Option::<SampleMirostat2>::None,
                 ),
             ),
         ])
