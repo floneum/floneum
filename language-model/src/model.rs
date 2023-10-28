@@ -5,7 +5,6 @@ use kalosm_sample::Tokenizer;
 use llm_samplers::prelude::Sampler;
 use llm_samplers::types::Logits;
 use std::any::Any;
-use std::future::Future;
 use std::future::IntoFuture;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -379,7 +378,7 @@ pub trait ModelExt: Model + Send + 'static {
     ///     let tokenizer = llm.tokenizer();
     ///     // Start a sync task on the model
     ///     llm.run_sync(move |llm: &mut Phi::SyncModel| {
-    ///         async move {
+    ///         Box::pin(async move {
     ///             let question = "What is 10 + 10?";
     ///
     ///             // Create a new session of the model
@@ -389,44 +388,17 @@ pub trait ModelExt: Model + Send + 'static {
     ///             let mut logits = llm.feed_text(&mut session, question).unwrap();
     ///
     ///             println!("logits: {:?}", logits);
-    ///         }
+    ///         })
     ///     })
     ///     .await
     ///     .unwrap();
     /// }
     /// ```
-    async fn run_sync<F: std::future::Future<Output = ()>>(
+    async fn run_sync(
         &mut self,
-        f: impl for<'a> AsyncFnOnce<&'a mut Self::SyncModel, Output = ()> + Send + 'static,
+        f: impl for<'a> FnOnce(&'a mut Self::SyncModel) -> Pin<Box<dyn std::future::Future<Output = ()> + 'a>> + Send + 'static,
     ) -> anyhow::Result<()> {
-        self.run_sync_raw(Box::new(|llm| Box::pin(async move { f.call(llm).await })))
-            .await
-    }
-}
-
-/// A trait for a function that can be called asynchronously.
-///
-/// This is automatically implemented for any closure that implements [`FnOnce`] and returns a [`Future`] with the correct output.
-pub trait AsyncFnOnce<T> {
-    /// The future type that this function returns.
-    type Fut: Future<Output = Self::Output>;
-    /// The output type that this function returns.
-    type Output;
-
-    /// Call the function.
-    fn call(self, arg: T) -> Self::Fut;
-}
-
-impl<F, Fut, T> AsyncFnOnce<T> for F
-where
-    F: FnOnce(T) -> Fut,
-    Fut: Future,
-{
-    type Fut = Fut;
-    type Output = Fut::Output;
-
-    fn call(self, arg: T) -> Fut {
-        (self)(arg)
+        self.run_sync_raw(Box::new(f)).await
     }
 }
 
@@ -445,7 +417,7 @@ impl<M: Model + Send + 'static> ModelExt for M {}
 ///     let tokenizer = llm.tokenizer();
 ///     // Start a sync task on the model
 ///     llm.run_sync(move |llm: &mut Phi::SyncModel| {
-///         async move {
+///         Box::pin(async move {
 ///             let question = "What is 10 + 10?";
 ///
 ///             // Create a new session of the model
@@ -455,7 +427,7 @@ impl<M: Model + Send + 'static> ModelExt for M {}
 ///             let mut logits = llm.feed_text(&mut session, question).unwrap();
 ///
 ///             println!("logits: {:?}", logits);
-///         }
+///         })
 ///     })
 ///     .await
 ///     .unwrap();

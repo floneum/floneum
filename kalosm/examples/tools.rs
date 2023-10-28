@@ -12,8 +12,8 @@ async fn main() {
     let mut llm = Phi::start().await;
 
     let tokenizer = llm.tokenizer();
-    llm.run_sync(Box::new({
-        move |llm| {
+    llm.run_sync(
+        move |llm: &mut <Phi as kalosm_language::Model>::SyncModel| {
             Box::pin(async move {
                 let question = "What is 10 + 10?";
                 let mut tools = ToolManager::default()
@@ -111,8 +111,7 @@ async fn main() {
                     }
                 }
             })
-        }
-    }))
+        })
     .await
     .unwrap();
 }
