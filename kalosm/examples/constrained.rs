@@ -10,10 +10,29 @@ use std::sync::Mutex;
 async fn main() {
     tracing_subscriber::fmt::init();
     let mut llm = Phi::start().await;
-    let prompt = "";
+    let prompt = "A";
     print!("{}", prompt);
 
-    let validator = LiteralParser::from("Web Search: ").then(IntegerParser::new(0..=10));
+    let validator = LiteralParser::from("A list of 10 numbers: ")
+        .then(IntegerParser::new(1004..=1005))
+        .then(LiteralParser::from(", "))
+        .then(IntegerParser::new(-1005..=-1000))
+        .then(LiteralParser::from(", "))
+        .then(IntegerParser::new(0..=10))
+        .then(LiteralParser::from(", "))
+        .then(IntegerParser::new(0..=10))
+        .then(LiteralParser::from(", "))
+        .then(IntegerParser::new(0..=10))
+        .then(LiteralParser::from(", "))
+        .then(IntegerParser::new(0..=10))
+        .then(LiteralParser::from(", "))
+        .then(IntegerParser::new(0..=10))
+        .then(LiteralParser::from(", "))
+        .then(IntegerParser::new(0..=10))
+        .then(LiteralParser::from(", "))
+        .then(IntegerParser::new(0..=10))
+        .then(LiteralParser::from(", "))
+        .then(IntegerParser::new(0..=10));
     let structured = StructuredSampler::new(validator.clone(), 0, llm.tokenizer());
     let chain = SamplerChain::new() + structured;
     let mut words = llm
