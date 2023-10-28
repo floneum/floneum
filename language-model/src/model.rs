@@ -2,7 +2,8 @@ use crate::embedding::{Embedding, VectorSpace};
 use crate::UnknownVectorSpace;
 use futures_util::{Stream, StreamExt};
 use kalosm_sample::Tokenizer;
-use llm_samplers::prelude::Sampler;
+use llm_samplers::configure::SamplerChainBuilder;
+use llm_samplers::prelude::*;
 use llm_samplers::types::Logits;
 use std::any::Any;
 use std::future::IntoFuture;
@@ -396,7 +397,11 @@ pub trait ModelExt: Model + Send + 'static {
     /// ```
     async fn run_sync(
         &mut self,
-        f: impl for<'a> FnOnce(&'a mut Self::SyncModel) -> Pin<Box<dyn std::future::Future<Output = ()> + 'a>> + Send + 'static,
+        f: impl for<'a> FnOnce(
+                &'a mut Self::SyncModel,
+            ) -> Pin<Box<dyn std::future::Future<Output = ()> + 'a>>
+            + Send
+            + 'static,
     ) -> anyhow::Result<()> {
         self.run_sync_raw(Box::new(f)).await
     }
@@ -729,7 +734,67 @@ impl Default for GenerationParameters {
     }
 }
 
-impl GenerationParameters {
+impl crate::model::GenerationParameters {
+    /// Create a sampler chain from the generation parameters.
+    pub fn sampler(self) -> SamplerChain {
+        use llm_samplers::configure::SamplerSlot;
+        let GenerationParameters {
+            temperature,
+            tau,
+            eta,
+            mu,
+            repetition_penalty,
+            repetition_penalty_range,
+            max_length: _,
+            stop_on: _,
+        } = self;
+        SamplerChainBuilder::from([
+            (
+                "repetition",
+                SamplerSlot::new_chain(
+                    move || {
+                        Box::new(
+                            SampleRepetition::default()
+                                .penalty(repetition_penalty)
+                                .last_n(repetition_penalty_range as usize),
+                        )
+                    },
+                    [],
+                ),
+            ),
+            (
+                "freqpresence",
+                SamplerSlot::new_chain(
+                    move || Box::new(SampleFreqPresence::default().last_n(64)),
+                    [],
+                ),
+            ),
+            (
+                "seqrepetition",
+                SamplerSlot::new_chain(move || Box::<SampleSeqRepetition>::default(), []),
+            ),
+            (
+                "mirostat2",
+                SamplerSlot::new_single(
+                    move || Box::new(SampleMirostat2::default().tau(tau).eta(eta).mu(mu)),
+                    Option::<SampleTopK>::None,
+                ),
+            ),
+            (
+                "temperature",
+                SamplerSlot::new_single(
+                    move || Box::new(SampleTemperature::default().temperature(temperature)),
+                    Option::<SampleTemperature>::None,
+                ),
+            ),
+            (
+                "randdistrib",
+                SamplerSlot::new_static(|| Box::<SampleRandDistrib>::default()),
+            ),
+        ])
+        .into_chain()
+    }
+
     /// Set the temperature to use when generating text.
     pub fn with_temperature(mut self, temperature: f32) -> Self {
         self.temperature = temperature;

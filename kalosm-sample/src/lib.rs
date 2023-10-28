@@ -25,6 +25,7 @@ mod structured;
 pub use structured::*;
 mod structured_parser;
 pub use structured_parser::*;
+// mod llm;
 
 /// A type erased wrapper for a tokenizer.
 pub struct DynTokenizer {
@@ -55,17 +56,6 @@ impl From<Arc<dyn Tokenizer + Send + Sync>> for DynTokenizer {
         Self {
             tokenizer: tokenizer.clone(),
         }
-    }
-}
-
-impl From<&llm::Tokenizer> for DynTokenizer {
-    fn from(tokenizer: &llm::Tokenizer) -> Self {
-        Self::new(match tokenizer {
-            llm::Tokenizer::Embedded(embedded) => llm::Tokenizer::Embedded(embedded.clone()),
-            llm::Tokenizer::HuggingFace(hugging_face) => {
-                llm::Tokenizer::HuggingFace(hugging_face.clone())
-            }
-        })
     }
 }
 
@@ -104,21 +94,6 @@ pub trait Tokenizer {
     /// Decode a list of a list of token ids into a string.
     fn decode_batch(&self, ids: &[&[u32]]) -> anyhow::Result<Vec<Cow<'_, str>>> {
         ids.iter().map(|id| self.decode(id)).collect()
-    }
-}
-
-impl Tokenizer for llm::Tokenizer {
-    fn encode(&self, text: &str) -> anyhow::Result<Vec<u32>> {
-        Ok(self
-            .tokenize(text, false)?
-            .into_iter()
-            .map(|token| token.1)
-            .collect())
-    }
-
-    fn decode(&self, ids: &[u32]) -> anyhow::Result<Cow<'_, str>> {
-        let bytes = self.decode(ids.into(), false);
-        Ok(String::from_utf8(bytes)?.into())
     }
 }
 

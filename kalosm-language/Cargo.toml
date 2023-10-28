@@ -31,11 +31,10 @@ readability = { version = "0.2.0", default_features = false }
 tantivy = "0.21.0"
 tempfile = "3.8.0"
 rss = { version = "2.0.6", features = ["atom"] }
-scraper = { git = "https://github.com/causal-agent/scraper", features = ["atomic"] }
-llm = { git = "https://github.com/rustformers/llm" }
+scraper = { version = "0.18.0", features = ["atomic"] }
 floneumite = { path = "../floneumite" }
 kalosm-language-model = { path = "../language-model" }
-headless_chrome = { git = "https://github.com/atroche/rust-headless-chrome", rev = "6bbefaf04a4906420bf21de25ae8d0c1bc70721c", features = ["fetch"] }
+headless_chrome = "1.0.7"
 candle-core.workspace = true
 tokio-util = { version = "0.7.9", features = ["rt"] }
 crossbeam = "0.8.2"
@@ -47,8 +46,8 @@ pin-project = "1"
 kalosm-streams = { path = "../kalosm-streams" }
 pulldown-cmark = "0.9.3"
 docx-rs = "0.4.7"
-pdf = { git = "https://github.com/pdf-rs/pdf" }
-pdf_text = { git = "https://github.com/pdf-rs/pdf_text" }
+# pdf = { git = "https://github.com/pdf-rs/pdf" }
+# pdf_text = { git = "https://github.com/pdf-rs/pdf_text" }
 convert_case = "0.6.0"
 itertools = "0.11.0"
 async-recursion = "1.0.5"
@@ -60,5 +59,7 @@ image = "0.24.7"
 meval = "0.2.0"
 
 [features]
-metal = ["llm/metal", "rphi/accelerate", "rbert/accelerate"]
-cublas = ["llm/cublas"]
+metal = ["rphi/accelerate", "rbert/accelerate"]
+# metal = ["llm/metal", "rphi/accelerate", "rbert/accelerate"]
+cublas = []
+# cublas = ["llm/cublas"]

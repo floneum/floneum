@@ -116,15 +116,3 @@ impl<S: VectorSpace> Embedding<S> {
         self.embedding.to_vec1::<f32>().unwrap()
     }
 }
-
-pub(crate) fn get_embeddings<S: VectorSpace>(model: &dyn llm::Model, embed: &str) -> Embedding<S> {
-    let mut session = model.start_session(Default::default());
-    let mut output_request = llm::OutputRequest {
-        all_logits: None,
-        embeddings: Some(Vec::new()),
-    };
-    let _ = session.feed_prompt(model, embed, &mut output_request, |_| {
-        Ok::<_, std::convert::Infallible>(llm::InferenceFeedback::Halt)
-    });
-    Embedding::from(output_request.embeddings.unwrap())
-}

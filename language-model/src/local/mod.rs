@@ -3,12 +3,11 @@ use crate::{embedding::Embedding, model::*};
 use kalosm_sample::Tokenizer;
 use kalosm_streams::ChannelTextStream;
 use llm::InferenceSessionConfig;
-use llm_samplers::configure::SamplerChainBuilder;
 use llm_samplers::prelude::Sampler;
-use llm_samplers::prelude::*;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+mod download;
 mod session;
 
 pub(crate) trait LocalModelType {
@@ -118,64 +117,16 @@ local_model!(
 );
 local_model!(ModelType::GptNeoX(GptNeoXType::StableLm), StableLmSpace);
 
-impl crate::model::GenerationParameters {
-    /// Create a sampler chain from the generation parameters.
-    pub fn sampler(self) -> SamplerChain {
-        use llm_samplers::configure::SamplerSlot;
-        let GenerationParameters {
-            temperature,
-            tau,
-            eta,
-            mu,
-            repetition_penalty,
-            repetition_penalty_range,
-            max_length: _,
-            stop_on: _,
-        } = self;
-        SamplerChainBuilder::from([
-            (
-                "repetition",
-                SamplerSlot::new_chain(
-                    move || {
-                        Box::new(
-                            SampleRepetition::default()
-                                .penalty(repetition_penalty)
-                                .last_n(repetition_penalty_range as usize),
-                        )
-                    },
-                    [],
-                ),
-            ),
-            (
-                "freqpresence",
-                SamplerSlot::new_chain(
-                    move || Box::new(SampleFreqPresence::default().last_n(64)),
-                    [],
-                ),
-            ),
-            (
-                "seqrepetition",
-                SamplerSlot::new_chain(move || Box::<SampleSeqRepetition>::default(), []),
-            ),
-            (
-                "mirostat2",
-                SamplerSlot::new_single(
-                    move || Box::new(SampleMirostat2::default().tau(tau).eta(eta).mu(mu)),
-                    Option::<SampleTopK>::None,
-                ),
-            ),
-            (
-                "temperature",
-                SamplerSlot::new_single(
-                    move || Box::new(SampleTemperature::default().temperature(temperature)),
-                    Option::<SampleTemperature>::None,
-                ),
-            ),
-            (
-                "randdistrib",
-                SamplerSlot::new_static(|| Box::<SampleRandDistrib>::default()),
-            ),
-        ])
-        .into_chain()
-    }
+
+
+pub(crate) fn get_embeddings<S: crate::VectorSpace>(model: &dyn llm::Model, embed: &str) -> Embedding<S> {
+    let mut session = model.start_session(Default::default());
+    let mut output_request = llm::OutputRequest {
+        all_logits: None,
+        embeddings: Some(Vec::new()),
+    };
+    let _ = session.feed_prompt(model, embed, &mut output_request, |_| {
+        Ok::<_, std::convert::Infallible>(llm::InferenceFeedback::Halt)
+    });
+    Embedding::from(output_request.embeddings.unwrap())
 }
