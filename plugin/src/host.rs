@@ -3,12 +3,12 @@ use crate::plugins::main::imports::{self};
 use crate::plugins::main::types::{EitherStructure, NumberParameters, ThenStructure};
 use crate::Both;
 
-use kalosm::kalosm_language::Document;
+use kalosm::language::Document;
 
 use headless_chrome::Tab;
-use kalosm::kalosm_language::DynamicNodeId;
-use kalosm::kalosm_language::VectorDB;
-use kalosm::kalosm_language::*;
+use kalosm::language::DynamicNodeId;
+use kalosm::language::VectorDB;
+use kalosm::language::*;
 use once_cell::sync::Lazy;
 
 use slab::Slab;

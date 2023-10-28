@@ -1,11 +1,11 @@
 use crate::host::State;
 use crate::llm::kalosm_sample::StructuredSampler;
 use crate::plugins::main;
-use kalosm::kalosm_language::Model as _;
+use kalosm::language::Model as _;
 
 use crate::plugins::main::types::{Embedding, EmbeddingModel, Model, Structure};
 
-use kalosm::kalosm_language::*;
+use kalosm::language::*;
 
 use std::sync::{Arc, Mutex};
 

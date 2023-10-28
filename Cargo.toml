@@ -47,7 +47,6 @@ dioxus-std = { git = "https://github.com/DioxusLabs/dioxus-std/", version = "0.4
 dioxus-core = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
 dioxus-rsx = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
 dioxus = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
-llm-samplers = { git = "https://github.com/ealmloff/llm-samplers" }
 
 [workspace]
 members = [

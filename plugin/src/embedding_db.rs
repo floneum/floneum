@@ -3,9 +3,9 @@ use crate::plugins::main;
 
 use crate::plugins::main::types::{Embedding, EmbeddingDb};
 
-use kalosm::kalosm_language::Document;
+use kalosm::language::Document;
 
-use kalosm::kalosm_language::VectorDB;
+use kalosm::language::VectorDB;
 
 use wasmtime::component::__internal::async_trait;
 

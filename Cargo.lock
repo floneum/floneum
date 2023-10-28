@@ -5465,7 +5465,8 @@ dependencies = [
 [[package]]
 name = "llm-samplers"
 version = "0.0.6"
-source = "git+https://github.com/ealmloff/llm-samplers#01be52ec1b7066e3ddac60c0aac1a83b5de82cb2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7553f60d113c9cdc6a5402456a31cd9a273bef79f6f16d8a4f7b4bedf5f754b2"
 dependencies = [
  "anyhow",
  "num-traits",

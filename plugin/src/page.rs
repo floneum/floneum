@@ -3,7 +3,7 @@ use crate::plugins::main;
 
 use crate::plugins::main::types::{Node, Page};
 
-use kalosm::kalosm_language::Tab;
+use kalosm::language::Tab;
 use wasmtime::component::__internal::async_trait;
 
 #[async_trait]
