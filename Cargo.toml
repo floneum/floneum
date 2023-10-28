@@ -112,9 +112,22 @@ members = [
 ]
 
 [workspace.dependencies]
-candle-core = { git = "https://github.com/huggingface/candle" }
-candle-nn = { git = "https://github.com/huggingface/candle" }
-candle-transformers = { git = "https://github.com/huggingface/candle" }
+candle-core = { version = "0.3.0" }
+candle-nn = { version = "0.3.0" }
+candle-transformers = { version = "0.3.0" }
+kalosm-sample = { path = "./kalosm-sample", version = "0.1.0" }
+kalosm-language-model = { path = "./language-model", version = "0.1.0" }
+kalosm-streams = { path = "./kalosm-streams", version = "0.1.0" }
+kalosm-language = { path = "./kalosm-language", version = "0.1.0" }
+kalosm-sound = { path = "./kalosm-sound", version = "0.1.0" }
+kalosm-vision = { path = "./kalosm-vision", version = "0.1.0" }
+kalosm = { path = "./kalosm", version = "0.1.0" }
+rphi = { path = "./rphi", version = "0.1.0" }
+rbert = { path = "./rbert", version = "0.1.0" }
+rmistral = { path = "./rmistral", version = "0.1.0" }
+rwhisper = { path = "./rwhisper", version = "0.1.0" }
+rwuerstchen = { path = "./rwuerstchen", version = "0.1.0" }
+segment-anything-rs = { path = "./segment-anything-rs", version = "0.1.0" }
 
 # The profile that 'cargo dist' will build with
 [profile.dist]

@@ -24,9 +24,9 @@ rand = "0.8.5"
 tokio = { version = "1.32.0", features = ["full"] }
 async-trait = "0.1.73"
 llm-samplers = { version = "0.0.6" }
-kalosm-sample = { path = "../kalosm-sample" }
-kalosm-language-model = { path = "../language-model" }
-kalosm-streams = { path = "../kalosm-streams" }
+kalosm-sample.workspace = true
+kalosm-language-model.workspace = true
+kalosm-streams.workspace = true
 
 [features]
 accelerate = ["dep:accelerate-src", "candle-core/accelerate", "candle-nn/accelerate", "candle-transformers/accelerate"]

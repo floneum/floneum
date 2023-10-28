@@ -32,18 +32,17 @@ tantivy = "0.21.0"
 tempfile = "3.8.0"
 rss = { version = "2.0.6", features = ["atom"] }
 scraper = { version = "0.18.0", features = ["atomic"] }
-floneumite = { path = "../floneumite" }
-kalosm-language-model = { path = "../language-model" }
+kalosm-language-model.workspace = true
 headless_chrome = "1.0.7"
 candle-core.workspace = true
 tokio-util = { version = "0.7.9", features = ["rt"] }
 crossbeam = "0.8.2"
 dashmap = "5.5.3"
-rbert = { path = "../rbert" }
-rphi = { path = "../rphi" }
-rmistral = { path = "../rmistral" }
+rbert.workspace = true
+rphi.workspace = true
+rmistral.workspace = true
 pin-project = "1"
-kalosm-streams = { path = "../kalosm-streams" }
+kalosm-streams.workspace = true
 pulldown-cmark = "0.9.3"
 docx-rs = "0.4.7"
 # pdf = { git = "https://github.com/pdf-rs/pdf" }
@@ -53,7 +52,7 @@ itertools = "0.11.0"
 async-recursion = "1.0.5"
 tokenizers = { version = "0.13.4" }
 rustc-hash = "1.1.0"
-kalosm-sample = { path = "../kalosm-sample" }
+kalosm-sample.workspace = true
 ego-tree = "0.6.2"
 image = "0.24.7"
 meval = "0.2.0"

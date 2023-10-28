@@ -23,7 +23,7 @@ serde_json = "1.0.106"
 async-trait = "0.1.73"
 tokio = { version = "1.33.0", features = ["full"] }
 
-kalosm-language-model = { path = "../language-model" }
+kalosm-language-model.workspace = true
 
 [features]
 accelerate = ["dep:accelerate-src", "candle-core/accelerate", "candle-nn/accelerate", "candle-transformers/accelerate"]

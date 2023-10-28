@@ -6,12 +6,12 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-kalosm-language = { path = "../kalosm-language" }
-kalosm-sound = { path = "../kalosm-sound" }
+kalosm-language.workspace = true
+kalosm-sound.workspace = true
 tokio = { version = "1.32.0", features = ["full"] }
 futures-util = "0.3.28"
 anyhow = "1.0.75"
-kalosm-streams = { path = "../kalosm-streams" }
+kalosm-streams.workspace = true
 rand = "0.8.5"
 
 [dev-dependencies]
