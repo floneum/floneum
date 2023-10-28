@@ -774,13 +774,6 @@ impl crate::model::GenerationParameters {
                 SamplerSlot::new_chain(move || Box::<SampleSeqRepetition>::default(), []),
             ),
             (
-                "mirostat2",
-                SamplerSlot::new_single(
-                    move || Box::new(SampleMirostat2::default().tau(tau).eta(eta).mu(mu)),
-                    Option::<SampleTopK>::None,
-                ),
-            ),
-            (
                 "temperature",
                 SamplerSlot::new_single(
                     move || Box::new(SampleTemperature::default().temperature(temperature)),
@@ -790,6 +783,13 @@ impl crate::model::GenerationParameters {
             (
                 "randdistrib",
                 SamplerSlot::new_static(|| Box::<SampleRandDistrib>::default()),
+            ),
+            (
+                "mirostat2",
+                SamplerSlot::new_single(
+                    move || Box::new(SampleMirostat2::default().tau(tau).eta(eta).mu(mu)),
+                    Option::<SampleMirostat2>::None,
+                ),
             ),
         ])
         .into_chain()
