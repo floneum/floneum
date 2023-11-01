@@ -751,37 +751,33 @@ impl crate::model::GenerationParameters {
         SamplerChainBuilder::from([
             (
                 "repetition",
-                SamplerSlot::new_static(
-                    move || {
-                        Box::new(
-                            SampleRepetition::default()
-                                .penalty(repetition_penalty)
-                                .last_n(repetition_penalty_range as usize),
-                        )
-                    },
-                ),
+                SamplerSlot::new_static(move || {
+                    Box::new(
+                        SampleRepetition::default()
+                            .penalty(repetition_penalty)
+                            .last_n(repetition_penalty_range as usize),
+                    )
+                }),
             ),
             (
                 "freqpresence",
-                SamplerSlot::new_static(
-                    move || Box::new(SampleFreqPresence::default().last_n(64)),
-                ),
+                SamplerSlot::new_static(move || Box::new(SampleFreqPresence::default().last_n(64))),
             ),
             (
                 "seqrepetition",
-                SamplerSlot::new_static(move || Box::<SampleSeqRepetition>::default(),),
+                SamplerSlot::new_static(move || Box::<SampleSeqRepetition>::default()),
             ),
             (
                 "temperature",
-                SamplerSlot::new_static(
-                    move || Box::new(SampleTemperature::default().temperature(temperature)),
-                ),
+                SamplerSlot::new_static(move || {
+                    Box::new(SampleTemperature::default().temperature(temperature))
+                }),
             ),
             (
                 "mirostat2",
-                SamplerSlot::new_static(
-                    move || Box::new(SampleMirostat2::default().tau(tau).eta(eta).mu(mu)),
-                ),
+                SamplerSlot::new_static(move || {
+                    Box::new(SampleMirostat2::default().tau(tau).eta(eta).mu(mu))
+                }),
             ),
         ])
         .into_chain()

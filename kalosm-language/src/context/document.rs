@@ -1,4 +1,5 @@
 use url::Url;
+pub use whatlang::Lang;
 
 /// A document is a piece of text with a title.
 #[derive(Debug, Clone, PartialEq)]
@@ -11,6 +12,11 @@ impl Document {
     /// Create a new document from a source.
     pub async fn new<T: IntoDocument>(source: T) -> anyhow::Result<Self> {
         source.into_document().await
+    }
+
+    /// Get the language of the document.
+    pub fn language(&self) -> Option<whatlang::Lang> {
+        whatlang::detect_lang(&self.body)
     }
 
     /// Create a new document from the raw parts.

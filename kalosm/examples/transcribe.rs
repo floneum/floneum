@@ -1,5 +1,5 @@
 use futures_util::StreamExt;
-use rwhisper::*;
+use kalosm::audio::*;
 use tokio::time::{Duration, Instant};
 
 #[tokio::main]
@@ -15,7 +15,8 @@ async fn main() -> Result<(), anyhow::Error> {
         .await?;
 
     // Transcribe the audio.
-    let mut text = model.transcribe(audio)?;
+    let mut transcribed = model.transcribe(audio)?;
+    let mut current_time_stamp = 0.0;
 
     // As the model transcribes the audio, print the text to the console.
     while let Some(transcribed) = transcribed.next().await {

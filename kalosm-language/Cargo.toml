@@ -57,6 +57,7 @@ kalosm-sample.workspace = true
 ego-tree = "0.6.2"
 image = "0.24.7"
 meval = "0.2.0"
+whatlang = "0.16.3"
 
 [features]
 metal = ["llm/metal", "rphi/accelerate", "rbert/accelerate"]
