@@ -21,16 +21,26 @@ pub enum WhisperSource {
     Large,
     /// The large model with only English support.
     LargeV2,
+    /// The distil-medium english model.
+    DistilMediumEn,
+    /// The distil-large model.
+    DistilLargeV2,
 }
 
 impl WhisperSource {
     /// Check if the model is multilingual.
     pub fn is_multilingual(&self) -> bool {
         match self {
-            Self::Tiny | Self::Base | Self::Small | Self::Medium | Self::Large | Self::LargeV2 => {
-                true
+            Self::Tiny
+            | Self::Base
+            | Self::Small
+            | Self::Medium
+            | Self::Large
+            | Self::LargeV2
+            | Self::DistilLargeV2 => true,
+            Self::TinyEn | Self::BaseEn | Self::SmallEn | Self::MediumEn | Self::DistilMediumEn => {
+                false
             }
-            Self::TinyEn | Self::BaseEn | Self::SmallEn | Self::MediumEn => false,
         }
     }
 
@@ -46,6 +56,8 @@ impl WhisperSource {
             Self::MediumEn => ("openai/whisper-medium.en", "main"),
             Self::Large => ("openai/whisper-large", "refs/pr/36"),
             Self::LargeV2 => ("openai/whisper-large-v2", "refs/pr/57"),
+            Self::DistilMediumEn => ("distil-whisper/distil-medium.en", "main"),
+            Self::DistilLargeV2 => ("distil-whisper/distil-large-v2", "main"),
         }
     }
 }
