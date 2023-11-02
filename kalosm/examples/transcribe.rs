@@ -9,6 +9,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .with_source(WhisperSource::DistilLargeV2)
         .build()?;
 
+    let mut current_time_stamp = 0.0;
     loop {
         // Record audio from the microphone for 5 seconds.
         let audio = kalosm_sound::MicInput::default()
@@ -17,7 +18,6 @@ async fn main() -> Result<(), anyhow::Error> {
 
         // Transcribe the audio.
         let mut transcribed = model.transcribe(audio)?;
-        let mut current_time_stamp = 0.0;
 
         // As the model transcribes the audio, print the text to the console.
         while let Some(transcribed) = transcribed.next().await {
