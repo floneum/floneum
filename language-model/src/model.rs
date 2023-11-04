@@ -437,8 +437,8 @@ pub trait ModelExt: Model + Send + 'static {
                     sampler,
                     sender,
                 );
-                match result_sender.send(result){
-                    Ok(()) => {},
+                match result_sender.send(result) {
+                    Ok(()) => {}
                     Err(Ok(_)) => {
                         log::error!("Error generating structured text: cancelled");
                     }
