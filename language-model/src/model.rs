@@ -1,7 +1,8 @@
 use crate::embedding::{Embedding, VectorSpace};
+use crate::structured::generate_structured;
 use crate::UnknownVectorSpace;
 use futures_util::{Stream, StreamExt};
-use kalosm_sample::Tokenizer;
+use kalosm_sample::{Parser, Tokenizer};
 use llm_samplers::configure::SamplerChainBuilder;
 use llm_samplers::prelude::*;
 use llm_samplers::types::Logits;
@@ -405,6 +406,52 @@ pub trait ModelExt: Model + Send + 'static {
     ) -> anyhow::Result<()> {
         self.run_sync_raw(Box::new(f)).await
     }
+
+    /// Generate structured text with the given prompt.
+    async fn stream_structured_text_with_sampler<P>(
+        &mut self,
+        prompt: &str,
+        parser: P,
+        parser_state: P::PartialState,
+        sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
+    ) -> anyhow::Result<Self::TextStream>
+    where
+        Self::TextStream: From<tokio::sync::mpsc::UnboundedReceiver<String>>,
+        P: Parser + Send + 'static,
+        P::PartialState: Send + 'static,
+        P::Output: Send + 'static,
+    {
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        let (result_sender, result_receiver) = tokio::sync::oneshot::channel();
+
+        let tokenizer = self.tokenizer();
+        let prompt = prompt.to_string();
+        self.run_sync(move |llm: &mut Self::SyncModel| {
+            Box::pin(async move {
+                let result = generate_structured(
+                    prompt,
+                    llm,
+                    &tokenizer,
+                    parser,
+                    parser_state,
+                    sampler,
+                    sender,
+                );
+                match result_sender.send(result){
+                    Ok(()) => {},
+                    Err(Ok(_)) => {
+                        log::error!("Error generating structured text: cancelled");
+                    }
+                    Err(Err(err)) => {
+                        log::error!("Error generating structured text: {:?}", err);
+                    }
+                }
+            })
+        })
+        .await?;
+
+        Ok(receiver.into())
+    }
 }
 
 impl<M: Model + Send + 'static> ModelExt for M {}
@@ -452,6 +499,13 @@ pub trait SyncModel {
         prompt: &str,
     ) -> anyhow::Result<Logits<u32, f32>>;
 
+    /// Run the model synchronously with a pre-tokenized input.
+    fn feed_tokens(
+        &mut self,
+        session: &mut Self::Session,
+        tokens: &[u32],
+    ) -> anyhow::Result<Logits<u32, f32>>;
+
     /// Get the token ID that represents the end of a sequence.
     fn stop_token(&self) -> anyhow::Result<u32>;
 }
@@ -467,6 +521,14 @@ impl SyncModel for SyncModelNotSupported {
     }
 
     fn feed_text(&mut self, _session: &mut (), _prompt: &str) -> anyhow::Result<Logits<u32, f32>> {
+        Err(anyhow::Error::msg("Not implemented"))
+    }
+
+    fn feed_tokens(
+        &mut self,
+        _session: &mut (),
+        _tokens: &[u32],
+    ) -> anyhow::Result<Logits<u32, f32>> {
         Err(anyhow::Error::msg("Not implemented"))
     }
 
@@ -624,6 +686,15 @@ impl SyncModel for BoxedSyncModel {
         self_ref.feed_text(session, prompt)
     }
 
+    fn feed_tokens(
+        &mut self,
+        session: &mut Self::Session,
+        tokens: &[u32],
+    ) -> anyhow::Result<Logits<u32, f32>> {
+        let self_ref: &mut (dyn SyncModel<Session = Box<dyn Any>>) = self.as_mut();
+        self_ref.feed_tokens(session, tokens)
+    }
+
     fn stop_token(&self) -> anyhow::Result<u32> {
         let self_ref: &(dyn SyncModel<Session = Box<dyn Any>>) = self.as_ref();
         self_ref.stop_token()
@@ -655,6 +726,25 @@ impl<M: SyncModel<Session = S>, S: Any> SyncModel for AnySyncModel<M, S> {
                 }
             },
             prompt,
+        )
+    }
+
+    fn feed_tokens(
+        &mut self,
+        session: &mut Self::Session,
+        tokens: &[u32],
+    ) -> anyhow::Result<Logits<u32, f32>> {
+        self.0.feed_tokens(
+            match session.downcast_mut() {
+                Some(s) => s,
+                None => {
+                    return Err(anyhow::Error::msg(format!(
+                        "Invalid session type expected {:?}",
+                        std::any::type_name::<S>()
+                    )))
+                }
+            },
+            tokens,
         )
     }
 
@@ -777,6 +867,44 @@ impl crate::model::GenerationParameters {
                 "mirostat2",
                 SamplerSlot::new_static(move || {
                     Box::new(SampleMirostat2::default().tau(tau).eta(eta).mu(mu))
+                }),
+            ),
+        ])
+        .into_chain()
+    }
+
+    /// Create a sampler chain from the generation parameters without removing any tokens. This can be useful in combination with [`ModelExt::stream_structured_text_with_sampler`] which may pick unlikely tokens.
+    pub fn bias_only_sampler(self) -> SamplerChain {
+        use llm_samplers::configure::SamplerSlot;
+        let GenerationParameters {
+            temperature,
+            repetition_penalty,
+            repetition_penalty_range,
+            ..
+        } = self;
+        SamplerChainBuilder::from([
+            (
+                "repetition",
+                SamplerSlot::new_static(move || {
+                    Box::new(
+                        SampleRepetition::default()
+                            .penalty(repetition_penalty)
+                            .last_n(repetition_penalty_range as usize),
+                    )
+                }),
+            ),
+            (
+                "freqpresence",
+                SamplerSlot::new_static(move || Box::new(SampleFreqPresence::default().last_n(64))),
+            ),
+            (
+                "seqrepetition",
+                SamplerSlot::new_static(move || Box::<SampleSeqRepetition>::default()),
+            ),
+            (
+                "temperature",
+                SamplerSlot::new_static(move || {
+                    Box::new(SampleTemperature::default().temperature(temperature))
                 }),
             ),
         ])

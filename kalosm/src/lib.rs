@@ -6,3 +6,4 @@ pub use kalosm_sound as audio;
 pub use kalosm_streams::*;
 
 mod chat;
+pub use chat::*;

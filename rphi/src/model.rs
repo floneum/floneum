@@ -76,12 +76,20 @@ impl SyncModel for PhiModel {
             .map_err(E::msg)?
             .get_ids()
             .to_vec();
+        self.feed_tokens(session, &tokens)
+    }
+
+    fn feed_tokens(
+        &mut self,
+        session: &mut Self::Session,
+        tokens: &[u32],
+    ) -> anyhow::Result<Logits<u32, f32>> {
         session.current_tokens.extend(tokens.iter().copied());
 
         Self::forward(
             &mut self.model,
             &self.device,
-            &tokens,
+            tokens,
             Some(&mut session.cache),
         )
     }

@@ -72,10 +72,17 @@ impl SyncModel for MistralModel {
     ) -> anyhow::Result<Logits<u32, f32>> {
         let encoded = self.tokenizer.encode(&*prompt, true).map_err(E::msg)?;
         let tokens = encoded.get_ids();
-        let token_count = tokens.len();
+        self.feed_tokens(session, tokens)
+    }
 
+    fn feed_tokens(
+        &mut self,
+        session: &mut Self::Session,
+        tokens: &[u32],
+    ) -> anyhow::Result<Logits<u32, f32>> {
         session.current_tokens.extend(tokens);
 
+        let token_count = tokens.len();
         Self::forward(
             &mut self.model,
             &self.device,

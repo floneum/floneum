@@ -32,3 +32,4 @@ mod remote;
 pub use futures_util::StreamExt;
 pub use kalosm_sample;
 pub use remote::*;
+mod structured;

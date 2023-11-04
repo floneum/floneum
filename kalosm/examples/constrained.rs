@@ -1,7 +1,6 @@
 use futures_util::stream::StreamExt;
 use kalosm_language::*;
 use kalosm_sample::*;
-use llm_samplers::prelude::SamplerChain;
 use std::io::Write;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -13,7 +12,7 @@ async fn main() {
     let prompt = "A";
     print!("{}", prompt);
 
-    let validator = LiteralParser::from("A list of 10 numbers: ")
+    let validator = LiteralParser::from(" list of 10 numbers: ")
         .then(IntegerParser::new(1004..=1005))
         .then(LiteralParser::from(", "))
         .then(IntegerParser::new(-1005..=-1000))
@@ -33,10 +32,14 @@ async fn main() {
         .then(IntegerParser::new(0..=10))
         .then(LiteralParser::from(", "))
         .then(IntegerParser::new(0..=10));
-    let structured = StructuredSampler::new(validator.clone(), 0, llm.tokenizer());
-    let chain = SamplerChain::new() + structured;
+    let validator_state = validator.create_parser_state();
     let mut words = llm
-        .stream_text_with_sampler(prompt, Some(300), None, Arc::new(Mutex::new(chain)))
+        .stream_structured_text_with_sampler(
+            prompt,
+            validator,
+            validator_state,
+            Arc::new(Mutex::new(GenerationParameters::default().bias_only_sampler())),
+        )
         .await
         .unwrap();
 
