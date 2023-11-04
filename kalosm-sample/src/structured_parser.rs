@@ -393,7 +393,12 @@ impl Parser for IntegerParser {
         for index in 0..input.len() {
             let input_byte = input[index];
             let digit = match input_byte {
-                b'0'..=b'9' => input_byte - b'0',
+                b'0'..=b'9' => {
+                    if (state == IntegerParserProgress::Initial || state == IntegerParserProgress::AfterSign ) && input_byte == b'0' {
+                        return Err(()); // Leading zeros are not allowed                        
+                    }
+                    input_byte - b'0'
+                },
                 b'+' | b'-' => {
                     if state == IntegerParserProgress::Initial {
                         state = IntegerParserProgress::AfterSign;
@@ -631,7 +636,12 @@ impl Parser for FloatParser {
         for index in 0..input.len() {
             let input_byte = input[index];
             let digit = match input_byte {
-                b'0'..=b'9' => input_byte - b'0',
+                b'0'..=b'9' =>{
+                    if (state == FloatParserProgress::Initial || state == FloatParserProgress::AfterSign ) && input_byte == b'0' {
+                        return Err(()); // Leading zeros are not allowed                        
+                    }
+                    input_byte - b'0'
+                },
                 b'.' => {
                     let value_digits = value.abs().log10() + 1.;
                     let start_digits = self.range.start().abs().log10() + 1.;
