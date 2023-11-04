@@ -414,6 +414,7 @@ pub trait ModelExt: Model + Send + 'static {
         parser: P,
         parser_state: P::PartialState,
         sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
+        post_filter_sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
     ) -> anyhow::Result<Self::TextStream>
     where
         Self::TextStream: From<tokio::sync::mpsc::UnboundedReceiver<String>>,
@@ -435,6 +436,7 @@ pub trait ModelExt: Model + Send + 'static {
                     parser,
                     parser_state,
                     sampler,
+                    post_filter_sampler,
                     sender,
                 );
                 match result_sender.send(result) {
@@ -872,6 +874,11 @@ impl crate::model::GenerationParameters {
         ])
         .into_chain()
     }
+
+    /// Get the mirostat2 sampler from the generation parameters.
+pub fn mirostat2_sampler(self) -> SampleMirostat2 {
+    SampleMirostat2::default().tau(self.tau).eta(self.eta).mu(self.mu)
+}
 
     /// Create a sampler chain from the generation parameters without removing any tokens. This can be useful in combination with [`ModelExt::stream_structured_text_with_sampler`] which may pick unlikely tokens.
     pub fn bias_only_sampler(self) -> SamplerChain {

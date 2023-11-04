@@ -5,7 +5,7 @@ use std::{
 
 use kalosm_sample::{Parser, Tokenizer};
 use llm_samplers::types::{HasSamplerResources, Sampler, SamplerError};
-use rand::Rng;
+use rustc_hash::FxHashMap;
 
 use crate::SyncModel;
 
@@ -16,6 +16,7 @@ pub(crate) fn generate_structured<M: SyncModel, P: Parser>(
     parser: P,
     mut parser_state: P::PartialState,
     mut sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
+    mut post_filter_sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
     stream: tokio::sync::mpsc::UnboundedSender<String>,
 ) -> anyhow::Result<P::Output> {
     let prompt_text = prompt.to_string();
@@ -42,39 +43,26 @@ pub(crate) fn generate_structured<M: SyncModel, P: Parser>(
             rng: &mut rng,
         };
         let sampled = sampler.sample(resources, &mut logits)?;
-        let mut choices = Vec::with_capacity(sampled.len());
-        for logit in logits.iter() {
+        let mut state_map = FxHashMap::default();
+        for logit in sampled.iter_mut() {
             let new_text = tokenizer.decode(&[logit.token_id]).unwrap();
             if new_text.is_empty() || logit.logit == 0.0 {
+                logit.logit = 0.0;
                 continue;
             }
             if let Ok(result) = parser.parse(&parser_state, new_text.as_bytes()) {
                 let result = result.without_remaining();
-                let prob = logit.logit;
-                choices.push((logit.token_id, new_text.to_string(), result, prob));
+                state_map.insert(logit.token_id, (new_text.to_string(), result));
+            }
+            else {
+                logit.logit = 0.0;
             }
         }
-        if choices.is_empty() {
+        if state_map.is_empty() {
             return Err(anyhow::anyhow!("No valid tokens found"));
         }
-        let total = choices.iter().map(|(_, _, _, prob)| prob).sum::<f32>();
-        let mut rng = rand::thread_rng();
-        let random_choice = if total == 0.0 {
-            0.0
-        } else {
-            rng.gen_range(0.0..total)
-        };
-        let mut best_token = None;
-
-        let mut total = 0.0;
-        for (token_id, token, result, prob) in choices {
-            total += prob;
-            if total >= random_choice {
-                best_token = Some((token_id, token, result));
-                break;
-            }
-        }
-        let (token_id, token, result) = best_token.unwrap();
+        let token_id =  post_filter_sampler.sample_token(resources, &mut logits)?.ok_or(anyhow::anyhow!("No valid tokens found"))?;
+        let (token, result) = state_map.remove(&token_id).unwrap();
 
         stream
             .send(token.clone())
