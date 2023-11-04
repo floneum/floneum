@@ -8,6 +8,10 @@ mod or;
 pub use or::*;
 mod then;
 pub use then::*;
+mod string;
+pub use string::*;
+mod repeat;
+pub use repeat::*;
 
 /// A trait for a parser with a default state.
 pub trait CreateParserState: Parser {
@@ -68,6 +72,14 @@ pub trait Parser {
         Self: Sized,
     {
         SequenceParser::new(self, other)
+    }
+
+    /// Repeat this parser a number of times.
+    fn repeat(self, length_range: std::ops::RangeInclusive<usize>) -> RepeatParser<Self>
+    where
+        Self: Sized,
+    {
+        RepeatParser::new(self, length_range)
     }
 }
 

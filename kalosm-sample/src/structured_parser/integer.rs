@@ -39,6 +39,15 @@ impl IntegerParser {
         self.range.contains(&value)
     }
 
+    fn should_stop(&self, value: i64) -> bool {
+        let after_next_digit = value * 10;
+        if after_next_digit > *self.range.end() || after_next_digit < *self.range.start() {
+            true
+        } else {
+            false
+        }
+    }
+
     fn could_number_become_valid(&self, value: i64) -> bool {
         if self.is_number_valid(value) {
             true
@@ -178,6 +187,13 @@ impl Parser for IntegerParser {
                 None => {
                     return Err(());
                 }
+            }
+
+            if self.should_stop(value as i64 * if positive { 1 } else { -1 }) {
+                return Ok(ParseResult::Finished {
+                    result: value as i64 * if positive { 1 } else { -1 },
+                    remaining: &input[index + 1..],
+                });
             }
 
             if !self.could_number_become_valid(value as i64 * if positive { 1 } else { -1 }) {
