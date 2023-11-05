@@ -34,7 +34,7 @@ tempfile = "3.8.0"
 rss = { version = "2.0.6", features = ["atom"] }
 scraper = { version = "0.18.0", features = ["atomic"] }
 kalosm-language-model.workspace = true
-headless_chrome = "1.0.7"
+headless_chrome = { git = "https://github.com/atroche/rust-headless-chrome", rev = "6bbefaf04a4906420bf21de25ae8d0c1bc70721c" }
 candle-core.workspace = true
 tokio-util = { version = "0.7.9", features = ["rt"] }
 crossbeam = "0.8.2"
