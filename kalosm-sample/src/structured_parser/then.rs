@@ -9,7 +9,7 @@ pub enum SequenceParserState<P1, P2, O1> {
     SecondParser(P2, O1),
 }
 
-impl<P1, P2, O1> SequenceParserState<P1, P2, O1>{
+impl<P1, P2, O1> SequenceParserState<P1, P2, O1> {
     /// Create a new sequence parser state.
     pub fn new(state1: P1) -> Self {
         Self::FirstParser(state1)
@@ -81,7 +81,10 @@ impl<
                         remaining,
                     } => {
                         let second_parser_state = self.parser2.create_parser_state();
-                        let result = self.parser2.parse(&second_parser_state, remaining).map_err(Either::Right)?;
+                        let result = self
+                            .parser2
+                            .parse(&second_parser_state, remaining)
+                            .map_err(Either::Right)?;
                         match result {
                             ParseResult::Finished { result, remaining } => {
                                 Ok(ParseResult::Finished {
@@ -153,5 +156,8 @@ fn sequence_parser() {
             remaining: &[]
         })
     );
-    assert_eq!(parser.parse(&state, b"Goodbye, world!"), Err(Either::Left(())));
+    assert_eq!(
+        parser.parse(&state, b"Goodbye, world!"),
+        Err(Either::Left(()))
+    );
 }

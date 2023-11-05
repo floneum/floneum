@@ -12,6 +12,8 @@ mod string;
 pub use string::*;
 mod repeat;
 pub use repeat::*;
+mod separated;
+pub use separated::*;
 mod has_parser;
 pub use has_parser::*;
 
@@ -238,7 +240,7 @@ pub enum StructureParserState {
     Literal(LiteralParserOffset),
     NumInt(IntegerParserState),
     Num(FloatParserState),
-    Either(ChoiceParserState<Box<StructureParserState>, Box<StructureParserState>, ()>),
+    Either(ChoiceParserState<Box<StructureParserState>, Box<StructureParserState>, (), ()>),
     Then(SequenceParserState<Box<StructureParserState>, Box<StructureParserState>, ()>),
 }
 

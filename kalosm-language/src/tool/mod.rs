@@ -1,7 +1,7 @@
 mod search;
 use kalosm_sample::{
-    ChoiceParser, CreateParserState, LiteralParser, LiteralParserOffset, ParseResult, Parser,
-    SequenceParser, SequenceParserState,
+    ChoiceParser, CreateParserState, Either, LiteralParser, LiteralParserOffset, ParseResult,
+    Parser, SequenceParser, SequenceParserState,
 };
 pub use search::*;
 mod calculator;
@@ -155,7 +155,7 @@ Question: {question}
     pub fn thought_constraints(
         &self,
     ) -> impl Parser<
-        Error = (),
+        Error = Either<(), ()>,
         Output = ((), String),
         PartialState = SequenceParserState<LiteralParserOffset, OneLineState, ()>,
     > + CreateParserState
@@ -194,7 +194,7 @@ Question: {question}
     pub fn answer_constraints(
         &self,
     ) -> impl Parser<
-        Error = (),
+        Error = Either<(), ()>,
         Output = ((), String),
         PartialState = SequenceParserState<LiteralParserOffset, OneLineState, ()>,
     > + CreateParserState
@@ -211,9 +211,9 @@ Question: {question}
         &self,
     ) -> ChoiceParser<
         ChoiceParser<
-            impl Parser<
-                    Error = (),
-                    Output = ((), String),
+            impl kalosm_sample::Parser<
+                    Error = kalosm_sample::Either<(), ()>,
+                    Output = ((), std::string::String),
                     PartialState = SequenceParserState<LiteralParserOffset, OneLineState, ()>,
                 > + CreateParserState
                 + Send
@@ -221,8 +221,8 @@ Question: {question}
                 + 'static,
             SequenceParser<
                 SequenceParser<
-                    LiteralParser<&'static str>,
-                    impl Parser<
+                    LiteralParser<&str>,
+                    impl kalosm_sample::Parser<
                             Error = (),
                             Output = usize,
                             PartialState = IndexParserState<LiteralParserOffset, ()>,
@@ -234,9 +234,9 @@ Question: {question}
                 OneLine,
             >,
         >,
-        impl Parser<
-                Error = (),
-                Output = ((), String),
+        impl kalosm_sample::Parser<
+                Error = kalosm_sample::Either<(), ()>,
+                Output = ((), std::string::String),
                 PartialState = SequenceParserState<LiteralParserOffset, OneLineState, ()>,
             > + CreateParserState
             + Send

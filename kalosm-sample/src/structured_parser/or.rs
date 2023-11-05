@@ -2,12 +2,12 @@ use crate::{CreateParserState, ParseResult, Parser};
 
 /// State of a choice parser.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub struct ChoiceParserState<P1, P2, E> {
-    pub(crate) state1: Result<P1, E>,
-    pub(crate) state2: Result<P2, E>,
+pub struct ChoiceParserState<P1, P2, E1, E2> {
+    pub(crate) state1: Result<P1, E1>,
+    pub(crate) state2: Result<P2, E2>,
 }
 
-impl<P1, P2, E> ChoiceParserState<P1, P2, E> {
+impl<P1, P2, E1, E2> ChoiceParserState<P1, P2, E1, E2> {
     /// Create a new choice parser state.
     pub fn new(state1: P1, state2: P2) -> Self {
         Self {
@@ -17,7 +17,7 @@ impl<P1, P2, E> ChoiceParserState<P1, P2, E> {
     }
 }
 
-impl<P1: Default, P2: Default, E> Default for ChoiceParserState<P1, P2, E> {
+impl<P1: Default, P2: Default, E1, E2> Default for ChoiceParserState<P1, P2, E1, E2> {
     fn default() -> Self {
         ChoiceParserState {
             state1: Ok(Default::default()),
@@ -41,13 +41,14 @@ impl<P1, P2> ChoiceParser<P1, P2> {
 }
 
 impl<
-        E: Clone,
+        E1: Clone,
+        E2: Clone,
         O1,
         O2,
         PA1,
         PA2,
-        P1: Parser<Error = E, Output = O1, PartialState = PA1> + CreateParserState,
-        P2: Parser<Error = E, Output = O2, PartialState = PA2> + CreateParserState,
+        P1: Parser<Error = E1, Output = O1, PartialState = PA1> + CreateParserState,
+        P2: Parser<Error = E2, Output = O2, PartialState = PA2> + CreateParserState,
     > CreateParserState for ChoiceParser<P1, P2>
 {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState {
@@ -68,18 +69,19 @@ pub enum Either<L, R> {
 }
 
 impl<
-        E: Clone,
+        E1: Clone,
+        E2: Clone,
         O1,
         O2,
         PA1,
         PA2,
-        P1: Parser<Error = E, Output = O1, PartialState = PA1>,
-        P2: Parser<Error = E, Output = O2, PartialState = PA2>,
+        P1: Parser<Error = E1, Output = O1, PartialState = PA1>,
+        P2: Parser<Error = E2, Output = O2, PartialState = PA2>,
     > Parser for ChoiceParser<P1, P2>
 {
-    type Error = E;
+    type Error = Either<E1, E2>;
     type Output = Either<O1, O2>;
-    type PartialState = ChoiceParserState<PA1, PA2, E>;
+    type PartialState = ChoiceParserState<PA1, PA2, E1, E2>;
 
     fn parse<'a>(
         &self,
@@ -126,11 +128,11 @@ impl<
                     }
 
                     // If both parsers fail, we return the error from the first parser
-                    (Err(err1), Err(_)) => Err(err1),
+                    (Err(err1), Err(_)) => Err(Either::Left(err1.clone())),
                 }
             }
             (Ok(p1), Err(err2)) => {
-                let result = self.parser1.parse(p1, input)?;
+                let result = self.parser1.parse(p1, input).map_err(Either::Left)?;
                 match result {
                     ParseResult::Finished { result, remaining } => Ok(ParseResult::Finished {
                         result: Either::Left(result),
@@ -146,7 +148,7 @@ impl<
                 }
             }
             (Err(err1), Ok(p2)) => {
-                let result = self.parser2.parse(p2, input)?;
+                let result = self.parser2.parse(p2, input).map_err(Either::Right)?;
                 match result {
                     ParseResult::Finished { result, remaining } => Ok(ParseResult::Finished {
                         result: Either::Right(result),
@@ -197,7 +199,10 @@ fn choice_parser() {
             remaining: &[]
         })
     );
-    assert_eq!(parser.parse(&state, b"Goodbye, world!"), Err(()));
+    assert_eq!(
+        parser.parse(&state, b"Goodbye, world!"),
+        Err(Either::Left(()))
+    );
 
     let parser = ChoiceParser::new(
         LiteralParser::new("This isn't a test"),
