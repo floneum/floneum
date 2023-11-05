@@ -2986,7 +2986,7 @@ dependencies = [
  "bytesize",
  "floneumite",
  "futures-util",
- "headless_chrome 1.0.6",
+ "headless_chrome",
  "kalosm",
  "log",
  "once_cell",
@@ -4173,32 +4173,6 @@ dependencies = [
 
 [[package]]
 name = "headless_chrome"
-version = "1.0.6"
-source = "git+https://github.com/atroche/rust-headless-chrome?rev=6bbefaf04a4906420bf21de25ae8d0c1bc70721c#6bbefaf04a4906420bf21de25ae8d0c1bc70721c"
-dependencies = [
- "anyhow",
- "auto_generate_cdp",
- "base64 0.21.5",
- "derive_builder 0.12.0",
- "directories 4.0.1",
- "log",
- "rand 0.8.5",
- "regex",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "tungstenite 0.18.0",
- "ureq",
- "url",
- "walkdir",
- "which",
- "winreg 0.10.1",
- "zip",
-]
-
-[[package]]
-name = "headless_chrome"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "510feb44247f8b19964c8359f5f746fe202e88dfaeab1ac53632ad71b6dec60b"
@@ -4207,6 +4181,7 @@ dependencies = [
  "auto_generate_cdp",
  "base64 0.21.5",
  "derive_builder 0.12.0",
+ "directories 5.0.1",
  "log",
  "rand 0.8.5",
  "regex",
@@ -4214,10 +4189,13 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror",
- "tungstenite 0.20.1",
+ "tungstenite",
+ "ureq",
  "url",
+ "walkdir",
  "which",
  "winreg 0.51.0",
+ "zip",
 ]
 
 [[package]]
@@ -4993,7 +4971,7 @@ dependencies = [
  "docx-rs",
  "ego-tree",
  "futures-util",
- "headless_chrome 1.0.7",
+ "headless_chrome",
  "image 0.24.7",
  "instant-distance",
  "itertools 0.11.0",
@@ -10183,25 +10161,6 @@ name = "ttf-parser"
 version = "0.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7b3e06c9b9d80ed6b745c7159c40b311ad2916abb34a49e9be2653b90db0d8dd"
-
-[[package]]
-name = "tungstenite"
-version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30ee6ab729cd4cf0fd55218530c4522ed30b7b6081752839b68fcec8d0960788"
-dependencies = [
- "base64 0.13.1",
- "byteorder",
- "bytes",
- "http",
- "httparse",
- "log",
- "rand 0.8.5",
- "sha1",
- "thiserror",
- "url",
- "utf-8",
-]
 
 [[package]]
 name = "tungstenite"

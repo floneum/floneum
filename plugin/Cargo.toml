@@ -22,7 +22,7 @@ pollster = "0.3.0"
 url = "2.4.0"
 anyhow = "1.0.71"
 tracing = "0.1.37"
-headless_chrome = {git = "https://github.com/atroche/rust-headless-chrome", rev = "6bbefaf04a4906420bf21de25ae8d0c1bc70721c", features = ["fetch"]}
+headless_chrome = { version = "1.0.7", features = ["fetch"]}
 floneumite = { path = "../floneumite" }
 kalosm = { path = "../kalosm" }
 
