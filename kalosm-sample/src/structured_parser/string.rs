@@ -2,20 +2,34 @@ use crate::{CreateParserState, ParseResult, Parser};
 
 /// A parser for an ascii string.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct StringParser {
+pub struct StringParser<F: Fn(char) -> bool + 'static> {
     len_range: std::ops::RangeInclusive<usize>,
+    character_filter: F,
 }
 
-impl CreateParserState for StringParser {
+impl CreateParserState for StringParser<fn(char) -> bool> {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState {
         StringParserState::default()
     }
 }
 
-impl StringParser {
+impl StringParser<fn(char) -> bool> {
     /// Create a new string parser.
-    pub fn new(len_range: std::ops::RangeInclusive<usize>) -> Self {
-        Self { len_range }
+    pub fn new(len_range: std::ops::RangeInclusive<usize>,) -> Self {
+        Self { len_range, character_filter: |_| true }
+    }
+}
+
+impl<F: Fn(char) -> bool + 'static> StringParser<F> {
+    /// Only allow characters that pass the filter.
+    pub fn with_allowed_characters<F2: Fn(char) -> bool + 'static>(
+        self,
+        character_filter: F2,
+    ) -> StringParser<F2> {
+        StringParser {
+            len_range: self.len_range,
+            character_filter,
+        }
     }
 }
 
@@ -50,7 +64,7 @@ impl StringParserState {
     }
 }
 
-impl Parser for StringParser {
+impl<F: Fn(char) -> bool + 'static> Parser for StringParser<F> {
     type Error = ();
     type Output = String;
     type PartialState = StringParserState;
@@ -76,10 +90,21 @@ impl Parser for StringParser {
                     }
                 }
                 StringParserProgress::InString => {
+                    if (state.next_char_escaped || *byte != b'"') && !(self.character_filter)(*byte as char){
+                        return Err(());
+                    }
+
+                    if string.len() == *self.len_range.end() && *byte != b'"' {
+                        return Err(());
+                    }
+
                     if next_char_escaped {
                         next_char_escaped = false;
                         string.push(*byte as char);
                     } else if *byte == b'"' {
+                        if !self.len_range.contains(&string.len()) {
+                            return Err(());
+                        }
                         return Ok(ParseResult::Finished {
                             remaining: &input[i + 1..],
                             result: string,

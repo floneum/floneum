@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity)]
+
 mod integer;
 pub use integer::*;
 mod float;
@@ -16,6 +18,10 @@ mod separated;
 pub use separated::*;
 mod has_parser;
 pub use has_parser::*;
+mod word;
+pub use word::*;
+mod sentence;
+pub use sentence::*;
 
 /// A trait for a parser with a default state.
 pub trait CreateParserState: Parser {
@@ -111,7 +117,7 @@ impl<P: Parser> Parser for Box<P> {
         state: &Self::PartialState,
         input: &'a [u8],
     ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
-        let _self: &P = &*self;
+        let _self: &P = self;
         _self.parse(state, input)
     }
 }

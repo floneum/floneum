@@ -41,11 +41,7 @@ impl IntegerParser {
 
     fn should_stop(&self, value: i64) -> bool {
         let after_next_digit = value * 10;
-        if after_next_digit > *self.range.end() || after_next_digit < *self.range.start() {
-            true
-        } else {
-            false
-        }
+        after_next_digit > *self.range.end() || after_next_digit < *self.range.start()
     }
 
     fn could_number_become_valid(&self, value: i64) -> bool {
@@ -60,10 +56,8 @@ impl IntegerParser {
                 if value * 10 > end_value {
                     return false;
                 }
-            } else {
-                if value * 10 < start_value {
-                    return false;
-                }
+            } else if value * 10 < start_value {
+                return false;
             }
 
             // Check if the digits are within the range so far
@@ -83,11 +77,10 @@ impl IntegerParser {
                     {
                         return false;
                     }
-                } else {
-                    if selected_digit < selected_end_digit || selected_digit > selected_start_digit
-                    {
-                        return false;
-                    }
+                } else if selected_digit < selected_end_digit
+                    || selected_digit > selected_start_digit
+                {
+                    return false;
                 }
             }
             true

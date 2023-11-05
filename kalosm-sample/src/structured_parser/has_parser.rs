@@ -1,3 +1,5 @@
+
+
 use crate::{CreateParserState, SeparatedParser};
 use crate::{
     IntegerParser, LiteralParser, ParseResult, Parser, RepeatParser, SequenceParser,
@@ -16,7 +18,7 @@ pub trait HasParser {
     fn create_parser_state() -> <Self::Parser as Parser>::PartialState;
 }
 
-macro_rules! intparser {
+macro_rules! int_parser {
     ($ty:ident, $num:ty) => {
         #[doc = "A parser for `"]
         #[doc = stringify!($num)]
@@ -26,11 +28,8 @@ macro_rules! intparser {
             parser: IntegerParser,
         }
 
-        impl $ty {
-            /// Create a new
-            #[doc = stringify!($ty)]
-            /// parser.
-            pub fn new() -> Self {
+        impl Default for $ty {
+            fn default() -> Self {
                 Self {
                     parser: IntegerParser::new((<$num>::MIN as i64)..=(<$num>::MAX as i64)),
                 }
@@ -63,7 +62,7 @@ macro_rules! intparser {
             type Parser = $ty;
 
             fn new_parser() -> Self::Parser {
-                $ty::new()
+                $ty::default()
             }
 
             fn create_parser_state() -> <Self::Parser as Parser>::PartialState {
@@ -73,19 +72,19 @@ macro_rules! intparser {
     };
 }
 
-intparser!(U8Parser, u8);
-intparser!(U16Parser, u16);
-intparser!(U32Parser, u32);
-intparser!(U64Parser, u64);
-intparser!(U128Parser, u128);
-intparser!(I8Parser, i8);
-intparser!(I16Parser, i16);
-intparser!(I32Parser, i32);
-intparser!(I64Parser, i64);
-intparser!(I128Parser, i128);
+int_parser!(U8Parser, u8);
+int_parser!(U16Parser, u16);
+int_parser!(U32Parser, u32);
+int_parser!(U64Parser, u64);
+int_parser!(U128Parser, u128);
+int_parser!(I8Parser, i8);
+int_parser!(I16Parser, i16);
+int_parser!(I32Parser, i32);
+int_parser!(I64Parser, i64);
+int_parser!(I128Parser, i128);
 
 impl HasParser for String {
-    type Parser = StringParser;
+    type Parser = StringParser<fn(char) -> bool>;
 
     fn new_parser() -> Self::Parser {
         StringParser::new(0..=usize::MAX)
@@ -95,6 +94,7 @@ impl HasParser for String {
         Default::default()
     }
 }
+
 
 /// A parser for a vector of a type.
 #[derive(Clone, Debug)]
@@ -108,14 +108,13 @@ pub struct VecParser<T: HasParser> {
     >,
 }
 
-impl<T: HasParser> VecParser<T>
+impl<T: HasParser> Default for VecParser<T>
 where
     <T::Parser as Parser>::PartialState: Clone,
     <T::Parser as Parser>::Output: Clone,
     <T as HasParser>::Parser: CreateParserState,
 {
-    /// Create a new array parser.
-    pub fn new() -> Self {
+    fn default() -> Self {
         Self {
             parser: SequenceParser::new(
                 LiteralParser::new("["),
@@ -181,7 +180,7 @@ where
     type Parser = VecParser<T>;
 
     fn new_parser() -> Self::Parser {
-        VecParser::new()
+        VecParser::default()
     }
 
     fn create_parser_state() -> <Self::Parser as Parser>::PartialState {
@@ -200,14 +199,13 @@ pub struct ArrayParser<const N: usize, T: HasParser> {
     >,
 }
 
-impl<const N: usize, T: HasParser> ArrayParser<N, T>
+impl<const N: usize, T: HasParser> Default for ArrayParser<N, T>
 where
     <T::Parser as Parser>::PartialState: Clone,
     <T::Parser as Parser>::Output: Clone,
     <T as HasParser>::Parser: CreateParserState,
 {
-    /// Create a new array parser.
-    pub fn new() -> Self {
+    fn default() -> Self {
         Self {
             parser: SequenceParser::new(
                 LiteralParser::new("["),
@@ -277,7 +275,7 @@ where
     type Parser = ArrayParser<N, T>;
 
     fn new_parser() -> Self::Parser {
-        ArrayParser::new()
+        ArrayParser::default()
     }
 
     fn create_parser_state() -> <Self::Parser as Parser>::PartialState {

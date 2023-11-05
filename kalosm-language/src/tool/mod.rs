@@ -84,10 +84,7 @@ impl ToolManager {
     }
 
     /// Get a tool mutably by index
-    pub fn get_tool_mut_by_index<'a>(
-        &'a mut self,
-        index: usize,
-    ) -> Option<&'a mut (dyn Tool + Send + Sync)> {
+    pub fn get_tool_mut_by_index(&mut self, index: usize) -> Option<&mut (dyn Tool + Send + Sync)> {
         match self.tools.get_mut(index) {
             Some(tool) => Some(&mut **tool),
             None => None,

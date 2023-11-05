@@ -3,11 +3,11 @@ use kalosm_language::{
     CreateModel, FuzzySearchIndex, LlamaSevenChatSpace, LocalSession, ModelExt, SearchIndex,
 };
 use kalosm_sound::*;
-use std::{
-    io::Write,
-    sync::{Arc, RwLock},
+use std::{io::Write, sync::Arc};
+use tokio::{
+    sync::RwLock,
+    time::{Duration, Instant},
 };
-use tokio::time::{Duration, Instant};
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
@@ -34,7 +34,7 @@ async fn main() -> Result<(), anyhow::Error> {
                                 if transcribed.probability_of_no_speech() < 0.90 {
                                     let text = transcribed.text();
                                     println!("Adding to context: {}", text);
-                                    document_engine.write().unwrap().add(text).await.unwrap();
+                                    document_engine.write().await.add(text).await.unwrap();
                                 }
                             }
                         }
@@ -49,9 +49,10 @@ async fn main() -> Result<(), anyhow::Error> {
         std::io::stdout().flush().unwrap();
         let mut user_question = String::new();
         std::io::stdin().read_line(&mut user_question).unwrap();
-        let mut engine = document_engine.write().unwrap();
 
         let mut llm = LocalSession::<LlamaSevenChatSpace>::start().await;
+
+        let mut engine = document_engine.write().await;
 
         let context = {
             let context = engine.search(&user_question, 5).await;

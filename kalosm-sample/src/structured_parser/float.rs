@@ -90,10 +90,8 @@ impl FloatParser {
                 if *self.range.start() > num_with_extra_digit {
                     return false;
                 }
-            } else {
-                if *self.range.end() < num_with_extra_digit {
-                    return false;
-                }
+            } else if *self.range.end() < num_with_extra_digit {
+                return false;
             }
             let value_string = value.abs().to_string();
             let start_value_string = self.range.start().abs().to_string();
@@ -129,11 +127,7 @@ impl FloatParser {
             *self.range.end() - value
         };
 
-        if distance < 10.0_f64.powi(-(digits_after_decimal_point as i32)) {
-            true
-        } else {
-            false
-        }
+        distance < 10.0_f64.powi(-(digits_after_decimal_point as i32))
     }
 }
 
@@ -171,10 +165,8 @@ impl Parser for FloatParser {
                         if value_digits > end_digits {
                             return Err(());
                         }
-                    } else {
-                        if value_digits > start_digits {
-                            return Err(());
-                        }
+                    } else if value_digits > start_digits {
+                        return Err(());
                     }
                     if state == FloatParserProgress::AfterDigit {
                         state = FloatParserProgress::AfterDecimalPoint {
@@ -239,8 +231,8 @@ impl Parser for FloatParser {
                 FloatParserProgress::AfterDecimalPoint {
                     digits_after_decimal_point,
                 } => {
-                    value = value
-                        + f64::from(digit) / 10.0_f64.powi(*digits_after_decimal_point as i32 + 1);
+                    value +=
+                        f64::from(digit) / 10.0_f64.powi(*digits_after_decimal_point as i32 + 1);
                     *digits_after_decimal_point += 1;
 
                     if !self.could_number_become_valid_after_decimal(

@@ -66,7 +66,7 @@ async fn main() {
     ];
     let states_parser = states
         .into_iter()
-        .map(|s| LiteralParser::from(s))
+        .map(LiteralParser::from)
         .collect::<Vec<_>>();
 
     let states = IndexParser::new(states_parser);
