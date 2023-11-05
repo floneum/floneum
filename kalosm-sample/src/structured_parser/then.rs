@@ -1,4 +1,4 @@
-use crate::{CreateParserState, ParseResult, Parser};
+use crate::{CreateParserState, Either, ParseResult, Parser};
 
 /// State of a sequence parser.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -9,6 +9,13 @@ pub enum SequenceParserState<P1, P2, O1> {
     SecondParser(P2, O1),
 }
 
+impl<P1, P2, O1> SequenceParserState<P1, P2, O1>{
+    /// Create a new sequence parser state.
+    pub fn new(state1: P1) -> Self {
+        Self::FirstParser(state1)
+    }
+}
+
 impl<P1: Default, P2, O1> Default for SequenceParserState<P1, P2, O1> {
     fn default() -> Self {
         SequenceParserState::FirstParser(Default::default())
@@ -16,13 +23,14 @@ impl<P1: Default, P2, O1> Default for SequenceParserState<P1, P2, O1> {
 }
 
 impl<
-        E,
+        E1,
+        E2,
         O1: Clone,
         O2,
         PA1,
         PA2,
-        P1: Parser<Error = E, Output = O1, PartialState = PA1> + CreateParserState,
-        P2: Parser<Error = E, Output = O2, PartialState = PA2> + CreateParserState,
+        P1: Parser<Error = E1, Output = O1, PartialState = PA1> + CreateParserState,
+        P2: Parser<Error = E2, Output = O2, PartialState = PA2> + CreateParserState,
     > CreateParserState for SequenceParser<P1, P2>
 {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState {
@@ -45,16 +53,17 @@ impl<P1, P2> SequenceParser<P1, P2> {
 }
 
 impl<
-        E,
+        E1,
+        E2,
         O1: Clone,
         O2,
         PA1,
         PA2,
-        P1: Parser<Error = E, Output = O1, PartialState = PA1>,
-        P2: Parser<Error = E, Output = O2, PartialState = PA2> + CreateParserState,
+        P1: Parser<Error = E1, Output = O1, PartialState = PA1>,
+        P2: Parser<Error = E2, Output = O2, PartialState = PA2> + CreateParserState,
     > Parser for SequenceParser<P1, P2>
 {
-    type Error = E;
+    type Error = Either<E1, E2>;
     type Output = (O1, O2);
     type PartialState = SequenceParserState<PA1, PA2, O1>;
 
@@ -65,14 +74,14 @@ impl<
     ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
         match state {
             SequenceParserState::FirstParser(p1) => {
-                let result = self.parser1.parse(p1, input)?;
+                let result = self.parser1.parse(p1, input).map_err(Either::Left)?;
                 match result {
                     ParseResult::Finished {
                         result: o1,
                         remaining,
                     } => {
                         let second_parser_state = self.parser2.create_parser_state();
-                        let result = self.parser2.parse(&second_parser_state, remaining)?;
+                        let result = self.parser2.parse(&second_parser_state, remaining).map_err(Either::Right)?;
                         match result {
                             ParseResult::Finished { result, remaining } => {
                                 Ok(ParseResult::Finished {
@@ -93,7 +102,7 @@ impl<
                 }
             }
             SequenceParserState::SecondParser(p2, o1) => {
-                let result = self.parser2.parse(p2, input)?;
+                let result = self.parser2.parse(p2, input).map_err(Either::Right)?;
                 match result {
                     ParseResult::Finished { result, remaining } => Ok(ParseResult::Finished {
                         result: (o1.clone(), result),
@@ -144,5 +153,5 @@ fn sequence_parser() {
             remaining: &[]
         })
     );
-    assert_eq!(parser.parse(&state, b"Goodbye, world!"), Err(()));
+    assert_eq!(parser.parse(&state, b"Goodbye, world!"), Err(Either::Left(())));
 }

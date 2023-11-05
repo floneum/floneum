@@ -1,4 +1,4 @@
-use crate::{CreateParserState, ParseResult, Parser};
+use crate::{CreateParserState, Either, ParseResult, Parser};
 
 /// State of a repeat parser.
 #[derive(Debug, PartialEq, Eq)]

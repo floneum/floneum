@@ -1,5 +1,8 @@
-
-use crate::{IntegerParser, ParseResult, Parser, StringParser};
+use crate::CreateParserState;
+use crate::{
+    IntegerParser, LiteralParser, ParseResult, Parser, RepeatParser,
+    SequenceParser, SequenceParserState, StringParser,
+};
 
 /// Data that can be parsed incrementally.
 pub trait HasParser {
@@ -74,5 +77,76 @@ impl HasParser for String {
 
     fn create_parser_state() -> <Self::Parser as Parser>::PartialState {
         Default::default()
+    }
+}
+
+/// A parser for a vector of a type.
+pub struct VecParser<T: HasParser> {
+    parser: SequenceParser<
+        LiteralParser<&'static str>,
+        SequenceParser<
+            RepeatParser<SequenceParser<T::Parser, LiteralParser<&'static str>>>,
+            LiteralParser<&'static str>,
+        >,
+    >,
+}
+
+impl<T: HasParser> Parser for VecParser<T>
+where
+    <T::Parser as Parser>::PartialState: Clone,
+    <T::Parser as Parser>::Output: Clone,
+    <T as HasParser>::Parser: CreateParserState,
+{
+    type Error = <SequenceParser<
+        LiteralParser<&'static str>,
+        SequenceParser<
+            RepeatParser<SequenceParser<T::Parser, LiteralParser<&'static str>>>,
+            LiteralParser<&'static str>,
+        >,
+    > as Parser>::Error;
+    type Output = Vec<<T::Parser as Parser>::Output>;
+    type PartialState = <SequenceParser<
+        LiteralParser<&'static str>,
+        SequenceParser<
+            RepeatParser<SequenceParser<T::Parser, LiteralParser<&'static str>>>,
+            LiteralParser<&'static str>,
+        >,
+    > as Parser>::PartialState;
+
+    fn parse<'a>(
+        &self,
+        state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+        self.parser.parse(state, input).map(|result| {
+            result.map(|((), (outputs, ()))| outputs.into_iter().map(|(output, _)| output).collect())
+        })
+    }
+}
+
+impl<T: HasParser> HasParser for Vec<T>
+where
+    <T::Parser as Parser>::PartialState: Clone,
+    <T::Parser as Parser>::Output: Clone,
+    <T as HasParser>::Parser: CreateParserState,
+{
+    type Parser = VecParser<T>;
+
+    fn new_parser() -> Self::Parser {
+        VecParser{
+            parser:SequenceParser::new(
+            LiteralParser::new("["),
+            SequenceParser::new(
+                RepeatParser::new(
+                    SequenceParser::new(T::new_parser(), LiteralParser::new(",")),
+                    0..=usize::MAX,
+                ),
+                LiteralParser::new("]"),
+            ),
+        )}
+    }
+
+    fn create_parser_state() -> <Self::Parser as Parser>::PartialState {
+        SequenceParserState::default()
     }
 }
