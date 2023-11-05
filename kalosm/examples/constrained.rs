@@ -44,6 +44,8 @@ async fn main() {
         std::io::stdout().flush().unwrap();
     }
 
+    println!("{:#?}", words.result().await);
+
     println!("\n\n# without constraints");
     print!("{}", prompt);
 

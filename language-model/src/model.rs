@@ -3,12 +3,14 @@ use crate::structured::generate_structured;
 use crate::UnknownVectorSpace;
 use futures_util::{Stream, StreamExt};
 use kalosm_sample::{Parser, Tokenizer};
+use kalosm_streams::TextStream;
 use llm_samplers::configure::SamplerChainBuilder;
 use llm_samplers::prelude::*;
 use llm_samplers::types::Logits;
 use std::any::Any;
 use std::future::IntoFuture;
 use std::marker::PhantomData;
+use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -415,7 +417,7 @@ pub trait ModelExt: Model + Send + 'static {
         parser_state: P::PartialState,
         sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
         post_filter_sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
-    ) -> anyhow::Result<Self::TextStream>
+    ) -> anyhow::Result<StructureParserResult<Self::TextStream, P::Output>>
     where
         Self::TextStream: From<tokio::sync::mpsc::UnboundedReceiver<String>>,
         P: Parser + Send + 'static,
@@ -452,7 +454,49 @@ pub trait ModelExt: Model + Send + 'static {
         })
         .await?;
 
-        Ok(receiver.into())
+        Ok(StructureParserResult::new(
+            Self::TextStream::from(receiver),
+            result_receiver,
+        ))
+    }
+}
+
+/// The result of a structured parser stream.
+pub struct StructureParserResult<S:Stream<Item = String> + Send + Unpin + 'static, O>{
+    stream: S,
+    result: tokio::sync::oneshot::Receiver<anyhow::Result<O>>,
+}
+
+impl<S:Stream<Item = String> + Send + Unpin + 'static, O> Deref for StructureParserResult<S, O> {
+    type Target = S;
+
+    fn deref(&self) -> &Self::Target {
+        &self.stream
+    }
+}
+
+impl<S:Stream<Item = String> + Send + Unpin + 'static, O> DerefMut for StructureParserResult<S, O> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.stream
+    }
+}
+
+impl<S:Stream<Item = String> + Send + Unpin + 'static, O> StructureParserResult<S, O> {
+    fn new(stream: S, result: tokio::sync::oneshot::Receiver<anyhow::Result<O>>) -> Self {
+        Self {
+            stream,
+            result,
+        }
+    }
+
+    /// Get the final result of the structured parser.
+    pub async fn result(self) -> anyhow::Result<O> {
+        self.result.await.unwrap()
+    }
+
+    /// Split the stream into a token stream and a result.
+    pub fn split(self) -> (S, tokio::sync::oneshot::Receiver<anyhow::Result<O>>) {
+        (self.stream, self.result)
     }
 }
 
