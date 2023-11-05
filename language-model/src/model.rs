@@ -3,7 +3,6 @@ use crate::structured::generate_structured;
 use crate::UnknownVectorSpace;
 use futures_util::{Stream, StreamExt};
 use kalosm_sample::{Parser, Tokenizer};
-use kalosm_streams::TextStream;
 use llm_samplers::configure::SamplerChainBuilder;
 use llm_samplers::prelude::*;
 use llm_samplers::types::Logits;
