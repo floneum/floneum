@@ -12,6 +12,8 @@ mod string;
 pub use string::*;
 mod repeat;
 pub use repeat::*;
+mod has_parser;
+pub use has_parser::*;
 
 /// A trait for a parser with a default state.
 pub trait CreateParserState: Parser {
@@ -181,6 +183,20 @@ impl<'a, P, R> ParseResult<'a, P, R> {
                 panic!("called `ParseResult::unwrap_incomplete()` on a `Finished` value")
             }
             ParseResult::Incomplete(parser) => parser,
+        }
+    }
+
+    /// Map the result of the parser.
+    pub fn map<F, O>(self, f: F) -> ParseResult<'a, P, O>
+    where
+        F: FnOnce(R) -> O,
+    {
+        match self {
+            ParseResult::Finished { result, remaining } => ParseResult::Finished {
+                result: f(result),
+                remaining,
+            },
+            ParseResult::Incomplete(parser) => ParseResult::Incomplete(parser),
         }
     }
 }
