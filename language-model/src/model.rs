@@ -461,12 +461,12 @@ pub trait ModelExt: Model + Send + 'static {
 }
 
 /// The result of a structured parser stream.
-pub struct StructureParserResult<S:Stream<Item = String> + Send + Unpin + 'static, O>{
+pub struct StructureParserResult<S: Stream<Item = String> + Send + Unpin + 'static, O> {
     stream: S,
     result: tokio::sync::oneshot::Receiver<anyhow::Result<O>>,
 }
 
-impl<S:Stream<Item = String> + Send + Unpin + 'static, O> Deref for StructureParserResult<S, O> {
+impl<S: Stream<Item = String> + Send + Unpin + 'static, O> Deref for StructureParserResult<S, O> {
     type Target = S;
 
     fn deref(&self) -> &Self::Target {
@@ -474,18 +474,17 @@ impl<S:Stream<Item = String> + Send + Unpin + 'static, O> Deref for StructurePar
     }
 }
 
-impl<S:Stream<Item = String> + Send + Unpin + 'static, O> DerefMut for StructureParserResult<S, O> {
+impl<S: Stream<Item = String> + Send + Unpin + 'static, O> DerefMut
+    for StructureParserResult<S, O>
+{
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.stream
     }
 }
 
-impl<S:Stream<Item = String> + Send + Unpin + 'static, O> StructureParserResult<S, O> {
+impl<S: Stream<Item = String> + Send + Unpin + 'static, O> StructureParserResult<S, O> {
     fn new(stream: S, result: tokio::sync::oneshot::Receiver<anyhow::Result<O>>) -> Self {
-        Self {
-            stream,
-            result,
-        }
+        Self { stream, result }
     }
 
     /// Get the final result of the structured parser.
