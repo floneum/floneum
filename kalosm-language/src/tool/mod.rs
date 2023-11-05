@@ -260,6 +260,13 @@ pub struct IndexParser<S: Parser<Error = E, Output = (), PartialState = PA>, E, 
     parsers: Vec<S>,
 }
 
+impl<S: Parser<Error = E, Output = (), PartialState = PA>, E, PA> IndexParser<S, E, PA> {
+    /// Create a new index parser
+    pub fn new(parsers: Vec<S>) -> Self {
+        Self { parsers }
+    }
+}
+
 impl<S, E, PA> CreateParserState for IndexParser<S, E, PA>
 where
     S: Parser<Error = E, Output = (), PartialState = PA> + CreateParserState,

@@ -110,6 +110,7 @@ where
                     remaining: new_remaining,
                 }) => {
                     state.outputs.push(result);
+                    state.last_state = self.parser.create_parser_state();
                     remaining = new_remaining;
                     if self.length_range.end() == &state.outputs.len() {
                         return Ok(ParseResult::Finished {
@@ -141,7 +142,7 @@ where
 
 #[test]
 fn repeat_parser() {
-    use crate::{LiteralParser, IntegerParser};
+    use crate::{IntegerParser, LiteralParser};
     let parser = RepeatParser::new(LiteralParser::from("a"), 1..=3);
     let state = parser.create_parser_state();
     let result = parser.parse(&state, b"aaa");

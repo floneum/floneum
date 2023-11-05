@@ -53,15 +53,16 @@ pub(crate) fn generate_structured<M: SyncModel, P: Parser>(
             if let Ok(result) = parser.parse(&parser_state, new_text.as_bytes()) {
                 let result = result.without_remaining();
                 state_map.insert(logit.token_id, (new_text.to_string(), result));
-            }
-            else {
+            } else {
                 logit.logit = 0.0;
             }
         }
         if state_map.is_empty() {
             return Err(anyhow::anyhow!("No valid tokens found"));
         }
-        let token_id =  post_filter_sampler.sample_token(resources, &mut logits)?.ok_or(anyhow::anyhow!("No valid tokens found"))?;
+        let token_id = post_filter_sampler
+            .sample_token(resources, &mut logits)?
+            .ok_or(anyhow::anyhow!("No valid tokens found"))?;
         let (token, result) = state_map.remove(&token_id).unwrap();
 
         stream

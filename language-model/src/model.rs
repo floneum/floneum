@@ -876,9 +876,12 @@ impl crate::model::GenerationParameters {
     }
 
     /// Get the mirostat2 sampler from the generation parameters.
-pub fn mirostat2_sampler(self) -> SampleMirostat2 {
-    SampleMirostat2::default().tau(self.tau).eta(self.eta).mu(self.mu)
-}
+    pub fn mirostat2_sampler(self) -> SampleMirostat2 {
+        SampleMirostat2::default()
+            .tau(self.tau)
+            .eta(self.eta)
+            .mu(self.mu)
+    }
 
     /// Create a sampler chain from the generation parameters without removing any tokens. This can be useful in combination with [`ModelExt::stream_structured_text_with_sampler`] which may pick unlikely tokens.
     pub fn bias_only_sampler(self) -> SamplerChain {
