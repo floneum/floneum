@@ -63,7 +63,7 @@ impl Model for Phi {
         prompt: &str,
         max_tokens: Option<u32>,
         stop_on: Option<&str>,
-        sampler: Arc<Mutex<dyn llm_samplers::prelude::Sampler<u32, f32>>>,
+        sampler: Arc<Mutex<dyn llm_samplers::prelude::Sampler>>,
     ) -> anyhow::Result<Self::TextStream> {
         let max_length = max_tokens.unwrap_or(64);
         self.run(

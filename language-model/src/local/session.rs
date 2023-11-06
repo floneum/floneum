@@ -121,7 +121,7 @@ impl<S: VectorSpace + Send + Sync + 'static> LocalSession<S> {
         prompt: String,
         max_tokens: Option<u32>,
         stop_on: Option<&str>,
-        sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
+        sampler: Arc<Mutex<dyn Sampler>>,
     ) -> ChannelTextStream<String> {
         let (sender, receiver) = tokio::sync::oneshot::channel();
         self.task_sender
@@ -161,7 +161,7 @@ enum Task<S: VectorSpace> {
         prompt: String,
         max_tokens: Option<u32>,
         stop_on: Option<String>,
-        sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
+        sampler: Arc<Mutex<dyn Sampler>>,
         sender: tokio::sync::oneshot::Sender<ChannelTextStream<String>>,
     },
     GetEmbedding {
@@ -188,7 +188,7 @@ impl<S: VectorSpace> LocalSessionInner<S> {
         prompt: String,
         max_tokens: Option<u32>,
         stop_on: Option<&str>,
-        sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
+        sampler: Arc<Mutex<dyn Sampler>>,
         out: tokio::sync::oneshot::Sender<ChannelTextStream<String>>,
     ) {
         let session = &mut self.session;
