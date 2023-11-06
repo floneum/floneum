@@ -185,8 +185,7 @@ Question: {question}
     > {
         let constraints = LiteralParser::from("Action: ");
         let constraints = constraints.then(self.tool_choices().unwrap());
-        let constraints = constraints.then(OneLine);
-        constraints
+        constraints.then(OneLine)
     }
 
     /// Get the constraints for the answer action
@@ -201,8 +200,7 @@ Question: {question}
            + Sync
            + 'static {
         let constraints = LiteralParser::from("Final Answer: ");
-        let constraints = constraints.then(OneLine);
-        constraints
+        constraints.then(OneLine)
     }
 
     /// Get the constraints for any action
