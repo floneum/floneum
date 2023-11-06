@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use kalosm_sample::{Parser, Tokenizer};
+use kalosm_sample::{ParseResult, Parser, Tokenizer};
 use llm_samplers::types::{HasSamplerResources, Sampler, SamplerError};
 use rustc_hash::FxHashMap;
 
@@ -65,23 +65,59 @@ pub(crate) fn generate_structured<M: SyncModel, P: Parser>(
             .map_err(|_| anyhow::anyhow!("Failed to send token to stream: {}", token))?;
         unprocessed_token_count = 1;
         tokens.push(token_id);
-        match result {
-            kalosm_sample::ParseResult::Incomplete {
-                new_state,
-                required_next,
-            } => {
-                parser_state = new_state;
-                if !required_next.is_empty() {
-                    let extra_tokens = tokenizer.encode(&required_next)?;
-                    println!("Extra tokens: {:?}", extra_tokens);
-                    unprocessed_token_count += extra_tokens.len();
-                    tokens.extend(extra_tokens);
-                }
-            }
-            kalosm_sample::ParseResult::Finished { result, .. } => {
-                return Ok(result);
+        if let Some(result) = update_state(
+            &parser,
+            &mut parser_state,
+            result,
+            tokenizer,
+            &mut tokens,
+            &stream,
+            &mut unprocessed_token_count,
+        )? {
+            return Ok(result);
+        }
+    }
+}
+
+fn update_state<P: Parser>(
+    parser: &P,
+    parser_state: &mut P::PartialState,
+    result: ParseResult<P::PartialState, P::Output>,
+    tokenizer: &Arc<dyn Tokenizer + Send + Sync>,
+    tokens: &mut Vec<u32>,
+    stream: &tokio::sync::mpsc::UnboundedSender<String>,
+    unprocessed_token_count: &mut usize,
+) -> anyhow::Result<Option<P::Output>> {
+    match result {
+        kalosm_sample::ParseResult::Incomplete {
+            new_state,
+            required_next,
+        } => {
+            *parser_state = new_state;
+            if required_next.is_empty() {
+                Ok(None)
+            } else {
+                let result = parser
+                    .parse(parser_state, required_next.as_bytes())
+                    .unwrap_or_else(|_| unreachable!("Required next should always be valid"));
+                let extra_tokens = tokenizer.encode(&required_next)?;
+                *unprocessed_token_count += extra_tokens.len();
+                tokens.extend(extra_tokens);
+                stream
+                    .send(required_next.to_string())
+                    .map_err(|_| anyhow::anyhow!("Failed to send token to stream"))?;
+                update_state(
+                    parser,
+                    parser_state,
+                    result,
+                    tokenizer,
+                    tokens,
+                    stream,
+                    unprocessed_token_count,
+                )
             }
         }
+        kalosm_sample::ParseResult::Finished { result, .. } => Ok(Some(result)),
     }
 }
 

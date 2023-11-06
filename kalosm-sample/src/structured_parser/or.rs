@@ -138,7 +138,7 @@ impl<
                                     Cow::Borrowed(&required_next[common_bytes..])
                                 }
                                 (Cow::Owned(mut required_next), _) => {
-                                    required_next.drain(0..common_bytes);
+                                    required_next.truncate(common_bytes);
                                     Cow::Owned(required_next)
                                 }
                             },

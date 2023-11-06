@@ -1,4 +1,6 @@
 mod search;
+use std::borrow::Cow;
+
 use kalosm_sample::{
     ChoiceParser, CreateParserState, Either, LiteralParser, LiteralParserOffset, ParseResult,
     Parser, SequenceParser, SequenceParserState,
@@ -301,6 +303,7 @@ where
     {
         let mut states = state.states.clone();
         let mut has_incomplete_option = false;
+        let mut required_next: Option<Cow<'static, str>> = None;
         let last_index = self.parsers.len() - 1;
         for (i, parser) in self.parsers.iter().enumerate() {
             match &states[i] {
@@ -316,9 +319,38 @@ where
                                 remaining: r,
                             })
                         }
-                        Ok(ParseResult::Incomplete { new_state: s, .. }) => {
+                        Ok(ParseResult::Incomplete {
+                            new_state: s,
+                            required_next: new_required_next,
+                        }) => {
                             states[i] = Ok(s);
                             has_incomplete_option = true;
+                            match required_next {
+                                Some(r) => {
+                                    let mut common_bytes = 0;
+                                    for (byte1, byte2) in r.bytes().zip(new_required_next.bytes()) {
+                                        if byte1 != byte2 {
+                                            break;
+                                        }
+                                        common_bytes += 1;
+                                    }
+                                    required_next = Some(match (r, new_required_next) {
+                                        (Cow::Borrowed(required_next), _) => {
+                                            Cow::Borrowed(&required_next[common_bytes..])
+                                        }
+                                        (_, Cow::Borrowed(required_next)) => {
+                                            Cow::Borrowed(&required_next[common_bytes..])
+                                        }
+                                        (Cow::Owned(mut required_next), _) => {
+                                            required_next.truncate(common_bytes);
+                                            Cow::Owned(required_next)
+                                        }
+                                    });
+                                }
+                                None => {
+                                    required_next = Some(new_required_next);
+                                }
+                            }
                         }
                         Err(e) => {
                             if !has_incomplete_option && i == last_index {
@@ -337,7 +369,7 @@ where
         }
         Ok(ParseResult::Incomplete {
             new_state: IndexParserState { states },
-            required_next: Default::default(),
+            required_next: required_next.unwrap_or_default(),
         })
     }
 }
