@@ -69,7 +69,7 @@ impl SyncModel for MistralModel {
         &mut self,
         session: &mut Self::Session,
         prompt: &str,
-    ) -> anyhow::Result<Logits<u32, f32>> {
+    ) -> anyhow::Result<Logits> {
         let encoded = self.tokenizer.encode(&*prompt, true).map_err(E::msg)?;
         let tokens = encoded.get_ids();
         self.feed_tokens(session, tokens)
@@ -79,7 +79,7 @@ impl SyncModel for MistralModel {
         &mut self,
         session: &mut Self::Session,
         tokens: &[u32],
-    ) -> anyhow::Result<Logits<u32, f32>> {
+    ) -> anyhow::Result<Logits> {
         session.current_tokens.extend(tokens);
 
         let token_count = tokens.len();
@@ -113,7 +113,7 @@ impl MistralModel {
         tokens: &[u32],
         seqlen_offset: usize,
         cache: Option<&mut MistralCache>,
-    ) -> anyhow::Result<Logits<u32, f32>> {
+    ) -> anyhow::Result<Logits> {
         if tokens.is_empty() {
             return Err(anyhow::anyhow!("Cannot run model on empty input"));
         }
@@ -143,7 +143,7 @@ impl MistralModel {
     pub(crate) fn _infer(
         &mut self,
         settings: InferenceSettings,
-        mut sampler: std::sync::Arc<std::sync::Mutex<dyn llm_samplers::prelude::Sampler<u32, f32>>>,
+        mut sampler: std::sync::Arc<std::sync::Mutex<dyn llm_samplers::prelude::Sampler>>,
         out: tokio::sync::mpsc::UnboundedSender<String>,
     ) -> Result<()> {
         let InferenceSettings {
@@ -251,8 +251,6 @@ impl<R> HasSamplerResources for SamplerResources<'_, '_, R>
 where
     R: rand::Rng,
 {
-    type TokenId = u32;
-
     fn with_rng_mut(
         &mut self,
         fun: &mut dyn FnMut(&mut dyn rand::RngCore),
@@ -261,17 +259,17 @@ where
         Ok(())
     }
 
-    fn with_last_tokens(&self, fun: &mut dyn FnMut(&[Self::TokenId])) -> Result<(), SamplerError> {
+    fn with_last_tokens(&self, fun: &mut dyn FnMut(&[u32])) -> Result<(), SamplerError> {
         fun(self.previous_tokens);
         Ok(())
     }
 }
 
 pub fn sample_token(
-    sampler: &mut impl Sampler<u32, f32>,
+    sampler: &mut impl Sampler,
     rng: &mut impl rand::Rng,
     previous_tokens: &[u32],
-    mut last_logits: Logits<u32, f32>,
+    mut last_logits: Logits,
     stop_on: Option<&str>,
     tokenizer: &Tokenizer,
 ) -> anyhow::Result<u32> {
@@ -294,7 +292,7 @@ pub fn sample_token(
     for logit in last_logits.iter_mut() {
         let tid = logit.token_id;
         if let Some(stop_on) = stop_on {
-            let token = tokenizer.decode(&[tid as u32], true).unwrap();
+            let token = tokenizer.decode(&[tid], true).unwrap();
             let combined = end_tokens.clone() + &token;
             if combined.contains(stop_on) && !combined.ends_with(stop_on) {
                 // if the token contains a stop_on token, but not the end of the string, set the probability to 0

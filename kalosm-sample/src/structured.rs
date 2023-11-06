@@ -46,13 +46,13 @@ impl<
         E,
         O,
         PA,
-    > Sampler<u32, f32> for StructuredSampler<V, E, O, PA>
+    > Sampler for StructuredSampler<V, E, O, PA>
 {
     fn sample<'a>(
         &mut self,
-        res: &mut dyn HasSamplerResources<TokenId = u32>,
-        logits: &'a mut Logits<u32, f32>,
-    ) -> anyhow::Result<&'a mut Logits<u32, f32>> {
+        res: &mut dyn HasSamplerResources,
+        logits: &'a mut Logits,
+    ) -> anyhow::Result<&'a mut Logits> {
         let mut valid_tokens = 0;
         let mut best_token: Option<Logit> = None;
         res.with_last_tokens(&mut |previous_tokens| {

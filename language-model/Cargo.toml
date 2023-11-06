@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 futures-util = "0.3.28"
-llm-samplers = { version = "0.0.6" }
+llm-samplers = { workspace = true }
 log = "0.4.17"
 rand = "0.8.5"
 reqwest = { version = "0.11.18", features = ["stream", "json"] }
@@ -31,7 +31,7 @@ tokenizers = { version = "0.13.4" }
 rustc-hash = "1.1.0"
 kalosm-sample.workspace = true
 # Required for LLM
-llm = { git = "https://github.com/rustformers/llm" }
+llm = { git = "https://github.com/rustformers/llm", rev = "refs/pull/440/head" }
 kalosm-streams.workspace = true
 spinoff = "0.8.0"
 bytesize = "1.3.0"

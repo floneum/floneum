@@ -17,7 +17,7 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
     tokenizer: &Arc<dyn Tokenizer + Send + Sync>,
     parser: P,
     mut parser_state: P::PartialState,
-    mut sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
+    mut sampler: Arc<Mutex<dyn Sampler>>,
     mut on_token: impl FnMut(String) -> anyhow::Result<()>,
 ) -> anyhow::Result<P::Output> {
     let prompt_text = prompt.to_string();
@@ -156,8 +156,6 @@ impl<R> HasSamplerResources for SamplerResources<'_, '_, R>
 where
     R: rand::Rng,
 {
-    type TokenId = u32;
-
     fn with_rng_mut(
         &mut self,
         fun: &mut dyn FnMut(&mut dyn rand::RngCore),
@@ -166,7 +164,7 @@ where
         Ok(())
     }
 
-    fn with_last_tokens(&self, fun: &mut dyn FnMut(&[Self::TokenId])) -> Result<(), SamplerError> {
+    fn with_last_tokens(&self, fun: &mut dyn FnMut(&[u32])) -> Result<(), SamplerError> {
         fun(self.previous_tokens);
         Ok(())
     }
