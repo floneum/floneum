@@ -1,9 +1,7 @@
-use std::ops::{DerefMut, Deref};
+use std::ops::{Deref, DerefMut};
 
 use crate::{CreateParserState, HasParser};
-use crate::{
-    ParseResult, Parser, StringParser,
-};
+use crate::{ParseResult, Parser, StringParser};
 
 #[derive(Clone, Debug)]
 /// A single word.
@@ -18,13 +16,17 @@ impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Word<MIN_LENGTH, MAX_LENG
     }
 }
 
-impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> From<Word<MIN_LENGTH, MAX_LENGTH>> for String {
+impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> From<Word<MIN_LENGTH, MAX_LENGTH>>
+    for String
+{
     fn from(word: Word<MIN_LENGTH, MAX_LENGTH>) -> Self {
         word.0
     }
 }
 
-impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> From<String> for Word<MIN_LENGTH, MAX_LENGTH> {
+impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> From<String>
+    for Word<MIN_LENGTH, MAX_LENGTH>
+{
     fn from(word: String) -> Self {
         Self(word)
     }
@@ -46,10 +48,12 @@ impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> DerefMut for Word<MIN_LEN
 
 /// A parser for a word.
 pub struct WordParser<const MIN_LENGTH: usize, const MAX_LENGTH: usize> {
-    parser: StringParser<fn(char) -> bool>
+    parser: StringParser<fn(char) -> bool>,
 }
 
-impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Default for WordParser<MIN_LENGTH, MAX_LENGTH> {
+impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Default
+    for WordParser<MIN_LENGTH, MAX_LENGTH>
+{
     fn default() -> Self {
         Self {
             parser: StringParser::new(MIN_LENGTH..=MAX_LENGTH)
@@ -58,13 +62,17 @@ impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Default for WordParser<MI
     }
 }
 
-impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> CreateParserState for WordParser<MIN_LENGTH, MAX_LENGTH> {
+impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> CreateParserState
+    for WordParser<MIN_LENGTH, MAX_LENGTH>
+{
     fn create_parser_state(&self) -> <Self as Parser>::PartialState {
         self.parser.create_parser_state()
     }
 }
 
-impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Parser for WordParser<MIN_LENGTH, MAX_LENGTH> {
+impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Parser
+    for WordParser<MIN_LENGTH, MAX_LENGTH>
+{
     type Error = <StringParser<fn(char) -> bool> as Parser>::Error;
     type Output = Word<MIN_LENGTH, MAX_LENGTH>;
     type PartialState = <StringParser<fn(char) -> bool> as Parser>::PartialState;

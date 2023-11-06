@@ -1,6 +1,8 @@
 #![allow(clippy::type_complexity)]
 
 mod integer;
+use std::borrow::Cow;
+
 pub use integer::*;
 mod float;
 pub use float::*;
@@ -126,7 +128,12 @@ impl<P: Parser> Parser for Box<P> {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum OwnedParseResult<P, R> {
     /// The parser is incomplete.
-    Incomplete(P),
+    Incomplete {
+        /// The new state of the parser.
+        new_state: P,
+        /// The text that is required next.
+        required_next: Cow<'static, str>,
+    },
     /// The parser is finished.
     Finished {
         /// The result of the parser.
@@ -139,7 +146,13 @@ pub enum OwnedParseResult<P, R> {
 impl<P, R> From<ParseResult<'_, P, R>> for OwnedParseResult<P, R> {
     fn from(result: ParseResult<P, R>) -> Self {
         match result {
-            ParseResult::Incomplete(parser) => OwnedParseResult::Incomplete(parser),
+            ParseResult::Incomplete {
+                new_state,
+                required_next,
+            } => OwnedParseResult::Incomplete {
+                new_state,
+                required_next,
+            },
             ParseResult::Finished { result, remaining } => OwnedParseResult::Finished {
                 result,
                 remaining: remaining.to_vec(),
@@ -149,10 +162,15 @@ impl<P, R> From<ParseResult<'_, P, R>> for OwnedParseResult<P, R> {
 }
 
 /// The state of a parser.
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ParseResult<'a, P, R> {
     /// The parser is incomplete.
-    Incomplete(P),
+    Incomplete {
+        /// The new state of the parser.
+        new_state: P,
+        /// The text that is required next.
+        required_next: Cow<'static, str>,
+    },
     /// The parser is finished.
     Finished {
         /// The result of the parser.
@@ -170,7 +188,13 @@ impl<'a, P, R> ParseResult<'a, P, R> {
                 result,
                 remaining: &[],
             },
-            ParseResult::Incomplete(parser) => ParseResult::Incomplete(parser),
+            ParseResult::Incomplete {
+                new_state,
+                required_next,
+            } => ParseResult::Incomplete {
+                new_state,
+                required_next,
+            },
         }
     }
 
@@ -178,19 +202,22 @@ impl<'a, P, R> ParseResult<'a, P, R> {
     pub fn unwrap_finished(self) -> R {
         match self {
             ParseResult::Finished { result, .. } => result,
-            ParseResult::Incomplete(_) => {
+            ParseResult::Incomplete { .. } => {
                 panic!("called `ParseResult::unwrap_finished()` on an `Incomplete` value")
             }
         }
     }
 
     /// Unwrap the parser to an incomplete result.
-    pub fn unwrap_incomplete(self) -> P {
+    pub fn unwrap_incomplete(self) -> (P, Cow<'static, str>) {
         match self {
             ParseResult::Finished { .. } => {
                 panic!("called `ParseResult::unwrap_incomplete()` on a `Finished` value")
             }
-            ParseResult::Incomplete(parser) => parser,
+            ParseResult::Incomplete {
+                new_state,
+                required_next,
+            } => (new_state, required_next),
         }
     }
 
@@ -204,7 +231,32 @@ impl<'a, P, R> ParseResult<'a, P, R> {
                 result: f(result),
                 remaining,
             },
-            ParseResult::Incomplete(parser) => ParseResult::Incomplete(parser),
+            ParseResult::Incomplete {
+                new_state,
+                required_next,
+            } => ParseResult::Incomplete {
+                new_state,
+                required_next,
+            },
+        }
+    }
+
+    /// Map the state of the parser.
+    pub fn map_state<F, O>(self, f: F) -> ParseResult<'a, O, R>
+    where
+        F: FnOnce(P) -> O,
+    {
+        match self {
+            ParseResult::Finished { result, remaining } => {
+                ParseResult::Finished { result, remaining }
+            }
+            ParseResult::Incomplete {
+                new_state,
+                required_next,
+            } => ParseResult::Incomplete {
+                new_state: f(new_state),
+                required_next,
+            },
         }
     }
 }
@@ -295,14 +347,7 @@ impl Parser for StructureParser {
             (StructureParser::Literal(lit_parser), StructureParserState::Literal(state)) => {
                 LiteralParser::from(lit_parser)
                     .parse(state, input)
-                    .map(|result| match result {
-                        ParseResult::Finished { result, remaining } => {
-                            ParseResult::Finished { result, remaining }
-                        }
-                        ParseResult::Incomplete(parser) => {
-                            ParseResult::Incomplete(StructureParserState::Literal(parser))
-                        }
-                    })
+                    .map(|result| result.map(|_| ()).map_state(StructureParserState::Literal))
             }
             (
                 StructureParser::Num {
@@ -313,15 +358,7 @@ impl Parser for StructureParser {
                 StructureParserState::Num(state),
             ) => FloatParser::new(*min..=*max)
                 .parse(state, input)
-                .map(|result| match result {
-                    ParseResult::Finished { remaining, .. } => ParseResult::Finished {
-                        result: (),
-                        remaining,
-                    },
-                    ParseResult::Incomplete(parser) => {
-                        ParseResult::Incomplete(StructureParserState::Num(parser))
-                    }
-                }),
+                .map(|result| result.map(|_| ()).map_state(StructureParserState::Num)),
             (
                 StructureParser::Num {
                     min,
@@ -331,15 +368,7 @@ impl Parser for StructureParser {
                 StructureParserState::NumInt(int),
             ) => IntegerParser::new(*min as i64..=*max as i64)
                 .parse(int, input)
-                .map(|result| match result {
-                    ParseResult::Finished { remaining, .. } => ParseResult::Finished {
-                        result: (),
-                        remaining,
-                    },
-                    ParseResult::Incomplete(parser) => {
-                        ParseResult::Incomplete(StructureParserState::NumInt(parser))
-                    }
-                }),
+                .map(|result| result.map(|_| ()).map_state(StructureParserState::NumInt)),
             (StructureParser::Either { first, second }, StructureParserState::Either(state)) => {
                 let state = ChoiceParserState {
                     state1: match &state.state1 {
@@ -353,12 +382,15 @@ impl Parser for StructureParser {
                 };
                 let parser = ChoiceParser::new(first.clone(), second.clone());
                 match parser.parse(&state, input) {
-                    Ok(ParseResult::Incomplete(state)) => Ok(ParseResult::Incomplete(
-                        StructureParserState::Either(ChoiceParserState {
-                            state1: state.state1.map(Box::new),
-                            state2: state.state2.map(Box::new),
-                        }),
-                    )),
+                    Ok(ParseResult::Incomplete { required_next, .. }) => {
+                        Ok(ParseResult::Incomplete {
+                            new_state: StructureParserState::Either(ChoiceParserState {
+                                state1: state.state1.map(Box::new),
+                                state2: state.state2.map(Box::new),
+                            }),
+                            required_next,
+                        })
+                    }
                     Ok(ParseResult::Finished { remaining, .. }) => Ok(ParseResult::Finished {
                         result: (),
                         remaining,
@@ -373,16 +405,19 @@ impl Parser for StructureParser {
                 });
                 let parser = SequenceParser::new(first.clone(), second.clone());
                 match parser.parse(&state, input) {
-                    Ok(ParseResult::Incomplete(state)) => Ok(ParseResult::Incomplete(
-                        StructureParserState::Then(match state {
-                            SequenceParserState::FirstParser(state) => {
-                                SequenceParserState::FirstParser(Box::new(state))
-                            }
-                            SequenceParserState::SecondParser(state, _) => {
-                                SequenceParserState::SecondParser(Box::new(state), ())
-                            }
-                        }),
-                    )),
+                    Ok(ParseResult::Incomplete { required_next, .. }) => {
+                        Ok(ParseResult::Incomplete {
+                            new_state: StructureParserState::Then(match state {
+                                SequenceParserState::FirstParser(state) => {
+                                    SequenceParserState::FirstParser(Box::new(state))
+                                }
+                                SequenceParserState::SecondParser(state, _) => {
+                                    SequenceParserState::SecondParser(Box::new(state), ())
+                                }
+                            }),
+                            required_next,
+                        })
+                    }
                     Ok(ParseResult::Finished { remaining, .. }) => Ok(ParseResult::Finished {
                         result: (),
                         remaining,

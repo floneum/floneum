@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::{CreateParserState, ParseResult, Parser};
 
 /// State of a choice parser.
@@ -105,26 +107,74 @@ impl<
                         })
                     }
                     // If either parser is incomplete, we return the incomplete state
-                    (Ok(ParseResult::Incomplete(p1)), Ok(ParseResult::Incomplete(p2))) => {
+                    (
+                        Ok(ParseResult::Incomplete {
+                            new_state: p1,
+                            required_next: required_next1,
+                        }),
+                        Ok(ParseResult::Incomplete {
+                            new_state: p2,
+                            required_next: required_next2,
+                        }),
+                    ) => {
                         let new_state = ChoiceParserState {
                             state1: Ok(p1),
                             state2: Ok(p2),
                         };
-                        Ok(ParseResult::Incomplete(new_state))
+                        let mut common_bytes = 0;
+                        for (byte1, byte2) in required_next1.bytes().zip(required_next2.bytes()) {
+                            if byte1 != byte2 {
+                                break;
+                            }
+                            common_bytes += 1;
+                        }
+                        Ok(ParseResult::Incomplete {
+                            new_state,
+                            required_next: match (required_next1, required_next2) {
+                                (Cow::Borrowed(required_next), _) => {
+                                    Cow::Borrowed(&required_next[common_bytes..])
+                                }
+                                (_, Cow::Borrowed(required_next)) => {
+                                    Cow::Borrowed(&required_next[common_bytes..])
+                                }
+                                (Cow::Owned(mut required_next), _) => {
+                                    required_next.drain(0..common_bytes);
+                                    Cow::Owned(required_next)
+                                }
+                            },
+                        })
                     }
-                    (Ok(ParseResult::Incomplete(p1)), Err(err2)) => {
+                    (
+                        Ok(ParseResult::Incomplete {
+                            new_state: p1,
+                            required_next,
+                        }),
+                        Err(err2),
+                    ) => {
                         let new_state = ChoiceParserState {
                             state1: Ok(p1),
                             state2: Err(err2),
                         };
-                        Ok(ParseResult::Incomplete(new_state))
+                        Ok(ParseResult::Incomplete {
+                            new_state,
+                            required_next,
+                        })
                     }
-                    (Err(err1), Ok(ParseResult::Incomplete(p2))) => {
+                    (
+                        Err(err1),
+                        Ok(ParseResult::Incomplete {
+                            new_state: p2,
+                            required_next,
+                        }),
+                    ) => {
                         let new_state = ChoiceParserState {
                             state1: Err(err1),
                             state2: Ok(p2),
                         };
-                        Ok(ParseResult::Incomplete(new_state))
+                        Ok(ParseResult::Incomplete {
+                            new_state,
+                            required_next,
+                        })
                     }
 
                     // If both parsers fail, we return the error from the first parser
@@ -138,12 +188,18 @@ impl<
                         result: Either::Left(result),
                         remaining,
                     }),
-                    ParseResult::Incomplete(p1) => {
+                    ParseResult::Incomplete {
+                        new_state: p1,
+                        required_next,
+                    } => {
                         let new_state = ChoiceParserState {
                             state1: Ok(p1),
                             state2: Err(err2.clone()),
                         };
-                        Ok(ParseResult::Incomplete(new_state))
+                        Ok(ParseResult::Incomplete {
+                            new_state,
+                            required_next,
+                        })
                     }
                 }
             }
@@ -154,12 +210,18 @@ impl<
                         result: Either::Right(result),
                         remaining,
                     }),
-                    ParseResult::Incomplete(p2) => {
+                    ParseResult::Incomplete {
+                        new_state: p2,
+                        required_next,
+                    } => {
                         let new_state = ChoiceParserState {
                             state1: Err(err1.clone()),
                             state2: Ok(p2),
                         };
-                        Ok(ParseResult::Incomplete(new_state))
+                        Ok(ParseResult::Incomplete {
+                            new_state,
+                            required_next,
+                        })
                     }
                 }
             }
@@ -211,9 +273,12 @@ fn choice_parser() {
     let state = ChoiceParserState::default();
     assert_eq!(
         parser.parse(&state, b"This isn"),
-        Ok(ParseResult::Incomplete(ChoiceParserState {
-            state1: Ok(LiteralParserOffset::new(8)),
-            state2: Err(()),
-        }))
+        Ok(ParseResult::Incomplete {
+            new_state: ChoiceParserState {
+                state1: Ok(LiteralParserOffset::new(8)),
+                state2: Err(()),
+            },
+            required_next: "'t a test".into()
+        })
     );
 }

@@ -92,15 +92,27 @@ impl<
                                     remaining,
                                 })
                             }
-                            ParseResult::Incomplete(p2) => {
+                            ParseResult::Incomplete {
+                                new_state: p2,
+                                required_next,
+                            } => {
                                 let new_state = SequenceParserState::SecondParser(p2, o1);
-                                Ok(ParseResult::Incomplete(new_state))
+                                Ok(ParseResult::Incomplete {
+                                    new_state,
+                                    required_next,
+                                })
                             }
                         }
                     }
-                    ParseResult::Incomplete(p1) => {
+                    ParseResult::Incomplete {
+                        new_state: p1,
+                        required_next,
+                    } => {
                         let new_state = SequenceParserState::FirstParser(p1);
-                        Ok(ParseResult::Incomplete(new_state))
+                        Ok(ParseResult::Incomplete {
+                            new_state,
+                            required_next,
+                        })
                     }
                 }
             }
@@ -111,9 +123,15 @@ impl<
                         result: (o1.clone(), result),
                         remaining,
                     }),
-                    ParseResult::Incomplete(p2) => {
+                    ParseResult::Incomplete {
+                        new_state: p2,
+                        required_next,
+                    } => {
                         let new_state = SequenceParserState::SecondParser(p2, o1.clone());
-                        Ok(ParseResult::Incomplete(new_state))
+                        Ok(ParseResult::Incomplete {
+                            new_state,
+                            required_next,
+                        })
                     }
                 }
             }
@@ -138,17 +156,18 @@ fn sequence_parser() {
     );
     assert_eq!(
         parser.parse(&state, b"Hello, "),
-        Ok(ParseResult::Incomplete(SequenceParserState::SecondParser(
-            LiteralParserOffset::new(0),
-            ()
-        )))
+        Ok(ParseResult::Incomplete {
+            new_state: SequenceParserState::SecondParser(LiteralParserOffset::new(0), ()),
+            required_next: "world!".into()
+        })
     );
     assert_eq!(
         parser.parse(
             &parser
                 .parse(&state, b"Hello, ")
                 .unwrap()
-                .unwrap_incomplete(),
+                .unwrap_incomplete()
+                .0,
             b"world!"
         ),
         Ok(ParseResult::Finished {

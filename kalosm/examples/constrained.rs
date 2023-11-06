@@ -8,7 +8,7 @@ use std::sync::Mutex;
 #[tokio::main]
 async fn main() {
     let mut llm = Phi::start().await;
-    let prompt = "Five US states in central America are ";
+    let prompt = "Five US states in central US are ";
 
     println!("# with constraints");
     print!("{}", prompt);
@@ -66,7 +66,7 @@ async fn main() {
     ];
     let states_parser = states
         .into_iter()
-        .map(LiteralParser::from)
+        .map(|s| LiteralParser::from(s.to_string().repeat(10)))
         .collect::<Vec<_>>();
 
     let states = IndexParser::new(states_parser);

@@ -1,5 +1,3 @@
-
-
 use crate::{CreateParserState, SeparatedParser};
 use crate::{
     IntegerParser, LiteralParser, ParseResult, Parser, RepeatParser, SequenceParser,
@@ -94,7 +92,6 @@ impl HasParser for String {
         Default::default()
     }
 }
-
 
 /// A parser for a vector of a type.
 #[derive(Clone, Debug)]

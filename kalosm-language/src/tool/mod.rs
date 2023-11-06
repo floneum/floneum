@@ -316,7 +316,7 @@ where
                                 remaining: r,
                             })
                         }
-                        Ok(ParseResult::Incomplete(s)) => {
+                        Ok(ParseResult::Incomplete { new_state: s, .. }) => {
                             states[i] = Ok(s);
                             has_incomplete_option = true;
                         }
@@ -335,7 +335,10 @@ where
                 }
             }
         }
-        Ok(ParseResult::Incomplete(IndexParserState { states }))
+        Ok(ParseResult::Incomplete {
+            new_state: IndexParserState { states },
+            required_next: Default::default(),
+        })
     }
 }
 
@@ -375,7 +378,10 @@ impl Parser for OneLine {
             if state.all_whitespace {
                 return Err(());
             } else {
-                return Ok(ParseResult::Incomplete(state.clone()));
+                return Ok(ParseResult::Incomplete {
+                    new_state: state.clone(),
+                    required_next: Default::default(),
+                });
             }
         }
         let mut state = state.clone();
@@ -400,7 +406,10 @@ impl Parser for OneLine {
             }
             state.bytes.push(c);
         }
-        Ok(ParseResult::Incomplete(state))
+        Ok(ParseResult::Incomplete {
+            new_state: state,
+            required_next: Default::default(),
+        })
     }
 }
 

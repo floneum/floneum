@@ -88,7 +88,7 @@ impl<
                             logit.logit = 0.0;
                         }
                     }
-                    Ok(crate::ParseResult::Incomplete(_)) => {
+                    Ok(crate::ParseResult::Incomplete { .. }) => {
                         valid_tokens += 1;
                         if best_token.is_none() || logit.logit > best_token.as_ref().unwrap().logit
                         {

@@ -15,8 +15,11 @@ impl CreateParserState for StringParser<fn(char) -> bool> {
 
 impl StringParser<fn(char) -> bool> {
     /// Create a new string parser.
-    pub fn new(len_range: std::ops::RangeInclusive<usize>,) -> Self {
-        Self { len_range, character_filter: |_| true }
+    pub fn new(len_range: std::ops::RangeInclusive<usize>) -> Self {
+        Self {
+            len_range,
+            character_filter: |_| true,
+        }
     }
 }
 
@@ -90,7 +93,9 @@ impl<F: Fn(char) -> bool + 'static> Parser for StringParser<F> {
                     }
                 }
                 StringParserProgress::InString => {
-                    if (state.next_char_escaped || *byte != b'"') && !(self.character_filter)(*byte as char){
+                    if (state.next_char_escaped || *byte != b'"')
+                        && !(self.character_filter)(*byte as char)
+                    {
                         return Err(());
                     }
 
@@ -118,17 +123,20 @@ impl<F: Fn(char) -> bool + 'static> Parser for StringParser<F> {
             }
         }
 
-        Ok(ParseResult::Incomplete(StringParserState {
-            progress,
-            string,
-            next_char_escaped,
-        }))
+        Ok(ParseResult::Incomplete {
+            new_state: StringParserState {
+                progress,
+                string,
+                next_char_escaped,
+            },
+            required_next: "".into(),
+        })
     }
 }
 
 #[test]
 fn literal_parser() {
-    let parser = StringParser::new(1..=10);
+    let parser = StringParser::new(1..=20);
     let state = StringParserState::default();
     assert_eq!(
         parser.parse(&state, b"\"Hello, \\\"world!\""),
@@ -140,11 +148,14 @@ fn literal_parser() {
 
     assert_eq!(
         parser.parse(&state, b"\"Hello, "),
-        Ok(ParseResult::Incomplete(StringParserState {
-            progress: StringParserProgress::InString,
-            string: "Hello, ".to_string(),
-            next_char_escaped: false,
-        }))
+        Ok(ParseResult::Incomplete {
+            new_state: StringParserState {
+                progress: StringParserProgress::InString,
+                string: "Hello, ".to_string(),
+                next_char_escaped: false,
+            },
+            required_next: "".into()
+        })
     );
 
     assert_eq!(
@@ -152,7 +163,8 @@ fn literal_parser() {
             &parser
                 .parse(&state, b"\"Hello, ")
                 .unwrap()
-                .unwrap_incomplete(),
+                .unwrap_incomplete()
+                .0,
             b"world!\""
         ),
         Ok(ParseResult::Finished {

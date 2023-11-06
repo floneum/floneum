@@ -142,18 +142,18 @@ where
     ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
         let mut state = state.clone();
         let mut remaining = input;
+        let required_next;
         loop {
-            match state.last_state {
+            match &state.last_state {
                 SeparatedItemState::Item(item_state) => {
-                    let result = self.parser.parse(&item_state, remaining);
+                    let result = self.parser.parse(item_state, remaining);
                     match result {
                         Ok(ParseResult::Finished {
                             result,
                             remaining: new_remaining,
                         }) => {
                             state.outputs.push(result);
-                            state.last_state =
-                                SeparatedItemState::Separator(self.separator.create_parser_state());
+                            let separator_state = self.separator.create_parser_state();
                             state.new_state_in_progress = false;
                             remaining = new_remaining;
                             if self.length_range.end() == &state.outputs.len() {
@@ -163,12 +163,25 @@ where
                                 });
                             }
                             if remaining.is_empty() {
+                                match self.separator.parse(&separator_state, remaining) {
+                                    Ok(ParseResult::Incomplete {
+                                        required_next: new_required_next,
+                                        ..
+                                    }) => required_next = Some(new_required_next),
+                                    _ => required_next = None,
+                                }
+                                state.last_state = SeparatedItemState::Separator(separator_state);
                                 break;
                             }
+                            state.last_state = SeparatedItemState::Separator(separator_state);
                         }
-                        Ok(ParseResult::Incomplete(new_state)) => {
+                        Ok(ParseResult::Incomplete {
+                            new_state,
+                            required_next: new_required_next,
+                        }) => {
                             state.last_state = SeparatedItemState::Item(new_state);
                             state.new_state_in_progress = true;
+                            required_next = Some(new_required_next);
                             break;
                         }
                         Err(e) => {
@@ -186,14 +199,13 @@ where
                     }
                 }
                 SeparatedItemState::Separator(separator_state) => {
-                    let result = self.separator.parse(&separator_state, remaining);
+                    let result = self.separator.parse(separator_state, remaining);
                     match result {
                         Ok(ParseResult::Finished {
                             remaining: new_remaining,
                             ..
                         }) => {
-                            state.last_state =
-                                SeparatedItemState::Item(self.parser.create_parser_state());
+                            let item_state = self.parser.create_parser_state();
                             state.new_state_in_progress = false;
                             remaining = new_remaining;
                             if self.length_range.end() == &state.outputs.len() {
@@ -203,12 +215,24 @@ where
                                 });
                             }
                             if remaining.is_empty() {
+                                match self.parser.parse(&item_state, remaining) {
+                                    Ok(ParseResult::Incomplete {
+                                        required_next: new_required_next,
+                                        ..
+                                    }) => required_next = Some(new_required_next),
+                                    _ => required_next = None,
+                                }
                                 break;
                             }
+                            state.last_state = SeparatedItemState::Item(item_state);
                         }
-                        Ok(ParseResult::Incomplete(new_state)) => {
+                        Ok(ParseResult::Incomplete {
+                            new_state,
+                            required_next: new_required_next,
+                        }) => {
                             state.last_state = SeparatedItemState::Separator(new_state);
                             state.new_state_in_progress = true;
+                            required_next = Some(new_required_next);
                             break;
                         }
                         Err(e) => {
@@ -226,13 +250,16 @@ where
             }
         }
 
-        Ok(ParseResult::Incomplete(state))
+        Ok(ParseResult::Incomplete {
+            new_state: state,
+            required_next: required_next.unwrap_or_default(),
+        })
     }
 }
 
 #[test]
 fn repeat_parser() {
-    use crate::{CreateParserState, IntegerParser, LiteralParser};
+    use crate::{CreateParserState, IntegerParser, LiteralParser, LiteralParserOffset};
     let parser = SeparatedParser::new(LiteralParser::from("a"), LiteralParser::from("b"), 1..=3);
     let state = parser.create_parser_state();
     let result = parser.parse(&state, b"ababa");
@@ -255,15 +282,18 @@ fn repeat_parser() {
         })
     );
 
-    let parser = SeparatedParser::new(IntegerParser::new(1..=3), LiteralParser::from("b"), 1..=3);
+    let parser = SeparatedParser::new(IntegerParser::new(1..=3), LiteralParser::from("bb"), 1..=3);
     let state = parser.create_parser_state();
-    let result = parser.parse(&state, b"1b2b");
+    let result = parser.parse(&state, b"1bb2b");
     assert_eq!(
         result,
-        Ok(ParseResult::Incomplete(SeparatedParserState {
-            new_state_in_progress: false,
-            last_state: SeparatedItemState::Item(IntegerParser::new(1..=3).create_parser_state()),
-            outputs: vec![1, 2],
-        }))
+        Ok(ParseResult::Incomplete {
+            new_state: SeparatedParserState {
+                new_state_in_progress: true,
+                last_state: SeparatedItemState::Separator(LiteralParserOffset::new(1)),
+                outputs: vec![1, 2],
+            },
+            required_next: "b".into()
+        })
     );
 }

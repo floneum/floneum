@@ -25,4 +25,8 @@ impl Tokenizer for llm::Tokenizer {
         let bytes = self.decode(ids.into(), false);
         Ok(String::from_utf8(bytes)?.into())
     }
+
+    fn get_all_tokens(&self) -> anyhow::Result<Cow<'_, [u32]>> {
+        anyhow::bail!("Not implemented")
+    }
 }

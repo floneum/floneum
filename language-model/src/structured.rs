@@ -9,6 +9,7 @@ use rustc_hash::FxHashMap;
 
 use crate::SyncModel;
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn generate_structured<M: SyncModel, P: Parser>(
     prompt: impl Display,
     llm: &mut M,
@@ -20,24 +21,16 @@ pub(crate) fn generate_structured<M: SyncModel, P: Parser>(
     stream: tokio::sync::mpsc::UnboundedSender<String>,
 ) -> anyhow::Result<P::Output> {
     let prompt_text = prompt.to_string();
-    let mut tokens = tokenizer.encode(&prompt_text).unwrap();
-    let mut session = llm.new_session().unwrap();
+    let mut tokens = tokenizer.encode(&prompt_text)?;
+    let mut session = llm.new_session()?;
     let mut unprocessed_token_count = tokens.len();
     let mut rng = rand::thread_rng();
 
     loop {
-        let mut logits = llm
-            .feed_tokens(
-                &mut session,
-                &tokens[tokens.len() - unprocessed_token_count..],
-            )
-            .unwrap();
-        logits.ensure_sorted().unwrap();
-        let min_prob = logits.last().unwrap().logit;
-        for logit in logits.iter_mut() {
-            logit.logit = logit.logit - min_prob;
-            debug_assert!(logit.logit >= 0.0)
-        }
+        let mut logits = llm.feed_tokens(
+            &mut session,
+            &tokens[tokens.len() - unprocessed_token_count..],
+        )?;
         let resources = &mut SamplerResources {
             previous_tokens: &tokens,
             rng: &mut rng,
@@ -45,7 +38,7 @@ pub(crate) fn generate_structured<M: SyncModel, P: Parser>(
         let sampled = sampler.sample(resources, &mut logits)?;
         let mut state_map = FxHashMap::default();
         for logit in sampled.iter_mut() {
-            let new_text = tokenizer.decode(&[logit.token_id]).unwrap();
+            let new_text = tokenizer.decode(&[logit.token_id])?;
             if new_text.is_empty() || logit.logit == 0.0 {
                 logit.logit = 0.0;
                 continue;
@@ -63,7 +56,9 @@ pub(crate) fn generate_structured<M: SyncModel, P: Parser>(
         let token_id = post_filter_sampler
             .sample_token(resources, &mut logits)?
             .ok_or(anyhow::anyhow!("No valid tokens found"))?;
-        let (token, result) = state_map.remove(&token_id).unwrap();
+        let (token, result) = state_map
+            .remove(&token_id)
+            .ok_or(anyhow::anyhow!("Token {} not found in state map", token_id))?;
 
         stream
             .send(token.clone())
@@ -71,8 +66,17 @@ pub(crate) fn generate_structured<M: SyncModel, P: Parser>(
         unprocessed_token_count = 1;
         tokens.push(token_id);
         match result {
-            kalosm_sample::ParseResult::Incomplete(new_state) => {
+            kalosm_sample::ParseResult::Incomplete {
+                new_state,
+                required_next,
+            } => {
                 parser_state = new_state;
+                if !required_next.is_empty() {
+                    let extra_tokens = tokenizer.encode(&required_next)?;
+                    println!("Extra tokens: {:?}", extra_tokens);
+                    unprocessed_token_count += extra_tokens.len();
+                    tokens.extend(extra_tokens);
+                }
             }
             kalosm_sample::ParseResult::Finished { result, .. } => {
                 return Ok(result);
