@@ -21,6 +21,8 @@ pub(crate) fn generate_structured<M: SyncModel, P: Parser>(
 ) -> anyhow::Result<P::Output> {
     let prompt_text = prompt.to_string();
     let mut tokens = tokenizer.encode(&prompt_text)?;
+    let mut prev_index = tokens.len();
+    let mut current_index = tokens.len();
     let mut session = llm.new_session()?;
     let mut unprocessed_token_count = tokens.len();
     let mut rng = rand::thread_rng();
@@ -35,17 +37,30 @@ pub(crate) fn generate_structured<M: SyncModel, P: Parser>(
             rng: &mut rng,
         };
         let mut state_map = FxHashMap::default();
+        let prev_text = if tokens.is_empty() {
+            "".into()
+        } else {
+            let tokens = &tokens[prev_index..current_index];
+            tokenizer.decode(tokens)?
+        };
         for logit in logits.iter_mut() {
-            let new_text = tokenizer.decode(&[logit.token_id])?;
-            if new_text.is_empty() || logit.logit == 0.0 {
-                logit.logit = 0.0;
-                continue;
-            }
-            if let Ok(result) = parser.parse(&parser_state, new_text.as_bytes()) {
-                let result = result.without_remaining();
-                state_map.insert(logit.token_id, (new_text.to_string(), result));
+            let mut potential_new_tokens = tokens[prev_index..].to_vec();
+            potential_new_tokens.push(logit.token_id);
+            let token_text = tokenizer.decode(&potential_new_tokens)?;
+            if token_text.len() > prev_text.len() {
+                let text = token_text.split_at(prev_text.len());
+                let new_text = text.1.to_string();
+                if new_text.is_empty() {
+                    continue;
+                }
+                if let Ok(result) = parser.parse(&parser_state, new_text.as_bytes()) {
+                    let result = result.without_remaining();
+                    state_map.insert(logit.token_id, Some((new_text.to_string(), result)));
+                } else {
+                    logit.logit = 0.0;
+                }
             } else {
-                logit.logit = 0.0;
+                state_map.insert(logit.token_id, None);
             }
         }
         if state_map.is_empty() {
@@ -54,26 +69,30 @@ pub(crate) fn generate_structured<M: SyncModel, P: Parser>(
         let token_id = sampler
             .sample_token(resources, &mut logits)?
             .ok_or(anyhow::anyhow!("No valid tokens found"))?;
-        let (token, result) = state_map
-            .remove(&token_id)
-            .ok_or(anyhow::anyhow!("Token {} not found in state map", token_id))?;
-
-        tracing::trace!("Adding token {} to parser", token);
-        stream
-            .send(token.clone())
-            .map_err(|_| anyhow::anyhow!("Failed to send token to stream: {}", token))?;
         unprocessed_token_count = 1;
         tokens.push(token_id);
-        if let Some(result) = update_state(
-            &parser,
-            &mut parser_state,
-            result,
-            tokenizer,
-            &mut tokens,
-            &stream,
-            &mut unprocessed_token_count,
-        )? {
-            return Ok(result);
+        if let Some((token, result)) = state_map
+            .remove(&token_id)
+            .ok_or(anyhow::anyhow!("Token {} not found in state map", token_id))?
+        {
+            tracing::trace!("Adding token {} to parser", token);
+            prev_index = current_index;
+            current_index = tokens.len();
+            stream
+                .send(token.clone())
+                .map_err(|_| anyhow::anyhow!("Failed to send token to stream: {}", token))?;
+
+            if let Some(result) = update_state(
+                &parser,
+                &mut parser_state,
+                result,
+                tokenizer,
+                &mut tokens,
+                &stream,
+                &mut unprocessed_token_count,
+            )? {
+                return Ok(result);
+            }
         }
     }
 }

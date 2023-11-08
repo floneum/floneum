@@ -16,7 +16,7 @@ pub(crate) struct WhisperInner {
     mel_filters: Vec<f32>,
     device: Device,
     decoder: Decoder,
-    config: Config
+    config: Config,
 }
 
 impl WhisperInner {
@@ -72,7 +72,7 @@ impl WhisperInner {
             mel_filters,
             device,
             decoder,
-            config
+            config,
         })
     }
 
@@ -81,13 +81,18 @@ impl WhisperInner {
         pcm_data: Vec<f32>,
         result: tokio::sync::mpsc::UnboundedSender<Segment>,
     ) {
-        let mel = audio::pcm_to_mel(&self.config,&pcm_data, &self.mel_filters);
+        let mel = audio::pcm_to_mel(&self.config, &pcm_data, &self.mel_filters);
         let mel_len = mel.len();
         let mel = Tensor::from_vec(
             mel,
-            (1, self.config.num_mel_bins, mel_len / self.config.num_mel_bins),
-            &self.device
-        ).unwrap();
+            (
+                1,
+                self.config.num_mel_bins,
+                mel_len / self.config.num_mel_bins,
+            ),
+            &self.device,
+        )
+        .unwrap();
 
         self.decoder.run(&mel, Task::Transcribe, result);
     }

@@ -7,7 +7,7 @@ use std::sync::Mutex;
 
 #[tokio::main]
 async fn main() {
-    let mut llm = Phi::start().await;
+    let mut llm = Mistral::start().await;
 
     println!("Loading local documents...");
     let mut document_database = DocumentDatabase::new(

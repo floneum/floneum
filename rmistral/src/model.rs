@@ -169,7 +169,7 @@ impl MistralModel {
             let logits = Self::forward(
                 &mut self.model,
                 &self.device,
-                &ctxt,
+                ctxt,
                 start_pos,
                 Some(&mut self.cache),
             )?;
