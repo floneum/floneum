@@ -25,22 +25,26 @@ async fn main() {
     let mut tools = ToolManager::default().with_tool(DocumentSearchTool::new(document_database, 5));
     llm.run_sync(|llm| {
         Box::pin(async move {
-            let prompt = tools.prompt(question);
+            let mut prompt = tools.prompt(question);
             let mut session = llm.new_session().unwrap();
-            llm.feed_text(&mut session, &prompt).unwrap();
             loop {
-                if let ToolManagerStepResult::Finished(result) = tools
-                    .run_step(llm, &mut session, |token| {
-                        print!("{}", token);
-                        std::io::stdout().flush().unwrap();
-                        Ok(())
-                    })
+                match tools
+                    .run_step(&prompt, llm, &mut session, |_| Ok(()))
                     .await
                     .unwrap()
                 {
-                    println!();
-                    println!("\n\nAnswer: {}", result);
-                    break;
+                    ToolManagerStepResult::Finished(result) => {
+                        println!("\n\nAnswer: {}", result);
+                        break;
+                    }
+                    ToolManagerStepResult::Action(result) => {
+                        prompt = format!("{result}\n");
+                        println!("Action Result: {}", result)
+                    }
+                    ToolManagerStepResult::Thought(thought) => {
+                        prompt = format!("{thought}\n");
+                        println!("Thought: {}", thought);
+                    }
                 }
             }
         })

@@ -314,6 +314,7 @@ Question: {question}
     /// Run one step of the tool manager
     pub async fn run_step<M: SyncModel>(
         &mut self,
+        prompt: &str,
         llm: &mut M,
         llm_session: &mut M::Session,
         mut add_token: impl FnMut(String) -> anyhow::Result<()>,
@@ -324,7 +325,7 @@ Question: {question}
         let validator_state = constraints.create_parser_state();
         let result = llm.generate_structured(
             llm_session,
-            &new_text,
+            prompt,
             constraints,
             validator_state,
             Arc::new(Mutex::new(GenerationParameters::default().sampler())),
