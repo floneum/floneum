@@ -36,7 +36,8 @@ impl Tool for WebSearchTool {
     }
 
     async fn run(&mut self, query: String) -> String {
-        let api_key = std::env::var("SERPER_API_KEY").unwrap();
+        let api_key =
+            std::env::var("SERPER_API_KEY").expect("SERPER_API_KEY environment variable not set");
         let search_query = SearchQuery::new(&query, &api_key, self.top_n);
         let documents = search_query.into_documents().await.unwrap();
         let mut text = String::new();
