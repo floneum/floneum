@@ -5,7 +5,6 @@
 
 #![warn(missing_docs)]
 
-use rustc_hash::FxHashMap;
 use std::borrow::Cow;
 use std::ops::Deref;
 use std::sync::Arc;

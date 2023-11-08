@@ -1,6 +1,12 @@
 mod search;
-use std::{any::Any, borrow::Cow, error::Error, sync::Arc};
+use std::{
+    any::Any,
+    borrow::Cow,
+    error::Error,
+    sync::{Arc, Mutex},
+};
 
+use kalosm_language_model::{GenerationParameters, SyncModel, SyncModelExt};
 use kalosm_sample::{
     ArcParser, ChoiceParser, CreateParserState, Either, LiteralParser, LiteralParserOffset,
     ParseResult, Parser, ParserExt, SequenceParser, SequenceParserState,
@@ -85,7 +91,7 @@ where
 }
 
 /// A dynamic tool that can be used by a [`kalosm_language_model::Model`]
-pub type BoxedTool = Box<dyn Tool<Constraint = ArcParser>>;
+pub type BoxedTool = Box<dyn Tool<Constraint = ArcParser> + Sync + Send>;
 
 /// A set of tools that can be used by a [`kalosm_language_model::Model`]
 #[derive(Default)]
@@ -304,6 +310,58 @@ Question: {question}
             .or(self.action_constraints())
             .or(self.answer_constraints())
     }
+
+    /// Run one step of the tool manager
+    pub async fn run_step<M: SyncModel>(
+        &mut self,
+        llm: &mut M,
+        llm_session: &mut M::Session,
+        mut add_token: impl FnMut(String) -> anyhow::Result<()>,
+    ) -> anyhow::Result<ToolManagerStepResult> {
+        let mut new_text = String::new();
+
+        let constraints = self.any_action_constraint();
+        let validator_state = constraints.create_parser_state();
+        let result = llm.generate_structured(
+            llm_session,
+            &new_text,
+            constraints,
+            validator_state,
+            Arc::new(Mutex::new(GenerationParameters::default().sampler())),
+            &mut add_token,
+        )?;
+
+        Ok(match result {
+            Either::Left(Either::Left(thought)) => {
+                new_text += &thought.1;
+                new_text += "\n";
+                add_token(new_text)?;
+                ToolManagerStepResult::Thought(thought.1)
+            }
+            Either::Left(Either::Right(((), (tool_index, ((), left))))) => {
+                let result = self
+                    .get_tool_mut_by_index(tool_index)
+                    .unwrap()
+                    .run(left)
+                    .await;
+                new_text += &result;
+                new_text += "\n";
+                add_token(new_text)?;
+                ToolManagerStepResult::Action(result)
+            }
+            Either::Right(right) => ToolManagerStepResult::Finished(right.1),
+        })
+    }
+}
+
+/// The result of a step in the tool manager
+pub enum ToolManagerStepResult {
+    /// The task was completed
+    Finished(String),
+    /// The model produced a new thought
+    Thought(String),
+    /// The model produced a new action result
+    Action(String),
 }
 
 /// The state of the [`IndexParser`] parser

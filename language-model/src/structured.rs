@@ -10,28 +10,26 @@ use rustc_hash::FxHashMap;
 use crate::SyncModel;
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn generate_structured<M: SyncModel, P: Parser>(
+pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
     prompt: impl Display,
     llm: &mut M,
+    session: &mut M::Session,
     tokenizer: &Arc<dyn Tokenizer + Send + Sync>,
     parser: P,
     mut parser_state: P::PartialState,
     mut sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
-    stream: tokio::sync::mpsc::UnboundedSender<String>,
+    mut on_token: impl FnMut(String) -> anyhow::Result<()>,
 ) -> anyhow::Result<P::Output> {
     let prompt_text = prompt.to_string();
     let mut tokens = tokenizer.encode(&prompt_text)?;
     let mut prev_index = tokens.len();
     let mut current_index = tokens.len();
-    let mut session = llm.new_session()?;
     let mut unprocessed_token_count = tokens.len();
     let mut rng = rand::thread_rng();
 
     loop {
-        let mut logits = llm.feed_tokens(
-            &mut session,
-            &tokens[tokens.len() - unprocessed_token_count..],
-        )?;
+        let mut logits =
+            llm.feed_tokens(session, &tokens[tokens.len() - unprocessed_token_count..])?;
         let resources = &mut SamplerResources {
             previous_tokens: &tokens,
             rng: &mut rng,
@@ -78,9 +76,7 @@ pub(crate) fn generate_structured<M: SyncModel, P: Parser>(
             tracing::trace!("Adding token {} to parser", token);
             prev_index = current_index;
             current_index = tokens.len();
-            stream
-                .send(token.clone())
-                .map_err(|_| anyhow::anyhow!("Failed to send token to stream: {}", token))?;
+            on_token(token.clone())?;
 
             if let Some(result) = update_state(
                 &parser,
@@ -88,7 +84,7 @@ pub(crate) fn generate_structured<M: SyncModel, P: Parser>(
                 result,
                 tokenizer,
                 &mut tokens,
-                &stream,
+                &mut on_token,
                 &mut unprocessed_token_count,
             )? {
                 return Ok(result);
@@ -103,7 +99,7 @@ fn update_state<P: Parser>(
     result: ParseResult<P::PartialState, P::Output>,
     tokenizer: &Arc<dyn Tokenizer + Send + Sync>,
     tokens: &mut Vec<u32>,
-    stream: &tokio::sync::mpsc::UnboundedSender<String>,
+    on_token: &mut impl FnMut(String) -> anyhow::Result<()>,
     unprocessed_token_count: &mut usize,
 ) -> anyhow::Result<Option<P::Output>> {
     match result {
@@ -124,16 +120,14 @@ fn update_state<P: Parser>(
                 let extra_tokens = tokenizer.encode(&required_next)?;
                 *unprocessed_token_count += extra_tokens.len();
                 tokens.extend(extra_tokens);
-                stream
-                    .send(required_next.to_string())
-                    .map_err(|_| anyhow::anyhow!("Failed to send token to stream"))?;
+                on_token(required_next.to_string())?;
                 update_state(
                     parser,
                     parser_state,
                     result,
                     tokenizer,
                     tokens,
-                    stream,
+                    on_token,
                     unprocessed_token_count,
                 )
             }
