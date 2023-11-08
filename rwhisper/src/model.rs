@@ -16,6 +16,7 @@ pub(crate) struct WhisperInner {
     mel_filters: Vec<f32>,
     device: Device,
     decoder: Decoder,
+    config: Config
 }
 
 impl WhisperInner {
@@ -55,7 +56,7 @@ impl WhisperInner {
         let vb =
             unsafe { VarBuilder::from_mmaped_safetensors(&[weights_filename], m::DTYPE, &device)? };
         let config: Config = serde_json::from_str(&std::fs::read_to_string(config_filename)?)?;
-        let model = Whisper::load(&vb, config)?;
+        let model = Whisper::load(&vb, config.clone())?;
         let language_token = if settings.model.is_multilingual() {
             let language = settings.language.unwrap_or(WhisperLanguage::English);
             match token_id(&tokenizer, &format!("<|{language}|>")) {
@@ -71,6 +72,7 @@ impl WhisperInner {
             mel_filters,
             device,
             decoder,
+            config
         })
     }
 
@@ -79,9 +81,13 @@ impl WhisperInner {
         pcm_data: Vec<f32>,
         result: tokio::sync::mpsc::UnboundedSender<Segment>,
     ) {
-        let mel = audio::pcm_to_mel(&pcm_data, &self.mel_filters);
+        let mel = audio::pcm_to_mel(&self.config,&pcm_data, &self.mel_filters);
         let mel_len = mel.len();
-        let mel = Tensor::from_vec(mel, (1, m::N_MELS, mel_len / m::N_MELS), &self.device).unwrap();
+        let mel = Tensor::from_vec(
+            mel,
+            (1, self.config.num_mel_bins, mel_len / self.config.num_mel_bins),
+            &self.device
+        ).unwrap();
 
         self.decoder.run(&mel, Task::Transcribe, result);
     }

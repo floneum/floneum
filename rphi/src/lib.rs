@@ -31,7 +31,7 @@ extern crate intel_mkl_src;
 #[cfg(feature = "accelerate")]
 extern crate accelerate_src;
 
-mod lanuage_model;
+mod language_model;
 mod model;
 mod raw;
 mod source;
