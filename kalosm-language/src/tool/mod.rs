@@ -226,7 +226,7 @@ Question: {question}
     pub fn thought_constraints(
         &self,
     ) -> impl Parser<
-        Error = Either<(), ()>,
+        Error = Either<(), OneLineError>,
         Output = ((), String),
         PartialState = SequenceParserState<LiteralParserOffset, OneLineState, ()>,
     > + CreateParserState
@@ -257,7 +257,7 @@ Question: {question}
     pub fn answer_constraints(
         &self,
     ) -> impl Parser<
-        Error = Either<(), ()>,
+        Error = Either<(), OneLineError>,
         Output = ((), String),
         PartialState = SequenceParserState<LiteralParserOffset, OneLineState, ()>,
     > + CreateParserState
@@ -274,7 +274,7 @@ Question: {question}
     ) -> ChoiceParser<
         ChoiceParser<
             impl Parser<
-                    Error = Either<(), ()>,
+                    Error = Either<(), OneLineError>,
                     Output = ((), String),
                     PartialState = SequenceParserState<LiteralParserOffset, OneLineState, ()>,
                 > + CreateParserState
@@ -292,7 +292,7 @@ Question: {question}
             >,
         >,
         impl Parser<
-                Error = Either<(), ()>,
+                Error = Either<(), OneLineError>,
                 Output = ((), String),
                 PartialState = SequenceParserState<LiteralParserOffset, OneLineState, ()>,
             > + CreateParserState
@@ -448,8 +448,20 @@ impl CreateParserState for OneLine {
     }
 }
 
+/// An error that can occur when parsing a [`OneLine`]
+#[derive(Debug, Clone)]
+pub struct OneLineError;
+
+impl std::fmt::Display for OneLineError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "OneLineError")
+    }
+}
+
+impl Error for OneLineError {}
+
 impl Parser for OneLine {
-    type Error = ();
+    type Error = OneLineError;
     type Output = String;
     type PartialState = OneLineState;
 
@@ -476,7 +488,7 @@ impl Parser for OneLine {
             }
             if c == b'\n' || c == b'\r' {
                 if state.all_whitespace {
-                    return Err(());
+                    return Err(OneLineError);
                 } else {
                     return Ok(ParseResult::Finished {
                         result: String::from_utf8_lossy(&state.bytes).to_string(),

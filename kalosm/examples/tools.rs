@@ -9,10 +9,10 @@ use std::sync::Mutex;
 async fn main() {
     let mut llm = Phi::start().await;
 
-    let question = "What is 10 + 10? (Use a tool first)";
+    let question = "What is the latest news about the 2024 presidential election?";
     let mut tools = ToolManager::default()
-        // .with_tool(WebSearchTool::new(1))
-        .with_tool(CalculatorTool);
+        // .with_tool(CalculatorTool)
+        .with_tool(WebSearchTool::new(1));
 
     let mut current_text = tools.prompt(question);
 
@@ -48,7 +48,8 @@ async fn main() {
                 println!("Tool Result: {}", result);
             }
             Either::Right(right) => {
-                println!("Final Answer: {}", right.1)
+                println!("Final Answer: {}", right.1);
+                break;
             }
         }
     }

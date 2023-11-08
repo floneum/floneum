@@ -100,7 +100,7 @@ impl Default for EquationParser {
 
         let expression = number.or(function_call).or(binary_operation);
 
-        Self { parser: expression, }
+        Self { parser: expression }
     }
 }
 
@@ -129,25 +129,24 @@ impl Parser for EquationParser {
         input: &'a [u8],
     ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
         self.parser
-        .parse(&*state.state, input)
-        .map(|result| {
+            .parse(&*state.state, input)
+            .map(|result| {
                 let new_text = state.current_text.clone() + std::str::from_utf8(input).unwrap();
-                match result{
-                    ParseResult::Incomplete { new_state, required_next } => {
-                        ParseResult::Incomplete {
-                            new_state: EquationParserState {
-                                state: LazyState(Box::new(OnceCell::from(new_state))),
-                                current_text: new_text,
-                            },
-                            required_next,
-                        }
-                    }
-                    ParseResult::Finished { remaining,.. } => {
-                        ParseResult::Finished {
-                            remaining,
-                            result: new_text,
-                        }
-                    }
+                match result {
+                    ParseResult::Incomplete {
+                        new_state,
+                        required_next,
+                    } => ParseResult::Incomplete {
+                        new_state: EquationParserState {
+                            state: LazyState(Box::new(OnceCell::from(new_state))),
+                            current_text: new_text,
+                        },
+                        required_next,
+                    },
+                    ParseResult::Finished { remaining, .. } => ParseResult::Finished {
+                        remaining,
+                        result: new_text,
+                    },
                 }
             })
             .map_err(|_| EquationParserParseError)
