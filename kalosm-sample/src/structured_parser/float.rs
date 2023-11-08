@@ -90,10 +90,8 @@ impl FloatParser {
                 if *self.range.start() > num_with_extra_digit {
                     return false;
                 }
-            } else {
-                if *self.range.end() < num_with_extra_digit {
-                    return false;
-                }
+            } else if *self.range.end() < num_with_extra_digit {
+                return false;
             }
             let value_string = value.abs().to_string();
             let start_value_string = self.range.start().abs().to_string();
@@ -128,12 +126,9 @@ impl FloatParser {
         } else {
             *self.range.end() - value
         };
+        println!("Distance: {}", distance);
 
-        if distance < 10.0_f64.powi(-(digits_after_decimal_point as i32)) {
-            true
-        } else {
-            false
-        }
+        distance < 10.0_f64.powi(-(digits_after_decimal_point as i32))
     }
 }
 
@@ -171,10 +166,8 @@ impl Parser for FloatParser {
                         if value_digits > end_digits {
                             return Err(());
                         }
-                    } else {
-                        if value_digits > start_digits {
-                            return Err(());
-                        }
+                    } else if value_digits > start_digits {
+                        return Err(());
                     }
                     if state == FloatParserProgress::AfterDigit {
                         state = FloatParserProgress::AfterDecimalPoint {
@@ -239,58 +232,71 @@ impl Parser for FloatParser {
                 FloatParserProgress::AfterDecimalPoint {
                     digits_after_decimal_point,
                 } => {
-                    value = value
-                        + f64::from(digit) / 10.0_f64.powi(*digits_after_decimal_point as i32 + 1);
+                    value +=
+                        f64::from(digit) / 10.0_f64.powi(*digits_after_decimal_point as i32 + 1);
                     *digits_after_decimal_point += 1;
 
-                    if !self.could_number_become_valid_after_decimal(
-                        value * if positive { 1.0 } else { -1.0 },
-                        *digits_after_decimal_point,
-                    ) {
+                    let signed_value = value * if positive { 1.0 } else { -1.0 };
+                    if !self.range.contains(&signed_value)
+                        && !self.could_number_become_valid_after_decimal(
+                            signed_value,
+                            *digits_after_decimal_point,
+                        )
+                    {
                         return Err(());
                     }
                 }
             }
         }
 
-        Ok(ParseResult::Incomplete(FloatParserState {
-            state,
-            value,
-            positive,
-        }))
+        Ok(ParseResult::Incomplete {
+            new_state: FloatParserState {
+                state,
+                value,
+                positive,
+            },
+            required_next: Default::default(),
+        })
     }
 }
 
 #[test]
 fn float_parser() {
     let parser = FloatParser {
-        range: -100.0..=100.0,
+        range: -100.0..=200.0,
     };
     let state = FloatParserState::default();
     assert_eq!(
         parser.parse(&state, b"123"),
-        Ok(ParseResult::Incomplete(FloatParserState {
-            state: FloatParserProgress::AfterDigit,
-            value: 123.0,
-            positive: true
-        }))
+        Ok(ParseResult::Incomplete {
+            new_state: FloatParserState {
+                state: FloatParserProgress::AfterDigit,
+                value: 123.0,
+                positive: true
+            },
+            required_next: Default::default()
+        })
     );
     assert_eq!(
         parser.parse(&state, b"123.456"),
-        Ok(ParseResult::Incomplete(FloatParserState {
-            state: FloatParserProgress::AfterDecimalPoint {
-                digits_after_decimal_point: 3
+        Ok(ParseResult::Incomplete {
+            new_state: FloatParserState {
+                state: FloatParserProgress::AfterDecimalPoint {
+                    digits_after_decimal_point: 3
+                },
+                value: 123.456,
+                positive: true
             },
-            value: 123.456,
-            positive: true
-        }))
+            required_next: Default::default()
+        })
     );
     assert_eq!(
         parser.parse(
             &parser
                 .parse(&state, b"123.456")
                 .unwrap()
-                .unwrap_incomplete(),
+                .unwrap_incomplete()
+                .0,
             b"789x"
         ),
         Ok(ParseResult::Finished {

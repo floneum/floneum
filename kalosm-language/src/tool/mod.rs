@@ -1,7 +1,15 @@
 mod search;
+use std::{
+    any::Any,
+    borrow::Cow,
+    error::Error,
+    sync::{Arc, Mutex},
+};
+
+use kalosm_language_model::{GenerationParameters, SyncModel, SyncModelExt};
 use kalosm_sample::{
-    ChoiceParser, CreateParserState, LiteralParser, LiteralParserOffset, ParseResult, Parser,
-    SequenceParser, SequenceParserState,
+    ArcParser, ChoiceParser, CreateParserState, Either, LiteralParser, LiteralParserOffset,
+    ParseResult, Parser, ParserExt, SequenceParser, SequenceParserState,
 };
 pub use search::*;
 mod calculator;
@@ -13,20 +21,82 @@ pub use document::*;
 // TODO: Add example
 #[async_trait::async_trait]
 pub trait Tool {
+    /// The constraints for the input to the tool
+    type Constraint: Parser + CreateParserState;
+    /// The constraints for the input to the tool
+    fn constraints(&self) -> Self::Constraint;
+
     /// The name of the tool
     fn name(&self) -> String;
     /// The prompt for the input to the tool
     fn input_prompt(&self) -> String;
     /// A description of the tool
     fn description(&self) -> String;
+
     /// Run the tool with the given arguments
-    async fn run(&mut self, args: &str) -> String;
+    async fn run(&mut self, args: <<Self as Tool>::Constraint as Parser>::Output) -> String;
 }
+
+/// An extension trait for [`Tool`] that allows for dynamic dispatch
+pub trait DynToolExt {
+    /// Convert a tool into a dynamic tool
+    fn boxed(self) -> BoxedTool;
+}
+
+impl DynToolExt for BoxedTool {
+    fn boxed(self) -> BoxedTool {
+        self
+    }
+}
+
+struct DynToolWrapper<T: Tool>
+where
+    <T::Constraint as Parser>::Output: Clone + Send + Sync + 'static,
+    <T::Constraint as Parser>::PartialState: Send + Sync + 'static,
+    <T::Constraint as Parser>::Error: Error + Send + Sync + 'static,
+    <T as Tool>::Constraint: std::marker::Send + std::marker::Sync + 'static,
+{
+    tool: T,
+}
+
+#[async_trait::async_trait]
+impl<T: Tool + Send> Tool for DynToolWrapper<T>
+where
+    <T::Constraint as Parser>::Output: Clone + Send + Sync + 'static,
+    <T::Constraint as Parser>::PartialState: Send + Sync + 'static,
+    <T::Constraint as Parser>::Error: Error + Send + Sync + 'static,
+    <T as Tool>::Constraint: std::marker::Send + std::marker::Sync + 'static,
+{
+    type Constraint = ArcParser;
+    fn constraints(&self) -> Self::Constraint {
+        self.tool.constraints().boxed()
+    }
+
+    fn name(&self) -> String {
+        self.tool.name()
+    }
+    fn input_prompt(&self) -> String {
+        self.tool.input_prompt()
+    }
+    fn description(&self) -> String {
+        self.tool.description()
+    }
+    async fn run(&mut self, args: <<Self as Tool>::Constraint as Parser>::Output) -> String {
+        let args = args
+            .downcast_ref::<<T::Constraint as Parser>::Output>()
+            .unwrap()
+            .clone();
+        self.tool.run(args).await
+    }
+}
+
+/// A dynamic tool that can be used by a [`kalosm_language_model::Model`]
+pub type BoxedTool = Box<dyn Tool<Constraint = ArcParser> + Sync + Send>;
 
 /// A set of tools that can be used by a [`kalosm_language_model::Model`]
 #[derive(Default)]
 pub struct ToolManager {
-    tools: Vec<Box<dyn Tool + Send + Sync>>,
+    tools: Vec<BoxedTool>,
 }
 
 impl std::fmt::Debug for ToolManager {
@@ -47,51 +117,58 @@ impl ToolManager {
     }
 
     /// Add a tool to the manager
-    pub fn with_tool(self, tool: impl Tool + Send + Sync + 'static) -> Self {
-        let mut tools = self.tools;
-        tools.push(Box::new(tool));
-        Self { tools }
+    pub fn with_tool<T>(mut self, tool: T) -> Self
+    where
+        T: Tool + Send + Sync + 'static,
+        <T::Constraint as Parser>::Output: Clone + Send + Sync + 'static,
+        <T::Constraint as Parser>::PartialState: Send + Sync + 'static,
+        <T::Constraint as Parser>::Error: Error + Send + Sync + 'static,
+        <T as Tool>::Constraint: std::marker::Send + std::marker::Sync + 'static,
+    {
+        self.add_tool(tool);
+        self
     }
 
     /// Add a tool to the manager
-    pub fn add_tool(&mut self, tool: impl Tool + Send + Sync + 'static) {
-        self.tools.push(Box::new(tool));
+    pub fn add_tool<T>(&mut self, tool: T)
+    where
+        T: Tool + Send + Sync + 'static,
+        <T::Constraint as Parser>::Output: Clone + Send + Sync + 'static,
+        <T::Constraint as Parser>::PartialState: Send + Sync + 'static,
+        <T::Constraint as Parser>::Error: Error + Send + Sync + 'static,
+        <T as Tool>::Constraint: std::marker::Send + std::marker::Sync + 'static,
+    {
+        self.tools.push(Box::new(DynToolWrapper { tool }));
     }
 
     /// Get the tools in the manager
-    pub fn get_tools(&self) -> &[Box<dyn Tool + Send + Sync>] {
+    pub fn get_tools(&self) -> &[BoxedTool] {
         &self.tools
     }
 
     /// Get a tool by name
-    pub fn get_tool(&self, name: &str) -> Option<&(dyn Tool + Send + Sync)> {
-        self.tools.iter().find(|t| t.name() == name).map(|t| &**t)
+    pub fn get_tool(&self, name: &str) -> Option<&BoxedTool> {
+        self.tools.iter().find(|t| t.name() == name)
     }
 
     /// Get a tool mutably by name
-    pub fn get_tool_mut<'a>(&'a mut self, name: &str) -> Option<&'a mut (dyn Tool + Send + Sync)> {
+    pub fn get_tool_mut<'a>(&'a mut self, name: &str) -> Option<&'a mut BoxedTool> {
         for tool in &mut self.tools {
             if tool.name() == name {
-                return Some(&mut **tool);
+                return Some(&mut *tool);
             }
         }
         None
     }
 
     /// Get a tool by index
-    pub fn get_tool_by_index(&self, index: usize) -> Option<&(dyn Tool + Send + Sync)> {
-        self.tools.get(index).map(|t| &**t)
+    pub fn get_tool_by_index(&self, index: usize) -> Option<&BoxedTool> {
+        self.tools.get(index)
     }
 
     /// Get a tool mutably by index
-    pub fn get_tool_mut_by_index<'a>(
-        &'a mut self,
-        index: usize,
-    ) -> Option<&'a mut (dyn Tool + Send + Sync)> {
-        match self.tools.get_mut(index) {
-            Some(tool) => Some(&mut **tool),
-            None => None,
-        }
+    pub fn get_tool_mut_by_index(&mut self, index: usize) -> Option<&mut BoxedTool> {
+        self.tools.get_mut(index)
     }
 
     /// Get a prompt for the tools in the manager
@@ -129,33 +206,33 @@ Question: {question}
     pub fn tool_choices(
         &self,
     ) -> Option<
-        impl Parser<
-                Error = (),
-                Output = usize,
-                PartialState = IndexParserState<LiteralParserOffset, ()>,
-            > + CreateParserState
-            + Send
-            + Sync
-            + 'static,
+        IndexParser<
+            SequenceParser<LiteralParser<String>, ArcParser>,
+            Either<(), Arc<anyhow::Error>>,
+            (
+                (),
+                Arc<(dyn std::any::Any + std::marker::Send + std::marker::Sync + 'static)>,
+            ),
+            SequenceParserState<LiteralParserOffset, Arc<dyn Any + Send + Sync>, ()>,
+        >,
     > {
-        let mut choices: Vec<LiteralParser<_>> = Vec::with_capacity(self.tools.len());
+        let mut parsers = Vec::with_capacity(self.tools.len());
         for tool in self.tools.iter() {
             let name = tool.name();
             let prompt = tool.input_prompt();
-            choices.push(LiteralParser::from(format!("{name}\n{prompt}")));
+            let input_constraint = tool.constraints();
+            let tool_input_parser =
+                LiteralParser::from(format!("{name}\n{prompt}")).then(input_constraint);
+            parsers.push(tool_input_parser);
         }
-        if choices.is_empty() {
-            None
-        } else {
-            Some(IndexParser { parsers: choices })
-        }
+        (!parsers.is_empty()).then_some(IndexParser { parsers })
     }
 
     /// Get the constraints for the thought action
     pub fn thought_constraints(
         &self,
     ) -> impl Parser<
-        Error = (),
+        Error = Either<(), OneLineError>,
         Output = ((), String),
         PartialState = SequenceParserState<LiteralParserOffset, OneLineState, ()>,
     > + CreateParserState
@@ -163,38 +240,30 @@ Question: {question}
            + Sync
            + 'static {
         let constraints = "Thought: ";
-        let constraints = LiteralParser::from(constraints).then(OneLine);
-        constraints
+        LiteralParser::from(constraints).then(OneLine)
     }
 
     /// Get the constraints for the action action
     pub fn action_constraints(
         &self,
     ) -> SequenceParser<
-        SequenceParser<
-            LiteralParser<&'static str>,
-            impl Parser<
-                    Error = (),
-                    Output = usize,
-                    PartialState = IndexParserState<LiteralParserOffset, ()>,
-                > + CreateParserState
-                + Send
-                + Sync
-                + 'static,
+        LiteralParser<&'static str>,
+        IndexParser<
+            SequenceParser<LiteralParser<String>, ArcParser>,
+            Either<(), Arc<anyhow::Error>>,
+            ((), Arc<dyn Any + Send + Sync>),
+            SequenceParserState<LiteralParserOffset, Arc<dyn Any + Send + Sync>, ()>,
         >,
-        OneLine,
     > {
         let constraints = LiteralParser::from("Action: ");
-        let constraints = constraints.then(self.tool_choices().unwrap());
-        let constraints = constraints.then(OneLine);
-        constraints
+        constraints.then(self.tool_choices().unwrap())
     }
 
     /// Get the constraints for the answer action
     pub fn answer_constraints(
         &self,
     ) -> impl Parser<
-        Error = (),
+        Error = Either<(), OneLineError>,
         Output = ((), String),
         PartialState = SequenceParserState<LiteralParserOffset, OneLineState, ()>,
     > + CreateParserState
@@ -202,8 +271,7 @@ Question: {question}
            + Sync
            + 'static {
         let constraints = LiteralParser::from("Final Answer: ");
-        let constraints = constraints.then(OneLine);
-        constraints
+        constraints.then(OneLine)
     }
 
     /// Get the constraints for any action
@@ -212,7 +280,7 @@ Question: {question}
     ) -> ChoiceParser<
         ChoiceParser<
             impl Parser<
-                    Error = (),
+                    Error = Either<(), OneLineError>,
                     Output = ((), String),
                     PartialState = SequenceParserState<LiteralParserOffset, OneLineState, ()>,
                 > + CreateParserState
@@ -220,22 +288,17 @@ Question: {question}
                 + Sync
                 + 'static,
             SequenceParser<
-                SequenceParser<
-                    LiteralParser<&'static str>,
-                    impl Parser<
-                            Error = (),
-                            Output = usize,
-                            PartialState = IndexParserState<LiteralParserOffset, ()>,
-                        > + CreateParserState
-                        + Send
-                        + Sync
-                        + 'static,
+                LiteralParser<&'static str>,
+                IndexParser<
+                    SequenceParser<LiteralParser<String>, ArcParser>,
+                    Either<(), Arc<anyhow::Error>>,
+                    ((), Arc<dyn Any + Send + Sync>),
+                    SequenceParserState<LiteralParserOffset, Arc<dyn Any + Send + Sync>, ()>,
                 >,
-                OneLine,
             >,
         >,
         impl Parser<
-                Error = (),
+                Error = Either<(), OneLineError>,
                 Output = ((), String),
                 PartialState = SequenceParserState<LiteralParserOffset, OneLineState, ()>,
             > + CreateParserState
@@ -247,6 +310,59 @@ Question: {question}
             .or(self.action_constraints())
             .or(self.answer_constraints())
     }
+
+    /// Run one step of the tool manager
+    pub async fn run_step<M: SyncModel>(
+        &mut self,
+        prompt: &str,
+        llm: &mut M,
+        llm_session: &mut M::Session,
+        mut add_token: impl FnMut(String) -> anyhow::Result<()>,
+    ) -> anyhow::Result<ToolManagerStepResult> {
+        let mut new_text = String::new();
+
+        let constraints = self.any_action_constraint();
+        let validator_state = constraints.create_parser_state();
+        let result = llm.generate_structured(
+            llm_session,
+            prompt,
+            constraints,
+            validator_state,
+            Arc::new(Mutex::new(GenerationParameters::default().sampler())),
+            &mut add_token,
+        )?;
+
+        Ok(match result {
+            Either::Left(Either::Left(thought)) => {
+                new_text += &thought.1;
+                new_text += "\n";
+                add_token(new_text)?;
+                ToolManagerStepResult::Thought(thought.1)
+            }
+            Either::Left(Either::Right(((), (tool_index, ((), left))))) => {
+                let result = self
+                    .get_tool_mut_by_index(tool_index)
+                    .unwrap()
+                    .run(left)
+                    .await;
+                new_text += &result;
+                new_text += "\n";
+                add_token(new_text)?;
+                ToolManagerStepResult::Action(result)
+            }
+            Either::Right(right) => ToolManagerStepResult::Finished(right.1),
+        })
+    }
+}
+
+/// The result of a step in the tool manager
+pub enum ToolManagerStepResult {
+    /// The task was completed
+    Finished(String),
+    /// The model produced a new thought
+    Thought(String),
+    /// The model produced a new action result
+    Action(String),
 }
 
 /// The state of the [`IndexParser`] parser
@@ -256,20 +372,20 @@ pub struct IndexParserState<PA, E> {
 }
 
 /// A parser that parses a sequence of parsers and returns the index of the first parser that succeeds
-pub struct IndexParser<S: Parser<Error = E, Output = (), PartialState = PA>, E, PA> {
+pub struct IndexParser<S: Parser<Error = E, Output = O, PartialState = PA>, E, O, PA> {
     parsers: Vec<S>,
 }
 
-impl<S: Parser<Error = E, Output = (), PartialState = PA>, E, PA> IndexParser<S, E, PA> {
+impl<S: Parser<Error = E, Output = O, PartialState = PA>, E, O, PA> IndexParser<S, E, O, PA> {
     /// Create a new index parser
     pub fn new(parsers: Vec<S>) -> Self {
         Self { parsers }
     }
 }
 
-impl<S, E, PA> CreateParserState for IndexParser<S, E, PA>
+impl<S, E, O, PA> CreateParserState for IndexParser<S, E, O, PA>
 where
-    S: Parser<Error = E, Output = (), PartialState = PA> + CreateParserState,
+    S: Parser<Error = E, Output = O, PartialState = PA> + CreateParserState,
     E: Clone,
     PA: Clone,
 {
@@ -284,26 +400,24 @@ where
     }
 }
 
-impl<S, E, PA> Parser for IndexParser<S, E, PA>
+impl<S, E, O, PA> Parser for IndexParser<S, E, O, PA>
 where
-    S: Parser<Error = E, Output = (), PartialState = PA>,
+    S: Parser<Error = E, Output = O, PartialState = PA>,
     E: Clone,
     PA: Clone,
 {
     type Error = E;
-    type Output = usize;
+    type Output = (usize, S::Output);
     type PartialState = IndexParserState<PA, E>;
 
     fn parse<'a>(
         &self,
         state: &Self::PartialState,
         input: &'a [u8],
-    ) -> Result<kalosm_sample::ParseResult<'a, Self::PartialState, Self::Output>, Self::Error>
-    where
-        Self: Sized,
-    {
+    ) -> Result<kalosm_sample::ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
         let mut states = state.states.clone();
         let mut has_incomplete_option = false;
+        let mut required_next: Option<Cow<'static, str>> = None;
         let last_index = self.parsers.len() - 1;
         for (i, parser) in self.parsers.iter().enumerate() {
             match &states[i] {
@@ -311,17 +425,46 @@ where
                     let result = parser.parse(state, input);
                     match result {
                         Ok(ParseResult::Finished {
-                            result: _,
+                            result,
                             remaining: r,
                         }) => {
                             return Ok(ParseResult::Finished {
-                                result: i,
+                                result: (i, result),
                                 remaining: r,
                             })
                         }
-                        Ok(ParseResult::Incomplete(s)) => {
+                        Ok(ParseResult::Incomplete {
+                            new_state: s,
+                            required_next: new_required_next,
+                        }) => {
                             states[i] = Ok(s);
                             has_incomplete_option = true;
+                            match required_next {
+                                Some(r) => {
+                                    let mut common_bytes = 0;
+                                    for (byte1, byte2) in r.bytes().zip(new_required_next.bytes()) {
+                                        if byte1 != byte2 {
+                                            break;
+                                        }
+                                        common_bytes += 1;
+                                    }
+                                    required_next = Some(match (r, new_required_next) {
+                                        (Cow::Borrowed(required_next), _) => {
+                                            Cow::Borrowed(&required_next[common_bytes..])
+                                        }
+                                        (_, Cow::Borrowed(required_next)) => {
+                                            Cow::Borrowed(&required_next[common_bytes..])
+                                        }
+                                        (Cow::Owned(mut required_next), _) => {
+                                            required_next.truncate(common_bytes);
+                                            Cow::Owned(required_next)
+                                        }
+                                    });
+                                }
+                                None => {
+                                    required_next = Some(new_required_next);
+                                }
+                            }
                         }
                         Err(e) => {
                             if !has_incomplete_option && i == last_index {
@@ -338,7 +481,10 @@ where
                 }
             }
         }
-        Ok(ParseResult::Incomplete(IndexParserState { states }))
+        Ok(ParseResult::Incomplete {
+            new_state: IndexParserState { states },
+            required_next: required_next.unwrap_or_default(),
+        })
     }
 }
 
@@ -361,8 +507,20 @@ impl CreateParserState for OneLine {
     }
 }
 
+/// An error that can occur when parsing a [`OneLine`]
+#[derive(Debug, Clone)]
+pub struct OneLineError;
+
+impl std::fmt::Display for OneLineError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "OneLineError")
+    }
+}
+
+impl Error for OneLineError {}
+
 impl Parser for OneLine {
-    type Error = ();
+    type Error = OneLineError;
     type Output = String;
     type PartialState = OneLineState;
 
@@ -370,16 +528,12 @@ impl Parser for OneLine {
         &self,
         state: &Self::PartialState,
         input: &'a [u8],
-    ) -> Result<kalosm_sample::ParseResult<'a, Self::PartialState, Self::Output>, Self::Error>
-    where
-        Self: Sized,
-    {
+    ) -> Result<kalosm_sample::ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
         if input.is_empty() {
-            if state.all_whitespace {
-                return Err(());
-            } else {
-                return Ok(ParseResult::Incomplete(state.clone()));
-            }
+            return Ok(ParseResult::Incomplete {
+                new_state: state.clone(),
+                required_next: Default::default(),
+            });
         }
         let mut state = state.clone();
         let mut iter = input.iter();
@@ -393,7 +547,7 @@ impl Parser for OneLine {
             }
             if c == b'\n' || c == b'\r' {
                 if state.all_whitespace {
-                    return Err(());
+                    return Err(OneLineError);
                 } else {
                     return Ok(ParseResult::Finished {
                         result: String::from_utf8_lossy(&state.bytes).to_string(),
@@ -403,14 +557,24 @@ impl Parser for OneLine {
             }
             state.bytes.push(c);
         }
-        Ok(ParseResult::Incomplete(state))
+        Ok(ParseResult::Incomplete {
+            new_state: state,
+            required_next: Default::default(),
+        })
     }
 }
 
 macro_rules! impl_from_tool_tuple {
     ($($name:ident),*) => {
         #[allow(non_snake_case)]
-        impl<$($name: Tool + Send + Sync + 'static),*> From<($($name,)*)> for ToolManager {
+        impl<$($name: Tool + Send + Sync + 'static),*> From<($($name,)*)> for ToolManager where
+            $(
+                <$name::Constraint as Parser>::Output: Clone+Send + Sync + 'static,
+                <$name::Constraint as Parser>::PartialState: Send + Sync + 'static,
+                <$name::Constraint as Parser>::Error: Error + Send + Sync + 'static,
+                <$name as Tool>::Constraint: std::marker::Send + std::marker::Sync + 'static,
+            )*
+        {
             fn from(tools: ($($name,)*)) -> Self {
                 let ($($name,)*) = tools;
                 Self::new()$(.with_tool($name))*

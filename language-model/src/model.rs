@@ -7,6 +7,7 @@ use llm_samplers::configure::SamplerChainBuilder;
 use llm_samplers::prelude::*;
 use llm_samplers::types::Logits;
 use std::any::Any;
+use std::fmt::Display;
 use std::future::IntoFuture;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
@@ -415,7 +416,6 @@ pub trait ModelExt: Model + Send + 'static {
         parser: P,
         parser_state: P::PartialState,
         sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
-        post_filter_sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
     ) -> anyhow::Result<StructureParserResult<Self::TextStream, P::Output>>
     where
         Self::TextStream: From<tokio::sync::mpsc::UnboundedReceiver<String>>,
@@ -426,19 +426,17 @@ pub trait ModelExt: Model + Send + 'static {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         let (result_sender, result_receiver) = tokio::sync::oneshot::channel();
 
-        let tokenizer = self.tokenizer();
         let prompt = prompt.to_string();
         self.run_sync(move |llm: &mut Self::SyncModel| {
+            let mut session = llm.new_session().unwrap();
             Box::pin(async move {
-                let result = generate_structured(
+                let result = llm.generate_structured(
+                    &mut session,
                     prompt,
-                    llm,
-                    &tokenizer,
                     parser,
                     parser_state,
                     sampler,
-                    post_filter_sampler,
-                    sender,
+                    |token| Ok(sender.send(token)?),
                 );
                 match result_sender.send(result) {
                     Ok(()) => {}
@@ -461,12 +459,12 @@ pub trait ModelExt: Model + Send + 'static {
 }
 
 /// The result of a structured parser stream.
-pub struct StructureParserResult<S:Stream<Item = String> + Send + Unpin + 'static, O>{
+pub struct StructureParserResult<S: Stream<Item = String> + Send + Unpin + 'static, O> {
     stream: S,
     result: tokio::sync::oneshot::Receiver<anyhow::Result<O>>,
 }
 
-impl<S:Stream<Item = String> + Send + Unpin + 'static, O> Deref for StructureParserResult<S, O> {
+impl<S: Stream<Item = String> + Send + Unpin + 'static, O> Deref for StructureParserResult<S, O> {
     type Target = S;
 
     fn deref(&self) -> &Self::Target {
@@ -474,18 +472,17 @@ impl<S:Stream<Item = String> + Send + Unpin + 'static, O> Deref for StructurePar
     }
 }
 
-impl<S:Stream<Item = String> + Send + Unpin + 'static, O> DerefMut for StructureParserResult<S, O> {
+impl<S: Stream<Item = String> + Send + Unpin + 'static, O> DerefMut
+    for StructureParserResult<S, O>
+{
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.stream
     }
 }
 
-impl<S:Stream<Item = String> + Send + Unpin + 'static, O> StructureParserResult<S, O> {
+impl<S: Stream<Item = String> + Send + Unpin + 'static, O> StructureParserResult<S, O> {
     fn new(stream: S, result: tokio::sync::oneshot::Receiver<anyhow::Result<O>>) -> Self {
-        Self {
-            stream,
-            result,
-        }
+        Self { stream, result }
     }
 
     /// Get the final result of the structured parser.
@@ -553,7 +550,37 @@ pub trait SyncModel {
 
     /// Get the token ID that represents the end of a sequence.
     fn stop_token(&self) -> anyhow::Result<u32>;
+
+    /// Return the tokenizer associated with this model.
+    fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync>;
 }
+
+/// An extension trait for sync models.
+pub trait SyncModelExt: SyncModel {
+    /// Generate new text with the given prompt that conforms to the given parser.
+    fn generate_structured<P: Parser>(
+        &mut self,
+        session: &mut Self::Session,
+        prompt: impl Display,
+        parser: P,
+        parser_state: P::PartialState,
+        sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
+        on_token: impl FnMut(String) -> anyhow::Result<()>,
+    ) -> anyhow::Result<P::Output> {
+        generate_structured(
+            prompt,
+            self,
+            session,
+            &self.tokenizer(),
+            parser,
+            parser_state,
+            sampler,
+            on_token,
+        )
+    }
+}
+
+impl<M: SyncModel> SyncModelExt for M {}
 
 /// A marker type for models that do not support synchronous generation.
 pub struct SyncModelNotSupported;
@@ -579,6 +606,10 @@ impl SyncModel for SyncModelNotSupported {
 
     fn stop_token(&self) -> anyhow::Result<u32> {
         Err(anyhow::Error::msg("Not implemented"))
+    }
+
+    fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
+        unimplemented!()
     }
 }
 
@@ -744,6 +775,11 @@ impl SyncModel for BoxedSyncModel {
         let self_ref: &(dyn SyncModel<Session = Box<dyn Any>>) = self.as_ref();
         self_ref.stop_token()
     }
+
+    fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
+        let self_ref: &(dyn SyncModel<Session = Box<dyn Any>>) = self.as_ref();
+        self_ref.tokenizer()
+    }
 }
 
 struct AnySyncModel<M: SyncModel<Session = S>, S: Any>(M, PhantomData<S>);
@@ -795,6 +831,10 @@ impl<M: SyncModel<Session = S>, S: Any> SyncModel for AnySyncModel<M, S> {
 
     fn stop_token(&self) -> anyhow::Result<u32> {
         self.0.stop_token()
+    }
+
+    fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
+        self.0.tokenizer()
     }
 }
 

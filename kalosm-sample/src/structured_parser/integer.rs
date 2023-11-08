@@ -40,11 +40,12 @@ impl IntegerParser {
     }
 
     fn should_stop(&self, value: i64) -> bool {
-        let after_next_digit = value * 10;
-        if after_next_digit > *self.range.end() || after_next_digit < *self.range.start() {
-            true
-        } else {
-            false
+        match value.checked_mul(10) {
+            Some(after_next_digit) => {
+                (after_next_digit > 0 && after_next_digit > *self.range.end())
+                    || (after_next_digit <= 0 && after_next_digit < *self.range.start())
+            }
+            None => true,
         }
     }
 
@@ -60,10 +61,8 @@ impl IntegerParser {
                 if value * 10 > end_value {
                     return false;
                 }
-            } else {
-                if value * 10 < start_value {
-                    return false;
-                }
+            } else if value * 10 < start_value {
+                return false;
             }
 
             // Check if the digits are within the range so far
@@ -74,19 +73,33 @@ impl IntegerParser {
                 .map(|x| x + 1)
                 .unwrap_or(1);
             let end_digits = end_value.abs().checked_ilog10().map(|x| x + 1).unwrap_or(1);
+            let mut check_end = true;
+            let mut check_start = true;
             for digit in 1..(digits + 1) {
                 let selected_digit = value / (10_i64.pow(digits - digit)) % 10;
                 let selected_start_digit = start_value / (10_i64.pow(start_digits - digit)) % 10;
                 let selected_end_digit = end_value / (10_i64.pow(end_digits - digit)) % 10;
-                if positive {
-                    if selected_digit > selected_end_digit || selected_digit < selected_start_digit
-                    {
-                        return false;
+
+                if check_start {
+                    match selected_digit.cmp(&selected_start_digit) {
+                        std::cmp::Ordering::Greater => {
+                            check_start = false;
+                        }
+                        std::cmp::Ordering::Less => {
+                            return false;
+                        }
+                        std::cmp::Ordering::Equal => {}
                     }
-                } else {
-                    if selected_digit < selected_end_digit || selected_digit > selected_start_digit
-                    {
-                        return false;
+                }
+                if check_end {
+                    match selected_digit.cmp(&selected_end_digit) {
+                        std::cmp::Ordering::Greater => {
+                            return false;
+                        }
+                        std::cmp::Ordering::Less => {
+                            check_end = false;
+                        }
+                        std::cmp::Ordering::Equal => {}
                     }
                 }
             }
@@ -188,24 +201,28 @@ impl Parser for IntegerParser {
                     return Err(());
                 }
             }
+            let signed_value = value as i64 * if positive { 1 } else { -1 };
 
-            if self.should_stop(value as i64 * if positive { 1 } else { -1 }) {
+            if self.should_stop(signed_value) {
                 return Ok(ParseResult::Finished {
-                    result: value as i64 * if positive { 1 } else { -1 },
+                    result: signed_value,
                     remaining: &input[index + 1..],
                 });
             }
 
-            if !self.could_number_become_valid(value as i64 * if positive { 1 } else { -1 }) {
+            if !self.could_number_become_valid(signed_value) {
                 return Err(());
             }
         }
 
-        Ok(ParseResult::Incomplete(IntegerParserState {
-            state,
-            value,
-            positive,
-        }))
+        Ok(ParseResult::Incomplete {
+            new_state: IntegerParserState {
+                state,
+                value,
+                positive,
+            },
+            required_next: Default::default(),
+        })
     }
 }
 
@@ -213,11 +230,13 @@ impl Parser for IntegerParser {
 fn integer_parser() {
     for _ in 0..100 {
         let random_number = rand::random::<i64>();
+        let range = random_number.saturating_sub(rand::random::<u8>() as i64)
+            ..=random_number.saturating_add(rand::random::<u8>() as i64);
+        assert!(range.contains(&random_number));
+        println!("range: {:?}", range);
+        println!("random_number: {:?}", random_number);
 
-        let parser = IntegerParser {
-            range: random_number - rand::random::<u8>() as i64
-                ..=random_number + rand::random::<u8>() as i64,
-        };
+        let parser = IntegerParser { range };
         let mut state = IntegerParserState::default();
 
         let mut as_string = random_number.to_string();
@@ -229,7 +248,7 @@ fn integer_parser() {
             let taken = bytes.drain(..take_count).collect::<Vec<_>>();
             match parser.parse(&state, &taken) {
                 Ok(result) => match result {
-                    ParseResult::Incomplete(new_state) => {
+                    ParseResult::Incomplete { new_state, .. } => {
                         state = new_state;
                     }
                     ParseResult::Finished { result, remaining } => {

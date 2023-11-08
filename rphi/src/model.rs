@@ -5,6 +5,7 @@ use rand::SeedableRng;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::fmt::Formatter;
+use std::sync::Arc;
 
 use crate::raw::MixFormerSequentialForCausalLM as QMixFormer;
 use crate::raw::PhiCache;
@@ -72,7 +73,7 @@ impl SyncModel for PhiModel {
     ) -> anyhow::Result<Logits<u32, f32>> {
         let tokens = self
             .tokenizer
-            .encode(&*prompt, true)
+            .encode(prompt, true)
             .map_err(E::msg)?
             .get_ids()
             .to_vec();
@@ -100,6 +101,10 @@ impl SyncModel for PhiModel {
             None => anyhow::bail!("cannot find the endoftext token"),
         };
         Ok(eos_token)
+    }
+
+    fn tokenizer(&self) -> Arc<dyn kalosm_sample::Tokenizer + Send + Sync> {
+        Arc::new(self.tokenizer.clone())
     }
 }
 

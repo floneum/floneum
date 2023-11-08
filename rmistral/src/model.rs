@@ -4,8 +4,8 @@ use llm_samplers::{
     prelude::Logits,
     types::{HasSamplerResources, Sampler, SamplerError},
 };
-use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
+use std::{collections::HashMap, sync::Arc};
 
 use candle_core::{DType, Device, Tensor};
 use kalosm_language_model::SyncModel;
@@ -86,7 +86,7 @@ impl SyncModel for MistralModel {
         Self::forward(
             &mut self.model,
             &self.device,
-            &tokens,
+            tokens,
             session.current_tokens.len() - token_count,
             Some(&mut session.cache),
         )
@@ -98,6 +98,11 @@ impl SyncModel for MistralModel {
             None => anyhow::bail!("cannot find the </s> token"),
         };
         Ok(eos_token)
+    }
+
+    fn tokenizer(&self) -> std::sync::Arc<dyn kalosm_sample::Tokenizer + Send + Sync> {
+        Arc::new(self.tokenizer.clone())
+            as std::sync::Arc<dyn kalosm_sample::Tokenizer + Send + Sync>
     }
 }
 
@@ -169,7 +174,7 @@ impl MistralModel {
             let logits = Self::forward(
                 &mut self.model,
                 &self.device,
-                &ctxt,
+                ctxt,
                 start_pos,
                 Some(&mut self.cache),
             )?;

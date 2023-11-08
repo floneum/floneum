@@ -66,9 +66,18 @@ impl<S: AsRef<str>> Parser for LiteralParser<S> {
                 remaining: &input[bytes_consumed..],
             })
         } else {
-            Ok(ParseResult::Incomplete(LiteralParserOffset {
-                offset: state.offset + bytes_consumed,
-            }))
+            Ok(ParseResult::Incomplete {
+                new_state: LiteralParserOffset {
+                    offset: state.offset + bytes_consumed,
+                },
+                required_next: self
+                    .literal
+                    .as_ref()
+                    .split_at(state.offset + bytes_consumed)
+                    .1
+                    .to_string()
+                    .into(),
+            })
         }
     }
 }
@@ -88,14 +97,18 @@ fn literal_parser() {
     );
     assert_eq!(
         parser.parse(&state, b"Hello, "),
-        Ok(ParseResult::Incomplete(LiteralParserOffset { offset: 7 }))
+        Ok(ParseResult::Incomplete {
+            new_state: LiteralParserOffset { offset: 7 },
+            required_next: "world!".into()
+        })
     );
     assert_eq!(
         parser.parse(
             &parser
                 .parse(&state, b"Hello, ")
                 .unwrap()
-                .unwrap_incomplete(),
+                .unwrap_incomplete()
+                .0,
             b"world!"
         ),
         Ok(ParseResult::Finished {

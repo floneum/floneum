@@ -5,7 +5,6 @@
 
 #![warn(missing_docs)]
 
-use rustc_hash::FxHashMap;
 use std::borrow::Cow;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -76,6 +75,10 @@ impl Tokenizer for DynTokenizer {
     fn decode(&self, ids: &[u32]) -> anyhow::Result<Cow<'_, str>> {
         self.tokenizer.decode(ids)
     }
+
+    fn get_all_tokens(&self) -> anyhow::Result<Cow<'_, [u32]>> {
+        self.tokenizer.get_all_tokens()
+    }
 }
 
 /// A tokenizer is a type that can decode a list of token ids into a string.
@@ -95,6 +98,9 @@ pub trait Tokenizer {
     fn decode_batch(&self, ids: &[&[u32]]) -> anyhow::Result<Vec<Cow<'_, str>>> {
         ids.iter().map(|id| self.decode(id)).collect()
     }
+
+    /// Get all possible tokens.
+    fn get_all_tokens(&self) -> anyhow::Result<Cow<'_, [u32]>>;
 }
 
 impl<M, N, PT, PP, D> Tokenizer for tokenizers::tokenizer::TokenizerImpl<M, N, PT, PP, D>
@@ -118,32 +124,28 @@ where
             .map(|s| s.into())
             .map_err(|e| anyhow::anyhow!(e))
     }
+
+    fn get_all_tokens(&self) -> anyhow::Result<Cow<'_, [u32]>> {
+        Ok(self
+            .get_vocab(true)
+            .into_values()
+            .collect::<Vec<_>>()
+            .into())
+    }
 }
 
 /// A tokenizer that uses the HuggingFace tokenizer with a cache for single tokens.
 pub struct FasterHuggingFaceTokenizer {
     inner: tokenizers::Tokenizer,
-    single_token_map: FxHashMap<u32, Cow<'static, str>>,
+    all_tokens: Vec<u32>,
 }
 
 impl FasterHuggingFaceTokenizer {
     /// Create a new `FasterHuggingFaceTokenizer` from a `tokenizers::Tokenizer`.
     pub fn new(tokenizer: tokenizers::Tokenizer) -> Self {
-        let single_token_map: FxHashMap<_, _> = tokenizer
-            .get_vocab(true)
-            .into_iter()
-            .map(|(string, token_id)| {
-                let decoded = if let Some(decoder) = tokenizer.get_decoder() {
-                    decoder.decode(vec![string]).unwrap()
-                } else {
-                    string
-                };
-                (token_id, decoded.into())
-            })
-            .collect();
         Self {
+            all_tokens: tokenizer.get_vocab(true).into_values().collect(),
             inner: tokenizer,
-            single_token_map,
         }
     }
 
@@ -169,39 +171,15 @@ impl Tokenizer for FasterHuggingFaceTokenizer {
     }
 
     fn decode(&self, ids: &[u32]) -> anyhow::Result<Cow<'_, str>> {
-        if ids.len() == 1 {
-            if let Some(token) = self.single_token_map.get(&ids[0]) {
-                return Ok(token.clone());
-            }
-        }
-        let mut tokens = String::new();
-        for id in ids {
-            tokens.push_str(
-                self.single_token_map
-                    .get(id)
-                    .map(|s| &**s)
-                    .unwrap_or_else(|| ""),
-            );
-        }
-        Ok(tokens.into())
+        self.inner.decode(ids)
     }
 
     fn decode_batch(&self, ids: &[&[u32]]) -> anyhow::Result<Vec<Cow<'_, str>>> {
-        let mut tokens = Vec::with_capacity(ids.len());
-        for id in ids {
-            if id.len() == 1 {
-                if let Some(token) = self.single_token_map.get(&id[0]) {
-                    tokens.push(token.clone());
-                    continue;
-                }
-            }
-            let mut token = String::new();
-            for id in *id {
-                token.push_str(self.single_token_map.get(id).map(|s| &**s).unwrap_or(""));
-            }
-            tokens.push(token.into());
-        }
-        Ok(tokens)
+        self.inner.decode_batch(ids)
+    }
+
+    fn get_all_tokens(&self) -> anyhow::Result<Cow<'_, [u32]>> {
+        Ok((&self.all_tokens).into())
     }
 }
 
@@ -226,6 +204,21 @@ impl Tokenizer for tokenizers::Tokenizer {
         Ok(as_impl
             .decode(ids, false)
             .map_err(|e| anyhow::anyhow!(e))?
+            .into())
+    }
+
+    fn get_all_tokens(&self) -> anyhow::Result<Cow<'_, [u32]>> {
+        let as_impl: &TokenizerImpl<
+            ModelWrapper,
+            NormalizerWrapper,
+            PreTokenizerWrapper,
+            PostProcessorWrapper,
+            DecoderWrapper,
+        > = self;
+        Ok(as_impl
+            .get_vocab(true)
+            .into_values()
+            .collect::<Vec<_>>()
             .into())
     }
 }

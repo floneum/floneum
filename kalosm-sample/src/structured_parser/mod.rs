@@ -1,4 +1,8 @@
+#![allow(clippy::type_complexity)]
+
 mod integer;
+use std::{any::Any, borrow::Cow, error::Error, sync::Arc};
+
 pub use integer::*;
 mod float;
 pub use float::*;
@@ -12,6 +16,14 @@ mod string;
 pub use string::*;
 mod repeat;
 pub use repeat::*;
+mod separated;
+pub use separated::*;
+mod has_parser;
+pub use has_parser::*;
+mod word;
+pub use word::*;
+mod sentence;
+pub use sentence::*;
 
 /// A trait for a parser with a default state.
 pub trait CreateParserState: Parser {
@@ -19,15 +31,27 @@ pub trait CreateParserState: Parser {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState;
 }
 
-impl<P: CreateParserState> CreateParserState for &P {
+impl<P: ?Sized + CreateParserState> CreateParserState for &P {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState {
         (*self).create_parser_state()
     }
 }
 
-impl<P: CreateParserState> CreateParserState for Box<P> {
+impl<P: ?Sized + CreateParserState> CreateParserState for Box<P> {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState {
         (**self).create_parser_state()
+    }
+}
+
+impl<P: ?Sized + CreateParserState> CreateParserState for Arc<P> {
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState {
+        (**self).create_parser_state()
+    }
+}
+
+impl CreateParserState for ArcParser {
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState {
+        self.0.create_parser_state()
     }
 }
 
@@ -45,10 +69,176 @@ pub trait Parser {
         &self,
         state: &Self::PartialState,
         input: &'a [u8],
-    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error>
-    where
-        Self: Sized;
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error>;
+}
 
+impl Parser for () {
+    type Error = ();
+    type Output = ();
+    type PartialState = ();
+
+    fn parse<'a>(
+        &self,
+        _state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+        Ok(ParseResult::Finished {
+            result: (),
+            remaining: input,
+        })
+    }
+}
+
+impl<P: ?Sized + Parser> Parser for &P {
+    type Error = P::Error;
+    type Output = P::Output;
+    type PartialState = P::PartialState;
+
+    fn parse<'a>(
+        &self,
+        state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+        (*self).parse(state, input)
+    }
+}
+
+impl<P: ?Sized + Parser> Parser for Box<P> {
+    type Error = P::Error;
+    type Output = P::Output;
+    type PartialState = P::PartialState;
+
+    fn parse<'a>(
+        &self,
+        state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+        let _self: &P = self;
+        _self.parse(state, input)
+    }
+}
+
+impl<P: ?Sized + Parser> Parser for Arc<P> {
+    type Error = P::Error;
+    type Output = P::Output;
+    type PartialState = P::PartialState;
+
+    fn parse<'a>(
+        &self,
+        state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+        let _self: &P = self;
+        _self.parse(state, input)
+    }
+}
+
+trait AnyCreateParserState:
+    Parser<
+        Error = Arc<anyhow::Error>,
+        Output = Arc<dyn Any + Send + Sync>,
+        PartialState = Arc<dyn Any + Send + Sync>,
+    > + CreateParserState
+    + Send
+    + Sync
+{
+}
+
+impl<
+        P: Parser<
+                Error = Arc<anyhow::Error>,
+                Output = Arc<dyn Any + Send + Sync>,
+                PartialState = Arc<dyn Any + Send + Sync>,
+            > + CreateParserState
+            + Send
+            + Sync,
+    > AnyCreateParserState for P
+{
+}
+
+/// A boxed parser.
+pub struct ArcParser(Arc<dyn AnyCreateParserState + Send + Sync>);
+
+impl ArcParser {
+    fn new<P>(parser: P) -> Self
+    where
+        P: Parser<
+                Error = Arc<anyhow::Error>,
+                Output = Arc<dyn Any + Send + Sync>,
+                PartialState = Arc<dyn Any + Send + Sync>,
+            > + CreateParserState
+            + Send
+            + Sync
+            + 'static,
+    {
+        ArcParser(Arc::new(parser))
+    }
+}
+
+impl Parser for ArcParser {
+    type Error = Arc<anyhow::Error>;
+    type Output = Arc<dyn Any + Send + Sync>;
+    type PartialState = Arc<dyn Any + Send + Sync>;
+
+    fn parse<'a>(
+        &self,
+        state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+        let _self: &dyn Parser<
+            Error = Arc<anyhow::Error>,
+            Output = Arc<dyn Any + Send + Sync>,
+            PartialState = Arc<dyn Any + Send + Sync>,
+        > = &self.0;
+        _self.parse(state, input)
+    }
+}
+
+/// A wrapper for a parser that implements an easily boxable version of Parser.
+struct AnyParser<P>(P);
+
+impl<P> Parser for AnyParser<P>
+where
+    P: Parser,
+    P::Error: Error + Send + Sync + 'static,
+    P::Output: Send + Sync + 'static,
+    P::PartialState: Send + Sync + 'static,
+{
+    type Error = Arc<anyhow::Error>;
+    type Output = Arc<dyn Any + Sync + Send>;
+    type PartialState = Arc<dyn Any + Sync + Send>;
+
+    fn parse<'a>(
+        &self,
+        state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+        let state = state
+            .downcast_ref::<P::PartialState>()
+            .ok_or_else(|| Arc::new(anyhow::anyhow!("State is not of the correct type")))?;
+        match self.0.parse(state, input) {
+            Ok(result) => Ok(result
+                .map_state(|state| Arc::new(state) as Arc<dyn Any + Sync + Send>)
+                .map(|output| Arc::new(output) as Arc<dyn Any + Sync + Send>)),
+            Err(err) => Err(Arc::new(anyhow::Error::new(err))),
+        }
+    }
+}
+
+impl<P: CreateParserState> CreateParserState for AnyParser<P>
+where
+    P: Parser,
+    P::Error: Error + Send + Sync + 'static,
+    P::Output: Send + Sync + 'static,
+    P::PartialState: Send + Sync + 'static,
+{
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState {
+        Arc::new(self.0.create_parser_state())
+    }
+}
+
+/// An extension trait for parsers.
+pub trait ParserExt: Parser {
     /// Parse this parser, or another other parser.
     fn or<V: Parser<Error = E, Output = O, PartialState = PA>, E, O, PA>(
         self,
@@ -81,42 +271,31 @@ pub trait Parser {
     {
         RepeatParser::new(self, length_range)
     }
-}
 
-impl<P: Parser> Parser for &P {
-    type Error = P::Error;
-    type Output = P::Output;
-    type PartialState = P::PartialState;
-
-    fn parse<'a>(
-        &self,
-        state: &Self::PartialState,
-        input: &'a [u8],
-    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
-        (*self).parse(state, input)
+    /// Get a boxed version of this parser.
+    fn boxed(self) -> ArcParser
+    where
+        Self: CreateParserState + Sized + Send + Sync + 'static,
+        Self::Error: Error + Send + Sync + 'static,
+        Self::Output: Send + Sync + 'static,
+        Self::PartialState: Send + Sync + 'static,
+    {
+        ArcParser::new(AnyParser(self))
     }
 }
 
-impl<P: Parser> Parser for Box<P> {
-    type Error = P::Error;
-    type Output = P::Output;
-    type PartialState = P::PartialState;
-
-    fn parse<'a>(
-        &self,
-        state: &Self::PartialState,
-        input: &'a [u8],
-    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
-        let _self: &P = &*self;
-        _self.parse(state, input)
-    }
-}
+impl<P: Parser> ParserExt for P {}
 
 /// A parser for a choice between two parsers.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum OwnedParseResult<P, R> {
     /// The parser is incomplete.
-    Incomplete(P),
+    Incomplete {
+        /// The new state of the parser.
+        new_state: P,
+        /// The text that is required next.
+        required_next: Cow<'static, str>,
+    },
     /// The parser is finished.
     Finished {
         /// The result of the parser.
@@ -129,7 +308,13 @@ pub enum OwnedParseResult<P, R> {
 impl<P, R> From<ParseResult<'_, P, R>> for OwnedParseResult<P, R> {
     fn from(result: ParseResult<P, R>) -> Self {
         match result {
-            ParseResult::Incomplete(parser) => OwnedParseResult::Incomplete(parser),
+            ParseResult::Incomplete {
+                new_state,
+                required_next,
+            } => OwnedParseResult::Incomplete {
+                new_state,
+                required_next,
+            },
             ParseResult::Finished { result, remaining } => OwnedParseResult::Finished {
                 result,
                 remaining: remaining.to_vec(),
@@ -139,10 +324,15 @@ impl<P, R> From<ParseResult<'_, P, R>> for OwnedParseResult<P, R> {
 }
 
 /// The state of a parser.
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ParseResult<'a, P, R> {
     /// The parser is incomplete.
-    Incomplete(P),
+    Incomplete {
+        /// The new state of the parser.
+        new_state: P,
+        /// The text that is required next.
+        required_next: Cow<'static, str>,
+    },
     /// The parser is finished.
     Finished {
         /// The result of the parser.
@@ -160,7 +350,13 @@ impl<'a, P, R> ParseResult<'a, P, R> {
                 result,
                 remaining: &[],
             },
-            ParseResult::Incomplete(parser) => ParseResult::Incomplete(parser),
+            ParseResult::Incomplete {
+                new_state,
+                required_next,
+            } => ParseResult::Incomplete {
+                new_state,
+                required_next,
+            },
         }
     }
 
@@ -168,19 +364,61 @@ impl<'a, P, R> ParseResult<'a, P, R> {
     pub fn unwrap_finished(self) -> R {
         match self {
             ParseResult::Finished { result, .. } => result,
-            ParseResult::Incomplete(_) => {
+            ParseResult::Incomplete { .. } => {
                 panic!("called `ParseResult::unwrap_finished()` on an `Incomplete` value")
             }
         }
     }
 
     /// Unwrap the parser to an incomplete result.
-    pub fn unwrap_incomplete(self) -> P {
+    pub fn unwrap_incomplete(self) -> (P, Cow<'static, str>) {
         match self {
             ParseResult::Finished { .. } => {
                 panic!("called `ParseResult::unwrap_incomplete()` on a `Finished` value")
             }
-            ParseResult::Incomplete(parser) => parser,
+            ParseResult::Incomplete {
+                new_state,
+                required_next,
+            } => (new_state, required_next),
+        }
+    }
+
+    /// Map the result of the parser.
+    pub fn map<F, O>(self, f: F) -> ParseResult<'a, P, O>
+    where
+        F: FnOnce(R) -> O,
+    {
+        match self {
+            ParseResult::Finished { result, remaining } => ParseResult::Finished {
+                result: f(result),
+                remaining,
+            },
+            ParseResult::Incomplete {
+                new_state,
+                required_next,
+            } => ParseResult::Incomplete {
+                new_state,
+                required_next,
+            },
+        }
+    }
+
+    /// Map the state of the parser.
+    pub fn map_state<F, O>(self, f: F) -> ParseResult<'a, O, R>
+    where
+        F: FnOnce(P) -> O,
+    {
+        match self {
+            ParseResult::Finished { result, remaining } => {
+                ParseResult::Finished { result, remaining }
+            }
+            ParseResult::Incomplete {
+                new_state,
+                required_next,
+            } => ParseResult::Incomplete {
+                new_state: f(new_state),
+                required_next,
+            },
         }
     }
 }
@@ -222,7 +460,7 @@ pub enum StructureParserState {
     Literal(LiteralParserOffset),
     NumInt(IntegerParserState),
     Num(FloatParserState),
-    Either(ChoiceParserState<Box<StructureParserState>, Box<StructureParserState>, ()>),
+    Either(ChoiceParserState<Box<StructureParserState>, Box<StructureParserState>, (), ()>),
     Then(SequenceParserState<Box<StructureParserState>, Box<StructureParserState>, ()>),
 }
 
@@ -263,22 +501,12 @@ impl Parser for StructureParser {
         &self,
         state: &Self::PartialState,
         input: &'a [u8],
-    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error>
-    where
-        Self: Sized,
-    {
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
         match (self, state) {
             (StructureParser::Literal(lit_parser), StructureParserState::Literal(state)) => {
                 LiteralParser::from(lit_parser)
                     .parse(state, input)
-                    .map(|result| match result {
-                        ParseResult::Finished { result, remaining } => {
-                            ParseResult::Finished { result, remaining }
-                        }
-                        ParseResult::Incomplete(parser) => {
-                            ParseResult::Incomplete(StructureParserState::Literal(parser))
-                        }
-                    })
+                    .map(|result| result.map(|_| ()).map_state(StructureParserState::Literal))
             }
             (
                 StructureParser::Num {
@@ -289,15 +517,7 @@ impl Parser for StructureParser {
                 StructureParserState::Num(state),
             ) => FloatParser::new(*min..=*max)
                 .parse(state, input)
-                .map(|result| match result {
-                    ParseResult::Finished { remaining, .. } => ParseResult::Finished {
-                        result: (),
-                        remaining,
-                    },
-                    ParseResult::Incomplete(parser) => {
-                        ParseResult::Incomplete(StructureParserState::Num(parser))
-                    }
-                }),
+                .map(|result| result.map(|_| ()).map_state(StructureParserState::Num)),
             (
                 StructureParser::Num {
                     min,
@@ -307,15 +527,7 @@ impl Parser for StructureParser {
                 StructureParserState::NumInt(int),
             ) => IntegerParser::new(*min as i64..=*max as i64)
                 .parse(int, input)
-                .map(|result| match result {
-                    ParseResult::Finished { remaining, .. } => ParseResult::Finished {
-                        result: (),
-                        remaining,
-                    },
-                    ParseResult::Incomplete(parser) => {
-                        ParseResult::Incomplete(StructureParserState::NumInt(parser))
-                    }
-                }),
+                .map(|result| result.map(|_| ()).map_state(StructureParserState::NumInt)),
             (StructureParser::Either { first, second }, StructureParserState::Either(state)) => {
                 let state = ChoiceParserState {
                     state1: match &state.state1 {
@@ -329,12 +541,15 @@ impl Parser for StructureParser {
                 };
                 let parser = ChoiceParser::new(first.clone(), second.clone());
                 match parser.parse(&state, input) {
-                    Ok(ParseResult::Incomplete(state)) => Ok(ParseResult::Incomplete(
-                        StructureParserState::Either(ChoiceParserState {
-                            state1: state.state1.map(Box::new),
-                            state2: state.state2.map(Box::new),
-                        }),
-                    )),
+                    Ok(ParseResult::Incomplete { required_next, .. }) => {
+                        Ok(ParseResult::Incomplete {
+                            new_state: StructureParserState::Either(ChoiceParserState {
+                                state1: state.state1.map(Box::new),
+                                state2: state.state2.map(Box::new),
+                            }),
+                            required_next,
+                        })
+                    }
                     Ok(ParseResult::Finished { remaining, .. }) => Ok(ParseResult::Finished {
                         result: (),
                         remaining,
@@ -349,16 +564,19 @@ impl Parser for StructureParser {
                 });
                 let parser = SequenceParser::new(first.clone(), second.clone());
                 match parser.parse(&state, input) {
-                    Ok(ParseResult::Incomplete(state)) => Ok(ParseResult::Incomplete(
-                        StructureParserState::Then(match state {
-                            SequenceParserState::FirstParser(state) => {
-                                SequenceParserState::FirstParser(Box::new(state))
-                            }
-                            SequenceParserState::SecondParser(state, _) => {
-                                SequenceParserState::SecondParser(Box::new(state), ())
-                            }
-                        }),
-                    )),
+                    Ok(ParseResult::Incomplete { required_next, .. }) => {
+                        Ok(ParseResult::Incomplete {
+                            new_state: StructureParserState::Then(match state {
+                                SequenceParserState::FirstParser(state) => {
+                                    SequenceParserState::FirstParser(Box::new(state))
+                                }
+                                SequenceParserState::SecondParser(state, _) => {
+                                    SequenceParserState::SecondParser(Box::new(state), ())
+                                }
+                            }),
+                            required_next,
+                        })
+                    }
                     Ok(ParseResult::Finished { remaining, .. }) => Ok(ParseResult::Finished {
                         result: (),
                         remaining,
