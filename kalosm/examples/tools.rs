@@ -9,47 +9,65 @@ use std::sync::Mutex;
 async fn main() {
     let mut llm = Phi::start().await;
 
-    let question = "What is the latest news about the 2024 presidential election?";
-    let mut tools = ToolManager::default()
-        // .with_tool(CalculatorTool)
-        .with_tool(WebSearchTool::new(1));
-
-    let mut current_text = tools.prompt(question);
+    println!("Loading local documents...");
+    let mut document_database = DocumentDatabase::new(
+        Bert::builder().build().unwrap(),
+        ChunkStrategy::Sentence {
+            sentence_count: 1,
+            overlap: 0,
+        },
+    );
+    let documents = DocumentFolder::try_from(std::path::PathBuf::from("./documents")).unwrap();
+    document_database.extend(documents).await.unwrap();
+    println!("Loaded local documents.");
+    let mut tools = ToolManager::default().with_tool(DocumentSearchTool::new(document_database, 5));
 
     loop {
-        let constraints = tools.any_action_constraint();
-        let validator_state = constraints.create_parser_state();
-        let mut words = llm
-            .stream_structured_text_with_sampler(
-                &current_text,
-                constraints,
-                validator_state,
-                Arc::new(Mutex::new(GenerationParameters::default().sampler())),
-            )
-            .await
-            .unwrap();
+        print!("Question: ");
+        std::io::stdout().flush().unwrap();
+        let mut question = String::new();
+        std::io::stdin().read_line(&mut question).unwrap();
 
-        while let Some(text) = words.next().await {
-            print!("{}", text);
-            current_text += &text;
-            std::io::stdout().flush().unwrap();
-        }
+        let mut current_text = tools.prompt(&question);
 
-        match words.result().await.unwrap() {
-            Either::Left(Either::Left(_)) => {}
-            Either::Left(Either::Right(((), (tool_index, ((), left))))) => {
-                let result = tools
-                    .get_tool_mut_by_index(tool_index)
-                    .unwrap()
-                    .run(left)
-                    .await;
-                current_text += "\n";
-                current_text += &result;
-                println!("Tool Result: {}", result);
+        loop {
+            let constraints = tools.any_action_constraint();
+            let validator_state = constraints.create_parser_state();
+            let mut words = llm
+                .stream_structured_text_with_sampler(
+                    &current_text,
+                    constraints,
+                    validator_state,
+                    Arc::new(Mutex::new(GenerationParameters::default().sampler())),
+                )
+                .await
+                .unwrap();
+
+            while let Some(text) = words.next().await {
+                print!("{}", text);
+                current_text += &text;
+                std::io::stdout().flush().unwrap();
             }
-            Either::Right(right) => {
-                println!("Final Answer: {}", right.1);
-                break;
+
+            match words.result().await.unwrap() {
+                Either::Left(Either::Left(_)) => {}
+                Either::Left(Either::Right(((), (tool_index, ((), left))))) => {
+                    let result = tools
+                        .get_tool_mut_by_index(tool_index)
+                        .unwrap()
+                        .run(left)
+                        .await;
+                    current_text += "\n";
+                    current_text += &result;
+                    current_text += "\nRemember: You are answering the question: ";
+                    current_text += &question;
+                    current_text += "\n";
+                    println!("Tool Result: {}", result);
+                }
+                Either::Right(right) => {
+                    println!("Final Answer: {}", right.1);
+                    break;
+                }
             }
         }
     }
