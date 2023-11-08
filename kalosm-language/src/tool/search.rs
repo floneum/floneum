@@ -1,6 +1,7 @@
 use crate::context::SearchQuery;
 use crate::index::IntoDocuments;
 use crate::tool::Tool;
+use crate::OneLine;
 
 /// A tool that can search the web
 pub struct WebSearchTool {
@@ -16,6 +17,12 @@ impl WebSearchTool {
 
 #[async_trait::async_trait]
 impl Tool for WebSearchTool {
+    type Constraint = OneLine;
+
+    fn constraints(&self) -> Self::Constraint {
+        OneLine
+    }
+
     fn name(&self) -> String {
         "Web Search".to_string()
     }
@@ -28,9 +35,9 @@ impl Tool for WebSearchTool {
         "Search the web for a query.\nUse tool with:\nAction: Web Search\nSearch query: the search query\nExample:\n\nQuestion: What is Floneum?\nThought: I don't remember what Floneum is. I should search the web for it.\nAction: Web Search\nAction Input: What is Floneum?\nObservation: Floneum is a visual editor for AI workflows.\nThought: I now know that Floneum is a visual editor for AI workflows.\nFinal Answer: Floneum is a visual editor for AI workflows.".to_string()
     }
 
-    async fn run(&mut self, query: &str) -> String {
+    async fn run(&mut self, query: String) -> String {
         let api_key = std::env::var("SERPER_API_KEY").unwrap();
-        let search_query = SearchQuery::new(query, &api_key, self.top_n);
+        let search_query = SearchQuery::new(&query, &api_key, self.top_n);
         let documents = search_query.into_documents().await.unwrap();
         let mut text = String::new();
         for document in documents {

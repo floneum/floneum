@@ -1,7 +1,7 @@
 #![allow(clippy::type_complexity)]
 
 mod integer;
-use std::borrow::Cow;
+use std::{any::Any, borrow::Cow, error::Error, sync::Arc};
 
 pub use integer::*;
 mod float;
@@ -31,15 +31,27 @@ pub trait CreateParserState: Parser {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState;
 }
 
-impl<P: CreateParserState> CreateParserState for &P {
+impl<P: ?Sized + CreateParserState> CreateParserState for &P {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState {
         (*self).create_parser_state()
     }
 }
 
-impl<P: CreateParserState> CreateParserState for Box<P> {
+impl<P: ?Sized + CreateParserState> CreateParserState for Box<P> {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState {
         (**self).create_parser_state()
+    }
+}
+
+impl<P: ?Sized + CreateParserState> CreateParserState for Arc<P> {
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState {
+        (**self).create_parser_state()
+    }
+}
+
+impl CreateParserState for ArcParser {
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState {
+        self.0.create_parser_state()
     }
 }
 
@@ -57,10 +69,176 @@ pub trait Parser {
         &self,
         state: &Self::PartialState,
         input: &'a [u8],
-    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error>
-    where
-        Self: Sized;
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error>;
+}
 
+impl Parser for () {
+    type Error = ();
+    type Output = ();
+    type PartialState = ();
+
+    fn parse<'a>(
+        &self,
+        _state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+        Ok(ParseResult::Finished {
+            result: (),
+            remaining: input,
+        })
+    }
+}
+
+impl<P: ?Sized + Parser> Parser for &P {
+    type Error = P::Error;
+    type Output = P::Output;
+    type PartialState = P::PartialState;
+
+    fn parse<'a>(
+        &self,
+        state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+        (*self).parse(state, input)
+    }
+}
+
+impl<P: ?Sized + Parser> Parser for Box<P> {
+    type Error = P::Error;
+    type Output = P::Output;
+    type PartialState = P::PartialState;
+
+    fn parse<'a>(
+        &self,
+        state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+        let _self: &P = self;
+        _self.parse(state, input)
+    }
+}
+
+impl<P: ?Sized + Parser> Parser for Arc<P> {
+    type Error = P::Error;
+    type Output = P::Output;
+    type PartialState = P::PartialState;
+
+    fn parse<'a>(
+        &self,
+        state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+        let _self: &P = self;
+        _self.parse(state, input)
+    }
+}
+
+trait AnyCreateParserState:
+    Parser<
+        Error = Arc<anyhow::Error>,
+        Output = Arc<dyn Any + Send + Sync>,
+        PartialState = Arc<dyn Any + Send + Sync>,
+    > + CreateParserState
+    + Send
+    + Sync
+{
+}
+
+impl<
+        P: Parser<
+                Error = Arc<anyhow::Error>,
+                Output = Arc<dyn Any + Send + Sync>,
+                PartialState = Arc<dyn Any + Send + Sync>,
+            > + CreateParserState
+            + Send
+            + Sync,
+    > AnyCreateParserState for P
+{
+}
+
+/// A boxed parser.
+pub struct ArcParser(Arc<dyn AnyCreateParserState + Send + Sync>);
+
+impl ArcParser {
+    fn new<P>(parser: P) -> Self
+    where
+        P: Parser<
+                Error = Arc<anyhow::Error>,
+                Output = Arc<dyn Any + Send + Sync>,
+                PartialState = Arc<dyn Any + Send + Sync>,
+            > + CreateParserState
+            + Send
+            + Sync
+            + 'static,
+    {
+        ArcParser(Arc::new(parser))
+    }
+}
+
+impl Parser for ArcParser {
+    type Error = Arc<anyhow::Error>;
+    type Output = Arc<dyn Any + Send + Sync>;
+    type PartialState = Arc<dyn Any + Send + Sync>;
+
+    fn parse<'a>(
+        &self,
+        state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+        let _self: &dyn Parser<
+            Error = Arc<anyhow::Error>,
+            Output = Arc<dyn Any + Send + Sync>,
+            PartialState = Arc<dyn Any + Send + Sync>,
+        > = &self.0;
+        _self.parse(state, input)
+    }
+}
+
+/// A wrapper for a parser that implements an easily boxable version of Parser.
+struct AnyParser<P>(P);
+
+impl<P> Parser for AnyParser<P>
+where
+    P: Parser,
+    P::Error: Error + Send + Sync + 'static,
+    P::Output: Send + Sync + 'static,
+    P::PartialState: Send + Sync + 'static,
+{
+    type Error = Arc<anyhow::Error>;
+    type Output = Arc<dyn Any + Sync + Send>;
+    type PartialState = Arc<dyn Any + Sync + Send>;
+
+    fn parse<'a>(
+        &self,
+        state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+        let state = state
+            .downcast_ref::<P::PartialState>()
+            .ok_or_else(|| Arc::new(anyhow::anyhow!("State is not of the correct type")))?;
+        match self.0.parse(state, input) {
+            Ok(result) => Ok(result
+                .map_state(|state| Arc::new(state) as Arc<dyn Any + Sync + Send>)
+                .map(|output| Arc::new(output) as Arc<dyn Any + Sync + Send>)),
+            Err(err) => Err(Arc::new(anyhow::Error::new(err))),
+        }
+    }
+}
+
+impl<P: CreateParserState> CreateParserState for AnyParser<P>
+where
+    P: Parser,
+    P::Error: Error + Send + Sync + 'static,
+    P::Output: Send + Sync + 'static,
+    P::PartialState: Send + Sync + 'static,
+{
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState {
+        Arc::new(self.0.create_parser_state())
+    }
+}
+
+/// An extension trait for parsers.
+pub trait ParserExt: Parser {
     /// Parse this parser, or another other parser.
     fn or<V: Parser<Error = E, Output = O, PartialState = PA>, E, O, PA>(
         self,
@@ -93,36 +271,20 @@ pub trait Parser {
     {
         RepeatParser::new(self, length_range)
     }
-}
 
-impl<P: Parser> Parser for &P {
-    type Error = P::Error;
-    type Output = P::Output;
-    type PartialState = P::PartialState;
-
-    fn parse<'a>(
-        &self,
-        state: &Self::PartialState,
-        input: &'a [u8],
-    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
-        (*self).parse(state, input)
+    /// Get a boxed version of this parser.
+    fn boxed(self) -> ArcParser
+    where
+        Self: CreateParserState + Sized + Send + Sync + 'static,
+        Self::Error: Error + Send + Sync + 'static,
+        Self::Output: Send + Sync + 'static,
+        Self::PartialState: Send + Sync + 'static,
+    {
+        ArcParser::new(AnyParser(self))
     }
 }
 
-impl<P: Parser> Parser for Box<P> {
-    type Error = P::Error;
-    type Output = P::Output;
-    type PartialState = P::PartialState;
-
-    fn parse<'a>(
-        &self,
-        state: &Self::PartialState,
-        input: &'a [u8],
-    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
-        let _self: &P = self;
-        _self.parse(state, input)
-    }
-}
+impl<P: Parser> ParserExt for P {}
 
 /// A parser for a choice between two parsers.
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -339,10 +501,7 @@ impl Parser for StructureParser {
         &self,
         state: &Self::PartialState,
         input: &'a [u8],
-    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error>
-    where
-        Self: Sized,
-    {
+    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
         match (self, state) {
             (StructureParser::Literal(lit_parser), StructureParserState::Literal(state)) => {
                 LiteralParser::from(lit_parser)

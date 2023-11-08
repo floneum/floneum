@@ -415,7 +415,6 @@ pub trait ModelExt: Model + Send + 'static {
         parser: P,
         parser_state: P::PartialState,
         sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
-        post_filter_sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
     ) -> anyhow::Result<StructureParserResult<Self::TextStream, P::Output>>
     where
         Self::TextStream: From<tokio::sync::mpsc::UnboundedReceiver<String>>,
@@ -437,7 +436,6 @@ pub trait ModelExt: Model + Send + 'static {
                     parser,
                     parser_state,
                     sampler,
-                    post_filter_sampler,
                     sender,
                 );
                 match result_sender.send(result) {

@@ -15,12 +15,7 @@ async fn main() {
             prompt,
             validator,
             validator_state,
-            Arc::new(Mutex::new(
-                GenerationParameters::default().bias_only_sampler(),
-            )),
-            Arc::new(Mutex::new(
-                GenerationParameters::default().mirostat2_sampler(),
-            )),
+            Arc::new(Mutex::new(GenerationParameters::default().sampler())),
         )
         .await
         .unwrap();

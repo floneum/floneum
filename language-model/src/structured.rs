@@ -17,7 +17,6 @@ pub(crate) fn generate_structured<M: SyncModel, P: Parser>(
     parser: P,
     mut parser_state: P::PartialState,
     mut sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
-    mut post_filter_sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
     stream: tokio::sync::mpsc::UnboundedSender<String>,
 ) -> anyhow::Result<P::Output> {
     let prompt_text = prompt.to_string();
@@ -35,9 +34,8 @@ pub(crate) fn generate_structured<M: SyncModel, P: Parser>(
             previous_tokens: &tokens,
             rng: &mut rng,
         };
-        let sampled = sampler.sample(resources, &mut logits)?;
         let mut state_map = FxHashMap::default();
-        for logit in sampled.iter_mut() {
+        for logit in logits.iter_mut() {
             let new_text = tokenizer.decode(&[logit.token_id])?;
             if new_text.is_empty() || logit.logit == 0.0 {
                 logit.logit = 0.0;
@@ -53,13 +51,14 @@ pub(crate) fn generate_structured<M: SyncModel, P: Parser>(
         if state_map.is_empty() {
             return Err(anyhow::anyhow!("No valid tokens found"));
         }
-        let token_id = post_filter_sampler
+        let token_id = sampler
             .sample_token(resources, &mut logits)?
             .ok_or(anyhow::anyhow!("No valid tokens found"))?;
         let (token, result) = state_map
             .remove(&token_id)
             .ok_or(anyhow::anyhow!("Token {} not found in state map", token_id))?;
 
+        tracing::trace!("Adding token {} to parser", token);
         stream
             .send(token.clone())
             .map_err(|_| anyhow::anyhow!("Failed to send token to stream: {}", token))?;
@@ -97,9 +96,12 @@ fn update_state<P: Parser>(
             if required_next.is_empty() {
                 Ok(None)
             } else {
+                tracing::trace!("Required next: {}", required_next);
                 let result = parser
                     .parse(parser_state, required_next.as_bytes())
-                    .unwrap_or_else(|_| unreachable!("Required next should always be valid"));
+                    .unwrap_or_else(|_| {
+                        unreachable!("Required next should always be valid attempted to add {} but got error", required_next)
+            });
                 let extra_tokens = tokenizer.encode(&required_next)?;
                 *unprocessed_token_count += extra_tokens.len();
                 tokens.extend(extra_tokens);
