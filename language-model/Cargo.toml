@@ -31,7 +31,7 @@ tokenizers = { version = "0.13.4" }
 rustc-hash = "1.1.0"
 kalosm-sample.workspace = true
 # Required for LLM
-llm = { git = "https://github.com/rustformers/llm", rev = "refs/pull/440/head" }
+llm = { git = "https://github.com/rustformers/llm" }
 kalosm-streams.workspace = true
 spinoff = "0.8.0"
 bytesize = "1.3.0"
