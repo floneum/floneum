@@ -130,8 +130,7 @@ kalosm-llama = { path = "./kalosm-llama", version = "0.1.0" }
 rwhisper = { path = "./rwhisper", version = "0.1.0" }
 rwuerstchen = { path = "./rwuerstchen", version = "0.1.0" }
 segment-anything-rs = { path = "./segment-anything-rs", version = "0.1.0" }
-
-llm-samplers = { git = "https://github.com/KerfuffleV2/llm-samplers", branch = "feat-v0.0.7" }
+llm-samplers = "=0.0.7"
 
 # The profile that 'cargo dist' will build with
 [profile.dist]

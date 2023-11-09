@@ -4942,7 +4942,7 @@ dependencies = [
  "kalosm-language",
  "kalosm-sound",
  "kalosm-streams",
- "llm-samplers",
+ "llm-samplers 0.0.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.8.5",
  "tokio",
  "tracing-subscriber 0.2.25",
@@ -4972,7 +4972,7 @@ dependencies = [
  "kalosm-sample",
  "kalosm-streams",
  "llm",
- "llm-samplers",
+ "llm-samplers 0.0.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "log",
  "meval",
  "num_cpus",
@@ -5020,7 +5020,7 @@ dependencies = [
  "kalosm-sample",
  "kalosm-streams",
  "llm",
- "llm-samplers",
+ "llm-samplers 0.0.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "log",
  "num_cpus",
  "once_cell",
@@ -5074,7 +5074,7 @@ dependencies = [
  "anyhow",
  "candle-core",
  "llm",
- "llm-samplers",
+ "llm-samplers 0.0.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.8.5",
  "rustc-hash",
  "tokenizers 0.13.4",
@@ -5360,7 +5360,7 @@ dependencies = [
  "bytemuck",
  "ggml",
  "half 2.3.1",
- "llm-samplers",
+ "llm-samplers 0.0.7 (git+https://github.com/KerfuffleV2/llm-samplers?branch=feat-v0.0.7)",
  "memmap2 0.5.10",
  "partial_sort",
  "rand 0.8.5",
@@ -5420,6 +5420,18 @@ version = "0.2.0-dev"
 source = "git+https://github.com/rustformers/llm?rev=refs/pull/440/head#5fa9bb28ce28690102e7eddd3f561a3582c55008"
 dependencies = [
  "llm-base",
+]
+
+[[package]]
+name = "llm-samplers"
+version = "0.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e85df656cd89e7702cb56171d75aa77c7bec828af7d2054d9987c34411cf896"
+dependencies = [
+ "anyhow",
+ "num-traits",
+ "rand 0.8.5",
+ "thiserror",
 ]
 
 [[package]]
@@ -7922,7 +7934,7 @@ dependencies = [
  "kalosm-language-model",
  "kalosm-sample",
  "kalosm-streams",
- "llm-samplers",
+ "llm-samplers 0.0.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.8.5",
  "serde_json",
  "tokenizers 0.13.4",
@@ -7960,7 +7972,7 @@ dependencies = [
  "kalosm-language-model",
  "kalosm-sample",
  "kalosm-streams",
- "llm-samplers",
+ "llm-samplers 0.0.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.8.5",
  "serde_json",
  "tokenizers 0.13.4",
