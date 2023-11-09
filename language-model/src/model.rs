@@ -564,7 +564,7 @@ pub trait SyncModelExt: SyncModel {
         prompt: impl Display,
         parser: P,
         parser_state: P::PartialState,
-        sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
+        sampler: Arc<Mutex<dyn Sampler>>,
         on_token: impl FnMut(String) -> anyhow::Result<()>,
     ) -> anyhow::Result<P::Output> {
         generate_structured(
