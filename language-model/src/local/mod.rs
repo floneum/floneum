@@ -62,7 +62,7 @@ macro_rules! local_model {
                 prompt: &str,
                 max_tokens: Option<u32>,
                 stop_on: Option<&str>,
-                sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
+                sampler: Arc<Mutex<dyn Sampler>>,
             ) -> anyhow::Result<Self::TextStream> {
                 Ok(self
                     .infer_sampler(prompt.to_string(), max_tokens, stop_on, sampler)

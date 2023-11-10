@@ -415,7 +415,7 @@ pub trait ModelExt: Model + Send + 'static {
         prompt: &str,
         parser: P,
         parser_state: P::PartialState,
-        sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
+        sampler: Arc<Mutex<dyn Sampler>>,
     ) -> anyhow::Result<StructureParserResult<Self::TextStream, P::Output>>
     where
         Self::TextStream: From<tokio::sync::mpsc::UnboundedReceiver<String>>,
@@ -539,14 +539,14 @@ pub trait SyncModel {
         &mut self,
         session: &mut Self::Session,
         prompt: &str,
-    ) -> anyhow::Result<Logits<u32, f32>>;
+    ) -> anyhow::Result<Logits>;
 
     /// Run the model synchronously with a pre-tokenized input.
     fn feed_tokens(
         &mut self,
         session: &mut Self::Session,
         tokens: &[u32],
-    ) -> anyhow::Result<Logits<u32, f32>>;
+    ) -> anyhow::Result<Logits>;
 
     /// Get the token ID that represents the end of a sequence.
     fn stop_token(&self) -> anyhow::Result<u32>;
@@ -564,7 +564,7 @@ pub trait SyncModelExt: SyncModel {
         prompt: impl Display,
         parser: P,
         parser_state: P::PartialState,
-        sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
+        sampler: Arc<Mutex<dyn Sampler>>,
         on_token: impl FnMut(String) -> anyhow::Result<()>,
     ) -> anyhow::Result<P::Output> {
         generate_structured(
@@ -592,7 +592,7 @@ impl SyncModel for SyncModelNotSupported {
         Err(anyhow::Error::msg("Not implemented"))
     }
 
-    fn feed_text(&mut self, _session: &mut (), _prompt: &str) -> anyhow::Result<Logits<u32, f32>> {
+    fn feed_text(&mut self, _session: &mut (), _prompt: &str) -> anyhow::Result<Logits> {
         Err(anyhow::Error::msg("Not implemented"))
     }
 
@@ -600,7 +600,7 @@ impl SyncModel for SyncModelNotSupported {
         &mut self,
         _session: &mut (),
         _tokens: &[u32],
-    ) -> anyhow::Result<Logits<u32, f32>> {
+    ) -> anyhow::Result<Logits> {
         Err(anyhow::Error::msg("Not implemented"))
     }
 
@@ -649,7 +649,7 @@ pub trait Model: Send + 'static {
         prompt: &str,
         max_tokens: Option<u32>,
         stop_on: Option<&str>,
-        sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
+        sampler: Arc<Mutex<dyn Sampler>>,
     ) -> anyhow::Result<String> {
         let mut text = String::new();
 
@@ -685,7 +685,7 @@ pub trait Model: Send + 'static {
         _prompt: &str,
         _max_tokens: Option<u32>,
         _stop_on: Option<&str>,
-        _sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
+        _sampler: Arc<Mutex<dyn Sampler>>,
     ) -> anyhow::Result<Self::TextStream> {
         Err(anyhow::Error::msg("Not implemented"))
     }
@@ -757,7 +757,7 @@ impl SyncModel for BoxedSyncModel {
         &mut self,
         session: &mut Self::Session,
         prompt: &str,
-    ) -> anyhow::Result<Logits<u32, f32>> {
+    ) -> anyhow::Result<Logits> {
         let self_ref: &mut (dyn SyncModel<Session = Box<dyn Any>>) = self.as_mut();
         self_ref.feed_text(session, prompt)
     }
@@ -766,7 +766,7 @@ impl SyncModel for BoxedSyncModel {
         &mut self,
         session: &mut Self::Session,
         tokens: &[u32],
-    ) -> anyhow::Result<Logits<u32, f32>> {
+    ) -> anyhow::Result<Logits> {
         let self_ref: &mut (dyn SyncModel<Session = Box<dyn Any>>) = self.as_mut();
         self_ref.feed_tokens(session, tokens)
     }
@@ -795,7 +795,7 @@ impl<M: SyncModel<Session = S>, S: Any> SyncModel for AnySyncModel<M, S> {
         &mut self,
         session: &mut Self::Session,
         prompt: &str,
-    ) -> anyhow::Result<Logits<u32, f32>> {
+    ) -> anyhow::Result<Logits> {
         self.0.feed_text(
             match session.downcast_mut() {
                 Some(s) => s,
@@ -814,7 +814,7 @@ impl<M: SyncModel<Session = S>, S: Any> SyncModel for AnySyncModel<M, S> {
         &mut self,
         session: &mut Self::Session,
         tokens: &[u32],
-    ) -> anyhow::Result<Logits<u32, f32>> {
+    ) -> anyhow::Result<Logits> {
         self.0.feed_tokens(
             match session.downcast_mut() {
                 Some(s) => s,
@@ -872,7 +872,7 @@ where
         prompt: &str,
         max_tokens: Option<u32>,
         stop_on: Option<&str>,
-        sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
+        sampler: Arc<Mutex<dyn Sampler>>,
     ) -> anyhow::Result<Self::TextStream> {
         self.0
             .stream_text_with_sampler(prompt, max_tokens, stop_on, sampler)

@@ -16,7 +16,7 @@ rand = "0.8.5"
 
 [dev-dependencies]
 tracing-subscriber = "0.2"
-llm-samplers = { version = "0.0.6" }
+llm-samplers = { workspace = true }
 
 [features]
 metal = ["kalosm-language/metal"]
