@@ -108,7 +108,6 @@ pub struct BertBuilder {
     cpu: bool,
 }
 
-
 impl BertBuilder {
     /// Set the source of the model
     pub fn with_source(mut self, source: BertSource) -> Self {

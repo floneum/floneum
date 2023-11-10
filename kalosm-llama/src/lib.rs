@@ -71,9 +71,9 @@ enum Task {
 type SyncCallback = Box<
     dyn for<'a> FnOnce(
             &'a mut LlamaModel,
-        )
-            -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>>
-        + Send>;
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>>
+        + Send,
+>;
 
 /// A quantized Llama language model with support for streaming generation.
 pub struct Llama {

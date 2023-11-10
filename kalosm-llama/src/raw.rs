@@ -5,7 +5,7 @@ use candle_core::quantized::{ggml_file, gguf_file};
 use candle_core::{DType, Device, IndexOp, Result, Tensor, D};
 use candle_nn::{Embedding, Module};
 
-use crate::session::{LlamaCache, AttentionCache, AttentionCacheValue};
+use crate::session::{AttentionCache, AttentionCacheValue, LlamaCache};
 
 pub const MAX_SEQ_LEN: usize = 4096;
 
@@ -50,7 +50,7 @@ impl QMatMul {
 }
 
 #[derive(Debug, Clone)]
-pub(crate)struct LayerWeights {
+pub(crate) struct LayerWeights {
     attention_wq: QMatMul,
     attention_wk: QMatMul,
     attention_wv: QMatMul,
@@ -107,7 +107,13 @@ impl LayerWeights {
         Ok(rope)
     }
 
-    fn forward_attn(&mut self, x: &Tensor, mask: &Tensor, index_pos: usize, cache: Option<&mut AttentionCache>) -> Result<Tensor> {
+    fn forward_attn(
+        &mut self,
+        x: &Tensor,
+        mask: &Tensor,
+        index_pos: usize,
+        cache: Option<&mut AttentionCache>,
+    ) -> Result<Tensor> {
         let _enter = self.span_attn.enter();
         let (b_sz, seq_len, n_embd) = x.dims3()?;
         let q = self.attention_wq.forward(x)?;
@@ -129,29 +135,25 @@ impl LayerWeights {
 
         let (k, v) = match cache {
             None => (k, v),
-            Some(cache) => {
-                match &cache.0{
-                    Some(cache) => {
-                        if index_pos == 0 {
-                            (k, v)
-                        } else {
-                            let k = Tensor::cat(&[&cache.key, &k], 2)?.contiguous()?;
-                            let v = Tensor::cat(&[&cache.value, &v], 2)?.contiguous()?;
-                            (k, v)
-                        }
-                    },
-                    None => {
-                        cache.0 = Some(AttentionCacheValue{
-                            key: k.clone(),
-                            value: v.clone(),
-                        });
+            Some(cache) => match &cache.0 {
+                Some(cache) => {
+                    if index_pos == 0 {
+                        (k, v)
+                    } else {
+                        let k = Tensor::cat(&[&cache.key, &k], 2)?.contiguous()?;
+                        let v = Tensor::cat(&[&cache.value, &v], 2)?.contiguous()?;
                         (k, v)
                     }
                 }
-                
-            }
+                None => {
+                    cache.0 = Some(AttentionCacheValue {
+                        key: k.clone(),
+                        value: v.clone(),
+                    });
+                    (k, v)
+                }
+            },
         };
-        
 
         // Support for MQA, useful for 70B models.
         let k = self.repeat_kv(k)?;
@@ -186,7 +188,7 @@ impl LayerWeights {
 #[derive(Debug, Clone)]
 pub struct Model {
     tok_embeddings: Embedding,
-    pub(crate)layers: Vec<LayerWeights>,
+    pub(crate) layers: Vec<LayerWeights>,
     norm: RmsNorm,
     output: QMatMul,
     masks: HashMap<usize, Tensor>,
@@ -355,7 +357,12 @@ impl Model {
         }
     }
 
-    pub fn forward(&mut self, x: &Tensor, index_pos: usize, mut cache: Option<&mut LlamaCache>) -> Result<Tensor> {
+    pub fn forward(
+        &mut self,
+        x: &Tensor,
+        index_pos: usize,
+        mut cache: Option<&mut LlamaCache>,
+    ) -> Result<Tensor> {
         let (_b_sz, seq_len) = x.dims2()?;
         let mask = self.mask(seq_len)?;
         let _enter = self.span.enter();
@@ -364,7 +371,12 @@ impl Model {
             let x = layer_in;
             let residual = &x;
             let x = layer.attention_norm.forward(&x)?;
-            let attn = layer.forward_attn(&x, &mask, index_pos, cache.as_mut().map(|c| &mut c.blocks[i]))?;
+            let attn = layer.forward_attn(
+                &x,
+                &mask,
+                index_pos,
+                cache.as_mut().map(|c| &mut c.blocks[i]),
+            )?;
             let x = (attn + residual)?;
 
             // MLP

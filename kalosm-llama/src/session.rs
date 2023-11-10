@@ -1,7 +1,7 @@
+use crate::raw::Model;
 use candle_core::Tensor;
 pub use candle_transformers::quantized_var_builder::VarBuilder;
 use std::collections::HashMap;
-use crate::raw::Model;
 
 /// A Llama-1.5 session.
 pub struct LlamaSession {
@@ -47,9 +47,7 @@ impl LlamaCache {
         for _ in 0..model.layers.len() {
             blocks.push(AttentionCache(None))
         }
-        Self {
-            blocks,
-        }
+        Self { blocks }
     }
 
     /// Clear the cache.
@@ -110,9 +108,7 @@ impl LlamaCache {
                 }
             }
         }
-        Self {
-            blocks,
-        }
+        Self { blocks }
     }
 }
 
