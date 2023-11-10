@@ -56,6 +56,7 @@ members = [
     "floneumite",
     "floneum-cli",
     "rbert",
+    "kalosm-llama",
     "rphi",
     "rwhisper",
     "rmistral",
@@ -125,6 +126,7 @@ kalosm = { path = "./kalosm", version = "0.1.0" }
 rphi = { path = "./rphi", version = "0.1.0" }
 rbert = { path = "./rbert", version = "0.1.0" }
 rmistral = { path = "./rmistral", version = "0.1.0" }
+kalosm-llama = { path = "./kalosm-llama", version = "0.1.0" }
 rwhisper = { path = "./rwhisper", version = "0.1.0" }
 rwuerstchen = { path = "./rwuerstchen", version = "0.1.0" }
 segment-anything-rs = { path = "./segment-anything-rs", version = "0.1.0" }
