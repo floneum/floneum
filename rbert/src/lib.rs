@@ -102,19 +102,12 @@ impl Default for BertSource {
 }
 
 /// A builder for a [`Bert`] model
+#[derive(Default)]
 pub struct BertBuilder {
     source: BertSource,
     cpu: bool,
 }
 
-impl Default for BertBuilder {
-    fn default() -> Self {
-        Self {
-            source: Default::default(),
-            cpu: false,
-        }
-    }
-}
 
 impl BertBuilder {
     /// Set the source of the model

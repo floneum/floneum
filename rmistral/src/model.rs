@@ -70,7 +70,7 @@ impl SyncModel for MistralModel {
         session: &mut Self::Session,
         prompt: &str,
     ) -> anyhow::Result<Logits> {
-        let encoded = self.tokenizer.encode(&*prompt, true).map_err(E::msg)?;
+        let encoded = self.tokenizer.encode(prompt, true).map_err(E::msg)?;
         let tokens = encoded.get_ids();
         self.feed_tokens(session, tokens)
     }
@@ -118,7 +118,7 @@ impl MistralModel {
             return Err(anyhow::anyhow!("Cannot run model on empty input"));
         }
 
-        let input = Tensor::new(tokens, &device)?.unsqueeze(0)?;
+        let input = Tensor::new(tokens, device)?.unsqueeze(0)?;
         let logits = model.forward(&input, seqlen_offset, cache)?;
         let logits = logits.squeeze(0)?.squeeze(0)?.to_dtype(DType::F32)?;
         let logits: Vec<f32> = logits.to_vec1()?;

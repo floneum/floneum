@@ -61,15 +61,17 @@ enum Task {
         sampler: Arc<Mutex<dyn Sampler>>,
     },
     RunSync {
-        callback: Box<
-            dyn for<'a> FnOnce(
-                    &'a mut MistralModel,
-                )
-                    -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>>
-                + Send,
-        >,
+        callback: SyncCallback,
     },
 }
+
+
+type SyncCallback = Box<
+    dyn for<'a> FnOnce(
+            &'a mut MistralModel,
+        )
+            -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>>
+        + Send>;
 
 /// A quantized Mistral language model with support for streaming generation.
 pub struct Mistral {
