@@ -4970,6 +4970,7 @@ dependencies = [
  "instant-distance",
  "itertools 0.11.0",
  "kalosm-language-model",
+ "kalosm-llama",
  "kalosm-sample",
  "kalosm-streams",
  "llm",
