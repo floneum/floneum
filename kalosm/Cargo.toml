@@ -8,11 +8,13 @@ edition = "2021"
 [dependencies]
 kalosm-language.workspace = true
 kalosm-sound.workspace = true
+kalosm-vision.workspace = true
 tokio = { version = "1.32.0", features = ["full"] }
 futures-util = "0.3.28"
 anyhow = "1.0.75"
 kalosm-streams.workspace = true
 rand = "0.8.5"
+image = "0.24.7"
 
 [dev-dependencies]
 tracing-subscriber = "0.2"

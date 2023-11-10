@@ -4940,9 +4940,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "futures-util",
+ "image 0.24.7",
  "kalosm-language",
  "kalosm-sound",
  "kalosm-streams",
+ "kalosm-vision",
  "llm-samplers",
  "rand 0.8.5",
  "tokio",
