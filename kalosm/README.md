@@ -7,6 +7,46 @@ There are three different packages in Kalosm:
 - `kalosm::sound` - A simple interface for audio transcription and surrounding tools. It includes support for microphone input and the `whisper` model.
 - `kalosm::vision` - A simple interface for image generation and segmentation models and surrounding tools. It includes support for the `wuerstchen` and `segment-anything` models and integration with the [image](https://docs.rs/image/latest/image/) crate.
 
+## Quickstart!
+
+1) Install [rust](https://rustup.rs/)
+2) Create a new project:
+```sh
+cargo new next-gen-ai
+cd ./next-gen-ai
+```
+3) Add Kalsom as a dependancy
+```sh
+cargo add kalosm --git "https://github.com/floneum/floneum"
+```
+4) Add this code to your `main.rs` file
+```rust
+use std::io::Write;
+
+use futures_util::stream::StreamExt;
+use kalosm_language::*;
+use kalosm_streams::TextStream;
+
+#[tokio::main]
+async fn main() {
+    let mut llm = Phi::start().await;
+    let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
+    print!("{}", prompt);
+
+    let stream = llm.stream_text(prompt).with_max_length(1000).await.unwrap();
+
+    let mut sentences = stream.words();
+    while let Some(text) = sentences.next().await {
+        print!("{}", text);
+        std::io::stdout().flush().unwrap();
+    }
+}
+```
+5) Run your application with:
+```sh
+cargo run --release
+```
+
 ## What can you build with Kalosm?
 
 You can think of Kalosm as the plumbing between different pre-trained models and each other or the surrounding world. Kalosm makes it easy to build applications that use pre-trained models to generate text, audio, and images. Here are some examples of what you can build with Kalosm:
