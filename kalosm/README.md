@@ -18,6 +18,7 @@ cd ./next-gen-ai
 3) Add Kalsom as a dependancy
 ```sh
 cargo add kalosm --git "https://github.com/floneum/floneum"
+cargo add tokio --features full
 ```
 4) Add this code to your `main.rs` file
 ```rust
@@ -28,7 +29,7 @@ use kalosm::{*, language::*};
 #[tokio::main]
 async fn main() {
     let mut llm = Phi::start().await;
-    let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
+    let prompt = "The following is a 300 word essay about Paris:";
     print!("{}", prompt);
 
     let stream = llm.stream_text(prompt).with_max_length(1000).await.unwrap();
