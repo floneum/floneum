@@ -23,7 +23,7 @@ serde_json = "1.0.106"
 rand = "0.8.5"
 tokio = { version = "1.32.0", features = ["full"] }
 async-trait = "0.1.73"
-llm-samplers = { version = "0.0.6" }
+llm-samplers.workspace = true
 kalosm-sample.workspace = true
 kalosm-language-model.workspace = true
 kalosm-streams.workspace = true

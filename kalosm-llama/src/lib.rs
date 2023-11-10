@@ -61,7 +61,7 @@ enum Task {
     Infer {
         settings: InferenceSettings,
         sender: tokio::sync::mpsc::UnboundedSender<String>,
-        sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
+        sampler: Arc<Mutex<dyn Sampler>>,
     },
     RunSync {
         callback: Box<
@@ -151,7 +151,7 @@ impl Llama {
     fn run(
         &mut self,
         settings: InferenceSettings,
-        sampler: Arc<Mutex<dyn Sampler<u32, f32>>>,
+        sampler: Arc<Mutex<dyn Sampler>>,
     ) -> anyhow::Result<tokio::sync::mpsc::UnboundedReceiver<String>> {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         self.task_sender
