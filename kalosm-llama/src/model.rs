@@ -37,11 +37,7 @@ impl SyncModel for LlamaModel {
         })
     }
 
-    fn feed_text(
-        &mut self,
-        session: &mut Self::Session,
-        prompt: &str,
-    ) -> anyhow::Result<Logits> {
+    fn feed_text(&mut self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Logits> {
         let encoded = self.tokenizer.encode(prompt, true).map_err(E::msg)?;
         let tokens = encoded.get_ids();
         self.feed_tokens(session, tokens)
@@ -61,6 +57,7 @@ impl SyncModel for LlamaModel {
             tokens,
             session.current_tokens.len() - token_count,
             Some(&mut session.cache),
+            None,
         )
     }
 
@@ -85,6 +82,7 @@ impl LlamaModel {
         tokens: &[u32],
         seqlen_offset: usize,
         cache: Option<&mut LlamaCache>,
+        top_k: Option<usize>,
     ) -> anyhow::Result<Logits> {
         if tokens.is_empty() {
             return Err(anyhow::anyhow!("Cannot run model on empty input"));
@@ -94,7 +92,10 @@ impl LlamaModel {
         let logits = model.forward(&input, seqlen_offset, cache)?;
         let logits = logits.squeeze(0)?.squeeze(0)?.to_dtype(DType::F32)?;
         let logits: Vec<f32> = logits.to_vec1()?;
-        Ok(Logits::try_from_iter(logits)?)
+        match top_k {
+            Some(top_k) => Ok(Logits::try_from_iter_top_k(logits, top_k)?),
+            None => Ok(Logits::try_from_iter(logits)?),
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -149,6 +150,7 @@ impl LlamaModel {
                 ctxt,
                 start_pos,
                 Some(&mut self.cache),
+                Some(1000),
             )?;
             let next_token = sample_token(
                 &mut sampler,
@@ -264,7 +266,7 @@ pub fn sample_token(
     for logit in last_logits.iter_mut() {
         let tid = logit.token_id;
         if let Some(stop_on) = stop_on {
-            let token = tokenizer.decode(&[tid ], true).unwrap();
+            let token = tokenizer.decode(&[tid], true).unwrap();
             let combined = end_tokens.clone() + &token;
             if combined.contains(stop_on) && !combined.ends_with(stop_on) {
                 // if the token contains a stop_on token, but not the end of the string, set the probability to 0

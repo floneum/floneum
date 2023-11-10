@@ -66,11 +66,7 @@ impl SyncModel for PhiModel {
         })
     }
 
-    fn feed_text(
-        &mut self,
-        session: &mut Self::Session,
-        prompt: &str,
-    ) -> anyhow::Result<Logits> {
+    fn feed_text(&mut self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Logits> {
         let tokens = self
             .tokenizer
             .encode(prompt, true)
@@ -92,6 +88,7 @@ impl SyncModel for PhiModel {
             &self.device,
             tokens,
             Some(&mut session.cache),
+            None,
         )
     }
 
@@ -114,6 +111,7 @@ impl PhiModel {
         device: &Device,
         mut tokens: &[u32],
         cache: Option<&mut PhiCache>,
+        top_k: Option<usize>,
     ) -> anyhow::Result<Logits> {
         if tokens.is_empty() {
             return Err(anyhow::anyhow!("Cannot run model on empty input"));
@@ -127,7 +125,10 @@ impl PhiModel {
         let logits = model.forward(&input, cache)?;
         let logits = logits.squeeze(0)?.to_dtype(DType::F32)?;
         let logits: Vec<f32> = logits.to_vec1()?;
-        Ok(Logits::try_from_iter(logits)?)
+        match top_k {
+            Some(top_k) => Ok(Logits::try_from_iter_top_k(logits, top_k)?),
+            None => Ok(Logits::try_from_iter(logits)?),
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -173,7 +174,13 @@ impl PhiModel {
         for index in 0..sample_len {
             let context_size = if index > 0 { 1 } else { tokens.len() };
             let ctxt = &tokens[tokens.len().saturating_sub(context_size)..];
-            let logits = Self::forward(&mut self.model, &self.device, ctxt, Some(&mut self.cache))?;
+            let logits = Self::forward(
+                &mut self.model,
+                &self.device,
+                ctxt,
+                Some(&mut self.cache),
+                Some(1000),
+            )?;
             let next_token = sample_token(
                 &mut sampler,
                 &mut rng,

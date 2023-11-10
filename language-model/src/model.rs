@@ -535,11 +535,7 @@ pub trait SyncModel {
     fn new_session(&self) -> anyhow::Result<Self::Session>;
 
     /// Run the model synchronously.
-    fn feed_text(
-        &mut self,
-        session: &mut Self::Session,
-        prompt: &str,
-    ) -> anyhow::Result<Logits>;
+    fn feed_text(&mut self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Logits>;
 
     /// Run the model synchronously with a pre-tokenized input.
     fn feed_tokens(
@@ -596,11 +592,7 @@ impl SyncModel for SyncModelNotSupported {
         Err(anyhow::Error::msg("Not implemented"))
     }
 
-    fn feed_tokens(
-        &mut self,
-        _session: &mut (),
-        _tokens: &[u32],
-    ) -> anyhow::Result<Logits> {
+    fn feed_tokens(&mut self, _session: &mut (), _tokens: &[u32]) -> anyhow::Result<Logits> {
         Err(anyhow::Error::msg("Not implemented"))
     }
 
@@ -753,11 +745,7 @@ impl SyncModel for BoxedSyncModel {
         self_ref.new_session()
     }
 
-    fn feed_text(
-        &mut self,
-        session: &mut Self::Session,
-        prompt: &str,
-    ) -> anyhow::Result<Logits> {
+    fn feed_text(&mut self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Logits> {
         let self_ref: &mut (dyn SyncModel<Session = Box<dyn Any>>) = self.as_mut();
         self_ref.feed_text(session, prompt)
     }
@@ -791,11 +779,7 @@ impl<M: SyncModel<Session = S>, S: Any> SyncModel for AnySyncModel<M, S> {
         self.0.new_session().map(|s| Box::new(s) as Box<dyn Any>)
     }
 
-    fn feed_text(
-        &mut self,
-        session: &mut Self::Session,
-        prompt: &str,
-    ) -> anyhow::Result<Logits> {
+    fn feed_text(&mut self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Logits> {
         self.0.feed_text(
             match session.downcast_mut() {
                 Some(s) => s,

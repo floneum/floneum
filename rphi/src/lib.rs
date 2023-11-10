@@ -72,10 +72,10 @@ enum Task {
 
 type SyncCallback = Box<
     dyn for<'a> FnOnce(
-            &'a mut PhiModel
-        )
-            -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>>
-        + Send>;
+            &'a mut PhiModel,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>>
+        + Send,
+>;
 
 /// A quantized Phi-1.5 language model with support for streaming generation.
 pub struct Phi {
