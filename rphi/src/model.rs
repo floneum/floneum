@@ -123,7 +123,7 @@ impl PhiModel {
             tokens = &tokens[tokens.len() - 4096..];
         }
 
-        let input = Tensor::new(tokens, &device)?.unsqueeze(0)?;
+        let input = Tensor::new(tokens, device)?.unsqueeze(0)?;
         let logits = model.forward(&input, cache)?;
         let logits = logits.squeeze(0)?.to_dtype(DType::F32)?;
         let logits: Vec<f32> = logits.to_vec1()?;

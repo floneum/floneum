@@ -1,11 +1,14 @@
-use crate::raw::{MistralCache, Model};
+use crate::{
+    raw::Model,
+    session::{LlamaCache, LlamaSession},
+};
 use anyhow::{Error as E, Result};
 use llm_samplers::{
     prelude::Logits,
     types::{HasSamplerResources, Sampler, SamplerError},
 };
 use std::fmt::{Debug, Formatter};
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use candle_core::{DType, Device, Tensor};
 use kalosm_language_model::SyncModel;
@@ -14,47 +17,16 @@ use tokenizers::Tokenizer;
 
 use crate::InferenceSettings;
 
-/// A Mistral-1.5 session.
-pub struct MistralSession {
-    cache: MistralCache,
-    current_tokens: Vec<u32>,
-}
-
-impl MistralSession {
-    /// Export the current cache tensor map.
-    pub fn get_tensor_map(&self) -> HashMap<String, Tensor> {
-        self.cache.get_tensor_map()
-    }
-
-    /// Import a cache tensor map.
-    pub fn set_tensor_map(&mut self, map: HashMap<String, Tensor>) {
-        self.cache = MistralCache::from_tensor_map(map);
-    }
-
-    /// Create a cache from a tensor map. This can be used to load a cache from disk.
-    pub fn from_tensor_map(map: HashMap<String, Tensor>, current_tokens: Vec<u32>) -> Self {
-        Self {
-            cache: MistralCache::from_tensor_map(map),
-            current_tokens,
-        }
-    }
-
-    /// Get the current tokens.
-    pub fn get_current_tokens(&self) -> &[u32] {
-        &self.current_tokens
-    }
-}
-
-/// The inner, synchronous Mistral model.
-pub struct MistralModel {
+/// The inner, synchronous Llama model.
+pub struct LlamaModel {
     model: Model,
     device: Device,
     tokenizer: Tokenizer,
-    cache: MistralCache,
+    cache: LlamaCache,
 }
 
-impl SyncModel for MistralModel {
-    type Session = MistralSession;
+impl SyncModel for LlamaModel {
+    type Session = LlamaSession;
 
     fn new_session(&self) -> anyhow::Result<Self::Session> {
         let mut cache = self.cache.clone();
@@ -106,13 +78,13 @@ impl SyncModel for MistralModel {
     }
 }
 
-impl MistralModel {
+impl LlamaModel {
     fn forward(
         model: &mut Model,
         device: &Device,
         tokens: &[u32],
         seqlen_offset: usize,
-        cache: Option<&mut MistralCache>,
+        cache: Option<&mut LlamaCache>,
     ) -> anyhow::Result<Logits> {
         if tokens.is_empty() {
             return Err(anyhow::anyhow!("Cannot run model on empty input"));
@@ -130,7 +102,7 @@ impl MistralModel {
         model: Model,
         tokenizer: Tokenizer,
         device: Device,
-        cache: MistralCache,
+        cache: LlamaCache,
     ) -> Self {
         Self {
             cache,
@@ -292,7 +264,7 @@ pub fn sample_token(
     for logit in last_logits.iter_mut() {
         let tid = logit.token_id;
         if let Some(stop_on) = stop_on {
-            let token = tokenizer.decode(&[tid], true).unwrap();
+            let token = tokenizer.decode(&[tid ], true).unwrap();
             let combined = end_tokens.clone() + &token;
             if combined.contains(stop_on) && !combined.ends_with(stop_on) {
                 // if the token contains a stop_on token, but not the end of the string, set the probability to 0

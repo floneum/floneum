@@ -1,10 +1,10 @@
-//! # RMistral
+//! # RLlama
 //!
-//! RMistral is a Rust implementation of the quantized [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) language model.
+//! RLlama is a Rust implementation of the quantized [Llama 7B](https://llama.ai/news/announcing-llama-7b/) language model.
 //!
-//! Mistral 7B is a very small but performant language model that can be easily run on your local machine.
+//! Llama 7B is a very small but performant language model that can be easily run on your local machine.
 //!
-//! This library uses [Candle](https://github.com/huggingface/candle) to run Mistral.
+//! This library uses [Candle](https://github.com/huggingface/candle) to run Llama.
 //!
 //! ## Usage
 //!
@@ -12,7 +12,7 @@
 //! use mitral::prelude::*;
 //! #[tokio::main]
 //! async fn main() {
-//!     let mut model = Mistral::default();
+//!     let mut model = Llama::default();
 //!     let prompt = "The capital of France is ";
 //!     let mut result = model.stream_text(prompt).await.unwrap();
 //!
@@ -34,22 +34,25 @@ extern crate accelerate_src;
 mod language_model;
 mod model;
 mod raw;
+mod session;
 mod source;
+
+use crate::raw::Model;
 use llm_samplers::types::Sampler;
-use raw::MistralCache;
+use session::LlamaCache;
 pub use source::*;
 
-use crate::raw::{Config, Model};
-use anyhow::Error as E;
-use candle_core::Device;
-use hf_hub::{api::sync::Api, Repo, RepoType};
-use model::MistralModel;
+use candle_core::{
+    quantized::{ggml_file, gguf_file},
+    Device,
+};
+use model::LlamaModel;
 use std::sync::{Arc, Mutex};
 use tokenizers::Tokenizer;
 
 /// A prelude of commonly used items in RPhi.
 pub mod prelude {
-    pub use crate::{Mistral, MistralBuilder, MistralSource};
+    pub use crate::{Llama, LlamaBuilder, LlamaSource};
     pub use kalosm_language_model::*;
 }
 
@@ -65,38 +68,37 @@ enum Task {
     },
 }
 
-
 type SyncCallback = Box<
     dyn for<'a> FnOnce(
-            &'a mut MistralModel,
+            &'a mut LlamaModel,
         )
             -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>>
         + Send>;
 
-/// A quantized Mistral language model with support for streaming generation.
-pub struct Mistral {
+/// A quantized Llama language model with support for streaming generation.
+pub struct Llama {
     task_sender: tokio::sync::mpsc::UnboundedSender<Task>,
     thread_handle: Option<std::thread::JoinHandle<()>>,
     tokenizer: Arc<Tokenizer>,
 }
 
-impl Drop for Mistral {
+impl Drop for Llama {
     fn drop(&mut self) {
         self.task_sender.send(Task::Kill).unwrap();
         self.thread_handle.take().unwrap().join().unwrap();
     }
 }
 
-impl Default for Mistral {
+impl Default for Llama {
     fn default() -> Self {
-        Mistral::builder().build().unwrap()
+        Llama::builder().build().unwrap()
     }
 }
 
-impl Mistral {
-    /// Create a new builder for a Mistral model.
-    pub fn builder() -> MistralBuilder {
-        MistralBuilder::default()
+impl Llama {
+    /// Create a new builder for a Llama model.
+    pub fn builder() -> LlamaBuilder {
+        LlamaBuilder::default()
     }
 
     /// Check if the model has been downloaded.
@@ -105,12 +107,12 @@ impl Mistral {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn new(model: Model, tokenizer: Tokenizer, device: Device, cache: MistralCache) -> Self {
+    fn new(model: Model, tokenizer: Tokenizer, device: Device, cache: LlamaCache) -> Self {
         let (task_sender, mut task_receiver) = tokio::sync::mpsc::unbounded_channel();
         let arc_tokenizer = Arc::new(tokenizer.clone());
 
         let thread_handle = std::thread::spawn(move || {
-            let mut inner = MistralModel::new(model, tokenizer, device, cache);
+            let mut inner = LlamaModel::new(model, tokenizer, device, cache);
             tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
@@ -164,18 +166,18 @@ impl Mistral {
     }
 }
 
-/// A builder with configuration for a Mistral model.
+/// A builder with configuration for a Llama model.
 #[derive(Default)]
-pub struct MistralBuilder {
+pub struct LlamaBuilder {
     /// Run on CPU rather than on GPU.
     cpu: bool,
 
-    source: source::MistralSource,
+    source: source::LlamaSource,
 
     flash_attn: bool,
 }
 
-impl MistralBuilder {
+impl LlamaBuilder {
     /// Set whether to run on CPU rather than on GPU.
     pub fn with_cpu(mut self, cpu: bool) -> Self {
         self.cpu = cpu;
@@ -183,7 +185,7 @@ impl MistralBuilder {
     }
 
     /// Set the source for the model.
-    pub fn with_source(mut self, source: source::MistralSource) -> Self {
+    pub fn with_source(mut self, source: source::LlamaSource) -> Self {
         self.source = source;
         self
     }
@@ -195,24 +197,27 @@ impl MistralBuilder {
     }
 
     /// Build the model (this will download the model if it is not already downloaded)
-    pub fn build(self) -> anyhow::Result<Mistral> {
-        let api = Api::new()?;
-        let repo = api.repo(Repo::with_revision(
-            self.source.model_id,
-            RepoType::Model,
-            self.source.revision,
-        ));
-        let tokenizer_filename = repo.get(&self.source.tokenizer_file)?;
-        let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(E::msg)?;
+    pub fn build(self) -> anyhow::Result<Llama> {
+        let tokenizer = self.source.tokenizer()?;
 
         let device = Device::Cpu;
-        let config = Config::config_7b_v0_1(self.flash_attn);
-        let filename = repo.get(&self.source.gguf_file)?;
-        let vb = candle_transformers::quantized_var_builder::VarBuilder::from_gguf(filename)?;
-        let model = Model::new(&config, vb)?;
-        let cache = MistralCache::new(&config);
+        let filename = self.source.model()?;
+        let mut file = std::fs::File::open(&filename)?;
+        let model = match filename.extension().and_then(|v| v.to_str()) {
+            Some("gguf") => {
+                let model = gguf_file::Content::read(&mut file)?;
+                Model::from_gguf(model, &mut file)?
+            }
+            Some("ggml" | "bin") | Some(_) | None => {
+                let model = ggml_file::Content::read(&mut file)?;
+                let gqa = self.source.group_query_attention;
+                Model::from_ggml(model, gqa as usize)?
+            }
+        };
 
-        Ok(Mistral::new(model, tokenizer, device, cache))
+        let cache = LlamaCache::new(&model);
+
+        Ok(Llama::new(model, tokenizer, device, cache))
     }
 }
 

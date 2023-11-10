@@ -42,6 +42,7 @@ dashmap = "5.5.3"
 rbert.workspace = true
 rphi.workspace = true
 rmistral.workspace = true
+kalosm-llama.workspace = true
 pin-project = "1"
 kalosm-streams.workspace = true
 pulldown-cmark = "0.9.3"
