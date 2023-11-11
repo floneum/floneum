@@ -1,15 +1,15 @@
-package plugins:main
+package plugins:main;
 
 interface imports {
-  use types.{embedding, structure, model, model-type, embedding-db, node, page}
+  use types.{embedding, structure, model, model-type, embedding-db, node, page};
   
-  store: func(key: list<u8>, value: list<u8>)
+  store: func(key: list<u8>, value: list<u8>);
 
-  load: func(key: list<u8>) -> list<u8>
+  load: func(key: list<u8>) -> list<u8>;
 
-  unload: func(key: list<u8>)
+  unload: func(key: list<u8>);
 
-  log-to-user: func(information: string)
+  log-to-user: func(information: string);
 }
 
 interface types {
@@ -19,45 +19,45 @@ interface types {
   }
 
   resource page {
-    constructor(mode: browser-mode, url: string)
-    find-in-current-page: func(selector: string) -> node
-    screenshot-browser: func() -> list<u8>
+    constructor(mode: browser-mode, url: string);
+    find-in-current-page: func(selector: string) -> node;
+    screenshot-browser: func() -> list<u8>;
   }
 
   resource node {
-    get-element-text: func() -> string
-    click-element: func()
-    type-into-element: func(keys: string)
-    get-element-outer-html: func() -> string
-    screenshot-element: func() -> list<u8>
-    find-child-of-element: func(selector: string) -> node
+    get-element-text: func() -> string;
+    click-element: func();
+    type-into-element: func(keys: string);
+    get-element-outer-html: func() -> string;
+    screenshot-element: func() -> list<u8>;
+    find-child-of-element: func(selector: string) -> node;
   }
 
   resource embedding-db {
-    constructor(embeddings: list<embedding>, documents: list<string>)
-    add-embedding: func(embedding: embedding, documents: string)
-    find-closest-documents: func(search: embedding, count: u32) -> list<string>
-    find-documents-within: func(search: embedding, within: float32) -> list<string>
+    constructor(embeddings: list<embedding>, documents: list<string>);
+    add-embedding: func(embedding: embedding, documents: string);
+    find-closest-documents: func(search: embedding, count: u32) -> list<string>;
+    find-documents-within: func(search: embedding, within: float32) -> list<string>;
   }
 
   resource model {
-    constructor(ty: model-type)
-    model-downloaded: static func(ty: model-type) -> bool
-    infer: func(input: string, max-tokens: option<u32>, stop-on: option<string>) -> string
-    infer-structured: func(input: string, max-tokens: option<u32>, structure: structure) -> string
+    constructor(ty: model-type);
+    model-downloaded: static func(ty: model-type) -> bool;
+    infer: func(input: string, max-tokens: option<u32>, stop-on: option<string>) -> string;
+    infer-structured: func(input: string, max-tokens: option<u32>, structure: structure) -> string;
   }
 
   resource embedding-model {
-    constructor(ty: embedding-model-type)
-    model-downloaded: static func(ty: embedding-model-type) -> bool
-    get-embedding: func(document: string) -> embedding
+    constructor(ty: embedding-model-type);
+    model-downloaded: static func(ty: embedding-model-type) -> bool;
+    get-embedding: func(document: string) -> embedding;
   }
 
   resource structure {
-    num: static func(num: number-parameters) -> structure
-    literal: static func(literal: string) -> structure
-    or: static func(or: either-structure) -> structure
-    then: static func(then: then-structure) -> structure
+    num: static func(num: number-parameters) -> structure;
+    literal: static func(literal: string) -> structure;
+    or: static func(or: either-structure) -> structure;
+    then: static func(then: then-structure) -> structure;
   }
 
   record embedding {
@@ -164,23 +164,23 @@ interface types {
 }
 
 interface definitions {
-  use types.{definition, input, output}
+  use types.{definition, input, output};
 
-  structure: func() -> definition
+  structure: func() -> definition;
 
-  run: func(inputs: list<input>) -> list<output>
+  run: func(inputs: list<input>) -> list<output>;
 }
 
 world exports {
-  import imports
-  import types
+  import imports;
+  import types;
 }
 
 world plugin-world {
-  export definitions
+  export definitions;
 }
 
 world both {
-  import imports
-  export definitions
+  import imports;
+  export definitions;
 }
