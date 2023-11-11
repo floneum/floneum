@@ -6,3 +6,4 @@
 
 pub use rwuerstchen::*;
 pub use segment_anything_rs::*;
+pub use kalosm_ocr::*;

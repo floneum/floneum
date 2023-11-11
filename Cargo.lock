@@ -4940,9 +4940,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "futures-util",
+ "image 0.24.7",
  "kalosm-language",
  "kalosm-sound",
  "kalosm-streams",
+ "kalosm-vision",
  "llm-samplers",
  "rand 0.8.5",
  "tokio",
@@ -5070,6 +5072,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "kalosm-ocr"
+version = "0.1.0"
+dependencies = [
+ "accelerate-src",
+ "anyhow",
+ "candle-core",
+ "candle-nn",
+ "candle-transformers",
+ "cudarc",
+ "half 2.3.1",
+ "hf-hub",
+ "image 0.24.7",
+ "imageproc",
+ "intel-mkl-src",
+ "tokenizers 0.13.4",
+ "tracing",
+]
+
+[[package]]
 name = "kalosm-sample"
 version = "0.1.0"
 dependencies = [
@@ -5127,6 +5148,7 @@ name = "kalosm-vision"
 version = "0.1.0"
 dependencies = [
  "image 0.24.7",
+ "kalosm-ocr",
  "rwuerstchen",
  "segment-anything-rs",
 ]
