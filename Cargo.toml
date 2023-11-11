@@ -62,6 +62,7 @@ members = [
     "rmistral",
     "rwuerstchen",
     "segment-anything-rs",
+    "kalosm-ocr",
     "kalosm",
     "kalosm-language",
     "language-model",
@@ -130,6 +131,7 @@ kalosm-llama = { path = "./kalosm-llama", version = "0.1.0" }
 rwhisper = { path = "./rwhisper", version = "0.1.0" }
 rwuerstchen = { path = "./rwuerstchen", version = "0.1.0" }
 segment-anything-rs = { path = "./segment-anything-rs", version = "0.1.0" }
+kalosm-ocr = { path = "./kalosm-ocr", version = "0.1.0" }
 llm-samplers = "=0.0.7"
 
 # The profile that 'cargo dist' will build with
