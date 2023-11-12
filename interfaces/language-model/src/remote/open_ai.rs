@@ -18,7 +18,6 @@ macro_rules! openai_model {
 
         /// A builder for
         #[doc = $model]
-        #[derive(Debug, Default)]
         pub struct $tybuilder {
             config: async_openai::config::OpenAIConfig,
         }
@@ -51,9 +50,14 @@ macro_rules! openai_model {
 
             /// Build the model.
             pub fn build(self) -> $ty {
-                $ty {
-                    client: Client::with_config(self.config),
-                }
+                $ty { client: Client::with_config(self.config) }
+            }
+        }
+
+        impl $ty {
+            /// Creates a new builder
+            pub fn builder() -> $tybuilder {
+                $tybuilder::new()
             }
         }
 
