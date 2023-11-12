@@ -16,35 +16,48 @@ macro_rules! openai_model {
             client: Client<async_openai::config::OpenAIConfig>,
         }
 
+        /// A builder for
+        #[doc = $model]
+        pub struct $tybuilder {
+            config: async_openai::config::OpenAIConfig,
+        }
+
         impl $tybuilder {
             /// Creates a new builder
             pub fn new() -> Self {
                 Self {
-                    client: Client::new(),
+                    config: Default::default(),
                 }
             }
 
             /// Sets the API key for the builder.
             pub fn with_api_key(mut self, api_key: &str) -> Self {
-                self.client = self.client.with_api_key(api_key);
+                self.config = self.config.with_api_key(api_key);
                 self
             }
 
             /// Set the base URL of the API.
             pub fn with_base_url(mut self, base_url: &str) -> Self {
-                self.client = self.client.with_api_base(base_url);
+                self.config = self.config.with_api_base(base_url);
                 self
             }
 
             /// Set the organization ID for the builder.
             pub fn with_organization_id(mut self, organization_id: &str) -> Self {
-                self.client = self.client.with_org_id(organization_id);
+                self.config = self.config.with_org_id(organization_id);
                 self
             }
 
             /// Build the model.
             pub fn build(self) -> $ty {
-                $ty { client: self.client }
+                $ty { client: Client::with_config(self.config) }
+            }
+        }
+
+        impl $ty {
+            /// Creates a new builder
+            pub fn builder() -> $tybuilder {
+                $tybuilder::new()
             }
         }
 
@@ -107,8 +120,8 @@ macro_rules! openai_model {
     };
 }
 
-openai_model!(Gpt3_5, "gpt-3.5-turbo");
-openai_model!(Gpt4, "text-davinci-003");
+openai_model!(Gpt3_5, Gpt3_5Builder, "gpt-3.5-turbo");
+openai_model!(Gpt4, Gpt4Builder, "text-davinci-003");
 
 /// A stream of text from OpenAI's API.
 #[pin_project::pin_project]
@@ -147,6 +160,50 @@ impl Stream for MappedResponseStream {
 #[derive(Debug)]
 pub struct AdaEmbedder {
     client: Client<async_openai::config::OpenAIConfig>,
+}
+
+/// A builder for the Ada embedder.
+pub struct AdaEmbedderBuilder {
+    config: async_openai::config::OpenAIConfig,
+}
+
+impl AdaEmbedderBuilder {
+    /// Creates a new builder
+    pub fn new() -> Self {
+        Self {
+            config: Default::default(),
+        }
+    }
+
+    /// Sets the API key for the builder.
+    pub fn with_api_key(mut self, api_key: &str) -> Self {
+        self.config = self.config.with_api_key(api_key);
+        self
+    }
+
+    /// Set the base URL of the API.
+    pub fn with_base_url(mut self, base_url: &str) -> Self {
+        self.config = self.config.with_api_base(base_url);
+        self
+    }
+
+    /// Set the organization ID for the builder.
+    pub fn with_organization_id(mut self, organization_id: &str) -> Self {
+        self.config = self.config.with_org_id(organization_id);
+        self
+    }
+
+    /// Build the model.
+    pub fn build(self) -> AdaEmbedder {
+        AdaEmbedder { client: Client::with_config(self.config) }
+    }
+}
+
+impl AdaEmbedder {
+    /// Creates a new builder
+    pub fn builder() -> AdaEmbedderBuilder {
+        AdaEmbedderBuilder::new()
+    }
 }
 
 impl Default for AdaEmbedder {
