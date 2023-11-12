@@ -10,15 +10,46 @@ use std::sync::Arc;
 use crate::{CreateModel, Embedder, Embedding, GenerationParameters, VectorSpace};
 
 macro_rules! openai_model {
-    ($ty: ident, $model: literal) => {
+    ($ty: ident, $tybuilder: ident, $model: literal) => {
         /// A model that uses OpenAI's API.
         pub struct $ty {
             client: Client<async_openai::config::OpenAIConfig>,
         }
 
-        impl $ty {
-            /// Creates a new OpenAI model.
+        impl $tybuilder {
+            /// Creates a new builder
             pub fn new() -> Self {
+                Self {
+                    client: Client::new(),
+                }
+            }
+
+            /// Sets the API key for the builder.
+            pub fn with_api_key(mut self, api_key: &str) -> Self {
+                self.client = self.client.with_api_key(api_key);
+                self
+            }
+
+            /// Set the base URL of the API.
+            pub fn with_base_url(mut self, base_url: &str) -> Self {
+                self.client = self.client.with_api_base(base_url);
+                self
+            }
+
+            /// Set the organization ID for the builder.
+            pub fn with_organization_id(mut self, organization_id: &str) -> Self {
+                self.client = self.client.with_org_id(organization_id);
+                self
+            }
+
+            /// Build the model.
+            pub fn build(self) -> $ty {
+                $ty { client: self.client }
+            }
+        }
+
+        impl Default for $ty {
+            fn default() -> Self {
                 Self {
                     client: Client::new(),
                 }
