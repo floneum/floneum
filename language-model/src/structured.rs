@@ -66,7 +66,7 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
         }
         let token_id = sampler
             .sample_token(resources, &mut logits)?
-            .ok_or(anyhow::anyhow!("No valid tokens found"))?;
+            .ok_or(anyhow::anyhow!("Failed to sample constrained tokens"))?;
         unprocessed_token_count = 1;
         tokens.push(token_id);
         if let Some((token, result)) = state_map
@@ -93,6 +93,7 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
     }
 }
 
+#[allow(unused, clippy::all)]
 fn update_state<P: Parser>(
     parser: &P,
     parser_state: &mut P::PartialState,
@@ -108,29 +109,31 @@ fn update_state<P: Parser>(
             required_next,
         } => {
             *parser_state = new_state;
-            if required_next.is_empty() {
-                Ok(None)
-            } else {
-                tracing::trace!("Required next: {}", required_next);
-                let result = parser
-                    .parse(parser_state, required_next.as_bytes())
-                    .unwrap_or_else(|_| {
-                        unreachable!("Required next should always be valid attempted to add {} but got error", required_next)
-            });
-                let extra_tokens = tokenizer.encode(&required_next)?;
-                *unprocessed_token_count += extra_tokens.len();
-                tokens.extend(extra_tokens);
-                on_token(required_next.to_string())?;
-                update_state(
-                    parser,
-                    parser_state,
-                    result,
-                    tokenizer,
-                    tokens,
-                    on_token,
-                    unprocessed_token_count,
-                )
-            }
+            // TODO: restore faster required_next tokenization
+            // if required_next.is_empty() {
+            //     Ok(None)
+            // } else {
+            //     tracing::trace!("Required next: {}", required_next);
+            //     let result = parser
+            //         .parse(parser_state, required_next.as_bytes())
+            //         .unwrap_or_else(|_| {
+            //             unreachable!("Required next should always be valid attempted to add {} but got error", required_next)
+            // });
+            //     let extra_tokens = tokenizer.encode(&required_next)?;
+            //     *unprocessed_token_count += extra_tokens.len();
+            //     tokens.extend(extra_tokens);
+            //     on_token(required_next.to_string())?;
+            //     update_state(
+            //         parser,
+            //         parser_state,
+            //         result,
+            //         tokenizer,
+            //         tokens,
+            //         on_token,
+            //         unprocessed_token_count,
+            //     )
+            // }
+            Ok(None)
         }
         kalosm_sample::ParseResult::Finished { result, .. } => Ok(Some(result)),
     }

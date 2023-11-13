@@ -372,6 +372,7 @@ pub struct IndexParserState<PA, E> {
 }
 
 /// A parser that parses a sequence of parsers and returns the index of the first parser that succeeds
+#[derive(Debug, Clone)]
 pub struct IndexParser<S: Parser<Error = E, Output = O, PartialState = PA>, E, O, PA> {
     parsers: Vec<S>,
 }
