@@ -80,7 +80,7 @@ pub fn export_plugin(args: TokenStream, input: TokenStream) -> TokenStream {
     let mut input_idents: Vec<Ident> = Vec::new();
     let mut input_types: Vec<IoDefinitionType> = Vec::new();
     let mut extract_inputs = Vec::new();
-    for (idx, i) in input.sig.inputs.iter_mut().enumerate() {
+    for i in input.sig.inputs.iter_mut() {
         if let FnArg::Typed(typed) = i {
             let ident: Ident = {
                 let pat = &*typed.pat;
@@ -104,7 +104,7 @@ pub fn export_plugin(args: TokenStream, input: TokenStream) -> TokenStream {
             input_names.push(name);
             let ty = &typed.ty;
             let ty: IoDefinitionType = try_parse_quote!(#ty);
-            extract_inputs.push(ty.extract(ident, idx));
+            extract_inputs.push(ty.extract(ident));
             input_types.push(ty);
         } else {
             return quote! {
@@ -153,12 +153,14 @@ pub fn export_plugin(args: TokenStream, input: TokenStream) -> TokenStream {
     TokenStream::from(quote! {
         #input
 
-        floneum_rust::export_plugin_world!(Plugin);
+        floneum_rust::inventory::submit! {
+            floneum_rust::LazyGuest::new(|| Box::new(Plugin) as Box<dyn floneum_rust::DynGuest + Send + Sync>)
+        }
 
         pub struct Plugin;
 
-        impl floneum_rust::Definitions for Plugin {
-            fn structure() -> floneum_rust::Definition {
+        impl floneum_rust::DynGuest for Plugin {
+            fn structure(&self) -> floneum_rust::Definition {
                 floneum_rust::Definition {
                     name: #function_name.to_string(),
                     description: #description.to_string(),
@@ -183,7 +185,8 @@ pub fn export_plugin(args: TokenStream, input: TokenStream) -> TokenStream {
             }
 
 
-            fn run(input: Vec<floneum_rust::Input>) -> Vec<floneum_rust::Output> {
+            fn run(&self, input: Vec<floneum_rust::Input>) -> Vec<floneum_rust::Output> {
+                let mut input = input.into_iter();
                 let __inner_fn = #function_ident;
                 #(
                     #extract_inputs
@@ -202,7 +205,7 @@ struct IoDefinitionType {
 }
 
 impl IoDefinitionType {
-    fn extract(&self, ident: Ident, idx: usize) -> proc_macro2::TokenStream {
+    fn extract(&self, ident: Ident) -> proc_macro2::TokenStream {
         let inner = match &self.value_type {
             ValueType::Single(inner) => inner,
             ValueType::Many(inner) => inner,
@@ -260,20 +263,20 @@ impl IoDefinitionType {
         let get_return_value = match &self.value_type {
             ValueType::Single(_) => {
                 quote! {
-                    inner.clone().into()
+                    inner.into()
                 }
             }
             ValueType::Many(_) => {
                 quote! {
                     inner.iter().map(|inner| match inner {
-                        #match_inner => inner.clone().into(),
+                        #match_inner => inner.into(),
                         _ => panic!("unexpected input type {:?}", inner),
                     }).collect()
                 }
             }
         };
         quote! {
-            let __value = &input[#idx];
+            let __value = input.next().unwrap();
             let #ident = match __value {
                 #quote => #get_return_value,
                 _ => panic!("unexpected input type {:?}", __value),
@@ -411,7 +414,7 @@ fn parse_primitive_value_type(ident: &Ident) -> syn::Result<PrimitiveValueType> 
         Ok(PrimitiveValueType::Text)
     } else if ident == "ModelInstance" {
         Ok(PrimitiveValueType::Model)
-    } else if ident == "EmbeddingDbId" {
+    } else if ident == "EmbeddingDb" {
         Ok(PrimitiveValueType::Database)
     } else if ident == "Embedding" {
         Ok(PrimitiveValueType::Embedding)
@@ -430,7 +433,7 @@ fn parse_primitive_value_type(ident: &Ident) -> syn::Result<PrimitiveValueType> 
     } else if ident == "Node" {
         Ok(PrimitiveValueType::Node)
     } else {
-        let error = format!("type {} not allowed. Inputs and outputs must be one of i64, String, ModelInstance, EmbeddingDbId, Embedding, ModelType, bool, PrimitiveValue, Page, Node", ident);
+        let error = format!("type {} not allowed. Inputs and outputs must be one of i64, String, ModelInstance, EmbeddingDatabase, Embedding, ModelType, bool, PrimitiveValue, Page, Node", ident);
         Err(Error::new_spanned(ident, error))
     }
 }
