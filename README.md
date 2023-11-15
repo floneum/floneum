@@ -1,8 +1,8 @@
 # Floneum/Kalosm
 
 This repo has two main projects:
-- [Floneum](./floneum/): A graph editor for AI workflows with a focus on community-made plugins, local AI and safety. ([Download the latest release of Floneum](https://github.com/floneum/floneum/releases/tag/v0.2.0))
-- [Kalosm](./kalosm/): A simple interface for pre-trained models in rust. It makes it easy to interact with pre-trained, language, audio, and image models.
+- [Floneum](./floneum/floneum): A graph editor for AI workflows with a focus on community-made plugins, local AI and safety. ([Download the latest release of Floneum](https://github.com/floneum/floneum/releases/tag/v0.2.0))
+- [Kalosm](./interfaces/kalosm/): A simple interface for pre-trained models in rust. It makes it easy to interact with pre-trained, language, audio, and image models.
 
 ## Community
 
