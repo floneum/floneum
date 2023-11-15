@@ -88,6 +88,27 @@ impl BertSource {
         self.revision = revision;
         self
     }
+
+    /// Create a new [`BertSource`] with the BGE large english preset
+    pub fn bge_large_en() -> Self {
+        Self::default()
+            .with_model_id("BAAI/bge-large-en-v1.5".to_string())
+            .with_revision("refs/pr/5".to_string())
+    }
+
+    /// Create a new [`BertSource`] with the BGE base english preset
+    pub fn bge_base_en() -> Self {
+        Self::default()
+            .with_model_id("BAAI/bge-base-en-v1.5".to_string())
+            .with_revision("refs/pr/1".to_string())
+    }
+
+    /// Create a new [`BertSource`] with the BGE small english preset
+    pub fn bge_small_en() -> Self {
+        Self::default()
+            .with_model_id("BAAI/bge-small-en-v1.5".to_string())
+            .with_revision("refs/pr/3".to_string())
+    }
 }
 
 impl Default for BertSource {

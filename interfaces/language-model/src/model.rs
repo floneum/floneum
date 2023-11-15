@@ -112,6 +112,7 @@ pub struct StreamTextBuilder<'a, M: Model> {
     self_: &'a mut M,
     prompt: &'a str,
     parameters: GenerationParameters,
+    #[allow(clippy::type_complexity)]
     future: fn(
         &'a mut M,
         &'a str,
@@ -123,6 +124,7 @@ pub struct StreamTextBuilder<'a, M: Model> {
 
 impl<'a, M: Model> StreamTextBuilder<'a, M> {
     /// Create a new builder to return from the [`ModelExt::stream_text`] method.
+    #[allow(clippy::type_complexity)]
     pub fn new(
         prompt: &'a str,
         self_: &'a mut M,
@@ -213,6 +215,7 @@ impl<'a, M: Model> IntoFuture for StreamTextBuilder<'a, M> {
 }
 
 /// A builder for the [`ModelExt::generate_text`] method.
+#[allow(clippy::type_complexity)]
 pub struct GenerateTextBuilder<'a, M: Model> {
     self_: &'a mut M,
     prompt: &'a str,
@@ -227,6 +230,7 @@ pub struct GenerateTextBuilder<'a, M: Model> {
 
 impl<'a, M: Model> GenerateTextBuilder<'a, M> {
     /// Create a new builder to return from the [`ModelExt::generate_text`] method.
+    #[allow(clippy::type_complexity)]
     pub fn new(
         prompt: &'a str,
         self_: &'a mut M,
