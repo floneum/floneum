@@ -1,5 +1,5 @@
 //! # Kalosm OCR
-//! 
+//!
 //! A rust wrapper for [TR OCR](https://huggingface.co/docs/transformers/model_doc/trocr)
 //!
 //! ## Usage
@@ -15,7 +15,7 @@
 //!             .unwrap(),
 //!     )
 //!     .unwrap();
-//! 
+//!
 //! println!("{}", text);
 //! ```
 
@@ -35,7 +35,7 @@ use candle_nn::VarBuilder;
 use candle_transformers::models::trocr;
 use hf_hub::api::sync::Api;
 use hf_hub::Repo;
-use image::{ GenericImage, GenericImageView, ImageBuffer, Rgba};
+use image::{GenericImage, GenericImageView, ImageBuffer, Rgba};
 use tokenizers::Tokenizer;
 
 /// A builder for [`Ocr`].
@@ -176,7 +176,7 @@ impl Ocr {
             candle_transformers::models::vit::Config::microsoft_trocr_base_handwritten();
 
         let decoder_config = trocr::TrOCRConfig::default();
-        let  model = trocr::TrOCRModel::new(&encoder_config, &decoder_config, vb)?;
+        let model = trocr::TrOCRModel::new(&encoder_config, &decoder_config, vb)?;
 
         let config = image_processor::ProcessorConfig::default();
         let processor = image_processor::ViTImageProcessor::new(&config);
@@ -204,7 +204,7 @@ impl Ocr {
     ///             .unwrap(),
     ///     )
     ///     .unwrap();
-    /// 
+    ///
     /// println!("{}", text);
     /// ```
     pub fn recognize_text(&mut self, settings: OcrInferenceSettings) -> anyhow::Result<String> {

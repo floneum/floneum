@@ -197,7 +197,7 @@ impl<S: VectorSpace> LocalSessionInner<S> {
         let parameters = InferenceParameters { sampler };
 
         let (callback, stream) = inference_callback(stop_on.map(|s| s.to_string()));
-        if let Err(_) = out.send(stream) {
+        if out.send(stream).is_err() {
             log::error!("Failed to send stream");
             return;
         }
@@ -237,7 +237,7 @@ impl<S: VectorSpace> LocalSessionInner<S> {
         };
 
         let (callback, stream) = inference_callback(stop_on);
-        if let Err(_) = out.send(stream) {
+        if out.send(stream).is_err() {
             log::error!("Failed to send stream");
             return;
         }

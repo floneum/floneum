@@ -18,6 +18,7 @@ macro_rules! openai_model {
 
         /// A builder for
         #[doc = $model]
+        #[derive(Debug, Default)]
         pub struct $tybuilder {
             config: async_openai::config::OpenAIConfig,
         }
@@ -50,7 +51,9 @@ macro_rules! openai_model {
 
             /// Build the model.
             pub fn build(self) -> $ty {
-                $ty { client: Client::with_config(self.config) }
+                $ty {
+                    client: Client::with_config(self.config),
+                }
             }
         }
 
@@ -163,6 +166,7 @@ pub struct AdaEmbedder {
 }
 
 /// A builder for the Ada embedder.
+#[derive(Debug, Default)]
 pub struct AdaEmbedderBuilder {
     config: async_openai::config::OpenAIConfig,
 }
@@ -195,7 +199,9 @@ impl AdaEmbedderBuilder {
 
     /// Build the model.
     pub fn build(self) -> AdaEmbedder {
-        AdaEmbedder { client: Client::with_config(self.config) }
+        AdaEmbedder {
+            client: Client::with_config(self.config),
+        }
     }
 }
 
