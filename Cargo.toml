@@ -17,89 +17,89 @@ dioxus = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signal
 
 [workspace]
 members = [
-    "floneum",
-    "plugin",
-    "rust_adapter",
-    "rust_macro",
-    "floneumite",
-    "floneum-cli",
-    "rbert",
-    "kalosm-llama",
-    "rphi",
-    "rwhisper",
-    "rmistral",
-    "rwuerstchen",
-    "segment-anything-rs",
-    "kalosm-ocr",
-    "kalosm",
-    "kalosm-language",
-    "language-model",
-    "kalosm-sample",
-    "kalosm-vision",
-    "kalosm-sound",
-    "kalosm-streams",
-    "plugins/generate_text",
-    "plugins/generate_structured_text",
-    "plugins/format",
-    "plugins/search",
-    "plugins/embedding",
-    "plugins/embedding_db",
-    "plugins/add_embedding",
-    "plugins/search_engine",
-    "plugins/write_to_file",
-    "plugins/read_from_file",
-    "plugins/if_statement",
-    "plugins/contains",
-    "plugins/python",
-    "plugins/create_tab",
-    "plugins/find_node",
-    "plugins/click_node",
-    "plugins/node_text",
-    "plugins/type_in_node",
-    "plugins/navigate_to",
-    "plugins/find_child_node",
-    "plugins/get_article",
-    "plugins/read_rss",
-    "plugins/split",
-    "plugins/join",
-    "plugins/slice",
-    "plugins/add_to_list",
-    "plugins/new_list",
-    "plugins/length",
-    "plugins/more_than",
-    "plugins/less_than",
-    "plugins/equals",
-    "plugins/and",
-    "plugins/or",
-    "plugins/not",
-    "plugins/add",
-    "plugins/subtract",
-    "plugins/multiply",
-    "plugins/divide",
-    "plugins/power",
-    "plugins/number",
-    "plugins/string",
+    "models/rbert",
+    "models/kalosm-llama",
+    "models/rphi",
+    "models/rwhisper",
+    "models/rmistral",
+    "models/rwuerstchen",
+    "models/segment-anything-rs",
+    "models/kalosm-ocr",
+    "interfaces/kalosm",
+    "interfaces/kalosm-language",
+    "interfaces/language-model",
+    "interfaces/kalosm-sample",
+    "interfaces/kalosm-vision",
+    "interfaces/kalosm-sound",
+    "interfaces/kalosm-streams",
+    "floneum/floneum",
+    "floneum/plugin",
+    "floneum/rust_adapter",
+    "floneum/rust_macro",
+    "floneum/floneumite",
+    "floneum/floneum-cli",
+    "floneum/plugins/generate_text",
+    "floneum/plugins/generate_structured_text",
+    "floneum/plugins/format",
+    "floneum/plugins/search",
+    "floneum/plugins/embedding",
+    "floneum/plugins/embedding_db",
+    "floneum/plugins/add_embedding",
+    "floneum/plugins/search_engine",
+    "floneum/plugins/write_to_file",
+    "floneum/plugins/read_from_file",
+    "floneum/plugins/if_statement",
+    "floneum/plugins/contains",
+    "floneum/plugins/python",
+    "floneum/plugins/create_tab",
+    "floneum/plugins/find_node",
+    "floneum/plugins/click_node",
+    "floneum/plugins/node_text",
+    "floneum/plugins/type_in_node",
+    "floneum/plugins/navigate_to",
+    "floneum/plugins/find_child_node",
+    "floneum/plugins/get_article",
+    "floneum/plugins/read_rss",
+    "floneum/plugins/split",
+    "floneum/plugins/join",
+    "floneum/plugins/slice",
+    "floneum/plugins/add_to_list",
+    "floneum/plugins/new_list",
+    "floneum/plugins/length",
+    "floneum/plugins/more_than",
+    "floneum/plugins/less_than",
+    "floneum/plugins/equals",
+    "floneum/plugins/and",
+    "floneum/plugins/or",
+    "floneum/plugins/not",
+    "floneum/plugins/add",
+    "floneum/plugins/subtract",
+    "floneum/plugins/multiply",
+    "floneum/plugins/divide",
+    "floneum/plugins/power",
+    "floneum/plugins/number",
+    "floneum/plugins/string",
 ]
 
 [workspace.dependencies]
 candle-core = { version = "0.3.1" }
 candle-nn = { version = "0.3.1" }
 candle-transformers = { version = "0.3.1" }
-kalosm-sample = { path = "./kalosm-sample", version = "0.1.0" }
-kalosm-language-model = { path = "./language-model", version = "0.1.0" }
-kalosm-streams = { path = "./kalosm-streams", version = "0.1.0" }
-kalosm-language = { path = "./kalosm-language", version = "0.1.0" }
-kalosm-sound = { path = "./kalosm-sound", version = "0.1.0" }
-kalosm-vision = { path = "./kalosm-vision", version = "0.1.0" }
-kalosm = { path = "./kalosm", version = "0.1.0" }
-rphi = { path = "./rphi", version = "0.1.0" }
-rbert = { path = "./rbert", version = "0.1.0" }
-rmistral = { path = "./rmistral", version = "0.1.0" }
-kalosm-llama = { path = "./kalosm-llama", version = "0.1.0" }
-rwhisper = { path = "./rwhisper", version = "0.1.0" }
-rwuerstchen = { path = "./rwuerstchen", version = "0.1.0" }
-segment-anything-rs = { path = "./segment-anything-rs", version = "0.1.0" }
-kalosm-ocr = { path = "./kalosm-ocr", version = "0.1.0" }
+kalosm = { path = "./interfaces/kalosm", version = "0.1.0" }
+kalosm-sample = { path = "./interfaces/kalosm-sample", version = "0.1.0" }
+kalosm-language-model = { path = "./interfaces/language-model", version = "0.1.0" }
+kalosm-streams = { path = "./interfaces/kalosm-streams", version = "0.1.0" }
+kalosm-language = { path = "./interfaces/kalosm-language", version = "0.1.0" }
+kalosm-sound = { path = "./interfaces/kalosm-sound", version = "0.1.0" }
+kalosm-vision = { path = "./interfaces/kalosm-vision", version = "0.1.0" }
+rphi = { path = "./models/rphi", version = "0.1.0" }
+rbert = { path = "./models/rbert", version = "0.1.0" }
+rmistral = { path = "./models/rmistral", version = "0.1.0" }
+kalosm-llama = { path = "./models/kalosm-llama", version = "0.1.0" }
+rwhisper = { path = "./models/rwhisper", version = "0.1.0" }
+rwuerstchen = { path = "./models/rwuerstchen", version = "0.1.0" }
+segment-anything-rs = { path = "./models/segment-anything-rs", version = "0.1.0" }
+kalosm-ocr = { path = "./models/kalosm-ocr", version = "0.1.0" }
 llm-samplers = "=0.0.7"
 
 # The profile that 'cargo dist' will build with
