@@ -4,6 +4,7 @@ use dioxus_signals::use_signal;
 use std::{fmt::Display, str::FromStr};
 
 use serde::{de::DeserializeOwned, Serialize};
+use dioxus_desktop::tao::clipboard::Clipboard;
 
 use crate::use_application_state;
 
@@ -37,7 +38,7 @@ pub(crate) fn SaveMenu(cx: Scope) -> Element {
                     class: "p-2 {Color::foreground_color()} {Color::text_color()}",
                     onclick: move |_| {
                         async move {
-                            let mut clipboard = dioxus_std::clipboard::Clipboard::new().unwrap();
+                            let mut clipboard = Clipboard::new();
                             let application = application.read();
                             if let Some(id) = &application.last_save_id {
                                 clipboard.set_content(id.to_string()).unwrap();
