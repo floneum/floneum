@@ -3,8 +3,8 @@ use dioxus::prelude::*;
 use dioxus_signals::use_signal;
 use std::{fmt::Display, str::FromStr};
 
+use dioxus_std::clipboard::use_clipboard;
 use serde::{de::DeserializeOwned, Serialize};
-use dioxus_desktop::tao::clipboard::Clipboard;
 
 use crate::use_application_state;
 
@@ -20,6 +20,7 @@ pub(crate) fn SaveMenu(cx: Scope) -> Element {
         .unwrap_or_default();
     let error = use_signal(cx, || None);
     let current_error = error.read();
+    let clipboard = use_clipboard(cx);
 
     render! {
         div {
@@ -37,11 +38,11 @@ pub(crate) fn SaveMenu(cx: Scope) -> Element {
                 button {
                     class: "p-2 {Color::foreground_color()} {Color::text_color()}",
                     onclick: move |_| {
+                        to_owned![clipboard];
                         async move {
-                            let mut clipboard = Clipboard::new();
                             let application = application.read();
                             if let Some(id) = &application.last_save_id {
-                                clipboard.set_content(id.to_string()).unwrap();
+                                clipboard.set(id.to_string()).unwrap();
                             }
                         }
                     },
@@ -121,7 +122,7 @@ impl<T> FromStr for StorageId<T> {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(StorageId(
-            s.split("/").last().unwrap_or(s).to_string(),
+            s.split('/').last().unwrap_or(s).to_string(),
             std::marker::PhantomData,
         ))
     }

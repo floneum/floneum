@@ -45,7 +45,8 @@ static EXPORTED_DEFINITIONS: Lazy<Box<dyn DynGuest + Send + Sync>> = Lazy::new(|
     (inventory::iter::<LazyGuest>
         .into_iter()
         .next()
-        .expect("no plugin exported").0)()
+        .expect("no plugin exported")
+        .0)()
 });
 
 struct ExportedDefinitions;
