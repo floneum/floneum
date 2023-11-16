@@ -21,11 +21,57 @@ const COOLDOWN: Duration = Duration::from_secs(5);
 /// Feedback that can be given to the crawler after visiting a page.
 pub enum CrawlFeedback {
     /// Continue crawling from this page.
-    Continue,
-    /// Dont follow any links on this page.
-    DontFollow,
+    Continue(Box<dyn LinkFilter>),
     /// Stop the entire crawler
     Stop,
+}
+
+impl CrawlFeedback {
+    /// Follow all links from the current page
+    pub fn follow_all() -> Self {
+        Self::Continue(Box::new(|_: &Url| true)),
+    }
+
+    /// Follow any links from the current page that fit a filter
+    pub fn follow_filtered(filter: impl LinkFilter + 'static) -> Self {
+        Self::Continue(Box::new(filter)),
+    }
+
+    /// Follow no links from the current page
+    pub fn follow_none(filter: impl LinkFilter + 'static) -> Self {
+        Self::Continue(Box::new(|_: &Url| false)),
+    }
+
+    /// Follow any links that match the given domain
+    pub fn follow_domain(domain: impl Into<String>) -> Self {
+        let domain = domain.into();
+        Self::Continue(Box::new(|url: &Url| url.domain() = Some(&domain))),
+    }
+
+    /// Stop the entire crawler
+    pub fn stop() -> Self {
+        Self::Stop
+    }
+
+    /// Check if the given URL should be followed
+    pub fn should_follow(&mut self, url: &Url) -> bool {
+        match Self {
+            Self::Continue(filter) => filter.follow_link(url),
+            Self::Stop => false
+        }
+    }
+}
+
+/// A filter for links that determines if the link should be followed
+/// This is automatically implement for any `FnMut(&Url) -> bool` function
+pub trait LinkFilter {
+    fn follow_link(&mut self, link: &Url) -> bool;
+}
+
+impl<F: FnMut(&Url) -> bool> LinkFilter for F {
+    fn follow_link(&mut self, link: &Url) -> bool {
+        (self)(link)
+    }
 }
 
 /// Trait for a callback that is called when a page is visited.
@@ -58,17 +104,17 @@ pub enum CrawlFeedback {
 ///                 real_visited.fetch_add(1, Ordering::SeqCst);
 ///                 let current_count = count.load(Ordering::SeqCst);
 ///                 if current_count > 1000 {
-///                     return CrawlFeedback::Stop;
+///                     return CrawlFeedback::stop();
 ///                 }
 ///
 ///                 let Ok(page) = page.article().await else {
-///                     return CrawlFeedback::DontFollow;
+///                     return CrawlFeedback::follow_none();
 ///                 };
 ///
 ///                 let body = page.body();
 ///
 ///                 if body.len() < 100 {
-///                     return CrawlFeedback::DontFollow;
+///                     return CrawlFeedback::follow_none();
 ///                 }
 ///
 ///                 println!("Title: {}", page.title());
@@ -249,13 +295,13 @@ impl<T: CrawlingCallback> DomainQueue<T> {
                     let feedback = visit.await;
 
                     match feedback {
-                        CrawlFeedback::Continue => match page.links().await {
+                        CrawlFeedback::Continue(filter) => match page.links().await {
                             Ok(new_urls) => {
+                                new_urls.retain(|url| filter.should_follow(&url));
                                 crawler.add_urls(new_urls);
                             }
                             Err(err) => tracing::error!("Error getting links: {}", err),
                         },
-                        CrawlFeedback::DontFollow => {}
                         CrawlFeedback::Stop => {
                             crawler.abort();
                             return;
