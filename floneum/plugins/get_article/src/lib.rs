@@ -17,7 +17,7 @@ fn get_article(
     url: String,
 ) -> String {
     let base_url = Url::parse(&url).unwrap();
-    let html = get_request(&url, &[]);
-    let cleaned = readability::extractor::extract(&mut html.as_bytes(), &base_url).unwrap();
+    let html = Page::new(BrowserMode::Headless, &url);
+    let cleaned = readability::extractor::extract(&mut html.html().as_bytes(), &base_url).unwrap();
     cleaned.text
 }

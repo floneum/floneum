@@ -7,20 +7,17 @@ use floneum_rust::*;
 /// vec![
 ///     Example {
 ///         name: "example".into(),
-///         inputs: vec![TabId { id: 0 }.into_input_value(), String::from("https://floneum.com").into_input_value()],
-///         outputs: vec![TabId { id: 0 }.into_return_value()],
+///         inputs: vec![String::from("https://floneum.com").into_input_value()],
+///         outputs: vec![Page::new(BrowserMode::Headless, "https://floneum.com").into_return_value()],
 ///     },
 /// ]
 fn navigate_to(
-    /// The tab to navigate
-    tab: Tab,
     /// The URL to navigate to
     url: String,
-) -> Tab {
+) -> Page {
     if url.starts_with("http://") || url.starts_with("https://") {
-        tab.goto(&url);
+        Page::new(BrowserMode::Headless, &url)
     } else {
-        tab.goto(&format!("http://{}", url));
+        Page::new(BrowserMode::Headless, &format!("http://{}", url))
     }
-    tab
 }

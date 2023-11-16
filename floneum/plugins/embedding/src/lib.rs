@@ -13,8 +13,8 @@ use floneum_rust::*;
 ///         outputs: vec![Embedding { vector: vec![0.0, 0.0, 0.0] }.into_return_value()],
 ///     },
 /// ]
-fn embedding(model_type: ModelType, input: String) -> Embedding {
-    let model = ModelInstance::new(model_type);
+fn embedding(model_type: EmbeddingModelType, input: String) -> Embedding {
+    let model = EmbeddingModel::new(model_type);
 
     model.get_embedding(&input)
 }

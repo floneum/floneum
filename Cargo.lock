@@ -2828,7 +2828,7 @@ version = "0.1.0"
 name = "floneum_add"
 version = "0.1.0"
 dependencies = [
- "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -2861,13 +2861,6 @@ dependencies = [
 
 [[package]]
 name = "floneum_contains"
-version = "0.1.0"
-dependencies = [
- "floneum_rust",
-]
-
-[[package]]
-name = "floneum_create_tab"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
@@ -3071,6 +3064,9 @@ name = "floneum_python"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "malachite-base",
+ "malachite-bigint",
+ "malachite-q",
  "rustpython-vm",
 ]
 
@@ -5675,13 +5671,13 @@ checksum = "b8dd856d451cc0da70e2ef2ce95a18e39a93b7558bedf10201ad28503f918568"
 
 [[package]]
 name = "malachite"
-version = "0.4.4"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "220cb36c52aa6eff45559df497abe0e2a4c1209f92279a746a399f622d7b95c7"
+checksum = "f6cf7f4730c30071ba374fac86ad35b1cb7a0716f774737768667ea3fa1828e3"
 dependencies = [
- "malachite-base 0.4.4",
- "malachite-nz 0.4.4",
- "malachite-q 0.4.4",
+ "malachite-base",
+ "malachite-nz",
+ "malachite-q",
 ]
 
 [[package]]
@@ -5698,20 +5694,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "malachite-base"
-version = "0.4.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6538136c5daf04126d6be4899f7fe4879b7f8de896dd1b4210fe6de5b94f2555"
-dependencies = [
- "itertools 0.11.0",
- "ryu",
-]
-
-[[package]]
 name = "malachite-bigint"
-version = "0.1.1"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76c3eca3b5df299486144c8423c45c24bdf9e82e2452c8a1eeda547c4d8b5d41"
+checksum = "8a5110aee54537b0cef214efbebdd7df79b7408db8eef4f6a4b6db9d0d8fc01b"
 dependencies = [
  "derive_more",
  "malachite",
@@ -5728,18 +5714,7 @@ checksum = "c89e21c64b7af5be3dc8cef16f786243faf59459fe4ba93b44efdeb264e5ade4"
 dependencies = [
  "embed-doc-image",
  "itertools 0.9.0",
- "malachite-base 0.3.2",
-]
-
-[[package]]
-name = "malachite-nz"
-version = "0.4.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f0b05577b7a3f09433106460b10304f97fc572f0baabf6640e6cb1e23f5fc52"
-dependencies = [
- "embed-doc-image",
- "itertools 0.11.0",
- "malachite-base 0.4.4",
+ "malachite-base",
 ]
 
 [[package]]
@@ -5749,19 +5724,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3755e541d5134b5016594c9043094172c4dda9259b3ce824a7b8101941850360"
 dependencies = [
  "itertools 0.9.0",
- "malachite-base 0.3.2",
- "malachite-nz 0.3.2",
-]
-
-[[package]]
-name = "malachite-q"
-version = "0.4.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1cfdb4016292e6acd832eaee261175f3af8bbee62afeefe4420ebce4c440cb5"
-dependencies = [
- "itertools 0.11.0",
- "malachite-base 0.4.4",
- "malachite-nz 0.4.4",
+ "malachite-base",
+ "malachite-nz",
 ]
 
 [[package]]
@@ -8241,9 +8205,9 @@ dependencies = [
  "itertools 0.10.5",
  "libc",
  "lock_api",
- "malachite-base 0.3.2",
+ "malachite-base",
  "malachite-bigint",
- "malachite-q 0.3.2",
+ "malachite-q",
  "num-complex",
  "num-traits",
  "once_cell",

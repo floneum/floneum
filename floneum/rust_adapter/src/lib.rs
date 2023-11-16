@@ -124,6 +124,36 @@ impl IntoPrimitiveValue for ModelType {
     }
 }
 
+impl IntoPrimitiveValue for Model {
+    fn into_primitive_value(self) -> PrimitiveValue {
+        PrimitiveValue::Model(self)
+    }
+}
+
+impl IntoPrimitiveValue for EmbeddingModel {
+    fn into_primitive_value(self) -> PrimitiveValue {
+        PrimitiveValue::EmbeddingModel(self)
+    }
+}
+
+impl IntoPrimitiveValue for EmbeddingModelType {
+    fn into_primitive_value(self) -> PrimitiveValue {
+        PrimitiveValue::EmbeddingModelType(self)
+    }
+}
+
+impl IntoPrimitiveValue for Node {
+    fn into_primitive_value(self) -> PrimitiveValue {
+        PrimitiveValue::Node(self)
+    }
+}
+
+impl IntoPrimitiveValue for Page {
+    fn into_primitive_value(self) -> PrimitiveValue {
+        PrimitiveValue::Page(self)
+    }
+}
+
 impl IntoPrimitiveValue for bool {
     fn into_primitive_value(self) -> PrimitiveValue {
         PrimitiveValue::Boolean(self)

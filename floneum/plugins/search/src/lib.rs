@@ -11,7 +11,7 @@ use floneum_rust::*;
 /// vec![
 ///     Example {
 ///         name: "example".into(),
-///         inputs: vec![Embedding { vector: vec![0.0, 0.0, 0.0] }.into_input_value(), EmbeddingDatabase::default().into_input_value(), 10.into_input_value()],
+///         inputs: vec![Embedding { vector: vec![0.0, 0.0, 0.0] }.into_input_value(), EmbeddingDb::new(&[], &[]).into_input_value(), 10.into_input_value()],
 ///         outputs: vec![String::from("Document 1\nDocument 2\nDocument 3\nDocument 4\nDocument 5\nDocument 6\nDocument 7\nDocument 8\nDocument 9\nDocument 10\n").into_return_value()],
 ///     },
 /// ]

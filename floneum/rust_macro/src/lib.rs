@@ -232,8 +232,14 @@ impl IoDefinitionType {
             PrimitiveValueType::Model => quote! {
                 PrimitiveValue::Model(inner)
             },
+            PrimitiveValueType::EmbeddingModel => quote! {
+                PrimitiveValue::EmbeddingModel(inner)
+            },
             PrimitiveValueType::ModelType => quote! {
                 PrimitiveValue::ModelType(inner)
+            },
+            PrimitiveValueType::EmbeddingModelType => quote! {
+                PrimitiveValue::EmbeddingModelType(inner)
             },
             PrimitiveValueType::Boolean => quote! {
                 PrimitiveValue::Boolean(inner)
@@ -313,8 +319,14 @@ impl ToTokens for IoDefinitionType {
             PrimitiveValueType::Model => quote! {
                 floneum_rust::PrimitiveValueType::Model
             },
+            PrimitiveValueType::EmbeddingModel => quote! {
+                floneum_rust::PrimitiveValueType::EmbeddingModel
+            },
             PrimitiveValueType::ModelType => quote! {
                 floneum_rust::PrimitiveValueType::ModelType
+            },
+            PrimitiveValueType::EmbeddingModelType => quote! {
+                floneum_rust::PrimitiveValueType::EmbeddingModelType
             },
             PrimitiveValueType::Boolean => quote! {
                 floneum_rust::PrimitiveValueType::Boolean
@@ -412,14 +424,18 @@ fn parse_primitive_value_type(ident: &Ident) -> syn::Result<PrimitiveValueType> 
         Ok(PrimitiveValueType::Number)
     } else if ident == "String" {
         Ok(PrimitiveValueType::Text)
-    } else if ident == "ModelInstance" {
+    } else if ident == "Model" {
         Ok(PrimitiveValueType::Model)
+    } else if ident == "EmbeddingModel" {
+        Ok(PrimitiveValueType::EmbeddingModel)
     } else if ident == "EmbeddingDb" {
         Ok(PrimitiveValueType::Database)
     } else if ident == "Embedding" {
         Ok(PrimitiveValueType::Embedding)
     } else if ident == "ModelType" {
         Ok(PrimitiveValueType::ModelType)
+    } else if ident == "EmbeddingModelType" {
+        Ok(PrimitiveValueType::EmbeddingModelType)
     } else if ident == "bool" {
         Ok(PrimitiveValueType::Boolean)
     } else if ident == "File" {
