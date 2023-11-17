@@ -8,7 +8,7 @@ use super::document::Document;
 /// A RSS feed that can be used to add documents to a search index.
 ///
 /// # Example
-/// ```rust
+/// ```rust, no_run
 /// use kalosm_language::RssFeed;
 ///
 /// #[tokio::main]

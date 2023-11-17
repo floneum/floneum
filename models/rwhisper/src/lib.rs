@@ -3,7 +3,7 @@
 //!
 //! ## Usage
 //!
-//! ```rust
+//! ```rust, no_run
 //! use futures_util::StreamExt;
 //! use rwhisper::*;
 //! use tokio::time::{Duration, Instant};

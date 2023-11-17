@@ -9,20 +9,26 @@ use crate::index::IntoDocuments;
 /// A search query that can be used to search for documents on the web.
 ///
 /// # Example
-/// ```rust
+/// ```rust, no_run
 /// // You must have the SERPER_API_KEY environment variable set to run this example.
-/// let api_key = std::env::var("SERPER_API_KEY").unwrap();
-/// let search_query = SearchQuery::new(query, &api_key, self.top_n);
-/// let documents = search_query.into_documents().await.unwrap();
-/// let mut text = String::new();
-/// for document in documents {
-///     for word in document.body().split(' ').take(300) {
-///         text.push_str(word);
-///         text.push(' ');
+/// use kalosm_language::*;
+/// 
+/// #[tokio::main]
+/// async fn main() {
+///     let query = "What is the best way to learn a language?";
+///     let api_key = std::env::var("SERPER_API_KEY").unwrap();
+///     let search_query = SearchQuery::new(query, &api_key, 5);
+///     let documents = search_query.into_documents().await.unwrap();
+///     let mut text = String::new();
+///     for document in documents {
+///         for word in document.body().split(' ').take(300) {
+///             text.push_str(word);
+///             text.push(' ');
+///         }
+///         text.push('\n');
 ///     }
-///     text.push('\n');
+///     println!("{}", text);
 /// }
-/// println!("{}", text);
 /// ```
 pub struct SearchQuery<'a> {
     query: &'a str,

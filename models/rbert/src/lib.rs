@@ -4,7 +4,7 @@
 //!
 //! ## Usage
 //!
-//! ```rust
+//! ```rust, no_run
 //! use kalosm_language_model::Embedder;
 //! use rbert::*;
 //!
