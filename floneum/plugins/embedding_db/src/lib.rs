@@ -15,11 +15,11 @@ use floneum_rust::*;
 /// ]
 fn embedding_db(
     /// the model to use
-    model: ModelType,
+    model: EmbeddingModelType,
     /// the documents to index
     documents: Vec<String>,
 ) -> EmbeddingDb {
-    let instance = Model::new(model);
+    let instance = EmbeddingModel::new(model);
 
     let embeddings = documents
         .iter()

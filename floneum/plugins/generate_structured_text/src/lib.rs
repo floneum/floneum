@@ -30,82 +30,83 @@ fn generate_structured_text(
     /// the maximum length of the output
     max_output_length: i64,
 ) -> String {
-    if !Model::model_downloaded(model) {
-        log_to_user("downloading model... This could take several minutes");
-    }
+    todo!("rethink how this model works")
+    // if !Model::model_downloaded(model) {
+    //     log_to_user("downloading model... This could take several minutes");
+    // }
 
-    let structure = structured_from_string(&structure);
-    let session = Model::new(model);
+    // let structure = structured_from_string(&structure);
+    // let session = Model::new(model);
 
-    let max_output_length = if max_output_length == 0 {
-        None
-    } else {
-        max_output_length.try_into().ok()
-    };
+    // let max_output_length = if max_output_length == 0 {
+    //     None
+    // } else {
+    //     max_output_length.try_into().ok()
+    // };
 
-    let mut responce = session.infer_structured("", max_output_length, structure);
-    responce += "\n";
+    // let mut responce = session.infer_structured("", max_output_length, structure);
+    // responce += "\n";
 
-    responce
+    // responce
 }
 
-fn structured_from_string(input: &str) -> Structure {
-    let pattern = StructuredParser::parse(Rule::format, input).map(|mut iter| iter.next());
-    match pattern {
-        Ok(Some(pattern)) => multiple_structured_from_rule(pattern),
-        Err(err) => {
-            log::error!("error parsing pattern: {:?}\n", err);
-            Structure::str(..)
-        }
-        _ => Structure::str(..),
-    }
-}
+// fn structured_from_string(input: &str) -> Structure {
+//     let pattern = StructuredParser::parse(Rule::format, input).map(|mut iter| iter.next());
+//     match pattern {
+//         Ok(Some(pattern)) => multiple_structured_from_rule(pattern),
+//         Err(err) => {
+//             log::error!("error parsing pattern: {:?}\n", err);
+//             Structure::str(..)
+//         }
+//         _ => Structure::str(..),
+//     }
+// }
 
-fn multiple_structured_from_rule(rule: Pair<Rule>) -> Structure {
-    let mut iter = rule.into_inner();
-    let mut current = structured_from_rule(iter.next().unwrap());
-    for item in iter {
-        current = current.then(structured_from_rule(item));
-    }
-    current
-}
+// fn multiple_structured_from_rule(rule: Pair<Rule>) -> Structure {
+//     let mut iter = rule.into_inner();
+//     let mut current = structured_from_rule(iter.next().unwrap());
+//     for item in iter {
+//         current = current.then(structured_from_rule(item));
+//     }
+//     current
+// }
 
-fn structured_from_rule(rule: Pair<Rule>) -> Structure {
-    match rule.as_rule() {
-        Rule::literal => Structure::literal(rule.as_str()),
-        Rule::string => Structure::str(..),
-        Rule::boolean => Structure::boolean(),
-        Rule::hashtag => Structure::float(),
-        Rule::either => {
-            let mut iter = rule.into_inner();
-            let mut current = structured_from_rule(iter.next().unwrap());
-            for other in iter {
-                current = current.or(structured_from_rule(other));
-            }
-            current
-        }
-        Rule::array => {
-            let mut iter = rule.into_inner();
-            let item = multiple_structured_from_rule(iter.next().unwrap());
-            let separator = Structure::literal(",");
-            let range = if let Some(rule) = iter.next().filter(|pair| pair.as_rule() == Rule::range)
-            {
-                let mut iter = rule.into_inner();
-                let min = iter.next().unwrap().as_str().parse().unwrap();
-                let max = iter.next().unwrap().as_str().parse().unwrap();
-                min..=max
-            } else {
-                0..=u64::MAX
-            };
-            Structure::sequence_of(item, separator, range)
-        }
-        _ => {
-            let error = format!("unexpected rule: {:?}\n", rule);
-            todo!();
-        }
-    }
-}
+// fn structured_from_rule(rule: Pair<Rule>) -> Structure {
+//     match rule.as_rule() {
+//         Rule::literal => Structure::literal(rule.as_str()),
+//         Rule::string => Structure::str(..),
+//         Rule::boolean => Structure::boolean(),
+//         Rule::hashtag => Structure::float(),
+//         Rule::either => {
+//             let mut iter = rule.into_inner();
+//             let mut current = structured_from_rule(iter.next().unwrap());
+//             for other in iter {
+//                 current = current.or(structured_from_rule(other));
+//             }
+//             current
+//         }
+//         Rule::array => {
+//             let mut iter = rule.into_inner();
+//             let item = multiple_structured_from_rule(iter.next().unwrap());
+//             let separator = Structure::literal(",");
+//             let range = if let Some(rule) = iter.next().filter(|pair| pair.as_rule() == Rule::range)
+//             {
+//                 let mut iter = rule.into_inner();
+//                 let min = iter.next().unwrap().as_str().parse().unwrap();
+//                 let max = iter.next().unwrap().as_str().parse().unwrap();
+//                 min..=max
+//             } else {
+//                 0..=u64::MAX
+//             };
+//             Structure::sequence_of(item, separator, range)
+//         }
+//         _ => {
+//             let error = format!("unexpected rule: {:?}\n", rule);
+//             todo!();
+//         }
+//     }
+// }
 
-#[derive(Parser)]
-#[grammar = "structured.pest"]
-struct StructuredParser;
+// #[derive(Parser)]
+// #[grammar = "structured.pest"]
+// struct StructuredParser;

@@ -13,6 +13,13 @@ interface imports {
 }
 
 interface types {
+  record header {
+    key: string,
+    value: string,
+  }
+
+  get-request: func(url: string, headers: list<header>) -> string;
+
   enum browser-mode {
     headless,
     headfull,

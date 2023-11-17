@@ -10,4 +10,4 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen" }
+floneum_rust = { path = "../../rust_adapter", version = "0.1.0" }

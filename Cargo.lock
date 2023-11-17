@@ -2828,7 +2828,7 @@ version = "0.1.0"
 name = "floneum_add"
 version = "0.1.0"
 dependencies = [
- "wit-bindgen",
+ "floneum_rust",
 ]
 
 [[package]]
