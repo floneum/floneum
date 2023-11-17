@@ -11,4 +11,5 @@ image = "0.24.6"
 log = {version = "0.4", features = ["std"]}
 bincode = "1.3.3"
 serde = { version = "1.0.173", features = ["derive"] }
-
+inventory = "0.3.13"
+once_cell = "1.18.0"
