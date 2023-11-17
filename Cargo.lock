@@ -3034,7 +3034,7 @@ dependencies = [
  "bytesize",
  "floneumite",
  "futures-util",
- "headless_chrome",
+ "headless_chrome 1.0.6",
  "kalosm",
  "log",
  "once_cell",
@@ -4252,13 +4252,36 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror",
- "tungstenite",
+ "tungstenite 0.18.0",
  "ureq",
  "url",
  "walkdir",
  "which 5.0.0",
  "winreg 0.51.0",
  "zip",
+]
+
+[[package]]
+name = "headless_chrome"
+version = "1.0.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d77dd062851072678f048478ecd7f10f14e166985ae27e9338da3d9c8722607"
+dependencies = [
+ "anyhow",
+ "auto_generate_cdp",
+ "base64 0.21.5",
+ "derive_builder 0.12.0",
+ "log",
+ "rand 0.8.5",
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tungstenite 0.20.1",
+ "url",
+ "which 5.0.0",
+ "winreg 0.51.0",
 ]
 
 [[package]]
@@ -5051,7 +5074,7 @@ dependencies = [
  "docx-rs",
  "ego-tree",
  "futures-util",
- "headless_chrome",
+ "headless_chrome 1.0.8",
  "image 0.24.7",
  "instant-distance",
  "itertools 0.11.0",
@@ -10326,6 +10349,25 @@ name = "ttf-parser"
 version = "0.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7b3e06c9b9d80ed6b745c7159c40b311ad2916abb34a49e9be2653b90db0d8dd"
+
+[[package]]
+name = "tungstenite"
+version = "0.20.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e3dac10fd62eaf6617d3a904ae222845979aec67c615d1c842b4002c7666fb9"
+dependencies = [
+ "byteorder",
+ "bytes",
+ "data-encoding",
+ "http",
+ "httparse",
+ "log",
+ "rand 0.8.5",
+ "sha1",
+ "thiserror",
+ "url",
+ "utf-8",
+]
 
 [[package]]
 name = "tungstenite"
