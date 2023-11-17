@@ -148,11 +148,9 @@ impl Node {
             }) {
                 let len = self.inputs[input_idx].read().value.len();
                 if let ConnectionType::Element(inner) = index.ty {
-                    if input_idx == last_input_index {
-                        if inner < len {
-                            current += inner;
-                            break;
-                        }
+                    if input_idx == last_input_index && inner < len {
+                        current += inner;
+                        break;
                     }
                 }
                 current += len;
@@ -201,10 +199,7 @@ impl Node {
     }
 
     pub fn input_is_list(&self, index: Connection) -> bool {
-        match self.input_type(index) {
-            Some(ValueType::Many(_)) => true,
-            _ => false,
-        }
+        matches!(self.input_type(index), Some(ValueType::Many(_)))
     }
 
     pub fn output_type(&self, index: usize) -> Option<ValueType> {
@@ -214,10 +209,7 @@ impl Node {
     }
 
     pub fn output_is_list(&self, index: usize) -> bool {
-        match self.output_type(index) {
-            Some(ValueType::Many(_)) => true,
-            _ => false,
-        }
+        matches!(self.output_type(index), Some(ValueType::Many(_)))
     }
 
     pub fn output_color(&self, index: usize) -> String {
@@ -269,8 +261,8 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                 let input_pos = node.input_pos(index);
                                 (
                                     Action::Snap(DraggingIndex::Input(index)),
-                                    (input_pos.x - scaled_pos.x as f32).powi(2)
-                                        + (input_pos.y - scaled_pos.y as f32).powi(2),
+                                    (input_pos.x - scaled_pos.x).powi(2)
+                                        + (input_pos.y - scaled_pos.y).powi(2),
                                 )
                             })
                             .chain(
@@ -279,8 +271,8 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                         let output_pos = node.input_array_add_element_pos(i);
                                         (
                                             Action::IncreaseArray(i),
-                                            (output_pos.x - scaled_pos.x as f32).powi(2)
-                                                + (output_pos.y - scaled_pos.y as f32).powi(2),
+                                            (output_pos.x - scaled_pos.x).powi(2)
+                                                + (output_pos.y - scaled_pos.y).powi(2),
                                         )
                                     })
                             )
@@ -290,8 +282,8 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                         let output_pos = node.input_array_remove_element_pos(i);
                                         (
                                             Action::DecreaseArray(i),
-                                            (output_pos.x - scaled_pos.x as f32).powi(2)
-                                                + (output_pos.y - scaled_pos.y as f32).powi(2),
+                                            (output_pos.x - scaled_pos.x).powi(2)
+                                                + (output_pos.y - scaled_pos.y).powi(2),
                                         )
                                     })
                             )
@@ -301,8 +293,8 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                         let output_pos = node.output_pos(i);
                                         (
                                             Action::Snap(DraggingIndex::Output(i)),
-                                            (output_pos.x - scaled_pos.x as f32).powi(2)
-                                                + (output_pos.y - scaled_pos.y as f32).powi(2),
+                                            (output_pos.x - scaled_pos.x).powi(2)
+                                                + (output_pos.y - scaled_pos.y).powi(2),
                                         )
                                     }),
                             )
@@ -319,8 +311,8 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                             index,
                                             to: Signal::new(
                                                 Point2D::new(
-                                                    scaled_pos.x as f32,
-                                                    scaled_pos.y as f32,
+                                                    scaled_pos.x,
+                                                    scaled_pos.y,
                                                 ),
                                             ),
                                         }),
@@ -373,8 +365,8 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                         let input_pos = node.input_pos(index);
                                         (
                                             index,
-                                            (input_pos.x - scaled_pos.x as f32).powi(2)
-                                                + (input_pos.y - scaled_pos.y as f32).powi(2),
+                                            (input_pos.x - scaled_pos.x).powi(2)
+                                                + (input_pos.y - scaled_pos.y).powi(2),
                                         )
                                     })
                                     .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
@@ -393,8 +385,8 @@ pub fn Node(cx: Scope<NodeProps>) -> Element {
                                         let output_pos = node.output_pos(i);
                                         (
                                             i,
-                                            (output_pos.x - scaled_pos.x as f32).powi(2)
-                                                + (output_pos.y - scaled_pos.y as f32).powi(2),
+                                            (output_pos.x - scaled_pos.x).powi(2)
+                                                + (output_pos.y - scaled_pos.y).powi(2),
                                         )
                                     })
                                     .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())

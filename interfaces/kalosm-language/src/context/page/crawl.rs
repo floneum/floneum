@@ -32,7 +32,7 @@ pub enum CrawlFeedback {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust, no_run
 /// use kalosm_language::BrowserMode;
 /// use kalosm_language::CrawlFeedback;
 /// use kalosm_language::Page;

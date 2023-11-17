@@ -144,8 +144,8 @@ impl VisualGraph {
             }
             Some(CurrentlyDragging::Node(current_graph_dragging)) => {
                 let mut node = current_graph_dragging.node.write();
-                node.position.x = new_pos.x as f32 - current_graph_dragging.element_offset.x;
-                node.position.y = new_pos.y as f32 - current_graph_dragging.element_offset.y;
+                node.position.x = new_pos.x - current_graph_dragging.element_offset.x;
+                node.position.y = new_pos.y - current_graph_dragging.element_offset.y;
             }
             _ => {}
         }
@@ -278,7 +278,7 @@ impl VisualGraph {
                             .edges_directed(current_node_id, petgraph::Direction::Outgoing)
                         {
                             let new_node_id = edge.target();
-                            let node = current_graph.graph[new_node_id].clone();
+                            let node = current_graph.graph[new_node_id];
                             node.write().queued = true;
                         }
                     }
@@ -384,7 +384,7 @@ pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
     let theme = Theme::current();
     let graph = cx.props.graph.inner;
     let current_graph = graph.read();
-    let current_graph_dragging = current_graph.currently_dragging.clone();
+    let current_graph_dragging = current_graph.currently_dragging;
     let drag_start_pos = use_state(cx, || Option::<Point2D<f32, f32>>::None);
     let drag_pan_pos = use_state(cx, || Option::<Point2D<f32, f32>>::None);
     let pan_pos = current_graph.pan_pos;

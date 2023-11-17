@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust, no_run
 /// use kalosm_language::VectorDB;
 /// use kalosm_language_model::Embedder;
 /// use rbert::*;

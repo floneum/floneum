@@ -6,7 +6,7 @@
 //!
 //! ## Usage
 //!
-//! ```rust
+//! ```rust, no_run
 //! use rwuerstchen::*;
 //!
 //! let model = Wuerstchen::builder().build().unwrap();

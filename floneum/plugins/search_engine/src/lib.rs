@@ -30,11 +30,14 @@ fn search_engine(query: String) -> String {
                 let request = Page::new(BrowserMode::Headless, &href);
                 let html = request.html();
 
-                Document::from(&html).select("p").iter().for_each(|paragragh| {
-                    let html = paragragh.text();
-                    results += &html;
-                    results += "\n";
-                });
+                Document::from(&html)
+                    .select("p")
+                    .iter()
+                    .for_each(|paragragh| {
+                        let html = paragragh.text();
+                        results += &html;
+                        results += "\n";
+                    });
                 article_count += 1;
             }
         }

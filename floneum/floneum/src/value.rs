@@ -22,7 +22,7 @@ pub fn ShowOutput(cx: Scope<ShowOutputProps>) -> Element {
                 div {
                     class: "flex flex-col whitespace-pre-line",
                     "{name}:\n"
-                    show_primitive_value(cx, &value)
+                    show_primitive_value(cx, value)
                 }
             }
         }
@@ -106,7 +106,7 @@ pub fn ShowInput(cx: Scope<ShowInputProps>) -> Element {
                 div {
                     class: "flex flex-col whitespace-pre-line",
                     "{label}:\n"
-                    show_primitive_value(cx, &value)
+                    show_primitive_value(cx, value)
                 }
             }
         }

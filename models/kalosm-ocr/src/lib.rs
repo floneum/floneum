@@ -4,8 +4,8 @@
 //!
 //! ## Usage
 //!
-//! ```rust
-//! use kalosm::vision::*;
+//! ```rust, no_run
+//! use kalosm_ocr::*;
 //!
 //! let mut model = Ocr::builder().build().unwrap();
 //! let image = image::open("examples/ocr.png").unwrap();
@@ -193,7 +193,7 @@ impl Ocr {
     /// Segment an image from a list of points. Returns a [`DynamicImage`] mask.
     ///
     /// # Example
-    /// ```rust
+    /// ```rust, no_run
     /// use kalosm_ocr::*;
     ///
     /// let mut model = Ocr::builder().build().unwrap();

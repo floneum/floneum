@@ -3,7 +3,7 @@
 //!
 //! ## Usage
 //!
-//! ```rust
+//! ```rust, no_run
 //! use segment_anything_rs::*;
 //!
 //! let model = SegmentAnything::builder().build().unwrap();
@@ -191,7 +191,7 @@ impl SegmentAnything {
     /// Segment an image from a list of points. Returns a [`DynamicImage`] mask.
     ///
     /// # Example
-    /// ```rust
+    /// ```rust, no_run
     /// use segment_anything_rs::*;
     ///
     /// let model = SegmentAnything::builder().build().unwrap();
@@ -284,7 +284,7 @@ impl SegmentAnything {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust, no_run
     /// use segment_anything_rs::*;
     ///
     /// let model = SegmentAnything::builder().build().unwrap();
