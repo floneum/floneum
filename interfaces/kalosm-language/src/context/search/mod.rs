@@ -12,7 +12,7 @@ use crate::index::IntoDocuments;
 /// ```rust, no_run
 /// // You must have the SERPER_API_KEY environment variable set to run this example.
 /// use kalosm_language::*;
-/// 
+///
 /// #[tokio::main]
 /// async fn main() {
 ///     let query = "What is the best way to learn a language?";

@@ -10,7 +10,7 @@
 //!
 //! ```rust, no_run
 //! use kalosm_llama::prelude::*;
-//! 
+//!
 //! #[tokio::main]
 //! async fn main() {
 //!     let mut model = Llama::default();

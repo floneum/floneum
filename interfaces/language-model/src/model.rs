@@ -340,7 +340,7 @@ pub trait ModelExt: Model + Send + 'static {
     ///     let mut model = Phi::default();
     ///     let prompt = "The capital of France is";
     ///     let mut result = model.generate_text(prompt).with_max_length(300).await.unwrap();
-    /// 
+    ///
     ///     println!("{prompt}{result}");
     /// }
     /// ```
@@ -368,7 +368,7 @@ pub trait ModelExt: Model + Send + 'static {
     ///     let mut model = Phi::default();
     ///     let prompt = "The capital of France is";
     ///     let mut result = model.stream_text(prompt).with_max_length(300).await.unwrap();
-    /// 
+    ///
     ///     print!("{prompt}");
     ///     while let Some(token) = result.next().await {
     ///         print!("{token}");

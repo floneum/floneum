@@ -10,7 +10,7 @@
 //!
 //! ```rust, no_run
 //! use rmistral::prelude::*;
-//! 
+//!
 //! #[tokio::main]
 //! async fn main() {
 //!     let mut model = Mistral::default();
