@@ -18,7 +18,7 @@ impl State {
             .pages
             .get(node.page_id)
             .ok_or(anyhow::anyhow!("Page not found"))?;
-        Ok(headless_chrome::Element::new(tab, node.node_id)?)
+        headless_chrome::Element::new(tab, node.node_id)
     }
 }
 

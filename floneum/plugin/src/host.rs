@@ -145,9 +145,17 @@ impl main::types::Host for State {
     ) -> std::result::Result<String, wasmtime::Error> {
         let mut headers = headers
             .into_iter()
-            .map(|header| Ok((HeaderName::try_from(header.key)?,HeaderValue::from_str(&header.value)?)))
+            .map(|header| {
+                Ok((
+                    HeaderName::try_from(header.key)?,
+                    HeaderValue::from_str(&header.value)?,
+                ))
+            })
             .collect::<wasmtime::Result<Vec<_>>>()?;
-        headers.push((HeaderName::from_static("user-agent"), HeaderValue::from_static("floneum")));
+        headers.push((
+            HeaderName::from_static("user-agent"),
+            HeaderValue::from_static("floneum"),
+        ));
         let res = reqwest::Client::new()
             .get(&url)
             .headers(reqwest::header::HeaderMap::from_iter(headers))

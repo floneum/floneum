@@ -57,7 +57,10 @@ impl main::types::HostPage for State {
         Ok(bytes)
     }
 
-    async fn html(&mut self, self_: wasmtime::component::Resource<Page>) -> wasmtime::Result<String> {
+    async fn html(
+        &mut self,
+        self_: wasmtime::component::Resource<Page>,
+    ) -> wasmtime::Result<String> {
         let page = self
             .pages
             .get(self_.rep() as usize)
