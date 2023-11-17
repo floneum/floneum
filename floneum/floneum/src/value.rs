@@ -65,6 +65,9 @@ fn show_primitive_value<'a>(cx: &'a ScopeState, value: &PrimitiveValue) -> Eleme
         PrimitiveValue::Model(id) => {
             render! {"Model: {id:?}"}
         }
+        PrimitiveValue::EmbeddingModel(id) => {
+            render! {"Embedding Model: {id:?}"}
+        }
         PrimitiveValue::Database(id) => {
             render! {"Database: {id:?}"}
         }
@@ -72,6 +75,9 @@ fn show_primitive_value<'a>(cx: &'a ScopeState, value: &PrimitiveValue) -> Eleme
             render! {"{value}"}
         }
         PrimitiveValue::ModelType(ty) => {
+            render! {"{ty.name()}"}
+        }
+        PrimitiveValue::EmbeddingModelType(ty) => {
             render! {"{ty.name()}"}
         }
         PrimitiveValue::Boolean(val) => {
@@ -181,9 +187,10 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
             }
             PrimitiveValue::Embedding(_)
             | PrimitiveValue::Model(_)
+            | PrimitiveValue::EmbeddingModel(_)
             | PrimitiveValue::Database(_)
             | PrimitiveValue::Page(_)
-            | PrimitiveValue::Node { .. } => show_primitive_value(cx, &current_primitive),
+            | PrimitiveValue::Node(_) => show_primitive_value(cx, &current_primitive),
             PrimitiveValue::Number(value) => {
                 render! {
                     div {
@@ -219,6 +226,34 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                                 )];
                             },
                             for variant in ModelType::VARIANTS {
+                                option {
+                                    value: "{variant.name()}",
+                                    selected: "{variant.name() == ty.name()}",
+                                    "{variant.name()}"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            PrimitiveValue::EmbeddingModelType(ty) => {
+                render! {
+                    div {
+                        class: "flex flex-col",
+                        "{name}: "
+                        select {
+                            class: "border {Color::outline_color()} {Color::foreground_color()} rounded {Color::foreground_hover()} focus:outline-none focus:border-blue-500",
+                            style: "-webkit-appearance:none; -moz-appearance:none; -ms-appearance:none; appearance: none;",
+                            onchange: |e| {
+                                node
+                                    .write().value = vec![Input::Single(
+                                    PrimitiveValue::EmbeddingModelType(
+                                        embedding_model_type_from_str(&e.value)
+                                            .unwrap_or(EmbeddingModelType::Llama(LlamaType::LlamaThirteenChat)),
+                                    ),
+                                )];
+                            },
+                            for variant in EmbeddingModelType::VARIANTS {
                                 option {
                                     value: "{variant.name()}",
                                     selected: "{variant.name() == ty.name()}",
@@ -285,6 +320,28 @@ impl Variants for ModelType {
         ModelType::Mpt(MptType::Chat),
         ModelType::Mpt(MptType::Story),
         ModelType::Mpt(MptType::Instruct),
+        ModelType::Phi,
+        ModelType::Mistral,
+    ];
+}
+
+impl Variants for EmbeddingModelType {
+    const VARIANTS: &'static [Self] = &[
+        EmbeddingModelType::Llama(LlamaType::Guanaco),
+        EmbeddingModelType::Llama(LlamaType::Orca),
+        EmbeddingModelType::Llama(LlamaType::Vicuna),
+        EmbeddingModelType::Llama(LlamaType::Wizardlm),
+        EmbeddingModelType::Llama(LlamaType::LlamaSevenChat),
+        EmbeddingModelType::Llama(LlamaType::LlamaThirteenChat),
+        EmbeddingModelType::GptNeoX(GptNeoXType::TinyPythia),
+        EmbeddingModelType::GptNeoX(GptNeoXType::LargePythia),
+        EmbeddingModelType::GptNeoX(GptNeoXType::Stablelm),
+        EmbeddingModelType::GptNeoX(GptNeoXType::DollySevenB),
+        EmbeddingModelType::Mpt(MptType::Base),
+        EmbeddingModelType::Mpt(MptType::Chat),
+        EmbeddingModelType::Mpt(MptType::Story),
+        EmbeddingModelType::Mpt(MptType::Instruct),
+        EmbeddingModelType::Bert,
     ];
 }
 
@@ -361,6 +418,28 @@ impl Named for ModelType {
     }
 }
 
+impl Named for EmbeddingModelType {
+    fn name(&self) -> &'static str {
+        match self {
+            EmbeddingModelType::Llama(LlamaType::Guanaco) => "Guanaco",
+            EmbeddingModelType::Llama(LlamaType::Orca) => "Orca",
+            EmbeddingModelType::Llama(LlamaType::Vicuna) => "Vicuna",
+            EmbeddingModelType::Llama(LlamaType::Wizardlm) => "Wizardlm",
+            EmbeddingModelType::Llama(LlamaType::LlamaSevenChat) => "Llama Seven Chat",
+            EmbeddingModelType::Llama(LlamaType::LlamaThirteenChat) => "Llama Thirteen Chat",
+            EmbeddingModelType::GptNeoX(GptNeoXType::TinyPythia) => "Tiny Pythia",
+            EmbeddingModelType::GptNeoX(GptNeoXType::LargePythia) => "Large Pythia",
+            EmbeddingModelType::GptNeoX(GptNeoXType::Stablelm) => "Stablelm",
+            EmbeddingModelType::GptNeoX(GptNeoXType::DollySevenB) => "Dolly",
+            EmbeddingModelType::Mpt(MptType::Base) => "Mpt base",
+            EmbeddingModelType::Mpt(MptType::Chat) => "Mpt chat",
+            EmbeddingModelType::Mpt(MptType::Story) => "Mpt story",
+            EmbeddingModelType::Mpt(MptType::Instruct) => "Mpt instruct",
+            EmbeddingModelType::Bert => "Bert",
+        }
+    }
+}
+
 fn model_type_from_str(s: &str) -> Option<ModelType> {
     match &*s.to_lowercase() {
         "guanaco" => Some(ModelType::Llama(LlamaType::Guanaco)),
@@ -377,6 +456,29 @@ fn model_type_from_str(s: &str) -> Option<ModelType> {
         "mpt chat" => Some(ModelType::Mpt(MptType::Chat)),
         "mpt story" => Some(ModelType::Mpt(MptType::Story)),
         "mpt instruct" => Some(ModelType::Mpt(MptType::Instruct)),
+        "phi" => Some(ModelType::Phi),
+        "mistral" => Some(ModelType::Mistral),
+        _ => None,
+    }
+}
+
+fn embedding_model_type_from_str(s: &str) -> Option<EmbeddingModelType> {
+    match &*s.to_lowercase() {
+        "guanaco" => Some(EmbeddingModelType::Llama(LlamaType::Guanaco)),
+        "orca" => Some(EmbeddingModelType::Llama(LlamaType::Orca)),
+        "vicuna" => Some(EmbeddingModelType::Llama(LlamaType::Vicuna)),
+        "wizardlm" => Some(EmbeddingModelType::Llama(LlamaType::Wizardlm)),
+        "llama seven chat" => Some(EmbeddingModelType::Llama(LlamaType::LlamaSevenChat)),
+        "llama thirteen chat" => Some(EmbeddingModelType::Llama(LlamaType::LlamaThirteenChat)),
+        "tiny pythia" => Some(EmbeddingModelType::GptNeoX(GptNeoXType::TinyPythia)),
+        "large pythia" => Some(EmbeddingModelType::GptNeoX(GptNeoXType::LargePythia)),
+        "stablelm" => Some(EmbeddingModelType::GptNeoX(GptNeoXType::Stablelm)),
+        "dolly" => Some(EmbeddingModelType::GptNeoX(GptNeoXType::DollySevenB)),
+        "mpt base" => Some(EmbeddingModelType::Mpt(MptType::Base)),
+        "mpt chat" => Some(EmbeddingModelType::Mpt(MptType::Chat)),
+        "mpt story" => Some(EmbeddingModelType::Mpt(MptType::Story)),
+        "mpt instruct" => Some(EmbeddingModelType::Mpt(MptType::Instruct)),
+        "bert" => Some(EmbeddingModelType::Bert),
         _ => None,
     }
 }

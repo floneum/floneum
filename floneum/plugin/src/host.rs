@@ -11,6 +11,7 @@ use kalosm::language::VectorDB;
 use kalosm::language::*;
 use once_cell::sync::Lazy;
 
+use reqwest::header::{HeaderName, HeaderValue};
 use slab::Slab;
 use std::collections::HashMap;
 use std::path::Path;
@@ -135,7 +136,30 @@ impl WasiView for State {
     }
 }
 
-impl main::types::Host for State {}
+#[async_trait]
+impl main::types::Host for State {
+    async fn get_request(
+        &mut self,
+        url: String,
+        headers: Vec<main::types::Header>,
+    ) -> std::result::Result<String, wasmtime::Error> {
+        let mut headers = headers
+            .into_iter()
+            .map(|header| Ok((HeaderName::try_from(header.key)?,HeaderValue::from_str(&header.value)?)))
+            .collect::<wasmtime::Result<Vec<_>>>()?;
+        headers.push((HeaderName::from_static("user-agent"), HeaderValue::from_static("floneum")));
+        let res = reqwest::Client::new()
+            .get(&url)
+            .headers(reqwest::header::HeaderMap::from_iter(headers))
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        Ok(res)
+    }
+}
 
 #[async_trait]
 impl imports::Host for State {

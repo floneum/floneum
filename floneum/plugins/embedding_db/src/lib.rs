@@ -10,23 +10,21 @@ use floneum_rust::*;
 ///     Example {
 ///         name: "example".into(),
 ///         inputs: vec![ModelType::Llama(LlamaType::LlamaSevenChat).into_input_value(), vec![String::from("Text to embed"), String::from("Another text to embed")].into_input_value()],
-///         outputs: vec![EmbeddingDbId { id: 0 }.into_return_value()],
+///         outputs: vec![EmbeddingDb::new(&[], &[]).into_return_value()],
 ///     },
 /// ]
 fn embedding_db(
     /// the model to use
-    model: ModelType,
+    model: EmbeddingModelType,
     /// the documents to index
     documents: Vec<String>,
-) -> EmbeddingDbId {
-    let instance = ModelInstance::new(model);
+) -> EmbeddingDb {
+    let instance = EmbeddingModel::new(model);
 
     let embeddings = documents
         .iter()
         .map(|s| instance.get_embedding(s))
         .collect::<Vec<_>>();
 
-    let database = VectorDatabase::new(&embeddings, &documents);
-
-    database.leak()
+    EmbeddingDb::new(&embeddings, &documents)
 }
