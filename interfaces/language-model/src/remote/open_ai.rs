@@ -64,19 +64,9 @@ macro_rules! openai_model {
             }
         }
 
-        impl $ty {
-            /// Creates a new builder
-            pub fn builder() -> $tybuilder {
-                $tybuilder::new()
-            }
-        }
-
-
         impl Default for $ty {
             fn default() -> Self {
-                Self {
-                    client: Client::new(),
-                }
+                Self::builder().build()
             }
         }
 
