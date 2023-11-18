@@ -24,13 +24,13 @@ async fn main() {
                 }
 
                 let Ok(page) = page.article().await else {
-                    return CrawlFeedback::DontFollow;
+                    return CrawlFeedback::follow_none();
                 };
 
                 let body = page.body();
 
                 if body.len() < 100 {
-                    return CrawlFeedback::DontFollow;
+                    return CrawlFeedback::follow_none();
                 }
 
                 println!("Title: {}", page.title());
@@ -38,7 +38,7 @@ async fn main() {
 
                 count.fetch_add(1, Ordering::SeqCst);
 
-                CrawlFeedback::Continue
+                CrawlFeedback::follow_all()
             }) as Pin<Box<dyn Future<Output = CrawlFeedback>>>
         },
     )

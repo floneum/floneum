@@ -31,23 +31,23 @@ pub enum CrawlFeedback {
 impl CrawlFeedback {
     /// Follow all links from the current page
     pub fn follow_all() -> Self {
-        Self::Continue(Box::new(|_: &Url| true)),
+        Self::Continue(Box::new(|_: &Url| true))
     }
 
     /// Follow any links from the current page that fit a filter
     pub fn follow_filtered(filter: impl LinkFilter + 'static) -> Self {
-        Self::Continue(Box::new(filter)),
+        Self::Continue(Box::new(filter))
     }
 
     /// Follow no links from the current page
-    pub fn follow_none(filter: impl LinkFilter + 'static) -> Self {
-        Self::Continue(Box::new(|_: &Url| false)),
+    pub fn follow_none() -> Self {
+        Self::Continue(Box::new(|_: &Url| false))
     }
 
     /// Follow any links that match the given domain
     pub fn follow_domain(domain: impl Into<String>) -> Self {
         let domain = domain.into();
-        Self::Continue(Box::new(|url: &Url| url.domain() = Some(&domain))),
+        Self::Continue(Box::new(move |url: &Url| url.domain() == Some(&domain)))
     }
 
     /// Stop the entire crawler
@@ -57,9 +57,9 @@ impl CrawlFeedback {
 
     /// Check if the given URL should be followed
     pub fn should_follow(&mut self, url: &Url) -> bool {
-        match Self {
+        match self {
             Self::Continue(filter) => filter.follow_link(url),
-            Self::Stop => false
+            Self::Stop => false,
         }
     }
 }
@@ -67,6 +67,7 @@ impl CrawlFeedback {
 /// A filter for links that determines if the link should be followed
 /// This is automatically implement for any `FnMut(&Url) -> bool` function
 pub trait LinkFilter {
+    /// Check if the given URL should be followed
     fn follow_link(&mut self, link: &Url) -> bool;
 }
 
@@ -329,9 +330,9 @@ impl<T: CrawlingCallback> DomainQueue<T> {
                     let feedback = visit.await;
 
                     match feedback {
-                        CrawlFeedback::Continue(filter) => match page.links().await {
-                            Ok(new_urls) => {
-                                new_urls.retain(|url| filter.should_follow(&url));
+                        CrawlFeedback::Continue(mut filter) => match page.links().await {
+                            Ok(mut new_urls) => {
+                                new_urls.retain(|url| filter.follow_link(url));
                                 if let Err(err) = crawler.add_urls(new_urls).await {
                                     tracing::error!("Error adding urls: {}", err);
                                 }
