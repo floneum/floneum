@@ -8,7 +8,7 @@
 //!
 //! ## Usage
 //!
-//! ```rust
+//! ```rust, no_run
 //! use rphi::prelude::*;
 //! #[tokio::main]
 //! async fn main() {

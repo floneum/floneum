@@ -66,9 +66,7 @@ macro_rules! openai_model {
 
         impl Default for $ty {
             fn default() -> Self {
-                Self {
-                    client: Client::new(),
-                }
+                Self::builder().build()
             }
         }
 

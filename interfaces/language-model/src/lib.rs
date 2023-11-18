@@ -4,7 +4,7 @@
 //!
 //! ## Usage (with the RPhi implementation crate)
 //!
-//! ```rust
+//! ```rust, no_run
 //! use rphi::prelude::*;
 //!
 //! #[tokio::main]

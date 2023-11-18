@@ -60,8 +60,8 @@ pub fn Input(cx: Scope, node: Signal<Node>, index: usize) -> Element {
                 rect {
                     x: box_x as f64,
                     y: box_y as f64,
-                    width: box_width as f64,
-                    height: box_height as f64,
+                    width: box_width,
+                    height: box_height,
                     stroke: "black",
                     fill: "transparent",
                     stroke_width: 1,

@@ -57,6 +57,17 @@ impl main::types::HostPage for State {
         Ok(bytes)
     }
 
+    async fn html(
+        &mut self,
+        self_: wasmtime::component::Resource<Page>,
+    ) -> wasmtime::Result<String> {
+        let page = self
+            .pages
+            .get(self_.rep() as usize)
+            .ok_or(anyhow::anyhow!("Page not found"))?;
+        Ok(page.get_content()?)
+    }
+
     fn drop(&mut self, rep: wasmtime::component::Resource<Page>) -> wasmtime::Result<()> {
         self.pages.remove(rep.rep() as usize);
         Ok(())

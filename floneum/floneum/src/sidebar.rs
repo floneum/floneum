@@ -24,7 +24,7 @@ pub fn Sidebar(cx: Scope) -> Element {
 }
 
 fn Links(cx: Scope) -> Element {
-    let script = r##"
+    let script = r#"
 const BORDER_SIZE = 4;
 const panel = document.getElementById("left_panel");
 
@@ -45,7 +45,7 @@ panel.addEventListener("mousedown", function(e){
 document.addEventListener("mouseup", function(){
     document.removeEventListener("mousemove", resize, false);
 }, false);
-"##;
+"#;
     render! {
         div {
             id: "left_panel",

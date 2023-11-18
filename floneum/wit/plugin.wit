@@ -13,6 +13,13 @@ interface imports {
 }
 
 interface types {
+  record header {
+    key: string,
+    value: string,
+  }
+
+  get-request: func(url: string, headers: list<header>) -> string;
+
   enum browser-mode {
     headless,
     headfull,
@@ -22,6 +29,7 @@ interface types {
     constructor(mode: browser-mode, url: string);
     find-in-current-page: func(selector: string) -> node;
     screenshot-browser: func() -> list<u8>;
+    html: func() -> string;
   }
 
   resource node {
@@ -94,7 +102,9 @@ interface types {
 
   variant primitive-value {
     model(model),
+    embedding-model(embedding-model),
     model-type(model-type),
+    embedding-model-type(embedding-model-type),
     database(embedding-db),
     number(s64),
     text(string),
@@ -103,7 +113,7 @@ interface types {
     embedding(embedding),
     boolean(bool),
     page(page),
-    node(node),
+    node(node)
   }
 
   variant value-type {
@@ -119,7 +129,9 @@ interface types {
     embedding,
     database,
     model,
+    embedding-model,
     model-type,
+    embedding-model-type,
     boolean,
     page,
     node,

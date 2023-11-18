@@ -51,7 +51,6 @@ members = [
     "floneum/plugins/if_statement",
     "floneum/plugins/contains",
     "floneum/plugins/python",
-    "floneum/plugins/create_tab",
     "floneum/plugins/find_node",
     "floneum/plugins/click_node",
     "floneum/plugins/node_text",

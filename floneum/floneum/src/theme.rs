@@ -42,23 +42,23 @@ pub struct Color(&'static str);
 
 impl Color {
     pub fn outline_color() -> Color {
-        Theme::current().read().border.clone()
+        Theme::current().read().border
     }
 
     pub fn text_color() -> Color {
-        Theme::current().read().text.clone()
+        Theme::current().read().text
     }
 
     pub fn background_color() -> Color {
-        Theme::current().read().background.clone()
+        Theme::current().read().background
     }
 
     pub fn foreground_color() -> Color {
-        Theme::current().read().foreground.clone()
+        Theme::current().read().foreground
     }
 
     pub fn foreground_hover() -> Color {
-        Theme::current().read().foreground_hover.clone()
+        Theme::current().read().foreground_hover
     }
 }
 

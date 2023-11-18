@@ -1,6 +1,12 @@
 #![allow(unused_macros)]
 
+use once_cell::sync::Lazy;
+
+use crate::exports::plugins::main::definitions::Guest;
 pub use floneum_rust_macro::export_plugin;
+
+#[doc(hidden)]
+pub use inventory;
 
 pub use plugins::main::types::*;
 mod logging;
@@ -12,8 +18,48 @@ pub use filesystem::*;
 
 wit_bindgen::generate!({
     path: "../wit",
-    world: "exports",
+    world: "both",
+    exports: {
+        world: ExportedDefinitions,
+        "plugins:main/definitions": ExportedDefinitions,
+    },
 });
+
+pub trait DynGuest {
+    fn structure(&self) -> Definition;
+    fn run(&self, inputs: Vec<Input>) -> Vec<Output>;
+}
+
+#[doc(hidden)]
+pub struct LazyGuest(fn() -> Box<dyn DynGuest + Send + Sync>);
+
+impl LazyGuest {
+    pub const fn new(constructor: fn() -> Box<dyn DynGuest + Send + Sync>) -> Self {
+        Self(constructor)
+    }
+}
+
+inventory::collect!(LazyGuest);
+
+static EXPORTED_DEFINITIONS: Lazy<Box<dyn DynGuest + Send + Sync>> = Lazy::new(|| {
+    (inventory::iter::<LazyGuest>
+        .into_iter()
+        .next()
+        .expect("no plugin exported")
+        .0)()
+});
+
+struct ExportedDefinitions;
+
+impl Guest for ExportedDefinitions {
+    fn structure() -> Definition {
+        EXPORTED_DEFINITIONS.structure()
+    }
+
+    fn run(inputs: Vec<Input>) -> Vec<Output> {
+        EXPORTED_DEFINITIONS.run(inputs)
+    }
+}
 
 pub trait IntoInputValue<T = ()> {
     fn into_input_value(self) -> Input;
@@ -78,6 +124,36 @@ impl IntoPrimitiveValue for ModelType {
     }
 }
 
+impl IntoPrimitiveValue for Model {
+    fn into_primitive_value(self) -> PrimitiveValue {
+        PrimitiveValue::Model(self)
+    }
+}
+
+impl IntoPrimitiveValue for EmbeddingModel {
+    fn into_primitive_value(self) -> PrimitiveValue {
+        PrimitiveValue::EmbeddingModel(self)
+    }
+}
+
+impl IntoPrimitiveValue for EmbeddingModelType {
+    fn into_primitive_value(self) -> PrimitiveValue {
+        PrimitiveValue::EmbeddingModelType(self)
+    }
+}
+
+impl IntoPrimitiveValue for Node {
+    fn into_primitive_value(self) -> PrimitiveValue {
+        PrimitiveValue::Node(self)
+    }
+}
+
+impl IntoPrimitiveValue for Page {
+    fn into_primitive_value(self) -> PrimitiveValue {
+        PrimitiveValue::Page(self)
+    }
+}
+
 impl IntoPrimitiveValue for bool {
     fn into_primitive_value(self) -> PrimitiveValue {
         PrimitiveValue::Boolean(self)
@@ -99,6 +175,12 @@ impl IntoPrimitiveValue for String {
 impl IntoPrimitiveValue for Embedding {
     fn into_primitive_value(self) -> PrimitiveValue {
         PrimitiveValue::Embedding(self)
+    }
+}
+
+impl IntoPrimitiveValue for EmbeddingDb {
+    fn into_primitive_value(self) -> PrimitiveValue {
+        PrimitiveValue::Database(self)
     }
 }
 

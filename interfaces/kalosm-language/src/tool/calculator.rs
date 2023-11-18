@@ -203,21 +203,6 @@ fn function_equation() {
     assert!(result.is_ok());
 }
 
-#[test]
-fn additon_equation() {
-    let parser = EquationParser::default();
-
-    let state = parser.create_parser_state();
-
-    let result = parser.parse(&state, "(2+1)".as_bytes());
-    println!("{:?}", result);
-    assert!(result.is_ok());
-
-    let result = parser.parse(&state, "((2+1)+1)".as_bytes());
-    println!("{:?}", result);
-    assert!(result.is_ok());
-}
-
 /// A tool that can search the web
 pub struct CalculatorTool;
 

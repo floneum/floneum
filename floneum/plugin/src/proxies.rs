@@ -15,7 +15,7 @@ impl From<&Input> for MyValue {
     fn from(value: &Input) -> Self {
         match value {
             Input::Single(value) => MyValue::Single(value.into()),
-            Input::Many(values) => MyValue::List(values.into_iter().map(|v| v.into()).collect()),
+            Input::Many(values) => MyValue::List(values.iter().map(|v| v.into()).collect()),
         }
     }
 }
@@ -56,7 +56,7 @@ impl From<&Output> for MyValue {
     fn from(output: &Output) -> Self {
         match output {
             Output::Single(value) => MyValue::Single(value.into()),
-            Output::Many(values) => MyValue::List(values.into_iter().map(|v| v.into()).collect()),
+            Output::Many(values) => MyValue::List(values.iter().map(|v| v.into()).collect()),
             Output::Halt => MyValue::Unset,
         }
     }
@@ -104,6 +104,9 @@ impl PartialEq for PrimitiveValue {
             (PrimitiveValue::Embedding(a), PrimitiveValue::Embedding(b)) => a.vector == b.vector,
             (PrimitiveValue::Database(a), PrimitiveValue::Database(b)) => a.rep() == b.rep(),
             (PrimitiveValue::Model(a), PrimitiveValue::Model(b)) => a.rep() == b.rep(),
+            (PrimitiveValue::EmbeddingModel(a), PrimitiveValue::EmbeddingModel(b)) => {
+                a.rep() == b.rep()
+            }
             (PrimitiveValue::ModelType(a), PrimitiveValue::ModelType(b)) => a == b,
             (PrimitiveValue::Boolean(a), PrimitiveValue::Boolean(b)) => a == b,
             (PrimitiveValue::Page(a), PrimitiveValue::Page(b)) => a.rep() == b.rep(),
@@ -121,8 +124,10 @@ enum MyPrimitiveValue {
     Folder(String),
     Embedding(Vec<f32>),
     Model(u32),
+    EmbeddingModel(u32),
     Database(u32),
     ModelType(MyModelType),
+    EmbeddingModelType(MyEmbeddingModelType),
     Boolean(bool),
     Page(u32),
     Node(u32),
@@ -131,15 +136,19 @@ enum MyPrimitiveValue {
 impl From<&PrimitiveValue> for MyPrimitiveValue {
     fn from(value: &PrimitiveValue) -> Self {
         match value {
-            PrimitiveValue::Number(value) => MyPrimitiveValue::Number(value.clone()),
+            PrimitiveValue::Number(value) => MyPrimitiveValue::Number(*value),
             PrimitiveValue::Text(value) => MyPrimitiveValue::Text(value.clone()),
             PrimitiveValue::File(value) => MyPrimitiveValue::File(value.clone()),
             PrimitiveValue::Folder(value) => MyPrimitiveValue::Folder(value.clone()),
             PrimitiveValue::Embedding(value) => MyPrimitiveValue::Embedding(value.vector.clone()),
             PrimitiveValue::Model(value) => MyPrimitiveValue::Model(value.rep()),
+            PrimitiveValue::EmbeddingModel(value) => MyPrimitiveValue::Model(value.rep()),
             PrimitiveValue::Database(value) => MyPrimitiveValue::Database(value.rep()),
             PrimitiveValue::ModelType(value) => MyPrimitiveValue::ModelType(value.into()),
-            PrimitiveValue::Boolean(value) => MyPrimitiveValue::Boolean(value.clone()),
+            PrimitiveValue::EmbeddingModelType(value) => {
+                MyPrimitiveValue::EmbeddingModelType(value.into())
+            }
+            PrimitiveValue::Boolean(value) => MyPrimitiveValue::Boolean(*value),
             PrimitiveValue::Page(value) => MyPrimitiveValue::Page(value.rep()),
             PrimitiveValue::Node(value) => MyPrimitiveValue::Node(value.rep()),
         }
@@ -157,11 +166,58 @@ impl From<MyPrimitiveValue> for PrimitiveValue {
                 PrimitiveValue::Embedding(Embedding { vector: value })
             }
             MyPrimitiveValue::Model(value) => PrimitiveValue::Model(Resource::new_own(value)),
-            MyPrimitiveValue::Database(value) => PrimitiveValue::Database(Resource::new_own(value)),
+            MyPrimitiveValue::EmbeddingModel(value) => {
+                PrimitiveValue::EmbeddingModel(Resource::new_own(value))
+            }
             MyPrimitiveValue::ModelType(value) => PrimitiveValue::ModelType(value.into()),
+            MyPrimitiveValue::EmbeddingModelType(value) => {
+                PrimitiveValue::EmbeddingModelType(value.into())
+            }
+            MyPrimitiveValue::Database(value) => PrimitiveValue::Database(Resource::new_own(value)),
             MyPrimitiveValue::Boolean(value) => PrimitiveValue::Boolean(value),
             MyPrimitiveValue::Page(value) => PrimitiveValue::Page(Resource::new_own(value)),
             MyPrimitiveValue::Node(value) => PrimitiveValue::Node(Resource::new_own(value)),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+enum MyEmbeddingModelType {
+    Mpt(MyMptType),
+    GptNeoX(MyGptNeoXType),
+    Llama(MyLlamaType),
+    Bert,
+}
+
+impl From<&EmbeddingModelType> for MyEmbeddingModelType {
+    fn from(value: &EmbeddingModelType) -> Self {
+        match value {
+            EmbeddingModelType::Mpt(value) => MyEmbeddingModelType::Mpt(value.into()),
+            EmbeddingModelType::GptNeoX(value) => MyEmbeddingModelType::GptNeoX(value.into()),
+            EmbeddingModelType::Llama(value) => MyEmbeddingModelType::Llama(value.into()),
+            EmbeddingModelType::Bert => MyEmbeddingModelType::Bert,
+        }
+    }
+}
+
+impl From<MyEmbeddingModelType> for EmbeddingModelType {
+    fn from(value: MyEmbeddingModelType) -> Self {
+        match value {
+            MyEmbeddingModelType::Mpt(value) => EmbeddingModelType::Mpt(value.into()),
+            MyEmbeddingModelType::GptNeoX(value) => EmbeddingModelType::GptNeoX(value.into()),
+            MyEmbeddingModelType::Llama(value) => EmbeddingModelType::Llama(value.into()),
+            MyEmbeddingModelType::Bert => EmbeddingModelType::Bert,
+        }
+    }
+}
+
+impl PartialEq for EmbeddingModelType {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (EmbeddingModelType::Mpt(a), EmbeddingModelType::Mpt(b)) => a == b,
+            (EmbeddingModelType::GptNeoX(a), EmbeddingModelType::GptNeoX(b)) => a == b,
+            (EmbeddingModelType::Llama(a), EmbeddingModelType::Llama(b)) => a == b,
+            _ => false,
         }
     }
 }
@@ -353,9 +409,15 @@ impl PrimitiveValueType {
             }
             PrimitiveValueType::Database => PrimitiveValue::Database(Resource::new_own(0)),
             PrimitiveValueType::Model => PrimitiveValue::Model(Resource::new_own(0)),
+            PrimitiveValueType::EmbeddingModel => {
+                PrimitiveValue::EmbeddingModel(Resource::new_own(0))
+            }
             PrimitiveValueType::ModelType => {
                 PrimitiveValue::ModelType(ModelType::Llama(LlamaType::LlamaSevenChat))
             }
+            PrimitiveValueType::EmbeddingModelType => PrimitiveValue::EmbeddingModelType(
+                EmbeddingModelType::Llama(LlamaType::LlamaSevenChat),
+            ),
             PrimitiveValueType::Boolean => PrimitiveValue::Boolean(false),
             PrimitiveValueType::Page => PrimitiveValue::Page(Resource::new_own(0)),
             PrimitiveValueType::Node => PrimitiveValue::Node(Resource::new_own(0)),
@@ -364,22 +426,30 @@ impl PrimitiveValueType {
     }
 
     pub fn compatible(&self, other: &Self) -> bool {
-        match (self, other) {
-            (PrimitiveValueType::Number, PrimitiveValueType::Number) => true,
-            (PrimitiveValueType::Text, PrimitiveValueType::Text) => true,
-            (PrimitiveValueType::File, PrimitiveValueType::File) => true,
-            (PrimitiveValueType::Folder, PrimitiveValueType::Folder) => true,
-            (PrimitiveValueType::Embedding, PrimitiveValueType::Embedding) => true,
-            (PrimitiveValueType::Database, PrimitiveValueType::Database) => true,
-            (PrimitiveValueType::Model, PrimitiveValueType::Model) => true,
-            (PrimitiveValueType::ModelType, PrimitiveValueType::ModelType) => true,
-            (PrimitiveValueType::Boolean, PrimitiveValueType::Boolean) => true,
-            (PrimitiveValueType::Page, PrimitiveValueType::Page) => true,
-            (PrimitiveValueType::Node, PrimitiveValueType::Node) => true,
-            (PrimitiveValueType::Any, _) => true,
-            (_, PrimitiveValueType::Any) => true,
-            _ => false,
-        }
+        matches!(
+            (self, other),
+            (PrimitiveValueType::Number, PrimitiveValueType::Number)
+                | (PrimitiveValueType::Text, PrimitiveValueType::Text)
+                | (PrimitiveValueType::File, PrimitiveValueType::File)
+                | (PrimitiveValueType::Folder, PrimitiveValueType::Folder)
+                | (PrimitiveValueType::Embedding, PrimitiveValueType::Embedding)
+                | (PrimitiveValueType::Database, PrimitiveValueType::Database)
+                | (PrimitiveValueType::Model, PrimitiveValueType::Model)
+                | (
+                    PrimitiveValueType::EmbeddingModel,
+                    PrimitiveValueType::EmbeddingModel
+                )
+                | (PrimitiveValueType::ModelType, PrimitiveValueType::ModelType)
+                | (
+                    PrimitiveValueType::EmbeddingModelType,
+                    PrimitiveValueType::EmbeddingModelType
+                )
+                | (PrimitiveValueType::Boolean, PrimitiveValueType::Boolean)
+                | (PrimitiveValueType::Page, PrimitiveValueType::Page)
+                | (PrimitiveValueType::Node, PrimitiveValueType::Node)
+                | (PrimitiveValueType::Any, _)
+                | (_, PrimitiveValueType::Any)
+        )
     }
 }
 
@@ -468,7 +538,9 @@ enum MyPrimitiveValueType {
     Embedding,
     Database,
     Model,
+    EmbeddingModel,
     ModelType,
+    EmbeddingModelType,
     Boolean,
     Page,
     Node,
@@ -485,7 +557,9 @@ impl From<PrimitiveValueType> for MyPrimitiveValueType {
             PrimitiveValueType::Embedding => MyPrimitiveValueType::Embedding,
             PrimitiveValueType::Database => MyPrimitiveValueType::Database,
             PrimitiveValueType::Model => MyPrimitiveValueType::Model,
+            PrimitiveValueType::EmbeddingModel => MyPrimitiveValueType::EmbeddingModel,
             PrimitiveValueType::ModelType => MyPrimitiveValueType::ModelType,
+            PrimitiveValueType::EmbeddingModelType => MyPrimitiveValueType::EmbeddingModelType,
             PrimitiveValueType::Boolean => MyPrimitiveValueType::Boolean,
             PrimitiveValueType::Page => MyPrimitiveValueType::Page,
             PrimitiveValueType::Node => MyPrimitiveValueType::Node,
@@ -504,7 +578,9 @@ impl From<MyPrimitiveValueType> for PrimitiveValueType {
             MyPrimitiveValueType::Embedding => PrimitiveValueType::Embedding,
             MyPrimitiveValueType::Database => PrimitiveValueType::Database,
             MyPrimitiveValueType::Model => PrimitiveValueType::Model,
+            MyPrimitiveValueType::EmbeddingModel => PrimitiveValueType::EmbeddingModel,
             MyPrimitiveValueType::ModelType => PrimitiveValueType::ModelType,
+            MyPrimitiveValueType::EmbeddingModelType => PrimitiveValueType::EmbeddingModelType,
             MyPrimitiveValueType::Boolean => PrimitiveValueType::Boolean,
             MyPrimitiveValueType::Page => PrimitiveValueType::Page,
             MyPrimitiveValueType::Node => PrimitiveValueType::Node,
@@ -535,18 +611,18 @@ impl<'de> Deserialize<'de> for PrimitiveValueType {
 
 impl PrimitiveValue {
     pub fn is_of_type(&self, ty: PrimitiveValueType) -> bool {
-        match (self, ty) {
-            (PrimitiveValue::Number(_), PrimitiveValueType::Number) => true,
-            (PrimitiveValue::Text(_), PrimitiveValueType::Text) => true,
-            (PrimitiveValue::Embedding(_), PrimitiveValueType::Embedding) => true,
-            (PrimitiveValue::Database(_), PrimitiveValueType::Database) => true,
-            (PrimitiveValue::Model(_), PrimitiveValueType::Model) => true,
-            (PrimitiveValue::ModelType(_), PrimitiveValueType::ModelType) => true,
-            (PrimitiveValue::Boolean(_), PrimitiveValueType::Boolean) => true,
-            (PrimitiveValue::Page(_), PrimitiveValueType::Page) => true,
-            (PrimitiveValue::Node(_), PrimitiveValueType::Node) => true,
-            _ => false,
-        }
+        matches!(
+            (self, ty),
+            (PrimitiveValue::Number(_), PrimitiveValueType::Number)
+                | (PrimitiveValue::Text(_), PrimitiveValueType::Text)
+                | (PrimitiveValue::Embedding(_), PrimitiveValueType::Embedding)
+                | (PrimitiveValue::Database(_), PrimitiveValueType::Database)
+                | (PrimitiveValue::Model(_), PrimitiveValueType::Model)
+                | (PrimitiveValue::ModelType(_), PrimitiveValueType::ModelType)
+                | (PrimitiveValue::Boolean(_), PrimitiveValueType::Boolean)
+                | (PrimitiveValue::Page(_), PrimitiveValueType::Page)
+                | (PrimitiveValue::Node(_), PrimitiveValueType::Node)
+        )
     }
 }
 
@@ -618,7 +694,7 @@ impl Clone for Output {
 impl Clone for PrimitiveValue {
     fn clone(&self) -> Self {
         match self {
-            PrimitiveValue::Number(value) => PrimitiveValue::Number(value.clone()),
+            PrimitiveValue::Number(value) => PrimitiveValue::Number(*value),
             PrimitiveValue::Text(value) => PrimitiveValue::Text(value.clone()),
             PrimitiveValue::File(value) => PrimitiveValue::File(value.clone()),
             PrimitiveValue::Folder(value) => PrimitiveValue::Folder(value.clone()),
@@ -629,8 +705,12 @@ impl Clone for PrimitiveValue {
             PrimitiveValue::Model(value) => {
                 PrimitiveValue::Model(Resource::new_borrow(value.rep()))
             }
-            PrimitiveValue::ModelType(value) => PrimitiveValue::ModelType(value.clone()),
-            PrimitiveValue::Boolean(value) => PrimitiveValue::Boolean(value.clone()),
+            PrimitiveValue::EmbeddingModel(value) => {
+                PrimitiveValue::EmbeddingModel(Resource::new_borrow(value.rep()))
+            }
+            PrimitiveValue::ModelType(value) => PrimitiveValue::ModelType(*value),
+            PrimitiveValue::EmbeddingModelType(value) => PrimitiveValue::EmbeddingModelType(*value),
+            PrimitiveValue::Boolean(value) => PrimitiveValue::Boolean(*value),
             PrimitiveValue::Page(value) => PrimitiveValue::Page(Resource::new_borrow(value.rep())),
             PrimitiveValue::Node(value) => PrimitiveValue::Node(Resource::new_borrow(value.rep())),
         }

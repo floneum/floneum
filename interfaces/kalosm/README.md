@@ -15,13 +15,13 @@ There are three different packages in Kalosm:
 cargo new next-gen-ai
 cd ./next-gen-ai
 ```
-3) Add Kalsom as a dependancy
+3) Add Kalosm as a dependency
 ```sh
 cargo add kalosm --git "https://github.com/floneum/floneum"
 cargo add tokio --features full
 ```
 4) Add this code to your `main.rs` file
-```rust
+```rust, no_run
 use std::io::Write;
 
 use kalosm::{*, language::*};
@@ -54,23 +54,28 @@ You can think of Kalosm as the plumbing between different pre-trained models and
 
 The simplest way to use Kalosm is to pull in one of the local large language models and use it to generate text. Kalosm supports a streaming API that allows you to generate text in real time without blocking your main thread:
 
-```rust
+```rust, no_run
 use std::io::Write;
 
 use futures_util::stream::StreamExt;
 use kalosm::language::*;
-use kalosm::::TextStream;
+use kalosm::TextStream;
 
-let mut llm = Phi::start().await;
-let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
-print!("{}", prompt);
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut llm = Phi::start().await;
+    let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
+    print!("{}", prompt);
 
-let stream = llm.stream_text(prompt).with_max_length(1000).await.unwrap();
+    let stream = llm.stream_text(prompt).with_max_length(1000).await.unwrap();
 
-let mut words = stream.words();
-while let Some(text) = words.next().await {
-    print!("{}", text);
-    std::io::stdout().flush().unwrap();
+    let mut words = stream.words();
+    while let Some(text) = words.next().await {
+        print!("{}", text);
+        std::io::stdout().flush().unwrap();
+    }
+
+    Ok(())
 }
 ```
 
@@ -78,23 +83,28 @@ while let Some(text) = words.next().await {
 
 Kalosm also supports cloud models like GPT4 with the same streaming API:
 
-```rust
+```rust, no_run
 // You must set the environment variable OPENAI_API_KEY (https://platform.openai.com/account/api-keys) to run this example.
 
 use std::io::Write;
 use futures_util::stream::StreamExt;
 use kalosm::{language::*, TextStream};
 
-let mut llm = Gpt4::start().await;
-let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
-print!("{}", prompt);
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut llm = Gpt4::start().await;
+    let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
+    print!("{}", prompt);
 
-let stream = llm.stream_text(prompt).with_max_length(300).await.unwrap();
+    let stream = llm.stream_text(prompt).with_max_length(300).await.unwrap();
 
-let mut words = stream.words();
-while let Some(text) = words.next().await {
-    print!("{}", text);
-    std::io::stdout().flush().unwrap();
+    let mut words = stream.words();
+    while let Some(text) = words.next().await {
+        print!("{}", text);
+        std::io::stdout().flush().unwrap();
+    }
+
+    Ok(())
 }
 ```
 
@@ -102,80 +112,90 @@ while let Some(text) = words.next().await {
 
 Kalosm makes it easy to collect text data from a variety of sources. For example, you can use Kalosm to collect text from a local folder of documents, an RSS stream, a website, or a search engine:
 
-```rust
+```rust, no_run
 use kalosm::language::*;
 use std::convert::TryFrom;
 use std::path::PathBuf;
 
-// Read an RSS stream
-let nyt = RssFeed::new(Url::parse("https://rss.nytimes.com/services/xml/rss/nyt/US.xml").unwrap());
-// Read a local folder of documents
-let mut documents = DocumentFolder::try_from(PathBuf::from("./documents")).unwrap();
-// Read a website (either from the raw HTML or inside of a headless browser)
-let page = Page::new(Url::parse("https://www.nytimes.com/live/2023/09/21/world/zelensky-russia-ukraine-news").unwrap(), BrowserMode::Static).unwrap();
-let document = page.article().await.unwrap();
-println!("Title: {}", document.title());
-println!("Body: {}", document.body());
-// Read pages from a search engine (You must have the SERPER_API_KEY environment variable set to run this example)
-let query = "What is the capital of France?";
-let api_key = std::env::var("SERPER_API_KEY").unwrap();
-let search_query = SearchQuery::new(query, &api_key, self.top_n);
-let documents = search_query.into_documents().await.unwrap();
-let mut text = String::new();
-for document in documents {
-    for word in document.body().split(' ').take(300) {
-        text.push_str(word);
-        text.push(' ');
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Read an RSS stream
+    let nyt = RssFeed::new(Url::parse("https://rss.nytimes.com/services/xml/rss/nyt/US.xml").unwrap());
+    // Read a local folder of documents
+    let mut documents = DocumentFolder::try_from(PathBuf::from("./documents")).unwrap();
+    // Read a website (either from the raw HTML or inside of a headless browser)
+    let page = Page::new(Url::parse("https://www.nytimes.com/live/2023/09/21/world/zelensky-russia-ukraine-news").unwrap(), BrowserMode::Static).unwrap();
+    let document = page.article().await.unwrap();
+    println!("Title: {}", document.title());
+    println!("Body: {}", document.body());
+    // Read pages from a search engine (You must have the SERPER_API_KEY environment variable set to run this example)
+    let query = "What is the capital of France?";
+    let api_key = std::env::var("SERPER_API_KEY").unwrap();
+    let search_query = SearchQuery::new(query, &api_key, 5);
+    let documents = search_query.into_documents().await.unwrap();
+    let mut text = String::new();
+    for document in documents {
+        for word in document.body().split(' ').take(300) {
+            text.push_str(word);
+            text.push(' ');
+        }
+        text.push('\n');
     }
-    text.push('\n');
+    println!("{}", text);
+
+    Ok(())
 }
-println!("{}", text);
 ```
 
 ### Embedding powered search
 
 Once you have your data, Kalosm includes tools to create traditional fuzzy search indexes and vector search indexes. These indexes can be used to search for specific text in a large corpus of documents. Fuzzy search indexes are useful for finding documents that contain a specific word or phrase. Vector search indexes are useful for finding documents that are semantically similar to a specific word or phrase. Kalosm makes it easy to create and use these indexes with your embedding model of choice:
 
-```rust
+```rust, no_run
 use kalosm::language::*;
 use std::io::Write;
 use std::path::PathBuf;
 
-let documents = DocumentFolder::try_from(PathBuf::from("./documents")).unwrap();
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let documents = DocumentFolder::try_from(PathBuf::from("./documents")).unwrap();
 
-let mut database = DocumentDatabase::new(
-    Bert::builder().build().unwrap(),
-    ChunkStrategy::Sentence {
-        sentence_count: 1,
-        overlap: 0,
-    },
-);
-database.extend(documents.clone()).await.unwrap();
-let mut fuzzy = FuzzySearchIndex::default();
-fuzzy.extend(documents).await.unwrap();
-
-loop {
-    print!("Query: ");
-    std::io::stdout().flush().unwrap();
-    let mut user_question = String::new();
-    std::io::stdin().read_line(&mut user_question).unwrap();
-
-    println!(
-        "vector: {:?}",
-        database
-            .search(&user_question, 5)
-            .await
-            .iter()
-            .collect::<Vec<_>>()
+    let mut database = DocumentDatabase::new(
+        Bert::builder().build().unwrap(),
+        ChunkStrategy::Sentence {
+            sentence_count: 1,
+            overlap: 0,
+        },
     );
-    println!(
-        "fuzzy: {:?}",
-        fuzzy
-            .search(&user_question, 5)
-            .await
-            .iter()
-            .collect::<Vec<_>>()
-    );
+    database.extend(documents.clone()).await.unwrap();
+    let mut fuzzy = FuzzySearchIndex::default();
+    fuzzy.extend(documents).await.unwrap();
+
+    loop {
+        print!("Query: ");
+        std::io::stdout().flush().unwrap();
+        let mut user_question = String::new();
+        std::io::stdin().read_line(&mut user_question).unwrap();
+
+        println!(
+            "vector: {:?}",
+            database
+                .search(&user_question, 5)
+                .await
+                .iter()
+                .collect::<Vec<_>>()
+        );
+        println!(
+            "fuzzy: {:?}",
+            fuzzy
+                .search(&user_question, 5)
+                .await
+                .iter()
+                .collect::<Vec<_>>()
+        );
+    }
+
+    Ok(())
 }
 ```
 
@@ -183,48 +203,53 @@ loop {
 
 A large part of making modern LLMs performant is curating the context the models have access to. Resource augmented generation (or RAG) helps you do this by inserting context into the prompt based on a search query. For example, you can Kalosm to create a chatbot that uses context from local documents to answer questions:
 
-```rust
+```rust, no_run
 use futures_util::StreamExt;
 use kalosm::language::*;
 use std::io::Write;
 
-let nyt =
-    RssFeed::new(Url::parse("https://rss.nytimes.com/services/xml/rss/nyt/US.xml").unwrap());
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let nyt =
+        RssFeed::new(Url::parse("https://rss.nytimes.com/services/xml/rss/nyt/US.xml").unwrap());
 
-let mut fuzzy = FuzzySearchIndex::default();
-fuzzy.extend(nyt).await.unwrap();
+    let mut fuzzy = FuzzySearchIndex::default();
+    fuzzy.extend(nyt).await.unwrap();
 
-loop {
-    print!("Query: ");
-    std::io::stdout().flush().unwrap();
-    let mut user_question = String::new();
-    std::io::stdin().read_line(&mut user_question).unwrap();
-    let context = fuzzy.search(&user_question, 5).await;
-
-    let mut llm = LocalSession::<LlamaSevenChatSpace>::start().await;
-
-    let context = context
-        .iter()
-        .take(2)
-        .map(|x| x.to_string())
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let prompt = format!(
-        "# Question:
-{user_question}
-# Context:
-{context}
-# Answer:
-"
-    );
-
-    let mut stream = llm.stream_text(&prompt).with_max_length(300).await.unwrap();
-
-    while let Some(text) = stream.next().await {
-        print!("{}", text);
+    loop {
+        print!("Query: ");
         std::io::stdout().flush().unwrap();
+        let mut user_question = String::new();
+        std::io::stdin().read_line(&mut user_question).unwrap();
+        let context = fuzzy.search(&user_question, 5).await;
+
+        let mut llm = LocalSession::<LlamaSevenChatSpace>::start().await;
+
+        let context = context
+            .iter()
+            .take(2)
+            .map(|x| x.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let prompt = format!(
+            "# Question:
+    {user_question}
+    # Context:
+    {context}
+    # Answer:
+    "
+        );
+
+        let mut stream = llm.stream_text(&prompt).with_max_length(300).await.unwrap();
+
+        while let Some(text) = stream.next().await {
+            print!("{}", text);
+            std::io::stdout().flush().unwrap();
+        }
     }
+
+    Ok(())
 }
 ```
 
@@ -232,104 +257,109 @@ loop {
 
 Kalosm makes it easy to build up context about the world around your application and use it to generate text. For example, you can use Kalosm to transcribe audio from a microphone, insert that into a vector database and answer questions about the audio in real-time:
 
-```rust
+```rust, no_run
 use futures_util::StreamExt;
 use kalosm::language::{
     CreateModel, FuzzySearchIndex, LlamaSevenChatSpace, LocalSession, ModelExt, SearchIndex,
 };
-use kalosm::sound::*;
+use kalosm::audio::*;
 use std::{
     io::Write,
     sync::{Arc, RwLock},
 };
 use tokio::time::{Duration, Instant};
 
-let model = WhisperBuilder::default()
-    .with_source(WhisperSource::SmallEn)
-    .build()?;
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let model = WhisperBuilder::default()
+        .with_source(WhisperSource::SmallEn)
+        .build()?;
 
-let document_engine = Arc::new(RwLock::new(FuzzySearchIndex::default()));
-{
-    let document_engine = document_engine.clone();
-    std::thread::spawn(move || {
-        tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(async move {
-                let recording_time = Duration::from_secs(30);
-                loop {
-                    let input = kalosm::sound::MicInput::default()
-                        .record_until(Instant::now() + recording_time)
-                        .await
-                        .unwrap();
+    let document_engine = Arc::new(RwLock::new(FuzzySearchIndex::default()));
+    {
+        let document_engine = document_engine.clone();
+        std::thread::spawn(move || {
+            tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(async move {
+                    let recording_time = Duration::from_secs(30);
+                    loop {
+                        let input = MicInput::default()
+                            .record_until(Instant::now() + recording_time)
+                            .await
+                            .unwrap();
 
-                    if let Ok(mut transcribed) = model.transcribe(input) {
-                        while let Some(transcribed) = transcribed.next().await {
-                            if transcribed.probability_of_no_speech() < 0.90 {
-                                let text = transcribed.text();
-                                println!("Adding to context: {}", text);
-                                document_engine.write().unwrap().add(text).await.unwrap();
+                        if let Ok(mut transcribed) = model.transcribe(input) {
+                            while let Some(transcribed) = transcribed.next().await {
+                                if transcribed.probability_of_no_speech() < 0.90 {
+                                    let text = transcribed.text();
+                                    println!("Adding to context: {}", text);
+                                    document_engine.write().unwrap().add(text).await.unwrap();
+                                }
                             }
                         }
                     }
-                }
-            })
-    });
-}
-
-loop {
-    println!();
-    print!("Query: ");
-    std::io::stdout().flush().unwrap();
-    let mut user_question = String::new();
-    std::io::stdin().read_line(&mut user_question).unwrap();
-    let mut engine = document_engine.write().unwrap();
-
-    let mut llm = LocalSession::<LlamaSevenChatSpace>::start().await;
-
-    let context = {
-        let context = engine.search(&user_question, 5).await;
-        context
-            .iter()
-            .take(5)
-            .map(|x| x.to_string())
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-
-    let prompt = format!(
-        "# Question:
-{user_question}
-# Context:
-{context}
-# Answer:
-"
-    );
-
-    println!("{}", prompt);
-
-    let mut stream = llm.stream_text(&prompt).with_max_length(300).await.unwrap();
+                })
+        });
+    }
 
     loop {
-        // set up a CTRL-C handler to stop the stream
-        let quit_stream = tokio::signal::ctrl_c();
-        tokio::select! {
-            text = stream.next() => {
-                match text{
-                    Some(text) => {
-                        print!("{}", text);
-                        std::io::stdout().flush().unwrap();
-                    },
-                    None => {
-                        break;
+        println!();
+        print!("Query: ");
+        std::io::stdout().flush().unwrap();
+        let mut user_question = String::new();
+        std::io::stdin().read_line(&mut user_question).unwrap();
+        let mut engine = document_engine.write().unwrap();
+
+        let mut llm = LocalSession::<LlamaSevenChatSpace>::start().await;
+
+        let context = {
+            let context = engine.search(&user_question, 5).await;
+            context
+                .iter()
+                .take(5)
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        let prompt = format!(
+            "# Question:
+    {user_question}
+    # Context:
+    {context}
+    # Answer:
+    "
+        );
+
+        println!("{}", prompt);
+
+        let mut stream = llm.stream_text(&prompt).with_max_length(300).await.unwrap();
+
+        loop {
+            // set up a CTRL-C handler to stop the stream
+            let quit_stream = tokio::signal::ctrl_c();
+            tokio::select! {
+                text = stream.next() => {
+                    match text{
+                        Some(text) => {
+                            print!("{}", text);
+                            std::io::stdout().flush().unwrap();
+                        },
+                        None => {
+                            break;
+                        }
                     }
+                },
+                _ = quit_stream => {
+                    println!("Stopping stream...");
+                    break;
                 }
-            },
-            _ = quit_stream => {
-                println!("Stopping stream...");
-                break;
             }
         }
     }
+
+    Ok(())
 }
 ```
 
@@ -337,7 +367,7 @@ loop {
 
 In addition to language, audio, and embedding models, Kalosm also supports image generation. For example, you can use Kalosm to generate images from text:
 
-```rust
+```rust, no_run
 use kalosm::vision::*;
 
 let model = Wuerstchen::builder().build().unwrap();
@@ -355,7 +385,7 @@ for (i, img) in images.iter().enumerate() {
 
 Kalosm also supports image segmentation with the segment-anything model:
 
-```rust
+```rust, no_run
 use kalosm::vision::*;
 
 let model = SegmentAnything::builder().build().unwrap();

@@ -85,8 +85,8 @@ pub(crate) fn make_config() -> dioxus_desktop::Config {
 
 pub fn use_apply_menu_event(cx: &ScopeState, state: Signal<ApplicationState>) {
     let open_application = use_signal(cx, || None);
-    use_wry_event_handler(cx, move |event, _| match event {
-        dioxus_desktop::tao::event::Event::MenuEvent { menu_id, .. } => {
+    use_wry_event_handler(cx, move |event, _| {
+        if let dioxus_desktop::tao::event::Event::MenuEvent { menu_id, .. } = event {
             let menu_id = *menu_id;
             if menu_id == SaveMenuItem::id() {
                 SaveMenuItem::save(&state.read());
@@ -102,7 +102,6 @@ pub fn use_apply_menu_event(cx: &ScopeState, state: Signal<ApplicationState>) {
                 SummarizeNewsMenuItem::open(open_application);
             }
         }
-        _ => {}
     });
 
     if let Some(buffer) = open_application.take() {

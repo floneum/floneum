@@ -10,9 +10,9 @@ fn search_engine(query: String) -> String {
         "https://en.wikipedia.org/w/index.php?search={}",
         query.replace(' ', "+")
     );
-    let html = get_request(&url, &[]);
+    let page = Page::new(BrowserMode::Headless, &url);
 
-    let document = Document::from(&html);
+    let document = Document::from(&page.html());
     let mut results = String::new();
     let mut article_count = 0;
 
@@ -27,13 +27,17 @@ fn search_engine(query: String) -> String {
                 } else {
                     href.to_string()
                 };
-                let request = get_request(&href, &[]);
+                let request = Page::new(BrowserMode::Headless, &href);
+                let html = request.html();
 
-                document.select("p").iter().for_each(|paragragh| {
-                    let html = paragragh.text();
-                    results += &html;
-                    results += "\n";
-                });
+                Document::from(&html)
+                    .select("p")
+                    .iter()
+                    .for_each(|paragragh| {
+                        let html = paragragh.text();
+                        results += &html;
+                        results += "\n";
+                    });
                 article_count += 1;
             }
         }
