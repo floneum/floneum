@@ -113,6 +113,6 @@ impl<S: VectorSpace> Embedding<S> {
 
     /// Get the tensor that represents this embedding as a Vec of floats.
     pub fn to_vec(&self) -> Vec<f32> {
-        self.embedding.to_vec1::<f32>().unwrap()
+        self.embedding.flatten_to(1).unwrap().to_vec1::<f32>().unwrap()
     }
 }

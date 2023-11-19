@@ -1,6 +1,8 @@
 use candle_core::{DType, Device, Result, Tensor, D};
-use candle_nn::{loss, ops, Linear, Module, Optimizer, ParamsAdamW, VarBuilder, VarMap};
+use candle_nn::{loss, ops, Linear, Module, Optimizer, VarBuilder, VarMap};
 use rand::Rng;
+use rbert::Bert;
+use crate::Embedder;
 
 const MAX_EPOCHS: usize = 100;
 
@@ -206,14 +208,12 @@ impl<C: Class> Classifier<C> {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(u32)]
 enum MyClass {
-    Quadrant0,
-    Quadrant1,
-    Quadrant2,
-    Quadrant3,
+    Person,
+    Thing,
 }
 
 impl Class for MyClass {
-    const CLASSES: u32 = 4;
+    const CLASSES: u32 = 2;
 
     fn to_class(&self) -> u32 {
         *self as u32
@@ -221,97 +221,75 @@ impl Class for MyClass {
 
     fn from_class(class: u32) -> Self {
         match class {
-            0 => Self::Quadrant0,
-            1 => Self::Quadrant1,
-            2 => Self::Quadrant2,
-            3 => Self::Quadrant3,
+            0 => Self::Person,
+            1 => Self::Thing,
             _ => panic!("Invalid class"),
         }
     }
 }
 
-#[test]
-fn simplified() -> anyhow::Result<()> {
+#[tokio::test]
+async fn simplified() -> anyhow::Result<()> {
+    let mut bert = Bert::builder().build()?;
+
     let dev = Device::cuda_if_available(0).unwrap();
+    let person_questions = vec![
+        "What is the author's name?",
+        "What is the author's age?",
+        "Who is the queen of England?",
+        "Who is the president of the United States?",
+        "Who is the president of France?",
+        "Tell me about the CEO of Apple.",
+        "Who is the CEO of Google?",
+        "Who is the CEO of Microsoft?",
+        "What person invented the light bulb?",
+    ];
+    let person_embeddings = bert.embed_batch(&person_questions).await?;
+    let thing_sentences = vec![
+        "What is the capital of France?",
+        "What is the capital of England?",
+        "What is the name of the biggest city in the world?",
+        "What tool do you use to cut a tree?",
+        "What tool do you use to cut a piece of paper?",
+        "What is a good book to read?",
+        "What is a good movie to watch?",
+        "What is a good song to listen to?",
+        "What is the best tool to use to create a website?",
+    ];
+    let thing_embeddings = bert.embed_batch(&thing_sentences).await?;
 
-    let mut dataset = DatasetBuilder::<f32, MyClass>::new(3);
+    let input_size = person_embeddings[0].to_vec().len();
 
-    for _ in 0..1000 {
-        // Q0 is a random point in the first quadrant
-        dataset.add(
-            vec![
-                rand::thread_rng().gen_range(0.0..1.0),
-                rand::thread_rng().gen_range(0.0..1.0),
-                rand::thread_rng().gen_range(-1.0..1.0),
-            ],
-            MyClass::Quadrant0,
-        );
-        // Q1 is a random point in the second quadrant
-        dataset.add(
-            vec![
-                rand::thread_rng().gen_range(-1.0..0.0),
-                rand::thread_rng().gen_range(0.0..1.0),
-                rand::thread_rng().gen_range(-1.0..1.0),
-            ],
-            MyClass::Quadrant1,
-        );
-        // Q2 is a random point in the third quadrant
-        dataset.add(
-            vec![
-                rand::thread_rng().gen_range(-1.0..0.0),
-                rand::thread_rng().gen_range(-1.0..0.0),
-                rand::thread_rng().gen_range(-1.0..1.0),
-            ],
-            MyClass::Quadrant2,
-        );
-        // Q3 is a random point in the fourth quadrant
-        dataset.add(
-            vec![
-                rand::thread_rng().gen_range(0.0..1.0),
-                rand::thread_rng().gen_range(-1.0..0.0),
-                rand::thread_rng().gen_range(-1.0..1.0),
-            ],
-            MyClass::Quadrant3,
-        );
+    let mut dataset = DatasetBuilder::<f32, MyClass>::new(384);
+
+    for embedding in person_embeddings {
+        dataset.add(embedding.to_vec(), MyClass::Person);
+    }
+    for embedding in thing_embeddings {
+        dataset.add(embedding.to_vec(), MyClass::Thing);
     }
 
     let dataset = dataset.build(&dev)?;
     println!("{:?}", dataset);
 
-    let mut error = true;
-    let mut classifier = Classifier::<MyClass>::new(&dev, 2, &[5, 8, 5]).unwrap();
+    let mut classifier;
 
-    while error {
-        classifier = Classifier::<MyClass>::new(&dev, 3, &[5, 8, 5]).unwrap();
-        error = classifier.train(&dataset, &dev).is_err();
-        if error {
-            println!("Retrying...");
+    loop {
+        classifier = Classifier::<MyClass>::new(&dev, input_size, &[2, 2]).unwrap();
+        let error = classifier.train(&dataset, &dev).is_err();
+        if !error {
+            break;
         }
+        println!("Retrying...");
     }
 
-    for _ in 0..10 {
-        let x = rand::thread_rng().gen_range(-1.0..1.0);
-        let y = rand::thread_rng().gen_range(-1.0..1.0);
-        let z = rand::thread_rng().gen_range(-1.0..1.0);
-        let expected = if x > 0.0 && y > 0.0 {
-            println!("Expected: Quadrant0");
-            MyClass::Quadrant0
-        } else if x < 0.0 && y > 0.0 {
-            println!("Expected: Quadrant1");
-            MyClass::Quadrant1
-        } else if x < 0.0 && y < 0.0 {
-            println!("Expected: Quadrant2");
-            MyClass::Quadrant2
-        } else {
-            println!("Expected: Quadrant3");
-            MyClass::Quadrant3
-        };
-        let input = vec![x, y, z];
-        let class = classifier.run(&input, &dev)?;
-        println!("{} {} {:?}", x, y, class);
-        if class != expected {
-            println!(">>> Wrong class");
-        }
-    }
+    let input = bert.embed("Who is the president of Russia?").await?.to_vec();
+    let class = classifier.run(&input, &dev)?;
+    println!("{:?} {:?}", &input[..5], class);
+
+    let input = bert.embed("What is the capital of Russia?").await?.to_vec();
+    let class = classifier.run(&input, &dev)?;
+    println!("{:?} {:?}", &input[..5], class);
+
     Ok(())
 }
