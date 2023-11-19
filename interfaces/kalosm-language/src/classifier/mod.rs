@@ -1,5 +1,5 @@
 use candle_core::{DType, Device, Result, Tensor, D};
-use candle_nn::{loss, ops, Linear, Module, Optimizer, VarBuilder, VarMap, ParamsAdamW};
+use candle_nn::{loss, ops, Linear, Module, Optimizer, ParamsAdamW, VarBuilder, VarMap};
 use rand::Rng;
 
 const MAX_EPOCHS: usize = 100;
@@ -100,7 +100,11 @@ impl<C: Class> Classifier<C> {
         if layers_dims.is_empty() {
             return Ok(Self {
                 varmap,
-                layers: vec![candle_nn::linear(input_dim, output_dim as usize, vs.pp("output"))?],
+                layers: vec![candle_nn::linear(
+                    input_dim,
+                    output_dim as usize,
+                    vs.pp("output"),
+                )?],
                 phantom: std::marker::PhantomData,
             });
         }
@@ -185,18 +189,31 @@ impl<C: Class> Classifier<C> {
             Ok(())
         }
     }
+
+    fn run(&mut self, input: &[f32], dev: &Device) -> Result<C> {
+        let input = Tensor::from_vec(input.to_vec(), (1, input.len()), dev).unwrap();
+        let logits = self.forward(&input).unwrap();
+        let class = logits
+            .flatten_to(1)
+            .unwrap()
+            .argmax(D::Minus1)?
+            .to_scalar::<u32>()
+            .unwrap();
+        Ok(C::from_class(class))
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(u32)]
 enum MyClass {
-    Yes,
-    Maybe,
-    No,
+    Quadrant0,
+    Quadrant1,
+    Quadrant2,
+    Quadrant3,
 }
 
 impl Class for MyClass {
-    const CLASSES: u32 = 3;
+    const CLASSES: u32 = 4;
 
     fn to_class(&self) -> u32 {
         *self as u32
@@ -204,10 +221,11 @@ impl Class for MyClass {
 
     fn from_class(class: u32) -> Self {
         match class {
-            0 => Self::Yes,
-            1 => Self::Maybe,
-            2 => Self::No,
-            _ => panic!("Invalid class."),
+            0 => Self::Quadrant0,
+            1 => Self::Quadrant1,
+            2 => Self::Quadrant2,
+            3 => Self::Quadrant3,
+            _ => panic!("Invalid class"),
         }
     }
 }
@@ -216,32 +234,44 @@ impl Class for MyClass {
 fn simplified() -> anyhow::Result<()> {
     let dev = Device::cuda_if_available(0).unwrap();
 
-    let mut dataset = DatasetBuilder::<f32, MyClass>::new(2);
+    let mut dataset = DatasetBuilder::<f32, MyClass>::new(3);
 
-    for _ in 0..100 {
-        // Yes is a random point in the first quadrant
+    for _ in 0..1000 {
+        // Q0 is a random point in the first quadrant
         dataset.add(
             vec![
                 rand::thread_rng().gen_range(0.0..1.0),
                 rand::thread_rng().gen_range(0.0..1.0),
+                rand::thread_rng().gen_range(-1.0..1.0),
             ],
-            MyClass::Yes,
+            MyClass::Quadrant0,
         );
-        // Maybe is a random point in the second quadrant
+        // Q1 is a random point in the second quadrant
         dataset.add(
             vec![
                 rand::thread_rng().gen_range(-1.0..0.0),
                 rand::thread_rng().gen_range(0.0..1.0),
+                rand::thread_rng().gen_range(-1.0..1.0),
             ],
-            MyClass::Maybe,
+            MyClass::Quadrant1,
         );
-        // No is a random point in the third quadrant
+        // Q2 is a random point in the third quadrant
         dataset.add(
             vec![
                 rand::thread_rng().gen_range(-1.0..0.0),
                 rand::thread_rng().gen_range(-1.0..0.0),
+                rand::thread_rng().gen_range(-1.0..1.0),
             ],
-            MyClass::No,
+            MyClass::Quadrant2,
+        );
+        // Q3 is a random point in the fourth quadrant
+        dataset.add(
+            vec![
+                rand::thread_rng().gen_range(0.0..1.0),
+                rand::thread_rng().gen_range(-1.0..0.0),
+                rand::thread_rng().gen_range(-1.0..1.0),
+            ],
+            MyClass::Quadrant3,
         );
     }
 
@@ -249,12 +279,38 @@ fn simplified() -> anyhow::Result<()> {
     println!("{:?}", dataset);
 
     let mut error = true;
+    let mut classifier = Classifier::<MyClass>::new(&dev, 2, &[5, 8, 5]).unwrap();
+
     while error {
-        let mut classifier = Classifier::<MyClass>::new(&dev, 2, &[5, 8, 5]).unwrap();
-    
+        classifier = Classifier::<MyClass>::new(&dev, 3, &[5, 8, 5]).unwrap();
         error = classifier.train(&dataset, &dev).is_err();
         if error {
             println!("Retrying...");
+        }
+    }
+
+    for _ in 0..10 {
+        let x = rand::thread_rng().gen_range(-1.0..1.0);
+        let y = rand::thread_rng().gen_range(-1.0..1.0);
+        let z = rand::thread_rng().gen_range(-1.0..1.0);
+        let expected = if x > 0.0 && y > 0.0 {
+            println!("Expected: Quadrant0");
+            MyClass::Quadrant0
+        } else if x < 0.0 && y > 0.0 {
+            println!("Expected: Quadrant1");
+            MyClass::Quadrant1
+        } else if x < 0.0 && y < 0.0 {
+            println!("Expected: Quadrant2");
+            MyClass::Quadrant2
+        } else {
+            println!("Expected: Quadrant3");
+            MyClass::Quadrant3
+        };
+        let input = vec![x, y, z];
+        let class = classifier.run(&input, &dev)?;
+        println!("{} {} {:?}", x, y, class);
+        if class != expected {
+            println!(">>> Wrong class");
         }
     }
     Ok(())
