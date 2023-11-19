@@ -1,10 +1,9 @@
-use candle_core::{DType, Device, Result, Tensor, D};
-use candle_nn::{loss, ops, Linear, Module, Optimizer, VarBuilder, VarMap};
-use rand::Rng;
-use rbert::Bert;
 use crate::Embedder;
-
-const MAX_EPOCHS: usize = 100;
+use candle_core::{safetensors::Load, DType, Device, Result, Tensor, Var, D};
+use candle_nn::{loss, ops, Linear, Module, Optimizer, VarBuilder, VarMap};
+use chrono::format::format;
+use rand::{seq::SliceRandom, Rng};
+use rbert::Bert;
 
 pub trait Class {
     const CLASSES: u32;
@@ -47,6 +46,11 @@ impl<D: candle_core::WithDType, C: Class> DatasetBuilder<D, C> {
         // split into train and test
         let mut rng = rand::thread_rng();
         let first_quarter = self.inputs.len() / 4;
+        println!(
+            "{} train/{} tests",
+            self.inputs.len() - first_quarter,
+            first_quarter
+        );
         let mut input_test: Vec<D> = Vec::with_capacity(first_quarter);
         let mut class_test: Vec<u32> = Vec::with_capacity(first_quarter);
         let mut inputs: Vec<D> = Vec::with_capacity(self.inputs.len() - first_quarter);
@@ -55,7 +59,7 @@ impl<D: candle_core::WithDType, C: Class> DatasetBuilder<D, C> {
             let index = rng.gen_range(0..self.classes.len());
             let mut input = self.inputs.remove(index);
             let class = self.classes.remove(index);
-            if input_test.len() < first_quarter {
+            if input_test.len() <= first_quarter {
                 input_test.append(&mut input);
                 class_test.push(class.to_class());
             } else {
@@ -97,7 +101,15 @@ impl<C: Class> Classifier<C> {
     fn new(dev: &Device, input_dim: usize, layers_dims: &[usize]) -> Result<Self> {
         let varmap = VarMap::new();
         let vs = VarBuilder::from_varmap(&varmap, DType::F32, dev);
+        Self::new_inner(varmap, vs, input_dim, layers_dims)
+    }
 
+    fn new_inner(
+        varmap: VarMap,
+        vs: VarBuilder,
+        input_dim: usize,
+        layers_dims: &[usize],
+    ) -> Result<Self> {
         let output_dim = C::CLASSES;
         if layers_dims.is_empty() {
             return Ok(Self {
@@ -105,7 +117,7 @@ impl<C: Class> Classifier<C> {
                 layers: vec![candle_nn::linear(
                     input_dim,
                     output_dim as usize,
-                    vs.pp("output"),
+                    vs.pp("ln0"),
                 )?],
                 phantom: std::marker::PhantomData,
             });
@@ -114,7 +126,7 @@ impl<C: Class> Classifier<C> {
         layers.push(candle_nn::linear(
             input_dim,
             *layers_dims.first().unwrap(),
-            vs.pp("input"),
+            vs.pp("ln0"),
         )?);
         for (i, (in_dim, out_dim)) in layers_dims
             .iter()
@@ -124,13 +136,13 @@ impl<C: Class> Classifier<C> {
             layers.push(candle_nn::linear(
                 *in_dim,
                 *out_dim,
-                vs.pp(&format!("ln{}", i)),
+                vs.pp(&format!("ln{}", i + 1)),
             )?);
         }
         layers.push(candle_nn::linear(
             *layers_dims.last().unwrap(),
             output_dim as usize,
-            vs.pp("output"),
+            vs.pp(format!("ln{}", layers_dims.len() + 1)),
         )?);
         Ok(Self {
             layers,
@@ -148,7 +160,7 @@ impl<C: Class> Classifier<C> {
         Ok(xs)
     }
 
-    fn train(&mut self, m: &Dataset, dev: &Device) -> anyhow::Result<()> {
+    fn train(&mut self, m: &Dataset, dev: &Device, epochs: usize) -> anyhow::Result<()> {
         let train_results = m.train_classes.to_device(dev).unwrap();
         let train_votes = m.train_inputs.to_device(dev).unwrap();
 
@@ -156,7 +168,7 @@ impl<C: Class> Classifier<C> {
         let test_votes = m.test_inputs.to_device(dev).unwrap();
         let test_results = m.test_classes.to_device(dev).unwrap();
         let mut final_accuracy: f32 = 0.0;
-        for epoch in 1..MAX_EPOCHS + 1 {
+        for epoch in 1..epochs + 1 {
             let logits = self.forward(&train_votes).unwrap();
             let log_sm = ops::log_softmax(&logits, D::Minus1).unwrap();
             let loss = loss::nll(&log_sm, &train_results).unwrap();
@@ -187,6 +199,30 @@ impl<C: Class> Classifier<C> {
         } else {
             Ok(())
         }
+    }
+
+    fn save(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
+        self.varmap.save(path)
+    }
+
+    fn load(
+        path: impl AsRef<std::path::Path>,
+        dev: &Device,
+        input_dim: usize,
+        layers_dims: &[usize],
+    ) -> Result<Self> {
+        let varmap = VarMap::new();
+        let vs = VarBuilder::from_varmap(&varmap, DType::F32, dev);
+        {
+            let safetensors = unsafe { candle_core::safetensors::MmapedSafetensors::new(path) }?;
+            let tensors = safetensors.tensors();
+            let mut tensor_data = varmap.data().lock().unwrap();
+            for (name, value) in tensors {
+                let tensor = value.load(dev)?;
+                tensor_data.insert(name.to_string(), Var::from_tensor(&tensor)?);
+            }
+        }
+        Self::new_inner(varmap, vs, input_dim, layers_dims)
     }
 
     fn run(&mut self, input: &[f32], dev: &Device) -> Result<C> {
@@ -230,7 +266,7 @@ async fn simplified() -> anyhow::Result<()> {
     let mut bert = Bert::builder().build()?;
 
     let dev = Device::cuda_if_available(0).unwrap();
-    let person_questions = vec![
+    let mut person_questions = vec![
         "What is the author's name?",
         "What is the author's age?",
         "Who is the queen of England?",
@@ -251,9 +287,13 @@ async fn simplified() -> anyhow::Result<()> {
         "Who is the best tennis player in the world?",
         "Who is the best soccer player in the world right now?",
         "Who is the leader of the United States?",
+        "Who is the leader of France?",
+        "What is the name of the leader of the United States?",
+        "What is the name of the leader of France?",
     ];
+    person_questions.shuffle(&mut rand::thread_rng());
     let person_embeddings = bert.embed_batch(&person_questions).await?;
-    let thing_sentences = vec![
+    let mut thing_sentences = vec![
         "What is the capital of France?",
         "What is the capital of England?",
         "What is the name of the biggest city in the world?",
@@ -278,32 +318,60 @@ async fn simplified() -> anyhow::Result<()> {
         "What is the most spoken language in the world?",
         "What is the most spoken language in the United States?",
     ];
+    thing_sentences.shuffle(&mut rand::thread_rng());
     let thing_embeddings = bert.embed_batch(&thing_sentences).await?;
 
     let input_size = person_embeddings[0].to_vec().len();
 
     let mut dataset = DatasetBuilder::<f32, MyClass>::new(384);
 
-    for (person_embedding, thing_embedding) in person_embeddings.iter().zip(thing_embeddings.iter()) {
+    for (person_embedding, thing_embedding) in person_embeddings.iter().zip(thing_embeddings.iter())
+    {
         dataset.add(person_embedding.to_vec(), MyClass::Person);
         dataset.add(thing_embedding.to_vec(), MyClass::Thing);
     }
 
     let dataset = dataset.build(&dev)?;
-    println!("{:?}", dataset);
 
     let mut classifier;
+    let layers = [5, 8, 12, 8, 5];
 
     loop {
-        classifier = Classifier::<MyClass>::new(&dev, input_size, &[5, 8, 5]).unwrap();
-        let error = classifier.train(&dataset, &dev).is_err();
+        classifier = Classifier::<MyClass>::new(&dev, input_size, &layers).unwrap();
+        let error = classifier.train(&dataset, &dev, 10).is_err();
         if !error {
             break;
         }
         println!("Retrying...");
     }
 
-    let tests = ["Who is the president of Russia?", "What is the capital of Russia?", "Who invented the TV?", "What is the best way to learn a how to ride a bike?"];
+    let tests = [
+        "Who is the president of Russia?",
+        "What is the capital of Russia?",
+        "Who invented the TV?",
+        "What is the best way to learn a how to ride a bike?",
+    ];
+
+    for test in &tests {
+        let input = bert.embed(test).await?.to_vec();
+        let class = classifier.run(&input, &dev)?;
+        println!();
+        println!("{test}");
+        println!("{:?} {:?}", &input[..5], class);
+    }
+    println!("Done!");
+    classifier.save("classifier.safetensors")?;
+    println!("Saved!");
+    let mut classifier =
+        Classifier::<MyClass>::load("classifier.safetensors", &dev, input_size, &layers)?;
+    println!("Loaded!");
+
+    let tests = [
+        "Who is the president of Russia?",
+        "What is the capital of Russia?",
+        "Who invented the TV?",
+        "What is the best way to learn a how to ride a bike?",
+    ];
 
     for test in &tests {
         let input = bert.embed(test).await?.to_vec();
