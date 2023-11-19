@@ -32,6 +32,8 @@ members = [
     "interfaces/kalosm-vision",
     "interfaces/kalosm-sound",
     "interfaces/kalosm-streams",
+    "interfaces/kalosm-learning",
+    "interfaces/kalosm-learning-macro",
     "floneum/floneum",
     "floneum/plugin",
     "floneum/rust_adapter",
@@ -91,6 +93,8 @@ kalosm-streams = { path = "./interfaces/kalosm-streams", version = "0.1.0" }
 kalosm-language = { path = "./interfaces/kalosm-language", version = "0.1.0" }
 kalosm-sound = { path = "./interfaces/kalosm-sound", version = "0.1.0" }
 kalosm-vision = { path = "./interfaces/kalosm-vision", version = "0.1.0" }
+kalosm-learning = { path = "./interfaces/kalosm-learning", version = "0.1.0" }
+kalosm-learning-macro = { path = "./interfaces/kalosm-learning-macro", version = "0.1.0" }
 rphi = { path = "./models/rphi", version = "0.1.0" }
 rbert = { path = "./models/rbert", version = "0.1.0" }
 rmistral = { path = "./models/rmistral", version = "0.1.0" }

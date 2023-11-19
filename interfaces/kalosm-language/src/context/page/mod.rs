@@ -1,6 +1,4 @@
 use super::document::Document;
-pub use crate::context::page::crawl::CrawlFeedback;
-pub use crate::context::page::crawl::CrawlingCallback;
 use url::Url;
 
 mod browse;
