@@ -1,9 +1,8 @@
 use candle_core::{DType, Device, Result, Tensor, D};
-use candle_nn::{loss, ops, Linear, Module, Optimizer, VarBuilder, VarMap};
+use candle_nn::{loss, ops, Linear, Module, Optimizer, VarBuilder, VarMap, ParamsAdamW};
 use rand::Rng;
 
-const EPOCHS: usize = 10;
-const LEARNING_RATE: f64 = 0.5;
+const MAX_EPOCHS: usize = 100;
 
 pub trait Class {
     const CLASSES: u32;
@@ -147,11 +146,11 @@ impl<C: Class> Classifier<C> {
         let train_results = m.train_classes.to_device(dev).unwrap();
         let train_votes = m.train_inputs.to_device(dev).unwrap();
 
-        let mut sgd = candle_nn::SGD::new(self.varmap.all_vars(), LEARNING_RATE).unwrap();
+        let mut sgd = candle_nn::AdamW::new_lr(self.varmap.all_vars(), 0.05).unwrap();
         let test_votes = m.test_inputs.to_device(dev).unwrap();
         let test_results = m.test_classes.to_device(dev).unwrap();
         let mut final_accuracy: f32 = 0.0;
-        for epoch in 1..EPOCHS + 1 {
+        for epoch in 1..MAX_EPOCHS + 1 {
             let logits = self.forward(&train_votes).unwrap();
             let log_sm = ops::log_softmax(&logits, D::Minus1).unwrap();
             let loss = loss::nll(&log_sm, &train_results).unwrap();
@@ -251,9 +250,12 @@ fn simplified() -> anyhow::Result<()> {
 
     let mut error = true;
     while error {
-        let mut classifier = Classifier::<MyClass>::new(&dev, 2, &[3, 2]).unwrap();
+        let mut classifier = Classifier::<MyClass>::new(&dev, 2, &[5, 8, 5]).unwrap();
     
         error = classifier.train(&dataset, &dev).is_err();
+        if error {
+            println!("Retrying...");
+        }
     }
     Ok(())
 }
