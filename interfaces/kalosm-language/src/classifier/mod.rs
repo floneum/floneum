@@ -181,9 +181,6 @@ impl<C: Class> Classifier<C> {
                 loss.to_scalar::<f32>().unwrap(),
                 final_accuracy
             );
-            if final_accuracy == 100.0 {
-                break;
-            }
         }
         if final_accuracy < 100.0 {
             Err(anyhow::Error::msg("The model is not trained well enough."))
@@ -243,6 +240,17 @@ async fn simplified() -> anyhow::Result<()> {
         "Who is the CEO of Google?",
         "Who is the CEO of Microsoft?",
         "What person invented the light bulb?",
+        "What person invented the telephone?",
+        "What is the name of the person who invented the light bulb?",
+        "Who wrote the book 'The Lord of the Rings'?",
+        "Who wrote the book 'The Hobbit'?",
+        "How old is the author of the book 'The Lord of the Rings'?",
+        "How old is the author of the book 'The Hobbit'?",
+        "Who is the best soccer player in the world?",
+        "Who is the best basketball player in the world?",
+        "Who is the best tennis player in the world?",
+        "Who is the best soccer player in the world right now?",
+        "Who is the leader of the United States?",
     ];
     let person_embeddings = bert.embed_batch(&person_questions).await?;
     let thing_sentences = vec![
@@ -255,6 +263,20 @@ async fn simplified() -> anyhow::Result<()> {
         "What is a good movie to watch?",
         "What is a good song to listen to?",
         "What is the best tool to use to create a website?",
+        "What is the best tool to use to create a mobile app?",
+        "How long does it take to fly from Paris to New York?",
+        "How do you make a cake?",
+        "How do you make a pizza?",
+        "How can you make a website?",
+        "What is the best way to learn a new language?",
+        "What is the best way to learn a new programming language?",
+        "What is a framework?",
+        "What is a library?",
+        "What is a good way to learn a new language?",
+        "What is a good way to learn a new programming language?",
+        "What is the city with the most people in the world?",
+        "What is the most spoken language in the world?",
+        "What is the most spoken language in the United States?",
     ];
     let thing_embeddings = bert.embed_batch(&thing_sentences).await?;
 
@@ -262,11 +284,9 @@ async fn simplified() -> anyhow::Result<()> {
 
     let mut dataset = DatasetBuilder::<f32, MyClass>::new(384);
 
-    for embedding in person_embeddings {
-        dataset.add(embedding.to_vec(), MyClass::Person);
-    }
-    for embedding in thing_embeddings {
-        dataset.add(embedding.to_vec(), MyClass::Thing);
+    for (person_embedding, thing_embedding) in person_embeddings.iter().zip(thing_embeddings.iter()) {
+        dataset.add(person_embedding.to_vec(), MyClass::Person);
+        dataset.add(thing_embedding.to_vec(), MyClass::Thing);
     }
 
     let dataset = dataset.build(&dev)?;
@@ -275,7 +295,7 @@ async fn simplified() -> anyhow::Result<()> {
     let mut classifier;
 
     loop {
-        classifier = Classifier::<MyClass>::new(&dev, input_size, &[2, 2]).unwrap();
+        classifier = Classifier::<MyClass>::new(&dev, input_size, &[5, 8, 5]).unwrap();
         let error = classifier.train(&dataset, &dev).is_err();
         if !error {
             break;
@@ -283,13 +303,15 @@ async fn simplified() -> anyhow::Result<()> {
         println!("Retrying...");
     }
 
-    let input = bert.embed("Who is the president of Russia?").await?.to_vec();
-    let class = classifier.run(&input, &dev)?;
-    println!("{:?} {:?}", &input[..5], class);
+    let tests = ["Who is the president of Russia?", "What is the capital of Russia?", "Who invented the TV?", "What is the best way to learn a how to ride a bike?"];
 
-    let input = bert.embed("What is the capital of Russia?").await?.to_vec();
-    let class = classifier.run(&input, &dev)?;
-    println!("{:?} {:?}", &input[..5], class);
+    for test in &tests {
+        let input = bert.embed(test).await?.to_vec();
+        let class = classifier.run(&input, &dev)?;
+        println!();
+        println!("{test}");
+        println!("{:?} {:?}", &input[..5], class);
+    }
 
     Ok(())
 }
