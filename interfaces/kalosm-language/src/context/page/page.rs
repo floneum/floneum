@@ -1,7 +1,6 @@
 use super::browse::Tab;
 use super::{super::document::Document, NodeRef};
 use super::{extract_article, AnyNode};
-pub use crate::context::page::crawl::CrawlFeedback;
 use crate::context::page::crawl::Crawler;
 pub use crate::context::page::crawl::CrawlingCallback;
 use image::DynamicImage;

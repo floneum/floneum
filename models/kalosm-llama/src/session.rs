@@ -1,6 +1,5 @@
 use crate::raw::Model;
 use candle_core::Tensor;
-pub use candle_transformers::quantized_var_builder::VarBuilder;
 use std::collections::HashMap;
 
 /// A Llama-1.5 session.

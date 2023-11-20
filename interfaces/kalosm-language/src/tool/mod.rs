@@ -540,10 +540,9 @@ impl Parser for OneLine {
         let mut iter = input.iter();
         while let Some(&c) = iter.next() {
             if state.all_whitespace {
-                if let Ok(c) = char::try_from(c) {
-                    if !c.is_whitespace() {
-                        state.all_whitespace = false;
-                    }
+                let c = char::from(c);
+                if !c.is_whitespace() {
+                    state.all_whitespace = false;
                 }
             }
             if c == b'\n' || c == b'\r' {

@@ -1,0 +1,22 @@
+[package]
+name = "kalosm-learning"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+kalosm-language-model.workspace = true
+kalosm-learning-macro.workspace = true
+candle-core.workspace = true
+candle-nn.workspace = true
+tokio-util = { version = "0.7.9", features = ["rt"] }
+half = "2.3.1"
+rand = "0.8.5"
+anyhow = "1.0.75"
+tokio = { version = "1.34.0", features = ["full"] }
+
+[dev-dependencies]
+rbert.workspace = true
+
+[features]

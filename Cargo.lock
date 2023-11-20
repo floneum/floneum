@@ -5044,6 +5044,7 @@ dependencies = [
  "async-trait",
  "bytesize",
  "candle-core",
+ "candle-nn",
  "chrono",
  "convert_case 0.6.0",
  "crossbeam",
@@ -5051,6 +5052,7 @@ dependencies = [
  "docx-rs",
  "ego-tree",
  "futures-util",
+ "half 2.3.1",
  "headless_chrome",
  "image 0.24.7",
  "instant-distance",
@@ -5129,6 +5131,30 @@ dependencies = [
  "tokio-util",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "kalosm-learning"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "candle-core",
+ "candle-nn",
+ "half 2.3.1",
+ "kalosm-language-model",
+ "kalosm-learning-macro",
+ "rand 0.8.5",
+ "rbert",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "kalosm-learning-macro"
+version = "0.1.0"
+dependencies = [
+ "quote",
+ "syn 2.0.39",
 ]
 
 [[package]]

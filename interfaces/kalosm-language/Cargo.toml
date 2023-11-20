@@ -36,6 +36,7 @@ scraper = { version = "0.18.0", features = ["atomic"] }
 kalosm-language-model.workspace = true
 headless_chrome = { version = "1.0" }
 candle-core.workspace = true
+candle-nn.workspace = true
 tokio-util = { version = "0.7.9", features = ["rt"] }
 crossbeam = "0.8.2"
 dashmap = "5.5.3"
@@ -60,6 +61,7 @@ image = "0.24.7"
 meval = "0.2.0"
 whatlang = "0.16.3"
 texting_robots = "0.2.2"
+half = "2.3.1"
 
 [features]
 metal = ["llm/metal", "rphi/accelerate", "rbert/accelerate"]
