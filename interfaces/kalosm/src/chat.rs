@@ -15,6 +15,7 @@ enum ChatState {
     ModelAnswer,
 }
 
+#[allow(unused)]
 struct ChatHistoryItem {
     ty: ChatState,
     contents: String,
@@ -26,7 +27,6 @@ struct ChatSession<Session> {
     assistant_marker: String,
     history: Vec<ChatHistoryItem>,
     session: Session,
-    last_message_type: ChatState,
     unfed_text: String,
     eos: String,
     sampler: Arc<Mutex<dyn Sampler + Send + Sync>>,
@@ -57,7 +57,6 @@ impl<Session> ChatSession<Session> {
                 .unwrap()
                 .to_string(),
             session: model.new_session().unwrap(),
-            last_message_type: ChatState::SystemPrompt,
             unfed_text,
             history,
             sampler,
@@ -94,7 +93,7 @@ impl<Session> ChatSession<Session> {
             on_token,
         )?;
         self.history.push(ChatHistoryItem {
-            ty: ChatState::UserMessage,
+            ty: ChatState::ModelAnswer,
             contents: bot_response,
         });
         Ok(())
@@ -164,19 +163,3 @@ impl Chat {
             .ok_or(anyhow::anyhow!("Model stopped"))
     }
 }
-
-// fn testing() {
-//     let mut chat = Chat::builder(Phi::new())
-//         .with_system_prompt("Hello, how are you?".to_string())
-//         .with_context(LocalDocuments::new("examples/phi"))
-//         .with_context(OnlineDocuments::new())
-//         .with_action(Tools::new())
-//         .build()
-//         .unwrap();
-//     loop {
-//         let mut input = String::new();
-//         std::io::stdin().read_line(&mut input).unwrap();
-//         chat.add_message(input, true, &mut Phi::new()).unwrap();
-//         println!("{}", chat.response().await);
-//     }
-// }
