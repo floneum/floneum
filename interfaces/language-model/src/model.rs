@@ -626,11 +626,9 @@ pub trait SyncModelExt: SyncModel {
                     // Trim the buffer to the length of the stop_on string
                     if text_matching_buffer.len() > stop_on.len() {
                         let byte_idx = text_matching_buffer.len() - stop_on.len();
-                        if text_matching_buffer.is_char_boundary(byte_idx){
-                            text_matching_buffer = text_matching_buffer
-                                .split_at(byte_idx)
-                                .1
-                                .to_string();
+                        if text_matching_buffer.is_char_boundary(byte_idx) {
+                            text_matching_buffer =
+                                text_matching_buffer.split_at(byte_idx).1.to_string();
                         }
                     }
                 }

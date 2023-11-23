@@ -7,7 +7,7 @@ use anyhow::Result;
 use kalosm_language::{ChatModel, ModelExt, SyncModel, SyncModelExt};
 use kalosm_streams::ChannelTextStream;
 use llm_samplers::types::Sampler;
-use tokio::sync::mpsc::{unbounded_channel};
+use tokio::sync::mpsc::unbounded_channel;
 
 enum ChatState {
     SystemPrompt,
@@ -117,7 +117,7 @@ impl Chat {
         let system_prompt_marker = model.system_prompt_marker().to_string();
         let user_marker = model.user_marker().to_string();
         let assistant_marker = model.assistant_marker().to_string();
-        let system_prompt=system_prompt.into();
+        let system_prompt = system_prompt.into();
         let (sender_tx, mut sender_rx) = unbounded_channel();
         let (result_tx, result_rx) = unbounded_channel();
         model
@@ -148,7 +148,10 @@ impl Chat {
     }
 
     /// Adds a message to the history.
-    pub async fn add_message(&mut self, message: impl Into<String>) -> Result<ChannelTextStream<String>> {
+    pub async fn add_message(
+        &mut self,
+        message: impl Into<String>,
+    ) -> Result<ChannelTextStream<String>> {
         let message = message.into();
         let message = message.trim();
         self.sender
@@ -156,7 +159,8 @@ impl Chat {
             .map_err(|_| anyhow::anyhow!("Model stopped"))?;
         self.channel
             .recv()
-            .await.map(|c|c.into())
+            .await
+            .map(|c| c.into())
             .ok_or(anyhow::anyhow!("Model stopped"))
     }
 }

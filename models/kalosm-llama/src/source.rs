@@ -181,7 +181,7 @@ impl LlamaSource {
             tokenizer_repo: "hf-internal-testing/llama-tokenizer".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             group_query_attention: 1,
-            markers: Default::default()
+            markers: Default::default(),
         }
     }
 

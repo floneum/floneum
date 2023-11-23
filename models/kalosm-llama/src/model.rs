@@ -48,17 +48,45 @@ impl SyncModel for LlamaModel {
         session: &mut Self::Session,
         tokens: &[u32],
     ) -> anyhow::Result<Logits> {
-        session.current_tokens.extend(tokens);
-
-        let token_count = tokens.len();
-        Self::forward(
-            &mut self.model,
-            &self.device,
-            tokens,
-            session.current_tokens.len() - token_count,
-            Some(&mut session.cache),
-            None,
-        )
+        let first_token = session.current_tokens.is_empty();
+        
+        if first_token {
+            session.current_tokens.extend(tokens);
+            Self::forward(
+                &mut self.model,
+                &self.device,
+                &session.current_tokens,
+                0,
+                Some(&mut session.cache),
+                None,
+            )
+        }
+        else {
+            for tid in tokens.iter().copied().take(tokens.len()-1){
+                let seq_len_offset = session.current_tokens.len();
+                session.current_tokens.push(tid);
+                Self::forward(
+                    &mut self.model,
+                    &self.device,
+                    &[tid],
+                    seq_len_offset,
+                    Some(&mut session.cache),
+                    None,
+                )?;
+            }
+            let tid = *tokens.last().unwrap();
+            let seq_len_offset = session.current_tokens.len();
+            session.current_tokens.push(tid);
+            Self::forward(
+                &mut self.model,
+                &self.device,
+                &[tid],
+                seq_len_offset,
+                Some(&mut session.cache),
+                None,
+            )
+        }
+        
     }
 
     fn stop_token(&self) -> anyhow::Result<u32> {
