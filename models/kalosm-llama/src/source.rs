@@ -1,5 +1,12 @@
 use tokenizers::Tokenizer;
 
+#[derive(Default)]
+pub(crate) struct ChatMarkers {
+    pub(crate) user_marker: Option<&'static str>,
+    pub(crate) assistant_marker: Option<&'static str>,
+    pub(crate) system_prompt_marker: Option<&'static str>,
+}
+
 /// A source for the Llama model.
 pub struct LlamaSource {
     /// The model to use, check out available models: <https://huggingface.co/models?library=sentence-transformers&sort=trending>
@@ -9,6 +16,7 @@ pub struct LlamaSource {
     pub(crate) tokenizer_repo: String,
     pub(crate) tokenizer_file: String,
     pub(crate) group_query_attention: u8,
+    pub(crate) markers: ChatMarkers,
 }
 
 impl LlamaSource {
@@ -21,7 +29,33 @@ impl LlamaSource {
             tokenizer_repo: "hf-internal-testing/llama-tokenizer".to_string(),
             tokenizer_file,
             group_query_attention: 1,
+            markers: ChatMarkers {
+                user_marker: None,
+                assistant_marker: None,
+                system_prompt_marker: None,
+            },
         }
+    }
+
+    /// Set the marker text for a user message
+    pub fn with_user_marker(mut self, marker: &'static str) -> Self {
+        self.markers.user_marker = Some(marker);
+
+        self
+    }
+
+    /// Set the marker text for an assistant message
+    pub fn with_assistant_marker(mut self, marker: &'static str) -> Self {
+        self.markers.assistant_marker = Some(marker);
+
+        self
+    }
+
+    /// Set the marker text for a the system prompt
+    pub fn with_system_prompt_marker(mut self, marker: &'static str) -> Self {
+        self.markers.user_marker = Some(marker);
+
+        self
     }
 
     /// Set the revision of the model to use.
@@ -74,6 +108,7 @@ impl LlamaSource {
             tokenizer_repo: "mistralai/Mistral-7B-v0.1".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             group_query_attention: 8,
+            ..Default::default()
         }
     }
 
@@ -86,6 +121,7 @@ impl LlamaSource {
             tokenizer_repo: "mistralai/Mistral-7B-v0.1".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             group_query_attention: 8,
+            ..Default::default()
         }
     }
 
@@ -95,9 +131,14 @@ impl LlamaSource {
             model_id: "TheBloke/zephyr-7B-alpha-GGUF".to_string(),
             revision: "main".to_string(),
             gguf_file: "zephyr-7b-alpha.Q4_K_M.gguf".into(),
-            tokenizer_repo: "hf-internal-testing/llama-tokenizer".to_string(),
+            tokenizer_repo: "mistralai/Mistral-7B-v0.1".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             group_query_attention: 8,
+            markers: ChatMarkers {
+                system_prompt_marker: Some("<|system|>"),
+                user_marker: Some("<|user|>"),
+                assistant_marker: Some("<|assistant|>"),
+            },
         }
     }
 
@@ -107,9 +148,14 @@ impl LlamaSource {
             model_id: "TheBloke/zephyr-7B-beta-GGUF".to_string(),
             revision: "main".to_string(),
             gguf_file: "zephyr-7b-beta.Q4_K_M.gguf".into(),
-            tokenizer_repo: "hf-internal-testing/llama-tokenizer".to_string(),
+            tokenizer_repo: "mistralai/Mistral-7B-v0.1".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             group_query_attention: 8,
+            markers: ChatMarkers {
+                system_prompt_marker: Some("<|system|>"),
+                user_marker: Some("<|user|>"),
+                assistant_marker: Some("<|assistant|>"),
+            },
         }
     }
 
@@ -122,6 +168,7 @@ impl LlamaSource {
             tokenizer_repo: "hf-internal-testing/llama-tokenizer".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             group_query_attention: 1,
+            ..Default::default()
         }
     }
 
@@ -134,6 +181,7 @@ impl LlamaSource {
             tokenizer_repo: "hf-internal-testing/llama-tokenizer".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             group_query_attention: 1,
+            markers: Default::default()
         }
     }
 
@@ -146,6 +194,7 @@ impl LlamaSource {
             tokenizer_repo: "hf-internal-testing/llama-tokenizer".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             group_query_attention: 8,
+            ..Default::default()
         }
     }
 
@@ -158,6 +207,11 @@ impl LlamaSource {
             tokenizer_repo: "hf-internal-testing/llama-tokenizer".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             group_query_attention: 1,
+            markers: ChatMarkers {
+                system_prompt_marker: Some("<<SYS>>\n"),
+                assistant_marker: Some(" [/INST] "),
+                user_marker: Some("[INST]"),
+            },
         }
     }
 
@@ -170,6 +224,11 @@ impl LlamaSource {
             tokenizer_repo: "hf-internal-testing/llama-tokenizer".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             group_query_attention: 1,
+            markers: ChatMarkers {
+                system_prompt_marker: Some("<<SYS>>\n"),
+                assistant_marker: Some(" [/INST] "),
+                user_marker: Some("[INST]"),
+            },
         }
     }
 
@@ -182,6 +241,11 @@ impl LlamaSource {
             tokenizer_repo: "hf-internal-testing/llama-tokenizer".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             group_query_attention: 8,
+            markers: ChatMarkers {
+                system_prompt_marker: Some("<<SYS>>\n"),
+                assistant_marker: Some(" [/INST] "),
+                user_marker: Some("[INST]"),
+            },
         }
     }
 
@@ -194,6 +258,7 @@ impl LlamaSource {
             tokenizer_repo: "hf-internal-testing/llama-tokenizer".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             group_query_attention: 1,
+            ..Default::default()
         }
     }
 
@@ -206,6 +271,7 @@ impl LlamaSource {
             tokenizer_repo: "hf-internal-testing/llama-tokenizer".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             group_query_attention: 1,
+            ..Default::default()
         }
     }
 
@@ -218,6 +284,7 @@ impl LlamaSource {
             tokenizer_repo: "hf-internal-testing/llama-tokenizer".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             group_query_attention: 1,
+            ..Default::default()
         }
     }
 }

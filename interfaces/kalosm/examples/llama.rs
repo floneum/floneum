@@ -8,12 +8,13 @@ async fn main() {
         .build()
         .unwrap();
     let prompt = "<|system|>
-    </s>
-    <|user|>
-    who are you</s>
-    <|assistant|>";
+
+</s>
+<|user|>
+What is your favorite story from your adventures?</s>
+<|assistant|>";
     // let prompt = "What is the capital of france?";
-    let mut result = model.stream_text(prompt).await.unwrap();
+    let mut result = model.stream_text(prompt).with_max_length(1000).await.unwrap();
 
     print!("{prompt}");
     while let Some(token) = result.next().await {
