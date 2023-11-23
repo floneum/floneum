@@ -135,15 +135,20 @@ impl LayerWeights {
 
         let (k, v) = match cache {
             None => (k, v),
-            Some(cache) => match &cache.0 {
-                Some(cache) => {
-                    if index_pos == 0 {
+            Some(cache) => match &mut cache.0 {
+                Some(AttentionCacheValue { key, value }) => {
+                    let (k, v) = if index_pos == 0 {
                         (k, v)
                     } else {
-                        let k = Tensor::cat(&[&cache.key, &k], 2)?.contiguous()?;
-                        let v = Tensor::cat(&[&cache.value, &v], 2)?.contiguous()?;
+                        let k = Tensor::cat(&[&*key, &k], 2)?.contiguous()?;
+                        let v = Tensor::cat(&[&*value, &v], 2)?.contiguous()?;
                         (k, v)
-                    }
+                    };
+
+                    *key = k.clone();
+                    *value = v.clone();
+
+                    (k, v)
                 }
                 None => {
                     cache.0 = Some(AttentionCacheValue {

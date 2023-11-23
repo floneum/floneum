@@ -39,6 +39,7 @@ mod session;
 mod source;
 
 use crate::raw::Model;
+use kalosm_language_model::ChatModel;
 use llm_samplers::types::Sampler;
 use session::LlamaCache;
 pub use source::*;
@@ -81,6 +82,21 @@ pub struct Llama {
     task_sender: tokio::sync::mpsc::UnboundedSender<Task>,
     thread_handle: Option<std::thread::JoinHandle<()>>,
     tokenizer: Arc<Tokenizer>,
+    chat_markers: ChatMarkers,
+}
+
+impl ChatModel for Llama {
+    fn assistant_marker(&self) -> &str {
+        self.chat_markers.assistant_marker.unwrap_or("")
+    }
+
+    fn user_marker(&self) -> &str {
+        self.chat_markers.user_marker.unwrap_or("")
+    }
+
+    fn system_prompt_marker(&self) -> &str {
+        self.chat_markers.system_prompt_marker.unwrap_or("")
+    }
 }
 
 impl Drop for Llama {
@@ -108,7 +124,13 @@ impl Llama {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn new(model: Model, tokenizer: Tokenizer, device: Device, cache: LlamaCache) -> Self {
+    fn new(
+        model: Model,
+        tokenizer: Tokenizer,
+        device: Device,
+        cache: LlamaCache,
+        chat_markers: ChatMarkers,
+    ) -> Self {
         let (task_sender, mut task_receiver) = tokio::sync::mpsc::unbounded_channel();
         let arc_tokenizer = Arc::new(tokenizer.clone());
 
@@ -142,6 +164,7 @@ impl Llama {
             task_sender,
             thread_handle: Some(thread_handle),
             tokenizer: arc_tokenizer,
+            chat_markers,
         }
     }
 
@@ -218,7 +241,13 @@ impl LlamaBuilder {
 
         let cache = LlamaCache::new(&model);
 
-        Ok(Llama::new(model, tokenizer, device, cache))
+        Ok(Llama::new(
+            model,
+            tokenizer,
+            device,
+            cache,
+            self.source.markers,
+        ))
     }
 }
 

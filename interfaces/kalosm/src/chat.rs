@@ -1,92 +1,182 @@
-// use anyhow::Result;
-// use kalosm_language::{Model, SyncModel};
+use std::{
+    fmt::Display,
+    sync::{Arc, Mutex},
+};
 
-// enum ChatState {
-//     SystemPrompt,
-//     UserMessage,
-//     ModelAnswer,
-// }
+use anyhow::Result;
+use kalosm_language::{ChatModel, ModelExt, SyncModel, SyncModelExt};
+use kalosm_streams::ChannelTextStream;
+use llm_samplers::types::Sampler;
+use tokio::sync::mpsc::unbounded_channel;
 
-// /// The history of a chat session.
-// struct ChatSession<Session> {
-//     user_marker: String,
-//     assistant_marker: String,
-//     messages: String,
-//     session: Session,
-//     state: ChatState,
-// }
+enum ChatState {
+    SystemPrompt,
+    UserMessage,
+    ModelAnswer,
+}
 
-// impl<Session> ChatSession<Session> {
-//     /// Creates a new chat history.
-//     pub fn new<Model: SyncModel<Session = Session>>(
-//         model: &Model,
-//         system_prompt_marker: String,
-//         user_marker: String,
-//         assistant_marker: String,
-//         system_prompt: String,
-//     ) -> Result<Self> {
-//         Ok(Self {
-//             user_marker,
-//             assistant_marker,
-//             messages: system_prompt_marker + &system_prompt,
-//             session: model.new_session()?,
-//             state: ChatState::SystemPrompt,
-//         })
+struct ChatHistoryItem {
+    ty: ChatState,
+    contents: String,
+}
+
+/// The history of a chat session.
+struct ChatSession<Session> {
+    user_marker: String,
+    assistant_marker: String,
+    history: Vec<ChatHistoryItem>,
+    session: Session,
+    last_message_type: ChatState,
+    unfed_text: String,
+    eos: String,
+    sampler: Arc<Mutex<dyn Sampler + Send + Sync>>,
+}
+
+impl<Session> ChatSession<Session> {
+    /// Creates a new chat history.
+    pub fn new<Model: SyncModel<Session = Session>>(
+        model: &Model,
+        system_prompt_marker: String,
+        user_marker: String,
+        assistant_marker: String,
+        system_prompt: String,
+        sampler: Arc<Mutex<dyn Sampler + Send + Sync>>,
+    ) -> Self {
+        let unfed_text = system_prompt_marker + &system_prompt;
+        let history = vec![ChatHistoryItem {
+            ty: ChatState::SystemPrompt,
+            contents: system_prompt,
+        }];
+
+        Self {
+            user_marker,
+            assistant_marker,
+            eos: model
+                .tokenizer()
+                .decode(&[model.stop_token().unwrap()])
+                .unwrap()
+                .to_string(),
+            session: model.new_session().unwrap(),
+            last_message_type: ChatState::SystemPrompt,
+            unfed_text,
+            history,
+            sampler,
+        }
+    }
+
+    /// Adds a message to the history.
+    pub fn add_message<Model: SyncModel<Session = Session>>(
+        &mut self,
+        message: impl Display,
+        model: &mut Model,
+        stream: tokio::sync::mpsc::UnboundedSender<String>,
+    ) -> Result<()> {
+        let message = message.to_string();
+        let new_text = format!("{}{}{}", self.user_marker, message, self.eos);
+        self.history.push(ChatHistoryItem {
+            ty: ChatState::UserMessage,
+            contents: message,
+        });
+        self.unfed_text += &new_text;
+        let mut bot_response = String::new();
+        let on_token = |tok: String| {
+            bot_response += &tok;
+            stream.send(tok)?;
+            Ok(kalosm_language::ModelFeedback::Continue)
+        };
+        self.unfed_text += &self.assistant_marker;
+        model.stream_text_with_sampler(
+            &mut self.session,
+            &std::mem::take(&mut self.unfed_text),
+            None,
+            Some(&self.eos),
+            self.sampler.clone(),
+            on_token,
+        )?;
+        self.history.push(ChatHistoryItem {
+            ty: ChatState::UserMessage,
+            contents: bot_response,
+        });
+        Ok(())
+    }
+}
+
+/// A chat session.
+pub struct Chat {
+    sender: tokio::sync::mpsc::UnboundedSender<String>,
+    channel: tokio::sync::mpsc::UnboundedReceiver<tokio::sync::mpsc::UnboundedReceiver<String>>,
+}
+
+impl Chat {
+    /// Creates a new chat session.
+    pub async fn new<Model: ChatModel>(
+        model: &mut Model,
+        system_prompt: impl Into<String>,
+        sampler: impl Sampler + Send + Sync + 'static,
+    ) -> Self {
+        let system_prompt_marker = model.system_prompt_marker().to_string();
+        let user_marker = model.user_marker().to_string();
+        let assistant_marker = model.assistant_marker().to_string();
+        let system_prompt = system_prompt.into();
+        let (sender_tx, mut sender_rx) = unbounded_channel();
+        let (result_tx, result_rx) = unbounded_channel();
+        model
+            .run_sync(move |model| {
+                Box::pin(async move {
+                    let mut session = ChatSession::new(
+                        model,
+                        system_prompt_marker,
+                        user_marker,
+                        assistant_marker,
+                        system_prompt,
+                        Arc::new(Mutex::new(sampler)),
+                    );
+
+                    while let Some(message) = sender_rx.recv().await {
+                        let (tx, rx) = unbounded_channel();
+                        result_tx.send(rx).unwrap();
+                        session.add_message(message, model, tx).unwrap();
+                    }
+                })
+            })
+            .await
+            .unwrap();
+        Self {
+            sender: sender_tx,
+            channel: result_rx,
+        }
+    }
+
+    /// Adds a message to the history.
+    pub async fn add_message(
+        &mut self,
+        message: impl Into<String>,
+    ) -> Result<ChannelTextStream<String>> {
+        let message = message.into();
+        let message = message.trim();
+        self.sender
+            .send(message.to_string())
+            .map_err(|_| anyhow::anyhow!("Model stopped"))?;
+        self.channel
+            .recv()
+            .await
+            .map(|c| c.into())
+            .ok_or(anyhow::anyhow!("Model stopped"))
+    }
+}
+
+// fn testing() {
+//     let mut chat = Chat::builder(Phi::new())
+//         .with_system_prompt("Hello, how are you?".to_string())
+//         .with_context(LocalDocuments::new("examples/phi"))
+//         .with_context(OnlineDocuments::new())
+//         .with_action(Tools::new())
+//         .build()
+//         .unwrap();
+//     loop {
+//         let mut input = String::new();
+//         std::io::stdin().read_line(&mut input).unwrap();
+//         chat.add_message(input, true, &mut Phi::new()).unwrap();
+//         println!("{}", chat.response().await);
 //     }
-
-//     /// Adds a message to the history.
-//     pub fn add_message<Model: SyncModel<Session = Session>>(&mut self, message: String, is_user: bool, model: &mut Model) -> Result<()> {
-//         let marker = if is_user {
-//             &self.user_marker
-//         } else {
-//             &self.assistant_marker
-//         };
-//         let new_text = format!("{}{}\n", marker, message);
-//         model.feed_text(&mut self.session, &new_text)?;
-//         self.messages.push_str(&new_text);
-//         Ok(())
-//     }
-
-//     /// Returns the history as a string.
-//     pub fn prompt(&self) -> &str {
-//         &self.messages
-//     }
-// }
-
-// // <s>[INST] <<SYS>>
-// // {{ system_prompt }}
-// // <</SYS>>
-
-// // {{ user_msg_1 }} [/INST] {{ model_answer_1 }} </s><s>[INST] {{ user_msg_2 }} [/INST]
-
-// /// A chat session.
-// pub struct Chat{
-
-// }
-
-// impl Chat {
-//     /// Creates a new chat session.
-//     pub fn new<Model: ChatModel>(model: &Model, system_prompt: String) -> Result<Self> {
-//         let system_prompt_marker = model.system_prompt_marker().to_string();
-//         let user_marker = model.user_marker().to_string();
-//         let assistant_marker = model.assistant_marker().to_string();
-//         model.run_sync_raw(move ||{
-//             Box::pin(async move {
-
-//             })
-//         });
-//         Ok(Self {  })
-//     }
-
-//     /// Adds a message to the history.
-//     pub fn add_message(&mut self, message: String, is_user: bool, model: &mut Model) -> Result<()> {
-//         self.session.add_message(message, is_user, model)
-//     }
-// }
-
-// /// A model that has a chat format.
-// pub trait ChatModel: Model {
-//     fn user_marker(&self) -> &str;
-//     fn assistant_marker(&self) -> &str;
-//     fn system_prompt_marker(&self) -> &str;
 // }

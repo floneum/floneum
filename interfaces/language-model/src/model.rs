@@ -1,5 +1,6 @@
 use crate::embedding::{Embedding, VectorSpace};
 use crate::structured::generate_structured;
+use crate::TokenOutputStream;
 use crate::UnknownVectorSpace;
 use futures_util::{Stream, StreamExt};
 use kalosm_sample::{Parser, Tokenizer};
@@ -590,6 +591,70 @@ pub trait SyncModelExt: SyncModel {
             on_token,
         )
     }
+
+    /// Stream text, calling the on_token callback every time a new token is generated. For some models, this could be used to implement [`Model::stream_text_with_sampler`].
+    fn stream_text_with_sampler(
+        &mut self,
+        session: &mut Self::Session,
+        prompt: &str,
+        max_tokens: Option<u32>,
+        stop_on: Option<&str>,
+        mut sampler: Arc<Mutex<dyn Sampler>>,
+        mut on_token: impl FnMut(String) -> anyhow::Result<ModelFeedback>,
+    ) -> anyhow::Result<()> {
+        let tokens = self.tokenizer().encode(prompt)?;
+        let mut text_stream = TokenOutputStream::new(self.tokenizer(), tokens.clone());
+
+        let mut logits = self.feed_tokens(session, &tokens)?;
+        let mut tokens_generated = 0;
+        // This stores a buffer of text that has been generated to check against the stop_on string. It should never be longer than the stop_on string.
+        let mut text_matching_buffer = String::new();
+
+        loop {
+            let new_token = text_stream.sample_token(&mut sampler, logits, stop_on)?;
+            if let Some(mut new_text) = text_stream.next_token(new_token)? {
+                if let Some(stop_on) = stop_on {
+                    text_matching_buffer.push_str(&new_text);
+                    // Check if the string matches the stop_on string
+                    if let Some(position) = text_matching_buffer.find(stop_on) {
+                        // If it does, only send the text up to the stop_on string
+                        new_text = text_matching_buffer.split_at(position).0.to_string();
+                        on_token(new_text)?;
+                        // And stop the generation
+                        break;
+                    }
+                    // Trim the buffer to the length of the stop_on string
+                    if text_matching_buffer.len() > stop_on.len() {
+                        let byte_idx = text_matching_buffer.len() - stop_on.len();
+                        if text_matching_buffer.is_char_boundary(byte_idx) {
+                            text_matching_buffer =
+                                text_matching_buffer.split_at(byte_idx).1.to_string();
+                        }
+                    }
+                }
+                if let ModelFeedback::Stop = on_token(new_text)? {
+                    break;
+                }
+            }
+            tokens_generated += 1;
+            if let Some(max_tokens) = max_tokens {
+                if tokens_generated >= max_tokens {
+                    break;
+                }
+            }
+            logits = self.feed_tokens(session, &[new_token])?;
+        }
+
+        Ok(())
+    }
+}
+
+/// Feedback to give to the model when generating text.
+pub enum ModelFeedback {
+    /// Continue generating text.
+    Continue,
+    /// Stop generating text.
+    Stop,
 }
 
 impl<M: SyncModel> SyncModelExt for M {}
@@ -714,6 +779,16 @@ pub trait Model: Send + 'static {
     {
         Box::new(AnyModel(self, PhantomData))
     }
+}
+
+/// A model that has a chat format.
+pub trait ChatModel: Model {
+    /// The marker text for a user message
+    fn user_marker(&self) -> &str;
+    /// The marker text for an assistant message
+    fn assistant_marker(&self) -> &str;
+    /// The marker text for a the system prompt
+    fn system_prompt_marker(&self) -> &str;
 }
 
 /// A trait object for a model.
