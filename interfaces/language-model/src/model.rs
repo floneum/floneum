@@ -785,10 +785,16 @@ pub trait Model: Send + 'static {
 pub trait ChatModel: Model {
     /// The marker text for a user message
     fn user_marker(&self) -> &str;
+    /// The marker text after a user message
+    fn end_user_marker(&self) -> &str;
     /// The marker text for an assistant message
     fn assistant_marker(&self) -> &str;
+    /// The marker text after an assistant message
+    fn end_assistant_marker(&self) -> &str;
     /// The marker text for a the system prompt
     fn system_prompt_marker(&self) -> &str;
+    /// The marker text after a the system prompt
+    fn end_system_prompt_marker(&self) -> &str;
 }
 
 /// A trait object for a model.
