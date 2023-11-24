@@ -34,7 +34,9 @@ struct ChatHistoryItem {
 /// The history of a chat session.
 struct ChatSession<Session> {
     user_marker: String,
+    end_user_marker: String,
     assistant_marker: String,
+    end_assistant_marker: String,
     history: Vec<ChatHistoryItem>,
     session: Session,
     unfed_text: String,
@@ -43,16 +45,20 @@ struct ChatSession<Session> {
 }
 
 impl<Session> ChatSession<Session> {
-    /// Creates a new chat history.
-    pub fn new<Model: SyncModel<Session = Session>>(
+    #[allow(clippy::too_many_arguments)]
+    /// Creates a new chat history. 
+    pub(crate) fn new<Model: SyncModel<Session = Session>>(
         model: &Model,
         system_prompt_marker: String,
+        end_system_prompt_marker: String,
         user_marker: String,
+        end_user_marker: String,
         assistant_marker: String,
+        end_assistant_marker: String,
         system_prompt: String,
         sampler: Arc<Mutex<dyn Sampler + Send + Sync>>,
     ) -> Self {
-        let unfed_text = system_prompt_marker + &system_prompt;
+        let unfed_text = system_prompt_marker + &system_prompt + &end_system_prompt_marker;
         let history = vec![ChatHistoryItem {
             ty: ChatState::SystemPrompt,
             contents: system_prompt,
@@ -60,7 +66,9 @@ impl<Session> ChatSession<Session> {
 
         Self {
             user_marker,
+            end_user_marker,
             assistant_marker,
+            end_assistant_marker,
             eos: model
                 .tokenizer()
                 .decode(&[model.stop_token().unwrap()])
@@ -81,7 +89,7 @@ impl<Session> ChatSession<Session> {
         stream: tokio::sync::mpsc::UnboundedSender<String>,
     ) -> Result<()> {
         let message = message.to_string();
-        let new_text = format!("{}{}{}", self.user_marker, message, self.eos);
+        let new_text = format!("{}{}{}", self.user_marker, message, self.end_user_marker);
         self.history.push(ChatHistoryItem {
             ty: ChatState::UserMessage,
             contents: message,
@@ -102,6 +110,7 @@ impl<Session> ChatSession<Session> {
             self.sampler.clone(),
             on_token,
         )?;
+        self.unfed_text += &self.end_assistant_marker;
         self.history.push(ChatHistoryItem {
             ty: ChatState::ModelAnswer,
             contents: bot_response,
@@ -124,8 +133,11 @@ impl Chat {
         sampler: impl Sampler + Send + Sync + 'static,
     ) -> Self {
         let system_prompt_marker = model.system_prompt_marker().to_string();
+        let end_system_prompt_marker = model.end_system_prompt_marker().to_string();
         let user_marker = model.user_marker().to_string();
+        let end_user_marker = model.end_user_marker().to_string();
         let assistant_marker = model.assistant_marker().to_string();
+        let end_assistant_marker = model.end_assistant_marker().to_string();
         let system_prompt = system_prompt.into();
         let (sender_tx, mut sender_rx) = unbounded_channel();
         let (result_tx, result_rx) = unbounded_channel();
@@ -135,8 +147,11 @@ impl Chat {
                     let mut session = ChatSession::new(
                         model,
                         system_prompt_marker,
+                        end_system_prompt_marker,
                         user_marker,
+                        end_user_marker,
                         assistant_marker,
+                        end_assistant_marker,
                         system_prompt,
                         Arc::new(Mutex::new(sampler)),
                     );

@@ -90,12 +90,24 @@ impl ChatModel for Llama {
         self.chat_markers.assistant_marker.unwrap_or("")
     }
 
+    fn end_assistant_marker(&self) -> &str {
+        self.chat_markers.end_assistant_marker.unwrap_or("")
+    }
+
     fn user_marker(&self) -> &str {
         self.chat_markers.user_marker.unwrap_or("")
     }
 
+    fn end_user_marker(&self) -> &str {
+        self.chat_markers.end_user_marker.unwrap_or("")
+    }
+
     fn system_prompt_marker(&self) -> &str {
         self.chat_markers.system_prompt_marker.unwrap_or("")
+    }
+
+    fn end_system_prompt_marker(&self) -> &str {
+        self.chat_markers.end_system_marker.unwrap_or("")
     }
 }
 

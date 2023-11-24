@@ -3,8 +3,11 @@ use tokenizers::Tokenizer;
 #[derive(Default)]
 pub(crate) struct ChatMarkers {
     pub(crate) user_marker: Option<&'static str>,
+    pub(crate) end_user_marker: Option<&'static str>,
     pub(crate) assistant_marker: Option<&'static str>,
+    pub(crate) end_assistant_marker: Option<&'static str>,
     pub(crate) system_prompt_marker: Option<&'static str>,
+    pub(crate) end_system_marker: Option<&'static str>,
 }
 
 /// A source for the Llama model.
@@ -29,11 +32,7 @@ impl LlamaSource {
             tokenizer_repo: "hf-internal-testing/llama-tokenizer".to_string(),
             tokenizer_file,
             group_query_attention: 1,
-            markers: ChatMarkers {
-                user_marker: None,
-                assistant_marker: None,
-                system_prompt_marker: None,
-            },
+            markers: ChatMarkers::default()
         }
     }
 
@@ -138,6 +137,9 @@ impl LlamaSource {
                 system_prompt_marker: Some("<|system|>"),
                 user_marker: Some("<|user|>"),
                 assistant_marker: Some("<|assistant|>"),
+                end_system_marker: Some("</s>"),
+                end_user_marker: Some("</s>"),
+                end_assistant_marker: Some("</s>"),
             },
         }
     }
@@ -155,9 +157,33 @@ impl LlamaSource {
                 system_prompt_marker: Some("<|system|>"),
                 user_marker: Some("<|user|>"),
                 assistant_marker: Some("<|assistant|>"),
+                end_system_marker: Some("</s>"),
+                end_user_marker: Some("</s>"),
+                end_assistant_marker: Some("</s>"),
             },
         }
     }
+
+ /// A preset for Open chat 3.5
+ pub fn open_chat_7b() -> Self {
+    Self {
+        model_id: "TheBloke/openchat_3.5-GGUF".to_string(),
+        revision: "main".to_string(),
+        gguf_file: "openchat_3.5.Q4_K_M.gguf".into(),
+        tokenizer_repo: "openchat/openchat_3.5".to_string(),
+        tokenizer_file: "tokenizer.json".to_string(),
+        group_query_attention: 8,
+        markers: ChatMarkers {
+            system_prompt_marker: Some(""),
+            end_system_marker: Some("<|end_of_turn|>"),
+            user_marker: Some("GPT4 Correct User: "),
+            end_user_marker: Some("<|end_of_turn|>"),
+            assistant_marker: Some("GPT4 Correct Assistant: "),
+            end_assistant_marker: Some("<|end_of_turn|>"),
+        },
+    }
+}
+    
 
     /// A preset for Llama7b
     pub fn llama_7b() -> Self {
@@ -211,6 +237,9 @@ impl LlamaSource {
                 system_prompt_marker: Some("<<SYS>>\n"),
                 assistant_marker: Some(" [/INST] "),
                 user_marker: Some("[INST]"),
+                end_system_marker: Some("</s>"),
+                end_user_marker: Some("</s>"),
+                end_assistant_marker: Some("</s>"),
             },
         }
     }
@@ -228,6 +257,9 @@ impl LlamaSource {
                 system_prompt_marker: Some("<<SYS>>\n"),
                 assistant_marker: Some(" [/INST] "),
                 user_marker: Some("[INST]"),
+                end_system_marker: Some("</s>"),
+                end_user_marker: Some("</s>"),
+                end_assistant_marker: Some("</s>"),
             },
         }
     }
@@ -245,6 +277,9 @@ impl LlamaSource {
                 system_prompt_marker: Some("<<SYS>>\n"),
                 assistant_marker: Some(" [/INST] "),
                 user_marker: Some("[INST]"),
+                end_system_marker: Some("</s>"),
+                end_user_marker: Some("</s>"),
+                end_assistant_marker: Some("</s>"),
             },
         }
     }
