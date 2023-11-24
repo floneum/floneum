@@ -9,6 +9,16 @@ use kalosm_streams::ChannelTextStream;
 use llm_samplers::types::Sampler;
 use tokio::sync::mpsc::unbounded_channel;
 
+/// A simple helper function for prompting the user for input.
+pub fn prompt_input(prompt: impl Display) -> Result<String> {
+    use std::io::Write;
+    print!("{}", prompt);
+    std::io::stdout().flush()?;
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    Ok(input)
+}
+
 enum ChatState {
     SystemPrompt,
     UserMessage,

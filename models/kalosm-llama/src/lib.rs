@@ -113,6 +113,14 @@ impl Default for Llama {
 }
 
 impl Llama {
+    /// Create a default chat model.
+    pub fn new_chat() -> Self {
+        Llama::builder()
+            .with_source(LlamaSource::zephyr_7b_beta())
+            .build()
+            .unwrap()
+    }
+
     /// Create a new builder for a Llama model.
     pub fn builder() -> LlamaBuilder {
         LlamaBuilder::default()
