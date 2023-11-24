@@ -46,7 +46,7 @@ struct ChatSession<Session> {
 
 impl<Session> ChatSession<Session> {
     #[allow(clippy::too_many_arguments)]
-    /// Creates a new chat history. 
+    /// Creates a new chat history.
     pub(crate) fn new<Model: SyncModel<Session = Session>>(
         model: &Model,
         system_prompt_marker: String,

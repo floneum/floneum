@@ -32,7 +32,7 @@ impl LlamaSource {
             tokenizer_repo: "hf-internal-testing/llama-tokenizer".to_string(),
             tokenizer_file,
             group_query_attention: 1,
-            markers: ChatMarkers::default()
+            markers: ChatMarkers::default(),
         }
     }
 
@@ -164,26 +164,25 @@ impl LlamaSource {
         }
     }
 
- /// A preset for Open chat 3.5
- pub fn open_chat_7b() -> Self {
-    Self {
-        model_id: "TheBloke/openchat_3.5-GGUF".to_string(),
-        revision: "main".to_string(),
-        gguf_file: "openchat_3.5.Q4_K_M.gguf".into(),
-        tokenizer_repo: "openchat/openchat_3.5".to_string(),
-        tokenizer_file: "tokenizer.json".to_string(),
-        group_query_attention: 8,
-        markers: ChatMarkers {
-            system_prompt_marker: Some(""),
-            end_system_marker: Some("<|end_of_turn|>"),
-            user_marker: Some("GPT4 Correct User: "),
-            end_user_marker: Some("<|end_of_turn|>"),
-            assistant_marker: Some("GPT4 Correct Assistant: "),
-            end_assistant_marker: Some("<|end_of_turn|>"),
-        },
+    /// A preset for Open chat 3.5
+    pub fn open_chat_7b() -> Self {
+        Self {
+            model_id: "TheBloke/openchat_3.5-GGUF".to_string(),
+            revision: "main".to_string(),
+            gguf_file: "openchat_3.5.Q4_K_M.gguf".into(),
+            tokenizer_repo: "openchat/openchat_3.5".to_string(),
+            tokenizer_file: "tokenizer.json".to_string(),
+            group_query_attention: 8,
+            markers: ChatMarkers {
+                system_prompt_marker: Some(""),
+                end_system_marker: Some("<|end_of_turn|>"),
+                user_marker: Some("GPT4 Correct User: "),
+                end_user_marker: Some("<|end_of_turn|>"),
+                assistant_marker: Some("GPT4 Correct Assistant: "),
+                end_assistant_marker: Some("<|end_of_turn|>"),
+            },
+        }
     }
-}
-    
 
     /// A preset for Llama7b
     pub fn llama_7b() -> Self {
