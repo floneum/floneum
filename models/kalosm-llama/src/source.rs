@@ -120,7 +120,14 @@ impl LlamaSource {
             tokenizer_repo: "mistralai/Mistral-7B-v0.1".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             group_query_attention: 8,
-            ..Default::default()
+            markers: ChatMarkers {
+                system_prompt_marker: Some("<s>[INST] "),
+                end_system_marker: Some(" [/INST]"),
+                user_marker: Some("<|user|>"),
+                end_user_marker: Some(" [/INST]"),
+                assistant_marker: Some(""),
+                end_assistant_marker: Some("</s>"),
+            },
         }
     }
 
