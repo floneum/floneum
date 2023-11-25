@@ -84,11 +84,11 @@ impl<Session> ChatSession<Session> {
     /// Adds a message to the history.
     pub fn add_message<Model: SyncModel<Session = Session>>(
         &mut self,
-        message: impl Display,
+        message: AddMessage<Model>,
         model: &mut Model,
         stream: tokio::sync::mpsc::UnboundedSender<String>,
     ) -> Result<()> {
-        let message = message.to_string();
+        let AddMessage { message, filter } = message;
         let new_text = format!("{}{}{}", self.user_marker, message, self.end_user_marker);
         self.history.push(ChatHistoryItem {
             ty: ChatState::UserMessage,
@@ -96,20 +96,52 @@ impl<Session> ChatSession<Session> {
         });
         self.unfed_text += &new_text;
         let mut bot_response = String::new();
-        let on_token = |tok: String| {
-            bot_response += &tok;
-            stream.send(tok)?;
-            Ok(kalosm_language::ModelFeedback::Continue)
-        };
         self.unfed_text += &self.assistant_marker;
-        model.stream_text_with_sampler(
-            &mut self.session,
-            &std::mem::take(&mut self.unfed_text),
-            None,
-            Some(&self.eos),
-            self.sampler.clone(),
-            on_token,
-        )?;
+        let prompt = std::mem::take(&mut self.unfed_text);
+        match filter {
+            Some(filter) => {
+                let mut filter = filter.lock().unwrap();
+                loop {
+                    bot_response.clear();
+                    let on_token = |tok: String| {
+                        bot_response += &tok;
+                        Ok(kalosm_language::ModelFeedback::Continue)
+                    };
+
+                    model.stream_text_with_sampler(
+                        &mut self.session,
+                        &prompt,
+                        None,
+                        Some(&self.eos),
+                        self.sampler.clone(),
+                        on_token,
+                    )?;
+                    if filter(&bot_response, model) {
+                        stream.send(bot_response.clone())?;
+                        break;
+                    } else {
+                        tracing::trace!("Filtered out: {}", bot_response);
+                    }
+                }
+            }
+            None => {
+                let on_token = |tok: String| {
+                    bot_response += &tok;
+                    stream.send(tok)?;
+                    Ok(kalosm_language::ModelFeedback::Continue)
+                };
+
+                model.stream_text_with_sampler(
+                    &mut self.session,
+                    &prompt,
+                    None,
+                    Some(&self.eos),
+                    self.sampler.clone(),
+                    on_token,
+                )?;
+            }
+        }
+
         self.unfed_text += &self.end_assistant_marker;
         self.history.push(ChatHistoryItem {
             ty: ChatState::ModelAnswer,
@@ -119,16 +151,24 @@ impl<Session> ChatSession<Session> {
     }
 }
 
-/// A chat session.
-pub struct Chat {
-    sender: tokio::sync::mpsc::UnboundedSender<String>,
-    channel: tokio::sync::mpsc::UnboundedReceiver<tokio::sync::mpsc::UnboundedReceiver<String>>,
+type MessageFilter<M> = Option<Arc<Mutex<Box<dyn FnMut(&str, &mut M) -> bool + Send + Sync>>>>;
+
+struct AddMessage<M> {
+    message: String,
+    filter: MessageFilter<M>,
 }
 
-impl Chat {
+/// A chat session.
+pub struct Chat<M: ChatModel> {
+    sender: tokio::sync::mpsc::UnboundedSender<AddMessage<M::SyncModel>>,
+    channel: tokio::sync::mpsc::UnboundedReceiver<tokio::sync::mpsc::UnboundedReceiver<String>>,
+    filter: MessageFilter<M::SyncModel>,
+}
+
+impl<M: ChatModel> Chat<M> {
     /// Creates a new chat session.
-    pub async fn new<Model: ChatModel>(
-        model: &mut Model,
+    pub async fn new(
+        model: &mut M,
         system_prompt: impl Into<String>,
         sampler: impl Sampler + Send + Sync + 'static,
     ) -> Self {
@@ -168,6 +208,7 @@ impl Chat {
         Self {
             sender: sender_tx,
             channel: result_rx,
+            filter: None,
         }
     }
 
@@ -177,14 +218,30 @@ impl Chat {
         message: impl Into<String>,
     ) -> Result<ChannelTextStream<String>> {
         let message = message.into();
-        let message = message.trim();
+        let message = message.trim().to_string();
         self.sender
-            .send(message.to_string())
+            .send(AddMessage {
+                message,
+                filter: self.filter.clone(),
+            })
             .map_err(|_| anyhow::anyhow!("Model stopped"))?;
         self.channel
             .recv()
             .await
             .map(|c| c.into())
             .ok_or(anyhow::anyhow!("Model stopped"))
+    }
+
+    /// Filter all messages
+    pub fn filter(
+        self,
+        filter: impl FnMut(&str, &mut M::SyncModel) -> bool + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            filter: Some(Arc::new(Mutex::new(
+                Box::new(filter) as Box<dyn FnMut(&str, &mut M::SyncModel) -> bool + Send + Sync>
+            ))),
+            ..self
+        }
     }
 }

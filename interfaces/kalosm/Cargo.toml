@@ -16,6 +16,7 @@ futures-util = "0.3.28"
 anyhow = "1.0.75"
 rand = "0.8.5"
 image = "0.24.7"
+tracing = "0.1.40"
 
 [dev-dependencies]
 tracing-subscriber = "0.2"
