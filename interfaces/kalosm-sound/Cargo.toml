@@ -28,3 +28,7 @@ futures-util = "0.3.28"
 async-trait = "0.1.73"
 kalosm-streams.workspace = true
 rwhisper.workspace = true
+
+[features]
+metal = ["candle-core/metal", "rwhisper/accelerate"]
+cuda = ["candle-core/cuda", "rwhisper/cuda", "rwhisper/cudnn"]
