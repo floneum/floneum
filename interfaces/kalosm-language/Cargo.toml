@@ -64,5 +64,5 @@ texting_robots = "0.2.2"
 half = "2.3.1"
 
 [features]
-metal = ["llm/metal", "rphi/accelerate", "rbert/accelerate"]
-cublas = ["llm/cublas"]
+metal = ["llm/metal", "rphi/accelerate", "rbert/accelerate", "rmistral/accelerate", "kalosm-llama/accelerate"]
+cublas = ["llm/cublas", "rbert/cuda", "rbert/cudnn", "rphi/cuda", "rphi/cudnn", "rmistral/cuda", "rmistral/cudnn", "kalosm-llama/cuda", "kalosm-llama/cudnn"]
