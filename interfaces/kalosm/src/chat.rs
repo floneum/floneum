@@ -28,16 +28,33 @@ pub fn prompt_input(prompt: impl Display) -> Result<String> {
     Ok(input)
 }
 
-enum ChatState {
+/// The type of a chat message
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MessageType {
+    /// A system prompt.
     SystemPrompt,
+    /// A user message.
     UserMessage,
+    /// A model answer.
     ModelAnswer,
 }
 
-#[allow(unused)]
+/// A single item in the chat history.
 pub struct ChatHistoryItem {
-    ty: ChatState,
+    ty: MessageType,
     contents: String,
+}
+
+impl ChatHistoryItem {
+    /// Returns the type of the item.
+    pub fn ty(&self) -> MessageType {
+        self.ty
+    }
+
+    /// Returns the contents of the item.
+    pub fn contents(&self) -> &str {
+        &self.contents
+    }
 }
 
 /// The history of a chat session.
@@ -75,7 +92,7 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
     ) -> Self {
         let unfed_text = system_prompt_marker + &system_prompt + &end_system_prompt_marker;
         let history = vec![ChatHistoryItem {
-            ty: ChatState::SystemPrompt,
+            ty: MessageType::SystemPrompt,
             contents: system_prompt,
         }];
 
@@ -119,7 +136,7 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
             }
         };
         self.history.push(ChatHistoryItem {
-            ty: ChatState::UserMessage,
+            ty: MessageType::UserMessage,
             contents: message,
         });
         let mut bot_response = String::new();
@@ -213,7 +230,7 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
 
         self.unfed_text += &self.end_assistant_marker;
         self.history.push(ChatHistoryItem {
-            ty: ChatState::ModelAnswer,
+            ty: MessageType::ModelAnswer,
             contents: bot_response,
         });
         Ok(())
@@ -242,16 +259,22 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
         }
     }
 
+    /// Adds a system prompt to the chat. The system prompt guides the model to respond in a certain way.
+    /// If no system prompt is added, the model will use a default system prompt that instructs the model to respond in a way that is safe and respectful.
     pub fn with_system_prompt(mut self, system_prompt: impl Into<String>) -> Self {
         self.system_prompt = system_prompt.into();
         self
     }
 
+    /// Sets the [`Sampler`] to use for generating responses.
     pub fn with_sampler(mut self, sampler: impl Sampler + Send + Sync + 'static) -> Self {
         self.sampler = Arc::new(Mutex::new(sampler));
         self
     }
 
+    /// Filters out bot responses that do not match the given filter.
+    /// 
+    /// > **Note**: This setting will disable streaming responses.
     pub fn filter_bot_response(
         self,
         mut filter: impl FnMut(&str, &mut M::SyncModel) -> bool + Send + Sync + 'static,
@@ -261,6 +284,7 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
         })
     }
 
+    /// Map user prompts before they are sent to the model. This will not effect the chat history.
     pub fn map_user_message_prompt(
         mut self,
         map_user_message_prompt: impl FnMut(&str, &mut M::SyncModel) -> String + Send + Sync + 'static,
@@ -273,6 +297,7 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
         self
     }
 
+    /// Constrains the model's response to the given parser. This can be used to make the model start with a certain phrase, or to make the model respond in a certain way.
     pub fn constrain_response<P>(
         mut self,
         mut bot_constraints: impl FnMut(&[ChatHistoryItem], &mut M::SyncModel) -> P
@@ -297,6 +322,9 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
         self
     }
 
+    /// Filters out bot responses that do not match the given filter, and maps the bot response before it is sent to the stream.
+    /// 
+    /// > **Note**: This setting will disable streaming responses.
     pub fn filter_map_bot_response(
         mut self,
         filter_map_bot_response: impl for<'b> FnMut(&'b str, &mut M::SyncModel) -> Option<&'b str>
@@ -312,6 +340,9 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
         self
     }
 
+    /// Maps the bot response before it is sent to the stream.
+    /// 
+    /// > **Note**: This setting will disable streaming responses.
     pub fn map_bot_response(
         self,
         mut map_bot_response: impl for<'b> FnMut(&'b str, &mut M::SyncModel) -> &'b str
