@@ -237,9 +237,6 @@ pub(crate) fn device(cpu: bool) -> anyhow::Result<Device> {
 pub(crate) struct InferenceSettings {
     prompt: String,
 
-    /// The seed to use when generating random samples.
-    seed: u64,
-
     /// The length of the sample to generate (in tokens).
     sample_len: usize,
 
@@ -251,7 +248,6 @@ impl InferenceSettings {
     pub fn new(prompt: impl Into<String>) -> Self {
         Self {
             prompt: prompt.into(),
-            seed: rand::random(),
             sample_len: 100,
             stop_on: None,
         }
