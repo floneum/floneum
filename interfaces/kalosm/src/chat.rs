@@ -312,6 +312,16 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
         self
     }
 
+    pub fn map_bot_response(
+        self,
+        mut map_bot_response: impl for<'b> FnMut(&'b str, &mut M::SyncModel) -> &'b str
+            + Send
+            + Sync
+            + 'static,
+    ) -> Self {
+        self.filter_map_bot_response(move |message, model| Some(map_bot_response(message, model)))
+    }
+
     /// Builds a [`Chat`] instance.
     pub fn build(self) -> Chat {
         let Self {
