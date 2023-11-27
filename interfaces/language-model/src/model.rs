@@ -591,6 +591,7 @@ pub trait SyncModelExt: SyncModel {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// Stream text, calling the on_token callback every time a new token is generated. For some models, this could be used to implement [`Model::stream_text_with_sampler`].
     fn stream_text_with_sampler(
         &mut self,
@@ -616,8 +617,11 @@ pub trait SyncModelExt: SyncModel {
                     text_matching_buffer.push_str(&new_text);
                     // Check if the string matches the stop_on string
                     if let Some(position) = text_matching_buffer.find(stop_on) {
-                        // If it does, only send the text up to the stop_on string
-                        new_text = text_matching_buffer.split_at(position).0.to_string();
+                        // If it does, only send the text up and including the stop_on string
+                        new_text = text_matching_buffer
+                            .split_at(position + stop_on.len())
+                            .0
+                            .to_string();
                         on_token(new_text)?;
                         // And stop the generation
                         break;
