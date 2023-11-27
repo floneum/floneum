@@ -8,8 +8,8 @@ use std::{
 
 use kalosm_language_model::{GenerationParameters, SyncModel, SyncModelExt};
 use kalosm_sample::{
-    ArcParser, ChoiceParser, CreateParserState, Either, LiteralParser, LiteralParserOffset,
-    ParseResult, Parser, ParserExt, SequenceParser, SequenceParserState,
+    ArcParser, ChoiceParser, CreateParserState, Either, LiteralMismatchError, LiteralParser,
+    LiteralParserOffset, ParseResult, Parser, ParserExt, SequenceParser, SequenceParserState,
 };
 pub use search::*;
 mod calculator;
@@ -208,7 +208,7 @@ Question: {question}
     ) -> Option<
         IndexParser<
             SequenceParser<LiteralParser<String>, ArcParser>,
-            Either<(), Arc<anyhow::Error>>,
+            Either<LiteralMismatchError, Arc<anyhow::Error>>,
             (
                 (),
                 Arc<(dyn std::any::Any + std::marker::Send + std::marker::Sync + 'static)>,
@@ -232,7 +232,7 @@ Question: {question}
     pub fn thought_constraints(
         &self,
     ) -> impl Parser<
-        Error = Either<(), OneLineError>,
+        Error = Either<LiteralMismatchError, OneLineError>,
         Output = ((), String),
         PartialState = SequenceParserState<LiteralParserOffset, OneLineState, ()>,
     > + CreateParserState
@@ -250,7 +250,7 @@ Question: {question}
         LiteralParser<&'static str>,
         IndexParser<
             SequenceParser<LiteralParser<String>, ArcParser>,
-            Either<(), Arc<anyhow::Error>>,
+            Either<LiteralMismatchError, Arc<anyhow::Error>>,
             ((), Arc<dyn Any + Send + Sync>),
             SequenceParserState<LiteralParserOffset, Arc<dyn Any + Send + Sync>, ()>,
         >,
@@ -263,7 +263,7 @@ Question: {question}
     pub fn answer_constraints(
         &self,
     ) -> impl Parser<
-        Error = Either<(), OneLineError>,
+        Error = Either<LiteralMismatchError, OneLineError>,
         Output = ((), String),
         PartialState = SequenceParserState<LiteralParserOffset, OneLineState, ()>,
     > + CreateParserState
@@ -280,7 +280,7 @@ Question: {question}
     ) -> ChoiceParser<
         ChoiceParser<
             impl Parser<
-                    Error = Either<(), OneLineError>,
+                    Error = Either<LiteralMismatchError, OneLineError>,
                     Output = ((), String),
                     PartialState = SequenceParserState<LiteralParserOffset, OneLineState, ()>,
                 > + CreateParserState
@@ -291,14 +291,14 @@ Question: {question}
                 LiteralParser<&'static str>,
                 IndexParser<
                     SequenceParser<LiteralParser<String>, ArcParser>,
-                    Either<(), Arc<anyhow::Error>>,
+                    Either<LiteralMismatchError, Arc<anyhow::Error>>,
                     ((), Arc<dyn Any + Send + Sync>),
                     SequenceParserState<LiteralParserOffset, Arc<dyn Any + Send + Sync>, ()>,
                 >,
             >,
         >,
         impl Parser<
-                Error = Either<(), OneLineError>,
+                Error = Either<LiteralMismatchError, OneLineError>,
                 Output = ((), String),
                 PartialState = SequenceParserState<LiteralParserOffset, OneLineState, ()>,
             > + CreateParserState
@@ -490,6 +490,7 @@ where
 }
 
 /// One line of text with some non-whitespace characters
+#[derive(Debug, Clone, Copy)]
 pub struct OneLine;
 
 /// The state of the [`OneLine`] parser

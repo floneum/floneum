@@ -415,7 +415,7 @@ pub trait ModelExt: Model + Send + 'static {
     ///     .unwrap();
     /// }
     /// ```
-    async fn run_sync(
+    fn run_sync(
         &mut self,
         f: impl for<'a> FnOnce(
                 &'a mut Self::SyncModel,
@@ -423,7 +423,7 @@ pub trait ModelExt: Model + Send + 'static {
             + Send
             + 'static,
     ) -> anyhow::Result<()> {
-        self.run_sync_raw(Box::new(f)).await
+        self.run_sync_raw(Box::new(f))
     }
 
     /// Generate structured text with the given prompt.
@@ -465,8 +465,7 @@ pub trait ModelExt: Model + Send + 'static {
                     }
                 }
             })
-        })
-        .await?;
+        })?;
 
         Ok(StructureParserResult::new(
             Self::TextStream::from(receiver),
@@ -700,10 +699,11 @@ pub trait Model: Send + 'static {
     /// The raw sync model that backs this model.
     type SyncModel: SyncModel;
 
+    #[allow(clippy::type_complexity)]
     /// Run some code synchronously with the model.
     ///
     /// See [`ModelExt::run_sync`] for nicer API with an example.
-    async fn run_sync_raw(
+    fn run_sync_raw(
         &mut self,
         _f: Box<
             dyn for<'a> FnOnce(

@@ -49,7 +49,6 @@ async fn main() {
             }
         })
     })
-    .await
     .unwrap();
     std::future::pending::<()>().await;
 }

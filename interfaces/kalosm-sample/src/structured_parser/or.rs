@@ -1,4 +1,8 @@
-use std::borrow::Cow;
+use std::{
+    borrow::Cow,
+    error::Error,
+    fmt::{Display, Formatter},
+};
 
 use crate::{CreateParserState, ParseResult, Parser};
 
@@ -68,6 +72,24 @@ pub enum Either<L, R> {
     Left(L),
     /// The value is the right type.
     Right(R),
+}
+
+impl<L: Display, R: Display> Display for Either<L, R> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Either::Left(l) => l.fmt(f),
+            Either::Right(r) => r.fmt(f),
+        }
+    }
+}
+
+impl<L: Error + 'static, R: Error + 'static> Error for Either<L, R> {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Either::Left(l) => Some(l),
+            Either::Right(r) => Some(r),
+        }
+    }
 }
 
 impl<
@@ -234,6 +256,7 @@ impl<
 
 #[test]
 fn choice_parser() {
+    use crate::LiteralMismatchError;
     use crate::{LiteralParser, LiteralParserOffset};
     let parser = ChoiceParser {
         parser1: LiteralParser::new("Hello, "),
@@ -263,7 +286,7 @@ fn choice_parser() {
     );
     assert_eq!(
         parser.parse(&state, b"Goodbye, world!"),
-        Err(Either::Left(()))
+        Err(Either::Left(LiteralMismatchError))
     );
 
     let parser = ChoiceParser::new(
@@ -276,7 +299,7 @@ fn choice_parser() {
         Ok(ParseResult::Incomplete {
             new_state: ChoiceParserState {
                 state1: Ok(LiteralParserOffset::new(8)),
-                state2: Err(()),
+                state2: Err(LiteralMismatchError),
             },
             required_next: "'t a test".into()
         })

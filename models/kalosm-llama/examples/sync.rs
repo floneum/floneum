@@ -19,6 +19,5 @@ async fn main() {
                 println!("{:?}", logits);
             })
         })
-        .await
         .unwrap();
 }

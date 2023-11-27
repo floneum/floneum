@@ -26,7 +26,7 @@ impl Model for Llama {
         self.get_tokenizer() as Arc<dyn kalosm_sample::Tokenizer + Send + Sync>
     }
 
-    async fn run_sync_raw(
+    fn run_sync_raw(
         &mut self,
         f: Box<
             dyn for<'a> FnOnce(
