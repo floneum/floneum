@@ -3,8 +3,6 @@ use std::error::Error;
 use kalosm::{language::*, *};
 use language::kalosm_sample::*;
 
-
-
 /// One line of text with some non-whitespace characters
 #[derive(Debug, Clone, Copy)]
 pub struct OneAsciiLine;
@@ -56,7 +54,7 @@ impl Parser for OneAsciiLine {
         let mut state = state.clone();
         let mut iter = input.iter();
         while let Some(&c) = iter.next() {
-            if !c.is_ascii(){
+            if !c.is_ascii() {
                 return Err(OneAsciiLineError);
             }
             if state.all_whitespace {

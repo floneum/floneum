@@ -174,43 +174,41 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
                     }
                 }
             }
-            None => {
-                match bot_constraints {
-                    Some(constraints) => {
-                        let mut constraints = constraints.lock().unwrap();
-                        let constraints = constraints(&self.history, model);
-                        let state = constraints.create_parser_state();
-                        let on_token = |tok: String| {
-                            bot_response += &tok;
-                            stream.send(tok)?;
-                            Ok(())
-                        };
-                        model.generate_structured(
-                            &mut self.session,
-                            &prompt,
-                            constraints,
-                            state,
-                            self.sampler.clone(),
-                            on_token,
-                        )?;
-                    }
-                    None => {
-                        let on_token = |tok: String| {
-                            bot_response += &tok;
-                            stream.send(tok)?;
-                            Ok(kalosm_language::ModelFeedback::Continue)
-                        };
-                        model.stream_text_with_sampler(
-                            &mut self.session,
-                            &prompt,
-                            None,
-                            Some(&self.eos),
-                            self.sampler.clone(),
-                            on_token,
-                        )?;
-                    }
+            None => match bot_constraints {
+                Some(constraints) => {
+                    let mut constraints = constraints.lock().unwrap();
+                    let constraints = constraints(&self.history, model);
+                    let state = constraints.create_parser_state();
+                    let on_token = |tok: String| {
+                        bot_response += &tok;
+                        stream.send(tok)?;
+                        Ok(())
+                    };
+                    model.generate_structured(
+                        &mut self.session,
+                        &prompt,
+                        constraints,
+                        state,
+                        self.sampler.clone(),
+                        on_token,
+                    )?;
                 }
-            }
+                None => {
+                    let on_token = |tok: String| {
+                        bot_response += &tok;
+                        stream.send(tok)?;
+                        Ok(kalosm_language::ModelFeedback::Continue)
+                    };
+                    model.stream_text_with_sampler(
+                        &mut self.session,
+                        &prompt,
+                        None,
+                        Some(&self.eos),
+                        self.sampler.clone(),
+                        on_token,
+                    )?;
+                }
+            },
         }
 
         self.unfed_text += &self.end_assistant_marker;

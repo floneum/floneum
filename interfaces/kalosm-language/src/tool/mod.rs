@@ -8,8 +8,8 @@ use std::{
 
 use kalosm_language_model::{GenerationParameters, SyncModel, SyncModelExt};
 use kalosm_sample::{
-    ArcParser, ChoiceParser, CreateParserState, Either, LiteralParser, LiteralParserOffset,
-    ParseResult, Parser, ParserExt, SequenceParser, SequenceParserState, LiteralMismatchError,
+    ArcParser, ChoiceParser, CreateParserState, Either, LiteralMismatchError, LiteralParser,
+    LiteralParserOffset, ParseResult, Parser, ParserExt, SequenceParser, SequenceParserState,
 };
 pub use search::*;
 mod calculator;

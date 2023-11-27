@@ -1,3 +1,4 @@
+use kalosm_sample::LiteralMismatchError;
 use kalosm_sample::{
     ChoiceParser, ChoiceParserState, CreateParserState, Either, FloatParser, FloatParserState,
     LiteralParser, LiteralParserOffset, ParseResult, Parser, ParserExt, SequenceParser,
@@ -5,7 +6,6 @@ use kalosm_sample::{
 };
 use once_cell::sync::{Lazy, OnceCell};
 use std::ops::Deref;
-use kalosm_sample::LiteralMismatchError;
 
 use crate::tool::Tool;
 
