@@ -273,7 +273,7 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
     }
 
     /// Filters out bot responses that do not match the given filter.
-    /// 
+    ///
     /// > **Note**: This setting will disable streaming responses.
     pub fn filter_bot_response(
         self,
@@ -323,7 +323,7 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
     }
 
     /// Filters out bot responses that do not match the given filter, and maps the bot response before it is sent to the stream.
-    /// 
+    ///
     /// > **Note**: This setting will disable streaming responses.
     pub fn filter_map_bot_response(
         mut self,
@@ -341,7 +341,7 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
     }
 
     /// Maps the bot response before it is sent to the stream.
-    /// 
+    ///
     /// > **Note**: This setting will disable streaming responses.
     pub fn map_bot_response(
         self,
