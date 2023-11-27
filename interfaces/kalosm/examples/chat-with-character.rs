@@ -94,6 +94,11 @@ async fn main() {
         .constrain_response(move |_, _| {
             LiteralParser::new(format!("(Responding as {}) ", character_name)).then(OneAsciiLine)
         })
+        .map_bot_response(move |response, _| {
+            response
+                .trim_start_matches(&format!("(Responding as {}) ", character_name))
+                .trim()
+        })
         .build();
 
     loop {
