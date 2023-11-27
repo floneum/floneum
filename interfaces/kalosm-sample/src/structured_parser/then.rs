@@ -177,6 +177,6 @@ fn sequence_parser() {
     );
     assert_eq!(
         parser.parse(&state, b"Goodbye, world!"),
-        Err(Either::Left(()))
+        Err(Either::Left(crate::LiteralMismatchError))
     );
 }

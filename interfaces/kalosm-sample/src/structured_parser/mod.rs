@@ -507,6 +507,7 @@ impl Parser for StructureParser {
                 LiteralParser::from(lit_parser)
                     .parse(state, input)
                     .map(|result| result.map(|_| ()).map_state(StructureParserState::Literal))
+                    .map_err(|_| ())
             }
             (
                 StructureParser::Num {

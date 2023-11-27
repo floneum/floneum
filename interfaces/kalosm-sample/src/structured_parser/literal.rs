@@ -38,8 +38,20 @@ impl LiteralParserOffset {
     }
 }
 
+/// The error type for a literal parser.
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+pub struct LiteralMismatchError;
+
+impl std::fmt::Display for LiteralMismatchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Literal mismatch")
+    }
+}
+
+impl std::error::Error for LiteralMismatchError {}
+
 impl<S: AsRef<str>> Parser for LiteralParser<S> {
-    type Error = ();
+    type Error = LiteralMismatchError;
     type Output = ();
     type PartialState = LiteralParserOffset;
 
@@ -55,7 +67,7 @@ impl<S: AsRef<str>> Parser for LiteralParser<S> {
             .zip(self.literal.as_ref().as_bytes()[state.offset..].iter())
         {
             if input_byte != literal_byte {
-                return Err(());
+                return Err(LiteralMismatchError);
             }
             bytes_consumed += 1;
         }
@@ -116,5 +128,8 @@ fn literal_parser() {
             remaining: &[]
         })
     );
-    assert_eq!(parser.parse(&state, b"Goodbye, world!"), Err(()));
+    assert_eq!(
+        parser.parse(&state, b"Goodbye, world!"),
+        Err(LiteralMismatchError)
+    );
 }
