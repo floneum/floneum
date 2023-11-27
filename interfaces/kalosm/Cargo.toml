@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-kalosm-language.workspace = true
+kalosm-language = { default-features = false, workspace = true }
 kalosm-sound.workspace = true
 kalosm-vision.workspace = true
 kalosm-streams.workspace = true
@@ -22,5 +22,7 @@ tracing = "0.1.40"
 tracing-subscriber = "0.2"
 
 [features]
+default = ["llamacpp"]
+llamacpp = ["kalosm-language/llamacpp"]
 metal = ["kalosm-language/metal"]
 cublas = ["kalosm-language/cublas"]

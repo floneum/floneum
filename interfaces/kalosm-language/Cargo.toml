@@ -9,7 +9,6 @@ edition = "2021"
 bytesize = "1.2.0"
 futures-util = "0.3.28"
 llm-samplers = { workspace = true }
-llm = { git = "https://github.com/rustformers/llm" }
 log = "0.4.17"
 rand = "0.8.5"
 reqwest = { version = "0.11.18", features = ["stream", "json"] }
@@ -33,7 +32,7 @@ tantivy = "0.21.0"
 tempfile = "3.8.0"
 rss = { version = "2.0.6", features = ["atom"] }
 scraper = { version = "0.18.0", features = ["atomic"] }
-kalosm-language-model.workspace = true
+kalosm-language-model = { workspace = true }
 headless_chrome = { version = "1.0" }
 candle-core.workspace = true
 candle-nn.workspace = true
@@ -55,7 +54,7 @@ itertools = "0.11.0"
 async-recursion = "1.0.5"
 tokenizers = { version = "0.13.4" }
 rustc-hash = "1.1.0"
-kalosm-sample.workspace = true
+kalosm-sample = { workspace = true }
 ego-tree = "0.6.2"
 image = "0.24.7"
 meval = "0.2.0"
@@ -64,5 +63,6 @@ texting_robots = "0.2.2"
 half = "2.3.1"
 
 [features]
-metal = ["llm/metal", "rphi/accelerate", "rbert/accelerate", "rmistral/accelerate", "kalosm-llama/accelerate"]
-cublas = ["llm/cublas", "rbert/cuda", "rbert/cudnn", "rphi/cuda", "rphi/cudnn", "rmistral/cuda", "rmistral/cudnn", "kalosm-llama/cuda", "kalosm-llama/cudnn"]
+llamacpp = ["kalosm-language-model/llamacpp", "kalosm-sample/llamacpp"]
+metal = ["kalosm-language-model/metal", "rphi/accelerate", "rbert/accelerate", "rmistral/accelerate", "kalosm-llama/accelerate"]
+cublas = ["kalosm-language-model/cublas", "rbert/cuda", "rbert/cudnn", "rphi/cuda", "rphi/cudnn", "rmistral/cuda", "rmistral/cudnn", "kalosm-llama/cuda", "kalosm-llama/cudnn"]
