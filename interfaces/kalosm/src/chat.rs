@@ -182,6 +182,7 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
                         let state = constraints.create_parser_state();
                         let on_token = |tok: String| {
                             bot_response += &tok;
+                            stream.send(tok)?;
                             Ok(())
                         };
                         model.generate_structured(
@@ -196,6 +197,7 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
                     None => {
                         let on_token = |tok: String| {
                             bot_response += &tok;
+                            stream.send(tok)?;
                             Ok(kalosm_language::ModelFeedback::Continue)
                         };
                         model.stream_text_with_sampler(
