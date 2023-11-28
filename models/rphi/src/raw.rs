@@ -410,7 +410,7 @@ impl MixFormerSequentialForCausalLM {
 #[derive(Debug, Clone)]
 pub struct PhiCache {
     first_token: bool,
-    blocks: Vec<ParallelBlockCache>,
+    pub(crate)blocks: Vec<ParallelBlockCache>,
 }
 
 impl PhiCache {
@@ -498,10 +498,10 @@ impl PhiCache {
 }
 
 #[derive(Debug, Clone)]
-struct ParallelBlockCache(Option<ParallelBlockCacheValue>);
+pub(crate)struct ParallelBlockCache(pub(crate)Option<ParallelBlockCacheValue>);
 
 #[derive(Debug, Clone)]
-struct ParallelBlockCacheValue {
-    key: Tensor,
+pub(crate)struct ParallelBlockCacheValue {
+    pub(crate)key: Tensor,
     value: Tensor,
 }

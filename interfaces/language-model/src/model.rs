@@ -12,6 +12,7 @@ use std::fmt::Display;
 use std::future::IntoFuture;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
+use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -545,7 +546,7 @@ impl<M: Model + Send + 'static> ModelExt for M {}
 /// ```
 pub trait SyncModel {
     /// The session type for this model.
-    type Session;
+    type Session: Session;
 
     /// Create a new session for this model.
     fn new_session(&self) -> anyhow::Result<Self::Session>;
@@ -565,6 +566,29 @@ pub trait SyncModel {
 
     /// Return the tokenizer associated with this model.
     fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync>;
+}
+
+/// A session for a model.
+pub trait Session{
+    /// Save the session to the given path.
+    fn save_to(&self, _path: impl AsRef<Path>) -> anyhow::Result<()>{
+        Err(anyhow::Error::msg("Not implemented"))
+    }
+
+    /// Load the session from the given path.
+    fn load_from(_path: impl AsRef<Path>) -> anyhow::Result<Self>where Self: std::marker::Sized{
+        Err(anyhow::Error::msg("Not implemented"))
+    }
+}
+
+impl Session for (){
+    fn save_to(&self, _path: impl AsRef<Path>) -> anyhow::Result<()>{
+        Ok(())
+    }
+
+    fn load_from( _path: impl AsRef<Path>) -> anyhow::Result<()>{
+        Ok(())
+    }
 }
 
 /// An extension trait for sync models.
@@ -836,18 +860,52 @@ impl Model for DynModel {
 }
 
 /// A trait object for a sync model.
-pub type BoxedSyncModel = Box<dyn SyncModel<Session = Box<dyn Any>>>;
+pub type BoxedSyncModel = Box<dyn SyncModel<Session = AnySession>>;
+
+trait AnySessionTrait  {
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+    fn save_to(&self, path: &Path) -> anyhow::Result<()>;
+}
+
+impl<S: Any + Session> AnySessionTrait for S {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn save_to(&self, path: &Path) -> anyhow::Result<()> {
+        Session::save_to(self, path)
+    }
+}
+
+/// A type-erased session.
+/// 
+/// > Note: boxed sessions do not support loading from a path.
+pub struct AnySession {
+    session: Box<dyn AnySessionTrait>,
+}
+
+impl AnySession {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self.session.as_any_mut()
+    }
+}
+
+impl Session for AnySession {
+    fn save_to(&self, path: impl AsRef<Path>) -> anyhow::Result<()>{
+        self.session.save_to(path.as_ref())
+    }
+}
 
 impl SyncModel for BoxedSyncModel {
-    type Session = Box<dyn Any>;
+    type Session = AnySession;
 
     fn new_session(&self) -> anyhow::Result<Self::Session> {
-        let self_ref: &(dyn SyncModel<Session = Box<dyn Any>>) = self.as_ref();
+        let self_ref: &(dyn SyncModel<Session = AnySession>) = self.as_ref();
         self_ref.new_session()
     }
 
     fn feed_text(&mut self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Logits> {
-        let self_ref: &mut (dyn SyncModel<Session = Box<dyn Any>>) = self.as_mut();
+        let self_ref: &mut (dyn SyncModel<Session = AnySession>) = self.as_mut();
         self_ref.feed_text(session, prompt)
     }
 
@@ -856,33 +914,35 @@ impl SyncModel for BoxedSyncModel {
         session: &mut Self::Session,
         tokens: &[u32],
     ) -> anyhow::Result<Logits> {
-        let self_ref: &mut (dyn SyncModel<Session = Box<dyn Any>>) = self.as_mut();
+        let self_ref: &mut (dyn SyncModel<Session = AnySession>) = self.as_mut();
         self_ref.feed_tokens(session, tokens)
     }
 
     fn stop_token(&self) -> anyhow::Result<u32> {
-        let self_ref: &(dyn SyncModel<Session = Box<dyn Any>>) = self.as_ref();
+        let self_ref: &(dyn SyncModel<Session = AnySession>) = self.as_ref();
         self_ref.stop_token()
     }
 
     fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
-        let self_ref: &(dyn SyncModel<Session = Box<dyn Any>>) = self.as_ref();
+        let self_ref: &(dyn SyncModel<Session = AnySession>) = self.as_ref();
         self_ref.tokenizer()
     }
 }
 
 struct AnySyncModel<M: SyncModel<Session = S>, S: Any>(M, PhantomData<S>);
 
-impl<M: SyncModel<Session = S>, S: Any> SyncModel for AnySyncModel<M, S> {
-    type Session = Box<dyn Any>;
+impl<M: SyncModel<Session = S>, S: Session+ Any> SyncModel for AnySyncModel<M, S> {
+    type Session = AnySession;
 
     fn new_session(&self) -> anyhow::Result<Self::Session> {
-        self.0.new_session().map(|s| Box::new(s) as Box<dyn Any>)
+        self.0.new_session().map(|s| AnySession {
+            session: Box::new(s),
+        })
     }
 
     fn feed_text(&mut self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Logits> {
         self.0.feed_text(
-            match session.downcast_mut() {
+            match session.as_any_mut().downcast_mut() {
                 Some(s) => s,
                 None => {
                     return Err(anyhow::Error::msg(format!(
@@ -901,7 +961,7 @@ impl<M: SyncModel<Session = S>, S: Any> SyncModel for AnySyncModel<M, S> {
         tokens: &[u32],
     ) -> anyhow::Result<Logits> {
         self.0.feed_tokens(
-            match session.downcast_mut() {
+            match session.as_any_mut().downcast_mut() {
                 Some(s) => s,
                 None => {
                     return Err(anyhow::Error::msg(format!(

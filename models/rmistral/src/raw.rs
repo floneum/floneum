@@ -392,7 +392,7 @@ impl Model {
 #[derive(Debug, Clone)]
 pub struct MistralCache {
     first_token: bool,
-    blocks: Vec<AttentionCache>,
+    pub(crate)blocks: Vec<AttentionCache>,
 }
 
 impl MistralCache {
@@ -474,10 +474,10 @@ impl MistralCache {
 }
 
 #[derive(Debug, Clone)]
-struct AttentionCache(Option<AttentionCacheValue>);
+pub(crate) struct AttentionCache(pub(crate)Option<AttentionCacheValue>);
 
 #[derive(Debug, Clone)]
-struct AttentionCacheValue {
-    key: Tensor,
+pub(crate)struct AttentionCacheValue {
+    pub(crate)key: Tensor,
     value: Tensor,
 }
