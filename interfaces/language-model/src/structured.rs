@@ -55,7 +55,7 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
                     let result = result.without_remaining();
                     state_map.insert(logit.token_id, Some((new_text.to_string(), result)));
                 } else {
-                    logit.logit = 0.0;
+                    logit.logit = f32::NEG_INFINITY;
                 }
             } else {
                 state_map.insert(logit.token_id, None);

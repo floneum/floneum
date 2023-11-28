@@ -73,7 +73,7 @@ impl<
             for logit in logits.iter_mut() {
                 let new_token = new_tokens.next().unwrap();
                 if new_token.is_empty() {
-                    logit.logit = 0.0;
+                    logit.logit = f32::NEG_INFINITY;
                     continue;
                 }
                 let string = tokens.to_string() + &new_token;
@@ -85,7 +85,7 @@ impl<
                 match status {
                     Ok(crate::ParseResult::Finished { remaining, .. }) => {
                         if !remaining.is_empty() {
-                            logit.logit = 0.0;
+                            logit.logit = f32::NEG_INFINITY;
                         }
                     }
                     Ok(crate::ParseResult::Incomplete { .. }) => {
@@ -96,7 +96,7 @@ impl<
                         }
                     }
                     Err(_) => {
-                        logit.logit = 0.0;
+                        logit.logit = f32::NEG_INFINITY;
                     }
                 }
             }
