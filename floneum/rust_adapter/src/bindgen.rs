@@ -209,7 +209,7 @@ world both {
                 "plugins:main/definitions": $name
             },
         });
-        
+
 use plugins::main::types::*;
 use crate::exports::plugins::main::definitions::Guest;
 use crate::plugins::main::imports::log_to_user;
