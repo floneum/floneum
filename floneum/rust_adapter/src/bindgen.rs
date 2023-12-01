@@ -211,8 +211,8 @@ world both {
         });
 
 use plugins::main::types::*;
-use crate::exports::plugins::main::definitions::Guest;
-use crate::plugins::main::imports::log_to_user;
+use exports::plugins::main::definitions::Guest;
+use plugins::main::imports::log_to_user;
 
 pub trait IntoInputValue<T = ()> {
     fn into_input_value(self) -> Input;
