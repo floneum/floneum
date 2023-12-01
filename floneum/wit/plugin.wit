@@ -190,6 +190,8 @@ world exports {
 
 world plugin-world {
   export definitions;
+  import imports;
+  import types;
 }
 
 world both {

@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use floneum_rust::{plugins::main::imports::log_to_user, *};
+use floneum_rust::*;
 
 #[export_plugin]
 /// Calls a large language model to generate text.
