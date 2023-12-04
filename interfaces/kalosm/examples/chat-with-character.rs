@@ -12,16 +12,12 @@ async fn main() {
         .then(StopOn::new(model.end_assistant_marker().to_string()));
     let mut chat = Chat::builder(&mut model)
         .with_system_prompt(character_description)
-        .with_initial_history(vec![
-            ChatHistoryItem::new(MessageType::UserMessage, "Hello, who are you?"),
-            ChatHistoryItem::new(MessageType::ModelAnswer, "Meow! I'm a cat called Kittens!"),
-        ])
         .constrain_response(move |_, _| constraints.clone())
-        // .map_bot_response(move |response, _| {
-        //     response
-        //         .trim_start_matches(&format!("(Responding as {}) ", character_name))
-        //         .trim()
-        // })
+        .map_bot_response(move |response, _| {
+            response
+                .trim_start_matches(&format!("(Responding as {}) ", character_name))
+                .trim()
+        })
         .build();
 
     loop {
