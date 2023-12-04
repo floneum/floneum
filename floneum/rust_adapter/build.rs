@@ -291,7 +291,8 @@ macro_rules! bindgen {{
         }});
 {LIBRARY}
     }};
-}}"#,
+}}
+"#,
         wit_source
     );
 
