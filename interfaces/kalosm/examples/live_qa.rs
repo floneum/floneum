@@ -56,8 +56,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 .take(5)
                 .map(|x| x.to_string())
                 .collect::<Vec<_>>();
-            context
-                .join("\n")
+            context.join("\n")
         };
 
         let prompt = format!(

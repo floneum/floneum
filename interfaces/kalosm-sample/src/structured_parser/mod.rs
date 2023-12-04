@@ -24,6 +24,8 @@ mod word;
 pub use word::*;
 mod sentence;
 pub use sentence::*;
+mod stop_on;
+pub use stop_on::*;
 
 /// A trait for a parser with a default state.
 pub trait CreateParserState: Parser {

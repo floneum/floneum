@@ -46,6 +46,14 @@ pub struct ChatHistoryItem {
 }
 
 impl ChatHistoryItem {
+    /// Creates a new chat history item.
+    pub fn new(ty: MessageType, contents: impl Into<String>) -> Self {
+        Self {
+            ty,
+            contents: contents.into(),
+        }
+    }
+
     /// Returns the type of the item.
     pub fn ty(&self) -> MessageType {
         self.ty
@@ -77,7 +85,7 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
     #[allow(clippy::too_many_arguments)]
     /// Creates a new chat history.
     pub(crate) fn new(
-        model: &Model,
+        model: &mut Model,
         system_prompt_marker: String,
         end_system_prompt_marker: String,
         user_marker: String,
@@ -89,6 +97,7 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
         bot_constraints: Option<ResponseConstraintGenerator<Model>>,
         filter_map_bot_response: Option<MessageFilter<Model>>,
         sampler: Arc<Mutex<dyn Sampler + Send + Sync>>,
+        initial_history: Vec<ChatHistoryItem>,
     ) -> Self {
         let unfed_text = system_prompt_marker + &system_prompt + &end_system_prompt_marker;
         let history = vec![ChatHistoryItem {
@@ -96,7 +105,7 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
             contents: system_prompt,
         }];
 
-        Self {
+        let mut myself = Self {
             user_marker,
             end_user_marker,
             assistant_marker,
@@ -113,7 +122,25 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
             bot_constraints,
             filter_map_bot_response,
             sampler,
+        };
+
+        for item in initial_history {
+            match item.ty() {
+                MessageType::SystemPrompt => {
+                    panic!("Initial history cannot contain a system prompt");
+                }
+                MessageType::UserMessage => {
+                    myself.add_user_message(item.contents, model);
+                }
+                MessageType::ModelAnswer => {
+                    myself.add_bot_message(item.contents);
+                }
+            }
         }
+
+        println!("{}", myself.unfed_text);
+
+        myself
     }
 
     /// Adds a message to the history.
@@ -123,22 +150,7 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
         model: &mut Model,
         stream: tokio::sync::mpsc::UnboundedSender<String>,
     ) -> Result<()> {
-        match &self.map_user_message_prompt {
-            Some(map) => {
-                let mut map = map.lock().unwrap();
-                let message = map(&message, model);
-                let new_text = format!("{}{}{}", self.user_marker, message, self.end_user_marker);
-                self.unfed_text += &new_text;
-            }
-            None => {
-                let new_text = format!("{}{}{}", self.user_marker, message, self.end_user_marker);
-                self.unfed_text += &new_text;
-            }
-        };
-        self.history.push(ChatHistoryItem {
-            ty: MessageType::UserMessage,
-            contents: message,
-        });
+        self.add_user_message(message, model);
         let mut bot_response = String::new();
         self.unfed_text += &self.assistant_marker;
         let prompt = std::mem::take(&mut self.unfed_text);
@@ -228,12 +240,38 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
             },
         }
 
+        Ok(())
+    }
+
+    fn add_user_message(&mut self, message: String, model: &mut Model) {
+        match &self.map_user_message_prompt {
+            Some(map) => {
+                let mut map = map.lock().unwrap();
+                let message = map(&message, model);
+                self.unfed_text += &self.user_marker;
+                self.unfed_text += &message;
+                self.unfed_text += &self.end_user_marker;
+            }
+            None => {
+                self.unfed_text += &self.user_marker;
+                self.unfed_text += &message;
+                self.unfed_text += &self.end_user_marker;
+            }
+        };
+        self.history.push(ChatHistoryItem {
+            ty: MessageType::UserMessage,
+            contents: message,
+        });
+    }
+
+    fn add_bot_message(&mut self, message: String) {
+        self.unfed_text += &self.assistant_marker;
+        self.unfed_text += &message;
         self.unfed_text += &self.end_assistant_marker;
         self.history.push(ChatHistoryItem {
             ty: MessageType::ModelAnswer,
-            contents: bot_response,
+            contents: message,
         });
-        Ok(())
     }
 }
 
@@ -245,6 +283,7 @@ pub struct ChatBuilder<'a, M: ChatModel> {
     map_user_message_prompt: Option<UserMessageMapping<M::SyncModel>>,
     bot_constraints: Option<ResponseConstraintGenerator<M::SyncModel>>,
     filter_map_bot_response: Option<MessageFilter<M::SyncModel>>,
+    initial_history: Vec<ChatHistoryItem>,
 }
 
 impl<'a, M: ChatModel> ChatBuilder<'a, M> {
@@ -256,6 +295,7 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
             map_user_message_prompt: None,
             bot_constraints: None,
             filter_map_bot_response: None,
+            initial_history: Vec::new(),
         }
     }
 
@@ -353,6 +393,16 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
         self.filter_map_bot_response(move |message, model| Some(map_bot_response(message, model)))
     }
 
+    /// Set the initial history of the chat. Each message in the original history will be added to the chat history, and the model will be fed the user messages.
+    ///
+    /// Each message in the chat history will be mapped by the [`Self::map_user_message_prompt`] function, and then fed to the model, but because the messages are already created, they will not be checked by the [`Self::filter_map_bot_response`] function.
+    ///
+    /// > **Note**: The system prompt automatically added to the chat history and should not be included in the initial history.
+    pub fn with_initial_history(mut self, initial_history: Vec<ChatHistoryItem>) -> Self {
+        self.initial_history = initial_history;
+        self
+    }
+
     /// Builds a [`Chat`] instance.
     pub fn build(self) -> Chat {
         let Self {
@@ -362,6 +412,7 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
             map_user_message_prompt,
             bot_constraints,
             filter_map_bot_response,
+            initial_history,
         } = self;
         let system_prompt_marker = model.system_prompt_marker().to_string();
         let end_system_prompt_marker = model.end_system_prompt_marker().to_string();
@@ -387,6 +438,7 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
                         bot_constraints,
                         filter_map_bot_response,
                         sampler,
+                        initial_history,
                     );
 
                     while let Some(message) = sender_rx.recv().await {
