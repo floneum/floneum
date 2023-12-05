@@ -74,7 +74,6 @@ struct ChatSession<Session, Model: SyncModel<Session = Session>> {
     history: Vec<ChatHistoryItem>,
     session: Session,
     unfed_text: String,
-    eos: String,
     map_user_message_prompt: Option<UserMessageMapping<Model>>,
     bot_constraints: Option<ResponseConstraintGenerator<Model>>,
     filter_map_bot_response: Option<MessageFilter<Model>>,
@@ -110,11 +109,6 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
             end_user_marker,
             assistant_marker,
             end_assistant_marker,
-            eos: model
-                .tokenizer()
-                .decode(&[model.stop_token().unwrap()])
-                .unwrap()
-                .to_string(),
             session: model.new_session().unwrap(),
             unfed_text,
             history,
@@ -165,6 +159,10 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
                             let constraints = constraints(&self.history, model);
                             let state = constraints.create_parser_state();
                             let on_token = |tok: String| {
+                                let tok = tok
+                                    .strip_suffix(&self.end_assistant_marker)
+                                    .unwrap_or(&tok)
+                                    .to_string();
                                 bot_response += &tok;
                                 Ok(())
                             };
@@ -179,6 +177,10 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
                         }
                         None => {
                             let on_token = |tok: String| {
+                                let tok = tok
+                                    .strip_suffix(&self.end_assistant_marker)
+                                    .unwrap_or(&tok)
+                                    .to_string();
                                 bot_response += &tok;
                                 Ok(kalosm_language::ModelFeedback::Continue)
                             };
@@ -186,7 +188,7 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
                                 &mut self.session,
                                 &prompt,
                                 None,
-                                Some(&self.eos),
+                                Some(&self.end_assistant_marker),
                                 self.sampler.clone(),
                                 on_token,
                             )?;
@@ -207,6 +209,10 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
                     let constraints = constraints(&self.history, model);
                     let state = constraints.create_parser_state();
                     let on_token = |tok: String| {
+                        let tok = tok
+                            .strip_suffix(&self.end_assistant_marker)
+                            .unwrap_or(&tok)
+                            .to_string();
                         bot_response += &tok;
                         stream.send(tok)?;
                         Ok(())
@@ -222,6 +228,10 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
                 }
                 None => {
                     let on_token = |tok: String| {
+                        let tok = tok
+                            .strip_suffix(&self.end_assistant_marker)
+                            .unwrap_or(&tok)
+                            .to_string();
                         bot_response += &tok;
                         stream.send(tok)?;
                         Ok(kalosm_language::ModelFeedback::Continue)
@@ -230,7 +240,7 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
                         &mut self.session,
                         &prompt,
                         None,
-                        Some(&self.eos),
+                        Some(&self.end_assistant_marker),
                         self.sampler.clone(),
                         on_token,
                     )?;
