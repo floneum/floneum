@@ -90,7 +90,11 @@ impl Segment {
 
 impl AsRef<str> for Segment {
     fn as_ref(&self) -> &str {
-        self.text()
+        if self.probability_of_no_speech() < 0.90 {
+            self.text()
+        } else {
+            ""
+        }
     }
 }
 
