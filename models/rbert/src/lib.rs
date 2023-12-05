@@ -109,16 +109,18 @@ impl BertSource {
             .with_model_id("BAAI/bge-small-en-v1.5".to_string())
             .with_revision("refs/pr/3".to_string())
     }
+
+    /// Create a new [`BertSource`] with the MiniLM-L6-v2 preset
+    pub fn mini_lm_l6_v2() -> Self {
+        Self::default()
+            .with_model_id("sentence-transformers/all-MiniLM-L6-v2".to_string())
+            .with_revision("refs/pr/21".to_string())
+    }
 }
 
 impl Default for BertSource {
     fn default() -> Self {
-        let default_model = "sentence-transformers/all-MiniLM-L6-v2".to_string();
-        let default_revision = "refs/pr/21".to_string();
-        Self {
-            model_id: default_model,
-            revision: default_revision,
-        }
+        Self::mini_lm_l6_v2()
     }
 }
 
