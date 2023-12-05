@@ -138,8 +138,6 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
             }
         }
 
-        println!("{}", myself.unfed_text);
-
         myself
     }
 
