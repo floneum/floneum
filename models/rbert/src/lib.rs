@@ -121,7 +121,7 @@ impl BertSource {
 impl Default for BertSource {
     fn default() -> Self {
         Self {
-            model_id:"sentence-transformers/all-MiniLM-L6-v2".to_string(),
+            model_id: "sentence-transformers/all-MiniLM-L6-v2".to_string(),
             revision: "refs/pr/21".to_string(),
         }
     }
