@@ -8,7 +8,7 @@ use std::fmt::{Debug, Formatter};
 use std::{collections::HashMap, sync::Arc};
 
 use candle_core::{DType, Device, Tensor};
-use kalosm_language_model::{SyncModel, SyncModelExt};
+use kalosm_language_model::{Session, SyncModel, SyncModelExt};
 use tokenizers::Tokenizer;
 
 use crate::InferenceSettings;
@@ -19,10 +19,36 @@ pub struct MistralSession {
     current_tokens: Vec<u32>,
 }
 
+impl Session for MistralSession {
+    fn save_to(&self, path: impl AsRef<std::path::Path>) -> anyhow::Result<()> {
+        let tensors = self.get_tensor_map();
+        Ok(candle_core::safetensors::save(&tensors, path)?)
+    }
+
+    fn load_from(path: impl AsRef<std::path::Path>) -> anyhow::Result<Self>
+    where
+        Self: std::marker::Sized,
+    {
+        let device = Device::cuda_if_available(0)?;
+        let tensors = candle_core::safetensors::load(path, &device)?;
+
+        Ok(Self::from_tensor_map(tensors))
+    }
+}
+
 impl MistralSession {
     /// Export the current cache tensor map.
     pub fn get_tensor_map(&self) -> HashMap<String, Tensor> {
-        self.cache.get_tensor_map()
+        let mut map = self.cache.get_tensor_map();
+        map.insert(
+            "current_tokens".to_string(),
+            Tensor::from_iter(
+                self.current_tokens.iter().copied(),
+                self.cache.blocks[0].0.as_ref().unwrap().key.device(),
+            )
+            .unwrap(),
+        );
+        map
     }
 
     /// Import a cache tensor map.
@@ -31,7 +57,8 @@ impl MistralSession {
     }
 
     /// Create a cache from a tensor map. This can be used to load a cache from disk.
-    pub fn from_tensor_map(map: HashMap<String, Tensor>, current_tokens: Vec<u32>) -> Self {
+    pub fn from_tensor_map(map: HashMap<String, Tensor>) -> Self {
+        let current_tokens = map.get("current_tokens").unwrap().to_vec1().unwrap();
         Self {
             cache: MistralCache::from_tensor_map(map),
             current_tokens,
