@@ -1626,7 +1626,7 @@ dependencies = [
  "itertools 0.10.5",
  "log",
  "smallvec",
- "wasmparser 0.118.0",
+ "wasmparser",
  "wasmtime-types",
 ]
 
@@ -2830,6 +2830,7 @@ name = "floneum_add"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -2837,6 +2838,7 @@ name = "floneum_add_embedding"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -2844,6 +2846,7 @@ name = "floneum_add_to_list"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -2851,6 +2854,7 @@ name = "floneum_and"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -2858,6 +2862,7 @@ name = "floneum_click_node"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -2865,6 +2870,7 @@ name = "floneum_contains"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -2872,6 +2878,7 @@ name = "floneum_divide"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -2879,6 +2886,7 @@ name = "floneum_embedding"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -2886,6 +2894,7 @@ name = "floneum_embedding_db"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -2893,6 +2902,7 @@ name = "floneum_equals"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -2900,6 +2910,7 @@ name = "floneum_find_child_node"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -2907,6 +2918,7 @@ name = "floneum_find_node"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -2914,6 +2926,7 @@ name = "floneum_format"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -2924,6 +2937,7 @@ dependencies = [
  "log",
  "pest",
  "pest_derive",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -2932,6 +2946,7 @@ version = "0.1.0"
 dependencies = [
  "floneum_rust",
  "log",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -2941,6 +2956,7 @@ dependencies = [
  "floneum_rust",
  "readability",
  "url",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -2948,6 +2964,7 @@ name = "floneum_if"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -2955,6 +2972,7 @@ name = "floneum_join"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -2962,6 +2980,7 @@ name = "floneum_length"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -2969,6 +2988,7 @@ name = "floneum_less_than"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -2976,6 +2996,7 @@ name = "floneum_more_than"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -2983,6 +3004,7 @@ name = "floneum_multiply"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -2990,6 +3012,7 @@ name = "floneum_navigate_to"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -2997,6 +3020,7 @@ name = "floneum_new_list"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -3004,6 +3028,7 @@ name = "floneum_node_text"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -3011,6 +3036,7 @@ name = "floneum_not"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -3018,6 +3044,7 @@ name = "floneum_number"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -3025,6 +3052,7 @@ name = "floneum_or"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -3050,7 +3078,7 @@ dependencies = [
  "url",
  "wasmtime",
  "wasmtime-wasi",
- "wit-component 0.11.0",
+ "wit-component 0.19.0",
 ]
 
 [[package]]
@@ -3058,6 +3086,7 @@ name = "floneum_power"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -3069,6 +3098,7 @@ dependencies = [
  "malachite-bigint",
  "malachite-q",
  "rustpython-vm",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -3076,6 +3106,7 @@ name = "floneum_read_from_file"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -3086,6 +3117,7 @@ dependencies = [
  "readability",
  "rss",
  "url",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -3095,11 +3127,8 @@ dependencies = [
  "bincode",
  "floneum_rust_macro",
  "image 0.24.7",
- "inventory",
  "log",
- "once_cell",
  "serde",
- "wit-bindgen",
 ]
 
 [[package]]
@@ -3118,6 +3147,7 @@ name = "floneum_search"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -3126,6 +3156,7 @@ version = "0.1.0"
 dependencies = [
  "floneum_rust",
  "nipper",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -3133,6 +3164,7 @@ name = "floneum_slice"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -3140,6 +3172,7 @@ name = "floneum_split"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -3147,6 +3180,7 @@ name = "floneum_string"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -3154,6 +3188,7 @@ name = "floneum_subtract"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -3161,6 +3196,7 @@ name = "floneum_type_in_node"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -3168,6 +3204,7 @@ name = "floneum_write_to_file"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -4624,7 +4661,6 @@ checksum = "bd070e393353796e801d209ad339e89596eb4c8d430d18ede6a1cced8fafbd99"
 dependencies = [
  "autocfg",
  "hashbrown 0.12.3",
- "serde",
 ]
 
 [[package]]
@@ -4768,12 +4804,6 @@ name = "intmap"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae52f28f45ac2bc96edb7714de995cffc174a395fb0abf5bff453587c980d7b9"
-
-[[package]]
-name = "inventory"
-version = "0.3.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0508c56cfe9bfd5dfeb0c22ab9a6abfda2f27bdca422132e494266351ed8d83c"
 
 [[package]]
 name = "io-extras"
@@ -5100,7 +5130,7 @@ dependencies = [
  "pdf_text",
  "pin-project",
  "pollster",
- "pulldown-cmark 0.9.3",
+ "pulldown-cmark",
  "rand 0.8.5",
  "rbert",
  "readability",
@@ -7522,17 +7552,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5787f7cda34e3033a72192c018bc5883100330f362ef279a8cbccfce8bb4e874"
 dependencies = [
  "cc",
-]
-
-[[package]]
-name = "pulldown-cmark"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ffade02495f22453cd593159ea2f59827aae7f53fa8323f756799b670881dcf8"
-dependencies = [
- "bitflags 1.3.2",
- "memchr",
- "unicase",
 ]
 
 [[package]]
@@ -10915,40 +10934,18 @@ checksum = "7ab9b36309365056cd639da3134bf87fa8f3d86008abf99e612384a6eecd459f"
 
 [[package]]
 name = "wasm-encoder"
-version = "0.29.0"
+version = "0.38.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18c41dbd92eaebf3612a39be316540b8377c871cb9bde6b064af962984912881"
-dependencies = [
- "leb128",
-]
-
-[[package]]
-name = "wasm-encoder"
-version = "0.38.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b09bc5df933a3dabbdb72ae4b6b71be8ae07f58774d5aa41bd20adcd41a235a"
+checksum = "0ad2b51884de9c7f4fe2fd1043fccb8dcad4b1e29558146ee57a144d15779f3f"
 dependencies = [
  "leb128",
 ]
 
 [[package]]
 name = "wasm-metadata"
-version = "0.8.0"
+version = "0.10.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36e5156581ff4a302405c44ca7c85347563ca431d15f1a773f12c9c7b9a6cdc9"
-dependencies = [
- "anyhow",
- "indexmap 1.9.3",
- "serde",
- "wasm-encoder 0.29.0",
- "wasmparser 0.107.0",
-]
-
-[[package]]
-name = "wasm-metadata"
-version = "0.10.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b4a14bbedb07737809c00843d1f2f88ba0b8950c114283e0387e30b1b6ee558"
+checksum = "d835d67708f6374937c550ad8dd1d17c616ae009e3f00d7a0ac9f7825e78c36a"
 dependencies = [
  "anyhow",
  "indexmap 2.1.0",
@@ -10956,8 +10953,8 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "spdx",
- "wasm-encoder 0.38.0",
- "wasmparser 0.118.0",
+ "wasm-encoder",
+ "wasmparser",
 ]
 
 [[package]]
@@ -10975,19 +10972,9 @@ dependencies = [
 
 [[package]]
 name = "wasmparser"
-version = "0.107.0"
+version = "0.118.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29e3ac9b780c7dda0cac7a52a5d6d2d6707cc6e3451c9db209b6c758f40d7acb"
-dependencies = [
- "indexmap 1.9.3",
- "semver",
-]
-
-[[package]]
-name = "wasmparser"
-version = "0.118.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ebbb91574de0011ded32b14db12777e7dd5e9ea2f9d7317a1ab51a9495c75924"
+checksum = "95ee9723b928e735d53000dec9eae7b07a60e490c85ab54abb66659fc61bfcd9"
 dependencies = [
  "indexmap 2.1.0",
  "semver",
@@ -11000,7 +10987,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "61a7a046e6636d25c06a5df00bdc34e02f9e6e0e8a356d738299b961a6126114"
 dependencies = [
  "anyhow",
- "wasmparser 0.118.0",
+ "wasmparser",
 ]
 
 [[package]]
@@ -11027,8 +11014,8 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "target-lexicon",
- "wasm-encoder 0.38.0",
- "wasmparser 0.118.0",
+ "wasm-encoder",
+ "wasmparser",
  "wasmtime-cache",
  "wasmtime-component-macro",
  "wasmtime-component-util",
@@ -11080,7 +11067,7 @@ dependencies = [
  "syn 2.0.39",
  "wasmtime-component-util",
  "wasmtime-wit-bindgen",
- "wit-parser 0.13.0",
+ "wit-parser",
 ]
 
 [[package]]
@@ -11106,7 +11093,7 @@ dependencies = [
  "object",
  "target-lexicon",
  "thiserror",
- "wasmparser 0.118.0",
+ "wasmparser",
  "wasmtime-cranelift-shared",
  "wasmtime-environ",
  "wasmtime-versioned-export-macros",
@@ -11142,8 +11129,8 @@ dependencies = [
  "serde_derive",
  "target-lexicon",
  "thiserror",
- "wasm-encoder 0.38.0",
- "wasmparser 0.118.0",
+ "wasm-encoder",
+ "wasmparser",
  "wasmprinter",
  "wasmtime-component-util",
  "wasmtime-types",
@@ -11229,7 +11216,7 @@ dependencies = [
  "rand 0.8.5",
  "rustix 0.38.25",
  "sptr",
- "wasm-encoder 0.38.0",
+ "wasm-encoder",
  "wasmtime-asm-macros",
  "wasmtime-environ",
  "wasmtime-fiber",
@@ -11248,7 +11235,7 @@ dependencies = [
  "serde",
  "serde_derive",
  "thiserror",
- "wasmparser 0.118.0",
+ "wasmparser",
 ]
 
 [[package]]
@@ -11305,7 +11292,7 @@ dependencies = [
  "gimli",
  "object",
  "target-lexicon",
- "wasmparser 0.118.0",
+ "wasmparser",
  "wasmtime-cranelift-shared",
  "wasmtime-environ",
  "winch-codegen",
@@ -11319,7 +11306,7 @@ dependencies = [
  "anyhow",
  "heck",
  "indexmap 2.1.0",
- "wit-parser 0.13.0",
+ "wit-parser",
 ]
 
 [[package]]
@@ -11345,7 +11332,7 @@ dependencies = [
  "leb128",
  "memchr",
  "unicode-width",
- "wasm-encoder 0.38.0",
+ "wasm-encoder",
 ]
 
 [[package]]
@@ -11710,7 +11697,7 @@ dependencies = [
  "regalloc2",
  "smallvec",
  "target-lexicon",
- "wasmparser 0.118.0",
+ "wasmparser",
  "wasmtime-environ",
 ]
 
@@ -12101,7 +12088,7 @@ source = "git+https://github.com/bytecodealliance/wit-bindgen#4a3163d89e646fc6e9
 dependencies = [
  "anyhow",
  "wit-component 0.18.2",
- "wit-parser 0.13.0",
+ "wit-parser",
 ]
 
 [[package]]
@@ -12111,7 +12098,7 @@ source = "git+https://github.com/bytecodealliance/wit-bindgen#4a3163d89e646fc6e9
 dependencies = [
  "anyhow",
  "heck",
- "wasm-metadata 0.10.13",
+ "wasm-metadata",
  "wit-bindgen-core",
  "wit-component 0.18.2",
 ]
@@ -12132,22 +12119,6 @@ dependencies = [
 
 [[package]]
 name = "wit-component"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7cbd4c7f8f400327c482c88571f373844b7889e61460650d650fc5881bb3575c"
-dependencies = [
- "anyhow",
- "bitflags 1.3.2",
- "indexmap 1.9.3",
- "log",
- "wasm-encoder 0.29.0",
- "wasm-metadata 0.8.0",
- "wasmparser 0.107.0",
- "wit-parser 0.8.0",
-]
-
-[[package]]
-name = "wit-component"
 version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5b8a35a2a9992898c9d27f1664001860595a4bc99d32dd3599d547412e17d7e2"
@@ -12159,26 +12130,29 @@ dependencies = [
  "serde",
  "serde_derive",
  "serde_json",
- "wasm-encoder 0.38.0",
- "wasm-metadata 0.10.13",
- "wasmparser 0.118.0",
- "wit-parser 0.13.0",
+ "wasm-encoder",
+ "wasm-metadata",
+ "wasmparser",
+ "wit-parser",
 ]
 
 [[package]]
-name = "wit-parser"
-version = "0.8.0"
+name = "wit-component"
+version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6daec9f093dbaea0e94043eeb92ece327bbbe70c86b1f41aca9bbfefd7f050f0"
+checksum = "4b2e0cdd27c1500cb2524810e8f40b50012355a476c1bea5d12d73620125cc04"
 dependencies = [
  "anyhow",
- "id-arena",
- "indexmap 1.9.3",
+ "bitflags 2.4.1",
+ "indexmap 2.1.0",
  "log",
- "pulldown-cmark 0.8.0",
- "semver",
- "unicode-xid",
- "url",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "wasm-encoder",
+ "wasm-metadata",
+ "wasmparser",
+ "wit-parser",
 ]
 
 [[package]]

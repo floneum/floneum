@@ -111,13 +111,6 @@ package_version = "0.1.0"
 binding_version = "^0.1.0"
 
 [[packages]]
-name = "Create Browser"
-authors = ["Evan Almloff <evanalmloff@gmail.com>"]
-description = "Creates a browser tab."
-package_version = "0.1.0"
-binding_version = "^0.1.0"
-
-[[packages]]
 name = "Find Node"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "Finds a node in a tab"

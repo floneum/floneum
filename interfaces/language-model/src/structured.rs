@@ -46,9 +46,14 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
             potential_new_tokens.push(logit.token_id);
             let token_text = tokenizer.decode(&potential_new_tokens)?;
             if token_text.len() > prev_text.len() {
+                if !token_text.chars().last().unwrap().is_ascii() {
+                    logit.logit = f32::NEG_INFINITY;
+                    continue;
+                }
                 let text = token_text.split_at(prev_text.len());
                 let new_text = text.1.to_string();
                 if new_text.is_empty() {
+                    logit.logit = f32::NEG_INFINITY;
                     continue;
                 }
                 if let Ok(result) = parser.parse(&parser_state, new_text.as_bytes()) {

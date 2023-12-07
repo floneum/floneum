@@ -3,7 +3,7 @@
 use core::panic;
 use std::vec;
 
-use floneum_rust::{plugins::main::imports::log_to_user, *};
+use floneum_rust::*;
 use pest::{iterators::Pair, Parser};
 use pest_derive::Parser;
 

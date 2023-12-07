@@ -130,7 +130,7 @@ impl Llama {
     /// Create a default chat model.
     pub fn new_chat() -> Self {
         Llama::builder()
-            .with_source(LlamaSource::zephyr_7b_beta())
+            .with_source(LlamaSource::open_chat_7b())
             .build()
             .unwrap()
     }

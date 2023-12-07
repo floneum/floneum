@@ -19,7 +19,7 @@ pub enum WhisperSource {
     MediumEn,
     /// The large model.
     Large,
-    /// The large model with only English support.
+    /// The large model v2.
     LargeV2,
     /// The distil-medium english model.
     DistilMediumEn,

@@ -6,17 +6,11 @@ use syn::{
     Meta, Path, PathArguments, PathSegment, ReturnType, Type,
 };
 
-#[allow(unused_macros)]
 mod inner {
     wit_bindgen::generate!({
         path: "../wit",
-        // the name of the world in the `*.wit` input file
         world: "exports",
 
-        // For all exported worlds, interfaces, and resources, this specifies what
-        // type they're corresponding to in this module. In this case the `MyHost`
-        // struct defined below is going to define the exports of the `world`,
-        // namely the `run` function.
         exports: {
             world: MyHost,
         },
@@ -151,22 +145,20 @@ pub fn export_plugin(args: TokenStream, input: TokenStream) -> TokenStream {
 
     // Hand the resulting function body back to the compiler.
     TokenStream::from(quote! {
-        #input
+        ::floneum_rust::bindgen!(Plugin);
 
-        floneum_rust::inventory::submit! {
-            floneum_rust::LazyGuest::new(|| Box::new(Plugin) as Box<dyn floneum_rust::DynGuest + Send + Sync>)
-        }
+        #input
 
         pub struct Plugin;
 
-        impl floneum_rust::DynGuest for Plugin {
-            fn structure(&self) -> floneum_rust::Definition {
-                floneum_rust::Definition {
+        impl Guest for Plugin {
+            fn structure() -> Definition {
+                Definition {
                     name: #function_name.to_string(),
                     description: #description.to_string(),
                     inputs: vec![
                         #(
-                            floneum_rust::IoDefinition {
+                            IoDefinition {
                                 name: #input_names.to_string(),
                                 ty: #input_types,
                             },
@@ -174,7 +166,7 @@ pub fn export_plugin(args: TokenStream, input: TokenStream) -> TokenStream {
                     ],
                     outputs: vec![
                         #(
-                            floneum_rust::IoDefinition {
+                            IoDefinition {
                                 name: #output_names.to_string(),
                                 ty: #output_types,
                             },
@@ -185,14 +177,12 @@ pub fn export_plugin(args: TokenStream, input: TokenStream) -> TokenStream {
             }
 
 
-            fn run(&self, input: Vec<floneum_rust::Input>) -> Vec<floneum_rust::Output> {
+            fn run(input: Vec<Input>) -> Vec<Output> {
                 let mut input = input.into_iter();
                 let __inner_fn = #function_ident;
                 #(
                     #extract_inputs
                 )*
-
-                use floneum_rust::IntoReturnValues;
 
                 __inner_fn(#(#input_idents,)*).into_return_values()
             }
@@ -299,54 +289,54 @@ impl ToTokens for IoDefinitionType {
         };
         let quote_inner = match inner {
             PrimitiveValueType::Number => quote! {
-                floneum_rust::PrimitiveValueType::Number
+                PrimitiveValueType::Number
             },
             PrimitiveValueType::Text => quote! {
-                floneum_rust::PrimitiveValueType::Text
+                PrimitiveValueType::Text
             },
             PrimitiveValueType::File => quote! {
-                floneum_rust::PrimitiveValueType::File
+                PrimitiveValueType::File
             },
             PrimitiveValueType::Folder => quote! {
-                floneum_rust::PrimitiveValueType::Folder
+                PrimitiveValueType::Folder
             },
             PrimitiveValueType::Embedding => quote! {
-                floneum_rust::PrimitiveValueType::Embedding
+                PrimitiveValueType::Embedding
             },
             PrimitiveValueType::Database => quote! {
-                floneum_rust::PrimitiveValueType::Database
+                PrimitiveValueType::Database
             },
             PrimitiveValueType::Model => quote! {
-                floneum_rust::PrimitiveValueType::Model
+                PrimitiveValueType::Model
             },
             PrimitiveValueType::EmbeddingModel => quote! {
-                floneum_rust::PrimitiveValueType::EmbeddingModel
+                PrimitiveValueType::EmbeddingModel
             },
             PrimitiveValueType::ModelType => quote! {
-                floneum_rust::PrimitiveValueType::ModelType
+                PrimitiveValueType::ModelType
             },
             PrimitiveValueType::EmbeddingModelType => quote! {
-                floneum_rust::PrimitiveValueType::EmbeddingModelType
+                PrimitiveValueType::EmbeddingModelType
             },
             PrimitiveValueType::Boolean => quote! {
-                floneum_rust::PrimitiveValueType::Boolean
+                PrimitiveValueType::Boolean
             },
             PrimitiveValueType::Page => quote! {
-                floneum_rust::PrimitiveValueType::Page
+                PrimitiveValueType::Page
             },
             PrimitiveValueType::Node => quote! {
-                floneum_rust::PrimitiveValueType::Node
+                PrimitiveValueType::Node
             },
             PrimitiveValueType::Any => quote! {
-                floneum_rust::PrimitiveValueType::Any
+                PrimitiveValueType::Any
             },
         };
         let quote = match &self.value_type {
             ValueType::Single(_) => quote! {
-                floneum_rust::ValueType::Single(#quote_inner)
+                ValueType::Single(#quote_inner)
             },
             ValueType::Many(_) => quote! {
-                floneum_rust::ValueType::Many(#quote_inner)
+                ValueType::Many(#quote_inner)
             },
         };
         tokens.extend(quote)
