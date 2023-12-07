@@ -1,7 +1,8 @@
 use kalosm_language::Session;
 use std::{
     fmt::Display,
-    sync::{Arc, Mutex}, path::PathBuf,
+    path::PathBuf,
+    sync::{Arc, Mutex},
 };
 
 use anyhow::Result;
@@ -102,14 +103,12 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
     ) -> Self {
         let feed_initial_messages = session.is_none();
         let session = session.unwrap_or_else(|| model.new_session().unwrap());
-        let unfed_text = if feed_initial_messages{
-            
-            
-                let mut unfed_text = String::new();
-                unfed_text += &system_prompt_marker;
-                unfed_text += &system_prompt;
-                unfed_text += &end_system_prompt_marker;
-                unfed_text
+        let unfed_text = if feed_initial_messages {
+            let mut unfed_text = String::new();
+            unfed_text += &system_prompt_marker;
+            unfed_text += &system_prompt;
+            unfed_text += &end_system_prompt_marker;
+            unfed_text
         } else {
             String::new()
         };
@@ -132,7 +131,7 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
             sampler,
         };
 
-        if feed_initial_messages{
+        if feed_initial_messages {
             for item in initial_history {
                 match item.ty() {
                     MessageType::SystemPrompt => {
@@ -511,7 +510,6 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
     }
 }
 
-
 enum Message {
     AddMessage(String),
     SaveSession(PathBuf),
@@ -556,8 +554,7 @@ impl Chat {
 
     /// Saves the session to the given path.
     pub async fn save_session(&mut self, path: impl AsRef<std::path::Path>) -> Result<()> {
-        self
-            .sender
+        self.sender
             .send(Message::SaveSession(path.as_ref().to_path_buf()))
             .map_err(|_| anyhow::anyhow!("Model stopped"))?;
         self.channel
