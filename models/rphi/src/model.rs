@@ -1,4 +1,5 @@
 use anyhow::{Error as E, Result};
+use kalosm_language_model::Session;
 use kalosm_language_model::SyncModel;
 use kalosm_language_model::SyncModelExt;
 use llm_samplers::prelude::*;
@@ -6,7 +7,6 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::fmt::Formatter;
 use std::sync::Arc;
-use kalosm_language_model::Session;
 
 use crate::raw::MixFormerSequentialForCausalLM as QMixFormer;
 use crate::raw::PhiCache;
@@ -22,16 +22,19 @@ pub struct PhiSession {
     current_tokens: Vec<u32>,
 }
 
-impl Session for PhiSession{
+impl Session for PhiSession {
     fn save_to(&self, path: impl AsRef<std::path::Path>) -> anyhow::Result<()> {
         let tensors = self.get_tensor_map();
         Ok(candle_core::safetensors::save(&tensors, path)?)
     }
 
-    fn load_from(path: impl AsRef<std::path::Path>) -> anyhow::Result<Self>where Self: std::marker::Sized {
+    fn load_from(path: impl AsRef<std::path::Path>) -> anyhow::Result<Self>
+    where
+        Self: std::marker::Sized,
+    {
         let device = Device::cuda_if_available(0)?;
         let tensors = candle_core::safetensors::load(path, &device)?;
-        
+
         Ok(Self::from_tensor_map(tensors))
     }
 }
@@ -57,12 +60,8 @@ impl PhiSession {
     }
 
     /// Create a cache from a tensor map. This can be used to load a cache from disk.
-    pub fn from_tensor_map(map: HashMap<String, Tensor>,) -> Self {
-        let current_tokens = map
-            .get("current_tokens")
-            .unwrap()
-            .to_vec1()
-            .unwrap();
+    pub fn from_tensor_map(map: HashMap<String, Tensor>) -> Self {
+        let current_tokens = map.get("current_tokens").unwrap().to_vec1().unwrap();
         Self {
             cache: PhiCache::from_tensor_map(map),
             current_tokens,

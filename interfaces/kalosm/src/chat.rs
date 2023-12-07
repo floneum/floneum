@@ -1,6 +1,7 @@
+use kalosm_language::Session;
 use std::{
     fmt::Display,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex}, path::PathBuf,
 };
 
 use anyhow::Result;
@@ -89,8 +90,19 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
         bot_constraints: Option<ResponseConstraintGenerator<Model>>,
         filter_map_bot_response: Option<MessageFilter<Model>>,
         sampler: Arc<Mutex<dyn Sampler + Send + Sync>>,
+        session: Option<Session>,
     ) -> Self {
-        let unfed_text = system_prompt_marker + &system_prompt + &end_system_prompt_marker;
+        let (unfed_text, session) = match session {
+            Some(session) => (String::new(), session),
+            None => {
+                let session = model.new_session().unwrap();
+                let mut unfed_text = String::new();
+                unfed_text += &system_prompt_marker;
+                unfed_text += &system_prompt;
+                unfed_text += &end_system_prompt_marker;
+                (unfed_text, session)
+            }
+        };
         let history = vec![ChatHistoryItem {
             ty: MessageType::SystemPrompt,
             contents: system_prompt,
@@ -106,7 +118,7 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
                 .decode(&[model.stop_token().unwrap()])
                 .unwrap()
                 .to_string(),
-            session: model.new_session().unwrap(),
+            session,
             unfed_text,
             history,
             map_user_message_prompt,
@@ -240,6 +252,7 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
 /// A builder for [`Chat`].
 pub struct ChatBuilder<'a, M: ChatModel> {
     model: &'a mut M,
+    session: Option<<M::SyncModel as kalosm_language::SyncModel>::Session>,
     system_prompt: String,
     sampler: Arc<Mutex<dyn Sampler + Send + Sync>>,
     map_user_message_prompt: Option<UserMessageMapping<M::SyncModel>>,
@@ -251,6 +264,7 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
     fn new(model: &'a mut M) -> ChatBuilder<M> {
         ChatBuilder {
             model,
+            session: None,
             system_prompt: "Always assist with care, respect, and truth. Respond with utmost utility yet securely. Avoid harmful, unethical, prejudiced, or negative content. Ensure replies promote fairness and positivity.".into(),
             sampler: Arc::new(Mutex::new(GenerationParameters::default().sampler())),
             map_user_message_prompt: None,
@@ -353,8 +367,26 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
         self.filter_map_bot_response(move |message, model| Some(map_bot_response(message, model)))
     }
 
+    /// Starts the chat instance with the given session. This can be useful for resuming a chat session.
+    pub fn with_session(
+        mut self,
+        session: <M::SyncModel as kalosm_language::SyncModel>::Session,
+    ) -> Self {
+        self.session = Some(session);
+        self
+    }
+
+    /// Starts the chat instance with a session from the given path. This can be useful for resuming a chat session.
+    pub fn with_session_path(self, path: impl AsRef<std::path::Path>) -> anyhow::Result<Self> {
+        Ok(self
+            .with_session(<M::SyncModel as kalosm_language::SyncModel>::Session::load_from(path)?))
+    }
+
     /// Builds a [`Chat`] instance.
-    pub fn build(self) -> Chat {
+    pub fn build(self) -> Chat
+    where
+        <M::SyncModel as SyncModel>::Session: Send,
+    {
         let Self {
             model,
             system_prompt,
@@ -362,6 +394,7 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
             map_user_message_prompt,
             bot_constraints,
             filter_map_bot_response,
+            session,
         } = self;
         let system_prompt_marker = model.system_prompt_marker().to_string();
         let end_system_prompt_marker = model.end_system_prompt_marker().to_string();
@@ -387,12 +420,21 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
                         bot_constraints,
                         filter_map_bot_response,
                         sampler,
+                        session,
                     );
 
                     while let Some(message) = sender_rx.recv().await {
-                        let (tx, rx) = unbounded_channel();
-                        result_tx.send(rx).unwrap();
-                        session.add_message(message, model, tx).unwrap();
+                        match message {
+                            Message::AddMessage(message) => {
+                                let (tx, rx) = unbounded_channel();
+                                result_tx.send(Response::AddMessage(rx.into())).unwrap();
+                                session.add_message(message, model, tx).unwrap();
+                            }
+                            Message::SaveSession(path) => {
+                                session.session.save_to(path).unwrap();
+                                result_tx.send(Response::SaveSession).unwrap();
+                            }
+                        }
                     }
                 })
             })
@@ -405,10 +447,21 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
     }
 }
 
+
+enum Message {
+    AddMessage(String),
+    SaveSession(PathBuf),
+}
+
+enum Response {
+    AddMessage(ChannelTextStream<String>),
+    SaveSession,
+}
+
 /// A chat session.
 pub struct Chat {
-    sender: tokio::sync::mpsc::UnboundedSender<String>,
-    channel: tokio::sync::mpsc::UnboundedReceiver<tokio::sync::mpsc::UnboundedReceiver<String>>,
+    sender: tokio::sync::mpsc::UnboundedSender<Message>,
+    channel: tokio::sync::mpsc::UnboundedReceiver<Response>,
 }
 
 impl Chat {
@@ -425,12 +478,32 @@ impl Chat {
         let message = message.into();
         let message = message.trim().to_string();
         self.sender
-            .send(message)
+            .send(Message::AddMessage(message))
             .map_err(|_| anyhow::anyhow!("Model stopped"))?;
         self.channel
             .recv()
             .await
-            .map(|c| c.into())
+            .map(|c| match c {
+                Response::AddMessage(c) => c,
+                _ => unreachable!(),
+            })
             .ok_or(anyhow::anyhow!("Model stopped"))
+    }
+
+    /// Saves the session to the given path.
+    pub async fn save_session(&mut self, path: impl AsRef<std::path::Path>) -> Result<()> {
+        self
+            .sender
+            .send(Message::SaveSession(path.as_ref().to_path_buf()))
+            .map_err(|_| anyhow::anyhow!("Model stopped"))?;
+        self.channel
+            .recv()
+            .await
+            .map(|c| match c {
+                Response::SaveSession => (),
+                _ => unreachable!(),
+            })
+            .ok_or(anyhow::anyhow!("Model stopped"))?;
+        Ok(())
     }
 }

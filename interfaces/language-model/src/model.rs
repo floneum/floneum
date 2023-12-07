@@ -569,24 +569,27 @@ pub trait SyncModel {
 }
 
 /// A session for a model.
-pub trait Session{
+pub trait Session {
     /// Save the session to the given path.
-    fn save_to(&self, _path: impl AsRef<Path>) -> anyhow::Result<()>{
+    fn save_to(&self, _path: impl AsRef<Path>) -> anyhow::Result<()> {
         Err(anyhow::Error::msg("Not implemented"))
     }
 
     /// Load the session from the given path.
-    fn load_from(_path: impl AsRef<Path>) -> anyhow::Result<Self>where Self: std::marker::Sized{
+    fn load_from(_path: impl AsRef<Path>) -> anyhow::Result<Self>
+    where
+        Self: std::marker::Sized,
+    {
         Err(anyhow::Error::msg("Not implemented"))
     }
 }
 
-impl Session for (){
-    fn save_to(&self, _path: impl AsRef<Path>) -> anyhow::Result<()>{
+impl Session for () {
+    fn save_to(&self, _path: impl AsRef<Path>) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn load_from( _path: impl AsRef<Path>) -> anyhow::Result<()>{
+    fn load_from(_path: impl AsRef<Path>) -> anyhow::Result<()> {
         Ok(())
     }
 }
@@ -862,7 +865,7 @@ impl Model for DynModel {
 /// A trait object for a sync model.
 pub type BoxedSyncModel = Box<dyn SyncModel<Session = AnySession>>;
 
-trait AnySessionTrait  {
+trait AnySessionTrait {
     fn as_any_mut(&mut self) -> &mut dyn Any;
     fn save_to(&self, path: &Path) -> anyhow::Result<()>;
 }
@@ -878,7 +881,7 @@ impl<S: Any + Session> AnySessionTrait for S {
 }
 
 /// A type-erased session.
-/// 
+///
 /// > Note: boxed sessions do not support loading from a path.
 pub struct AnySession {
     session: Box<dyn AnySessionTrait>,
@@ -891,7 +894,7 @@ impl AnySession {
 }
 
 impl Session for AnySession {
-    fn save_to(&self, path: impl AsRef<Path>) -> anyhow::Result<()>{
+    fn save_to(&self, path: impl AsRef<Path>) -> anyhow::Result<()> {
         self.session.save_to(path.as_ref())
     }
 }
@@ -931,7 +934,7 @@ impl SyncModel for BoxedSyncModel {
 
 struct AnySyncModel<M: SyncModel<Session = S>, S: Any>(M, PhantomData<S>);
 
-impl<M: SyncModel<Session = S>, S: Session+ Any> SyncModel for AnySyncModel<M, S> {
+impl<M: SyncModel<Session = S>, S: Session + Any> SyncModel for AnySyncModel<M, S> {
     type Session = AnySession;
 
     fn new_session(&self) -> anyhow::Result<Self::Session> {

@@ -1,5 +1,5 @@
 use crate::raw::Model;
-use candle_core::{Tensor, Device};
+use candle_core::{Device, Tensor};
 use kalosm_language_model::Session;
 use std::collections::HashMap;
 
@@ -9,16 +9,19 @@ pub struct LlamaSession {
     pub(crate) current_tokens: Vec<u32>,
 }
 
-impl Session for LlamaSession{
+impl Session for LlamaSession {
     fn save_to(&self, path: impl AsRef<std::path::Path>) -> anyhow::Result<()> {
         let tensors = self.get_tensor_map();
         Ok(candle_core::safetensors::save(&tensors, path)?)
     }
 
-    fn load_from(path: impl AsRef<std::path::Path>) -> anyhow::Result<Self>where Self: std::marker::Sized {
+    fn load_from(path: impl AsRef<std::path::Path>) -> anyhow::Result<Self>
+    where
+        Self: std::marker::Sized,
+    {
         let device = Device::cuda_if_available(0)?;
         let tensors = candle_core::safetensors::load(path, &device)?;
-        
+
         Ok(Self::from_tensor_map(tensors))
     }
 }
@@ -40,7 +43,7 @@ impl LlamaSession {
     }
 
     /// Create a cache from a tensor map. This can be used to load a cache from disk.
-    pub fn from_tensor_map(map: HashMap<String, Tensor>,) -> Self {
+    pub fn from_tensor_map(map: HashMap<String, Tensor>) -> Self {
         let current_tokens = map.get("current_tokens").unwrap().to_vec1().unwrap();
         Self {
             cache: LlamaCache::from_tensor_map(map),

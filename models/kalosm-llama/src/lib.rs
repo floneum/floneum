@@ -39,11 +39,11 @@ mod session;
 mod source;
 
 use crate::raw::Model;
+pub use crate::session::LlamaSession;
 use kalosm_language_model::ChatModel;
 use llm_samplers::types::Sampler;
 use session::LlamaCache;
 pub use source::*;
-pub use crate::session::LlamaSession;
 
 use candle_core::{
     quantized::{ggml_file, gguf_file},
@@ -55,8 +55,8 @@ use tokenizers::Tokenizer;
 
 /// A prelude of commonly used items in RPhi.
 pub mod prelude {
-    pub use crate::{Llama, LlamaBuilder, LlamaSource};
     pub use crate::session::LlamaSession;
+    pub use crate::{Llama, LlamaBuilder, LlamaSource};
     pub use kalosm_language_model::*;
 }
 
