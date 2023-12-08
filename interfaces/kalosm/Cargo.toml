@@ -20,6 +20,14 @@ tracing = "0.1.40"
 
 [dev-dependencies]
 tracing-subscriber = "0.2"
+tokenizers = "0.15.0"
+candle-core = { workspace = true, features = ["accelerate"] }
+candle-nn = { workspace = true, features = ["accelerate"] }
+candle-datasets = { workspace = true }
+candle-transformers = { workspace = true, features = ["accelerate"] }
+scraper = "0.18.1"
+ego-tree = "0.6.2"
+kalosm-llama = { path = "/Users/evanalmloff/Desktop/Github/floneum/models/kalosm-llama" }
 
 [features]
 default = ["llamacpp"]
