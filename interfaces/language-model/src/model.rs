@@ -643,13 +643,12 @@ pub trait SyncModelExt: SyncModel {
                 if let Some(stop_on) = stop_on {
                     text_matching_buffer.push_str(&new_text);
                     // Check if the string matches the stop_on string
-                    if let Some(position) = text_matching_buffer.find(stop_on) {
+                    if text_matching_buffer.contains(stop_on) {
                         // If it does, only send the text up and including the stop_on string
-                        new_text = text_matching_buffer
-                            .split_at(position + stop_on.len())
-                            .0
-                            .to_string();
-                        on_token(new_text)?;
+                        if new_text.len() > stop_on.len() {
+                            new_text = new_text.strip_suffix(stop_on).unwrap().to_string();
+                            on_token(new_text)?;
+                        }
                         // And stop the generation
                         break;
                     }
