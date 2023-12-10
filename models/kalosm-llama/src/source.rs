@@ -123,7 +123,7 @@ impl LlamaSource {
             markers: ChatMarkers {
                 system_prompt_marker: Some("<s>[INST] "),
                 end_system_marker: Some(" [/INST]"),
-                user_marker: Some("<|user|>"),
+                user_marker: Some("[INST] "),
                 end_user_marker: Some(" [/INST]"),
                 assistant_marker: Some(""),
                 end_assistant_marker: Some("</s>"),
