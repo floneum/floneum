@@ -191,6 +191,26 @@ impl LlamaSource {
         }
     }
 
+    /// A preset for Starling 7b Alpha
+    pub fn starling_7b_alpha() -> Self {
+        Self {
+            model_id: "TheBloke/Starling-LM-7B-alpha-GGUF".to_string(),
+            revision: "main".to_string(),
+            gguf_file: "starling-lm-7b-alpha.Q4_K_M.gguf".into(),
+            tokenizer_repo: "berkeley-nest/Starling-LM-7B-alpha".to_string(),
+            tokenizer_file: "tokenizer.json".to_string(),
+            group_query_attention: 8,
+            markers: ChatMarkers {
+                system_prompt_marker: Some(""),
+                end_system_marker: Some("<|end_of_turn|>"),
+                user_marker: Some("GPT4 Correct User: "),
+                end_user_marker: Some("<|end_of_turn|>"),
+                assistant_marker: Some("GPT4 Correct Assistant: "),
+                end_assistant_marker: Some("<|end_of_turn|>"),
+            },
+        }
+    }
+
     /// A preset for Llama7b
     pub fn llama_7b() -> Self {
         Self {
