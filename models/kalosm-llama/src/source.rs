@@ -131,6 +131,26 @@ impl LlamaSource {
         }
     }
 
+    /// A preset for Mistral7bInstruct v0.2
+    pub fn mistral_7b_instruct_2() -> Self {
+        Self {
+            model_id: "TheBloke/Mistral-7B-Instruct-v0.2-GGUF".to_string(),
+            revision: "main".to_string(),
+            gguf_file: "mistral-7b-instruct-v0.2.Q4_K_M.gguf".into(),
+            tokenizer_repo: "mistralai/Mistral-7B-v0.1".to_string(),
+            tokenizer_file: "tokenizer.json".to_string(),
+            group_query_attention: 8,
+            markers: ChatMarkers {
+                system_prompt_marker: Some("<s>[INST] "),
+                end_system_marker: Some(" [/INST]"),
+                user_marker: Some("[INST] "),
+                end_user_marker: Some(" [/INST]"),
+                assistant_marker: Some(""),
+                end_assistant_marker: Some("</s>"),
+            },
+        }
+    }
+
     /// A preset for Zephyr7bAlpha
     pub fn zephyr_7b_alpha() -> Self {
         Self {
