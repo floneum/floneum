@@ -240,28 +240,64 @@ impl<'a, I: Display> std::fmt::Display for EvaluationResult<'a, I> {
         let bottom_half_of_metric =
             self.range.start() + (self.range.end() - self.range.start()) / 2.0;
 
-        for test in &self.tests {
-            let mut row = Row::new();
-            let quantile =
-                histogram.percentile_below((test.score * Self::SCALE_FACTOR) as u64) as f64 / 100.0;
-            let mut score_cell = if quantile <= 0.1 {
-                Cell::new(&format!("{:.2} (low outlier)", test.score))
+        fn create_cell(score: f64, quantile: f64) -> Cell {
+            if quantile <= 0.1 {
+                Cell::new(&format!("{:.2} (low outlier)", score))
             } else if quantile <= 0.9 {
-                Cell::new(&format!("{:.2}", test.score))
+                Cell::new(&format!("{:.2}", score))
             } else {
-                Cell::new(&format!("{:.2} (high outlier)", test.score))
-            };
-            if test.score < bottom_third_of_metric {
-                score_cell = score_cell.fg(comfy_table::Color::Red);
-            } else if test.score < bottom_half_of_metric {
-                score_cell = score_cell.fg(comfy_table::Color::Yellow);
-            } else {
-                score_cell = score_cell.fg(comfy_table::Color::Green);
+                Cell::new(&format!("{:.2} (high outlier)", score))
             }
-            row.add_cell(Cell::new(&test.case.input))
-                .add_cell(Cell::new(&test.case.output))
-                .add_cell(score_cell);
-            table.add_row(row);
+        }
+
+        let buckets = [
+            (comfy_table::Color::Red, bottom_third_of_metric),
+            (comfy_table::Color::Yellow, bottom_half_of_metric),
+            (comfy_table::Color::Green, f64::INFINITY),
+        ];
+
+        let mut test_iter = self.tests.iter().peekable();
+        for (color, max) in buckets {
+            let mut count = 0;
+            while let Some(test) = test_iter.next_if(|test| test.score <= max) {
+                let quantile = histogram.percentile_below((test.score * Self::SCALE_FACTOR) as u64)
+                    as f64
+                    / 100.0;
+
+                let score_cell = create_cell(test.score, quantile).fg(color);
+                let mut row = Row::new();
+                row.add_cell(Cell::new(&test.case.input))
+                    .add_cell(Cell::new(&test.case.output))
+                    .add_cell(score_cell);
+                table.add_row(row);
+                count += 1;
+
+                if count >= 5 {
+                    let mut remaining_matching_tests = 0;
+                    let mut total_score = 0.0;
+                    while let Some(test) = test_iter.next() {
+                        if test.score > max {
+                            break;
+                        }
+                        total_score += test.score;
+                        remaining_matching_tests += 1;
+                    }
+                    if remaining_matching_tests > 0 {
+                        let mut row = Row::new();
+                        row.add_cell(Cell::new(&format!("... {} more", remaining_matching_tests)))
+                            .add_cell(Cell::new(""))
+                            .add_cell(
+                                Cell::new(&format!(
+                                    "{:.2} (average)",
+                                    total_score / remaining_matching_tests as f64
+                                ))
+                                .fg(color),
+                            );
+                        table.add_row(row);
+                    }
+                    break;
+                }
+            }
         }
 
         writeln!(f, "{}", table)?;
@@ -283,9 +319,9 @@ impl<'a, I: Display> std::fmt::Display for EvaluationResult<'a, I> {
             1.0
         };
 
-        let max_width = (max_width as f64 * scale_factor) as usize;
+        let max_width = ((max_width as f64 * scale_factor) as usize).max(3);
 
-        writeln!(f, "| Histogram {} |", " ".repeat(max_width + 3))?;
+        writeln!(f, "| Score Histogram {} |", " ".repeat(max_width - 3))?;
 
         for (i, bucket) in buckets.iter().enumerate() {
             let min_bucket = self.denormalize_score(i as f64 / 10.0);
