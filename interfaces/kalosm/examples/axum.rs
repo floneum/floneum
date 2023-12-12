@@ -1,17 +1,18 @@
-use axum::body::Body;
-use axum::extract::Path;
-use axum::extract::State;
-use axum::response::IntoResponse;
-use axum::{routing::get, Router};
-use futures_util::Stream;
-use kalosm::{language::*, *};
+use axum::{
+    body::Body,
+    extract::{Path, State},
+    response::IntoResponse,
+    routing::get,
+    Router,
+};
+use kalosm::language::*;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 #[tokio::main]
 async fn main() {
     println!("Downloading and starting model...");
-    let mut model = Llama::builder()
+    let model = Llama::builder()
         .with_source(LlamaSource::mistral_7b())
         .build()
         .unwrap();
@@ -31,10 +32,9 @@ async fn stream_response(
     State(model): State<Arc<RwLock<Llama>>>,
 ) -> impl IntoResponse {
     println!("Responding to {prompt}");
-    let mut result = model.write().await.stream_text(&prompt).await.unwrap();
+    let model_stream = model.write().await.stream_text(&prompt).await.unwrap();
     println!("stream ready");
     fn infallible(t: String) -> Result<String, std::convert::Infallible> {
-        println!("added {t} to stream");
         Ok(t)
     }
     // Stream the html to the client
@@ -43,7 +43,7 @@ async fn stream_response(
     let head = infallible(head);
     let head = futures_util::stream::once(async { head });
     // Then the body
-    let body = result.map(infallible);
+    let body = model_stream.map(infallible);
     // Then the tail
     let tail = "</pre></body></html>";
     let tail = infallible(tail.to_string());
