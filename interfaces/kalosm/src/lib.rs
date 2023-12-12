@@ -9,3 +9,5 @@ pub use kalosm_vision as vision;
 
 mod chat;
 pub use chat::*;
+mod evaluate;
+pub use evaluate::*;
