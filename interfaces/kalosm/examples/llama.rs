@@ -3,7 +3,7 @@ use std::io::Write;
 
 #[tokio::main]
 async fn main() {
-    let mut model = Llama::builder()
+    let model = Llama::builder()
         .with_source(LlamaSource::zephyr_7b_beta())
         .build()
         .unwrap();

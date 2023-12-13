@@ -28,7 +28,7 @@ async fn main() {
         std::io::stdin().read_line(&mut user_question).unwrap();
         let context = vector.search(&user_question, 5).await;
 
-        let mut llm = LocalSession::<LlamaSevenChatSpace>::start().await;
+        let llm = LocalSession::<LlamaSevenChatSpace>::start().await;
 
         let context = context
             .iter()

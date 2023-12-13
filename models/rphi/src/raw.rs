@@ -254,7 +254,7 @@ impl MHA {
     }
 
     fn forward(
-        &mut self,
+        &self,
         xs: &Tensor,
         mask: Option<&Tensor>,
         cache: Option<&mut ParallelBlockCache>,
@@ -344,7 +344,7 @@ impl ParallelBlock {
     }
 
     fn forward(
-        &mut self,
+        &self,
         xs: &Tensor,
         mask: Option<&Tensor>,
         cache: Option<&mut ParallelBlockCache>,
@@ -384,7 +384,7 @@ impl MixFormerSequentialForCausalLM {
         })
     }
 
-    pub fn forward(&mut self, xs: &Tensor, mut cache: Option<&mut PhiCache>) -> Result<Tensor> {
+    pub fn forward(&self, xs: &Tensor, mut cache: Option<&mut PhiCache>) -> Result<Tensor> {
         let _enter = self.span.enter();
         let (_b_size, seq_len) = xs.dims2()?;
         let mut xs = xs.apply(&self.embedding)?;
@@ -399,7 +399,7 @@ impl MixFormerSequentialForCausalLM {
             }
             _ => Some(get_mask(seq_len, xs.device())?),
         };
-        for (i, block) in self.blocks.iter_mut().enumerate() {
+        for (i, block) in self.blocks.iter().enumerate() {
             xs = block.forward(&xs, mask.as_ref(), cache.as_mut().map(|c| &mut c.blocks[i]))?;
         }
         xs.narrow(1, seq_len - 1, 1)?.apply(&self.head)?.squeeze(1)

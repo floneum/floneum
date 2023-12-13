@@ -6,7 +6,7 @@ use kalosm_streams::TextStream;
 
 #[tokio::main]
 async fn main() {
-    let mut llm = Mistral::start().await;
+    let llm = Mistral::start().await;
     let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
     print!("{}", prompt);
 

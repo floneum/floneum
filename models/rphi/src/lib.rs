@@ -152,7 +152,7 @@ impl Phi {
     }
 
     fn run(
-        &mut self,
+        &self,
         settings: InferenceSettings,
         sampler: Arc<Mutex<dyn Sampler>>,
     ) -> anyhow::Result<tokio::sync::mpsc::UnboundedReceiver<String>> {

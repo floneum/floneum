@@ -2,7 +2,7 @@ use kalosm_llama::prelude::*;
 
 #[tokio::main]
 async fn main() {
-    let mut model = Llama::builder()
+    let model = Llama::builder()
         .with_source(LlamaSource::mistral_7b())
         .build()
         .unwrap();
