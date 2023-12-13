@@ -154,33 +154,36 @@ impl Llama {
         chat_markers: ChatMarkers,
     ) -> Self {
         let (task_sender, mut task_receiver) = tokio::sync::mpsc::unbounded_channel();
-        let arc_tokenizer = Arc::new(tokenizer.clone());
+        let arc_tokenizer = Arc::new(tokenizer);
 
-        let thread_handle = std::thread::spawn(move || {
-            let mut inner = LlamaModel::new(model, tokenizer, device, cache);
-            tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .unwrap()
-                .block_on(async move {
-                    while let Some(task) = task_receiver.recv().await {
-                        match task {
-                            Task::Kill => break,
-                            Task::Infer {
-                                settings,
-                                sender,
-                                sampler,
-                            } => {
-                                if let Err(err) = inner._infer(settings, sampler, sender) {
-                                    eprintln!("Error: {}", err);
+        let thread_handle = std::thread::spawn({
+            let arc_tokenizer = arc_tokenizer.clone();
+            move || {
+                let mut inner = LlamaModel::new(model, arc_tokenizer, device, cache);
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap()
+                    .block_on(async move {
+                        while let Some(task) = task_receiver.recv().await {
+                            match task {
+                                Task::Kill => break,
+                                Task::Infer {
+                                    settings,
+                                    sender,
+                                    sampler,
+                                } => {
+                                    if let Err(err) = inner._infer(settings, sampler, sender) {
+                                        eprintln!("Error: {}", err);
+                                    }
+                                }
+                                Task::RunSync { callback } => {
+                                    callback(&mut inner).await;
                                 }
                             }
-                            Task::RunSync { callback } => {
-                                callback(&mut inner).await;
-                            }
                         }
-                    }
-                })
+                    })
+            }
         });
         Self {
             task_sender,

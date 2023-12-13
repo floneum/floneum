@@ -369,7 +369,7 @@ impl Model {
             let masks = self.masks.read().unwrap();
             masks.get(&t).cloned()
         } {
-            Ok(mask.clone())
+            Ok(mask)
         } else {
             let mask: Vec<_> = (0..t)
                 .flat_map(|i| (0..t).map(move |j| u8::from(j > i)))

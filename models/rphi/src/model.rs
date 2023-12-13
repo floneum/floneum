@@ -79,7 +79,7 @@ pub struct PhiModel {
     cache: PhiCache,
     model: QMixFormer,
     device: Device,
-    tokenizer: Tokenizer,
+    tokenizer: Arc<Tokenizer>,
 }
 
 impl SyncModel for PhiModel {
@@ -125,7 +125,7 @@ impl SyncModel for PhiModel {
     }
 
     fn tokenizer(&self) -> Arc<dyn kalosm_sample::Tokenizer + Send + Sync> {
-        Arc::new(self.tokenizer.clone())
+        self.tokenizer.clone()
     }
 }
 
@@ -158,7 +158,7 @@ impl PhiModel {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         model: QMixFormer,
-        tokenizer: Tokenizer,
+        tokenizer: Arc<Tokenizer>,
         device: Device,
         cache: PhiCache,
     ) -> Self {

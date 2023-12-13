@@ -51,7 +51,6 @@ use crate::raw::Config;
 use crate::raw::MixFormerSequentialForCausalLM as QMixFormer;
 use candle_core::Device;
 use hf_hub::{api::sync::Api, Repo, RepoType};
-use kalosm_sample::FasterHuggingFaceTokenizer;
 use llm_samplers::prelude::Sampler;
 use model::PhiModel;
 use std::sync::Arc;
@@ -81,7 +80,7 @@ type SyncCallback = Box<
 pub struct Phi {
     task_sender: tokio::sync::mpsc::UnboundedSender<Task>,
     thread_handle: Option<std::thread::JoinHandle<()>>,
-    tokenizer: Arc<FasterHuggingFaceTokenizer>,
+    tokenizer: Arc<Tokenizer>,
 }
 
 impl Drop for Phi {
@@ -111,33 +110,36 @@ impl Phi {
     #[allow(clippy::too_many_arguments)]
     fn new(model: QMixFormer, tokenizer: Tokenizer, device: Device, cache: PhiCache) -> Self {
         let (task_sender, mut task_receiver) = tokio::sync::mpsc::unbounded_channel();
-        let arc_tokenizer = Arc::new(FasterHuggingFaceTokenizer::new(tokenizer.clone()));
+        let arc_tokenizer = Arc::new(tokenizer);
 
-        let thread_handle = std::thread::spawn(move || {
-            let mut inner = PhiModel::new(model, tokenizer, device, cache);
-            tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .unwrap()
-                .block_on(async move {
-                    while let Some(task) = task_receiver.recv().await {
-                        match task {
-                            Task::Kill => break,
-                            Task::Infer {
-                                settings,
-                                sender,
-                                sampler,
-                            } => {
-                                if let Err(err) = inner._infer(settings, sampler, sender) {
-                                    tracing::error!("Error in PhiModel::_infer: {}", err);
+        let thread_handle = std::thread::spawn({
+            let arc_tokenizer = arc_tokenizer.clone();
+            move || {
+                let mut inner = PhiModel::new(model, arc_tokenizer, device, cache);
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap()
+                    .block_on(async move {
+                        while let Some(task) = task_receiver.recv().await {
+                            match task {
+                                Task::Kill => break,
+                                Task::Infer {
+                                    settings,
+                                    sender,
+                                    sampler,
+                                } => {
+                                    if let Err(err) = inner._infer(settings, sampler, sender) {
+                                        tracing::error!("Error in PhiModel::_infer: {}", err);
+                                    }
+                                }
+                                Task::RunSync { callback } => {
+                                    callback(&mut inner).await;
                                 }
                             }
-                            Task::RunSync { callback } => {
-                                callback(&mut inner).await;
-                            }
                         }
-                    }
-                })
+                    })
+            }
         });
         Self {
             task_sender,
@@ -147,7 +149,7 @@ impl Phi {
     }
 
     /// Get the tokenizer used by this model.
-    pub(crate) fn get_tokenizer(&self) -> Arc<FasterHuggingFaceTokenizer> {
+    pub(crate) fn get_tokenizer(&self) -> Arc<Tokenizer> {
         self.tokenizer.clone()
     }
 

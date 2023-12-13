@@ -17,7 +17,7 @@ use crate::InferenceSettings;
 pub struct LlamaModel {
     model: Model,
     device: Device,
-    tokenizer: Tokenizer,
+    tokenizer: Arc<Tokenizer>,
     cache: LlamaCache,
 }
 
@@ -88,8 +88,7 @@ impl SyncModel for LlamaModel {
     }
 
     fn tokenizer(&self) -> std::sync::Arc<dyn kalosm_sample::Tokenizer + Send + Sync> {
-        Arc::new(self.tokenizer.clone())
-            as std::sync::Arc<dyn kalosm_sample::Tokenizer + Send + Sync>
+        self.tokenizer.clone() as std::sync::Arc<dyn kalosm_sample::Tokenizer + Send + Sync>
     }
 }
 
@@ -119,7 +118,7 @@ impl LlamaModel {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         model: Model,
-        tokenizer: Tokenizer,
+        tokenizer: Arc<Tokenizer>,
         device: Device,
         cache: LlamaCache,
     ) -> Self {
