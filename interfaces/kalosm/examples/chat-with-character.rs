@@ -1,5 +1,4 @@
 use kalosm::{language::*, *};
-use language::kalosm_sample::*;
 
 #[tokio::main]
 async fn main() {

@@ -1,4 +1,5 @@
-use std::sync::RwLock;use std::collections::HashMap;
+use std::collections::HashMap;
+use std::sync::RwLock;
 
 use candle_core::quantized::QTensor;
 use candle_core::quantized::{ggml_file, gguf_file};
@@ -208,7 +209,7 @@ impl Clone for Model {
             layers: self.layers.clone(),
             norm: self.norm.clone(),
             output: self.output.clone(),
-            masks: RwLock::new(HashMap::new()).into(),
+            masks: RwLock::new(HashMap::new()),
             span: tracing::Span::none(),
             span_output: tracing::Span::none(),
         }

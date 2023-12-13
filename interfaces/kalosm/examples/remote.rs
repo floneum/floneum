@@ -10,7 +10,7 @@ use kalosm_streams::TextStream;
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let mut llm = Gpt4::start().await;
+    let llm = Gpt4::start().await;
     let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
     print!("{}", prompt);
 
