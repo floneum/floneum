@@ -428,6 +428,24 @@ pub trait ModelExt: Model + Send + 'static {
     }
 
     /// Generate structured text with the given prompt.
+    async fn stream_structured_text<P>(
+        &mut self,
+        prompt: &str,
+        parser: P,
+    ) -> anyhow::Result<StructureParserResult<Self::TextStream, P::Output>>
+    where
+        Self::TextStream: From<tokio::sync::mpsc::UnboundedReceiver<String>>,
+        P: kalosm_sample::CreateParserState + Parser + Send + 'static,
+        P::PartialState: Send + 'static,
+        P::Output: Send + 'static,
+    {
+        let sampler = Arc::new(Mutex::new(GenerationParameters::default().sampler()));
+        let parser_state = parser.create_parser_state();
+        self.stream_structured_text_with_sampler(prompt, parser, parser_state, sampler)
+            .await
+    }
+
+    /// Generate structured text with the given prompt and sampler.
     async fn stream_structured_text_with_sampler<P>(
         &mut self,
         prompt: &str,
