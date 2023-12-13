@@ -28,7 +28,7 @@ impl Model for Phi {
     }
 
     fn run_sync_raw(
-        &mut self,
+        &self,
         f: Box<
             dyn for<'a> FnOnce(
                     &'a mut Self::SyncModel,
@@ -44,7 +44,7 @@ impl Model for Phi {
     }
 
     async fn stream_text_inner(
-        &mut self,
+        &self,
         prompt: &str,
         generation_parameters: GenerationParameters,
     ) -> anyhow::Result<Self::TextStream> {
@@ -59,7 +59,7 @@ impl Model for Phi {
     }
 
     async fn stream_text_with_sampler(
-        &mut self,
+        &self,
         prompt: &str,
         max_tokens: Option<u32>,
         stop_on: Option<&str>,

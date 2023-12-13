@@ -12,7 +12,7 @@ use crate::SyncModel;
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
     prompt: impl Display,
-    llm: &mut M,
+    llm: &M,
     session: &mut M::Session,
     tokenizer: &Arc<dyn Tokenizer + Send + Sync>,
     parser: P,

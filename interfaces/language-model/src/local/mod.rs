@@ -50,7 +50,7 @@ macro_rules! local_model {
             }
 
             async fn stream_text_inner(
-                &mut self,
+                &self,
                 prompt: &str,
                 generation_parameters: GenerationParameters,
             ) -> anyhow::Result<Self::TextStream> {
@@ -58,7 +58,7 @@ macro_rules! local_model {
             }
 
             async fn stream_text_with_sampler(
-                &mut self,
+                &self,
                 prompt: &str,
                 max_tokens: Option<u32>,
                 stop_on: Option<&str>,
