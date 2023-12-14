@@ -4,7 +4,7 @@ use std::io::Write;
 
 #[tokio::main]
 async fn main() {
-    let llm = Phi::start().await;
+    let llm = Phi::v2().unwrap();
     let prompt = "Five US states in central US are ";
 
     println!("# with constraints");

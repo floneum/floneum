@@ -102,6 +102,11 @@ impl Phi {
         PhiBuilder::default()
     }
 
+    /// Start the v2 model.
+    pub fn v2() -> anyhow::Result<Self> {
+        Phi::builder().with_source(PhiSource::v2()).build()
+    }
+
     /// Check if the model has been downloaded.
     pub(crate) fn downloaded() -> bool {
         false
@@ -207,10 +212,14 @@ impl PhiBuilder {
             .get(&self.source.model_file)?;
         let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(E::msg)?;
 
-        let config = Config::v1_5();
+        let config = self.source.phi_config;
         let (model, device) = {
             let vb = candle_transformers::quantized_var_builder::VarBuilder::from_gguf(filename)?;
-            let model = QMixFormer::new(&config, vb)?;
+            let model = if self.source.phi2 {
+                QMixFormer::new_v2(&config, vb)?
+            } else {
+                QMixFormer::new(&config, vb)?
+            };
 
             (model, device(self.cpu)?)
         };
