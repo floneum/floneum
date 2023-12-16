@@ -7,8 +7,6 @@ license = "MIT/Apache-2.0"
 repository = "https://github.com/floneum/floneum"
 authors = ["Evan Almloff"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 anyhow = "1.0.70"
 cpal = "0.15.1"
@@ -36,8 +34,8 @@ intel-mkl-src = { version = "0.8.1", features = ["mkl-static-lp64-iomp"], option
 cudarc = { version = "0.9.14", features = ["f16"], optional = true }
 half = { version = "2.3.1", features = ["num-traits", "use-intrinsics", "rand_distr"], optional = true }
 
-# [dev-dependencies]
-# kalosm-sound.workspace = true
+[dev-dependencies]
+kalosm-sound.workspace = true
 
 [features]
 accelerate = ["dep:accelerate-src", "candle-core/accelerate", "candle-nn/accelerate", "candle-transformers/accelerate"]

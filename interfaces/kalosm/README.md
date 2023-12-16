@@ -19,7 +19,7 @@ cd ./next-gen-ai
 ```
 3) Add Kalosm as a dependency
 ```sh
-cargo add kalosm --git "https://github.com/floneum/floneum"
+cargo add kalosm
 cargo add tokio --features full
 ```
 4) Add this code to your `main.rs` file

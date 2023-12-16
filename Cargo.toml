@@ -6,8 +6,6 @@ authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 license = "MIT/Apache-2.0"
 repository = "https://github.com/floneum/floneum"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 
 [patch.crates-io]
@@ -105,17 +103,13 @@ segment-anything-rs = { path = "./models/segment-anything-rs", version = "0.1.0"
 kalosm-ocr = { path = "./models/kalosm-ocr", version = "0.1.0" }
 llm-samplers = "=0.0.7"
 
-# The profile that 'cargo dist' will build with
 [profile.dist]
 inherits = "release"
 lto = "thin"
 
 [profile.release]
 lto = true
-# panic = "abort"
 opt-level = 3
-# opt-level = 'z'
-# strip = true
 debug = true
 codegen-units = 1
 

@@ -7,8 +7,6 @@ license = "MIT/Apache-2.0"
 repository = "https://github.com/floneum/floneum"
 authors = ["Evan Almloff"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 kalosm-language-model.workspace = true
 kalosm-learning-macro.workspace = true

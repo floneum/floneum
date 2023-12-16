@@ -6,8 +6,6 @@ authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 license = "MIT/Apache-2.0"
 repository = "https://github.com/floneum/floneum"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 bytesize = "1.2.0"
 futures-util = "0.3.28"
@@ -48,19 +46,9 @@ dioxus-core = { git = "https://github.com/ealmloff/dioxus", branch = "improved-s
 dioxus-rsx = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
 dioxus = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
 
-# The profile that 'cargo dist' will build with
 [profile.dist]
 inherits = "release"
 lto = "thin"
-
-[profile.release]
-lto = true
-# panic = "abort"
-opt-level = 3
-# opt-level = 'z'
-# strip = true
-debug = true
-codegen-units = 1
 
 [profile.dev.package."*"]
 opt-level = 3
