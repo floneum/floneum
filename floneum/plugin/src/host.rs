@@ -16,8 +16,8 @@ use slab::Slab;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
-use wasmtime::component::Linker;
 use wasmtime::component::__internal::async_trait;
+use wasmtime::component::{Linker, ResourceTable};
 use wasmtime::Config;
 use wasmtime::Engine;
 use wasmtime_wasi::preview2::{self, DirPerms, FilePerms, WasiView};
@@ -82,9 +82,10 @@ pub struct State {
     pub(crate) nodes: Slab<AnyNodeRef>,
     pub(crate) pages: Slab<Arc<Tab>>,
     pub(crate) plugin_state: HashMap<Vec<u8>, Vec<u8>>,
-    pub(crate) table: preview2::Table,
+    pub(crate) table: ResourceTable,
     pub(crate) ctx: preview2::WasiCtx,
 }
+
 impl Default for State {
     fn default() -> Self {
         let sandbox = Path::new("./sandbox");
@@ -101,7 +102,7 @@ impl Default for State {
                 FilePerms::all(),
                 ".",
             );
-        let table = preview2::Table::new();
+        let table = ResourceTable::new();
         let ctx = ctx_builder.build();
         State {
             plugin_state: Default::default(),
@@ -119,11 +120,11 @@ impl Default for State {
 }
 
 impl WasiView for State {
-    fn table(&self) -> &preview2::Table {
+    fn table(&self) -> &ResourceTable {
         &self.table
     }
 
-    fn table_mut(&mut self) -> &mut preview2::Table {
+    fn table_mut(&mut self) -> &mut ResourceTable {
         &mut self.table
     }
 
