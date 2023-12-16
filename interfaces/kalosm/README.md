@@ -1,4 +1,23 @@
-# Kalosm
+<div align="center">
+  <h1>Kalosm</h1>
+</div>
+<div align="center">
+  <!-- Crates version -->
+  <a href="https://crates.io/crates/kalosm">
+    <img src="https://img.shields.io/crates/v/kalosm.svg?style=flat-square"
+    alt="Crates.io version" />
+  </a>
+  <!-- Downloads -->
+  <a href="https://crates.io/crates/kalosm">
+    <img src="https://img.shields.io/crates/d/kalosm.svg?style=flat-square"
+      alt="Download" />
+  </a>
+  <!-- docs -->
+  <a href="https://docs.rs/kalosm">
+    <img src="https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square"
+      alt="docs.rs docs" />
+  </a>
+</div>
 
 Kalosm is a simple interface for pre-trained models in rust. It makes it easy to interact with pre-trained, language, audio, and image models.
 
