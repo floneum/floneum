@@ -1,7 +1,7 @@
 use comfy_table::Cell;
 use comfy_table::Row;
 use comfy_table::Table;
-use hdrhistogram::{Counter, Histogram};
+use hdrhistogram::Histogram;
 use once_cell::sync::OnceCell;
 use std::fmt::Display;
 use std::ops::RangeInclusive;
@@ -13,6 +13,7 @@ use kalosm_language::Embedder;
 /// A metric is a way to compare two pieces of data. It is used to evaluate the performance of a model.
 #[async_trait]
 pub trait Metric<T> {
+    /// The range of values that this metric can return.
     const RANGE: RangeInclusive<f64> = 0.0..=1.0;
 
     /// Compute the distance between this piece of data and another piece of data.
@@ -105,6 +106,7 @@ impl<I> TestCases<I> {
     }
 }
 
+/// The result of evaluating a model using a set of test cases.
 #[derive(Clone)]
 pub struct EvaluationResult<'a, I> {
     name: String,
@@ -119,8 +121,7 @@ impl<'a, I> EvaluationResult<'a, I> {
     fn histogram_scale_factor(&self) -> f64 {
         let min = self.range.start();
         let max = self.range.end();
-        let scale_factor = Self::SCALE_FACTOR / (max - min);
-        scale_factor
+        Self::SCALE_FACTOR / (max - min)
     }
 
     fn scale_value(&self, value: f64) -> f64 {
@@ -147,22 +148,27 @@ impl<'a, I> EvaluationResult<'a, I> {
         })
     }
 
+    /// Get the mean score of this EvaluationResult.
     pub fn mean_score(&self) -> f64 {
-        self.unscale_value(self.histogram().mean() as f64)
+        self.unscale_value(self.histogram().mean())
     }
 
+    /// Get the median score of this EvaluationResult.
     pub fn median_score(&self) -> f64 {
         self.unscale_value(self.histogram().value_at_percentile(50.0) as f64)
     }
 
+    /// Get the minimum score of this EvaluationResult.
     pub fn min_score(&self) -> f64 {
         self.unscale_value(self.histogram().min() as f64)
     }
 
+    /// Get the maximum score of this EvaluationResult.
     pub fn max_score(&self) -> f64 {
         self.unscale_value(self.histogram().max() as f64)
     }
 
+    /// Get the score at a given quantile of this EvaluationResult.
     pub fn quantile_score(&self, quantile: f64) -> f64 {
         self.unscale_value(self.histogram().value_at_percentile(quantile * 100.0) as f64)
     }
@@ -207,27 +213,27 @@ impl<'a, I: Display> std::fmt::Display for EvaluationResult<'a, I> {
         statistics.set_header(vec!["Statistic", "Value"]);
         statistics.add_row(vec![
             Cell::new("Mean"),
-            Cell::new(&format!("{:.2}", self.mean_score())),
+            Cell::new(format!("{:.2}", self.mean_score())),
         ]);
         statistics.add_row(vec![
             Cell::new("Median"),
-            Cell::new(&format!("{:.2}", self.median_score())),
+            Cell::new(format!("{:.2}", self.median_score())),
         ]);
         statistics.add_row(vec![
             Cell::new("Min"),
-            Cell::new(&format!("{:.2}", self.min_score())),
+            Cell::new(format!("{:.2}", self.min_score())),
         ]);
         statistics.add_row(vec![
             Cell::new("Max"),
-            Cell::new(&format!("{:.2}", self.max_score())),
+            Cell::new(format!("{:.2}", self.max_score())),
         ]);
         statistics.add_row(vec![
             Cell::new("25th Percentile"),
-            Cell::new(&format!("{:.2}", self.quantile_score(0.25))),
+            Cell::new(format!("{:.2}", self.quantile_score(0.25))),
         ]);
         statistics.add_row(vec![
             Cell::new("75th Percentile"),
-            Cell::new(&format!("{:.2}", self.quantile_score(0.75))),
+            Cell::new(format!("{:.2}", self.quantile_score(0.75))),
         ]);
 
         writeln!(f, "{}", statistics)?;
@@ -242,11 +248,11 @@ impl<'a, I: Display> std::fmt::Display for EvaluationResult<'a, I> {
 
         fn create_cell(score: f64, quantile: f64) -> Cell {
             if quantile <= 0.1 {
-                Cell::new(&format!("{:.2} (low outlier)", score))
+                Cell::new(format!("{:.2} (low outlier)", score))
             } else if quantile <= 0.9 {
-                Cell::new(&format!("{:.2}", score))
+                Cell::new(format!("{:.2}", score))
             } else {
-                Cell::new(&format!("{:.2} (high outlier)", score))
+                Cell::new(format!("{:.2} (high outlier)", score))
             }
         }
 
@@ -260,9 +266,8 @@ impl<'a, I: Display> std::fmt::Display for EvaluationResult<'a, I> {
         for (color, max) in buckets {
             let mut count = 0;
             while let Some(test) = test_iter.next_if(|test| test.score <= max) {
-                let quantile = histogram.percentile_below((test.score * Self::SCALE_FACTOR) as u64)
-                    as f64
-                    / 100.0;
+                let quantile =
+                    histogram.percentile_below((test.score * Self::SCALE_FACTOR) as u64) / 100.0;
 
                 let score_cell = create_cell(test.score, quantile).fg(color);
                 let mut row = Row::new();
@@ -275,7 +280,7 @@ impl<'a, I: Display> std::fmt::Display for EvaluationResult<'a, I> {
                 if count >= 5 {
                     let mut remaining_matching_tests = 0;
                     let mut total_score = 0.0;
-                    while let Some(test) = test_iter.next() {
+                    for test in test_iter.by_ref() {
                         if test.score > max {
                             break;
                         }
