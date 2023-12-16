@@ -47,8 +47,9 @@ pin-project = "1"
 kalosm-streams.workspace = true
 pulldown-cmark = "0.9.3"
 docx-rs = "0.4.7"
-pdf = { git = "https://github.com/pdf-rs/pdf" }
-pdf_text = { git = "https://github.com/pdf-rs/pdf_text" }
+pdf = "0.9.0"
+# pdf = { git = "https://github.com/pdf-rs/pdf" }
+# pdf_text = { git = "https://github.com/pdf-rs/pdf_text" }
 convert_case = "0.6.0"
 itertools = "0.11.0"
 async-recursion = "1.0.5"
@@ -63,6 +64,6 @@ texting_robots = "0.2.2"
 half = "2.3.1"
 
 [features]
-llamacpp = ["kalosm-language-model/llamacpp", "kalosm-sample/llamacpp"]
+# llamacpp = ["kalosm-language-model/llamacpp", "kalosm-sample/llamacpp"]
 metal = ["kalosm-language-model/metal", "rphi/accelerate", "rbert/accelerate", "rmistral/accelerate", "kalosm-llama/accelerate"]
 cublas = ["kalosm-language-model/cublas", "rbert/cuda", "rbert/cudnn", "rphi/cuda", "rphi/cudnn", "rmistral/cuda", "rmistral/cudnn", "kalosm-llama/cuda", "kalosm-llama/cudnn"]
