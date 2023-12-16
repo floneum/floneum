@@ -79,7 +79,7 @@ pub struct PhiModel {
     cache: PhiCache,
     model: QMixFormer,
     device: Device,
-    tokenizer: Tokenizer,
+    tokenizer: Arc<Tokenizer>,
 }
 
 impl SyncModel for PhiModel {
@@ -94,7 +94,7 @@ impl SyncModel for PhiModel {
         })
     }
 
-    fn feed_text(&mut self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Logits> {
+    fn feed_text(&self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Logits> {
         let tokens = self
             .tokenizer
             .encode(prompt, true)
@@ -104,15 +104,11 @@ impl SyncModel for PhiModel {
         self.feed_tokens(session, &tokens)
     }
 
-    fn feed_tokens(
-        &mut self,
-        session: &mut Self::Session,
-        tokens: &[u32],
-    ) -> anyhow::Result<Logits> {
+    fn feed_tokens(&self, session: &mut Self::Session, tokens: &[u32]) -> anyhow::Result<Logits> {
         session.current_tokens.extend(tokens.iter().copied());
 
         Self::forward(
-            &mut self.model,
+            &self.model,
             &self.device,
             tokens,
             Some(&mut session.cache),
@@ -129,13 +125,13 @@ impl SyncModel for PhiModel {
     }
 
     fn tokenizer(&self) -> Arc<dyn kalosm_sample::Tokenizer + Send + Sync> {
-        Arc::new(self.tokenizer.clone())
+        self.tokenizer.clone()
     }
 }
 
 impl PhiModel {
     fn forward(
-        model: &mut QMixFormer,
+        model: &QMixFormer,
         device: &Device,
         mut tokens: &[u32],
         cache: Option<&mut PhiCache>,
@@ -162,7 +158,7 @@ impl PhiModel {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         model: QMixFormer,
-        tokenizer: Tokenizer,
+        tokenizer: Arc<Tokenizer>,
         device: Device,
         cache: PhiCache,
     ) -> Self {
@@ -175,7 +171,7 @@ impl PhiModel {
     }
 
     pub(crate) fn _infer(
-        &mut self,
+        &self,
         settings: InferenceSettings,
         sampler: std::sync::Arc<std::sync::Mutex<dyn llm_samplers::prelude::Sampler>>,
         out: tokio::sync::mpsc::UnboundedSender<String>,

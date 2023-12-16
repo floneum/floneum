@@ -27,6 +27,7 @@ pub use tool::*;
 mod vector_db;
 pub use kalosm_language_model::*;
 pub use kalosm_llama::{Llama, LlamaBuilder, LlamaSession, LlamaSource};
+pub use kalosm_sample::*;
 pub use rbert::{Bert, BertBuilder, BertSource, BertSpace};
 pub use rmistral::{Mistral, MistralBuilder, MistralSource};
 pub use rphi::{Phi, PhiBuilder, PhiSource};

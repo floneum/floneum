@@ -3,7 +3,7 @@ use std::io::Write;
 
 #[tokio::main]
 async fn main() {
-    let mut llm = Phi::start().await;
+    let llm = Phi::v2().unwrap();
 
     println!("Loading local documents...");
     let mut document_database = DocumentDatabase::new(

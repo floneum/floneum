@@ -1,13 +1,10 @@
 use futures_util::stream::StreamExt;
 use kalosm_language::*;
-use kalosm_sample::*;
 use std::io::Write;
-use std::sync::Arc;
-use std::sync::Mutex;
 
 #[tokio::main]
 async fn main() {
-    let mut llm = Phi::start().await;
+    let llm = Phi::default();
     let prompt = "Five US states in central US are ";
 
     println!("# with constraints");
@@ -75,16 +72,7 @@ async fn main() {
         .then(LiteralParser::from(", "))
         .repeat(5..=5)
         .then(LiteralParser::from("\n"));
-    let validator_state = validator.create_parser_state();
-    let mut words = llm
-        .stream_structured_text_with_sampler(
-            prompt,
-            validator,
-            validator_state,
-            Arc::new(Mutex::new(GenerationParameters::default().sampler())),
-        )
-        .await
-        .unwrap();
+    let mut words = llm.stream_structured_text(prompt, validator).await.unwrap();
 
     while let Some(text) = words.next().await {
         print!("{}", text);

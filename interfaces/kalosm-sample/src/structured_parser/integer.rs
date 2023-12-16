@@ -4,12 +4,12 @@ use std::ops::RangeInclusive;
 /// A parser for an integer.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct IntegerParser {
-    range: RangeInclusive<i64>,
+    range: RangeInclusive<i128>,
 }
 
 impl IntegerParser {
     /// Create a new integer parser.
-    pub fn new(range: RangeInclusive<i64>) -> Self {
+    pub fn new(range: RangeInclusive<i128>) -> Self {
         if range.start() > range.end() {
             Self {
                 range: *range.end()..=*range.start(),
@@ -29,17 +29,17 @@ impl CreateParserState for IntegerParser {
 impl IntegerParser {
     fn sign_valid(&self, positive: bool) -> bool {
         if positive {
-            *self.range.start() >= 0
+            *self.range.end() >= 0
         } else {
-            *self.range.end() <= 0
+            *self.range.start() <= 0
         }
     }
 
-    fn is_number_valid(&self, value: i64) -> bool {
+    fn is_number_valid(&self, value: i128) -> bool {
         self.range.contains(&value)
     }
 
-    fn should_stop(&self, value: i64) -> bool {
+    fn should_stop(&self, value: i128) -> bool {
         match value.checked_mul(10) {
             Some(after_next_digit) => {
                 (after_next_digit > 0 && after_next_digit > *self.range.end())
@@ -49,7 +49,7 @@ impl IntegerParser {
         }
     }
 
-    fn could_number_become_valid(&self, value: i64) -> bool {
+    fn could_number_become_valid(&self, value: i128) -> bool {
         if self.is_number_valid(value) {
             true
         } else {
@@ -76,9 +76,9 @@ impl IntegerParser {
             let mut check_end = true;
             let mut check_start = true;
             for digit in 1..(digits + 1) {
-                let selected_digit = value / (10_i64.pow(digits - digit)) % 10;
-                let selected_start_digit = start_value / (10_i64.pow(start_digits - digit)) % 10;
-                let selected_end_digit = end_value / (10_i64.pow(end_digits - digit)) % 10;
+                let selected_digit = value / (10_i128.pow(digits - digit)) % 10;
+                let selected_start_digit = start_value / (10_i128.pow(start_digits - digit)) % 10;
+                let selected_end_digit = end_value / (10_i128.pow(end_digits - digit)) % 10;
 
                 if check_start {
                     match selected_digit.cmp(&selected_start_digit) {
@@ -142,7 +142,7 @@ impl Default for IntegerParserState {
 
 impl Parser for IntegerParser {
     type Error = ();
-    type Output = i64;
+    type Output = i128;
     type PartialState = IntegerParserState;
 
     fn parse<'a>(
@@ -158,10 +158,7 @@ impl Parser for IntegerParser {
             let input_byte = input[index];
             let digit = match input_byte {
                 b'0'..=b'9' => {
-                    if (state == IntegerParserProgress::Initial
-                        || state == IntegerParserProgress::AfterSign)
-                        && input_byte == b'0'
-                    {
+                    if state == IntegerParserProgress::AfterSign && input_byte == b'0' {
                         return Err(()); // Leading zeros are not allowed
                     }
                     input_byte - b'0'
@@ -180,7 +177,7 @@ impl Parser for IntegerParser {
                 }
                 _ => {
                     if state.is_after_digit() {
-                        let result = value as i64 * if positive { 1 } else { -1 };
+                        let result = value as i128 * if positive { 1 } else { -1 };
                         if self.is_number_valid(result) {
                             return Ok(ParseResult::Finished {
                                 result,
@@ -198,10 +195,18 @@ impl Parser for IntegerParser {
             match value.checked_mul(10) {
                 Some(v) => value = v + u64::from(digit),
                 None => {
+                    let signed_value = value as i128 * if positive { 1 } else { -1 };
+                    if self.is_number_valid(signed_value) {
+                        return Ok(ParseResult::Finished {
+                            result: signed_value,
+                            remaining: &input[index..],
+                        });
+                    }
                     return Err(());
                 }
             }
-            let signed_value = value as i64 * if positive { 1 } else { -1 };
+
+            let signed_value = value as i128 * if positive { 1 } else { -1 };
 
             if self.should_stop(signed_value) {
                 return Ok(ParseResult::Finished {
@@ -211,6 +216,12 @@ impl Parser for IntegerParser {
             }
 
             if !self.could_number_become_valid(signed_value) {
+                if self.is_number_valid(signed_value) {
+                    return Ok(ParseResult::Finished {
+                        result: signed_value,
+                        remaining: &input[index + 1..],
+                    });
+                }
                 return Err(());
             }
         }
@@ -229,9 +240,9 @@ impl Parser for IntegerParser {
 #[test]
 fn integer_parser() {
     for _ in 0..100 {
-        let random_number = rand::random::<i64>();
-        let range = random_number.saturating_sub(rand::random::<u8>() as i64)
-            ..=random_number.saturating_add(rand::random::<u8>() as i64);
+        let random_number = rand::random::<i64>() as i128;
+        let range = random_number.saturating_sub(rand::random::<u8>() as i128)
+            ..=random_number.saturating_add(rand::random::<u8>() as i128);
         assert!(range.contains(&random_number));
         println!("range: {:?}", range);
         println!("random_number: {:?}", random_number);

@@ -1,3 +1,5 @@
+// Modified from https://github.com/huggingface/candle/blob/main/candle-transformers/src/models/mixformer.rs to separate the model from the cache
+
 use std::collections::HashMap;
 
 use candle_core::{DType, Device, IndexOp, Module, Result, Tensor, D};
@@ -50,6 +52,22 @@ impl Config {
             n_inner: None,
             n_head: 32,
             rotary_dim: usize::min(32, 2048 / 32),
+            activation_function: Activation::Gelu,
+            layer_norm_epsilon: 1e-5,
+            tie_word_embeddings: false,
+            pad_vocab_size_multiple: 64,
+        }
+    }
+
+    pub fn v2() -> Self {
+        Self {
+            vocab_size: 51200,
+            n_positions: 2048,
+            n_embd: 2560,
+            n_layer: 32,
+            n_inner: None,
+            n_head: 32,
+            rotary_dim: usize::min(32, 2560 / 32),
             activation_function: Activation::Gelu,
             layer_norm_epsilon: 1e-5,
             tie_word_embeddings: false,
@@ -254,7 +272,7 @@ impl MHA {
     }
 
     fn forward(
-        &mut self,
+        &self,
         xs: &Tensor,
         mask: Option<&Tensor>,
         cache: Option<&mut ParallelBlockCache>,
@@ -344,7 +362,7 @@ impl ParallelBlock {
     }
 
     fn forward(
-        &mut self,
+        &self,
         xs: &Tensor,
         mask: Option<&Tensor>,
         cache: Option<&mut ParallelBlockCache>,
@@ -384,7 +402,25 @@ impl MixFormerSequentialForCausalLM {
         })
     }
 
-    pub fn forward(&mut self, xs: &Tensor, mut cache: Option<&mut PhiCache>) -> Result<Tensor> {
+    pub fn new_v2(cfg: &Config, vb: VarBuilder) -> Result<Self> {
+        let vb_head = vb.pp("lm_head");
+        let vb = vb.pp("transformer");
+        let embedding = Embedding::new(cfg, vb.pp("embd"))?;
+        let mut blocks = Vec::new();
+        for i in 0..cfg.n_layer {
+            let block = ParallelBlock::new(cfg, vb.pp("h").pp(i))?;
+            blocks.push(block)
+        }
+        let head = CausalLMHead::new(cfg, vb_head)?;
+        Ok(Self {
+            embedding,
+            blocks,
+            head,
+            span: tracing::span!(tracing::Level::TRACE, "mixformer"),
+        })
+    }
+
+    pub fn forward(&self, xs: &Tensor, mut cache: Option<&mut PhiCache>) -> Result<Tensor> {
         let _enter = self.span.enter();
         let (_b_size, seq_len) = xs.dims2()?;
         let mut xs = xs.apply(&self.embedding)?;
@@ -399,7 +435,7 @@ impl MixFormerSequentialForCausalLM {
             }
             _ => Some(get_mask(seq_len, xs.device())?),
         };
-        for (i, block) in self.blocks.iter_mut().enumerate() {
+        for (i, block) in self.blocks.iter().enumerate() {
             xs = block.forward(&xs, mask.as_ref(), cache.as_mut().map(|c| &mut c.blocks[i]))?;
         }
         xs.narrow(1, seq_len - 1, 1)?.apply(&self.head)?.squeeze(1)

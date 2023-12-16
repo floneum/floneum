@@ -17,7 +17,7 @@ use crate::InferenceSettings;
 pub struct LlamaModel {
     model: Model,
     device: Device,
-    tokenizer: Tokenizer,
+    tokenizer: Arc<Tokenizer>,
     cache: LlamaCache,
 }
 
@@ -33,23 +33,19 @@ impl SyncModel for LlamaModel {
         })
     }
 
-    fn feed_text(&mut self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Logits> {
+    fn feed_text(&self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Logits> {
         let encoded = self.tokenizer.encode(prompt, true).map_err(E::msg)?;
         let tokens = encoded.get_ids();
         self.feed_tokens(session, tokens)
     }
 
-    fn feed_tokens(
-        &mut self,
-        session: &mut Self::Session,
-        tokens: &[u32],
-    ) -> anyhow::Result<Logits> {
+    fn feed_tokens(&self, session: &mut Self::Session, tokens: &[u32]) -> anyhow::Result<Logits> {
         let first_token = session.current_tokens.is_empty();
 
         if first_token {
             session.current_tokens.extend(tokens);
             Self::forward(
-                &mut self.model,
+                &self.model,
                 &self.device,
                 &session.current_tokens,
                 0,
@@ -61,7 +57,7 @@ impl SyncModel for LlamaModel {
                 let seq_len_offset = session.current_tokens.len();
                 session.current_tokens.push(tid);
                 Self::forward(
-                    &mut self.model,
+                    &self.model,
                     &self.device,
                     &[tid],
                     seq_len_offset,
@@ -73,7 +69,7 @@ impl SyncModel for LlamaModel {
             let seq_len_offset = session.current_tokens.len();
             session.current_tokens.push(tid);
             Self::forward(
-                &mut self.model,
+                &self.model,
                 &self.device,
                 &[tid],
                 seq_len_offset,
@@ -92,14 +88,13 @@ impl SyncModel for LlamaModel {
     }
 
     fn tokenizer(&self) -> std::sync::Arc<dyn kalosm_sample::Tokenizer + Send + Sync> {
-        Arc::new(self.tokenizer.clone())
-            as std::sync::Arc<dyn kalosm_sample::Tokenizer + Send + Sync>
+        self.tokenizer.clone() as std::sync::Arc<dyn kalosm_sample::Tokenizer + Send + Sync>
     }
 }
 
 impl LlamaModel {
     fn forward(
-        model: &mut Model,
+        model: &Model,
         device: &Device,
         tokens: &[u32],
         seqlen_offset: usize,
@@ -123,7 +118,7 @@ impl LlamaModel {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         model: Model,
-        tokenizer: Tokenizer,
+        tokenizer: Arc<Tokenizer>,
         device: Device,
         cache: LlamaCache,
     ) -> Self {

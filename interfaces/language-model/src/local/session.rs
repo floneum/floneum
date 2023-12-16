@@ -101,7 +101,7 @@ impl<S: VectorSpace + Send + Sync + 'static> LocalSession<S> {
     }
 
     pub(crate) async fn infer(
-        &mut self,
+        &self,
         prompt: String,
         generation_parameters: crate::model::GenerationParameters,
     ) -> ChannelTextStream<String> {
@@ -117,7 +117,7 @@ impl<S: VectorSpace + Send + Sync + 'static> LocalSession<S> {
     }
 
     pub(crate) async fn infer_sampler(
-        &mut self,
+        &self,
         prompt: String,
         max_tokens: Option<u32>,
         stop_on: Option<&str>,

@@ -29,7 +29,7 @@ impl TryFrom<PathBuf> for PdfDocument {
 #[async_trait::async_trait]
 impl IntoDocument for PdfDocument {
     async fn into_document(self) -> anyhow::Result<Document> {
-        let file = FileOptions::cached().open(&self.path).unwrap();
+        let file = FileOptions::cached().open(self.path).unwrap();
         let resolver = file.resolver();
         let mut title = String::new();
         let mut text = String::new();
@@ -40,17 +40,15 @@ impl IntoDocument for PdfDocument {
             }
         }
 
-        for (_, page) in file.pages().enumerate() {
-            if let Ok(page) = page {
-                if let Ok(flow) = pdf_text::run(&file, &page, &resolver) {
-                    for run in flow.runs {
-                        for line in run.lines {
-                            let _ = text.write_fmt(format_args!(
-                                "{}",
-                                line.words.iter().map(|w| &w.text).format(" ")
-                            ));
-                            text += "\n\n";
-                        }
+        for page in file.pages().flatten() {
+            if let Ok(flow) = pdf_text::run(&file, &page, &resolver) {
+                for run in flow.runs {
+                    for line in run.lines {
+                        let _ = text.write_fmt(format_args!(
+                            "{}",
+                            line.words.iter().map(|w| &w.text).format(" ")
+                        ));
+                        text += "\n\n";
                     }
                 }
             }

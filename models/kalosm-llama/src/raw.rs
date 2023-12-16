@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::RwLock;
 
 use candle_core::quantized::QTensor;
 use candle_core::quantized::{ggml_file, gguf_file};
@@ -108,7 +109,7 @@ impl LayerWeights {
     }
 
     fn forward_attn(
-        &mut self,
+        &self,
         x: &Tensor,
         mask: &Tensor,
         index_pos: usize,
@@ -190,15 +191,29 @@ impl LayerWeights {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Model {
     tok_embeddings: Embedding,
     pub(crate) layers: Vec<LayerWeights>,
     norm: RmsNorm,
     output: QMatMul,
-    masks: HashMap<usize, Tensor>,
+    masks: RwLock<HashMap<usize, Tensor>>,
     span: tracing::Span,
     span_output: tracing::Span,
+}
+
+impl Clone for Model {
+    fn clone(&self) -> Self {
+        Self {
+            tok_embeddings: self.tok_embeddings.clone(),
+            layers: self.layers.clone(),
+            norm: self.norm.clone(),
+            output: self.output.clone(),
+            masks: RwLock::new(HashMap::new()),
+            span: tracing::Span::none(),
+            span_output: tracing::Span::none(),
+        }
+    }
 }
 
 fn precomput_freqs_cis(head_dim: usize, freq_base: f32) -> Result<(Tensor, Tensor)> {
@@ -267,7 +282,7 @@ impl Model {
             layers,
             norm,
             output: QMatMul::from_qtensor(output)?,
-            masks: HashMap::new(),
+            masks: HashMap::new().into(),
             span,
             span_output,
         })
@@ -343,27 +358,31 @@ impl Model {
             layers,
             norm,
             output: QMatMul::from_qtensor(output)?,
-            masks: HashMap::new(),
+            masks: RwLock::new(HashMap::new()),
             span,
             span_output,
         })
     }
 
-    fn mask(&mut self, t: usize) -> Result<Tensor> {
-        if let Some(mask) = self.masks.get(&t) {
-            Ok(mask.clone())
+    fn mask(&self, t: usize) -> Result<Tensor> {
+        if let Some(mask) = {
+            let masks = self.masks.read().unwrap();
+            masks.get(&t).cloned()
+        } {
+            Ok(mask)
         } else {
             let mask: Vec<_> = (0..t)
                 .flat_map(|i| (0..t).map(move |j| u8::from(j > i)))
                 .collect();
             let mask = Tensor::from_slice(&mask, (t, t), &Device::Cpu)?;
-            self.masks.insert(t, mask.clone());
+            let mut masks = self.masks.write().unwrap();
+            masks.insert(t, mask.clone());
             Ok(mask)
         }
     }
 
     pub fn forward(
-        &mut self,
+        &self,
         x: &Tensor,
         index_pos: usize,
         mut cache: Option<&mut LlamaCache>,
@@ -372,7 +391,7 @@ impl Model {
         let mask = self.mask(seq_len)?;
         let _enter = self.span.enter();
         let mut layer_in = self.tok_embeddings.forward(x)?;
-        for (i, layer) in self.layers.iter_mut().enumerate() {
+        for (i, layer) in self.layers.iter().enumerate() {
             let x = layer_in;
             let residual = &x;
             let x = layer.attention_norm.forward(&x)?;

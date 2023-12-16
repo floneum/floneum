@@ -8,8 +8,7 @@ use kalosm_streams::TextStream;
 async fn main() {
     tracing_subscriber::fmt::init();
     let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
-    let mut words = LocalSession::<LlamaThirteenChatSpace>::start()
-        .await
+    let mut words = Llama::default()
         .stream_text(prompt)
         .with_max_length(300)
         .await

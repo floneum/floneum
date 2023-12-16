@@ -1,11 +1,11 @@
 use kalosm::{language::*, *};
-use language::kalosm_sample::*;
 
 #[tokio::main]
 async fn main() {
+    let description = prompt_input("What is your character like? ").unwrap();
+    let character_name = prompt_input("What is your character's name? ").unwrap();
     let character_description =
-        "The assistant will respond like a cute cat named Kittens. The assistant will never reveal that it is an AI or assistant.";
-    let character_name = "Kittens";
+        format!("{description} The assistant will never reveal that it is an AI or assistant.");
 
     let mut model = Llama::new_chat();
     let constraints = LiteralParser::new(format!("(Responding as {}) ", character_name))

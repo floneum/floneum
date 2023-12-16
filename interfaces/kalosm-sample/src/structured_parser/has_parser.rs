@@ -17,7 +17,7 @@ pub trait HasParser {
 }
 
 macro_rules! int_parser {
-    ($ty:ident, $num:ty) => {
+    ($ty:ident, $num:ty, $test:ident) => {
         #[doc = "A parser for `"]
         #[doc = stringify!($num)]
         #[doc = "`."]
@@ -29,7 +29,7 @@ macro_rules! int_parser {
         impl Default for $ty {
             fn default() -> Self {
                 Self {
-                    parser: IntegerParser::new((<$num>::MIN as i64)..=(<$num>::MAX as i64)),
+                    parser: IntegerParser::new((<$num>::MIN as i128)..=(<$num>::MAX as i128)),
                 }
             }
         }
@@ -67,19 +67,36 @@ macro_rules! int_parser {
                 Default::default()
             }
         }
+
+        #[test]
+        fn $test() {
+            let parser = <$num as HasParser>::new_parser();
+            let state = <$num as HasParser>::create_parser_state();
+            for _ in 0..100 {
+                let input = rand::random::<$num>();
+                let input_str = input.to_string() + "\n";
+                println!("input: {:?}", input_str);
+                let result = parser.parse(&state, input_str.as_bytes());
+                assert_eq!(
+                    result,
+                    Ok(ParseResult::Finished {
+                        result: input,
+                        remaining: b"\n",
+                    })
+                );
+            }
+        }
     };
 }
 
-int_parser!(U8Parser, u8);
-int_parser!(U16Parser, u16);
-int_parser!(U32Parser, u32);
-int_parser!(U64Parser, u64);
-int_parser!(U128Parser, u128);
-int_parser!(I8Parser, i8);
-int_parser!(I16Parser, i16);
-int_parser!(I32Parser, i32);
-int_parser!(I64Parser, i64);
-int_parser!(I128Parser, i128);
+int_parser!(U8Parser, u8, test_u8);
+int_parser!(U16Parser, u16, test_u16);
+int_parser!(U32Parser, u32, test_u32);
+int_parser!(U64Parser, u64, test_u64);
+int_parser!(I8Parser, i8, test_i8);
+int_parser!(I16Parser, i16, test_i16);
+int_parser!(I32Parser, i32, test_i32);
+int_parser!(I64Parser, i64, test_i64);
 
 impl HasParser for String {
     type Parser = StringParser<fn(char) -> bool>;

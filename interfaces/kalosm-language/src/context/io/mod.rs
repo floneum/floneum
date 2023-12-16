@@ -9,8 +9,8 @@ mod html;
 pub use html::*;
 mod md;
 pub use md::*;
-// mod pdf;
-// pub use pdf::*;
+mod pdf;
+pub use pdf::*;
 mod txt;
 pub use txt::*;
 
@@ -35,8 +35,8 @@ pub enum FsDocument {
     Html(HtmlDocument),
     /// A markdown document.
     Md(MdDocument),
-    // /// A pdf document.
-    // Pdf(PdfDocument),
+    /// A pdf document.
+    Pdf(PdfDocument),
     /// A text document.
     Txt(TextDocument),
 }
@@ -52,7 +52,7 @@ impl TryFrom<PathBuf> for FsDocument {
             "docx" => Ok(Self::Docx(DocxDocument::try_from(path)?)),
             "html" => Ok(Self::Html(HtmlDocument::try_from(path)?)),
             "md" => Ok(Self::Md(MdDocument::try_from(path)?)),
-            // "pdf" => Ok(Self::Pdf(PdfDocument::try_from(path)?)),
+            "pdf" => Ok(Self::Pdf(PdfDocument::try_from(path)?)),
             "txt" => Ok(Self::Txt(TextDocument::try_from(path)?)),
             _ => Err(anyhow::anyhow!("Path is not a supported file type")),
         }
@@ -66,7 +66,7 @@ impl IntoDocument for FsDocument {
             Self::Docx(docx) => docx.into_document().await,
             Self::Html(html) => html.into_document().await,
             Self::Md(md) => md.into_document().await,
-            // Self::Pdf(pdf) => pdf.into_document().await,
+            Self::Pdf(pdf) => pdf.into_document().await,
             Self::Txt(txt) => txt.into_document().await,
         }
     }

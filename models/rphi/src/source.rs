@@ -7,6 +7,7 @@ pub struct PhiSource {
     pub(crate) model_file: String,
     pub(crate) tokenizer_file: String,
     pub(crate) phi_config: crate::Config,
+    pub(crate) phi2: bool,
 }
 
 impl PhiSource {
@@ -18,6 +19,7 @@ impl PhiSource {
             model_file: "model-q4k.gguf".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             phi_config: crate::Config::v1_5(),
+            phi2: false,
         }
     }
 
@@ -35,6 +37,16 @@ impl PhiSource {
             .with_model_file("model-q4k.gguf".to_string())
             .with_tokenizer_file("tokenizer.json".to_string())
             .with_phi_config(crate::Config::v1_5())
+    }
+
+    /// The phi-2 model.
+    pub fn v2() -> Self {
+        let mut myself = Self::new("lmz/candle-quantized-phi".to_string())
+            .with_model_file("model-v2-q4k.gguf".to_string())
+            .with_tokenizer_file("tokenizer.json".to_string())
+            .with_phi_config(crate::Config::v2());
+        myself.phi2 = true;
+        myself
     }
 
     /// The puffin model based on phi-1.5.

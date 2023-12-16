@@ -475,7 +475,7 @@ impl CreateParserState for StructureParser {
             StructureParser::Num { min, max, integer } => {
                 if *integer {
                     StructureParserState::NumInt(
-                        IntegerParser::new(*min as i64..=*max as i64).create_parser_state(),
+                        IntegerParser::new(*min as i128..=*max as i128).create_parser_state(),
                     )
                 } else {
                     StructureParserState::Num(FloatParser::new(*min..=*max).create_parser_state())
@@ -528,7 +528,7 @@ impl Parser for StructureParser {
                     integer: true,
                 },
                 StructureParserState::NumInt(int),
-            ) => IntegerParser::new(*min as i64..=*max as i64)
+            ) => IntegerParser::new(*min as i128..=*max as i128)
                 .parse(int, input)
                 .map(|result| result.map(|_| ()).map_state(StructureParserState::NumInt)),
             (StructureParser::Either { first, second }, StructureParserState::Either(state)) => {

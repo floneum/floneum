@@ -1,10 +1,8 @@
 use async_openai::types::CreateEmbeddingRequestArgs;
-use async_openai::{
-    types::{CompletionResponseStream, CreateCompletionRequestArgs},
-    Client,
-};
-use futures_util::Stream;
+use async_openai::{types::CreateCompletionRequestArgs, Client};
+use futures_util::StreamExt;
 use kalosm_sample::Tokenizer;
+use kalosm_streams::ChannelTextStream;
 use std::sync::Arc;
 
 use crate::{CreateModel, Embedder, Embedding, GenerationParameters, VectorSpace};
@@ -84,7 +82,7 @@ macro_rules! openai_model {
 
         #[async_trait::async_trait]
         impl crate::model::Model for $ty {
-            type TextStream = MappedResponseStream;
+            type TextStream = ChannelTextStream<String>;
             type SyncModel = crate::SyncModelNotSupported;
 
             fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
@@ -92,7 +90,7 @@ macro_rules! openai_model {
             }
 
             async fn stream_text_inner(
-                &mut self,
+                &self,
                 prompt: &str,
                 generation_parameters: GenerationParameters,
             ) -> anyhow::Result<Self::TextStream> {
@@ -113,9 +111,30 @@ macro_rules! openai_model {
                     .max_tokens(generation_parameters.max_length as u16)
                     .build()?;
 
-                Ok(MappedResponseStream {
-                    inner: self.client.completions().create_stream(request).await?,
-                })
+                let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+
+                let mut stream = self.client.completions().create_stream(request).await?;
+
+                tokio::spawn(async move {
+                    while let Some(response) = stream.next().await {
+                        match response {
+                            Ok(response) => {
+                                let text = response.choices[0].text.clone();
+                                if tx.send(text).is_err() {
+                                    break;
+                                }
+                            }
+                            Err(e) => {
+                                log::error!("Error in OpenAI stream: {}", e);
+                                break;
+                            }
+                        }
+                    }
+
+                    Ok::<(), anyhow::Error>(())
+                });
+
+                Ok(rx.into())
             }
         }
     };
@@ -123,39 +142,6 @@ macro_rules! openai_model {
 
 openai_model!(Gpt3_5, Gpt3_5Builder, "gpt-3.5-turbo");
 openai_model!(Gpt4, Gpt4Builder, "text-davinci-003");
-
-/// A stream of text from OpenAI's API.
-#[pin_project::pin_project]
-pub struct MappedResponseStream {
-    #[pin]
-    inner: CompletionResponseStream,
-}
-
-impl Stream for MappedResponseStream {
-    type Item = String;
-
-    fn poll_next(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        let this = self.project();
-        this.inner.poll_next(cx).map(|opt| {
-            opt.and_then(|res| match res {
-                Ok(res) => Some(
-                    res.choices
-                        .iter()
-                        .map(|c| c.text.clone())
-                        .collect::<Vec<_>>()
-                        .join(""),
-                ),
-                Err(e) => {
-                    tracing::error!("Error from OpenAI: {}", e);
-                    None
-                }
-            })
-        })
-    }
-}
 
 /// An embedder that uses OpenAI's API for the Ada embedding model.
 #[derive(Debug)]
