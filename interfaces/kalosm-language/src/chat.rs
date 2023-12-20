@@ -27,6 +27,7 @@ pub fn prompt_input(prompt: impl Display) -> Result<String> {
     std::io::stdout().flush()?;
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;
+    input.pop();
     Ok(input)
 }
 
