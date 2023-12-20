@@ -71,7 +71,7 @@ async fn main() {
         .repeat(5..=5)
         .then(LiteralParser::from("\n"));
     let stream = llm.stream_structured_text(prompt, validator).await.unwrap();
-    
+
     println!("{:#?}", stream.result().await);
 
     println!("\n\n# without constraints");
