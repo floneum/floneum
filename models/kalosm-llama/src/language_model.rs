@@ -4,7 +4,7 @@ pub use crate::Llama;
 use crate::LlamaModel;
 use crate::{InferenceSettings, Task};
 use kalosm_language_model::{CreateModel, GenerationParameters, Model, VectorSpace};
-use kalosm_streams::ChannelTextStream;
+use kalosm_streams::text_stream::ChannelTextStream;
 
 #[async_trait::async_trait]
 impl CreateModel for Llama {

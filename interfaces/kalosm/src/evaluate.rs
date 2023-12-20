@@ -7,8 +7,8 @@ use std::fmt::Display;
 use std::ops::RangeInclusive;
 
 use async_trait::async_trait;
-use kalosm_language::Bert;
-use kalosm_language::Embedder;
+use kalosm_language::prelude::Bert;
+use kalosm_language::prelude::Embedder;
 
 /// A metric is a way to compare two pieces of data. It is used to evaluate the performance of a model.
 #[async_trait]

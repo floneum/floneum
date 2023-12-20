@@ -3,7 +3,7 @@ use crate::InferenceSettings;
 pub use crate::Phi;
 use crate::Task;
 use kalosm_language_model::*;
-use kalosm_streams::ChannelTextStream;
+use kalosm_streams::text_stream::ChannelTextStream;
 use std::sync::Arc;
 use std::sync::Mutex;
 

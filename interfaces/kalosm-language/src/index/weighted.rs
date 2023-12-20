@@ -1,7 +1,7 @@
 use crate::index::DocumentSnippetRef;
 use crate::index::IntoDocuments;
 use crate::index::SearchIndex;
-use crate::IntoDocument;
+use crate::prelude::IntoDocument;
 
 /// A weighted index that combines two indexes with a weight. This allows you to combine two indexes with different strategies like the [`crate::index::keyword::FuzzySearchIndex`] and a [`crate::index::vector::DocumentDatabase`].
 pub struct WeightedIndex<First, Second> {

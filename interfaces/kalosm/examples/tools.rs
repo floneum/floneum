@@ -1,5 +1,4 @@
-use kalosm_language::*;
-use std::io::Write;
+use kalosm::language::*;
 
 #[tokio::main]
 async fn main() {
@@ -17,10 +16,7 @@ async fn main() {
     document_database.extend(documents).await.unwrap();
     println!("Loaded local documents.");
 
-    print!("Question: ");
-    std::io::stdout().flush().unwrap();
-    let mut question = String::new();
-    std::io::stdin().read_line(&mut question).unwrap();
+    let question = prompt_input("Question: ").unwrap();
 
     let mut tools = ToolManager::default().with_tool(DocumentSearchTool::new(document_database, 5));
     llm.run_sync(|llm| {

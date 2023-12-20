@@ -1,3 +1,5 @@
+//! Streams for time series data.
+
 use std::collections::VecDeque;
 
 use futures_util::Stream;

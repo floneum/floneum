@@ -8,9 +8,9 @@ repository = "https://github.com/floneum/floneum"
 authors = ["Evan Almloff"]
 
 [dependencies]
-kalosm-language = { default-features = false, workspace = true }
-kalosm-sound.workspace = true
-kalosm-vision.workspace = true
+kalosm-language = { default-features = false, workspace = true, optional = true }
+kalosm-sound = { workspace = true, optional = true }
+kalosm-vision = { workspace = true, optional = true }
 kalosm-streams.workspace = true
 llm-samplers.workspace = true
 tokio = { version = "1.32.0", features = ["full"] }
@@ -30,7 +30,10 @@ axum = "0.7.2"
 tracing-subscriber = "0.2"
 
 [features]
-default = ["llamacpp"]
+default = ["llamacpp", "language", "sound", "vision"]
 llamacpp = ["kalosm-language/llamacpp"]
 metal = ["kalosm-language/metal"]
 cublas = ["kalosm-language/cublas"]
+language = ["kalosm-language"]
+sound = ["kalosm-sound"]
+vision = ["kalosm-vision"]

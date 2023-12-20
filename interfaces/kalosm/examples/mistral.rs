@@ -1,8 +1,6 @@
 use std::io::Write;
 
-use futures_util::stream::StreamExt;
-use kalosm_language::*;
-use kalosm_streams::TextStream;
+use kalosm::language::*;
 
 #[tokio::main]
 async fn main() {

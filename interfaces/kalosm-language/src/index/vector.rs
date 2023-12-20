@@ -6,9 +6,9 @@ use std::ops::Range;
 use kalosm_language_model::*;
 use slab::Slab;
 
-use crate::{context::Document, vector_db::VectorDB};
+use crate::context::Document;
 
-use super::{DocumentId, DocumentSnippet, DocumentSnippetRef, SearchIndex};
+use super::{DocumentId, DocumentSnippet, DocumentSnippetRef, SearchIndex, VectorDB};
 
 /// A strategy for chunking a document into smaller pieces.
 ///

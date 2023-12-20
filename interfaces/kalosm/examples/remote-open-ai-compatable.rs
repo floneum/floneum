@@ -3,11 +3,7 @@
 //!
 //! If you would like to self host a llama model, you can use a tool like litellm to host the model: https://github.com/BerriAI/litellm#openai-proxy---docs
 
-use std::io::Write;
-
-use futures_util::stream::StreamExt;
-use kalosm_language::*;
-use kalosm_streams::TextStream;
+use kalosm::language::*;
 
 #[tokio::main]
 async fn main() {
@@ -19,10 +15,5 @@ async fn main() {
     print!("{}", prompt);
 
     let stream = llm.stream_text(prompt).with_max_length(300).await.unwrap();
-
-    let mut sentences = stream.words();
-    while let Some(text) = sentences.next().await {
-        print!("{}", text);
-        std::io::stdout().flush().unwrap();
-    }
+    stream.to_std_out().await.unwrap();
 }

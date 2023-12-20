@@ -1,7 +1,8 @@
+use crate::context::IntoDocuments;
 use crate::context::SearchQuery;
-use crate::index::IntoDocuments;
 use crate::tool::Tool;
-use crate::OneLine;
+
+use super::OneLine;
 
 /// A tool that can search the web
 pub struct WebSearchTool {

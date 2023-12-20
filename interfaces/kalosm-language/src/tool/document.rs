@@ -1,7 +1,11 @@
 use kalosm_language_model::{Embedder, VectorSpace};
 
-use crate::tool::Tool;
-use crate::{DocumentDatabase, OneLine, SearchIndex};
+use crate::{
+    prelude::{DocumentDatabase, SearchIndex},
+    tool::Tool,
+};
+
+use super::OneLine;
 
 /// A tool that can search the web
 pub struct DocumentSearchTool<S: VectorSpace + Send + Sync + 'static, M: Embedder<S>> {

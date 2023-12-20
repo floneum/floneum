@@ -5,8 +5,5 @@
 #![warn(missing_docs)]
 
 mod sender;
-pub use sender::*;
-mod text_stream;
-pub use text_stream::*;
-mod timed_stream;
-pub use timed_stream::*;
+pub mod text_stream;
+pub mod timed_stream;
