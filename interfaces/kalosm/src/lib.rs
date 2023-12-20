@@ -2,7 +2,9 @@
 #![doc = include_str!("../README.md")]
 
 pub use futures_util::StreamExt as _;
+pub use kalosm_streams::timed_stream::*;
 
+#[cfg(feature = "language")]
 pub mod language {
     //! Language processing utilities for the Kalosm framework.
     pub use kalosm_language::chat::*;
@@ -17,8 +19,9 @@ pub mod language {
     pub use kalosm_language::tool::*;
     pub use kalosm_streams::text_stream::*;
 }
+#[cfg(feature = "sound")]
 pub use kalosm_sound as audio;
-pub use kalosm_streams::timed_stream::*;
+#[cfg(feature = "vision")]
 pub use kalosm_vision as vision;
 
 mod evaluate;
