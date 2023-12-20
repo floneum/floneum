@@ -1,6 +1,4 @@
-use futures_util::StreamExt;
-use kalosm_language::*;
-use std::io::Write;
+use kalosm::language::*;
 
 #[tokio::main]
 async fn main() {
@@ -11,10 +9,7 @@ async fn main() {
     fuzzy.extend(nyt).await.unwrap();
 
     loop {
-        print!("Query: ");
-        std::io::stdout().flush().unwrap();
-        let mut user_question = String::new();
-        std::io::stdin().read_line(&mut user_question).unwrap();
+        let user_question = prompt_input("Query: ").unwrap();
         let context = fuzzy.search(&user_question, 5).await;
 
         let llm = Llama::new_chat();
@@ -35,11 +30,8 @@ async fn main() {
 "
         );
 
-        let mut stream = llm.stream_text(&prompt).with_max_length(300).await.unwrap();
+        let stream = llm.stream_text(&prompt).with_max_length(300).await.unwrap();
 
-        while let Some(text) = stream.next().await {
-            print!("{}", text);
-            std::io::stdout().flush().unwrap();
-        }
+        stream.to_std_out().await.unwrap();
     }
 }

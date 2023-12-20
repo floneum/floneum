@@ -1,4 +1,4 @@
-use kalosm_language::*;
+use kalosm::language::*;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;

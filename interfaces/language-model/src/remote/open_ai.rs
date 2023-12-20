@@ -2,7 +2,7 @@ use async_openai::types::CreateEmbeddingRequestArgs;
 use async_openai::{types::CreateCompletionRequestArgs, Client};
 use futures_util::StreamExt;
 use kalosm_sample::Tokenizer;
-use kalosm_streams::ChannelTextStream;
+use kalosm_streams::text_stream::ChannelTextStream;
 use std::sync::Arc;
 
 use crate::{CreateModel, Embedder, Embedding, GenerationParameters, VectorSpace};

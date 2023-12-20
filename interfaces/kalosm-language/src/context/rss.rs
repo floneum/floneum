@@ -1,9 +1,7 @@
 use rss::Channel;
 use url::Url;
 
-use crate::index::IntoDocuments;
-
-use super::document::Document;
+use super::document::{Document, IntoDocuments};
 
 /// A RSS feed that can be used to add documents to a search index.
 ///

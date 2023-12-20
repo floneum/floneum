@@ -1,4 +1,6 @@
-use kalosm_language::Session;
+//! A chat interface that builds on top of [`kalosm_language_model::ChatModel`]
+
+use kalosm_language_model::Session;
 use std::{
     fmt::Display,
     path::PathBuf,
@@ -6,11 +8,9 @@ use std::{
 };
 
 use anyhow::Result;
-use kalosm_language::{
-    kalosm_sample::{ArcParser, CreateParserState, ParserExt},
-    ChatModel, GenerationParameters, ModelExt, SyncModel, SyncModelExt,
-};
-use kalosm_streams::ChannelTextStream;
+use kalosm_language_model::{ChatModel, GenerationParameters, ModelExt, SyncModel, SyncModelExt};
+use kalosm_sample::{ArcParser, CreateParserState, ParserExt};
+use kalosm_streams::text_stream::ChannelTextStream;
 use llm_samplers::types::Sampler;
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -197,7 +197,7 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
                                     .unwrap_or(&tok)
                                     .to_string();
                                 bot_response += &tok;
-                                Ok(kalosm_language::ModelFeedback::Continue)
+                                Ok(kalosm_language_model::ModelFeedback::Continue)
                             };
                             model.stream_text_with_sampler(
                                 &mut self.session,
@@ -249,7 +249,7 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
                             .to_string();
                         bot_response += &tok;
                         stream.send(tok)?;
-                        Ok(kalosm_language::ModelFeedback::Continue)
+                        Ok(kalosm_language_model::ModelFeedback::Continue)
                     };
                     model.stream_text_with_sampler(
                         &mut self.session,
@@ -301,7 +301,7 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
 /// A builder for [`Chat`].
 pub struct ChatBuilder<'a, M: ChatModel> {
     model: &'a mut M,
-    session: Option<<M::SyncModel as kalosm_language::SyncModel>::Session>,
+    session: Option<<M::SyncModel as kalosm_language_model::SyncModel>::Session>,
     system_prompt: String,
     sampler: Arc<Mutex<dyn Sampler + Send + Sync>>,
     map_user_message_prompt: Option<UserMessageMapping<M::SyncModel>>,
@@ -421,7 +421,7 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
     /// Starts the chat instance with the given session. This can be useful for resuming a chat session.
     pub fn with_session(
         mut self,
-        session: <M::SyncModel as kalosm_language::SyncModel>::Session,
+        session: <M::SyncModel as kalosm_language_model::SyncModel>::Session,
     ) -> Self {
         self.session = Some(session);
         self
@@ -429,8 +429,9 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
 
     /// Starts the chat instance with a session from the given path. This can be useful for resuming a chat session.
     pub fn with_session_path(self, path: impl AsRef<std::path::Path>) -> anyhow::Result<Self> {
-        Ok(self
-            .with_session(<M::SyncModel as kalosm_language::SyncModel>::Session::load_from(path)?))
+        Ok(self.with_session(
+            <M::SyncModel as kalosm_language_model::SyncModel>::Session::load_from(path)?,
+        ))
     }
 
     /// Set the initial history of the chat. Each message in the original history will be added to the chat history, and the model will be fed the user messages.

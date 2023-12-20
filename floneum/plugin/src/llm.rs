@@ -1,7 +1,5 @@
 use crate::host::State;
-use crate::llm::kalosm_sample::StructuredSampler;
 use crate::plugins::main;
-use kalosm::language::Model as _;
 
 use crate::plugins::main::types::{Embedding, EmbeddingModel, Model, Structure};
 

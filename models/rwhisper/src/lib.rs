@@ -35,7 +35,7 @@
 #![warn(missing_docs)]
 
 use cpal::FromSample;
-use kalosm_streams::ChannelTextStream;
+use kalosm_streams::text_stream::ChannelTextStream;
 use model::WhisperInner;
 use rodio::{source::UniformSourceIterator, Source};
 use std::fmt::Display;

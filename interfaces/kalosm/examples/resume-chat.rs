@@ -1,11 +1,9 @@
-use std::path::PathBuf;
-
-use kalosm::{language::*, *};
+use kalosm::language::*;
 
 #[tokio::main]
 async fn main() {
     let mut model = Llama::new_chat();
-    let save_path = PathBuf::from("./chat.llama");
+    let save_path = std::path::PathBuf::from("./chat.llama");
     let mut chat = if save_path.exists() {
         Chat::builder(&mut model)
             .with_session_path(&save_path)

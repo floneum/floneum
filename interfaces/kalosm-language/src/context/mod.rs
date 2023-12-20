@@ -1,3 +1,5 @@
+//! Context for language models to consume.
+
 mod document;
 pub use document::*;
 mod io;

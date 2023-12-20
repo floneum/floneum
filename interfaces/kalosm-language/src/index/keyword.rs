@@ -1,9 +1,10 @@
-use crate::IntoDocument;
 use std::borrow::Cow;
 use tantivy::collector::TopDocs;
 use tantivy::query::QueryParser;
 use tantivy::schema::*;
 use tantivy::{doc, Index};
+
+use crate::prelude::IntoDocument;
 
 /// A fuzzy keyword search index that can be used to search for documents.
 ///

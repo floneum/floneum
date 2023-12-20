@@ -1,4 +1,5 @@
-use crate::{Document, IntoDocument};
+//! The index module contains different types of search indexes that can be used to search for [`crate::context::Document`]s created from [`crate::context::IntoDocument`] or [`crate::context::IntoDocuments`]
+
 use kalosm_language_model::*;
 use std::{
     borrow::Cow,
@@ -12,28 +13,10 @@ mod vector;
 pub use vector::*;
 mod weighted;
 pub use weighted::*;
+mod vector_db;
+pub use vector_db::*;
 
-/// A document that can be added to a search index.
-#[async_trait::async_trait]
-pub trait IntoDocuments {
-    /// Convert the document into a [`Document`]
-    async fn into_documents(self) -> anyhow::Result<Vec<Document>>;
-}
-
-#[async_trait::async_trait]
-impl<T: IntoDocument + Send + Sync, I> IntoDocuments for I
-where
-    I: IntoIterator<Item = T> + Send + Sync,
-    <I as IntoIterator>::IntoIter: Send + Sync,
-{
-    async fn into_documents(self) -> anyhow::Result<Vec<Document>> {
-        let mut documents = Vec::new();
-        for document in self {
-            documents.push(document.into_document().await?);
-        }
-        Ok(documents)
-    }
-}
+use crate::prelude::{IntoDocument, IntoDocuments};
 
 /// A search index that can be used to search for documents.
 #[async_trait::async_trait]

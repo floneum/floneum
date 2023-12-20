@@ -1,3 +1,5 @@
+//! Tools that can be used by [`kalosm_language_model::Model`]'s to perform actions.
+
 mod search;
 use std::{
     any::Any,

@@ -1,5 +1,4 @@
-use kalosm_language::*;
-use std::io::Write;
+use kalosm::language::*;
 
 #[tokio::main]
 async fn main() {
@@ -20,10 +19,7 @@ async fn main() {
     fuzzy.extend(nyt).await.unwrap();
 
     loop {
-        print!("Query: ");
-        std::io::stdout().flush().unwrap();
-        let mut user_question = String::new();
-        std::io::stdin().read_line(&mut user_question).unwrap();
+        let user_question = prompt_input("Query: ").unwrap();
 
         println!(
             "vector: {:?}",

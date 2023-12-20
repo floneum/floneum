@@ -1,6 +1,4 @@
-use futures_util::stream::StreamExt;
-use kalosm_language::*;
-use std::io::Write;
+use kalosm::language::*;
 
 #[tokio::main]
 async fn main() {
@@ -72,21 +70,13 @@ async fn main() {
         .then(LiteralParser::from(", "))
         .repeat(5..=5)
         .then(LiteralParser::from("\n"));
-    let mut words = llm.stream_structured_text(prompt, validator).await.unwrap();
-
-    while let Some(text) = words.next().await {
-        print!("{}", text);
-        std::io::stdout().flush().unwrap();
-    }
-
-    println!("{:#?}", words.result().await);
+    let stream = llm.stream_structured_text(prompt, validator).await.unwrap();
+    
+    println!("{:#?}", stream.result().await);
 
     println!("\n\n# without constraints");
     print!("{}", prompt);
 
-    let mut words = llm.stream_text(prompt).with_max_length(100).await.unwrap();
-    while let Some(text) = words.next().await {
-        print!("{}", text);
-        std::io::stdout().flush().unwrap();
-    }
+    let stream = llm.stream_text(prompt).with_max_length(100).await.unwrap();
+    stream.to_std_out().await.unwrap();
 }

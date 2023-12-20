@@ -3,8 +3,10 @@
 use rand::seq::SliceRandom;
 use url::Url;
 
-use super::{document::Document, page::get_article};
-use crate::index::IntoDocuments;
+use super::{
+    document::{Document, IntoDocuments},
+    page::get_article,
+};
 
 /// A search query that can be used to search for documents on the web.
 ///

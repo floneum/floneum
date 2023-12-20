@@ -1,3 +1,5 @@
+//! Streams for text data.
+
 use pin_project::pin_project;
 use std::{
     collections::VecDeque,
@@ -5,6 +7,7 @@ use std::{
     task::{Context, Poll},
 };
 
+pub use crate::sender::*;
 use futures_util::Stream;
 
 /// A stream of text. This is automatically implemented for all streams of something that acts like a string (String, &str).

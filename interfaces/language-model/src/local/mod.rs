@@ -1,7 +1,7 @@
 pub use crate::local::session::*;
 use crate::{embedding::Embedding, model::*};
 use kalosm_sample::Tokenizer;
-use kalosm_streams::ChannelTextStream;
+use kalosm_streams::text_stream::ChannelTextStream;
 use llm::InferenceSessionConfig;
 use llm_samplers::prelude::Sampler;
 use std::sync::Arc;
