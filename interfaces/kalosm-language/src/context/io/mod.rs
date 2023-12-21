@@ -10,7 +10,7 @@ pub use html::*;
 mod md;
 pub use md::*;
 mod pdf;
-pub use pdf::*;
+pub use self::pdf::*;
 mod txt;
 pub use txt::*;
 
