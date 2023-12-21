@@ -7,17 +7,15 @@ async fn main() {
     let character_description =
         format!("{description} The assistant will never reveal that it is an AI or assistant.");
 
-    let mut model = Llama::new_chat();
+    let mut model = Llama::builder()
+        .with_source(LlamaSource::mistral_7b_instruct_2())
+        .build()
+        .unwrap();
     let constraints = LiteralParser::new(format!("(Responding as {}) ", character_name))
         .then(StopOn::new(model.end_assistant_marker().to_string()));
     let mut chat = Chat::builder(&mut model)
         .with_system_prompt(character_description)
         .constrain_response(move |_, _| constraints.clone())
-        .map_bot_response(move |response, _| {
-            response
-                .trim_start_matches(&format!("(Responding as {}) ", character_name))
-                .trim()
-        })
         .build();
 
     loop {
