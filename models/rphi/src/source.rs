@@ -83,11 +83,11 @@ impl PhiSource {
             .with_tokenizer_file("tokenizer.json".to_string())
             .with_phi_config(crate::Config::v2())
             .with_chat_markers(ChatMarkers {
-                user_marker: Some("<|im_start|>user\n"),
+                user_marker: Some("<|im_start|>user"),
                 end_user_marker: Some("<|im_end|>"),
-                assistant_marker: Some("<|im_start|>assistant\n"),
+                assistant_marker: Some("<|im_start|>assistant"),
                 end_assistant_marker: Some("<|im_end|>"),
-                system_prompt_marker: Some("<|im_start|>system\n"),
+                system_prompt_marker: Some("<|im_start|>system"),
                 end_system_marker: Some("<|im_end|>"),
             });
         myself.phi2 = true;
