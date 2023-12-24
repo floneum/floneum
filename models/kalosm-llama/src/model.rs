@@ -139,7 +139,6 @@ impl LlamaModel {
         let InferenceSettings {
             prompt,
             sample_len,
-
             stop_on,
         } = settings;
 

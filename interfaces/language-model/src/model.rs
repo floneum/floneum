@@ -649,33 +649,62 @@ pub trait SyncModelExt: SyncModel {
         let mut logits = self.feed_tokens(session, &tokens)?;
         let mut tokens_generated = 0;
         // This stores a buffer of text that has been generated to check against the stop_on string. It should never be longer than the stop_on string.
-        let mut text_matching_buffer = String::new();
+        let mut queued_text_matching_stop_on = String::new();
+        let stop_on_lowercase = stop_on.map(|s| s.to_lowercase());
+        let stop_on_lowercase = stop_on_lowercase.as_deref();
 
-        loop {
+        'generate: loop {
             let new_token = text_stream.sample_token(&mut sampler, logits, stop_on)?;
             if let Some(mut new_text) = text_stream.next_token(new_token)? {
-                if let Some(stop_on) = stop_on {
-                    text_matching_buffer.push_str(&new_text);
-                    // Check if the string matches the stop_on string
-                    if text_matching_buffer.contains(stop_on) {
-                        // If it does, only send the text up and including the stop_on string
-                        if new_text.len() > stop_on.len() {
-                            new_text = new_text.strip_suffix(stop_on).unwrap().to_string();
-                            on_token(new_text)?;
-                        }
-                        // And stop the generation
+                if let Some(stop_on) = stop_on_lowercase {
+                    let lowercase = new_text.to_lowercase();
+
+                    // Check if the string ends with the start of the stop_on string
+                    let mut before_stop_on = None;
+                    let remaining_stop_on = stop_on
+                        .strip_prefix(&queued_text_matching_stop_on)
+                        .unwrap_or(stop_on);
+
+                    // If the remaining stop_on string is empty, we have found a match
+                    if remaining_stop_on.is_empty() {
                         break;
                     }
-                    // Trim the buffer to the length of the stop_on string
-                    if text_matching_buffer.len() > stop_on.len() {
-                        let byte_idx = text_matching_buffer.len() - stop_on.len();
-                        if text_matching_buffer.is_char_boundary(byte_idx) {
-                            text_matching_buffer =
-                                text_matching_buffer.split_at(byte_idx).1.to_string();
+
+                    for (i, _) in lowercase.char_indices() {
+                        let end_of_new_text = &lowercase[i..];
+                        if end_of_new_text.is_empty() {
+                            break;
+                        }
+
+                        // Check if we have matched all of the stop_on string
+                        if end_of_new_text.starts_with(remaining_stop_on) {
+                            queued_text_matching_stop_on += end_of_new_text;
+                            break 'generate;
+                        }
+
+                        // Check if the string ends with the start of the stop_on string
+                        if remaining_stop_on.starts_with(end_of_new_text) {
+                            before_stop_on = Some(lowercase[..i].to_string());
+                            queued_text_matching_stop_on += end_of_new_text;
+                            break;
                         }
                     }
-                }
-                if let ModelFeedback::Stop = on_token(new_text)? {
+
+                    match before_stop_on {
+                        Some(before_stop_on) => {
+                            if let ModelFeedback::Stop = on_token(before_stop_on)? {
+                                break;
+                            }
+                        }
+                        None => {
+                            new_text =
+                                std::mem::take(&mut queued_text_matching_stop_on) + &new_text;
+                            if let ModelFeedback::Stop = on_token(new_text)? {
+                                break;
+                            }
+                        }
+                    }
+                } else if let ModelFeedback::Stop = on_token(new_text)? {
                     break;
                 }
             }
@@ -686,6 +715,13 @@ pub trait SyncModelExt: SyncModel {
                 }
             }
             logits = self.feed_tokens(session, &[new_token])?;
+        }
+
+        // Flush the queued text
+        if let Some(stop_string) = stop_on_lowercase {
+            if !queued_text_matching_stop_on.starts_with(stop_string) {
+                on_token(queued_text_matching_stop_on)?;
+            }
         }
 
         Ok(())
