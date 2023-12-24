@@ -36,6 +36,7 @@ mod model;
 mod raw;
 mod source;
 pub use kalosm_language_model;
+use kalosm_language_model::ChatModel;
 use raw::PhiCache;
 pub use source::*;
 
@@ -81,6 +82,33 @@ pub struct Phi {
     task_sender: tokio::sync::mpsc::UnboundedSender<Task>,
     thread_handle: Option<std::thread::JoinHandle<()>>,
     tokenizer: Arc<Tokenizer>,
+    chat_markers: ChatMarkers,
+}
+
+impl ChatModel for Phi {
+    fn assistant_marker(&self) -> &str {
+        self.chat_markers.assistant_marker.unwrap_or("")
+    }
+
+    fn end_assistant_marker(&self) -> &str {
+        self.chat_markers.end_assistant_marker.unwrap_or("")
+    }
+
+    fn user_marker(&self) -> &str {
+        self.chat_markers.user_marker.unwrap_or("")
+    }
+
+    fn end_user_marker(&self) -> &str {
+        self.chat_markers.end_user_marker.unwrap_or("")
+    }
+
+    fn system_prompt_marker(&self) -> &str {
+        self.chat_markers.system_prompt_marker.unwrap_or("")
+    }
+
+    fn end_system_prompt_marker(&self) -> &str {
+        self.chat_markers.end_system_marker.unwrap_or("")
+    }
 }
 
 impl Drop for Phi {
@@ -113,7 +141,13 @@ impl Phi {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn new(model: QMixFormer, tokenizer: Tokenizer, device: Device, cache: PhiCache) -> Self {
+    fn new(
+        model: QMixFormer,
+        tokenizer: Tokenizer,
+        device: Device,
+        cache: PhiCache,
+        chat_markers: ChatMarkers,
+    ) -> Self {
         let (task_sender, mut task_receiver) = tokio::sync::mpsc::unbounded_channel();
         let arc_tokenizer = Arc::new(tokenizer);
 
@@ -150,6 +184,7 @@ impl Phi {
             task_sender,
             thread_handle: Some(thread_handle),
             tokenizer: arc_tokenizer,
+            chat_markers,
         }
     }
 
@@ -226,7 +261,13 @@ impl PhiBuilder {
 
         let cache = PhiCache::new(&config);
 
-        Ok(Phi::new(model, tokenizer, device, cache))
+        Ok(Phi::new(
+            model,
+            tokenizer,
+            device,
+            cache,
+            self.source.chat_markers,
+        ))
     }
 }
 

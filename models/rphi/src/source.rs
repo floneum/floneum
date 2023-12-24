@@ -1,3 +1,20 @@
+/// The chat markers to use for the model.
+#[derive(Default)]
+pub struct ChatMarkers {
+    /// The marker to use before user input.
+    pub user_marker: Option<&'static str>,
+    /// The marker to use after user input.
+    pub end_user_marker: Option<&'static str>,
+    /// The marker to use before assistant messages.
+    pub assistant_marker: Option<&'static str>,
+    /// The marker to use after assistant messages.
+    pub end_assistant_marker: Option<&'static str>,
+    /// The marker to use before system prompts.
+    pub system_prompt_marker: Option<&'static str>,
+    /// The marker to use after system prompts.
+    pub end_system_marker: Option<&'static str>,
+}
+
 /// A PhiSource is the source to fetch a Phi-1.5 model from.
 /// The model to use, check out available models: <https://huggingface.co/models?other=mixformer-sequential&sort=trending&search=phi>
 /// The model must have a quantized version available with a safetensors file. (for example lmz/candle-quantized-phi)
@@ -8,6 +25,7 @@ pub struct PhiSource {
     pub(crate) tokenizer_file: String,
     pub(crate) phi_config: crate::Config,
     pub(crate) phi2: bool,
+    pub(crate) chat_markers: ChatMarkers,
 }
 
 impl PhiSource {
@@ -20,6 +38,7 @@ impl PhiSource {
             tokenizer_file: "tokenizer.json".to_string(),
             phi_config: crate::Config::v1_5(),
             phi2: false,
+            chat_markers: ChatMarkers::default(),
         }
     }
 
@@ -57,6 +76,24 @@ impl PhiSource {
             .with_phi_config(crate::Config::puffin_phi_v2())
     }
 
+    /// The dolphin model based on phi-2.
+    pub fn dolphin_phi_v2() -> Self {
+        let mut myself = Self::new("Demonthos/dolphin-2_6-phi-2-candle".to_string())
+            .with_model_file("model-q4k.gguf".to_string())
+            .with_tokenizer_file("tokenizer.json".to_string())
+            .with_phi_config(crate::Config::v2())
+            .with_chat_markers(ChatMarkers {
+                user_marker: Some("<|im_start|>user"),
+                end_user_marker: Some("<|im_end|>"),
+                assistant_marker: Some("<|im_start|>assistant"),
+                end_assistant_marker: Some("<|im_end|>"),
+                system_prompt_marker: Some("<|im_start|>system"),
+                end_system_marker: Some("<|im_end|>"),
+            });
+        myself.phi2 = true;
+        myself
+    }
+
     /// Set the revision to use for the model.
     pub fn with_revision(mut self, revision: String) -> Self {
         self.revision = revision;
@@ -78,6 +115,12 @@ impl PhiSource {
     /// Set the phi config to use for the model.
     pub fn with_phi_config(mut self, phi_config: crate::Config) -> Self {
         self.phi_config = phi_config;
+        self
+    }
+
+    /// Set the chat markers to use for the model.
+    pub fn with_chat_markers(mut self, chat_markers: ChatMarkers) -> Self {
+        self.chat_markers = chat_markers;
         self
     }
 }
