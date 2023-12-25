@@ -596,6 +596,14 @@ pub trait Session {
     {
         Err(anyhow::Error::msg("Not implemented"))
     }
+
+    /// Try to clone the session.
+    fn try_clone(&self) -> anyhow::Result<Self>
+    where
+        Self: std::marker::Sized,
+    {
+        Err(anyhow::Error::msg("Not implemented"))
+    }
 }
 
 impl Session for () {

@@ -14,6 +14,7 @@ use tokenizers::Tokenizer;
 use crate::InferenceSettings;
 
 /// A Mistral-1.5 session.
+#[derive(Debug, Clone)]
 pub struct MistralSession {
     cache: MistralCache,
     current_tokens: Vec<u32>,
@@ -33,6 +34,13 @@ impl Session for MistralSession {
         let tensors = candle_core::safetensors::load(path, &device)?;
 
         Ok(Self::from_tensor_map(tensors))
+    }
+
+    fn try_clone(&self) -> anyhow::Result<Self>
+    where
+        Self: std::marker::Sized,
+    {
+        Ok(self.clone())
     }
 }
 
