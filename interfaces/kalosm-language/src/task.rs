@@ -1,33 +1,29 @@
-//! A chat interface that builds on top of [`kalosm_language_model::ChatModel`]
+//! A task interface that builds on top of [`kalosm_language_model::ChatModel`]
 
-use kalosm_language_model::Session;
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use kalosm_language_model::{ChatModel, GenerationParameters, ModelExt, SyncModel, SyncModelExt};
-use kalosm_sample::{ArcParser, CreateParserState, ParserExt};
+use kalosm_sample::{ArcParser, CreateParserState};
 use kalosm_streams::text_stream::ChannelTextStream;
 use llm_samplers::types::Sampler;
 use tokio::sync::mpsc::unbounded_channel;
 
 /// A task session
 struct TaskSession<Session> {
-    user_marker: String,
-    end_user_marker: String,
     assistant_marker: String,
     end_assistant_marker: String,
-    session: Session,
+    end_user_marker: String,
+    cached_prompt: String,
+    session: Option<Session>,
+    constraints: Option<Arc<Mutex<dyn Fn() -> ArcParser + Send + Sync>>>,
     sampler: Arc<Mutex<dyn Sampler + Send + Sync>>,
 }
 
-impl<Session> TaskSession<Session> {
+impl<Session: kalosm_language_model::Session> TaskSession<Session> {
     #[allow(clippy::too_many_arguments)]
     /// Creates a new [`TaskSession`].
-    pub(crate) fn new<Model: SyncModel<Session = Session>>(
-        model: &mut Model,
+    pub(crate) fn new(
         system_prompt_marker: String,
         end_system_prompt_marker: String,
         user_marker: String,
@@ -35,70 +31,106 @@ impl<Session> TaskSession<Session> {
         assistant_marker: String,
         end_assistant_marker: String,
         system_prompt: String,
+        constraints: Option<Arc<Mutex<dyn Fn() -> ArcParser + Send + Sync>>>,
         sampler: Arc<Mutex<dyn Sampler + Send + Sync>>,
     ) -> Self {
-        let session = session.unwrap_or_else(|| model.new_session().unwrap());
-
         Self {
-            user_marker,
-            end_user_marker,
             assistant_marker,
             end_assistant_marker,
-            session,
+            end_user_marker,
+            cached_prompt: format!(
+                "{}{}{}{}",
+                system_prompt_marker, system_prompt, end_system_prompt_marker, user_marker
+            ),
+            session: None,
+            constraints,
             sampler,
         }
     }
 
-    /// Adds a message to the history.
-    pub fn add_message<Model: SyncModel<Session = Session>>(
+    fn create_new_session(
+        &mut self,
+        model: &mut impl SyncModel<Session = Session>,
+    ) -> Result<Session> {
+        let mut session = model.new_session()?;
+        model.feed_text(&mut session, &self.cached_prompt)?;
+
+        self.session = session.try_clone().ok();
+
+        Ok(session)
+    }
+
+    /// Create a session with the task's system prompt.
+    fn create_session(&mut self, model: &mut impl SyncModel<Session = Session>) -> Result<Session> {
+        match &self.session {
+            Some(cache) => match cache.try_clone() {
+                Ok(cache) => Ok(cache),
+                Err(err) => {
+                    tracing::error!("Failed to clone session: {}", err);
+                    Ok(self.create_new_session(model)?)
+                }
+            },
+            None => Ok(self.create_new_session(model)?),
+        }
+    }
+
+    /// Run the task with a message.
+    pub fn run<Model: SyncModel<Session = Session>>(
         &mut self,
         message: String,
         model: &mut Model,
         stream: tokio::sync::mpsc::UnboundedSender<String>,
     ) -> Result<()> {
         let mut bot_response = String::new();
+        let mut session = self.create_session(model)?;
+        let Self {
+            end_user_marker,
+            constraints,
+            sampler,
+            ..
+        } = self;
+
+        // Feed the message to the model.
+        model.feed_text(
+            &mut session,
+            &format!("{}{}{}", message, end_user_marker, self.assistant_marker),
+        )?;
+
+        // Generate a response.
         match constraints {
-                Some(constraints) => {
-                    let mut constraints = constraints.lock().unwrap();
-                    let constraints = constraints(&self.history, model);
-                    let state = constraints.create_parser_state();
-                    let on_token = |tok: String| {
-                        let tok = tok
-                            .strip_suffix(&self.end_assistant_marker)
-                            .unwrap_or(&tok)
-                            .to_string();
-                        bot_response += &tok;
-                        stream.send(tok)?;
-                        Ok(())
-                    };
-                    model.generate_structured(
-                        &mut self.session,
-                        &prompt,
-                        constraints,
-                        state,
-                        self.sampler.clone(),
-                        on_token,
-                    )?;
-                }
-                None => {
-                    let on_token = |tok: String| {
-                        let tok = tok
-                            .strip_suffix(&self.end_assistant_marker)
-                            .unwrap_or(&tok)
-                            .to_string();
-                        bot_response += &tok;
-                        stream.send(tok)?;
-                        Ok(kalosm_language_model::ModelFeedback::Continue)
-                    };
-                    model.stream_text_with_sampler(
-                        &mut self.session,
-                        &prompt,
-                        None,
-                        Some(&self.end_assistant_marker),
-                        self.sampler.clone(),
-                        on_token,
-                    )?;
-                }
+            Some(constraints) => {
+                let constraints = constraints.lock().unwrap();
+                let constraints = constraints();
+                let state = constraints.create_parser_state();
+                let on_token = |tok: String| {
+                    bot_response += &tok;
+                    stream.send(tok)?;
+                    Ok(())
+                };
+                model.generate_structured(
+                    &mut session,
+                    &message,
+                    constraints,
+                    state,
+                    sampler.clone(),
+                    on_token,
+                )?;
+            }
+            None => {
+                let on_token = |tok: String| {
+                    bot_response += &tok;
+                    stream.send(tok)?;
+                    Ok(kalosm_language_model::ModelFeedback::Continue)
+                };
+                model.stream_text_with_sampler(
+                    &mut session,
+                    &message,
+                    None,
+                    Some(&self.end_assistant_marker),
+                    sampler.clone(),
+                    on_token,
+                )?;
+            }
         }
 
         Ok(())
@@ -106,29 +138,21 @@ impl<Session> TaskSession<Session> {
 }
 
 /// A builder for [`Task`].
-pub struct ChatBuilder<'a, M: ChatModel> {
+pub struct TaskBuilder<'a, M: ChatModel> {
     model: &'a mut M,
-    session: Option<<M::SyncModel as kalosm_language_model::SyncModel>::Session>,
     system_prompt: String,
     sampler: Arc<Mutex<dyn Sampler + Send + Sync>>,
-    
+    constraints: Option<Arc<Mutex<dyn Fn() -> ArcParser + Send + Sync>>>,
 }
 
-impl<'a, M: ChatModel> ChatBuilder<'a, M> {
-    fn new(model: &'a mut M) -> ChatBuilder<M> {
-        ChatBuilder {
+impl<'a, M: ChatModel> TaskBuilder<'a, M> {
+    fn new(model: &'a mut M, description: impl Into<String>) -> TaskBuilder<M> {
+        TaskBuilder {
             model,
-            session: None,
-            system_prompt: "Always assist with care, respect, and truth. Respond with utmost utility yet securely. Avoid harmful, unethical, prejudiced, or negative content. Ensure replies promote fairness and positivity.".into(),
+            system_prompt: description.into(),
             sampler: Arc::new(Mutex::new(GenerationParameters::default().sampler())),
+            constraints: None,
         }
-    }
-
-    /// Adds a system prompt to the chat. The system prompt guides the model to respond in a certain way.
-    /// If no system prompt is added, the model will use a default system prompt that instructs the model to respond in a way that is safe and respectful.
-    pub fn with_system_prompt(mut self, system_prompt: impl Into<String>) -> Self {
-        self.system_prompt = system_prompt.into();
-        self
     }
 
     /// Sets the [`Sampler`] to use for generating responses.
@@ -137,21 +161,13 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
         self
     }
 
-
-    /// Starts the chat instance with the given session. This can be useful for resuming a chat session.
-    pub fn with_session(
+    /// Set the constraints for the task. The response generated by the model will follow the constraints.
+    pub fn with_constraints(
         mut self,
-        session: <M::SyncModel as kalosm_language_model::SyncModel>::Session,
+        constraints: impl Fn() -> ArcParser + Send + Sync + 'static,
     ) -> Self {
-        self.session = Some(session);
+        self.constraints = Some(Arc::new(Mutex::new(constraints)));
         self
-    }
-
-    /// Starts the chat instance with a session from the given path. This can be useful for resuming a chat session.
-    pub fn with_session_path(self, path: impl AsRef<std::path::Path>) -> anyhow::Result<Self> {
-        Ok(self.with_session(
-            <M::SyncModel as kalosm_language_model::SyncModel>::Session::load_from(path)?,
-        ))
     }
 
     /// Builds a [`Task`] instance.
@@ -163,7 +179,7 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
             model,
             system_prompt,
             sampler,
-            session
+            constraints,
         } = self;
         let system_prompt_marker = model.system_prompt_marker().to_string();
         let end_system_prompt_marker = model.end_system_prompt_marker().to_string();
@@ -177,7 +193,6 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
             .run_sync(move |model| {
                 Box::pin(async move {
                     let mut session = TaskSession::new(
-                        model,
                         system_prompt_marker,
                         end_system_prompt_marker,
                         user_marker,
@@ -185,21 +200,14 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
                         assistant_marker,
                         end_assistant_marker,
                         system_prompt,
+                        constraints,
                         sampler,
                     );
 
                     while let Some(message) = sender_rx.recv().await {
-                        match message {
-                            Message::AddMessage(message) => {
-                                let (tx, rx) = unbounded_channel();
-                                result_tx.send(Response::AddMessage(rx.into())).unwrap();
-                                session.add_message(message, model, tx).unwrap();
-                            }
-                            Message::SaveSession(path) => {
-                                session.session.save_to(path).unwrap();
-                                result_tx.send(Response::SaveSession).unwrap();
-                            }
-                        }
+                        let (tx, rx) = unbounded_channel();
+                        result_tx.send(rx.into()).unwrap();
+                        session.run(message, model, tx).unwrap();
                     }
                 })
             })
@@ -212,61 +220,71 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
     }
 }
 
-enum Message {
-    AddMessage(String),
-    SaveSession(PathBuf),
-}
-
-enum Response {
-    AddMessage(ChannelTextStream<String>),
-    SaveSession,
-}
-
-/// A chat session.
+/// A task session lets you efficiently run a task with a model. The task session will reuse the model's cache to avoid re-feeding the task prompt repeatedly.
+///
+/// # Example
+/// ```rust
+/// use kalosm_language::prelude::*;
+///
+/// #[tokio::main]
+/// async fn main() {
+///     let mut llm = Llama::new_chat();
+///     let mut task = Task::new(&mut llm, "You are a math assistant who helps students with their homework. You solve equations and answer questions. When solving problems, you will always solve problems step by step.");
+///
+///     println!("question 1");
+///     // The first time we use the task, it will load the model and prompt.
+///     task.run("What is 2 + 2?")
+///         .await
+///         .unwrap()
+///         .to_std_out()
+///         .await
+///         .unwrap();
+///     
+///     println!("question 2");
+///     // After the first time, the model and prompt are cached.
+///     task.run("What is 4 + 4?")
+///         .await
+///         .unwrap()
+///         .to_std_out()
+///         .await
+///         .unwrap();
+/// }
+/// ```
 pub struct Task {
-    sender: tokio::sync::mpsc::UnboundedSender<Message>,
-    channel: tokio::sync::mpsc::UnboundedReceiver<Response>,
+    sender: tokio::sync::mpsc::UnboundedSender<String>,
+    channel: tokio::sync::mpsc::UnboundedReceiver<ChannelTextStream<String>>,
 }
 
 impl Task {
-    /// Creates a new builder for a chat session.
-    pub fn builder<M: ChatModel>(model: &mut M) -> ChatBuilder<'_, M> {
-        ChatBuilder::new(model)
+    /// Create a new task with no constraints and the default sampler. See [`Task::builder`] for more options.
+    pub fn new<M: ChatModel>(model: &mut M, description: impl Into<String>) -> Self
+    where
+        <M::SyncModel as SyncModel>::Session: Send,
+    {
+        Self::builder(model, description).build()
     }
 
-    /// Adds a message to the history.
-    pub async fn add_message(
-        &mut self,
-        message: impl Into<String>,
-    ) -> Result<ChannelTextStream<String>> {
+    /// Creates a new builder for a task session.
+    pub fn builder<M: ChatModel>(
+        model: &mut M,
+        description: impl Into<String>,
+    ) -> TaskBuilder<'_, M>
+    where
+        <M::SyncModel as SyncModel>::Session: Send,
+    {
+        TaskBuilder::new(model, description)
+    }
+
+    /// Run the task with a message.
+    pub async fn run(&mut self, message: impl Into<String>) -> Result<ChannelTextStream<String>> {
         let message = message.into();
         let message = message.trim().to_string();
         self.sender
-            .send(Message::AddMessage(message))
+            .send(message)
             .map_err(|_| anyhow::anyhow!("Model stopped"))?;
         self.channel
             .recv()
             .await
-            .map(|c| match c {
-                Response::AddMessage(c) => c,
-                _ => unreachable!(),
-            })
             .ok_or(anyhow::anyhow!("Model stopped"))
-    }
-
-    /// Saves the session to the given path.
-    pub async fn save_session(&mut self, path: impl AsRef<std::path::Path>) -> Result<()> {
-        self.sender
-            .send(Message::SaveSession(path.as_ref().to_path_buf()))
-            .map_err(|_| anyhow::anyhow!("Model stopped"))?;
-        self.channel
-            .recv()
-            .await
-            .map(|c| match c {
-                Response::SaveSession => (),
-                _ => unreachable!(),
-            })
-            .ok_or(anyhow::anyhow!("Model stopped"))?;
-        Ok(())
     }
 }

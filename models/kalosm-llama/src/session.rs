@@ -4,6 +4,7 @@ use kalosm_language_model::Session;
 use std::collections::HashMap;
 
 /// A Llama-1.5 session.
+#[derive(Debug, Clone)]
 pub struct LlamaSession {
     pub(crate) cache: LlamaCache,
     pub(crate) current_tokens: Vec<u32>,
@@ -23,6 +24,13 @@ impl Session for LlamaSession {
         let tensors = candle_core::safetensors::load(path, &device)?;
 
         Ok(Self::from_tensor_map(tensors))
+    }
+
+    fn try_clone(&self) -> anyhow::Result<Self>
+    where
+        Self: std::marker::Sized,
+    {
+        Ok(self.clone())
     }
 }
 

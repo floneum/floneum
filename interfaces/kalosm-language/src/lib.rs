@@ -21,8 +21,8 @@
 pub mod chat;
 pub mod context;
 pub mod index;
-pub mod tool;
 pub mod task;
+pub mod tool;
 
 pub use kalosm_language_model;
 pub use kalosm_llama;
@@ -36,8 +36,8 @@ pub mod prelude {
     pub use crate::chat::*;
     pub use crate::context::*;
     pub use crate::index::*;
-    pub use crate::tool::*;
     pub use crate::task::*;
+    pub use crate::tool::*;
     pub use futures_util::StreamExt as _;
     pub use kalosm_language_model::*;
     pub use kalosm_llama::{Llama, LlamaBuilder, LlamaSession, LlamaSource};

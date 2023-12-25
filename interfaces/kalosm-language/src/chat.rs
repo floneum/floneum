@@ -530,7 +530,10 @@ pub struct Chat {
 
 impl Chat {
     /// Creates a new builder for a chat session.
-    pub fn builder<M: ChatModel>(model: &mut M) -> ChatBuilder<'_, M> {
+    pub fn builder<M: ChatModel>(model: &mut M) -> ChatBuilder<'_, M>
+    where
+        <M::SyncModel as SyncModel>::Session: Send,
+    {
         ChatBuilder::new(model)
     }
 
