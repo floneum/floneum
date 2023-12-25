@@ -36,5 +36,5 @@ async fn main() {
         .to_std_out()
         .await
         .unwrap();
-    println!("third question took: {:?}", start_timestamp.elapsed());
+    println!("\nthird question took: {:?}", start_timestamp.elapsed());
 }
