@@ -17,6 +17,7 @@ use tokenizers::Tokenizer;
 use crate::InferenceSettings;
 
 /// A Phi-1.5 session.
+#[derive(Debug, Clone)]
 pub struct PhiSession {
     cache: PhiCache,
     current_tokens: Vec<u32>,
@@ -36,6 +37,13 @@ impl Session for PhiSession {
         let tensors = candle_core::safetensors::load(path, &device)?;
 
         Ok(Self::from_tensor_map(tensors))
+    }
+
+    fn try_clone(&self) -> anyhow::Result<Self>
+    where
+        Self: std::marker::Sized,
+    {
+        Ok(self.clone())
     }
 }
 
