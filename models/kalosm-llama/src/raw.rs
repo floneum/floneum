@@ -80,7 +80,7 @@ fn masked_fill(on_false: &Tensor, mask: &Tensor, on_true: f32) -> Result<Tensor>
 }
 
 impl LayerWeights {
-    fn apply_rotary_emb(span_rot: &Span, cos: &Tensor, sin:& Tensor, x: &Tensor,) -> Result<Tensor> {
+    fn apply_rotary_emb(span_rot: &Span, cos: &Tensor, sin: &Tensor, x: &Tensor) -> Result<Tensor> {
         let _enter = span_rot.enter();
         let (b_sz, n_head, seq_len, n_embd) = x.dims4()?;
         // This mimics the llama.cpp behavior.
@@ -109,12 +109,14 @@ impl LayerWeights {
         let _enter = self.span_attn.enter();
         let (b_sz, seq_len, n_embd) = x.dims3()?;
 
-        let cos = self.cos
-            .narrow(0, index_pos, seq_len)?
-            .reshape((seq_len, self.head_dim / 2, 1))?;
-        let sin = self.sin
-            .narrow(0, index_pos, seq_len)?
-            .reshape((seq_len, self.head_dim / 2, 1))?;
+        let cos =
+            self.cos
+                .narrow(0, index_pos, seq_len)?
+                .reshape((seq_len, self.head_dim / 2, 1))?;
+        let sin =
+            self.sin
+                .narrow(0, index_pos, seq_len)?
+                .reshape((seq_len, self.head_dim / 2, 1))?;
         let cos = cos.broadcast_as((b_sz, 1, seq_len, self.head_dim / 2, 1))?;
         let sin = sin.broadcast_as((b_sz, 1, seq_len, self.head_dim / 2, 1))?;
 
@@ -125,19 +127,21 @@ impl LayerWeights {
                     .transpose(1, 2)
             });
 
-        let q_task = scope.spawn(|| {
-            let q = self.attention_wq.forward(x)?;
-            let q = q.reshape((b_sz, seq_len, self.n_head, self.head_dim))?
-                .transpose(1, 2)?;
-            Self::apply_rotary_emb(&self.span_rot, &cos, &sin, &q,)
-        });
+            let q_task = scope.spawn(|| {
+                let q = self.attention_wq.forward(x)?;
+                let q = q
+                    .reshape((b_sz, seq_len, self.n_head, self.head_dim))?
+                    .transpose(1, 2)?;
+                Self::apply_rotary_emb(&self.span_rot, &cos, &sin, &q)
+            });
             let k_task = scope.spawn(|| {
                 let k = self.attention_wk.forward(x)?;
-                let k = k.reshape((b_sz, seq_len, self.n_kv_head, self.head_dim))?
+                let k = k
+                    .reshape((b_sz, seq_len, self.n_kv_head, self.head_dim))?
                     .transpose(1, 2)?;
-                    Self::apply_rotary_emb(&self.span_rot, &cos, &sin, &k,)
+                Self::apply_rotary_emb(&self.span_rot, &cos, &sin, &k)
             });
-           
+
             Ok::<_, candle_core::Error>((
                 q_task
                     .join()
@@ -186,7 +190,6 @@ impl LayerWeights {
         let mask = mask.broadcast_as(att.shape())?;
         let att = masked_fill(&att, &mask, f32::NEG_INFINITY)?;
         let att = candle_nn::ops::softmax_last_dim(&att)?;
-        // Convert to contiguous as matmul doesn't support strided vs for now.
         let y = att.matmul(&v)?;
         let y = y.transpose(1, 2)?.reshape(&[b_sz, seq_len, n_embd])?;
         let y = self.attention_wo.forward(&y)?;
