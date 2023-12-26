@@ -53,7 +53,7 @@ impl<Session: kalosm_language_model::Session> TaskSession<Session> {
         model: &mut impl SyncModel<Session = Session>,
     ) -> Result<Session> {
         let mut session = model.new_session()?;
-        model.feed_text(&mut session, &self.cached_prompt)?;
+        model.feed_text(&mut session, &self.cached_prompt, Some(0))?;
 
         self.session = session.try_clone().ok();
 
@@ -94,6 +94,7 @@ impl<Session: kalosm_language_model::Session> TaskSession<Session> {
         model.feed_text(
             &mut session,
             &format!("{}{}{}", message, end_user_marker, self.assistant_marker),
+            Some(0),
         )?;
 
         // Generate a response.

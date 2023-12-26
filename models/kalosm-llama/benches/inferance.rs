@@ -17,7 +17,7 @@ fn generation(c: &mut Criterion) {
 
         b.iter(|| {
             let mut session = model.new_session().unwrap();
-            model.feed_text(&mut session, prompt)
+            model.feed_text(&mut session, prompt, Some(0))
         })
     });
 
@@ -29,7 +29,7 @@ fn generation(c: &mut Criterion) {
 
         b.iter(|| {
             let mut session = model.new_session().unwrap();
-            model.feed_text(&mut session, &prompt)
+            model.feed_text(&mut session, &prompt, Some(0))
         })
     });
 
