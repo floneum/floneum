@@ -368,6 +368,38 @@ impl LlamaSource {
             ..Default::default()
         }
     }
+
+    /// A preset for the SOLAR 10.7B model
+    pub fn solar_10_7b() -> Self {
+        Self {
+            model_id: "TheBloke/SOLAR-10.7B-v1.0-GGUF".to_string(),
+            revision: "main".to_string(),
+            gguf_file: "solar-10.7b-v1.0.Q4_K_M.gguf".into(),
+            tokenizer_repo: "upstage/SOLAR-10.7B-v1.0".to_string(),
+            tokenizer_file: "tokenizer.json".to_string(),
+            ..Default::default()
+        }
+    }
+
+    /// A preset for the SOLAR 10.7B Instruct model
+    pub fn solar_10_7b_instruct() -> Self {
+        Self {
+            model_id: "TheBloke/SOLAR-10.7B-Instruct-v1.0-GGUF".to_string(),
+            revision: "main".to_string(),
+            gguf_file: "solar-10.7b-instruct-v1.0.Q4_K_M.gguf".into(),
+            tokenizer_repo: "upstage/SOLAR-10.7B-Instruct-v1.0".to_string(),
+            tokenizer_file: "tokenizer.json".to_string(),
+            markers: ChatMarkers {
+                system_prompt_marker: Some("<s>### System:\n"),
+                end_system_marker: Some(""),
+                user_marker: Some("### User:\n"),
+                end_user_marker: Some(""),
+                assistant_marker: Some("### Assistant:\n"),
+                end_assistant_marker: Some("</s>"),
+            },
+            ..Default::default()
+        }
+    }
 }
 
 impl Default for LlamaSource {
