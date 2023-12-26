@@ -30,9 +30,16 @@ kalosm-sample.workspace = true
 kalosm-language-model.workspace = true
 kalosm-streams.workspace = true
 
+[dev-dependencies]
+criterion = "0.5.1"
+
 [features]
 accelerate = ["dep:accelerate-src", "candle-core/accelerate", "candle-nn/accelerate", "candle-transformers/accelerate"]
 cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
 cudnn = ["candle-core/cudnn"]
 mkl = ["dep:intel-mkl-src", "candle-core/mkl", "candle-nn/mkl", "candle-transformers/mkl"]
 nccl = ["cuda", "cudarc/nccl", "dep:half"]
+
+[[bench]]
+name = "inferance"
+harness = false
