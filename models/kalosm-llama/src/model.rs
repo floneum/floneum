@@ -7,7 +7,10 @@ use kalosm_language_model::SyncModelExt;
 use llm_samplers::prelude::Logits;
 use std::sync::Arc;
 
-use candle_core::{DType, Device, Tensor};
+use candle_core::{
+    quantized::{ggml_file, gguf_file},
+    DType, Device, Tensor,
+};
 use kalosm_language_model::SyncModel;
 use tokenizers::Tokenizer;
 
@@ -113,6 +116,34 @@ impl LlamaModel {
             Some(top_k) => Ok(Logits::try_from_iter_top_k(logits, top_k)?),
             None => Ok(Logits::try_from_iter(logits)?),
         }
+    }
+
+    /// Create a new sync Llama model from a builder.
+    pub fn from_builder(builder: crate::LlamaBuilder) -> anyhow::Result<Self> {
+        let tokenizer = builder.source.tokenizer()?;
+
+        let device = Device::cuda_if_available(0)?;
+        let filename = builder.source.model()?;
+        let mut file = std::fs::File::open(&filename)?;
+        let model = match filename.extension().and_then(|v| v.to_str()) {
+            Some("gguf") => {
+                let model = gguf_file::Content::read(&mut file)?;
+                Model::from_gguf(model, &mut file)?
+            }
+            Some("ggml" | "bin") | Some(_) | None => {
+                let model = ggml_file::Content::read(&mut file)?;
+                let gqa = builder.source.group_query_attention;
+                Model::from_ggml(model, gqa as usize)?
+            }
+        };
+
+        let cache = LlamaCache::new(&model);
+        Ok(Self {
+            model,
+            tokenizer: Arc::new(tokenizer),
+            device,
+            cache,
+        })
     }
 
     #[allow(clippy::too_many_arguments)]

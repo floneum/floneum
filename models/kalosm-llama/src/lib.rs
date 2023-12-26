@@ -38,18 +38,17 @@ mod raw;
 mod session;
 mod source;
 
+pub use crate::model::LlamaModel;
 use crate::raw::Model;
 pub use crate::session::LlamaSession;
-use kalosm_language_model::ChatModel;
-use llm_samplers::types::Sampler;
-use session::LlamaCache;
-pub use source::*;
-
 use candle_core::{
     quantized::{ggml_file, gguf_file},
     Device,
 };
-use model::LlamaModel;
+use kalosm_language_model::ChatModel;
+use llm_samplers::types::Sampler;
+use session::LlamaCache;
+pub use source::*;
 use std::sync::{Arc, Mutex};
 use tokenizers::Tokenizer;
 
