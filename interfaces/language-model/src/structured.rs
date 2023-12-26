@@ -29,7 +29,7 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
 
     loop {
         let mut logits =
-            llm.feed_tokens(session, &tokens[tokens.len() - unprocessed_token_count..])?;
+            llm.feed_tokens(session, &tokens[tokens.len() - unprocessed_token_count..], None)?;
         let resources = &mut SamplerResources {
             previous_tokens: &tokens,
             rng: &mut rng,

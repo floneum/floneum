@@ -134,21 +134,19 @@ impl LayerWeights {
                     .transpose(1, 2)?;
                 Self::apply_rotary_emb(&self.span_rot, &cos, &sin, &q)
             });
-            let k_task = scope.spawn(|| {
+            let k = {
                 let k = self.attention_wk.forward(x)?;
                 let k = k
                     .reshape((b_sz, seq_len, self.n_kv_head, self.head_dim))?
                     .transpose(1, 2)?;
-                Self::apply_rotary_emb(&self.span_rot, &cos, &sin, &k)
-            });
+                Self::apply_rotary_emb(&self.span_rot, &cos, &sin, &k)?
+            };
 
             Ok::<_, candle_core::Error>((
                 q_task
                     .join()
                     .map_err(|_| candle_core::Error::Msg("Failed to join thread".to_string()))??,
-                k_task
-                    .join()
-                    .map_err(|_| candle_core::Error::Msg("Failed to join thread".to_string()))??,
+                k,
                 v_task
                     .join()
                     .map_err(|_| candle_core::Error::Msg("Failed to join thread".to_string()))??,
@@ -190,7 +188,7 @@ impl LayerWeights {
         let mask = mask.broadcast_as(att.shape())?;
         let att = masked_fill(&att, &mask, f32::NEG_INFINITY)?;
         let att = candle_nn::ops::softmax_last_dim(&att)?;
-        let y = att.matmul(&v)?;
+        let y = att.matmul(&v.contiguous()?)?;
         let y = y.transpose(1, 2)?.reshape(&[b_sz, seq_len, n_embd])?;
         let y = self.attention_wo.forward(&y)?;
         Ok(y)
