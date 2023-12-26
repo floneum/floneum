@@ -570,10 +570,20 @@ pub trait SyncModel {
     fn new_session(&self) -> anyhow::Result<Self::Session>;
 
     /// Run the model synchronously. The model implementation may choose to return only the top k logits.
-    fn feed_text(&self, session: &mut Self::Session, prompt: &str, top_k: Option<usize>) -> anyhow::Result<Logits>;
+    fn feed_text(
+        &self,
+        session: &mut Self::Session,
+        prompt: &str,
+        top_k: Option<usize>,
+    ) -> anyhow::Result<Logits>;
 
     /// Run the model synchronously with a pre-tokenized input. The model implementation may choose to return only the top k logits.
-    fn feed_tokens(&self, session: &mut Self::Session, tokens: &[u32], top_k: Option<usize>) -> anyhow::Result<Logits>;
+    fn feed_tokens(
+        &self,
+        session: &mut Self::Session,
+        tokens: &[u32],
+        top_k: Option<usize>,
+    ) -> anyhow::Result<Logits>;
 
     /// Get the token ID that represents the end of a sequence.
     fn stop_token(&self) -> anyhow::Result<u32>;
@@ -756,11 +766,21 @@ impl SyncModel for SyncModelNotSupported {
         Err(anyhow::Error::msg("Not implemented"))
     }
 
-    fn feed_text(&self, _session: &mut (), _prompt: &str, _: Option<usize>) -> anyhow::Result<Logits> {
+    fn feed_text(
+        &self,
+        _session: &mut (),
+        _prompt: &str,
+        _: Option<usize>,
+    ) -> anyhow::Result<Logits> {
         Err(anyhow::Error::msg("Not implemented"))
     }
 
-    fn feed_tokens(&self, _session: &mut (), _tokens: &[u32], _: Option<usize>) -> anyhow::Result<Logits> {
+    fn feed_tokens(
+        &self,
+        _session: &mut (),
+        _tokens: &[u32],
+        _: Option<usize>,
+    ) -> anyhow::Result<Logits> {
         Err(anyhow::Error::msg("Not implemented"))
     }
 
@@ -964,12 +984,22 @@ impl SyncModel for BoxedSyncModel {
         self_ref.new_session()
     }
 
-    fn feed_text(&self, session: &mut Self::Session, prompt: &str, top_k: Option<usize>) -> anyhow::Result<Logits> {
+    fn feed_text(
+        &self,
+        session: &mut Self::Session,
+        prompt: &str,
+        top_k: Option<usize>,
+    ) -> anyhow::Result<Logits> {
         let self_ref: &(dyn SyncModel<Session = AnySession>) = self.as_ref();
         self_ref.feed_text(session, prompt, top_k)
     }
 
-    fn feed_tokens(&self, session: &mut Self::Session, tokens: &[u32], top_k: Option<usize>) -> anyhow::Result<Logits> {
+    fn feed_tokens(
+        &self,
+        session: &mut Self::Session,
+        tokens: &[u32],
+        top_k: Option<usize>,
+    ) -> anyhow::Result<Logits> {
         let self_ref: &(dyn SyncModel<Session = AnySession>) = self.as_ref();
         self_ref.feed_tokens(session, tokens, top_k)
     }
@@ -996,7 +1026,12 @@ impl<M: SyncModel<Session = S>, S: Session + Any> SyncModel for AnySyncModel<M, 
         })
     }
 
-    fn feed_text(&self, session: &mut Self::Session, prompt: &str, top_k: Option<usize>) -> anyhow::Result<Logits> {
+    fn feed_text(
+        &self,
+        session: &mut Self::Session,
+        prompt: &str,
+        top_k: Option<usize>,
+    ) -> anyhow::Result<Logits> {
         self.0.feed_text(
             match session.as_any_mut().downcast_mut() {
                 Some(s) => s,
@@ -1012,7 +1047,12 @@ impl<M: SyncModel<Session = S>, S: Session + Any> SyncModel for AnySyncModel<M, 
         )
     }
 
-    fn feed_tokens(&self, session: &mut Self::Session, tokens: &[u32], top_k: Option<usize>) -> anyhow::Result<Logits> {
+    fn feed_tokens(
+        &self,
+        session: &mut Self::Session,
+        tokens: &[u32],
+        top_k: Option<usize>,
+    ) -> anyhow::Result<Logits> {
         self.0.feed_tokens(
             match session.as_any_mut().downcast_mut() {
                 Some(s) => s,

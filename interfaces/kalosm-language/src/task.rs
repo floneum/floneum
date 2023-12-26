@@ -94,7 +94,7 @@ impl<Session: kalosm_language_model::Session> TaskSession<Session> {
         model.feed_text(
             &mut session,
             &format!("{}{}{}", message, end_user_marker, self.assistant_marker),
-            Some(0)
+            Some(0),
         )?;
 
         // Generate a response.

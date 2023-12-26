@@ -36,13 +36,23 @@ impl SyncModel for LlamaModel {
         })
     }
 
-    fn feed_text(&self, session: &mut Self::Session, prompt: &str, top_k: Option<usize>) -> anyhow::Result<Logits> {
+    fn feed_text(
+        &self,
+        session: &mut Self::Session,
+        prompt: &str,
+        top_k: Option<usize>,
+    ) -> anyhow::Result<Logits> {
         let encoded = self.tokenizer.encode(prompt, true).map_err(E::msg)?;
         let tokens = encoded.get_ids();
         self.feed_tokens(session, tokens, top_k)
     }
 
-    fn feed_tokens(&self, session: &mut Self::Session, tokens: &[u32], top_k: Option<usize>) -> anyhow::Result<Logits> {
+    fn feed_tokens(
+        &self,
+        session: &mut Self::Session,
+        tokens: &[u32],
+        top_k: Option<usize>,
+    ) -> anyhow::Result<Logits> {
         let first_token = session.current_tokens.is_empty();
 
         if first_token {
@@ -77,7 +87,7 @@ impl SyncModel for LlamaModel {
                 &[tid],
                 seq_len_offset,
                 Some(&mut session.cache),
-                top_k
+                top_k,
             )
         }
     }

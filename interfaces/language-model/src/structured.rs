@@ -28,8 +28,11 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
     let mut rng = rand::thread_rng();
 
     loop {
-        let mut logits =
-            llm.feed_tokens(session, &tokens[tokens.len() - unprocessed_token_count..], None)?;
+        let mut logits = llm.feed_tokens(
+            session,
+            &tokens[tokens.len() - unprocessed_token_count..],
+            None,
+        )?;
         let resources = &mut SamplerResources {
             previous_tokens: &tokens,
             rng: &mut rng,

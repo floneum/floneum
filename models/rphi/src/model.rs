@@ -102,7 +102,12 @@ impl SyncModel for PhiModel {
         })
     }
 
-    fn feed_text(&self, session: &mut Self::Session, prompt: &str, top_k: Option<usize>) -> anyhow::Result<Logits> {
+    fn feed_text(
+        &self,
+        session: &mut Self::Session,
+        prompt: &str,
+        top_k: Option<usize>,
+    ) -> anyhow::Result<Logits> {
         let tokens = self
             .tokenizer
             .encode(prompt, true)
@@ -112,7 +117,12 @@ impl SyncModel for PhiModel {
         self.feed_tokens(session, &tokens, top_k)
     }
 
-    fn feed_tokens(&self, session: &mut Self::Session, tokens: &[u32], top_k: Option<usize>) -> anyhow::Result<Logits> {
+    fn feed_tokens(
+        &self,
+        session: &mut Self::Session,
+        tokens: &[u32],
+        top_k: Option<usize>,
+    ) -> anyhow::Result<Logits> {
         session.current_tokens.extend(tokens.iter().copied());
 
         Self::forward(
