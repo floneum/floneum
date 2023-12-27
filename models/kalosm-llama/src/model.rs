@@ -7,7 +7,10 @@ use kalosm_language_model::SyncModelExt;
 use llm_samplers::prelude::Logits;
 use std::sync::Arc;
 
-use candle_core::{DType, Device, Tensor};
+use candle_core::{
+    quantized::{ggml_file, gguf_file},
+    DType, Device, Tensor,
+};
 use kalosm_language_model::SyncModel;
 use tokenizers::Tokenizer;
 
@@ -33,13 +36,23 @@ impl SyncModel for LlamaModel {
         })
     }
 
-    fn feed_text(&self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Logits> {
+    fn feed_text(
+        &self,
+        session: &mut Self::Session,
+        prompt: &str,
+        top_k: Option<usize>,
+    ) -> anyhow::Result<Logits> {
         let encoded = self.tokenizer.encode(prompt, true).map_err(E::msg)?;
         let tokens = encoded.get_ids();
-        self.feed_tokens(session, tokens)
+        self.feed_tokens(session, tokens, top_k)
     }
 
-    fn feed_tokens(&self, session: &mut Self::Session, tokens: &[u32]) -> anyhow::Result<Logits> {
+    fn feed_tokens(
+        &self,
+        session: &mut Self::Session,
+        tokens: &[u32],
+        top_k: Option<usize>,
+    ) -> anyhow::Result<Logits> {
         let first_token = session.current_tokens.is_empty();
 
         if first_token {
@@ -50,7 +63,7 @@ impl SyncModel for LlamaModel {
                 &session.current_tokens,
                 0,
                 Some(&mut session.cache),
-                None,
+                top_k,
             )
         } else {
             for tid in tokens.iter().copied().take(tokens.len() - 1) {
@@ -62,7 +75,7 @@ impl SyncModel for LlamaModel {
                     &[tid],
                     seq_len_offset,
                     Some(&mut session.cache),
-                    None,
+                    Some(0),
                 )?;
             }
             let tid = *tokens.last().unwrap();
@@ -74,7 +87,7 @@ impl SyncModel for LlamaModel {
                 &[tid],
                 seq_len_offset,
                 Some(&mut session.cache),
-                None,
+                top_k,
             )
         }
     }
@@ -107,12 +120,45 @@ impl LlamaModel {
 
         let input = Tensor::new(tokens, device)?.unsqueeze(0)?;
         let logits = model.forward(&input, seqlen_offset, cache)?;
+
+        if top_k == Some(0) {
+            return Ok(Logits::default());
+        }
+
         let logits = logits.squeeze(0)?.squeeze(0)?.to_dtype(DType::F32)?;
         let logits: Vec<f32> = logits.to_vec1()?;
         match top_k {
             Some(top_k) => Ok(Logits::try_from_iter_top_k(logits, top_k)?),
             None => Ok(Logits::try_from_iter(logits)?),
         }
+    }
+
+    /// Create a new sync Llama model from a builder.
+    pub fn from_builder(builder: crate::LlamaBuilder) -> anyhow::Result<Self> {
+        let tokenizer = builder.source.tokenizer()?;
+
+        let device = Device::cuda_if_available(0)?;
+        let filename = builder.source.model()?;
+        let mut file = std::fs::File::open(&filename)?;
+        let model = match filename.extension().and_then(|v| v.to_str()) {
+            Some("gguf") => {
+                let model = gguf_file::Content::read(&mut file)?;
+                Model::from_gguf(model, &mut file)?
+            }
+            Some("ggml" | "bin") | Some(_) | None => {
+                let model = ggml_file::Content::read(&mut file)?;
+                let gqa = builder.source.group_query_attention;
+                Model::from_ggml(model, gqa as usize)?
+            }
+        };
+
+        let cache = LlamaCache::new(&model);
+        Ok(Self {
+            model,
+            tokenizer: Arc::new(tokenizer),
+            device,
+            cache,
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -139,7 +185,6 @@ impl LlamaModel {
         let InferenceSettings {
             prompt,
             sample_len,
-
             stop_on,
         } = settings;
 

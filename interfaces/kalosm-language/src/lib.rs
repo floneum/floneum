@@ -21,6 +21,7 @@
 pub mod chat;
 pub mod context;
 pub mod search;
+pub mod task;
 pub mod tool;
 pub mod vector_db;
 
@@ -35,6 +36,7 @@ pub use rphi;
 pub mod prelude {
     pub use crate::chat::*;
     pub use crate::context::*;
+    pub use crate::task::*;
     pub use crate::tool::*;
     pub use crate::vector_db::*;
     pub use futures_util::StreamExt as _;

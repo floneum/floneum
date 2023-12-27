@@ -85,6 +85,11 @@ impl<I> TestCases<I> {
         self
     }
 
+    /// Push a test case to this set of test cases.
+    pub fn push_case(&mut self, input: I, output: I) {
+        self.tests.push(TestCase { input, output });
+    }
+
     /// Evaluate a model using this set of test cases.
     pub async fn evaluate<M: Metric<I>>(&mut self, metric: &mut M) -> EvaluationResult<'_, I> {
         let mut values = Vec::new();

@@ -17,6 +17,7 @@ use tokenizers::Tokenizer;
 use crate::InferenceSettings;
 
 /// A Phi-1.5 session.
+#[derive(Debug, Clone)]
 pub struct PhiSession {
     cache: PhiCache,
     current_tokens: Vec<u32>,
@@ -36,6 +37,13 @@ impl Session for PhiSession {
         let tensors = candle_core::safetensors::load(path, &device)?;
 
         Ok(Self::from_tensor_map(tensors))
+    }
+
+    fn try_clone(&self) -> anyhow::Result<Self>
+    where
+        Self: std::marker::Sized,
+    {
+        Ok(self.clone())
     }
 }
 
@@ -94,17 +102,27 @@ impl SyncModel for PhiModel {
         })
     }
 
-    fn feed_text(&self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Logits> {
+    fn feed_text(
+        &self,
+        session: &mut Self::Session,
+        prompt: &str,
+        top_k: Option<usize>,
+    ) -> anyhow::Result<Logits> {
         let tokens = self
             .tokenizer
             .encode(prompt, true)
             .map_err(E::msg)?
             .get_ids()
             .to_vec();
-        self.feed_tokens(session, &tokens)
+        self.feed_tokens(session, &tokens, top_k)
     }
 
-    fn feed_tokens(&self, session: &mut Self::Session, tokens: &[u32]) -> anyhow::Result<Logits> {
+    fn feed_tokens(
+        &self,
+        session: &mut Self::Session,
+        tokens: &[u32],
+        top_k: Option<usize>,
+    ) -> anyhow::Result<Logits> {
         session.current_tokens.extend(tokens.iter().copied());
 
         Self::forward(
@@ -112,7 +130,7 @@ impl SyncModel for PhiModel {
             &self.device,
             tokens,
             Some(&mut session.cache),
-            None,
+            top_k,
         )
     }
 

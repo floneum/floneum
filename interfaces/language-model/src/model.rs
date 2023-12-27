@@ -569,11 +569,21 @@ pub trait SyncModel {
     /// Create a new session for this model.
     fn new_session(&self) -> anyhow::Result<Self::Session>;
 
-    /// Run the model synchronously.
-    fn feed_text(&self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Logits>;
+    /// Run the model synchronously. The model implementation may choose to return only the top k logits.
+    fn feed_text(
+        &self,
+        session: &mut Self::Session,
+        prompt: &str,
+        top_k: Option<usize>,
+    ) -> anyhow::Result<Logits>;
 
-    /// Run the model synchronously with a pre-tokenized input.
-    fn feed_tokens(&self, session: &mut Self::Session, tokens: &[u32]) -> anyhow::Result<Logits>;
+    /// Run the model synchronously with a pre-tokenized input. The model implementation may choose to return only the top k logits.
+    fn feed_tokens(
+        &self,
+        session: &mut Self::Session,
+        tokens: &[u32],
+        top_k: Option<usize>,
+    ) -> anyhow::Result<Logits>;
 
     /// Get the token ID that represents the end of a sequence.
     fn stop_token(&self) -> anyhow::Result<u32>;
@@ -591,6 +601,14 @@ pub trait Session {
 
     /// Load the session from the given path.
     fn load_from(_path: impl AsRef<Path>) -> anyhow::Result<Self>
+    where
+        Self: std::marker::Sized,
+    {
+        Err(anyhow::Error::msg("Not implemented"))
+    }
+
+    /// Try to clone the session.
+    fn try_clone(&self) -> anyhow::Result<Self>
     where
         Self: std::marker::Sized,
     {
@@ -646,36 +664,65 @@ pub trait SyncModelExt: SyncModel {
         let tokens = self.tokenizer().encode(prompt)?;
         let mut text_stream = TokenOutputStream::new(self.tokenizer(), tokens.clone());
 
-        let mut logits = self.feed_tokens(session, &tokens)?;
+        let mut logits = self.feed_tokens(session, &tokens, Some(512))?;
         let mut tokens_generated = 0;
         // This stores a buffer of text that has been generated to check against the stop_on string. It should never be longer than the stop_on string.
-        let mut text_matching_buffer = String::new();
+        let mut queued_text_matching_stop_on = String::new();
+        let stop_on_lowercase = stop_on.map(|s| s.to_lowercase());
+        let stop_on_lowercase = stop_on_lowercase.as_deref();
 
-        loop {
+        'generate: loop {
             let new_token = text_stream.sample_token(&mut sampler, logits, stop_on)?;
             if let Some(mut new_text) = text_stream.next_token(new_token)? {
-                if let Some(stop_on) = stop_on {
-                    text_matching_buffer.push_str(&new_text);
-                    // Check if the string matches the stop_on string
-                    if text_matching_buffer.contains(stop_on) {
-                        // If it does, only send the text up and including the stop_on string
-                        if new_text.len() > stop_on.len() {
-                            new_text = new_text.strip_suffix(stop_on).unwrap().to_string();
-                            on_token(new_text)?;
-                        }
-                        // And stop the generation
+                if let Some(stop_on) = stop_on_lowercase {
+                    let lowercase = new_text.to_lowercase();
+
+                    // Check if the string ends with the start of the stop_on string
+                    let mut before_stop_on = None;
+                    let remaining_stop_on = stop_on
+                        .strip_prefix(&queued_text_matching_stop_on)
+                        .unwrap_or(stop_on);
+
+                    // If the remaining stop_on string is empty, we have found a match
+                    if remaining_stop_on.is_empty() {
                         break;
                     }
-                    // Trim the buffer to the length of the stop_on string
-                    if text_matching_buffer.len() > stop_on.len() {
-                        let byte_idx = text_matching_buffer.len() - stop_on.len();
-                        if text_matching_buffer.is_char_boundary(byte_idx) {
-                            text_matching_buffer =
-                                text_matching_buffer.split_at(byte_idx).1.to_string();
+
+                    for (i, _) in lowercase.char_indices() {
+                        let end_of_new_text = &lowercase[i..];
+                        if end_of_new_text.is_empty() {
+                            break;
+                        }
+
+                        // Check if we have matched all of the stop_on string
+                        if end_of_new_text.starts_with(remaining_stop_on) {
+                            queued_text_matching_stop_on += end_of_new_text;
+                            break 'generate;
+                        }
+
+                        // Check if the string ends with the start of the stop_on string
+                        if remaining_stop_on.starts_with(end_of_new_text) {
+                            before_stop_on = Some(lowercase[..i].to_string());
+                            queued_text_matching_stop_on += end_of_new_text;
+                            break;
                         }
                     }
-                }
-                if let ModelFeedback::Stop = on_token(new_text)? {
+
+                    match before_stop_on {
+                        Some(before_stop_on) => {
+                            if let ModelFeedback::Stop = on_token(before_stop_on)? {
+                                break;
+                            }
+                        }
+                        None => {
+                            new_text =
+                                std::mem::take(&mut queued_text_matching_stop_on) + &new_text;
+                            if let ModelFeedback::Stop = on_token(new_text)? {
+                                break;
+                            }
+                        }
+                    }
+                } else if let ModelFeedback::Stop = on_token(new_text)? {
                     break;
                 }
             }
@@ -685,7 +732,14 @@ pub trait SyncModelExt: SyncModel {
                     break;
                 }
             }
-            logits = self.feed_tokens(session, &[new_token])?;
+            logits = self.feed_tokens(session, &[new_token], Some(512))?;
+        }
+
+        // Flush the queued text
+        if let Some(stop_string) = stop_on_lowercase {
+            if !queued_text_matching_stop_on.starts_with(stop_string) {
+                on_token(queued_text_matching_stop_on)?;
+            }
         }
 
         Ok(())
@@ -712,11 +766,21 @@ impl SyncModel for SyncModelNotSupported {
         Err(anyhow::Error::msg("Not implemented"))
     }
 
-    fn feed_text(&self, _session: &mut (), _prompt: &str) -> anyhow::Result<Logits> {
+    fn feed_text(
+        &self,
+        _session: &mut (),
+        _prompt: &str,
+        _: Option<usize>,
+    ) -> anyhow::Result<Logits> {
         Err(anyhow::Error::msg("Not implemented"))
     }
 
-    fn feed_tokens(&self, _session: &mut (), _tokens: &[u32]) -> anyhow::Result<Logits> {
+    fn feed_tokens(
+        &self,
+        _session: &mut (),
+        _tokens: &[u32],
+        _: Option<usize>,
+    ) -> anyhow::Result<Logits> {
         Err(anyhow::Error::msg("Not implemented"))
     }
 
@@ -920,14 +984,24 @@ impl SyncModel for BoxedSyncModel {
         self_ref.new_session()
     }
 
-    fn feed_text(&self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Logits> {
+    fn feed_text(
+        &self,
+        session: &mut Self::Session,
+        prompt: &str,
+        top_k: Option<usize>,
+    ) -> anyhow::Result<Logits> {
         let self_ref: &(dyn SyncModel<Session = AnySession>) = self.as_ref();
-        self_ref.feed_text(session, prompt)
+        self_ref.feed_text(session, prompt, top_k)
     }
 
-    fn feed_tokens(&self, session: &mut Self::Session, tokens: &[u32]) -> anyhow::Result<Logits> {
+    fn feed_tokens(
+        &self,
+        session: &mut Self::Session,
+        tokens: &[u32],
+        top_k: Option<usize>,
+    ) -> anyhow::Result<Logits> {
         let self_ref: &(dyn SyncModel<Session = AnySession>) = self.as_ref();
-        self_ref.feed_tokens(session, tokens)
+        self_ref.feed_tokens(session, tokens, top_k)
     }
 
     fn stop_token(&self) -> anyhow::Result<u32> {
@@ -952,7 +1026,12 @@ impl<M: SyncModel<Session = S>, S: Session + Any> SyncModel for AnySyncModel<M, 
         })
     }
 
-    fn feed_text(&self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Logits> {
+    fn feed_text(
+        &self,
+        session: &mut Self::Session,
+        prompt: &str,
+        top_k: Option<usize>,
+    ) -> anyhow::Result<Logits> {
         self.0.feed_text(
             match session.as_any_mut().downcast_mut() {
                 Some(s) => s,
@@ -964,10 +1043,16 @@ impl<M: SyncModel<Session = S>, S: Session + Any> SyncModel for AnySyncModel<M, 
                 }
             },
             prompt,
+            top_k,
         )
     }
 
-    fn feed_tokens(&self, session: &mut Self::Session, tokens: &[u32]) -> anyhow::Result<Logits> {
+    fn feed_tokens(
+        &self,
+        session: &mut Self::Session,
+        tokens: &[u32],
+        top_k: Option<usize>,
+    ) -> anyhow::Result<Logits> {
         self.0.feed_tokens(
             match session.as_any_mut().downcast_mut() {
                 Some(s) => s,
@@ -979,6 +1064,7 @@ impl<M: SyncModel<Session = S>, S: Session + Any> SyncModel for AnySyncModel<M, 
                 }
             },
             tokens,
+            top_k,
         )
     }
 

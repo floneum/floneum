@@ -2,7 +2,7 @@ use kalosm::language::*;
 
 #[tokio::main]
 async fn main() {
-    let llm = Phi::v2().unwrap();
+    let llm = Llama::default();
 
     println!("Loading local documents...");
     let mut document_database = DocumentDatabase::new(

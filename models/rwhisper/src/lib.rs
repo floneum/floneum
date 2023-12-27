@@ -116,7 +116,8 @@ where
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         tokio::spawn(async move {
             while let Some(source) = stream.next().await {
-                match model.transcribe(source) {
+                let result = { model.transcribe(source) };
+                match result {
                     Ok(mut stream) => {
                         while let Some(segment) = stream.next().await {
                             if let Err(err) = sender.send(segment) {

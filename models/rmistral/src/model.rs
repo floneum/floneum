@@ -14,6 +14,7 @@ use tokenizers::Tokenizer;
 use crate::InferenceSettings;
 
 /// A Mistral-1.5 session.
+#[derive(Debug, Clone)]
 pub struct MistralSession {
     cache: MistralCache,
     current_tokens: Vec<u32>,
@@ -33,6 +34,13 @@ impl Session for MistralSession {
         let tensors = candle_core::safetensors::load(path, &device)?;
 
         Ok(Self::from_tensor_map(tensors))
+    }
+
+    fn try_clone(&self) -> anyhow::Result<Self>
+    where
+        Self: std::marker::Sized,
+    {
+        Ok(self.clone())
     }
 }
 
@@ -91,13 +99,23 @@ impl SyncModel for MistralModel {
         })
     }
 
-    fn feed_text(&self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Logits> {
+    fn feed_text(
+        &self,
+        session: &mut Self::Session,
+        prompt: &str,
+        top_k: Option<usize>,
+    ) -> anyhow::Result<Logits> {
         let encoded = self.tokenizer.encode(prompt, true).map_err(E::msg)?;
         let tokens = encoded.get_ids();
-        self.feed_tokens(session, tokens)
+        self.feed_tokens(session, tokens, top_k)
     }
 
-    fn feed_tokens(&self, session: &mut Self::Session, tokens: &[u32]) -> anyhow::Result<Logits> {
+    fn feed_tokens(
+        &self,
+        session: &mut Self::Session,
+        tokens: &[u32],
+        top_k: Option<usize>,
+    ) -> anyhow::Result<Logits> {
         session.current_tokens.extend(tokens);
 
         let token_count = tokens.len();
@@ -107,7 +125,7 @@ impl SyncModel for MistralModel {
             tokens,
             session.current_tokens.len() - token_count,
             Some(&mut session.cache),
-            None,
+            top_k,
         )
     }
 

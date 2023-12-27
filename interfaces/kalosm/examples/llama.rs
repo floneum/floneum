@@ -13,7 +13,6 @@ async fn main() {
 <|user|>
 What is your favorite story from your adventures?</s>
 <|assistant|>";
-    // let prompt = "What is the capital of france?";
     let mut result = model
         .stream_text(prompt)
         .with_max_length(1000)
