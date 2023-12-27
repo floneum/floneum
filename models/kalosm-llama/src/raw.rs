@@ -5,6 +5,8 @@ use candle_core::quantized::QTensor;
 use candle_core::quantized::{ggml_file, gguf_file};
 use candle_core::{DType, Device, IndexOp, Result, Tensor, D};
 use candle_nn::{Embedding, Module};
+use rayon::iter::ParallelIterator;
+use rayon::slice::ParallelSliceMut;
 use tracing::Span;
 
 use crate::session::{AttentionCache, AttentionCacheValue, LlamaCache};
@@ -427,16 +429,53 @@ impl Model {
             let x = layer.ffn_norm.forward(&x)?;
 
             layer_in = std::thread::scope(|scope| {
-                let w1 = scope.spawn(|| layer.feed_forward_w1.forward(&x));
+                let w1 = scope.spawn(|| {
+                    let w1 = layer.feed_forward_w1.forward(&x)?;
+                    let shape = w1.shape();
+                    let mut as_vec = w1.flatten_all()?.to_vec1::<f32>()?;
+
+                    static SILU_CACHE: once_cell::sync::Lazy<Vec<f32>> =
+                        once_cell::sync::Lazy::new(|| {
+                            let f16_count = 2 << 16;
+                            let mut cache = Vec::with_capacity(f16_count);
+                            for i in 0..f16_count {
+                                let x = half::f16::from_bits(i as u16).to_f32();
+                                cache.push(x / (1. + (-x).exp()));
+                            }
+                            cache
+                        });
+
+                    #[inline(always)]
+                    fn silu_chunk(chunk: &mut [f32; 128]) {
+                        let cache: &[f32] = SILU_CACHE.as_ref();
+                        for entry in chunk {
+                            let as_f16 = half::f16::from_f32(*entry);
+                            let as_f16 = as_f16.to_bits();
+                            let as_f16 = as_f16 as usize;
+                            *entry = cache[as_f16];
+                        }
+                    }
+
+                    // SILU
+                    let cache: &[f32] = SILU_CACHE.as_ref();
+                    let mut iter = as_vec.par_chunks_exact_mut(128);
+                    for entry in iter.remainder() {
+                        *entry = cache[half::f16::from_f32(*entry).to_bits() as usize];
+                    }
+                    iter.for_each(|chunk| {
+                        let chunk: &mut [f32; 128] = unsafe { chunk.try_into().unwrap_unchecked() };
+                        silu_chunk(chunk)
+                    });
+
+                    Tensor::from_vec(as_vec, shape, &Device::Cpu)
+                });
 
                 let w3 = layer.feed_forward_w3.forward(&x)?;
                 let w1 = w1
                     .join()
                     .map_err(|_| candle_core::Error::Msg("Failed to join thread".to_string()))??;
 
-                let mlp = layer
-                    .feed_forward_w2
-                    .forward(&(candle_nn::ops::silu(&w1)? * w3)?)?;
+                let mlp = layer.feed_forward_w2.forward(&(&w1 * w3)?)?;
 
                 mlp + residual
             })?;
