@@ -30,8 +30,12 @@ async fn main() {
 "
         );
 
-        let stream = llm.stream_text(&prompt).with_max_length(300).await.unwrap();
-
-        stream.to_std_out().await.unwrap();
+        llm.stream_text(&prompt)
+            .with_max_length(300)
+            .await
+            .unwrap()
+            .to_std_out()
+            .await
+            .unwrap();
     }
 }

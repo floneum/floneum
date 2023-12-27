@@ -20,8 +20,9 @@
 
 pub mod chat;
 pub mod context;
-pub mod index;
+pub mod search;
 pub mod tool;
+pub mod vector_db;
 
 pub use kalosm_language_model;
 pub use kalosm_llama;
@@ -34,8 +35,8 @@ pub use rphi;
 pub mod prelude {
     pub use crate::chat::*;
     pub use crate::context::*;
-    pub use crate::index::*;
     pub use crate::tool::*;
+    pub use crate::vector_db::*;
     pub use futures_util::StreamExt as _;
     pub use kalosm_language_model::*;
     pub use kalosm_llama::{Llama, LlamaBuilder, LlamaSession, LlamaSource};

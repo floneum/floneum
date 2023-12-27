@@ -16,8 +16,6 @@ use kalosm_sample::{
 pub use search::*;
 mod calculator;
 pub use calculator::*;
-mod document;
-pub use document::*;
 
 /// A tool that can be used by a [`kalosm_language_model::Model`]
 // TODO: Add example

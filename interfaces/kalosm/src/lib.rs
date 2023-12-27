@@ -9,7 +9,6 @@ pub mod language {
     //! Language processing utilities for the Kalosm framework.
     pub use kalosm_language::chat::*;
     pub use kalosm_language::context::*;
-    pub use kalosm_language::index::*;
     pub use kalosm_language::kalosm_language_model::{Model as _, ModelExt as _, *};
     pub use kalosm_language::kalosm_llama::{Llama, LlamaBuilder, LlamaSession, LlamaSource};
     pub use kalosm_language::kalosm_sample::*;
@@ -26,3 +25,5 @@ pub use kalosm_vision as vision;
 
 mod evaluate;
 pub use evaluate::*;
+mod index;
+pub use index::*;
