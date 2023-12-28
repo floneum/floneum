@@ -516,7 +516,8 @@ impl<S: Stream<Item = String> + Send + Unpin + 'static, O> DerefMut
 }
 
 impl<S: Stream<Item = String> + Send + Unpin + 'static, O> StructureParserResult<S, O> {
-    fn new(stream: S, result: tokio::sync::oneshot::Receiver<anyhow::Result<O>>) -> Self {
+    /// Create a new structured parser result from a stream and a result.
+    pub fn new(stream: S, result: tokio::sync::oneshot::Receiver<anyhow::Result<O>>) -> Self {
         Self { stream, result }
     }
 

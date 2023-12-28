@@ -1,3 +1,5 @@
+//! A vector database that can be used to store embeddings and search for similar embeddings.
+
 use std::fmt::Debug;
 
 use crate::context::Document;

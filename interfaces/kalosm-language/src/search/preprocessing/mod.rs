@@ -12,7 +12,7 @@
 // 2. Dump all sentences that mention an entity
 // 3. Extract relevant sentences with an llm
 
-use kalosm_language_model::{VectorSpace, Embedder};
+use kalosm_language_model::{Embedder, VectorSpace};
 
 use crate::context::Document;
 
@@ -29,13 +29,21 @@ pub use summary::*;
 #[async_trait::async_trait]
 pub trait Chunker<S: VectorSpace + Send + Sync + 'static> {
     /// Chunk a document into embedded snippets.
-    async fn chunk<E: Embedder<S> + Send>(&self, document: &Document, embedder: &mut E) -> anyhow::Result<Vec<Chunk<S>>>;
+    async fn chunk<E: Embedder<S> + Send>(
+        &self,
+        document: &Document,
+        embedder: &mut E,
+    ) -> anyhow::Result<Vec<Chunk<S>>>;
 
     /// Chunk a batch of documents into embedded snippets.
-    async fn chunk_batch<'a, I, E: Embedder<S> + Send>(&self, documents: I, embedder: &mut E) -> anyhow::Result<Vec<Vec<Chunk<S>>>>
-    where 
-    I: IntoIterator<Item=&'a Document> + Send,
-    I::IntoIter: Send
+    async fn chunk_batch<'a, I, E: Embedder<S> + Send>(
+        &self,
+        documents: I,
+        embedder: &mut E,
+    ) -> anyhow::Result<Vec<Vec<Chunk<S>>>>
+    where
+        I: IntoIterator<Item = &'a Document> + Send,
+        I::IntoIter: Send,
     {
         let mut chunks = Vec::new();
         for document in documents {

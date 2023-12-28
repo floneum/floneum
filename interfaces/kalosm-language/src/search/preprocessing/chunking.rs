@@ -1,8 +1,8 @@
+use kalosm_language_model::{Embedder, VectorSpace};
 use std::ops::Range;
-use kalosm_language_model::{VectorSpace, Embedder};
 
-use crate::{prelude::Document, search::Chunk};
 use super::Chunker;
+use crate::{prelude::Document, search::Chunk};
 
 /// A strategy for chunking a document into smaller pieces.
 ///
@@ -132,7 +132,11 @@ impl<S: VectorSpace> std::fmt::Debug for EmbeddedDocument<S> {
 
 #[async_trait::async_trait]
 impl<S: VectorSpace + Send + Sync + 'static> Chunker<S> for ChunkStrategy {
-    async fn chunk<E: Embedder<S> + Send>(&self, document: &Document, embedder: &mut E) -> anyhow::Result<Vec<Chunk<S>>> {
+    async fn chunk<E: Embedder<S> + Send>(
+        &self,
+        document: &Document,
+        embedder: &mut E,
+    ) -> anyhow::Result<Vec<Chunk<S>>> {
         let mut chunks = Vec::new();
         let body = document.body();
         let mut documents = Vec::new();
@@ -150,7 +154,11 @@ impl<S: VectorSpace + Send + Sync + 'static> Chunker<S> for ChunkStrategy {
         Ok(chunks)
     }
 
-    async fn chunk_batch<'a, I, E: Embedder<S> + Send>(&self, documents: I, embedder: &mut E) ->anyhow::Result< Vec<Vec<Chunk<S>>>>
+    async fn chunk_batch<'a, I, E: Embedder<S> + Send>(
+        &self,
+        documents: I,
+        embedder: &mut E,
+    ) -> anyhow::Result<Vec<Vec<Chunk<S>>>>
     where
         I: IntoIterator<Item = &'a Document> + Send,
         I::IntoIter: Send,
@@ -167,7 +175,7 @@ impl<S: VectorSpace + Send + Sync + 'static> Chunker<S> for ChunkStrategy {
         }
 
         let mut embeddings = embedder.embed_batch(&chunk_strings).await?;
-        let mut embeddings = embeddings.drain(..).rev();
+        let mut embeddings = embeddings.drain(..);
         let mut embedded_chunks = Vec::new();
 
         for chunk in chunks {
