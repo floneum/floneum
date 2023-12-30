@@ -23,6 +23,8 @@ anyhow = "1.0.75"
 tracing = "0.1.37"
 image = "0.24.7"
 imageproc = "0.23.0"
+serde = "1.0.193"
+serde_json = "1.0"
 
 [features]
 flash = ["candle-transformers/flash-attn"]
