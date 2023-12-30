@@ -1,9 +1,9 @@
 use kalosm_language_model::{ChatModel, Embedder, StructureParserResult, SyncModel, VectorSpace};
-use kalosm_sample::{LiteralParser, ParserExt};
+use kalosm_sample::{LiteralParser, ParserExt, StopOn};
 use kalosm_streams::text_stream::ChannelTextStream;
 
 use crate::{
-    prelude::{Document, OneLine, Task},
+    prelude::{Document, Task},
     search::Chunk,
 };
 
@@ -13,7 +13,7 @@ const TASK_DESCRIPTION: &str = "You generate summaries of the given text.";
 
 /// Generates embeddings of questions
 pub struct Summarizer {
-    task: Task<StructureParserResult<ChannelTextStream<String>, Vec<((), String)>>>,
+    task: Task<StructureParserResult<ChannelTextStream<String>, Vec<((), String)>>> 
 }
 
 impl Summarizer {
@@ -23,8 +23,9 @@ impl Summarizer {
         M: ChatModel,
         <M::SyncModel as SyncModel>::Session: Send,
     {
-        let task = Task::builder(model, TASK_DESCRIPTION)
-            .with_constraints(move || LiteralParser::new("Summary: ").then(OneLine).repeat(2..=5))
+        let end_assistant_marker = model.end_assistant_marker().to_string();
+        let task= Task::builder(model, TASK_DESCRIPTION)
+            .with_constraints(move || LiteralParser::new("Summary: ").then(StopOn::new(end_assistant_marker.clone())).repeat(2..=5))
             .build();
         Self { task }
     }

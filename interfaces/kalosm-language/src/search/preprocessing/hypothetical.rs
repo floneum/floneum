@@ -1,9 +1,9 @@
 use kalosm_language_model::{ChatModel, Embedder, StructureParserResult, SyncModel, VectorSpace};
-use kalosm_sample::{LiteralParser, ParserExt};
+use kalosm_sample::{LiteralParser, ParserExt, StopOn};
 use kalosm_streams::text_stream::ChannelTextStream;
 
 use crate::{
-    prelude::{Document, OneLine, Task},
+    prelude::{Document, Task},
     search::Chunk,
 };
 
@@ -24,8 +24,9 @@ impl Hypothetical {
         M: ChatModel,
         <M::SyncModel as SyncModel>::Session: Send,
     {
+        let end_assistant_marker = model.end_assistant_marker().to_string();
         let task = Task::builder(model, TASK_DESCRIPTION)
-            .with_constraints(move || LiteralParser::new("Question: ").then(OneLine).repeat(2..=5))
+            .with_constraints(move || LiteralParser::new("Question: ").then(StopOn::new(end_assistant_marker.clone())).repeat(2..=5))
             .build();
         Self { task }
     }
