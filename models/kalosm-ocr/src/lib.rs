@@ -284,7 +284,7 @@ impl OcrEncoderConfig {
         }
     }
 
-/// Create a new [`OcrEncoderConfig`] for a [large print text model](https://huggingface.co/microsoft/trocr-large-printed)
+    /// Create a new [`OcrEncoderConfig`] for a [large print text model](https://huggingface.co/microsoft/trocr-large-printed)
     pub fn microsoft_trocr_large_printed() -> Self {
         Self {
             hidden_size: 1024,
