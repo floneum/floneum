@@ -85,7 +85,7 @@ impl<S: VectorSpace + Send + Sync + 'static> Chunker<S> for Hypothetical {
             let question = self.task.run(prompt).await?.result().await?;
             questions.push(question.len());
 
-            println!("generated questions {:?}", question);
+            tracing::trace!("generated questions {:?}", question);
 
             texts.extend(question.into_iter().map(|(_, text)| text));
         }
