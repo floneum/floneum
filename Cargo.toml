@@ -19,7 +19,6 @@ members = [
     "models/kalosm-llama",
     "models/rphi",
     "models/rwhisper",
-    "models/rmistral",
     "models/rwuerstchen",
     "models/segment-anything-rs",
     "models/kalosm-ocr",
@@ -95,7 +94,6 @@ kalosm-learning = { path = "./interfaces/kalosm-learning", version = "0.1.0" }
 kalosm-learning-macro = { path = "./interfaces/kalosm-learning-macro", version = "0.1.0" }
 rphi = { path = "./models/rphi", version = "0.1.0" }
 rbert = { path = "./models/rbert", version = "0.1.0" }
-rmistral = { path = "./models/rmistral", version = "0.1.0" }
 kalosm-llama = { path = "./models/kalosm-llama", version = "0.1.0" }
 rwhisper = { path = "./models/rwhisper", version = "0.1.0" }
 rwuerstchen = { path = "./models/rwuerstchen", version = "0.1.0" }

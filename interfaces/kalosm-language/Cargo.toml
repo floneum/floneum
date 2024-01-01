@@ -43,7 +43,6 @@ crossbeam = "0.8.2"
 dashmap = "5.5.3"
 rbert.workspace = true
 rphi.workspace = true
-rmistral.workspace = true
 kalosm-llama.workspace = true
 pin-project = "1"
 kalosm-streams.workspace = true
@@ -66,5 +65,5 @@ half = "2.3.1"
 
 [features]
 llamacpp = ["kalosm-language-model/llamacpp", "kalosm-sample/llamacpp"]
-metal = ["kalosm-language-model/metal", "rphi/accelerate", "rbert/accelerate", "rmistral/accelerate", "kalosm-llama/accelerate"]
-cublas = ["kalosm-language-model/cublas", "rbert/cuda", "rbert/cudnn", "rphi/cuda", "rphi/cudnn", "rmistral/cuda", "rmistral/cudnn", "kalosm-llama/cuda", "kalosm-llama/cudnn"]
+metal = ["kalosm-language-model/metal", "rphi/accelerate", "rbert/accelerate", "kalosm-llama/accelerate"]
+cublas = ["kalosm-language-model/cublas", "rbert/cuda", "rbert/cudnn", "rphi/cuda", "rphi/cudnn", "kalosm-llama/cuda", "kalosm-llama/cudnn"]
