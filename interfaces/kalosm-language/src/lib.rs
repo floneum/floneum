@@ -28,7 +28,6 @@ pub use kalosm_language_model;
 pub use kalosm_llama;
 pub use kalosm_sample;
 pub use rbert;
-pub use rmistral;
 pub use rphi;
 
 /// A prelude of commonly used items in kalosm-language
@@ -44,6 +43,5 @@ pub mod prelude {
     pub use kalosm_sample::*;
     pub use kalosm_streams::text_stream::*;
     pub use rbert::{Bert, BertBuilder, BertSource, BertSpace};
-    pub use rmistral::{Mistral, MistralBuilder, MistralSource};
     pub use rphi::{Phi, PhiBuilder, PhiSource};
 }
