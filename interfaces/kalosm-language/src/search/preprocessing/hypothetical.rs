@@ -26,7 +26,11 @@ impl Hypothetical {
     {
         let end_assistant_marker = model.end_assistant_marker().to_string();
         let task = Task::builder(model, TASK_DESCRIPTION)
-            .with_constraints(move || LiteralParser::new("Question: ").then(StopOn::new(end_assistant_marker.clone())).repeat(2..=5))
+            .with_constraints(move || {
+                LiteralParser::new("Question: ")
+                    .then(StopOn::new(end_assistant_marker.clone()))
+                    .repeat(2..=5)
+            })
             .build();
         Self { task }
     }

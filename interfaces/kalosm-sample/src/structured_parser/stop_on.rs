@@ -40,7 +40,10 @@ pub struct StopOnOffset {
 impl StopOnOffset {
     /// Create a new stop on literal parser state.
     pub fn new(offset: usize) -> Self {
-        Self { offset, text: String::new() }
+        Self {
+            offset,
+            text: String::new(),
+        }
     }
 }
 
@@ -59,7 +62,8 @@ impl<S: AsRef<str>> Parser for StopOn<S> {
 
         for (i, (input_byte, literal_byte)) in input
             .iter()
-            .zip(self.literal.as_ref().as_bytes()[state.offset..].iter()).enumerate()
+            .zip(self.literal.as_ref().as_bytes()[state.offset..].iter())
+            .enumerate()
         {
             if input_byte == literal_byte {
                 new_offset += 1;
@@ -77,11 +81,13 @@ impl<S: AsRef<str>> Parser for StopOn<S> {
 
         text.push_str(std::str::from_utf8(&input).unwrap());
 
-        
-            Ok(ParseResult::Incomplete {
-                new_state: StopOnOffset { offset: new_offset, text },
-                required_next: "".into(),
-            })
+        Ok(ParseResult::Incomplete {
+            new_state: StopOnOffset {
+                offset: new_offset,
+                text,
+            },
+            required_next: "".into(),
+        })
     }
 }
 
@@ -90,7 +96,10 @@ fn literal_parser() {
     let parser = StopOn {
         literal: "Hello, world!",
     };
-    let state = StopOnOffset { offset: 0, text: String::new() };
+    let state = StopOnOffset {
+        offset: 0,
+        text: String::new(),
+    };
     assert_eq!(
         parser.parse(&state, b"Hello, world!"),
         Ok(ParseResult::Finished {
@@ -108,7 +117,10 @@ fn literal_parser() {
     assert_eq!(
         parser.parse(&state, b"Hello, "),
         Ok(ParseResult::Incomplete {
-            new_state: StopOnOffset { offset: 7, text: "Hello, ".into() },
+            new_state: StopOnOffset {
+                offset: 7,
+                text: "Hello, ".into()
+            },
             required_next: "".into()
         })
     );
@@ -129,7 +141,10 @@ fn literal_parser() {
     assert_eq!(
         parser.parse(&state, b"Goodbye, world!"),
         Ok(ParseResult::Incomplete {
-            new_state: StopOnOffset { offset: 0, text: "Goodbye, world".into() },
+            new_state: StopOnOffset {
+                offset: 0,
+                text: "Goodbye, world".into()
+            },
             required_next: "".into()
         })
     );

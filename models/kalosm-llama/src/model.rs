@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use candle_core::{
     quantized::{ggml_file, gguf_file},
-    DType, Device, Tensor,
+    DType, Device,
 };
 use kalosm_language_model::SyncModel;
 use tokenizers::Tokenizer;
@@ -118,8 +118,7 @@ impl LlamaModel {
             return Err(anyhow::anyhow!("Cannot run model on empty input"));
         }
 
-        let input = Tensor::new(tokens, device)?.unsqueeze(0)?;
-        let logits = model.forward(&input, seqlen_offset, cache)?;
+        let logits = model.forward(tokens, device, seqlen_offset, cache)?;
 
         if top_k == Some(0) {
             return Ok(Logits::default());

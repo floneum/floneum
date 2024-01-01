@@ -13,7 +13,7 @@ const TASK_DESCRIPTION: &str = "You generate summaries of the given text.";
 
 /// Generates embeddings of questions
 pub struct Summarizer {
-    task: Task<StructureParserResult<ChannelTextStream<String>, Vec<((), String)>>> 
+    task: Task<StructureParserResult<ChannelTextStream<String>, Vec<((), String)>>>,
 }
 
 impl Summarizer {
@@ -24,8 +24,12 @@ impl Summarizer {
         <M::SyncModel as SyncModel>::Session: Send,
     {
         let end_assistant_marker = model.end_assistant_marker().to_string();
-        let task= Task::builder(model, TASK_DESCRIPTION)
-            .with_constraints(move || LiteralParser::new("Summary: ").then(StopOn::new(end_assistant_marker.clone())).repeat(2..=5))
+        let task = Task::builder(model, TASK_DESCRIPTION)
+            .with_constraints(move || {
+                LiteralParser::new("Summary: ")
+                    .then(StopOn::new(end_assistant_marker.clone()))
+                    .repeat(2..=5)
+            })
             .build();
         Self { task }
     }
