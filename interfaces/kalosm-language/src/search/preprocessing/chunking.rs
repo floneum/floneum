@@ -45,17 +45,22 @@ impl ChunkStrategy {
                 let mut newline_indexes = Vec::new();
                 for (i, c) in string.char_indices() {
                     if c == '\n' {
-                        newline_indexes.push(i);
+                        newline_indexes.push(i + 1);
                         if newline_indexes.len() >= *paragraph_count {
                             if !string[start..i].trim().is_empty() {
                                 chunks.push(start..i);
                             }
-                            for _ in 0..*overlap {
+                            for _ in 0..(newline_indexes.len() - *overlap) {
                                 start = newline_indexes.remove(0);
                             }
                         }
                     }
                 }
+
+                if !string[start..].trim().is_empty() {
+                    chunks.push(start..string.len());
+                }
+
                 chunks
             }
             Self::Sentence {
@@ -67,17 +72,22 @@ impl ChunkStrategy {
                 let mut sentance_start_indexes = Vec::new();
                 for (i, c) in string.char_indices() {
                     if c == '.' {
-                        sentance_start_indexes.push(i);
+                        sentance_start_indexes.push(i + 1);
                         if sentance_start_indexes.len() >= *sentence_count {
                             if !string[start..i].trim().is_empty() {
                                 chunks.push(start..i);
                             }
-                            for _ in 0..*overlap {
+                            for _ in 0..(sentance_start_indexes.len() - *overlap) {
                                 start = sentance_start_indexes.remove(0);
                             }
                         }
                     }
                 }
+
+                if !string[start..].trim().is_empty() {
+                    chunks.push(start..string.len());
+                }
+
                 chunks
             }
             Self::Words {
@@ -89,17 +99,22 @@ impl ChunkStrategy {
                 let mut word_start_indexes = Vec::new();
                 for (i, c) in string.char_indices() {
                     if c == ' ' {
-                        word_start_indexes.push(i);
+                        word_start_indexes.push(i + 1);
                         if word_start_indexes.len() >= *word_count {
                             if !string[start..i].trim().is_empty() {
                                 chunks.push(start..i);
                             }
-                            for _ in 0..*overlap {
+                            for _ in 0..(word_start_indexes.len() - *overlap) {
                                 start = word_start_indexes.remove(0);
                             }
                         }
                     }
                 }
+
+                if !string[start..].trim().is_empty() {
+                    chunks.push(start..string.len());
+                }
+
                 chunks
             }
         }
@@ -113,6 +128,79 @@ impl Default for ChunkStrategy {
             overlap: 1,
         }
     }
+}
+
+#[test]
+fn test_chunking() {
+    let string = "The quick brown fox jumps over the lazy dog.";
+    let chunks = ChunkStrategy::Words {
+        word_count: 3,
+        overlap: 1,
+    };
+    let chunks = chunks.chunk_str(string);
+    assert_eq!(chunks.len(), 4);
+    assert_eq!(string[chunks[0].clone()].trim(), "The quick brown");
+    assert_eq!(string[chunks[1].clone()].trim(), "brown fox jumps");
+    assert_eq!(string[chunks[2].clone()].trim(), "jumps over the");
+    assert_eq!(string[chunks[3].clone()].trim(), "the lazy dog.");
+
+    let chunks = ChunkStrategy::Words {
+        word_count: 3,
+        overlap: 2,
+    };
+    let chunks = chunks.chunk_str(string);
+    assert_eq!(chunks.len(), 7);
+    assert_eq!(string[chunks[0].clone()].trim(), "The quick brown");
+    assert_eq!(string[chunks[1].clone()].trim(), "quick brown fox");
+    assert_eq!(string[chunks[2].clone()].trim(), "brown fox jumps");
+    assert_eq!(string[chunks[3].clone()].trim(), "fox jumps over");
+    assert_eq!(string[chunks[4].clone()].trim(), "jumps over the");
+    assert_eq!(string[chunks[5].clone()].trim(), "over the lazy");
+    assert_eq!(string[chunks[6].clone()].trim(), "the lazy dog.");
+
+    let chunks = ChunkStrategy::Sentence {
+        sentence_count: 2,
+        overlap: 1,
+    };
+
+    let string = "first sentence. second sentence. third sentence. fourth sentence.";
+
+    let chunks = chunks.chunk_str(string);
+    assert_eq!(chunks.len(), 3);
+    assert_eq!(
+        string[chunks[0].clone()].trim(),
+        "first sentence. second sentence"
+    );
+    assert_eq!(
+        string[chunks[1].clone()].trim(),
+        "second sentence. third sentence"
+    );
+    assert_eq!(
+        string[chunks[2].clone()].trim(),
+        "third sentence. fourth sentence"
+    );
+
+    let chunks = ChunkStrategy::Paragraph {
+        paragraph_count: 3,
+        overlap: 1,
+    };
+
+    let string = "first paragraph\n\nsecond paragraph\n\nthird paragraph\n\nfourth paragraph";
+
+    let chunks = chunks.chunk_str(string);
+    assert_eq!(chunks.len(), 3);
+    assert_eq!(
+        string[chunks[0].clone()].trim(),
+        "first paragraph\n\nsecond paragraph"
+    );
+    assert_eq!(
+        string[chunks[1].clone()].trim(),
+        "second paragraph\n\nthird paragraph"
+    );
+    assert_eq!(
+        string[chunks[2].clone()].trim(),
+        "third paragraph\n\nfourth paragraph"
+    );
 }
 
 /// A document that has been split into smaller chunks and embedded.
