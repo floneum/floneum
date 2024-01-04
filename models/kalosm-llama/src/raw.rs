@@ -410,7 +410,7 @@ impl Model {
         let cached_tokens = cache.as_ref().map(|c| c.tokens.len()).unwrap_or_default();
         // We use a lower cutoff than the context length to avoid recomputing the attention every single token
         const CUTOFF_LEN: usize = MAX_SEQ_LEN - 32;
-        let x = if seq_len + cached_tokens > CUTOFF_LEN {
+        let (x, index_pos) = if seq_len + cached_tokens > CUTOFF_LEN {
             let all_tokens = if let Some(cache) = cache.as_mut() {
                 cache.clear();
                 let mut all_tokens = cache.tokens.clone();
@@ -420,9 +420,10 @@ impl Model {
                 tokens.to_vec()
             };
             let all_tokens = &all_tokens[all_tokens.len() - CUTOFF_LEN..];
-            Tensor::new(all_tokens, device)?.unsqueeze(0)?
+            assert!(all_tokens.len() <= MAX_SEQ_LEN);
+            (Tensor::new(all_tokens, device)?.unsqueeze(0)?, 0)
         } else {
-            Tensor::new(tokens, device)?.unsqueeze(0)?
+            (Tensor::new(tokens, device)?.unsqueeze(0)?, index_pos)
         };
         if let Some(cache) = cache.as_mut() {
             cache.tokens.extend_from_slice(tokens);

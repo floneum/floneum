@@ -1,19 +1,22 @@
 use kalosm::language::*;
 use kalosm_language::search::{Chunker, Hypothetical};
+use std::path::PathBuf;
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let nyt =
-        RssFeed::new(Url::parse("https://rss.nytimes.com/services/xml/rss/nyt/US.xml").unwrap());
-
-    let documents = nyt.into_documents().await.unwrap();
-    println!("documents: {:?}", documents);
+    let documents = DocumentFolder::try_from(PathBuf::from("./documents")).unwrap();
+    let documents = documents.into_documents().await.unwrap()[..5].to_vec();
 
     let mut chat = Llama::new_chat();
 
-    let hypothetical = Hypothetical::new(&mut chat);
+    let hypothetical = Hypothetical::new(&mut chat).with_chunking(
+        kalosm_language::search::ChunkStrategy::Sentence {
+            sentence_count: 3,
+            overlap: 0,
+        },
+    );
 
     let mut embedder = Bert::default();
     let chunked = hypothetical

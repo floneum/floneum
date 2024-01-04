@@ -7,18 +7,19 @@ use crate::{
     search::Chunk,
 };
 
-use super::Chunker;
+use super::{ChunkStrategy, Chunker};
 
 const TASK_DESCRIPTION: &str = "You generate summaries of the given text.";
 
 /// Generates embeddings of questions
 pub struct Summarizer {
+    chunking: Option<ChunkStrategy>,
     task: Task<StructureParserResult<ChannelTextStream<String>, Vec<((), String)>>>,
 }
 
 impl Summarizer {
     /// Create a new hypothetical chunker.
-    pub fn new<M>(model: &mut M) -> Self
+    pub fn new<M>(model: &mut M, chunking: Option<ChunkStrategy>) -> Self
     where
         M: ChatModel,
         <M::SyncModel as SyncModel>::Session: Send,
@@ -31,7 +32,20 @@ impl Summarizer {
                     .repeat(2..=5)
             })
             .build();
-        Self { task }
+        Self { chunking, task }
+    }
+
+    /// Generate a summary for a document.
+    async fn generate_summary(&self, text: &str) -> anyhow::Result<Vec<String>> {
+        let prompt = format!("Generate a summary of the following text:\n{}", text);
+
+        let questions = self.task.run(prompt).await?.result().await?;
+        let documents = questions
+            .into_iter()
+            .map(|(_, text)| text)
+            .collect::<Vec<_>>();
+
+        Ok(documents)
     }
 }
 
@@ -42,70 +56,42 @@ impl<S: VectorSpace + Send + Sync + 'static> Chunker<S> for Summarizer {
         document: &Document,
         embedder: &mut E,
     ) -> anyhow::Result<Vec<Chunk<S>>> {
-        let mut chunks = Vec::new();
-
         let body = document.body();
-        let prompt = format!("Generate a summary of the following text:\n{}", body);
 
-        let questions = self.task.run(prompt).await?.result().await?;
-        let documents = questions
-            .iter()
-            .map(|(_, text)| text.as_str())
-            .collect::<Vec<_>>();
-        let embeddings = embedder.embed_batch(&documents).await?;
+        #[allow(clippy::single_range_in_vec_init)]
+        let byte_chunks = self
+            .chunking
+            .map(|chunking| chunking.chunk_str(body))
+            .unwrap_or_else(|| vec![0..body.len()]);
 
+        let mut questions = Vec::new();
+        let mut questions_count = Vec::new();
+        for byte_chunk in &byte_chunks {
+            let text = &body[byte_chunk.clone()];
+            let mut chunk_questions = self.generate_summary(text).await?;
+            questions.append(&mut chunk_questions);
+            questions_count.push(chunk_questions.len());
+        }
+        let embeddings = embedder
+            .embed_batch(&questions.iter().map(|s| s.as_str()).collect::<Vec<_>>())
+            .await?;
+
+        let mut chunks = Vec::with_capacity(embeddings.len());
+        let mut questions_count = questions_count.iter();
+        let mut remaining_embeddings = *questions_count.next().unwrap();
+        let mut byte_chunks = byte_chunks.into_iter();
+        let mut byte_chunk = byte_chunks.next().unwrap();
         for embedding in embeddings {
+            if remaining_embeddings == 0 {
+                remaining_embeddings = *questions_count.next().unwrap();
+                byte_chunk = byte_chunks.next().unwrap();
+            }
+            remaining_embeddings -= 1;
             chunks.push(Chunk {
-                byte_range: 0..body.len(),
+                byte_range: byte_chunk.clone(),
                 embeddings: vec![embedding],
             });
         }
         Ok(chunks)
-    }
-
-    async fn chunk_batch<'a, I, E: Embedder<S> + Send>(
-        &self,
-        documents: I,
-        embedder: &mut E,
-    ) -> anyhow::Result<Vec<Vec<Chunk<S>>>>
-    where
-        I: IntoIterator<Item = &'a Document> + Send,
-        I::IntoIter: Send,
-    {
-        let mut texts = Vec::new();
-        let mut questions = Vec::new();
-        let mut document_lengths = Vec::new();
-        for document in documents {
-            let body = document.body();
-            document_lengths.push(body.len());
-
-            let prompt = format!("Generate a summary of the following text:\n{}", body);
-
-            let question = self.task.run(prompt).await?.result().await?;
-            questions.push(question.len());
-            texts.extend(question.into_iter().map(|(_, text)| text));
-        }
-
-        let mut embeddings = embedder
-            .embed_batch(&texts.iter().map(|s| s.as_str()).collect::<Vec<_>>())
-            .await?;
-        let mut embeddings = embeddings.drain(..);
-        let mut embedded_chunks = Vec::new();
-        let mut document_lengths = document_lengths.iter();
-
-        for question_count in questions {
-            let mut document_chunks = Vec::new();
-            let doc_len = *document_lengths.next().unwrap();
-            for _ in 0..question_count {
-                let embedding = embeddings.next().unwrap();
-                document_chunks.push(Chunk {
-                    byte_range: 0..doc_len,
-                    embeddings: vec![embedding],
-                });
-            }
-            embedded_chunks.push(document_chunks);
-        }
-
-        Ok(embedded_chunks)
     }
 }
