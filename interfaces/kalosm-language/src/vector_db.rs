@@ -1,11 +1,15 @@
 //! A vector database that can be used to store embeddings and search for similar embeddings.
 
+use std::cell::Cell;
 use std::fmt::Debug;
+use std::sync::Mutex;
 
-use crate::context::Document;
-use candle_core::Tensor;
-use instant_distance::{Builder, HnswMap, Search};
+use arroy::distances::Euclidean;
+use arroy::{Database as ArroyDatabase, Reader, Writer};
+use heed::EnvOpenOptions;
 use kalosm_language_model::*;
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 
 /// A vector database that can be used to store embeddings and search for similar embeddings.
@@ -42,148 +46,176 @@ use serde::{Deserialize, Serialize};
 ///     Ok(())
 /// }
 /// ```
-
-#[derive(Deserialize, Serialize)]
-pub struct VectorDB<T = Document, S: VectorSpace = UnknownVectorSpace> {
-    model: HnswMap<Point<S>, T>,
+pub struct VectorDB<S: VectorSpace = UnknownVectorSpace> {
+    model: ArroyDatabase<Euclidean>,
+    env: heed::Env,
+    max_id: Cell<EmbeddingId>,
+    recycled_ids: Mutex<Vec<EmbeddingId>>,
     _phantom: std::marker::PhantomData<S>,
 }
 
-impl<T: Clone + PartialEq + Debug, S: VectorSpace + Sync> Default for VectorDB<T, S>
+impl<S: VectorSpace + Sync> VectorDB<S>
 where
     Self: Sync + Send,
 {
-    fn default() -> Self {
-        VectorDB::new(Vec::new(), Vec::new())
-    }
-}
-
-impl<T: Debug, S: VectorSpace> std::fmt::Debug for VectorDB<T, S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("VectorDB")
-            .field("model", &self.model.values)
-            .finish()
-    }
-}
-
-impl<T: Clone + PartialEq + Debug, S: VectorSpace + Sync> VectorDB<T, S>
-where
-    Self: Sync + Send,
-{
-    /// Create a new vector database from a list of embeddings and values.
+    /// Create a new temporary vector database.
     #[tracing::instrument]
-    pub fn new(points: Vec<Embedding<S>>, values: Vec<T>) -> Self {
-        let points = points.into_iter().map(|e| Point(e)).collect();
-        let model = Builder::default().build(points, values);
+    pub fn new() -> anyhow::Result<Self> {
+        let dir = tempfile::tempdir()?;
 
-        VectorDB {
-            model,
+        Self::new_at(dir.path())
+    }
+
+    /// Create a new vector database at the given path.
+    pub fn new_at(path: impl AsRef<std::path::Path>) -> anyhow::Result<Self> {
+        const TWENTY_HUNDRED_MIB: usize = 2 * 1024 * 1024 * 1024;
+
+        let env = EnvOpenOptions::new()
+            .map_size(TWENTY_HUNDRED_MIB)
+            .open(path)?;
+
+        let mut wtxn = env.write_txn()?;
+        let db: ArroyDatabase<Euclidean> = env.create_database(&mut wtxn, None)?;
+        wtxn.commit()?;
+
+        Ok(Self {
+            model: db,
+            env,
+            max_id: Cell::new(EmbeddingId(0)),
+            recycled_ids: Mutex::new(Vec::new()),
             _phantom: std::marker::PhantomData,
-        }
+        })
     }
 
-    /// Add a new embedding to the database.
+    fn take_id(&self) -> EmbeddingId {
+        self.recycled_ids.lock().unwrap().pop().unwrap_or_else(|| {
+            let id = self.max_id.get();
+            self.max_id.set(EmbeddingId(id.0 + 1));
+            id
+        })
+    }
+
+    #[allow(dead_code)]
+    fn recycle_id(&self, id: EmbeddingId) {
+        self.recycled_ids.lock().unwrap().push(id);
+    }
+
+    /// Get the underlying database.
+    pub fn raw(&self) -> (&ArroyDatabase<Euclidean>, &heed::Env) {
+        (&self.model, &self.env)
+    }
+
+    /// Add a new embedding to the vector database.
     ///
-    /// Note: This will currently rebuild the entire database. If possible, you should add a batch of embeddings at once with `add_embeddings` instead.
-    #[tracing::instrument]
-    pub fn add_embedding(&mut self, embedding: Embedding<S>, value: T) {
-        let already_exists = self
-            .model
-            .search(&Point(embedding.clone()), &mut Search::default())
-            .next()
-            .filter(|result| result.distance < f32::EPSILON && result.value == &value)
-            .is_some();
-        if already_exists {
-            return;
+    /// Note: Adding embeddings in a batch with [`add_embeddings`] will be faster.
+    pub fn add_embedding(&self, embedding: Embedding<S>) -> anyhow::Result<EmbeddingId> {
+        let all_items = {
+            let rtxn = self.env.read_txn()?;
+            let reader = Reader::<Euclidean>::open(&rtxn, 0, self.model)?;
+            let current = reader.iter(&rtxn)?;
+            current.filter_map(|item| item.ok()).collect::<Vec<_>>()
+        };
+        let embedding = embedding.vector().to_vec1()?;
+
+        let mut wtxn = self.env.write_txn()?;
+
+        let writer = Writer::<Euclidean>::prepare(&mut wtxn, self.model, 0, embedding.len())?;
+
+        for (id, item) in all_items {
+            writer.add_item(&mut wtxn, id, &item)?;
         }
-        let mut new_points = vec![embedding];
-        let mut new_values = vec![value];
-        for (value_id, point) in self.model.iter() {
-            new_points.push(point.0.clone());
-            let value = self.model.values[value_id.into_inner() as usize].clone();
-            new_values.push(value);
-        }
-        *self = Self::new(new_points, new_values);
+
+        let id = self.take_id();
+
+        writer.add_item(&mut wtxn, id.0, &embedding)?;
+
+        let mut rng = StdRng::from_entropy();
+
+        writer.build(&mut wtxn, &mut rng, None)?;
+
+        wtxn.commit()?;
+
+        Ok(id)
     }
 
-    /// Add a list of new embeddings to the database.
-    #[tracing::instrument]
-    pub fn add_embeddings(&mut self, embeddings: Vec<Embedding<S>>, values: Vec<T>) {
-        let mut new_points = Vec::with_capacity(embeddings.len());
-        let mut new_values = Vec::with_capacity(values.len());
-        for (embedding, value) in embeddings.into_iter().zip(values.into_iter()) {
-            if self
-                .model
-                .search(&Point(embedding.clone()), &mut Search::default())
-                .next()
-                .filter(|result| result.distance < f32::EPSILON && result.value == &value)
-                .is_none()
-            {
-                new_points.push(embedding);
-                new_values.push(value);
-            }
+    /// Add a new batch of embeddings to the vector database.
+    pub fn add_embeddings(
+        &self,
+        embedding: impl IntoIterator<Item = Embedding<S>>,
+    ) -> anyhow::Result<Vec<EmbeddingId>> {
+        let all_items = {
+            let rtxn = self.env.read_txn()?;
+            let reader = Reader::<Euclidean>::open(&rtxn, 0, self.model)?;
+            let current = reader.iter(&rtxn)?;
+            current.filter_map(|item| item.ok()).collect::<Vec<_>>()
+        };
+
+        let mut embeddings = embedding.into_iter().map(|e| e.vector().to_vec1());
+        let first_embedding = match embeddings.next() {
+            Some(e) => e?,
+            None => return Ok(Vec::new()),
+        };
+
+        let mut wtxn = self.env.write_txn()?;
+        let writer = Writer::<Euclidean>::prepare(&mut wtxn, self.model, 0, first_embedding.len())?;
+
+        for (id, item) in all_items {
+            writer.add_item(&mut wtxn, id, &item)?;
         }
-        for (value_id, point) in self.model.iter() {
-            new_points.push(point.0.clone());
-            let value = self.model.values[value_id.into_inner() as usize].clone();
-            new_values.push(value);
+
+        let mut ids: Vec<_> = Vec::with_capacity(embeddings.size_hint().0 + 1);
+
+        {
+            let first_id = self.take_id();
+            writer.add_item(&mut wtxn, first_id.0, &first_embedding)?;
+            ids.push(first_id);
         }
-        *self = Self::new(new_points, new_values);
+
+        for embedding in embeddings {
+            let id = self.take_id();
+            writer.add_item(&mut wtxn, id.0, &embedding?)?;
+            ids.push(id);
+        }
+
+        let mut rng = StdRng::from_entropy();
+
+        writer.build(&mut wtxn, &mut rng, None)?;
+
+        wtxn.commit()?;
+
+        Ok(ids)
     }
 
     /// Get the closest N embeddings to the given embedding.
-    #[tracing::instrument]
-    pub fn get_closest(&self, embedding: Embedding<S>, n: usize) -> Vec<(f32, T)> {
-        let mut search = Search::default();
-        self.model
-            .search(&Point(embedding), &mut search)
-            .take(n)
-            .map(|result| (result.distance, result.value.clone()))
-            .collect()
-    }
+    pub fn get_closest(
+        &self,
+        embedding: Embedding<S>,
+        n: usize,
+    ) -> anyhow::Result<Vec<SearchResult>> {
+        let rtxn = self.env.read_txn()?;
+        let reader = Reader::<Euclidean>::open(&rtxn, 0, self.model)?;
 
-    /// Get all embeddings within a certain distance of the given embedding.
-    #[tracing::instrument]
-    pub fn get_within(&self, embedding: Embedding<S>, distance: f32) -> Vec<(f32, T)> {
-        let mut search = Search::default();
-        self.model
-            .search(&Point(embedding), &mut search)
-            .map_while(|result| {
-                (result.distance < distance).then(|| (result.distance, result.value.clone()))
+        let vector = embedding.vector().to_vec1()?;
+        let arroy_results = reader.nns_by_vector(&rtxn, &vector, n, None)?;
+
+        Ok(arroy_results
+            .into_iter()
+            .map(|(id, distance)| {
+                let value = EmbeddingId(id);
+                SearchResult { distance, value }
             })
-            .collect()
+            .collect::<Vec<_>>())
     }
 }
 
-/// A point in the vector database.
-#[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct Point<S: VectorSpace>(Embedding<S>);
-
-impl<S: VectorSpace> Clone for Point<S> {
-    fn clone(&self) -> Self {
-        Point(self.0.clone())
-    }
+/// A resulting point from a search.
+pub struct SearchResult {
+    /// The distance from the searched point.
+    pub distance: f32,
+    /// The value of the point.
+    pub value: EmbeddingId,
 }
 
-impl<S: VectorSpace> instant_distance::Point for Point<S>
-where
-    Self: Clone + Sync,
-{
-    fn distance(&self, other: &Self) -> f32 {
-        self.try_distance(other).unwrap()
-    }
-}
-
-impl<S: VectorSpace> Point<S> {
-    fn try_distance(&self, other: &Self) -> anyhow::Result<f32> {
-        cosine_similarity(self.0.vector(), other.0.vector())
-    }
-}
-
-fn cosine_similarity(v1: &Tensor, v2: &Tensor) -> anyhow::Result<f32> {
-    let sum_ij = (v1 * v2)?.sum_all()?.to_scalar::<f32>()?;
-    let sum_i2 = (v1 * v1)?.sum_all()?.to_scalar::<f32>()?;
-    let sum_j2 = (v2 * v2)?.sum_all()?.to_scalar::<f32>()?;
-    let cosine_similarity = sum_ij / (sum_i2 * sum_j2).sqrt();
-    Ok(1. - cosine_similarity)
-}
+/// A unique identifier for an embedding. If you delete an embedding, the id will be recycled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct EmbeddingId(u32);
