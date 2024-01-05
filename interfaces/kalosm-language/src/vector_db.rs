@@ -191,7 +191,7 @@ where
         &self,
         embedding: Embedding<S>,
         n: usize,
-    ) -> anyhow::Result<Vec<SearchResult>> {
+    ) -> anyhow::Result<Vec<VectorDBSearchResult>> {
         let rtxn = self.env.read_txn()?;
         let reader = Reader::<Euclidean>::open(&rtxn, 0, self.model)?;
 
@@ -202,14 +202,14 @@ where
             .into_iter()
             .map(|(id, distance)| {
                 let value = EmbeddingId(id);
-                SearchResult { distance, value }
+                VectorDBSearchResult { distance, value }
             })
             .collect::<Vec<_>>())
     }
 }
 
 /// A resulting point from a search.
-pub struct SearchResult {
+pub struct VectorDBSearchResult {
     /// The distance from the searched point.
     pub distance: f32,
     /// The value of the point.
