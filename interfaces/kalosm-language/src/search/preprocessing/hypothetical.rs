@@ -15,7 +15,7 @@ const TASK_DESCRIPTION: &str =
 /// Generates embeddings of questions
 pub struct Hypothetical {
     chunking: Option<ChunkStrategy>,
-    task: Task<StructureParserResult<ChannelTextStream<String>, Vec<((), String)>>>,
+    task: Task<StructureParserResult<ChannelTextStream<String>, ((), String)>>
 }
 
 impl Hypothetical {
@@ -30,7 +30,6 @@ impl Hypothetical {
             .with_constraints(move || {
                 LiteralParser::new("Question: ")
                     .then(StopOn::new(end_assistant_marker.clone()))
-                    .repeat(2..=5)
             })
             .build();
         Self {
@@ -53,10 +52,7 @@ impl Hypothetical {
         );
 
         let questions = self.task.run(prompt).await?.result().await?;
-        let documents = questions
-            .into_iter()
-            .map(|(_, text)| text)
-            .collect::<Vec<_>>();
+        let documents = vec![questions.1];
 
         Ok(documents)
     }
