@@ -15,6 +15,7 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
     llm: &M,
     session: &mut M::Session,
     tokenizer: &Arc<dyn Tokenizer + Send + Sync>,
+    stop_token: Option<u32>,
     parser: P,
     mut parser_state: P::PartialState,
     mut sampler: Arc<Mutex<dyn Sampler>>,
@@ -26,6 +27,7 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
     let mut current_index = tokens.len();
     let mut unprocessed_token_count = tokens.len();
     let mut rng = rand::thread_rng();
+    let mut current_result = None;
 
     loop {
         let mut logits = llm.feed_tokens(
@@ -45,6 +47,14 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
             tokenizer.decode(tokens)?
         };
         for logit in logits.iter_mut() {
+            if Some(logit.token_id) == stop_token {
+                // If the current state is not finished, we can't generate a stop token
+                if current_result.is_none() {
+                    logit.logit = f32::NEG_INFINITY;
+                }
+                continue;
+            }
+
             let mut potential_new_tokens = tokens[prev_index..].to_vec();
             potential_new_tokens.push(logit.token_id);
             let token_text = tokenizer.decode(&potential_new_tokens)?;
@@ -70,11 +80,25 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
             }
         }
         if state_map.is_empty() {
+            // We may already be at a finished state, so try to finish the parser
+            if let Some(result) = current_result.take() {
+                return Ok(result);
+            }
+            // Otherwise, return an error
             return Err(anyhow::anyhow!("No valid tokens found"));
         }
         let token_id = sampler
             .sample_token(resources, &mut logits)?
             .ok_or(anyhow::anyhow!("Failed to sample constrained tokens"))?;
+
+        // If the LLM returns a stop token, we may already be at a finished state, so try to finish the parser
+        if Some(token_id) == stop_token {
+            if let Some(result) = current_result.take() {
+                return Ok(result);
+            }
+            return Err(anyhow::anyhow!("No valid tokens found"));
+        }
+
         unprocessed_token_count = 1;
         tokens.push(token_id);
         if let Some((token, result)) = state_map
@@ -86,7 +110,7 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
             current_index = tokens.len();
             on_token(token.clone())?;
 
-            if let Some(result) = update_state(
+            current_result = update_state(
                 &parser,
                 &mut parser_state,
                 result,
@@ -94,9 +118,7 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
                 &mut tokens,
                 &mut on_token,
                 &mut unprocessed_token_count,
-            )? {
-                return Ok(result);
-            }
+            )?;
         }
     }
 }
@@ -143,7 +165,9 @@ fn update_state<P: Parser>(
             // }
             Ok(None)
         }
-        kalosm_sample::ParseResult::Finished { result, .. } => Ok(Some(result)),
+        kalosm_sample::ParseResult::Finished { result, .. } => {
+            Ok(Some(result))
+        },
     }
 }
 

@@ -644,6 +644,7 @@ pub trait SyncModelExt: SyncModel {
             self,
             session,
             &self.tokenizer(),
+            self.stop_token().ok(),
             parser,
             parser_state,
             sampler,
