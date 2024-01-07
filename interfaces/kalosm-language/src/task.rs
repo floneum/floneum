@@ -228,6 +228,8 @@ where
                 Box::pin(async move {
                     let mut session = TaskSession::new(chat_markers, system_prompt);
 
+                    let _span = tracing::span!(tracing::Level::TRACE, "Task session").enter();
+
                     while let Some(message) = sender_rx.recv().await {
                         let (tx, rx) = unbounded_channel();
                         let (parsed_tx, parsed_rx) = oneshot::channel();
@@ -246,6 +248,7 @@ where
                         let constraints = constraints();
                         let state = constraints.create_parser_state();
                         let on_token = |tok: String| {
+                            tracing::trace!("Task generated token: {}", tok);
                             tx.send(tok)?;
                             Ok(())
                         };
