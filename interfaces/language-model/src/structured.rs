@@ -119,6 +119,13 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
                 &mut on_token,
                 &mut unprocessed_token_count,
             )?;
+
+            // If we don't have a stop token, we can return the current result immediately
+            if stop_token.is_none()  {
+                if let Some(result) = current_result.take() {
+                    return Ok(result);
+                }
+            }
         }
     }
 }
