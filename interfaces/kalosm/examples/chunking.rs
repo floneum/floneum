@@ -9,7 +9,7 @@ async fn main() {
     let documents = DocumentFolder::try_from(PathBuf::from("./documents")).unwrap();
     let documents = documents.into_documents().await.unwrap()[..5].to_vec();
 
-    let mut chat = Llama::new_chat();
+    let mut chat = Phi::v2().unwrap();
 
     let hypothetical = Hypothetical::new(&mut chat).with_chunking(
         kalosm_language::search::ChunkStrategy::Sentence {

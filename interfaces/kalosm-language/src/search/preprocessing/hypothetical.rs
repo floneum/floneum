@@ -1,9 +1,9 @@
-use kalosm_language_model::{ChatModel, Embedder, StructureParserResult, SyncModel, VectorSpace};
-use kalosm_sample::{LiteralParser, ParserExt, StopOn};
+use kalosm_language_model::{Embedder, Model, StructureParserResult, SyncModel, VectorSpace};
+use kalosm_sample::{LiteralParser, ParserExt};
 use kalosm_streams::text_stream::ChannelTextStream;
 
 use crate::{
-    prelude::{Document, Task},
+    prelude::{Document, OneLine, Task},
     search::Chunk,
 };
 
@@ -15,23 +15,26 @@ const TASK_DESCRIPTION: &str =
 /// Generates embeddings of questions
 pub struct Hypothetical {
     chunking: Option<ChunkStrategy>,
-    task: Task<StructureParserResult<ChannelTextStream<String>, ((), String)>>
+    task: Task<StructureParserResult<ChannelTextStream<String>, ((), Vec<((), String)>)>>,
 }
 
 impl Hypothetical {
     /// Create a new hypothetical chunker.
     pub fn new<M>(model: &mut M) -> Self
     where
-        M: ChatModel,
+        M: Model,
         <M::SyncModel as SyncModel>::Session: Send,
     {
-        let end_assistant_marker = model.end_assistant_marker().to_string();
         let task = Task::builder(model, TASK_DESCRIPTION)
             .with_constraints(move || {
-                LiteralParser::new("Question: ")
-                    .then(StopOn::new(end_assistant_marker.clone()))
+                LiteralParser::new("Questions:\n").then(
+                    LiteralParser::new("- ")
+                        .then(OneLine)
+                        .repeat(1..=5),
+                )
             })
             .build();
+        
         Self {
             chunking: None,
             task,
@@ -52,7 +55,9 @@ impl Hypothetical {
         );
 
         let questions = self.task.run(prompt).await?.result().await?;
-        let documents = vec![questions.1];
+        let documents = questions.1.into_iter().map(|q| q.1).collect();
+
+        println!("documents: {:?}", documents);
 
         Ok(documents)
     }

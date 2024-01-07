@@ -1,8 +1,9 @@
-//! A task interface that builds on top of [`kalosm_language_model::ChatModel`]
+//! A task interface that builds on top of [`kalosm_language_model::Model`]
 
 use anyhow::Result;
+use kalosm_language_model::ChatMarkers;
 use kalosm_language_model::StructureParserResult;
-use kalosm_language_model::{ChatModel, GenerationParameters, ModelExt, SyncModel, SyncModelExt};
+use kalosm_language_model::{GenerationParameters, Model, ModelExt, SyncModel, SyncModelExt};
 use kalosm_sample::{CreateParserState, Parser};
 use kalosm_streams::text_stream::ChannelTextStream;
 use llm_samplers::types::Sampler;
@@ -12,30 +13,31 @@ use tokio::sync::{mpsc::unbounded_channel, oneshot};
 
 /// A task session
 struct TaskSession<Session> {
-    assistant_marker: String,
-    end_user_marker: String,
     cached_prompt: String,
+    after_input: String,
     session: Option<Session>,
 }
 
 impl<Session: kalosm_language_model::Session> TaskSession<Session> {
     #[allow(clippy::too_many_arguments)]
     /// Creates a new [`TaskSession`].
-    pub(crate) fn new(
-        system_prompt_marker: String,
-        end_system_prompt_marker: String,
-        user_marker: String,
-        end_user_marker: String,
-        assistant_marker: String,
-        system_prompt: String,
-    ) -> Self {
-        Self {
-            assistant_marker,
-            end_user_marker,
-            cached_prompt: format!(
-                "{}{}{}{}",
-                system_prompt_marker, system_prompt, end_system_prompt_marker, user_marker
+    pub(crate) fn new(markers: Option<ChatMarkers>, system_prompt: String) -> Self {
+        let (cached_prompt, after_input) = match markers {
+            Some(markers) => (
+                markers.system_prompt_marker.to_string()
+                    + &system_prompt
+                    + &markers.end_system_prompt_marker.to_string(),
+                markers.end_user_marker.to_string() + markers.assistant_marker,
             ),
+            None => (
+                "Instruct: ".to_string() + &system_prompt + "\nInput:\n",
+                "Output:\n".to_string(),
+            ),
+        };
+
+        Self {
+            cached_prompt,
+            after_input,
             session: None,
         }
     }
@@ -73,15 +75,10 @@ impl<Session: kalosm_language_model::Session> TaskSession<Session> {
     ) -> Result<Session> {
         let mut session = self.create_session(model)?;
 
+        let prompt = message.to_string() + &self.after_input;
+
         // Feed the message to the model.
-        model.feed_text(
-            &mut session,
-            &format!(
-                "{}{}{}",
-                message, self.end_user_marker, self.assistant_marker
-            ),
-            Some(0),
-        )?;
+        model.feed_text(&mut session, &prompt, Some(0))?;
 
         Ok(session)
     }
@@ -91,14 +88,14 @@ impl<Session: kalosm_language_model::Session> TaskSession<Session> {
 pub struct NoParser;
 
 /// A builder for [`Task`].
-pub struct TaskBuilder<'a, M: ChatModel, P = NoParser> {
+pub struct TaskBuilder<'a, M: Model, P = NoParser> {
     model: &'a mut M,
     system_prompt: String,
     sampler: Arc<std::sync::Mutex<dyn Sampler + Send + Sync>>,
     constraints: P,
 }
 
-impl<'a, M: ChatModel> TaskBuilder<'a, M> {
+impl<'a, M: Model> TaskBuilder<'a, M> {
     fn new(model: &'a mut M, description: impl Into<String>) -> TaskBuilder<'a, M> {
         TaskBuilder {
             model,
@@ -111,7 +108,7 @@ impl<'a, M: ChatModel> TaskBuilder<'a, M> {
     }
 }
 
-impl<'a, M: ChatModel, P: TaskBuilderReturn + Send + Sync + 'static> TaskBuilder<'a, M, P>
+impl<'a, M: Model, P: TaskBuilderReturn + Send + Sync + 'static> TaskBuilder<'a, M, P>
 where
     <M::SyncModel as SyncModel>::Session: Send,
 {
@@ -146,8 +143,7 @@ pub trait TaskBuilderReturn {
     type Output;
 
     /// Build the output of the [`TaskBuilder`].
-
-    fn build<M: ChatModel>(task_builder: TaskBuilder<M, Self>) -> Self::Output
+    fn build<M: Model>(task_builder: TaskBuilder<M, Self>) -> Self::Output
     where
         <M::SyncModel as SyncModel>::Session: Send,
         Self: Sized;
@@ -156,32 +152,21 @@ pub trait TaskBuilderReturn {
 impl TaskBuilderReturn for NoParser {
     type Output = Task<ChannelTextStream<String>>;
 
-    fn build<M: ChatModel>(task_builder: TaskBuilder<M, Self>) -> Self::Output {
+    fn build<M: Model>(task_builder: TaskBuilder<M, Self>) -> Self::Output {
         let TaskBuilder {
             model,
             system_prompt,
             sampler,
             ..
         } = task_builder;
-        let system_prompt_marker = model.system_prompt_marker().to_string();
-        let end_system_prompt_marker = model.end_system_prompt_marker().to_string();
-        let user_marker = model.user_marker().to_string();
-        let end_user_marker = model.end_user_marker().to_string();
-        let assistant_marker = model.assistant_marker().to_string();
-        let end_assistant_marker = model.end_assistant_marker().to_string();
+        let chat_markers = model.chat_markers();
+        let end_assistant_marker = chat_markers.as_ref().map(|m| m.end_assistant_marker.to_string());
         let (sender_tx, mut sender_rx) = unbounded_channel::<String>();
         let (result_tx, result_rx) = unbounded_channel();
         model
             .run_sync(move |model| {
                 Box::pin(async move {
-                    let mut session = TaskSession::new(
-                        system_prompt_marker,
-                        end_system_prompt_marker,
-                        user_marker,
-                        end_user_marker,
-                        assistant_marker,
-                        system_prompt,
-                    );
+                    let mut session = TaskSession::new(chat_markers, system_prompt);
 
                     while let Some(message) = sender_rx.recv().await {
                         let (tx, rx) = unbounded_channel();
@@ -202,7 +187,7 @@ impl TaskBuilderReturn for NoParser {
                             &mut session,
                             &message,
                             None,
-                            Some(&end_assistant_marker),
+                            end_assistant_marker.as_deref(),
                             sampler.clone(),
                             on_token,
                         ) {
@@ -228,31 +213,20 @@ where
 {
     type Output = Task<StructureParserResult<ChannelTextStream<String>, P::Output>>;
 
-    fn build<M: ChatModel>(task_builder: TaskBuilder<M, Self>) -> Self::Output {
+    fn build<M: Model>(task_builder: TaskBuilder<M, Self>) -> Self::Output {
         let TaskBuilder {
             model,
             system_prompt,
             sampler,
             mut constraints,
         } = task_builder;
-        let system_prompt_marker = model.system_prompt_marker().to_string();
-        let end_system_prompt_marker = model.end_system_prompt_marker().to_string();
-        let user_marker = model.user_marker().to_string();
-        let end_user_marker = model.end_user_marker().to_string();
-        let assistant_marker = model.assistant_marker().to_string();
+        let chat_markers = model.chat_markers();
         let (sender_tx, mut sender_rx) = unbounded_channel::<String>();
         let (result_tx, result_rx) = unbounded_channel();
         model
             .run_sync(move |model| {
                 Box::pin(async move {
-                    let mut session = TaskSession::new(
-                        system_prompt_marker,
-                        end_system_prompt_marker,
-                        user_marker,
-                        end_user_marker,
-                        assistant_marker,
-                        system_prompt,
-                    );
+                    let mut session = TaskSession::new(chat_markers, system_prompt);
 
                     while let Some(message) = sender_rx.recv().await {
                         let (tx, rx) = unbounded_channel();
@@ -336,7 +310,7 @@ pub struct Task<R = ChannelTextStream<String>> {
 
 impl Task<ChannelTextStream<String>> {
     /// Create a new task with no constraints and the default sampler. See [`Task::builder`] for more options.
-    pub fn new<M: ChatModel>(model: &mut M, description: impl Into<String>) -> Self
+    pub fn new<M: Model>(model: &mut M, description: impl Into<String>) -> Self
     where
         <M::SyncModel as SyncModel>::Session: Send,
     {
@@ -346,10 +320,7 @@ impl Task<ChannelTextStream<String>> {
 
 impl Task {
     /// Creates a new builder for a task session.
-    pub fn builder<M: ChatModel>(
-        model: &mut M,
-        description: impl Into<String>,
-    ) -> TaskBuilder<'_, M>
+    pub fn builder<M: Model>(model: &mut M, description: impl Into<String>) -> TaskBuilder<'_, M>
     where
         <M::SyncModel as SyncModel>::Session: Send,
     {

@@ -1,6 +1,5 @@
-//! A chat interface that builds on top of [`kalosm_language_model::ChatModel`]
+//! A chat interface that builds on top of [`kalosm_language_model::Model`]
 
-use kalosm_language_model::Session;
 use std::{
     fmt::Display,
     path::PathBuf,
@@ -8,7 +7,9 @@ use std::{
 };
 
 use anyhow::Result;
-use kalosm_language_model::{ChatModel, GenerationParameters, ModelExt, SyncModel, SyncModelExt};
+use kalosm_language_model::ChatMarkers;
+use kalosm_language_model::Session;
+use kalosm_language_model::{GenerationParameters, Model, ModelExt, SyncModel, SyncModelExt};
 use kalosm_sample::{ArcParser, CreateParserState, ParserExt};
 use kalosm_streams::text_stream::ChannelTextStream;
 use llm_samplers::types::Sampler;
@@ -300,8 +301,9 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
 }
 
 /// A builder for [`Chat`].
-pub struct ChatBuilder<'a, M: ChatModel> {
+pub struct ChatBuilder<'a, M: Model> {
     model: &'a mut M,
+    chat_markers: ChatMarkers,
     session: Option<<M::SyncModel as kalosm_language_model::SyncModel>::Session>,
     system_prompt: String,
     sampler: Arc<Mutex<dyn Sampler + Send + Sync>>,
@@ -311,10 +313,13 @@ pub struct ChatBuilder<'a, M: ChatModel> {
     initial_history: Vec<ChatHistoryItem>,
 }
 
-impl<'a, M: ChatModel> ChatBuilder<'a, M> {
+impl<'a, M: Model> ChatBuilder<'a, M> {
     fn new(model: &'a mut M) -> ChatBuilder<M> {
+        let chat_markers = model.chat_markers().expect("Model does not support chat");
+
         ChatBuilder {
             model,
+            chat_markers,
             session: None,
             system_prompt: "Always assist with care, respect, and truth. Respond with utmost utility yet securely. Avoid harmful, unethical, prejudiced, or negative content. Ensure replies promote fairness and positivity.".into(),
             sampler: Arc::new(Mutex::new(GenerationParameters::default().sampler())),
@@ -452,6 +457,7 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
     {
         let Self {
             model,
+            chat_markers,
             system_prompt,
             sampler,
             map_user_message_prompt,
@@ -460,12 +466,12 @@ impl<'a, M: ChatModel> ChatBuilder<'a, M> {
             session,
             initial_history,
         } = self;
-        let system_prompt_marker = model.system_prompt_marker().to_string();
-        let end_system_prompt_marker = model.end_system_prompt_marker().to_string();
-        let user_marker = model.user_marker().to_string();
-        let end_user_marker = model.end_user_marker().to_string();
-        let assistant_marker = model.assistant_marker().to_string();
-        let end_assistant_marker = model.end_assistant_marker().to_string();
+        let system_prompt_marker = chat_markers.system_prompt_marker.to_string();
+        let end_system_prompt_marker = chat_markers.end_system_prompt_marker.to_string();
+        let user_marker = chat_markers.user_marker.to_string();
+        let end_user_marker = chat_markers.end_user_marker.to_string();
+        let assistant_marker = chat_markers.assistant_marker.to_string();
+        let end_assistant_marker = chat_markers.end_assistant_marker.to_string();
         let (sender_tx, mut sender_rx) = unbounded_channel();
         let (result_tx, result_rx) = unbounded_channel();
         model
@@ -530,7 +536,7 @@ pub struct Chat {
 
 impl Chat {
     /// Creates a new builder for a chat session.
-    pub fn builder<M: ChatModel>(model: &mut M) -> ChatBuilder<'_, M>
+    pub fn builder<M: Model>(model: &mut M) -> ChatBuilder<'_, M>
     where
         <M::SyncModel as SyncModel>::Session: Send,
     {

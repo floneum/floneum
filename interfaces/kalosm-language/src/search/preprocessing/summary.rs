@@ -1,9 +1,9 @@
-use kalosm_language_model::{ChatModel, Embedder, StructureParserResult, SyncModel, VectorSpace};
-use kalosm_sample::{LiteralParser, ParserExt, StopOn};
+use kalosm_language_model::{Embedder, Model, StructureParserResult, SyncModel, VectorSpace};
+use kalosm_sample::{LiteralParser, ParserExt};
 use kalosm_streams::text_stream::ChannelTextStream;
 
 use crate::{
-    prelude::{Document, Task},
+    prelude::{Document, Task, OneLine},
     search::Chunk,
 };
 
@@ -21,14 +21,12 @@ impl Summarizer {
     /// Create a new hypothetical chunker.
     pub fn new<M>(model: &mut M, chunking: Option<ChunkStrategy>) -> Self
     where
-        M: ChatModel,
+        M: Model,
         <M::SyncModel as SyncModel>::Session: Send,
     {
-        let end_assistant_marker = model.end_assistant_marker().to_string();
         let task = Task::builder(model, TASK_DESCRIPTION)
             .with_constraints(move || {
-                LiteralParser::new("Summary: ")
-                    .then(StopOn::new(end_assistant_marker.clone()))
+                LiteralParser::new("Summary: ").then(OneLine)
             })
             .build();
         Self { chunking, task }
