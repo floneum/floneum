@@ -26,7 +26,7 @@ impl<Session: kalosm_language_model::Session> TaskSession<Session> {
             Some(markers) => (
                 markers.system_prompt_marker.to_string()
                     + &system_prompt
-                    + &markers.end_system_prompt_marker.to_string(),
+                    + markers.end_system_prompt_marker,
                 markers.end_user_marker.to_string() + markers.assistant_marker,
             ),
             None => (
@@ -160,7 +160,9 @@ impl TaskBuilderReturn for NoParser {
             ..
         } = task_builder;
         let chat_markers = model.chat_markers();
-        let end_assistant_marker = chat_markers.as_ref().map(|m| m.end_assistant_marker.to_string());
+        let end_assistant_marker = chat_markers
+            .as_ref()
+            .map(|m| m.end_assistant_marker.to_string());
         let (sender_tx, mut sender_rx) = unbounded_channel::<String>();
         let (result_tx, result_rx) = unbounded_channel();
         model

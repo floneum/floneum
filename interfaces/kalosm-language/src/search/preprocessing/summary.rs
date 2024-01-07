@@ -3,7 +3,7 @@ use kalosm_sample::{LiteralParser, ParserExt};
 use kalosm_streams::text_stream::ChannelTextStream;
 
 use crate::{
-    prelude::{Document, Task, OneLine},
+    prelude::{Document, OneLine, Task},
     search::Chunk,
 };
 
@@ -25,9 +25,7 @@ impl Summarizer {
         <M::SyncModel as SyncModel>::Session: Send,
     {
         let task = Task::builder(model, TASK_DESCRIPTION)
-            .with_constraints(move || {
-                LiteralParser::new("Summary: ").then(OneLine)
-            })
+            .with_constraints(move || LiteralParser::new("Summary: ").then(OneLine))
             .build();
         Self { chunking, task }
     }

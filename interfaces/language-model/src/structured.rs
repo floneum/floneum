@@ -121,7 +121,7 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
             )?;
 
             // If we don't have a stop token, we can return the current result immediately
-            if stop_token.is_none()  {
+            if stop_token.is_none() {
                 if let Some(result) = current_result.take() {
                     return Ok(result);
                 }
@@ -172,9 +172,7 @@ fn update_state<P: Parser>(
             // }
             Ok(None)
         }
-        kalosm_sample::ParseResult::Finished { result, .. } => {
-            Ok(Some(result))
-        },
+        kalosm_sample::ParseResult::Finished { result, .. } => Ok(Some(result)),
     }
 }
 

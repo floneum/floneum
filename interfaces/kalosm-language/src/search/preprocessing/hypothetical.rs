@@ -1,9 +1,9 @@
 use kalosm_language_model::{Embedder, Model, StructureParserResult, SyncModel, VectorSpace};
-use kalosm_sample::{LiteralParser, ParserExt};
+use kalosm_sample::{LiteralParser, ParserExt, StopOn};
 use kalosm_streams::text_stream::ChannelTextStream;
 
 use crate::{
-    prelude::{Document, OneLine, Task},
+    prelude::{Document, Task},
     search::Chunk,
 };
 
@@ -15,7 +15,7 @@ const TASK_DESCRIPTION: &str =
 /// Generates embeddings of questions
 pub struct Hypothetical {
     chunking: Option<ChunkStrategy>,
-    task: Task<StructureParserResult<ChannelTextStream<String>, ((), Vec<((), String)>)>>,
+    task: Task<StructureParserResult<ChannelTextStream<String>, ((), Vec<String>)>>,
 }
 
 impl Hypothetical {
@@ -27,14 +27,14 @@ impl Hypothetical {
     {
         let task = Task::builder(model, TASK_DESCRIPTION)
             .with_constraints(move || {
-                LiteralParser::new("Questions:\n").then(
-                    LiteralParser::new("- ")
-                        .then(OneLine)
+                LiteralParser::new("Questions: ").then(
+                    StopOn::new("?")
+                        .filter_characters(|c| matches!(c, ' ' | '?' | 'a'..='z' | 'A'..='Z' | ','))
                         .repeat(1..=5),
                 )
             })
             .build();
-        
+
         Self {
             chunking: None,
             task,
@@ -55,7 +55,7 @@ impl Hypothetical {
         );
 
         let questions = self.task.run(prompt).await?.result().await?;
-        let documents = questions.1.into_iter().map(|q| q.1).collect();
+        let documents = questions.1;
 
         println!("documents: {:?}", documents);
 
@@ -105,9 +105,11 @@ impl<S: VectorSpace + Send + Sync + 'static> Chunker<S> for Hypothetical {
         let mut byte_chunk = byte_chunks.next().unwrap();
 
         for embedding in embeddings {
-            if remaining_embeddings == 0 {
-                remaining_embeddings = *questions_count.next().unwrap();
-                byte_chunk = byte_chunks.next().unwrap();
+            while remaining_embeddings == 0 {
+                if let Some(  &questions_count) = questions_count.next(){
+                    remaining_embeddings = questions_count;
+                    byte_chunk = byte_chunks.next().unwrap();
+                }
             }
             remaining_embeddings -= 1;
             chunks.push(Chunk {
