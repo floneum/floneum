@@ -64,15 +64,25 @@ async fn main() {
         .map(LiteralParser::from)
         .collect::<Vec<_>>();
 
-    let states = IndexParser::new(states_parser);
+    let index_parser = IndexParser::new(states_parser);
 
-    let validator = states
+    let validator = index_parser
         .then(LiteralParser::from(", "))
         .repeat(5..=5)
         .then(LiteralParser::from("\n"));
     let stream = llm.stream_structured_text(prompt, validator).await.unwrap();
 
-    println!("{:#?}", stream.result().await);
+    println!(
+        "{:#?}",
+        stream
+            .result()
+            .await
+            .unwrap()
+            .0
+            .iter()
+            .map(|x| states[x.0 .0])
+            .collect::<Vec<_>>()
+    );
 
     println!("\n\n# without constraints");
     print!("{}", prompt);

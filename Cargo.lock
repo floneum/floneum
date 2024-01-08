@@ -5924,7 +5924,6 @@ dependencies = [
  "rbert",
  "readability",
  "reqwest",
- "rmistral",
  "rphi",
  "rss",
  "rustc-hash",
@@ -6022,7 +6021,9 @@ dependencies = [
  "kalosm-sample",
  "kalosm-streams",
  "llm-samplers",
+ "once_cell",
  "rand 0.8.5",
+ "rayon",
  "serde_json",
  "tokenizers 0.13.4",
  "tokio",
@@ -6044,6 +6045,8 @@ dependencies = [
  "image 0.24.7",
  "imageproc",
  "intel-mkl-src",
+ "serde",
+ "serde_json",
  "tokenizers 0.13.4",
  "tracing",
 ]
@@ -9269,31 +9272,6 @@ name = "rle-decode-fast"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3582f63211428f83597b51b2ddb88e2a91a9d52d12831f9d08f5e624e8977422"
-
-[[package]]
-name = "rmistral"
-version = "0.1.0"
-dependencies = [
- "accelerate-src",
- "anyhow",
- "async-trait",
- "candle-core",
- "candle-nn",
- "candle-transformers",
- "cudarc",
- "half 2.3.1",
- "hf-hub",
- "intel-mkl-src",
- "kalosm-language-model",
- "kalosm-sample",
- "kalosm-streams",
- "llm-samplers",
- "rand 0.8.5",
- "serde_json",
- "tokenizers 0.13.4",
- "tokio",
- "tracing",
-]
 
 [[package]]
 name = "roaring"

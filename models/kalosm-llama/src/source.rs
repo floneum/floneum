@@ -208,6 +208,39 @@ impl LlamaSource {
         }
     }
 
+    /// A preset for tiny llama 1.1b 1.0 Chat
+    pub fn tiny_llama_1_1b_chat() -> Self {
+        Self {
+            model_id: "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF".to_string(),
+            revision: "main".to_string(),
+            gguf_file: "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf".into(),
+            tokenizer_repo: "TinyLlama/TinyLlama-1.1B-Chat-v1.0".to_string(),
+            tokenizer_file: "tokenizer.json".to_string(),
+            group_query_attention: 4,
+            markers: ChatMarkers {
+                system_prompt_marker: Some("<|system|>\n"),
+                assistant_marker: Some("<|user|>\n"),
+                user_marker: Some("<|assistant|>\n"),
+                end_system_marker: Some("</s>"),
+                end_user_marker: Some("</s>"),
+                end_assistant_marker: Some("</s>"),
+            },
+        }
+    }
+
+    /// A preset for tiny llama 1.1b 1.0
+    pub fn tiny_llama_1_1b() -> Self {
+        Self {
+            model_id: "TheBloke/TinyLlama-1.1B-intermediate-step-1431k-3T-GGUF".to_string(),
+            revision: "main".to_string(),
+            gguf_file: "tinyllama-1.1b-intermediate-step-1431k-3t.Q4_K_M.gguf".into(),
+            tokenizer_repo: "TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T".to_string(),
+            tokenizer_file: "tokenizer.json".to_string(),
+            group_query_attention: 4,
+            ..Default::default()
+        }
+    }
+
     /// A preset for Llama7b
     pub fn llama_7b() -> Self {
         Self {
