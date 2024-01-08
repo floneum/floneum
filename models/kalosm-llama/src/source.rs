@@ -217,14 +217,14 @@ impl LlamaSource {
             tokenizer_repo: "TinyLlama/TinyLlama-1.1B-Chat-v1.0".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             group_query_attention: 4,
-            markers: ChatMarkers {
-                system_prompt_marker: Some("<|system|>\n"),
-                assistant_marker: Some("<|user|>\n"),
-                user_marker: Some("<|assistant|>\n"),
-                end_system_marker: Some("</s>"),
-                end_user_marker: Some("</s>"),
-                end_assistant_marker: Some("</s>"),
-            },
+            markers: Some(ChatMarkers {
+                system_prompt_marker: "<|system|>\n",
+                assistant_marker: "<|user|>\n",
+                user_marker: "<|assistant|>\n",
+                end_system_prompt_marker: "</s>",
+                end_user_marker: "</s>",
+                end_assistant_marker: "</s>",
+            }),
         }
     }
 
