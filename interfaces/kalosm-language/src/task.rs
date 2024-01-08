@@ -232,6 +232,7 @@ where
 
                     let span = tracing::span!(tracing::Level::TRACE, "Task session");
                     let _span = span.enter();
+                    println!("Task session started");
 
                     while let Some(message) = sender_rx.recv().await {
                         let (tx, rx) = unbounded_channel();
@@ -251,7 +252,10 @@ where
                         let constraints = constraints();
                         let state = constraints.create_parser_state();
                         let on_token = |tok: String| {
-                            tracing::trace!("Task generated token: {}", tok);
+                            // tracing::trace!("Task generated token: {}", tok);
+                            use std::io::Write;
+                            print!("{}", tok);
+                            std::io::stdout().flush().unwrap();
                             tx.send(tok)?;
                             Ok(())
                         };

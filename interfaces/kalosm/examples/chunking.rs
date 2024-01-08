@@ -9,9 +9,9 @@ async fn main() {
     let documents = DocumentFolder::try_from(PathBuf::from("./documents")).unwrap();
     let documents = documents.into_documents().await.unwrap()[..5].to_vec();
 
-    let mut chat = Phi::v2().unwrap();
+    let mut llm = Phi::v2().unwrap();
 
-    let hypothetical = Hypothetical::new(&mut chat).with_chunking(
+    let hypothetical = Hypothetical::new(&mut llm).with_chunking(
         kalosm_language::search::ChunkStrategy::Sentence {
             sentence_count: 3,
             overlap: 0,

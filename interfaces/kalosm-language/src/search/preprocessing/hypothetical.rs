@@ -3,7 +3,7 @@ use kalosm_sample::{LiteralParser, ParserExt, StopOn};
 use kalosm_streams::text_stream::ChannelTextStream;
 
 use crate::{
-    prelude::{Document, Task},
+    prelude::{Document, IndexParser, Task},
     search::Chunk,
 };
 
@@ -12,10 +12,30 @@ use super::{ChunkStrategy, Chunker};
 const TASK_DESCRIPTION: &str =
     "You generate hypothetical questions that may be answered by the given text.";
 
+const QUESTION_STARTERS: [&str; 9] = [
+    "Who", "What", "When", "Where", "Why", "How", "Which", "Whom", "Whose",
+];
+
+fn create_constraints() -> kalosm_sample::SequenceParser<LiteralParser<&'static str>, kalosm_sample::RepeatParser<kalosm_sample::SequenceParser<IndexParser<LiteralParser<&'static str>, kalosm_sample::LiteralMismatchError, (), kalosm_sample::LiteralParserOffset>, StopOn<&'static str>>>>{
+    LiteralParser::new("Questions that are answered by the previous text: ").then(
+        IndexParser::new(
+            QUESTION_STARTERS
+                .iter()
+                .copied()
+                .map(LiteralParser::new)
+                .collect::<Vec<_>>(),
+        )
+        .then(StopOn::new("?").filter_characters(
+            |c| matches!(c, ' ' | '?' | 'a'..='z' | 'A'..='Z' | '0'..='9' | ','),
+        ))
+        .repeat(1..=5),
+    )
+}
+
 /// Generates embeddings of questions
 pub struct Hypothetical {
     chunking: Option<ChunkStrategy>,
-    task: Task<StructureParserResult<ChannelTextStream<String>, ((), Vec<String>)>>,
+    task: Task<StructureParserResult<ChannelTextStream<String>, ((), Vec<((usize, ()), String)>)>>,
 }
 
 impl Hypothetical {
@@ -26,13 +46,9 @@ impl Hypothetical {
         <M::SyncModel as SyncModel>::Session: Send,
     {
         let task = Task::builder(model, TASK_DESCRIPTION)
-            .with_constraints(move || {
-                LiteralParser::new("Questions: ").then(
-                    StopOn::new("?")
-                        .filter_characters(|c| matches!(c, ' ' | '?' | 'a'..='z' | 'A'..='Z' | ','))
-                        .repeat(1..=5),
-                )
-            })
+            .with_constraints(
+                create_constraints
+            )
             .build();
 
         Self {
@@ -55,7 +71,11 @@ impl Hypothetical {
         );
 
         let questions = self.task.run(prompt).await?.result().await?;
-        let documents = questions.1;
+        let documents = questions
+            .1
+            .into_iter()
+            .map(|((i, _), s)| QUESTION_STARTERS[i].to_string() + &s)
+            .collect::<Vec<_>>();
 
         println!("documents: {:?}", documents);
 
@@ -106,7 +126,7 @@ impl<S: VectorSpace + Send + Sync + 'static> Chunker<S> for Hypothetical {
 
         for embedding in embeddings {
             while remaining_embeddings == 0 {
-                if let Some(  &questions_count) = questions_count.next(){
+                if let Some(&questions_count) = questions_count.next() {
                     remaining_embeddings = questions_count;
                     byte_chunk = byte_chunks.next().unwrap();
                 }

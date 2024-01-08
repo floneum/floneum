@@ -46,39 +46,49 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
             let tokens = &tokens[prev_index..current_index];
             tokenizer.decode(tokens)?
         };
-        for logit in logits.iter_mut() {
+
+        logits.retain_mut(|logit| {
             if Some(logit.token_id) == stop_token {
                 // If the current state is not finished, we can't generate a stop token
-                if current_result.is_none() {
+                return if current_result.is_none() {
                     logit.logit = f32::NEG_INFINITY;
+                    false
                 }
-                continue;
+                else {
+                    true  
+                };
             }
 
             let mut potential_new_tokens = tokens[prev_index..].to_vec();
             potential_new_tokens.push(logit.token_id);
-            let token_text = tokenizer.decode(&potential_new_tokens)?;
+            let Ok(token_text) = tokenizer.decode(&potential_new_tokens) else {
+                logit.logit = f32::NEG_INFINITY;
+                return false;
+            };
             if token_text.len() > prev_text.len() {
                 if !token_text.chars().last().unwrap().is_ascii() {
                     logit.logit = f32::NEG_INFINITY;
-                    continue;
+                    return false;
                 }
                 let text = token_text.split_at(prev_text.len());
                 let new_text = text.1.to_string();
                 if new_text.is_empty() {
                     logit.logit = f32::NEG_INFINITY;
-                    continue;
+                    return false;
                 }
                 if let Ok(result) = parser.parse(&parser_state, new_text.as_bytes()) {
                     let result = result.without_remaining();
                     state_map.insert(logit.token_id, Some((new_text.to_string(), result)));
+                    true
                 } else {
-                    logit.logit = f32::NEG_INFINITY;
+                    false
                 }
             } else {
                 state_map.insert(logit.token_id, None);
+                true
             }
-        }
+        });
+
         if state_map.is_empty() {
             // We may already be at a finished state, so try to finish the parser
             if let Some(result) = current_result.take() {
@@ -120,12 +130,12 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
                 &mut unprocessed_token_count,
             )?;
 
-            // If we don't have a stop token, we can return the current result immediately
-            if stop_token.is_none() {
+            // // If we don't have a stop token, we can return the current result immediately
+            // if stop_token.is_none() {
                 if let Some(result) = current_result.take() {
                     return Ok(result);
                 }
-            }
+            // }
         }
     }
 }
