@@ -34,16 +34,16 @@ impl BertDistance {
 }
 
 #[async_trait]
-impl<'a> Metric<&'a str> for BertDistance {
-    async fn distance(&mut self, first: &&'a str, other: &&'a str) -> f64 {
+impl<S: AsRef<str> + Send + Sync> Metric<S> for BertDistance {
+    async fn distance(&mut self, first: &S, other: &S) -> f64 {
         let first_embedding = self
             .bert
-            .embed(first)
+            .embed(first.as_ref())
             .await
             .expect("Failed to embed this string");
         let other_embedding = self
             .bert
-            .embed(other)
+            .embed(other.as_ref())
             .await
             .expect("Failed to embed other string");
         first_embedding.cosine_similarity(&other_embedding).into()
@@ -80,22 +80,22 @@ impl<I> TestCases<I> {
     }
 
     /// Add a test case to this set of test cases.
-    pub fn with_case(mut self, input: I, output: I) -> Self {
-        self.tests.push(TestCase { input, output });
+    pub fn with_case(mut self, expected: I, actual: I) -> Self {
+        self.tests.push(TestCase { expected, actual });
         self
     }
 
     /// Push a test case to this set of test cases.
-    pub fn push_case(&mut self, input: I, output: I) {
-        self.tests.push(TestCase { input, output });
+    pub fn push_case(&mut self, expected: I, actual: I) {
+        self.tests.push(TestCase { expected, actual });
     }
 
     /// Evaluate a model using this set of test cases.
     pub async fn evaluate<M: Metric<I>>(&mut self, metric: &mut M) -> EvaluationResult<'_, I> {
         let mut values = Vec::new();
         for case in &self.tests {
-            let TestCase { input, output } = case;
-            let distance = metric.distance(input, output).await;
+            let TestCase { expected, actual } = case;
+            let distance = metric.distance(expected, actual).await;
             values.push(TestCaseScored {
                 case,
                 score: distance,
@@ -276,8 +276,8 @@ impl<'a, I: Display> std::fmt::Display for EvaluationResult<'a, I> {
 
                 let score_cell = create_cell(test.score, quantile).fg(color);
                 let mut row = Row::new();
-                row.add_cell(Cell::new(&test.case.input))
-                    .add_cell(Cell::new(&test.case.output))
+                row.add_cell(Cell::new(&test.case.expected))
+                    .add_cell(Cell::new(&test.case.actual))
                     .add_cell(score_cell);
                 table.add_row(row);
                 count += 1;
@@ -353,8 +353,8 @@ impl<'a, I: Display> std::fmt::Display for EvaluationResult<'a, I> {
 
 #[derive(Default, Clone)]
 struct TestCase<I> {
-    input: I,
-    output: I,
+    expected: I,
+    actual: I,
 }
 
 #[derive(Clone)]
