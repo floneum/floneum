@@ -10,13 +10,37 @@ use crate::{
 use super::{ChunkStrategy, Chunker};
 
 const TASK_DESCRIPTION: &str =
-    "You generate hypothetical questions that may be answered by the given text.";
+    "You generate hypothetical questions that may be answered by the given text. The questions restate any information nessisary to understand the question";
+
+const EXAMPLES:[(&str, &str);2] = [
+    (
+"Yesterday, apple stock rose 10%, google stock rose 15%, and microsoft stock rose 5%",
+"Questions that are answered by the previous text: How have tech stocks changed recently? How have apple stocks changed recently? How have google stocks changed recently? How have microsoft stocks changed recently?"
+    ),
+    (
+        "The Eiffel Tower is a wrought-iron lattice tower on the Champ de Mars in Paris, France. It is named after the engineer Gustave Eiffel, whose company designed and built the tower.",
+        "Questions that are answered by the previous text: What is the Eiffel Tower? Who designed the Eiffel Tower?"
+    ),
+];
 
 const QUESTION_STARTERS: [&str; 9] = [
     "Who", "What", "When", "Where", "Why", "How", "Which", "Whom", "Whose",
 ];
 
-fn create_constraints() -> kalosm_sample::SequenceParser<LiteralParser<&'static str>, kalosm_sample::RepeatParser<kalosm_sample::SequenceParser<IndexParser<LiteralParser<&'static str>, kalosm_sample::LiteralMismatchError, (), kalosm_sample::LiteralParserOffset>, StopOn<&'static str>>>>{
+fn create_constraints() -> kalosm_sample::SequenceParser<
+    LiteralParser<&'static str>,
+    kalosm_sample::RepeatParser<
+        kalosm_sample::SequenceParser<
+            IndexParser<
+                LiteralParser<&'static str>,
+                kalosm_sample::LiteralMismatchError,
+                (),
+                kalosm_sample::LiteralParserOffset,
+            >,
+            StopOn<&'static str>,
+        >,
+    >,
+> {
     LiteralParser::new("Questions that are answered by the previous text: ").then(
         IndexParser::new(
             QUESTION_STARTERS
@@ -46,9 +70,8 @@ impl Hypothetical {
         <M::SyncModel as SyncModel>::Session: Send,
     {
         let task = Task::builder(model, TASK_DESCRIPTION)
-            .with_constraints(
-                create_constraints
-            )
+            .with_constraints(create_constraints)
+            .with_examples(EXAMPLES)
             .build();
 
         Self {
@@ -63,14 +86,9 @@ impl Hypothetical {
         self
     }
 
-    /// Generate a hypothetical question for a document.
-    async fn generate_question(&self, text: &str) -> anyhow::Result<Vec<String>> {
-        let prompt = format!(
-            "Generate a question that is answered by the following text:\n{}",
-            text
-        );
-
-        let questions = self.task.run(prompt).await?.result().await?;
+    /// Generate a list of hypothetical questions about the given text.
+    pub async fn generate_question(&self, text: &str) -> anyhow::Result<Vec<String>> {
+        let questions = self.task.run(text).await?.result().await?;
         let documents = questions
             .1
             .into_iter()

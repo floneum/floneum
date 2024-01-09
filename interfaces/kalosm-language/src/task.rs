@@ -21,18 +21,54 @@ struct TaskSession<Session> {
 impl<Session: kalosm_language_model::Session> TaskSession<Session> {
     #[allow(clippy::too_many_arguments)]
     /// Creates a new [`TaskSession`].
-    pub(crate) fn new(markers: Option<ChatMarkers>, system_prompt: String) -> Self {
+    pub(crate) fn new(
+        markers: Option<ChatMarkers>,
+        system_prompt: String,
+        examples: Vec<TaskExample>,
+    ) -> Self {
         let (cached_prompt, after_input) = match markers {
-            Some(markers) => (
-                markers.system_prompt_marker.to_string()
-                    + &system_prompt
-                    + markers.end_system_prompt_marker,
-                markers.end_user_marker.to_string() + markers.assistant_marker,
-            ),
-            None => (
-                "Instruct: ".to_string() + &system_prompt + "\nInput:\n",
-                "Output:\n".to_string(),
-            ),
+            Some(markers) => {
+                let mut cached_prompt = markers.system_prompt_marker.to_string() + &system_prompt;
+                cached_prompt += markers.end_system_prompt_marker;
+
+                for example in examples {
+                    cached_prompt += markers.user_marker;
+                    cached_prompt += &example.input;
+                    cached_prompt += markers.end_user_marker;
+                    cached_prompt += markers.assistant_marker;
+                    cached_prompt += &example.output;
+                    cached_prompt += markers.end_assistant_marker;
+                }
+
+                cached_prompt += markers.user_marker;
+                (
+                    cached_prompt,
+                    markers.end_user_marker.to_string() + markers.assistant_marker,
+                )
+            }
+            None => {
+                let mut cached_prompt = "# Instruction\n".to_string();
+                cached_prompt += &system_prompt;
+                if !system_prompt.ends_with('\n') {
+                    cached_prompt += "\n";
+                }
+
+                for example in examples {
+                    cached_prompt += "# Input\n";
+                    cached_prompt += &example.input;
+                    if !example.input.ends_with('\n') {
+                        cached_prompt += "\n";
+                    }
+                    cached_prompt += "# Output\n";
+                    cached_prompt += &example.output;
+                    if !example.output.ends_with('\n') {
+                        cached_prompt += "\n";
+                    }
+                }
+
+                cached_prompt += "# Input\n";
+                (cached_prompt, "# Output\n".to_string())
+            }
         };
 
         Self {
@@ -84,6 +120,12 @@ impl<Session: kalosm_language_model::Session> TaskSession<Session> {
     }
 }
 
+#[derive(Debug)]
+struct TaskExample {
+    input: String,
+    output: String,
+}
+
 /// A marker for no parser.
 pub struct NoParser;
 
@@ -93,6 +135,7 @@ pub struct TaskBuilder<'a, M: Model, P = NoParser> {
     system_prompt: String,
     sampler: Arc<std::sync::Mutex<dyn Sampler + Send + Sync>>,
     constraints: P,
+    examples: Vec<TaskExample>,
 }
 
 impl<'a, M: Model> TaskBuilder<'a, M> {
@@ -104,6 +147,7 @@ impl<'a, M: Model> TaskBuilder<'a, M> {
                 GenerationParameters::default().sampler(),
             )),
             constraints: NoParser,
+            examples: Vec::new(),
         }
     }
 }
@@ -128,7 +172,29 @@ where
             model: self.model,
             system_prompt: self.system_prompt,
             sampler: self.sampler,
+            examples: self.examples,
         }
+    }
+
+    /// Add an example to the task.
+    pub fn with_example(mut self, input: impl Into<String>, output: impl Into<String>) -> Self {
+        let input = input.into();
+        let output = output.into();
+        self.examples.push(TaskExample { input, output });
+        self
+    }
+
+    /// Add multiple examples to the task.
+    pub fn with_examples(
+        mut self,
+        examples: impl IntoIterator<Item = (impl Into<String>, impl Into<String>)>,
+    ) -> Self {
+        for (input, output) in examples {
+            let input = input.into();
+            let output = output.into();
+            self.examples.push(TaskExample { input, output });
+        }
+        self
     }
 
     /// Build a [`Task`] from a [`TaskBuilder`].
@@ -157,18 +223,20 @@ impl TaskBuilderReturn for NoParser {
             model,
             system_prompt,
             sampler,
+            examples,
             ..
         } = task_builder;
         let chat_markers = model.chat_markers();
-        let end_assistant_marker = chat_markers
+        let stop_on = chat_markers
             .as_ref()
-            .map(|m| m.end_assistant_marker.to_string());
+            .map(|m| m.end_assistant_marker.to_string())
+            .unwrap_or_else(|| "# Input".to_string());
         let (sender_tx, mut sender_rx) = unbounded_channel::<String>();
         let (result_tx, result_rx) = unbounded_channel();
         model
             .run_sync(move |model| {
                 Box::pin(async move {
-                    let mut session = TaskSession::new(chat_markers, system_prompt);
+                    let mut session = TaskSession::new(chat_markers, system_prompt, examples);
 
                     while let Some(message) = sender_rx.recv().await {
                         let (tx, rx) = unbounded_channel();
@@ -189,7 +257,7 @@ impl TaskBuilderReturn for NoParser {
                             &mut session,
                             &message,
                             None,
-                            end_assistant_marker.as_deref(),
+                            Some(&stop_on),
                             sampler.clone(),
                             on_token,
                         ) {
@@ -221,14 +289,29 @@ where
             system_prompt,
             sampler,
             mut constraints,
+            examples,
         } = task_builder;
+
+        // check if the examples are valid
+        #[cfg(debug_assertions)]
+        {
+            let parser = constraints();
+            for example in &examples {
+                let state = parser.create_parser_state();
+                let result = parser.parse(&state, example.output.as_bytes());
+                if result.is_err() {
+                    tracing::error!("Example: {:?} does not fit the constraints you provided to the task. Examples tend to perform better when they follow the same format as the model output.", example);
+                }
+            }
+        }
+
         let chat_markers = model.chat_markers();
         let (sender_tx, mut sender_rx) = unbounded_channel::<String>();
         let (result_tx, result_rx) = unbounded_channel();
         model
             .run_sync(move |model| {
                 Box::pin(async move {
-                    let mut session = TaskSession::new(chat_markers, system_prompt);
+                    let mut session = TaskSession::new(chat_markers, system_prompt, examples);
 
                     let span = tracing::span!(tracing::Level::TRACE, "Task session");
                     let _span = span.enter();

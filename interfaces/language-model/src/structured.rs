@@ -53,9 +53,8 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
                 return if current_result.is_none() {
                     logit.logit = f32::NEG_INFINITY;
                     false
-                }
-                else {
-                    true  
+                } else {
+                    true
                 };
             }
 
@@ -132,9 +131,9 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
 
             // // If we don't have a stop token, we can return the current result immediately
             // if stop_token.is_none() {
-                if let Some(result) = current_result.take() {
-                    return Ok(result);
-                }
+            if let Some(result) = current_result.take() {
+                return Ok(result);
+            }
             // }
         }
     }
