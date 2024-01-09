@@ -1,7 +1,6 @@
 //! The index module contains different types of search indexes that can be used to search for [`crate::context::Document`]s created from [`crate::context::IntoDocument`] or [`crate::context::IntoDocuments`]
 
 mod postprocessing;
-pub use postprocessing::*;
 mod preprocessing;
 pub use preprocessing::*;
 

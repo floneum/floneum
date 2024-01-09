@@ -12,7 +12,7 @@ async fn main() {
         .build()
         .unwrap();
     let constraints = LiteralParser::new(format!("(Responding as {}) ", character_name))
-        .then(StopOn::new(model.end_assistant_marker().to_string()));
+        .then(StopOn::new(model.chat_markers().unwrap().end_assistant_marker));
     let mut chat = Chat::builder(&mut model)
         .with_system_prompt(character_description)
         .constrain_response(move |_, _| constraints.clone())
