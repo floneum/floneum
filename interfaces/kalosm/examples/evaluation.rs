@@ -10,7 +10,7 @@ const TEST_PAIRS :&[(&str, &str)]= &[
     ("Quantum computing leverages the principles of quantum mechanics to perform computations at speeds unattainable by classical computers. This emerging technology holds the potential to solve complex problems, such as factorizing large numbers, with unprecedented efficiency.", "What sets quantum computing apart from classical computing?"),
     ("Docker containers provide a lightweight and portable way to package and deploy applications, along with their dependencies. This approach streamlines the deployment process and ensures consistency across different environments.", "What is the purpose of Docker containers in application deployment?"),
     ("Neural networks, inspired by the human brain, form the backbone of deep learning. These interconnected layers of nodes learn to recognize patterns and make predictions, enabling tasks like image recognition and natural language processing.", "What is the role of neural networks in deep learning?"),
-    ];
+];
 
 const TRAIN_PAIRS:&[(&str, &str)]= &[
     ("Floneum is a user-friendly editor for visual AI workflows. Unlike existing tools that may have a high barrier to entry or allow limited control, Floneum provides a solution that is both easy to use and allows for greater customization.", "What is Floneum?"),
@@ -20,26 +20,18 @@ const TRAIN_PAIRS:&[(&str, &str)]= &[
     ("Embeddings are a way to understand the meaning of text. They provide a representation of the meaning of the words used. It lets us focus on the meaning of the text instead of the specific wording of the text.", "What is an embedding?"),
     ("In the world of programming languages, Rust stands out for its focus on memory safety without sacrificing performance. Its ownership system ensures that memory is managed efficiently, preventing common pitfalls like null pointer dereferencing.", "What is Rust known for?"),
     ("While traditional databases rely on a fixed schema, NoSQL databases like MongoDB offer a flexible structure, allowing you to store and retrieve data in a more dynamic way. This flexibility is particularly beneficial for applications with evolving data requirements.", "How does MongoDB differ from traditional databases?"),
-        ("Floneum is designed to support an expanding ecosystem of plugins. In the future, additional plugins will be added to enhance its functionality further. Furthermore, if the built-in plugins don't precisely fit your application, Floneum allows you to extend its capabilities with plugins that are fully sandboxed within their own environment. Through the utilization of a WebAssembly (WASM) compiler, plugins can only access resources within their designated sandbox. This ensures that you can trust Floneum to prevent any malicious activity from impacting your computer.", "What are Floneum plugins?"),
-        ("The agile software development methodology emphasizes iterative and collaborative approaches to project management. This flexible framework allows teams to adapt to changing requirements and deliver incremental improvements.", "What are the key principles of agile software development?"),
-        ("The concept of virtualization involves creating virtual instances of resources like servers or networks. Virtualization enables better resource utilization, scalability, and isolation in computing environments.", "What is the purpose of virtualization in computer science?"),
-        ("Open-source software, like the Linux operating system, is freely accessible and allows users to view, modify, and distribute its source code. This collaborative approach fosters innovation and community-driven development.", "What distinguishes open-source software from proprietary software?"),
-        ("A content delivery network (CDN) optimizes the distribution of web content by strategically placing servers worldwide. This reduces latency, accelerates content delivery, and enhances the overall user experience.", "What role does a content delivery network (CDN) play in web performance?"),
-        ("Biometric authentication methods, such as fingerprint recognition and facial recognition, use unique biological characteristics for identity verification. This enhances security by providing a more robust and personalized authentication process.", "How do biometric authentication methods contribute to security?"),
-        ("The concept of DevOps integrates software development and IT operations to improve collaboration and productivity. Automation tools play a crucial role in achieving continuous integration and continuous delivery (CI/CD) in DevOps practices.", "What is the relationship between DevOps and continuous integration/continuous delivery (CI/CD)?"),
-        ("Natural Language Processing (NLP) involves the interaction between computers and human language. Applications of NLP include language translation, sentiment analysis, and chatbot development.", "What are some applications of Natural Language Processing (NLP)?"),
-        ("The concept of edge computing involves processing data closer to the source rather than relying on a centralized cloud infrastructure. This approach reduces latency and enhances real-time processing in distributed systems.", "What is the significance of edge computing in data processing?"),
-        ("APIs (Application Programming Interfaces) facilitate communication between different software systems. They define the methods and data formats applications can use to request and exchange information.", "What is the purpose of APIs in software development?"),
-        ("Blockchain technology, beyond cryptocurrencies, is being explored for applications like smart contracts. Smart contracts are self-executing contracts with the terms of the agreement directly written into code.", "How is blockchain technology utilized in the concept of smart contracts?")
+    ("Floneum is designed to support an expanding ecosystem of plugins. In the future, additional plugins will be added to enhance its functionality further. Furthermore, if the built-in plugins don't precisely fit your application, Floneum allows you to extend its capabilities with plugins that are fully sandboxed within their own environment. Through the utilization of a WebAssembly (WASM) compiler, plugins can only access resources within their designated sandbox. This ensures that you can trust Floneum to prevent any malicious activity from impacting your computer.", "What are Floneum plugins?"),
+    ("The agile software development methodology emphasizes iterative and collaborative approaches to project management. This flexible framework allows teams to adapt to changing requirements and deliver incremental improvements.", "What are the key principles of agile software development?"),
+    ("The concept of virtualization involves creating virtual instances of resources like servers or networks. Virtualization enables better resource utilization, scalability, and isolation in computing environments.", "What is the purpose of virtualization in computer science?"),
+    ("Open-source software, like the Linux operating system, is freely accessible and allows users to view, modify, and distribute its source code. This collaborative approach fosters innovation and community-driven development.", "What distinguishes open-source software from proprietary software?"),
+    ("A content delivery network (CDN) optimizes the distribution of web content by strategically placing servers worldwide. This reduces latency, accelerates content delivery, and enhances the overall user experience.", "What role does a content delivery network (CDN) play in web performance?"),
+    ("Biometric authentication methods, such as fingerprint recognition and facial recognition, use unique biological characteristics for identity verification. This enhances security by providing a more robust and personalized authentication process.", "How do biometric authentication methods contribute to security?"),
+    ("The concept of DevOps integrates software development and IT operations to improve collaboration and productivity. Automation tools play a crucial role in achieving continuous integration and continuous delivery (CI/CD) in DevOps practices.", "What is the relationship between DevOps and continuous integration/continuous delivery (CI/CD)?"),
+    ("Natural Language Processing (NLP) involves the interaction between computers and human language. Applications of NLP include language translation, sentiment analysis, and chatbot development.", "What are some applications of Natural Language Processing (NLP)?"),
+    ("The concept of edge computing involves processing data closer to the source rather than relying on a centralized cloud infrastructure. This approach reduces latency and enhances real-time processing in distributed systems.", "What is the significance of edge computing in data processing?"),
+    ("APIs (Application Programming Interfaces) facilitate communication between different software systems. They define the methods and data formats applications can use to request and exchange information.", "What is the purpose of APIs in software development?"),
+    ("Blockchain technology, beyond cryptocurrencies, is being explored for applications like smart contracts. Smart contracts are self-executing contracts with the terms of the agreement directly written into code.", "How is blockchain technology utilized in the concept of smart contracts?")
 ];
-
-// Scored 0.77
-const BEST:&[(&str, &str)]= &[
-    ("For instance, while the chat GPT interface provides a straightforward entry point, it quickly becomes challenging to create structured workflows. Imagine wanting to search through files to find specific ones, such as all .txt files related to travel, and then upload them. With Floneum, you can achieve this seamlessly within a structured workflow, eliminating the need for manual interaction with external tools.", "What are the tradeoffs of using chat GPT?"),
-     ("On the other end of the spectrum, tools like Langchain offer extensive workflow customization but come with more system requirements and potential security concerns. Langchain requires users to install tools like Python and CUDA, making it less accessible to non-developers. In addition to this, building workflows in Python code can be impractical for individuals without programming expertise. Finally, plugins in Langchain are not sandboxed, which can expose users to malware or security risks when incorporating third-party libraries.", "What are the tradeoffs of using Langchain?"),
-     ("Floneum is a single executable that runs models locally, eliminating the need for complex installations. The heart of Floneum is its graph-based editor, designed to enable users without programming knowledge to build and manage their AI workflows seamlessly.", "What is Floneum?"), 
-     ("Embeddings are a way to understand the meaning of text. They provide a representation of the meaning of the words used. It lets us focus on the meaning of the text instead of the specific wording of the text.", "What is an embedding?"), 
-     ("While traditional databases rely on a fixed schema, NoSQL databases like MongoDB offer a flexible structure, allowing you to store and retrieve data in a more dynamic way. This flexibility is particularly beneficial for applications with evolving data requirements.", "How does MongoDB differ from traditional databases?")];
 
 #[tokio::main]
 async fn main() {
@@ -69,7 +61,7 @@ async fn main() {
                     .build()
                     .unwrap();
 
-                let mut phi_test_cases = TestCases::new();
+                let mut llama_test_cases = TestCases::new();
 
                 for (text, expected) in removed_examples
                     .iter()
@@ -77,26 +69,26 @@ async fn main() {
                 {
                     let actual = &hypothetical.generate_question(text).await.unwrap()[0];
 
-                    phi_test_cases.push_case(expected.to_string(), actual.clone());
+                    llama_test_cases.push_case(expected.to_string(), actual.clone());
                 }
 
                 let mut bert_distance = BertDistance::default();
-                let phi_distance = phi_test_cases
+                let llama_distance = llama_test_cases
                     .evaluate(&mut bert_distance)
                     .await
                     .normalized();
 
-                println!("phi");
+                println!("llama");
                 println!("with examples {:?}", remaining_examples);
-                println!("{}", phi_distance);
+                println!("{}", llama_distance);
 
                 if let Some((idx, min_score)) = &mut max_eval {
-                    if phi_distance.mean_score() > *min_score {
-                        *min_score = phi_distance.mean_score();
+                    if llama_distance.mean_score() > *min_score {
+                        *min_score = llama_distance.mean_score();
                         *idx = index;
                     }
                 } else {
-                    max_eval = Some((index, phi_distance.mean_score()));
+                    max_eval = Some((index, llama_distance.mean_score()));
                 }
             }
 

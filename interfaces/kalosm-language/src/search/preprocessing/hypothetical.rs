@@ -12,15 +12,12 @@ use super::{ChunkStrategy, Chunker};
 const TASK_DESCRIPTION: &str =
     "You generate hypothetical questions that may be answered by the given text. The questions restate any information nessisary to understand the question";
 
-const EXAMPLES:[(&str, &str);2] = [
-    (
-"Yesterday, apple stock rose 10%, google stock rose 15%, and microsoft stock rose 5%",
-"Questions that are answered by the previous text: How have tech stocks changed recently? How have apple stocks changed recently? How have google stocks changed recently? How have microsoft stocks changed recently?"
-    ),
-    (
-        "The Eiffel Tower is a wrought-iron lattice tower on the Champ de Mars in Paris, France. It is named after the engineer Gustave Eiffel, whose company designed and built the tower.",
-        "Questions that are answered by the previous text: What is the Eiffel Tower? Who designed the Eiffel Tower?"
-    ),
+const EXAMPLES: [(&str, &str); 5] = [
+    ("For instance, while the chat GPT interface provides a straightforward entry point, it quickly becomes challenging to create structured workflows. Imagine wanting to search through files to find specific ones, such as all .txt files related to travel, and then upload them. With Floneum, you can achieve this seamlessly within a structured workflow, eliminating the need for manual interaction with external tools.", "What are the tradeoffs of using chat GPT?"),
+    ("On the other end of the spectrum, tools like Langchain offer extensive workflow customization but come with more system requirements and potential security concerns. Langchain requires users to install tools like Python and CUDA, making it less accessible to non-developers. In addition to this, building workflows in Python code can be impractical for individuals without programming expertise. Finally, plugins in Langchain are not sandboxed, which can expose users to malware or security risks when incorporating third-party libraries.", "What are the tradeoffs of using Langchain?"),
+    ("Floneum is a single executable that runs models locally, eliminating the need for complex installations. The heart of Floneum is its graph-based editor, designed to enable users without programming knowledge to build and manage their AI workflows seamlessly.", "What is Floneum?"), 
+    ("Embeddings are a way to understand the meaning of text. They provide a representation of the meaning of the words used. It lets us focus on the meaning of the text instead of the specific wording of the text.", "What is an embedding?"), 
+    ("While traditional databases rely on a fixed schema, NoSQL databases like MongoDB offer a flexible structure, allowing you to store and retrieve data in a more dynamic way. This flexibility is particularly beneficial for applications with evolving data requirements.", "How does MongoDB differ from traditional databases?")
 ];
 
 const QUESTION_STARTERS: [&str; 9] = [

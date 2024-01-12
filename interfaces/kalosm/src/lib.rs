@@ -25,5 +25,3 @@ pub use kalosm_vision as vision;
 
 mod evaluate;
 pub use evaluate::*;
-// mod index;
-// pub use index::*;
