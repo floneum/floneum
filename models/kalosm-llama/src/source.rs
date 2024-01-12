@@ -168,13 +168,13 @@ impl LlamaSource {
         }
     }
 
-    /// A preset for Open chat 3.5
+    /// A preset for [Open chat 3.5 (0106)](https://huggingface.co/openchat/openchat-3.5-0106)
     pub fn open_chat_7b() -> Self {
         Self {
-            model_id: "TheBloke/openchat_3.5-GGUF".to_string(),
+            model_id: "TheBloke/openchat-3.5-0106-GGUF".to_string(),
             revision: "main".to_string(),
-            gguf_file: "openchat_3.5.Q4_K_M.gguf".into(),
-            tokenizer_repo: "openchat/openchat_3.5".to_string(),
+            gguf_file: "openchat-3.5-0106.Q4_K_M.gguf".into(),
+            tokenizer_repo: "openchat/openchat-3.5-0106".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             group_query_attention: 8,
             markers: Some(ChatMarkers {
