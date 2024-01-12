@@ -56,6 +56,71 @@ fn create_constraints() -> kalosm_sample::SequenceParser<
     )
 }
 
+/// A builder for a hypothetical chunker.
+pub struct HypotheticalBuilder<'a, M>
+where
+    M: Model,
+    <M::SyncModel as SyncModel>::Session: Send,
+{
+    model: &'a mut M,
+    task_description: Option<String>,
+    examples: Option<Vec<(String, String)>>,
+    chunking: Option<ChunkStrategy>,
+}
+
+impl<'a, M> HypotheticalBuilder<'a, M>
+where
+    M: Model,
+    <M::SyncModel as SyncModel>::Session: Send,
+{
+    /// Set the chunking strategy.
+    pub fn with_chunking(mut self, chunking: ChunkStrategy) -> Self {
+        self.chunking = Some(chunking);
+        self
+    }
+
+    /// Set the examples for this task. Each example should include the text and the questions that are answered by the text.
+    pub fn with_examples<S: Into<String>>(
+        mut self,
+        examples: impl IntoIterator<Item = (S, S)>,
+    ) -> HypotheticalBuilder<'a, M> {
+        self.examples = Some(
+            examples
+                .into_iter()
+                .map(|(a, b)| (a.into(), b.into()))
+                .collect::<Vec<_>>(),
+        );
+        self
+    }
+
+    /// Set the task description. The task description should describe a task of generating hypothetical questions that may be answered by the given text.
+    pub fn with_task_description(mut self, task_description: String) -> Self {
+        self.task_description = Some(task_description);
+        self
+    }
+
+    /// Build the hypothetical chunker.
+    pub fn build(self) -> anyhow::Result<Hypothetical> {
+        let task_description = self
+            .task_description
+            .unwrap_or_else(|| TASK_DESCRIPTION.to_string());
+        let examples = self.examples.unwrap_or_else(|| {
+            EXAMPLES
+                .iter()
+                .map(|(a, b)| (a.to_string(), b.to_string()))
+                .collect::<Vec<_>>()
+        });
+        let chunking = self.chunking;
+
+        let task = Task::builder(self.model, task_description)
+            .with_constraints(create_constraints)
+            .with_examples(examples)
+            .build();
+
+        Ok(Hypothetical { chunking, task })
+    }
+}
+
 /// Generates embeddings of questions
 pub struct Hypothetical {
     chunking: Option<ChunkStrategy>,
@@ -64,26 +129,17 @@ pub struct Hypothetical {
 
 impl Hypothetical {
     /// Create a new hypothetical chunker.
-    pub fn new<M>(model: &mut M) -> Self
+    pub fn builder<M>(model: &mut M) -> HypotheticalBuilder<M>
     where
         M: Model,
         <M::SyncModel as SyncModel>::Session: Send,
     {
-        let task = Task::builder(model, TASK_DESCRIPTION)
-            .with_constraints(create_constraints)
-            .with_examples(EXAMPLES)
-            .build();
-
-        Self {
+        HypotheticalBuilder {
+            model,
+            task_description: None,
+            examples: None,
             chunking: None,
-            task,
         }
-    }
-
-    /// Set the chunking strategy.
-    pub fn with_chunking(mut self, chunking: ChunkStrategy) -> Self {
-        self.chunking = Some(chunking);
-        self
     }
 
     /// Generate a list of hypothetical questions about the given text.
