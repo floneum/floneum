@@ -1,5 +1,5 @@
 use kalosm::language::*;
-use kalosm_language::search::{Chunker, Hypothetical};
+use kalosm_language::search::{ Hypothetical, Chunker};
 
 #[tokio::main]
 async fn main() {
@@ -15,14 +15,14 @@ async fn main() {
         Floneum is a single executable that runs models locally, eliminating the need for complex installations. The heart of Floneum is its graph-based editor, designed to enable users without programming knowledge to build and manage their AI workflows seamlessly.")
     ];
 
-    let mut llm = Phi::v2().unwrap();
+    let mut llm = Llama::new_chat();
 
-    let hypothetical = Hypothetical::new(&mut llm).with_chunking(
+    let hypothetical = Hypothetical::builder(&mut llm).with_chunking(
         kalosm_language::search::ChunkStrategy::Paragraph {
             paragraph_count: 1,
             overlap: 0,
         },
-    );
+    ).build().unwrap();
 
     let mut embedder = Bert::default();
     let chunked = hypothetical
