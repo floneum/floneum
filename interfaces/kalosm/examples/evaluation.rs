@@ -38,7 +38,10 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     {
-        let mut llm = Llama::new_chat();
+        let mut llm = Llama::builder()
+            .with_source(LlamaSource::tiny_llama_1_1b_chat())
+            .build()
+            .unwrap();
 
         let mut remaining_examples = TEST_PAIRS.to_vec();
         let mut removed_examples = TRAIN_PAIRS.to_vec();
