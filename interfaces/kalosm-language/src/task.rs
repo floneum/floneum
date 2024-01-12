@@ -1,50 +1,80 @@
-//! A task interface that builds on top of [`kalosm_language_model::ChatModel`]
-
-use std::sync::{Arc, Mutex};
+//! A task interface that builds on top of [`kalosm_language_model::Model`]
 
 use anyhow::Result;
-use kalosm_language_model::{ChatModel, GenerationParameters, ModelExt, SyncModel, SyncModelExt};
-use kalosm_sample::{ArcParser, CreateParserState};
+use kalosm_language_model::ChatMarkers;
+use kalosm_language_model::StructureParserResult;
+use kalosm_language_model::{GenerationParameters, Model, ModelExt, SyncModel, SyncModelExt};
+use kalosm_sample::{CreateParserState, Parser};
 use kalosm_streams::text_stream::ChannelTextStream;
 use llm_samplers::types::Sampler;
-use tokio::sync::mpsc::unbounded_channel;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use tokio::sync::{mpsc::unbounded_channel, oneshot};
 
 /// A task session
 struct TaskSession<Session> {
-    assistant_marker: String,
-    end_assistant_marker: String,
-    end_user_marker: String,
     cached_prompt: String,
+    after_input: String,
     session: Option<Session>,
-    constraints: Option<Arc<Mutex<dyn Fn() -> ArcParser + Send + Sync>>>,
-    sampler: Arc<Mutex<dyn Sampler + Send + Sync>>,
 }
 
 impl<Session: kalosm_language_model::Session> TaskSession<Session> {
     #[allow(clippy::too_many_arguments)]
     /// Creates a new [`TaskSession`].
     pub(crate) fn new(
-        system_prompt_marker: String,
-        end_system_prompt_marker: String,
-        user_marker: String,
-        end_user_marker: String,
-        assistant_marker: String,
-        end_assistant_marker: String,
+        markers: Option<ChatMarkers>,
         system_prompt: String,
-        constraints: Option<Arc<Mutex<dyn Fn() -> ArcParser + Send + Sync>>>,
-        sampler: Arc<Mutex<dyn Sampler + Send + Sync>>,
+        examples: Vec<TaskExample>,
     ) -> Self {
+        let (cached_prompt, after_input) = match markers {
+            Some(markers) => {
+                let mut cached_prompt = markers.system_prompt_marker.to_string() + &system_prompt;
+                cached_prompt += markers.end_system_prompt_marker;
+
+                for example in examples {
+                    cached_prompt += markers.user_marker;
+                    cached_prompt += &example.input;
+                    cached_prompt += markers.end_user_marker;
+                    cached_prompt += markers.assistant_marker;
+                    cached_prompt += &example.output;
+                    cached_prompt += markers.end_assistant_marker;
+                }
+
+                cached_prompt += markers.user_marker;
+                (
+                    cached_prompt,
+                    markers.end_user_marker.to_string() + markers.assistant_marker,
+                )
+            }
+            None => {
+                let mut cached_prompt = "# Instruction\n".to_string();
+                cached_prompt += &system_prompt;
+                if !system_prompt.ends_with('\n') {
+                    cached_prompt += "\n";
+                }
+
+                for example in examples {
+                    cached_prompt += "# Input\n";
+                    cached_prompt += &example.input;
+                    if !example.input.ends_with('\n') {
+                        cached_prompt += "\n";
+                    }
+                    cached_prompt += "# Output\n";
+                    cached_prompt += &example.output;
+                    if !example.output.ends_with('\n') {
+                        cached_prompt += "\n";
+                    }
+                }
+
+                cached_prompt += "# Input\n";
+                (cached_prompt, "# Output\n".to_string())
+            }
+        };
+
         Self {
-            assistant_marker,
-            end_assistant_marker,
-            end_user_marker,
-            cached_prompt: format!(
-                "{}{}{}{}",
-                system_prompt_marker, system_prompt, end_system_prompt_marker, user_marker
-            ),
+            cached_prompt,
+            after_input,
             session: None,
-            constraints,
-            sampler,
         }
     }
 
@@ -74,141 +104,166 @@ impl<Session: kalosm_language_model::Session> TaskSession<Session> {
         }
     }
 
-    /// Run the task with a message.
-    pub fn run<Model: SyncModel<Session = Session>>(
+    fn start_session(
         &mut self,
-        message: String,
-        model: &mut Model,
-        stream: tokio::sync::mpsc::UnboundedSender<String>,
-    ) -> Result<()> {
-        let mut bot_response = String::new();
+        message: &str,
+        model: &mut impl SyncModel<Session = Session>,
+    ) -> Result<Session> {
         let mut session = self.create_session(model)?;
-        let Self {
-            end_user_marker,
-            constraints,
-            sampler,
-            ..
-        } = self;
+
+        let prompt = message.to_string() + &self.after_input;
 
         // Feed the message to the model.
-        model.feed_text(
-            &mut session,
-            &format!("{}{}{}", message, end_user_marker, self.assistant_marker),
-            Some(0),
-        )?;
+        model.feed_text(&mut session, &prompt, Some(0))?;
 
-        // Generate a response.
-        match constraints {
-            Some(constraints) => {
-                let constraints = constraints.lock().unwrap();
-                let constraints = constraints();
-                let state = constraints.create_parser_state();
-                let on_token = |tok: String| {
-                    bot_response += &tok;
-                    stream.send(tok)?;
-                    Ok(())
-                };
-                model.generate_structured(
-                    &mut session,
-                    &message,
-                    constraints,
-                    state,
-                    sampler.clone(),
-                    on_token,
-                )?;
-            }
-            None => {
-                let on_token = |tok: String| {
-                    bot_response += &tok;
-                    stream.send(tok)?;
-                    Ok(kalosm_language_model::ModelFeedback::Continue)
-                };
-                model.stream_text_with_sampler(
-                    &mut session,
-                    &message,
-                    None,
-                    Some(&self.end_assistant_marker),
-                    sampler.clone(),
-                    on_token,
-                )?;
-            }
-        }
-
-        Ok(())
+        Ok(session)
     }
 }
 
-/// A builder for [`Task`].
-pub struct TaskBuilder<'a, M: ChatModel> {
-    model: &'a mut M,
-    system_prompt: String,
-    sampler: Arc<Mutex<dyn Sampler + Send + Sync>>,
-    constraints: Option<Arc<Mutex<dyn Fn() -> ArcParser + Send + Sync>>>,
+#[derive(Debug)]
+struct TaskExample {
+    input: String,
+    output: String,
 }
 
-impl<'a, M: ChatModel> TaskBuilder<'a, M> {
-    fn new(model: &'a mut M, description: impl Into<String>) -> TaskBuilder<M> {
+/// A marker for no parser.
+pub struct NoParser;
+
+/// A builder for [`Task`].
+pub struct TaskBuilder<'a, M: Model, P = NoParser> {
+    model: &'a mut M,
+    system_prompt: String,
+    sampler: Arc<std::sync::Mutex<dyn Sampler + Send + Sync>>,
+    constraints: P,
+    examples: Vec<TaskExample>,
+}
+
+impl<'a, M: Model> TaskBuilder<'a, M> {
+    fn new(model: &'a mut M, description: impl Into<String>) -> TaskBuilder<'a, M> {
         TaskBuilder {
             model,
             system_prompt: description.into(),
-            sampler: Arc::new(Mutex::new(GenerationParameters::default().sampler())),
-            constraints: None,
+            sampler: Arc::new(std::sync::Mutex::new(
+                GenerationParameters::default().sampler(),
+            )),
+            constraints: NoParser,
+            examples: Vec::new(),
         }
     }
+}
 
+impl<'a, M: Model, P: TaskBuilderReturn + Send + Sync + 'static> TaskBuilder<'a, M, P>
+where
+    <M::SyncModel as SyncModel>::Session: Send,
+{
     /// Sets the [`Sampler`] to use for generating responses.
     pub fn with_sampler(mut self, sampler: impl Sampler + Send + Sync + 'static) -> Self {
-        self.sampler = Arc::new(Mutex::new(sampler));
+        self.sampler = Arc::new(std::sync::Mutex::new(sampler));
         self
     }
 
     /// Set the constraints for the task. The response generated by the model will follow the constraints.
-    pub fn with_constraints(
-        mut self,
-        constraints: impl Fn() -> ArcParser + Send + Sync + 'static,
-    ) -> Self {
-        self.constraints = Some(Arc::new(Mutex::new(constraints)));
+    pub fn with_constraints<Parser, Builder: FnMut() -> Parser + 'static>(
+        self,
+        constraints: Builder,
+    ) -> TaskBuilder<'a, M, Builder> {
+        TaskBuilder {
+            constraints,
+            model: self.model,
+            system_prompt: self.system_prompt,
+            sampler: self.sampler,
+            examples: self.examples,
+        }
+    }
+
+    /// Add an example to the task.
+    pub fn with_example(mut self, input: impl Into<String>, output: impl Into<String>) -> Self {
+        let input = input.into();
+        let output = output.into();
+        self.examples.push(TaskExample { input, output });
         self
     }
 
-    /// Builds a [`Task`] instance.
-    pub fn build(self) -> Task
+    /// Add multiple examples to the task.
+    pub fn with_examples(
+        mut self,
+        examples: impl IntoIterator<Item = (impl Into<String>, impl Into<String>)>,
+    ) -> Self {
+        for (input, output) in examples {
+            let input = input.into();
+            let output = output.into();
+            self.examples.push(TaskExample { input, output });
+        }
+        self
+    }
+
+    /// Build a [`Task`] from a [`TaskBuilder`].
+    pub fn build(self) -> <P as TaskBuilderReturn>::Output {
+        <P as TaskBuilderReturn>::build(self)
+    }
+}
+
+/// A trait for returning the output of a [`TaskBuilder`].
+pub trait TaskBuilderReturn {
+    /// The output of the [`TaskBuilder`].
+    type Output;
+
+    /// Build the output of the [`TaskBuilder`].
+    fn build<M: Model>(task_builder: TaskBuilder<M, Self>) -> Self::Output
     where
         <M::SyncModel as SyncModel>::Session: Send,
-    {
-        let Self {
+        Self: Sized;
+}
+
+impl TaskBuilderReturn for NoParser {
+    type Output = Task<ChannelTextStream<String>>;
+
+    fn build<M: Model>(task_builder: TaskBuilder<M, Self>) -> Self::Output {
+        let TaskBuilder {
             model,
             system_prompt,
             sampler,
-            constraints,
-        } = self;
-        let system_prompt_marker = model.system_prompt_marker().to_string();
-        let end_system_prompt_marker = model.end_system_prompt_marker().to_string();
-        let user_marker = model.user_marker().to_string();
-        let end_user_marker = model.end_user_marker().to_string();
-        let assistant_marker = model.assistant_marker().to_string();
-        let end_assistant_marker = model.end_assistant_marker().to_string();
-        let (sender_tx, mut sender_rx) = unbounded_channel();
+            examples,
+            ..
+        } = task_builder;
+        let chat_markers = model.chat_markers();
+        let stop_on = chat_markers
+            .as_ref()
+            .map(|m| m.end_assistant_marker.to_string())
+            .unwrap_or_else(|| "# Input".to_string());
+        let (sender_tx, mut sender_rx) = unbounded_channel::<String>();
         let (result_tx, result_rx) = unbounded_channel();
         model
             .run_sync(move |model| {
                 Box::pin(async move {
-                    let mut session = TaskSession::new(
-                        system_prompt_marker,
-                        end_system_prompt_marker,
-                        user_marker,
-                        end_user_marker,
-                        assistant_marker,
-                        end_assistant_marker,
-                        system_prompt,
-                        constraints,
-                        sampler,
-                    );
+                    let mut session = TaskSession::new(chat_markers, system_prompt, examples);
 
                     while let Some(message) = sender_rx.recv().await {
                         let (tx, rx) = unbounded_channel();
                         result_tx.send(rx.into()).unwrap();
-                        session.run(message, model, tx).unwrap();
+
+                        let mut session = match session.start_session(message.as_str(), model) {
+                            Ok(session) => session,
+                            Err(err) => {
+                                tracing::error!("Failed to start session: {}", err);
+                                return;
+                            }
+                        };
+                        let on_token = |tok: String| {
+                            tx.send(tok)?;
+                            Ok(kalosm_language_model::ModelFeedback::Continue)
+                        };
+                        if let Err(err) = model.stream_text_with_sampler(
+                            &mut session,
+                            &message,
+                            None,
+                            Some(&stop_on),
+                            sampler.clone(),
+                            on_token,
+                        ) {
+                            tracing::error!("Failed to stream text: {}", err);
+                            return;
+                        }
                     }
                 })
             })
@@ -216,7 +271,97 @@ impl<'a, M: ChatModel> TaskBuilder<'a, M> {
 
         Task {
             sender: sender_tx,
-            channel: result_rx,
+            channel: Mutex::new(result_rx),
+        }
+    }
+}
+
+impl<P: Parser + CreateParserState, B: FnMut() -> P + Send + 'static> TaskBuilderReturn for B
+where
+    <P as Parser>::Output: Send + 'static,
+    <P as Parser>::PartialState: Sync + Send,
+{
+    type Output = Task<StructureParserResult<ChannelTextStream<String>, P::Output>>;
+
+    fn build<M: Model>(task_builder: TaskBuilder<M, Self>) -> Self::Output {
+        let TaskBuilder {
+            model,
+            system_prompt,
+            sampler,
+            mut constraints,
+            examples,
+        } = task_builder;
+
+        // check if the examples are valid
+        #[cfg(debug_assertions)]
+        {
+            let parser = constraints();
+            for example in &examples {
+                let state = parser.create_parser_state();
+                let result = parser.parse(&state, example.output.as_bytes());
+                if result.is_err() {
+                    tracing::error!("Example: {:?} does not fit the constraints you provided to the task. Examples tend to perform better when they follow the same format as the model output.", example);
+                }
+            }
+        }
+
+        let chat_markers = model.chat_markers();
+        let (sender_tx, mut sender_rx) = unbounded_channel::<String>();
+        let (result_tx, result_rx) = unbounded_channel();
+        model
+            .run_sync(move |model| {
+                Box::pin(async move {
+                    let mut session = TaskSession::new(chat_markers, system_prompt, examples);
+
+                    let span = tracing::span!(tracing::Level::TRACE, "Task session");
+                    let _span = span.enter();
+                    println!("Task session started");
+
+                    while let Some(message) = sender_rx.recv().await {
+                        let (tx, rx) = unbounded_channel();
+                        let (parsed_tx, parsed_rx) = oneshot::channel();
+                        result_tx
+                            .send(StructureParserResult::new(rx.into(), parsed_rx))
+                            .unwrap();
+
+                        let mut session = match session.start_session(message.as_str(), model) {
+                            Ok(session) => session,
+                            Err(err) => {
+                                tracing::error!("Failed to start session: {}", err);
+                                return;
+                            }
+                        };
+
+                        let constraints = constraints();
+                        let state = constraints.create_parser_state();
+                        let on_token = |tok: String| {
+                            // tracing::trace!("Task generated token: {}", tok);
+                            use std::io::Write;
+                            print!("{}", tok);
+                            std::io::stdout().flush().unwrap();
+                            tx.send(tok)?;
+                            Ok(())
+                        };
+                        let result = model.generate_structured(
+                            &mut session,
+                            &message,
+                            constraints,
+                            state,
+                            sampler.clone(),
+                            on_token,
+                        );
+                        if parsed_tx.send(result).is_err() {
+                            tracing::error!("Failed to send parsed result");
+                            return;
+                        }
+                    }
+                })
+            })
+            .unwrap();
+
+        Task {
+            sender: sender_tx,
+            channel: Mutex::new(result_rx),
         }
     }
 }
@@ -251,39 +396,42 @@ impl<'a, M: ChatModel> TaskBuilder<'a, M> {
 ///         .unwrap();
 /// }
 /// ```
-pub struct Task {
+pub struct Task<R = ChannelTextStream<String>> {
     sender: tokio::sync::mpsc::UnboundedSender<String>,
-    channel: tokio::sync::mpsc::UnboundedReceiver<ChannelTextStream<String>>,
+    channel: Mutex<tokio::sync::mpsc::UnboundedReceiver<R>>,
 }
 
-impl Task {
+impl Task<ChannelTextStream<String>> {
     /// Create a new task with no constraints and the default sampler. See [`Task::builder`] for more options.
-    pub fn new<M: ChatModel>(model: &mut M, description: impl Into<String>) -> Self
+    pub fn new<M: Model>(model: &mut M, description: impl Into<String>) -> Self
     where
         <M::SyncModel as SyncModel>::Session: Send,
     {
         Self::builder(model, description).build()
     }
+}
 
+impl Task {
     /// Creates a new builder for a task session.
-    pub fn builder<M: ChatModel>(
-        model: &mut M,
-        description: impl Into<String>,
-    ) -> TaskBuilder<'_, M>
+    pub fn builder<M: Model>(model: &mut M, description: impl Into<String>) -> TaskBuilder<'_, M>
     where
         <M::SyncModel as SyncModel>::Session: Send,
     {
         TaskBuilder::new(model, description)
     }
+}
 
+impl<R> Task<R> {
     /// Run the task with a message.
-    pub async fn run(&mut self, message: impl Into<String>) -> Result<ChannelTextStream<String>> {
+    pub async fn run(&self, message: impl Into<String>) -> Result<R> {
         let message = message.into();
         let message = message.trim().to_string();
         self.sender
             .send(message)
             .map_err(|_| anyhow::anyhow!("Model stopped"))?;
         self.channel
+            .lock()
+            .await
             .recv()
             .await
             .ok_or(anyhow::anyhow!("Model stopped"))

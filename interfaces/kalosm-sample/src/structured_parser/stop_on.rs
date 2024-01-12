@@ -1,9 +1,12 @@
 use crate::{CreateParserState, ParseResult, Parser};
 
+type CharFilter = fn(char) -> bool;
+
 /// A parser that parses until a literal is found.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub struct StopOn<S: AsRef<str>> {
+pub struct StopOn<S: AsRef<str>, F: Fn(char) -> bool + 'static = CharFilter> {
     literal: S,
+    character_filter: F,
 }
 
 impl<S: AsRef<str>> CreateParserState for StopOn<S> {
@@ -14,14 +17,30 @@ impl<S: AsRef<str>> CreateParserState for StopOn<S> {
 
 impl<S: AsRef<str>> From<S> for StopOn<S> {
     fn from(literal: S) -> Self {
-        Self { literal }
+        Self {
+            literal,
+            character_filter: |_| true,
+        }
     }
 }
 
 impl<S: AsRef<str>> StopOn<S> {
-    /// Create a new stop on literal parser.
+    /// Create a new literal parser.
     pub fn new(literal: S) -> Self {
-        Self { literal }
+        Self {
+            literal,
+            character_filter: |_| true,
+        }
+    }
+}
+
+impl<S: AsRef<str>, F: Fn(char) -> bool + 'static> StopOn<S, F> {
+    /// Only allow characters that pass the filter.
+    pub fn filter_characters(self, character_filter: F) -> StopOn<S, F> {
+        StopOn {
+            literal: self.literal,
+            character_filter,
+        }
     }
 
     /// Get the literal that this parser stops on.
@@ -30,22 +49,38 @@ impl<S: AsRef<str>> StopOn<S> {
     }
 }
 
+/// An error that can occur while parsing a string literal.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct StopOnParseError;
+
+impl std::fmt::Display for StopOnParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        "StopOnParseError".fmt(f)
+    }
+}
+
+impl std::error::Error for StopOnParseError {}
+
 /// The state of a stop on literal parser.
-#[derive(Default, Debug, PartialEq, Eq, Copy, Clone)]
+#[derive(Default, Debug, PartialEq, Eq, Clone)]
 pub struct StopOnOffset {
     offset: usize,
+    text: String,
 }
 
 impl StopOnOffset {
     /// Create a new stop on literal parser state.
     pub fn new(offset: usize) -> Self {
-        Self { offset }
+        Self {
+            offset,
+            text: String::new(),
+        }
     }
 }
 
-impl<S: AsRef<str>> Parser for StopOn<S> {
-    type Error = std::convert::Infallible;
-    type Output = ();
+impl<S: AsRef<str>, F: Fn(char) -> bool + 'static> Parser for StopOn<S, F> {
+    type Error = StopOnParseError;
+    type Output = String;
     type PartialState = StopOnOffset;
 
     fn parse<'a>(
@@ -54,58 +89,75 @@ impl<S: AsRef<str>> Parser for StopOn<S> {
         input: &'a [u8],
     ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
         let mut new_offset = state.offset;
-        let mut input_offset = 0;
+        let mut text = state.text.clone();
 
-        for (input_byte, literal_byte) in input
-            .iter()
-            .zip(self.literal.as_ref().as_bytes()[state.offset..].iter())
-        {
-            if input_byte == literal_byte {
+        let input_str = std::str::from_utf8(input).unwrap();
+        let literal_length = self.literal.as_ref().len();
+        let mut literal_iter = self.literal.as_ref()[state.offset..].chars();
+
+        for (i, input_char) in input_str.char_indices() {
+            if !(self.character_filter)(input_char) {
+                return Err(StopOnParseError);
+            }
+
+            let literal_char = literal_iter.next();
+
+            if Some(input_char) == literal_char {
                 new_offset += 1;
+
+                if new_offset == literal_length {
+                    text += std::str::from_utf8(&input[..i + 1]).unwrap();
+                    return Ok(ParseResult::Finished {
+                        result: text,
+                        remaining: &input[i + 1..],
+                    });
+                }
             } else {
+                literal_iter = self.literal.as_ref()[state.offset..].chars();
                 new_offset = 0;
             }
-            input_offset += 1;
         }
 
-        if new_offset == self.literal.as_ref().len() {
-            Ok(ParseResult::Finished {
-                result: (),
-                remaining: &input[input_offset..],
-            })
-        } else {
-            Ok(ParseResult::Incomplete {
-                new_state: StopOnOffset { offset: new_offset },
-                required_next: "".into(),
-            })
-        }
+        text.push_str(input_str);
+
+        Ok(ParseResult::Incomplete {
+            new_state: StopOnOffset {
+                offset: new_offset,
+                text,
+            },
+            required_next: "".into(),
+        })
     }
 }
 
 #[test]
 fn literal_parser() {
-    let parser = StopOn {
-        literal: "Hello, world!",
+    let parser = StopOn::new("Hello, world!");
+    let state = StopOnOffset {
+        offset: 0,
+        text: String::new(),
     };
-    let state = StopOnOffset { offset: 0 };
     assert_eq!(
         parser.parse(&state, b"Hello, world!"),
         Ok(ParseResult::Finished {
-            result: (),
+            result: "Hello, world!".to_string(),
             remaining: &[]
         })
     );
     assert_eq!(
         parser.parse(&state, b"Hello, world! This is a test"),
         Ok(ParseResult::Finished {
-            result: (),
+            result: "Hello, world!".to_string(),
             remaining: b" This is a test"
         })
     );
     assert_eq!(
         parser.parse(&state, b"Hello, "),
         Ok(ParseResult::Incomplete {
-            new_state: StopOnOffset { offset: 7 },
+            new_state: StopOnOffset {
+                offset: 7,
+                text: "Hello, ".into()
+            },
             required_next: "".into()
         })
     );
@@ -119,14 +171,17 @@ fn literal_parser() {
             b"world!"
         ),
         Ok(ParseResult::Finished {
-            result: (),
+            result: "Hello, world!".to_string(),
             remaining: &[]
         })
     );
     assert_eq!(
         parser.parse(&state, b"Goodbye, world!"),
         Ok(ParseResult::Incomplete {
-            new_state: StopOnOffset { offset: 0 },
+            new_state: StopOnOffset {
+                offset: 0,
+                text: "Goodbye, world!".into()
+            },
             required_next: "".into()
         })
     );

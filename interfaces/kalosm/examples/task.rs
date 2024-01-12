@@ -2,9 +2,9 @@ use kalosm::language::*;
 
 #[tokio::main]
 async fn main() {
-    let mut llm = Llama::new_chat();
+    let mut llm = Phi::v2().unwrap();
 
-    let mut task = Task::new(&mut llm, "You are a math assistant who helps students with their homework. You solve equations and answer questions. When solving problems, you will always solve problems step by step.");
+    let  task = Task::new(&mut llm, "You are a math assistant who helps students with their homework. You solve equations and answer questions. When solving problems, you will always solve problems step by step.");
 
     let start_timestamp = std::time::Instant::now();
     println!("question 1");

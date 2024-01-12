@@ -6,6 +6,9 @@ pub use whatlang::Lang;
 pub struct Document {
     title: String,
     body: String,
+    summary: Option<String>,
+    created_at: Option<chrono::DateTime<chrono::Utc>>,
+    updated_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 impl Document {
@@ -24,7 +27,25 @@ impl Document {
         Self {
             title: title.into(),
             body: body.into(),
+            summary: None,
+            created_at: None,
+            updated_at: None,
         }
+    }
+
+    /// Set the summary of the document.
+    pub fn set_summary(&mut self, summary: impl Into<String>) {
+        self.summary = Some(summary.into());
+    }
+
+    /// Set the created at time of the document.
+    pub fn set_created_at(&mut self, created_at: chrono::DateTime<chrono::Utc>) {
+        self.created_at = Some(created_at);
+    }
+
+    /// Set the updated at time of the document.
+    pub fn set_updated_at(&mut self, updated_at: chrono::DateTime<chrono::Utc>) {
+        self.updated_at = Some(updated_at);
     }
 
     /// Get the title of the document.

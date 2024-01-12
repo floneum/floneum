@@ -74,6 +74,10 @@ impl Model for Phi {
         )
         .map(Into::into)
     }
+
+    fn chat_markers(&self) -> Option<ChatMarkers> {
+        self.chat_markers.clone()
+    }
 }
 
 pub struct PhiSpace;

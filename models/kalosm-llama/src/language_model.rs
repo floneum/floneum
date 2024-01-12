@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 pub use crate::Llama;
 use crate::LlamaModel;
 use crate::{InferenceSettings, Task};
+use kalosm_language_model::ChatMarkers;
 use kalosm_language_model::{CreateModel, GenerationParameters, Model, VectorSpace};
 use kalosm_streams::text_stream::ChannelTextStream;
 
@@ -72,6 +73,10 @@ impl Model for Llama {
             sampler,
         )
         .map(Into::into)
+    }
+
+    fn chat_markers(&self) -> Option<ChatMarkers> {
+        self.chat_markers.clone()
     }
 }
 

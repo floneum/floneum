@@ -403,14 +403,36 @@ impl Model {
 
     pub fn forward(
         &self,
-        x: &Tensor,
+        tokens: &[u32],
+        device: &Device,
         index_pos: usize,
         mut cache: Option<&mut LlamaCache>,
     ) -> Result<Tensor> {
-        let (_b_sz, seq_len) = x.dims2()?;
+        let seq_len = tokens.len();
+        let cached_tokens = cache.as_ref().map(|c| c.tokens.len()).unwrap_or_default();
+        // We use a lower cutoff than the context length to avoid recomputing the attention every single token
+        const CUTOFF_LEN: usize = MAX_SEQ_LEN - 32;
+        let (x, index_pos) = if seq_len + cached_tokens > CUTOFF_LEN {
+            let all_tokens = if let Some(cache) = cache.as_mut() {
+                cache.clear();
+                let mut all_tokens = cache.tokens.clone();
+                all_tokens.extend(tokens);
+                all_tokens
+            } else {
+                tokens.to_vec()
+            };
+            let all_tokens = &all_tokens[all_tokens.len() - CUTOFF_LEN..];
+            assert!(all_tokens.len() <= MAX_SEQ_LEN);
+            (Tensor::new(all_tokens, device)?.unsqueeze(0)?, 0)
+        } else {
+            (Tensor::new(tokens, device)?.unsqueeze(0)?, index_pos)
+        };
+        if let Some(cache) = cache.as_mut() {
+            cache.tokens.extend_from_slice(tokens);
+        }
         let mask = self.mask(seq_len)?;
         let _enter = self.span.enter();
-        let mut layer_in = self.tok_embeddings.forward(x)?;
+        let mut layer_in = self.tok_embeddings.forward(&x)?;
         for (i, layer) in self.layers.iter().enumerate() {
             let x = layer_in;
             let residual = &x;

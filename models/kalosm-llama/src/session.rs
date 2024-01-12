@@ -68,6 +68,7 @@ impl LlamaSession {
 /// A cache for Llama inference. This cache will speed up generation of sequential text significantly.
 #[derive(Debug, Clone)]
 pub struct LlamaCache {
+    pub(crate) tokens: Vec<u32>,
     pub(crate) blocks: Vec<AttentionCache>,
 }
 
@@ -78,7 +79,10 @@ impl LlamaCache {
         for _ in 0..model.layers.len() {
             blocks.push(AttentionCache(None))
         }
-        Self { blocks }
+        Self {
+            tokens: Vec::new(),
+            blocks,
+        }
     }
 
     /// Clear the cache.
@@ -97,11 +101,19 @@ impl LlamaCache {
                 map.insert(format!("Llama.cache.blocks.{}.value", i), value.clone());
             }
         }
+        map.insert(
+            "Llama.cache.tokens".to_string(),
+            Tensor::from_iter(self.tokens.iter().copied(), &Device::Cpu).unwrap(),
+        );
         map
     }
 
     /// Create a cache from a tensor map. This can be used to load a cache from disk.
     pub fn from_tensor_map(map: HashMap<String, Tensor>) -> Self {
+        let tokens = map
+            .get("Llama.cache.tokens")
+            .and_then(|tokens| tokens.to_vec1().ok())
+            .unwrap_or_default();
         let mut blocks = Vec::with_capacity(24);
         for (k, v) in map {
             if let Some(i) = k.strip_prefix("Llama.cache.blocks.") {
@@ -139,7 +151,7 @@ impl LlamaCache {
                 }
             }
         }
-        Self { blocks }
+        Self { tokens, blocks }
     }
 }
 

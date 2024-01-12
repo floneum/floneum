@@ -11,8 +11,9 @@ async fn main() {
         .with_source(LlamaSource::mistral_7b_instruct_2())
         .build()
         .unwrap();
-    let constraints = LiteralParser::new(format!("(Responding as {}) ", character_name))
-        .then(StopOn::new(model.end_assistant_marker().to_string()));
+    let constraints = LiteralParser::new(format!("(Responding as {}) ", character_name)).then(
+        StopOn::new(model.chat_markers().unwrap().end_assistant_marker),
+    );
     let mut chat = Chat::builder(&mut model)
         .with_system_prompt(character_description)
         .constrain_response(move |_, _| constraints.clone())

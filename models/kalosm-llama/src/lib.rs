@@ -45,7 +45,7 @@ use candle_core::{
     quantized::{ggml_file, gguf_file},
     Device,
 };
-use kalosm_language_model::ChatModel;
+use kalosm_language_model::ChatMarkers;
 use llm_samplers::types::Sampler;
 use session::LlamaCache;
 pub use source::*;
@@ -83,33 +83,7 @@ pub struct Llama {
     task_sender: tokio::sync::mpsc::UnboundedSender<Task>,
     thread_handle: Option<std::thread::JoinHandle<()>>,
     tokenizer: Arc<Tokenizer>,
-    chat_markers: ChatMarkers,
-}
-
-impl ChatModel for Llama {
-    fn assistant_marker(&self) -> &str {
-        self.chat_markers.assistant_marker.unwrap_or("")
-    }
-
-    fn end_assistant_marker(&self) -> &str {
-        self.chat_markers.end_assistant_marker.unwrap_or("")
-    }
-
-    fn user_marker(&self) -> &str {
-        self.chat_markers.user_marker.unwrap_or("")
-    }
-
-    fn end_user_marker(&self) -> &str {
-        self.chat_markers.end_user_marker.unwrap_or("")
-    }
-
-    fn system_prompt_marker(&self) -> &str {
-        self.chat_markers.system_prompt_marker.unwrap_or("")
-    }
-
-    fn end_system_prompt_marker(&self) -> &str {
-        self.chat_markers.end_system_marker.unwrap_or("")
-    }
+    chat_markers: Option<ChatMarkers>,
 }
 
 impl Drop for Llama {
@@ -150,7 +124,7 @@ impl Llama {
         tokenizer: Tokenizer,
         device: Device,
         cache: LlamaCache,
-        chat_markers: ChatMarkers,
+        chat_markers: Option<ChatMarkers>,
     ) -> Self {
         let (task_sender, mut task_receiver) = tokio::sync::mpsc::unbounded_channel();
         let arc_tokenizer = Arc::new(tokenizer);

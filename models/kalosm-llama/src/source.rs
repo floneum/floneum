@@ -1,14 +1,5 @@
+use kalosm_language_model::ChatMarkers;
 use tokenizers::Tokenizer;
-
-#[derive(Default)]
-pub(crate) struct ChatMarkers {
-    pub(crate) user_marker: Option<&'static str>,
-    pub(crate) end_user_marker: Option<&'static str>,
-    pub(crate) assistant_marker: Option<&'static str>,
-    pub(crate) end_assistant_marker: Option<&'static str>,
-    pub(crate) system_prompt_marker: Option<&'static str>,
-    pub(crate) end_system_marker: Option<&'static str>,
-}
 
 /// A source for the Llama model.
 pub struct LlamaSource {
@@ -19,7 +10,7 @@ pub struct LlamaSource {
     pub(crate) tokenizer_repo: String,
     pub(crate) tokenizer_file: String,
     pub(crate) group_query_attention: u8,
-    pub(crate) markers: ChatMarkers,
+    pub(crate) markers: Option<ChatMarkers>,
 }
 
 impl LlamaSource {
@@ -32,27 +23,13 @@ impl LlamaSource {
             tokenizer_repo: "hf-internal-testing/llama-tokenizer".to_string(),
             tokenizer_file,
             group_query_attention: 1,
-            markers: ChatMarkers::default(),
+            markers: Default::default(),
         }
     }
 
     /// Set the marker text for a user message
-    pub fn with_user_marker(mut self, marker: &'static str) -> Self {
-        self.markers.user_marker = Some(marker);
-
-        self
-    }
-
-    /// Set the marker text for an assistant message
-    pub fn with_assistant_marker(mut self, marker: &'static str) -> Self {
-        self.markers.assistant_marker = Some(marker);
-
-        self
-    }
-
-    /// Set the marker text for a the system prompt
-    pub fn with_system_prompt_marker(mut self, marker: &'static str) -> Self {
-        self.markers.user_marker = Some(marker);
+    pub fn with_chat_markers(mut self, markers: ChatMarkers) -> Self {
+        self.markers = Some(markers);
 
         self
     }
@@ -120,14 +97,14 @@ impl LlamaSource {
             tokenizer_repo: "mistralai/Mistral-7B-v0.1".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             group_query_attention: 8,
-            markers: ChatMarkers {
-                system_prompt_marker: Some("<s>[INST] "),
-                end_system_marker: Some(" [/INST]"),
-                user_marker: Some("[INST] "),
-                end_user_marker: Some(" [/INST]"),
-                assistant_marker: Some(""),
-                end_assistant_marker: Some("</s>"),
-            },
+            markers: Some(ChatMarkers {
+                system_prompt_marker: "<s>[INST] ",
+                end_system_prompt_marker: " [/INST]",
+                user_marker: "[INST] ",
+                end_user_marker: " [/INST]",
+                assistant_marker: "",
+                end_assistant_marker: "</s>",
+            }),
         }
     }
 
@@ -140,14 +117,14 @@ impl LlamaSource {
             tokenizer_repo: "mistralai/Mistral-7B-v0.1".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             group_query_attention: 8,
-            markers: ChatMarkers {
-                system_prompt_marker: Some("<s>[INST] "),
-                end_system_marker: Some(" [/INST]"),
-                user_marker: Some("[INST] "),
-                end_user_marker: Some(" [/INST]"),
-                assistant_marker: Some(""),
-                end_assistant_marker: Some("</s>"),
-            },
+            markers: Some(ChatMarkers {
+                system_prompt_marker: "<s>[INST] ",
+                end_system_prompt_marker: " [/INST]",
+                user_marker: "[INST] ",
+                end_user_marker: " [/INST]",
+                assistant_marker: "",
+                end_assistant_marker: "</s>",
+            }),
         }
     }
 
@@ -160,14 +137,14 @@ impl LlamaSource {
             tokenizer_repo: "mistralai/Mistral-7B-v0.1".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             group_query_attention: 8,
-            markers: ChatMarkers {
-                system_prompt_marker: Some("<|system|>"),
-                user_marker: Some("<|user|>"),
-                assistant_marker: Some("<|assistant|>"),
-                end_system_marker: Some("</s>"),
-                end_user_marker: Some("</s>"),
-                end_assistant_marker: Some("</s>"),
-            },
+            markers: Some(ChatMarkers {
+                system_prompt_marker: "<|system|>",
+                user_marker: "<|user|>",
+                assistant_marker: "<|assistant|>",
+                end_system_prompt_marker: "</s>",
+                end_user_marker: "</s>",
+                end_assistant_marker: "</s>",
+            }),
         }
     }
 
@@ -180,34 +157,34 @@ impl LlamaSource {
             tokenizer_repo: "mistralai/Mistral-7B-v0.1".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             group_query_attention: 8,
-            markers: ChatMarkers {
-                system_prompt_marker: Some("<|system|>"),
-                user_marker: Some("<|user|>"),
-                assistant_marker: Some("<|assistant|>"),
-                end_system_marker: Some("</s>"),
-                end_user_marker: Some("</s>"),
-                end_assistant_marker: Some("</s>"),
-            },
+            markers: Some(ChatMarkers {
+                system_prompt_marker: "<|system|>",
+                user_marker: "<|user|>",
+                assistant_marker: "<|assistant|>",
+                end_system_prompt_marker: "</s>",
+                end_user_marker: "</s>",
+                end_assistant_marker: "</s>",
+            }),
         }
     }
 
-    /// A preset for [Open chat 3.5 (0106)](https://huggingface.co/openchat/openchat-3.5-0106)
+    /// A preset for Open chat 3.5
     pub fn open_chat_7b() -> Self {
         Self {
-            model_id: "TheBloke/openchat-3.5-0106-GGUF".to_string(),
+            model_id: "TheBloke/openchat_3.5-GGUF".to_string(),
             revision: "main".to_string(),
-            gguf_file: "openchat-3.5-0106.Q4_K_M.gguf".into(),
-            tokenizer_repo: "openchat/openchat-3.5-0106".to_string(),
+            gguf_file: "openchat_3.5.Q4_K_M.gguf".into(),
+            tokenizer_repo: "openchat/openchat_3.5".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             group_query_attention: 8,
-            markers: ChatMarkers {
-                system_prompt_marker: Some(""),
-                end_system_marker: Some("<|end_of_turn|>"),
-                user_marker: Some("GPT4 Correct User: "),
-                end_user_marker: Some("<|end_of_turn|>"),
-                assistant_marker: Some("GPT4 Correct Assistant: "),
-                end_assistant_marker: Some("<|end_of_turn|>"),
-            },
+            markers: Some(ChatMarkers {
+                system_prompt_marker: "",
+                end_system_prompt_marker: "<|end_of_turn|>",
+                user_marker: "GPT4 Correct User: ",
+                end_user_marker: "<|end_of_turn|>",
+                assistant_marker: "GPT4 Correct Assistant: ",
+                end_assistant_marker: "<|end_of_turn|>",
+            }),
         }
     }
 
@@ -220,14 +197,14 @@ impl LlamaSource {
             tokenizer_repo: "berkeley-nest/Starling-LM-7B-alpha".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             group_query_attention: 8,
-            markers: ChatMarkers {
-                system_prompt_marker: Some(""),
-                end_system_marker: Some("<|end_of_turn|>"),
-                user_marker: Some("GPT4 Correct User: "),
-                end_user_marker: Some("<|end_of_turn|>"),
-                assistant_marker: Some("GPT4 Correct Assistant: "),
-                end_assistant_marker: Some("<|end_of_turn|>"),
-            },
+            markers: Some(ChatMarkers {
+                system_prompt_marker: "",
+                end_system_prompt_marker: "<|end_of_turn|>",
+                user_marker: "GPT4 Correct User: ",
+                end_user_marker: "<|end_of_turn|>",
+                assistant_marker: "GPT4 Correct Assistant: ",
+                end_assistant_marker: "<|end_of_turn|>",
+            }),
         }
     }
 
@@ -240,14 +217,14 @@ impl LlamaSource {
             tokenizer_repo: "TinyLlama/TinyLlama-1.1B-Chat-v1.0".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             group_query_attention: 4,
-            markers: ChatMarkers {
-                system_prompt_marker: Some("<|system|>\n"),
-                assistant_marker: Some("<|user|>\n"),
-                user_marker: Some("<|assistant|>\n"),
-                end_system_marker: Some("</s>"),
-                end_user_marker: Some("</s>"),
-                end_assistant_marker: Some("</s>"),
-            },
+            markers: Some(ChatMarkers {
+                system_prompt_marker: "<|system|>\n",
+                assistant_marker: "<|user|>\n",
+                user_marker: "<|assistant|>\n",
+                end_system_prompt_marker: "</s>",
+                end_user_marker: "</s>",
+                end_assistant_marker: "</s>",
+            }),
         }
     }
 
@@ -312,14 +289,14 @@ impl LlamaSource {
             tokenizer_repo: "hf-internal-testing/llama-tokenizer".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             group_query_attention: 1,
-            markers: ChatMarkers {
-                system_prompt_marker: Some("<<SYS>>\n"),
-                assistant_marker: Some(" [/INST] "),
-                user_marker: Some("[INST]"),
-                end_system_marker: Some("</s>"),
-                end_user_marker: Some("</s>"),
-                end_assistant_marker: Some("</s>"),
-            },
+            markers: Some(ChatMarkers {
+                system_prompt_marker: "<<SYS>>\n",
+                assistant_marker: " [/INST] ",
+                user_marker: "[INST]",
+                end_system_prompt_marker: "</s>",
+                end_user_marker: "</s>",
+                end_assistant_marker: "</s>",
+            }),
         }
     }
 
@@ -332,14 +309,14 @@ impl LlamaSource {
             tokenizer_repo: "hf-internal-testing/llama-tokenizer".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             group_query_attention: 1,
-            markers: ChatMarkers {
-                system_prompt_marker: Some("<<SYS>>\n"),
-                assistant_marker: Some(" [/INST] "),
-                user_marker: Some("[INST]"),
-                end_system_marker: Some("</s>"),
-                end_user_marker: Some("</s>"),
-                end_assistant_marker: Some("</s>"),
-            },
+            markers: Some(ChatMarkers {
+                system_prompt_marker: "<<SYS>>\n",
+                assistant_marker: " [/INST] ",
+                user_marker: "[INST]",
+                end_system_prompt_marker: "</s>",
+                end_user_marker: "</s>",
+                end_assistant_marker: "</s>",
+            }),
         }
     }
 
@@ -352,14 +329,14 @@ impl LlamaSource {
             tokenizer_repo: "hf-internal-testing/llama-tokenizer".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
             group_query_attention: 8,
-            markers: ChatMarkers {
-                system_prompt_marker: Some("<<SYS>>\n"),
-                assistant_marker: Some(" [/INST] "),
-                user_marker: Some("[INST]"),
-                end_system_marker: Some("</s>"),
-                end_user_marker: Some("</s>"),
-                end_assistant_marker: Some("</s>"),
-            },
+            markers: Some(ChatMarkers {
+                system_prompt_marker: "<<SYS>>\n",
+                assistant_marker: " [/INST] ",
+                user_marker: "[INST]",
+                end_system_prompt_marker: "</s>",
+                end_user_marker: "</s>",
+                end_assistant_marker: "</s>",
+            }),
         }
     }
 
@@ -422,14 +399,14 @@ impl LlamaSource {
             gguf_file: "solar-10.7b-instruct-v1.0.Q4_K_M.gguf".into(),
             tokenizer_repo: "upstage/SOLAR-10.7B-Instruct-v1.0".to_string(),
             tokenizer_file: "tokenizer.json".to_string(),
-            markers: ChatMarkers {
-                system_prompt_marker: Some("<s>### System:\n"),
-                end_system_marker: Some(""),
-                user_marker: Some("### User:\n"),
-                end_user_marker: Some(""),
-                assistant_marker: Some("### Assistant:\n"),
-                end_assistant_marker: Some("</s>"),
-            },
+            markers: Some(ChatMarkers {
+                system_prompt_marker: "<s>### System:\n",
+                end_system_prompt_marker: "",
+                user_marker: "### User:\n",
+                end_user_marker: "",
+                assistant_marker: "### Assistant:\n",
+                end_assistant_marker: "</s>",
+            }),
             ..Default::default()
         }
     }

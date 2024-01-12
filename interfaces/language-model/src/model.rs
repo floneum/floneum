@@ -516,7 +516,8 @@ impl<S: Stream<Item = String> + Send + Unpin + 'static, O> DerefMut
 }
 
 impl<S: Stream<Item = String> + Send + Unpin + 'static, O> StructureParserResult<S, O> {
-    fn new(stream: S, result: tokio::sync::oneshot::Receiver<anyhow::Result<O>>) -> Self {
+    /// Create a new structured parser result from a stream and a result.
+    pub fn new(stream: S, result: tokio::sync::oneshot::Receiver<anyhow::Result<O>>) -> Self {
         Self { stream, result }
     }
 
@@ -643,6 +644,7 @@ pub trait SyncModelExt: SyncModel {
             self,
             session,
             &self.tokenizer(),
+            self.stop_token().ok(),
             parser,
             parser_state,
             sampler,
@@ -670,9 +672,13 @@ pub trait SyncModelExt: SyncModel {
         let mut queued_text_matching_stop_on = String::new();
         let stop_on_lowercase = stop_on.map(|s| s.to_lowercase());
         let stop_on_lowercase = stop_on_lowercase.as_deref();
+        let stop_token = self.stop_token()?;
 
         'generate: loop {
             let new_token = text_stream.sample_token(&mut sampler, logits, stop_on)?;
+            if new_token == stop_token {
+                break;
+            }
             if let Some(mut new_text) = text_stream.next_token(new_token)? {
                 if let Some(stop_on) = stop_on_lowercase {
                     let lowercase = new_text.to_lowercase();
@@ -880,6 +886,11 @@ pub trait Model: Send + Sync + 'static {
         parameters: GenerationParameters,
     ) -> anyhow::Result<Self::TextStream>;
 
+    /// Returns the chat markers to use for the model if this is a chat model.
+    fn chat_markers(&self) -> Option<ChatMarkers> {
+        None
+    }
+
     /// Convert this model into a model trait object.
     fn into_any_model(self) -> DynModel
     where
@@ -889,20 +900,21 @@ pub trait Model: Send + Sync + 'static {
     }
 }
 
-/// A model that has a chat format.
-pub trait ChatModel: Model {
-    /// The marker text for a user message
-    fn user_marker(&self) -> &str;
-    /// The marker text after a user message
-    fn end_user_marker(&self) -> &str;
-    /// The marker text for an assistant message
-    fn assistant_marker(&self) -> &str;
-    /// The marker text after an assistant message
-    fn end_assistant_marker(&self) -> &str;
-    /// The marker text for a the system prompt
-    fn system_prompt_marker(&self) -> &str;
-    /// The marker text after a the system prompt
-    fn end_system_prompt_marker(&self) -> &str;
+/// The chat markers to use for the model.
+#[derive(Default, Clone)]
+pub struct ChatMarkers {
+    /// The marker to use before user input.
+    pub user_marker: &'static str,
+    /// The marker to use after user input.
+    pub end_user_marker: &'static str,
+    /// The marker to use before assistant messages.
+    pub assistant_marker: &'static str,
+    /// The marker to use after assistant messages.
+    pub end_assistant_marker: &'static str,
+    /// The marker to use before system prompts.
+    pub system_prompt_marker: &'static str,
+    /// The marker to use after system prompts.
+    pub end_system_prompt_marker: &'static str,
 }
 
 /// A trait object for a model.

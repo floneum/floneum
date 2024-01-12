@@ -13,7 +13,7 @@ kalosm-sound = { workspace = true, optional = true }
 kalosm-vision = { workspace = true, optional = true }
 kalosm-streams.workspace = true
 llm-samplers.workspace = true
-tokio = { version = "1.32.0", features = ["full"] }
+tokio = { version = "1.32.0", features = ["full", "macros", "rt-multi-thread"] }
 futures-util = "0.3.28"
 anyhow = "1.0.75"
 rand = "0.8.5"
@@ -24,6 +24,8 @@ hdrhistogram = "7.5.4"
 num-traits = "0.2.17"
 once_cell = "1.19.0"
 comfy-table = "7.1.0"
+serde = { version = "1.0.163", features = ["derive"] }
+surrealdb = { version = "1.0.2", features = ["kv-mem", "kv-rocksdb"] }
 
 [dev-dependencies]
 axum = "0.7.2"
