@@ -1,5 +1,5 @@
 use kalosm::language::*;
-use kalosm_language::search::{ Hypothetical, Chunker};
+use kalosm_language::search::{Chunker, Hypothetical};
 
 #[tokio::main]
 async fn main() {
@@ -17,12 +17,13 @@ async fn main() {
 
     let mut llm = Llama::new_chat();
 
-    let hypothetical = Hypothetical::builder(&mut llm).with_chunking(
-        kalosm_language::search::ChunkStrategy::Paragraph {
+    let hypothetical = Hypothetical::builder(&mut llm)
+        .with_chunking(kalosm_language::search::ChunkStrategy::Paragraph {
             paragraph_count: 1,
             overlap: 0,
-        },
-    ).build().unwrap();
+        })
+        .build()
+        .unwrap();
 
     let mut embedder = Bert::default();
     let chunked = hypothetical

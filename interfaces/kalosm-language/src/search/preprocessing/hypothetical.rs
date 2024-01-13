@@ -10,7 +10,7 @@ use crate::{
 use super::{ChunkStrategy, Chunker};
 
 const TASK_DESCRIPTION: &str =
-    "You generate hypothetical questions that may be answered by the given text. The questions restate any information nessisary to understand the question";
+    "You generate hypothetical questions that may be answered by the given text. The questions restate any information necessary to understand the question";
 
 const EXAMPLES: [(&str, &str); 5] = [
     ("For instance, while the chat GPT interface provides a straightforward entry point, it quickly becomes challenging to create structured workflows. Imagine wanting to search through files to find specific ones, such as all .txt files related to travel, and then upload them. With Floneum, you can achieve this seamlessly within a structured workflow, eliminating the need for manual interaction with external tools.", "What are the tradeoffs of using chat GPT?"),
@@ -23,6 +23,8 @@ const EXAMPLES: [(&str, &str); 5] = [
 const QUESTION_STARTERS: [&str; 9] = [
     "Who", "What", "When", "Where", "Why", "How", "Which", "Whom", "Whose",
 ];
+
+const PREFIX: &str = "Questions that are answered by the previous text: ";
 
 fn create_constraints() -> kalosm_sample::SequenceParser<
     LiteralParser<&'static str>,
@@ -38,7 +40,7 @@ fn create_constraints() -> kalosm_sample::SequenceParser<
         >,
     >,
 > {
-    LiteralParser::new("Questions that are answered by the previous text: ").then(
+    LiteralParser::new(PREFIX).then(
         IndexParser::new(
             QUESTION_STARTERS
                 .iter()
@@ -84,7 +86,7 @@ where
         self.examples = Some(
             examples
                 .into_iter()
-                .map(|(a, b)| (a.into(), b.into()))
+                .map(|(a, b)| (a.into(), { PREFIX.to_string() + &b.into() }))
                 .collect::<Vec<_>>(),
         );
         self
@@ -148,8 +150,6 @@ impl Hypothetical {
             .map(|((i, _), s)| QUESTION_STARTERS[i].to_string() + &s)
             .collect::<Vec<_>>();
 
-        println!("documents: {:?}", documents);
-
         Ok(documents)
     }
 }
@@ -168,9 +168,6 @@ impl<S: VectorSpace + Send + Sync + 'static> Chunker<S> for Hypothetical {
             .chunking
             .map(|chunking| chunking.chunk_str(body))
             .unwrap_or_else(|| vec![0..body.len()]);
-
-        println!("body: {:?}", body);
-        println!("byte_chunks: {:?}", byte_chunks);
 
         if byte_chunks.is_empty() {
             return Ok(vec![]);
