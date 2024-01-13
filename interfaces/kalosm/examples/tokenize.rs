@@ -8,12 +8,12 @@ use candle_transformers::models::llama2_c::Cache;
 use candle_transformers::models::llama2_c::{Config, Llama};
 use std::io::Read;
 use std::io::Write;
+use std::path::Path;
 use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
 use tokenizers::normalizers::{strip::Strip, unicode::NFC, utils::Sequence};
 use tokenizers::pre_tokenizers::byte_level::ByteLevel;
 use tokenizers::Tokenizer;
 use tokenizers::TokenizerBuilder;
-use std::path::Path;
 
 const LEARNING_RATE: f64 = 0.001;
 const BATCH_SIZE: usize = 32;
