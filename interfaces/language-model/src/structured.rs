@@ -50,29 +50,21 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
         logits.retain_mut(|logit| {
             if Some(logit.token_id) == stop_token {
                 // If the current state is not finished, we can't generate a stop token
-                return if current_result.is_none() {
-                    logit.logit = f32::NEG_INFINITY;
-                    false
-                } else {
-                    true
-                };
+                return  current_result.is_some() ;
             }
 
             let mut potential_new_tokens = tokens[prev_index..].to_vec();
             potential_new_tokens.push(logit.token_id);
             let Ok(token_text) = tokenizer.decode(&potential_new_tokens) else {
-                logit.logit = f32::NEG_INFINITY;
                 return false;
             };
             if token_text.len() > prev_text.len() {
                 if !token_text.chars().last().unwrap().is_ascii() {
-                    logit.logit = f32::NEG_INFINITY;
                     return false;
                 }
                 let text = token_text.split_at(prev_text.len());
                 let new_text = text.1.to_string();
                 if new_text.is_empty() {
-                    logit.logit = f32::NEG_INFINITY;
                     return false;
                 }
                 if let Ok(result) = parser.parse(&parser_state, new_text.as_bytes()) {
@@ -105,7 +97,7 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
             if let Some(result) = current_result.take() {
                 return Ok(result);
             }
-            return Err(anyhow::anyhow!("No valid tokens found"));
+            return Err(anyhow::anyhow!("Stop token produced without finishing parser"));
         }
 
         unprocessed_token_count = 1;
@@ -115,8 +107,6 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
             .ok_or(anyhow::anyhow!("Token {} not found in state map", token_id))?
         {
             tracing::trace!("Adding token {} to parser", token);
-            prev_index = current_index;
-            current_index = tokens.len();
             on_token(token.clone())?;
 
             current_result = update_state(
@@ -128,6 +118,9 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
                 &mut on_token,
                 &mut unprocessed_token_count,
             )?;
+
+            prev_index = current_index;
+            current_index = tokens.len();
 
             // // If we don't have a stop token, we can return the current result immediately
             // if stop_token.is_none() {
@@ -155,31 +148,29 @@ fn update_state<P: Parser>(
             required_next,
         } => {
             *parser_state = new_state;
-            // TODO: restore faster required_next tokenization
-            // if required_next.is_empty() {
-            //     Ok(None)
-            // } else {
-            //     tracing::trace!("Required next: {}", required_next);
-            //     let result = parser
-            //         .parse(parser_state, required_next.as_bytes())
-            //         .unwrap_or_else(|_| {
-            //             unreachable!("Required next should always be valid attempted to add {} but got error", required_next)
-            // });
-            //     let extra_tokens = tokenizer.encode(&required_next)?;
-            //     *unprocessed_token_count += extra_tokens.len();
-            //     tokens.extend(extra_tokens);
-            //     on_token(required_next.to_string())?;
-            //     update_state(
-            //         parser,
-            //         parser_state,
-            //         result,
-            //         tokenizer,
-            //         tokens,
-            //         on_token,
-            //         unprocessed_token_count,
-            //     )
-            // }
-            Ok(None)
+            if required_next.is_empty() {
+                Ok(None)
+            } else {
+                tracing::trace!("Required next: {}", required_next);
+                let result = parser
+                    .parse(parser_state, required_next.as_bytes())
+                    .unwrap_or_else(|_| {
+                        unreachable!("Required next should always be valid attempted to add {} but got error", required_next)
+                });
+                let extra_tokens = tokenizer.encode(&required_next)?;
+                *unprocessed_token_count += extra_tokens.len();
+                tokens.extend(extra_tokens);
+                on_token(required_next.to_string())?;
+                update_state(
+                    parser,
+                    parser_state,
+                    result,
+                    tokenizer,
+                    tokens,
+                    on_token,
+                    unprocessed_token_count,
+                )
+            }
         }
         kalosm_sample::ParseResult::Finished { result, .. } => Ok(Some(result)),
     }
