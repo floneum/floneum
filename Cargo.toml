@@ -108,7 +108,7 @@ lto = "thin"
 [profile.release]
 lto = true
 opt-level = 3
-debug = true
+debug = false
 codegen-units = 1
 
 [profile.dev.package."*"]
