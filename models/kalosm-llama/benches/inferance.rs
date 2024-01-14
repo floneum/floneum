@@ -21,6 +21,20 @@ fn generation(c: &mut Criterion) {
         })
     });
 
+    c.bench_function("feed text repeated", |b| {
+        let model =
+            LlamaModel::from_builder(Llama::builder().with_source(LlamaSource::mistral_7b()))
+                .unwrap();
+        let prompt = "Hello world";
+
+        b.iter(|| {
+            let mut session = model.new_session().unwrap();
+            for _ in 0..5 {
+                model.feed_text(&mut session, prompt, Some(0)).unwrap();
+            }
+        })
+    });
+
     c.bench_function("feed text long", |b| {
         let model =
             LlamaModel::from_builder(Llama::builder().with_source(LlamaSource::mistral_7b()))
