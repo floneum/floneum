@@ -66,25 +66,12 @@ impl SyncModel for LlamaModel {
                 top_k,
             )
         } else {
-            for tid in tokens.iter().copied().take(tokens.len() - 1) {
-                let seq_len_offset = session.current_tokens.len();
-                session.current_tokens.push(tid);
-                Self::forward(
-                    &self.model,
-                    &self.device,
-                    &[tid],
-                    seq_len_offset,
-                    Some(&mut session.cache),
-                    Some(0),
-                )?;
-            }
-            let tid = *tokens.last().unwrap();
             let seq_len_offset = session.current_tokens.len();
-            session.current_tokens.push(tid);
+            session.current_tokens.extend(tokens);
             Self::forward(
                 &self.model,
                 &self.device,
-                &[tid],
+                tokens,
                 seq_len_offset,
                 Some(&mut session.cache),
                 top_k,

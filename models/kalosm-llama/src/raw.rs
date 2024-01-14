@@ -384,21 +384,31 @@ impl Model {
         })
     }
 
-    fn mask(&self, t: usize) -> Result<Tensor> {
-        if let Some(mask) = {
+    fn mask(&self, seq_len: usize, seqlen_offset: usize) -> Result<Tensor> {
+        let mask = if let Some(mask) = {
+            
             let masks = self.masks.read().unwrap();
-            masks.get(&t).cloned()
+            masks.get(&seq_len).cloned()
         } {
-            Ok(mask)
+            mask
         } else {
-            let mask: Vec<_> = (0..t)
-                .flat_map(|i| (0..t).map(move |j| u8::from(j > i)))
+            let mask: Vec<_> = (0..seq_len)
+                .flat_map(|i| (0..seq_len).map(move |j| u8::from(j > i)))
                 .collect();
-            let mask = Tensor::from_slice(&mask, (t, t), &Device::Cpu)?;
+            let mask = Tensor::from_slice(&mask, (seq_len, seq_len), &Device::Cpu)?;
             let mut masks = self.masks.write().unwrap();
-            masks.insert(t, mask.clone());
-            Ok(mask)
-        }
+            masks.insert(seq_len, mask.clone());
+            mask
+        };
+
+        let mask = if seqlen_offset > 0 {
+                    let mask0 = Tensor::zeros((seq_len, seqlen_offset), DType::U8, &Device::Cpu)?;
+                    Tensor::cat(&[&mask0, &mask], D::Minus1)?
+                } else {
+                    mask
+                };
+
+                Ok(mask)
     }
 
     pub fn forward(
@@ -430,7 +440,7 @@ impl Model {
         if let Some(cache) = cache.as_mut() {
             cache.tokens.extend_from_slice(tokens);
         }
-        let mask = self.mask(seq_len)?;
+        let mask = self.mask(seq_len, index_pos)?;
         let _enter = self.span.enter();
         let mut layer_in = self.tok_embeddings.forward(&x)?;
         for (i, layer) in self.layers.iter().enumerate() {
