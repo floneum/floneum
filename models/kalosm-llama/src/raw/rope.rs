@@ -1,5 +1,6 @@
 use super::LlamaConfig;
-use candle_core::{DType, Device, Tensor};
+use candle_core::IndexOp;
+use candle_core::{DType, Device, Tensor, D};
 
 pub struct RopeCache {
     sin: Tensor,
@@ -43,6 +44,33 @@ impl RopeCache {
             cos: Tensor::cat(&[&cos, &cos], 1)?,
         })
     }
+
+    fn get(&self, seq_len: usize) -> candle_core::Result<(Tensor, Tensor)> {
+        Ok((self.cos.i(..seq_len)?, self.sin.i(..seq_len)?))
+    }
+
+    fn forward(
+        &self,
+        q: &Tensor,
+        k: &Tensor,
+        seq_len: usize,
+        start_pos: usize,
+    ) -> candle_core::Result<(Tensor, Tensor)> {
+        let (cos, sin) = self.get(seq_len)?;
+        let cos = cos.i((start_pos.., ..))?;
+        let sin = sin.i((start_pos.., ..))?;
+
+        let q_embed = ((q * &cos)? + (rotate_half(q)? * &sin)?)?;
+        let k_embed = ((k * cos)? + (rotate_half(k)? * sin)?)?;
+        Ok((q_embed, k_embed))
+    }
+}
+
+fn rotate_half(x: &Tensor) -> candle_core::Result<Tensor> {
+    let last_dim = x.dim(D::Minus1)?;
+    let xs1 = x.narrow(D::Minus1, 0, last_dim / 2)?;
+    let xs2 = x.narrow(D::Minus1, last_dim / 2, last_dim - last_dim / 2)?;
+    Tensor::cat(&[&xs2.neg()?, &xs1], D::Minus1)
 }
 
 #[test]
