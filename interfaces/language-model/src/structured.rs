@@ -50,7 +50,7 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
         logits.retain_mut(|logit| {
             if Some(logit.token_id) == stop_token {
                 // If the current state is not finished, we can't generate a stop token
-                return  current_result.is_some() ;
+                return current_result.is_some();
             }
 
             let mut potential_new_tokens = tokens[prev_index..].to_vec();
@@ -97,7 +97,9 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
             if let Some(result) = current_result.take() {
                 return Ok(result);
             }
-            return Err(anyhow::anyhow!("Stop token produced without finishing parser"));
+            return Err(anyhow::anyhow!(
+                "Stop token produced without finishing parser"
+            ));
         }
 
         unprocessed_token_count = 1;
