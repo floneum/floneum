@@ -51,7 +51,7 @@ fn create_constraints(
 ) -> kalosm_sample::SequenceParser<LiteralParser<&'static str>, StopOn<&'static str>> {
     LiteralParser::new(PREFIX).then(
         StopOn::new(".").filter_characters(
-            |c| matches!(c, ' ' | '.' | 'a'..='z' | 'A'..='Z' | '0'..='9' | ','),
+            |c| matches!(c, ' ' | '.' | ':' | '/' | '+' | '-' | '*' | 'a'..='z' | 'A'..='Z' | '0'..='9' | ','),
         ),
     )
 }

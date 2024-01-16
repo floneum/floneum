@@ -67,7 +67,10 @@ async fn main() {
                     .iter()
                     .chain(std::iter::once(&removed_example))
                 {
-                    let actual = &hypothetical.generate_question(text).await.unwrap()[0];
+                    let actual = &hypothetical
+                        .generate_question(text, &mut llm)
+                        .await
+                        .unwrap()[0];
 
                     llama_test_cases.push_case(expected.to_string(), actual.clone());
                 }

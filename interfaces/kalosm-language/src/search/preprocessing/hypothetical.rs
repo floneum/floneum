@@ -120,7 +120,7 @@ where
     }
 }
 
-/// Generates embeddings of questions
+/// Generates questions for a document.
 pub struct Hypothetical<M: Model>
 where
     <M::SyncModel as SyncModel>::Session: Sync + Send,
@@ -134,7 +134,7 @@ impl<M: Model> Hypothetical<M>
 where
     <M::SyncModel as SyncModel>::Session: Sync + Send,
 {
-    /// Create a new hypothetical chunker.
+    /// Create a new hypothetical generator.
     pub fn builder(model: &mut M) -> HypotheticalBuilder<M> {
         HypotheticalBuilder {
             model,
@@ -159,60 +159,86 @@ where
 
         Ok(documents)
     }
+
+    /// Turn this hypothetical generator into a chunker.
+    pub fn chunker<'a>(&'a self, model: &'a mut M) -> HypotheticalChunker<'a, M> {
+        HypotheticalChunker {
+            hypothetical: self,
+            model,
+        }
+    }
 }
 
-// #[async_trait::async_trait]
-// impl<S: VectorSpace + Send + Sync + 'static> Chunker<S> for Hypothetical {
-//     async fn chunk<E: Embedder<S> + Send>(
-//         &self,
-//         document: &Document,
-//         embedder: &mut E,
-//     ) -> anyhow::Result<Vec<Chunk<S>>> {
-//         let body = document.body();
+/// A hypothetical chunker.
+pub struct HypotheticalChunker<'a, M: Model>
+where
+    <M::SyncModel as SyncModel>::Session: Sync + Send,
+{
+    hypothetical: &'a Hypothetical<M>,
+    model: &'a mut M,
+}
 
-//         #[allow(clippy::single_range_in_vec_init)]
-//         let byte_chunks = self
-//             .chunking
-//             .map(|chunking| chunking.chunk_str(body))
-//             .unwrap_or_else(|| vec![0..body.len()]);
+#[async_trait::async_trait]
+impl<'a, S, M> Chunker<S> for HypotheticalChunker<'a, M>
+where
+    M: Model,
+    <M::SyncModel as SyncModel>::Session: Sync + Send,
+    S: VectorSpace + Send + Sync + 'static,
+{
+    async fn chunk<E: Embedder<S> + Send>(
+        &mut self,
+        document: &Document,
+        embedder: &mut E,
+    ) -> anyhow::Result<Vec<Chunk<S>>> {
+        let body = document.body();
 
-//         if byte_chunks.is_empty() {
-//             return Ok(vec![]);
-//         }
+        #[allow(clippy::single_range_in_vec_init)]
+        let byte_chunks = self
+            .hypothetical
+            .chunking
+            .map(|chunking| chunking.chunk_str(body))
+            .unwrap_or_else(|| vec![0..body.len()]);
 
-//         let mut questions = Vec::new();
-//         let mut questions_count = Vec::new();
-//         for byte_chunk in &byte_chunks {
-//             let text = &body[byte_chunk.clone()];
-//             let mut chunk_questions = self.generate_question(text).await?;
-//             questions.append(&mut chunk_questions);
-//             questions_count.push(chunk_questions.len());
-//         }
-//         let embeddings = embedder
-//             .embed_batch(&questions.iter().map(|s| s.as_str()).collect::<Vec<_>>())
-//             .await?;
+        if byte_chunks.is_empty() {
+            return Ok(vec![]);
+        }
 
-//         let mut chunks = Vec::with_capacity(embeddings.len());
-//         let mut questions_count = questions_count.iter();
-//         let mut byte_chunks = byte_chunks.into_iter();
+        let mut questions = Vec::new();
+        let mut questions_count = Vec::new();
+        for byte_chunk in &byte_chunks {
+            let text = &body[byte_chunk.clone()];
+            let mut chunk_questions = self
+                .hypothetical
+                .generate_question(text, self.model)
+                .await?;
+            questions.append(&mut chunk_questions);
+            questions_count.push(chunk_questions.len());
+        }
+        let embeddings = embedder
+            .embed_batch(&questions.iter().map(|s| s.as_str()).collect::<Vec<_>>())
+            .await?;
 
-//         let mut remaining_embeddings = *questions_count.next().unwrap();
-//         let mut byte_chunk = byte_chunks.next().unwrap();
+        let mut chunks = Vec::with_capacity(embeddings.len());
+        let mut questions_count = questions_count.iter();
+        let mut byte_chunks = byte_chunks.into_iter();
 
-//         for embedding in embeddings {
-//             while remaining_embeddings == 0 {
-//                 if let Some(&questions_count) = questions_count.next() {
-//                     remaining_embeddings = questions_count;
-//                     byte_chunk = byte_chunks.next().unwrap();
-//                 }
-//             }
-//             remaining_embeddings -= 1;
-//             chunks.push(Chunk {
-//                 byte_range: byte_chunk.clone(),
-//                 embeddings: vec![embedding],
-//             });
-//         }
+        let mut remaining_embeddings = *questions_count.next().unwrap();
+        let mut byte_chunk = byte_chunks.next().unwrap();
 
-//         Ok(chunks)
-//     }
-// }
+        for embedding in embeddings {
+            while remaining_embeddings == 0 {
+                if let Some(&questions_count) = questions_count.next() {
+                    remaining_embeddings = questions_count;
+                    byte_chunk = byte_chunks.next().unwrap();
+                }
+            }
+            remaining_embeddings -= 1;
+            chunks.push(Chunk {
+                byte_range: byte_chunk.clone(),
+                embeddings: vec![embedding],
+            });
+        }
+
+        Ok(chunks)
+    }
+}
