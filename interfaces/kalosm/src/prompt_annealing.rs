@@ -96,15 +96,22 @@ where
         let mut rng = rand::thread_rng();
         for _ in 0..self.initial_population {
             let amount = rng.gen_range(self.initial_choice_range.clone());
-            let index_vec = sample(&mut rng, train_set.len(), amount, );
+            let index_vec = sample(&mut rng, train_set.len(), amount);
             let index_vec = index_vec.iter().collect::<Vec<_>>();
 
             let mut chosen_cases = train_set.to_vec();
-            
+            assert!(index_vec.len() <= self.initial_choice_range.end);
+
             for index in &index_vec {
                 chosen_cases.push(train_set[*index]);
             }
-            let  remaining_cases = train_set.iter().enumerate().filter(|(i,_)| !index_vec.contains(i)).map(|(_,x)| *x).collect::<Vec<_>>();
+
+            let remaining_cases = train_set
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| !index_vec.contains(i))
+                .map(|(_, x)| *x)
+                .collect::<Vec<_>>();
 
             population.push(
                 ExamplesInstance::new(
@@ -113,7 +120,7 @@ where
                     remaining_cases,
                     self.initial_temperature,
                     test_set,
-                    &mut self.metric
+                    &mut self.metric,
                 )
                 .await,
             );
@@ -124,7 +131,7 @@ where
             train: train_set,
             test: test_set,
             population,
-            metric: self.metric
+            metric: self.metric,
         }
     }
 }
@@ -193,7 +200,7 @@ impl ExamplesInstance {
         test:&[(&'static str, &'static str)],
     llm: &mut M,
     metric: &mut impl Metric<String>
-) where <<M as kalosm_language::prelude::Model>::SyncModel as kalosm_language::prelude::SyncModel>::Session: Sync+ Send{
+    ) where <<M as kalosm_language::prelude::Model>::SyncModel as kalosm_language::prelude::SyncModel>::Session: Sync+ Send{
         let action = if self.current_examples.is_empty() {
             2
         } else if self.unused_examples.is_empty() {
@@ -217,12 +224,17 @@ impl ExamplesInstance {
                 let index = random::<usize>() % mutated_examples.len();
                 let removed = mutated_examples.remove(index);
 
-                let new_evaluation = evaluate(&mutated_examples, test, llm, metric).await;
-
-                if accept_regardless || new_evaluation > self.current_evaluation {
-                    self.current_evaluation = new_evaluation;
+                if accept_regardless {
                     self.current_examples = mutated_examples;
                     self.unused_examples.push(removed);
+                } else {
+                    let new_evaluation = evaluate(&mutated_examples, test, llm, metric).await;
+
+                    if new_evaluation > self.current_evaluation {
+                        self.current_evaluation = new_evaluation;
+                        self.current_examples = mutated_examples;
+                        self.unused_examples.push(removed);
+                    }
                 }
             }
             // swap examples
@@ -232,11 +244,15 @@ impl ExamplesInstance {
 
                 mutated_examples.swap(index1, index2);
 
-                let new_evaluation = evaluate(&mutated_examples, test, llm, metric).await;
-
-                if accept_regardless || new_evaluation > self.current_evaluation {
-                    self.current_evaluation = new_evaluation;
+                if accept_regardless {
                     self.current_examples = mutated_examples;
+                } else {
+                    let new_evaluation = evaluate(&mutated_examples, test, llm, metric).await;
+
+                    if new_evaluation > self.current_evaluation {
+                        self.current_evaluation = new_evaluation;
+                        self.current_examples = mutated_examples;
+                    }
                 }
             }
             // add example
@@ -245,12 +261,17 @@ impl ExamplesInstance {
                 let added = self.unused_examples[index];
                 mutated_examples.push(added);
 
-                let new_evaluation = evaluate(&mutated_examples, test, llm, metric).await;
-
-                if accept_regardless || new_evaluation > self.current_evaluation {
-                    self.current_evaluation = new_evaluation;
+                if accept_regardless {
                     self.current_examples = mutated_examples;
                     self.unused_examples.remove(index);
+                } else {
+                    let new_evaluation = evaluate(&mutated_examples, test, llm, metric).await;
+
+                    if new_evaluation > self.current_evaluation {
+                        self.current_evaluation = new_evaluation;
+                        self.current_examples = mutated_examples;
+                        self.unused_examples.remove(index);
+                    }
                 }
             }
         }
@@ -282,12 +303,9 @@ async fn evaluate<M: Model>(examples: &[(&str, &str)], test:&[(&str, &str)], llm
         llama_test_cases.push_case(expected.to_string(), actual.clone());
     }
 
-    let llama_distance = llama_test_cases
-        .evaluate(metric)
-        .await
-        .normalized();
+    let llama_distance = llama_test_cases.evaluate(metric).await.normalized();
 
-    println!("evaluating examples {:?}", examples);
+    println!("evaluating {} examples {:?}", examples.len(), examples);
     println!("{}", llama_distance);
 
     llama_distance.mean_score() - examples_tokens as f64 * 0.0001
