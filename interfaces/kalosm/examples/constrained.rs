@@ -75,7 +75,6 @@ async fn main() {
             .result()
             .await
             .unwrap()
-            .0
             .iter()
             .map(|x| states[x.0 .0])
             .collect::<Vec<_>>()
