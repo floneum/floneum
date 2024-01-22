@@ -66,10 +66,7 @@ async fn main() {
 
     let index_parser = IndexParser::new(states_parser);
 
-    let validator = index_parser
-        .then(LiteralParser::from(", "))
-        .repeat(5..=5)
-        .then(LiteralParser::from("\n"));
+    let validator = index_parser.then(LiteralParser::from(", ")).repeat(1..=5);
     let stream = llm.stream_structured_text(prompt, validator).await.unwrap();
 
     println!(
