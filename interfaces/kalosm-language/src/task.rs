@@ -278,7 +278,7 @@ impl TaskBuilderReturn for NoParser {
 
 impl<P: Parser + CreateParserState, B: FnMut() -> P + Send + 'static> TaskBuilderReturn for B
 where
-    <P as Parser>::Output: Send + 'static,
+    <P as Parser>::Output: Clone + Send + 'static,
     <P as Parser>::PartialState: Sync + Send,
 {
     type Output = Task<StructureParserResult<ChannelTextStream<String>, P::Output>>;

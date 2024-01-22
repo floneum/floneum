@@ -386,7 +386,6 @@ impl Model {
 
     fn mask(&self, seq_len: usize, seqlen_offset: usize) -> Result<Tensor> {
         let mask = if let Some(mask) = {
-            
             let masks = self.masks.read().unwrap();
             masks.get(&seq_len).cloned()
         } {
@@ -402,13 +401,13 @@ impl Model {
         };
 
         let mask = if seqlen_offset > 0 {
-                    let mask0 = Tensor::zeros((seq_len, seqlen_offset), DType::U8, &Device::Cpu)?;
-                    Tensor::cat(&[&mask0, &mask], D::Minus1)?
-                } else {
-                    mask
-                };
+            let mask0 = Tensor::zeros((seq_len, seqlen_offset), DType::U8, &Device::Cpu)?;
+            Tensor::cat(&[&mask0, &mask], D::Minus1)?
+        } else {
+            mask
+        };
 
-                Ok(mask)
+        Ok(mask)
     }
 
     pub fn forward(
