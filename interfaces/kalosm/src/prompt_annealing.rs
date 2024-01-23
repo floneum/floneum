@@ -2,14 +2,11 @@ use kalosm_language::{
     kalosm_language_model::{Model, SyncModel},
     search::Hypothetical,
 };
-use rand::{
-    random,
-    seq::{index::sample, SliceRandom},
-    Rng,
-};
+use rand::{random, seq::index::sample, Rng};
 
 use crate::{BertDistance, Metric, TestCases};
 
+/// A builder for [`PromptAnnealer`].
 pub struct PromptAnnealerBuilder<'a, M: Model, Met: Metric<String> = BertDistance>
 where
     <<M as Model>::SyncModel as SyncModel>::Session: Sync + Send,
@@ -27,6 +24,7 @@ impl<'a, M: Model> PromptAnnealer<'a, M>
 where
     <<M as Model>::SyncModel as SyncModel>::Session: Sync + Send,
 {
+    /// Create a new builder for [`PromptAnnealer`].
     pub fn builder(
         model: &'a mut M,
         train_set: &'a [(&'static str, &'static str)],
@@ -37,7 +35,7 @@ where
             test: &[],
             initial_temperature: 0.6,
             initial_population: 20,
-            initial_choice_range: 0..3,
+            initial_choice_range: 1..3,
             metric: BertDistance::default(),
         }
     }
@@ -47,26 +45,31 @@ impl<'a, M: Model, Met: Metric<String>> PromptAnnealerBuilder<'a, M, Met>
 where
     <<M as Model>::SyncModel as SyncModel>::Session: Sync + Send,
 {
+    /// Set the test set to use for evaluation. If no test set is provided, a subset of the train set will be used.
     pub fn with_test_set(mut self, test_set: &'a [(&'static str, &'static str)]) -> Self {
         self.test = test_set;
         self
     }
 
+    /// Set the initial temperature for the annealing process a higher temperature will allow for more exploration, but it will also take longer to converge to a solution.
     pub fn with_initial_temperature(mut self, temperature: f64) -> Self {
         self.initial_temperature = temperature;
         self
     }
 
+    /// Set the initial population size. A larger population will allow for more exploration, but it will also take longer to run.
     pub fn with_initial_population(mut self, population: usize) -> Self {
         self.initial_population = population;
         self
     }
 
+    /// Set the initial range of examples to choose from.
     pub fn with_initial_choice_range(mut self, range: std::ops::Range<usize>) -> Self {
         self.initial_choice_range = range;
         self
     }
 
+    /// Build the [`PromptAnnealer`].
     pub async fn build(mut self) -> PromptAnnealer<'a, M, Met> {
         let (train_set, test_set) = if self.test.is_empty() {
             tracing::warn!("No test set provided, using a subset of the train set for evaluation");
@@ -128,7 +131,6 @@ where
 
         PromptAnnealer {
             llm: self.llm,
-            train: train_set,
             test: test_set,
             population,
             metric: self.metric,
@@ -136,13 +138,13 @@ where
     }
 }
 
+/// A prompt annealer that takes a set of examples and tries to find the best combination and order of examples to use as a prompt for a given task.
 pub struct PromptAnnealer<'a, M: Model, Met: Metric<String> = BertDistance>
 where
     <<M as Model>::SyncModel as SyncModel>::Session: Sync + Send,
 {
     llm: &'a mut M,
     metric: Met,
-    train: &'a [(&'static str, &'static str)],
     test: &'a [(&'static str, &'static str)],
     population: Vec<ExamplesInstance>,
 }
@@ -151,6 +153,7 @@ impl<'a, M: Model> PromptAnnealer<'a, M>
 where
     <<M as Model>::SyncModel as SyncModel>::Session: Sync + Send,
 {
+    /// Run the annealing process.
     pub async fn run(&mut self) {
         loop {
             for instance in &mut self.population {
