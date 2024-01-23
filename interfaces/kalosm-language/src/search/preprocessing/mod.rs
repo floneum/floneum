@@ -30,14 +30,14 @@ pub use summary::*;
 pub trait Chunker<S: VectorSpace + Send + Sync + 'static> {
     /// Chunk a document into embedded snippets.
     async fn chunk<E: Embedder<S> + Send>(
-        &self,
+        &mut self,
         document: &Document,
         embedder: &mut E,
     ) -> anyhow::Result<Vec<Chunk<S>>>;
 
     /// Chunk a batch of documents into embedded snippets.
     async fn chunk_batch<'a, I, E: Embedder<S> + Send>(
-        &self,
+        &mut self,
         documents: I,
         embedder: &mut E,
     ) -> anyhow::Result<Vec<Vec<Chunk<S>>>>

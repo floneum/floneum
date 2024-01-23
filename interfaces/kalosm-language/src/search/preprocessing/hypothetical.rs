@@ -70,7 +70,7 @@ where
 impl<'a, M> HypotheticalBuilder<'a, M>
 where
     M: Model,
-    <M::SyncModel as SyncModel>::Session: Send,
+    <M::SyncModel as SyncModel>::Session: Sync + Send,
 {
     /// Set the chunking strategy.
     pub fn with_chunking(mut self, chunking: ChunkStrategy) -> Self {
@@ -99,20 +99,20 @@ where
     }
 
     /// Build the hypothetical chunker.
-    pub fn build(self) -> anyhow::Result<Hypothetical> {
+    pub fn build(self) -> anyhow::Result<Hypothetical<M>> {
         let task_description = self
             .task_description
             .unwrap_or_else(|| TASK_DESCRIPTION.to_string());
         let examples = self.examples.unwrap_or_else(|| {
             EXAMPLES
                 .iter()
-                .map(|(a, b)| (a.to_string(), b.to_string()))
+                .map(|(a, b)| (a.to_string(), { PREFIX.to_string() + b }))
                 .collect::<Vec<_>>()
         });
         let chunking = self.chunking;
 
         let task = Task::builder(self.model, task_description)
-            .with_constraints(create_constraints)
+            .with_constraints(create_constraints())
             .with_examples(examples)
             .build();
 
@@ -120,19 +120,22 @@ where
     }
 }
 
-/// Generates embeddings of questions
-pub struct Hypothetical {
+/// Generates questions for a document.
+pub struct Hypothetical<M: Model>
+where
+    <M::SyncModel as SyncModel>::Session: Sync + Send,
+{
     chunking: Option<ChunkStrategy>,
-    task: Task<StructureParserResult<ChannelTextStream<String>, ((), Vec<((usize, ()), String)>)>>,
+    task:
+        Task<M, StructureParserResult<ChannelTextStream<String>, ((), Vec<((usize, ()), String)>)>>,
 }
 
-impl Hypothetical {
-    /// Create a new hypothetical chunker.
-    pub fn builder<M>(model: &mut M) -> HypotheticalBuilder<M>
-    where
-        M: Model,
-        <M::SyncModel as SyncModel>::Session: Send,
-    {
+impl<M: Model> Hypothetical<M>
+where
+    <M::SyncModel as SyncModel>::Session: Sync + Send,
+{
+    /// Create a new hypothetical generator.
+    pub fn builder(model: &mut M) -> HypotheticalBuilder<M> {
         HypotheticalBuilder {
             model,
             task_description: None,
@@ -142,8 +145,12 @@ impl Hypothetical {
     }
 
     /// Generate a list of hypothetical questions about the given text.
-    pub async fn generate_question(&self, text: &str) -> anyhow::Result<Vec<String>> {
-        let questions = self.task.run(text).await?.result().await?;
+    pub async fn generate_question(
+        &self,
+        text: &str,
+        model: &mut M,
+    ) -> anyhow::Result<Vec<String>> {
+        let questions = self.task.run(text, model).await?.result().await?;
         let documents = questions
             .1
             .into_iter()
@@ -152,12 +159,34 @@ impl Hypothetical {
 
         Ok(documents)
     }
+
+    /// Turn this hypothetical generator into a chunker.
+    pub fn chunker<'a>(&'a self, model: &'a mut M) -> HypotheticalChunker<'a, M> {
+        HypotheticalChunker {
+            hypothetical: self,
+            model,
+        }
+    }
+}
+
+/// A hypothetical chunker.
+pub struct HypotheticalChunker<'a, M: Model>
+where
+    <M::SyncModel as SyncModel>::Session: Sync + Send,
+{
+    hypothetical: &'a Hypothetical<M>,
+    model: &'a mut M,
 }
 
 #[async_trait::async_trait]
-impl<S: VectorSpace + Send + Sync + 'static> Chunker<S> for Hypothetical {
+impl<'a, S, M> Chunker<S> for HypotheticalChunker<'a, M>
+where
+    M: Model,
+    <M::SyncModel as SyncModel>::Session: Sync + Send,
+    S: VectorSpace + Send + Sync + 'static,
+{
     async fn chunk<E: Embedder<S> + Send>(
-        &self,
+        &mut self,
         document: &Document,
         embedder: &mut E,
     ) -> anyhow::Result<Vec<Chunk<S>>> {
@@ -165,6 +194,7 @@ impl<S: VectorSpace + Send + Sync + 'static> Chunker<S> for Hypothetical {
 
         #[allow(clippy::single_range_in_vec_init)]
         let byte_chunks = self
+            .hypothetical
             .chunking
             .map(|chunking| chunking.chunk_str(body))
             .unwrap_or_else(|| vec![0..body.len()]);
@@ -177,7 +207,10 @@ impl<S: VectorSpace + Send + Sync + 'static> Chunker<S> for Hypothetical {
         let mut questions_count = Vec::new();
         for byte_chunk in &byte_chunks {
             let text = &body[byte_chunk.clone()];
-            let mut chunk_questions = self.generate_question(text).await?;
+            let mut chunk_questions = self
+                .hypothetical
+                .generate_question(text, self.model)
+                .await?;
             questions.append(&mut chunk_questions);
             questions_count.push(chunk_questions.len());
         }

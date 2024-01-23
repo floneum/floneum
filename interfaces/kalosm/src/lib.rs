@@ -25,3 +25,6 @@ pub use kalosm_vision as vision;
 
 mod evaluate;
 pub use evaluate::*;
+
+mod prompt_annealing;
+pub use prompt_annealing::*;

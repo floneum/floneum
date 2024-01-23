@@ -414,7 +414,6 @@ impl Model {
         &self,
         tokens: &[u32],
         device: &Device,
-        index_pos: usize,
         mut cache: Option<&mut LlamaCache>,
     ) -> Result<Tensor> {
         let seq_len = tokens.len();
@@ -434,6 +433,7 @@ impl Model {
             assert!(all_tokens.len() <= MAX_SEQ_LEN);
             (Tensor::new(all_tokens, device)?.unsqueeze(0)?, 0)
         } else {
+            let index_pos = cache.as_ref().map(|c| c.tokens.len()).unwrap_or_default();
             (Tensor::new(tokens, device)?.unsqueeze(0)?, index_pos)
         };
         if let Some(cache) = cache.as_mut() {
