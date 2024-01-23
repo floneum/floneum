@@ -26,6 +26,8 @@ mod sentence;
 pub use sentence::*;
 mod stop_on;
 pub use stop_on::*;
+mod map;
+pub use map::*;
 
 /// A trait for a parser with a default state.
 pub trait CreateParserState: Parser {
@@ -272,6 +274,18 @@ pub trait ParserExt: Parser {
         Self: Sized,
     {
         RepeatParser::new(self, length_range)
+    }
+
+    /// Map the output of this parser.
+    fn map_output<F: Fn(Self::Output) -> O, O>(self, f: F) -> MapOutputParser<Self, F, O>
+    where
+        Self: Sized,
+    {
+        MapOutputParser {
+            parser: self,
+            map: f,
+            _output: std::marker::PhantomData,
+        }
     }
 
     /// Get a boxed version of this parser.

@@ -3,7 +3,9 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use kalosm_sample::{ParseResult, Parser, Tokenizer};
+use kalosm_sample::{
+    LiteralParser, ParseResult, Parser, ParserExt, SequenceParserState, Tokenizer,
+};
 use llm_samplers::types::{HasSamplerResources, Sampler, SamplerError};
 use rustc_hash::FxHashMap;
 
@@ -15,12 +17,21 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
     llm: &M,
     session: &mut M::Session,
     tokenizer: &Arc<dyn Tokenizer + Send + Sync>,
-    stop_token: Option<u32>,
+    stop_token: String,
     parser: P,
-    mut parser_state: P::PartialState,
+    parser_state: P::PartialState,
     mut sampler: Arc<Mutex<dyn Sampler>>,
     mut on_token: impl FnMut(String) -> anyhow::Result<()>,
-) -> anyhow::Result<P::Output> {
+) -> anyhow::Result<P::Output>
+where
+    P::Output: Clone,
+{
+    // We wrap the parser in a LiteralParser so that we can stop the parser when we reach the stop token automatically if the sequence is unterminated
+    let parser = parser
+        .then(LiteralParser::new(stop_token))
+        .map_output(|(output, _)| output);
+    let mut parser_state = SequenceParserState::FirstParser(parser_state);
+
     let prompt_text = prompt.to_string();
     let mut tokens = tokenizer.encode(&prompt_text)?;
     let mut prev_index = tokens.len();
@@ -48,11 +59,6 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
         };
 
         logits.retain_mut(|logit| {
-            if Some(logit.token_id) == stop_token {
-                // If the current state is not finished, we can't generate a stop token
-                return current_result.is_some();
-            }
-
             let mut potential_new_tokens = tokens[prev_index..].to_vec();
             potential_new_tokens.push(logit.token_id);
             let Ok(token_text) = tokenizer.decode(&potential_new_tokens) else {
@@ -92,16 +98,6 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
             .sample_token(resources, &mut logits)?
             .ok_or(anyhow::anyhow!("Failed to sample constrained tokens"))?;
 
-        // If the LLM returns a stop token, we may already be at a finished state, so try to finish the parser
-        if Some(token_id) == stop_token {
-            if let Some(result) = current_result.take() {
-                return Ok(result);
-            }
-            return Err(anyhow::anyhow!(
-                "Stop token produced without finishing parser"
-            ));
-        }
-
         unprocessed_token_count = 1;
         tokens.push(token_id);
         if let Some((token, result)) = state_map
@@ -111,7 +107,7 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
             tracing::trace!("Adding token {} to parser", token);
             on_token(token.clone())?;
 
-            current_result = update_state(
+            if let Some(result) = update_state(
                 &parser,
                 &mut parser_state,
                 result,
@@ -119,17 +115,12 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
                 &mut tokens,
                 &mut on_token,
                 &mut unprocessed_token_count,
-            )?;
+            )? {
+                return Ok(result);
+            }
 
             prev_index = current_index;
             current_index = tokens.len();
-
-            // // If we don't have a stop token, we can return the current result immediately
-            // if stop_token.is_none() {
-            if let Some(result) = current_result.take() {
-                return Ok(result);
-            }
-            // }
         }
     }
 }

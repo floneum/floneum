@@ -437,7 +437,7 @@ pub trait ModelExt: Model + Send + Sync + 'static {
         Self::TextStream: From<tokio::sync::mpsc::UnboundedReceiver<String>>,
         P: kalosm_sample::CreateParserState + Parser + Send + 'static,
         P::PartialState: Send + 'static,
-        P::Output: Send + 'static,
+        P::Output: Clone + Send + 'static,
     {
         let sampler = Arc::new(Mutex::new(GenerationParameters::default().sampler()));
         let parser_state = parser.create_parser_state();
@@ -457,7 +457,7 @@ pub trait ModelExt: Model + Send + Sync + 'static {
         Self::TextStream: From<tokio::sync::mpsc::UnboundedReceiver<String>>,
         P: Parser + Send + 'static,
         P::PartialState: Send + 'static,
-        P::Output: Send + 'static,
+        P::Output: Clone + Send + 'static,
     {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         let (result_sender, result_receiver) = tokio::sync::oneshot::channel();
@@ -638,13 +638,23 @@ pub trait SyncModelExt: SyncModel {
         parser_state: P::PartialState,
         sampler: Arc<Mutex<dyn Sampler>>,
         on_token: impl FnMut(String) -> anyhow::Result<()>,
-    ) -> anyhow::Result<P::Output> {
+    ) -> anyhow::Result<P::Output>
+    where
+        P::Output: Clone,
+    {
+        let tokenizer = self.tokenizer();
+        let stop_token = self
+            .stop_token()
+            .ok()
+            .and_then(|token_id| tokenizer.decode(&[token_id]).ok())
+            .map(|s| s.to_string())
+            .unwrap_or("<|endoftext|>".to_string());
         generate_structured(
             prompt,
             self,
             session,
-            &self.tokenizer(),
-            self.stop_token().ok(),
+            &tokenizer,
+            stop_token,
             parser,
             parser_state,
             sampler,

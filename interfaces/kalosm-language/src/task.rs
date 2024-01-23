@@ -290,7 +290,7 @@ where
 
 impl<M: Model, P: Parser + CreateParserState + Sync + Send + 'static> TaskBuilderReturn<M> for P
 where
-    <P as Parser>::Output: Send + 'static,
+    <P as Parser>::Output: Clone + Send + 'static,
     <P as Parser>::PartialState: Sync + Send,
     <M::SyncModel as SyncModel>::Session: Send + Sync,
 {
