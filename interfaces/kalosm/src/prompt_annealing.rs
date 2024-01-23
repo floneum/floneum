@@ -38,7 +38,7 @@ where
             initial_temperature: 0.6,
             decay_rate: 0.9,
             cutoff_temperature: 0.10,
-            initial_population: 20,
+            initial_population: 10,
             initial_choice_range: 1..3,
             metric: BertDistance::default(),
         }
@@ -174,7 +174,7 @@ where
     <<M as Model>::SyncModel as SyncModel>::Session: Sync + Send,
 {
     /// Run the annealing process.
-    pub async fn run(&mut self) {
+    pub async fn run(&mut self) -> Vec<AnnealingResult> {
         loop {
             for instance in &mut self.population {
                 instance.mutate(self.test, self.llm, &mut self.metric).await;
@@ -182,7 +182,14 @@ where
             }
 
             if self.population[0].temperature < self.cutoff_temperature {
-                break;
+                break self
+                    .population
+                    .iter()
+                    .map(|instance| AnnealingResult {
+                        examples: instance.current_examples.clone(),
+                        score: instance.current_evaluation,
+                    })
+                    .collect();
             }
             println!("current temperature: {}", self.population[0].temperature);
 
@@ -194,6 +201,14 @@ where
             }
         }
     }
+}
+
+/// A result example configuration produced by the annealing process.
+pub struct AnnealingResult {
+    /// The examples used in the configuration.
+    pub examples: Vec<(&'static str, &'static str)>,
+    /// The score of the configuration.
+    pub score: f64,
 }
 
 struct ExamplesInstance {

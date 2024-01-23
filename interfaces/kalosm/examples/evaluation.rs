@@ -34,10 +34,11 @@ async fn main() {
     let mut llm = Phi::v2().unwrap();
     let mut annealing = kalosm::PromptAnnealer::builder(&mut llm, EXAMPLES)
         .with_initial_temperature(0.6)
-        .with_initial_population(20)
         .with_initial_choice_range(1..4)
         .build()
         .await;
 
-    annealing.run().await;
+    let result = annealing.run().await;
+
+    println!("Result: {}", result);
 }
