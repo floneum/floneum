@@ -16,6 +16,8 @@ where
     train: &'a [(&'static str, &'static str)],
     test: &'a [(&'static str, &'static str)],
     initial_temperature: f64,
+    decay_rate: f64,
+    cutoff_temperature: f64,
     initial_population: usize,
     initial_choice_range: std::ops::Range<usize>,
 }
@@ -34,6 +36,8 @@ where
             train: train_set,
             test: &[],
             initial_temperature: 0.6,
+            decay_rate: 0.9,
+            cutoff_temperature: 0.10,
             initial_population: 20,
             initial_choice_range: 1..3,
             metric: BertDistance::default(),
@@ -66,6 +70,18 @@ where
     /// Set the initial range of examples to choose from.
     pub fn with_initial_choice_range(mut self, range: std::ops::Range<usize>) -> Self {
         self.initial_choice_range = range;
+        self
+    }
+
+    /// Set the decay rate for the temperature. A higher decay rate will cause the temperature to decrease faster which will allow for faster convergence, but it will also increase the risk of getting stuck in a local optimum.
+    pub fn with_decay_rate(mut self, rate: f64) -> Self {
+        self.decay_rate = rate;
+        self
+    }
+
+    /// Set the cutoff temperature. Once the temperature reaches this value, the annealing process will stop.
+    pub fn with_cutoff_temperature(mut self, temperature: f64) -> Self {
+        self.cutoff_temperature = temperature;
         self
     }
 
@@ -134,6 +150,8 @@ where
             test: test_set,
             population,
             metric: self.metric,
+            decay_rate: self.decay_rate,
+            cutoff_temperature: self.cutoff_temperature,
         }
     }
 }
@@ -147,6 +165,8 @@ where
     metric: Met,
     test: &'a [(&'static str, &'static str)],
     population: Vec<ExamplesInstance>,
+    decay_rate: f64,
+    cutoff_temperature: f64,
 }
 
 impl<'a, M: Model> PromptAnnealer<'a, M>
@@ -158,9 +178,10 @@ where
         loop {
             for instance in &mut self.population {
                 instance.mutate(self.test, self.llm, &mut self.metric).await;
+                instance.temperature *= self.decay_rate;
             }
 
-            if self.population[0].temperature < 0.10 {
+            if self.population[0].temperature < self.cutoff_temperature {
                 break;
             }
             println!("current temperature: {}", self.population[0].temperature);
@@ -278,8 +299,6 @@ impl ExamplesInstance {
                 }
             }
         }
-
-        self.temperature *= 0.9;
     }
 }
 
