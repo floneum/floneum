@@ -17,7 +17,7 @@ reqwest = { version = "0.11.18", features = ["stream", "json"] }
 spinoff = "0.7.0"
 tokio = { version = "1.28.1", features = ["full"] }
 slab = { version = "0.4.8", features = ["serde"] }
-arroy = "0.1.0"
+arroy = "0.2.0"
 heed = "0.20.0-alpha.9"
 serde = { version = "1.0.163", features = ["derive"] }
 partial_sort = "0.2.0"
