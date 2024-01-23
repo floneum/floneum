@@ -99,7 +99,7 @@ where
             let index_vec = sample(&mut rng, train_set.len(), amount);
             let index_vec = index_vec.iter().collect::<Vec<_>>();
 
-            let mut chosen_cases = train_set.to_vec();
+            let mut chosen_cases = Vec::new();
             assert!(index_vec.len() <= self.initial_choice_range.end);
 
             for index in &index_vec {
@@ -305,7 +305,7 @@ async fn evaluate<M: Model>(examples: &[(&str, &str)], test:&[(&str, &str)], llm
 
     let llama_distance = llama_test_cases.evaluate(metric).await.normalized();
 
-    println!("evaluating {} examples {:?}", examples.len(), examples);
+    println!("evaluating examples {:?}", examples);
     println!("{}", llama_distance);
 
     llama_distance.mean_score() - examples_tokens as f64 * 0.0001
