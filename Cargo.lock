@@ -298,20 +298,15 @@ checksum = "96d30a06541fbafbc7f82ed10c06164cfbd2c401138f6addd8404629c4b16711"
 
 [[package]]
 name = "arroy"
-version = "0.2.0"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "efddeb1e7c32a551cc07ef4c3e181e3cd5478fdaf4f0bd799983171c1f6efe57"
+checksum = "d56e38c275131466686b508ec119b7451726eb17574e12cd7594d9485982a2bf"
 dependencies = [
  "bytemuck",
  "byteorder",
  "heed",
- "log",
- "memmap2 0.9.3",
  "ordered-float 4.2.0",
  "rand 0.8.5",
- "rayon",
- "roaring",
- "tempfile",
  "thiserror",
 ]
 
@@ -6872,15 +6867,6 @@ checksum = "f49388d20533534cd19360ad3d6a7dadc885944aa802ba3995040c5ec11288c6"
 dependencies = [
  "libc",
  "stable_deref_trait",
-]
-
-[[package]]
-name = "memmap2"
-version = "0.9.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45fd3a57831bf88bc63f8cebc0cf956116276e97fef3966103e96416209f7c92"
-dependencies = [
- "libc",
 ]
 
 [[package]]
