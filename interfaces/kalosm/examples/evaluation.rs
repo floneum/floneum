@@ -40,5 +40,5 @@ async fn main() {
 
     let result = annealing.run().await;
 
-    println!("Result: {}", result);
+    println!("Result: {:?}", result);
 }

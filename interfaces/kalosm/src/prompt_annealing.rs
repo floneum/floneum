@@ -204,6 +204,7 @@ where
 }
 
 /// A result example configuration produced by the annealing process.
+#[derive(Debug, Clone)]
 pub struct AnnealingResult {
     /// The examples used in the configuration.
     pub examples: Vec<(&'static str, &'static str)>,
