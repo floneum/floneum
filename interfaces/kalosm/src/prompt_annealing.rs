@@ -264,17 +264,12 @@ impl ExamplesInstance {
                 let index = random::<usize>() % mutated_examples.len();
                 let removed = mutated_examples.remove(index);
 
-                if accept_regardless {
+                let new_evaluation = evaluate(&mutated_examples, test, llm, metric).await;
+
+                if accept_regardless || new_evaluation > self.current_evaluation {
+                    self.current_evaluation = new_evaluation;
                     self.current_examples = mutated_examples;
                     self.unused_examples.push(removed);
-                } else {
-                    let new_evaluation = evaluate(&mutated_examples, test, llm, metric).await;
-
-                    if new_evaluation > self.current_evaluation {
-                        self.current_evaluation = new_evaluation;
-                        self.current_examples = mutated_examples;
-                        self.unused_examples.push(removed);
-                    }
                 }
             }
             // swap examples
@@ -284,15 +279,11 @@ impl ExamplesInstance {
 
                 mutated_examples.swap(index1, index2);
 
-                if accept_regardless {
-                    self.current_examples = mutated_examples;
-                } else {
-                    let new_evaluation = evaluate(&mutated_examples, test, llm, metric).await;
+                let new_evaluation = evaluate(&mutated_examples, test, llm, metric).await;
 
-                    if new_evaluation > self.current_evaluation {
-                        self.current_evaluation = new_evaluation;
-                        self.current_examples = mutated_examples;
-                    }
+                if accept_regardless || new_evaluation > self.current_evaluation {
+                    self.current_evaluation = new_evaluation;
+                    self.current_examples = mutated_examples;
                 }
             }
             // add example
@@ -301,17 +292,12 @@ impl ExamplesInstance {
                 let added = self.unused_examples[index];
                 mutated_examples.push(added);
 
-                if accept_regardless {
+                let new_evaluation = evaluate(&mutated_examples, test, llm, metric).await;
+
+                if accept_regardless || new_evaluation > self.current_evaluation {
+                    self.current_evaluation = new_evaluation;
                     self.current_examples = mutated_examples;
                     self.unused_examples.remove(index);
-                } else {
-                    let new_evaluation = evaluate(&mutated_examples, test, llm, metric).await;
-
-                    if new_evaluation > self.current_evaluation {
-                        self.current_evaluation = new_evaluation;
-                        self.current_examples = mutated_examples;
-                        self.unused_examples.remove(index);
-                    }
                 }
             }
         }
