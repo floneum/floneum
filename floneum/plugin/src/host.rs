@@ -1,13 +1,11 @@
+use crate::embedding_db::VectorDBWithDocuments;
 use crate::plugins::main;
 use crate::plugins::main::imports::{self};
 use crate::plugins::main::types::{EitherStructure, NumberParameters, ThenStructure};
 use crate::Both;
 
-use kalosm::language::Document;
-
 use headless_chrome::Tab;
 use kalosm::language::DynamicNodeId;
-use kalosm::language::VectorDB;
 use kalosm::language::*;
 use once_cell::sync::Lazy;
 
@@ -78,7 +76,7 @@ pub struct State {
     pub(crate) structures: Slab<StructureType>,
     pub(crate) models: Slab<DynModel>,
     pub(crate) embedders: Slab<DynEmbedder>,
-    pub(crate) embedding_dbs: Slab<VectorDB<Document>>,
+    pub(crate) embedding_dbs: Slab<VectorDBWithDocuments>,
     pub(crate) nodes: Slab<AnyNodeRef>,
     pub(crate) pages: Slab<Arc<Tab>>,
     pub(crate) plugin_state: HashMap<Vec<u8>, Vec<u8>>,
@@ -120,19 +118,11 @@ impl Default for State {
 }
 
 impl WasiView for State {
-    fn table(&self) -> &ResourceTable {
-        &self.table
-    }
-
-    fn table_mut(&mut self) -> &mut ResourceTable {
+    fn table(&mut self) -> &mut ResourceTable {
         &mut self.table
     }
 
-    fn ctx(&self) -> &preview2::WasiCtx {
-        &self.ctx
-    }
-
-    fn ctx_mut(&mut self) -> &mut preview2::WasiCtx {
+    fn ctx(&mut self) -> &mut preview2::WasiCtx {
         &mut self.ctx
     }
 }
