@@ -5,7 +5,6 @@ use crate::plugins::main::types::{Embedding, EmbeddingModel, Model, Structure};
 
 use kalosm::language::*;
 
-
 use wasmtime::component::__internal::async_trait;
 
 #[async_trait]
