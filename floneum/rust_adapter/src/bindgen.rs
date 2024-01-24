@@ -49,14 +49,13 @@ interface types {
     constructor(embeddings: list<embedding>, documents: list<string>);
     add-embedding: func(embedding: embedding, documents: string);
     find-closest-documents: func(search: embedding, count: u32) -> list<string>;
-    find-documents-within: func(search: embedding, within: float32) -> list<string>;
   }
 
   resource model {
     constructor(ty: model-type);
     model-downloaded: static func(ty: model-type) -> bool;
     infer: func(input: string, max-tokens: option<u32>, stop-on: option<string>) -> string;
-    infer-structured: func(input: string, max-tokens: option<u32>, structure: structure) -> string;
+    infer-structured: func(input: string, structure: structure) -> string;
   }
 
   resource embedding-model {

@@ -5,7 +5,6 @@ use crate::plugins::main::types::{Embedding, EmbeddingModel, Model, Structure};
 
 use kalosm::language::*;
 
-use std::sync::{Arc, Mutex};
 
 use wasmtime::component::__internal::async_trait;
 
@@ -274,7 +273,6 @@ impl main::types::HostModel for State {
         &mut self,
         self_: wasmtime::component::Resource<Model>,
         input: String,
-        max_tokens: Option<u32>,
         structure: wasmtime::component::Resource<Structure>,
     ) -> wasmtime::Result<String> {
         let decoded_structure = self.get_full_structured_parser(&structure).ok_or_else(|| {
@@ -284,11 +282,11 @@ impl main::types::HostModel for State {
         })?;
         let model = &mut self.models[self_.rep() as usize];
 
-        let structured = StructuredSampler::new(decoded_structure.clone(), 0, model.tokenizer());
-
         Ok(model
-            .generate_text_with_sampler(&input, max_tokens, None, Arc::new(Mutex::new(structured)))
-            .await?)
+            .stream_structured_text(&input, decoded_structure)
+            .await?
+            .text()
+            .await)
     }
 
     fn drop(&mut self, rep: wasmtime::component::Resource<Model>) -> wasmtime::Result<()> {

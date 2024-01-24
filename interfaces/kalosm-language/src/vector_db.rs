@@ -1,6 +1,5 @@
 //! A vector database that can be used to store embeddings and search for similar embeddings.
 
-use std::cell::Cell;
 use std::fmt::Debug;
 use std::sync::Mutex;
 
@@ -49,15 +48,18 @@ use serde::{Deserialize, Serialize};
 pub struct VectorDB<S: VectorSpace = UnknownVectorSpace> {
     database: ArroyDatabase<Euclidean>,
     env: heed::Env,
-    max_id: Cell<EmbeddingId>,
+    max_id: Mutex<EmbeddingId>,
     recycled_ids: Mutex<Vec<EmbeddingId>>,
     _phantom: std::marker::PhantomData<S>,
 }
 
-impl<S: VectorSpace + Sync> VectorDB<S>
-where
-    Self: Sync + Send,
-{
+impl<S: VectorSpace + Sync> Default for VectorDB<S> {
+    fn default() -> Self {
+        Self::new().unwrap()
+    }
+}
+
+impl<S: VectorSpace + Sync> VectorDB<S> {
     /// Create a new temporary vector database.
     #[tracing::instrument]
     pub fn new() -> anyhow::Result<Self> {
@@ -81,7 +83,7 @@ where
         Ok(Self {
             database: db,
             env,
-            max_id: Cell::new(EmbeddingId(0)),
+            max_id: Mutex::new(EmbeddingId(0)),
             recycled_ids: Mutex::new(Vec::new()),
             _phantom: std::marker::PhantomData,
         })
@@ -89,8 +91,9 @@ where
 
     fn take_id(&self) -> EmbeddingId {
         self.recycled_ids.lock().unwrap().pop().unwrap_or_else(|| {
-            let id = self.max_id.get();
-            self.max_id.set(EmbeddingId(id.0 + 1));
+            let mut locked = self.max_id.lock().unwrap();
+            let id = *locked;
+            locked.0 += 1;
             id
         })
     }
@@ -109,14 +112,11 @@ where
     ///
     /// Note: Adding embeddings in a batch with [`add_embeddings`] will be faster.
     pub fn add_embedding(&self, embedding: Embedding<S>) -> anyhow::Result<EmbeddingId> {
-       
         let embedding = embedding.vector().to_vec1()?;
 
         let mut wtxn = self.env.write_txn()?;
 
         let writer = Writer::<Euclidean>::new(self.database, 0, embedding.len())?;
-
-       
 
         let id = self.take_id();
 
@@ -200,4 +200,4 @@ pub struct VectorDBSearchResult {
 
 /// A unique identifier for an embedding. If you delete an embedding, the id will be recycled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct EmbeddingId(u32);
+pub struct EmbeddingId(pub u32);
