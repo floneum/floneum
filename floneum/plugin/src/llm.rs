@@ -14,58 +14,6 @@ impl main::types::HostEmbeddingModel for State {
         ty: main::types::EmbeddingModelType,
     ) -> wasmtime::Result<wasmtime::component::Resource<EmbeddingModel>> {
         let model = match ty {
-            main::types::EmbeddingModelType::Mpt(mpt) => match mpt {
-                main::types::MptType::Base => LocalSession::<MptBaseSpace>::start()
-                    .await
-                    .into_any_embedder(),
-                main::types::MptType::Story => LocalSession::<MptStorySpace>::start()
-                    .await
-                    .into_any_embedder(),
-                main::types::MptType::Instruct => LocalSession::<MptInstructSpace>::start()
-                    .await
-                    .into_any_embedder(),
-                main::types::MptType::Chat => LocalSession::<MptChatSpace>::start()
-                    .await
-                    .into_any_embedder(),
-            },
-            main::types::EmbeddingModelType::GptNeoX(neo) => match neo {
-                main::types::GptNeoXType::LargePythia => LocalSession::<LargePythiaSpace>::start()
-                    .await
-                    .into_any_embedder(),
-                main::types::GptNeoXType::TinyPythia => LocalSession::<TinyPythiaSpace>::start()
-                    .await
-                    .into_any_embedder(),
-                main::types::GptNeoXType::DollySevenB => LocalSession::<DollySevenBSpace>::start()
-                    .await
-                    .into_any_embedder(),
-                main::types::GptNeoXType::Stablelm => LocalSession::<StableLmSpace>::start()
-                    .await
-                    .into_any_embedder(),
-            },
-            main::types::EmbeddingModelType::Llama(llama) => match llama {
-                main::types::LlamaType::Vicuna => LocalSession::<VicunaSpace>::start()
-                    .await
-                    .into_any_embedder(),
-                main::types::LlamaType::Guanaco => LocalSession::<GuanacoSpace>::start()
-                    .await
-                    .into_any_embedder(),
-                main::types::LlamaType::Wizardlm => LocalSession::<WizardLmSpace>::start()
-                    .await
-                    .into_any_embedder(),
-                main::types::LlamaType::Orca => {
-                    LocalSession::<OrcaSpace>::start().await.into_any_embedder()
-                }
-                main::types::LlamaType::LlamaSevenChat => {
-                    LocalSession::<LlamaSevenChatSpace>::start()
-                        .await
-                        .into_any_embedder()
-                }
-                main::types::LlamaType::LlamaThirteenChat => {
-                    LocalSession::<LlamaThirteenChatSpace>::start()
-                        .await
-                        .into_any_embedder()
-                }
-            },
             main::types::EmbeddingModelType::Bert => Bert::builder().build()?.into_any_embedder(),
         };
         let idx = self.embedders.insert(model);
@@ -75,49 +23,9 @@ impl main::types::HostEmbeddingModel for State {
 
     async fn model_downloaded(
         &mut self,
-        ty: main::types::EmbeddingModelType,
+        _ty: main::types::EmbeddingModelType,
     ) -> wasmtime::Result<bool> {
-        Ok(match ty {
-            main::types::EmbeddingModelType::Mpt(mpt) => match mpt {
-                main::types::MptType::Base => !LocalSession::<MptBaseSpace>::requires_download(),
-                main::types::MptType::Story => !LocalSession::<MptStorySpace>::requires_download(),
-                main::types::MptType::Instruct => {
-                    !LocalSession::<MptInstructSpace>::requires_download()
-                }
-                main::types::MptType::Chat => !LocalSession::<MptChatSpace>::requires_download(),
-            },
-            main::types::EmbeddingModelType::GptNeoX(neo) => match neo {
-                main::types::GptNeoXType::LargePythia => {
-                    !LocalSession::<LargePythiaSpace>::requires_download()
-                }
-                main::types::GptNeoXType::TinyPythia => {
-                    !LocalSession::<TinyPythiaSpace>::requires_download()
-                }
-                main::types::GptNeoXType::DollySevenB => {
-                    !LocalSession::<DollySevenBSpace>::requires_download()
-                }
-                main::types::GptNeoXType::Stablelm => {
-                    !LocalSession::<StableLmSpace>::requires_download()
-                }
-            },
-            main::types::EmbeddingModelType::Llama(llama) => match llama {
-                main::types::LlamaType::Vicuna => !LocalSession::<VicunaSpace>::requires_download(),
-                main::types::LlamaType::Guanaco => {
-                    !LocalSession::<GuanacoSpace>::requires_download()
-                }
-                main::types::LlamaType::Wizardlm => {
-                    !LocalSession::<WizardLmSpace>::requires_download()
-                }
-                main::types::LlamaType::Orca => !LocalSession::<OrcaSpace>::requires_download(),
-                main::types::LlamaType::LlamaSevenChat => {
-                    !LocalSession::<LlamaSevenChatSpace>::requires_download()
-                }
-                main::types::LlamaType::LlamaThirteenChat => {
-                    !LocalSession::<LlamaThirteenChatSpace>::requires_download()
-                }
-            },
-            main::types::EmbeddingModelType::Bert => !Bert::requires_download(),
-        })
+        Ok(false)
     }
 
     async fn get_embedding(
@@ -146,61 +54,104 @@ impl main::types::HostModel for State {
         ty: main::types::ModelType,
     ) -> wasmtime::Result<wasmtime::component::Resource<Model>> {
         let model = match ty {
-            main::types::ModelType::Mpt(mpt) => match mpt {
-                main::types::MptType::Base => {
-                    LocalSession::<MptBaseSpace>::start().await.into_any_model()
-                }
-                main::types::MptType::Story => LocalSession::<MptStorySpace>::start()
-                    .await
-                    .into_any_model(),
-                main::types::MptType::Instruct => LocalSession::<MptInstructSpace>::start()
-                    .await
-                    .into_any_model(),
-                main::types::MptType::Chat => {
-                    LocalSession::<MptChatSpace>::start().await.into_any_model()
-                }
-            },
-            main::types::ModelType::GptNeoX(neo) => match neo {
-                main::types::GptNeoXType::LargePythia => LocalSession::<LargePythiaSpace>::start()
-                    .await
-                    .into_any_model(),
-                main::types::GptNeoXType::TinyPythia => LocalSession::<TinyPythiaSpace>::start()
-                    .await
-                    .into_any_model(),
-                main::types::GptNeoXType::DollySevenB => LocalSession::<DollySevenBSpace>::start()
-                    .await
-                    .into_any_model(),
-                main::types::GptNeoXType::Stablelm => LocalSession::<StableLmSpace>::start()
-                    .await
-                    .into_any_model(),
-            },
-            main::types::ModelType::Llama(llama) => match llama {
-                main::types::LlamaType::Vicuna => {
-                    LocalSession::<VicunaSpace>::start().await.into_any_model()
-                }
-                main::types::LlamaType::Guanaco => {
-                    LocalSession::<GuanacoSpace>::start().await.into_any_model()
-                }
-                main::types::LlamaType::Wizardlm => LocalSession::<WizardLmSpace>::start()
-                    .await
-                    .into_any_model(),
-                main::types::LlamaType::Orca => {
-                    LocalSession::<OrcaSpace>::start().await.into_any_model()
-                }
-                main::types::LlamaType::LlamaSevenChat => {
-                    LocalSession::<LlamaSevenChatSpace>::start()
-                        .await
-                        .into_any_model()
-                }
-                main::types::LlamaType::LlamaThirteenChat => {
-                    LocalSession::<LlamaThirteenChatSpace>::start()
-                        .await
-                        .into_any_model()
-                }
-            },
-            main::types::ModelType::Phi => Phi::builder().build()?.into_any_model(),
-            main::types::ModelType::Mistral => Llama::builder()
+            main::types::ModelType::MistralSeven => Llama::builder()
                 .with_source(LlamaSource::mistral_7b())
+                .build()?
+                .into_any_model(),
+            main::types::ModelType::MistralSevenInstruct => Llama::builder()
+                .with_source(LlamaSource::mistral_7b_instruct())
+                .build()?
+                .into_any_model(),
+            main::types::ModelType::MistralSevenInstructTwo => Llama::builder()
+                .with_source(LlamaSource::mistral_7b_instruct_2())
+                .build()?
+                .into_any_model(),
+            main::types::ModelType::ZephyrSevenAlpha => Llama::builder()
+                .with_source(LlamaSource::zephyr_7b_alpha())
+                .build()?
+                .into_any_model(),
+            main::types::ModelType::ZephyrSevenBeta => Llama::builder()
+                .with_source(LlamaSource::zephyr_7b_beta())
+                .build()?
+                .into_any_model(),
+            main::types::ModelType::OpenChatSeven => Llama::builder()
+                .with_source(LlamaSource::open_chat_7b())
+                .build()?
+                .into_any_model(),
+            main::types::ModelType::StarlingSevenAlpha => Llama::builder()
+                .with_source(LlamaSource::starling_7b_alpha())
+                .build()?
+                .into_any_model(),
+            main::types::ModelType::TinyLlamaChat => Llama::builder()
+                .with_source(LlamaSource::tiny_llama_1_1b_chat())
+                .build()?
+                .into_any_model(),
+            main::types::ModelType::TinyLlama => Llama::builder()
+                .with_source(LlamaSource::tiny_llama_1_1b())
+                .build()?
+                .into_any_model(),
+            main::types::ModelType::LlamaSeven => Llama::builder()
+                .with_source(LlamaSource::llama_7b())
+                .build()?
+                .into_any_model(),
+            main::types::ModelType::LlamaThirteen => Llama::builder()
+                .with_source(LlamaSource::llama_13b())
+                .build()?
+                .into_any_model(),
+            main::types::ModelType::LlamaSeventy => Llama::builder()
+                .with_source(LlamaSource::llama_70b())
+                .build()?
+                .into_any_model(),
+            main::types::ModelType::LlamaSevenChat => Llama::builder()
+                .with_source(LlamaSource::llama_70b_chat())
+                .build()?
+                .into_any_model(),
+            main::types::ModelType::LlamaThirteenChat => Llama::builder()
+                .with_source(LlamaSource::llama_13b_chat())
+                .build()?
+                .into_any_model(),
+            main::types::ModelType::LlamaSeventyChat => Llama::builder()
+                .with_source(LlamaSource::llama_70b_chat())
+                .build()?
+                .into_any_model(),
+            main::types::ModelType::LlamaSevenCode => Llama::builder()
+                .with_source(LlamaSource::llama_7b_code())
+                .build()?
+                .into_any_model(),
+            main::types::ModelType::LlamaThirteenCode => Llama::builder()
+                .with_source(LlamaSource::llama_13b_code())
+                .build()?
+                .into_any_model(),
+            main::types::ModelType::LlamaThirtyFourCode => Llama::builder()
+                .with_source(LlamaSource::llama_34b_code())
+                .build()?
+                .into_any_model(),
+            main::types::ModelType::SolarTen => Llama::builder()
+                .with_source(LlamaSource::solar_10_7b())
+                .build()?
+                .into_any_model(),
+            main::types::ModelType::SolarTenInstruct => Llama::builder()
+                .with_source(LlamaSource::solar_10_7b_instruct())
+                .build()?
+                .into_any_model(),
+            main::types::ModelType::PhiOne => Phi::builder()
+                .with_source(PhiSource::v1())
+                .build()?
+                .into_any_model(),
+            main::types::ModelType::PhiOnePointFive => Phi::builder()
+                .with_source(PhiSource::v1_5())
+                .build()?
+                .into_any_model(),
+            main::types::ModelType::PhiTwo => Phi::builder()
+                .with_source(PhiSource::v2())
+                .build()?
+                .into_any_model(),
+            main::types::ModelType::PuffinPhiTwo => Phi::builder()
+                .with_source(PhiSource::puffin_phi_v2())
+                .build()?
+                .into_any_model(),
+            main::types::ModelType::DolphinPhiTwo => Phi::builder()
+                .with_source(PhiSource::dolphin_phi_v2())
                 .build()?
                 .into_any_model(),
         };
@@ -209,49 +160,9 @@ impl main::types::HostModel for State {
         Ok(wasmtime::component::Resource::new_own(idx as u32))
     }
 
-    async fn model_downloaded(&mut self, ty: main::types::ModelType) -> wasmtime::Result<bool> {
-        Ok(match ty {
-            main::types::ModelType::Mpt(mpt) => match mpt {
-                main::types::MptType::Base => !LocalSession::<MptBaseSpace>::requires_download(),
-                main::types::MptType::Story => !LocalSession::<MptStorySpace>::requires_download(),
-                main::types::MptType::Instruct => {
-                    !LocalSession::<MptInstructSpace>::requires_download()
-                }
-                main::types::MptType::Chat => !LocalSession::<MptChatSpace>::requires_download(),
-            },
-            main::types::ModelType::GptNeoX(neo) => match neo {
-                main::types::GptNeoXType::LargePythia => {
-                    !LocalSession::<LargePythiaSpace>::requires_download()
-                }
-                main::types::GptNeoXType::TinyPythia => {
-                    !LocalSession::<TinyPythiaSpace>::requires_download()
-                }
-                main::types::GptNeoXType::DollySevenB => {
-                    !LocalSession::<DollySevenBSpace>::requires_download()
-                }
-                main::types::GptNeoXType::Stablelm => {
-                    !LocalSession::<StableLmSpace>::requires_download()
-                }
-            },
-            main::types::ModelType::Llama(llama) => match llama {
-                main::types::LlamaType::Vicuna => !LocalSession::<VicunaSpace>::requires_download(),
-                main::types::LlamaType::Guanaco => {
-                    !LocalSession::<GuanacoSpace>::requires_download()
-                }
-                main::types::LlamaType::Wizardlm => {
-                    !LocalSession::<WizardLmSpace>::requires_download()
-                }
-                main::types::LlamaType::Orca => !LocalSession::<OrcaSpace>::requires_download(),
-                main::types::LlamaType::LlamaSevenChat => {
-                    !LocalSession::<LlamaSevenChatSpace>::requires_download()
-                }
-                main::types::LlamaType::LlamaThirteenChat => {
-                    !LocalSession::<LlamaThirteenChatSpace>::requires_download()
-                }
-            },
-            main::types::ModelType::Phi => !Phi::requires_download(),
-            main::types::ModelType::Mistral => !Llama::requires_download(),
-        })
+    async fn model_downloaded(&mut self, _ty: main::types::ModelType) -> wasmtime::Result<bool> {
+        // TODO: actually check if the model is downloaded
+        Ok(false)
     }
 
     async fn infer(

@@ -9,7 +9,7 @@ use floneum_rust::*;
 /// vec![
 ///     Example {
 ///         name: "example".into(),
-///         inputs: vec![ModelType::Llama(LlamaType::LlamaSevenChat).into_input_value(), String::from("Text to embed").into_input_value()],
+///         inputs: vec![ModelType::LlamaSevenChat.into_input_value(), String::from("Text to embed").into_input_value()],
 ///         outputs: vec![Embedding { vector: vec![0.0, 0.0, 0.0] }.into_return_value()],
 ///     },
 /// ]

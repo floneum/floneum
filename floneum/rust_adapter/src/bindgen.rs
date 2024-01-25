@@ -171,11 +171,34 @@ interface types {
     halt,
   }
 
-  variant model-type { MPT(mpt-type), gpt-neo-x(gpt-neo-x-type), llama(llama-type), phi, mistral }
-  variant embedding-model-type { MPT(mpt-type), gpt-neo-x(gpt-neo-x-type), llama(llama-type), bert }
-  enum llama-type { vicuna, guanaco, wizardlm, orca, llama-seven-chat, llama-thirteen-chat }
-  enum mpt-type { base, story, instruct, chat }
-  enum gpt-neo-x-type { large-pythia, tiny-pythia, dolly-seven-b, stablelm }
+  variant model-type {
+    mistral-seven,
+    mistral-seven-instruct,
+    mistral-seven-instruct-two,
+    zephyr-seven-alpha,
+    zephyr-seven-beta,
+    open-chat-seven,
+    starling-seven-alpha,
+    tiny-llama-chat,
+    tiny-llama,
+    llama-seven,
+    llama-thirteen,
+    llama-seventy,
+    llama-seven-chat,
+    llama-thirteen-chat,
+    llama-seventy-chat,
+    llama-seven-code,
+    llama-thirteen-code,
+    llama-thirty-four-code,
+    solar-ten,
+    solar-ten-instruct,
+    phi-one,
+    phi-one-point-five,
+    phi-two,
+    puffin-phi-two,
+    dolphin-phi-two
+  }
+  variant embedding-model-type { bert }
 }
 
 interface definitions {

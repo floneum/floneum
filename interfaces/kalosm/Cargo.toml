@@ -31,7 +31,7 @@ axum = "0.7.2"
 tracing-subscriber = "0.2"
 
 [features]
-default = ["llamacpp", "language", "sound", "vision"]
+default = ["language", "sound", "vision"]
 llamacpp = ["kalosm-language/llamacpp"]
 metal = ["kalosm-language/metal"]
 cublas = ["kalosm-language/cublas"]

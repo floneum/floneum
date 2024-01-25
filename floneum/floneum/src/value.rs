@@ -221,7 +221,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                                     .write().value = vec![Input::Single(
                                     PrimitiveValue::ModelType(
                                         model_type_from_str(&e.value)
-                                            .unwrap_or(ModelType::Llama(LlamaType::LlamaThirteenChat)),
+                                            .unwrap_or(ModelType::MistralSeven),
                                     ),
                                 )];
                             },
@@ -249,7 +249,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                                     .write().value = vec![Input::Single(
                                     PrimitiveValue::EmbeddingModelType(
                                         embedding_model_type_from_str(&e.value)
-                                            .unwrap_or(EmbeddingModelType::Llama(LlamaType::LlamaThirteenChat)),
+                                            .unwrap_or(EmbeddingModelType::Bert),
                                     ),
                                 )];
                             },
@@ -306,43 +306,36 @@ pub trait Variants: Sized + 'static {
 
 impl Variants for ModelType {
     const VARIANTS: &'static [Self] = &[
-        ModelType::Llama(LlamaType::Guanaco),
-        ModelType::Llama(LlamaType::Orca),
-        ModelType::Llama(LlamaType::Vicuna),
-        ModelType::Llama(LlamaType::Wizardlm),
-        ModelType::Llama(LlamaType::LlamaSevenChat),
-        ModelType::Llama(LlamaType::LlamaThirteenChat),
-        ModelType::GptNeoX(GptNeoXType::TinyPythia),
-        ModelType::GptNeoX(GptNeoXType::LargePythia),
-        ModelType::GptNeoX(GptNeoXType::Stablelm),
-        ModelType::GptNeoX(GptNeoXType::DollySevenB),
-        ModelType::Mpt(MptType::Base),
-        ModelType::Mpt(MptType::Chat),
-        ModelType::Mpt(MptType::Story),
-        ModelType::Mpt(MptType::Instruct),
-        ModelType::Phi,
-        ModelType::Mistral,
+        ModelType::MistralSeven,
+        ModelType::MistralSevenInstruct,
+        ModelType::MistralSevenInstructTwo,
+        ModelType::ZephyrSevenAlpha,
+        ModelType::ZephyrSevenBeta,
+        ModelType::OpenChatSeven,
+        ModelType::StarlingSevenAlpha,
+        ModelType::TinyLlamaChat,
+        ModelType::TinyLlama,
+        ModelType::LlamaSeven,
+        ModelType::LlamaThirteen,
+        ModelType::LlamaSeventy,
+        ModelType::LlamaSevenChat,
+        ModelType::LlamaThirteenChat,
+        ModelType::LlamaSeventyChat,
+        ModelType::LlamaSevenCode,
+        ModelType::LlamaThirteenCode,
+        ModelType::LlamaThirtyFourCode,
+        ModelType::SolarTen,
+        ModelType::SolarTenInstruct,
+        ModelType::PhiOne,
+        ModelType::PhiOnePointFive,
+        ModelType::PhiTwo,
+        ModelType::PuffinPhiTwo,
+        ModelType::DolphinPhiTwo,
     ];
 }
 
 impl Variants for EmbeddingModelType {
-    const VARIANTS: &'static [Self] = &[
-        EmbeddingModelType::Llama(LlamaType::Guanaco),
-        EmbeddingModelType::Llama(LlamaType::Orca),
-        EmbeddingModelType::Llama(LlamaType::Vicuna),
-        EmbeddingModelType::Llama(LlamaType::Wizardlm),
-        EmbeddingModelType::Llama(LlamaType::LlamaSevenChat),
-        EmbeddingModelType::Llama(LlamaType::LlamaThirteenChat),
-        EmbeddingModelType::GptNeoX(GptNeoXType::TinyPythia),
-        EmbeddingModelType::GptNeoX(GptNeoXType::LargePythia),
-        EmbeddingModelType::GptNeoX(GptNeoXType::Stablelm),
-        EmbeddingModelType::GptNeoX(GptNeoXType::DollySevenB),
-        EmbeddingModelType::Mpt(MptType::Base),
-        EmbeddingModelType::Mpt(MptType::Chat),
-        EmbeddingModelType::Mpt(MptType::Story),
-        EmbeddingModelType::Mpt(MptType::Instruct),
-        EmbeddingModelType::Bert,
-    ];
+    const VARIANTS: &'static [Self] = &[EmbeddingModelType::Bert];
 }
 
 impl Variants for PrimitiveValueType {
@@ -398,22 +391,31 @@ pub trait Named {
 impl Named for ModelType {
     fn name(&self) -> &'static str {
         match self {
-            ModelType::Llama(LlamaType::Guanaco) => "Guanaco",
-            ModelType::Llama(LlamaType::Orca) => "Orca",
-            ModelType::Llama(LlamaType::Vicuna) => "Vicuna",
-            ModelType::Llama(LlamaType::Wizardlm) => "Wizardlm",
-            ModelType::Llama(LlamaType::LlamaSevenChat) => "Llama Seven Chat",
-            ModelType::Llama(LlamaType::LlamaThirteenChat) => "Llama Thirteen Chat",
-            ModelType::GptNeoX(GptNeoXType::TinyPythia) => "Tiny Pythia",
-            ModelType::GptNeoX(GptNeoXType::LargePythia) => "Large Pythia",
-            ModelType::GptNeoX(GptNeoXType::Stablelm) => "Stablelm",
-            ModelType::GptNeoX(GptNeoXType::DollySevenB) => "Dolly",
-            ModelType::Mpt(MptType::Base) => "Mpt base",
-            ModelType::Mpt(MptType::Chat) => "Mpt chat",
-            ModelType::Mpt(MptType::Story) => "Mpt story",
-            ModelType::Mpt(MptType::Instruct) => "Mpt instruct",
-            ModelType::Phi => "Phi",
-            ModelType::Mistral => "Mistral",
+            ModelType::MistralSeven => "Mistral Seven",
+            ModelType::MistralSevenInstruct => "Mistral Seven Instruct",
+            ModelType::MistralSevenInstructTwo => "Mistral Seven Instruct Two",
+            ModelType::ZephyrSevenAlpha => "Zephyr Seven Alpha",
+            ModelType::ZephyrSevenBeta => "Zephyr Seven Beta",
+            ModelType::OpenChatSeven => "Open Chat Seven",
+            ModelType::StarlingSevenAlpha => "Starling Seven Alpha",
+            ModelType::TinyLlamaChat => "Tiny Llama Chat",
+            ModelType::TinyLlama => "Tiny Llama",
+            ModelType::LlamaSeven => "Llama Seven",
+            ModelType::LlamaThirteen => "Llama Thirteen",
+            ModelType::LlamaSeventy => "Llama Seventy",
+            ModelType::LlamaSevenChat => "Llama Seven Chat",
+            ModelType::LlamaThirteenChat => "Llama Thirteen Chat",
+            ModelType::LlamaSeventyChat => "Llama Seventy Chat",
+            ModelType::LlamaSevenCode => "Llama Seven Code",
+            ModelType::LlamaThirteenCode => "Llama Thirteen Code",
+            ModelType::LlamaThirtyFourCode => "Llama Thirty Four Code",
+            ModelType::SolarTen => "Solar Ten",
+            ModelType::SolarTenInstruct => "Solar Ten Instruct",
+            ModelType::PhiOne => "Phi One",
+            ModelType::PhiOnePointFive => "Phi One Point Five",
+            ModelType::PhiTwo => "Phi Two",
+            ModelType::PuffinPhiTwo => "Puffin Phi Two",
+            ModelType::DolphinPhiTwo => "Dolphin Phi Two",
         }
     }
 }
@@ -421,20 +423,6 @@ impl Named for ModelType {
 impl Named for EmbeddingModelType {
     fn name(&self) -> &'static str {
         match self {
-            EmbeddingModelType::Llama(LlamaType::Guanaco) => "Guanaco",
-            EmbeddingModelType::Llama(LlamaType::Orca) => "Orca",
-            EmbeddingModelType::Llama(LlamaType::Vicuna) => "Vicuna",
-            EmbeddingModelType::Llama(LlamaType::Wizardlm) => "Wizardlm",
-            EmbeddingModelType::Llama(LlamaType::LlamaSevenChat) => "Llama Seven Chat",
-            EmbeddingModelType::Llama(LlamaType::LlamaThirteenChat) => "Llama Thirteen Chat",
-            EmbeddingModelType::GptNeoX(GptNeoXType::TinyPythia) => "Tiny Pythia",
-            EmbeddingModelType::GptNeoX(GptNeoXType::LargePythia) => "Large Pythia",
-            EmbeddingModelType::GptNeoX(GptNeoXType::Stablelm) => "Stablelm",
-            EmbeddingModelType::GptNeoX(GptNeoXType::DollySevenB) => "Dolly",
-            EmbeddingModelType::Mpt(MptType::Base) => "Mpt base",
-            EmbeddingModelType::Mpt(MptType::Chat) => "Mpt chat",
-            EmbeddingModelType::Mpt(MptType::Story) => "Mpt story",
-            EmbeddingModelType::Mpt(MptType::Instruct) => "Mpt instruct",
             EmbeddingModelType::Bert => "Bert",
         }
     }
@@ -442,42 +430,37 @@ impl Named for EmbeddingModelType {
 
 fn model_type_from_str(s: &str) -> Option<ModelType> {
     match &*s.to_lowercase() {
-        "guanaco" => Some(ModelType::Llama(LlamaType::Guanaco)),
-        "orca" => Some(ModelType::Llama(LlamaType::Orca)),
-        "vicuna" => Some(ModelType::Llama(LlamaType::Vicuna)),
-        "wizardlm" => Some(ModelType::Llama(LlamaType::Wizardlm)),
-        "llama seven chat" => Some(ModelType::Llama(LlamaType::LlamaSevenChat)),
-        "llama thirteen chat" => Some(ModelType::Llama(LlamaType::LlamaThirteenChat)),
-        "tiny pythia" => Some(ModelType::GptNeoX(GptNeoXType::TinyPythia)),
-        "large pythia" => Some(ModelType::GptNeoX(GptNeoXType::LargePythia)),
-        "stablelm" => Some(ModelType::GptNeoX(GptNeoXType::Stablelm)),
-        "dolly" => Some(ModelType::GptNeoX(GptNeoXType::DollySevenB)),
-        "mpt base" => Some(ModelType::Mpt(MptType::Base)),
-        "mpt chat" => Some(ModelType::Mpt(MptType::Chat)),
-        "mpt story" => Some(ModelType::Mpt(MptType::Story)),
-        "mpt instruct" => Some(ModelType::Mpt(MptType::Instruct)),
-        "phi" => Some(ModelType::Phi),
-        "mistral" => Some(ModelType::Mistral),
+        "mistral seven" => Some(ModelType::MistralSeven),
+        "mistral seven instruct" => Some(ModelType::MistralSevenInstruct),
+        "mistral seven instruct two" => Some(ModelType::MistralSevenInstructTwo),
+        "zephyr seven alpha" => Some(ModelType::ZephyrSevenAlpha),
+        "zephyr seven beta" => Some(ModelType::ZephyrSevenBeta),
+        "open chat seven" => Some(ModelType::OpenChatSeven),
+        "starling seven alpha" => Some(ModelType::StarlingSevenAlpha),
+        "tiny llama chat" => Some(ModelType::TinyLlamaChat),
+        "tiny llama" => Some(ModelType::TinyLlama),
+        "llama seven" => Some(ModelType::LlamaSeven),
+        "llama thirteen" => Some(ModelType::LlamaThirteen),
+        "llama seventy" => Some(ModelType::LlamaSeventy),
+        "llama seven chat" => Some(ModelType::LlamaSevenChat),
+        "llama thirteen chat" => Some(ModelType::LlamaThirteenChat),
+        "llama seventy chat" => Some(ModelType::LlamaSeventyChat),
+        "llama seven code" => Some(ModelType::LlamaSevenCode),
+        "llama thirteen code" => Some(ModelType::LlamaThirteenCode),
+        "llama thirty four code" => Some(ModelType::LlamaThirtyFourCode),
+        "solar ten" => Some(ModelType::SolarTen),
+        "solar ten instruct" => Some(ModelType::SolarTenInstruct),
+        "phi one" => Some(ModelType::PhiOne),
+        "phi one point five" => Some(ModelType::PhiOnePointFive),
+        "phi two" => Some(ModelType::PhiTwo),
+        "puffin phi two" => Some(ModelType::PuffinPhiTwo),
+        "dolphin phi two" => Some(ModelType::DolphinPhiTwo),
         _ => None,
     }
 }
 
 fn embedding_model_type_from_str(s: &str) -> Option<EmbeddingModelType> {
     match &*s.to_lowercase() {
-        "guanaco" => Some(EmbeddingModelType::Llama(LlamaType::Guanaco)),
-        "orca" => Some(EmbeddingModelType::Llama(LlamaType::Orca)),
-        "vicuna" => Some(EmbeddingModelType::Llama(LlamaType::Vicuna)),
-        "wizardlm" => Some(EmbeddingModelType::Llama(LlamaType::Wizardlm)),
-        "llama seven chat" => Some(EmbeddingModelType::Llama(LlamaType::LlamaSevenChat)),
-        "llama thirteen chat" => Some(EmbeddingModelType::Llama(LlamaType::LlamaThirteenChat)),
-        "tiny pythia" => Some(EmbeddingModelType::GptNeoX(GptNeoXType::TinyPythia)),
-        "large pythia" => Some(EmbeddingModelType::GptNeoX(GptNeoXType::LargePythia)),
-        "stablelm" => Some(EmbeddingModelType::GptNeoX(GptNeoXType::Stablelm)),
-        "dolly" => Some(EmbeddingModelType::GptNeoX(GptNeoXType::DollySevenB)),
-        "mpt base" => Some(EmbeddingModelType::Mpt(MptType::Base)),
-        "mpt chat" => Some(EmbeddingModelType::Mpt(MptType::Chat)),
-        "mpt story" => Some(EmbeddingModelType::Mpt(MptType::Story)),
-        "mpt instruct" => Some(EmbeddingModelType::Mpt(MptType::Instruct)),
         "bert" => Some(EmbeddingModelType::Bert),
         _ => None,
     }

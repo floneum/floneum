@@ -18,7 +18,7 @@ use pest_derive::Parser;
 /// vec![
 ///     Example {
 ///         name: "example".into(),
-///         inputs: vec![ModelType::Llama(LlamaType::LlamaSevenChat).into_input_value(), String::from("The following is a chat between a user and an assistant. The assistant helpfully and succinctly answers questions posed by the user.\n### USER\nWhat is 3 + 6?\n### ASSISTANT\n9\n### USER\nWhat is 1 + 1?\n### ASSISTANT\n2\n### USER\nWhat is 2 + 8?\n### ASSISTANT\n{#}").into_input_value()],
+///         inputs: vec![ModelType::LlamaSevenChat.into_input_value(), String::from("The following is a chat between a user and an assistant. The assistant helpfully and succinctly answers questions posed by the user.\n### USER\nWhat is 3 + 6?\n### ASSISTANT\n9\n### USER\nWhat is 1 + 1?\n### ASSISTANT\n2\n### USER\nWhat is 2 + 8?\n### ASSISTANT\n{#}").into_input_value()],
 ///         outputs: vec![String::from("10").into_return_value()],
 ///     },
 /// ]
