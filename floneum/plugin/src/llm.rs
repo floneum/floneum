@@ -103,7 +103,7 @@ impl main::types::HostModel for State {
                 .build()?
                 .into_any_model(),
             main::types::ModelType::LlamaSevenChat => Llama::builder()
-                .with_source(LlamaSource::llama_70b_chat())
+                .with_source(LlamaSource::llama_7b_chat())
                 .build()?
                 .into_any_model(),
             main::types::ModelType::LlamaThirteenChat => Llama::builder()
