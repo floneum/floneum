@@ -1,27 +1,22 @@
-use candle_core::{quantized::QMatMul, Module, Tensor,};
-use candle_transformers::quantized_nn::RmsNorm;
-
 use super::cache::{AttentionCache, AttentionCacheValue};
 use super::rope::RopeCache;
-use super::LlamaConfig;
+use candle_core::{quantized::QMatMul, Module, Tensor};
+use candle_nn::LayerNorm;
 
-struct LlamaAttention {
-    attention_wq: QMatMul,
-    attention_wk: QMatMul,
-    attention_wv: QMatMul,
-    attention_wo: QMatMul,
-    attention_norm: RmsNorm,
-    feed_forward_w1: QMatMul,
-    feed_forward_w2: QMatMul,
-    feed_forward_w3: QMatMul,
-    ffn_norm: RmsNorm,
-    n_head: usize,
-    n_kv_head: usize,
-    head_dim: usize,
-    rope_cache: RopeCache,
-    span_attn: tracing::Span,
-    span_rot: tracing::Span,
-    span_mlp: tracing::Span,
+pub struct LlamaAttention {
+    pub attention_wq: QMatMul,
+    pub attention_wk: QMatMul,
+    pub attention_wv: QMatMul,
+    pub attention_wo: QMatMul,
+    pub attention_norm: LayerNorm,
+    pub feed_forward_w1: QMatMul,
+    pub feed_forward_w2: QMatMul,
+    pub feed_forward_w3: QMatMul,
+    pub ffn_norm: LayerNorm,
+    pub n_head: usize,
+    pub n_kv_head: usize,
+    pub head_dim: usize,
+    pub rope_cache: RopeCache,
 }
 
 impl LlamaAttention {
@@ -104,16 +99,16 @@ impl LlamaAttention {
             )));
         }
 
-		if let Some(attention_mask) = attention_mask {
-			if attention_mask.dims() != [bsz, 1, q_len, kv_seq_len] {
-				return Err(candle_core::Error::Msg(format!(
-					"Attention mask should be of size {:?}, but is {:?}",
-					[bsz, 1, q_len, kv_seq_len],
-					attention_mask.dims()
-				)));
-			}
-			attn_weights = (attn_weights + attention_mask)?;
-		}
+        if let Some(attention_mask) = attention_mask {
+            if attention_mask.dims() != [bsz, 1, q_len, kv_seq_len] {
+                return Err(candle_core::Error::Msg(format!(
+                    "Attention mask should be of size {:?}, but is {:?}",
+                    [bsz, 1, q_len, kv_seq_len],
+                    attention_mask.dims()
+                )));
+            }
+            attn_weights = (attn_weights + attention_mask)?;
+        }
 
         attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights)?;
 

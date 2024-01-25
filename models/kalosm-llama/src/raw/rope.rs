@@ -2,6 +2,7 @@ use super::LlamaConfig;
 use candle_core::IndexOp;
 use candle_core::{DType, Device, Tensor, D};
 
+#[derive(Debug, Clone)]
 pub struct RopeCache {
     sin: Tensor,
     cos: Tensor,
