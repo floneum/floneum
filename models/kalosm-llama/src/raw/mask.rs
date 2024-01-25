@@ -25,7 +25,7 @@ impl MaskCache {
         };
 
         let mask = if seqlen_offset > 0 {
-			// If this isn't the first token, we need to pad the mask with zeros for the previous tokens.
+            // If this isn't the first token, we need to pad the mask with zeros for the previous tokens.
             let mask0 = Tensor::zeros((seq_len, seqlen_offset), DType::U8, &Device::Cpu)?;
             Tensor::cat(&[&mask0, &mask], D::Minus1)?
         } else {

@@ -3,6 +3,7 @@ use candle_core::Device;
 use candle_transformers::quantized_nn::RmsNorm;
 
 mod attention_layer;
+mod cache;
 mod mask;
 mod rope;
 mod silu;
@@ -11,6 +12,20 @@ struct LlamaConfig {
     rope_theta: f32,
     context_length: usize,
     head_dimension: usize,
+    n_head: usize,
+    n_kv_head: usize,
+}
+
+impl Default for LlamaConfig {
+    fn default() -> Self {
+        Self {
+            rope_theta: 1e-5,
+            context_length: 1024,
+            head_dimension: 64,
+            n_head: 16,
+            n_kv_head: 4,
+        }
+    }
 }
 
 struct Llama {}

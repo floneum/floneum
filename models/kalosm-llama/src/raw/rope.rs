@@ -49,7 +49,7 @@ impl RopeCache {
         Ok((self.cos.i(..seq_len)?, self.sin.i(..seq_len)?))
     }
 
-    fn forward(
+    pub fn forward(
         &self,
         q: &Tensor,
         k: &Tensor,
@@ -79,6 +79,7 @@ fn test_rope_cache() {
         rope_theta: 5000.,
         context_length: 6,
         head_dimension: 2,
+        ..Default::default()
     };
     let device = Device::cuda_if_available(0).unwrap();
     let cache = RopeCache::new(&config, DType::F32, &device).unwrap();
