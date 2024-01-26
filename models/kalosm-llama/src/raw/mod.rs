@@ -42,7 +42,7 @@ impl Default for LlamaConfig {
     }
 }
 
-struct Llama {
+pub struct Llama {
     tok_embeddings: Embedding,
     layers: Vec<LlamaAttention>,
     norm: candle_nn::LayerNorm,
@@ -56,8 +56,8 @@ impl Llama {
         let head_dim = (ct.hparams.n_embd / ct.hparams.n_head) as usize;
         let config = LlamaConfig {
             rope_theta: 10000.,
-            head_dimension: head_dim as usize,
-            rope_dimension: head_dim as usize,
+            head_dimension: head_dim,
+            rope_dimension: head_dim,
             n_head: ct.hparams.n_head as usize,
             n_kv_head: ct.hparams.n_head as usize / gqa,
             ..Default::default()
