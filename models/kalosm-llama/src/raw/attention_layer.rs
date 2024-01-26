@@ -35,7 +35,7 @@ impl LlamaAttention {
         let num_key_value_heads = self.n_kv_head;
         let num_key_value_groups = num_heads / num_key_value_heads;
 
-        if (head_dim * num_heads) != hidden_size {
+        if head_dim * num_heads != hidden_size {
             panic!("hidden_size must be divisible by num_heads (got `hidden_size`: {} and `num_heads`: {}).", hidden_size, num_heads);
         }
 

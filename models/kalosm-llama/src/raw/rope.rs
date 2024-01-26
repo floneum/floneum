@@ -10,14 +10,14 @@ pub struct RopeCache {
 
 impl RopeCache {
     pub fn new(config: &LlamaConfig, dtype: DType, device: &Device) -> candle_core::Result<Self> {
-        let half_heads = config.head_dimension / 2;
+        let half_heads = config.rope_dimension / 2;
 
-        let inverse_frequency = (0..config.head_dimension)
+        let inverse_frequency = (0..config.rope_dimension)
             .step_by(2)
             .map(|i| {
                 1. / (config
                     .rope_theta
-                    .powf(i as f32 / config.head_dimension as f32))
+                    .powf(i as f32 / config.rope_dimension as f32))
             })
             .collect::<Vec<_>>();
         let inverse_frequency = Tensor::new(inverse_frequency, device)?;
@@ -79,7 +79,7 @@ fn test_rope_cache() {
     let config = LlamaConfig {
         rope_theta: 5000.,
         context_length: 6,
-        head_dimension: 2,
+        rope_dimension: 2,
         ..Default::default()
     };
     let device = Device::cuda_if_available(0).unwrap();

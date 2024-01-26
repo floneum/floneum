@@ -1,10 +1,11 @@
-use candle_nn::Embedding;
 use crate::raw::attention_layer::LlamaAttention;
 use crate::raw::rope::RopeCache;
 use candle_core::quantized::*;
 use candle_core::quantized::{ggml_file, gguf_file};
-use candle_core::{DType, Device, Result};
-use candle_transformers::quantized_nn::RmsNorm;
+use candle_core::{DType, Device, Result, Tensor};
+use candle_nn::Embedding;
+use std::collections::HashMap;
+use std::sync::RwLock;
 
 mod attention_layer;
 mod cache;
@@ -23,6 +24,7 @@ struct LlamaConfig {
     rope_theta: f32,
     context_length: usize,
     head_dimension: usize,
+    rope_dimension: usize,
     n_head: usize,
     n_kv_head: usize,
 }
@@ -33,13 +35,20 @@ impl Default for LlamaConfig {
             rope_theta: 1e-5,
             context_length: 4096,
             head_dimension: 64,
+            rope_dimension: 64,
             n_head: 16,
             n_kv_head: 4,
         }
     }
 }
 
-struct Llama {}
+struct Llama {
+    tok_embeddings: Embedding,
+    layers: Vec<LlamaAttention>,
+    norm: candle_nn::LayerNorm,
+    output: QMatMul,
+    masks: RwLock<HashMap<String, Tensor>>,
+}
 
 impl Llama {
     pub fn from_ggml(mut ct: ggml_file::Content, gqa: usize) -> anyhow::Result<Self> {
@@ -48,6 +57,7 @@ impl Llama {
         let config = LlamaConfig {
             rope_theta: 10000.,
             head_dimension: head_dim as usize,
+            rope_dimension: head_dim as usize,
             n_head: ct.hparams.n_head as usize,
             n_kv_head: ct.hparams.n_head as usize / gqa,
             ..Default::default()
@@ -55,7 +65,6 @@ impl Llama {
         let rope = RopeCache::new(&config, DType::F32, cpu)?;
         let tok_embeddings = ct.remove("tok_embeddings.weight")?;
         let tok_embeddings = tok_embeddings.dequantize(cpu)?;
-        let span = tracing::span!(tracing::Level::TRACE, "rms-norm");
         let output = ct.remove("output.weight")?;
         let mut layers = Vec::with_capacity(ct.hparams.n_layer as usize);
         for layer_idx in 0..ct.hparams.n_layer {
@@ -83,15 +92,14 @@ impl Llama {
                 n_kv_head: ct.hparams.n_head as usize / gqa,
                 head_dim: (ct.hparams.n_embd / ct.hparams.n_head) as usize,
                 rope_cache: rope.clone(),
-                
             })
         }
         Ok(Self {
-            // tok_embeddings: Embedding::new(tok_embeddings, ct.hparams.n_embd as usize),
-            // layers,
-            // norm: decode_norm(ct.remove("norm.weight")?, 1e-5),
-            // output: QMatMul::from_qtensor(output)?,
-            // masks: HashMap::new().into(),
+            tok_embeddings: Embedding::new(tok_embeddings, ct.hparams.n_embd as usize),
+            layers,
+            norm: decode_norm(ct.remove("norm.weight")?, 1e-5)?,
+            output: QMatMul::from_qtensor(output)?,
+            masks: Default::default(),
         })
     }
 
@@ -118,17 +126,16 @@ impl Llama {
             .and_then(|m| m.to_f32())
             .unwrap_or(10000f32);
 
-            let config = LlamaConfig {
-                rope_theta: rope_freq_base,
-                context_length: 4096,
-                head_dimension: embedding_length / head_count,
-                n_head: head_count,
-                n_kv_head: head_count_kv,
-            };
+        let config = LlamaConfig {
+            rope_theta: rope_freq_base,
+            context_length: 4096,
+            head_dimension: embedding_length / head_count,
+            rope_dimension: rope_dim,
+            n_head: head_count,
+            n_kv_head: head_count_kv,
+        };
 
-        let rope = RopeCache::new(
-            &config, DType::F32, cpu,
-        )?;
+        let rope = RopeCache::new(&config, DType::F32, cpu)?;
 
         let tok_embeddings = ct.tensor(reader, "token_embd.weight")?;
         let tok_embeddings = tok_embeddings.dequantize(cpu)?;
@@ -163,11 +170,11 @@ impl Llama {
             })
         }
         Ok(Self {
-            // tok_embeddings: Embedding::new(tok_embeddings, embedding_length),
-            // layers,
-            // norm,
-            // output: QMatMul::from_qtensor(output)?,
-            // masks: RwLock::new(HashMap::new()),
+            tok_embeddings: Embedding::new(tok_embeddings, embedding_length),
+            layers,
+            norm,
+            output: QMatMul::from_qtensor(output)?,
+            masks: Default::default(),
         })
     }
 }
