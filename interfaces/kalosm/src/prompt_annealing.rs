@@ -1,5 +1,6 @@
 use kalosm_language::{
-    kalosm_language_model::{Model, SyncModel},
+    kalosm_language_model::{Embedder, Embedding, Model, SyncModel},
+    rbert::{Bert, BertSpace},
     search::Hypothetical,
 };
 use rand::{random, seq::index::sample, Rng};
@@ -102,6 +103,42 @@ where
             (self.train, self.test)
         };
 
+        let mut bert = Bert::default();
+
+        // Calculate embeddings for all examples
+        let mut embedded_train_set = Vec::new();
+
+        for train_example in train_set {
+            let embedding = bert
+                .embed(train_example.0)
+                .await
+                .expect("Failed to embed input");
+
+            embedded_train_set.push(Example {
+                input: train_example.0,
+                output: train_example.1,
+                embedding,
+            });
+        }
+
+        let mut embedded_test_set = Vec::new();
+
+        for test_example in test_set {
+            let embedding = bert
+                .embed(test_example.0)
+                .await
+                .expect("Failed to embed input");
+
+            embedded_test_set.push(Example {
+                input: test_example.0,
+                output: test_example.1,
+                embedding,
+            });
+        }
+
+        let train_set = embedded_train_set;
+        let test_set = embedded_test_set;
+
         assert!(!train_set.is_empty(), "Train set is empty");
         assert!(!test_set.is_empty(), "Test set is empty");
 
@@ -122,14 +159,14 @@ where
             assert!(index_vec.len() <= self.initial_choice_range.end);
 
             for index in &index_vec {
-                chosen_cases.push(train_set[*index]);
+                chosen_cases.push(train_set[*index].clone());
             }
 
             let remaining_cases = train_set
                 .iter()
                 .enumerate()
                 .filter(|(i, _)| !index_vec.contains(i))
-                .map(|(_, x)| *x)
+                .map(|(_, x)| x.clone())
                 .collect::<Vec<_>>();
 
             population.push(
@@ -138,7 +175,7 @@ where
                     chosen_cases,
                     remaining_cases,
                     self.initial_temperature,
-                    test_set,
+                    &test_set,
                     &mut self.metric,
                 )
                 .await,
@@ -163,7 +200,7 @@ where
 {
     llm: &'a mut M,
     metric: Met,
-    test: &'a [(&'static str, &'static str)],
+    test: Vec<Example<'static>>,
     population: Vec<ExamplesInstance>,
     decay_rate: f64,
     cutoff_temperature: f64,
@@ -177,7 +214,9 @@ where
     pub async fn run(&mut self) -> Vec<AnnealingResult> {
         loop {
             for instance in &mut self.population {
-                instance.mutate(self.test, self.llm, &mut self.metric).await;
+                instance
+                    .mutate(&self.test, self.llm, &mut self.metric)
+                    .await;
                 instance.temperature *= self.decay_rate;
             }
 
@@ -186,7 +225,11 @@ where
                     .population
                     .iter()
                     .map(|instance| AnnealingResult {
-                        examples: instance.current_examples.clone(),
+                        examples: instance
+                            .current_examples
+                            .iter()
+                            .map(|x| (x.input, x.output))
+                            .collect(),
                         score: instance.current_evaluation,
                     })
                     .collect();
@@ -213,17 +256,17 @@ pub struct AnnealingResult {
 }
 
 struct ExamplesInstance {
-    current_examples: Vec<(&'static str, &'static str)>,
-    unused_examples: Vec<(&'static str, &'static str)>,
+    current_examples: Vec<Example<'static>>,
+    unused_examples: Vec<Example<'static>>,
     current_evaluation: f64,
     temperature: f64,
 }
 
 impl ExamplesInstance {
-    async fn new<M: Model>(llm: &mut M, current_examples:Vec<(&'static str, &'static str)>,
-    unused_examples:Vec<(&'static str, &'static str),>,  temperature:f64
+    async fn new<M: Model>(llm: &mut M, current_examples:Vec<Example<'static>>,
+    unused_examples:Vec<Example<'static>>,  temperature:f64
     ,
-    test:&[(&'static str, &'static str)],
+    test:&[Example<'static>],
     metric: &mut impl Metric<String>
     ) -> Self where <<M as kalosm_language::prelude::Model>::SyncModel as kalosm_language::prelude::SyncModel>::Session: Sync+ Send{
         let current_evaluation = evaluate(&current_examples, test, llm, metric).await;
@@ -237,7 +280,7 @@ impl ExamplesInstance {
     }
 
     async fn mutate<M: Model>(&mut self,
-        test:&[(&'static str, &'static str)],
+        test:&[Example<'static>],
     llm: &mut M,
     metric: &mut impl Metric<String>
     ) where <<M as kalosm_language::prelude::Model>::SyncModel as kalosm_language::prelude::SyncModel>::Session: Sync+ Send{
@@ -289,7 +332,7 @@ impl ExamplesInstance {
             // add example
             _ => {
                 let index = random::<usize>() % self.unused_examples.len();
-                let added = self.unused_examples[index];
+                let added = self.unused_examples[index].clone();
                 mutated_examples.push(added);
 
                 let new_evaluation = evaluate(&mutated_examples, test, llm, metric).await;
@@ -304,10 +347,23 @@ impl ExamplesInstance {
     }
 }
 
-async fn evaluate<M: Model>(examples: &[(&str, &str)], test:&[(&str, &str)], llm: &mut M, metric: &mut impl Metric<String>) -> f64 where <<M as kalosm_language::prelude::Model>::SyncModel as kalosm_language::prelude::SyncModel>::Session: Sync+ Send{
+#[derive(Debug, Clone)]
+struct Example<'a> {
+    input: &'a str,
+    output: &'a str,
+    embedding: Embedding<BertSpace>,
+}
+
+async fn evaluate<M: Model>(examples: &[Example<'static>], test:&[Example<'static>], llm: &mut M, metric: &mut impl Metric<String>) -> f64 where <<M as kalosm_language::prelude::Model>::SyncModel as kalosm_language::prelude::SyncModel>::Session: Sync+ Send{
     let examples_tokens: usize = examples
         .iter()
-        .filter_map(|(text, _)| llm.tokenizer().encode(text).ok().map(|x| x.len()))
+        .filter_map(|example| {
+            llm.tokenizer()
+                .encode(example.input)
+                .ok()
+                .map(|x| x.len())
+                .and_then(|x| Some(x + llm.tokenizer().encode(example.output).ok()?.len()))
+        })
         .sum();
 
     let hypothetical = Hypothetical::builder(llm)
@@ -315,16 +371,23 @@ async fn evaluate<M: Model>(examples: &[(&str, &str)], test:&[(&str, &str)], llm
             paragraph_count: 1,
             overlap: 0,
         })
-        .with_examples(examples.iter().copied())
+        .with_examples(
+            examples
+                .iter()
+                .map(|example| (example.input, example.output)),
+        )
         .build()
         .unwrap();
 
     let mut llama_test_cases = TestCases::new();
 
-    for (text, expected) in test {
-        let actual = &hypothetical.generate_question(text, llm).await.unwrap()[0];
+    for example in test {
+        let actual = &hypothetical
+            .generate_question(example.input, llm)
+            .await
+            .unwrap()[0];
 
-        llama_test_cases.push_case(expected.to_string(), actual.clone());
+        llama_test_cases.push_case(example.output.to_string(), actual.clone());
     }
 
     let llama_distance = llama_test_cases.evaluate(metric).await.normalized();
@@ -332,5 +395,47 @@ async fn evaluate<M: Model>(examples: &[(&str, &str)], test:&[(&str, &str)], llm
     println!("evaluating examples {:?}", examples);
     println!("{}", llama_distance);
 
-    llama_distance.mean_score() - examples_tokens as f64 * 0.0001
+    let similarity_scope = llama_distance.mean_score();
+    let token_penalty = examples_tokens as f64 * 0.0001;
+    let mut diversity_bonus = {
+        // We want to incentivize diversity in the examples, so we calculate the average distance between all examples and add it as a bonus.
+        examples
+            .iter()
+            .enumerate()
+            .map(|(i, example)| {
+                examples
+                    .iter()
+                    .enumerate()
+                    .filter(|(j, _)| i != *j)
+                    .map(|(_, other_example)| {
+                        example
+                            .embedding
+                            .cosine_similarity(&other_example.embedding)
+                    })
+                    .sum::<f32>()
+                    / examples.len() as f32
+            })
+            .sum::<f32>()
+            / examples.len() as f32
+    };
+
+    if diversity_bonus.is_nan() {
+        diversity_bonus = 0.0;
+    }
+
+    // diversity_bonus should now be in the range 0..1
+    if diversity_bonus <= 1.0 {
+        println!("diversity bonus: {}", diversity_bonus);
+    }
+
+    println!(
+        "similarity scope: {}, token penalty: {}, diversity bonus: {}",
+        similarity_scope, token_penalty, diversity_bonus
+    );
+
+    let final_score = similarity_scope - token_penalty + diversity_bonus as f64 / 2.;
+
+    println!("final score: {}", final_score);
+
+    final_score
 }

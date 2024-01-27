@@ -12,10 +12,7 @@ use super::{ChunkStrategy, Chunker};
 const TASK_DESCRIPTION: &str =
     "You generate hypothetical questions that may be answered by the given text. The questions restate any information necessary to understand the question";
 
-const EXAMPLES: [(&str, &str); 2] = [
-    ("While traditional databases rely on a fixed schema, NoSQL databases like MongoDB offer a flexible structure, allowing you to store and retrieve data in a more dynamic way. This flexibility is particularly beneficial for applications with evolving data requirements.", "How does MongoDB differ from traditional databases?"),
-    ("Blockchain technology, beyond cryptocurrencies, is being explored for applications like smart contracts. Smart contracts are self-executing contracts with the terms of the agreement directly written into code.", "How is blockchain technology utilized in the concept of smart contracts?")
-];
+const EXAMPLES: [(&str, &str); 2] = [("A content delivery network or a CDN optimizes the distribution of web content by strategically placing servers worldwide. This reduces latency, accelerates content delivery, and enhances the overall user experience.", "What role does a content delivery network play in web performance?"), ("The Internet of Things or IoT connects everyday devices to the internet, enabling them to send and receive data. This connectivity enhances automation and allows for more efficient monitoring and control of various systems.", "What is the purpose of the Internet of Things?")];
 
 const QUESTION_STARTERS: [&str; 9] = [
     "Who", "What", "When", "Where", "Why", "How", "Which", "Whom", "Whose",
