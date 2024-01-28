@@ -14,6 +14,7 @@ pub mod language {
     pub use kalosm_language::kalosm_sample::*;
     pub use kalosm_language::rbert::{Bert, BertBuilder, BertSource, BertSpace};
     pub use kalosm_language::rphi::{Phi, PhiBuilder, PhiSource};
+    pub use kalosm_language::search::*;
     pub use kalosm_language::task::*;
     pub use kalosm_language::tool::*;
     pub use kalosm_language::vector_db::*;

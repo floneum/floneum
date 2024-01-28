@@ -14,10 +14,7 @@ use url::Url;
 /// # Example
 ///
 /// ```rust, no_run
-/// use kalosm_language::BrowserMode;
-/// use kalosm_language::CrawlFeedback;
-/// use kalosm_language::Page;
-/// use kalosm_language::Url;
+/// use kalosm_language::prelude::*;
 ///
 /// #[tokio::main]
 /// async fn main() {

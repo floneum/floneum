@@ -82,10 +82,7 @@ impl<F: FnMut(&Url) -> bool> LinkFilter for F {
 /// # Example
 ///
 /// ```rust, no_run
-/// use kalosm_language::BrowserMode;
-/// use kalosm_language::CrawlFeedback;
-/// use kalosm_language::Page;
-/// use kalosm_language::Url;
+/// use kalosm_language::prelude::*;
 /// use std::future::Future;
 /// use std::pin::Pin;
 /// use std::sync::atomic::AtomicUsize;
@@ -125,7 +122,7 @@ impl<F: FnMut(&Url) -> bool> LinkFilter for F {
 ///
 ///                 count.fetch_add(1, Ordering::SeqCst);
 ///
-///                 CrawlFeedback::Continue
+///                 CrawlFeedback::follow_all()
 ///             }) as Pin<Box<dyn Future<Output = CrawlFeedback>>>
 ///         },
 ///     )

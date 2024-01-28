@@ -18,7 +18,7 @@ pub use txt::*;
 ///
 /// # Example
 /// ```rust, no_run
-/// use kalosm_language::*;
+/// use kalosm_language::prelude::*;
 /// use std::path::PathBuf;
 ///
 /// #[tokio::main]
@@ -75,11 +75,8 @@ impl IntoDocument for FsDocument {
 /// A folder full of documents.
 ///
 /// # Example
-/// ```rust, no_run
-/// use kalosm_language::DocumentFolder;
-/// use kalosm_language::ChunkStrategy;
-/// use kalosm_language::{FuzzySearchIndex, DocumentDatabase, SearchIndex};
-/// use kalosm_language::Bert;
+/// ```rust, ignore
+/// use kalosm_language::prelude::*;
 /// use std::io::Write;
 /// use std::path::PathBuf;
 ///

@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 /// # Example
 ///
 /// ```rust, no_run
-/// use kalosm_language::VectorDB;
+/// use kalosm_language::prelude::VectorDB;
 /// use kalosm_language_model::Embedder;
 /// use rbert::*;
 ///
@@ -36,10 +36,11 @@ use serde::{Deserialize, Serialize};
 ///     println!("embeddings {:?}", embeddings);
 ///
 ///     // Create a vector database from the embeddings
-///     let mut db = VectorDB::new(embeddings, sentences);
+///     let mut db = VectorDB::new()?;
+///     println!("added {:?}", db.add_embeddings(embeddings)?);
 ///     // Find the closest sentence to "Cats are good"
 ///     let embedding = bert.embed("Cats are good").await?;
-///     let closest = db.get_closest(embedding, 1);
+///     let closest = db.get_closest(embedding, 1)?;
 ///     println!("closest: {:?}", closest);
 ///
 ///     Ok(())
@@ -191,6 +192,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
 }
 
 /// A resulting point from a search.
+#[derive(Debug, Clone)]
 pub struct VectorDBSearchResult {
     /// The distance from the searched point.
     pub distance: f32,

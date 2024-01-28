@@ -393,6 +393,7 @@ pub trait ModelExt: Model + Send + Sync + 'static {
     /// # Example
     /// ```rust, no_run
     /// use rphi::prelude::*;
+    /// use kalosm_language_model::Model;
     ///
     /// #[tokio::main]
     /// async fn main() {
@@ -408,12 +409,11 @@ pub trait ModelExt: Model + Send + Sync + 'static {
     ///             let mut session = llm.new_session().unwrap();
     ///
     ///             // Feed the question into the model
-    ///             let mut logits = llm.feed_text(&mut session, question).unwrap();
+    ///             let mut logits = llm.feed_text(&mut session, question, None).unwrap();
     ///
     ///             println!("logits: {:?}", logits);
     ///         })
     ///     })
-    ///     .await
     ///     .unwrap();
     /// }
     /// ```
@@ -550,6 +550,7 @@ impl<M: Model + Send + Sync + 'static> ModelExt for M {}
 /// # Example
 /// ```rust, no_run
 /// use rphi::prelude::*;
+/// use kalosm_language_model::Model;
 ///
 /// #[tokio::main]
 /// async fn main() {
@@ -565,12 +566,11 @@ impl<M: Model + Send + Sync + 'static> ModelExt for M {}
 ///             let mut session = llm.new_session().unwrap();
 ///
 ///             // Feed the question into the model
-///             let mut logits = llm.feed_text(&mut session, question).unwrap();
+///             let mut logits = llm.feed_text(&mut session, question, None).unwrap();
 ///
 ///             println!("logits: {:?}", logits);
 ///         })
 ///     })
-///     .await
 ///     .unwrap();
 /// }
 /// ```

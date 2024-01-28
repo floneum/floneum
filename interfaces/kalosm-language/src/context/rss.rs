@@ -7,7 +7,7 @@ use super::document::{Document, IntoDocuments};
 ///
 /// # Example
 /// ```rust, no_run
-/// use kalosm_language::RssFeed;
+/// use kalosm_language::prelude::*;
 ///
 /// #[tokio::main]
 /// async fn main() {

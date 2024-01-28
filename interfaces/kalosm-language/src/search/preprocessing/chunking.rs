@@ -166,7 +166,7 @@ fn test_chunking() {
     let string = "first sentence. second sentence. third sentence. fourth sentence.";
 
     let chunks = chunks.chunk_str(string);
-    assert_eq!(chunks.len(), 3);
+    assert_eq!(chunks.len(), 4);
     assert_eq!(
         string[chunks[0].clone()].trim(),
         "first sentence. second sentence"
@@ -179,6 +179,7 @@ fn test_chunking() {
         string[chunks[2].clone()].trim(),
         "third sentence. fourth sentence"
     );
+    assert_eq!(string[chunks[3].clone()].trim(), "fourth sentence.");
 
     let chunks = ChunkStrategy::Paragraph {
         paragraph_count: 3,
