@@ -80,7 +80,10 @@ fn test_rope_cache() {
         rope_theta: 5000.,
         context_length: 6,
         rope_dimension: 2,
-        ..Default::default()
+        head_dimension: 0,
+        n_head: 0,
+        n_kv_head: 0,
+        n_layer: 0,
     };
     let device = Device::cuda_if_available(0).unwrap();
     let cache = RopeCache::new(&config, DType::F32, &device).unwrap();

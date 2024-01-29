@@ -16,11 +16,12 @@ pub struct LlamaAttention {
     pub n_head: usize,
     pub n_kv_head: usize,
     pub head_dim: usize,
+    pub hidden_size: usize,
     pub rope_cache: RopeCache,
 }
 
 impl LlamaAttention {
-    fn forward(
+    pub(crate) fn forward(
         &self,
         hidden_states: &Tensor,
         attention_mask: Option<&Tensor>,
@@ -29,15 +30,11 @@ impl LlamaAttention {
     ) -> candle_core::Result<Tensor> {
         let bsz = hidden_states.dims()[0];
         let q_len = hidden_states.dims()[1];
-        let hidden_size = self.head_dim;
+        let hidden_size = self.hidden_size;
         let num_heads = self.n_head;
         let head_dim = self.head_dim;
         let num_key_value_heads = self.n_kv_head;
         let num_key_value_groups = num_heads / num_key_value_heads;
-
-        if head_dim * num_heads != hidden_size {
-            panic!("hidden_size must be divisible by num_heads (got `hidden_size`: {} and `num_heads`: {}).", hidden_size, num_heads);
-        }
 
         let query_states = self.attention_wq.forward(hidden_states)?;
         let key_states = self.attention_wk.forward(hidden_states)?;

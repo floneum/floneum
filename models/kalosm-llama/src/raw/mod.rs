@@ -1,17 +1,21 @@
 use crate::raw::attention_layer::LlamaAttention;
 use crate::raw::rope::RopeCache;
+use crate::raw::silu::fast_cpu_silu;
 use candle_core::quantized::*;
 use candle_core::quantized::{ggml_file, gguf_file};
+use candle_core::IndexOp;
+use candle_core::Module;
 use candle_core::{DType, Device, Result, Tensor};
 use candle_nn::Embedding;
-use std::collections::HashMap;
-use std::sync::RwLock;
+use mask::MaskCache;
 
 mod attention_layer;
-mod cache;
+pub mod cache;
 mod mask;
 mod rope;
 mod silu;
+
+use cache::LlamaCache;
 
 fn decode_norm(tensor: QTensor, eps: f64) -> candle_core::Result<candle_nn::LayerNorm> {
     Ok(candle_nn::LayerNorm::rms_norm(
@@ -20,53 +24,51 @@ fn decode_norm(tensor: QTensor, eps: f64) -> candle_core::Result<candle_nn::Laye
     ))
 }
 
-struct LlamaConfig {
+#[allow(unused)]
+pub(crate) struct LlamaConfig {
     rope_theta: f32,
     context_length: usize,
     head_dimension: usize,
     rope_dimension: usize,
     n_head: usize,
     n_kv_head: usize,
+    pub(crate) n_layer: usize,
 }
 
-impl Default for LlamaConfig {
-    fn default() -> Self {
-        Self {
-            rope_theta: 1e-5,
-            context_length: 4096,
-            head_dimension: 64,
-            rope_dimension: 64,
-            n_head: 16,
-            n_kv_head: 4,
-        }
+impl LlamaConfig {
+    fn hidden_size(&self) -> usize {
+        self.head_dimension * self.n_head
     }
 }
 
-pub struct Llama {
+pub struct Model {
+    pub(crate) config: LlamaConfig,
     tok_embeddings: Embedding,
     layers: Vec<LlamaAttention>,
     norm: candle_nn::LayerNorm,
     output: QMatMul,
-    masks: RwLock<HashMap<String, Tensor>>,
+    masks: MaskCache,
 }
 
-impl Llama {
+impl Model {
     pub fn from_ggml(mut ct: ggml_file::Content, gqa: usize) -> anyhow::Result<Self> {
         let cpu = &Device::Cpu;
         let head_dim = (ct.hparams.n_embd / ct.hparams.n_head) as usize;
+        let n_layer = ct.hparams.n_layer as usize;
         let config = LlamaConfig {
             rope_theta: 10000.,
             head_dimension: head_dim,
             rope_dimension: head_dim,
             n_head: ct.hparams.n_head as usize,
             n_kv_head: ct.hparams.n_head as usize / gqa,
-            ..Default::default()
+            n_layer,
+            context_length: 4096,
         };
         let rope = RopeCache::new(&config, DType::F32, cpu)?;
         let tok_embeddings = ct.remove("tok_embeddings.weight")?;
         let tok_embeddings = tok_embeddings.dequantize(cpu)?;
         let output = ct.remove("output.weight")?;
-        let mut layers = Vec::with_capacity(ct.hparams.n_layer as usize);
+        let mut layers = Vec::with_capacity(n_layer);
         for layer_idx in 0..ct.hparams.n_layer {
             let prefix = format!("layers.{layer_idx}");
             let attention_wq = ct.remove(&format!("{prefix}.attention.wq.weight"))?;
@@ -91,10 +93,12 @@ impl Llama {
                 n_head: ct.hparams.n_head as usize,
                 n_kv_head: ct.hparams.n_head as usize / gqa,
                 head_dim: (ct.hparams.n_embd / ct.hparams.n_head) as usize,
+                hidden_size: config.hidden_size(),
                 rope_cache: rope.clone(),
             })
         }
         Ok(Self {
+            config,
             tok_embeddings: Embedding::new(tok_embeddings, ct.hparams.n_embd as usize),
             layers,
             norm: decode_norm(ct.remove("norm.weight")?, 1e-5)?,
@@ -120,7 +124,7 @@ impl Llama {
         let embedding_length = md_get("llama.embedding_length")?.to_u32()? as usize;
         let rope_dim = md_get("llama.rope.dimension_count")?.to_u32()? as usize;
         // Strangely this value is generally 1e-6 in GGUF file but used to be 1e-5 by default.
-        let rms_norm_eps = md_get("llama.attention.layer_norm_rms_epsilon")?.to_f64()?;
+        let rms_norm_eps = md_get("llama.attention.layer_norm_rms_epsilon")?.to_f32()? as f64;
 
         let rope_freq_base = md_get("llama.rope.freq_base")
             .and_then(|m| m.to_f32())
@@ -133,6 +137,7 @@ impl Llama {
             rope_dimension: rope_dim,
             n_head: head_count,
             n_kv_head: head_count_kv,
+            n_layer: block_count,
         };
 
         let rope = RopeCache::new(&config, DType::F32, cpu)?;
@@ -166,15 +171,86 @@ impl Llama {
                 n_head: head_count,
                 n_kv_head: head_count_kv,
                 head_dim: embedding_length / head_count,
+                hidden_size: config.hidden_size(),
                 rope_cache: rope.clone(),
             })
         }
         Ok(Self {
+            config,
             tok_embeddings: Embedding::new(tok_embeddings, embedding_length),
             layers,
             norm,
             output: QMatMul::from_qtensor(output)?,
             masks: Default::default(),
         })
+    }
+
+    pub fn forward(
+        &self,
+        tokens: &[u32],
+        device: &Device,
+        index_pos: usize,
+        mut cache: Option<&mut LlamaCache>,
+    ) -> Result<Tensor> {
+        let seq_len = tokens.len();
+        let cached_tokens = cache.as_ref().map(|c| c.tokens.len()).unwrap_or_default();
+        // We use a lower cutoff than the context length to avoid recomputing the attention every single token
+        let cutoff_len: usize = self.config.context_length - 32;
+        let (x, index_pos) = if seq_len + cached_tokens > cutoff_len {
+            let all_tokens = if let Some(cache) = cache.as_mut() {
+                cache.clear();
+                let mut all_tokens = cache.tokens.clone();
+                all_tokens.extend(tokens);
+                all_tokens
+            } else {
+                tokens.to_vec()
+            };
+            let all_tokens = &all_tokens[all_tokens.len() - cutoff_len..];
+            assert!(all_tokens.len() <= self.config.context_length);
+            (Tensor::new(all_tokens, device)?.unsqueeze(0)?, 0)
+        } else {
+            (Tensor::new(tokens, device)?.unsqueeze(0)?, index_pos)
+        };
+        if let Some(cache) = cache.as_mut() {
+            cache.tokens.extend_from_slice(tokens);
+        }
+        let mask = self.masks.get_mask(seq_len, index_pos)?;
+
+        let mut layer_in = self.tok_embeddings.forward(&x)?;
+        for (i, layer) in self.layers.iter().enumerate() {
+            let x = layer_in;
+            let residual = &x;
+            let x = layer.attention_norm.forward(&x)?;
+            let attn = layer.forward(
+                &x,
+                Some(&mask),
+                index_pos,
+                cache.as_mut().map(|c| &mut c.blocks[i]),
+            )?;
+            let x = (attn + residual)?;
+
+            // MLP
+            let residual = &x;
+            let x = layer.ffn_norm.forward(&x)?;
+
+            layer_in = std::thread::scope(|scope| {
+                let w1 = scope.spawn(|| {
+                    let w1 = layer.feed_forward_w1.forward(&x)?;
+                    fast_cpu_silu(&w1)
+                });
+
+                let w3 = layer.feed_forward_w3.forward(&x)?;
+                let w1 = w1
+                    .join()
+                    .map_err(|_| candle_core::Error::Msg("Failed to join thread".to_string()))??;
+
+                let mlp = layer.feed_forward_w2.forward(&(&w1 * w3)?)?;
+
+                mlp + residual
+            })?;
+        }
+        let x = self.norm.forward(&layer_in)?;
+        let x = x.i((.., seq_len - 1, ..))?;
+        self.output.forward(&x)
     }
 }

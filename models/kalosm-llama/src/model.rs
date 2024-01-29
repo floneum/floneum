@@ -1,7 +1,5 @@
-use crate::{
-    raw::Model,
-    session::{LlamaCache, LlamaSession},
-};
+use crate::raw::cache::LlamaCache;
+use crate::{raw::Model, session::LlamaSession};
 use anyhow::{Error as E, Result};
 use kalosm_language_model::SyncModelExt;
 use llm_samplers::prelude::Logits;
@@ -151,7 +149,7 @@ impl LlamaModel {
             }
         };
 
-        let cache = LlamaCache::new(&model);
+        let cache = LlamaCache::new(model.config.n_layer);
         Ok(Self {
             model,
             tokenizer: Arc::new(tokenizer),

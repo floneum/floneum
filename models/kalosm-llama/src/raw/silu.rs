@@ -1,4 +1,4 @@
-use candle_core::Tensor;
+use candle_core::{Device, Tensor};
 use rayon::iter::ParallelIterator;
 use rayon::slice::ParallelSliceMut;
 
@@ -28,7 +28,9 @@ fn silu_chunk(chunk: &mut [f32; 16]) {
     }
 }
 
-pub(crate) fn fast_cpu_silu(tensor: &mut Tensor) -> candle_core::Result<Vec<f32>> {
+pub(crate) fn fast_cpu_silu(tensor: &Tensor) -> candle_core::Result<Tensor> {
+    let shape = tensor.shape();
+
     let mut as_vec = tensor.flatten_all()?.to_vec1::<f32>()?;
     let mut iter = as_vec.par_chunks_exact_mut(16);
     for item in iter.remainder() {
@@ -38,5 +40,6 @@ pub(crate) fn fast_cpu_silu(tensor: &mut Tensor) -> candle_core::Result<Vec<f32>
         let chunk: &mut [f32; 16] = unsafe { chunk.try_into().unwrap_unchecked() };
         silu_chunk(chunk)
     });
-    Ok(as_vec)
+
+    Tensor::from_vec(as_vec, shape, &Device::Cpu)
 }
