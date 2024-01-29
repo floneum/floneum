@@ -53,6 +53,7 @@ async fn main() {
         .unwrap()
         .data_dir()
         .join("debug.log");
+    std::fs::create_dir_all(log_path.parent().unwrap()).unwrap();
     let file = File::create(log_path).unwrap();
     let debug_log = tracing_subscriber::fmt::layer().with_writer(std::sync::Arc::new(file));
 

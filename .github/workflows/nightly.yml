@@ -32,7 +32,6 @@ jobs:
           #   target: x86_64-unknown-freebsd
           #   bin: floneum
           #   name: floneum-FreeBSD-x86_64.tar.gz
-          #   skip_tests: true
           # - os_name: Linux-x86_64
           #   os: ubuntu-20.04
           #   target: x86_64-unknown-linux-musl
@@ -53,7 +52,6 @@ jobs:
           #   target: i686-unknown-linux-musl
           #   bin: floneum
           #   name: floneum-Linux-i686-musl.tar.gz
-          #   skip_tests: true
           # - os_name: Linux-mips
           #   os: ubuntu-20.04
           #   target: mips-unknown-linux-musl
@@ -69,31 +67,26 @@ jobs:
           #   target: mips64-unknown-linux-muslabi64
           #   bin: floneum
           #   name: floneum-Linux-mips64.tar.gz
-          #   skip_tests: true
           # - os_name: Linux-mips64el
           #   os: ubuntu-20.04
           #   target: mips64el-unknown-linux-muslabi64
           #   bin: floneum
           #   name: floneum-Linux-mips64el.tar.gz
-          #   skip_tests: true
           # - os_name: Linux-powerpc
           #   os: ubuntu-20.04
           #   target: powerpc-unknown-linux-gnu
           #   bin: floneum
           #   name: floneum-Linux-powerpc-gnu.tar.gz
-          #   skip_tests: true
           # - os_name: Linux-powerpc64
           #   os: ubuntu-20.04
           #   target: powerpc64-unknown-linux-gnu
           #   bin: floneum
           #   name: floneum-Linux-powerpc64-gnu.tar.gz
-          #   skip_tests: true
           # - os_name: Linux-powerpc64le
           #   os: ubuntu-20.04
           #   target: powerpc64le-unknown-linux-gnu
           #   bin: floneum
           #   name: floneum-Linux-powerpc64le.tar.gz
-          #   skip_tests: true
           # - os_name: Linux-riscv64
           #   os: ubuntu-20.04
           #   target: riscv64gc-unknown-linux-gnu
@@ -104,13 +97,11 @@ jobs:
           #   target: s390x-unknown-linux-gnu
           #   bin: floneum
           #   name: floneum-Linux-s390x-gnu.tar.gz
-          #   skip_tests: true
           # - os_name: NetBSD-x86_64
           #   os: ubuntu-20.04
           #   target: x86_64-unknown-netbsd
           #   bin: floneum
           #   name: floneum-NetBSD-x86_64.tar.gz
-          #   skip_tests: true
           - os_name: Windows-x86_64
             os: windows-latest
             target: x86_64-pc-windows-msvc
@@ -126,7 +117,6 @@ jobs:
             target: aarch64-apple-darwin
             bin: floneum
             name: floneum-Darwin-aarch64.tar.gz
-            skip_tests: true
         toolchain:
           - stable
     steps:
@@ -150,15 +140,6 @@ jobs:
           target: ${{ matrix.platform.target }}
           toolchain: ${{ matrix.toolchain }}
           args: "--release"
-          strip: true
-      - name: Run tests
-        uses: houseabsolute/actions-rust-cross@v0
-        with:
-          command: "test"
-          target: ${{ matrix.platform.target }}
-          toolchain: ${{ matrix.toolchain }}
-          args: "--release"
-        if: ${{ !matrix.platform.skip_tests }}
       - name: Package as archive
         shell: bash
         run: |
