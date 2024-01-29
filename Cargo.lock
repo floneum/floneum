@@ -2987,6 +2987,7 @@ dependencies = [
  "dioxus-router",
  "dioxus-signals",
  "dioxus-std",
+ "directories 5.0.1",
  "floneum_plugin",
  "floneumite",
  "futures-util",

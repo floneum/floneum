@@ -49,7 +49,11 @@ async fn main() {
     use tracing_subscriber::util::SubscriberInitExt;
     use tracing_subscriber::EnvFilter;
 
-    let file = File::create("debug.log").unwrap();
+    let log_path = directories::ProjectDirs::from("com", "floneum", "floneum")
+        .unwrap()
+        .data_dir()
+        .join("debug.log");
+    let file = File::create(log_path).unwrap();
     let debug_log = tracing_subscriber::fmt::layer().with_writer(std::sync::Arc::new(file));
 
     let logger = tracing_subscriber::fmt()
