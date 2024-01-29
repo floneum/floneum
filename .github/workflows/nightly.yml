@@ -1,0 +1,178 @@
+name: Tests and release
+
+on:
+  push:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CRATE_NAME: floneum
+  GITHUB_TOKEN: ${{ github.token }}
+  RUST_BACKTRACE: 1
+
+jobs:
+  test:
+    name: ${{ matrix.platform.os_name }} with rust ${{ matrix.toolchain }}
+    runs-on: ${{ matrix.platform.os }}
+    env:
+      OPENSSL_DIR: /usr/include/openssl
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          # Platforms that don't work:
+          #
+          # - sparc64-unknown-linux-gnu - cannot compile openssl-sys
+          # - x86_64-unknown-illumos - weird error compiling openssl - "bin/sh: 1: granlib: not found"
+
+          # - os_name: FreeBSD-x86_64
+          #   os: ubuntu-20.04
+          #   target: x86_64-unknown-freebsd
+          #   bin: floneum
+          #   name: floneum-FreeBSD-x86_64.tar.gz
+          #   skip_tests: true
+          # - os_name: Linux-x86_64
+          #   os: ubuntu-20.04
+          #   target: x86_64-unknown-linux-musl
+          #   bin: floneum
+          #   name: floneum-Linux-x86_64-musl.tar.gz
+          # - os_name: Linux-aarch64
+          #   os: ubuntu-20.04
+          #   target: aarch64-unknown-linux-musl
+          #   bin: floneum
+          #   name: floneum-Linux-aarch64-musl.tar.gz
+          # - os_name: Linux-arm
+          #   os: ubuntu-20.04
+          #   target: arm-unknown-linux-musleabi
+          #   bin: floneum
+          #   name: floneum-Linux-arm-musl.tar.gz
+          # - os_name: Linux-i686
+          #   os: ubuntu-20.04
+          #   target: i686-unknown-linux-musl
+          #   bin: floneum
+          #   name: floneum-Linux-i686-musl.tar.gz
+          #   skip_tests: true
+          # - os_name: Linux-mips
+          #   os: ubuntu-20.04
+          #   target: mips-unknown-linux-musl
+          #   bin: floneum
+          #   name: floneum-Linux-mips.tar.gz
+          # - os_name: Linux-mipsel
+          #   os: ubuntu-20.04
+          #   target: mipsel-unknown-linux-musl
+          #   bin: floneum
+          #   name: floneum-Linux-mipsel.tar.gz
+          # - os_name: Linux-mips64
+          #   os: ubuntu-20.04
+          #   target: mips64-unknown-linux-muslabi64
+          #   bin: floneum
+          #   name: floneum-Linux-mips64.tar.gz
+          #   skip_tests: true
+          # - os_name: Linux-mips64el
+          #   os: ubuntu-20.04
+          #   target: mips64el-unknown-linux-muslabi64
+          #   bin: floneum
+          #   name: floneum-Linux-mips64el.tar.gz
+          #   skip_tests: true
+          # - os_name: Linux-powerpc
+          #   os: ubuntu-20.04
+          #   target: powerpc-unknown-linux-gnu
+          #   bin: floneum
+          #   name: floneum-Linux-powerpc-gnu.tar.gz
+          #   skip_tests: true
+          # - os_name: Linux-powerpc64
+          #   os: ubuntu-20.04
+          #   target: powerpc64-unknown-linux-gnu
+          #   bin: floneum
+          #   name: floneum-Linux-powerpc64-gnu.tar.gz
+          #   skip_tests: true
+          # - os_name: Linux-powerpc64le
+          #   os: ubuntu-20.04
+          #   target: powerpc64le-unknown-linux-gnu
+          #   bin: floneum
+          #   name: floneum-Linux-powerpc64le.tar.gz
+          #   skip_tests: true
+          # - os_name: Linux-riscv64
+          #   os: ubuntu-20.04
+          #   target: riscv64gc-unknown-linux-gnu
+          #   bin: floneum
+          #   name: floneum-Linux-riscv64gc-gnu.tar.gz
+          # - os_name: Linux-s390x
+          #   os: ubuntu-20.04
+          #   target: s390x-unknown-linux-gnu
+          #   bin: floneum
+          #   name: floneum-Linux-s390x-gnu.tar.gz
+          #   skip_tests: true
+          # - os_name: NetBSD-x86_64
+          #   os: ubuntu-20.04
+          #   target: x86_64-unknown-netbsd
+          #   bin: floneum
+          #   name: floneum-NetBSD-x86_64.tar.gz
+          #   skip_tests: true
+          - os_name: Windows-x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bin: floneum.exe
+            name: floneum-Windows-x86_64.zip
+          - os_name: macOS-x86_64
+            os: macOS-latest
+            target: x86_64-apple-darwin
+            bin: floneum
+            name: floneum-Darwin-x86_64.tar.gz
+          - os_name: macOS-aarch64
+            os: macOS-latest
+            target: aarch64-apple-darwin
+            bin: floneum
+            name: floneum-Darwin-aarch64.tar.gz
+            skip_tests: true
+        toolchain:
+          - stable
+    steps:
+      - uses: actions/checkout@v3
+      - name: Cache cargo & target directories
+        uses: Swatinem/rust-cache@v2
+      - name: Configure Git
+        run: |
+          git config --global user.email "jdoe@example.com"
+          git config --global user.name "J. Doe"
+      - name: Install musl-tools on Linux
+        run: sudo apt-get update --yes && sudo apt-get install --yes musl-tools
+        if: contains(matrix.platform.name, 'musl')
+      - name: Install openssl on Linux
+        run: sudo apt-get update --yes && sudo apt-get install --yes libssl-dev pkg-config
+        if: contains(matrix.platform.name, 'musl')
+      - name: Build binary
+        uses: houseabsolute/actions-rust-cross@v0
+        with:
+          command: "build"
+          target: ${{ matrix.platform.target }}
+          toolchain: ${{ matrix.toolchain }}
+          args: "--release"
+          strip: true
+      - name: Run tests
+        uses: houseabsolute/actions-rust-cross@v0
+        with:
+          command: "test"
+          target: ${{ matrix.platform.target }}
+          toolchain: ${{ matrix.toolchain }}
+          args: "--release"
+        if: ${{ !matrix.platform.skip_tests }}
+      - name: Package as archive
+        shell: bash
+        run: |
+          cd target/${{ matrix.platform.target }}/release
+          if [[ "${{ matrix.platform.os }}" == "windows-latest" ]]; then
+            7z a ../../../${{ matrix.platform.name }} ${{ matrix.platform.bin }}
+          else
+            tar czvf ../../../${{ matrix.platform.name }} ${{ matrix.platform.bin }}
+          fi
+          cd -
+        if: |
+          matrix.toolchain == 'stable'
+      - name: Publish release artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: floneum-${{ matrix.platform.os_name }}
+          path: "floneum-*"
