@@ -1,7 +1,7 @@
 use crate::host::State;
 use crate::plugins::main;
 
-use crate::plugins::main::types::{Embedding, EmbeddingModel, Model, Structure};
+use crate::plugins::main::types::{Embedding, EmbeddingModel, Model};
 
 use kalosm::language::*;
 
@@ -183,17 +183,13 @@ impl main::types::HostModel for State {
         &mut self,
         self_: wasmtime::component::Resource<Model>,
         input: String,
-        structure: wasmtime::component::Resource<Structure>,
+        regex: String,
     ) -> wasmtime::Result<String> {
-        let decoded_structure = self.get_full_structured_parser(&structure).ok_or_else(|| {
-            anyhow::Error::msg(
-                "Structure is not a valid structure. This is a bug in the plugin host.",
-            )
-        })?;
+        let structure = RegexParser::new(&regex)?;
         let model = &mut self.models[self_.rep() as usize];
 
         Ok(model
-            .stream_structured_text(&input, decoded_structure)
+            .stream_structured_text(&input, structure)
             .await?
             .text()
             .await)

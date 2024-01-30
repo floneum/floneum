@@ -1,7 +1,6 @@
 use crate::embedding_db::VectorDBWithDocuments;
 use crate::plugins::main;
 use crate::plugins::main::imports::{self};
-use crate::plugins::main::types::{EitherStructure, NumberParameters, ThenStructure};
 use crate::Both;
 
 use headless_chrome::Tab;
@@ -26,30 +25,7 @@ pub(crate) static LINKER: Lazy<Linker<State>> = Lazy::new(|| {
     let l = &mut linker;
     Both::add_to_linker(l, |x| x).unwrap();
     preview2::command::add_to_linker(l).unwrap();
-    // preview2::bindings::filesystem::types::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::filesystem::preopens::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::io::streams::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::cli::environment::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::cli::exit::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::cli::stdin::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::cli::stdout::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::cli::stderr::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::cli::terminal_input::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::cli::terminal_output::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::cli::terminal_stdin::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::cli::terminal_stdout::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::cli::terminal_stderr::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::clocks::monotonic_clock::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::clocks::timezone::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::clocks::wall_clock::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::random::insecure::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::random::insecure_seed::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::random::random::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::sockets::network::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::sockets::instance_network::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::sockets::tcp::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::sockets::tcp_create_socket::add_to_linker(&mut linker, |x| x).unwrap();
-
+    
     linker
 });
 pub(crate) static ENGINE: Lazy<Engine> = Lazy::new(|| {
@@ -58,12 +34,6 @@ pub(crate) static ENGINE: Lazy<Engine> = Lazy::new(|| {
     Engine::new(&config).unwrap()
 });
 
-pub(crate) enum StructureType {
-    Num(NumberParameters),
-    Literal(String),
-    Or(EitherStructure),
-    Then(ThenStructure),
-}
 
 #[derive(Clone, Copy)]
 pub(crate) struct AnyNodeRef {
@@ -73,7 +43,6 @@ pub(crate) struct AnyNodeRef {
 
 pub struct State {
     pub(crate) logs: Arc<RwLock<Vec<String>>>,
-    pub(crate) structures: Slab<StructureType>,
     pub(crate) models: Slab<DynModel>,
     pub(crate) embedders: Slab<DynEmbedder>,
     pub(crate) embedding_dbs: Slab<VectorDBWithDocuments>,
@@ -104,7 +73,6 @@ impl Default for State {
         let ctx = ctx_builder.build();
         State {
             plugin_state: Default::default(),
-            structures: Default::default(),
             embedders: Default::default(),
             models: Default::default(),
             embedding_dbs: Default::default(),
