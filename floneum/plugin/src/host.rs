@@ -25,7 +25,7 @@ pub(crate) static LINKER: Lazy<Linker<State>> = Lazy::new(|| {
     let l = &mut linker;
     Both::add_to_linker(l, |x| x).unwrap();
     preview2::command::add_to_linker(l).unwrap();
-    
+
     linker
 });
 pub(crate) static ENGINE: Lazy<Engine> = Lazy::new(|| {
@@ -33,7 +33,6 @@ pub(crate) static ENGINE: Lazy<Engine> = Lazy::new(|| {
     config.wasm_component_model(true).async_support(true);
     Engine::new(&config).unwrap()
 });
-
 
 #[derive(Clone, Copy)]
 pub(crate) struct AnyNodeRef {
