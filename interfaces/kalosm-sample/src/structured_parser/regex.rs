@@ -146,7 +146,9 @@ impl Parser for UnicodeRangesParser {
     ) -> Result<crate::ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
         let mut iter = std::str::from_utf8(input).unwrap().char_indices();
 
-        let (i, c) = match iter.next() {
+        let first_char = iter.next();
+        let remaining_index = iter.next().map(|(i, _)| i).unwrap_or(input.len());
+        let (_, c) = match first_char {
             Some((i, c)) => (i, c),
             None => {
                 return Ok(crate::ParseResult::Incomplete {
@@ -167,7 +169,7 @@ impl Parser for UnicodeRangesParser {
         if found {
             Ok(crate::ParseResult::Finished {
                 result: (),
-                remaining: &input[i..],
+                remaining: &input[remaining_index..],
             })
         } else {
             Err(UnmatchedCharRange)
@@ -195,7 +197,9 @@ impl Parser for BytesRangesParser {
     ) -> Result<crate::ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
         let mut iter = std::str::from_utf8(input).unwrap().char_indices();
 
-        let (i, c) = match iter.next() {
+        let first_char = iter.next();
+        let remaining_index = iter.next().map(|(i, _)| i).unwrap_or(input.len());
+        let (_, c) = match first_char {
             Some((i, c)) => (i, c),
             None => {
                 return Ok(crate::ParseResult::Incomplete {
@@ -210,7 +214,7 @@ impl Parser for BytesRangesParser {
             Err(_) => {
                 return Ok(crate::ParseResult::Finished {
                     result: (),
-                    remaining: &input[i..],
+                    remaining: &input[remaining_index..],
                 })
             }
         };
@@ -225,7 +229,7 @@ impl Parser for BytesRangesParser {
         if found {
             Ok(crate::ParseResult::Finished {
                 result: (),
-                remaining: &input[i..],
+                remaining: &input[remaining_index..],
             })
         } else {
             Err(UnmatchedCharRange)
@@ -238,56 +242,69 @@ fn test_regex_parser() {
     let parser = RegexParser::new(r"abc").unwrap();
 
     let result = parser.parse(&parser.create_parser_state(), b"abc").unwrap();
-    println!(
-        "{:?}",
+    assert!(
         matches!(result, crate::ParseResult::Finished { .. })
     );
 
     let result = parser.parse(&parser.create_parser_state(), b"ab").unwrap();
-    println!(
-        "{:?}",
+    assert!(
         matches!(result, crate::ParseResult::Incomplete { .. })
     );
 
     let result = parser
         .parse(&parser.create_parser_state(), b"abcd")
         .unwrap();
-    println!(
-        "{:?}",
+    assert!(
         matches!(result, crate::ParseResult::Finished { .. })
     );
 
     let parser = RegexParser::new(r"[a-z]").unwrap();
 
     let result = parser.parse(&parser.create_parser_state(), b"a").unwrap();
-    println!(
-        "{:?}",
+    assert!(
         matches!(result, crate::ParseResult::Finished { .. })
     );
 
     let result = parser.parse(&parser.create_parser_state(), b"z").unwrap();
-    println!(
-        "{:?}",
+    assert!(
         matches!(result, crate::ParseResult::Finished { .. })
     );
 
 	let parser = RegexParser::new(r"[a-z]*").unwrap();
 
 	let result = parser.parse(&parser.create_parser_state(), b"abc").unwrap();
-	println!(
-		"{:?}",
-		matches!(result, crate::ParseResult::Finished { .. })
+	assert!(
+		matches!(result, crate::ParseResult::Incomplete { .. })
 	);
 
-	let result = parser.parse(&parser.create_parser_state(), b"123");
-	println!(
-		"{:?}",
-		result.is_err()
+	let result = parser.parse(&parser.create_parser_state(), b"123").unwrap();
+	assert!(
+		matches!(result, crate::ParseResult::Finished { .. })
 	);
 
 	let result = parser.parse(&parser.create_parser_state(), b"abc123").unwrap();
-	println!(
-		"{:?}",
+	assert!(
 		matches!(result, crate::ParseResult::Finished { .. })
 	);
+
+    let parser = RegexParser::new(r"[a-z]{2,4}").unwrap();
+    let result = parser.parse(&parser.create_parser_state(), b"abc").unwrap();
+    assert!(
+        matches!(result, crate::ParseResult::Incomplete { .. })
+    );
+
+    let result = parser.parse(&parser.create_parser_state(), b"ab").unwrap();
+    assert!(
+        matches!(result, crate::ParseResult::Incomplete { .. })
+    );
+
+    let result = parser.parse(&parser.create_parser_state(), b"abcd").unwrap();
+    assert!(
+        matches!(result, crate::ParseResult::Finished { .. })
+    );
+
+    let result = parser.parse(&parser.create_parser_state(), b"abcde").unwrap();
+    assert!(
+        matches!(result, crate::ParseResult::Finished { .. })
+    );
 }
