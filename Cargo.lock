@@ -5606,6 +5606,7 @@ dependencies = [
  "llm",
  "llm-samplers",
  "rand 0.8.5",
+ "regex-syntax 0.8.2",
  "rustc-hash",
  "tokenizers 0.13.4",
  "tracing",
