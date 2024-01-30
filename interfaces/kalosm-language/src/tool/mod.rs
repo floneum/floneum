@@ -208,7 +208,7 @@ Question: {question}
     ) -> Option<
         IndexParser<
             SequenceParser<LiteralParser<String>, ArcParser>,
-            Either<LiteralMismatchError, Arc<anyhow::Error>>,
+            Either<LiteralMismatchError, Arc<dyn Error + Send + Sync>>,
             (
                 (),
                 Arc<(dyn std::any::Any + std::marker::Send + std::marker::Sync + 'static)>,
@@ -250,7 +250,7 @@ Question: {question}
         LiteralParser<&'static str>,
         IndexParser<
             SequenceParser<LiteralParser<String>, ArcParser>,
-            Either<LiteralMismatchError, Arc<anyhow::Error>>,
+            Either<LiteralMismatchError, Arc<dyn Error + Send + Sync>>,
             ((), Arc<dyn Any + Send + Sync>),
             SequenceParserState<LiteralParserOffset, Arc<dyn Any + Send + Sync>, ()>,
         >,
@@ -291,7 +291,7 @@ Question: {question}
                 LiteralParser<&'static str>,
                 IndexParser<
                     SequenceParser<LiteralParser<String>, ArcParser>,
-                    Either<LiteralMismatchError, Arc<anyhow::Error>>,
+                    Either<LiteralMismatchError, Arc<dyn Error + Send + Sync>>,
                     ((), Arc<dyn Any + Send + Sync>),
                     SequenceParserState<LiteralParserOffset, Arc<dyn Any + Send + Sync>, ()>,
                 >,
