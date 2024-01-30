@@ -1,310 +1,64 @@
-use regex_syntax::hir::ClassBytesRange;
-use regex_syntax::hir::ClassUnicodeRange;
-use std::{any::Any, sync::Arc};
-
-use regex_syntax::{hir::Hir, parse};
-
-use crate::{ArcParser, CreateParserState, LiteralParser, Parser, ParserExt, RepeatParser};
+use crate::{CreateParserState, Parser};
+use regex_automata::{
+    dfa::{sparse, Automaton},
+    util::primitives::StateID,
+};
 
 /// A parser that uses a regex pattern to parse input.
 pub struct RegexParser {
-    parser: ArcParser,
+    dfa: sparse::DFA<Vec<u8>>,
+    config: regex_automata::util::start::Config,
 }
 
 impl RegexParser {
     /// Create a new `RegexParser` from a regex pattern.
     pub fn new(regex: &str) -> anyhow::Result<Self> {
-        let hir = parse(regex)?;
+        let dfa = sparse::DFA::new(regex)?;
 
-        Ok(Self {
-            parser: create_parser_hir(&hir)?,
-        })
+        let config =
+            regex_automata::util::start::Config::new().anchored(regex_automata::Anchored::Yes);
+
+        Ok(Self { dfa, config })
     }
 }
 
 impl CreateParserState for RegexParser {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState {
-        self.parser.create_parser_state()
+        self.dfa.start_state(&self.config).unwrap()
     }
 }
 
 impl Parser for RegexParser {
-    type Error = Arc<dyn std::error::Error + Send + Sync>;
-    type Output = Arc<dyn Any + Send + Sync>;
-    type PartialState = Arc<dyn Any + Send + Sync>;
+    type Error = regex_automata::MatchError;
+    type Output = ();
+    type PartialState = StateID;
 
     fn parse<'a>(
         &self,
         state: &Self::PartialState,
         input: &'a [u8],
     ) -> Result<crate::ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
-        self.parser.parse(state, input)
+        let mut state = *state;
+        for (idx, &b) in input.iter().enumerate() {
+            state = self.dfa.next_state(state, b);
+            if self.dfa.is_match_state(state) {
+                // If this is a match state, accept it only if it's the last byte
+                return if idx == input.len() - 1 {
+                    Ok(crate::ParseResult::Finished {
+                        result: (),
+                        remaining: Default::default(),
+                    })
+                } else {
+                    Err(regex_automata::MatchError::quit(b, 0))
+                };
+            } else if self.dfa.is_dead_state(state) || self.dfa.is_quit_state(state) {
+                return Err(regex_automata::MatchError::quit(b, 0));
+            }
+        }
+
+        Ok(crate::ParseResult::Incomplete {
+            new_state: state,
+            required_next: "".into(),
+        })
     }
-}
-
-fn create_parser_hir(hir: &Hir) -> anyhow::Result<ArcParser> {
-    Ok(match hir.kind() {
-        regex_syntax::hir::HirKind::Empty => todo!(),
-        #[allow(clippy::unnecessary_to_owned)]
-        regex_syntax::hir::HirKind::Literal(literal) => {
-            LiteralParser::new(String::from_utf8_lossy(&literal.0).to_string()).boxed()
-        }
-        regex_syntax::hir::HirKind::Class(class) => match class.literal() {
-            Some(literal) =>
-            {
-                #[allow(clippy::unnecessary_to_owned)]
-                LiteralParser::new(String::from_utf8_lossy(&literal).to_string()).boxed()
-            }
-            None => match class {
-                regex_syntax::hir::Class::Unicode(ranges) => {
-                    let ranges: Vec<_> = ranges.iter().cloned().collect();
-
-                    UnicodeRangesParser { range: ranges }.boxed()
-                }
-                regex_syntax::hir::Class::Bytes(ranges) => {
-                    let ranges: Vec<_> = ranges.iter().cloned().collect();
-
-                    BytesRangesParser { range: ranges }.boxed()
-                }
-            },
-        },
-        regex_syntax::hir::HirKind::Look(_) => anyhow::bail!("Look is not supported"),
-        regex_syntax::hir::HirKind::Repetition(repetition) => {
-            if !repetition.greedy {
-                return Err(anyhow::anyhow!("Non-greedy repetition is not supported"));
-            }
-
-            let parser = create_parser_hir(&repetition.sub)?;
-            let min = repetition.min as usize;
-            let max = match repetition.max {
-                Some(max) => max as usize,
-                None => usize::MAX,
-            };
-
-            RepeatParser::new(parser, min..=max).boxed()
-        }
-        regex_syntax::hir::HirKind::Capture(_) => anyhow::bail!("Capture is not supported"),
-        regex_syntax::hir::HirKind::Concat(concat) => {
-            let mut parsers = concat.iter().map(create_parser_hir);
-
-            let mut parser = match parsers.next() {
-                Some(first) => first?,
-                None => return Ok(LiteralParser::new("").boxed()),
-            };
-
-            for next in parsers {
-                parser = parser.then(next?).boxed();
-            }
-
-            parser
-        }
-        regex_syntax::hir::HirKind::Alternation(or) => {
-            let mut parsers = or.iter().map(create_parser_hir);
-
-            let mut parser = match parsers.next() {
-                Some(first) => first?,
-                None => return Ok(LiteralParser::new("").boxed()),
-            };
-
-            for next in parsers {
-                parser = parser.or(next?).boxed();
-            }
-
-            parser
-        }
-    })
-}
-
-#[derive(Debug)]
-struct UnmatchedCharRange;
-
-impl std::fmt::Display for UnmatchedCharRange {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "unmatched character range")
-    }
-}
-
-impl std::error::Error for UnmatchedCharRange {}
-
-struct UnicodeRangesParser {
-    range: Vec<ClassUnicodeRange>,
-}
-
-impl CreateParserState for UnicodeRangesParser {
-    fn create_parser_state(&self) -> <Self as Parser>::PartialState {}
-}
-
-impl Parser for UnicodeRangesParser {
-    type Error = UnmatchedCharRange;
-    type Output = ();
-    type PartialState = ();
-
-    fn parse<'a>(
-        &self,
-        _state: &Self::PartialState,
-        input: &'a [u8],
-    ) -> Result<crate::ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
-        let mut iter = std::str::from_utf8(input).unwrap().char_indices();
-
-        let first_char = iter.next();
-        let remaining_index = iter.next().map(|(i, _)| i).unwrap_or(input.len());
-        let (_, c) = match first_char {
-            Some((i, c)) => (i, c),
-            None => {
-                return Ok(crate::ParseResult::Incomplete {
-                    new_state: (),
-                    required_next: "".into(),
-                });
-            }
-        };
-
-        let mut found = false;
-        for range in &self.range {
-            if range.start() <= c && c <= range.end() {
-                found = true;
-                break;
-            }
-        }
-
-        if found {
-            Ok(crate::ParseResult::Finished {
-                result: (),
-                remaining: &input[remaining_index..],
-            })
-        } else {
-            Err(UnmatchedCharRange)
-        }
-    }
-}
-
-struct BytesRangesParser {
-    range: Vec<ClassBytesRange>,
-}
-
-impl CreateParserState for BytesRangesParser {
-    fn create_parser_state(&self) -> <Self as Parser>::PartialState {}
-}
-
-impl Parser for BytesRangesParser {
-    type Error = UnmatchedCharRange;
-    type Output = ();
-    type PartialState = ();
-
-    fn parse<'a>(
-        &self,
-        _state: &Self::PartialState,
-        input: &'a [u8],
-    ) -> Result<crate::ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
-        let mut iter = std::str::from_utf8(input).unwrap().char_indices();
-
-        let first_char = iter.next();
-        let remaining_index = iter.next().map(|(i, _)| i).unwrap_or(input.len());
-        let (_, c) = match first_char {
-            Some((i, c)) => (i, c),
-            None => {
-                return Ok(crate::ParseResult::Incomplete {
-                    new_state: (),
-                    required_next: "".into(),
-                });
-            }
-        };
-        // try to convert char to u8
-        let c: u8 = match c.try_into() {
-            Ok(c) => c,
-            Err(_) => {
-                return Ok(crate::ParseResult::Finished {
-                    result: (),
-                    remaining: &input[remaining_index..],
-                })
-            }
-        };
-        let mut found = false;
-        for range in &self.range {
-            if range.start() <= c && c <= range.end() {
-                found = true;
-                break;
-            }
-        }
-
-        if found {
-            Ok(crate::ParseResult::Finished {
-                result: (),
-                remaining: &input[remaining_index..],
-            })
-        } else {
-            Err(UnmatchedCharRange)
-        }
-    }
-}
-
-#[test]
-fn test_regex_parser() {
-    let parser = RegexParser::new(r"abc").unwrap();
-
-    let result = parser.parse(&parser.create_parser_state(), b"abc").unwrap();
-    assert!(
-        matches!(result, crate::ParseResult::Finished { .. })
-    );
-
-    let result = parser.parse(&parser.create_parser_state(), b"ab").unwrap();
-    assert!(
-        matches!(result, crate::ParseResult::Incomplete { .. })
-    );
-
-    let result = parser
-        .parse(&parser.create_parser_state(), b"abcd")
-        .unwrap();
-    assert!(
-        matches!(result, crate::ParseResult::Finished { .. })
-    );
-
-    let parser = RegexParser::new(r"[a-z]").unwrap();
-
-    let result = parser.parse(&parser.create_parser_state(), b"a").unwrap();
-    assert!(
-        matches!(result, crate::ParseResult::Finished { .. })
-    );
-
-    let result = parser.parse(&parser.create_parser_state(), b"z").unwrap();
-    assert!(
-        matches!(result, crate::ParseResult::Finished { .. })
-    );
-
-	let parser = RegexParser::new(r"[a-z]*").unwrap();
-
-	let result = parser.parse(&parser.create_parser_state(), b"abc").unwrap();
-	assert!(
-		matches!(result, crate::ParseResult::Incomplete { .. })
-	);
-
-	let result = parser.parse(&parser.create_parser_state(), b"123").unwrap();
-	assert!(
-		matches!(result, crate::ParseResult::Finished { .. })
-	);
-
-	let result = parser.parse(&parser.create_parser_state(), b"abc123").unwrap();
-	assert!(
-		matches!(result, crate::ParseResult::Finished { .. })
-	);
-
-    let parser = RegexParser::new(r"[a-z]{2,4}").unwrap();
-    let result = parser.parse(&parser.create_parser_state(), b"abc").unwrap();
-    assert!(
-        matches!(result, crate::ParseResult::Incomplete { .. })
-    );
-
-    let result = parser.parse(&parser.create_parser_state(), b"ab").unwrap();
-    assert!(
-        matches!(result, crate::ParseResult::Incomplete { .. })
-    );
-
-    let result = parser.parse(&parser.create_parser_state(), b"abcd").unwrap();
-    assert!(
-        matches!(result, crate::ParseResult::Finished { .. })
-    );
-
-    let result = parser.parse(&parser.create_parser_state(), b"abcde").unwrap();
-    assert!(
-        matches!(result, crate::ParseResult::Finished { .. })
-    );
 }

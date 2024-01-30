@@ -16,7 +16,7 @@ llm = { git = "https://github.com/rustformers/llm", optional = true }
 candle-core.workspace = true
 tokenizers = { version = "0.13.4" }
 rustc-hash = "1.1.0"
-regex-syntax = "0.8.2"
+regex-automata = "0.4.5"
 
 [features]
 llamacpp = ["llm"]
