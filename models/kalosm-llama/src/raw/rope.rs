@@ -41,8 +41,8 @@ impl RopeCache {
         let cos = outer_product.cos()?.to_dtype(dtype)?;
 
         Ok(Self {
-            sin: Tensor::cat(&[&sin, &sin], 1)?,
-            cos: Tensor::cat(&[&cos, &cos], 1)?,
+            sin: Tensor::cat(&[&sin, &sin], D::Minus1)?,
+            cos: Tensor::cat(&[&cos, &cos], D::Minus1)?,
         })
     }
 
@@ -58,11 +58,11 @@ impl RopeCache {
         start_pos: usize,
     ) -> candle_core::Result<(Tensor, Tensor)> {
         let (cos, sin) = self.get(seq_len)?;
-        let cos = cos.i((start_pos.., ..))?;
-        let sin = sin.i((start_pos.., ..))?;
+        let cos = cos.i(start_pos..)?;
+        let sin = sin.i(start_pos..)?;
 
         let q_embed = ((q * &cos)? + (rotate_half(q)? * &sin)?)?;
-        let k_embed = ((k * cos)? + (rotate_half(k)? * sin)?)?;
+        let k_embed = ((k * &cos)? + (rotate_half(k)? * &sin)?)?;
         Ok((q_embed, k_embed))
     }
 }
