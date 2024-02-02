@@ -17,7 +17,6 @@ dioxus = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signal
 members = [
     "models/rbert",
     "models/kalosm-llama",
-    "models/kalosm-llama-older",
     "models/rphi",
     "models/rwhisper",
     "models/rwuerstchen",

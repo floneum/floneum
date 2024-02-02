@@ -6218,34 +6218,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "kalosm-llama-old"
-version = "0.1.0"
-dependencies = [
- "accelerate-src",
- "anyhow",
- "async-trait",
- "candle-core",
- "candle-nn",
- "candle-transformers",
- "criterion",
- "cudarc",
- "half 2.3.1",
- "hf-hub",
- "intel-mkl-src",
- "kalosm-language-model",
- "kalosm-sample",
- "kalosm-streams",
- "llm-samplers",
- "once_cell",
- "rand 0.8.5",
- "rayon",
- "serde_json",
- "tokenizers 0.13.4",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "kalosm-ocr"
 version = "0.1.0"
 dependencies = [
