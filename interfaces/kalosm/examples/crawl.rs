@@ -138,10 +138,10 @@ fn write_element(node: ego_tree::NodeRef<scraper::Node>, to: &mut String) {
         let filtered = [
             "script", "noscript", "style", "head", "meta", "link", "svg", "path",
         ];
-        if !filtered.contains(&name) && !name.contains("-") {
-            to.push_str("<");
+        if !filtered.contains(&name) && !name.contains('-') {
+            to.push('<');
             to.push_str(name);
-            let mut attrs = el.attrs().into_iter().collect::<Vec<_>>();
+            let mut attrs = el.attrs().collect::<Vec<_>>();
             attrs.sort();
             for (key, value) in attrs {
                 if key.starts_with("data-")
@@ -152,7 +152,7 @@ fn write_element(node: ego_tree::NodeRef<scraper::Node>, to: &mut String) {
                 {
                     continue;
                 }
-                to.push_str(" ");
+                to.push(' ');
                 to.push_str(key);
                 to.push_str("=\"");
                 if key == "class" {
@@ -164,14 +164,14 @@ fn write_element(node: ego_tree::NodeRef<scraper::Node>, to: &mut String) {
                 } else {
                     to.push_str(value);
                 }
-                to.push_str("\"");
+                to.push('\"');
             }
-            to.push_str(">");
+            to.push('>');
             for child in element.children() {
                 write_element(child, to);
             }
             to.push_str("</");
-            to.push_str(">");
+            to.push('>');
         }
     }
 }

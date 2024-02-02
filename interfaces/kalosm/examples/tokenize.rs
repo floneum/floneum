@@ -64,11 +64,11 @@ fn main() -> anyhow::Result<()> {
         let mut file = std::fs::File::open(&path)?;
         let mut contents = String::new();
         file.read_to_string(&mut contents)?;
-        let mut tokens = tokenizer
+        let tokens = tokenizer
             .encode(&*contents, false)
             .map_err(|e| anyhow::anyhow!("{}", e))?;
         let mut ids = Vec::new();
-        ids.extend(tokens.get_ids().into_iter());
+        ids.extend(tokens.get_ids().iter());
         dataset.push(ids);
     }
 
@@ -255,7 +255,7 @@ impl<'a> Iterator for DatasetRandomIter<'a> {
 
 fn run_inference(
     tokenizer: &Tokenizer,
-    cache: &Cache,
+    _cache: &Cache,
     model: &Llama,
     config: &Config,
 ) -> anyhow::Result<()> {
