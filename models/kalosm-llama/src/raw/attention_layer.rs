@@ -36,24 +36,31 @@ impl LlamaAttention {
         let num_key_value_heads = self.n_kv_head;
         let num_key_value_groups = num_heads / num_key_value_heads;
 
-        let query_states = self.attention_wq.forward(hidden_states)?;
-        let key_states = self.attention_wk.forward(hidden_states)?;
-        let value_states = self.attention_wv.forward(hidden_states)?;
+        let query_states = self.attention_wq.forward(hidden_states).unwrap();
+        let key_states = self.attention_wk.forward(hidden_states).unwrap();
+        let value_states = self.attention_wv.forward(hidden_states).unwrap();
 
         let query_states = query_states
-            .reshape((bsz, q_len, num_heads, head_dim))?
-            .transpose(1, 2)?;
+            .reshape((bsz, q_len, num_heads, head_dim))
+            .unwrap()
+            .transpose(1, 2)
+            .unwrap();
         let key_states = key_states
-            .reshape((bsz, q_len, num_key_value_heads, head_dim))?
-            .transpose(1, 2)?;
-        let value_states = value_states
-            .reshape((bsz, q_len, num_key_value_heads, head_dim))?
-            .transpose(1, 2)?;
+            .reshape((bsz, q_len, num_key_value_heads, head_dim))
+            .unwrap()
+            .transpose(1, 2)
+            .unwrap();
+        let v = value_states
+            .reshape((bsz, q_len, num_key_value_heads, head_dim))
+            .unwrap()
+            .transpose(1, 2)
+            .unwrap();
 
-        let kv_seq_len = key_states.dims()[2];
-        let (k, v) = self
+        let kv_seq_len = key_states.dim(candle_core::D::Minus2).unwrap();
+        let (q, k) = self
             .rope_cache
-            .forward(&query_states, &key_states, kv_seq_len, start_pos)?;
+            .forward(&query_states, &key_states, start_pos)
+            .unwrap();
 
         let (key_states, value_states) = match cache {
             None => (k, v),
@@ -62,8 +69,11 @@ impl LlamaAttention {
                     let (k, v) = if kv_seq_len == 0 {
                         (k, v)
                     } else {
-                        let k = Tensor::cat(&[&*key, &k], 2)?.contiguous()?;
-                        let v = Tensor::cat(&[&*value, &v], 2)?.contiguous()?;
+                        let k = Tensor::cat(&[&*key, &k], 2).unwrap().contiguous().unwrap();
+                        let v = Tensor::cat(&[&*value, &v], 2)
+                            .unwrap()
+                            .contiguous()
+                            .unwrap();
                         (k, v)
                     };
 
@@ -82,34 +92,20 @@ impl LlamaAttention {
             },
         };
 
-        let key_states = repeat_kv(key_states.clone(), num_key_value_groups)?;
-        let value_states = repeat_kv(value_states, num_key_value_groups)?;
+        let key_states = repeat_kv(key_states.clone(), num_key_value_groups).unwrap();
+        let value_states = repeat_kv(value_states, num_key_value_groups).unwrap();
 
-        let mut attn_weights =
-            (query_states.matmul(&key_states.transpose(2, 3)?)? / (head_dim as f64).sqrt())?;
-
-        if attn_weights.dims() != [bsz, num_heads, q_len, kv_seq_len] {
-            return Err(candle_core::Error::Msg(format!(
-                "Attention weights should be of size {:?}, but is {:?}",
-                [bsz, self.n_head, q_len, kv_seq_len],
-                attn_weights.dims()
-            )));
-        }
+        let mut attn_weights = (q.matmul(&key_states.transpose(2, 3).unwrap()).unwrap()
+            / (head_dim as f64).sqrt())
+        .unwrap();
 
         if let Some(attention_mask) = attention_mask {
-            if attention_mask.dims() != [bsz, 1, q_len, kv_seq_len] {
-                return Err(candle_core::Error::Msg(format!(
-                    "Attention mask should be of size {:?}, but is {:?}",
-                    [bsz, 1, q_len, kv_seq_len],
-                    attention_mask.dims()
-                )));
-            }
-            attn_weights = (attn_weights + attention_mask)?;
+            attn_weights = attn_weights.broadcast_add(attention_mask).unwrap();
         }
 
-        attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights)?;
+        attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights).unwrap();
 
-        let mut attn_output = attn_weights.matmul(&value_states)?;
+        let mut attn_output = attn_weights.matmul(&value_states).unwrap();
 
         if attn_output.dims() != [bsz, num_heads, q_len, head_dim] {
             return Err(candle_core::Error::Msg(format!(
@@ -119,11 +115,11 @@ impl LlamaAttention {
             )));
         }
 
-        attn_output = attn_output.transpose(1, 2)?.contiguous()?;
+        attn_output = attn_output.transpose(1, 2).unwrap().contiguous().unwrap();
 
-        attn_output = attn_output.reshape(&[bsz, q_len, hidden_size])?;
+        attn_output = attn_output.reshape(&[bsz, q_len, hidden_size]).unwrap();
 
-        attn_output = self.attention_wo.forward(&attn_output)?;
+        attn_output = self.attention_wo.forward(&attn_output).unwrap();
 
         Ok(attn_output)
     }
@@ -133,11 +129,14 @@ fn repeat_kv(x: Tensor, num_key_value_groups: usize) -> candle_core::Result<Tens
     if num_key_value_groups == 1 {
         Ok(x)
     } else {
-        let (b_sz, n_kv_head, seq_len, head_dim) = x.dims4()?;
+        let (b_sz, n_kv_head, seq_len, head_dim) = x.dims4().unwrap();
         let x = x
-            .unsqueeze(2)?
-            .expand((b_sz, n_kv_head, num_key_value_groups, seq_len, head_dim))?
-            .reshape((b_sz, n_kv_head * num_key_value_groups, seq_len, head_dim))?;
+            .unsqueeze(2)
+            .unwrap()
+            .expand((b_sz, n_kv_head, num_key_value_groups, seq_len, head_dim))
+            .unwrap()
+            .reshape((b_sz, n_kv_head * num_key_value_groups, seq_len, head_dim))
+            .unwrap();
         Ok(x)
     }
 }

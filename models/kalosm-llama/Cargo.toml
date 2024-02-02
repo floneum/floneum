@@ -41,3 +41,7 @@ cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
 cudnn = ["candle-core/cudnn"]
 mkl = ["dep:intel-mkl-src", "candle-core/mkl", "candle-nn/mkl", "candle-transformers/mkl"]
 nccl = ["cuda", "cudarc/nccl", "half/num-traits", "half/use-intrinsics", "half/rand_distr"]
+
+[[bench]]
+name = "inferance"
+harness = false

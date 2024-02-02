@@ -18,7 +18,8 @@ impl MaskCache {
             let mask: Vec<_> = (0..seq_len)
                 .flat_map(|i| (0..seq_len).map(move |j| u8::from(j > i)))
                 .collect();
-            let mask = Tensor::from_slice(&mask, (seq_len, seq_len), &Device::Cpu)?;
+            let mask = Tensor::from_slice(&mask, (seq_len, seq_len), &Device::Cpu)?
+                .to_dtype(DType::F32)?;
             let mut masks = self.masks.write().unwrap();
             masks.insert(seq_len, mask.clone());
             mask
@@ -26,11 +27,13 @@ impl MaskCache {
 
         let mask = if seqlen_offset > 0 {
             // If this isn't the first token, we need to pad the mask with zeros for the previous tokens.
-            let mask0 = Tensor::zeros((seq_len, seqlen_offset), DType::U8, &Device::Cpu)?;
+            let mask0 = Tensor::zeros((seq_len, seqlen_offset), DType::F32, &Device::Cpu)?;
             Tensor::cat(&[&mask0, &mask], D::Minus1)?
         } else {
             mask
         };
+
+        let mask = mask.unsqueeze(0)?.unsqueeze(0)?;
 
         Ok(mask)
     }

@@ -3,7 +3,7 @@
 use std::sync::{Arc, Mutex};
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use kalosm_llama::{prelude::*, LlamaModel};
+use kalosm_llama_old::{prelude::*, LlamaModel};
 
 criterion_group!(mbenches, generation);
 criterion_main!(mbenches);
