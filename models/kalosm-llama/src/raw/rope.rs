@@ -41,8 +41,9 @@ impl RopeCache {
 
         let outer_product = (llama_context_length_indices * inverse_frequency)?;
 
-        let sin = outer_product.sin()?.to_dtype(dtype)?;
-        let cos = outer_product.cos()?.to_dtype(dtype)?;
+        let outer_product = Tensor::cat(&[&outer_product, &outer_product], D::Minus1)?.to_dtype(dtype)?;
+        let sin = outer_product.sin()?;
+        let cos = outer_product.cos()?;
 
         Ok(Self { sin, cos })
     }
@@ -51,41 +52,21 @@ impl RopeCache {
         &self,
         index_pos: usize,
         seq_len: usize,
-        head_dim: usize,
-        batch_size: usize,
     ) -> candle_core::Result<(Tensor, Tensor)> {
         let cos = self
             .cos
             .narrow(0, index_pos, seq_len)
-            .unwrap()
-            .reshape((seq_len, head_dim / 2, 1))
-            .unwrap();
+            .unwrap().unsqueeze(0)?.unsqueeze(0)?;
         let sin = self
             .sin
             .narrow(0, index_pos, seq_len)
-            .unwrap()
-            .reshape((seq_len, head_dim / 2, 1))
-            .unwrap();
-        let cos = cos
-            .broadcast_as((batch_size, 1, seq_len, head_dim / 2, 1))
-            .unwrap();
-        let sin = sin
-            .broadcast_as((batch_size, 1, seq_len, head_dim / 2, 1))
-            .unwrap();
-
+            .unwrap().unsqueeze(0)?.unsqueeze(0)?;
+        
         Ok((cos, sin))
     }
 
     fn apply_rotary_emb(cos: &Tensor, sin: &Tensor, x: &Tensor) -> candle_core::Result<Tensor> {
-        let (b_sz, n_head, seq_len, n_embd) = x.dims4().unwrap();
-        let x = x.reshape((b_sz, n_head, seq_len, n_embd / 2, 2)).unwrap();
-        let x0 = x.narrow(D::Minus1, 0, 1).unwrap();
-        let x1 = x.narrow(D::Minus1, 1, 1).unwrap();
-        let y0 = (x0.broadcast_mul(cos).unwrap() - x1.broadcast_mul(sin).unwrap()).unwrap();
-        let y1 = (x0.broadcast_mul(sin).unwrap() + x1.broadcast_mul(cos).unwrap()).unwrap();
-        let rope = Tensor::cat(&[y0, y1], D::Minus1).unwrap();
-        let rope = rope.flatten_from(D::Minus2).unwrap();
-        Ok(rope)
+        x.broadcast_mul(cos)? + rotate_half(x)?.broadcast_mul(sin)
     }
 
     pub fn forward(
@@ -94,12 +75,28 @@ impl RopeCache {
         k: &Tensor,
         start_pos: usize,
     ) -> candle_core::Result<(Tensor, Tensor)> {
-        let (b_sz, _n_head, seq_len, n_embd) = q.dims4().unwrap();
-        let (cos, sin) = self.get(start_pos, seq_len, n_embd, b_sz)?;
-        let q = Self::apply_rotary_emb(&cos, &sin, q)?;
+        let (_, _n_head, seq_len, _) = q.dims4().unwrap();
+        let (cos, sin) = self.get(start_pos, seq_len)?;
+        let q = {
+            let cos = cos.clone();
+            let sin = sin.clone();
+            let q = q.clone();
+            std::thread::spawn(
+            move || Self::apply_rotary_emb(&cos, &sin, &q))
+        
+            };
         let k = Self::apply_rotary_emb(&cos, &sin, k)?;
-        Ok((q, k))
+        Ok((q.join().map_err(
+            |_| candle_core::Error::Msg("Error in rotary emb thread".to_string())
+        )??, k))
     }
+}
+
+fn rotate_half(xs: &Tensor) -> candle_core::Result<Tensor> {
+    let last_dim = xs.dim(D::Minus1)?;
+    let xs1 = xs.narrow(D::Minus1, 0, last_dim / 2)?;
+    let xs2 = xs.narrow(D::Minus1, last_dim / 2, last_dim - last_dim / 2)?;
+    Tensor::cat(&[&xs2.neg()?, &xs1], D::Minus1)
 }
 
 #[test]
