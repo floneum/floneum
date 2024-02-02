@@ -36,7 +36,7 @@ candle-datasets = { workspace = true }
 candle-transformers = { workspace = true, features = ["accelerate"] }
 scraper = "0.18.1"
 ego-tree = "0.6.2"
-kalosm-llama = { path = "/Users/evanalmloff/Desktop/Github/floneum/models/kalosm-llama" }
+kalosm-llama = { workspace = true }
 
 [features]
 default = ["language", "sound", "vision"]
