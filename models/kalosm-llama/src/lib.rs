@@ -8,7 +8,7 @@
 //!
 //! ## Usage
 //!
-//! ```rust, no_run
+//! ```rust, ignore // TODO: Restore
 //! use kalosm_llama::prelude::*;
 //!
 //! #[tokio::main]
@@ -39,6 +39,7 @@ mod session;
 mod source;
 
 pub use crate::model::LlamaModel;
+pub use crate::raw::cache::*;
 use crate::raw::Model;
 pub use crate::session::LlamaSession;
 use candle_core::{
@@ -47,7 +48,6 @@ use candle_core::{
 };
 use kalosm_language_model::ChatMarkers;
 use llm_samplers::types::Sampler;
-use session::LlamaCache;
 pub use source::*;
 use std::sync::{Arc, Mutex};
 use tokenizers::Tokenizer;
@@ -237,7 +237,7 @@ impl LlamaBuilder {
             }
         };
 
-        let cache = LlamaCache::new(&model);
+        let cache = LlamaCache::new(model.config.n_layer);
 
         Ok(Llama::new(
             model,

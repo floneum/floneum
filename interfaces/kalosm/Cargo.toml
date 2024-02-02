@@ -29,6 +29,14 @@ serde = { version = "1.0.163", features = ["derive"] }
 [dev-dependencies]
 axum = "0.7.2"
 tracing-subscriber = "0.2"
+tokenizers = "0.15.0"
+candle-core = { workspace = true, features = ["accelerate"] }
+candle-nn = { workspace = true, features = ["accelerate"] }
+candle-datasets = { workspace = true }
+candle-transformers = { workspace = true, features = ["accelerate"] }
+scraper = "0.18.1"
+ego-tree = "0.6.2"
+kalosm-llama = { workspace = true }
 
 [features]
 default = ["language", "sound", "vision"]
