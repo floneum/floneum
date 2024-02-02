@@ -41,27 +41,28 @@ impl RopeCache {
 
         let outer_product = (llama_context_length_indices * inverse_frequency)?;
 
-        let outer_product = Tensor::cat(&[&outer_product, &outer_product], D::Minus1)?.to_dtype(dtype)?;
+        let outer_product =
+            Tensor::cat(&[&outer_product, &outer_product], D::Minus1)?.to_dtype(dtype)?;
         let sin = outer_product.sin()?;
         let cos = outer_product.cos()?;
 
         Ok(Self { sin, cos })
     }
 
-    fn get(
-        &self,
-        index_pos: usize,
-        seq_len: usize,
-    ) -> candle_core::Result<(Tensor, Tensor)> {
+    fn get(&self, index_pos: usize, seq_len: usize) -> candle_core::Result<(Tensor, Tensor)> {
         let cos = self
             .cos
             .narrow(0, index_pos, seq_len)
-            .unwrap().unsqueeze(0)?.unsqueeze(0)?;
+            .unwrap()
+            .unsqueeze(0)?
+            .unsqueeze(0)?;
         let sin = self
             .sin
             .narrow(0, index_pos, seq_len)
-            .unwrap().unsqueeze(0)?.unsqueeze(0)?;
-        
+            .unwrap()
+            .unsqueeze(0)?
+            .unsqueeze(0)?;
+
         Ok((cos, sin))
     }
 
@@ -81,14 +82,14 @@ impl RopeCache {
             let cos = cos.clone();
             let sin = sin.clone();
             let q = q.clone();
-            std::thread::spawn(
-            move || Self::apply_rotary_emb(&cos, &sin, &q))
-        
-            };
+            std::thread::spawn(move || Self::apply_rotary_emb(&cos, &sin, &q))
+        };
         let k = Self::apply_rotary_emb(&cos, &sin, k)?;
-        Ok((q.join().map_err(
-            |_| candle_core::Error::Msg("Error in rotary emb thread".to_string())
-        )??, k))
+        Ok((
+            q.join()
+                .map_err(|_| candle_core::Error::Msg("Error in rotary emb thread".to_string()))??,
+            k,
+        ))
     }
 }
 

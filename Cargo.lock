@@ -77,7 +77,7 @@ checksum = "77c3a9648d43b9cd48db467b3f87fdd6e146bcc88ab0180006cef2179fe11d01"
 dependencies = [
  "cfg-if 1.0.0",
  "const-random",
- "getrandom 0.2.11",
+ "getrandom 0.2.12",
  "once_cell",
  "version_check",
  "zerocopy",
@@ -291,7 +291,7 @@ version = "45.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a86d9c1473db72896bd2345ebb6b8ad75b8553ba390875c76708e8dc5c5492d"
 dependencies = [
- "ahash 0.8.6",
+ "ahash 0.8.7",
  "arrow-buffer",
  "arrow-data",
  "arrow-schema",
@@ -893,40 +893,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "blowfish"
-version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e412e2cd0f2b2d93e02543ceae7917b3c70331573df19ee046bcbc35e45e87d7"
-dependencies = [
- "byteorder",
- "cipher",
-]
-
-[[package]]
-name = "borsh"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26d4d6dafc1a3bb54687538972158f07b2c948bc57d5890df22c0739098b3028"
-dependencies = [
- "borsh-derive",
- "cfg_aliases",
-]
-
-[[package]]
-name = "borsh-derive"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf4918709cc4dd777ad2b6303ed03cb37f3ca0ccede8c1b0d28ac6db8f4710e0"
-dependencies = [
- "once_cell",
- "proc-macro-crate 2.0.0",
- "proc-macro2",
- "quote",
- "syn 2.0.42",
- "syn_derive",
-]
-
-[[package]]
 name = "brotli"
 version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1115,15 +1081,15 @@ dependencies = [
 
 [[package]]
 name = "candle-datasets"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "809c1a61bef165ee30e3ba9dcef8b4c846eacdc36921a2908f6a79ae85115bbe"
+checksum = "7dbdf5177d5b51376ada3972da40b4e7914c7acf46cf387bece5761c438345a7"
 dependencies = [
  "byteorder",
  "candle-core",
  "candle-nn",
  "hf-hub",
- "image 0.24.7",
+ "image 0.24.8",
  "memmap2 0.7.1",
  "parquet",
  "rand 0.8.5",
@@ -1692,12 +1658,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "const-oid"
-version = "0.9.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2459377285ad874054d797f3ccebf984978aa39129f6eafde5cdc8315b612f8"
-
-[[package]]
 name = "const-random"
 version = "0.1.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1712,7 +1672,7 @@ version = "0.1.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9d839f2a20b0aee515dc581a6172f2321f96cab76c1a38a4c584a194955390e"
 dependencies = [
- "getrandom 0.2.11",
+ "getrandom 0.2.12",
  "once_cell",
  "tiny-keccak",
 ]
@@ -5645,7 +5605,6 @@ dependencies = [
  "rand 0.8.5",
  "scraper",
  "serde",
- "surrealdb",
  "tokenizers 0.15.0",
  "tokio",
  "tracing",
@@ -6047,15 +6006,6 @@ checksum = "e1b6f3d1f4422866b68192d62f77bc5c700bee84f3069f2469d7bc8c77852446"
 dependencies = [
  "lexical-util",
  "static_assertions",
-]
-
-[[package]]
-name = "lexicmp"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7378d131ddf24063b32cbd7e91668d183140c4b3906270635a4d633d1068ea5d"
-dependencies = [
- "any_ascii",
 ]
 
 [[package]]
@@ -7527,7 +7477,7 @@ version = "45.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49f9739b984380582bdb7749ae5b5d28839bce899212cf16465c1ac1f8b65d79"
 dependencies = [
- "ahash 0.8.6",
+ "ahash 0.8.7",
  "arrow-array",
  "arrow-buffer",
  "arrow-cast",
@@ -7535,7 +7485,7 @@ dependencies = [
  "arrow-ipc",
  "arrow-schema",
  "arrow-select",
- "base64 0.21.5",
+ "base64 0.21.7",
  "brotli",
  "bytes",
  "chrono",
@@ -9841,6 +9791,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "snap"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b6b67fb9a61334225b5b790716f609cd58395f895b3fe8b328786812a40bc3b"
+
+[[package]]
 name = "socket2"
 version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10795,7 +10751,7 @@ dependencies = [
  "clap",
  "derive_builder 0.12.0",
  "esaxx-rs",
- "getrandom 0.2.11",
+ "getrandom 0.2.12",
  "indicatif 0.17.7",
  "itertools 0.11.0",
  "lazy_static",
