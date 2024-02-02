@@ -23,7 +23,7 @@ Kalosm is a simple interface for pre-trained models in rust. It makes it easy to
 
 There are three different packages in Kalosm:
 - `kalosm::language` - A simple interface for text generation and embedding models and surrounding tools. It includes support for search databases, and text collection from websites, RSS feeds, and search engines.
-- `kalosm::sound` - A simple interface for audio transcription and surrounding tools. It includes support for microphone input and the `whisper` model.
+- `kalosm::audio` - A simple interface for audio transcription and surrounding tools. It includes support for microphone input and the `whisper` model.
 - `kalosm::vision` - A simple interface for image generation and segmentation models and surrounding tools. It includes support for the `wuerstchen` and `segment-anything` models and integration with the [image](https://docs.rs/image/latest/image/) crate.
 
 A complete guide for Kalosm is available on the [Kalosm website](https://floneum.com/kalosm/), and examples are available in the [examples folder](https://github.com/floneum/floneum/tree/master/interfaces/kalosm/examples).
@@ -80,7 +80,6 @@ use std::io::Write;
 
 use futures_util::stream::StreamExt;
 use kalosm::language::*;
-use kalosm::TextStream;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -109,7 +108,7 @@ Kalosm also supports cloud models like GPT4 with the same streaming API:
 
 use std::io::Write;
 use futures_util::stream::StreamExt;
-use kalosm::{language::*, TextStream};
+use kalosm::{language::*};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -172,7 +171,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 Once you have your data, Kalosm includes tools to create traditional fuzzy search indexes and vector search indexes. These indexes can be used to search for specific text in a large corpus of documents. Fuzzy search indexes are useful for finding documents that contain a specific word or phrase. Vector search indexes are useful for finding documents that are semantically similar to a specific word or phrase. Kalosm makes it easy to create and use these indexes with your embedding model of choice:
 
-```rust, no_run
+```rust, ignore
 use kalosm::language::*;
 use std::io::Write;
 use std::path::PathBuf;
@@ -224,7 +223,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 A large part of making modern LLMs performant is curating the context the models have access to. Resource augmented generation (or RAG) helps you do this by inserting context into the prompt based on a search query. For example, you can Kalosm to create a chatbot that uses context from local documents to answer questions:
 
-```rust, no_run
+```rust, ignore
 use futures_util::StreamExt;
 use kalosm::language::*;
 use std::io::Write;
@@ -278,11 +277,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 Kalosm makes it easy to build up context about the world around your application and use it to generate text. For example, you can use Kalosm to transcribe audio from a microphone, insert that into a vector database and answer questions about the audio in real-time:
 
-```rust, no_run
+```rust, ignore
 use futures_util::StreamExt;
 use kalosm::*;
-use kalosm_language::*;
-use kalosm_sound::*;
+use kalosm::language::*;
+use kalosm::audio::*;
 use std::sync::Arc;
 use tokio::{
     sync::RwLock,
@@ -304,7 +303,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 .block_on(async move {
                     let recording_time = Duration::from_secs(30);
                     loop {
-                        let input = kalosm_sound::MicInput::default()
+                        let input = kalosm::audio::MicInput::default()
                             .record_until(Instant::now() + recording_time)
                             .await
                             .unwrap();

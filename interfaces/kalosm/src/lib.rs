@@ -14,8 +14,10 @@ pub mod language {
     pub use kalosm_language::kalosm_sample::*;
     pub use kalosm_language::rbert::{Bert, BertBuilder, BertSource, BertSpace};
     pub use kalosm_language::rphi::{Phi, PhiBuilder, PhiSource};
+    pub use kalosm_language::search::*;
     pub use kalosm_language::task::*;
     pub use kalosm_language::tool::*;
+    pub use kalosm_language::vector_db::*;
     pub use kalosm_streams::text_stream::*;
 }
 #[cfg(feature = "sound")]
@@ -25,3 +27,6 @@ pub use kalosm_vision as vision;
 
 mod evaluate;
 pub use evaluate::*;
+
+mod prompt_annealing;
+pub use prompt_annealing::*;

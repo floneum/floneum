@@ -27,6 +27,7 @@ async fn main() {
 
     let mut embedder = Bert::default();
     let chunked = hypothetical
+        .chunker(&mut llm)
         .chunk_batch(&documents, &mut embedder)
         .await
         .unwrap();

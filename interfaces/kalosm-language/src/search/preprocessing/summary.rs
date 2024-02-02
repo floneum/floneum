@@ -11,40 +11,64 @@ use super::{ChunkStrategy, Chunker};
 
 const TASK_DESCRIPTION: &str = "You generate summaries of the given text.";
 
-/// Generates embeddings of questions
-pub struct Summarizer {
+/// Generates summaries for a document.
+pub struct Summarizer<M: Model>
+where
+    <M::SyncModel as SyncModel>::Session: Sync + Send,
+{
     chunking: Option<ChunkStrategy>,
-    task: Task<StructureParserResult<ChannelTextStream<String>, ((), String)>>,
+    task: Task<M, StructureParserResult<ChannelTextStream<String>, ((), String)>>,
 }
 
-impl Summarizer {
-    /// Create a new hypothetical chunker.
-    pub fn new<M>(model: &mut M, chunking: Option<ChunkStrategy>) -> Self
-    where
-        M: Model,
-        <M::SyncModel as SyncModel>::Session: Send,
-    {
+impl<M: Model> Summarizer<M>
+where
+    <M::SyncModel as SyncModel>::Session: Sync + Send,
+{
+    /// Create a new summary generator.
+    pub fn new(model: &mut M, chunking: Option<ChunkStrategy>) -> Self {
         let task = Task::builder(model, TASK_DESCRIPTION)
-            .with_constraints(move || LiteralParser::new("Summary: ").then(OneLine))
+            .with_constraints(LiteralParser::new("Summary: ").then(OneLine))
             .build();
         Self { chunking, task }
     }
 
     /// Generate a summary for a document.
-    async fn generate_summary(&self, text: &str) -> anyhow::Result<Vec<String>> {
+    pub async fn generate_summary(&self, text: &str, model: &mut M) -> anyhow::Result<Vec<String>> {
         let prompt = format!("Generate a summary of the following text:\n{}", text);
 
-        let questions = self.task.run(prompt).await?.result().await?;
+        let questions = self.task.run(prompt, model).await?.result().await?;
         let documents = vec![questions.1];
 
         Ok(documents)
     }
+
+    /// Turn this summary generator into a chunker.
+    pub fn summary<'a>(&'a self, model: &'a mut M) -> SummaryChunker<'a, M> {
+        SummaryChunker {
+            summary: self,
+            model,
+        }
+    }
+}
+
+/// A summary chunker.
+pub struct SummaryChunker<'a, M: Model>
+where
+    <M::SyncModel as SyncModel>::Session: Sync + Send,
+{
+    summary: &'a Summarizer<M>,
+    model: &'a mut M,
 }
 
 #[async_trait::async_trait]
-impl<S: VectorSpace + Send + Sync + 'static> Chunker<S> for Summarizer {
+impl<'a, M, S> Chunker<S> for SummaryChunker<'a, M>
+where
+    M: Model,
+    <M::SyncModel as SyncModel>::Session: Sync + Send,
+    S: VectorSpace + Send + Sync + 'static,
+{
     async fn chunk<E: Embedder<S> + Send>(
-        &self,
+        &mut self,
         document: &Document,
         embedder: &mut E,
     ) -> anyhow::Result<Vec<Chunk<S>>> {
@@ -52,6 +76,7 @@ impl<S: VectorSpace + Send + Sync + 'static> Chunker<S> for Summarizer {
 
         #[allow(clippy::single_range_in_vec_init)]
         let byte_chunks = self
+            .summary
             .chunking
             .map(|chunking| chunking.chunk_str(body))
             .unwrap_or_else(|| vec![0..body.len()]);
@@ -60,7 +85,7 @@ impl<S: VectorSpace + Send + Sync + 'static> Chunker<S> for Summarizer {
         let mut questions_count = Vec::new();
         for byte_chunk in &byte_chunks {
             let text = &body[byte_chunk.clone()];
-            let mut chunk_questions = self.generate_summary(text).await?;
+            let mut chunk_questions = self.summary.generate_summary(text, self.model).await?;
             questions.append(&mut chunk_questions);
             questions_count.push(chunk_questions.len());
         }

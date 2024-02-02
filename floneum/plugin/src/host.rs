@@ -1,13 +1,10 @@
+use crate::embedding_db::VectorDBWithDocuments;
 use crate::plugins::main;
 use crate::plugins::main::imports::{self};
-use crate::plugins::main::types::{EitherStructure, NumberParameters, ThenStructure};
 use crate::Both;
-
-use kalosm::language::Document;
 
 use headless_chrome::Tab;
 use kalosm::language::DynamicNodeId;
-use kalosm::language::VectorDB;
 use kalosm::language::*;
 use once_cell::sync::Lazy;
 
@@ -28,29 +25,6 @@ pub(crate) static LINKER: Lazy<Linker<State>> = Lazy::new(|| {
     let l = &mut linker;
     Both::add_to_linker(l, |x| x).unwrap();
     preview2::command::add_to_linker(l).unwrap();
-    // preview2::bindings::filesystem::types::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::filesystem::preopens::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::io::streams::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::cli::environment::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::cli::exit::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::cli::stdin::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::cli::stdout::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::cli::stderr::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::cli::terminal_input::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::cli::terminal_output::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::cli::terminal_stdin::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::cli::terminal_stdout::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::cli::terminal_stderr::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::clocks::monotonic_clock::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::clocks::timezone::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::clocks::wall_clock::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::random::insecure::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::random::insecure_seed::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::random::random::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::sockets::network::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::sockets::instance_network::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::sockets::tcp::add_to_linker(&mut linker, |x| x).unwrap();
-    // preview2::bindings::sockets::tcp_create_socket::add_to_linker(&mut linker, |x| x).unwrap();
 
     linker
 });
@@ -60,13 +34,6 @@ pub(crate) static ENGINE: Lazy<Engine> = Lazy::new(|| {
     Engine::new(&config).unwrap()
 });
 
-pub(crate) enum StructureType {
-    Num(NumberParameters),
-    Literal(String),
-    Or(EitherStructure),
-    Then(ThenStructure),
-}
-
 #[derive(Clone, Copy)]
 pub(crate) struct AnyNodeRef {
     pub(crate) node_id: DynamicNodeId,
@@ -75,10 +42,9 @@ pub(crate) struct AnyNodeRef {
 
 pub struct State {
     pub(crate) logs: Arc<RwLock<Vec<String>>>,
-    pub(crate) structures: Slab<StructureType>,
     pub(crate) models: Slab<DynModel>,
     pub(crate) embedders: Slab<DynEmbedder>,
-    pub(crate) embedding_dbs: Slab<VectorDB<Document>>,
+    pub(crate) embedding_dbs: Slab<VectorDBWithDocuments>,
     pub(crate) nodes: Slab<AnyNodeRef>,
     pub(crate) pages: Slab<Arc<Tab>>,
     pub(crate) plugin_state: HashMap<Vec<u8>, Vec<u8>>,
@@ -106,7 +72,6 @@ impl Default for State {
         let ctx = ctx_builder.build();
         State {
             plugin_state: Default::default(),
-            structures: Default::default(),
             embedders: Default::default(),
             models: Default::default(),
             embedding_dbs: Default::default(),
@@ -120,19 +85,11 @@ impl Default for State {
 }
 
 impl WasiView for State {
-    fn table(&self) -> &ResourceTable {
-        &self.table
-    }
-
-    fn table_mut(&mut self) -> &mut ResourceTable {
+    fn table(&mut self) -> &mut ResourceTable {
         &mut self.table
     }
 
-    fn ctx(&self) -> &preview2::WasiCtx {
-        &self.ctx
-    }
-
-    fn ctx_mut(&mut self) -> &mut preview2::WasiCtx {
+    fn ctx(&mut self) -> &mut preview2::WasiCtx {
         &mut self.ctx
     }
 }

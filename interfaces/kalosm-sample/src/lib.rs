@@ -20,8 +20,6 @@ use tokenizers::PreTokenizer;
 use tokenizers::PreTokenizerWrapper;
 use tokenizers::TokenizerImpl;
 
-mod structured;
-pub use structured::*;
 mod structured_parser;
 pub use structured_parser::*;
 #[cfg(feature = "llamacpp")]

@@ -5,7 +5,7 @@ macro_rules! bindgen {
             inline: "package plugins:main;
 
 interface imports {
-  use types.{embedding, structure, model, model-type, embedding-db, node, page};
+  use types.{embedding, model, model-type, embedding-db, node, page};
   
   store: func(key: list<u8>, value: list<u8>);
 
@@ -49,14 +49,13 @@ interface types {
     constructor(embeddings: list<embedding>, documents: list<string>);
     add-embedding: func(embedding: embedding, documents: string);
     find-closest-documents: func(search: embedding, count: u32) -> list<string>;
-    find-documents-within: func(search: embedding, within: float32) -> list<string>;
   }
 
   resource model {
     constructor(ty: model-type);
     model-downloaded: static func(ty: model-type) -> bool;
     infer: func(input: string, max-tokens: option<u32>, stop-on: option<string>) -> string;
-    infer-structured: func(input: string, max-tokens: option<u32>, structure: structure) -> string;
+    infer-structured: func(input: string, regex: string) -> string;
   }
 
   resource embedding-model {
@@ -65,43 +64,8 @@ interface types {
     get-embedding: func(document: string) -> embedding;
   }
 
-  resource structure {
-    num: static func(num: number-parameters) -> structure;
-    literal: static func(literal: string) -> structure;
-    or: static func(or: either-structure) -> structure;
-    then: static func(then: then-structure) -> structure;
-  }
-
   record embedding {
     vector: list<float32>
-  }
-
-  record then-structure {
-    first: structure,
-    second: structure,
-  }
-
-  record either-structure {
-    first: structure,
-    second: structure,
-  }
-
-  record sequence-parameters {
-    item: structure,
-    separator: structure,
-    min-len: u64,
-    max-len: u64,
-  }
-
-  record number-parameters {
-    min: float64,
-    max: float64,
-    integer: bool
-  }
-
-  record unsigned-range {
-    min: u64,
-    max: u64,
   }
 
   variant primitive-value {
@@ -172,11 +136,34 @@ interface types {
     halt,
   }
 
-  variant model-type { MPT(mpt-type), gpt-neo-x(gpt-neo-x-type), llama(llama-type), phi, mistral }
-  variant embedding-model-type { MPT(mpt-type), gpt-neo-x(gpt-neo-x-type), llama(llama-type), bert }
-  enum llama-type { vicuna, guanaco, wizardlm, orca, llama-seven-chat, llama-thirteen-chat }
-  enum mpt-type { base, story, instruct, chat }
-  enum gpt-neo-x-type { large-pythia, tiny-pythia, dolly-seven-b, stablelm }
+  variant model-type {
+    mistral-seven,
+    mistral-seven-instruct,
+    mistral-seven-instruct-two,
+    zephyr-seven-alpha,
+    zephyr-seven-beta,
+    open-chat-seven,
+    starling-seven-alpha,
+    tiny-llama-chat,
+    tiny-llama,
+    llama-seven,
+    llama-thirteen,
+    llama-seventy,
+    llama-seven-chat,
+    llama-thirteen-chat,
+    llama-seventy-chat,
+    llama-seven-code,
+    llama-thirteen-code,
+    llama-thirty-four-code,
+    solar-ten,
+    solar-ten-instruct,
+    phi-one,
+    phi-one-point-five,
+    phi-two,
+    puffin-phi-two,
+    dolphin-phi-two
+  }
+  variant embedding-model-type { bert }
 }
 
 interface definitions {

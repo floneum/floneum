@@ -13,7 +13,7 @@ use super::{
 /// # Example
 /// ```rust, no_run
 /// // You must have the SERPER_API_KEY environment variable set to run this example.
-/// use kalosm_language::*;
+/// use kalosm_language::prelude::*;
 ///
 /// #[tokio::main]
 /// async fn main() {

@@ -28,10 +28,7 @@ impl SyncModel for LlamaModel {
     fn new_session(&self) -> anyhow::Result<Self::Session> {
         let mut cache = self.cache.clone();
         cache.clear();
-        Ok(Self::Session {
-            cache,
-            current_tokens: Vec::new(),
-        })
+        Ok(Self::Session { cache })
     }
 
     fn feed_text(
@@ -51,43 +48,13 @@ impl SyncModel for LlamaModel {
         tokens: &[u32],
         top_k: Option<usize>,
     ) -> anyhow::Result<Logits> {
-        let first_token = session.current_tokens.is_empty();
-
-        if first_token {
-            session.current_tokens.extend(tokens);
-            Self::forward(
-                &self.model,
-                &self.device,
-                &session.current_tokens,
-                0,
-                Some(&mut session.cache),
-                top_k,
-            )
-        } else {
-            for tid in tokens.iter().copied().take(tokens.len() - 1) {
-                let seq_len_offset = session.current_tokens.len();
-                session.current_tokens.push(tid);
-                Self::forward(
-                    &self.model,
-                    &self.device,
-                    &[tid],
-                    seq_len_offset,
-                    Some(&mut session.cache),
-                    Some(0),
-                )?;
-            }
-            let tid = *tokens.last().unwrap();
-            let seq_len_offset = session.current_tokens.len();
-            session.current_tokens.push(tid);
-            Self::forward(
-                &self.model,
-                &self.device,
-                &[tid],
-                seq_len_offset,
-                Some(&mut session.cache),
-                top_k,
-            )
-        }
+        Self::forward(
+            &self.model,
+            &self.device,
+            tokens,
+            Some(&mut session.cache),
+            top_k,
+        )
     }
 
     fn stop_token(&self) -> anyhow::Result<u32> {
@@ -108,7 +75,6 @@ impl LlamaModel {
         model: &Model,
         device: &Device,
         tokens: &[u32],
-        seqlen_offset: usize,
         cache: Option<&mut LlamaCache>,
         top_k: Option<usize>,
     ) -> anyhow::Result<Logits> {
@@ -116,7 +82,7 @@ impl LlamaModel {
             return Err(anyhow::anyhow!("Cannot run model on empty input"));
         }
 
-        let logits = model.forward(tokens, device, seqlen_offset, cache)?;
+        let logits = model.forward(tokens, device, cache)?;
 
         if top_k == Some(0) {
             return Ok(Logits::default());

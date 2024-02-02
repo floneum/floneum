@@ -40,6 +40,7 @@ rfd = "0.11.4"
 dioxus-std = { git = "https://github.com/DioxusLabs/dioxus-std/", version = "0.4.0", features = [
     "clipboard",
 ] }
+directories = "5.0.1"
 
 [patch.crates-io]
 dioxus-core = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }

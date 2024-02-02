@@ -166,7 +166,7 @@ fn test_chunking() {
     let string = "first sentence. second sentence. third sentence. fourth sentence.";
 
     let chunks = chunks.chunk_str(string);
-    assert_eq!(chunks.len(), 3);
+    assert_eq!(chunks.len(), 4);
     assert_eq!(
         string[chunks[0].clone()].trim(),
         "first sentence. second sentence"
@@ -179,6 +179,7 @@ fn test_chunking() {
         string[chunks[2].clone()].trim(),
         "third sentence. fourth sentence"
     );
+    assert_eq!(string[chunks[3].clone()].trim(), "fourth sentence.");
 
     let chunks = ChunkStrategy::Paragraph {
         paragraph_count: 3,
@@ -221,7 +222,7 @@ impl<S: VectorSpace> std::fmt::Debug for EmbeddedDocument<S> {
 #[async_trait::async_trait]
 impl<S: VectorSpace + Send + Sync + 'static> Chunker<S> for ChunkStrategy {
     async fn chunk<E: Embedder<S> + Send>(
-        &self,
+        &mut self,
         document: &Document,
         embedder: &mut E,
     ) -> anyhow::Result<Vec<Chunk<S>>> {
@@ -243,7 +244,7 @@ impl<S: VectorSpace + Send + Sync + 'static> Chunker<S> for ChunkStrategy {
     }
 
     async fn chunk_batch<'a, I, E: Embedder<S> + Send>(
-        &self,
+        &mut self,
         documents: I,
         embedder: &mut E,
     ) -> anyhow::Result<Vec<Vec<Chunk<S>>>>

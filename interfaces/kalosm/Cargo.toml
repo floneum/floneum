@@ -25,7 +25,6 @@ num-traits = "0.2.17"
 once_cell = "1.19.0"
 comfy-table = "7.1.0"
 serde = { version = "1.0.163", features = ["derive"] }
-surrealdb = { version = "1.0.2", features = ["kv-mem", "kv-rocksdb"] }
 
 [dev-dependencies]
 axum = "0.7.2"
@@ -40,7 +39,7 @@ ego-tree = "0.6.2"
 kalosm-llama = { path = "/Users/evanalmloff/Desktop/Github/floneum/models/kalosm-llama" }
 
 [features]
-default = ["llamacpp", "language", "sound", "vision"]
+default = ["language", "sound", "vision"]
 llamacpp = ["kalosm-language/llamacpp"]
 metal = ["kalosm-language/metal"]
 cublas = ["kalosm-language/cublas"]

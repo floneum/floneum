@@ -11,6 +11,4 @@ crate-type = ["cdylib"]
 wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen" }
 floneum_rust = { path = "../../rust_adapter", version = "0.1.0" }
 log = "0.4.19"
-pest = "2.6.0"
-pest_derive = "2.6.0"
 

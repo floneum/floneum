@@ -26,6 +26,10 @@ mod sentence;
 pub use sentence::*;
 mod stop_on;
 pub use stop_on::*;
+mod map;
+pub use map::*;
+mod regex;
+pub use regex::*;
 
 /// A trait for a parser with a default state.
 pub trait CreateParserState: Parser {
@@ -137,7 +141,7 @@ impl<P: ?Sized + Parser> Parser for Arc<P> {
 
 trait AnyCreateParserState:
     Parser<
-        Error = Arc<anyhow::Error>,
+        Error = Arc<dyn Error + Send + Sync>,
         Output = Arc<dyn Any + Send + Sync>,
         PartialState = Arc<dyn Any + Send + Sync>,
     > + CreateParserState
@@ -148,7 +152,7 @@ trait AnyCreateParserState:
 
 impl<
         P: Parser<
-                Error = Arc<anyhow::Error>,
+                Error = Arc<dyn Error + Send + Sync>,
                 Output = Arc<dyn Any + Send + Sync>,
                 PartialState = Arc<dyn Any + Send + Sync>,
             > + CreateParserState
@@ -165,7 +169,7 @@ impl ArcParser {
     fn new<P>(parser: P) -> Self
     where
         P: Parser<
-                Error = Arc<anyhow::Error>,
+                Error = Arc<dyn Error + Send + Sync>,
                 Output = Arc<dyn Any + Send + Sync>,
                 PartialState = Arc<dyn Any + Send + Sync>,
             > + CreateParserState
@@ -178,7 +182,7 @@ impl ArcParser {
 }
 
 impl Parser for ArcParser {
-    type Error = Arc<anyhow::Error>;
+    type Error = Arc<dyn Error + Send + Sync>;
     type Output = Arc<dyn Any + Send + Sync>;
     type PartialState = Arc<dyn Any + Send + Sync>;
 
@@ -188,7 +192,7 @@ impl Parser for ArcParser {
         input: &'a [u8],
     ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
         let _self: &dyn Parser<
-            Error = Arc<anyhow::Error>,
+            Error = Arc<dyn Error + Send + Sync>,
             Output = Arc<dyn Any + Send + Sync>,
             PartialState = Arc<dyn Any + Send + Sync>,
         > = &self.0;
@@ -206,7 +210,7 @@ where
     P::Output: Send + Sync + 'static,
     P::PartialState: Send + Sync + 'static,
 {
-    type Error = Arc<anyhow::Error>;
+    type Error = Arc<dyn Error + Send + Sync>;
     type Output = Arc<dyn Any + Sync + Send>;
     type PartialState = Arc<dyn Any + Sync + Send>;
 
@@ -215,14 +219,26 @@ where
         state: &Self::PartialState,
         input: &'a [u8],
     ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
-        let state = state
-            .downcast_ref::<P::PartialState>()
-            .ok_or_else(|| Arc::new(anyhow::anyhow!("State is not of the correct type")))?;
+        let state = state.downcast_ref::<P::PartialState>().ok_or_else(|| {
+            struct StateIsNotOfTheCorrectType;
+            impl std::fmt::Display for StateIsNotOfTheCorrectType {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    write!(f, "State is not of the correct type")
+                }
+            }
+            impl std::fmt::Debug for StateIsNotOfTheCorrectType {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    write!(f, "State is not of the correct type")
+                }
+            }
+            impl Error for StateIsNotOfTheCorrectType {}
+            Arc::new(StateIsNotOfTheCorrectType) as Arc<dyn Error + Send + Sync>
+        })?;
         match self.0.parse(state, input) {
             Ok(result) => Ok(result
                 .map_state(|state| Arc::new(state) as Arc<dyn Any + Sync + Send>)
                 .map(|output| Arc::new(output) as Arc<dyn Any + Sync + Send>)),
-            Err(err) => Err(Arc::new(anyhow::Error::new(err))),
+            Err(err) => Err(Arc::new(err)),
         }
     }
 }
@@ -272,6 +288,18 @@ pub trait ParserExt: Parser {
         Self: Sized,
     {
         RepeatParser::new(self, length_range)
+    }
+
+    /// Map the output of this parser.
+    fn map_output<F: Fn(Self::Output) -> O, O>(self, f: F) -> MapOutputParser<Self, F, O>
+    where
+        Self: Sized,
+    {
+        MapOutputParser {
+            parser: self,
+            map: f,
+            _output: std::marker::PhantomData,
+        }
     }
 
     /// Get a boxed version of this parser.
