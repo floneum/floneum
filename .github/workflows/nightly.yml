@@ -1,7 +1,40 @@
-name: Tests and release
+name: Build nightly Floneum
 
 on:
   push:
+    branches:
+      - master
+    paths:
+      - interfaces/*/src/**
+      - interfaces/*/examples/**
+      - interfaces/*/Cargo.toml
+      - models/*/src/**
+      - models/*/examples/**
+      - models/*/Cargo.toml
+      - floneum/*/src/**
+      - floneum/*/examples/**
+      - floneum/*/Cargo.toml
+      - src/**
+      - .github/**
+      - Cargo.toml
+
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - master
+    paths:
+      - interfaces/*/src/**
+      - interfaces/*/examples/**
+      - interfaces/*/Cargo.toml
+      - models/*/src/**
+      - models/*/examples/**
+      - models/*/Cargo.toml
+      - floneum/*/src/**
+      - floneum/*/examples/**
+      - floneum/*/Cargo.toml
+      - src/**
+      - .github/**
+      - Cargo.toml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
