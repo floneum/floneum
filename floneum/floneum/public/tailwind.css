@@ -777,10 +777,6 @@ video {
   filter: var(--tw-blur) var(--tw-brightness) var(--tw-contrast) var(--tw-grayscale) var(--tw-hue-rotate) var(--tw-invert) var(--tw-saturate) var(--tw-sepia) var(--tw-drop-shadow);
 }
 
-.ease-in-out {
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-}
-
 .hover\:bg-\[\#475362\]:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(71 83 98 / var(--tw-bg-opacity));
