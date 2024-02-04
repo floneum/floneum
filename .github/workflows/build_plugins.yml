@@ -52,6 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: dtolnay/rust-toolchain@stable
+      - run: rustup target add wasm32-wasi
       - uses: Swatinem/rust-cache@v2
       - run: sudo apt-get update
       - run: sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libasound2-dev
