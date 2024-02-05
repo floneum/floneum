@@ -168,6 +168,39 @@ impl LlamaSource {
         }
     }
 
+    /// A preset for stablelm 2 1.6b
+    pub fn stablelm_1_6b() -> Self {
+        Self {
+            model_id: "lmz/candle-stablelm".to_string(),
+            revision: "main".to_string(),
+            gguf_file: "stablelm-2-1_6b-q4k.gguf".into(),
+            tokenizer_repo: "lmz/candle-stablelm".to_string(),
+            tokenizer_file: "tokenizer-gpt4.json".to_string(),
+            group_query_attention: 8,
+            markers: None,
+        }
+    }
+
+    /// A preset for stablelm 2 1.6b
+    pub fn stablelm_zephyr_1_6b() -> Self {
+        Self {
+            model_id: "lmz/candle-stablelm".to_string(),
+            revision: "main".to_string(),
+            gguf_file: "stablelm-2-zephyr-1_6b-q4k.gguf".into(),
+            tokenizer_repo: "lmz/candle-stablelm".to_string(),
+            tokenizer_file: "tokenizer-gpt4.json".to_string(),
+            group_query_attention: 8,
+            markers: Some(ChatMarkers {
+                system_prompt_marker: "<|system|>",
+                user_marker: "<|user|>",
+                assistant_marker: "<|assistant|>",
+                end_system_prompt_marker: "<|endoftext|>",
+                end_user_marker: "<|endoftext|>",
+                end_assistant_marker: "<|endoftext|>",
+            }),
+        }
+    }
+
     /// A preset for [Open chat 3.5 (0106)](https://huggingface.co/openchat/openchat-3.5-0106)
     pub fn open_chat_7b() -> Self {
         Self {
