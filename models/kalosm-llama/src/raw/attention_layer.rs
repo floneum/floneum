@@ -62,6 +62,9 @@ impl LlamaAttention {
             .forward(&query_states, &key_states, start_pos)
             .unwrap();
 
+        let k = repeat_kv(k.clone(), num_key_value_groups).unwrap();
+        let v = repeat_kv(v, num_key_value_groups).unwrap();
+
         let (key_states, value_states) = match cache {
             None => (k, v),
             Some(cache) => match &mut cache.0 {
@@ -91,9 +94,6 @@ impl LlamaAttention {
                 }
             },
         };
-
-        let key_states = repeat_kv(key_states.clone(), num_key_value_groups).unwrap();
-        let value_states = repeat_kv(value_states, num_key_value_groups).unwrap();
 
         let mut attn_weights = (q.matmul(&key_states.transpose(2, 3).unwrap()).unwrap()
             / (head_dim as f64).sqrt())
