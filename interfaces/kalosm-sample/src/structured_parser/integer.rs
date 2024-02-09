@@ -158,12 +158,15 @@ impl Parser for IntegerParser {
             let input_byte = input[index];
             let digit = match input_byte {
                 b'0'..=b'9' => {
-                    if state == IntegerParserProgress::AfterSign && input_byte == b'0' {
-                        return Err(()); // Leading zeros are not allowed
+                    if state == IntegerParserProgress::AfterDigit
+                        && value == 0
+                        && input_byte == b'0'
+                    {
+                        return Err(()); // Multiple leading zeros
                     }
                     input_byte - b'0'
                 }
-                b'+' | b'-' => {
+                b'-' => {
                     if state == IntegerParserProgress::Initial {
                         state = IntegerParserProgress::AfterSign;
                         positive = input_byte == b'+';

@@ -412,7 +412,7 @@ where
     <M::SyncModel as SyncModel>::Session: Send + Sync,
 {
     /// Create a new task with no constraints and the default sampler. See [`Task::builder`] for more options.
-    pub fn new(model: &mut M, description: impl Into<String>) -> Self {
+    pub fn new(model: &M, description: impl Into<String>) -> Self {
         Self::builder(model, description).build()
     }
 }

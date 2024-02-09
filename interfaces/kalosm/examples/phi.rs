@@ -3,7 +3,6 @@ use kalosm::language::*;
 #[tokio::main]
 async fn main() {
     Phi::v2()
-        .unwrap()
         .stream_text("```py\ndef factorial")
         .with_max_length(1000)
         .await

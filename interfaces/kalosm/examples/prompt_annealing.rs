@@ -31,7 +31,7 @@ const EXAMPLES: &[(&str, &str)]= &[
 
 #[tokio::main]
 async fn main() {
-    let mut llm = Phi::v2().unwrap();
+    let mut llm = Phi::v2();
     let mut annealing = kalosm::PromptAnnealer::builder(&mut llm, EXAMPLES)
         .with_initial_temperature(0.6)
         .with_initial_choice_range(1..4)

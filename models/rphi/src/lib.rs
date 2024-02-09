@@ -106,8 +106,8 @@ impl Phi {
     }
 
     /// Start the v2 model.
-    pub fn v2() -> anyhow::Result<Self> {
-        Phi::builder().with_source(PhiSource::v2()).build()
+    pub fn v2() -> Self {
+        Phi::builder().with_source(PhiSource::v2()).build().unwrap()
     }
 
     /// Check if the model has been downloaded.
