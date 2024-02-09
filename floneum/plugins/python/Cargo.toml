@@ -11,6 +11,6 @@ crate-type = ["cdylib"]
 wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen" }
 floneum_rust = { path = "../../rust_adapter", version = "0.1.0" }
 rustpython-vm = { version = "0.3.0", no-default-features = true }
-malachite-bigint = { version = "=0.1.0" }
-malachite-q = "=0.3.2"
-malachite-base = "=0.3.2"
+malachite-bigint = { version = "0.1.0" }
+malachite-q = "0.3.2"
+malachite-base = "0.3.2"
