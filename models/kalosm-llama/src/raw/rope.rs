@@ -17,29 +17,15 @@ impl RopeCache {
                     .powf(i as f32 / config.head_dimension as f32))
             })
             .collect::<Vec<_>>();
-        let inverse_frequency = Tensor::new(inverse_frequency, device)?;
+        let inverse_frequency_len = inverse_frequency.len();
+        let inverse_frequency =
+            Tensor::from_vec(inverse_frequency, (1, inverse_frequency_len), device)?;
 
         let llama_context_length_indices =
-            Tensor::arange(0f32, config.context_length as f32, device)?;
+            Tensor::arange(0f32, config.context_length as f32, device)?
+                .reshape((config.context_length, 1))?;
 
-        let new_shape = (
-            llama_context_length_indices.dim(D::Minus1)?,
-            inverse_frequency.dim(D::Minus1)?,
-        );
-
-        let llama_context_length_indices = llama_context_length_indices
-            .reshape((new_shape.0, 1))
-            .unwrap()
-            .broadcast_as(new_shape)
-            .unwrap();
-
-        let inverse_frequency = inverse_frequency
-            .reshape((1, new_shape.1))
-            .unwrap()
-            .broadcast_as(new_shape)
-            .unwrap();
-
-        let outer_product = (llama_context_length_indices * inverse_frequency)?;
+        let outer_product = llama_context_length_indices.matmul(&inverse_frequency)?;
 
         let outer_product =
             Tensor::cat(&[&outer_product, &outer_product], D::Minus1)?.to_dtype(dtype)?;
@@ -76,7 +62,7 @@ impl RopeCache {
         k: &Tensor,
         start_pos: usize,
     ) -> candle_core::Result<(Tensor, Tensor)> {
-        let (_, _n_head, seq_len, _) = q.dims4().unwrap();
+        let (_, _, seq_len, _) = q.dims4().unwrap();
         let (cos, sin) = self.get(start_pos, seq_len)?;
         let q = {
             let cos = cos.clone();

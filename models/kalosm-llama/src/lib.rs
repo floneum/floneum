@@ -8,7 +8,7 @@
 //!
 //! ## Usage
 //!
-//! ```rust, ignore // TODO: Restore
+//! ```rust, no_run
 //! use kalosm_llama::prelude::*;
 //!
 //! #[tokio::main]
@@ -52,7 +52,7 @@ pub use source::*;
 use std::sync::{Arc, Mutex};
 use tokenizers::Tokenizer;
 
-/// A prelude of commonly used items in RPhi.
+/// A prelude of commonly used items in kalosm-llama.
 pub mod prelude {
     pub use crate::session::LlamaSession;
     pub use crate::{Llama, LlamaBuilder, LlamaSource};

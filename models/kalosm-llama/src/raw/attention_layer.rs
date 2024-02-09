@@ -36,48 +36,66 @@ impl LlamaAttention {
         let num_key_value_heads = self.n_kv_head;
         let num_key_value_groups = num_heads / num_key_value_heads;
 
-        let query_states = self.attention_wq.forward(hidden_states).unwrap();
-        let key_states = self.attention_wk.forward(hidden_states).unwrap();
-        let value_states = self.attention_wv.forward(hidden_states).unwrap();
+        let (query_states, key_states, value_states) = std::thread::scope(|s| {
+            let query_states = s.spawn(|| {
+                let query_states = self.attention_wq.forward(hidden_states).unwrap();
+                query_states
+                    .reshape((bsz, q_len, num_heads, head_dim))
+                    .unwrap()
+                    .transpose(1, 2)
+                    .unwrap()
+            });
+            let key_states = s.spawn(|| {
+                let key_states = self.attention_wk.forward(hidden_states).unwrap();
+                key_states
+                    .reshape((bsz, q_len, num_key_value_heads, head_dim))
+                    .unwrap()
+                    .transpose(1, 2)
+                    .unwrap()
+            });
+            let value_states = s.spawn(|| {
+                let value_states = self.attention_wv.forward(hidden_states).unwrap();
 
-        let query_states = query_states
-            .reshape((bsz, q_len, num_heads, head_dim))
-            .unwrap()
-            .transpose(1, 2)
-            .unwrap();
-        let key_states = key_states
-            .reshape((bsz, q_len, num_key_value_heads, head_dim))
-            .unwrap()
-            .transpose(1, 2)
-            .unwrap();
-        let v = value_states
-            .reshape((bsz, q_len, num_key_value_heads, head_dim))
-            .unwrap()
-            .transpose(1, 2)
-            .unwrap();
+                value_states
+                    .reshape((bsz, q_len, num_key_value_heads, head_dim))
+                    .unwrap()
+                    .transpose(1, 2)
+                    .unwrap()
+            });
 
-        let kv_seq_len = key_states.dim(candle_core::D::Minus2).unwrap();
-        let (q, k) = self
-            .rope_cache
-            .forward(&query_states, &key_states, start_pos)
-            .unwrap();
+            let query_states = query_states.join().unwrap();
+            let key_states = key_states.join().unwrap();
 
-        let k = repeat_kv(k.clone(), num_key_value_groups).unwrap();
-        let v = repeat_kv(v, num_key_value_groups).unwrap();
+            let (query_states, key_states) = self
+                .rope_cache
+                .forward(&query_states, &key_states, start_pos)
+                .unwrap();
+
+            let value_states = value_states.join().unwrap();
+
+            (query_states, key_states, value_states)
+        });
+
+        let key_states = repeat_kv(key_states.clone(), num_key_value_groups).unwrap();
+        let value_states = repeat_kv(value_states, num_key_value_groups).unwrap();
 
         let (key_states, value_states) = match cache {
-            None => (k, v),
+            None => (key_states, value_states),
             Some(cache) => match &mut cache.0 {
                 Some(AttentionCacheValue { key, value }) => {
+                    let kv_seq_len = key_states.dim(candle_core::D::Minus2).unwrap();
                     let (k, v) = if kv_seq_len == 0 {
-                        (k, v)
+                        (key_states, value_states)
                     } else {
-                        let k = Tensor::cat(&[&*key, &k], 2).unwrap().contiguous().unwrap();
-                        let v = Tensor::cat(&[&*value, &v], 2)
+                        let key_states = Tensor::cat(&[&*key, &key_states], 2)
                             .unwrap()
                             .contiguous()
                             .unwrap();
-                        (k, v)
+                        let value_states = Tensor::cat(&[&*value, &value_states], 2)
+                            .unwrap()
+                            .contiguous()
+                            .unwrap();
+                        (key_states, value_states)
                     };
 
                     *key = k.clone();
@@ -87,25 +105,29 @@ impl LlamaAttention {
                 }
                 None => {
                     cache.0 = Some(AttentionCacheValue {
-                        key: k.clone(),
-                        value: v.clone(),
+                        key: key_states.clone(),
+                        value: value_states.clone(),
                     });
-                    (k, v)
+                    (key_states, value_states)
                 }
             },
         };
 
-        let mut attn_weights = (q.matmul(&key_states.transpose(2, 3).unwrap()).unwrap()
+        let mut attn_weights = (query_states.matmul(&key_states.t().unwrap()).unwrap()
             / (head_dim as f64).sqrt())
         .unwrap();
 
         if let Some(attention_mask) = attention_mask {
-            attn_weights = attn_weights.broadcast_add(attention_mask).unwrap();
+            let shape = attn_weights.shape();
+            let attention_mask = attention_mask.broadcast_as(shape)?;
+            let on_true =
+                Tensor::new(f32::NEG_INFINITY, attn_weights.device())?.broadcast_as(shape)?;
+            attn_weights = attention_mask.where_cond(&on_true, &attn_weights)?;
         }
 
         attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights).unwrap();
 
-        let mut attn_output = attn_weights.matmul(&value_states).unwrap();
+        let mut attn_output = attn_weights.matmul(&value_states.contiguous()?).unwrap();
 
         if attn_output.dims() != [bsz, num_heads, q_len, head_dim] {
             return Err(candle_core::Error::Msg(format!(
@@ -115,7 +137,7 @@ impl LlamaAttention {
             )));
         }
 
-        attn_output = attn_output.transpose(1, 2).unwrap().contiguous().unwrap();
+        attn_output = attn_output.transpose(1, 2).unwrap();
 
         attn_output = attn_output.reshape(&[bsz, q_len, hidden_size]).unwrap();
 

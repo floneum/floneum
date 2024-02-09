@@ -26,8 +26,7 @@ impl SyncModel for LlamaModel {
     type Session = LlamaSession;
 
     fn new_session(&self) -> anyhow::Result<Self::Session> {
-        let mut cache = self.cache.clone();
-        cache.clear();
+        let cache = self.cache.clone();
         Ok(Self::Session { cache })
     }
 
@@ -88,7 +87,7 @@ impl LlamaModel {
             return Ok(Logits::default());
         }
 
-        let logits = logits.squeeze(0)?.squeeze(0)?.to_dtype(DType::F32)?;
+        let logits = logits.squeeze(0)?.to_dtype(DType::F32)?;
         let logits: Vec<f32> = logits.to_vec1()?;
         match top_k {
             Some(top_k) => Ok(Logits::try_from_iter_top_k(logits, top_k)?),
