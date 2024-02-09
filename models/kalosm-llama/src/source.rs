@@ -128,6 +128,46 @@ impl LlamaSource {
         }
     }
 
+    /// A preset for NeuralHermes-2.5-Mistral-7B-GGUF
+    pub fn neural_hermes_2_5_mistral_7b() -> Self {
+        Self {
+            model_id: "TheBloke/NeuralHermes-2.5-Mistral-7B-GGUF".to_string(),
+            revision: "main".to_string(),
+            gguf_file: "neuralhermes-2.5-mistral-7b.Q4_0.gguf".into(),
+            tokenizer_repo: "mistralai/Mistral-7B-v0.1".to_string(),
+            tokenizer_file: "tokenizer.json".to_string(),
+            group_query_attention: 8,
+            markers: Some(ChatMarkers {
+                system_prompt_marker: "<|im_start|>system\n",
+                end_system_prompt_marker: "<|im_end|>",
+                user_marker: "<|im_start|>user\n",
+                end_user_marker: "<|im_end|>",
+                assistant_marker: "<|im_start|>assistant\n",
+                end_assistant_marker: "<|im_end|>",
+            }),
+        }
+    }
+
+    /// A preset for Neural Chat v3.3
+    pub fn neural_chat_7b_v3_3() -> Self {
+        Self {
+            model_id: "TheBloke/neural-chat-7B-v3-3-GGUF".to_string(),
+            revision: "main".to_string(),
+            gguf_file: "neural-chat-7b-v3-3.Q4_0.gguf".into(),
+            tokenizer_repo: "Intel/neural-chat-7b-v3-3".to_string(),
+            tokenizer_file: "tokenizer.json".to_string(),
+            group_query_attention: 8,
+            markers: Some(ChatMarkers {
+                system_prompt_marker: "### System:\n",
+                end_system_prompt_marker: "\n",
+                user_marker: "### User\n",
+                end_user_marker: "\n",
+                assistant_marker: "### Assistant:\n",
+                end_assistant_marker: "\n",
+            }),
+        }
+    }
+
     /// A preset for Zephyr7bAlpha
     pub fn zephyr_7b_alpha() -> Self {
         Self {
