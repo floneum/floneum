@@ -67,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "What is the most spoken language in the United States?",
     ];
 
-    let mut dataset = TextClassifierDatasetBuilder::<MyClass, _, _>::new(&mut bert);
+    let mut dataset = TextClassifierDatasetBuilder::<MyClass, _>::new(&mut bert);
 
     for question in &person_questions {
         dataset.add(question, MyClass::Person).await?;

@@ -222,7 +222,9 @@ pub struct AdaEmbedding;
 impl VectorSpace for AdaEmbedding {}
 
 #[async_trait::async_trait]
-impl Embedder<AdaEmbedding> for AdaEmbedder {
+impl Embedder for AdaEmbedder {
+    type VectorSpace = AdaEmbedding;
+
     /// Embed a single string.
     async fn embed(&mut self, input: &str) -> anyhow::Result<Embedding<AdaEmbedding>> {
         let request = CreateEmbeddingRequestArgs::default()

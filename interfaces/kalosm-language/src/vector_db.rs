@@ -47,7 +47,7 @@ use serde::{Deserialize, Serialize};
 ///     Ok(())
 /// }
 /// ```
-pub struct VectorDB<S: VectorSpace = UnknownVectorSpace> {
+pub struct VectorDB<S = UnknownVectorSpace> {
     database: ArroyDatabase<Euclidean>,
     env: heed::Env,
     max_id: Mutex<EmbeddingId>,
