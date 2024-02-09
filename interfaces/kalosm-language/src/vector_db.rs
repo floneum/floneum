@@ -1,6 +1,7 @@
 //! A vector database that can be used to store embeddings and search for similar embeddings.
 
 use std::fmt::Debug;
+use std::sync::atomic::AtomicUsize;
 use std::sync::Mutex;
 
 use arroy::distances::Euclidean;
@@ -51,6 +52,7 @@ pub struct VectorDB<S: VectorSpace = UnknownVectorSpace> {
     env: heed::Env,
     max_id: Mutex<EmbeddingId>,
     recycled_ids: Mutex<Vec<EmbeddingId>>,
+    dim: AtomicUsize,
     _phantom: std::marker::PhantomData<S>,
 }
 
@@ -61,6 +63,21 @@ impl<S: VectorSpace + Sync> Default for VectorDB<S> {
 }
 
 impl<S: VectorSpace + Sync> VectorDB<S> {
+    fn set_dim(&self, dim: usize) {
+        if dim == 0 {
+            panic!("Dimension cannot be 0");
+        }
+        self.dim.store(dim, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn get_dim(&self) -> anyhow::Result<usize> {
+        let dim = self.dim.load(std::sync::atomic::Ordering::Relaxed);
+        if dim == 0 {
+            anyhow::bail!("No vectors in the database");
+        }
+        Ok(dim)
+    }
+
     /// Create a new temporary vector database.
     #[tracing::instrument]
     pub fn new() -> anyhow::Result<Self> {
@@ -86,6 +103,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
             env,
             max_id: Mutex::new(EmbeddingId(0)),
             recycled_ids: Mutex::new(Vec::new()),
+            dim: AtomicUsize::new(0),
             _phantom: std::marker::PhantomData,
         })
     }
@@ -99,7 +117,6 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
         })
     }
 
-    #[allow(dead_code)]
     fn recycle_id(&self, id: EmbeddingId) {
         self.recycled_ids.lock().unwrap().push(id);
     }
@@ -109,11 +126,33 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
         (&self.database, &self.env)
     }
 
+    /// Remove an embedding from the vector database.
+    pub fn remove_embedding(&self, embedding_id: EmbeddingId) -> anyhow::Result<()> {
+        let dims = self.get_dim()?;
+
+        let mut wtxn = self.env.write_txn()?;
+
+        let writer = Writer::<Euclidean>::new(self.database, 0, dims)?;
+
+        writer.del_item(&mut wtxn, embedding_id.0)?;
+        self.recycle_id(embedding_id);
+
+        let mut rng = StdRng::from_entropy();
+
+        writer.build(&mut wtxn, &mut rng, None)?;
+
+        wtxn.commit()?;
+
+        Ok(())
+    }
+
     /// Add a new embedding to the vector database.
     ///
     /// Note: Adding embeddings in a batch with [`add_embeddings`] will be faster.
     pub fn add_embedding(&self, embedding: Embedding<S>) -> anyhow::Result<EmbeddingId> {
         let embedding = embedding.vector().to_vec1()?;
+
+        self.set_dim(embedding.len());
 
         let mut wtxn = self.env.write_txn()?;
 
@@ -142,6 +181,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
             Some(e) => e?,
             None => return Ok(Vec::new()),
         };
+        self.set_dim(first_embedding.len());
 
         let mut wtxn = self.env.write_txn()?;
         let writer = Writer::<Euclidean>::new(self.database, 0, first_embedding.len())?;

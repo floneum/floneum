@@ -13,7 +13,7 @@ impl VectorSpace for UnknownVectorSpace {}
 /// For example, the Llama model has a different vector space than the Bert model. Comparing these two vector spaces would not make sense because different parts of each vector encode different information. This trait allows you to mark an embedding with the type of vector space it comes from to avoid problems combing vector spaces.
 ///
 /// If you want to cast an embedding from one vector space to another, you can use the [`Embedding::cast`] method. You can cast to the UnknownVectorSpace to erase the vector space type.
-pub trait VectorSpace {}
+pub trait VectorSpace: Sync + Send + 'static {}
 
 /// An embedding represents something about the meaning of data. It can be used to compare the meaning of different pieces of data, cluster data, or as input to a machine learning model.
 pub struct Embedding<S: VectorSpace> {

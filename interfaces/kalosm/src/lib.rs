@@ -30,3 +30,8 @@ pub use evaluate::*;
 
 mod prompt_annealing;
 pub use prompt_annealing::*;
+
+#[cfg(feature = "surrealdb")]
+mod surrealdb;
+#[cfg(feature = "surrealdb")]
+pub use surrealdb::*;
