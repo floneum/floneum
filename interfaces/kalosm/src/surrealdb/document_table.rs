@@ -2,6 +2,7 @@ use super::{EmbeddingIndexedTable, EmbeddingIndexedTableSearchResult};
 use kalosm_language::prelude::*;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use surrealdb::sql::Id;
 use surrealdb::Connection;
 use surrealdb::Surreal;
 
@@ -18,20 +19,23 @@ impl HasDocument for Document {
 }
 
 /// A table in a surreal database that is indexed by embeddings from a vector database.
-pub struct DocumentTable<C: Connection, R, M: Embedder> {
+pub struct DocumentTable<C: Connection, R, M: Embedder, K: Chunker> {
     embedding_model: M,
+    chunker: K,
     table: EmbeddingIndexedTable<C, R, M::VectorSpace>,
 }
 
-impl<C: Connection, R, M> DocumentTable<C, R, M>
-where
-    M: Embedder,
-{
+impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     /// Create a new document table.
-    pub fn new(embedding_model: M, table: EmbeddingIndexedTable<C, R, M::VectorSpace>) -> Self {
+    pub fn new(
+        embedding_model: M,
+        table: EmbeddingIndexedTable<C, R, M::VectorSpace>,
+        chunker: K,
+    ) -> Self {
         Self {
             embedding_model,
             table,
+            chunker,
         }
     }
 
@@ -51,16 +55,26 @@ where
     }
 
     /// Insert a new record into the table with the given embedding.
-    pub async fn insert(&mut self, value: R) -> anyhow::Result<EmbeddingId>
+    pub async fn insert(&mut self, value: R) -> anyhow::Result<Id>
     where
         R: HasDocument + Serialize + DeserializeOwned,
     {
-        let embedding = self.embedding_model.embed(value.document().body()).await?;
-        self.table.insert(embedding, value).await
+        let embeddings = self
+            .chunker
+            .chunk(value.document(), &mut self.embedding_model)
+            .await?;
+        self.table
+            .insert(
+                embeddings
+                    .into_iter()
+                    .flat_map(|embedding| embedding.embeddings),
+                value,
+            )
+            .await
     }
 
     /// Update a record in the table with the given embedding id.
-    pub async fn update(&self, id: EmbeddingId, value: R) -> anyhow::Result<Option<R>>
+    pub async fn update(&self, id: Id, value: R) -> anyhow::Result<Option<R>>
     where
         R: Serialize + DeserializeOwned,
     {
@@ -68,7 +82,7 @@ where
     }
 
     /// Select a record from the table with the given embedding id.
-    pub async fn select(&self, id: EmbeddingId) -> anyhow::Result<R>
+    pub async fn select(&self, id: Id) -> anyhow::Result<R>
     where
         R: Serialize + DeserializeOwned,
     {
@@ -76,7 +90,7 @@ where
     }
 
     /// Delete a record from the table with the given embedding id.
-    pub async fn delete(&self, id: EmbeddingId) -> anyhow::Result<Option<R>>
+    pub async fn delete(&self, id: Id) -> anyhow::Result<Option<R>>
     where
         R: Serialize + DeserializeOwned,
     {
@@ -162,7 +176,9 @@ impl<C: Connection, E: Embedder, K: Chunker> DocumentTableBuilder<C, E, K> {
     }
 
     /// Build the document table.
-    pub fn build<R: Serialize + DeserializeOwned>(self) -> anyhow::Result<DocumentTable<C, R, E>> {
+    pub fn build<R: Serialize + DeserializeOwned>(
+        self,
+    ) -> anyhow::Result<DocumentTable<C, R, E, K>> {
         let vector_db = if let Some(location) = self.location {
             VectorDB::new_at(location)?
         } else {
@@ -175,6 +191,6 @@ impl<C: Connection, E: Embedder, K: Chunker> DocumentTableBuilder<C, E, K> {
             phantom: std::marker::PhantomData,
         };
         let embedding_model = self.embedding_model;
-        Ok(DocumentTable::new(embedding_model, table))
+        Ok(DocumentTable::new(embedding_model, table, self.chunker))
     }
 }

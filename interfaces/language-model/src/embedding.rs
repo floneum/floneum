@@ -100,8 +100,9 @@ impl<S1: VectorSpace> Embedding<S1> {
 impl<S: VectorSpace> Embedding<S> {
     /// Create a new embedding from a tensor.
     pub fn new(embedding: Tensor) -> Self {
+        let flattened = embedding.flatten_all().unwrap();
         Embedding {
-            embedding,
+            embedding: flattened,
             model: PhantomData,
         }
     }

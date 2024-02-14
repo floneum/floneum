@@ -90,6 +90,8 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
     pub fn new_at(path: impl AsRef<std::path::Path>) -> anyhow::Result<Self> {
         const TWENTY_HUNDRED_MIB: usize = 2 * 1024 * 1024 * 1024;
 
+        std::fs::create_dir_all(&path)?;
+
         let env = EnvOpenOptions::new()
             .map_size(TWENTY_HUNDRED_MIB)
             .open(path)?;

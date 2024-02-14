@@ -1,5 +1,6 @@
 /sandbox
 /target
+/documents
 /plugin/target
 /plugin_demo/target
 /*.bin

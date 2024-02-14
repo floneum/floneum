@@ -2,7 +2,7 @@ use kalosm_language::kalosm_language_model::{UnknownVectorSpace, VectorSpace};
 use kalosm_language::prelude::*;
 use kalosm_language::vector_db::VectorDB;
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use surrealdb::sql::{Id, Thing};
 use surrealdb::{Connection, Surreal};
 
@@ -10,6 +10,18 @@ use surrealdb::{Connection, Surreal};
 mod document_table;
 #[cfg(feature = "language")]
 pub use document_table::*;
+
+#[derive(Serialize, Deserialize)]
+struct DocumentLink {
+    document_id: Id,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ObjectWithEmbeddingIds<T> {
+    #[serde(flatten)]
+    object: T,
+    embedding_ids: Vec<EmbeddingId>,
+}
 
 /// A table in a surreal database with a primary key tied to an embedding in a vector database.
 pub struct EmbeddingIndexedTable<C: Connection, R, S = UnknownVectorSpace> {
@@ -25,6 +37,11 @@ impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
         &self.table
     }
 
+    /// Get the name of the table. The table has a id with the same number as an embedding id and the value of the id of the object in the table
+    fn table_links(&self) -> String {
+        format!("{}-links", &self.table)
+    }
+
     /// Get the raw vector database.
     pub fn vector_db(&self) -> &VectorDB<S> {
         &self.vector_db
@@ -36,29 +53,56 @@ impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
     }
 
     /// Insert a new record into the table with the given embedding.
-    pub async fn insert(&self, embedding: Embedding<S>, value: R) -> anyhow::Result<EmbeddingId>
+    pub async fn insert(
+        &self,
+        embeddings: impl IntoIterator<Item = Embedding<S>>,
+        value: R,
+    ) -> anyhow::Result<Id>
     where
         R: Serialize + DeserializeOwned,
     {
-        let record_id = self.vector_db.add_embedding(embedding)?;
+        let id = Id::uuid();
+        let embedding_ids = embeddings
+            .into_iter()
+            .map(|embedding| self.vector_db.add_embedding(embedding))
+            .collect::<anyhow::Result<Vec<_>>>()?;
         let thing = Thing {
             tb: self.table.clone(),
-            id: Id::Number(record_id.0 as i64),
+            id: id.clone(),
         };
-        let old = self.db.create::<Option<R>>(thing).content(value).await?;
-        debug_assert!(old.is_none());
 
-        Ok(record_id)
+        for embedding_id in &embedding_ids {
+            let link = Thing {
+                tb: self.table_links(),
+                id: Id::Number(embedding_id.0 as i64),
+            };
+            self.db
+                .create::<Option<DocumentLink>>(link)
+                .content(DocumentLink {
+                    document_id: id.clone(),
+                })
+                .await?;
+        }
+
+        self.db
+            .create::<Option<ObjectWithEmbeddingIds<R>>>(thing)
+            .content(ObjectWithEmbeddingIds {
+                object: value,
+                embedding_ids,
+            })
+            .await?;
+
+        Ok(id)
     }
 
     /// Update a record in the table with the given embedding id.
-    pub async fn update(&self, id: EmbeddingId, value: R) -> anyhow::Result<Option<R>>
+    pub async fn update(&self, id: Id, value: R) -> anyhow::Result<Option<R>>
     where
         R: Serialize + DeserializeOwned,
     {
         let thing = Thing {
             tb: self.table.clone(),
-            id: Id::Number(id.0 as i64),
+            id,
         };
         let old = self.db.update::<Option<R>>(thing).merge(value).await?;
 
@@ -66,13 +110,13 @@ impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
     }
 
     /// Select a record from the table with the given embedding id.
-    pub async fn select(&self, id: EmbeddingId) -> anyhow::Result<R>
+    pub async fn select(&self, id: Id) -> anyhow::Result<R>
     where
         R: DeserializeOwned,
     {
         let thing = Thing {
             tb: self.table.clone(),
-            id: Id::Number(id.0 as i64),
+            id,
         };
         let record = self.db.select::<Option<R>>(thing).await?;
         match record {
@@ -82,20 +126,40 @@ impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
     }
 
     /// Delete a record from the table with the given embedding id.
-    pub async fn delete(&self, id: EmbeddingId) -> anyhow::Result<Option<R>>
+    pub async fn delete(&self, id: Id) -> anyhow::Result<Option<R>>
     where
         R: Serialize + DeserializeOwned,
     {
-        // First delete the record from the vector db
-        self.vector_db.remove_embedding(id)?;
-
+        // First delete the record from the main table
         let thing = Thing {
             tb: self.table.clone(),
-            id: Id::Number(id.0 as i64),
+            id,
         };
-        let old = self.db.delete::<Option<R>>(thing).await?;
+        let old = self
+            .db
+            .delete::<Option<ObjectWithEmbeddingIds<R>>>(thing)
+            .await?;
 
-        Ok(old)
+        if let Some(old) = old {
+            let ObjectWithEmbeddingIds {
+                object,
+                embedding_ids,
+            } = old;
+            // Then delete the links from the links table
+            for id in embedding_ids {
+                let link = Thing {
+                    tb: self.table_links(),
+                    id: Id::Number(id.0 as i64),
+                };
+                self.db.delete::<Option<DocumentLink>>(link).await?;
+                // Then delete the embedding from the vector db
+                self.vector_db.remove_embedding(id)?;
+            }
+
+            Ok(Some(object))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Select all records from the table.
@@ -119,7 +183,15 @@ impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
         let ids = self.vector_db.get_closest(embedding, k)?;
         let mut records = Vec::new();
         for id in ids {
-            let record = self.select(id.value).await?;
+            let main_table_id = self
+                .db
+                .select::<Option<DocumentLink>>(Thing {
+                    tb: self.table_links(),
+                    id: Id::Number(id.value.0 as i64),
+                })
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("Record not found"))?;
+            let record = self.select(main_table_id.document_id).await?;
             records.push(EmbeddingIndexedTableSearchResult {
                 distance: id.distance,
                 id: id.value,
