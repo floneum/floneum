@@ -19,11 +19,13 @@ impl RopeCache {
             .collect::<Vec<_>>();
         let inverse_frequency_len = inverse_frequency.len();
         let inverse_frequency =
-            Tensor::from_vec(inverse_frequency, (1, inverse_frequency_len), device)?.to_dtype(dtype)?;
+            Tensor::from_vec(inverse_frequency, (1, inverse_frequency_len), device)?
+                .to_dtype(dtype)?;
 
         let llama_context_length_indices =
             Tensor::arange(0f32, config.context_length as f32, device)?
-                .reshape((config.context_length, 1))?.to_dtype(dtype)?;
+                .reshape((config.context_length, 1))?
+                .to_dtype(dtype)?;
 
         let outer_product = llama_context_length_indices.matmul(&inverse_frequency)?;
 
@@ -39,7 +41,12 @@ impl RopeCache {
         k: &Tensor,
         start_pos: usize,
     ) -> candle_core::Result<(Tensor, Tensor)> {
-        fn apply_rotary_emb(sin: &Tensor, cos: &Tensor, x: &Tensor, index_pos: usize) -> candle_core::Result<Tensor> {
+        fn apply_rotary_emb(
+            sin: &Tensor,
+            cos: &Tensor,
+            x: &Tensor,
+            index_pos: usize,
+        ) -> candle_core::Result<Tensor> {
             let (b_sz, n_head, seq_len, n_embd) = x.dims4()?;
             let cos = cos
                 .narrow(0, index_pos, seq_len)?
@@ -64,9 +71,9 @@ impl RopeCache {
             let rope = rope.flatten_from(D::Minus2)?;
             Ok(rope)
         }
-        
-        let q = apply_rotary_emb(&self.sin , &self.cos, q, start_pos)?;
-        let k = apply_rotary_emb(&self.sin , &self.cos, k, start_pos)?;
+
+        let q = apply_rotary_emb(&self.sin, &self.cos, q, start_pos)?;
+        let k = apply_rotary_emb(&self.sin, &self.cos, k, start_pos)?;
         Ok((q, k))
     }
 }
