@@ -11,9 +11,7 @@ async fn main() {
     let exists = std::path::Path::new("./db").exists();
 
     // Create database connection
-    let db = Surreal::new::<RocksDb>("./db/temp.db")
-        .await
-        .unwrap();
+    let db = Surreal::new::<RocksDb>("./db/temp.db").await.unwrap();
 
     // Select a specific namespace / database
     db.use_ns("test").use_db("test").await.unwrap();
@@ -26,8 +24,7 @@ async fn main() {
 
     if !exists {
         std::fs::create_dir_all("documents").unwrap();
-        let documents =
-            DocumentFolder::try_from(PathBuf::from("./documents")).unwrap();
+        let documents = DocumentFolder::try_from(PathBuf::from("./documents")).unwrap();
 
         // Create a new document database table
         let documents = documents.into_documents().await.unwrap();
