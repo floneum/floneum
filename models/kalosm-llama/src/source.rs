@@ -5,9 +5,9 @@ use kalosm_language_model::ChatMarkers;
 use tokenizers::Tokenizer;
 
 /// A source for a file, either from Hugging Face or a local path
-pub enum FileSource{
+pub enum FileSource {
     /// A file from Hugging Face
-    HuggingFace{
+    HuggingFace {
         /// The model id to use
         model_id: String,
         /// The revision to use
@@ -16,7 +16,7 @@ pub enum FileSource{
         file: String,
     },
     /// A local file
-    Local(PathBuf)
+    Local(PathBuf),
 }
 
 impl FileSource {
@@ -37,11 +37,15 @@ impl FileSource {
     /// Get the path to the file
     pub fn path(&self) -> anyhow::Result<std::path::PathBuf> {
         match self {
-            Self::HuggingFace { model_id, revision, file } => {
+            Self::HuggingFace {
+                model_id,
+                revision,
+                file,
+            } => {
                 let api = hf_hub::api::sync::Api::new()?;
                 let repo = Repo::with_revision(
                     model_id.to_string(),
-                    RepoType::Model,    
+                    RepoType::Model,
                     revision.to_string(),
                 );
                 let api = api.repo(repo);

@@ -231,12 +231,11 @@ Question: {question}
     /// Get the constraints for the thought action
     pub fn thought_constraints(
         &self,
-    ) -> impl Parser<
+    ) -> impl CreateParserState<
         Error = Either<LiteralMismatchError, OneLineError>,
         Output = ((), String),
         PartialState = SequenceParserState<LiteralParserOffset, OneLineState, ()>,
-    > + CreateParserState
-           + Send
+    > + Send
            + Sync
            + 'static {
         let constraints = "Thought: ";
@@ -262,12 +261,11 @@ Question: {question}
     /// Get the constraints for the answer action
     pub fn answer_constraints(
         &self,
-    ) -> impl Parser<
+    ) -> impl CreateParserState<
         Error = Either<LiteralMismatchError, OneLineError>,
         Output = ((), String),
         PartialState = SequenceParserState<LiteralParserOffset, OneLineState, ()>,
-    > + CreateParserState
-           + Send
+    > + Send
            + Sync
            + 'static {
         let constraints = LiteralParser::from("Final Answer: ");
