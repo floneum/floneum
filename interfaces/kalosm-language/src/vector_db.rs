@@ -71,11 +71,14 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
     }
 
     fn get_dim(&self) -> anyhow::Result<usize> {
-        let dim = self.dim.load(std::sync::atomic::Ordering::Relaxed);
-        if dim == 0 {
-            anyhow::bail!("No vectors in the database");
+        let mut dims = self.dim.load(std::sync::atomic::Ordering::Relaxed);
+        if dims == 0 {
+            let rtxn = self.env.read_txn()?;
+            let reader = Reader::<Euclidean>::open(&rtxn, 0, self.database)?;
+            dims = reader.dimensions();
+            self.set_dim(dims);
         }
-        Ok(dim)
+        Ok(dims)
     }
 
     /// Create a new temporary vector database.

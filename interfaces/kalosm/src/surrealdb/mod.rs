@@ -191,10 +191,11 @@ impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
                 })
                 .await?
                 .ok_or_else(|| anyhow::anyhow!("Record not found"))?;
-            let record = self.select(main_table_id.document_id).await?;
+            let record = self.select(main_table_id.document_id.clone()).await?;
             records.push(EmbeddingIndexedTableSearchResult {
                 distance: id.distance,
                 id: id.value,
+                record_id: main_table_id.document_id,
                 record,
             });
         }
@@ -203,12 +204,14 @@ impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
 }
 
 /// The result of a search in an embedding indexed table.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct EmbeddingIndexedTableSearchResult<R> {
     /// The distance from the searched point.
     pub distance: f32,
     /// The embedding id of the record.
     pub id: EmbeddingId,
+    /// The record id.
+    pub record_id: Id,
     /// The record.
     pub record: R,
 }

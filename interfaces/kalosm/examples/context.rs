@@ -8,10 +8,10 @@ use surrealdb::{engine::local::RocksDb, Surreal};
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let exists = std::path::Path::new("./documents").exists();
+    let exists = std::path::Path::new("./db").exists();
 
     // Create database connection
-    let db = Surreal::new::<RocksDb>("./documents/temp.db")
+    let db = Surreal::new::<RocksDb>("./db/temp.db")
         .await
         .unwrap();
 
@@ -20,14 +20,14 @@ async fn main() {
 
     let mut document_table = db
         .document_table_builder("documents")
-        .at("./documents/embeddings.db")
+        .at("./db/embeddings.db")
         .build()
         .unwrap();
 
     if !exists {
         std::fs::create_dir_all("documents").unwrap();
         let documents =
-            DocumentFolder::try_from(PathBuf::from("./interfaces/kalosm/documents")).unwrap();
+            DocumentFolder::try_from(PathBuf::from("./documents")).unwrap();
 
         // Create a new document database table
         let documents = documents.into_documents().await.unwrap();
