@@ -9,8 +9,8 @@ mod html;
 pub use html::*;
 mod md;
 pub use md::*;
-mod pdf;
-pub use self::pdf::*;
+// mod pdf;
+// pub use self::pdf::*;
 mod txt;
 pub use txt::*;
 
