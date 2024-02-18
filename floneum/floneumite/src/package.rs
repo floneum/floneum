@@ -28,7 +28,7 @@ pub struct PackageStructure {
     pub description: String,
     #[serde(default = "default_version")]
     pub package_version: String,
-    #[serde(default = "default_binding_version")]
+    #[serde(default = "current_binding_version")]
     pub binding_version: String,
 }
 
@@ -36,8 +36,8 @@ fn default_version() -> String {
     "0.1".to_string()
 }
 
-fn default_binding_version() -> String {
-    "*".to_string()
+fn current_binding_version() -> String {
+    crate::CURRENT_BINDING_VERSION.to_string()
 }
 
 impl PackageStructure {
