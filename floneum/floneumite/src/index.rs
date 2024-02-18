@@ -137,7 +137,10 @@ impl FloneumPackageIndex {
         let instance = &*OCTOCRAB;
         let page = instance
             .search()
-            .repositories(&format!("topic:floneum-v{}", crate::CURRENT_BINDING_VERSION))
+            .repositories(&format!(
+                "topic:floneum-v{}",
+                crate::CURRENT_BINDING_VERSION
+            ))
             .sort("stars")
             .order("desc")
             .send()
