@@ -39,10 +39,6 @@ spinoff = "0.8.0"
 bytesize = "1.3.0"
 minijinja = "1.0.10"
 
-[dev-dependencies]
-rphi.workspace = true
-rbert.workspace = true
-
 [features]
 # llamacpp = ["llm", "kalosm-sample/llamacpp"]
 # metal = ["llm?/metal"]
