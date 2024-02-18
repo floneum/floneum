@@ -1,4 +1,4 @@
-use kalosm_language_model::{Embedder, Model, StructureParserResult, SyncModel, VectorSpace};
+use kalosm_language_model::{Embedder, Model, StructureParserResult, SyncModel};
 use kalosm_sample::{LiteralParser, ParserExt, StopOn};
 use kalosm_streams::text_stream::ChannelTextStream;
 
@@ -173,17 +173,16 @@ where
 }
 
 #[async_trait::async_trait]
-impl<'a, S, M> Chunker<S> for HypotheticalChunker<'a, M>
+impl<'a, M> Chunker for HypotheticalChunker<'a, M>
 where
     M: Model,
     <M::SyncModel as SyncModel>::Session: Sync + Send,
-    S: VectorSpace + Send + Sync + 'static,
 {
-    async fn chunk<E: Embedder<S> + Send>(
+    async fn chunk<E: Embedder + Send>(
         &mut self,
         document: &Document,
         embedder: &mut E,
-    ) -> anyhow::Result<Vec<Chunk<S>>> {
+    ) -> anyhow::Result<Vec<Chunk<E::VectorSpace>>> {
         let body = document.body();
 
         #[allow(clippy::single_range_in_vec_init)]

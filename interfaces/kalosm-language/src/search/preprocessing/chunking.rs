@@ -220,12 +220,12 @@ impl<S: VectorSpace> std::fmt::Debug for EmbeddedDocument<S> {
 }
 
 #[async_trait::async_trait]
-impl<S: VectorSpace + Send + Sync + 'static> Chunker<S> for ChunkStrategy {
-    async fn chunk<E: Embedder<S> + Send>(
+impl Chunker for ChunkStrategy {
+    async fn chunk<E: Embedder + Send>(
         &mut self,
         document: &Document,
         embedder: &mut E,
-    ) -> anyhow::Result<Vec<Chunk<S>>> {
+    ) -> anyhow::Result<Vec<Chunk<E::VectorSpace>>> {
         let mut chunks = Vec::new();
         let body = document.body();
         let mut documents = Vec::new();
@@ -243,11 +243,11 @@ impl<S: VectorSpace + Send + Sync + 'static> Chunker<S> for ChunkStrategy {
         Ok(chunks)
     }
 
-    async fn chunk_batch<'a, I, E: Embedder<S> + Send>(
+    async fn chunk_batch<'a, I, E: Embedder + Send>(
         &mut self,
         documents: I,
         embedder: &mut E,
-    ) -> anyhow::Result<Vec<Vec<Chunk<S>>>>
+    ) -> anyhow::Result<Vec<Vec<Chunk<E::VectorSpace>>>>
     where
         I: IntoIterator<Item = &'a Document> + Send,
         I::IntoIter: Send,

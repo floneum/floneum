@@ -44,12 +44,18 @@ use url::Url;
 /// }
 /// ```
 #[async_trait::async_trait]
-pub trait Embedder<S: VectorSpace + Send + Sync + 'static>: Send + Sync + 'static {
+pub trait Embedder: Send + Sync + 'static {
+    /// The vector space that this embedder uses.
+    type VectorSpace: VectorSpace + Send + Sync + 'static;
+
     /// Embed a single string.
-    async fn embed(&mut self, input: &str) -> anyhow::Result<Embedding<S>>;
+    async fn embed(&mut self, input: &str) -> anyhow::Result<Embedding<Self::VectorSpace>>;
 
     /// Embed a batch of strings.
-    async fn embed_batch(&mut self, inputs: &[&str]) -> anyhow::Result<Vec<Embedding<S>>> {
+    async fn embed_batch(
+        &mut self,
+        inputs: &[&str],
+    ) -> anyhow::Result<Vec<Embedding<Self::VectorSpace>>> {
         let mut embeddings = Vec::with_capacity(inputs.len());
         for input in inputs {
             embeddings.push(self.embed(input).await?);
@@ -62,22 +68,19 @@ pub trait Embedder<S: VectorSpace + Send + Sync + 'static>: Send + Sync + 'stati
     where
         Self: Sized,
     {
-        Box::new(AnyEmbedder::<S, Self>(self, PhantomData))
+        Box::new(AnyEmbedder::<Self>(self))
     }
 }
 
 /// A trait object for an embedder.
-pub type DynEmbedder = Box<dyn Embedder<UnknownVectorSpace>>;
+pub type DynEmbedder = Box<dyn Embedder<VectorSpace = UnknownVectorSpace>>;
 
-struct AnyEmbedder<S: VectorSpace + Send + Sync + 'static, E: Embedder<S> + Send + Sync + 'static>(
-    E,
-    PhantomData<S>,
-);
+struct AnyEmbedder<E: Embedder + Send + Sync + 'static>(E);
 
 #[async_trait::async_trait]
-impl<S: VectorSpace + Send + Sync + 'static, E: Embedder<S> + Send + Sync + 'static>
-    Embedder<UnknownVectorSpace> for AnyEmbedder<S, E>
-{
+impl<E: Embedder + Send + Sync + 'static> Embedder for AnyEmbedder<E> {
+    type VectorSpace = UnknownVectorSpace;
+
     async fn embed(&mut self, input: &str) -> anyhow::Result<Embedding<UnknownVectorSpace>> {
         self.0.embed(input).await.map(|e| e.cast())
     }

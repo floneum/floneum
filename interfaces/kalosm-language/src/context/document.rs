@@ -2,7 +2,7 @@ use url::Url;
 pub use whatlang::Lang;
 
 /// A document is a piece of text with a title.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Document {
     title: String,
     body: String,

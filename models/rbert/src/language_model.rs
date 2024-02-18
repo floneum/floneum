@@ -15,7 +15,9 @@ impl CreateModel for Bert {
 }
 
 #[async_trait::async_trait]
-impl Embedder<BertSpace> for Bert {
+impl Embedder for Bert {
+    type VectorSpace = BertSpace;
+
     async fn embed(&mut self, input: &str) -> anyhow::Result<Embedding<BertSpace>> {
         let tensor = self.embed_batch_raw(&[input])?.pop().unwrap();
         Ok(Embedding::new(tensor))

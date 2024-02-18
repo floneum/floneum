@@ -12,7 +12,7 @@
 // 2. Dump all sentences that mention an entity
 // 3. Extract relevant sentences with an llm
 
-use kalosm_language_model::{Embedder, VectorSpace};
+use kalosm_language_model::Embedder;
 
 use crate::context::Document;
 
@@ -27,20 +27,20 @@ pub use summary::*;
 
 /// A strategy for chunking a document into smaller pieces.
 #[async_trait::async_trait]
-pub trait Chunker<S: VectorSpace + Send + Sync + 'static> {
+pub trait Chunker {
     /// Chunk a document into embedded snippets.
-    async fn chunk<E: Embedder<S> + Send>(
+    async fn chunk<E: Embedder + Send>(
         &mut self,
         document: &Document,
         embedder: &mut E,
-    ) -> anyhow::Result<Vec<Chunk<S>>>;
+    ) -> anyhow::Result<Vec<Chunk<E::VectorSpace>>>;
 
     /// Chunk a batch of documents into embedded snippets.
-    async fn chunk_batch<'a, I, E: Embedder<S> + Send>(
+    async fn chunk_batch<'a, I, E: Embedder + Send>(
         &mut self,
         documents: I,
         embedder: &mut E,
-    ) -> anyhow::Result<Vec<Vec<Chunk<S>>>>
+    ) -> anyhow::Result<Vec<Vec<Chunk<E::VectorSpace>>>>
     where
         I: IntoIterator<Item = &'a Document> + Send,
         I::IntoIter: Send,
