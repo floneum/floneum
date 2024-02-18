@@ -1,6 +1,6 @@
 [package]
 name = "kalosm-sample"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "A common interface for token sampling and helpers for structered llm sampling "
 license = "MIT/Apache-2.0"
