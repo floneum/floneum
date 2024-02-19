@@ -1,11 +1,12 @@
 [package]
 name = "kalosm"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 description = "A simple interface for pretrained AI models "
 license = "MIT/Apache-2.0"
 repository = "https://github.com/floneum/floneum"
 authors = ["Evan Almloff"]
+keywords = ["llm", "llama", "whisper", "ocr", "nlp"]
 
 [dependencies]
 kalosm-language = { default-features = false, workspace = true, optional = true }
@@ -41,9 +42,9 @@ kalosm-llama = { workspace = true }
 
 [features]
 default = ["language", "sound", "vision", "surrealdb"]
-llamacpp = ["kalosm-language/llamacpp"]
-metal = ["kalosm-language/metal"]
-cublas = ["kalosm-language/cublas"]
+# llamacpp = ["kalosm-language/llamacpp"]
+# metal = ["kalosm-language/metal"]
+# cublas = ["kalosm-language/cublas"]
 language = ["kalosm-language"]
 sound = ["kalosm-sound"]
 vision = ["kalosm-vision"]

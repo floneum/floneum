@@ -5964,7 +5964,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5998,7 +5998,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-language"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "arroy",
@@ -6059,7 +6059,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-language-model"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-openai",
@@ -6096,7 +6096,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-learning"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "candle-core",
@@ -6112,7 +6112,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-learning-macro"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "quote",
  "syn 2.0.49",
@@ -6120,7 +6120,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-llama"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "accelerate-src",
  "anyhow",
@@ -6148,7 +6148,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-ocr"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "accelerate-src",
  "anyhow",
@@ -6169,7 +6169,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-sample"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "candle-core",
@@ -6184,7 +6184,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-sound"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6212,7 +6212,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-streams"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "futures-util",
@@ -6223,7 +6223,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-vision"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "image 0.24.8",
  "kalosm-ocr",
@@ -9013,7 +9013,7 @@ dependencies = [
 
 [[package]]
 name = "rbert"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "accelerate-src",
  "anyhow",
@@ -9432,7 +9432,7 @@ dependencies = [
 
 [[package]]
 name = "rphi"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "accelerate-src",
  "anyhow",
@@ -9980,7 +9980,7 @@ dependencies = [
 
 [[package]]
 name = "rwhisper"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "accelerate-src",
  "anyhow",
@@ -10011,7 +10011,7 @@ dependencies = [
 
 [[package]]
 name = "rwuerstchen"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "accelerate-src",
  "anyhow",
@@ -10193,7 +10193,7 @@ dependencies = [
 
 [[package]]
 name = "segment-anything-rs"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "accelerate-src",
  "anyhow",
