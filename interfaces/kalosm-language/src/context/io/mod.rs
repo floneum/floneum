@@ -66,7 +66,7 @@ impl IntoDocument for FsDocument {
             Self::Docx(docx) => docx.into_document().await,
             Self::Html(html) => html.into_document().await,
             Self::Md(md) => md.into_document().await,
-            Self::Pdf(pdf) => pdf.into_document().await,
+            // Self::Pdf(pdf) => pdf.into_document().await,
             Self::Txt(txt) => txt.into_document().await,
         }
     }

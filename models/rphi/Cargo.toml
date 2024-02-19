@@ -6,6 +6,7 @@ description = "A simple interface for Phi models "
 license = "MIT/Apache-2.0"
 repository = "https://github.com/floneum/floneum"
 authors = ["Evan Almloff"]
+keywords = ["ai", "llm", "phi", "nlp", "candle"]
 
 [dependencies]
 candle-core.workspace = true

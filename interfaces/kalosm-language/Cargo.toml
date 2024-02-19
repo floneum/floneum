@@ -6,6 +6,7 @@ description = "A set of pretrained language models "
 license = "MIT/Apache-2.0"
 repository = "https://github.com/floneum/floneum"
 authors = ["Evan Almloff"]
+keywords = ["ai", "llm", "llama", "mistral", "nlp"]
 
 [dependencies]
 bytesize = "1.2.0"
@@ -29,7 +30,7 @@ tracing = "0.1.37"
 num_cpus = "1.16.0"
 async-trait = "0.1.73"
 serde_json = "1.0.107"
-chrono = "0.4.31"
+chrono = { version = "0.4.31", features = ["serde"] }
 readability = { version = "0.2.0", default_features = false }
 tantivy = "0.21.0"
 tempfile = "3.8.0"

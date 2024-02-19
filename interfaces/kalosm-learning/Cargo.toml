@@ -6,6 +6,7 @@ description = "A simplified machine learning library for building off of pretrai
 license = "MIT/Apache-2.0"
 repository = "https://github.com/floneum/floneum"
 authors = ["Evan Almloff"]
+keywords = ["ai", "bert", "nlp", "machine-learning", "transformers"]
 
 [dependencies]
 kalosm-language-model.workspace = true

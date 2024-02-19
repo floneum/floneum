@@ -6,6 +6,7 @@ description = "A simple interface for pretrained AI models "
 license = "MIT/Apache-2.0"
 repository = "https://github.com/floneum/floneum"
 authors = ["Evan Almloff"]
+keywords = ["llm", "llama", "whisper", "ocr", "nlp"]
 
 [dependencies]
 kalosm-language = { default-features = false, workspace = true, optional = true }
