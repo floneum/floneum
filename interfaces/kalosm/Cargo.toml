@@ -42,9 +42,9 @@ kalosm-llama = { workspace = true }
 
 [features]
 default = ["language", "sound", "vision", "surrealdb"]
-# llamacpp = ["kalosm-language/llamacpp"]
-# metal = ["kalosm-language/metal"]
-# cublas = ["kalosm-language/cublas"]
+llamacpp = ["kalosm-language/llamacpp"]
+metal = ["kalosm-language/metal"]
+cublas = ["kalosm-language/cublas"]
 language = ["kalosm-language"]
 sound = ["kalosm-sound"]
 vision = ["kalosm-vision"]

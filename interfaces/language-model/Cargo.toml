@@ -35,12 +35,12 @@ rustc-hash = "1.1.0"
 kalosm-sample = { workspace = true }
 kalosm-streams.workspace = true
 # Required for LLM
-# llm = { git = "https://github.com/rustformers/llm", optional = true }
+llm = { git = "https://github.com/rustformers/llm", optional = true }
 spinoff = "0.8.0"
 bytesize = "1.3.0"
 minijinja = "1.0.10"
 
 [features]
-# llamacpp = ["llm", "kalosm-sample/llamacpp"]
-# metal = ["llm?/metal"]
-# cublas = ["llm?/cublas"]
+llamacpp = ["llm", "kalosm-sample/llamacpp"]
+metal = ["llm?/metal"]
+cublas = ["llm?/cublas"]
