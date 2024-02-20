@@ -8,7 +8,7 @@ use std::{
 };
 
 pub use crate::sender::*;
-use futures_util::Stream;
+use futures_util::{Stream, StreamExt};
 
 /// A stream of text. This is automatically implemented for all streams of something that acts like a string (String, &str).
 pub trait TextStream<I: AsRef<str>>: Stream<Item = I> {
@@ -34,6 +34,31 @@ pub trait TextStream<I: AsRef<str>>: Stream<Item = I> {
         Self: Sized,
     {
         ParagraphStream::new(self)
+    }
+
+    /// Write the stream to a writer.
+    fn write_to<W: std::io::Write + Send>(
+        mut self,
+        mut writer: W,
+    ) -> impl std::future::Future<Output = std::io::Result<()>> + Send
+    where
+        Self: Sized + Unpin + Send,
+    {
+        async move {
+            while let Some(text) = self.next().await {
+                writer.write_all(text.as_ref().as_bytes())?;
+                writer.flush()?;
+            }
+            Ok(())
+        }
+    }
+
+    /// Write the stream to standard output.
+    fn to_std_out(self) -> impl std::future::Future<Output = std::io::Result<()>> + Send
+    where
+        Self: Sized + Unpin + Send,
+    {
+        self.write_to(std::io::stdout())
     }
 }
 
