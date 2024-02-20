@@ -12,7 +12,6 @@ use std::any::Any;
 use std::fmt::Display;
 use std::future::IntoFuture;
 use std::marker::PhantomData;
-use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -503,22 +502,6 @@ pub struct StructureParserResult<S: Stream<Item = String> + Send + Unpin + 'stat
     result: tokio::sync::oneshot::Receiver<anyhow::Result<O>>,
 }
 
-impl<S: Stream<Item = String> + Send + Unpin + 'static, O> Deref for StructureParserResult<S, O> {
-    type Target = S;
-
-    fn deref(&self) -> &Self::Target {
-        &self.stream
-    }
-}
-
-impl<S: Stream<Item = String> + Send + Unpin + 'static, O> DerefMut
-    for StructureParserResult<S, O>
-{
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.stream
-    }
-}
-
 impl<S: Stream<Item = String> + Send + Unpin + 'static, O> StructureParserResult<S, O> {
     /// Create a new structured parser result from a stream and a result.
     pub fn new(stream: S, result: tokio::sync::oneshot::Receiver<anyhow::Result<O>>) -> Self {
@@ -543,6 +526,18 @@ impl<S: Stream<Item = String> + Send + Unpin + 'static, O> StructureParserResult
     /// Split the stream into a token stream and a result.
     pub fn split(self) -> (S, tokio::sync::oneshot::Receiver<anyhow::Result<O>>) {
         (self.stream, self.result)
+    }
+}
+
+impl<S: Stream<Item = String> + Send + Unpin + 'static, O> Stream for StructureParserResult<S, O> {
+    type Item = String;
+
+    fn poll_next(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        this.stream.poll_next_unpin(cx)
     }
 }
 
@@ -701,6 +696,7 @@ pub trait SyncModelExt: SyncModel {
         'generate: loop {
             let new_token = text_stream.sample_token(&mut sampler, logits, stop_on)?;
             if new_token == stop_token {
+                tracing::trace!("Stopping on stop token");
                 break;
             }
             if let Some(mut new_text) = text_stream.next_token(new_token)? {

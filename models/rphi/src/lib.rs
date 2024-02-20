@@ -110,6 +110,14 @@ impl Phi {
         Phi::builder().with_source(PhiSource::v2()).build().unwrap()
     }
 
+    /// Create a new chat model.
+    pub fn new_chat() -> Self {
+        Phi::builder()
+            .with_source(PhiSource::dolphin_phi_v2())
+            .build()
+            .unwrap()
+    }
+
     /// Check if the model has been downloaded.
     pub(crate) fn downloaded() -> bool {
         false
