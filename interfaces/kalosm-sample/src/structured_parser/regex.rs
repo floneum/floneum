@@ -1,3 +1,5 @@
+use std::{collections::HashMap, sync::RwLock};
+
 use crate::{CreateParserState, Parser};
 use regex_automata::{
     dfa::{sparse, Automaton},
@@ -8,6 +10,8 @@ use regex_automata::{
 pub struct RegexParser {
     dfa: sparse::DFA<Vec<u8>>,
     config: regex_automata::util::start::Config,
+    // A cache for the required next bytes for each state
+    jump_table: RwLock<HashMap<StateID, String>>,
 }
 
 impl RegexParser {
@@ -18,7 +22,7 @@ impl RegexParser {
         let config =
             regex_automata::util::start::Config::new().anchored(regex_automata::Anchored::Yes);
 
-        Ok(Self { dfa, config })
+        Ok(Self { dfa, config, jump_table: Default::default() })
     }
 }
 
@@ -56,9 +60,50 @@ impl Parser for RegexParser {
             }
         }
 
+        let mut required_next = String::new();
+        let mut required_next_state = state;
+        let jump_table_read = self.jump_table.read().unwrap();
+
+        if let Some(string) = jump_table_read.get(&required_next_state) {
+            required_next.push_str(string);
+        }
+        else {
+            'required_next: loop {
+                let mut one_valid_byte = None;
+    
+                if let Some(string) = jump_table_read.get(&required_next_state) {
+                    required_next.push_str(string);
+                    break;
+                }
+            
+                for byte in 0..=255 {
+                    let next_state = self.dfa.next_state(required_next_state, byte);
+                    if self.dfa.is_dead_state(next_state) || self.dfa.is_quit_state(next_state) {
+                        continue;
+                    }
+                    if one_valid_byte.is_some() {
+                        break 'required_next;
+                    }
+                    one_valid_byte = Some((byte, next_state));
+                }
+    
+                if let Some((byte, new_state)) = one_valid_byte {
+                    required_next.push(byte.into());
+                    required_next_state = new_state;
+                } else {
+                    break;
+                }
+            }
+
+            if !required_next.is_empty() {
+                drop(jump_table_read);
+                self.jump_table.write().unwrap().insert(state, required_next.clone());
+            }
+        }
+
         Ok(crate::ParseResult::Incomplete {
             new_state: state,
-            required_next: "".into(),
+            required_next: required_next.into(),
         })
     }
 }
