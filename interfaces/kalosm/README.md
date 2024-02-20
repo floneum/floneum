@@ -171,7 +171,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 Once you have your data, Kalosm includes tools to create traditional fuzzy search indexes and vector search indexes. These indexes can be used to search for specific text in a large corpus of documents. Fuzzy search indexes are useful for finding documents that contain a specific word or phrase. Vector search indexes are useful for finding documents that are semantically similar to a specific word or phrase. Kalosm makes it easy to create and use these indexes with your embedding model of choice:
 
-```rust, ignore
+```rust, no_run
 use kalosm::language::*;
 use std::io::Write;
 use std::path::PathBuf;
@@ -223,7 +223,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 A large part of making modern LLMs performant is curating the context the models have access to. Resource augmented generation (or RAG) helps you do this by inserting context into the prompt based on a search query. For example, you can Kalosm to create a chatbot that uses context from local documents to answer questions:
 
-```rust, ignore
+```rust, no_run
 use futures_util::StreamExt;
 use kalosm::language::*;
 use std::io::Write;
@@ -277,7 +277,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 Kalosm makes it easy to build up context about the world around your application and use it to generate text. For example, you can use Kalosm to transcribe audio from a microphone, insert that into a vector database and answer questions about the audio in real-time:
 
-```rust, ignore
+```rust, no_run
 use futures_util::StreamExt;
 use kalosm::*;
 use kalosm::language::*;

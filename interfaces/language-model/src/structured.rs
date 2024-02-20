@@ -28,9 +28,13 @@ where
 {
     // We wrap the parser in a LiteralParser so that we can stop the parser when we reach the stop token automatically if the sequence is unterminated
     let parser = parser
-        .then(LiteralParser::new(stop_token))
+        .then(LiteralParser::new(stop_token.clone()))
         .map_output(|(output, _)| output);
     let mut parser_state = SequenceParserState::FirstParser(parser_state);
+
+    let mut on_token = move |token: String| -> anyhow::Result<()> {
+        on_token(token.replace(stop_token.as_str(), "").to_string())
+    };
 
     let prompt_text = prompt.to_string();
     let mut tokens = tokenizer.encode(&prompt_text)?;
@@ -105,7 +109,7 @@ where
             .ok_or(anyhow::anyhow!("Token {} not found in state map", token_id))?
         {
             tracing::trace!("Adding token {} to parser", token);
-            on_token(token.clone())?;
+            on_token(token)?;
 
             if let Some(result) = update_state(
                 &parser,

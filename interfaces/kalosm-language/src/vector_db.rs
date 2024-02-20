@@ -153,7 +153,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
 
     /// Add a new embedding to the vector database.
     ///
-    /// Note: Adding embeddings in a batch with [`add_embeddings`] will be faster.
+    /// Note: Adding embeddings in a batch with [`VectorDB::add_embeddings`] will be faster.
     pub fn add_embedding(&self, embedding: Embedding<S>) -> anyhow::Result<EmbeddingId> {
         let embedding = embedding.vector().to_vec1()?;
 

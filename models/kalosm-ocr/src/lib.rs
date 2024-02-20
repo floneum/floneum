@@ -66,7 +66,7 @@ impl OcrBuilder {
     }
 }
 
-/// Configuration for a [`TrOCRModel`] decoder.
+/// Configuration for a [`Ocr`] decoder.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct OcrDecoderConfig {
     /// The vocabulary size of the model.
@@ -496,7 +496,7 @@ impl Ocr {
         })
     }
 
-    /// Segment an image from a list of points. Returns a [`DynamicImage`] mask.
+    /// Recognize text from an image. Returns the recognized text.
     ///
     /// # Example
     /// ```rust, no_run

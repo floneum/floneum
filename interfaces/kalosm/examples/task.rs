@@ -2,31 +2,18 @@ use kalosm::language::*;
 
 #[tokio::main]
 async fn main() {
-    let mut llm = Phi::v2();
+    tracing_subscriber::fmt::init();
 
-    let operator = IndexParser::new(vec![
-        LiteralParser::new("+"),
-        LiteralParser::new("-"),
-        LiteralParser::new("*"),
-        LiteralParser::new("/"),
-    ]);
-    let equation = IntegerParser::new(0..=100)
-        .then(operator)
-        .then(IntegerParser::new(0..=100))
-        .then(LiteralParser::new(" = "))
-        .then(IntegerParser::new(0..=100));
-    let calculation_step = LiteralParser::new("Step ")
-        .then(IntegerParser::new(1..=9))
-        .then(LiteralParser::new(": "))
-        .then(equation)
-        .then(LiteralParser::new("\n"));
-    let output = LiteralParser::new("Output: ").then(IntegerParser::new(0..=100));
+    let mut llm = Llama::new_chat();
 
-    let task = Task::builder(&llm, "You are an assistant who solves math problems. When solving problems, you will always solve problems step by step with one step per line.")
-        .with_constraints(calculation_step.repeat(0..=2).then(output))
-        .with_example("What is 1 + 2?", "Step 1: 1+2 = 3\nOutput: 3")
-        .with_example("What is 3 + 4?", "Step 1: 3+4 = 7\nOutput: 7")
-        .with_example("What is (1 + 2) * 3?", "Step 1: 1+2 = 3\nStep 2: 3*3 = 9\nOutput: 9")
+    let constraints =
+        RegexParser::new(r"(Step \d: \d+ [+\-*/] \d+ = \d+\n){1,3}Output: \d+").unwrap();
+
+    let task = Task::builder(&llm, "You are an assistant who solves math problems. When solving problems, you will always solve problems step by step with one step per line. Once you have solved the problem, you will output the result in the format 'Output: <result>'.")
+        .with_constraints(constraints)
+        .with_example("What is 1 + 2?", "Step 1: 1 + 2 = 3\nOutput: 3")
+        .with_example("What is 3 + 4?", "Step 1: 3 + 4 = 7\nOutput: 7")
+        .with_example("What is (4 + 8) / 3?", "Step 1: 4 + 8 = 12\nStep 2: 12 / 3 = 4\nOutput: 4")
         .build();
 
     let start_timestamp = std::time::Instant::now();
@@ -57,7 +44,7 @@ async fn main() {
 
     let start_timestamp = std::time::Instant::now();
     println!("question 3");
-    task.run("What is (7 + 4)*2?", &mut llm)
+    task.run("What is (7 + 5)/2?", &mut llm)
         .await
         .unwrap()
         .split()
