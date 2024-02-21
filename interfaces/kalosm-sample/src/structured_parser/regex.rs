@@ -22,7 +22,11 @@ impl RegexParser {
         let config =
             regex_automata::util::start::Config::new().anchored(regex_automata::Anchored::Yes);
 
-        Ok(Self { dfa, config, jump_table: Default::default() })
+        Ok(Self {
+            dfa,
+            config,
+            jump_table: Default::default(),
+        })
     }
 }
 
@@ -66,16 +70,15 @@ impl Parser for RegexParser {
 
         if let Some(string) = jump_table_read.get(&required_next_state) {
             required_next.push_str(string);
-        }
-        else {
+        } else {
             'required_next: loop {
                 let mut one_valid_byte = None;
-    
+
                 if let Some(string) = jump_table_read.get(&required_next_state) {
                     required_next.push_str(string);
                     break;
                 }
-            
+
                 for byte in 0..=255 {
                     let next_state = self.dfa.next_state(required_next_state, byte);
                     if self.dfa.is_dead_state(next_state) || self.dfa.is_quit_state(next_state) {
@@ -86,7 +89,7 @@ impl Parser for RegexParser {
                     }
                     one_valid_byte = Some((byte, next_state));
                 }
-    
+
                 if let Some((byte, new_state)) = one_valid_byte {
                     required_next.push(byte.into());
                     required_next_state = new_state;
@@ -97,7 +100,10 @@ impl Parser for RegexParser {
 
             if !required_next.is_empty() {
                 drop(jump_table_read);
-                self.jump_table.write().unwrap().insert(state, required_next.clone());
+                self.jump_table
+                    .write()
+                    .unwrap()
+                    .insert(state, required_next.clone());
             }
         }
 

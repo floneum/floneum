@@ -7,7 +7,7 @@ async fn main() {
 
     let mut llm = Llama::new_chat();
 
-    let mutator = Mutator::builder(&mut llm).build().unwrap();
+    let mutator = Mutator::builder().build().unwrap();
 
     let mut text = "You generate isolated hypothetical questions with any necessary information that may be answered by the given text".to_string();
     let mut max_score = eval_with_prompt(&mut llm, &text).await.unwrap();
@@ -47,8 +47,9 @@ const EXAMPLES: [(&str, &str); 4] = [
 
 const PREFIX: &str = "A variant of the previous task: ";
 
-fn create_constraints(
-) -> kalosm_sample::SequenceParser<LiteralParser<&'static str>, StopOn<&'static str>> {
+type Constraints = kalosm_sample::SequenceParser<LiteralParser<&'static str>, StopOn<&'static str>>;
+
+fn create_constraints() -> Constraints {
     LiteralParser::new(PREFIX).then(
         StopOn::new(".").filter_characters(
             |c| matches!(c, ' ' | '.' | ':' | '/' | '+' | '-' | '*' | 'a'..='z' | 'A'..='Z' | '0'..='9' | ','),
@@ -57,26 +58,17 @@ fn create_constraints(
 }
 
 /// A builder for a Mutator chunker.
-pub struct MutatorBuilder<'a, M>
-where
-    M: Model,
-    <M::SyncModel as SyncModel>::Session: Send,
-{
-    model: &'a mut M,
+pub struct MutatorBuilder {
     task_description: Option<String>,
     examples: Option<Vec<(String, String)>>,
 }
 
-impl<'a, M> MutatorBuilder<'a, M>
-where
-    M: Model,
-    <M::SyncModel as SyncModel>::Session: Sync + Send,
-{
+impl MutatorBuilder {
     /// Set the examples for this task. Each example should include the text and the questions that are answered by the text.
     pub fn with_examples<S: Into<String>>(
         mut self,
         examples: impl IntoIterator<Item = (S, S)>,
-    ) -> MutatorBuilder<'a, M> {
+    ) -> MutatorBuilder {
         self.examples = Some(
             examples
                 .into_iter()
@@ -93,7 +85,7 @@ where
     }
 
     /// Build the Mutator chunker.
-    pub fn build(self) -> anyhow::Result<Mutator<M>> {
+    pub fn build(self) -> anyhow::Result<Mutator> {
         let task_description = self
             .task_description
             .unwrap_or_else(|| TASK_DESCRIPTION.to_string());
@@ -104,7 +96,7 @@ where
                 .collect::<Vec<_>>()
         });
 
-        let task = Task::builder(self.model, task_description)
+        let task = Task::builder(task_description)
             .with_constraints(create_constraints())
             .with_examples(examples)
             .build();
@@ -114,29 +106,26 @@ where
 }
 
 /// Generates embeddings of questions
-pub struct Mutator<M: Model>
-where
-    <M::SyncModel as SyncModel>::Session: Sync + Send,
-{
-    task: Task<M, StructureParserResult<ChannelTextStream<String>, ((), String)>>,
+pub struct Mutator {
+    task: Task<StructuredRunner<Constraints>>,
 }
 
-impl<M: Model> Mutator<M>
-where
-    <M::SyncModel as SyncModel>::Session: Sync + Send,
-{
+impl Mutator {
     /// Create a new Mutator chunker.
-    pub fn builder(model: &mut M) -> MutatorBuilder<M> {
+    pub fn builder() -> MutatorBuilder {
         MutatorBuilder {
-            model,
             task_description: None,
             examples: None,
         }
     }
 
     /// Generate a list of Mutator questions about the given text.
-    pub async fn mutate(&self, text: &str, model: &mut M) -> anyhow::Result<String> {
-        let questions = self.task.run(text, model).await?.result().await?;
+    pub async fn mutate<M>(&self, text: &str, model: &mut M) -> anyhow::Result<String>
+    where
+        M: Model,
+        <M::SyncModel as SyncModel>::Session: Sync + Send,
+    {
+        let questions = self.task.run(text, model).result().await?;
         let documents = questions.1;
 
         Ok(documents)
@@ -175,7 +164,7 @@ const TEST_PAIRS :&[(&str, &str)]= &[
 async fn eval_with_prompt(llm: &mut Llama, prompt: &str) -> anyhow::Result<f64> {
     println!("evaluating prompt: {prompt}");
 
-    let hypothetical = Hypothetical::builder(llm)
+    let hypothetical = Hypothetical::builder()
         .with_task_description(prompt.into())
         .build()
         .unwrap();

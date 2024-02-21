@@ -53,6 +53,20 @@ pub trait TextStream<I: AsRef<str>>: Stream<Item = I> {
         }
     }
 
+    /// Get all the text from the stream.
+    fn all_text(mut self) -> impl std::future::Future<Output = String> + Send
+    where
+        Self: Sized + Unpin + Send,
+    {
+        async move {
+            let mut all_text = String::new();
+            while let Some(text) = self.next().await {
+                all_text.push_str(text.as_ref());
+            }
+            all_text
+        }
+    }
+
     /// Write the stream to standard output.
     fn to_std_out(self) -> impl std::future::Future<Output = std::io::Result<()>> + Send
     where

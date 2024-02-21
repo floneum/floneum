@@ -1,21 +1,27 @@
+use kalosm_language::prelude::*;
 use kalosm_language::{
     kalosm_language_model::{Embedder, Embedding, Model, SyncModel},
     rbert::{Bert, BertSpace},
-    search::Hypothetical,
+    task::TaskBuilderReturn,
 };
 use rand::{random, seq::index::sample, Rng};
 
 use crate::{BertDistance, Metric, TestCases};
 
 /// A builder for [`PromptAnnealer`].
-pub struct PromptAnnealerBuilder<'a, M: Model, Met: Metric<String> = BertDistance>
-where
+pub struct PromptAnnealerBuilder<
+    'a,
+    M: Model,
+    P = ChannelTextStream<String>,
+    Met: Metric<String> = BertDistance,
+> where
     <<M as Model>::SyncModel as SyncModel>::Session: Sync + Send,
 {
     llm: &'a mut M,
     metric: Met,
     train: &'a [(&'static str, &'static str)],
     test: &'a [(&'static str, &'static str)],
+    task: TaskBuilder<P>,
     initial_temperature: f64,
     decay_rate: f64,
     cutoff_temperature: f64,
@@ -23,18 +29,21 @@ where
     initial_choice_range: std::ops::Range<usize>,
 }
 
-impl<'a, M: Model> PromptAnnealer<'a, M>
+impl<'a, M: Model, P> PromptAnnealer<'a, M, P>
 where
     <<M as Model>::SyncModel as SyncModel>::Session: Sync + Send,
+    P: Clone + TaskBuilderReturn + Send + Sync + 'static,
 {
     /// Create a new builder for [`PromptAnnealer`].
     pub fn builder(
         model: &'a mut M,
         train_set: &'a [(&'static str, &'static str)],
-    ) -> PromptAnnealerBuilder<'a, M, BertDistance> {
+        task: TaskBuilder<P>,
+    ) -> PromptAnnealerBuilder<'a, M, P, BertDistance> {
         PromptAnnealerBuilder {
             llm: model,
             train: train_set,
+            task,
             test: &[],
             initial_temperature: 0.6,
             decay_rate: 0.9,
@@ -46,9 +55,10 @@ where
     }
 }
 
-impl<'a, M: Model, Met: Metric<String>> PromptAnnealerBuilder<'a, M, Met>
+impl<'a, M: Model, P, Met: Metric<String>> PromptAnnealerBuilder<'a, M, P, Met>
 where
     <<M as Model>::SyncModel as SyncModel>::Session: Sync + Send,
+    P: Clone + TaskBuilderReturn + Send + Sync + 'static,
 {
     /// Set the test set to use for evaluation. If no test set is provided, a subset of the train set will be used.
     pub fn with_test_set(mut self, test_set: &'a [(&'static str, &'static str)]) -> Self {
@@ -87,7 +97,7 @@ where
     }
 
     /// Build the [`PromptAnnealer`].
-    pub async fn build(mut self) -> PromptAnnealer<'a, M, Met> {
+    pub async fn build(mut self) -> PromptAnnealer<'a, M, P, Met> {
         let (train_set, test_set) = if self.test.is_empty() {
             tracing::warn!("No test set provided, using a subset of the train set for evaluation");
 
@@ -177,12 +187,14 @@ where
                     self.initial_temperature,
                     &test_set,
                     &mut self.metric,
+                    self.task.clone(),
                 )
                 .await,
             );
         }
 
         PromptAnnealer {
+            task: self.task,
             llm: self.llm,
             test: test_set,
             population,
@@ -194,10 +206,15 @@ where
 }
 
 /// A prompt annealer that takes a set of examples and tries to find the best combination and order of examples to use as a prompt for a given task.
-pub struct PromptAnnealer<'a, M: Model, Met: Metric<String> = BertDistance>
-where
+pub struct PromptAnnealer<
+    'a,
+    M: Model,
+    P = ChannelTextStream<String>,
+    Met: Metric<String> = BertDistance,
+> where
     <<M as Model>::SyncModel as SyncModel>::Session: Sync + Send,
 {
+    task: TaskBuilder<P>,
     llm: &'a mut M,
     metric: Met,
     test: Vec<Example<'static>>,
@@ -206,16 +223,18 @@ where
     cutoff_temperature: f64,
 }
 
-impl<'a, M: Model> PromptAnnealer<'a, M>
+impl<'a, M: Model, P, Met> PromptAnnealer<'a, M, P, Met>
 where
     <<M as Model>::SyncModel as SyncModel>::Session: Sync + Send,
+    P: Clone + TaskBuilderReturn + Send + Sync + 'static,
+    Met: Metric<String>,
 {
     /// Run the annealing process.
     pub async fn run(&mut self) -> Vec<AnnealingResult> {
         loop {
             for instance in &mut self.population {
                 instance
-                    .mutate(&self.test, self.llm, &mut self.metric)
+                    .mutate(&self.test, self.llm, &mut self.metric, self.task.clone())
                     .await;
                 instance.temperature *= self.decay_rate;
             }
@@ -263,13 +282,15 @@ struct ExamplesInstance {
 }
 
 impl ExamplesInstance {
-    async fn new<M: Model>(llm: &mut M, current_examples:Vec<Example<'static>>,
-    unused_examples:Vec<Example<'static>>,  temperature:f64
-    ,
+    async fn new<M, P>(llm: &mut M, current_examples:Vec<Example<'static>>,
+    unused_examples:Vec<Example<'static>>,  temperature:f64,
     test:&[Example<'static>],
-    metric: &mut impl Metric<String>
-    ) -> Self where <<M as kalosm_language::prelude::Model>::SyncModel as kalosm_language::prelude::SyncModel>::Session: Sync+ Send{
-        let current_evaluation = evaluate(&current_examples, test, llm, metric).await;
+    metric: &mut impl Metric<String>,
+    task: TaskBuilder<P>,
+    ) -> Self where M: Model,
+    <<M as kalosm_language::prelude::Model>::SyncModel as kalosm_language::prelude::SyncModel>::Session: Sync+ Send,
+    P: TaskBuilderReturn + Send + Sync + 'static,{
+        let current_evaluation = evaluate(&current_examples, test, llm, metric, task).await;
 
         Self {
             current_examples,
@@ -279,11 +300,17 @@ impl ExamplesInstance {
         }
     }
 
-    async fn mutate<M: Model>(&mut self,
-        test:&[Example<'static>],
-    llm: &mut M,
-    metric: &mut impl Metric<String>
-    ) where <<M as kalosm_language::prelude::Model>::SyncModel as kalosm_language::prelude::SyncModel>::Session: Sync+ Send{
+    async fn mutate<M, P>(
+        &mut self,
+        test: &[Example<'static>],
+        llm: &mut M,
+        metric: &mut impl Metric<String>,
+        task: TaskBuilder<P>,
+    ) where
+        M: Model,
+        <M::SyncModel as SyncModel>::Session: Send + Sync,
+        P: TaskBuilderReturn + Send + Sync + 'static,
+    {
         let action = if self.current_examples.is_empty() {
             2
         } else if self.unused_examples.is_empty() {
@@ -307,7 +334,7 @@ impl ExamplesInstance {
                 let index = random::<usize>() % mutated_examples.len();
                 let removed = mutated_examples.remove(index);
 
-                let new_evaluation = evaluate(&mutated_examples, test, llm, metric).await;
+                let new_evaluation = evaluate(&mutated_examples, test, llm, metric, task).await;
 
                 if accept_regardless || new_evaluation > self.current_evaluation {
                     self.current_evaluation = new_evaluation;
@@ -322,7 +349,7 @@ impl ExamplesInstance {
 
                 mutated_examples.swap(index1, index2);
 
-                let new_evaluation = evaluate(&mutated_examples, test, llm, metric).await;
+                let new_evaluation = evaluate(&mutated_examples, test, llm, metric, task).await;
 
                 if accept_regardless || new_evaluation > self.current_evaluation {
                     self.current_evaluation = new_evaluation;
@@ -335,7 +362,7 @@ impl ExamplesInstance {
                 let added = self.unused_examples[index].clone();
                 mutated_examples.push(added);
 
-                let new_evaluation = evaluate(&mutated_examples, test, llm, metric).await;
+                let new_evaluation = evaluate(&mutated_examples, test, llm, metric, task).await;
 
                 if accept_regardless || new_evaluation > self.current_evaluation {
                     self.current_evaluation = new_evaluation;
@@ -354,7 +381,20 @@ struct Example<'a> {
     embedding: Embedding<BertSpace>,
 }
 
-async fn evaluate<M: Model>(examples: &[Example<'static>], test:&[Example<'static>], llm: &mut M, metric: &mut impl Metric<String>) -> f64 where <<M as kalosm_language::prelude::Model>::SyncModel as kalosm_language::prelude::SyncModel>::Session: Sync+ Send{
+// impl<'a, M: Model, P: TaskBuilderReturn<M> + Send + Sync + 'static>> TaskBuilder<'a, M, P>
+// where
+//     <M::SyncModel as SyncModel>::Session: Send + Sync,
+async fn evaluate<'a, M: Model, P>(
+    examples: &[Example<'static>],
+    test: &[Example<'static>],
+    llm: &mut M,
+    metric: &mut impl Metric<String>,
+    task: TaskBuilder<P>,
+) -> f64
+where
+    <M::SyncModel as SyncModel>::Session: Send + Sync,
+    P: TaskBuilderReturn + Send + Sync + 'static,
+{
     let examples_tokens: usize = examples
         .iter()
         .filter_map(|example| {
@@ -366,28 +406,22 @@ async fn evaluate<M: Model>(examples: &[Example<'static>], test:&[Example<'stati
         })
         .sum();
 
-    let hypothetical = Hypothetical::builder(llm)
-        .with_chunking(kalosm_language::search::ChunkStrategy::Paragraph {
-            paragraph_count: 1,
-            overlap: 0,
-        })
+    let task = task
         .with_examples(
             examples
                 .iter()
                 .map(|example| (example.input, example.output)),
         )
-        .build()
-        .unwrap();
+        .build();
 
     let mut llama_test_cases = TestCases::new();
 
     for example in test {
-        let actual = &hypothetical
-            .generate_question(example.input, llm)
-            .await
-            .unwrap()[0];
+        let actual = task.run(example.input, llm);
 
-        llama_test_cases.push_case(example.output.to_string(), actual.clone());
+        let all_text = actual.all_text().await;
+
+        llama_test_cases.push_case(example.output.to_string(), all_text);
     }
 
     let llama_distance = llama_test_cases.evaluate(metric).await.normalized();

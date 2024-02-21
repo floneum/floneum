@@ -1,9 +1,8 @@
-use kalosm_language_model::{Embedder, Model, StructureParserResult, SyncModel};
+use kalosm_language_model::{Embedder, Model, SyncModel};
 use kalosm_sample::{LiteralParser, ParserExt};
-use kalosm_streams::text_stream::ChannelTextStream;
 
 use crate::{
-    prelude::{Document, OneLine, Task},
+    prelude::{Document, OneLine, StructuredRunner, Task},
     search::Chunk,
 };
 
@@ -11,39 +10,47 @@ use super::{ChunkStrategy, Chunker};
 
 const TASK_DESCRIPTION: &str = "You generate summaries of the given text.";
 
+type Constraints = kalosm_sample::SequenceParser<LiteralParser<&'static str>, OneLine>;
+
 /// Generates summaries for a document.
-pub struct Summarizer<M: Model>
-where
-    <M::SyncModel as SyncModel>::Session: Sync + Send,
-{
+pub struct Summarizer {
     chunking: Option<ChunkStrategy>,
-    task: Task<M, StructureParserResult<ChannelTextStream<String>, ((), String)>>,
+    task: Task<StructuredRunner<Constraints>>,
 }
 
-impl<M: Model> Summarizer<M>
-where
-    <M::SyncModel as SyncModel>::Session: Sync + Send,
-{
+impl Summarizer {
     /// Create a new summary generator.
-    pub fn new(model: &mut M, chunking: Option<ChunkStrategy>) -> Self {
-        let task = Task::builder(model, TASK_DESCRIPTION)
+    pub fn new(chunking: Option<ChunkStrategy>) -> Self {
+        let task = Task::builder(TASK_DESCRIPTION)
             .with_constraints(LiteralParser::new("Summary: ").then(OneLine))
             .build();
         Self { chunking, task }
     }
 
     /// Generate a summary for a document.
-    pub async fn generate_summary(&self, text: &str, model: &mut M) -> anyhow::Result<Vec<String>> {
+    pub async fn generate_summary<M>(
+        &self,
+        text: &str,
+        model: &mut M,
+    ) -> anyhow::Result<Vec<String>>
+    where
+        M: Model,
+        <M::SyncModel as SyncModel>::Session: Sync + Send,
+    {
         let prompt = format!("Generate a summary of the following text:\n{}", text);
 
-        let questions = self.task.run(prompt, model).await?.result().await?;
+        let questions = self.task.run(prompt, model).result().await?;
         let documents = vec![questions.1];
 
         Ok(documents)
     }
 
     /// Turn this summary generator into a chunker.
-    pub fn summary<'a>(&'a self, model: &'a mut M) -> SummaryChunker<'a, M> {
+    pub fn summary<'a, M>(&'a self, model: &'a mut M) -> SummaryChunker<'a, M>
+    where
+        M: Model,
+        <M::SyncModel as SyncModel>::Session: Sync + Send,
+    {
         SummaryChunker {
             summary: self,
             model,
@@ -52,11 +59,8 @@ where
 }
 
 /// A summary chunker.
-pub struct SummaryChunker<'a, M: Model>
-where
-    <M::SyncModel as SyncModel>::Session: Sync + Send,
-{
-    summary: &'a Summarizer<M>,
+pub struct SummaryChunker<'a, M> {
+    summary: &'a Summarizer,
     model: &'a mut M,
 }
 
