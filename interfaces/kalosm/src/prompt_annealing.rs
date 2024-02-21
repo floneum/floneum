@@ -359,10 +359,10 @@ async fn evaluate<M: Model>(examples: &[Example<'static>], test:&[Example<'stati
         .iter()
         .filter_map(|example| {
             llm.tokenizer()
-                .encode(example.input)
+                .encode(example.input, true)
                 .ok()
                 .map(|x| x.len())
-                .and_then(|x| Some(x + llm.tokenizer().encode(example.output).ok()?.len()))
+                .and_then(|x| Some(x + llm.tokenizer().encode(example.output, true).ok()?.len()))
         })
         .sum();
 

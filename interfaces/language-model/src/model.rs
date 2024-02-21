@@ -682,7 +682,7 @@ pub trait SyncModelExt: SyncModel {
         mut sampler: Arc<Mutex<dyn Sampler>>,
         mut on_token: impl FnMut(String) -> anyhow::Result<ModelFeedback>,
     ) -> anyhow::Result<()> {
-        let tokens = self.tokenizer().encode(prompt)?;
+        let tokens = self.tokenizer().encode(prompt, true)?;
         let mut text_stream = TokenOutputStream::new(self.tokenizer(), tokens.clone());
 
         let mut logits = self.feed_tokens(session, &tokens, Some(512))?;
