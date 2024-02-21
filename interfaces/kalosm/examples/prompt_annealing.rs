@@ -32,7 +32,26 @@ const EXAMPLES: &[(&str, &str)]= &[
 #[tokio::main]
 async fn main() {
     let mut llm = Phi::v2();
-    let mut annealing = kalosm::PromptAnnealer::builder(&mut llm, EXAMPLES)
+    const PREFIX: &str = "Questions that are answered by the previous text: ";
+    const QUESTION_STARTERS: [&str; 9] = [
+        "Who", "What", "When", "Where", "Why", "How", "Which", "Whom", "Whose",
+    ];
+    let constraints = LiteralParser::new(PREFIX).then(
+        IndexParser::new(
+            QUESTION_STARTERS
+                .iter()
+                .copied()
+                .map(LiteralParser::new)
+                .collect::<Vec<_>>(),
+        )
+        .then(StopOn::new("?").filter_characters(
+            |c| matches!(c, ' ' | '?' | 'a'..='z' | 'A'..='Z' | '0'..='9' | ','),
+        ))
+        .repeat(1..=5),
+    );
+    let task = Task::builder("You generate hypothetical questions that may be answered by the given text. The questions restate any information necessary to understand the question")
+        .with_constraints(constraints);
+    let mut annealing = kalosm::PromptAnnealer::builder(&mut llm, EXAMPLES, task)
         .with_initial_temperature(0.6)
         .with_initial_choice_range(1..4)
         .build()

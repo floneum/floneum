@@ -17,7 +17,7 @@ async fn main() {
 
     let mut llm = Llama::new_chat();
 
-    let hypothetical = Hypothetical::builder(&mut llm)
+    let hypothetical = Hypothetical::builder()
         .with_chunking(kalosm_language::search::ChunkStrategy::Paragraph {
             paragraph_count: 1,
             overlap: 0,

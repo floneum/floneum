@@ -86,8 +86,14 @@ pub trait Tokenizer {
     fn encode(&self, text: &str, add_special_tokens: bool) -> anyhow::Result<Vec<u32>>;
 
     /// Encode a list of strings into a list of token ids.
-    fn encode_batch(&self, text: &[&str], add_special_tokens: bool) -> anyhow::Result<Vec<Vec<u32>>> {
-        text.iter().map(|text| self.encode(text, add_special_tokens)).collect()
+    fn encode_batch(
+        &self,
+        text: &[&str],
+        add_special_tokens: bool,
+    ) -> anyhow::Result<Vec<Vec<u32>>> {
+        text.iter()
+            .map(|text| self.encode(text, add_special_tokens))
+            .collect()
     }
 
     /// Decode a list of token ids into a string.

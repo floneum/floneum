@@ -1,9 +1,8 @@
-use kalosm_language_model::{Embedder, Model, StructureParserResult, SyncModel};
+use kalosm_language_model::{Embedder, Model, SyncModel};
 use kalosm_sample::{LiteralParser, ParserExt, StopOn};
-use kalosm_streams::text_stream::ChannelTextStream;
 
 use crate::{
-    prelude::{Document, IndexParser, Task},
+    prelude::{Document, IndexParser, StructuredRunner, Task},
     search::Chunk,
 };
 
@@ -20,7 +19,7 @@ const QUESTION_STARTERS: [&str; 9] = [
 
 const PREFIX: &str = "Questions that are answered by the previous text: ";
 
-fn create_constraints() -> kalosm_sample::SequenceParser<
+type Constraints = kalosm_sample::SequenceParser<
     LiteralParser<&'static str>,
     kalosm_sample::RepeatParser<
         kalosm_sample::SequenceParser<
@@ -33,7 +32,9 @@ fn create_constraints() -> kalosm_sample::SequenceParser<
             StopOn<&'static str>,
         >,
     >,
-> {
+>;
+
+fn create_constraints() -> Constraints {
     LiteralParser::new(PREFIX).then(
         IndexParser::new(
             QUESTION_STARTERS
@@ -50,22 +51,13 @@ fn create_constraints() -> kalosm_sample::SequenceParser<
 }
 
 /// A builder for a hypothetical chunker.
-pub struct HypotheticalBuilder<'a, M>
-where
-    M: Model,
-    <M::SyncModel as SyncModel>::Session: Send,
-{
-    model: &'a mut M,
+pub struct HypotheticalBuilder {
     task_description: Option<String>,
     examples: Option<Vec<(String, String)>>,
     chunking: Option<ChunkStrategy>,
 }
 
-impl<'a, M> HypotheticalBuilder<'a, M>
-where
-    M: Model,
-    <M::SyncModel as SyncModel>::Session: Sync + Send,
-{
+impl HypotheticalBuilder {
     /// Set the chunking strategy.
     pub fn with_chunking(mut self, chunking: ChunkStrategy) -> Self {
         self.chunking = Some(chunking);
@@ -76,7 +68,7 @@ where
     pub fn with_examples<S: Into<String>>(
         mut self,
         examples: impl IntoIterator<Item = (S, S)>,
-    ) -> HypotheticalBuilder<'a, M> {
+    ) -> Self {
         self.examples = Some(
             examples
                 .into_iter()
@@ -93,7 +85,7 @@ where
     }
 
     /// Build the hypothetical chunker.
-    pub fn build(self) -> anyhow::Result<Hypothetical<M>> {
+    pub fn build(self) -> anyhow::Result<Hypothetical> {
         let task_description = self
             .task_description
             .unwrap_or_else(|| TASK_DESCRIPTION.to_string());
@@ -105,7 +97,7 @@ where
         });
         let chunking = self.chunking;
 
-        let task = Task::builder(self.model, task_description)
+        let task = Task::builder(task_description)
             .with_constraints(create_constraints())
             .with_examples(examples)
             .build();
@@ -115,23 +107,15 @@ where
 }
 
 /// Generates questions for a document.
-pub struct Hypothetical<M: Model>
-where
-    <M::SyncModel as SyncModel>::Session: Sync + Send,
-{
+pub struct Hypothetical {
     chunking: Option<ChunkStrategy>,
-    task:
-        Task<M, StructureParserResult<ChannelTextStream<String>, ((), Vec<((usize, ()), String)>)>>,
+    task: Task<StructuredRunner<Constraints>>,
 }
 
-impl<M: Model> Hypothetical<M>
-where
-    <M::SyncModel as SyncModel>::Session: Sync + Send,
-{
+impl Hypothetical {
     /// Create a new hypothetical generator.
-    pub fn builder(model: &mut M) -> HypotheticalBuilder<M> {
+    pub fn builder() -> HypotheticalBuilder {
         HypotheticalBuilder {
-            model,
             task_description: None,
             examples: None,
             chunking: None,
@@ -139,12 +123,16 @@ where
     }
 
     /// Generate a list of hypothetical questions about the given text.
-    pub async fn generate_question(
+    pub async fn generate_question<M>(
         &self,
         text: &str,
         model: &mut M,
-    ) -> anyhow::Result<Vec<String>> {
-        let questions = self.task.run(text, model).await?.result().await?;
+    ) -> anyhow::Result<Vec<String>>
+    where
+        M: Model,
+        <M::SyncModel as SyncModel>::Session: Sync + Send,
+    {
+        let questions = self.task.run(text, model).result().await?;
         let documents = questions
             .1
             .into_iter()
@@ -155,7 +143,11 @@ where
     }
 
     /// Turn this hypothetical generator into a chunker.
-    pub fn chunker<'a>(&'a self, model: &'a mut M) -> HypotheticalChunker<'a, M> {
+    pub fn chunker<'a, M>(&'a self, model: &'a mut M) -> HypotheticalChunker<'a, M>
+    where
+        M: Model,
+        <M::SyncModel as SyncModel>::Session: Sync + Send,
+    {
         HypotheticalChunker {
             hypothetical: self,
             model,
@@ -168,7 +160,7 @@ pub struct HypotheticalChunker<'a, M: Model>
 where
     <M::SyncModel as SyncModel>::Session: Sync + Send,
 {
-    hypothetical: &'a Hypothetical<M>,
+    hypothetical: &'a Hypothetical,
     model: &'a mut M,
 }
 

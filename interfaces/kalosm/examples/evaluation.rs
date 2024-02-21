@@ -34,7 +34,7 @@ async fn main() {
 
     let mut llm = Llama::new_chat();
 
-    let hypothetical = Hypothetical::builder(&mut llm).build().unwrap();
+    let hypothetical = Hypothetical::builder().build().unwrap();
 
     let mut test_cases = TestCases::new();
 
@@ -57,7 +57,7 @@ async fn main() {
         ("Blockchain technology, beyond cryptocurrencies, is being explored for applications like smart contracts. Smart contracts are self-executing contracts with the terms of the agreement directly written into code.", "How is blockchain technology utilized in the concept of smart contracts?")
     ];
 
-    let hypothetical = Hypothetical::builder(&mut llm)
+    let hypothetical = Hypothetical::builder()
         .with_examples(alternate_examples)
         .build()
         .unwrap();
