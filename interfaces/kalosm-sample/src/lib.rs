@@ -67,8 +67,8 @@ impl DynTokenizer {
 }
 
 impl Tokenizer for DynTokenizer {
-    fn encode(&self, text: &str) -> anyhow::Result<Vec<u32>> {
-        self.tokenizer.encode(text)
+    fn encode(&self, text: &str, special_tokens: bool) -> anyhow::Result<Vec<u32>> {
+        self.tokenizer.encode(text, special_tokens)
     }
 
     fn decode(&self, ids: &[u32]) -> anyhow::Result<Cow<'_, str>> {
@@ -83,11 +83,11 @@ impl Tokenizer for DynTokenizer {
 /// A tokenizer is a type that can decode a list of token ids into a string.
 pub trait Tokenizer {
     /// Encode a string into a list of token ids.
-    fn encode(&self, text: &str) -> anyhow::Result<Vec<u32>>;
+    fn encode(&self, text: &str, add_special_tokens: bool) -> anyhow::Result<Vec<u32>>;
 
     /// Encode a list of strings into a list of token ids.
-    fn encode_batch(&self, text: &[&str]) -> anyhow::Result<Vec<Vec<u32>>> {
-        text.iter().map(|text| self.encode(text)).collect()
+    fn encode_batch(&self, text: &[&str], add_special_tokens: bool) -> anyhow::Result<Vec<Vec<u32>>> {
+        text.iter().map(|text| self.encode(text, add_special_tokens)).collect()
     }
 
     /// Decode a list of token ids into a string.
@@ -110,9 +110,9 @@ where
     PP: PostProcessor,
     D: Decoder,
 {
-    fn encode(&self, text: &str) -> anyhow::Result<Vec<u32>> {
+    fn encode(&self, text: &str, special_tokens: bool) -> anyhow::Result<Vec<u32>> {
         Ok(self
-            .encode(text, true)
+            .encode(text, special_tokens)
             .map_err(|e| anyhow::anyhow!(e))?
             .get_ids()
             .to_vec())
@@ -165,8 +165,8 @@ impl FasterHuggingFaceTokenizer {
 }
 
 impl Tokenizer for FasterHuggingFaceTokenizer {
-    fn encode(&self, text: &str) -> anyhow::Result<Vec<u32>> {
-        self.inner.encode(text)
+    fn encode(&self, text: &str, special_tokens: bool) -> anyhow::Result<Vec<u32>> {
+        self.inner.encode(text, special_tokens)
     }
 
     fn decode(&self, ids: &[u32]) -> anyhow::Result<Cow<'_, str>> {
@@ -183,10 +183,10 @@ impl Tokenizer for FasterHuggingFaceTokenizer {
 }
 
 impl Tokenizer for tokenizers::Tokenizer {
-    fn encode(&self, text: &str) -> anyhow::Result<Vec<u32>> {
+    fn encode(&self, text: &str, special_tokens: bool) -> anyhow::Result<Vec<u32>> {
         let deref = self.deref();
         Ok(deref
-            .encode(text, true)
+            .encode(text, special_tokens)
             .map_err(|e| anyhow::anyhow!(e))?
             .get_ids()
             .to_vec())

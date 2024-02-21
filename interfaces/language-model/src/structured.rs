@@ -33,11 +33,11 @@ where
     let mut parser_state = SequenceParserState::FirstParser(parser_state);
 
     let mut on_token = move |token: String| -> anyhow::Result<()> {
-        on_token(token.replace(stop_token.as_str(), "").to_string())
+        on_token(token.replace(stop_token.as_str().trim(), ""))
     };
 
     let prompt_text = prompt.to_string();
-    let mut tokens = tokenizer.encode(&prompt_text)?;
+    let mut tokens = tokenizer.encode(&prompt_text, true)?;
     let mut prev_index = tokens.len();
     let mut current_index = tokens.len();
     let mut unprocessed_token_count = tokens.len();
@@ -154,9 +154,15 @@ fn update_state<P: Parser>(
                     .unwrap_or_else(|_| {
                         unreachable!("Required next should always be valid attempted to add {} but got error", required_next)
                 });
-                let extra_tokens = tokenizer.encode(&required_next)?;
+                let mut extra_tokens = tokenizer.encode(&required_next, false)?;
+                if extra_tokens.len() == 1 {
+                    return Ok(None);
+                }
+                tokens.extend(extra_tokens.iter().copied());
+                // Remove the last token to avoid influencing the next token
+                tokens.pop();
+                let required_next = tokenizer.decode(&extra_tokens)?;
                 *unprocessed_token_count += extra_tokens.len();
-                tokens.extend(extra_tokens);
                 on_token(required_next.to_string())?;
                 update_state(
                     parser,
