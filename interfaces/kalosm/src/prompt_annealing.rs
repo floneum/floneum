@@ -215,7 +215,7 @@ pub struct PromptAnnealer<
     <<M as Model>::SyncModel as SyncModel>::Session: Sync + Send,
 {
     task: TaskBuilder<P>,
-    llm: &'a mut M,
+    llm: &'a M,
     metric: Met,
     test: Vec<Example<'static>>,
     population: Vec<ExamplesInstance>,
@@ -303,7 +303,7 @@ impl ExamplesInstance {
     async fn mutate<M, P>(
         &mut self,
         test: &[Example<'static>],
-        llm: &mut M,
+        llm: &M,
         metric: &mut impl Metric<String>,
         task: TaskBuilder<P>,
     ) where
@@ -381,13 +381,10 @@ struct Example<'a> {
     embedding: Embedding<BertSpace>,
 }
 
-// impl<'a, M: Model, P: TaskBuilderReturn<M> + Send + Sync + 'static>> TaskBuilder<'a, M, P>
-// where
-//     <M::SyncModel as SyncModel>::Session: Send + Sync,
 async fn evaluate<'a, M: Model, P>(
     examples: &[Example<'static>],
     test: &[Example<'static>],
-    llm: &mut M,
+    llm: &M,
     metric: &mut impl Metric<String>,
     task: TaskBuilder<P>,
 ) -> f64

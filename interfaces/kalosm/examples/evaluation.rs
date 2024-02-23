@@ -32,7 +32,7 @@ const TEST_PAIRS :&[(&str, &str)]= &[
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let mut llm = Llama::new_chat();
+    let llm = Llama::new_chat();
 
     let hypothetical = Hypothetical::builder().build().unwrap();
 
