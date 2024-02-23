@@ -3,7 +3,7 @@ use rbert::*;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let mut bert = Bert::builder().build()?;
+    let bert = Bert::builder().build()?;
     let sentences = vec![
         "Cats are cool",
         "The geopolitical situation is dire",

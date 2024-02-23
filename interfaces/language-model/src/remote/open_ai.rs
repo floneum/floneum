@@ -226,7 +226,7 @@ impl Embedder for AdaEmbedder {
     type VectorSpace = AdaEmbedding;
 
     /// Embed a single string.
-    async fn embed(&mut self, input: &str) -> anyhow::Result<Embedding<AdaEmbedding>> {
+    async fn embed(&self, input: &str) -> anyhow::Result<Embedding<AdaEmbedding>> {
         let request = CreateEmbeddingRequestArgs::default()
             .model("text-embedding-ada-002")
             .input([input])

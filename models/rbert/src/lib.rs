@@ -51,7 +51,7 @@ extern crate accelerate_src;
 mod language_model;
 pub use language_model::*;
 
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::RwLock};
 
 use anyhow::anyhow;
 use candle_core::{Device, Tensor};
@@ -156,7 +156,7 @@ impl BertBuilder {
 /// A bert model
 pub struct Bert {
     model: BertModel,
-    tokenizer: Tokenizer,
+    tokenizer: RwLock<Tokenizer>,
 }
 
 impl Default for Bert {
@@ -207,11 +207,14 @@ impl Bert {
         let model = BertModel::load(vb, &config)?;
         let tokenizer = Tokenizer::from_file(&tokenizer_filename).map_err(anyhow::Error::msg)?;
 
-        Ok(Bert { tokenizer, model })
+        Ok(Bert {
+            tokenizer: RwLock::new(tokenizer),
+            model,
+        })
     }
 
     /// Embed a batch of sentences
-    pub(crate) fn embed_batch_raw(&mut self, sentences: &[&str]) -> anyhow::Result<Vec<Tensor>> {
+    pub(crate) fn embed_batch_raw(&self, sentences: &[&str]) -> anyhow::Result<Vec<Tensor>> {
         let mut combined = Vec::new();
         for batch in sentences.chunks(4) {
             let embeddings = self.embed_batch_raw_inner(batch)?;
@@ -220,23 +223,25 @@ impl Bert {
         Ok(combined)
     }
 
-    fn embed_batch_raw_inner(&mut self, sentences: &[&str]) -> anyhow::Result<Vec<Tensor>> {
+    fn embed_batch_raw_inner(&self, sentences: &[&str]) -> anyhow::Result<Vec<Tensor>> {
         let device = &self.model.device;
 
         let n_sentences = sentences.len();
-        if let Some(pp) = self.tokenizer.get_padding_mut() {
-            pp.strategy = tokenizers::PaddingStrategy::BatchLongest
-        } else {
-            let pp = PaddingParams {
-                strategy: tokenizers::PaddingStrategy::BatchLongest,
-                ..Default::default()
-            };
-            self.tokenizer.with_padding(Some(pp));
-        }
-        let tokens = self
-            .tokenizer
-            .encode_batch(sentences.to_vec(), true)
-            .map_err(anyhow::Error::msg)?;
+        let tokens = {
+            let mut tokenizer_write = self.tokenizer.write().unwrap();
+            if let Some(pp) = tokenizer_write.get_padding_mut() {
+                pp.strategy = tokenizers::PaddingStrategy::BatchLongest
+            } else {
+                let pp = PaddingParams {
+                    strategy: tokenizers::PaddingStrategy::BatchLongest,
+                    ..Default::default()
+                };
+                tokenizer_write.with_padding(Some(pp));
+            }
+            tokenizer_write
+                .encode_batch(sentences.to_vec(), true)
+                .map_err(anyhow::Error::msg)?
+        };
         let token_ids = tokens
             .iter()
             .map(|tokens| {

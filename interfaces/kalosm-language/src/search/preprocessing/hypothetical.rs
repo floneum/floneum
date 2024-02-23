@@ -123,11 +123,7 @@ impl Hypothetical {
     }
 
     /// Generate a list of hypothetical questions about the given text.
-    pub async fn generate_question<M>(
-        &self,
-        text: &str,
-        model: &mut M,
-    ) -> anyhow::Result<Vec<String>>
+    pub async fn generate_question<M>(&self, text: &str, model: &M) -> anyhow::Result<Vec<String>>
     where
         M: Model,
         <M::SyncModel as SyncModel>::Session: Sync + Send,
@@ -143,7 +139,7 @@ impl Hypothetical {
     }
 
     /// Turn this hypothetical generator into a chunker.
-    pub fn chunker<'a, M>(&'a self, model: &'a mut M) -> HypotheticalChunker<'a, M>
+    pub fn chunker<'a, M>(&'a self, model: &'a M) -> HypotheticalChunker<'a, M>
     where
         M: Model,
         <M::SyncModel as SyncModel>::Session: Sync + Send,
@@ -161,7 +157,7 @@ where
     <M::SyncModel as SyncModel>::Session: Sync + Send,
 {
     hypothetical: &'a Hypothetical,
-    model: &'a mut M,
+    model: &'a M,
 }
 
 #[async_trait::async_trait]
@@ -171,9 +167,9 @@ where
     <M::SyncModel as SyncModel>::Session: Sync + Send,
 {
     async fn chunk<E: Embedder + Send>(
-        &mut self,
+        &self,
         document: &Document,
-        embedder: &mut E,
+        embedder: &E,
     ) -> anyhow::Result<Vec<Chunk<E::VectorSpace>>> {
         let body = document.body();
 

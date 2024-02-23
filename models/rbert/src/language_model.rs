@@ -18,12 +18,12 @@ impl CreateModel for Bert {
 impl Embedder for Bert {
     type VectorSpace = BertSpace;
 
-    async fn embed(&mut self, input: &str) -> anyhow::Result<Embedding<BertSpace>> {
+    async fn embed(&self, input: &str) -> anyhow::Result<Embedding<BertSpace>> {
         let tensor = self.embed_batch_raw(&[input])?.pop().unwrap();
         Ok(Embedding::new(tensor))
     }
 
-    async fn embed_batch(&mut self, inputs: &[&str]) -> anyhow::Result<Vec<Embedding<BertSpace>>> {
+    async fn embed_batch(&self, inputs: &[&str]) -> anyhow::Result<Vec<Embedding<BertSpace>>> {
         let tensors = self.embed_batch_raw(inputs)?;
 
         let mut embeddings = Vec::with_capacity(tensors.len());

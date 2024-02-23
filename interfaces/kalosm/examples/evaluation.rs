@@ -39,10 +39,7 @@ async fn main() {
     let mut test_cases = TestCases::new();
 
     for (text, expected) in TEST_PAIRS {
-        let actual = &hypothetical
-            .generate_question(text, &mut llm)
-            .await
-            .unwrap()[0];
+        let actual = &hypothetical.generate_question(text, &llm).await.unwrap()[0];
 
         test_cases.push_case(expected.to_string(), actual.clone());
     }
@@ -65,10 +62,7 @@ async fn main() {
     let mut test_cases = TestCases::new();
 
     for (text, expected) in TEST_PAIRS {
-        let actual = &hypothetical
-            .generate_question(text, &mut llm)
-            .await
-            .unwrap()[0];
+        let actual = &hypothetical.generate_question(text, &llm).await.unwrap()[0];
 
         test_cases.push_case(expected.to_string(), actual.clone());
     }

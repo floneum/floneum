@@ -28,11 +28,7 @@ impl Summarizer {
     }
 
     /// Generate a summary for a document.
-    pub async fn generate_summary<M>(
-        &self,
-        text: &str,
-        model: &mut M,
-    ) -> anyhow::Result<Vec<String>>
+    pub async fn generate_summary<M>(&self, text: &str, model: &M) -> anyhow::Result<Vec<String>>
     where
         M: Model,
         <M::SyncModel as SyncModel>::Session: Sync + Send,
@@ -46,7 +42,7 @@ impl Summarizer {
     }
 
     /// Turn this summary generator into a chunker.
-    pub fn summary<'a, M>(&'a self, model: &'a mut M) -> SummaryChunker<'a, M>
+    pub fn summary<'a, M>(&'a self, model: &'a M) -> SummaryChunker<'a, M>
     where
         M: Model,
         <M::SyncModel as SyncModel>::Session: Sync + Send,
@@ -61,7 +57,7 @@ impl Summarizer {
 /// A summary chunker.
 pub struct SummaryChunker<'a, M> {
     summary: &'a Summarizer,
-    model: &'a mut M,
+    model: &'a M,
 }
 
 #[async_trait::async_trait]
@@ -71,9 +67,9 @@ where
     <M::SyncModel as SyncModel>::Session: Sync + Send,
 {
     async fn chunk<E: Embedder + Send>(
-        &mut self,
+        &self,
         document: &Document,
-        embedder: &mut E,
+        embedder: &E,
     ) -> anyhow::Result<Vec<Chunk<E::VectorSpace>>> {
         let body = document.body();
 

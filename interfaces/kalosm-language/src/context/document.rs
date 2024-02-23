@@ -74,6 +74,13 @@ impl IntoDocument for String {
 }
 
 #[async_trait::async_trait]
+impl IntoDocument for &String {
+    async fn into_document(self) -> anyhow::Result<Document> {
+        Ok(Document::from_parts("", self.to_string()))
+    }
+}
+
+#[async_trait::async_trait]
 impl IntoDocument for &str {
     async fn into_document(self) -> anyhow::Result<Document> {
         Ok(Document::from_parts("", self.to_string()))

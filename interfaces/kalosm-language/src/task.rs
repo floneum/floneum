@@ -259,7 +259,7 @@ pub struct UnstructuredRunner {
 impl TaskRunner for UnstructuredRunner {
     type Output = ChannelTextStream<String>;
 
-    fn run<M: Model>(&self, input: String, model: &mut M) -> Self::Output  where <<M as kalosm_language_model::Model>::SyncModel as kalosm_language_model::SyncModel>::Session: Send + Sync{
+    fn run<M: Model>(&self, input: String, model: & M) -> Self::Output  where <<M as kalosm_language_model::Model>::SyncModel as kalosm_language_model::SyncModel>::Session: Send + Sync{
         let chat_markers = model.chat_markers();
 
         let stop_on = chat_markers
@@ -373,7 +373,7 @@ where
 {
     type Output = StructureParserResult<ChannelTextStream<String>, P::Output>;
 
-    fn run<M: Model>(&self, input: String, model: &mut M) -> Self::Output where <<M as kalosm_language_model::Model>::SyncModel as kalosm_language_model::SyncModel>::Session: Send + Sync{
+    fn run<M: Model>(&self, input: String, model: & M) -> Self::Output where <<M as kalosm_language_model::Model>::SyncModel as kalosm_language_model::SyncModel>::Session: Send + Sync{
         let (tx, rx) = unbounded_channel();
         let (parsed_tx, parsed_rx) = oneshot::channel();
         let arc_parser = self.parser.clone();
@@ -441,7 +441,7 @@ pub trait TaskRunner {
     type Output: Stream<Item = String> + Send + Sync + Unpin + 'static;
 
     /// Run the task with a input and a model.
-    fn run<M: Model>(&self, input: String, model: &mut M) -> Self::Output where <<M as kalosm_language_model::Model>::SyncModel as kalosm_language_model::SyncModel>::Session: Send + Sync;
+    fn run<M: Model>(&self, input: String, model: & M) -> Self::Output where <<M as kalosm_language_model::Model>::SyncModel as kalosm_language_model::SyncModel>::Session: Send + Sync;
 }
 
 /// A task session lets you efficiently run a task with a model. The task session will reuse the model's cache to avoid re-feeding the task prompt repeatedly.
@@ -492,7 +492,7 @@ impl Task {
 
 impl<R: TaskRunner> Task<R> {
     /// Run the task with a message.
-    pub fn run<M>(&self, message: impl Into<String>, model: &mut M) -> R::Output
+    pub fn run<M>(&self, message: impl Into<String>, model: & M) -> R::Output
     where
         M: Model,
          <<M as kalosm_language_model::Model>::SyncModel as kalosm_language_model::SyncModel>::Session: Send + Sync

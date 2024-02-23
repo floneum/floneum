@@ -113,7 +113,7 @@ where
             (self.train, self.test)
         };
 
-        let mut bert = Bert::default();
+        let bert = Bert::default();
 
         // Calculate embeddings for all examples
         let mut embedded_train_set = Vec::new();

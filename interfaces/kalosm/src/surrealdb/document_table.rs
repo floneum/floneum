@@ -55,13 +55,13 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     }
 
     /// Insert a new record into the table with the given embedding.
-    pub async fn insert(&mut self, value: R) -> anyhow::Result<Id>
+    pub async fn insert(&self, value: R) -> anyhow::Result<Id>
     where
         R: HasDocument + Serialize + DeserializeOwned,
     {
         let embeddings = self
             .chunker
-            .chunk(value.document(), &mut self.embedding_model)
+            .chunk(value.document(), &self.embedding_model)
             .await?;
         self.table
             .insert(
@@ -107,14 +107,17 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
 
     /// Select the top k records nearest records to the given record.
     pub async fn select_nearest(
-        &mut self,
-        record: &R,
+        &self,
+        record: impl IntoDocument,
         k: usize,
     ) -> anyhow::Result<Vec<EmbeddingIndexedTableSearchResult<R>>>
     where
-        R: HasDocument + DeserializeOwned,
+        R: DeserializeOwned,
     {
-        let embedding = self.embedding_model.embed(record.document().body()).await?;
+        let embedding = self
+            .embedding_model
+            .embed(record.into_document().await?.body())
+            .await?;
         self.select_nearest_embedding(embedding, k).await
     }
 
