@@ -32,6 +32,8 @@ mod prompt_annealing;
 pub use prompt_annealing::*;
 
 #[cfg(feature = "surrealdb")]
-mod surrealdb;
+mod surrealdb_integration;
 #[cfg(feature = "surrealdb")]
-pub use surrealdb::*;
+pub use surrealdb_integration::*;
+#[cfg(feature = "surrealdb")]
+pub use ::surrealdb;
