@@ -1,3 +1,5 @@
+use std::path::Display;
+
 use url::Url;
 pub use whatlang::Lang;
 
@@ -56,6 +58,12 @@ impl Document {
     /// Get the body of the document.
     pub fn body(&self) -> &str {
         &self.body
+    }
+}
+
+impl std::fmt::Display for Document {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}\n{}", self.title, self.body)
     }
 }
 
