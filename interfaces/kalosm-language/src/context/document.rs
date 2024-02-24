@@ -1,5 +1,3 @@
-use std::path::Display;
-
 use url::Url;
 pub use whatlang::Lang;
 
