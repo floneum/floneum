@@ -24,7 +24,7 @@ Floneum is a graph editor that makes it easy to develop your own AI workflows
 
 ## Kalosm
 
-[Kalosm](./interfaces/kalosm/) is a simple interface for pre-trained models in rust. It makes it easy to interact with pre-trained, language, audio, and image models.
+[Kalosm](./interfaces/kalosm/) is a simple interface for pre-trained models in rust that backs Floneum. It makes it easy to interact with pre-trained, language, audio, and image models.
 
 There are three different packages in Kalosm:
 
