@@ -105,6 +105,15 @@ impl LlamaSource {
         self
     }
 
+    /// Set the group query attention for the model
+    /// For the llama family of models, this is typically 1
+    /// For the mistral family of models, this is typically 8
+    pub fn with_group_query_attention(mut self, group_query_attention: u8) -> Self {
+        self.group_query_attention = group_query_attention;
+
+        self
+    }
+
     pub(crate) fn tokenizer(&self) -> anyhow::Result<Tokenizer> {
         let tokenizer_path = self.tokenizer.path()?;
         Tokenizer::from_file(tokenizer_path).map_err(anyhow::Error::msg)

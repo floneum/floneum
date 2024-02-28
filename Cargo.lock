@@ -5964,7 +5964,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6118,7 +6118,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-llama"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "accelerate-src",
  "anyhow",
