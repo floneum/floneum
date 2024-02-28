@@ -4854,7 +4854,7 @@ source = "git+https://github.com/s3bk/glyphmatcher#1958392699b875695a22b332f1e49
 dependencies = [
  "font",
  "istring 0.3.4 (git+https://github.com/s3bk/istring)",
- "itertools 0.12.1",
+ "itertools 0.8.2",
  "pathfinder_content",
  "pathfinder_geometry",
  "pdf_encoding 0.4.0 (git+https://github.com/pdf-rs/encoding)",
@@ -5964,7 +5964,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5998,7 +5998,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-language"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "arroy",
@@ -6059,7 +6059,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-language-model"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "async-openai",
@@ -6094,7 +6094,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-learning"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "candle-core",
@@ -6110,7 +6110,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-learning-macro"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "quote",
  "syn 2.0.49",
@@ -6118,7 +6118,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-llama"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "accelerate-src",
  "anyhow",
@@ -6146,7 +6146,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-ocr"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "accelerate-src",
  "anyhow",
@@ -6167,11 +6167,10 @@ dependencies = [
 
 [[package]]
 name = "kalosm-sample"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "candle-core",
- "llm",
  "llm-samplers",
  "rand 0.8.5",
  "regex-automata 0.4.5",
@@ -6182,7 +6181,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-sound"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6210,7 +6209,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-streams"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "futures-util",
@@ -6221,7 +6220,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-vision"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "image 0.24.8",
  "kalosm-ocr",
@@ -8232,7 +8231,7 @@ dependencies = [
  "image 0.24.8",
  "instant",
  "istring 0.3.4 (git+https://github.com/s3bk/istring)",
- "itertools 0.12.1",
+ "itertools 0.8.2",
  "log",
  "once_cell",
  "pathfinder_color",
@@ -8251,9 +8250,9 @@ version = "0.1.0"
 source = "git+https://github.com/pdf-rs/pdf_text#03d4789b4d23b24a991a18d31a352c8400237afc"
 dependencies = [
  "font",
- "itertools 0.12.1",
+ "itertools 0.8.2",
  "log",
- "ordered-float 4.2.0",
+ "ordered-float 2.10.1",
  "pathfinder_color",
  "pathfinder_content",
  "pathfinder_geometry",
@@ -9011,7 +9010,7 @@ dependencies = [
 
 [[package]]
 name = "rbert"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "accelerate-src",
  "anyhow",
@@ -9430,7 +9429,7 @@ dependencies = [
 
 [[package]]
 name = "rphi"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "accelerate-src",
  "anyhow",
@@ -9978,7 +9977,7 @@ dependencies = [
 
 [[package]]
 name = "rwhisper"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "accelerate-src",
  "anyhow",
@@ -10009,7 +10008,7 @@ dependencies = [
 
 [[package]]
 name = "rwuerstchen"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "accelerate-src",
  "anyhow",
@@ -10191,7 +10190,7 @@ dependencies = [
 
 [[package]]
 name = "segment-anything-rs"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "accelerate-src",
  "anyhow",
