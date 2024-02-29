@@ -8,7 +8,7 @@ async fn main() {
     println!("# with constraints");
     print!("{}", prompt);
 
-    let validator = RegexParser::new(r"(\d, )*\d").unwrap();
+    let validator = RegexParser::new(r"(\d, ){4}\d").unwrap();
     let stream = llm.stream_structured_text(prompt, validator).await.unwrap();
 
     stream.split().0.to_std_out().await.unwrap();
