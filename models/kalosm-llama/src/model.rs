@@ -13,6 +13,7 @@ use kalosm_language_model::SyncModel;
 use tokenizers::Tokenizer;
 
 use crate::InferenceSettings;
+use kalosm_common::accelerated_device_if_available;
 
 /// The inner, synchronous Llama model.
 pub struct LlamaModel {
@@ -99,18 +100,18 @@ impl LlamaModel {
     pub fn from_builder(builder: crate::LlamaBuilder) -> anyhow::Result<Self> {
         let tokenizer = builder.source.tokenizer()?;
 
-        let device = Device::cuda_if_available(0)?;
+        let device = accelerated_device_if_available()?;
         let filename = builder.source.model()?;
         let mut file = std::fs::File::open(&filename)?;
         let model = match filename.extension().and_then(|v| v.to_str()) {
             Some("gguf") => {
                 let model = gguf_file::Content::read(&mut file)?;
-                Model::from_gguf(model, &mut file)?
+                Model::from_gguf(model, &mut file, &device)?
             }
             Some("ggml" | "bin") | Some(_) | None => {
-                let model = ggml_file::Content::read(&mut file)?;
+                let model = ggml_file::Content::read(&mut file, &device)?;
                 let gqa = builder.source.group_query_attention;
-                Model::from_ggml(model, gqa as usize)?
+                Model::from_ggml(model, gqa as usize, &device)?
             }
         };
 

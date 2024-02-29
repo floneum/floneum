@@ -46,6 +46,7 @@ use candle_core::{
     quantized::{ggml_file, gguf_file},
     Device,
 };
+use kalosm_common::accelerated_device_if_available;
 use kalosm_language_model::ChatMarkers;
 use llm_samplers::types::Sampler;
 pub use source::*;
@@ -191,21 +192,12 @@ impl Llama {
 /// A builder with configuration for a Llama model.
 #[derive(Default)]
 pub struct LlamaBuilder {
-    /// Run on CPU rather than on GPU.
-    cpu: bool,
-
     source: source::LlamaSource,
 
     flash_attn: bool,
 }
 
 impl LlamaBuilder {
-    /// Set whether to run on CPU rather than on GPU.
-    pub fn with_cpu(mut self, cpu: bool) -> Self {
-        self.cpu = cpu;
-        self
-    }
-
     /// Set the source for the model.
     pub fn with_source(mut self, source: source::LlamaSource) -> Self {
         self.source = source;
@@ -222,18 +214,18 @@ impl LlamaBuilder {
     pub fn build(self) -> anyhow::Result<Llama> {
         let tokenizer = self.source.tokenizer()?;
 
-        let device = Device::cuda_if_available(0)?;
+        let device = accelerated_device_if_available()?;
         let filename = self.source.model()?;
         let mut file = std::fs::File::open(&filename)?;
         let model = match filename.extension().and_then(|v| v.to_str()) {
             Some("gguf") => {
                 let model = gguf_file::Content::read(&mut file)?;
-                Model::from_gguf(model, &mut file)?
+                Model::from_gguf(model, &mut file, &device)?
             }
             Some("ggml" | "bin") | Some(_) | None => {
-                let model = ggml_file::Content::read(&mut file)?;
+                let model = ggml_file::Content::read(&mut file, &device)?;
                 let gqa = self.source.group_query_attention;
-                Model::from_ggml(model, gqa as usize)?
+                Model::from_ggml(model, gqa as usize, &device)?
             }
         };
 

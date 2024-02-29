@@ -67,5 +67,5 @@ half = "2.3.1"
 
 [features]
 llamacpp = ["kalosm-language-model/llamacpp", "kalosm-sample/llamacpp"]
-metal = ["rphi/accelerate", "rbert/accelerate", "kalosm-llama/accelerate"]
+metal = ["rphi/metal", "rbert/metal", "kalosm-llama/metal"]
 cublas = ["rbert/cuda", "rbert/cudnn", "rphi/cuda", "rphi/cudnn", "kalosm-llama/cuda", "kalosm-llama/cudnn"]

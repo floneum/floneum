@@ -28,18 +28,22 @@ fn silu_chunk(chunk: &mut [f32; 16]) {
     }
 }
 
-pub(crate) fn fast_cpu_silu(tensor: &Tensor) -> candle_core::Result<Tensor> {
-    let shape = tensor.shape();
+pub(crate) fn fast_cpu_silu(tensor: &Tensor, device: &Device) -> candle_core::Result<Tensor> {
+    if matches!(device, Device::Cpu) {
+        let shape = tensor.shape();
 
-    let mut as_vec = tensor.flatten_all()?.to_vec1::<f32>()?;
-    let mut iter = as_vec.par_chunks_exact_mut(16);
-    for item in iter.remainder() {
-        silu(item)
+        let mut as_vec = tensor.flatten_all()?.to_vec1::<f32>()?;
+        let mut iter = as_vec.par_chunks_exact_mut(16);
+        for item in iter.remainder() {
+            silu(item)
+        }
+        iter.for_each(|chunk| {
+            let chunk: &mut [f32; 16] = unsafe { chunk.try_into().unwrap_unchecked() };
+            silu_chunk(chunk)
+        });
+
+        Tensor::from_vec(as_vec, shape, device)
+    } else {
+        candle_nn::ops::silu(tensor)
     }
-    iter.for_each(|chunk| {
-        let chunk: &mut [f32; 16] = unsafe { chunk.try_into().unwrap_unchecked() };
-        silu_chunk(chunk)
-    });
-
-    Tensor::from_vec(as_vec, shape, &Device::Cpu)
 }

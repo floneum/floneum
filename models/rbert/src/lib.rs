@@ -51,10 +51,11 @@ extern crate accelerate_src;
 mod language_model;
 pub use language_model::*;
 
+use kalosm_common::accelerated_device_if_available;
 use std::{path::PathBuf, sync::RwLock};
 
 use anyhow::anyhow;
-use candle_core::{Device, Tensor};
+use candle_core::Tensor;
 use candle_nn::VarBuilder;
 use candle_transformers::models::bert::{BertModel, Config, DTYPE};
 use hf_hub::{api::sync::Api, Cache, Repo, RepoType};
@@ -131,19 +132,12 @@ impl Default for BertSource {
 #[derive(Default)]
 pub struct BertBuilder {
     source: BertSource,
-    cpu: bool,
 }
 
 impl BertBuilder {
     /// Set the source of the model
     pub fn with_source(mut self, source: BertSource) -> Self {
         self.source = source;
-        self
-    }
-
-    /// Set whether to use the CPU or GPU
-    pub fn with_cpu(mut self, cpu: bool) -> Self {
-        self.cpu = cpu;
         self
     }
 
@@ -172,7 +166,7 @@ impl Bert {
     }
 
     fn new(builder: BertBuilder) -> anyhow::Result<Self> {
-        let BertBuilder { source, cpu } = builder;
+        let BertBuilder { source } = builder;
         let BertSource { model_id, revision } = source;
 
         let repo = Repo::with_revision(model_id, RepoType::Model, revision);
@@ -201,7 +195,7 @@ impl Bert {
         let config = std::fs::read_to_string(config_filename)?;
         let config: Config = serde_json::from_str(&config)?;
 
-        let device = device(cpu)?;
+        let device = accelerated_device_if_available()?;
         let vb =
             unsafe { VarBuilder::from_mmaped_safetensors(&[&weights_filename], DTYPE, &device)? };
         let model = BertModel::load(vb, &config)?;
@@ -265,18 +259,4 @@ impl Bert {
 
 fn normalize_l2(v: &Tensor) -> anyhow::Result<Tensor> {
     Ok(v.broadcast_div(&v.sqr()?.sum_keepdim(1)?.sqrt()?)?)
-}
-
-fn device(cpu: bool) -> anyhow::Result<Device> {
-    if cpu {
-        Ok(Device::Cpu)
-    } else {
-        let device = Device::cuda_if_available(0)?;
-        if !device.is_cuda() {
-            tracing::warn!(
-                "Running on CPU, to run on GPU, build this example with `--features cuda`"
-            );
-        }
-        Ok(device)
-    }
 }

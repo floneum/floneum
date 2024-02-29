@@ -72,15 +72,22 @@ impl RopeCache {
             Ok(rope)
         }
 
-        let (q, k) = std::thread::scope(|s| {
-            let q = s.spawn(|| apply_rotary_emb(&self.sin, &self.cos, q, start_pos));
+        let device = q.device();
+        let (q, k) = if matches!(device, Device::Cpu) {
+            std::thread::scope(|s| {
+                let q = s.spawn(|| apply_rotary_emb(&self.sin, &self.cos, q, start_pos));
+                let k = apply_rotary_emb(&self.sin, &self.cos, k, start_pos)?;
+                candle_core::Result::Ok((
+                    q.join()
+                        .map_err(|e| candle_core::Error::Msg(format!("Error in q: {:?}", e)))??,
+                    k,
+                ))
+            })?
+        } else {
+            let q = apply_rotary_emb(&self.sin, &self.cos, q, start_pos)?;
             let k = apply_rotary_emb(&self.sin, &self.cos, k, start_pos)?;
-            candle_core::Result::Ok((
-                q.join()
-                    .map_err(|e| candle_core::Error::Msg(format!("Error in q: {:?}", e)))??,
-                k,
-            ))
-        })?;
+            (q, k)
+        };
 
         Ok((q, k))
     }

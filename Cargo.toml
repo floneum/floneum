@@ -77,15 +77,17 @@ members = [
     "floneum/plugins/power",
     "floneum/plugins/number",
     "floneum/plugins/string",
+    "interfaces/kalosm-common",
 ]
 
 [workspace.dependencies]
-candle-core = { version = "=0.3.2" }
-candle-nn = { version = "=0.3.2" }
-candle-transformers = { version = "=0.3.2" }
-candle-datasets = { version = "=0.3.2" }
+candle-core = { version = "=0.4.1" }
+candle-nn = { version = "=0.4.1" }
+candle-transformers = { version = "=0.4.1" }
+candle-datasets = { version = "=0.4.1" }
 kalosm = { path = "./interfaces/kalosm", version = "0.2.1" }
 kalosm-sample = { path = "./interfaces/kalosm-sample", version = "0.2.1" }
+kalosm-common = { path = "./interfaces/kalosm-common", version = "0.1.0" }
 kalosm-language-model = { path = "./interfaces/language-model", version = "0.2.1" }
 kalosm-streams = { path = "./interfaces/kalosm-streams", version = "0.2.1" }
 kalosm-language = { path = "./interfaces/kalosm-language", version = "0.2.1" }

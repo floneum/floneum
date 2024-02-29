@@ -1,5 +1,6 @@
 use super::cache::{AttentionCache, AttentionCacheValue};
 use super::rope::RopeCache;
+use candle_core::Device;
 use candle_core::{quantized::QMatMul, Module, Tensor};
 use candle_nn::LayerNorm;
 
@@ -35,8 +36,9 @@ impl LlamaAttention {
         let head_dim = self.head_dim;
         let num_key_value_heads = self.n_kv_head;
         let num_key_value_groups = num_heads / num_key_value_heads;
+        let device = hidden_states.device();
 
-        let (query_states, key_states, value_states) =
+        let (query_states, key_states, value_states) = if matches!(device, Device::Cpu) {
             std::thread::scope(|s| -> Result<_, candle_core::Error> {
                 let query_states = s.spawn(|| {
                     let query_states = self.attention_wq.forward(hidden_states)?;
@@ -68,7 +70,34 @@ impl LlamaAttention {
                 let value_states = value_states.join().unwrap()?;
 
                 Ok((query_states, key_states, value_states))
-            })?;
+            })?
+        } else {
+            let query_states = {
+                let query_states = self.attention_wq.forward(hidden_states)?;
+                query_states
+                    .reshape((bsz, q_len, num_heads, head_dim))?
+                    .transpose(1, 2)?
+            };
+            let key_states = {
+                let key_states = self.attention_wk.forward(hidden_states)?;
+                key_states
+                    .reshape((bsz, q_len, num_key_value_heads, head_dim))?
+                    .transpose(1, 2)?
+            };
+            let value_states = {
+                let value_states = self.attention_wv.forward(hidden_states)?;
+
+                value_states
+                    .reshape((bsz, q_len, num_key_value_heads, head_dim))?
+                    .transpose(1, 2)?
+            };
+
+            let (query_states, key_states) =
+                self.rope_cache
+                    .forward(&query_states, &key_states, start_pos)?;
+
+            (query_states, key_states, value_states)
+        };
 
         let key_states = repeat_kv(key_states.clone(), num_key_value_groups)?;
         let value_states = repeat_kv(value_states, num_key_value_groups)?;

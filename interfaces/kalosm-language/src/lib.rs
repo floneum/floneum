@@ -37,7 +37,7 @@ pub mod prelude {
     pub use crate::vector_db::*;
     pub use futures_util::StreamExt as _;
     pub use kalosm_language_model::*;
-    pub use kalosm_llama::{FileSource, Llama, LlamaBuilder, LlamaSession, LlamaSource};
+    pub use kalosm_llama::{Llama, LlamaBuilder, LlamaSession, LlamaSource};
     pub use kalosm_sample::*;
     pub use kalosm_streams::text_stream::*;
     pub use rbert::{Bert, BertBuilder, BertSource, BertSpace};

@@ -31,20 +31,12 @@ use image::{DynamicImage, GenericImage, GenericImageView, ImageBuffer, Rgba};
 #[derive(Default)]
 pub struct SegmentAnythingBuilder {
     source: SegmentAnythingSource,
-
-    cpu: bool,
 }
 
 impl SegmentAnythingBuilder {
     /// Sets the source of the model.
     pub fn source(mut self, source: SegmentAnythingSource) -> Self {
         self.source = source;
-        self
-    }
-
-    /// Set to true to run the model on CPU.
-    pub fn cpu(mut self, cpu: bool) -> Self {
-        self.cpu = cpu;
         self
     }
 
@@ -172,13 +164,15 @@ impl SegmentAnything {
     }
 
     fn new(settings: SegmentAnythingBuilder) -> anyhow::Result<Self> {
-        let SegmentAnythingBuilder { source, cpu } = settings;
+        let SegmentAnythingBuilder { source } = settings;
         let model = {
             let api = hf_hub::api::sync::Api::new()?;
             let api = api.model(source.model);
             api.get(&source.filename)?
         };
-        let device = device(cpu)?;
+        // Currently, candle doesn't support some operations that are required for segment anything
+        // let device = kalosm_common::accelerated_device_if_available()?;
+        let device = Device::Cpu;
         let vb = unsafe { VarBuilder::from_mmaped_safetensors(&[model], DType::F32, &device)? };
         let sam = if source.tiny {
             sam::Sam::new_tiny(vb)? // tiny vit_t
@@ -321,19 +315,5 @@ impl SegmentAnything {
         }
 
         Ok(masks)
-    }
-}
-
-fn device(cpu: bool) -> anyhow::Result<Device> {
-    if cpu {
-        Ok(Device::Cpu)
-    } else {
-        let device = Device::cuda_if_available(0)?;
-        if !device.is_cuda() {
-            tracing::warn!(
-                "Running on CPU, to run on GPU, build this example with `--features cuda`"
-            );
-        }
-        Ok(device)
     }
 }

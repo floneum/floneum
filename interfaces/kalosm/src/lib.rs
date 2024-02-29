@@ -7,12 +7,11 @@ pub use kalosm_streams::timed_stream::*;
 #[cfg(feature = "language")]
 pub mod language {
     //! Language processing utilities for the Kalosm framework.
+    pub use kalosm_common::FileSource;
     pub use kalosm_language::chat::*;
     pub use kalosm_language::context::*;
     pub use kalosm_language::kalosm_language_model::{Model as _, ModelExt as _, *};
-    pub use kalosm_language::kalosm_llama::{
-        FileSource, Llama, LlamaBuilder, LlamaSession, LlamaSource,
-    };
+    pub use kalosm_language::kalosm_llama::{Llama, LlamaBuilder, LlamaSession, LlamaSource};
     pub use kalosm_language::kalosm_sample::*;
     pub use kalosm_language::rbert::{Bert, BertBuilder, BertSource, BertSpace};
     pub use kalosm_language::rphi::{Phi, PhiBuilder, PhiSource};

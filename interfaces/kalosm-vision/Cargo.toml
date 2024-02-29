@@ -15,5 +15,5 @@ rwuerstchen.workspace = true
 segment-anything-rs.workspace = true
 
 [features]
-metal = ["kalosm-ocr/accelerate", "rwuerstchen/accelerate", "segment-anything-rs/accelerate"]
+metal = ["kalosm-ocr/metal", "rwuerstchen/metal", "segment-anything-rs/metal"]
 cublas = ["kalosm-ocr/cuda", "rwuerstchen/cuda", "segment-anything-rs/cuda"]
