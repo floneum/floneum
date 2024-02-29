@@ -17,9 +17,13 @@ mod silu;
 
 use cache::LlamaCache;
 
-fn decode_norm(tensor: QTensor, eps: f64) -> candle_core::Result<candle_nn::LayerNorm> {
+fn decode_norm(
+    tensor: QTensor,
+    eps: f64,
+    device: &Device,
+) -> candle_core::Result<candle_nn::LayerNorm> {
     Ok(candle_nn::LayerNorm::rms_norm(
-        tensor.dequantize(&Device::Cpu)?,
+        tensor.dequantize(device)?,
         eps,
     ))
 }
@@ -51,8 +55,11 @@ pub struct Model {
 }
 
 impl Model {
-    pub fn from_ggml(mut ct: ggml_file::Content, gqa: usize) -> anyhow::Result<Self> {
-        let cpu = &Device::Cpu;
+    pub fn from_ggml(
+        mut ct: ggml_file::Content,
+        gqa: usize,
+        device: &Device,
+    ) -> anyhow::Result<Self> {
         let head_dim = (ct.hparams.n_embd / ct.hparams.n_head) as usize;
         let n_layer = ct.hparams.n_layer as usize;
         let config = LlamaConfig {
@@ -64,9 +71,9 @@ impl Model {
             n_layer,
             context_length: 4096,
         };
-        let rope = RopeCache::new(&config, DType::F32, cpu)?;
+        let rope = RopeCache::new(&config, DType::F32, device)?;
         let tok_embeddings = ct.remove("tok_embeddings.weight")?;
-        let tok_embeddings = tok_embeddings.dequantize(cpu)?;
+        let tok_embeddings = tok_embeddings.dequantize(device)?;
         let output = ct.remove("output.weight")?;
         let mut layers = Vec::with_capacity(n_layer);
         for layer_idx in 0..ct.hparams.n_layer {
@@ -85,11 +92,11 @@ impl Model {
                 attention_wk: QMatMul::from_qtensor(attention_wk)?,
                 attention_wv: QMatMul::from_qtensor(attention_wv)?,
                 attention_wo: QMatMul::from_qtensor(attention_wo)?,
-                attention_norm: decode_norm(attention_norm, 1e-5)?,
+                attention_norm: decode_norm(attention_norm, 1e-5, device)?,
                 feed_forward_w1: QMatMul::from_qtensor(feed_forward_w1)?,
                 feed_forward_w2: QMatMul::from_qtensor(feed_forward_w2)?,
                 feed_forward_w3: QMatMul::from_qtensor(feed_forward_w3)?,
-                ffn_norm: decode_norm(ffn_norm, 1e-5)?,
+                ffn_norm: decode_norm(ffn_norm, 1e-5, device)?,
                 n_head: ct.hparams.n_head as usize,
                 n_kv_head: ct.hparams.n_head as usize / gqa,
                 head_dim: (ct.hparams.n_embd / ct.hparams.n_head) as usize,
@@ -101,7 +108,7 @@ impl Model {
             config,
             tok_embeddings: Embedding::new(tok_embeddings, ct.hparams.n_embd as usize),
             layers,
-            norm: decode_norm(ct.remove("norm.weight")?, 1e-5)?,
+            norm: decode_norm(ct.remove("norm.weight")?, 1e-5, device)?,
             output: QMatMul::from_qtensor(output)?,
             masks: Default::default(),
         })
@@ -110,8 +117,8 @@ impl Model {
     pub fn from_gguf<R: std::io::Seek + std::io::Read>(
         ct: gguf_file::Content,
         reader: &mut R,
+        device: &Device,
     ) -> Result<Self> {
-        let cpu = &Device::Cpu;
         let md_get = |s: &str| match ct.metadata.get(s) {
             None => candle_core::bail!("cannot find {s} in metadata"),
             Some(v) => Ok(v),
@@ -140,34 +147,42 @@ impl Model {
             n_layer: block_count,
         };
 
-        let rope = RopeCache::new(&config, DType::F32, cpu)?;
+        let rope = RopeCache::new(&config, DType::F32, device)?;
 
-        let tok_embeddings = ct.tensor(reader, "token_embd.weight")?;
-        let tok_embeddings = tok_embeddings.dequantize(cpu)?;
-        let norm = decode_norm(ct.tensor(reader, "output_norm.weight")?, rms_norm_eps)?;
-        let output = ct.tensor(reader, "output.weight")?;
+        let tok_embeddings = ct.tensor(reader, "token_embd.weight", device)?;
+        let tok_embeddings = tok_embeddings.dequantize(device)?;
+        let norm = decode_norm(
+            ct.tensor(reader, "output_norm.weight", device)?,
+            rms_norm_eps,
+            device,
+        )?;
+        let output = ct.tensor(reader, "output.weight", device)?;
         let mut layers = Vec::with_capacity(block_count);
         for layer_idx in 0..block_count {
             let prefix = format!("blk.{layer_idx}");
-            let attention_wq = ct.tensor(reader, &format!("{prefix}.attn_q.weight"))?;
-            let attention_wk = ct.tensor(reader, &format!("{prefix}.attn_k.weight"))?;
-            let attention_wv = ct.tensor(reader, &format!("{prefix}.attn_v.weight"))?;
-            let attention_wo = ct.tensor(reader, &format!("{prefix}.attn_output.weight"))?;
-            let feed_forward_w1 = ct.tensor(reader, &format!("{prefix}.ffn_gate.weight"))?;
-            let feed_forward_w2 = ct.tensor(reader, &format!("{prefix}.ffn_down.weight"))?;
-            let feed_forward_w3 = ct.tensor(reader, &format!("{prefix}.ffn_up.weight"))?;
-            let attention_norm = ct.tensor(reader, &format!("{prefix}.attn_norm.weight"))?;
-            let ffn_norm = ct.tensor(reader, &format!("{prefix}.ffn_norm.weight"))?;
+            let attention_wq = ct.tensor(reader, &format!("{prefix}.attn_q.weight"), device)?;
+            let attention_wk = ct.tensor(reader, &format!("{prefix}.attn_k.weight"), device)?;
+            let attention_wv = ct.tensor(reader, &format!("{prefix}.attn_v.weight"), device)?;
+            let attention_wo =
+                ct.tensor(reader, &format!("{prefix}.attn_output.weight"), device)?;
+            let feed_forward_w1 =
+                ct.tensor(reader, &format!("{prefix}.ffn_gate.weight"), device)?;
+            let feed_forward_w2 =
+                ct.tensor(reader, &format!("{prefix}.ffn_down.weight"), device)?;
+            let feed_forward_w3 = ct.tensor(reader, &format!("{prefix}.ffn_up.weight"), device)?;
+            let attention_norm =
+                ct.tensor(reader, &format!("{prefix}.attn_norm.weight"), device)?;
+            let ffn_norm = ct.tensor(reader, &format!("{prefix}.ffn_norm.weight"), device)?;
             layers.push(LlamaAttention {
                 attention_wq: QMatMul::from_qtensor(attention_wq)?,
                 attention_wk: QMatMul::from_qtensor(attention_wk)?,
                 attention_wv: QMatMul::from_qtensor(attention_wv)?,
                 attention_wo: QMatMul::from_qtensor(attention_wo)?,
-                attention_norm: decode_norm(attention_norm, rms_norm_eps)?,
+                attention_norm: decode_norm(attention_norm, rms_norm_eps, device)?,
                 feed_forward_w1: QMatMul::from_qtensor(feed_forward_w1)?,
                 feed_forward_w2: QMatMul::from_qtensor(feed_forward_w2)?,
                 feed_forward_w3: QMatMul::from_qtensor(feed_forward_w3)?,
-                ffn_norm: decode_norm(ffn_norm, rms_norm_eps)?,
+                ffn_norm: decode_norm(ffn_norm, rms_norm_eps, device)?,
                 n_head: head_count,
                 n_kv_head: head_count_kv,
                 head_dim: embedding_length / head_count,
@@ -214,7 +229,7 @@ impl Model {
         if let Some(cache) = cache.as_mut() {
             cache.tokens.extend_from_slice(tokens);
         }
-        let mask = self.masks.get_mask(seq_len, index_pos)?;
+        let mask = self.masks.get_mask(seq_len, index_pos, device)?;
 
         let mut layer_in = self.tok_embeddings.forward(&x)?;
         for (i, layer) in self.layers.iter().enumerate() {
@@ -236,7 +251,7 @@ impl Model {
             layer_in = std::thread::scope(|scope| {
                 let w1 = scope.spawn(|| {
                     let w1 = layer.feed_forward_w1.forward(&x)?;
-                    fast_cpu_silu(&w1)
+                    fast_cpu_silu(&w1, device)
                 });
 
                 let w3 = layer.feed_forward_w3.forward(&x)?;

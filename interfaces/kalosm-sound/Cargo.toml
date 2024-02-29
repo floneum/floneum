@@ -33,5 +33,5 @@ kalosm-streams.workspace = true
 rwhisper.workspace = true
 
 [features]
-metal = ["candle-core/metal", "rwhisper/accelerate"]
+metal = ["candle-core/metal", "rwhisper/accelerate", "rwhisper/metal"]
 cuda = ["candle-core/cuda", "rwhisper/cuda", "rwhisper/cudnn"]

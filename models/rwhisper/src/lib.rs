@@ -144,9 +144,6 @@ enum Task {
 /// A builder with configuration for a Whisper model.
 #[derive(Debug)]
 pub struct WhisperBuilder {
-    /// Run on CPU rather than on GPU.
-    cpu: bool,
-
     /// The model to be used, can be tiny, small, medium.
     model: WhisperSource,
 
@@ -157,7 +154,6 @@ pub struct WhisperBuilder {
 impl Default for WhisperBuilder {
     fn default() -> Self {
         Self {
-            cpu: false,
             model: WhisperSource::LargeV2,
             language: Some(WhisperLanguage::English),
         }
@@ -189,12 +185,6 @@ impl WhisperBuilder {
             thread: Some(thread),
             sender: rx,
         })
-    }
-
-    /// Set if the model should run on CPU rather than on GPU.
-    pub fn with_cpu(mut self, cpu: bool) -> Self {
-        self.cpu = cpu;
-        self
     }
 
     /// Set the model to be used.

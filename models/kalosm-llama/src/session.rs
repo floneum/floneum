@@ -1,3 +1,4 @@
+use crate::accelerated_device_if_available;
 use crate::raw::cache::LlamaCache;
 use candle_core::{Device, Tensor};
 use kalosm_language_model::Session;
@@ -11,7 +12,8 @@ pub struct LlamaSession {
 
 impl Session for LlamaSession {
     fn save_to(&self, path: impl AsRef<std::path::Path>) -> anyhow::Result<()> {
-        let tensors = self.get_tensor_map();
+        let device = accelerated_device_if_available()?;
+        let tensors = self.get_tensor_map(&device);
         Ok(candle_core::safetensors::save(&tensors, path)?)
     }
 
@@ -19,7 +21,7 @@ impl Session for LlamaSession {
     where
         Self: std::marker::Sized,
     {
-        let device = Device::cuda_if_available(0)?;
+        let device = accelerated_device_if_available()?;
         let tensors = candle_core::safetensors::load(path, &device)?;
 
         Ok(Self::from_tensor_map(tensors))
@@ -35,8 +37,8 @@ impl Session for LlamaSession {
 
 impl LlamaSession {
     /// Export the current cache tensor map.
-    pub fn get_tensor_map(&self) -> HashMap<String, Tensor> {
-        self.cache.get_tensor_map()
+    pub fn get_tensor_map(&self, device: &Device) -> HashMap<String, Tensor> {
+        self.cache.get_tensor_map(device)
     }
 
     /// Import a cache tensor map.

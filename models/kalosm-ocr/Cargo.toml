@@ -26,6 +26,7 @@ image = "0.24.7"
 imageproc = "0.23.0"
 serde = "1.0.193"
 serde_json = "1.0"
+kalosm-common = { version = "0.1.0", path = "../../interfaces/kalosm-common" }
 
 [features]
 flash = ["candle-transformers/flash-attn"]
@@ -34,3 +35,4 @@ cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
 cudnn = ["candle-core/cudnn"]
 mkl = ["dep:intel-mkl-src", "candle-core/mkl", "candle-nn/mkl", "candle-transformers/mkl"]
 nccl = ["cuda", "cudarc/nccl", "dep:half"]
+metal = ["candle-core/metal", "candle-nn/metal", "candle-transformers/metal"]

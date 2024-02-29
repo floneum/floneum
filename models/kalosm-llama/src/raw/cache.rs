@@ -29,7 +29,7 @@ impl LlamaCache {
     }
 
     /// Get the tensor map for this cache. This can be used to save the cache to disk.
-    pub fn get_tensor_map(&self) -> HashMap<String, Tensor> {
+    pub fn get_tensor_map(&self, device: &Device) -> HashMap<String, Tensor> {
         let mut map = HashMap::with_capacity(self.blocks.len());
         for (i, block) in self.blocks.iter().enumerate() {
             if let AttentionCache(Some(AttentionCacheValue { key, value })) = block {
@@ -39,7 +39,7 @@ impl LlamaCache {
         }
         map.insert(
             "Llama.cache.tokens".to_string(),
-            Tensor::from_iter(self.tokens.iter().copied(), &Device::Cpu).unwrap(),
+            Tensor::from_iter(self.tokens.iter().copied(), device).unwrap(),
         );
         map
     }

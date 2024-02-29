@@ -48,9 +48,6 @@ const DECODER_CIN: usize = 4;
 
 /// A builder for the Wuerstchen model.
 pub struct WuerstchenBuilder {
-    /// Run on CPU rather than on GPU.
-    cpu: bool,
-
     use_flash_attn: bool,
 
     /// The decoder weight file, in .safetensors format.
@@ -78,7 +75,6 @@ pub struct WuerstchenBuilder {
 impl Default for WuerstchenBuilder {
     fn default() -> Self {
         Self {
-            cpu: false,
             use_flash_attn: { cfg!(feature = "flash-attn") },
             decoder_weights: None,
             clip_weights: None,
@@ -92,12 +88,6 @@ impl Default for WuerstchenBuilder {
 }
 
 impl WuerstchenBuilder {
-    /// Set whether to run on CPU rather than on GPU.
-    pub fn with_cpu(mut self, cpu: bool) -> Self {
-        self.cpu = cpu;
-        self
-    }
-
     /// Set whether to use the Flash Attention implementation.
     pub fn with_flash_attn(mut self, use_flash_attn: bool) -> Self {
         self.use_flash_attn = use_flash_attn;
@@ -289,7 +279,6 @@ impl Wuerstchen {
 
     fn new(settings: WuerstchenBuilder) -> Result<Self> {
         let WuerstchenBuilder {
-            cpu,
             use_flash_attn,
             decoder_weights,
             clip_weights,
@@ -305,7 +294,9 @@ impl Wuerstchen {
         let tokenizer_path = ModelFile::Tokenizer.get(tokenizer)?;
         let tokenizer = Tokenizer::from_file(tokenizer_path).map_err(E::msg)?;
 
-        let device = device(cpu)?;
+        // Candle doesn't support some operations rwuerstchen needs, so we can't use it.
+        // let device = kalosm_common::accelerated_device_if_available()?;
+        let device = Device::Cpu;
 
         let clip_weights = ModelFile::Clip.get(clip_weights)?;
         let clip_config = stable_diffusion::clip::Config::wuerstchen();
@@ -557,19 +548,5 @@ impl Wuerstchen {
             images.push(image);
         }
         Ok(images)
-    }
-}
-
-fn device(cpu: bool) -> anyhow::Result<Device> {
-    if cpu {
-        Ok(Device::Cpu)
-    } else {
-        let device = Device::cuda_if_available(0)?;
-        if !device.is_cuda() {
-            tracing::warn!(
-                "Running on CPU, to run on GPU, build this example with `--features cuda`"
-            );
-        }
-        Ok(device)
     }
 }

@@ -6,6 +6,7 @@ use rand::{distributions::Distribution, SeedableRng};
 use tokenizers::Tokenizer;
 
 use candle_transformers::models::whisper::{self as m, audio, model, Config};
+use kalosm_common::accelerated_device_if_available;
 use model::Whisper;
 
 use crate::{Task, WhisperBuilder, WhisperLanguage};
@@ -21,7 +22,7 @@ pub(crate) struct WhisperInner {
 
 impl WhisperInner {
     pub(crate) fn new(settings: WhisperBuilder) -> anyhow::Result<Self> {
-        let device = device(settings.cpu)?;
+        let device = accelerated_device_if_available()?;
         let (default_model, _) = settings.model.model_and_revision();
         let default_model = default_model.to_string();
         let path = std::path::PathBuf::from(default_model.clone());
@@ -297,19 +298,5 @@ pub fn token_id(tokenizer: &Tokenizer, token: &str) -> candle_core::Result<u32> 
     match tokenizer.token_to_id(token) {
         None => candle_core::bail!("no token-id for {token}"),
         Some(id) => Ok(id),
-    }
-}
-
-fn device(cpu: bool) -> anyhow::Result<Device> {
-    if cpu {
-        Ok(Device::Cpu)
-    } else {
-        let device = Device::cuda_if_available(0)?;
-        if !device.is_cuda() {
-            tracing::warn!(
-                "Running on CPU, to run on GPU, build this example with `--features cuda`"
-            );
-        }
-        Ok(device)
     }
 }

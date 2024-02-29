@@ -4,7 +4,7 @@ pub use crate::Llama;
 use crate::LlamaModel;
 use crate::{InferenceSettings, Task};
 use kalosm_language_model::ChatMarkers;
-use kalosm_language_model::{CreateModel, GenerationParameters, Model, VectorSpace};
+use kalosm_language_model::{CreateModel, GenerationParameters, Model};
 use kalosm_streams::text_stream::ChannelTextStream;
 
 #[async_trait::async_trait]
@@ -79,7 +79,3 @@ impl Model for Llama {
         self.chat_markers.clone()
     }
 }
-
-pub struct LlamaSpace;
-
-impl VectorSpace for LlamaSpace {}

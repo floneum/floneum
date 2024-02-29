@@ -28,7 +28,7 @@ fn silu_chunk(chunk: &mut [f32; 16]) {
     }
 }
 
-pub(crate) fn fast_cpu_silu(tensor: &Tensor) -> candle_core::Result<Tensor> {
+pub(crate) fn fast_cpu_silu(tensor: &Tensor, device: &Device) -> candle_core::Result<Tensor> {
     let shape = tensor.shape();
 
     let mut as_vec = tensor.flatten_all()?.to_vec1::<f32>()?;
@@ -41,5 +41,5 @@ pub(crate) fn fast_cpu_silu(tensor: &Tensor) -> candle_core::Result<Tensor> {
         silu_chunk(chunk)
     });
 
-    Tensor::from_vec(as_vec, shape, &Device::Cpu)
+    Tensor::from_vec(as_vec, shape, device)
 }
