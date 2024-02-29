@@ -26,7 +26,7 @@ image = "0.24.7"
 imageproc = "0.23.0"
 serde = "1.0.193"
 serde_json = "1.0"
-kalosm-common = { version = "0.1.0", path = "../../interfaces/kalosm-common" }
+kalosm-common = { version = "0.1.0", workspace = true }
 
 [features]
 flash = ["candle-transformers/flash-attn"]

@@ -30,7 +30,7 @@ async-trait = "0.1.73"
 kalosm-sample.workspace = true
 kalosm-language-model.workspace = true
 kalosm-streams.workspace = true
-kalosm-common = { version = "0.1.0", path = "../../interfaces/kalosm-common" }
+kalosm-common = { version = "0.1.0", workspace = true }
 
 [features]
 accelerate = ["dep:accelerate-src", "candle-core/accelerate", "candle-nn/accelerate", "candle-transformers/accelerate"]

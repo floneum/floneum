@@ -32,7 +32,7 @@ llm-samplers.workspace = true
 kalosm-sample.workspace = true
 kalosm-language-model.workspace = true
 kalosm-streams.workspace = true
-kalosm-common = { version = "0.1.0", path = "../../interfaces/kalosm-common" }
+kalosm-common = { version = "0.1.0", workspace = true }
 
 [dev-dependencies]
 criterion = "0.5.1"

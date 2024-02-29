@@ -248,21 +248,32 @@ impl Model {
             let residual = &x;
             let x = layer.ffn_norm.forward(&x)?;
 
-            layer_in = std::thread::scope(|scope| {
-                let w1 = scope.spawn(|| {
-                    let w1 = layer.feed_forward_w1.forward(&x)?;
-                    fast_cpu_silu(&w1, device)
-                });
+            layer_in = if matches!(device, Device::Cpu) {
+                std::thread::scope(|scope| {
+                    let w1 = scope.spawn(|| {
+                        let w1 = layer.feed_forward_w1.forward(&x)?;
+                        fast_cpu_silu(&w1, device)
+                    });
+
+                    let w3 = layer.feed_forward_w3.forward(&x)?;
+                    let w1 = w1.join().map_err(|_| {
+                        candle_core::Error::Msg("Failed to join thread".to_string())
+                    })??;
+
+                    let mlp = layer.feed_forward_w2.forward(&(&w1 * w3)?)?;
+
+                    mlp + residual
+                })?
+            } else {
+                let w1 = layer.feed_forward_w1.forward(&x)?;
+                let w1 = fast_cpu_silu(&w1, device)?;
 
                 let w3 = layer.feed_forward_w3.forward(&x)?;
-                let w1 = w1
-                    .join()
-                    .map_err(|_| candle_core::Error::Msg("Failed to join thread".to_string()))??;
 
                 let mlp = layer.feed_forward_w2.forward(&(&w1 * w3)?)?;
 
-                mlp + residual
-            })?;
+                (mlp + residual)?
+            }
         }
         let x = self.norm.forward(&layer_in)?;
         let x = x.i((.., seq_len - 1, ..))?;
