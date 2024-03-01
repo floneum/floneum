@@ -1,4 +1,4 @@
-use candle_core::Device;
+use kalosm_common::accelerated_device_if_available;
 use kalosm_language_model::Embedder;
 use kalosm_learning::{
     Class, Classifier, ClassifierConfig, TextClassifier, TextClassifierDatasetBuilder,
@@ -15,7 +15,7 @@ enum MyClass {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut bert = Bert::builder().build()?;
 
-    let dev = Device::cuda_if_available(0)?;
+    let dev = accelerated_device_if_available()?;
     let person_questions = vec![
         "What is the author's name?",
         "What is the author's age?",
@@ -80,14 +80,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dataset = dataset.build(&dev)?;
 
     let mut classifier;
-    let layers = vec![10, 20, 10];
+    let layers = vec![10, 20, 20, 10];
 
     loop {
         classifier = TextClassifier::<MyClass, BertSpace>::new(Classifier::new(
             &dev,
             ClassifierConfig::new(384).layers_dims(layers.clone()),
         )?);
-        if let Err(error) = classifier.train(&dataset, &dev, 100) {
+        if let Err(error) = classifier.train(&dataset, &dev, 1000) {
             println!("Error: {:?}", error);
         } else {
             break;

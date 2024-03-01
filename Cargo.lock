@@ -6135,6 +6135,7 @@ dependencies = [
  "candle-core",
  "candle-nn",
  "half 2.3.1",
+ "kalosm-common",
  "kalosm-language-model",
  "kalosm-learning-macro",
  "rand 0.8.5",
