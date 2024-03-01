@@ -80,14 +80,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dataset = dataset.build(&dev)?;
 
     let mut classifier;
-    let layers = vec![10, 20, 20, 10];
+    let layers = vec![3, 3, 3];
 
     loop {
         classifier = TextClassifier::<MyClass, BertSpace>::new(Classifier::new(
             &dev,
             ClassifierConfig::new(384).layers_dims(layers.clone()),
         )?);
-        if let Err(error) = classifier.train(&dataset, &dev, 1000) {
+        if let Err(error) = classifier.train(&dataset, &dev, 100) {
             println!("Error: {:?}", error);
         } else {
             break;
