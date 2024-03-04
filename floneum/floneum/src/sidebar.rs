@@ -18,9 +18,7 @@ enum SidebarRoute {
 }
 
 pub fn Sidebar(cx: Scope) -> Element {
-    render! {
-        Router::<SidebarRoute> {}
-    }
+    render! { Router::<SidebarRoute> {} }
 }
 
 fn Links(cx: Scope) -> Element {
@@ -49,9 +47,8 @@ document.addEventListener("mouseup", function(){
     render! {
         div {
             id: "left_panel",
-            class: "h-full w-64 {Color::foreground_color()} {Color::text_color()} border-l-4 {Color::outline_color()} top-0 bottom-0 right-0 z-10 fixed overflow-scroll text-center",
-            div {
-                class: "flex flex-row overflow-x-scroll divide-x border-b {Color::outline_color()}",
+            class: "h-full w-64 cursor-ew-resize select-none {Color::foreground_color()} {Color::text_color()} border-l-4 {Color::outline_color()} top-0 bottom-0 right-0 z-10 fixed overflow-scroll text-center",
+            div { class: "flex flex-row overflow-x-scroll divide-x border-b {Color::outline_color()}",
                 Link {
                     class: "{Color::foreground_hover()} {Color::outline_color()} px-3 py-2 text-sm font-medium w-full",
                     to: SidebarRoute::PluginSearch {},
@@ -70,8 +67,6 @@ document.addEventListener("mouseup", function(){
             }
             Outlet::<SidebarRoute> {}
         }
-        script {
-            dangerous_inner_html: script
-        }
+        script { dangerous_inner_html: script }
     }
 }

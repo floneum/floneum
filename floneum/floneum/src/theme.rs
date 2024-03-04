@@ -5,8 +5,10 @@ use std::fmt::{self, Display, Formatter};
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Theme {
     border: Color,
+    background_svg: Color,
     background: Color,
     text: Color,
+    divide: Color,
     foreground: Color,
     foreground_hover: Color,
 }
@@ -23,7 +25,9 @@ impl Theme {
     pub const DARK: Theme = Theme {
         border: Color("border-[#6A7C93]"),
         text: Color("text-blue-50"),
-        background: Color("fill-zinc-700"),
+        divide: Color("divide-[#313943]"),
+        background_svg: Color("fill-zinc-700"),
+        background: Color("bg-zinc-800"),
         foreground: Color("bg-[#313943]"),
         foreground_hover: Color("hover:bg-[#475362]"),
     };
@@ -31,7 +35,9 @@ impl Theme {
     pub const WHITE: Theme = Theme {
         border: Color("border-black"),
         text: Color("text-black"),
-        background: Color("fill-[#d4dff2]"),
+        divide: Color("divide-[#b8c5da]"),
+        background_svg: Color("fill-[#d4dff2]"),
+        background: Color("bg-[#d4dff2]"),
         foreground: Color("bg-[#b8c5da]"),
         foreground_hover: Color("hover:bg-[#dae1ec]"),
     };
@@ -51,6 +57,14 @@ impl Color {
 
     pub fn background_color() -> Color {
         Theme::current().read().background
+    }
+
+    pub fn background_color_svg() -> Color {
+        Theme::current().read().background_svg
+    }
+
+    pub fn divide_color() -> Color {
+        Theme::current().read().divide
     }
 
     pub fn foreground_color() -> Color {

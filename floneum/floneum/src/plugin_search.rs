@@ -1,6 +1,9 @@
 use crate::Color;
 use dioxus::prelude::*;
 use floneum_plugin::{load_plugin, load_plugin_from_source};
+use floneumite::Category;
+use floneumite::PackageIndexEntry;
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::{use_application_state, use_package_manager};
@@ -51,88 +54,127 @@ const BUILT_IN_PLUGINS: &[&str] = &[
 
 pub fn PluginSearch(cx: Scope) -> Element {
     render! {
-        div {
-            class: "flex flex-col",
-            LoadRegisteredPlugin {}
-            LoadLocalPlugin {}
-        }
+        LoadRegisteredPlugin {}
+        LoadLocalPlugin {}
     }
 }
 
 fn LoadRegisteredPlugin(cx: Scope) -> Element {
     let plugins = use_package_manager(cx);
-    let application = use_application_state(cx);
     let search_text = use_state(cx, || "".to_string());
     let text_words: Vec<&str> = search_text.split_whitespace().collect();
 
     render! {
-        div {
-            class: "flex flex-col",
-            "Add Plugin"
-            input {
-                class: "border {Color::outline_color()} {Color::foreground_color()} rounded-md p-2 m-2",
-                r#type: "text",
-                oninput: {
-                    let search_text = search_text.clone();
-                    move |event| {
-                        search_text.set(event.value.clone());
-                    }
-                },
-            }
-            match &plugins {
-                Some(plugins) => {
-                    rsx! {
-                        for entry in plugins.entries().iter().filter(|entry| {
-                            if let Some(meta) = entry.meta(){
-                                text_words.iter().all(|word| meta.name.to_lowercase().contains(&word.trim().to_lowercase()))
-                            }
-                            else {
-                                false
-                            }
+        "Add Plugin"
+        input {
+            class: "border {Color::outline_color()} {Color::foreground_color()} rounded-md p-2 m-2",
+            r#type: "text",
+            oninput: {
+                let search_text = search_text.clone();
+                move |event| {
+                    search_text.set(event.value.clone());
+                }
+            },
+        }
+        match &plugins {
+            Some(plugins) => {
+                let mut categories = HashMap::new();
+                for category in Category::ALL {
+                    categories.insert(category, Vec::new());
+                }
+                for entry in plugins.entries() {
+                    if let Some(meta) = entry.meta() {
+                        if text_words.iter().all(|word| {
+                            let lowercase = word.trim().to_lowercase();
+                            let title_contains_word = meta.name.to_lowercase().contains(&lowercase);
+                            let description_contains_word = meta.description.to_lowercase().contains(&lowercase);
+                            title_contains_word || description_contains_word
                         }) {
-                            button {
-                                class: "{Color::foreground_hover()} border {Color::outline_color()} rounded-md p-2 m-2",
-                                onclick: {
-                                    let entry = entry.clone();
-                                    move |_| {
-                                        let plugin = load_plugin_from_source(entry.clone());
-                                        to_owned![application];
-                                        async move {
-                                            let mut application = application.write();
-                                            let name = plugin.name().await.unwrap();
-                                            if application.get_plugin(&name).is_none() {
-                                                let _ = application.add_plugin(plugin).await;
-                                            }
-
-                                            if let Err(err) = application.insert_plugin(&name).await {
-                                                log::error!("Failed to insert plugin: {}", err);
-                                            }
-                                        }
-                                    }
-                                },
-                                if let Some(meta) = entry.meta() {
-                                    let name = &meta.name;
-                                    let built_in = BUILT_IN_PLUGINS.contains(&name.as_str());
-                                    let extra = if built_in {
-                                        " (built-in)"
-                                    } else {
-                                        ""
-                                    };
-                                    rsx! {
-                                        "{name}{extra}"
-                                    }
-                                } else {
-                                    rsx! {
-                                        "{entry.path().display()}"
-                                    }
+                            categories.get_mut(&meta.category).unwrap().push(entry.clone());
+                        }
+                    }
+                }
+                let mut categories_sorted = categories.into_iter().collect::<Vec<_>>();
+                categories_sorted.sort_by(|(a, _), (b, _)| a.cmp(b));
+                rsx! {
+                    nav { "aria-label": "Directory", class: "h-full overflow-y-auto",
+                        div { class: "relative",
+                            for (name, category) in categories_sorted {
+                                Category {
+                                    key: "{name}",
+                                    name: "{name}",
+                                    plugins: category,
                                 }
                             }
                         }
                     }
                 }
-                None => {
-                    rsx! {
-                        "Loading..."
+            }
+            None => {
+                rsx! {
+                    "Loading..."
+                }
+            }
+        }
+    }
+}
+
+#[inline_props]
+fn Category<'a>(cx: Scope<'a>, name: &'a str, plugins: Vec<PackageIndexEntry>) -> Element<'a> {
+    let application = use_application_state(cx);
+
+    render! {
+        div { class: "sticky top-0 z-10 border-y border-b-gray-200 border-t-gray-100 {Color::foreground_color()} px-3 py-1.5 text-sm font-semibold leading-6",
+            h3 { "{name}" }
+        }
+        ul { role: "list", class: "divide-y {Color::divide_color()} {Color::background_color()}",
+            for entry in plugins {
+                li { class: "flex gap-x-4 px-3 py-5",
+                    button {
+                        class: "min-w-0 w-full",
+                        onclick: {
+                            let entry = entry.clone();
+                            move |_| {
+                                let plugin = load_plugin_from_source(entry.clone());
+                                to_owned![application];
+                                async move {
+                                    let mut application = application.write();
+                                    let name = plugin.name().await.unwrap();
+                                    if application.get_plugin(&name).is_none() {
+                                        let _ = application.add_plugin(plugin).await;
+                                    }
+
+                                    if let Err(err) = application.insert_plugin(&name).await {
+                                        log::error!("Failed to insert plugin: {}", err);
+                                    }
+                                }
+                            }
+                        },
+                        p { class: "text-sm font-semibold leading-6",
+                            if let Some(meta) = entry.meta() {
+                                let name = &meta.name;
+                                let built_in = BUILT_IN_PLUGINS.contains(&name.as_str());
+                                let extra = if built_in {
+                                    ""
+                                } else {
+                                    " (community)"
+                                };
+                                rsx! {
+                                    "{name}{extra}"
+                                }
+                            } else {
+                                rsx! {
+                                    "{entry.path().display()}"
+                                }
+                            }
+                        }
+                        if let Some(meta) = entry.meta() {
+                            render! {
+                                p { class: "mt-1 truncate text-xs leading-5",
+                                    "{meta.description}"
+                                }
+                            }
+                        }
                     }
                 }
             }

@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use cargo_metadata::{Metadata, MetadataCommand};
 use clap::{Parser, Subcommand};
 use floneum_plugin::*;
-use floneumite::{packages_path, Config, PackageStructure};
+use floneumite::{packages_path, Category, Config, PackageStructure};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -123,9 +123,21 @@ async fn package_and_build(
             .unwrap_or_else(|| "*".to_string());
         let description = &info.description;
         let authors = this_package.authors.clone();
-        let package =
-            floneumite::PackageStructure::new(name, &version, description, &binding_version)
-                .with_authors(authors);
+        let category = this_package
+            .keywords
+            .iter()
+            .fold(Category::Other, |state, keyword| match state {
+                Category::Other => keyword.parse().unwrap(),
+                _ => state,
+            });
+        let package = floneumite::PackageStructure::new(
+            name,
+            &version,
+            category,
+            description,
+            &binding_version,
+        )
+        .with_authors(authors);
 
         // Normalize case to lowercase for github
         let package_path = package_path.join(name.to_lowercase());
