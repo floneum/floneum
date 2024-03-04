@@ -123,15 +123,21 @@ async fn package_and_build(
             .unwrap_or_else(|| "*".to_string());
         let description = &info.description;
         let authors = this_package.authors.clone();
-        let category = this_package.keywords.iter().fold(Category::Other, |state, keyword|
-            match state {
+        let category = this_package
+            .keywords
+            .iter()
+            .fold(Category::Other, |state, keyword| match state {
                 Category::Other => keyword.parse().unwrap(),
                 _ => state,
-            }
-        );
-        let package =
-            floneumite::PackageStructure::new(name, &version, category, description, &binding_version)
-                .with_authors(authors);
+            });
+        let package = floneumite::PackageStructure::new(
+            name,
+            &version,
+            category,
+            description,
+            &binding_version,
+        )
+        .with_authors(authors);
 
         // Normalize case to lowercase for github
         let package_path = package_path.join(name.to_lowercase());
