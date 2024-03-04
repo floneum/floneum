@@ -3,7 +3,7 @@ use directories::BaseDirs;
 use once_cell::sync::Lazy;
 
 mod package;
-pub use package::PackageStructure;
+pub use package::{Category, PackageStructure};
 
 mod index;
 pub use index::{FloneumPackageIndex, PackageIndexEntry};

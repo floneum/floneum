@@ -491,7 +491,7 @@ pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
                 rect {
                     width: "100%",
                     height: "100%",
-                    class: "{Color::background_color()}",
+                    class: "{Color::background_color_svg()}",
                 }
 
                 g {
