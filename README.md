@@ -1,5 +1,28 @@
 # [Floneum](./floneum/floneum)/[Kalosm](./interfaces/kalosm/)
 
+<div align="center">
+  <!-- Crates version -->
+  <a href="https://crates.io/crates/kalosm">
+    <img src="https://img.shields.io/crates/v/kalosm.svg?style=flat-square"
+    alt="Crates.io version" />
+  </a>
+  <!-- Downloads -->
+  <a href="https://crates.io/crates/kalosm">
+    <img src="https://img.shields.io/crates/d/kalosm.svg?style=flat-square"
+      alt="Download" />
+  </a>
+  <!-- docs -->
+  <a href="https://docs.rs/kalosm">
+    <img src="https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square"
+      alt="docs.rs docs" />
+  </a>
+
+  <!-- Discord -->
+  <a href="https://discord.gg/dQdmhuB8q5">
+    <img src="https://img.shields.io/discord/1120130300236800062?logo=discord&style=flat-square" alt="Discord Link" />
+  </a>
+</div>
+
 Floneum is a graph editor that makes it easy to develop your own AI workflows
 
 <img width="1512" alt="Screenshot 2023-06-18 at 4 26 11 PM" src="https://floneum.com/assets/question_answer_example.png">
