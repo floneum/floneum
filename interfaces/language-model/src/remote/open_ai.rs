@@ -5,7 +5,9 @@ use kalosm_sample::Tokenizer;
 use kalosm_streams::text_stream::ChannelTextStream;
 use std::sync::Arc;
 
-use crate::{CreateModel, Embedder, Embedding, GenerationParameters, VectorSpace};
+use crate::{
+    Embedder, Embedding, GenerationParameters, ModelBuilder, ModelLoadingProgress, VectorSpace,
+};
 
 macro_rules! openai_model {
     ($ty: ident, $tybuilder: ident, $model: literal) => {
@@ -69,13 +71,18 @@ macro_rules! openai_model {
         }
 
         #[async_trait::async_trait]
-        impl CreateModel for $ty {
-            async fn start() -> Self {
+        impl ModelBuilder for $tybuilder {
+            type Model = $ty;
+
+            async fn start_with_loading_handler(
+                self,
+                _: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
+            ) -> anyhow::Result<$ty> {
                 let client = Client::new();
-                $ty { client }
+                Ok($ty { client })
             }
 
-            fn requires_download() -> bool {
+            fn requires_download(&self) -> bool {
                 false
             }
         }
@@ -205,13 +212,17 @@ impl Default for AdaEmbedder {
 }
 
 #[async_trait::async_trait]
-impl CreateModel for AdaEmbedder {
-    async fn start() -> Self {
-        let client = Client::new();
-        AdaEmbedder { client }
+impl ModelBuilder for AdaEmbedderBuilder {
+    type Model = AdaEmbedder;
+
+    async fn start_with_loading_handler(
+        self,
+        _: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
+    ) -> anyhow::Result<AdaEmbedder> {
+        Ok(self.build())
     }
 
-    fn requires_download() -> bool {
+    fn requires_download(&self) -> bool {
         false
     }
 }

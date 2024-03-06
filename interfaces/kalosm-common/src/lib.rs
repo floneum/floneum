@@ -1,7 +1,9 @@
-use std::path::PathBuf;
+use std::{fmt::Display, path::PathBuf};
 
 use candle_core::{utils::*, Device};
-use hf_hub::{Repo, RepoType};
+
+mod cache;
+pub use cache::*;
 
 /// Create a candle device that uses any available accelerator.
 pub fn accelerated_device_if_available() -> candle_core::Result<Device> {
@@ -23,6 +25,7 @@ pub fn accelerated_device_if_available() -> candle_core::Result<Device> {
 }
 
 /// A source for a file, either from Hugging Face or a local path
+#[derive(Clone, Debug)]
 pub enum FileSource {
     /// A file from Hugging Face
     HuggingFace {
@@ -35,6 +38,19 @@ pub enum FileSource {
     },
     /// A local file
     Local(PathBuf),
+}
+
+impl Display for FileSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FileSource::HuggingFace {
+                model_id,
+                revision,
+                file,
+            } => write!(f, "hf://{}/{}/{}", model_id, revision, file),
+            FileSource::Local(path) => write!(f, "{}", path.display()),
+        }
+    }
 }
 
 impl FileSource {
@@ -52,25 +68,9 @@ impl FileSource {
         Self::Local(path)
     }
 
-    /// Get the path to the file
-    pub fn path(&self) -> anyhow::Result<std::path::PathBuf> {
-        match self {
-            Self::HuggingFace {
-                model_id,
-                revision,
-                file,
-            } => {
-                let api = hf_hub::api::sync::Api::new()?;
-                let repo = Repo::with_revision(
-                    model_id.to_string(),
-                    RepoType::Model,
-                    revision.to_string(),
-                );
-                let api = api.repo(repo);
-                let model_path = api.get(file)?;
-                Ok(model_path)
-            }
-            Self::Local(path) => Ok(path.clone()),
-        }
+    /// Check if the file exists locally (if it is a local file or if it has been downloaded)
+    pub fn downloaded(&self) -> bool {
+        let cache = Cache::default();
+        cache.exists(self)
     }
 }

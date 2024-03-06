@@ -5,6 +5,7 @@ async fn main() {
     let model = Llama::builder()
         .with_source(LlamaSource::mistral_7b())
         .build()
+        .await
         .unwrap();
     model
         .run_sync(move |model| {

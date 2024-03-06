@@ -6028,7 +6028,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "candle-core",
+ "dirs 5.0.1",
  "hf-hub",
+ "reqwest",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -6179,6 +6183,7 @@ dependencies = [
  "tokenizers 0.13.4",
  "tokio",
  "tracing",
+ "tracing-subscriber 0.3.18",
 ]
 
 [[package]]

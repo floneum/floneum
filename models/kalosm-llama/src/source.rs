@@ -19,6 +19,7 @@ fn mistral_tokenizer() -> FileSource {
 }
 
 /// A source for the Llama model.
+#[derive(Clone, Debug)]
 pub struct LlamaSource {
     /// The model to use, check out available models: <https://huggingface.co/models?library=sentence-transformers&sort=trending>
     // pub(crate) model_id: String,
@@ -26,8 +27,8 @@ pub struct LlamaSource {
     // pub(crate) gguf_file: String,
     // pub(crate) tokenizer_repo: String,
     // pub(crate) tokenizer_file: String,
-    model: FileSource,
-    tokenizer: FileSource,
+    pub(crate) model: FileSource,
+    pub(crate) tokenizer: FileSource,
     pub(crate) group_query_attention: u8,
     pub(crate) markers: Option<ChatMarkers>,
 }
@@ -59,13 +60,19 @@ impl LlamaSource {
         self
     }
 
-    pub(crate) fn tokenizer(&self) -> anyhow::Result<Tokenizer> {
-        let tokenizer_path = self.tokenizer.path()?;
+    pub(crate) async fn tokenizer(
+        &self,
+        progress: impl FnMut(f32) + Send + Sync,
+    ) -> anyhow::Result<Tokenizer> {
+        let tokenizer_path = self.tokenizer.download(progress).await?;
         Tokenizer::from_file(tokenizer_path).map_err(anyhow::Error::msg)
     }
 
-    pub(crate) fn model(&self) -> anyhow::Result<std::path::PathBuf> {
-        self.model.path()
+    pub(crate) async fn model(
+        &self,
+        progress: impl FnMut(f32) + Send + Sync,
+    ) -> anyhow::Result<std::path::PathBuf> {
+        self.model.download(progress).await
     }
 
     /// A preset for Mistral7b

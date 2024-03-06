@@ -95,7 +95,7 @@ impl<E: Embedder + Send + Sync + 'static> Embedder for AnyEmbedder<E> {
     }
 }
 
-/// A model that can be created asynchronously.
+/// A builder that can create a model asynchronously.
 ///
 /// # Example
 /// ```rust, no_run
@@ -108,14 +108,46 @@ impl<E: Embedder + Send + Sync + 'static> Embedder for AnyEmbedder<E> {
 /// }
 /// ```
 #[async_trait::async_trait]
-pub trait CreateModel {
+pub trait ModelBuilder {
+    /// The model that this trait creates.
+    type Model;
+
     /// Start the model.
-    async fn start() -> Self;
+    async fn start(self) -> anyhow::Result<Self::Model>
+    where
+        Self: Sized,
+    {
+        self.start_with_loading_handler(|_| {}).await
+    }
+
+    /// Start the model with a loading handler.
+    async fn start_with_loading_handler(
+        self,
+        handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
+    ) -> anyhow::Result<Self::Model>
+    where
+        Self: Sized;
 
     /// Check if the model will need to be downloaded before use (default: false)
-    fn requires_download() -> bool {
+    fn requires_download(&self) -> bool {
         false
     }
+}
+
+/// The progress starting a model
+pub enum ModelLoadingProgress {
+    /// The model is downloading
+    Downloading {
+        /// The source of the download
+        source: String,
+        /// The progress of the download, from 0 to 1
+        progress: f32,
+    },
+    /// The model is loading
+    Loading {
+        /// The progress of the loading, from 0 to 1
+        progress: f32,
+    },
 }
 
 /// A builder for the [`ModelExt::stream_text`] method.
@@ -928,7 +960,7 @@ pub trait AnyModelExt:
 impl<M: Model<TextStream = ChannelTextStream<String>> + Send + Sync + 'static> AnyModelExt for M {}
 
 /// The chat markers to use for the model.
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct ChatMarkers {
     /// The marker to use before user input.
     pub user_marker: &'static str,

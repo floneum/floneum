@@ -1,20 +1,25 @@
 use std::sync::{Arc, Mutex};
 
 pub use crate::Llama;
-use crate::LlamaModel;
 use crate::{InferenceSettings, Task};
-use kalosm_language_model::ChatMarkers;
-use kalosm_language_model::{CreateModel, GenerationParameters, Model};
+use crate::{LlamaBuilder, LlamaModel};
+use kalosm_language_model::{ChatMarkers, ModelLoadingProgress};
+use kalosm_language_model::{GenerationParameters, Model, ModelBuilder};
 use kalosm_streams::text_stream::ChannelTextStream;
 
 #[async_trait::async_trait]
-impl CreateModel for Llama {
-    async fn start() -> Self {
-        Llama::default()
+impl ModelBuilder for LlamaBuilder {
+    type Model = Llama;
+
+    async fn start_with_loading_handler(
+        self,
+        handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
+    ) -> anyhow::Result<Self::Model> {
+        self.build_with_loading_handler(handler).await
     }
 
-    fn requires_download() -> bool {
-        !Llama::downloaded()
+    fn requires_download(&self) -> bool {
+        !self.source.model.downloaded() || !self.source.tokenizer.downloaded()
     }
 }
 

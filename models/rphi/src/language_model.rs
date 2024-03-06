@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 #[async_trait::async_trait]
-impl CreateModel for Phi {
+impl ModelBuilder for Phi {
     async fn start() -> Self {
         Phi::default()
     }

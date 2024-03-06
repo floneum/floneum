@@ -49,6 +49,7 @@ extern crate intel_mkl_src;
 extern crate accelerate_src;
 
 mod language_model;
+use kalosm_language_model::ModelLoadingProgress;
 pub use language_model::*;
 
 use kalosm_common::accelerated_device_if_available;
@@ -143,7 +144,15 @@ impl BertBuilder {
 
     /// Build the model
     pub fn build(self) -> anyhow::Result<Bert> {
-        Bert::new(self)
+        Bert::new(self, |_|{})
+    }
+
+    /// Build the model with a loading handler
+    pub async fn build_with_loading_handler(
+        self,
+        loading_handler: impl FnMut(ModelLoadingProgress) + Send + 'static,
+    ) -> anyhow::Result<Bert> {
+        self.build()
     }
 }
 
@@ -165,7 +174,8 @@ impl Bert {
         BertBuilder::default()
     }
 
-    fn new(builder: BertBuilder) -> anyhow::Result<Self> {
+    fn new(builder: BertBuilder, progress_handler: impl FnMut(ModelLoadingProgress) + Send +Sync+ 'static
+    ) -> anyhow::Result<Self> {
         let BertBuilder { source } = builder;
         let BertSource { model_id, revision } = source;
 
