@@ -32,7 +32,7 @@ const TEST_PAIRS :&[(&str, &str)]= &[
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let llm = Llama::new_chat();
+    let llm = Llama::new_chat().await.unwrap();
 
     let hypothetical = Hypothetical::builder().build().unwrap();
 
@@ -44,7 +44,7 @@ async fn main() {
         test_cases.push_case(expected.to_string(), actual.clone());
     }
 
-    let mut bert_distance = BertDistance::default();
+    let mut bert_distance = BertDistance::new(Bert::new().await.unwrap());
     let evaluation = test_cases.evaluate(&mut bert_distance).await.normalized();
 
     println!("Original\n{}", evaluation);
@@ -67,7 +67,6 @@ async fn main() {
         test_cases.push_case(expected.to_string(), actual.clone());
     }
 
-    let mut bert_distance = BertDistance::default();
     let evaluation = test_cases.evaluate(&mut bert_distance).await.normalized();
 
     println!("Alternate\n{}", evaluation);

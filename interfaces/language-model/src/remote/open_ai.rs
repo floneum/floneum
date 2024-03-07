@@ -1,13 +1,12 @@
 use async_openai::types::CreateEmbeddingRequestArgs;
 use async_openai::{types::CreateCompletionRequestArgs, Client};
 use futures_util::StreamExt;
+use kalosm_common::*;
 use kalosm_sample::Tokenizer;
 use kalosm_streams::text_stream::ChannelTextStream;
 use std::sync::Arc;
 
-use crate::{
-    Embedder, Embedding, GenerationParameters, ModelBuilder, ModelLoadingProgress, VectorSpace,
-};
+use crate::{Embedder, Embedding, GenerationParameters, ModelBuilder, VectorSpace};
 
 macro_rules! openai_model {
     ($ty: ident, $tybuilder: ident, $model: literal) => {

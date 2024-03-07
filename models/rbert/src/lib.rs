@@ -49,82 +49,141 @@ extern crate intel_mkl_src;
 extern crate accelerate_src;
 
 mod language_model;
-use kalosm_language_model::ModelLoadingProgress;
+use kalosm_common::*;
 pub use language_model::*;
 
-use kalosm_common::accelerated_device_if_available;
-use std::{path::PathBuf, sync::RwLock};
+use std::sync::RwLock;
 
-use anyhow::anyhow;
 use candle_core::Tensor;
 use candle_nn::VarBuilder;
 use candle_transformers::models::bert::{BertModel, Config, DTYPE};
-use hf_hub::{api::sync::Api, Cache, Repo, RepoType};
 use tokenizers::{PaddingParams, Tokenizer};
-
-fn try_fetch(repo: Repo) -> anyhow::Result<(PathBuf, PathBuf, PathBuf)> {
-    let api = Api::new()?;
-    let api = api.repo(repo);
-    Ok((
-        api.get("config.json")?,
-        api.get("tokenizer.json")?,
-        api.get("model.safetensors")?,
-    ))
-}
 
 /// A the source of a [`Bert`] model
 pub struct BertSource {
-    model_id: String,
-    revision: String,
+    config: FileSource,
+    tokenizer: FileSource,
+    model: FileSource,
 }
 
 impl BertSource {
     /// Set the model to use, check out available models: <https://huggingface.co/models?library=sentence-transformers&sort=trending>
-    pub fn with_model_id(mut self, model_id: String) -> Self {
-        self.model_id = model_id;
+    pub fn with_model(mut self, model: FileSource) -> Self {
+        self.model = model;
         self
     }
 
-    /// Set the revision to use
-    pub fn with_revision(mut self, revision: String) -> Self {
-        self.revision = revision;
+    /// Set the tokenizer to use
+    pub fn with_tokenizer(mut self, tokenizer: FileSource) -> Self {
+        self.tokenizer = tokenizer;
+        self
+    }
+
+    /// Set the config to use
+    pub fn with_config(mut self, config: FileSource) -> Self {
+        self.config = config;
         self
     }
 
     /// Create a new [`BertSource`] with the BGE large english preset
     pub fn bge_large_en() -> Self {
         Self::default()
-            .with_model_id("BAAI/bge-large-en-v1.5".to_string())
-            .with_revision("refs/pr/5".to_string())
+            .with_model(FileSource::huggingface(
+                "BAAI/bge-large-en-v1.5".to_string(),
+                "refs/pr/5".to_string(),
+                "model.safetensors".to_string(),
+            ))
+            .with_tokenizer(FileSource::huggingface(
+                "BAAI/bge-large-en-v1.5".to_string(),
+                "refs/pr/5".to_string(),
+                "tokenizer.json".to_string(),
+            ))
+            .with_config(FileSource::huggingface(
+                "BAAI/bge-large-en-v1.5".to_string(),
+                "refs/pr/5".to_string(),
+                "config.json".to_string(),
+            ))
     }
 
     /// Create a new [`BertSource`] with the BGE base english preset
     pub fn bge_base_en() -> Self {
         Self::default()
-            .with_model_id("BAAI/bge-base-en-v1.5".to_string())
-            .with_revision("refs/pr/1".to_string())
+            .with_model(FileSource::huggingface(
+                "BAAI/bge-base-en-v1.5".to_string(),
+                "refs/pr/1".to_string(),
+                "model.safetensors".to_string(),
+            ))
+            .with_tokenizer(FileSource::huggingface(
+                "BAAI/bge-base-en-v1.5".to_string(),
+                "refs/pr/1".to_string(),
+                "tokenizer.json".to_string(),
+            ))
+            .with_config(FileSource::huggingface(
+                "BAAI/bge-base-en-v1.5".to_string(),
+                "refs/pr/1".to_string(),
+                "config.json".to_string(),
+            ))
     }
 
     /// Create a new [`BertSource`] with the BGE small english preset
     pub fn bge_small_en() -> Self {
         Self::default()
-            .with_model_id("BAAI/bge-small-en-v1.5".to_string())
-            .with_revision("refs/pr/3".to_string())
+            .with_model(FileSource::huggingface(
+                "BAAI/bge-small-en-v1.5".to_string(),
+                "refs/pr/3".to_string(),
+                "model.safetensors".to_string(),
+            ))
+            .with_tokenizer(FileSource::huggingface(
+                "BAAI/bge-small-en-v1.5".to_string(),
+                "refs/pr/3".to_string(),
+                "tokenizer.json".to_string(),
+            ))
+            .with_config(FileSource::huggingface(
+                "BAAI/bge-small-en-v1.5".to_string(),
+                "refs/pr/3".to_string(),
+                "config.json".to_string(),
+            ))
     }
 
     /// Create a new [`BertSource`] with the MiniLM-L6-v2 preset
     pub fn mini_lm_l6_v2() -> Self {
         Self::default()
-            .with_model_id("sentence-transformers/all-MiniLM-L6-v2".to_string())
-            .with_revision("refs/pr/21".to_string())
+            .with_model(FileSource::huggingface(
+                "sentence-transformers/all-MiniLM-L6-v2".to_string(),
+                "refs/pr/21".to_string(),
+                "model.safetensors".to_string(),
+            ))
+            .with_tokenizer(FileSource::huggingface(
+                "sentence-transformers/all-MiniLM-L6-v2".to_string(),
+                "refs/pr/21".to_string(),
+                "tokenizer.json".to_string(),
+            ))
+            .with_config(FileSource::huggingface(
+                "sentence-transformers/all-MiniLM-L6-v2".to_string(),
+                "refs/pr/21".to_string(),
+                "config.json".to_string(),
+            ))
     }
 }
 
 impl Default for BertSource {
     fn default() -> Self {
         Self {
-            model_id: "sentence-transformers/all-MiniLM-L6-v2".to_string(),
-            revision: "refs/pr/21".to_string(),
+            config: FileSource::huggingface(
+                "sentence-transformers/all-MiniLM-L6-v2".to_string(),
+                "refs/pr/21".to_string(),
+                "config.json".to_string(),
+            ),
+            tokenizer: FileSource::huggingface(
+                "sentence-transformers/all-MiniLM-L6-v2".to_string(),
+                "refs/pr/21".to_string(),
+                "tokenizer.json".to_string(),
+            ),
+            model: FileSource::huggingface(
+                "sentence-transformers/all-MiniLM-L6-v2".to_string(),
+                "refs/pr/21".to_string(),
+                "model.safetensors".to_string(),
+            ),
         }
     }
 }
@@ -143,8 +202,8 @@ impl BertBuilder {
     }
 
     /// Build the model
-    pub fn build(self) -> anyhow::Result<Bert> {
-        Bert::new(self, |_|{})
+    pub async fn build(self) -> anyhow::Result<Bert> {
+        self.build_with_loading_handler(|_| {}).await
     }
 
     /// Build the model with a loading handler
@@ -152,7 +211,7 @@ impl BertBuilder {
         self,
         loading_handler: impl FnMut(ModelLoadingProgress) + Send + 'static,
     ) -> anyhow::Result<Bert> {
-        self.build()
+        Bert::from_builder(self, loading_handler).await
     }
 }
 
@@ -162,46 +221,53 @@ pub struct Bert {
     tokenizer: RwLock<Tokenizer>,
 }
 
-impl Default for Bert {
-    fn default() -> Self {
-        Self::builder().build().unwrap()
-    }
-}
-
 impl Bert {
     /// Create a new [`BertBuilder`]
     pub fn builder() -> BertBuilder {
         BertBuilder::default()
     }
 
-    fn new(builder: BertBuilder, progress_handler: impl FnMut(ModelLoadingProgress) + Send +Sync+ 'static
+    /// Create a new default bert model
+    pub async fn new() -> anyhow::Result<Self> {
+        Self::builder().build().await
+    }
+
+    async fn from_builder(
+        builder: BertBuilder,
+        mut progress_handler: impl FnMut(ModelLoadingProgress) + Send + 'static,
     ) -> anyhow::Result<Self> {
         let BertBuilder { source } = builder;
-        let BertSource { model_id, revision } = source;
+        let BertSource {
+            config,
+            tokenizer,
+            model,
+        } = source;
 
-        let repo = Repo::with_revision(model_id, RepoType::Model, revision);
-        let (config_filename, tokenizer_filename, weights_filename) = match try_fetch(repo.clone())
-        {
-            Ok(filenames) => filenames,
-            Err(err) => {
-                tracing::warn!(
-                    "Failed to fetch model from hub, falling back to local cache: {}",
-                    err
-                );
-                let cache = Cache::default().repo(repo);
-                (
-                    cache
-                        .get("config.json")
-                        .ok_or(anyhow!("Missing config file in cache"))?,
-                    cache
-                        .get("tokenizer.json")
-                        .ok_or(anyhow!("Missing tokenizer file in cache"))?,
-                    cache
-                        .get("model.safetensors")
-                        .ok_or(anyhow!("Missing weights file in cache"))?,
-                )
-            }
-        };
+        let config_filename = config
+            .download(|progress| {
+                progress_handler(ModelLoadingProgress::downloading(
+                    format!("Config ({})", config),
+                    progress,
+                ))
+            })
+            .await?;
+        let tokenizer_filename = tokenizer
+            .download(|progress| {
+                progress_handler(ModelLoadingProgress::downloading(
+                    format!("Tokenizer ({})", tokenizer),
+                    progress,
+                ))
+            })
+            .await?;
+        let weights_filename = model
+            .download(|progress| {
+                progress_handler(ModelLoadingProgress::downloading(
+                    format!("Model ({})", model),
+                    progress,
+                ))
+            })
+            .await?;
+
         let config = std::fs::read_to_string(config_filename)?;
         let config: Config = serde_json::from_str(&config)?;
 

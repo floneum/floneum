@@ -1,3 +1,4 @@
+use kalosm_common::ModelLoadingProgress;
 use kalosm_llama::prelude::*;
 use std::io::Write;
 

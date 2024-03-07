@@ -3,6 +3,7 @@ use crate::structured::generate_structured;
 use crate::TokenOutputStream;
 use crate::UnknownVectorSpace;
 use futures_util::{Stream, StreamExt};
+use kalosm_common::*;
 use kalosm_sample::{Parser, Tokenizer};
 use kalosm_streams::text_stream::ChannelTextStream;
 use llm_samplers::configure::SamplerChainBuilder;
@@ -132,22 +133,6 @@ pub trait ModelBuilder {
     fn requires_download(&self) -> bool {
         false
     }
-}
-
-/// The progress starting a model
-pub enum ModelLoadingProgress {
-    /// The model is downloading
-    Downloading {
-        /// The source of the download
-        source: String,
-        /// The progress of the download, from 0 to 1
-        progress: f32,
-    },
-    /// The model is loading
-    Loading {
-        /// The progress of the loading, from 0 to 1
-        progress: f32,
-    },
 }
 
 /// A builder for the [`ModelExt::stream_text`] method.

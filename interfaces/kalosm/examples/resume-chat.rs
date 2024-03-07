@@ -2,7 +2,7 @@ use kalosm::language::*;
 
 #[tokio::main]
 async fn main() {
-    let mut model = Llama::new_chat();
+    let mut model = Llama::new_chat().await.unwrap();
     let save_path = std::path::PathBuf::from("./chat.llama");
     let mut chat = if save_path.exists() {
         Chat::builder(&mut model)

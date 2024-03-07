@@ -1,13 +1,49 @@
 use anyhow::bail;
 use hf_hub::{Repo, RepoType};
-use reqwest::header::{HeaderValue, CONTENT_LENGTH, RANGE};
-use reqwest::{StatusCode, Url};
+use httpdate::parse_http_date;
+use reqwest::header::{HeaderValue, CONTENT_LENGTH, LAST_MODIFIED, RANGE};
+use reqwest::{Response, StatusCode, Url};
 use std::path::PathBuf;
 use std::str::FromStr;
 use tokio::fs::{File, OpenOptions};
 use tokio::io::AsyncWriteExt;
 
 use crate::FileSource;
+
+/// The progress starting a model
+pub enum ModelLoadingProgress {
+    /// The model is downloading
+    Downloading {
+        /// The source of the download. This is not a path or URL, but a description of the source
+        source: String,
+        /// The progress of the download, from 0 to 1
+        progress: f32,
+    },
+    /// The model is loading
+    Loading {
+        /// The progress of the loading, from 0 to 1
+        progress: f32,
+    },
+}
+
+impl ModelLoadingProgress {
+    /// Create a new downloading progress
+    pub fn downloading(source: String, progress: f32) -> Self {
+        Self::Downloading { source, progress }
+    }
+
+    /// Create a new downloading progress
+    pub fn downloading_progress(source: String) -> impl FnMut(f32) + Send + Sync {
+        move |progress| {
+            ModelLoadingProgress::downloading(source.clone(), progress);
+        }
+    }
+
+    /// Create a new loading progress
+    pub fn loading(progress: f32) -> Self {
+        Self::Loading { progress }
+    }
+}
 
 pub struct Cache {
     location: PathBuf,
@@ -39,7 +75,7 @@ impl Cache {
     pub async fn get(
         &self,
         source: &FileSource,
-        progress: impl FnMut(f32) + Send + Sync,
+        progress: impl FnMut(f32),
     ) -> anyhow::Result<PathBuf> {
         match source {
             FileSource::HuggingFace {
@@ -49,10 +85,6 @@ impl Cache {
             } => {
                 let path = self.location.join(model_id).join(revision);
                 let complete_download = path.join(file);
-                if complete_download.exists() {
-                    return Ok(complete_download);
-                }
-                let incomplete_download = path.join(format!("{}.partial", file));
 
                 let api = hf_hub::api::sync::Api::new()?;
                 let repo = Repo::with_revision(
@@ -63,10 +95,33 @@ impl Cache {
                 let api = api.repo(repo);
                 let url = api.url(file);
                 let url = Url::from_str(&url)?;
+                let client = reqwest::Client::new();
+                let response = client.head(url.clone()).send().await;
+
+                if complete_download.exists() {
+                    let metadata = tokio::fs::metadata(&complete_download).await?;
+                    let file_last_modified = metadata.modified()?;
+                    // If the server says the file hasn't been modified since we downloaded it, we can use the local file
+                    if let Some(last_updated) = response
+                        .as_ref()
+                        .ok()
+                        .and_then(|response| response.headers().get(LAST_MODIFIED))
+                        .and_then(|last_updated| last_updated.to_str().ok())
+                        .and_then(|s| parse_http_date(s).ok())
+                    {
+                        if last_updated <= file_last_modified {
+                            return Ok(complete_download);
+                        }
+                    } else {
+                        // Or if we are offline, we can use the local file
+                        return Ok(complete_download);
+                    }
+                }
+                let incomplete_download = path.join(format!("{}.partial", file));
 
                 tracing::trace!("Downloading into {:?}", incomplete_download);
 
-                download_into(url, &incomplete_download, progress).await?;
+                download_into(url, &incomplete_download, response?, progress).await?;
 
                 // Rename the file to remove the .partial extension
                 tokio::fs::rename(&incomplete_download, &complete_download).await?;
@@ -88,10 +143,7 @@ impl Default for Cache {
 
 impl FileSource {
     /// Check if the file exists locally (if it is a local file or if it has been downloaded)
-    pub async fn download(
-        &self,
-        progress: impl FnMut(f32) + Send + Sync,
-    ) -> anyhow::Result<PathBuf> {
+    pub async fn download(&self, progress: impl FnMut(f32)) -> anyhow::Result<PathBuf> {
         let cache = Cache::default();
         cache.get(self, progress).await
     }
@@ -100,11 +152,11 @@ impl FileSource {
 async fn download_into(
     url: Url,
     file: &PathBuf,
-    mut progress: impl FnMut(f32) + Send + Sync,
+    head: Response,
+    mut progress: impl FnMut(f32),
 ) -> anyhow::Result<()> {
     let client = reqwest::Client::new();
-    let response = client.head(url.clone()).send().await.unwrap();
-    let length = response
+    let length = head
         .headers()
         .get(CONTENT_LENGTH)
         .ok_or("response doesn't include the content length")
@@ -169,7 +221,9 @@ async fn downloads_work() {
     let progress = |p| {
         println!("Progress: {}", p);
     };
-    download_into(Url::from_str(url).unwrap(), &file, progress)
+    let client = reqwest::Client::new();
+    let response = client.head(url).send().await.unwrap();
+    download_into(Url::from_str(url).unwrap(), &file, response, progress)
         .await
         .unwrap();
     assert!(file.exists());

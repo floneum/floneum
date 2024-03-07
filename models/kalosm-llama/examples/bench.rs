@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 
-use kalosm_language_model::{GenerationParameters, ModelLoadingProgress, SyncModel, SyncModelExt};
+use kalosm_common::ModelLoadingProgress;
+use kalosm_language_model::{GenerationParameters, SyncModel, SyncModelExt};
 use kalosm_llama::*;
 
 #[tokio::main]

@@ -2,7 +2,7 @@ use kalosm::language::*;
 
 #[tokio::main]
 async fn main() {
-    let llm = Llama::default();
+    let llm = Llama::new().await.unwrap();
     let prompt = "Five prime numbers: 2, ";
 
     println!("# with constraints");

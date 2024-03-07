@@ -3,7 +3,8 @@ use std::sync::{Arc, Mutex};
 pub use crate::Llama;
 use crate::{InferenceSettings, Task};
 use crate::{LlamaBuilder, LlamaModel};
-use kalosm_language_model::{ChatMarkers, ModelLoadingProgress};
+use kalosm_common::ModelLoadingProgress;
+use kalosm_language_model::ChatMarkers;
 use kalosm_language_model::{GenerationParameters, Model, ModelBuilder};
 use kalosm_streams::text_stream::ChannelTextStream;
 

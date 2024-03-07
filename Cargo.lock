@@ -6030,6 +6030,7 @@ dependencies = [
  "candle-core",
  "dirs 5.0.1",
  "hf-hub",
+ "httpdate",
  "reqwest",
  "tokio",
  "tracing",
@@ -6107,6 +6108,7 @@ dependencies = [
  "candle-core",
  "futures-util",
  "itertools 0.11.0",
+ "kalosm-common",
  "kalosm-sample",
  "kalosm-streams",
  "llm",
@@ -6205,6 +6207,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokenizers 0.13.4",
+ "tokio",
  "tracing",
 ]
 

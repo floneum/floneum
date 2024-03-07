@@ -1,7 +1,8 @@
 use crate::raw::cache::LlamaCache;
 use crate::{raw::Model, session::LlamaSession};
 use anyhow::{Error as E, Result};
-use kalosm_language_model::{ModelLoadingProgress, SyncModelExt};
+use kalosm_common::*;
+use kalosm_language_model::SyncModelExt;
 use llm_samplers::prelude::Logits;
 use std::sync::Arc;
 

@@ -37,6 +37,7 @@ mod raw;
 mod source;
 
 use kalosm_common::accelerated_device_if_available;
+use kalosm_common::ModelLoadingProgress;
 pub use kalosm_language_model;
 use kalosm_language_model::ChatMarkers;
 use raw::PhiCache;
@@ -93,12 +94,6 @@ impl Drop for Phi {
     }
 }
 
-impl Default for Phi {
-    fn default() -> Self {
-        Phi::builder().build().unwrap()
-    }
-}
-
 impl Phi {
     /// Create a builder for a Phi model.
     pub fn builder() -> PhiBuilder {
@@ -106,21 +101,16 @@ impl Phi {
     }
 
     /// Start the v2 model.
-    pub fn v2() -> Self {
-        Phi::builder().with_source(PhiSource::v2()).build().unwrap()
+    pub async fn v2() -> anyhow::Result<Phi> {
+        Phi::builder().with_source(PhiSource::v2()).build().await
     }
 
     /// Create a new chat model.
-    pub fn new_chat() -> Self {
+    pub async fn new_chat() -> anyhow::Result<Phi> {
         Phi::builder()
             .with_source(PhiSource::dolphin_phi_v2())
             .build()
-            .unwrap()
-    }
-
-    /// Check if the model has been downloaded.
-    pub(crate) fn downloaded() -> bool {
-        false
+            .await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -208,9 +198,34 @@ impl PhiBuilder {
     }
 
     /// Build the model (this will download the model if it is not already downloaded)
-    pub fn build(self) -> anyhow::Result<Phi> {
-        let tokenizer_filename = self.source.tokenizer.path()?;
-        let filename = self.source.model.path()?;
+    pub async fn build(self) -> anyhow::Result<Phi> {
+        self.build_with_loading_handler(|_| {}).await
+    }
+
+    /// Build the model with a handler for progress as the download and loading progresses.
+    pub async fn build_with_loading_handler(
+        self,
+        mut progress_handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
+    ) -> anyhow::Result<Phi> {
+        let PhiSource {
+            tokenizer, model, ..
+        } = self.source;
+        let tokenizer_filename = tokenizer
+            .download(|progress| {
+                progress_handler(ModelLoadingProgress::downloading(
+                    format!("Tokenizer ({})", tokenizer),
+                    progress,
+                ))
+            })
+            .await?;
+        let filename = model
+            .download(|progress| {
+                progress_handler(ModelLoadingProgress::downloading(
+                    format!("Model ({})", model),
+                    progress,
+                ))
+            })
+            .await?;
         let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(E::msg)?;
 
         let config = self.source.phi_config;

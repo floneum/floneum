@@ -1,14 +1,14 @@
 pub use crate::Bert;
 use crate::BertBuilder;
+use kalosm_common::*;
 use kalosm_language_model::Embedding;
-use kalosm_language_model::ModelLoadingProgress;
 use kalosm_language_model::VectorSpace;
 use kalosm_language_model::{Embedder, ModelBuilder};
 
 #[async_trait::async_trait]
 impl ModelBuilder for BertBuilder {
     type Model = Bert;
-    
+
     async fn start_with_loading_handler(
         self,
         loading_handler: impl FnMut(ModelLoadingProgress) + Send + 'static,

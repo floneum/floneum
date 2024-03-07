@@ -33,6 +33,7 @@ itertools = "0.11.0"
 tokenizers = { version = "0.13.4" }
 rustc-hash = "1.1.0"
 kalosm-sample = { workspace = true }
+kalosm-common.workspace = true
 kalosm-streams.workspace = true
 # Required for LLM
 llm = { git = "https://github.com/rustformers/llm", optional = true }

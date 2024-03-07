@@ -1,3 +1,5 @@
+use std::any::{Any, TypeId};
+
 use kalosm_language::prelude::*;
 use kalosm_language::{
     kalosm_language_model::{Embedder, Embedding, Model, SyncModel},
@@ -18,7 +20,7 @@ pub struct PromptAnnealerBuilder<
     <<M as Model>::SyncModel as SyncModel>::Session: Sync + Send,
 {
     llm: &'a mut M,
-    metric: Met,
+    metric: Option<Met>,
     train: &'a [(&'static str, &'static str)],
     test: &'a [(&'static str, &'static str)],
     task: TaskBuilder<P>,
@@ -50,12 +52,12 @@ where
             cutoff_temperature: 0.10,
             initial_population: 10,
             initial_choice_range: 1..3,
-            metric: BertDistance::default(),
+            metric: None,
         }
     }
 }
 
-impl<'a, M: Model, P, Met: Metric<String>> PromptAnnealerBuilder<'a, M, P, Met>
+impl<'a, M: Model, P, Met: Metric<String> + 'static> PromptAnnealerBuilder<'a, M, P, Met>
 where
     <<M as Model>::SyncModel as SyncModel>::Session: Sync + Send,
     P: Clone + TaskBuilderReturn + Send + Sync + 'static,
@@ -97,7 +99,20 @@ where
     }
 
     /// Build the [`PromptAnnealer`].
-    pub async fn build(mut self) -> PromptAnnealer<'a, M, P, Met> {
+    pub async fn build(self) -> anyhow::Result<PromptAnnealer<'a, M, P, Met>> {
+        let mut metric = match self.metric {
+            Some(metric) => metric,
+            None => {
+                if TypeId::of::<Met>() == TypeId::of::<BertDistance>() {
+                    *(Box::new(BertDistance::new(Bert::builder().build().await?)) as Box<dyn Any>)
+                        .downcast::<Met>()
+                        .unwrap()
+                } else {
+                    return Err(anyhow::anyhow!("No metric provided"));
+                }
+            }
+        };
+
         let (train_set, test_set) = if self.test.is_empty() {
             tracing::warn!("No test set provided, using a subset of the train set for evaluation");
 
@@ -113,7 +128,7 @@ where
             (self.train, self.test)
         };
 
-        let bert = Bert::default();
+        let bert = Bert::builder().build().await?;
 
         // Calculate embeddings for all examples
         let mut embedded_train_set = Vec::new();
@@ -186,22 +201,22 @@ where
                     remaining_cases,
                     self.initial_temperature,
                     &test_set,
-                    &mut self.metric,
+                    &mut metric,
                     self.task.clone(),
                 )
                 .await,
             );
         }
 
-        PromptAnnealer {
+        Ok(PromptAnnealer {
             task: self.task,
             llm: self.llm,
             test: test_set,
             population,
-            metric: self.metric,
+            metric,
             decay_rate: self.decay_rate,
             cutoff_temperature: self.cutoff_temperature,
-        }
+        })
     }
 }
 

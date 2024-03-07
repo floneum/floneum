@@ -2,7 +2,7 @@ use kalosm::language::*;
 
 #[tokio::main]
 async fn main() {
-    let llm = Llama::default();
+    let llm = Llama::new().await.unwrap();
     let prompt = "Five US states in central US are ";
 
     println!("# with constraints");

@@ -223,7 +223,7 @@ async fn simplified() -> anyhow::Result<()> {
         Thing,
     }
 
-    let mut bert = Bert::builder().build()?;
+    let mut bert = Bert::builder().build().await?;
 
     let dev = Device::cuda_if_available(0)?;
     let person_questions = vec![

@@ -46,8 +46,8 @@ use candle_core::{
     quantized::{ggml_file, gguf_file},
     Device,
 };
-use kalosm_common::accelerated_device_if_available;
-use kalosm_language_model::{ChatMarkers, ModelLoadingProgress};
+pub use kalosm_common::*;
+use kalosm_language_model::ChatMarkers;
 use llm_samplers::types::Sampler;
 pub use source::*;
 use std::sync::{Arc, Mutex};
@@ -103,13 +103,21 @@ impl Llama {
             .await
     }
 
+    /// Create a default text generation model.
+    pub async fn new() -> anyhow::Result<Self> {
+        Llama::builder()
+            .with_source(LlamaSource::mistral_7b())
+            .build()
+            .await
+    }
+
     /// Create a new builder for a Llama model.
     pub fn builder() -> LlamaBuilder {
         LlamaBuilder::default()
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn new(
+    fn from_build(
         model: Model,
         tokenizer: Tokenizer,
         device: Device,
@@ -247,7 +255,7 @@ impl LlamaBuilder {
 
         let cache = LlamaCache::new(model.config.n_layer);
 
-        Ok(Llama::new(
+        Ok(Llama::from_build(
             model,
             tokenizer,
             device,

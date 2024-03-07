@@ -6,7 +6,7 @@ use kalosm::language::*;
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let llm = Gpt4::start().await;
+    let llm = Gpt4::default();
     let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
     print!("{}", prompt);
 
