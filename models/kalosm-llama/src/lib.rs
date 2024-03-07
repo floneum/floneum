@@ -46,7 +46,7 @@ use candle_core::{
     quantized::{ggml_file, gguf_file},
     Device,
 };
-use kalosm_common::accelerated_device_if_available;
+pub use kalosm_common::*;
 use kalosm_language_model::ChatMarkers;
 use llm_samplers::types::Sampler;
 pub use source::*;
@@ -94,19 +94,21 @@ impl Drop for Llama {
     }
 }
 
-impl Default for Llama {
-    fn default() -> Self {
-        Llama::builder().build().unwrap()
-    }
-}
-
 impl Llama {
     /// Create a default chat model.
-    pub fn new_chat() -> Self {
+    pub async fn new_chat() -> anyhow::Result<Self> {
         Llama::builder()
             .with_source(LlamaSource::open_chat_7b())
             .build()
-            .unwrap()
+            .await
+    }
+
+    /// Create a default text generation model.
+    pub async fn new() -> anyhow::Result<Self> {
+        Llama::builder()
+            .with_source(LlamaSource::mistral_7b())
+            .build()
+            .await
     }
 
     /// Create a new builder for a Llama model.
@@ -114,13 +116,8 @@ impl Llama {
         LlamaBuilder::default()
     }
 
-    /// Check if the model has been downloaded.
-    pub(crate) fn downloaded() -> bool {
-        false
-    }
-
     #[allow(clippy::too_many_arguments)]
-    fn new(
+    fn from_build(
         model: Model,
         tokenizer: Tokenizer,
         device: Device,
@@ -210,12 +207,39 @@ impl LlamaBuilder {
         self
     }
 
-    /// Build the model (this will download the model if it is not already downloaded)
-    pub fn build(self) -> anyhow::Result<Llama> {
-        let tokenizer = self.source.tokenizer()?;
+    /// Build the model with a handler for progress as the download and loading progresses.
+    pub async fn build_with_loading_handler(
+        self,
+        handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
+    ) -> anyhow::Result<Llama> {
+        let handler = Arc::new(Mutex::new(handler));
+        let filename = tokio::spawn({
+            let source = self.source.clone();
+            let handler = handler.clone();
+            async move {
+                let source_display = format!("Model ({})", source.model);
+                source
+                    .model(move |progress| {
+                        (handler.lock().unwrap())(ModelLoadingProgress::Downloading {
+                            source: source_display.clone(),
+                            progress,
+                        })
+                    })
+                    .await
+            }
+        });
+        let tokenizer = self
+            .source
+            .tokenizer(|progress| {
+                (handler.lock().unwrap())(ModelLoadingProgress::Downloading {
+                    source: format!("Tokenizer ({})", self.source.tokenizer),
+                    progress,
+                })
+            })
+            .await?;
+        let filename = filename.await??;
 
         let device = accelerated_device_if_available()?;
-        let filename = self.source.model()?;
         let mut file = std::fs::File::open(&filename)?;
         let model = match filename.extension().and_then(|v| v.to_str()) {
             Some("gguf") => {
@@ -231,13 +255,18 @@ impl LlamaBuilder {
 
         let cache = LlamaCache::new(model.config.n_layer);
 
-        Ok(Llama::new(
+        Ok(Llama::from_build(
             model,
             tokenizer,
             device,
             cache,
             self.source.markers,
         ))
+    }
+
+    /// Build the model (this will download the model if it is not already downloaded)
+    pub async fn build(self) -> anyhow::Result<Llama> {
+        self.build_with_loading_handler(|_| {}).await
     }
 }
 

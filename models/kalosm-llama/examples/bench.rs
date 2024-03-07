@@ -1,14 +1,21 @@
 use std::sync::{Arc, Mutex};
 
+use kalosm_common::ModelLoadingProgress;
 use kalosm_language_model::{GenerationParameters, SyncModel, SyncModelExt};
 use kalosm_llama::*;
 
-fn main() {
+#[tokio::main]
+async fn main() {
+    fn progress(_: ModelLoadingProgress) {}
+
     #[inline(never)]
-    fn load_small() {
-        let model =
-            LlamaModel::from_builder(Llama::builder().with_source(LlamaSource::mistral_7b()))
-                .unwrap();
+    async fn load_small() {
+        let model = LlamaModel::from_builder(
+            Llama::builder().with_source(LlamaSource::mistral_7b()),
+            progress,
+        )
+        .await
+        .unwrap();
         let prompt = "Hello world";
 
         for _ in 0..100 {
@@ -18,10 +25,13 @@ fn main() {
     }
 
     #[inline(never)]
-    fn load_large() {
-        let model =
-            LlamaModel::from_builder(Llama::builder().with_source(LlamaSource::mistral_7b()))
-                .unwrap();
+    async fn load_large() {
+        let model = LlamaModel::from_builder(
+            Llama::builder().with_source(LlamaSource::mistral_7b()),
+            progress,
+        )
+        .await
+        .unwrap();
         let prompt = "Hello world".repeat(10);
 
         for _ in 0..100 {
@@ -31,10 +41,13 @@ fn main() {
     }
 
     #[inline(never)]
-    fn generate() {
-        let model =
-            LlamaModel::from_builder(Llama::builder().with_source(LlamaSource::mistral_7b()))
-                .unwrap();
+    async fn generate() {
+        let model = LlamaModel::from_builder(
+            Llama::builder().with_source(LlamaSource::mistral_7b()),
+            progress,
+        )
+        .await
+        .unwrap();
         let prompt = "Hello world";
 
         for _ in 0..100 {
@@ -52,7 +65,7 @@ fn main() {
         }
     }
 
-    load_small();
-    load_large();
-    generate();
+    load_small().await;
+    load_large().await;
+    generate().await;
 }

@@ -5,6 +5,7 @@ async fn main() {
     let llm = Llama::builder()
         .with_source(LlamaSource::tiny_llama_1_1b())
         .build()
+        .await
         .unwrap();
     let prompt = "An array of realistic single word reddit user names: ";
 

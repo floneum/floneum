@@ -7,7 +7,7 @@ async fn main() {
     let character_description =
         format!("{description} The assistant will never reveal that it is an AI or assistant.");
 
-    let mut model = Llama::new_chat();
+    let mut model = Llama::new_chat().await.unwrap();
     let constraints = LiteralParser::new(format!("(Responding as {}) ", character_name)).then(
         StopOn::new(model.chat_markers().unwrap().end_assistant_marker),
     );

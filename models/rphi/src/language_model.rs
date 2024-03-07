@@ -1,20 +1,27 @@
 use crate::model::PhiModel;
 use crate::InferenceSettings;
 pub use crate::Phi;
+use crate::PhiBuilder;
 use crate::Task;
+use kalosm_common::ModelLoadingProgress;
 use kalosm_language_model::*;
 use kalosm_streams::text_stream::ChannelTextStream;
 use std::sync::Arc;
 use std::sync::Mutex;
 
 #[async_trait::async_trait]
-impl CreateModel for Phi {
-    async fn start() -> Self {
-        Phi::default()
+impl ModelBuilder for PhiBuilder {
+    type Model = Phi;
+
+    async fn start_with_loading_handler(
+        self,
+        handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
+    ) -> anyhow::Result<Self::Model> {
+        self.build_with_loading_handler(handler).await
     }
 
-    fn requires_download() -> bool {
-        !Phi::downloaded()
+    fn requires_download(&self) -> bool {
+        !self.source.model.downloaded() || !self.source.tokenizer.downloaded()
     }
 }
 

@@ -3,7 +3,7 @@ use std::io::Write;
 
 #[tokio::main]
 async fn main() {
-    let model = Phi::default();
+    let model = Phi::v2().await.unwrap();
     let prompt = "The capital of France is";
     let mut result = model.stream_text(prompt).await.unwrap();
 

@@ -53,8 +53,16 @@ impl OcrBuilder {
     }
 
     /// Builds the [`Ocr`] model.
-    pub fn build(self) -> anyhow::Result<Ocr> {
-        Ocr::new(self)
+    pub async fn build(self) -> anyhow::Result<Ocr> {
+        Ocr::new(self, |_| {}).await
+    }
+
+    /// Builds the [`Ocr`] model.
+    pub async fn build_with_loading_handler(
+        self,
+        handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
+    ) -> anyhow::Result<Ocr> {
+        Ocr::new(self, handler).await
     }
 }
 
@@ -134,12 +142,27 @@ impl OcrSource {
         )
     }
 
-    fn varbuilder(&self, device: &Device) -> anyhow::Result<VarBuilder> {
-        let filename = self.model.path()?;
+    async fn varbuilder(
+        &self,
+        device: &Device,
+        mut handler: impl FnMut(ModelLoadingProgress) + Send + Sync,
+    ) -> anyhow::Result<VarBuilder> {
+        let filename = self
+            .model
+            .download(|progress| {
+                handler(ModelLoadingProgress::downloading(
+                    format!("Model ({})", self.model),
+                    progress,
+                ))
+            })
+            .await?;
         Ok(unsafe { VarBuilder::from_mmaped_safetensors(&[filename], DType::F32, device)? })
     }
 
-    fn config(&self) -> anyhow::Result<(vit::Config, trocr::TrOCRConfig)> {
+    async fn config(
+        &self,
+        mut handler: impl FnMut(ModelLoadingProgress) + Send + Sync,
+    ) -> anyhow::Result<(vit::Config, trocr::TrOCRConfig)> {
         #[derive(Debug, Clone, serde::Deserialize)]
         struct Config {
             encoder: vit::Config,
@@ -147,7 +170,15 @@ impl OcrSource {
         }
 
         let (encoder_config, decoder_config) = {
-            let config_filename = self.config.path()?;
+            let config_filename = self
+                .config
+                .download(|progress| {
+                    handler(ModelLoadingProgress::downloading(
+                        format!("Config ({})", self.model),
+                        progress,
+                    ))
+                })
+                .await?;
             let config: Config = serde_json::from_reader(std::fs::File::open(config_filename)?)?;
             (config.encoder, config.decoder)
         };
@@ -201,7 +232,10 @@ impl Ocr {
         OcrBuilder::default()
     }
 
-    fn new(settings: OcrBuilder) -> anyhow::Result<Self> {
+    async fn new(
+        settings: OcrBuilder,
+        mut handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
+    ) -> anyhow::Result<Self> {
         let OcrBuilder { source } = settings;
         let tokenizer_dec = {
             let tokenizer = Api::new()?
@@ -212,9 +246,9 @@ impl Ocr {
         };
         let device = accelerated_device_if_available()?;
 
-        let vb = source.varbuilder(&device)?;
+        let vb = source.varbuilder(&device, &mut handler).await?;
 
-        let (encoder_config, decoder_config) = source.config()?;
+        let (encoder_config, decoder_config) = source.config(&mut handler).await?;
 
         let model = trocr::TrOCRModel::new(&encoder_config, &decoder_config, vb)?;
 

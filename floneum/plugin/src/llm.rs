@@ -14,7 +14,9 @@ impl main::types::HostEmbeddingModel for State {
         ty: main::types::EmbeddingModelType,
     ) -> wasmtime::Result<wasmtime::component::Resource<EmbeddingModel>> {
         let model = match ty {
-            main::types::EmbeddingModelType::Bert => Bert::builder().build()?.into_any_embedder(),
+            main::types::EmbeddingModelType::Bert => {
+                Bert::builder().build().await?.into_any_embedder()
+            }
         };
         let idx = self.embedders.insert(model);
 
@@ -56,103 +58,128 @@ impl main::types::HostModel for State {
         let model = match ty {
             main::types::ModelType::MistralSeven => Llama::builder()
                 .with_source(LlamaSource::mistral_7b())
-                .build()?
+                .build()
+                .await?
                 .into_any_model(),
             main::types::ModelType::MistralSevenInstruct => Llama::builder()
                 .with_source(LlamaSource::mistral_7b_instruct())
-                .build()?
+                .build()
+                .await?
                 .into_any_model(),
             main::types::ModelType::MistralSevenInstructTwo => Llama::builder()
                 .with_source(LlamaSource::mistral_7b_instruct_2())
-                .build()?
+                .build()
+                .await?
                 .into_any_model(),
             main::types::ModelType::ZephyrSevenAlpha => Llama::builder()
                 .with_source(LlamaSource::zephyr_7b_alpha())
-                .build()?
+                .build()
+                .await?
                 .into_any_model(),
             main::types::ModelType::ZephyrSevenBeta => Llama::builder()
                 .with_source(LlamaSource::zephyr_7b_beta())
-                .build()?
+                .build()
+                .await?
                 .into_any_model(),
             main::types::ModelType::OpenChatSeven => Llama::builder()
                 .with_source(LlamaSource::open_chat_7b())
-                .build()?
+                .build()
+                .await?
                 .into_any_model(),
             main::types::ModelType::StarlingSevenAlpha => Llama::builder()
                 .with_source(LlamaSource::starling_7b_alpha())
-                .build()?
+                .build()
+                .await?
                 .into_any_model(),
             main::types::ModelType::TinyLlamaChat => Llama::builder()
                 .with_source(LlamaSource::tiny_llama_1_1b_chat())
-                .build()?
+                .build()
+                .await?
                 .into_any_model(),
             main::types::ModelType::TinyLlama => Llama::builder()
                 .with_source(LlamaSource::tiny_llama_1_1b())
-                .build()?
+                .build()
+                .await?
                 .into_any_model(),
             main::types::ModelType::LlamaSeven => Llama::builder()
                 .with_source(LlamaSource::llama_7b())
-                .build()?
+                .build()
+                .await?
                 .into_any_model(),
             main::types::ModelType::LlamaThirteen => Llama::builder()
                 .with_source(LlamaSource::llama_13b())
-                .build()?
+                .build()
+                .await?
                 .into_any_model(),
             main::types::ModelType::LlamaSeventy => Llama::builder()
                 .with_source(LlamaSource::llama_70b())
-                .build()?
+                .build()
+                .await?
                 .into_any_model(),
             main::types::ModelType::LlamaSevenChat => Llama::builder()
                 .with_source(LlamaSource::llama_7b_chat())
-                .build()?
+                .build()
+                .await?
                 .into_any_model(),
             main::types::ModelType::LlamaThirteenChat => Llama::builder()
                 .with_source(LlamaSource::llama_13b_chat())
-                .build()?
+                .build()
+                .await?
                 .into_any_model(),
             main::types::ModelType::LlamaSeventyChat => Llama::builder()
                 .with_source(LlamaSource::llama_70b_chat())
-                .build()?
+                .build()
+                .await?
                 .into_any_model(),
             main::types::ModelType::LlamaSevenCode => Llama::builder()
                 .with_source(LlamaSource::llama_7b_code())
-                .build()?
+                .build()
+                .await?
                 .into_any_model(),
             main::types::ModelType::LlamaThirteenCode => Llama::builder()
                 .with_source(LlamaSource::llama_13b_code())
-                .build()?
+                .build()
+                .await?
                 .into_any_model(),
             main::types::ModelType::LlamaThirtyFourCode => Llama::builder()
                 .with_source(LlamaSource::llama_34b_code())
-                .build()?
+                .build()
+                .await?
                 .into_any_model(),
             main::types::ModelType::SolarTen => Llama::builder()
                 .with_source(LlamaSource::solar_10_7b())
-                .build()?
+                .build()
+                .await?
                 .into_any_model(),
             main::types::ModelType::SolarTenInstruct => Llama::builder()
                 .with_source(LlamaSource::solar_10_7b_instruct())
-                .build()?
+                .build()
+                .await?
                 .into_any_model(),
             main::types::ModelType::PhiOne => Phi::builder()
                 .with_source(PhiSource::v1())
-                .build()?
+                .build()
+                .await?
                 .into_any_model(),
             main::types::ModelType::PhiOnePointFive => Phi::builder()
                 .with_source(PhiSource::v1_5())
-                .build()?
+                .build()
+                .await?
                 .into_any_model(),
             main::types::ModelType::PhiTwo => Phi::builder()
                 .with_source(PhiSource::v2())
-                .build()?
+                .build()
+                .await?
                 .into_any_model(),
             main::types::ModelType::PuffinPhiTwo => Phi::builder()
                 .with_source(PhiSource::puffin_phi_v2())
-                .build()?
+                .build()
+                .await?
                 .into_any_model(),
             main::types::ModelType::DolphinPhiTwo => Phi::builder()
                 .with_source(PhiSource::dolphin_phi_v2())
-                .build()?
+                .build()
+                .await?
                 .into_any_model(),
         };
         let idx = self.models.insert(model);

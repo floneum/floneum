@@ -1,15 +1,22 @@
 pub use crate::Bert;
+use crate::BertBuilder;
+use kalosm_common::*;
 use kalosm_language_model::Embedding;
 use kalosm_language_model::VectorSpace;
-use kalosm_language_model::{CreateModel, Embedder};
+use kalosm_language_model::{Embedder, ModelBuilder};
 
 #[async_trait::async_trait]
-impl CreateModel for Bert {
-    async fn start() -> Self {
-        Self::default()
+impl ModelBuilder for BertBuilder {
+    type Model = Bert;
+
+    async fn start_with_loading_handler(
+        self,
+        loading_handler: impl FnMut(ModelLoadingProgress) + Send + 'static,
+    ) -> anyhow::Result<Self::Model> {
+        self.build_with_loading_handler(loading_handler).await
     }
 
-    fn requires_download() -> bool {
+    fn requires_download(&self) -> bool {
         true
     }
 }

@@ -6028,7 +6028,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "candle-core",
+ "dirs 5.0.1",
  "hf-hub",
+ "httpdate",
+ "reqwest",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -6103,6 +6108,7 @@ dependencies = [
  "candle-core",
  "futures-util",
  "itertools 0.11.0",
+ "kalosm-common",
  "kalosm-sample",
  "kalosm-streams",
  "llm",
@@ -6179,6 +6185,7 @@ dependencies = [
  "tokenizers 0.13.4",
  "tokio",
  "tracing",
+ "tracing-subscriber 0.3.18",
 ]
 
 [[package]]
@@ -6200,6 +6207,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokenizers 0.13.4",
+ "tokio",
  "tracing",
 ]
 

@@ -6,6 +6,7 @@ async fn main() {
     let model = Llama::builder()
         .with_source(LlamaSource::zephyr_7b_beta())
         .build()
+        .await
         .unwrap();
     let prompt = "<|system|>
 

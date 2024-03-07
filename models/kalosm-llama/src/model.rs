@@ -1,6 +1,7 @@
 use crate::raw::cache::LlamaCache;
 use crate::{raw::Model, session::LlamaSession};
 use anyhow::{Error as E, Result};
+use kalosm_common::*;
 use kalosm_language_model::SyncModelExt;
 use llm_samplers::prelude::Logits;
 use std::sync::Arc;
@@ -97,11 +98,30 @@ impl LlamaModel {
     }
 
     /// Create a new sync Llama model from a builder.
-    pub fn from_builder(builder: crate::LlamaBuilder) -> anyhow::Result<Self> {
-        let tokenizer = builder.source.tokenizer()?;
+    pub async fn from_builder(
+        builder: crate::LlamaBuilder,
+        mut handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
+    ) -> anyhow::Result<Self> {
+        let tokenizer = builder
+            .source
+            .tokenizer(|progress| {
+                handler(ModelLoadingProgress::Downloading {
+                    source: format!("Tokenizer ({})", builder.source.tokenizer),
+                    progress,
+                })
+            })
+            .await?;
 
         let device = accelerated_device_if_available()?;
-        let filename = builder.source.model()?;
+        let filename = builder
+            .source
+            .model(|progress| {
+                handler(ModelLoadingProgress::Downloading {
+                    source: format!("Model ({})", builder.source.tokenizer),
+                    progress,
+                })
+            })
+            .await?;
         let mut file = std::fs::File::open(&filename)?;
         let model = match filename.extension().and_then(|v| v.to_str()) {
             Some("gguf") => {

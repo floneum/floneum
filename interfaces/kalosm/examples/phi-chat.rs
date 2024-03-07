@@ -7,6 +7,7 @@ async fn main() {
     let mut model = Phi::builder()
         .with_source(PhiSource::dolphin_phi_v2())
         .build()
+        .await
         .unwrap();
     let mut chat = Chat::builder(&mut model)
         .with_system_prompt(description)

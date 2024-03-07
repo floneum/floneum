@@ -13,7 +13,7 @@ enum MyClass {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut bert = Bert::builder().build()?;
+    let mut bert = Bert::builder().build().await?;
 
     let dev = accelerated_device_if_available()?;
     let person_questions = vec![
