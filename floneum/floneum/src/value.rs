@@ -1,4 +1,4 @@
-use crate::Color;
+use crate::{application_state, Color};
 use dioxus::prelude::*;
 use floneum_plugin::{
     exports::plugins::main::definitions::{Input, Output},
@@ -59,10 +59,11 @@ fn show_primitive_value<'a>(cx: &'a ScopeState, value: &PrimitiveValue) -> Eleme
             render! {"{value}"}
         }
         PrimitiveValue::Embedding(value) => {
-            let first_five = value.vector.iter().take(5).collect::<Vec<_>>();
-            render! {"{first_five:?}"}
+            let first_five = value.vector.iter().take(5).map(ToString::to_string).collect::<Vec<_>>().join(", ");
+            render! {"[{first_five}, ...]"}
         }
         PrimitiveValue::Model(id) => {
+
             render! {"Model: {id:?}"}
         }
         PrimitiveValue::EmbeddingModel(id) => {
@@ -230,6 +231,9 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                                     value: "{variant.name()}",
                                     selected: "{variant.name() == ty.name()}",
                                     "{variant.name()}"
+                                    if variant.model_downloaded_sync() {
+                                        " (Downloaded)"
+                                    }
                                 }
                             }
                         }
@@ -258,6 +262,9 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                                     value: "{variant.name()}",
                                     selected: "{variant.name() == ty.name()}",
                                     "{variant.name()}"
+                                    if variant.model_downloaded_sync() {
+                                        " (Downloaded)"
+                                    }
                                 }
                             }
                         }

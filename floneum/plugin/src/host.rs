@@ -1,11 +1,12 @@
 use crate::embedding_db::VectorDBWithDocuments;
-use crate::plugins::main;
 use crate::plugins::main::imports::{self};
+use crate::plugins::main::{self};
 use crate::Both;
 
 use headless_chrome::Tab;
 use kalosm::language::DynamicNodeId;
 use kalosm::language::*;
+use kalosm_common::*;
 use once_cell::sync::Lazy;
 
 use reqwest::header::{HeaderName, HeaderValue};
@@ -13,18 +14,19 @@ use slab::Slab;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
+use wasi_common::sync::Dir;
 use wasmtime::component::__internal::async_trait;
 use wasmtime::component::{Linker, ResourceTable};
 use wasmtime::Config;
 use wasmtime::Engine;
-use wasmtime_wasi::preview2::{self, DirPerms, FilePerms, WasiView};
-use wasmtime_wasi::Dir;
+use wasmtime_wasi::WasiCtxBuilder;
+use wasmtime_wasi::{self, command, DirPerms, FilePerms, WasiCtx, WasiView};
 
 pub(crate) static LINKER: Lazy<Linker<State>> = Lazy::new(|| {
     let mut linker = Linker::new(&ENGINE);
     let l = &mut linker;
     Both::add_to_linker(l, |x| x).unwrap();
-    preview2::command::add_to_linker(l).unwrap();
+    command::add_to_linker(l).unwrap();
 
     linker
 });
@@ -43,27 +45,28 @@ pub(crate) struct AnyNodeRef {
 pub struct State {
     pub(crate) logs: Arc<RwLock<Vec<String>>>,
     pub(crate) models: Slab<DynModel>,
+    pub(crate) model_download_progress: Arc<RwLock<HashMap<usize, ModelLoadingProgress>>>,
     pub(crate) embedders: Slab<DynEmbedder>,
     pub(crate) embedding_dbs: Slab<VectorDBWithDocuments>,
     pub(crate) nodes: Slab<AnyNodeRef>,
     pub(crate) pages: Slab<Arc<Tab>>,
     pub(crate) plugin_state: HashMap<Vec<u8>, Vec<u8>>,
     pub(crate) table: ResourceTable,
-    pub(crate) ctx: preview2::WasiCtx,
+    pub(crate) ctx: WasiCtx,
 }
 
 impl Default for State {
     fn default() -> Self {
         let sandbox = Path::new("./sandbox");
         std::fs::create_dir_all(sandbox).unwrap();
-        let mut ctx = preview2::WasiCtxBuilder::new();
+        let mut ctx = WasiCtxBuilder::new();
         let ctx_builder = ctx
             .inherit_stderr()
             .inherit_stdin()
             .inherit_stdio()
             .inherit_stdout()
             .preopened_dir(
-                Dir::open_ambient_dir(sandbox, wasmtime_wasi::sync::ambient_authority()).unwrap(),
+                Dir::open_ambient_dir(sandbox, wasi_common::sync::ambient_authority()).unwrap(),
                 DirPerms::all(),
                 FilePerms::all(),
                 ".",
@@ -74,6 +77,7 @@ impl Default for State {
             plugin_state: Default::default(),
             embedders: Default::default(),
             models: Default::default(),
+            model_download_progress: Default::default(),
             embedding_dbs: Default::default(),
             nodes: Default::default(),
             pages: Default::default(),
@@ -89,7 +93,7 @@ impl WasiView for State {
         &mut self.table
     }
 
-    fn ctx(&mut self) -> &mut preview2::WasiCtx {
+    fn ctx(&mut self) -> &mut WasiCtx {
         &mut self.ctx
     }
 }

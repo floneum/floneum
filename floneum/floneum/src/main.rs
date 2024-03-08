@@ -165,6 +165,10 @@ pub fn use_application_state(cx: &ScopeState) -> Signal<ApplicationState> {
     *use_context::<Signal<ApplicationState>>(cx).unwrap()
 }
 
+pub fn application_state(cx: &ScopeState) -> Signal<ApplicationState> {
+    cx.consume_context().unwrap()
+}
+
 struct DeserializeApplicationState {
     new_state: StorageId<ApplicationState>,
 }
