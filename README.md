@@ -1,4 +1,4 @@
-# [Floneum](./floneum/floneum)/[Kalosm](./interfaces/kalosm/)
+# [Floneum](./floneum/floneum)/[Kalosm](./interfaces/kalosm/README.md)
 
 <div align="center">
   <!-- Crates version -->
