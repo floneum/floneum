@@ -187,7 +187,7 @@ jobs:
         if: |
           matrix.toolchain == 'stable'
       - name: Publish release artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: floneum-${{ matrix.platform.os_name }}
           path: "floneum-*"
