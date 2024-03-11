@@ -6,7 +6,6 @@ use crate::Both;
 use headless_chrome::Tab;
 use kalosm::language::DynamicNodeId;
 use kalosm::language::*;
-use kalosm_common::*;
 use once_cell::sync::Lazy;
 
 use reqwest::header::{HeaderName, HeaderValue};
@@ -45,7 +44,6 @@ pub(crate) struct AnyNodeRef {
 pub struct State {
     pub(crate) logs: Arc<RwLock<Vec<String>>>,
     pub(crate) models: Slab<DynModel>,
-    pub(crate) model_download_progress: Arc<RwLock<HashMap<usize, ModelLoadingProgress>>>,
     pub(crate) embedders: Slab<DynEmbedder>,
     pub(crate) embedding_dbs: Slab<VectorDBWithDocuments>,
     pub(crate) nodes: Slab<AnyNodeRef>,
@@ -77,7 +75,6 @@ impl Default for State {
             plugin_state: Default::default(),
             embedders: Default::default(),
             models: Default::default(),
-            model_download_progress: Default::default(),
             embedding_dbs: Default::default(),
             nodes: Default::default(),
             pages: Default::default(),

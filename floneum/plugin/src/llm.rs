@@ -1,11 +1,51 @@
 use crate::host::State;
 use crate::plugins::main;
-
 use crate::plugins::main::types::{Embedding, EmbeddingModel, Model};
 
 use kalosm::language::*;
-
+use kalosm_common::ModelLoadingProgress;
+use once_cell::sync::Lazy;
+use std::collections::HashMap;
+use std::sync::RwLock;
 use wasmtime::component::__internal::async_trait;
+
+#[allow(clippy::type_complexity)]
+static MODEL_DOWNLOAD_PROGRESS: Lazy<
+    RwLock<HashMap<usize, Vec<Box<dyn FnMut(ModelLoadingProgress) + Send + Sync>>>>,
+> = Lazy::new(Default::default);
+
+pub fn listen_to_model_download_progresses<
+    F: FnMut(ModelLoadingProgress) + Send + Sync + 'static,
+>(
+    model_type: main::types::ModelType,
+    f: F,
+) {
+    let mut progress = MODEL_DOWNLOAD_PROGRESS.write().unwrap();
+    let model_type_as_id = model_type as usize;
+    progress
+        .entry(model_type_as_id)
+        .or_default()
+        .push(Box::new(f));
+}
+
+#[allow(clippy::type_complexity)]
+static EMBEDDING_MODEL_DOWNLOAD_PROGRESS: Lazy<
+    RwLock<HashMap<usize, Vec<Box<dyn FnMut(ModelLoadingProgress) + Send + Sync>>>>,
+> = Lazy::new(Default::default);
+
+pub fn listen_to_embedding_model_download_progresses<
+    F: FnMut(ModelLoadingProgress) + Send + Sync + 'static,
+>(
+    model_type: main::types::EmbeddingModelType,
+    f: F,
+) {
+    let mut progress = EMBEDDING_MODEL_DOWNLOAD_PROGRESS.write().unwrap();
+    let model_type_as_id = model_type as usize;
+    progress
+        .entry(model_type_as_id)
+        .or_default()
+        .push(Box::new(f));
+}
 
 impl main::types::EmbeddingModelType {
     /// Returns whether the model has been downloaded.
@@ -21,9 +61,20 @@ impl main::types::HostEmbeddingModel for State {
         ty: main::types::EmbeddingModelType,
     ) -> wasmtime::Result<wasmtime::component::Resource<EmbeddingModel>> {
         let model = match ty {
-            main::types::EmbeddingModelType::Bert => {
-                Bert::builder().build().await?.into_any_embedder()
-            }
+            main::types::EmbeddingModelType::Bert => Bert::builder()
+                .build_with_loading_handler(move |progress: ModelLoadingProgress| {
+                    if let Some(callbacks) = EMBEDDING_MODEL_DOWNLOAD_PROGRESS
+                        .write()
+                        .unwrap()
+                        .get_mut(&(ty as usize))
+                    {
+                        for callback in callbacks {
+                            callback(progress.clone());
+                        }
+                    }
+                })
+                .await?
+                .into_any_embedder(),
         };
         let idx = self.embedders.insert(model);
 
@@ -174,12 +225,16 @@ impl main::types::HostModel for State {
         ty: main::types::ModelType,
     ) -> wasmtime::Result<wasmtime::component::Resource<Model>> {
         let model_type_as_id = ty as usize;
-        let model_download_progress = self.model_download_progress.clone();
-        let progress = move |progress| {
-            model_download_progress
+        let progress = move |progress: ModelLoadingProgress| {
+            if let Some(callbacks) = MODEL_DOWNLOAD_PROGRESS
                 .write()
                 .unwrap()
-                .insert(model_type_as_id, progress);
+                .get_mut(&model_type_as_id)
+            {
+                for callback in callbacks {
+                    callback(progress.clone());
+                }
+            }
         };
         let model = match ty.llm_builder() {
             LlmBuilder::Llama(builder) => builder

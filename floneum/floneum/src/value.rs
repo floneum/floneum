@@ -1,4 +1,4 @@
-use crate::{application_state, Color};
+use crate::Color;
 use dioxus::prelude::*;
 use floneum_plugin::{
     exports::plugins::main::definitions::{Input, Output},
@@ -8,40 +8,40 @@ use std::path::PathBuf;
 
 use crate::{node_value::NodeInput, Signal};
 
-#[derive(Props, PartialEq)]
+#[derive(Clone, Props, PartialEq)]
 pub struct ShowOutputProps {
     name: String,
     value: Output,
 }
 
-pub fn ShowOutput(cx: Scope<ShowOutputProps>) -> Element {
-    let ShowOutputProps { name, value } = &cx.props;
+pub fn ShowOutput(props: ShowOutputProps) -> Element {
+    let ShowOutputProps { name, value } = &props;
     match value {
         Output::Single(value) => {
-            render! {
+            rsx! {
                 div {
                     class: "flex flex-col whitespace-pre-line",
                     "{name}:\n"
-                    show_primitive_value(cx, value)
+                    {show_primitive_value(value)}
                 }
             }
         }
         Output::Many(value) => {
-            render! {
+            rsx! {
                 div {
                     class: "flex flex-col",
                     "{name}:"
                     for value in &value {
                         div {
                             class: "whitespace-pre-line",
-                            show_primitive_value(cx, value)
+                            {show_primitive_value(value)}
                         }
                     }
                 }
             }
         }
         _ => {
-            render! {
+            rsx! {
                 div {
                     class: "flex flex-col",
                     "{name}: Unset"
@@ -51,75 +51,80 @@ pub fn ShowOutput(cx: Scope<ShowOutputProps>) -> Element {
     }
 }
 
-fn show_primitive_value<'a>(cx: &'a ScopeState, value: &PrimitiveValue) -> Element<'a> {
+fn show_primitive_value(value: &PrimitiveValue) -> Element {
     match value {
         PrimitiveValue::Text(value)
         | PrimitiveValue::File(value)
         | PrimitiveValue::Folder(value) => {
-            render! {"{value}"}
+            rsx! {"{value}"}
         }
         PrimitiveValue::Embedding(value) => {
-            let first_five = value.vector.iter().take(5).map(ToString::to_string).collect::<Vec<_>>().join(", ");
-            render! {"[{first_five}, ...]"}
+            let first_five = value
+                .vector
+                .iter()
+                .take(5)
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
+            rsx! {"[{first_five}, ...]"}
         }
         PrimitiveValue::Model(id) => {
-
-            render! {"Model: {id:?}"}
+            rsx! {"Model: {id:?}"}
         }
         PrimitiveValue::EmbeddingModel(id) => {
-            render! {"Embedding Model: {id:?}"}
+            rsx! {"Embedding Model: {id:?}"}
         }
         PrimitiveValue::Database(id) => {
-            render! {"Database: {id:?}"}
+            rsx! {"Database: {id:?}"}
         }
         PrimitiveValue::Number(value) => {
-            render! {"{value}"}
+            rsx! {"{value}"}
         }
         PrimitiveValue::ModelType(ty) => {
-            render! {"{ty.name()}"}
+            rsx! {"{ty.name()}"}
         }
         PrimitiveValue::EmbeddingModelType(ty) => {
-            render! {"{ty.name()}"}
+            rsx! {"{ty.name()}"}
         }
         PrimitiveValue::Boolean(val) => {
-            render! {"{val:?}"}
+            rsx! {"{val:?}"}
         }
         PrimitiveValue::Page(id) => {
-            render! {"Page: {id:?}"}
+            rsx! {"Page: {id:?}"}
         }
         PrimitiveValue::Node(id) => {
-            render! {"Node: {id:?}"}
+            rsx! {"Node: {id:?}"}
         }
     }
 }
 
-#[derive(Props, PartialEq)]
+#[derive(Clone, Props, PartialEq)]
 pub struct ShowInputProps {
     label: String,
     value: Input,
 }
 
-pub fn ShowInput(cx: Scope<ShowInputProps>) -> Element {
-    let ShowInputProps { label, value } = &cx.props;
+pub fn ShowInput(props: ShowInputProps) -> Element {
+    let ShowInputProps { label, value } = &props;
     match value {
         Input::Single(value) => {
-            render! {
+            rsx! {
                 div {
                     class: "flex flex-col whitespace-pre-line",
                     "{label}:\n"
-                    show_primitive_value(cx, value)
+                    {show_primitive_value(value)}
                 }
             }
         }
         Input::Many(value) => {
-            render! {
+            rsx! {
                 div {
                     class: "flex flex-col",
                     "{label}:"
                     for value in &value {
                         div {
                             class: "whitespace-pre-line",
-                            show_primitive_value(cx, value)
+                            {show_primitive_value(value)}
                         }
                     }
                 }
@@ -128,15 +133,15 @@ pub fn ShowInput(cx: Scope<ShowInputProps>) -> Element {
     }
 }
 
-#[inline_props]
-pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
-    let node = value;
+#[component]
+pub fn ModifyInput(value: Signal<NodeInput>) -> Element {
+    let mut node = value;
     let current_value = node.read();
     let name = &current_value.definition.name;
     match current_value.value() {
         Input::Single(current_primitive) => match current_primitive {
             PrimitiveValue::Text(value) => {
-                render! {
+                rsx! {
                     div {
                         class: "flex flex-col",
                         "{name}: "
@@ -144,14 +149,14 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                             class: "border {Color::outline_color()} {Color::foreground_color()} {Color::foreground_hover()} rounded focus:outline-none focus:border-blue-500",
                             value: "{value}",
                             oninput: |e| {
-                                node.write().value = vec![Input::Single(PrimitiveValue::Text(e.value.to_string()))];
+                                node.write().value = vec![Input::Single(PrimitiveValue::Text(e.value()))];
                             }
                         }
                     }
                 }
             }
             PrimitiveValue::File(file) => {
-                render! {
+                rsx! {
                     button {
                         class: "border {Color::outline_color()} {Color::foreground_hover()} rounded focus:outline-none focus:border-blue-500",
                         onclick: |_| {
@@ -169,7 +174,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                 }
             }
             PrimitiveValue::Folder(folder) => {
-                render! {
+                rsx! {
                     button {
                         class: "border {Color::outline_color()} rounded {Color::foreground_hover()} focus:outline-none focus:border-blue-500",
                         onclick: |_| {
@@ -191,9 +196,9 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
             | PrimitiveValue::EmbeddingModel(_)
             | PrimitiveValue::Database(_)
             | PrimitiveValue::Page(_)
-            | PrimitiveValue::Node(_) => show_primitive_value(cx, &current_primitive),
+            | PrimitiveValue::Node(_) => show_primitive_value(&current_primitive),
             PrimitiveValue::Number(value) => {
-                render! {
+                rsx! {
                     div {
                         class: "flex flex-col",
                         "{name}: "
@@ -203,14 +208,14 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                             value: "{value}",
                             oninput: |e| {
                                 node
-                                    .write().value = vec![Input::Single(PrimitiveValue::Number(e.value.parse().unwrap_or(0)))];
+                                    .write().value = vec![Input::Single(PrimitiveValue::Number(e.value().parse().unwrap_or(0)))];
                             }
                         }
                     }
                 }
             }
             PrimitiveValue::ModelType(ty) => {
-                render! {
+                rsx! {
                     div {
                         class: "flex flex-col",
                         "{name}: "
@@ -221,7 +226,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                                 node
                                     .write().value = vec![Input::Single(
                                     PrimitiveValue::ModelType(
-                                        model_type_from_str(&e.value)
+                                        model_type_from_str(&e.value())
                                             .unwrap_or(ModelType::MistralSeven),
                                     ),
                                 )];
@@ -241,7 +246,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                 }
             }
             PrimitiveValue::EmbeddingModelType(ty) => {
-                render! {
+                rsx! {
                     div {
                         class: "flex flex-col",
                         "{name}: "
@@ -252,7 +257,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                                 node
                                     .write().value = vec![Input::Single(
                                     PrimitiveValue::EmbeddingModelType(
-                                        embedding_model_type_from_str(&e.value)
+                                        embedding_model_type_from_str(&e.value())
                                             .unwrap_or(EmbeddingModelType::Bert),
                                     ),
                                 )];
@@ -272,7 +277,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                 }
             }
             PrimitiveValue::Boolean(val) => {
-                render! {
+                rsx! {
                     div {
                         class: "flex flex-col",
                         "{name}: "
@@ -281,7 +286,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                             r#type: "checkbox",
                             checked: "{val}",
                             onchange: |e| {
-                                node.write().value = vec![Input::Single(PrimitiveValue::Boolean(e.value == "on"))];
+                                node.write().value = vec![Input::Single(PrimitiveValue::Boolean(e.value() == "on"))];
                             }
                         }
                     }
@@ -289,7 +294,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
             }
         },
         Input::Many(values) => {
-            render! {
+            rsx! {
                 div {
                     div {
                         class: "flex flex-col",
@@ -297,7 +302,7 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                         for value in values.iter() {
                             div {
                                 class: "whitespace-pre-line",
-                                show_primitive_value(cx, value)
+                                {show_primitive_value(value)}
                             }
                         }
                     }

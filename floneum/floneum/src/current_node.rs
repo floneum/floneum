@@ -8,8 +8,8 @@ pub(crate) struct FocusedNodeInfo {
     pub active_example_index: Option<usize>,
 }
 
-pub fn CurrentNodeInfo(cx: Scope) -> Element {
-    let application = use_application_state(cx);
+pub fn CurrentNodeInfo() -> Element {
+    let application = use_application_state();
     let focused = application.read().currently_focused;
 
     match focused {
@@ -19,7 +19,7 @@ pub fn CurrentNodeInfo(cx: Scope) -> Element {
             let name = &md.name;
             let description = &md.description;
 
-            render! {
+            rsx! {
                 div {
                     class: "p-4",
                     h1 {
@@ -28,85 +28,79 @@ pub fn CurrentNodeInfo(cx: Scope) -> Element {
                     }
 
                     if let Some(example_index) = node_info.active_example_index {
-                        rsx! {
-                            button {
-                                class: "text-xl font-bold m-2 rounded-md p-2 border-2 {Color::outline_color()}",
-                                onclick: move |_| {
-                                    if let Some(focused) = &mut application.write().currently_focused {
-                                        focused.active_example_index = None;
-                                    }
-                                },
-                                "Back to node"
-                            }
-                            div {
-                                class: "text-left {Color::foreground_color()} rounded-md m-2 p-2",
-                                h2 {
-                                    class: "text-xl font-bold",
-                                    "inputs:"
+                        button {
+                            class: "text-xl font-bold m-2 rounded-md p-2 border-2 {Color::outline_color()}",
+                            onclick: move |_| {
+                                if let Some(focused) = &mut application.write().currently_focused {
+                                    focused.active_example_index = None;
                                 }
-                                for (i, input) in md.examples[example_index].inputs.iter().enumerate() {
-                                    div {
-                                        ShowInput {
-                                            key: "{input.read().definition.name}",
-                                            label: md.inputs[i].name.clone(),
-                                            value: input.clone()
-                                        }
+                            },
+                            "Back to node"
+                        }
+                        div {
+                            class: "text-left {Color::foreground_color()} rounded-md m-2 p-2",
+                            h2 {
+                                class: "text-xl font-bold",
+                                "inputs:"
+                            }
+                            for (i, input) in md.examples[example_index].inputs.iter().enumerate() {
+                                div {
+                                    ShowInput {
+                                        key: "{input.read().definition.name}",
+                                        label: md.inputs[i].name.clone(),
+                                        value: input.clone()
                                     }
                                 }
                             }
-                            div {
-                                class: "text-left {Color::foreground_color()} rounded-md m-2 p-2",
-                                h2 {
-                                    class: "text-xl font-bold",
-                                    "outputs:"
-                                }
-                                for (i, output) in md.examples[example_index].outputs.iter().enumerate() {
-                                    div {
-                                        ShowOutput {
-                                            key: "{output.read().definition.name}",
-                                            name: md.outputs[i].name.clone(),
-                                            value: output.clone()
-                                        }
+                        }
+                        div {
+                            class: "text-left {Color::foreground_color()} rounded-md m-2 p-2",
+                            h2 {
+                                class: "text-xl font-bold",
+                                "outputs:"
+                            }
+                            for (i, output) in md.examples[example_index].outputs.iter().enumerate() {
+                                div {
+                                    ShowOutput {
+                                        key: "{output.read().definition.name}",
+                                        name: md.outputs[i].name.clone(),
+                                        value: output.clone()
                                     }
                                 }
                             }
                         }
                     }
                     else {
-                        let inputs = &node.inputs;
-                        let outputs = &node.outputs;
-                        rsx! {
-                            // Inputs
-                            div {
-                                class: "text-left {Color::foreground_color()} rounded-md m-2 p-2",
-                                h2 {
-                                    class: "text-xl font-bold",
-                                    "inputs:"
-                                }
-                                for input in inputs {
-                                    div {
-                                        ModifyInput {
-                                            key: "{input.read().definition.name}",
-                                            value: *input
-                                        }
+                        // Inputs
+                        div {
+                            class: "text-left {Color::foreground_color()} rounded-md m-2 p-2",
+                            h2 {
+                                class: "text-xl font-bold",
+                                "inputs:"
+                            }
+                            for input in &node.inputs {
+                                div {
+                                    ModifyInput {
+                                        key: "{input.read().definition.name}",
+                                        value: *input
                                     }
                                 }
                             }
+                        }
 
-                            // Outputs
-                            div {
-                                class: "text-left {Color::foreground_color()} rounded-md m-2 p-2",
-                                h2 {
-                                    class: "text-xl font-bold",
-                                    "outputs:"
-                                }
-                                for output in outputs {
-                                    div {
-                                        ShowOutput {
-                                            key: "{output.read().definition.name}",
-                                            name: output.read().definition.name.clone(),
-                                            value: output.read().value.clone()
-                                        }
+                        // Outputs
+                        div {
+                            class: "text-left {Color::foreground_color()} rounded-md m-2 p-2",
+                            h2 {
+                                class: "text-xl font-bold",
+                                "outputs:"
+                            }
+                            for output in &node.outputs {
+                                div {
+                                    ShowOutput {
+                                        key: "{output.read().definition.name}",
+                                        name: output.read().definition.name.clone(),
+                                        value: output.read().value.clone()
                                     }
                                 }
                             }
@@ -135,7 +129,7 @@ pub fn CurrentNodeInfo(cx: Scope) -> Element {
             }
         }
         None => {
-            render! {
+            rsx! {
                 "Select a node to see its info"
             }
         }

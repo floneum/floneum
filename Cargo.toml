@@ -8,11 +8,6 @@ repository = "https://github.com/floneum/floneum"
 
 [dependencies]
 
-[patch.crates-io]
-dioxus-core = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
-dioxus-rsx = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
-dioxus = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
-
 [workspace]
 members = [
     "models/rbert",

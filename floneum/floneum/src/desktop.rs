@@ -1,11 +1,11 @@
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
-use dioxus_desktop::Config;
+use dioxus::desktop::Config;
 use dioxus_flow::{Edge, FlowView, Signal, Node, VisualGraph, VisualGraphInner};
 use petgraph::Graph;
 
 fn main() {
     const TAILWIND_CSS: &str = include_str!("../public/tailwind.css");
-    dioxus_desktop::launch_cfg(
+    dioxus::desktop::launch_cfg(
         app,
         Config::new().with_custom_index(
             format!(r#"
@@ -27,7 +27,7 @@ fn main() {
         <body>
             <div id="main"></div>
             <script type="module">
-                import init from "./pkg/dioxus_desktop.js";
+                import init from "./pkg/dioxus::desktop.js";
                 init();
             </script>
         </body>
@@ -39,7 +39,7 @@ fn main() {
     );
 }
 
-fn app(cx: Scope) -> Element {
+fn app() -> Element {
     // Create an undirected graph with `i32` nodes and edges with `()` associated data.
     let mut g: Graph<Signal<Node>, Signal<Edge>> = Graph::new();
 
@@ -91,7 +91,7 @@ fn app(cx: Scope) -> Element {
         }),
     };
 
-    render! {
+    rsx! {
         div { width: "100%", height: "100%", FlowView { graph: visual_graph } }
     }
 }

@@ -16,9 +16,9 @@ pub struct Theme {
 #[allow(unused)]
 impl Theme {
     pub fn current() -> Signal<Theme> {
-        match consume_context::<Signal<Theme>>() {
+        match try_consume_context::<Signal<Theme>>() {
             Some(theme) => theme,
-            None => provide_root_context(Signal::new_in_scope(Theme::DARK, ScopeId::ROOT)).unwrap(),
+            None => provide_root_context(Signal::new_in_scope(Theme::DARK, ScopeId::ROOT)),
         }
     }
 

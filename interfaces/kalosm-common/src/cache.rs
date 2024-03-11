@@ -11,6 +11,7 @@ use tokio::io::AsyncWriteExt;
 use crate::FileSource;
 
 /// The progress starting a model
+#[derive(Clone)]
 pub enum ModelLoadingProgress {
     /// The model is downloading
     Downloading {

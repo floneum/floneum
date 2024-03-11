@@ -4,13 +4,13 @@
 use crate::theme::Color;
 use anyhow::Result;
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
-use dioxus_signals::*;
 use floneum_plugin::Plugin;
 use floneumite::FloneumPackageIndex;
 use futures_util::stream::StreamExt;
 use petgraph::stable_graph::{DefaultIx, NodeIndex};
 use serde::{Deserialize, Serialize};
 use share::StorageId;
+use std::cell::RefCell;
 use std::{collections::HashMap, fs::File, io::Read, rc::Rc};
 use tokio::sync::oneshot::Receiver;
 
@@ -73,13 +73,12 @@ async fn main() {
         tx.send(FloneumPackageIndex::load().await).unwrap();
     });
 
-    dioxus_desktop::launch_with_props(
-        App,
-        AppProps {
-            channel: RefCell::new(Some(rx)),
-        },
-        make_config(),
-    );
+    dioxus::prelude::LaunchBuilder::new()
+        .with_cfg(make_config())
+        .with_context(AppProps {
+            channel: Rc::new(RefCell::new(Some(rx))),
+        })
+        .launch(App);
 }
 
 pub struct PluginId(usize);
@@ -134,8 +133,8 @@ impl PartialEq for ApplicationState {
     }
 }
 
-pub fn use_provide_application_state(cx: &ScopeState) -> Signal<ApplicationState> {
-    *use_context_provider(cx, || {
+pub fn use_provide_application_state() -> Signal<ApplicationState> {
+    use_context_provider(|| {
         let mut current_dir = std::env::current_dir().unwrap();
         current_dir.push(SAVE_NAME);
         let state = if let Ok(mut file) = File::open(current_dir) {
@@ -161,43 +160,37 @@ pub fn use_provide_application_state(cx: &ScopeState) -> Signal<ApplicationState
     })
 }
 
-pub fn use_application_state(cx: &ScopeState) -> Signal<ApplicationState> {
-    *use_context::<Signal<ApplicationState>>(cx).unwrap()
+pub fn use_application_state() -> Signal<ApplicationState> {
+    use_context::<Signal<ApplicationState>>()
 }
 
-pub fn application_state(cx: &ScopeState) -> Signal<ApplicationState> {
-    cx.consume_context().unwrap()
+pub fn application_state() -> Signal<ApplicationState> {
+    consume_context()
 }
 
 struct DeserializeApplicationState {
     new_state: StorageId<ApplicationState>,
 }
 
-#[derive(Props)]
+#[derive(Clone)]
 pub struct AppProps {
-    #[props(into)]
-    channel: RefCell<Option<Receiver<FloneumPackageIndex>>>,
+    channel: Rc<RefCell<Option<Receiver<FloneumPackageIndex>>>>,
 }
 
-impl PartialEq for AppProps {
-    fn eq(&self, _: &Self) -> bool {
-        true
-    }
-}
-
-fn App(cx: Scope<AppProps>) -> Element {
-    use_package_manager_provider(cx);
-    let package_manager = use_shared_state::<Option<Rc<FloneumPackageIndex>>>(cx).unwrap();
-    let state = use_provide_application_state(cx);
-    cx.use_hook(|| {
-        let channel = cx.props.channel.borrow_mut().take().unwrap();
+fn App() -> Element {
+    let props: AppProps = use_context();
+    use_package_manager_provider();
+    let package_manager = use_context::<Signal<Option<Rc<FloneumPackageIndex>>>>();
+    let state = use_provide_application_state();
+    use_hook(|| {
+        let channel = props.channel.borrow_mut().take().unwrap();
         to_owned![package_manager];
-        cx.spawn(async move {
+        spawn(async move {
             let new_package_manager = channel.await;
             *package_manager.write() = Some(Rc::new(new_package_manager.unwrap()));
         });
     });
-    use_coroutine(cx, |mut channel| async move {
+    use_coroutine(|mut channel| async move {
         while let Some(DeserializeApplicationState { new_state }) = channel.next().await {
             let mut application = state.write();
             *application = new_state.load().await.unwrap();
@@ -205,24 +198,22 @@ fn App(cx: Scope<AppProps>) -> Element {
         }
     });
     let graph = state.read().graph.clone();
-    use_apply_menu_event(cx, state);
+    use_apply_menu_event(state);
 
-    render! {
+    rsx! {
         FlowView { graph: graph }
         Sidebar {}
     }
 }
 
-fn use_package_manager_provider(cx: &ScopeState) {
-    use_shared_state_provider(cx, || {
+fn use_package_manager_provider() {
+    use_context_provider(|| {
         let state: Option<Rc<FloneumPackageIndex>> = None;
-        state
+        Signal::new(state)
     });
 }
 
-pub fn use_package_manager(cx: &ScopeState) -> Option<Rc<FloneumPackageIndex>> {
-    use_shared_state::<Option<Rc<FloneumPackageIndex>>>(cx)
-        .unwrap()
-        .read()
-        .clone()
+pub fn use_package_manager() -> Option<Rc<FloneumPackageIndex>> {
+    use_context::<Signal<Option<Rc<FloneumPackageIndex>>>>()
+        .cloned()
 }
