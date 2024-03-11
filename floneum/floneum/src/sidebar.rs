@@ -3,7 +3,6 @@ use crate::share::SaveMenu;
 use crate::Color;
 use crate::CurrentNodeInfo;
 use dioxus::prelude::*;
-use dioxus_router::prelude::*;
 
 #[derive(Routable, Clone)]
 #[rustfmt::skip]
@@ -17,11 +16,11 @@ enum SidebarRoute {
         SaveMenu {}
 }
 
-pub fn Sidebar(cx: Scope) -> Element {
-    render! { Router::<SidebarRoute> {} }
+pub fn Sidebar() -> Element {
+    rsx! { Router::<SidebarRoute> {} }
 }
 
-fn Links(cx: Scope) -> Element {
+fn Links() -> Element {
     let script = r#"
 const BORDER_SIZE = 4;
 const panel = document.getElementById("left_panel");
@@ -44,7 +43,7 @@ document.addEventListener("mouseup", function(){
     document.removeEventListener("mousemove", resize, false);
 }, false);
 "#;
-    render! {
+    rsx! {
         div {
             id: "left_panel",
             class: "h-full w-64 cursor-ew-resize select-none {Color::foreground_color()} {Color::text_color()} border-l-4 {Color::outline_color()} top-0 bottom-0 right-0 z-10 fixed overflow-scroll text-center",

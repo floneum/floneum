@@ -1,8 +1,10 @@
 #[macro_export]
 macro_rules! bindgen {
     ($name:ident) => {
-        ::wit_bindgen::generate!({
-            inline: "package plugins:main;
+        #[allow(clippy::all)]
+        mod bindings {
+            ::wit_bindgen::generate!({
+                inline: "package plugins:main;
 
 interface imports {
   use types.{embedding, model, model-type, embedding-db, node, page};
@@ -190,12 +192,10 @@ world both {
   export definitions;
 }
 ",
-            world: "plugin-world",
-            exports: {
-                world: $name,
-                "plugins:main/definitions": $name
-            },
-        });
+                world: "plugin-world",
+            });
+        }
+        use bindings::*;
 
 use plugins::main::types::*;
 use exports::plugins::main::definitions::Guest;

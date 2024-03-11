@@ -281,14 +281,14 @@ fn main() {
         r#"#[macro_export]
 macro_rules! bindgen {{
     ($name:ident) => {{
-        ::wit_bindgen::generate!({{
-            inline: "{}",
-            world: "plugin-world",
-            exports: {{
-                world: $name,
-                "plugins:main/definitions": $name
-            }},
-        }});
+        #[allow(clippy::all)]
+        mod bindings {{
+            ::wit_bindgen::generate!({{
+                inline: "{}",
+                world: "plugin-world",
+            }});
+        }}
+        use bindings::*;
 {LIBRARY}
     }};
 }}

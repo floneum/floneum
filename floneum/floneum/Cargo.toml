@@ -28,24 +28,21 @@ wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", features = [
 ] }
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
-dioxus = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
+dioxus = { version = "0.5.0-alpha.0", features = [
+    "desktop",
+    "router",
+]}
 petgraph = { version = "0.6.4", features = ["serde-1"] }
-dioxus-desktop = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
-dioxus-router = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
-dioxus-signals = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals", features = [
+dioxus-signals = { version = "0.5.0-alpha.0", features = [
     "serialize",
 ] }
-dioxus-free-icons = { version = "0.7.0", features = ["ionicons"] }
-rfd = "0.11.4"
-dioxus-std = { git = "https://github.com/DioxusLabs/dioxus-std/", version = "0.4.0", features = [
+dioxus-free-icons = { git = "https://github.com/dioxus-community/dioxus-free-icons", branch = "feat/dioxus-0.5", features = ["ionicons"] }
+rfd = "0.12"
+dioxus-std = { git = "https://github.com/marc2332/dioxus-std/", branch = "feat/dioxus-0.5", features = [
     "clipboard",
 ] }
 directories = "5.0.1"
-
-[patch.crates-io]
-dioxus-core = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
-dioxus-rsx = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
-dioxus = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
+muda = "0.11.3"
 
 [profile.dist]
 inherits = "release"

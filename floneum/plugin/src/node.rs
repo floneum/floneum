@@ -9,7 +9,7 @@ impl State {
     pub fn get_node(
         &self,
         node: wasmtime::component::Resource<Node>,
-    ) -> anyhow::Result<headless_chrome::Element<'_>> {
+    ) -> anyhow::Result<headless_chrome::Element> {
         let node = self
             .nodes
             .get(node.rep() as usize)

@@ -6,14 +6,11 @@ use syn::{
     Meta, Path, PathArguments, PathSegment, ReturnType, Type,
 };
 
+#[allow(clippy::all)]
 mod inner {
     wit_bindgen::generate!({
         path: "../wit",
         world: "exports",
-
-        exports: {
-            world: MyHost,
-        },
     });
 }
 use inner::plugins::main::types::{PrimitiveValueType, ValueType};

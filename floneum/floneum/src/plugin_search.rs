@@ -52,19 +52,19 @@ const BUILT_IN_PLUGINS: &[&str] = &[
     "Power",
 ];
 
-pub fn PluginSearch(cx: Scope) -> Element {
-    render! {
+pub fn PluginSearch() -> Element {
+    rsx! {
         LoadRegisteredPlugin {}
         LoadLocalPlugin {}
     }
 }
 
-fn LoadRegisteredPlugin(cx: Scope) -> Element {
-    let plugins = use_package_manager(cx);
-    let search_text = use_state(cx, || "".to_string());
-    let text_words: Vec<&str> = search_text.split_whitespace().collect();
+fn LoadRegisteredPlugin() -> Element {
+    let plugins = use_package_manager();
+    let search_text = use_signal(|| "".to_string());
+    let text_words: Vec<&str> = search_text().split_whitespace().collect();
 
-    render! {
+    rsx! {
         "Add Plugin"
         input {
             class: "border {Color::outline_color()} {Color::foreground_color()} rounded-md p-2 m-2",
@@ -72,7 +72,7 @@ fn LoadRegisteredPlugin(cx: Scope) -> Element {
             oninput: {
                 let search_text = search_text.clone();
                 move |event| {
-                    search_text.set(event.value.clone());
+                    search_text.set(event.value());
                 }
             },
         }
@@ -119,11 +119,11 @@ fn LoadRegisteredPlugin(cx: Scope) -> Element {
     }
 }
 
-#[inline_props]
-fn Category<'a>(cx: Scope<'a>, name: &'a str, plugins: Vec<PackageIndexEntry>) -> Element<'a> {
-    let application = use_application_state(cx);
+#[component]
+fn Category(name: String, plugins: Vec<PackageIndexEntry>) -> Element {
+    let application = use_application_state();
 
-    render! {
+    rsx! {
         div { class: "sticky top-0 z-10 border-y border-b-gray-200 border-t-gray-100 {Color::foreground_color()} px-3 py-1.5 text-sm font-semibold leading-6",
             h3 { "{name}" }
         }
@@ -152,27 +152,25 @@ fn Category<'a>(cx: Scope<'a>, name: &'a str, plugins: Vec<PackageIndexEntry>) -
                         },
                         p { class: "text-sm font-semibold leading-6",
                             if let Some(meta) = entry.meta() {
-                                let name = &meta.name;
-                                let built_in = BUILT_IN_PLUGINS.contains(&name.as_str());
-                                let extra = if built_in {
-                                    ""
-                                } else {
-                                    " (community)"
-                                };
-                                rsx! {
-                                    "{name}{extra}"
+                                {
+                                    let name = &meta.name;
+                                    let built_in = BUILT_IN_PLUGINS.contains(&name.as_str());
+                                    let extra = if built_in {
+                                        ""
+                                    } else {
+                                        " (community)"
+                                    };
+                                    rsx! {
+                                        "{name}{extra}"
+                                    }
                                 }
                             } else {
-                                rsx! {
-                                    "{entry.path().display()}"
-                                }
+                                "{entry.path().display()}"
                             }
                         }
                         if let Some(meta) = entry.meta() {
-                            render! {
-                                p { class: "mt-1 truncate text-xs leading-5",
-                                    "{meta.description}"
-                                }
+                            p { class: "mt-1 truncate text-xs leading-5",
+                                "{meta.description}"
                             }
                         }
                     }
@@ -182,11 +180,11 @@ fn Category<'a>(cx: Scope<'a>, name: &'a str, plugins: Vec<PackageIndexEntry>) -
     }
 }
 
-fn LoadLocalPlugin(cx: Scope) -> Element {
-    let search_text = use_state(cx, String::new);
-    let application = use_application_state(cx);
+fn LoadLocalPlugin() -> Element {
+    let search_text = use_signal(String::new);
+    let application = use_application_state();
 
-    render! {
+    rsx! {
         div {
             class: "flex flex-col items-left",
             "Add Plugin from File"
@@ -194,14 +192,14 @@ fn LoadLocalPlugin(cx: Scope) -> Element {
                 class: "border {Color::outline_color()} {Color::foreground_color()} rounded-md p-2 m-2",
                 value: "{search_text}",
                 oninput: move |event| {
-                    search_text.set(event.value.clone());
+                    search_text.set(event.value());
                 },
             }
 
             button {
                 class: "{Color::foreground_hover()} border {Color::outline_color()} rounded-md p-2 m-2",
                 onclick: move |_| {
-                    let path = PathBuf::from(search_text.get());
+                    let path = PathBuf::from(search_text());
                     let plugin = load_plugin(&path);
                     to_owned![application];
                     async move {

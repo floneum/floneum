@@ -6,7 +6,8 @@ authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 
 [dependencies]
 wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", features = ['component-model'] }
-wasmtime-wasi = { git = "https://github.com/bytecodealliance/wasmtime", features = ['preview2'] }
+wasmtime-wasi = { git = "https://github.com/bytecodealliance/wasmtime" }
+wasi-common = { git = "https://github.com/bytecodealliance/wasmtime" }
 wit-component = "0.19.0"
 bytesize = "1.2.0"
 futures-util = "0.3.28"
@@ -25,6 +26,7 @@ tracing = "0.1.37"
 headless_chrome = { version = "1.0", features = ["fetch"]}
 floneumite = { path = "../floneumite" }
 kalosm = { workspace = true }
+kalosm-common.workspace = true
 
 [features]
 metal = ["kalosm/metal"]

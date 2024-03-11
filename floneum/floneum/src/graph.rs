@@ -11,6 +11,7 @@ use petgraph::{
     visit::{EdgeRef, IntoEdgeReferences, IntoNodeIdentifiers},
 };
 use serde::{Deserialize, Serialize};
+use slab::Slab;
 
 use crate::{
     node_value::{NodeInput, NodeOutput},
@@ -20,6 +21,7 @@ use crate::{
 #[derive(Serialize, Deserialize)]
 pub struct VisualGraphInner {
     pub graph: StableGraph<Signal<Node>, Signal<Edge>>,
+    pub connections: Slab<ConnectionProps>,
     pub currently_dragging: Option<CurrentlyDragging>,
     pub pan_pos: Point2D<f32, f32>,
     pub zoom: f32,
@@ -29,6 +31,7 @@ impl Default for VisualGraphInner {
     fn default() -> Self {
         Self {
             graph: StableGraph::default(),
+            connections: Slab::default(),
             currently_dragging: None,
             pan_pos: Point2D::new(0.0, 0.0),
             zoom: 1.0,
@@ -67,6 +70,7 @@ pub enum DraggingIndex {
 pub struct CurrentlyDraggingProps {
     pub from: Signal<Node>,
     pub index: DraggingIndex,
+    pub from_pos: Point2D<f32, f32>,
     pub to: Signal<Point2D<f32, f32>>,
 }
 
@@ -111,8 +115,6 @@ impl VisualGraph {
                 id: Default::default(),
                 inputs,
                 outputs,
-                width: 120.0,
-                height: 120.0,
             },
             self.inner.origin_scope(),
         );
@@ -151,13 +153,10 @@ impl VisualGraph {
         }
     }
 
-    pub fn start_dragging_node(&self, _evt: &MouseData, node: Signal<Node>) {
+    pub fn start_dragging_node(&self, evt: &MouseData, node: Signal<Node>) {
         let mut inner = self.inner.write();
         inner.currently_dragging = Some(CurrentlyDragging::Node(NodeDragInfo {
-            element_offset: {
-                let current_node = node.read();
-                Point2D::new(current_node.height / 2.0, current_node.width / 4.0)
-            },
+            element_offset: evt.element_coordinates().cast().cast_unit(),
             node,
         }));
     }
@@ -233,7 +232,7 @@ impl VisualGraph {
             let input = graph.graph[source].read();
             let value = input.outputs[start_index].read().as_input();
             if let Some(value) = value {
-                let input = inputs[end_index.index];
+                let mut input = inputs[end_index.index];
                 let mut input = input.write();
                 input.set_connection(end_index.ty, value);
             }
@@ -242,7 +241,7 @@ impl VisualGraph {
         true
     }
 
-    pub fn run_node(&self, cx: &ScopeState, node: Signal<Node>) {
+    pub fn run_node(&self, node: Signal<Node>) {
         let current_node_id = {
             let current = node.read();
             current.id
@@ -264,7 +263,7 @@ impl VisualGraph {
 
             let fut = current_node.instance.run(inputs);
             let graph = self.inner;
-            cx.spawn(async move {
+            spawn(async move {
                 match fut.await.as_deref() {
                     Some(Ok(result)) => {
                         let current_node = node.read();
@@ -374,19 +373,19 @@ impl VisualGraph {
     }
 }
 
-#[derive(Props, PartialEq)]
+#[derive(Props, PartialEq, Clone)]
 pub struct FlowViewProps {
     graph: VisualGraph,
 }
 
-pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
-    use_context_provider(cx, || cx.props.graph.clone());
+pub fn FlowView(props: FlowViewProps) -> Element {
+    use_context_provider(|| props.graph.clone());
     let theme = Theme::current();
-    let graph = cx.props.graph.inner;
+    let graph = props.graph.inner;
     let current_graph = graph.read();
     let current_graph_dragging = current_graph.currently_dragging;
-    let drag_start_pos = use_state(cx, || Option::<Point2D<f32, f32>>::None);
-    let drag_pan_pos = use_state(cx, || Option::<Point2D<f32, f32>>::None);
+    let drag_start_pos = use_signal(|| Option::<Point2D<f32, f32>>::None);
+    let drag_pan_pos = use_signal(|| Option::<Point2D<f32, f32>>::None);
     let pan_pos = current_graph.pan_pos;
     let zoom = current_graph.zoom;
     let mut transform_matrix = [1., 0., 0., 1., 0., 0.];
@@ -406,7 +405,7 @@ pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
         transform_matrix[5]
     );
 
-    render! {
+    rsx! {
         div { position: "relative",
             style: "-webkit-user-select: none; -ms-user-select: none; user-select: none;",
             width: "100%",
@@ -438,33 +437,37 @@ pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
                     "-"
                 }
                 if *theme.read() == Theme::DARK {
-                    rsx! {
-                        button {
-                            class: "m-1",
-                            onclick: move |_| {
-                                theme.set(Theme::WHITE);
-                            },
-                            "🌞"
-                        }
+                    button {
+                        class: "m-1",
+                        onclick: move |_| {
+                            theme.set(Theme::WHITE);
+                        },
+                        "🌞"
                     }
                 }
                 else {
-                    rsx! {
-                        button {
-                            onclick: move |_| {
-                                theme.set(Theme::DARK);
-                            },
-                            "🌙"
-                        }
+                    button {
+                        onclick: move |_| {
+                            theme.set(Theme::DARK);
+                        },
+                        "🌙"
                     }
                 }
             }
+
+            for id in current_graph.graph.node_identifiers() {
+                Node {
+                    key: "{id:?}",
+                    node: current_graph.graph[id],
+                }
+            }
+
             svg {
                 width: "100%",
                 height: "100%",
                 onmouseenter: move |data| {
                     if data.held_buttons().is_empty() {
-                        cx.props.graph.clear_dragging();
+                        props.graph.clear_dragging();
                     }
                 },
                 onmousedown: move |evt| {
@@ -474,10 +477,10 @@ pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
                 },
                 onmouseup: move |_| {
                     drag_start_pos.set(None);
-                    cx.props.graph.clear_dragging();
+                    props.graph.clear_dragging();
                 },
                 onmousemove: move |evt| {
-                    if let (Some(drag_start_pos), Some(drag_pan_pos)) = (*drag_start_pos.current(), *drag_pan_pos.current()) {
+                    if let (Some(drag_start_pos), Some(drag_pan_pos)) = (drag_start_pos(), drag_pan_pos()) {
                         let pos = evt.element_coordinates();
                         let end_pos = Point2D::new(pos.x as f32, pos.y as f32);
                         let diff = end_pos - drag_start_pos;
@@ -486,7 +489,7 @@ pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
                             graph.pan_pos.y = drag_pan_pos.y + diff.y;
                         });
                     }
-                    cx.props.graph.update_mouse(&evt);
+                    props.graph.update_mouse(&evt);
                 },
                 rect {
                     width: "100%",
@@ -496,38 +499,21 @@ pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
 
                 g {
                     transform: "{transform}",
-                    current_graph.graph.edge_references().map(|edge_ref|{
-                        let edge = current_graph.graph[edge_ref.id()];
-                        let start_id = edge_ref.target();
-                        let start = current_graph.graph[start_id];
-                        let end_id = edge_ref.source();
-                        let end = current_graph.graph[end_id];
-                        rsx! {
-                            NodeConnection {
-                                key: "{edge_ref.id():?}",
-                                start: start,
-                                connection: edge,
-                                end: end,
-                            }
+                    for edge_ref in current_graph.graph.edge_references() {
+                        NodeConnection {
+                            key: "{edge_ref.id():?}",
+                            start: current_graph.graph[edge_ref.target()],
+                            connection: current_graph.graph[edge_ref.id()],
+                            end: current_graph.graph[edge_ref.source()],
                         }
-                    }),
-                    current_graph.graph.node_identifiers().map(|id| {
-                        let node = current_graph.graph[id];
-                        rsx! {
-                            Node {
-                                key: "{id:?}",
-                                node: node,
-                            }
-                        }
-                    }),
+                    }
 
                     if let Some(CurrentlyDragging::Connection(current_graph_dragging)) = &current_graph_dragging {
-                        rsx! {
-                            CurrentlyDragging {
-                                from: current_graph_dragging.from,
-                                index: current_graph_dragging.index,
-                                to: current_graph_dragging.to,
-                            }
+                        CurrentlyDragging {
+                            from_pos: current_graph_dragging.from_pos,
+                            from: current_graph_dragging.from,
+                            index: current_graph_dragging.index,
+                            to: current_graph_dragging.to,
                         }
                     }
                 }
@@ -536,38 +522,36 @@ pub fn FlowView(cx: Scope<FlowViewProps>) -> Element {
     }
 }
 
-#[derive(Props, PartialEq)]
+#[derive(Clone, Props, PartialEq, Serialize, Deserialize)]
 struct ConnectionProps {
     start: Signal<Node>,
     connection: Signal<Edge>,
     end: Signal<Node>,
 }
 
-fn CurrentlyDragging(cx: Scope<CurrentlyDraggingProps>) -> Element {
-    let start = cx.props.from;
+fn CurrentlyDragging(props: CurrentlyDraggingProps) -> Element {
+    let start = props.from;
     let current_start = start.read();
-    let start_pos;
+    let start_pos = props.from_pos;
     let color;
-    match cx.props.index {
+    match props.index {
         DraggingIndex::Input(index) => {
             color = current_start.input_color(index);
-            start_pos = current_start.input_pos(index);
         }
         DraggingIndex::Output(index) => {
             color = current_start.output_color(index);
-            start_pos = current_start.output_pos(index);
         }
     };
-    let end = cx.props.to;
+    let end = props.to;
     let end_pos = end.read();
 
-    render! { Connection { start_pos: start_pos, end_pos: *end_pos, color: color } }
+    rsx! { Connection { start_pos: start_pos, end_pos: *end_pos, color: color } }
 }
 
-fn NodeConnection(cx: Scope<ConnectionProps>) -> Element {
-    let start = cx.props.start;
-    let connection = cx.props.connection;
-    let end = cx.props.end;
+fn NodeConnection(props: ConnectionProps) -> Element {
+    let start = props.start;
+    let connection = props.connection;
+    let end = props.end;
 
     let current_connection = connection.read();
     let start_index = current_connection.end;
@@ -579,5 +563,5 @@ fn NodeConnection(cx: Scope<ConnectionProps>) -> Element {
     let ty = start_node.input_type(start_index).unwrap();
     let color = ty.color();
 
-    render! { Connection { start_pos: start, end_pos: end, color: color } }
+    rsx! { Connection { start_pos: start, end_pos: end, color: color } }
 }
