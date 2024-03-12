@@ -49,6 +49,29 @@ async fn main() {
     use tracing_subscriber::util::SubscriberInitExt;
     use tracing_subscriber::EnvFilter;
 
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd",
+    ))]
+    {
+        use gtk::prelude::DisplayExtManual;
+
+        gtk::init().unwrap();
+        if gtk::gdk::Display::default().unwrap().backend().is_wayland() {
+            panic!("This example doesn't support wayland!");
+        }
+
+        // we need to ignore this error here otherwise it will be catched by winit and will be
+        // make the example crash
+        winit::platform::x11::register_xlib_error_hook(Box::new(|_display, error| {
+            let error = error as *mut x11_dl::xlib::XErrorEvent;
+            (unsafe { (*error).error_code }) == 170
+        }));
+    }
+
     let log_path = directories::ProjectDirs::from("com", "floneum", "floneum")
         .unwrap()
         .data_dir()
