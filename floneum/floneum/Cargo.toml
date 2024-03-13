@@ -45,7 +45,7 @@ winit = "0.29"
 
 [target."cfg(any(target_os = \"linux\", target_os = \"dragonfly\", target_os = \"freebsd\", target_os = \"openbsd\", target_os = \"netbsd\"))".dependencies]
 gtk = { version = "0.16" }
-x11 = "2.21.0"
+x11-dl = "2.21.0"
 
 [patch.crates-io]
 dioxus-core = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
