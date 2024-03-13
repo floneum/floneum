@@ -3604,6 +3604,7 @@ dependencies = [
  "tracing-subscriber 0.3.18",
  "wasmtime",
  "winit",
+ "x11",
 ]
 
 [[package]]
