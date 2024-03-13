@@ -3,7 +3,7 @@ name: Build nightly Floneum
 on:
   push:
     branches:
-      - master
+      - main
     paths:
       - interfaces/*/src/**
       - interfaces/*/examples/**
@@ -21,7 +21,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     branches:
-      - master
+      - main
     paths:
       - interfaces/*/src/**
       - interfaces/*/examples/**
