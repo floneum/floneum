@@ -10,14 +10,14 @@ use crate::use_application_state;
 pub(crate) fn SaveMenu() -> Element {
     let set_application_state: Coroutine<DeserializeApplicationState> =
         use_coroutine_handle();
-    let application = use_application_state();
+    let mut application = use_application_state();
     let current_application = application.read();
     let current_save_id = &current_application.last_save_id;
     let current_save_string = current_save_id
         .as_ref()
         .map(|id| id.to_string())
         .unwrap_or_default();
-    let error: Signal<Option<String>> = use_signal(|| None);
+    let mut error: Signal<Option<String>> = use_signal(|| None);
     let current_error = error.read();
     let clipboard = use_clipboard();
 

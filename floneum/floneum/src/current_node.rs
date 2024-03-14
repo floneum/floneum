@@ -9,7 +9,7 @@ pub(crate) struct FocusedNodeInfo {
 }
 
 pub fn CurrentNodeInfo() -> Element {
-    let application = use_application_state();
+    let mut application = use_application_state();
     let focused = application.read().currently_focused;
 
     match focused {

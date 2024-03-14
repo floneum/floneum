@@ -8,13 +8,11 @@ use petgraph::{graph::NodeIndex, stable_graph::DefaultIx};
 use serde::{Deserialize, Serialize};
 
 use crate::edge::{Connection, ConnectionType};
-use crate::graph::CurrentlyDragging;
 use crate::input::Input;
 use crate::node_value::{NodeInput, NodeOutput};
 use crate::output::Output;
-use crate::{use_application_state, Colored, CurrentlyDraggingProps, DraggingIndex, Edge};
+use crate::{use_application_state, Colored, };
 use crate::{Point, VisualGraph};
-use dioxus_signals::*;
 
 const SNAP_DISTANCE: f32 = 15.;
 pub const NODE_KNOB_SIZE: f64 = 5.;
@@ -140,8 +138,8 @@ pub struct NodeProps {
 }
 
 pub fn Node(props: NodeProps) -> Element {
-    let application = use_application_state();
-    let node = props.node;
+    let mut application = use_application_state();
+    let mut node = props.node;
     let current_node = node.read();
     let current_node_id = current_node.id;
     let pos = current_node.position - Point::new(1., 0.);
@@ -152,7 +150,7 @@ pub fn Node(props: NodeProps) -> Element {
             left: "{pos.x}",
             top: "{pos.y}",
             onmousedown: move |evt| {
-                let graph: VisualGraph = consume_context();
+                let mut graph: VisualGraph = consume_context();
                 let scaled_pos = graph.scale_screen_pos(evt.page_coordinates());
                 {
                     let node = node.read();
@@ -160,11 +158,11 @@ pub fn Node(props: NodeProps) -> Element {
                 }
             },
             onmousemove: |evt| {
-                let graph: VisualGraph = consume_context();
+                let mut  graph: VisualGraph = consume_context();
                 graph.update_mouse(&evt);
             },
             onmouseup: move |evt| {
-                let graph: VisualGraph = consume_context();
+                let mut graph: VisualGraph = consume_context();
                 let scaled_pos = graph.scale_screen_pos(evt.page_coordinates());
                 graph.clear_dragging();
 
@@ -207,9 +205,9 @@ pub fn Node(props: NodeProps) -> Element {
 }
 
 fn CenterNodeUI(props: NodeProps) -> Element {
-    let application = use_application_state();
+    let mut application = use_application_state();
     let focused = application.read().currently_focused.map(|n| n.node) == Some(props.node);
-    let node = props.node;
+    let mut node = props.node;
     {
         let current_node = node.read();
         if current_node.queued {

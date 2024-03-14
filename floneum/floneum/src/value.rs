@@ -148,7 +148,7 @@ pub fn ModifyInput(value: Signal<NodeInput>) -> Element {
                         textarea {
                             class: "border {Color::outline_color()} {Color::foreground_color()} {Color::foreground_hover()} rounded focus:outline-none focus:border-blue-500",
                             value: "{value}",
-                            oninput: |e| {
+                            oninput: move |e| {
                                 node.write().value = vec![Input::Single(PrimitiveValue::Text(e.value()))];
                             }
                         }
@@ -159,7 +159,7 @@ pub fn ModifyInput(value: Signal<NodeInput>) -> Element {
                 rsx! {
                     button {
                         class: "border {Color::outline_color()} {Color::foreground_hover()} rounded focus:outline-none focus:border-blue-500",
-                        onclick: |_| {
+                        onclick: move |_| {
                             node.write().value = rfd::FileDialog::new()
                                 .set_directory("./sandbox")
                                 .set_file_name("Floneum")
@@ -177,7 +177,7 @@ pub fn ModifyInput(value: Signal<NodeInput>) -> Element {
                 rsx! {
                     button {
                         class: "border {Color::outline_color()} rounded {Color::foreground_hover()} focus:outline-none focus:border-blue-500",
-                        onclick: |_| {
+                        onclick: move |_| {
                             node.write().value = rfd::FileDialog::new()
                                 .set_directory("./sandbox")
                                 .set_file_name("Floneum")
@@ -206,7 +206,7 @@ pub fn ModifyInput(value: Signal<NodeInput>) -> Element {
                             class: "border {Color::outline_color()} {Color::foreground_color()} rounded {Color::foreground_hover()} focus:outline-none focus:border-blue-500",
                             r#type: "number",
                             value: "{value}",
-                            oninput: |e| {
+                            oninput: move |e| {
                                 node
                                     .write().value = vec![Input::Single(PrimitiveValue::Number(e.value().parse().unwrap_or(0)))];
                             }
@@ -222,7 +222,7 @@ pub fn ModifyInput(value: Signal<NodeInput>) -> Element {
                         select {
                             class: "border {Color::outline_color()} {Color::foreground_color()} rounded {Color::foreground_hover()} focus:outline-none focus:border-blue-500",
                             style: "-webkit-appearance:none; -moz-appearance:none; -ms-appearance:none; appearance: none;",
-                            onchange: |e| {
+                            onchange: move |e| {
                                 node
                                     .write().value = vec![Input::Single(
                                     PrimitiveValue::ModelType(
@@ -253,7 +253,7 @@ pub fn ModifyInput(value: Signal<NodeInput>) -> Element {
                         select {
                             class: "border {Color::outline_color()} {Color::foreground_color()} rounded {Color::foreground_hover()} focus:outline-none focus:border-blue-500",
                             style: "-webkit-appearance:none; -moz-appearance:none; -ms-appearance:none; appearance: none;",
-                            onchange: |e| {
+                            onchange: move |e| {
                                 node
                                     .write().value = vec![Input::Single(
                                     PrimitiveValue::EmbeddingModelType(
@@ -285,7 +285,7 @@ pub fn ModifyInput(value: Signal<NodeInput>) -> Element {
                             class: "border {Color::outline_color()} {Color::foreground_color()} rounded {Color::foreground_hover()} focus:outline-none focus:border-blue-500",
                             r#type: "checkbox",
                             checked: "{val}",
-                            onchange: |e| {
+                            onchange: move |e| {
                                 node.write().value = vec![Input::Single(PrimitiveValue::Boolean(e.value() == "on"))];
                             }
                         }

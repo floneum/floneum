@@ -20,10 +20,10 @@ pub fn Output(node: Signal<Node>, index: usize) -> Element {
             border_radius: NODE_KNOB_SIZE,
             background_color: "{color}",
             onmousedown: move |evt| {
-                let graph: VisualGraph = consume_context();
+                let mut graph: VisualGraph = consume_context();
                 let scaled_pos = graph.scale_screen_pos(evt.page_coordinates());
                 graph.inner.write().currently_dragging = Some(CurrentlyDragging::Connection(CurrentlyDraggingProps {
-                    from: props.node,
+                    from: node,
                     from_pos: scaled_pos,
                     index: DraggingIndex::Output(index),
                     to: Signal::new(scaled_pos),
@@ -31,11 +31,11 @@ pub fn Output(node: Signal<Node>, index: usize) -> Element {
             },
             onmouseup: move |_| {
                 // Set this as the end of the connection if we're currently dragging and this is the right type of connection
-                let graph: VisualGraph = consume_context();
+                let mut graph: VisualGraph = consume_context();
                 graph.finish_connection(current_node_id, DraggingIndex::Output(index));
             },
             onmousemove: move |evt| {
-                let graph: VisualGraph = consume_context();
+                let mut graph: VisualGraph = consume_context();
                 graph.update_mouse(&evt);
             },
             if is_list {

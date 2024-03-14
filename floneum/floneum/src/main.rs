@@ -180,14 +180,13 @@ pub struct AppProps {
 fn App() -> Element {
     let props: AppProps = use_context();
     use_package_manager_provider();
-    let package_manager = use_context::<Signal<Option<Rc<FloneumPackageIndex>>>>();
-    let state = use_provide_application_state();
+    let mut package_manager = use_context::<Signal<Option<Rc<FloneumPackageIndex>>>>();
+    let mut state = use_provide_application_state();
     use_hook(|| {
         let channel = props.channel.borrow_mut().take().unwrap();
-        to_owned![package_manager];
         spawn(async move {
-            let new_package_manager = channel.await;
-            *package_manager.write() = Some(Rc::new(new_package_manager.unwrap()));
+            let mut new_package_manager = channel.await;
+            package_manager.set(Some(Rc::new(new_package_manager.unwrap())));
         });
     });
     use_coroutine(|mut channel| async move {

@@ -61,20 +61,19 @@ pub fn PluginSearch() -> Element {
 
 fn LoadRegisteredPlugin() -> Element {
     let plugins = use_package_manager();
-    let search_text = use_signal(|| "".to_string());
-    let text_words: Vec<&str> = search_text().split_whitespace().collect();
+    let mut search_text = use_signal(|| "".to_string());
+    let current_search_text = search_text();
+    let text_words: Vec<&str> = current_search_text.split_whitespace().collect();
 
     rsx! {
         "Add Plugin"
         input {
             class: "border {Color::outline_color()} {Color::foreground_color()} rounded-md p-2 m-2",
             r#type: "text",
-            oninput: {
-                let search_text = search_text.clone();
+            oninput: 
                 move |event| {
                     search_text.set(event.value());
-                }
-            },
+                },
         }
         match &plugins {
             Some(plugins) => {
@@ -181,7 +180,7 @@ fn Category(name: String, plugins: Vec<PackageIndexEntry>) -> Element {
 }
 
 fn LoadLocalPlugin() -> Element {
-    let search_text = use_signal(String::new);
+    let mut search_text = use_signal(String::new);
     let application = use_application_state();
 
     rsx! {

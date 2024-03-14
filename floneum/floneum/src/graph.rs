@@ -74,7 +74,7 @@ pub struct CurrentlyDraggingProps {
     pub to: Signal<Point2D<f32, f32>>,
 }
 
-#[derive(Props, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[derive(Props, Clone, Copy, Serialize, Deserialize, Default, PartialEq)]
 pub struct VisualGraph {
     pub inner: Signal<VisualGraphInner>,
 }
@@ -82,7 +82,8 @@ pub struct VisualGraph {
 impl VisualGraph {
     pub fn create_node(&self, instance: PluginInstance) {
         let position = self.scale_screen_pos(PagePoint::new(0., 0.));
-        let mut inner = self.inner.write();
+        let mut inner_mut = self.inner;
+        let mut inner = inner_mut.write();
 
         let mut inputs = Vec::new();
 
@@ -132,11 +133,11 @@ impl VisualGraph {
         pos
     }
 
-    pub fn clear_dragging(&self) {
+    pub fn clear_dragging(&mut self) {
         self.inner.write().currently_dragging = None;
     }
 
-    pub fn update_mouse(&self, evt: &MouseData) {
+    pub fn update_mouse(&mut self, evt: &MouseData) {
         let new_pos = self.scale_screen_pos(evt.page_coordinates());
         let mut inner = self.inner.write();
         match &mut inner.currently_dragging {
@@ -153,7 +154,7 @@ impl VisualGraph {
         }
     }
 
-    pub fn start_dragging_node(&self, evt: &MouseData, node: Signal<Node>) {
+    pub fn start_dragging_node(&mut self, evt: &MouseData, node: Signal<Node>) {
         let mut inner = self.inner.write();
         inner.currently_dragging = Some(CurrentlyDragging::Node(NodeDragInfo {
             element_offset: evt.element_coordinates().cast().cast_unit(),
@@ -241,7 +242,7 @@ impl VisualGraph {
         true
     }
 
-    pub fn run_node(&self, node: Signal<Node>) {
+    pub fn run_node(&self, mut node: Signal<Node>) {
         let current_node_id = {
             let current = node.read();
             current.id
@@ -267,8 +268,8 @@ impl VisualGraph {
                 match fut.await.as_deref() {
                     Some(Ok(result)) => {
                         let current_node = node.read();
-                        for (out, current) in result.iter().zip(current_node.outputs.iter()) {
-                            current.write().value = out.clone();
+                        for (out,  current) in result.iter().zip(current_node.outputs.iter()) {
+                            current.write_unchecked().value = out.clone();
                         }
 
                         let current_graph = graph.read();
@@ -277,7 +278,7 @@ impl VisualGraph {
                             .edges_directed(current_node_id, petgraph::Direction::Outgoing)
                         {
                             let new_node_id = edge.target();
-                            let node = current_graph.graph[new_node_id];
+                            let mut node = current_graph.graph[new_node_id];
                             node.write().queued = true;
                         }
                     }
@@ -312,7 +313,7 @@ impl VisualGraph {
     }
 
     pub fn connect(
-        &self,
+        &mut self,
         input_id: petgraph::graph::NodeIndex,
         output_id: petgraph::graph::NodeIndex,
         edge: Signal<Edge>,
@@ -341,7 +342,7 @@ impl VisualGraph {
     }
 
     pub(crate) fn finish_connection(
-        &self,
+        &mut self,
         node_id: petgraph::graph::NodeIndex,
         index: DraggingIndex,
     ) {
@@ -378,14 +379,14 @@ pub struct FlowViewProps {
     graph: VisualGraph,
 }
 
-pub fn FlowView(props: FlowViewProps) -> Element {
+pub fn FlowView(mut props: FlowViewProps) -> Element {
     use_context_provider(|| props.graph.clone());
-    let theme = Theme::current();
-    let graph = props.graph.inner;
+    let mut theme = Theme::current();
+    let mut graph = props.graph.inner;
     let current_graph = graph.read();
     let current_graph_dragging = current_graph.currently_dragging;
-    let drag_start_pos = use_signal(|| Option::<Point2D<f32, f32>>::None);
-    let drag_pan_pos = use_signal(|| Option::<Point2D<f32, f32>>::None);
+    let mut drag_start_pos = use_signal(|| Option::<Point2D<f32, f32>>::None);
+    let mut drag_pan_pos = use_signal(|| Option::<Point2D<f32, f32>>::None);
     let pan_pos = current_graph.pan_pos;
     let zoom = current_graph.zoom;
     let mut transform_matrix = [1., 0., 0., 1., 0., 0.];
@@ -556,12 +557,13 @@ fn NodeConnection(props: ConnectionProps) -> Element {
     let current_connection = connection.read();
     let start_index = current_connection.end;
     let start_node = start.read();
-    let start = start_node.input_pos(start_index);
-    let end_index = current_connection.start;
-    let end = end.read().output_pos(end_index);
+    // let start = start_node.input_pos(start_index);
+    // let end_index = current_connection.start;
+    // let end = end.read().output_pos(end_index);
 
-    let ty = start_node.input_type(start_index).unwrap();
-    let color = ty.color();
+    // let ty = start_node.input_type(start_index).unwrap();
+    // let color = ty.color();
 
-    rsx! { Connection { start_pos: start, end_pos: end, color: color } }
+    // rsx! { Connection { start_pos: start, end_pos: end, color: color } }
+    None
 }

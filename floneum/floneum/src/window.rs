@@ -92,32 +92,32 @@ pub(crate) fn make_config() -> dioxus::desktop::Config {
 }
 
 pub fn use_apply_menu_event(state: Signal<ApplicationState>) {
-    let open_application = use_signal(|| None);
+    // let open_application = use_signal(|| None);
     use_wry_event_handler(move |event, _| {
-        if let dioxus::desktop::tao::event::Event::MenuEvent { menu_id, .. } = event {
-            let menu_id = *menu_id;
-            if menu_id == SavePredefinedMenuItem::id() {
-                SavePredefinedMenuItem::save(&state.read());
-            } else if menu_id == SaveAsPredefinedMenuItem::id() {
-                SaveAsPredefinedMenuItem::save(&state.read());
-            } else if menu_id == OpenPredefinedMenuItem::id() {
-                OpenPredefinedMenuItem::open(open_application);
-            } else if menu_id == QAndAPredefinedMenuItem::id() {
-                QAndAPredefinedMenuItem::open(open_application);
-            } else if menu_id == StarRepoPredefinedMenuItem::id() {
-                StarRepoPredefinedMenuItem::open(open_application);
-            } else if menu_id == SummarizeNewsPredefinedMenuItem::id() {
-                SummarizeNewsPredefinedMenuItem::open(open_application);
-            }
-        }
+        // if let dioxus::desktop::tao::event::Event::MenuEvent { menu_id, .. } = event {
+        //     let menu_id = *menu_id;
+        //     if menu_id == SavePredefinedMenuItem::id() {
+        //         SavePredefinedMenuItem::save(&state.read());
+        //     } else if menu_id == SaveAsPredefinedMenuItem::id() {
+        //         SaveAsPredefinedMenuItem::save(&state.read());
+        //     } else if menu_id == OpenPredefinedMenuItem::id() {
+        //         OpenPredefinedMenuItem::open(open_application);
+        //     } else if menu_id == QAndAPredefinedMenuItem::id() {
+        //         QAndAPredefinedMenuItem::open(open_application);
+        //     } else if menu_id == StarRepoPredefinedMenuItem::id() {
+        //         StarRepoPredefinedMenuItem::open(open_application);
+        //     } else if menu_id == SummarizeNewsPredefinedMenuItem::id() {
+        //         SummarizeNewsPredefinedMenuItem::open(open_application);
+        //     }
+        // }
     });
 
-    if let Some(buffer) = open_application.take() {
-        let as_str = std::str::from_utf8(&buffer).unwrap();
-        if let Ok(from_storage) = serde_json::from_str(as_str) {
-            state.set(from_storage);
-        }
-    }
+    // if let Some(buffer) = open_application.take() {
+    //     let as_str = std::str::from_utf8(&buffer).unwrap();
+    //     if let Ok(from_storage) = serde_json::from_str(as_str) {
+    //         state.set(from_storage);
+    //     }
+    // }
 }
 
 const SHORTCUT_LEADER: muda::accelerator::Modifiers = {
