@@ -248,27 +248,32 @@ impl VisualGraph {
             current.id
         };
         if self.set_input_nodes(current_node_id) {
-            let mut current_node = node.write();
-            let inputs = current_node
+            let inputs = {
+                let mut current_node = node.write();
+                current_node.running = true;
+                current_node.queued = true;
+                current_node
                 .inputs
                 .iter()
                 .map(|input| input.read().value())
-                .collect();
+                .collect()
+            };
             log::info!(
                 "Running node {:?} with inputs {:?}",
                 current_node_id,
                 inputs
             );
-            current_node.running = true;
-            current_node.queued = true;
 
-            let fut = current_node.instance.run(inputs);
             let graph = self.inner;
             spawn(async move {
-                match fut.await.as_deref() {
+                let mut current_node_write = node.write();
+                let fut = current_node_write.instance.run(inputs);
+                let result = {
+                    fut.await
+                };
+                match result.as_deref() {
                     Some(Ok(result)) => {
-                        let current_node = node.read();
-                        for (out,  current) in result.iter().zip(current_node.outputs.iter()) {
+                        for (out,  current) in result.iter().zip(current_node_write.outputs.iter()) {
                             current.write_unchecked().value = out.clone();
                         }
 
@@ -284,14 +289,12 @@ impl VisualGraph {
                     }
                     Some(Err(err)) => {
                         log::error!("Error running node {:?}: {:?}", current_node_id, err);
-                        let mut node_mut = node.write();
-                        node_mut.error = Some(err.to_string());
+                        current_node_write.error = Some(err.to_string());
                     }
                     None => {}
                 }
-                let mut current_node = node.write();
-                current_node.running = false;
-                current_node.queued = false;
+                current_node_write.running = false;
+                current_node_write.queued = false;
             });
         }
     }

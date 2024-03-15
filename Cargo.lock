@@ -244,9 +244,9 @@ checksum = "ea50b14b7a4b9343f8c627a7a53c52076482bd4bdad0a24fd3ec533ed616cc2c"
 
 [[package]]
 name = "anyhow"
-version = "1.0.80"
+version = "1.0.81"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ad32ce52e4161730f7098c077cd2ed6229b5804ccf99e5366be1ab72a98b4e1"
+checksum = "0952808a6c2afd1aa8947271f3a60f1a6763c7b912d210184c5149b5cf147247"
 dependencies = [
  "backtrace",
 ]
@@ -1163,9 +1163,9 @@ dependencies = [
 
 [[package]]
 name = "bumpalo"
-version = "3.15.3"
+version = "3.15.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ea184aa71bb362a1157c896979544cc23974e08fd265f29ea96b59f0b4a555b"
+checksum = "7ff69b9dd49fd426c69a0db9fc04dd934cdb6645ff000864d98f7e2af8830eaa"
 
 [[package]]
 name = "byte-slice-cast"
@@ -1197,18 +1197,18 @@ dependencies = [
 
 [[package]]
 name = "bytemuck"
-version = "1.14.3"
+version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2ef034f05691a48569bd920a96c81b9d91bbad1ab5ac7c4616c1f6ef36cb79f"
+checksum = "5d6d68c57235a3a081186990eca2867354726650f42f7516ca50c28d6281fd15"
 dependencies = [
  "bytemuck_derive",
 ]
 
 [[package]]
 name = "bytemuck_derive"
-version = "1.5.0"
+version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "965ab7eb5f8f97d2a083c799f3a1b994fc397b2fe2da5d1da1626ce15a39f2b1"
+checksum = "4da9a32f3fed317401fa3c862968128267c3106685286e15d5aaa3d7389c2f60"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1312,8 +1312,8 @@ dependencies = [
 
 [[package]]
 name = "candle-core"
-version = "0.4.1"
-source = "git+https://github.com/huggingface/candle#0c09d10f320df7c23fc231f7f400967b03d9b9da"
+version = "0.4.2"
+source = "git+https://github.com/huggingface/candle#3318fe30fb3d8c3b92ba404a2a33de81c2731ad9"
 dependencies = [
  "accelerate-src",
  "byteorder",
@@ -1339,8 +1339,8 @@ dependencies = [
 
 [[package]]
 name = "candle-datasets"
-version = "0.4.1"
-source = "git+https://github.com/huggingface/candle#0c09d10f320df7c23fc231f7f400967b03d9b9da"
+version = "0.4.2"
+source = "git+https://github.com/huggingface/candle#3318fe30fb3d8c3b92ba404a2a33de81c2731ad9"
 dependencies = [
  "byteorder",
  "candle-core",
@@ -1356,8 +1356,8 @@ dependencies = [
 
 [[package]]
 name = "candle-flash-attn"
-version = "0.4.1"
-source = "git+https://github.com/huggingface/candle#0c09d10f320df7c23fc231f7f400967b03d9b9da"
+version = "0.4.2"
+source = "git+https://github.com/huggingface/candle#3318fe30fb3d8c3b92ba404a2a33de81c2731ad9"
 dependencies = [
  "anyhow",
  "bindgen_cuda",
@@ -1367,16 +1367,16 @@ dependencies = [
 
 [[package]]
 name = "candle-kernels"
-version = "0.4.1"
-source = "git+https://github.com/huggingface/candle#0c09d10f320df7c23fc231f7f400967b03d9b9da"
+version = "0.4.2"
+source = "git+https://github.com/huggingface/candle#3318fe30fb3d8c3b92ba404a2a33de81c2731ad9"
 dependencies = [
  "bindgen_cuda",
 ]
 
 [[package]]
 name = "candle-metal-kernels"
-version = "0.4.1"
-source = "git+https://github.com/huggingface/candle#0c09d10f320df7c23fc231f7f400967b03d9b9da"
+version = "0.4.2"
+source = "git+https://github.com/huggingface/candle#3318fe30fb3d8c3b92ba404a2a33de81c2731ad9"
 dependencies = [
  "metal",
  "once_cell",
@@ -1386,8 +1386,8 @@ dependencies = [
 
 [[package]]
 name = "candle-nn"
-version = "0.4.1"
-source = "git+https://github.com/huggingface/candle#0c09d10f320df7c23fc231f7f400967b03d9b9da"
+version = "0.4.2"
+source = "git+https://github.com/huggingface/candle#3318fe30fb3d8c3b92ba404a2a33de81c2731ad9"
 dependencies = [
  "accelerate-src",
  "candle-core",
@@ -1404,8 +1404,8 @@ dependencies = [
 
 [[package]]
 name = "candle-transformers"
-version = "0.4.1"
-source = "git+https://github.com/huggingface/candle#0c09d10f320df7c23fc231f7f400967b03d9b9da"
+version = "0.4.2"
+source = "git+https://github.com/huggingface/candle#3318fe30fb3d8c3b92ba404a2a33de81c2731ad9"
 dependencies = [
  "accelerate-src",
  "byteorder",
@@ -2178,7 +2178,7 @@ dependencies = [
 [[package]]
 name = "cranelift-bforest"
 version = "0.107.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "cranelift-entity",
 ]
@@ -2186,7 +2186,7 @@ dependencies = [
 [[package]]
 name = "cranelift-codegen"
 version = "0.107.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "bumpalo",
  "cranelift-bforest",
@@ -2206,7 +2206,7 @@ dependencies = [
 [[package]]
 name = "cranelift-codegen-meta"
 version = "0.107.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "cranelift-codegen-shared",
 ]
@@ -2214,12 +2214,12 @@ dependencies = [
 [[package]]
 name = "cranelift-codegen-shared"
 version = "0.107.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 
 [[package]]
 name = "cranelift-control"
 version = "0.107.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "arbitrary",
 ]
@@ -2227,7 +2227,7 @@ dependencies = [
 [[package]]
 name = "cranelift-entity"
 version = "0.107.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "serde",
  "serde_derive",
@@ -2236,7 +2236,7 @@ dependencies = [
 [[package]]
 name = "cranelift-frontend"
 version = "0.107.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "cranelift-codegen",
  "log",
@@ -2247,12 +2247,12 @@ dependencies = [
 [[package]]
 name = "cranelift-isle"
 version = "0.107.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 
 [[package]]
 name = "cranelift-native"
 version = "0.107.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "cranelift-codegen",
  "libc",
@@ -2262,7 +2262,7 @@ dependencies = [
 [[package]]
 name = "cranelift-wasm"
 version = "0.107.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "cranelift-codegen",
  "cranelift-entity",
@@ -2697,6 +2697,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "deranged"
+version = "0.3.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b42b6fa04a440b495c8b04d0e71b707c585f83cb9cb28cf8cd0d976c315e31b4"
+dependencies = [
+ "powerfmt",
+ "serde",
+]
+
+[[package]]
 name = "derivative"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2824,24 +2834,6 @@ dependencies = [
 [[package]]
 name = "dioxus"
 version = "0.5.0-alpha.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1539a0f310428385205bf9af0376f7497d1dfb5cfb06e2170a8917c66c985e3b"
-dependencies = [
- "dioxus-config-macro 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "dioxus-core 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "dioxus-core-macro 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "dioxus-desktop",
- "dioxus-fullstack",
- "dioxus-hooks 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "dioxus-hot-reload 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "dioxus-html 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "dioxus-router",
- "dioxus-signals 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "dioxus"
-version = "0.5.0-alpha.0"
 source = "git+https://github.com/DioxusLabs/dioxus?rev=2d2e9dc56a59b4f3ad4deb55d15c27f337cf564c#2d2e9dc56a59b4f3ad4deb55d15c27f337cf564c"
 dependencies = [
  "dioxus-config-macro 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus?rev=2d2e9dc56a59b4f3ad4deb55d15c27f337cf564c)",
@@ -2854,25 +2846,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "dioxus"
+version = "0.5.0-alpha.0"
+source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
+dependencies = [
+ "dioxus-config-macro 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-core 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-core-macro 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-desktop",
+ "dioxus-fullstack",
+ "dioxus-hooks 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-hot-reload 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-html 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-router",
+ "dioxus-signals 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+]
+
+[[package]]
 name = "dioxus-cli-config"
 version = "0.5.0-alpha.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99a4dfa43bd5360f057197bfc4bc0c80ab38f2c77421885a46bfb7730acef673"
+source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
  "once_cell",
  "serde",
  "serde_json",
  "tracing",
-]
-
-[[package]]
-name = "dioxus-config-macro"
-version = "0.5.0-alpha.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b380f0ea33c09bbddfd4983f03561c93ca89c5bbfff945ab51dc6afb5190890"
-dependencies = [
- "proc-macro2",
- "quote",
 ]
 
 [[package]]
@@ -2885,18 +2883,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "dioxus-core"
+name = "dioxus-config-macro"
 version = "0.5.0-alpha.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f39bef0484998f724622964f04468ddfde7fd550f5f0f1aef9394306e9caba44"
+source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
- "futures-channel",
- "futures-util",
- "longest-increasing-subsequence",
- "rustc-hash",
- "serde",
- "slab",
- "tracing",
+ "proc-macro2",
+ "quote",
 ]
 
 [[package]]
@@ -2915,18 +2907,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "dioxus-core-macro"
+name = "dioxus-core"
 version = "0.5.0-alpha.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e67324e1e01be46bc624db219101f0410d36740cdd429041d6c56d8f66f2bf51"
+source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
- "constcat",
- "convert_case 0.6.0",
- "dioxus-rsx 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "prettyplease",
- "proc-macro2",
- "quote",
- "syn 2.0.52",
+ "futures-channel",
+ "futures-util",
+ "longest-increasing-subsequence",
+ "rustc-hash",
+ "serde",
+ "slab",
+ "tracing",
+ "tracing-subscriber 0.3.18",
 ]
 
 [[package]]
@@ -2944,6 +2936,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "dioxus-core-macro"
+version = "0.5.0-alpha.0"
+source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
+dependencies = [
+ "constcat",
+ "convert_case 0.6.0",
+ "dioxus-rsx 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.52",
+]
+
+[[package]]
 name = "dioxus-debug-cell"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2952,22 +2958,20 @@ checksum = "2ea539174bb236e0e7dc9c12b19b88eae3cb574dedbd0252a2d43ea7e6de13e2"
 [[package]]
 name = "dioxus-desktop"
 version = "0.5.0-alpha.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2001c62ae716bc44aa450072dd65ca964c059bc501206f0559b6b73be5a3945b"
+source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
  "async-trait",
  "core-foundation",
- "crossbeam-channel 0.5.12",
  "dioxus-cli-config",
- "dioxus-core 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "dioxus-hooks 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "dioxus-hot-reload 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "dioxus-html 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "dioxus-core 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-hooks 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-hot-reload 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-html 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
  "dioxus-interpreter-js",
  "dunce",
  "futures-channel",
  "futures-util",
- "generational-box 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "generational-box 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
  "global-hotkey",
  "infer",
  "muda",
@@ -2992,21 +2996,20 @@ name = "dioxus-free-icons"
 version = "0.8.0"
 source = "git+https://github.com/dioxus-community/dioxus-free-icons?branch=feat/dioxus-0.5#58f601c7b717aa203cbee30616b4f3cd5b3b3148"
 dependencies = [
- "dioxus 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "dioxus 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
 ]
 
 [[package]]
 name = "dioxus-fullstack"
 version = "0.5.0-alpha.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8a78cf31dec8711659ebd9d051c60ba6fe1fe7c9050e9dc6220a851a52d498e"
+source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
  "bytes",
  "ciborium",
  "dioxus-desktop",
- "dioxus-hot-reload 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "dioxus-hot-reload 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
  "dioxus-lib",
  "dioxus_server_macro",
  "futures-util",
@@ -3014,22 +3017,6 @@ dependencies = [
  "serde",
  "serde_json",
  "server_fn",
- "tracing",
-]
-
-[[package]]
-name = "dioxus-hooks"
-version = "0.5.0-alpha.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88564fa5649eb591d6d872e3bb54830d2ed17ea2d4eba4167d36085eaf64645d"
-dependencies = [
- "dioxus-core 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "dioxus-debug-cell",
- "dioxus-signals 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "futures-channel",
- "futures-util",
- "slab",
- "thiserror",
  "tracing",
 ]
 
@@ -3050,17 +3037,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "dioxus-hot-reload"
+name = "dioxus-hooks"
 version = "0.5.0-alpha.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a94d426c1f1c52df83ca2a1bbf9b9012c5d91b05f1897159971dbf960b7637d5"
+source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
- "dioxus-core 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "dioxus-html 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "dioxus-rsx 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "interprocess-docfix",
- "serde",
- "serde_json",
+ "dioxus-core 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-debug-cell",
+ "dioxus-signals 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "futures-channel",
+ "futures-util",
+ "generational-box 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "slab",
+ "thiserror",
+ "tracing",
 ]
 
 [[package]]
@@ -3077,25 +3066,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "dioxus-html"
+name = "dioxus-hot-reload"
 version = "0.5.0-alpha.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22a6830f666d8115a07eefe506fa00cb8988ef5fd91e3ef4cf5b3d9d6e34b6cf"
+source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
- "async-trait",
- "dioxus-core 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "dioxus-html-internal-macro 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "enumset",
- "euclid",
- "futures-channel",
- "generational-box 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "keyboard-types",
+ "dioxus-core 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-html 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-rsx 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "interprocess-docfix",
  "serde",
- "serde-value",
  "serde_json",
- "serde_repr",
- "tokio",
- "web-sys",
 ]
 
 [[package]]
@@ -3119,15 +3099,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "dioxus-html-internal-macro"
+name = "dioxus-html"
 version = "0.5.0-alpha.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea886f6935b6c235f5e427eaab53c4e671275616741c15f44f6ee1116dde9482"
+source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
- "convert_case 0.6.0",
- "proc-macro2",
- "quote",
- "syn 2.0.52",
+ "async-trait",
+ "dioxus-core 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-html-internal-macro 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "enumset",
+ "euclid",
+ "futures-channel",
+ "generational-box 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "keyboard-types",
+ "serde",
+ "serde-value",
+ "serde_json",
+ "serde_repr",
+ "tokio",
+ "web-sys",
 ]
 
 [[package]]
@@ -3142,13 +3131,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "dioxus-html-internal-macro"
+version = "0.5.0-alpha.0"
+source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
+dependencies = [
+ "convert_case 0.6.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.52",
+]
+
+[[package]]
 name = "dioxus-interpreter-js"
 version = "0.5.0-alpha.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a66e68d2a47eda0d6df53d3f616d5aa135f6b07e4730d3e3aafdd52b2ca958d"
+source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
- "dioxus-core 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "dioxus-html 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "dioxus-core 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-html 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "md5",
  "sledgehammer_bindgen",
  "sledgehammer_utils",
 ]
@@ -3156,22 +3156,20 @@ dependencies = [
 [[package]]
 name = "dioxus-lib"
 version = "0.5.0-alpha.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99c6d03c68bc2546668fdb17d4001112ffc82c77617b39d5445d85f26ef2a97c"
+source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
- "dioxus-core 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "dioxus-core-macro 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "dioxus-hooks 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "dioxus-html 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "dioxus-rsx 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "dioxus-signals 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "dioxus-core 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-core-macro 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-hooks 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-html 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-rsx 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-signals 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
 ]
 
 [[package]]
 name = "dioxus-router"
 version = "0.5.0-alpha.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "78e82b018c26da0823e62a00e5953e2e7ad152d9ffc35914d9a576b56abdbdbf"
+source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
  "dioxus-cli-config",
  "dioxus-lib",
@@ -3184,25 +3182,12 @@ dependencies = [
 [[package]]
 name = "dioxus-router-macro"
 version = "0.5.0-alpha.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b3c2116487c268ab034631d753fd296c62d56770567927a9fb34ccafcfcdd9c"
+source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
  "proc-macro2",
  "quote",
  "slab",
  "syn 2.0.52",
-]
-
-[[package]]
-name = "dioxus-rsx"
-version = "0.5.0-alpha.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef34678f6544a716a1ce483de1cd2e4931787f9c06bf72507bb9e168acca2613"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.52",
- "tracing",
 ]
 
 [[package]]
@@ -3217,20 +3202,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "dioxus-signals"
+name = "dioxus-rsx"
 version = "0.5.0-alpha.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36f29a6f8bfaa7211da5c74515dacbdce82d88d637924faef3a08ab4a8400891"
+source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
- "dioxus-core 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "flume",
- "futures-channel",
- "futures-util",
- "generational-box 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "once_cell",
- "parking_lot",
- "rustc-hash",
- "serde",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.52",
  "tracing",
 ]
 
@@ -3250,6 +3228,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "dioxus-signals"
+version = "0.5.0-alpha.0"
+source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
+dependencies = [
+ "dioxus-core 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "futures-channel",
+ "futures-util",
+ "generational-box 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "once_cell",
+ "parking_lot",
+ "rustc-hash",
+ "serde",
+ "tracing",
+]
+
+[[package]]
 name = "dioxus-std"
 version = "0.5.0"
 source = "git+https://github.com/marc2332/dioxus-std/?branch=feat/dioxus-0.5#0fe58a69df21013fc7e57c5a88f0cc2ee0eda857"
@@ -3264,8 +3258,7 @@ dependencies = [
 [[package]]
 name = "dioxus_server_macro"
 version = "0.5.0-alpha.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8459444509a7cb49a2b26849942a0b91609a9a567c7f05697133c40d440ae705"
+source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
  "convert_case 0.6.0",
  "proc-macro2",
@@ -3851,9 +3844,9 @@ dependencies = [
  "anyhow",
  "bytesize",
  "cargo-dist",
- "dioxus 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "dioxus 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
  "dioxus-free-icons",
- "dioxus-signals 0.5.0-alpha.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "dioxus-signals 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
  "dioxus-std",
  "directories 5.0.1",
  "floneum_plugin",
@@ -4313,7 +4306,7 @@ checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 [[package]]
 name = "font"
 version = "0.1.0"
-source = "git+https://github.com/pdf-rs/font#9aa9b821955e37490ea7e76cf6126cf6bf5880ef"
+source = "git+https://github.com/pdf-rs/font#12bb2cf0856bda73e6b5593fcaaf73d128703ee9"
 dependencies = [
  "decorum",
  "indexmap 1.9.3",
@@ -4461,9 +4454,9 @@ dependencies = [
 
 [[package]]
 name = "futures-concurrency"
-version = "7.4.3"
+version = "7.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef6712e11cdeed5c8cf21ea0b90fec40fbe64afc9bbf2339356197eeca829fc3"
+checksum = "9b590a729e1cbaf9ae3ec294143ea034d93cbb1de01c884d04bcd0af8b613d02"
 dependencies = [
  "bitvec",
  "futures-core",
@@ -4821,8 +4814,7 @@ dependencies = [
 [[package]]
 name = "generational-box"
 version = "0.5.0-alpha.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "46fabb11c4113fca866acad7fa8b7a4102eb6629b6c7363da3ec6516d61612aa"
+source = "git+https://github.com/DioxusLabs/dioxus?rev=2d2e9dc56a59b4f3ad4deb55d15c27f337cf564c#2d2e9dc56a59b4f3ad4deb55d15c27f337cf564c"
 dependencies = [
  "parking_lot",
 ]
@@ -4830,7 +4822,7 @@ dependencies = [
 [[package]]
 name = "generational-box"
 version = "0.5.0-alpha.0"
-source = "git+https://github.com/DioxusLabs/dioxus?rev=2d2e9dc56a59b4f3ad4deb55d15c27f337cf564c#2d2e9dc56a59b4f3ad4deb55d15c27f337cf564c"
+source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
  "parking_lot",
 ]
@@ -5098,9 +5090,9 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 
 [[package]]
 name = "global-hotkey"
-version = "0.4.2"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "927a00fd7c31d82029f99ce2481a8de1ae974758017d6a55ebbe7f22edcd1617"
+checksum = "5b0d37e95d3937251ee2019709389bb793c1237f16d45fc0fe7b2464b5f97c68"
 dependencies = [
  "crossbeam-channel 0.5.12",
  "keyboard-types",
@@ -5630,12 +5622,12 @@ dependencies = [
 
 [[package]]
 name = "http-body-util"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41cb79eb393015dadd30fc252023adb0b2400a0caee0fa2a077e6e21a551e840"
+checksum = "0475f8b2ac86659c21b64320d5d653f9efe42acd2a4e560073ec61a155a34f1d"
 dependencies = [
  "bytes",
- "futures-util",
+ "futures-core",
  "http 1.1.0",
  "http-body 1.0.0",
  "pin-project-lite",
@@ -7042,15 +7034,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c41e0c4fef86961ac6d6f8a82609f55f31b05e4fce149ac5710e439df7619ba4"
 
 [[package]]
-name = "mach"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b823e83b2affd8f40a9ee8c29dbc56404c1e34cd2710921f2801e2cf29527afa"
-dependencies = [
- "libc",
-]
-
-[[package]]
 name = "mach2"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7799,6 +7782,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "num-conv"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51d515d32fb182ee37cda2ccdcb92950d6a3c2893aa280e540671c2cd0f3b1d9"
+
+[[package]]
 name = "num-derive"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8442,7 +8431,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_color"
 version = "0.5.0"
-source = "git+https://github.com/servo/pathfinder#dc6034f6661eaee5e38c7888f7e40fe6699543c1"
+source = "git+https://github.com/servo/pathfinder#30419d07660dc11a21e42ef4a7fa329600cff152"
 dependencies = [
  "pathfinder_simd",
 ]
@@ -8450,7 +8439,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_content"
 version = "0.5.0"
-source = "git+https://github.com/servo/pathfinder#dc6034f6661eaee5e38c7888f7e40fe6699543c1"
+source = "git+https://github.com/servo/pathfinder#30419d07660dc11a21e42ef4a7fa329600cff152"
 dependencies = [
  "arrayvec 0.5.2",
  "bitflags 1.3.2",
@@ -8465,7 +8454,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_geometry"
 version = "0.5.1"
-source = "git+https://github.com/servo/pathfinder#dc6034f6661eaee5e38c7888f7e40fe6699543c1"
+source = "git+https://github.com/servo/pathfinder#30419d07660dc11a21e42ef4a7fa329600cff152"
 dependencies = [
  "log",
  "pathfinder_simd",
@@ -8474,7 +8463,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_gpu"
 version = "0.5.0"
-source = "git+https://github.com/servo/pathfinder#dc6034f6661eaee5e38c7888f7e40fe6699543c1"
+source = "git+https://github.com/servo/pathfinder#30419d07660dc11a21e42ef4a7fa329600cff152"
 dependencies = [
  "bitflags 1.3.2",
  "fxhash",
@@ -8491,7 +8480,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_renderer"
 version = "0.5.0"
-source = "git+https://github.com/servo/pathfinder#dc6034f6661eaee5e38c7888f7e40fe6699543c1"
+source = "git+https://github.com/servo/pathfinder#30419d07660dc11a21e42ef4a7fa329600cff152"
 dependencies = [
  "bitflags 1.3.2",
  "byte-slice-cast",
@@ -8519,12 +8508,12 @@ dependencies = [
 [[package]]
 name = "pathfinder_resources"
 version = "0.5.0"
-source = "git+https://github.com/servo/pathfinder#dc6034f6661eaee5e38c7888f7e40fe6699543c1"
+source = "git+https://github.com/servo/pathfinder#30419d07660dc11a21e42ef4a7fa329600cff152"
 
 [[package]]
 name = "pathfinder_simd"
 version = "0.5.3"
-source = "git+https://github.com/servo/pathfinder#dc6034f6661eaee5e38c7888f7e40fe6699543c1"
+source = "git+https://github.com/servo/pathfinder#30419d07660dc11a21e42ef4a7fa329600cff152"
 dependencies = [
  "rustc_version",
 ]
@@ -8532,7 +8521,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_ui"
 version = "0.5.0"
-source = "git+https://github.com/servo/pathfinder#dc6034f6661eaee5e38c7888f7e40fe6699543c1"
+source = "git+https://github.com/servo/pathfinder#30419d07660dc11a21e42ef4a7fa329600cff152"
 dependencies = [
  "hashbrown 0.7.2",
  "pathfinder_color",
@@ -9069,6 +9058,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "powerfmt"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "439ee305def115ba05938db6eb1644ff94165c5ab5e9420d1c1bcedbba909391"
+
+[[package]]
 name = "ppv-lite86"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9150,9 +9145,9 @@ checksum = "dc375e1527247fe1a97d8b7156678dfe7c1af2fc075c9a4db3690ecd2a148068"
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.78"
+version = "1.0.79"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2422ad645d89c99f8f3e6b88a9fdeca7fabeac836b1002371c4367c8f984aae"
+checksum = "e835ff2298f5721608eb1a980ecaee1aef2c132bf95ecc026a11b7bf3c01c02e"
 dependencies = [
  "unicode-ident",
 ]
@@ -9597,9 +9592,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.11.24"
+version = "0.11.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6920094eb85afde5e4a138be3f2de8bbdf28000f0029e72c45025a56b042251"
+checksum = "78bf93c4af7a8bb7d879d51cebe797356ff10ae8516ace542b5182d9dcac10b2"
 dependencies = [
  "base64 0.21.7",
  "bytes",
@@ -10109,7 +10104,7 @@ dependencies = [
 [[package]]
 name = "rustpython-codegen"
 version = "0.3.0"
-source = "git+https://github.com/RustPython/RustPython#2f8e5189d3c0abc70251fd6d928d0176e7b7f3ab"
+source = "git+https://github.com/RustPython/RustPython#92c8b371ae5db0d95bd8199bc42b08af115bb88a"
 dependencies = [
  "ahash 0.8.11",
  "bitflags 2.4.2",
@@ -10126,7 +10121,7 @@ dependencies = [
 [[package]]
 name = "rustpython-common"
 version = "0.3.0"
-source = "git+https://github.com/RustPython/RustPython#2f8e5189d3c0abc70251fd6d928d0176e7b7f3ab"
+source = "git+https://github.com/RustPython/RustPython#92c8b371ae5db0d95bd8199bc42b08af115bb88a"
 dependencies = [
  "ascii",
  "bitflags 2.4.2",
@@ -10152,7 +10147,7 @@ dependencies = [
 [[package]]
 name = "rustpython-compiler"
 version = "0.3.0"
-source = "git+https://github.com/RustPython/RustPython#2f8e5189d3c0abc70251fd6d928d0176e7b7f3ab"
+source = "git+https://github.com/RustPython/RustPython#92c8b371ae5db0d95bd8199bc42b08af115bb88a"
 dependencies = [
  "rustpython-codegen",
  "rustpython-compiler-core",
@@ -10162,7 +10157,7 @@ dependencies = [
 [[package]]
 name = "rustpython-compiler-core"
 version = "0.3.0"
-source = "git+https://github.com/RustPython/RustPython#2f8e5189d3c0abc70251fd6d928d0176e7b7f3ab"
+source = "git+https://github.com/RustPython/RustPython#92c8b371ae5db0d95bd8199bc42b08af115bb88a"
 dependencies = [
  "bitflags 2.4.2",
  "itertools 0.11.0",
@@ -10175,7 +10170,7 @@ dependencies = [
 [[package]]
 name = "rustpython-derive"
 version = "0.3.0"
-source = "git+https://github.com/RustPython/RustPython#2f8e5189d3c0abc70251fd6d928d0176e7b7f3ab"
+source = "git+https://github.com/RustPython/RustPython#92c8b371ae5db0d95bd8199bc42b08af115bb88a"
 dependencies = [
  "rustpython-compiler",
  "rustpython-derive-impl",
@@ -10185,7 +10180,7 @@ dependencies = [
 [[package]]
 name = "rustpython-derive-impl"
 version = "0.3.0"
-source = "git+https://github.com/RustPython/RustPython#2f8e5189d3c0abc70251fd6d928d0176e7b7f3ab"
+source = "git+https://github.com/RustPython/RustPython#92c8b371ae5db0d95bd8199bc42b08af115bb88a"
 dependencies = [
  "itertools 0.11.0",
  "maplit",
@@ -10296,7 +10291,7 @@ dependencies = [
 [[package]]
 name = "rustpython-vm"
 version = "0.3.0"
-source = "git+https://github.com/RustPython/RustPython#2f8e5189d3c0abc70251fd6d928d0176e7b7f3ab"
+source = "git+https://github.com/RustPython/RustPython#92c8b371ae5db0d95bd8199bc42b08af115bb88a"
 dependencies = [
  "ahash 0.8.11",
  "ascii",
@@ -10766,9 +10761,9 @@ dependencies = [
 
 [[package]]
 name = "serde_path_to_error"
-version = "0.1.15"
+version = "0.1.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ebd154a240de39fdebcf5775d2675c204d7c13cf39a4c697be6493c8e734337c"
+checksum = "af99884400da37c88f5e9146b7f1fd0fbcae8f6eec4e9da38b67d05486f814a6"
 dependencies = [
  "itoa 1.0.10",
  "serde",
@@ -10828,9 +10823,9 @@ dependencies = [
 
 [[package]]
 name = "serde_with"
-version = "3.6.1"
+version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15d167997bd841ec232f5b2b8e0e26606df2e7caa4c31b95ea9ca52b200bd270"
+checksum = "ee80b0e361bbf88fd2f6e242ccd19cfda072cb0faa6ae694ecee08199938569a"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -10841,14 +10836,14 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "serde_with_macros",
- "time 0.3.20",
+ "time 0.3.34",
 ]
 
 [[package]]
 name = "serde_with_macros"
-version = "3.6.1"
+version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "865f9743393e638991566a8b7a479043c2c8da94a33e0a31f18214c9cae0a64d"
+checksum = "6561dc161a9224638a31d876ccdfefbc1df91d3f3a8342eddb35f055d48c7655"
 dependencies = [
  "darling 0.20.8",
  "proc-macro2",
@@ -11032,7 +11027,7 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "thiserror",
- "time 0.3.20",
+ "time 0.3.34",
 ]
 
 [[package]]
@@ -11043,7 +11038,7 @@ checksum = "8e7e46c8c90251d47d08b28b8a419ffb4aede0f87c2eea95e17d1d5bacbf3ef1"
 dependencies = [
  "colored",
  "log",
- "time 0.3.20",
+ "time 0.3.34",
  "windows-sys 0.48.0",
 ]
 
@@ -11074,9 +11069,16 @@ dependencies = [
 
 [[package]]
 name = "sledgehammer_bindgen"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9298e863f0143b89972299110a7fa3e2fc08c412341d588c497bae38409f9e68"
+version = "0.5.0"
+source = "git+https://github.com/ealmloff/sledgehammer_bindgen#0f3aa817c70456c1f7ebfcc5e87823f2fca82eac"
+dependencies = [
+ "sledgehammer_bindgen_macro",
+]
+
+[[package]]
+name = "sledgehammer_bindgen_macro"
+version = "0.5.0"
+source = "git+https://github.com/ealmloff/sledgehammer_bindgen#0f3aa817c70456c1f7ebfcc5e87823f2fca82eac"
 dependencies = [
  "quote",
  "syn 2.0.52",
@@ -11509,9 +11511,9 @@ dependencies = [
 
 [[package]]
 name = "surrealdb"
-version = "1.2.2"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eeda932a753a5a9c78481e20c3ecd7a60cb705b0e519cb7a9b91fe1391dff7d1"
+checksum = "427e35b7b49c42e8e5a5de5621af3a953cce6221fff06d089cbe1920dc6fb39b"
 dependencies = [
  "async-channel 1.9.0",
  "bincode",
@@ -11548,9 +11550,9 @@ dependencies = [
 
 [[package]]
 name = "surrealdb-core"
-version = "1.2.2"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ba01ca3f11b036bfcbebaa0b43747a76708d9064042e412cecd54079735e77b"
+checksum = "24b66c830b767da9b8a289877b2ea3c290b6a56482ae604848b977446cdcdda6"
 dependencies = [
  "addr",
  "any_ascii",
@@ -11799,14 +11801,14 @@ dependencies = [
 
 [[package]]
 name = "system-deps"
-version = "6.2.0"
+version = "6.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a2d580ff6a20c55dfb86be5f9c238f67835d0e81cbdea8bf5680e0897320331"
+checksum = "e8e9199467bcbc77c6a13cc6e32a6af21721ab8c96aa0261856c4fda5a4433f0"
 dependencies = [
  "cfg-expr",
  "heck",
  "pkg-config",
- "toml 0.8.10",
+ "toml 0.8.11",
  "version-compare",
 ]
 
@@ -11882,7 +11884,7 @@ dependencies = [
  "tantivy-tokenizer-api",
  "tempfile",
  "thiserror",
- "time 0.3.20",
+ "time 0.3.34",
  "uuid",
  "winapi",
 ]
@@ -11922,7 +11924,7 @@ dependencies = [
  "byteorder",
  "ownedbytes",
  "serde",
- "time 0.3.20",
+ "time 0.3.34",
 ]
 
 [[package]]
@@ -12141,18 +12143,18 @@ checksum = "8eaa81235c7058867fa8c0e7314f33dcce9c215f535d1913822a2b3f5e289f3c"
 
 [[package]]
 name = "thiserror"
-version = "1.0.57"
+version = "1.0.58"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e45bcbe8ed29775f228095caf2cd67af7a4ccf756ebff23a306bf3e8b47b24b"
+checksum = "03468839009160513471e86a034bb2c5c0e4baae3b43f79ffc55c4a5427b3297"
 dependencies = [
  "thiserror-impl",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "1.0.57"
+version = "1.0.58"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a953cb265bef375dae3de6663da4d3804eee9682ea80d8e2542529b73c531c81"
+checksum = "c61f3ba182994efc43764a46c018c347bc492c79f024e705f46567b418f6d4f7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -12204,13 +12206,16 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.3.20"
+version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd0cbfecb4d19b5ea75bb31ad904eb5b9fa13f21079c3b92017ebdf4999a5890"
+checksum = "c8248b6521bb14bc45b4067159b9b6ad792e2d6d754d6c41fb50e29fefe38749"
 dependencies = [
+ "deranged",
  "itoa 1.0.10",
  "libc",
+ "num-conv",
  "num_threads",
+ "powerfmt",
  "serde",
  "time-core",
  "time-macros",
@@ -12218,16 +12223,17 @@ dependencies = [
 
 [[package]]
 name = "time-core"
-version = "0.1.0"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e153e1f1acaef8acc537e68b44906d2db6436e2b35ac2c6b42640fff91f00fd"
+checksum = "ef927ca75afb808a4d64dd374f00a2adf8d0fcff8e7b184af886c3c87ec4a3f3"
 
 [[package]]
 name = "time-macros"
-version = "0.2.8"
+version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd80a657e71da814b8e5d60d3374fc6d35045062245d80224748ae522dd76f36"
+checksum = "7ba3a3ef41e6672a2f0f001392bb5dcd3ff0a9992d618ca761a11c3121547774"
 dependencies = [
+ "num-conv",
  "time-core",
 ]
 
@@ -12505,14 +12511,14 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "0.8.10"
+version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a9aad4a3066010876e8dcf5a8a06e70a558751117a145c6ce2b82c2e2054290"
+checksum = "af06656561d28735e9c1cd63dfd57132c8155426aa6af24f36a00a351f88c48e"
 dependencies = [
  "serde",
  "serde_spanned",
  "toml_datetime 0.6.5",
- "toml_edit 0.22.6",
+ "toml_edit 0.22.7",
 ]
 
 [[package]]
@@ -12579,9 +12585,9 @@ dependencies = [
 
 [[package]]
 name = "toml_edit"
-version = "0.22.6"
+version = "0.22.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c1b5fd4128cc8d3e0cb74d4ed9a9cc7c7284becd4df68f5f940e1ad123606f6"
+checksum = "18769cd1cec395d70860ceb4d932812a0b4d06b1a4bb336745a4d21b9496e992"
 dependencies = [
  "indexmap 2.2.5",
  "serde",
@@ -13040,9 +13046,9 @@ checksum = "39ec24b3121d976906ece63c9daad25b85969647682eee313cb5779fdd69e14e"
 
 [[package]]
 name = "unicode_names2"
-version = "1.2.1"
+version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac64ef2f016dc69dfa8283394a70b057066eb054d5fcb6b9eb17bd2ec5097211"
+checksum = "addeebf294df7922a1164f729fb27ebbbcea99cc32b3bf08afab62757f707677"
 dependencies = [
  "phf 0.11.2",
  "unicode_names2_generator",
@@ -13050,15 +13056,14 @@ dependencies = [
 
 [[package]]
 name = "unicode_names2_generator"
-version = "1.2.1"
+version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "013f6a731e80f3930de580e55ba41dfa846de4e0fdee4a701f97989cb1597d6a"
+checksum = "f444b8bba042fe3c1251ffaca35c603f2dc2ccc08d595c65a8c4f76f3e8426c0"
 dependencies = [
  "getopts",
  "log",
  "phf_codegen 0.11.2",
  "rand 0.8.5",
- "time 0.3.20",
 ]
 
 [[package]]
@@ -13224,7 +13229,7 @@ checksum = "9c8d87e72b64a3b4db28d11ce29237c246188f4f51057d65a7eab63b7987e423"
 [[package]]
 name = "wasi-common"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "anyhow",
  "bitflags 2.4.2",
@@ -13430,7 +13435,7 @@ dependencies = [
 [[package]]
 name = "wasmtime"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "addr2line",
  "anyhow",
@@ -13475,7 +13480,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-asm-macros"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "cfg-if 1.0.0",
 ]
@@ -13483,7 +13488,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-cache"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
@@ -13494,7 +13499,7 @@ dependencies = [
  "serde",
  "serde_derive",
  "sha2",
- "toml 0.8.10",
+ "toml 0.8.11",
  "windows-sys 0.52.0",
  "zstd 0.13.0",
 ]
@@ -13502,7 +13507,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-component-macro"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "anyhow",
  "proc-macro2",
@@ -13516,12 +13521,12 @@ dependencies = [
 [[package]]
 name = "wasmtime-component-util"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 
 [[package]]
 name = "wasmtime-cranelift"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "anyhow",
  "cfg-if 1.0.0",
@@ -13545,7 +13550,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-cranelift-shared"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
@@ -13560,7 +13565,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-environ"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "anyhow",
  "bincode",
@@ -13585,7 +13590,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-fiber"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "anyhow",
  "cc",
@@ -13599,7 +13604,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-jit-debug"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "object 0.33.0",
  "once_cell",
@@ -13610,7 +13615,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-jit-icache-coherence"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "cfg-if 1.0.0",
  "libc",
@@ -13620,7 +13625,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-runtime"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "anyhow",
  "cc",
@@ -13629,7 +13634,7 @@ dependencies = [
  "indexmap 2.2.5",
  "libc",
  "log",
- "mach",
+ "mach2",
  "memfd",
  "memoffset 0.9.0",
  "paste",
@@ -13649,12 +13654,12 @@ dependencies = [
 [[package]]
 name = "wasmtime-slab"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 
 [[package]]
 name = "wasmtime-types"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "cranelift-entity",
  "serde",
@@ -13666,7 +13671,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-versioned-export-macros"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -13676,7 +13681,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-wasi"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -13706,7 +13711,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-winch"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
@@ -13714,6 +13719,7 @@ dependencies = [
  "object 0.33.0",
  "target-lexicon",
  "wasmparser 0.201.0",
+ "wasmtime-cranelift",
  "wasmtime-cranelift-shared",
  "wasmtime-environ",
  "winch-codegen",
@@ -13722,7 +13728,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-wit-bindgen"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "anyhow",
  "heck",
@@ -13733,7 +13739,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-wmemcheck"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 
 [[package]]
 name = "wasmtimer"
@@ -14053,7 +14059,7 @@ checksum = "17882f045410753661207383517a6f62ec3dbeb6a4ed2acce01f0728238d1983"
 [[package]]
 name = "wiggle"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -14067,7 +14073,7 @@ dependencies = [
 [[package]]
 name = "wiggle-generate"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "anyhow",
  "heck",
@@ -14081,7 +14087,7 @@ dependencies = [
 [[package]]
 name = "wiggle-macro"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -14132,7 +14138,7 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 [[package]]
 name = "winch-codegen"
 version = "0.18.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#bd2ea901d3fa4555ffb3b8dc73c45455fe8a4439"
+source = "git+https://github.com/bytecodealliance/wasmtime#5a342c8b8610dfda97810ad0e9ec4f481aeb908a"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
@@ -14491,8 +14497,8 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen"
-version = "0.21.0"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#745f48d5a7ea02eff1c66aa778c02e7ec35f36d2"
+version = "0.22.0"
+source = "git+https://github.com/bytecodealliance/wit-bindgen#9c913f6d119739a09b521deed89743b4a001aae1"
 dependencies = [
  "bitflags 2.4.2",
  "wit-bindgen-rt",
@@ -14501,8 +14507,8 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-core"
-version = "0.21.0"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#745f48d5a7ea02eff1c66aa778c02e7ec35f36d2"
+version = "0.22.0"
+source = "git+https://github.com/bytecodealliance/wit-bindgen#9c913f6d119739a09b521deed89743b4a001aae1"
 dependencies = [
  "anyhow",
  "wit-parser 0.201.0",
@@ -14510,13 +14516,13 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rt"
-version = "0.21.0"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#745f48d5a7ea02eff1c66aa778c02e7ec35f36d2"
+version = "0.22.0"
+source = "git+https://github.com/bytecodealliance/wit-bindgen#9c913f6d119739a09b521deed89743b4a001aae1"
 
 [[package]]
 name = "wit-bindgen-rust"
-version = "0.21.0"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#745f48d5a7ea02eff1c66aa778c02e7ec35f36d2"
+version = "0.22.0"
+source = "git+https://github.com/bytecodealliance/wit-bindgen#9c913f6d119739a09b521deed89743b4a001aae1"
 dependencies = [
  "anyhow",
  "heck",
@@ -14528,8 +14534,8 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust-macro"
-version = "0.21.0"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#745f48d5a7ea02eff1c66aa778c02e7ec35f36d2"
+version = "0.22.0"
+source = "git+https://github.com/bytecodealliance/wit-bindgen#9c913f6d119739a09b521deed89743b4a001aae1"
 dependencies = [
  "anyhow",
  "proc-macro2",
@@ -14962,7 +14968,7 @@ dependencies = [
  "hmac",
  "pbkdf2 0.11.0",
  "sha1",
- "time 0.3.20",
+ "time 0.3.34",
  "zstd 0.11.2+zstd.1.5.2",
 ]
 
@@ -15078,3 +15084,33 @@ dependencies = [
  "quote",
  "syn 1.0.109",
 ]
+
+[[patch.unused]]
+name = "dioxus-liveview"
+version = "0.5.0-alpha.0"
+source = "git+https://github.com/DioxusLabs/dioxus#92416253e0fa19a88abef27e15c0621ce41b6903"
+
+[[patch.unused]]
+name = "dioxus-native-core"
+version = "0.5.0-alpha.0"
+source = "git+https://github.com/DioxusLabs/dioxus#92416253e0fa19a88abef27e15c0621ce41b6903"
+
+[[patch.unused]]
+name = "dioxus-native-core-macro"
+version = "0.5.0-alpha.0"
+source = "git+https://github.com/DioxusLabs/dioxus#92416253e0fa19a88abef27e15c0621ce41b6903"
+
+[[patch.unused]]
+name = "dioxus-ssr"
+version = "0.5.0-alpha.0"
+source = "git+https://github.com/DioxusLabs/dioxus#92416253e0fa19a88abef27e15c0621ce41b6903"
+
+[[patch.unused]]
+name = "dioxus-tui"
+version = "0.5.0-alpha.0"
+source = "git+https://github.com/DioxusLabs/dioxus#92416253e0fa19a88abef27e15c0621ce41b6903"
+
+[[patch.unused]]
+name = "dioxus-web"
+version = "0.5.0-alpha.0"
+source = "git+https://github.com/DioxusLabs/dioxus#92416253e0fa19a88abef27e15c0621ce41b6903"
