@@ -42,8 +42,7 @@ const SAVE_NAME: &str = "workflow.json";
 
 pub type Point = Point2D<f32, f32>;
 
-#[tokio::main]
-async fn main() {
+fn main() {
     use tracing_subscriber::filter::LevelFilter;
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
@@ -68,16 +67,8 @@ async fn main() {
 
     logger.with(debug_log).init();
 
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    tokio::spawn(async move {
-        tx.send(FloneumPackageIndex::load().await).unwrap();
-    });
-
     dioxus::prelude::LaunchBuilder::new()
         .with_cfg(make_config())
-        .with_context(AppProps {
-            channel: Rc::new(RefCell::new(Some(rx))),
-        })
         .launch(App);
 }
 
@@ -178,15 +169,16 @@ pub struct AppProps {
 }
 
 fn App() -> Element {
-    let props: AppProps = use_context();
     use_package_manager_provider();
     let mut package_manager = use_context::<Signal<Option<Rc<FloneumPackageIndex>>>>();
     let mut state = use_provide_application_state();
     use_hook(|| {
-        let channel = props.channel.borrow_mut().take().unwrap();
         spawn(async move {
-            let mut new_package_manager = channel.await;
-            package_manager.set(Some(Rc::new(new_package_manager.unwrap())));
+            let mut new_package_manager =
+                tokio::spawn(async move { FloneumPackageIndex::load().await })
+                    .await
+                    .unwrap();
+            package_manager.set(Some(Rc::new(new_package_manager)));
         });
     });
     use_coroutine(|mut channel| async move {
@@ -213,6 +205,5 @@ fn use_package_manager_provider() {
 }
 
 pub fn use_package_manager() -> Option<Rc<FloneumPackageIndex>> {
-    use_context::<Signal<Option<Rc<FloneumPackageIndex>>>>()
-        .cloned()
+    use_context::<Signal<Option<Rc<FloneumPackageIndex>>>>().cloned()
 }

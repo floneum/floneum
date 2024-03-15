@@ -253,10 +253,10 @@ impl VisualGraph {
                 current_node.running = true;
                 current_node.queued = true;
                 current_node
-                .inputs
-                .iter()
-                .map(|input| input.read().value())
-                .collect()
+                    .inputs
+                    .iter()
+                    .map(|input| input.read().value())
+                    .collect()
             };
             log::info!(
                 "Running node {:?} with inputs {:?}",
@@ -268,12 +268,10 @@ impl VisualGraph {
             spawn(async move {
                 let mut current_node_write = node.write();
                 let fut = current_node_write.instance.run(inputs);
-                let result = {
-                    fut.await
-                };
+                let result = { fut.await };
                 match result.as_deref() {
                     Some(Ok(result)) => {
-                        for (out,  current) in result.iter().zip(current_node_write.outputs.iter()) {
+                        for (out, current) in result.iter().zip(current_node_write.outputs.iter()) {
                             current.write_unchecked().value = out.clone();
                         }
 

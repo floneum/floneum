@@ -2848,24 +2848,24 @@ dependencies = [
 [[package]]
 name = "dioxus"
 version = "0.5.0-alpha.0"
-source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
+source = "git+https://github.com/dioxuslabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
- "dioxus-config-macro 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
- "dioxus-core 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
- "dioxus-core-macro 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-config-macro 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
+ "dioxus-core 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
+ "dioxus-core-macro 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
  "dioxus-desktop",
  "dioxus-fullstack",
- "dioxus-hooks 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
- "dioxus-hot-reload 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
- "dioxus-html 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-hooks 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
+ "dioxus-hot-reload 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
+ "dioxus-html 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
  "dioxus-router",
- "dioxus-signals 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-signals 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
 ]
 
 [[package]]
 name = "dioxus-cli-config"
 version = "0.5.0-alpha.0"
-source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
+source = "git+https://github.com/dioxuslabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
  "once_cell",
  "serde",
@@ -2885,7 +2885,7 @@ dependencies = [
 [[package]]
 name = "dioxus-config-macro"
 version = "0.5.0-alpha.0"
-source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
+source = "git+https://github.com/dioxuslabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2909,7 +2909,7 @@ dependencies = [
 [[package]]
 name = "dioxus-core"
 version = "0.5.0-alpha.0"
-source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
+source = "git+https://github.com/dioxuslabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
  "futures-channel",
  "futures-util",
@@ -2938,11 +2938,11 @@ dependencies = [
 [[package]]
 name = "dioxus-core-macro"
 version = "0.5.0-alpha.0"
-source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
+source = "git+https://github.com/dioxuslabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
  "constcat",
  "convert_case 0.6.0",
- "dioxus-rsx 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-rsx 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
  "prettyplease",
  "proc-macro2",
  "quote",
@@ -2958,20 +2958,20 @@ checksum = "2ea539174bb236e0e7dc9c12b19b88eae3cb574dedbd0252a2d43ea7e6de13e2"
 [[package]]
 name = "dioxus-desktop"
 version = "0.5.0-alpha.0"
-source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
+source = "git+https://github.com/dioxuslabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
  "async-trait",
  "core-foundation",
  "dioxus-cli-config",
- "dioxus-core 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
- "dioxus-hooks 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
- "dioxus-hot-reload 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
- "dioxus-html 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-core 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
+ "dioxus-hooks 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
+ "dioxus-hot-reload 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
+ "dioxus-html 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
  "dioxus-interpreter-js",
  "dunce",
  "futures-channel",
  "futures-util",
- "generational-box 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "generational-box 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
  "global-hotkey",
  "infer",
  "muda",
@@ -2996,20 +2996,20 @@ name = "dioxus-free-icons"
 version = "0.8.0"
 source = "git+https://github.com/dioxus-community/dioxus-free-icons?branch=feat/dioxus-0.5#58f601c7b717aa203cbee30616b4f3cd5b3b3148"
 dependencies = [
- "dioxus 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
 ]
 
 [[package]]
 name = "dioxus-fullstack"
 version = "0.5.0-alpha.0"
-source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
+source = "git+https://github.com/dioxuslabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
  "bytes",
  "ciborium",
  "dioxus-desktop",
- "dioxus-hot-reload 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-hot-reload 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
  "dioxus-lib",
  "dioxus_server_macro",
  "futures-util",
@@ -3039,14 +3039,14 @@ dependencies = [
 [[package]]
 name = "dioxus-hooks"
 version = "0.5.0-alpha.0"
-source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
+source = "git+https://github.com/dioxuslabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
- "dioxus-core 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-core 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
  "dioxus-debug-cell",
- "dioxus-signals 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-signals 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
  "futures-channel",
  "futures-util",
- "generational-box 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "generational-box 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
  "slab",
  "thiserror",
  "tracing",
@@ -3068,11 +3068,11 @@ dependencies = [
 [[package]]
 name = "dioxus-hot-reload"
 version = "0.5.0-alpha.0"
-source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
+source = "git+https://github.com/dioxuslabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
- "dioxus-core 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
- "dioxus-html 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
- "dioxus-rsx 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-core 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
+ "dioxus-html 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
+ "dioxus-rsx 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
  "interprocess-docfix",
  "serde",
  "serde_json",
@@ -3101,15 +3101,15 @@ dependencies = [
 [[package]]
 name = "dioxus-html"
 version = "0.5.0-alpha.0"
-source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
+source = "git+https://github.com/dioxuslabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
  "async-trait",
- "dioxus-core 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
- "dioxus-html-internal-macro 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-core 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
+ "dioxus-html-internal-macro 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
  "enumset",
  "euclid",
  "futures-channel",
- "generational-box 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "generational-box 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
  "keyboard-types",
  "serde",
  "serde-value",
@@ -3133,7 +3133,7 @@ dependencies = [
 [[package]]
 name = "dioxus-html-internal-macro"
 version = "0.5.0-alpha.0"
-source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
+source = "git+https://github.com/dioxuslabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
  "convert_case 0.6.0",
  "proc-macro2",
@@ -3144,10 +3144,10 @@ dependencies = [
 [[package]]
 name = "dioxus-interpreter-js"
 version = "0.5.0-alpha.0"
-source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
+source = "git+https://github.com/dioxuslabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
- "dioxus-core 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
- "dioxus-html 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-core 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
+ "dioxus-html 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
  "md5",
  "sledgehammer_bindgen",
  "sledgehammer_utils",
@@ -3156,20 +3156,20 @@ dependencies = [
 [[package]]
 name = "dioxus-lib"
 version = "0.5.0-alpha.0"
-source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
+source = "git+https://github.com/dioxuslabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
- "dioxus-core 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
- "dioxus-core-macro 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
- "dioxus-hooks 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
- "dioxus-html 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
- "dioxus-rsx 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
- "dioxus-signals 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-core 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
+ "dioxus-core-macro 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
+ "dioxus-hooks 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
+ "dioxus-html 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
+ "dioxus-rsx 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
+ "dioxus-signals 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
 ]
 
 [[package]]
 name = "dioxus-router"
 version = "0.5.0-alpha.0"
-source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
+source = "git+https://github.com/dioxuslabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
  "dioxus-cli-config",
  "dioxus-lib",
@@ -3182,7 +3182,7 @@ dependencies = [
 [[package]]
 name = "dioxus-router-macro"
 version = "0.5.0-alpha.0"
-source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
+source = "git+https://github.com/dioxuslabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3204,7 +3204,7 @@ dependencies = [
 [[package]]
 name = "dioxus-rsx"
 version = "0.5.0-alpha.0"
-source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
+source = "git+https://github.com/dioxuslabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3230,12 +3230,12 @@ dependencies = [
 [[package]]
 name = "dioxus-signals"
 version = "0.5.0-alpha.0"
-source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
+source = "git+https://github.com/dioxuslabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
- "dioxus-core 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-core 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
  "futures-channel",
  "futures-util",
- "generational-box 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "generational-box 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
  "once_cell",
  "parking_lot",
  "rustc-hash",
@@ -3258,7 +3258,7 @@ dependencies = [
 [[package]]
 name = "dioxus_server_macro"
 version = "0.5.0-alpha.0"
-source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
+source = "git+https://github.com/dioxuslabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
  "convert_case 0.6.0",
  "proc-macro2",
@@ -3844,9 +3844,9 @@ dependencies = [
  "anyhow",
  "bytesize",
  "cargo-dist",
- "dioxus 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
  "dioxus-free-icons",
- "dioxus-signals 0.5.0-alpha.0 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-signals 0.5.0-alpha.0 (git+https://github.com/dioxuslabs/dioxus)",
  "dioxus-std",
  "directories 5.0.1",
  "floneum_plugin",
@@ -4822,7 +4822,7 @@ dependencies = [
 [[package]]
 name = "generational-box"
 version = "0.5.0-alpha.0"
-source = "git+https://github.com/DioxusLabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
+source = "git+https://github.com/dioxuslabs/dioxus#34956cdb312085789026b18766da0e97c4b4e810"
 dependencies = [
  "parking_lot",
 ]
@@ -15088,29 +15088,29 @@ dependencies = [
 [[patch.unused]]
 name = "dioxus-liveview"
 version = "0.5.0-alpha.0"
-source = "git+https://github.com/DioxusLabs/dioxus#92416253e0fa19a88abef27e15c0621ce41b6903"
+source = "git+https://github.com/dioxuslabs/dioxus#92416253e0fa19a88abef27e15c0621ce41b6903"
 
 [[patch.unused]]
 name = "dioxus-native-core"
 version = "0.5.0-alpha.0"
-source = "git+https://github.com/DioxusLabs/dioxus#92416253e0fa19a88abef27e15c0621ce41b6903"
+source = "git+https://github.com/dioxuslabs/dioxus#92416253e0fa19a88abef27e15c0621ce41b6903"
 
 [[patch.unused]]
 name = "dioxus-native-core-macro"
 version = "0.5.0-alpha.0"
-source = "git+https://github.com/DioxusLabs/dioxus#92416253e0fa19a88abef27e15c0621ce41b6903"
+source = "git+https://github.com/dioxuslabs/dioxus#92416253e0fa19a88abef27e15c0621ce41b6903"
 
 [[patch.unused]]
 name = "dioxus-ssr"
 version = "0.5.0-alpha.0"
-source = "git+https://github.com/DioxusLabs/dioxus#92416253e0fa19a88abef27e15c0621ce41b6903"
+source = "git+https://github.com/dioxuslabs/dioxus#92416253e0fa19a88abef27e15c0621ce41b6903"
 
 [[patch.unused]]
 name = "dioxus-tui"
 version = "0.5.0-alpha.0"
-source = "git+https://github.com/DioxusLabs/dioxus#92416253e0fa19a88abef27e15c0621ce41b6903"
+source = "git+https://github.com/dioxuslabs/dioxus#92416253e0fa19a88abef27e15c0621ce41b6903"
 
 [[patch.unused]]
 name = "dioxus-web"
 version = "0.5.0-alpha.0"
-source = "git+https://github.com/DioxusLabs/dioxus#92416253e0fa19a88abef27e15c0621ce41b6903"
+source = "git+https://github.com/dioxuslabs/dioxus#92416253e0fa19a88abef27e15c0621ce41b6903"

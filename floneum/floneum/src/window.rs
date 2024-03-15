@@ -41,9 +41,9 @@ pub(crate) fn make_config() -> dioxus::desktop::Config {
     ]);
 
     application_menu.append_items(&[
-&SavePredefinedMenuItem::item(),
-    &SaveAsPredefinedMenuItem::item(),
-    &OpenPredefinedMenuItem::item(),
+        &SavePredefinedMenuItem::item(),
+        &SaveAsPredefinedMenuItem::item(),
+        &OpenPredefinedMenuItem::item(),
     ]);
 
     examples_menu.append_items(&[
@@ -52,19 +52,11 @@ pub(crate) fn make_config() -> dioxus::desktop::Config {
         &SummarizeNewsPredefinedMenuItem::item(),
     ]);
 
-    main_menu.append_items(&[
-        &edit_menu,
-        &window_menu,
-        &application_menu,
-        &examples_menu,
-    ]);
+    main_menu.append_items(&[&edit_menu, &window_menu, &application_menu, &examples_menu]);
 
     let tailwind = include_str!("../public/tailwind.css");
     dioxus::desktop::Config::default()
-        .with_window(
-            WindowBuilder::new()
-                .with_title("Floneum")
-        )
+        .with_window(WindowBuilder::new().with_title("Floneum"))
         .with_icon(Icon::from_rgba(include_bytes!("../public/Icon.rgba").to_vec(), 64, 64).unwrap())
         .with_custom_head(
             r#"
@@ -150,11 +142,7 @@ impl CustomMenuItem for SavePredefinedMenuItem {
     }
 
     fn accelerator() -> Option<Accelerator> {
-        Accelerator::new(
-            Some(SHORTCUT_LEADER),
-            Code::KeyS,
-        )
-        .into()
+        Accelerator::new(Some(SHORTCUT_LEADER), Code::KeyS).into()
     }
 }
 
@@ -170,7 +158,6 @@ impl CustomMenuItem for SaveAsPredefinedMenuItem {
     fn name() -> &'static str {
         "Save As"
     }
-
 
     fn accelerator() -> Option<Accelerator> {
         Accelerator::new(
@@ -202,11 +189,7 @@ impl CustomMenuItem for OpenPredefinedMenuItem {
     }
 
     fn accelerator() -> Option<Accelerator> {
-        Accelerator::new(
-            Some(SHORTCUT_LEADER),
-            Code::KeyO,
-        )
-        .into()
+        Accelerator::new(Some(SHORTCUT_LEADER), Code::KeyO).into()
     }
 }
 

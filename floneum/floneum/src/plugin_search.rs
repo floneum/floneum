@@ -70,7 +70,7 @@ fn LoadRegisteredPlugin() -> Element {
         input {
             class: "border {Color::outline_color()} {Color::foreground_color()} rounded-md p-2 m-2",
             r#type: "text",
-            oninput: 
+            oninput:
                 move |event| {
                     search_text.set(event.value());
                 },

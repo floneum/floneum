@@ -11,7 +11,7 @@ use crate::edge::{Connection, ConnectionType};
 use crate::input::Input;
 use crate::node_value::{NodeInput, NodeOutput};
 use crate::output::Output;
-use crate::{use_application_state, Colored, };
+use crate::{use_application_state, Colored};
 use crate::{Point, VisualGraph};
 
 const SNAP_DISTANCE: f32 = 15.;
