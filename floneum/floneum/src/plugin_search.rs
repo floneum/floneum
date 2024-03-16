@@ -1,4 +1,4 @@
-use crate::Color;
+use crate::theme::category_bg_color;
 use dioxus::prelude::*;
 use floneum_plugin::{load_plugin, load_plugin_from_source};
 use floneumite::Category;
@@ -68,12 +68,11 @@ fn LoadRegisteredPlugin() -> Element {
     rsx! {
         "Add Plugin"
         input {
-            class: "border {Color::outline_color()} {Color::foreground_color()} rounded-md p-2 m-2",
+            class: "border rounded-md p-2 m-2",
             r#type: "text",
-            oninput:
-                move |event| {
-                    search_text.set(event.value());
-                },
+            oninput: move |event| {
+                search_text.set(event.value());
+            },
         }
         match &plugins {
             Some(plugins) => {
@@ -98,11 +97,11 @@ fn LoadRegisteredPlugin() -> Element {
                 rsx! {
                     nav { "aria-label": "Directory", class: "h-full overflow-y-auto",
                         div { class: "relative",
-                            for (name, category) in categories_sorted {
+                            for (category, plugins) in categories_sorted {
                                 Category {
-                                    key: "{name}",
-                                    name: "{name}",
-                                    plugins: category,
+                                    key: "{category}",
+                                    category,
+                                    plugins,
                                 }
                             }
                         }
@@ -119,14 +118,15 @@ fn LoadRegisteredPlugin() -> Element {
 }
 
 #[component]
-fn Category(name: String, plugins: Vec<PackageIndexEntry>) -> Element {
+fn Category(category: Category, plugins: Vec<PackageIndexEntry>) -> Element {
     let application = use_application_state();
+    let color = category_bg_color(category);
 
     rsx! {
-        div { class: "sticky top-0 z-10 border-y border-b-gray-200 border-t-gray-100 {Color::foreground_color()} px-3 py-1.5 text-sm font-semibold leading-6",
-            h3 { "{name}" }
+        div { class: "sticky top-0 z-10 border-y border-b-black border-t-black px-3 py-1.5 text-sm font-semibold leading-6 {color}",
+            h3 { "{category}" }
         }
-        ul { role: "list", class: "divide-y {Color::divide_color()} {Color::background_color()}",
+        ul { role: "list", class: "divide-y divide-black",
             for entry in plugins {
                 li { class: "flex gap-x-4 px-3 py-5",
                     button {
@@ -188,7 +188,7 @@ fn LoadLocalPlugin() -> Element {
             class: "flex flex-col items-left",
             "Add Plugin from File"
             input {
-                class: "border {Color::outline_color()} {Color::foreground_color()} rounded-md p-2 m-2",
+                class: "border rounded-md p-2 m-2",
                 value: "{search_text}",
                 oninput: move |event| {
                     search_text.set(event.value());
@@ -196,7 +196,7 @@ fn LoadLocalPlugin() -> Element {
             }
 
             button {
-                class: "{Color::foreground_hover()} border {Color::outline_color()} rounded-md p-2 m-2",
+                class: "border rounded-md p-2 m-2",
                 onclick: move |_| {
                     let path = PathBuf::from(search_text());
                     let plugin = load_plugin(&path);

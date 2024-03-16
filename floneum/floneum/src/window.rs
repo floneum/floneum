@@ -67,6 +67,7 @@ pub(crate) fn make_config() -> dioxus::desktop::Config {
         overscroll-behavior-y: none;
         overscroll-behavior-x: none;
         overflow: hidden;
+        background-color: #ededf2;
     }
     #main, #bodywrap {
         height: 100%;

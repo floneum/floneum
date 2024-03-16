@@ -1,4 +1,3 @@
-use crate::Color;
 use dioxus::prelude::*;
 use floneum_plugin::{
     exports::plugins::main::definitions::{Input, Output},
@@ -146,7 +145,7 @@ pub fn ModifyInput(value: Signal<NodeInput>) -> Element {
                         class: "flex flex-col",
                         "{name}: "
                         textarea {
-                            class: "border {Color::outline_color()} {Color::foreground_color()} {Color::foreground_hover()} rounded focus:outline-none focus:border-blue-500",
+                            class: "border rounded focus:outline-none focus:border-blue-500",
                             value: "{value}",
                             oninput: move |e| {
                                 node.write().value = vec![Input::Single(PrimitiveValue::Text(e.value()))];
@@ -158,7 +157,7 @@ pub fn ModifyInput(value: Signal<NodeInput>) -> Element {
             PrimitiveValue::File(file) => {
                 rsx! {
                     button {
-                        class: "border {Color::outline_color()} {Color::foreground_hover()} rounded focus:outline-none focus:border-blue-500",
+                        class: "border rounded focus:outline-none focus:border-blue-500",
                         onclick: move |_| {
                             node.write().value = rfd::FileDialog::new()
                                 .set_directory("./sandbox")
@@ -176,7 +175,7 @@ pub fn ModifyInput(value: Signal<NodeInput>) -> Element {
             PrimitiveValue::Folder(folder) => {
                 rsx! {
                     button {
-                        class: "border {Color::outline_color()} rounded {Color::foreground_hover()} focus:outline-none focus:border-blue-500",
+                        class: "border rounded focus:outline-none focus:border-blue-500",
                         onclick: move |_| {
                             node.write().value = rfd::FileDialog::new()
                                 .set_directory("./sandbox")
@@ -203,7 +202,7 @@ pub fn ModifyInput(value: Signal<NodeInput>) -> Element {
                         class: "flex flex-col",
                         "{name}: "
                         input {
-                            class: "border {Color::outline_color()} {Color::foreground_color()} rounded {Color::foreground_hover()} focus:outline-none focus:border-blue-500",
+                            class: "border rounded focus:outline-none focus:border-blue-500",
                             r#type: "number",
                             value: "{value}",
                             oninput: move |e| {
@@ -220,7 +219,7 @@ pub fn ModifyInput(value: Signal<NodeInput>) -> Element {
                         class: "flex flex-col",
                         "{name}: "
                         select {
-                            class: "border {Color::outline_color()} {Color::foreground_color()} rounded {Color::foreground_hover()} focus:outline-none focus:border-blue-500",
+                            class: "border rounded focus:outline-none focus:border-blue-500",
                             style: "-webkit-appearance:none; -moz-appearance:none; -ms-appearance:none; appearance: none;",
                             onchange: move |e| {
                                 node
@@ -251,7 +250,7 @@ pub fn ModifyInput(value: Signal<NodeInput>) -> Element {
                         class: "flex flex-col",
                         "{name}: "
                         select {
-                            class: "border {Color::outline_color()} {Color::foreground_color()} rounded {Color::foreground_hover()} focus:outline-none focus:border-blue-500",
+                            class: "border rounded focus:outline-none focus:border-blue-500",
                             style: "-webkit-appearance:none; -moz-appearance:none; -ms-appearance:none; appearance: none;",
                             onchange: move |e| {
                                 node
@@ -282,7 +281,7 @@ pub fn ModifyInput(value: Signal<NodeInput>) -> Element {
                         class: "flex flex-col",
                         "{name}: "
                         input {
-                            class: "border {Color::outline_color()} {Color::foreground_color()} rounded {Color::foreground_hover()} focus:outline-none focus:border-blue-500",
+                            class: "border rounded focus:outline-none focus:border-blue-500",
                             r#type: "checkbox",
                             checked: "{val}",
                             onchange: move |e| {

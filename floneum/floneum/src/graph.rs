@@ -1,4 +1,3 @@
-use crate::{theme::Theme, Color};
 use std::{collections::HashSet, fmt::Debug};
 
 use dioxus::{
@@ -382,7 +381,6 @@ pub struct FlowViewProps {
 
 pub fn FlowView(mut props: FlowViewProps) -> Element {
     use_context_provider(|| props.graph.clone());
-    let mut theme = Theme::current();
     let mut graph = props.graph.inner;
     let current_graph = graph.read();
     let current_graph_dragging = current_graph.currently_dragging;
@@ -412,12 +410,12 @@ pub fn FlowView(mut props: FlowViewProps) -> Element {
             style: "-webkit-user-select: none; -ms-user-select: none; user-select: none;",
             width: "100%",
             height: "100%",
-            class: "{Color::text_color()}",
+            class: "",
             div {
                 position: "absolute",
                 top: "0",
                 left: "0",
-                class: "{Color::text_color()} {Color::foreground_color()} {Color::outline_color()} border-b-2 border-r-2 rounded-br-md p-2",
+                class: "border-b-2 border-r-2 rounded-br-md p-2",
                 button {
                     class: "m-1",
                     onclick: move |_| {
@@ -437,23 +435,6 @@ pub fn FlowView(mut props: FlowViewProps) -> Element {
                         });
                     },
                     "-"
-                }
-                if *theme.read() == Theme::DARK {
-                    button {
-                        class: "m-1",
-                        onclick: move |_| {
-                            theme.set(Theme::WHITE);
-                        },
-                        "🌞"
-                    }
-                }
-                else {
-                    button {
-                        onclick: move |_| {
-                            theme.set(Theme::DARK);
-                        },
-                        "🌙"
-                    }
                 }
             }
 
@@ -493,11 +474,6 @@ pub fn FlowView(mut props: FlowViewProps) -> Element {
                     }
                     props.graph.update_mouse(&evt);
                 },
-                rect {
-                    width: "100%",
-                    height: "100%",
-                    class: "{Color::background_color_svg()}",
-                }
 
                 g {
                     transform: "{transform}",

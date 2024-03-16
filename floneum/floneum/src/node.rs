@@ -1,9 +1,9 @@
 use crate::current_node::FocusedNodeInfo;
-use crate::Color;
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
 use dioxus_free_icons::Icon;
 use floneum_plugin::plugins::main::types::ValueType;
 use floneum_plugin::PluginInstance;
+use floneumite::Category;
 use petgraph::{graph::NodeIndex, stable_graph::DefaultIx};
 use serde::{Deserialize, Serialize};
 
@@ -11,7 +11,7 @@ use crate::edge::{Connection, ConnectionType};
 use crate::input::Input;
 use crate::node_value::{NodeInput, NodeOutput};
 use crate::output::Output;
-use crate::{use_application_state, Colored};
+use crate::{theme, use_application_state, Colored};
 use crate::{Point, VisualGraph};
 
 const SNAP_DISTANCE: f32 = 15.;
@@ -139,9 +139,8 @@ pub struct NodeProps {
 
 pub fn Node(props: NodeProps) -> Element {
     let mut application = use_application_state();
-    let mut node = props.node;
+    let node = props.node;
     let current_node = node.read();
-    let current_node_id = current_node.id;
     let pos = current_node.position - Point::new(1., 0.);
 
     rsx! {
@@ -151,19 +150,14 @@ pub fn Node(props: NodeProps) -> Element {
             top: "{pos.y}",
             onmousedown: move |evt| {
                 let mut graph: VisualGraph = consume_context();
-                let scaled_pos = graph.scale_screen_pos(evt.page_coordinates());
-                {
-                    let node = node.read();
-                    graph.start_dragging_node(&evt, props.node);
-                }
+                graph.start_dragging_node(&evt, props.node);
             },
             onmousemove: |evt| {
                 let mut  graph: VisualGraph = consume_context();
                 graph.update_mouse(&evt);
             },
-            onmouseup: move |evt| {
+            onmouseup: move |_| {
                 let mut graph: VisualGraph = consume_context();
-                let scaled_pos = graph.scale_screen_pos(evt.page_coordinates());
                 graph.clear_dragging();
 
                 // Focus or unfocus this node
@@ -212,10 +206,7 @@ fn CenterNodeUI(props: NodeProps) -> Element {
         let current_node = node.read();
         if current_node.queued {
             drop(current_node);
-            {
-                let mut node = node.write();
-                node.queued = false;
-            }
+            node.with_mut(|node| node.queued = false);
             let application = application.write();
             application.graph.run_node(node);
         }
@@ -223,16 +214,46 @@ fn CenterNodeUI(props: NodeProps) -> Element {
     let current_node = node.read();
     let name = &current_node.instance.metadata().name;
     let focused_class = if focused {
-        "border-2 border-blue-500".into()
+        "border-2 border-blue-500"
     } else {
-        format!("border {}", Color::outline_color())
+        "border"
     };
+    let category = match current_node.instance.source().meta(){
+        Some(meta) => meta.category,
+        None => Category::Other,
+    };
+    let color = theme::category_bg_color(category);
 
     rsx! {
+        // <li class="col-span-1 flex rounded-md shadow-sm">
+        //     <div class="flex w-16 flex-shrink-0 items-center justify-center bg-purple-600 rounded-l-md text-sm font-medium text-white">CD</div>
+        //     <div class="flex flex-1 items-center justify-between truncate rounded-r-md border-b border-r border-t border-gray-200 bg-white">
+        //         <div class="flex-1 truncate px-4 py-2 text-sm">
+        //         <a href="#" class="font-medium text-gray-900 hover:text-gray-600">Component Design</a>
+        //         <p class="text-gray-500">12 Members</p>
+        //         </div>
+        //         <div class="flex-shrink-0 pr-2">
+        //         <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-transparent bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2">
+        //             <span class="sr-only">Open options</span>
+        //             <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        //             <path d="M10 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM11.5 15.5a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z" />
+        //             </svg>
+        //         </button>
+        //         </div>
+        //     </div>
+        // </li>
         div {
-            style: "-webkit-user-select: none; -ms-user-select: none; user-select: none; padding: {NODE_KNOB_SIZE*2.+2.}px;",
-            class: "flex flex-col justify-center items-center w-full h-full rounded-md {Color::foreground_color()} {focused_class}",
+            style: "-webkit-user-select: none; -ms-user-select: none; user-select: none;",
+            class: "shadow-sm resize w-32 h-32 flex flex-col rounded-md {focused_class}",
             div {
+                class: "flex w-full h-8 flex-shrink-0 items-center justify-center {color} rounded-l-md text-sm font-medium text-white",
+                h1 {
+                    class: "text-md",
+                    "{name}"
+                }
+            }
+            div {
+                class: "justify-center items-center",
                 button {
                     class: "fixed p-2 top-0 right-0",
                     onclick: move |_| {
@@ -244,16 +265,12 @@ fn CenterNodeUI(props: NodeProps) -> Element {
                         icon: dioxus_free_icons::icons::io_icons::IoTrashOutline,
                     }
                 }
-                h1 {
-                    class: "text-md",
-                    "{name}"
-                }
                 if current_node.running {
                     div { "Loading..." }
                 }
                 else {
                     button {
-                        class: "p-1 border {Color::outline_color()} rounded-md {Color::foreground_hover()}",
+                        class: "p-1 border rounded-md ",
                         onclick: move |_| {
                             node.write().queued = true;
                         },

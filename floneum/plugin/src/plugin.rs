@@ -241,6 +241,10 @@ impl PluginInstance {
         }
     }
 
+    pub fn source(&self) -> &PackageIndexEntry {
+        &self.source
+    }
+
     pub fn read_logs(&self) -> LockResult<RwLockReadGuard<Vec<String>>> {
         self.logs.read()
     }

@@ -111,14 +111,8 @@ dioxus-cli-config = { git = "https://github.com/dioxuslabs/dioxus" }
 dioxus-router = { git = "https://github.com/dioxuslabs/dioxus" }
 dioxus-router-macro = { git = "https://github.com/dioxuslabs/dioxus" }
 
-dioxus-web = { git = "https://github.com/dioxuslabs/dioxus" }
-dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus" }
-dioxus-tui = { git = "https://github.com/dioxuslabs/dioxus" }
 dioxus-desktop = { git = "https://github.com/dioxuslabs/dioxus" }
-dioxus-liveview = { git = "https://github.com/dioxuslabs/dioxus" }
 dioxus-fullstack = { git = "https://github.com/dioxuslabs/dioxus" }
-dioxus-native-core = { git = "https://github.com/dioxuslabs/dioxus" }
-dioxus-native-core-macro = { git = "https://github.com/dioxuslabs/dioxus" }
 
 [profile.dist]
 inherits = "release"

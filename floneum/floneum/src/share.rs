@@ -1,4 +1,4 @@
-use crate::{Color, DeserializeApplicationState};
+use crate::DeserializeApplicationState;
 use dioxus::prelude::*;
 use std::{fmt::Display, str::FromStr};
 
@@ -22,11 +22,11 @@ pub(crate) fn SaveMenu() -> Element {
 
     rsx! {
         div {
-            class: "flex flex-col {Color::text_color()}",
+            class: "flex flex-col ",
             div {
                 class: "flex flex-row",
                 input {
-                    class: "border-2 rounded-md p-2 {Color::foreground_color()} {Color::text_color()} {Color::outline_color()}",
+                    class: "border-2 rounded-md p-2 ",
                     value: "{current_save_string}",
                     oninput: move |event| {
                         application.write().last_save_id = event.value().parse().ok();
@@ -34,7 +34,7 @@ pub(crate) fn SaveMenu() -> Element {
                 }
 
                 button {
-                    class: "p-2 {Color::foreground_color()} {Color::text_color()}",
+                    class: "p-2 ",
                     onclick: move |_| {
                         to_owned![clipboard];
                         async move {
@@ -52,7 +52,7 @@ pub(crate) fn SaveMenu() -> Element {
             }
 
             button {
-                class: "border-2 rounded-md p-2 {Color::outline_color()}",
+                class: "border-2 rounded-md p-2 ",
                 onclick: move |_| {
                     async move {
                         let mut application = application.write();
@@ -79,7 +79,7 @@ pub(crate) fn SaveMenu() -> Element {
             }
 
             button {
-                class: "border-2 rounded-md p-2 {Color::outline_color()}",
+                class: "border-2 rounded-md p-2 ",
                 onclick: move |_| {
                     to_owned![set_application_state];
                     async move {

@@ -1,4 +1,4 @@
-use crate::{use_application_state, Color, ModifyInput, Node, ShowInput, ShowOutput};
+use crate::{use_application_state, ModifyInput, Node, ShowInput, ShowOutput};
 use dioxus::prelude::*;
 use dioxus_signals::Signal;
 
@@ -29,7 +29,7 @@ pub fn CurrentNodeInfo() -> Element {
 
                     if let Some(example_index) = node_info.active_example_index {
                         button {
-                            class: "text-xl font-bold m-2 rounded-md p-2 border-2 {Color::outline_color()}",
+                            class: "text-xl font-bold m-2 rounded-md p-2 border-2 ",
                             onclick: move |_| {
                                 if let Some(focused) = &mut application.write().currently_focused {
                                     focused.active_example_index = None;
@@ -38,7 +38,7 @@ pub fn CurrentNodeInfo() -> Element {
                             "Back to node"
                         }
                         div {
-                            class: "text-left {Color::foreground_color()} rounded-md m-2 p-2",
+                            class: "text-left rounded-md m-2 p-2",
                             h2 {
                                 class: "text-xl font-bold",
                                 "inputs:"
@@ -54,7 +54,7 @@ pub fn CurrentNodeInfo() -> Element {
                             }
                         }
                         div {
-                            class: "text-left {Color::foreground_color()} rounded-md m-2 p-2",
+                            class: "text-left rounded-md m-2 p-2",
                             h2 {
                                 class: "text-xl font-bold",
                                 "outputs:"
@@ -73,7 +73,7 @@ pub fn CurrentNodeInfo() -> Element {
                     else {
                         // Inputs
                         div {
-                            class: "text-left {Color::foreground_color()} rounded-md m-2 p-2",
+                            class: "text-left rounded-md m-2 p-2",
                             h2 {
                                 class: "text-xl font-bold",
                                 "inputs:"
@@ -90,7 +90,7 @@ pub fn CurrentNodeInfo() -> Element {
 
                         // Outputs
                         div {
-                            class: "text-left {Color::foreground_color()} rounded-md m-2 p-2",
+                            class: "text-left rounded-md m-2 p-2",
                             h2 {
                                 class: "text-xl font-bold",
                                 "outputs:"
@@ -110,7 +110,7 @@ pub fn CurrentNodeInfo() -> Element {
                     // Examples
                     for (i, example) in md.examples.iter().enumerate() {
                         button {
-                            class: "text-xl font-bold m-2 rounded-md p-2 border-2 {Color::outline_color()}",
+                            class: "text-xl font-bold m-2 rounded-md p-2 border-2 ",
                             onclick: move |_| {
                                 if let Some(focused) = &mut application.write().currently_focused {
                                     focused.active_example_index = Some(i);

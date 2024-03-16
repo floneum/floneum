@@ -15084,33 +15084,3 @@ dependencies = [
  "quote",
  "syn 1.0.109",
 ]
-
-[[patch.unused]]
-name = "dioxus-liveview"
-version = "0.5.0-alpha.0"
-source = "git+https://github.com/dioxuslabs/dioxus#92416253e0fa19a88abef27e15c0621ce41b6903"
-
-[[patch.unused]]
-name = "dioxus-native-core"
-version = "0.5.0-alpha.0"
-source = "git+https://github.com/dioxuslabs/dioxus#92416253e0fa19a88abef27e15c0621ce41b6903"
-
-[[patch.unused]]
-name = "dioxus-native-core-macro"
-version = "0.5.0-alpha.0"
-source = "git+https://github.com/dioxuslabs/dioxus#92416253e0fa19a88abef27e15c0621ce41b6903"
-
-[[patch.unused]]
-name = "dioxus-ssr"
-version = "0.5.0-alpha.0"
-source = "git+https://github.com/dioxuslabs/dioxus#92416253e0fa19a88abef27e15c0621ce41b6903"
-
-[[patch.unused]]
-name = "dioxus-tui"
-version = "0.5.0-alpha.0"
-source = "git+https://github.com/dioxuslabs/dioxus#92416253e0fa19a88abef27e15c0621ce41b6903"
-
-[[patch.unused]]
-name = "dioxus-web"
-version = "0.5.0-alpha.0"
-source = "git+https://github.com/dioxuslabs/dioxus#92416253e0fa19a88abef27e15c0621ce41b6903"
