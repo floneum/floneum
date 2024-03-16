@@ -141,13 +141,14 @@ pub fn Node(props: NodeProps) -> Element {
     let mut application = use_application_state();
     let node = props.node;
     let current_node = node.read();
-    let pos = current_node.position - Point::new(1., 0.);
+    let pos = current_node.position;
 
     rsx! {
         // center UI/Configuration
         div {
-            left: "{pos.x}",
-            top: "{pos.y}",
+            position: "absolute",
+            left: "{pos.x}px",
+            top: "{pos.y}px",
             onmousedown: move |evt| {
                 let mut graph: VisualGraph = consume_context();
                 graph.start_dragging_node(&evt, props.node);

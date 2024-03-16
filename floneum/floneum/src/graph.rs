@@ -380,7 +380,7 @@ pub struct FlowViewProps {
 }
 
 pub fn FlowView(mut props: FlowViewProps) -> Element {
-    use_context_provider(|| props.graph.clone());
+    use_context_provider(|| props.graph);
     let mut graph = props.graph.inner;
     let current_graph = graph.read();
     let current_graph_dragging = current_graph.currently_dragging;
@@ -410,7 +410,7 @@ pub fn FlowView(mut props: FlowViewProps) -> Element {
             style: "-webkit-user-select: none; -ms-user-select: none; user-select: none;",
             width: "100%",
             height: "100%",
-            class: "",
+            onmousemove: move |evt| props.graph.update_mouse(&evt),
             div {
                 position: "absolute",
                 top: "0",
