@@ -35,3 +35,4 @@ rwhisper.workspace = true
 [features]
 metal = ["candle-core/metal", "rwhisper/accelerate", "rwhisper/metal"]
 cuda = ["candle-core/cuda", "rwhisper/cuda", "rwhisper/cudnn"]
+mkl = ["candle-core/mkl", "rwhisper/mkl"]

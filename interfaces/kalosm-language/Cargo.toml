@@ -69,3 +69,4 @@ half = "2.3.1"
 llamacpp = ["kalosm-language-model/llamacpp", "kalosm-sample/llamacpp"]
 metal = ["rphi/metal", "rbert/metal", "kalosm-llama/metal"]
 cublas = ["rbert/cuda", "rbert/cudnn", "rphi/cuda", "rphi/cudnn", "kalosm-llama/cuda", "kalosm-llama/cudnn"]
+mkl = ["rphi/mkl", "rbert/mkl", "kalosm-llama/mkl"]
