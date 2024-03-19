@@ -204,9 +204,7 @@ fn CenterNodeUI(props: NodeProps) -> Element {
     let focused = application.read().currently_focused.map(|n| n.node) == Some(props.node);
     let mut node = props.node;
     {
-        let current_node = node.read();
-        if current_node.queued {
-            drop(current_node);
+        if node.with(|n| n.queued) {
             node.with_mut(|node| node.queued = false);
             let application = application.write();
             application.graph.run_node(node);
@@ -219,44 +217,27 @@ fn CenterNodeUI(props: NodeProps) -> Element {
     } else {
         "border"
     };
-    let category = match current_node.instance.source().meta(){
+    let category = match current_node.instance.source().meta() {
         Some(meta) => meta.category,
         None => Category::Other,
     };
     let color = theme::category_bg_color(category);
 
     rsx! {
-        // <li class="col-span-1 flex rounded-md shadow-sm">
-        //     <div class="flex w-16 flex-shrink-0 items-center justify-center bg-purple-600 rounded-l-md text-sm font-medium text-white">CD</div>
-        //     <div class="flex flex-1 items-center justify-between truncate rounded-r-md border-b border-r border-t border-gray-200 bg-white">
-        //         <div class="flex-1 truncate px-4 py-2 text-sm">
-        //         <a href="#" class="font-medium text-gray-900 hover:text-gray-600">Component Design</a>
-        //         <p class="text-gray-500">12 Members</p>
-        //         </div>
-        //         <div class="flex-shrink-0 pr-2">
-        //         <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-transparent bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2">
-        //             <span class="sr-only">Open options</span>
-        //             <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-        //             <path d="M10 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM11.5 15.5a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z" />
-        //             </svg>
-        //         </button>
-        //         </div>
-        //     </div>
-        // </li>
         div {
             style: "-webkit-user-select: none; -ms-user-select: none; user-select: none;",
             class: "shadow-sm resize w-32 h-32 flex flex-col rounded-md {focused_class}",
             div {
-                class: "flex w-full h-8 flex-shrink-0 items-center justify-center {color} rounded-l-md text-sm font-medium text-white",
+                class: "flex w-full h-8 flex-shrink-0 items-center justify-center {color} rounded-t-md text-sm font-medium text-black",
                 h1 {
                     class: "text-md",
                     "{name}"
                 }
             }
             div {
-                class: "justify-center items-center",
+                class: "flex flex-col justify-center items-center",
                 button {
-                    class: "fixed p-2 top-0 right-0",
+                    class: "p-2 border top-0 right-0",
                     onclick: move |_| {
                         application.write().remove(node.read().id)
                     },
@@ -267,9 +248,8 @@ fn CenterNodeUI(props: NodeProps) -> Element {
                     }
                 }
                 if current_node.running {
-                    div { "Loading..." }
-                }
-                else {
+                    "Loading..."
+                } else {
                     button {
                         class: "p-1 border rounded-md ",
                         onclick: move |_| {

@@ -762,6 +762,11 @@ video {
   border-bottom-right-radius: 0.375rem;
 }
 
+.rounded-t-md {
+  border-top-left-radius: 0.375rem;
+  border-top-right-radius: 0.375rem;
+}
+
 .rounded-br-md {
   border-bottom-right-radius: 0.375rem;
 }
@@ -968,6 +973,11 @@ video {
 
 .leading-6 {
   line-height: 1.5rem;
+}
+
+.text-black {
+  --tw-text-opacity: 1;
+  color: rgb(0 0 0 / var(--tw-text-opacity));
 }
 
 .text-gray-400 {

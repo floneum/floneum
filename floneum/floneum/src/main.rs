@@ -9,9 +9,7 @@ use futures_util::stream::StreamExt;
 use petgraph::stable_graph::{DefaultIx, NodeIndex};
 use serde::{Deserialize, Serialize};
 use share::StorageId;
-use std::cell::RefCell;
 use std::{collections::HashMap, fs::File, io::Read, rc::Rc};
-use tokio::sync::oneshot::Receiver;
 
 mod node;
 pub use node::Node;
@@ -58,7 +56,7 @@ fn main() {
     let logger = tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::builder()
-                .with_default_directive(LevelFilter::DEBUG.into())
+                .with_default_directive(LevelFilter::ERROR.into())
                 .from_env_lossy(),
         )
         .pretty()
@@ -162,18 +160,13 @@ struct DeserializeApplicationState {
     new_state: StorageId<ApplicationState>,
 }
 
-#[derive(Clone)]
-pub struct AppProps {
-    channel: Rc<RefCell<Option<Receiver<FloneumPackageIndex>>>>,
-}
-
 fn App() -> Element {
     use_package_manager_provider();
     let mut package_manager = use_context::<Signal<Option<Rc<FloneumPackageIndex>>>>();
     let mut state = use_provide_application_state();
     use_hook(|| {
         spawn(async move {
-            let mut new_package_manager =
+            let new_package_manager =
                 tokio::spawn(async move { FloneumPackageIndex::load().await })
                     .await
                     .unwrap();
@@ -187,7 +180,7 @@ fn App() -> Element {
             application.last_save_id = Some(new_state);
         }
     });
-    let graph = state.read().graph.clone();
+    let graph = state.read().graph;
     use_apply_menu_event(state);
 
     rsx! {

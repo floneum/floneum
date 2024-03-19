@@ -14,7 +14,7 @@ use slab::Slab;
 
 use crate::{
     node_value::{NodeInput, NodeOutput},
-    Colored, Connection, Edge, Node, Signal,
+    Connection, Edge, Node, Signal,
 };
 
 #[derive(Serialize, Deserialize)]
@@ -116,7 +116,7 @@ impl VisualGraph {
                 inputs,
                 outputs,
             },
-            self.inner.origin_scope(),
+            ScopeId::ROOT,
         );
         let idx = inner.graph.add_node(node);
         inner.graph[idx].write().id = idx;
@@ -501,7 +501,7 @@ pub fn FlowView(mut props: FlowViewProps) -> Element {
 }
 
 #[derive(Clone, Props, PartialEq, Serialize, Deserialize)]
-struct ConnectionProps {
+pub struct ConnectionProps {
     start: Signal<Node>,
     connection: Signal<Edge>,
     end: Signal<Node>,
