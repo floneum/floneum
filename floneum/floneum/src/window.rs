@@ -12,13 +12,13 @@ use serde::Serialize;
 
 use crate::{ApplicationState, SAVE_NAME};
 
-pub(crate) fn make_config() -> dioxus::desktop::Config {
+pub(crate) fn make_config() -> anyhow::Result<dioxus::desktop::Config> {
     // Add a bunch of built-in menu items
-    let mut main_menu = Menu::new();
-    let mut edit_menu = Submenu::new("Edit", true);
-    let mut window_menu = Submenu::new("Window", true);
-    let mut application_menu = Submenu::new("Floneum", true);
-    let mut examples_menu = Submenu::new("Examples", true);
+    let main_menu = Menu::new();
+    let edit_menu = Submenu::new("Edit", true);
+    let window_menu = Submenu::new("Window", true);
+    let application_menu = Submenu::new("Floneum", true);
+    let examples_menu = Submenu::new("Examples", true);
 
     edit_menu.append_items(&[
         &PredefinedMenuItem::undo(None),
@@ -28,7 +28,7 @@ pub(crate) fn make_config() -> dioxus::desktop::Config {
         &PredefinedMenuItem::copy(None),
         &PredefinedMenuItem::paste(None),
         &PredefinedMenuItem::select_all(None),
-    ]);
+    ])?;
 
     window_menu.append_items(&[
         &PredefinedMenuItem::quit(None),
@@ -38,25 +38,26 @@ pub(crate) fn make_config() -> dioxus::desktop::Config {
         &PredefinedMenuItem::fullscreen(None),
         &PredefinedMenuItem::separator(),
         &PredefinedMenuItem::close_window(None),
-    ]);
+    ])?;
 
     application_menu.append_items(&[
         &SavePredefinedMenuItem::item(),
         &SaveAsPredefinedMenuItem::item(),
         &OpenPredefinedMenuItem::item(),
-    ]);
+    ])?;
 
     examples_menu.append_items(&[
         &QAndAPredefinedMenuItem::item(),
         &StarRepoPredefinedMenuItem::item(),
         &SummarizeNewsPredefinedMenuItem::item(),
-    ]);
+    ])?;
 
-    main_menu.append_items(&[&edit_menu, &window_menu, &application_menu, &examples_menu]);
+    main_menu.append_items(&[&edit_menu, &window_menu, &application_menu, &examples_menu])?;
 
     let tailwind = include_str!("../public/tailwind.css");
-    dioxus::desktop::Config::default()
+    let cfg = dioxus::desktop::Config::default()
         .with_window(WindowBuilder::new().with_title("Floneum"))
+        .with_menu(main_menu)
         .with_icon(Icon::from_rgba(include_bytes!("../public/Icon.rgba").to_vec(), 64, 64).unwrap())
         .with_custom_head(
             r#"
@@ -81,36 +82,37 @@ pub(crate) fn make_config() -> dioxus::desktop::Config {
             .to_owned()
                 + tailwind
                 + "</style>",
-        )
+        );
+    Ok(cfg)
 }
 
 pub fn use_apply_menu_event(state: Signal<ApplicationState>) {
-    // let open_application = use_signal(|| None);
+    let open_application = use_signal(|| None);
     use_wry_event_handler(move |event, _| {
-        // if let dioxus::desktop::tao::event::Event::MenuEvent { menu_id, .. } = event {
-        //     let menu_id = *menu_id;
-        //     if menu_id == SavePredefinedMenuItem::id() {
-        //         SavePredefinedMenuItem::save(&state.read());
-        //     } else if menu_id == SaveAsPredefinedMenuItem::id() {
-        //         SaveAsPredefinedMenuItem::save(&state.read());
-        //     } else if menu_id == OpenPredefinedMenuItem::id() {
-        //         OpenPredefinedMenuItem::open(open_application);
-        //     } else if menu_id == QAndAPredefinedMenuItem::id() {
-        //         QAndAPredefinedMenuItem::open(open_application);
-        //     } else if menu_id == StarRepoPredefinedMenuItem::id() {
-        //         StarRepoPredefinedMenuItem::open(open_application);
-        //     } else if menu_id == SummarizeNewsPredefinedMenuItem::id() {
-        //         SummarizeNewsPredefinedMenuItem::open(open_application);
-        //     }
-        // }
+        if let dioxus::desktop::tao::event::Event::MenuEvent { menu_id, .. } = event {
+            let menu_id = *menu_id;
+            if menu_id == SavePredefinedMenuItem::id() {
+                SavePredefinedMenuItem::save(&state.read());
+            } else if menu_id == SaveAsPredefinedMenuItem::id() {
+                SaveAsPredefinedMenuItem::save(&state.read());
+            } else if menu_id == OpenPredefinedMenuItem::id() {
+                OpenPredefinedMenuItem::open(open_application);
+            } else if menu_id == QAndAPredefinedMenuItem::id() {
+                QAndAPredefinedMenuItem::open(open_application);
+            } else if menu_id == StarRepoPredefinedMenuItem::id() {
+                StarRepoPredefinedMenuItem::open(open_application);
+            } else if menu_id == SummarizeNewsPredefinedMenuItem::id() {
+                SummarizeNewsPredefinedMenuItem::open(open_application);
+            }
+        }
     });
 
-    // if let Some(buffer) = open_application.take() {
-    //     let as_str = std::str::from_utf8(&buffer).unwrap();
-    //     if let Ok(from_storage) = serde_json::from_str(as_str) {
-    //         state.set(from_storage);
-    //     }
-    // }
+    if let Some(buffer) = open_application.take() {
+        let as_str = std::str::from_utf8(&buffer).unwrap();
+        if let Ok(from_storage) = serde_json::from_str(as_str) {
+            state.set(from_storage);
+        }
+    }
 }
 
 const SHORTCUT_LEADER: muda::accelerator::Modifiers = {

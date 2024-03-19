@@ -1,5 +1,5 @@
 use crate::current_node::FocusedNodeInfo;
-use dioxus::{html::geometry::euclid::Point2D, prelude::*};
+use dioxus::{ prelude::*};
 use dioxus_free_icons::Icon;
 use floneum_plugin::plugins::main::types::ValueType;
 use floneum_plugin::PluginInstance;
