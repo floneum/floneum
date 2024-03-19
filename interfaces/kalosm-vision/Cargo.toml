@@ -17,3 +17,4 @@ segment-anything-rs.workspace = true
 [features]
 metal = ["kalosm-ocr/metal", "rwuerstchen/metal", "segment-anything-rs/metal"]
 cublas = ["kalosm-ocr/cuda", "rwuerstchen/cuda", "segment-anything-rs/cuda"]
+mkl = ["kalosm-ocr/mkl", "rwuerstchen/mkl", "segment-anything-rs/mkl"]
