@@ -80,6 +80,22 @@ interface types {
     node(node)
   }
 
+  variant borrowed-primitive-value {
+    model(borrow<model>),
+    embedding-model(borrow<embedding-model>),
+    model-type(model-type),
+    embedding-model-type(embedding-model-type),
+    database(borrow<embedding-db>),
+    number(s64),
+    text(string),
+    file(string),
+    folder(string),
+    embedding(embedding),
+    boolean(bool),
+    page(page),
+    node(node)
+  }
+
   variant value-type {
     single(primitive-value-type),
     many(primitive-value-type),
@@ -112,24 +128,13 @@ interface types {
 
   record example {
     name: string,
-    inputs: list<input>,
-    outputs: list<output>,
+    inputs: list<list<borrowed-primitive-value>>,
+    outputs: list<list<primitive-value>>,
   }
 
   record io-definition {
     name: string,
     ty: value-type,
-  }
-
-  variant input {
-    single(primitive-value),
-    many(list<primitive-value>),
-  }
-
-  variant output {
-    single(primitive-value),
-    many(list<primitive-value>),
-    halt,
   }
 
   variant model-type {
@@ -163,11 +168,11 @@ interface types {
 }
 
 interface definitions {
-  use types.{definition, input, output};
+  use types.{definition, borrowed-primitive-value, primitive-value};
 
   structure: func() -> definition;
 
-  run: func(inputs: list<input>) -> list<output>;
+  run: func(inputs: list<list<borrowed-primitive-value>>) -> list<list<primitive-value>>;
 }
 
 world exports {

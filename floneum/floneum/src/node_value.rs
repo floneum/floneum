@@ -6,18 +6,15 @@ use crate::edge::ConnectionType;
 #[derive(Serialize, Deserialize)]
 pub struct NodeInput {
     pub definition: IoDefinition,
-    pub value: Vec<Input>,
+    pub value: Vec<BorrowedPrimitiveValue>,
 }
 
 impl NodeInput {
-    pub fn new(definition: IoDefinition, value: Input) -> Self {
-        Self {
-            definition,
-            value: vec![value],
-        }
+    pub fn new(definition: IoDefinition, value: Vec<BorrowedPrimitiveValue>) -> Self {
+        Self { definition, value }
     }
 
-    pub fn set_connection(&mut self, connection: ConnectionType, value: Input) {
+    pub fn set_connection(&mut self, connection: ConnectionType, value: BorrowedPrimitiveValue) {
         match connection {
             ConnectionType::Single => {
                 self.value = vec![value];
@@ -30,7 +27,7 @@ impl NodeInput {
         self.value[index] = value;
     }
 
-    pub fn push_value(&mut self, value: Input) {
+    pub fn push_value(&mut self, value: Vec<BorrowedPrimitiveValue>) {
         if let ValueType::Many(_) = self.definition.ty {
             self.value.push(value);
         }
@@ -49,43 +46,19 @@ impl NodeInput {
         }
     }
 
-    pub fn value(&self) -> Input {
-        match self.definition.ty {
-            ValueType::Single(_) => self.value[0].clone(),
-            ValueType::Many(_) => {
-                let mut return_values: Vec<PrimitiveValue> = Vec::new();
-
-                for value in &self.value {
-                    match value {
-                        Input::Single(value) => {
-                            return_values.push(value.clone());
-                        }
-                        Input::Many(values) => {
-                            for value in values {
-                                return_values.push(value.clone());
-                            }
-                        }
-                    }
-                }
-
-                Input::Many(return_values)
-            }
-        }
+    pub fn value(&self) -> Vec<BorrowedPrimitiveValue> {
+        self.value
     }
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct NodeOutput {
     pub definition: IoDefinition,
-    pub value: Output,
+    pub value: Vec<PrimitiveValue>,
 }
 
 impl NodeOutput {
-    pub fn as_input(&self) -> Option<Input> {
-        match &self.value {
-            Output::Single(value) => Some(Input::Single(value.clone())),
-            Output::Many(values) => Some(Input::Many(values.clone())),
-            Output::Halt => None,
-        }
+    pub fn as_input(&self) -> Option<Vec<BorrowedPrimitiveValue>> {
+        self.value.iter().map(|v| v.borrow()).collect()
     }
 }

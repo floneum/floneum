@@ -1,22 +1,21 @@
 use dioxus::prelude::*;
-use floneum_plugin::{
-    exports::plugins::main::definitions::{Input, Output},
-    plugins::main::types::*,
-};
+use floneum_plugin::plugins::main::types::*;
 use std::path::PathBuf;
+use tracing::Value;
 
 use crate::{node_value::NodeInput, Signal};
 
 #[derive(Clone, Props, PartialEq)]
 pub struct ShowOutputProps {
     name: String,
-    value: Output,
+    ty: ValueType,
+    value: Vec<PrimitiveValue>,
 }
 
 pub fn ShowOutput(props: ShowOutputProps) -> Element {
-    let ShowOutputProps { name, value } = &props;
-    match value {
-        Output::Single(value) => {
+    let ShowOutputProps { name, ty, value } = &props;
+    match ty {
+        ValueType::Single(value) => {
             rsx! {
                 div {
                     class: "flex flex-col whitespace-pre-line",
@@ -25,7 +24,7 @@ pub fn ShowOutput(props: ShowOutputProps) -> Element {
                 }
             }
         }
-        Output::Many(value) => {
+        ValueType::Many(value) => {
             rsx! {
                 div {
                     class: "flex flex-col",
@@ -39,25 +38,17 @@ pub fn ShowOutput(props: ShowOutputProps) -> Element {
                 }
             }
         }
-        _ => {
-            rsx! {
-                div {
-                    class: "flex flex-col",
-                    "{name}: Unset"
-                }
-            }
-        }
     }
 }
 
-fn show_primitive_value(value: &PrimitiveValue) -> Element {
+fn show_primitive_value(value: &BorrowedPrimitiveValue) -> Element {
     match value {
-        PrimitiveValue::Text(value)
-        | PrimitiveValue::File(value)
-        | PrimitiveValue::Folder(value) => {
+        BorrowedPrimitiveValue::Text(value)
+        | BorrowedPrimitiveValue::File(value)
+        | BorrowedPrimitiveValue::Folder(value) => {
             rsx! {"{value}"}
         }
-        PrimitiveValue::Embedding(value) => {
+        BorrowedPrimitiveValue::Embedding(value) => {
             let first_five = value
                 .vector
                 .iter()
@@ -67,31 +58,31 @@ fn show_primitive_value(value: &PrimitiveValue) -> Element {
                 .join(", ");
             rsx! {"[{first_five}, ...]"}
         }
-        PrimitiveValue::Model(id) => {
+        BorrowedPrimitiveValue::Model(id) => {
             rsx! {"Model: {id:?}"}
         }
-        PrimitiveValue::EmbeddingModel(id) => {
+        BorrowedPrimitiveValue::EmbeddingModel(id) => {
             rsx! {"Embedding Model: {id:?}"}
         }
-        PrimitiveValue::Database(id) => {
+        BorrowedPrimitiveValue::Database(id) => {
             rsx! {"Database: {id:?}"}
         }
-        PrimitiveValue::Number(value) => {
+        BorrowedPrimitiveValue::Number(value) => {
             rsx! {"{value}"}
         }
-        PrimitiveValue::ModelType(ty) => {
+        BorrowedPrimitiveValue::ModelType(ty) => {
             rsx! {"{ty.name()}"}
         }
-        PrimitiveValue::EmbeddingModelType(ty) => {
+        BorrowedPrimitiveValue::EmbeddingModelType(ty) => {
             rsx! {"{ty.name()}"}
         }
-        PrimitiveValue::Boolean(val) => {
+        BorrowedPrimitiveValue::Boolean(val) => {
             rsx! {"{val:?}"}
         }
-        PrimitiveValue::Page(id) => {
+        BorrowedPrimitiveValue::Page(id) => {
             rsx! {"Page: {id:?}"}
         }
-        PrimitiveValue::Node(id) => {
+        BorrowedPrimitiveValue::Node(id) => {
             rsx! {"Node: {id:?}"}
         }
     }
@@ -100,13 +91,15 @@ fn show_primitive_value(value: &PrimitiveValue) -> Element {
 #[derive(Clone, Props, PartialEq)]
 pub struct ShowInputProps {
     label: String,
-    value: Input,
+    ty: ValueType,
+    value: Vec<BorrowedPrimitiveValue>,
 }
 
 pub fn ShowInput(props: ShowInputProps) -> Element {
-    let ShowInputProps { label, value } = &props;
-    match value {
-        Input::Single(value) => {
+    let ShowInputProps { label, ty,value } = &props;
+    match ty {
+        ValueType::Single(_) => {
+            let value = value.first()?;
             rsx! {
                 div {
                     class: "flex flex-col whitespace-pre-line",
@@ -115,7 +108,7 @@ pub fn ShowInput(props: ShowInputProps) -> Element {
                 }
             }
         }
-        Input::Many(value) => {
+        ValueType::Many(_) => {
             rsx! {
                 div {
                     class: "flex flex-col",
