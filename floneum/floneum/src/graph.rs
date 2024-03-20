@@ -88,7 +88,15 @@ impl VisualGraph {
 
         for input in &instance.metadata().inputs {
             inputs.push(Signal::new_in_scope(
-                NodeInput::new(input.clone(), input.ty.create()),
+                NodeInput::new(
+                    input.clone(),
+                    vec![input
+                        .ty
+                        .create()
+                        .into_iter()
+                        .map(|v| v.borrow().clone())
+                        .collect()],
+                ),
                 self.inner.origin_scope(),
             ));
         }
@@ -99,7 +107,7 @@ impl VisualGraph {
             outputs.push(Signal::new_in_scope(
                 NodeOutput {
                     definition: output.clone(),
-                    value: output.ty.create_output(),
+                    value: output.ty.create(),
                 },
                 self.inner.origin_scope(),
             ));
@@ -231,11 +239,9 @@ impl VisualGraph {
             let end_index = edge.end;
             let input = graph.graph[source].read();
             let value = input.outputs[start_index].read().as_input();
-            if let Some(value) = value {
-                let mut input = inputs[end_index.index];
-                let mut input = input.write();
-                input.set_connection(end_index.ty, value);
-            }
+            let mut input = inputs[end_index.index];
+            let mut input = input.write();
+            input.set_connection(end_index.ty, value);
         }
 
         true

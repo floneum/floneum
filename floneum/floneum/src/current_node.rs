@@ -47,6 +47,7 @@ pub fn CurrentNodeInfo() -> Element {
                                 div {
                                     ShowInput {
                                         key: "{input.read().definition.name}",
+                                        ty: md.inputs[i].ty.clone(),
                                         label: md.inputs[i].name.clone(),
                                         value: input.clone()
                                     }
@@ -63,6 +64,7 @@ pub fn CurrentNodeInfo() -> Element {
                                 div {
                                     ShowOutput {
                                         key: "{output.read().definition.name}",
+                                        ty: md.outputs[i].ty.clone(),
                                         name: md.outputs[i].name.clone(),
                                         value: output.clone()
                                     }
@@ -99,6 +101,7 @@ pub fn CurrentNodeInfo() -> Element {
                                 div {
                                     ShowOutput {
                                         key: "{output.read().definition.name}",
+                                        ty: output.read().definition.ty.clone(),
                                         name: output.read().definition.name.clone(),
                                         value: output.read().value.clone()
                                     }

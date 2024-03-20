@@ -19,19 +19,17 @@ mod graph;
 pub use graph::{CurrentlyDraggingProps, DraggingIndex, FlowView, VisualGraph, VisualGraphInner};
 mod connection;
 pub use connection::Connection;
-mod value;
-pub use value::*;
 mod plugin_search;
 mod sidebar;
 use sidebar::Sidebar;
 mod current_node;
 use current_node::{CurrentNodeInfo, FocusedNodeInfo};
+mod node_value;
 mod share;
 mod theme;
-
 use crate::window::{make_config, use_apply_menu_event};
+pub use node_value::*;
 mod input;
-mod node_value;
 mod output;
 mod window;
 

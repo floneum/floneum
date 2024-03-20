@@ -59,16 +59,6 @@ impl PartialEq for BorrowedPrimitiveValue {
     }
 }
 
-impl Serialize for BorrowedPrimitiveValue {
-    fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error>
-    where
-        S: Serializer,
-    {
-        let my_primitive_value = MyPrimitiveValue::from(self);
-        my_primitive_value.serialize(serializer)
-    }
-}
-
 #[derive(serde::Serialize, serde::Deserialize)]
 enum MyPrimitiveValue {
     Number(i64),
@@ -84,6 +74,61 @@ enum MyPrimitiveValue {
     Boolean(bool),
     Page(u32),
     Node(u32),
+}
+
+
+impl From<&PrimitiveValue> for MyPrimitiveValue {
+    fn from(value: &PrimitiveValue) -> Self {
+        match value {
+            PrimitiveValue::Number(value) => MyPrimitiveValue::Number(*value),
+            PrimitiveValue::Text(value) => MyPrimitiveValue::Text(value.clone()),
+            PrimitiveValue::File(value) => MyPrimitiveValue::File(value.clone()),
+            PrimitiveValue::Folder(value) => MyPrimitiveValue::Folder(value.clone()),
+            PrimitiveValue::Embedding(value) => {
+                MyPrimitiveValue::Embedding(value.vector.clone())
+            }
+            PrimitiveValue::Model(value) => MyPrimitiveValue::Model(value.rep()),
+            PrimitiveValue::EmbeddingModel(value) => MyPrimitiveValue::Model(value.rep()),
+            PrimitiveValue::Database(value) => MyPrimitiveValue::Database(value.rep()),
+            PrimitiveValue::ModelType(value) => MyPrimitiveValue::ModelType(value.into()),
+            PrimitiveValue::EmbeddingModelType(value) => {
+                MyPrimitiveValue::EmbeddingModelType(value.into())
+            }
+            PrimitiveValue::Boolean(value) => MyPrimitiveValue::Boolean(*value),
+            PrimitiveValue::Page(value) => MyPrimitiveValue::Page(value.rep()),
+            PrimitiveValue::Node(value) => MyPrimitiveValue::Node(value.rep()),
+        }
+    }
+}
+
+impl From<MyPrimitiveValue> for PrimitiveValue {
+    fn from(value: MyPrimitiveValue) -> Self {
+        match value {
+            MyPrimitiveValue::Number(value) => PrimitiveValue::Number(value),
+            MyPrimitiveValue::Text(value) => PrimitiveValue::Text(value),
+            MyPrimitiveValue::File(value) => PrimitiveValue::File(value),
+            MyPrimitiveValue::Folder(value) => PrimitiveValue::Folder(value),
+            MyPrimitiveValue::Embedding(value) => {
+                PrimitiveValue::Embedding(Embedding { vector: value })
+            }
+            MyPrimitiveValue::Model(value) => {
+                PrimitiveValue::Model(Resource::new_own(value))
+            }
+            MyPrimitiveValue::EmbeddingModel(value) => {
+                PrimitiveValue::EmbeddingModel(Resource::new_own(value))
+            }
+            MyPrimitiveValue::ModelType(value) => PrimitiveValue::ModelType(value.into()),
+            MyPrimitiveValue::EmbeddingModelType(value) => {
+                PrimitiveValue::EmbeddingModelType(value.into())
+            }
+            MyPrimitiveValue::Database(value) => {
+                PrimitiveValue::Database(Resource::new_own(value))
+            }
+            MyPrimitiveValue::Boolean(value) => PrimitiveValue::Boolean(value),
+            MyPrimitiveValue::Page(value) => PrimitiveValue::Page(Resource::new_own(value)),
+            MyPrimitiveValue::Node(value) => PrimitiveValue::Node(Resource::new_own(value)),
+        }
+    }
 }
 
 impl From<&BorrowedPrimitiveValue> for MyPrimitiveValue {
@@ -121,22 +166,62 @@ impl From<MyPrimitiveValue> for BorrowedPrimitiveValue {
                 BorrowedPrimitiveValue::Embedding(Embedding { vector: value })
             }
             MyPrimitiveValue::Model(value) => {
-                BorrowedPrimitiveValue::Model(Resource::new_own(value))
+                BorrowedPrimitiveValue::Model(Resource::new_borrow(value))
             }
             MyPrimitiveValue::EmbeddingModel(value) => {
-                BorrowedPrimitiveValue::EmbeddingModel(Resource::new_own(value))
+                BorrowedPrimitiveValue::EmbeddingModel(Resource::new_borrow(value))
             }
             MyPrimitiveValue::ModelType(value) => BorrowedPrimitiveValue::ModelType(value.into()),
             MyPrimitiveValue::EmbeddingModelType(value) => {
                 BorrowedPrimitiveValue::EmbeddingModelType(value.into())
             }
             MyPrimitiveValue::Database(value) => {
-                BorrowedPrimitiveValue::Database(Resource::new_own(value))
+                BorrowedPrimitiveValue::Database(Resource::new_borrow(value))
             }
             MyPrimitiveValue::Boolean(value) => BorrowedPrimitiveValue::Boolean(value),
-            MyPrimitiveValue::Page(value) => BorrowedPrimitiveValue::Page(Resource::new_own(value)),
-            MyPrimitiveValue::Node(value) => BorrowedPrimitiveValue::Node(Resource::new_own(value)),
+            MyPrimitiveValue::Page(value) => BorrowedPrimitiveValue::Page(Resource::new_borrow(value)),
+            MyPrimitiveValue::Node(value) => BorrowedPrimitiveValue::Node(Resource::new_borrow(value)),
         }
+    }
+}
+
+impl Serialize for PrimitiveValue {
+    fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error>
+    where
+        S: Serializer,
+    {
+        let my_primitive_value = MyPrimitiveValue::from(self);
+        my_primitive_value.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for PrimitiveValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let my_primitive_value = MyPrimitiveValue::deserialize(deserializer)?;
+        Ok(PrimitiveValue::from(my_primitive_value))
+    }
+}
+
+impl Serialize for BorrowedPrimitiveValue {
+    fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error>
+    where
+        S: Serializer,
+    {
+        let my_primitive_value = MyPrimitiveValue::from(self);
+        my_primitive_value.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for BorrowedPrimitiveValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let my_primitive_value = MyPrimitiveValue::deserialize(deserializer)?;
+        Ok(BorrowedPrimitiveValue::from(my_primitive_value))
     }
 }
 
@@ -364,6 +449,13 @@ impl ValueType {
             (ValueType::Many(a), ValueType::Many(b)) => a.compatible(b),
             (ValueType::Single(a), ValueType::Many(b)) => a.compatible(b),
             _ => false,
+        }
+    }
+
+    pub fn create(&self) -> Vec<PrimitiveValue> {
+        match self {
+            ValueType::Single(ty) => vec![ty.create()],
+            ValueType::Many(ty) => Vec::new(),
         }
     }
 }

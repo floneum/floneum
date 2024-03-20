@@ -6,15 +6,19 @@ use crate::edge::ConnectionType;
 #[derive(Serialize, Deserialize)]
 pub struct NodeInput {
     pub definition: IoDefinition,
-    pub value: Vec<BorrowedPrimitiveValue>,
+    pub value: Vec<Vec<BorrowedPrimitiveValue>>,
 }
 
 impl NodeInput {
-    pub fn new(definition: IoDefinition, value: Vec<BorrowedPrimitiveValue>) -> Self {
+    pub fn new(definition: IoDefinition, value: Vec<Vec<BorrowedPrimitiveValue>>) -> Self {
         Self { definition, value }
     }
 
-    pub fn set_connection(&mut self, connection: ConnectionType, value: BorrowedPrimitiveValue) {
+    pub fn set_connection(
+        &mut self,
+        connection: ConnectionType,
+        value: Vec<BorrowedPrimitiveValue>,
+    ) {
         match connection {
             ConnectionType::Single => {
                 self.value = vec![value];
@@ -23,7 +27,7 @@ impl NodeInput {
         }
     }
 
-    pub fn set_value(&mut self, index: usize, value: Input) {
+    pub fn set_value(&mut self, index: usize, value: Vec<BorrowedPrimitiveValue>) {
         self.value[index] = value;
     }
 
@@ -35,8 +39,8 @@ impl NodeInput {
 
     pub fn push_default_value(&mut self) {
         if let ValueType::Many(values) = self.definition.ty {
-            let value = Input::Single(values.create());
-            self.value.push(value);
+            let value = values.create();
+            self.value.push(vec![value.borrow()]);
         }
     }
 
@@ -47,7 +51,7 @@ impl NodeInput {
     }
 
     pub fn value(&self) -> Vec<BorrowedPrimitiveValue> {
-        self.value
+        self.value.iter().flatten().cloned().collect()
     }
 }
 
@@ -58,7 +62,7 @@ pub struct NodeOutput {
 }
 
 impl NodeOutput {
-    pub fn as_input(&self) -> Option<Vec<BorrowedPrimitiveValue>> {
+    pub fn as_input(&self) -> Vec<BorrowedPrimitiveValue> {
         self.value.iter().map(|v| v.borrow()).collect()
     }
 }
