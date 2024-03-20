@@ -98,6 +98,7 @@ impl PartialEq for PrimitiveValue {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (PrimitiveValue::Number(a), PrimitiveValue::Number(b)) => a == b,
+            (PrimitiveValue::Float(a), PrimitiveValue::Float(b)) => a == b,
             (PrimitiveValue::Text(a), PrimitiveValue::Text(b)) => a == b,
             (PrimitiveValue::File(a), PrimitiveValue::File(b)) => a == b,
             (PrimitiveValue::Folder(a), PrimitiveValue::Folder(b)) => a == b,
@@ -119,6 +120,7 @@ impl PartialEq for PrimitiveValue {
 #[derive(serde::Serialize, serde::Deserialize)]
 enum MyPrimitiveValue {
     Number(i64),
+    Float(f64),
     Text(String),
     File(String),
     Folder(String),
@@ -137,6 +139,7 @@ impl From<&PrimitiveValue> for MyPrimitiveValue {
     fn from(value: &PrimitiveValue) -> Self {
         match value {
             PrimitiveValue::Number(value) => MyPrimitiveValue::Number(*value),
+            PrimitiveValue::Float(value) => MyPrimitiveValue::Float(*value),
             PrimitiveValue::Text(value) => MyPrimitiveValue::Text(value.clone()),
             PrimitiveValue::File(value) => MyPrimitiveValue::File(value.clone()),
             PrimitiveValue::Folder(value) => MyPrimitiveValue::Folder(value.clone()),
@@ -159,6 +162,7 @@ impl From<MyPrimitiveValue> for PrimitiveValue {
     fn from(value: MyPrimitiveValue) -> Self {
         match value {
             MyPrimitiveValue::Number(value) => PrimitiveValue::Number(value),
+            MyPrimitiveValue::Float(value) => PrimitiveValue::Float(value),
             MyPrimitiveValue::Text(value) => PrimitiveValue::Text(value),
             MyPrimitiveValue::File(value) => PrimitiveValue::File(value),
             MyPrimitiveValue::Folder(value) => PrimitiveValue::Folder(value),
@@ -427,6 +431,7 @@ impl PrimitiveValueType {
     pub fn create(&self) -> PrimitiveValue {
         match self {
             PrimitiveValueType::Number => PrimitiveValue::Number(0),
+            PrimitiveValueType::Float => PrimitiveValue::Float(0.),
             PrimitiveValueType::Text => PrimitiveValue::Text("".to_string()),
             PrimitiveValueType::File => PrimitiveValue::File("".to_string()),
             PrimitiveValueType::Folder => PrimitiveValue::Folder("".to_string()),
@@ -453,6 +458,7 @@ impl PrimitiveValueType {
         matches!(
             (self, other),
             (PrimitiveValueType::Number, PrimitiveValueType::Number)
+                | (PrimitiveValueType::Float, PrimitiveValueType::Float)
                 | (PrimitiveValueType::Text, PrimitiveValueType::Text)
                 | (PrimitiveValueType::File, PrimitiveValueType::File)
                 | (PrimitiveValueType::Folder, PrimitiveValueType::Folder)
@@ -556,6 +562,7 @@ impl<'de> Deserialize<'de> for ValueType {
 #[derive(Serialize, Deserialize)]
 enum MyPrimitiveValueType {
     Number,
+    Float,
     Text,
     File,
     Folder,
@@ -575,6 +582,7 @@ impl From<PrimitiveValueType> for MyPrimitiveValueType {
     fn from(value: PrimitiveValueType) -> Self {
         match value {
             PrimitiveValueType::Number => MyPrimitiveValueType::Number,
+            PrimitiveValueType::Float => MyPrimitiveValueType::Float,
             PrimitiveValueType::Text => MyPrimitiveValueType::Text,
             PrimitiveValueType::File => MyPrimitiveValueType::File,
             PrimitiveValueType::Folder => MyPrimitiveValueType::Folder,
@@ -596,6 +604,7 @@ impl From<MyPrimitiveValueType> for PrimitiveValueType {
     fn from(value: MyPrimitiveValueType) -> Self {
         match value {
             MyPrimitiveValueType::Number => PrimitiveValueType::Number,
+            MyPrimitiveValueType::Float => PrimitiveValueType::Float,
             MyPrimitiveValueType::Text => PrimitiveValueType::Text,
             MyPrimitiveValueType::File => PrimitiveValueType::File,
             MyPrimitiveValueType::Folder => PrimitiveValueType::Folder,
@@ -638,6 +647,7 @@ impl PrimitiveValue {
         matches!(
             (self, ty),
             (PrimitiveValue::Number(_), PrimitiveValueType::Number)
+                | (PrimitiveValue::Float(_), PrimitiveValueType::Float)
                 | (PrimitiveValue::Text(_), PrimitiveValueType::Text)
                 | (PrimitiveValue::Embedding(_), PrimitiveValueType::Embedding)
                 | (PrimitiveValue::Database(_), PrimitiveValueType::Database)
@@ -719,6 +729,7 @@ impl Clone for PrimitiveValue {
     fn clone(&self) -> Self {
         match self {
             PrimitiveValue::Number(value) => PrimitiveValue::Number(*value),
+            PrimitiveValue::Float(value) => PrimitiveValue::Float(*value),
             PrimitiveValue::Text(value) => PrimitiveValue::Text(value.clone()),
             PrimitiveValue::File(value) => PrimitiveValue::File(value.clone()),
             PrimitiveValue::Folder(value) => PrimitiveValue::Folder(value.clone()),

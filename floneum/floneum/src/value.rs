@@ -74,6 +74,9 @@ fn show_primitive_value<'a>(cx: &'a ScopeState, value: &PrimitiveValue) -> Eleme
         PrimitiveValue::Number(value) => {
             render! {"{value}"}
         }
+        PrimitiveValue::Float(value) => {
+            render! {"{value}"}
+        }
         PrimitiveValue::ModelType(ty) => {
             render! {"{ty.name()}"}
         }
@@ -203,6 +206,23 @@ pub fn ModifyInput(cx: &ScopeState, value: Signal<NodeInput>) -> Element {
                             oninput: |e| {
                                 node
                                     .write().value = vec![Input::Single(PrimitiveValue::Number(e.value.parse().unwrap_or(0)))];
+                            }
+                        }
+                    }
+                }
+            }
+            PrimitiveValue::Float(value) => {
+                render! {
+                    div {
+                        class: "flex flex-col",
+                        "{name}: "
+                        input {
+                            class: "border {Color::outline_color()} {Color::foreground_color()} rounded {Color::foreground_hover()} focus:outline-none focus:border-blue-500",
+                            r#type: "number",
+                            value: "{value}",
+                            oninput: |e| {
+                                node
+                                    .write().value = vec![Input::Single(PrimitiveValue::Float(e.value.parse().unwrap_or(0.)))];
                             }
                         }
                     }
@@ -344,6 +364,7 @@ impl Variants for PrimitiveValueType {
         PrimitiveValueType::File,
         PrimitiveValueType::Folder,
         PrimitiveValueType::Number,
+        PrimitiveValueType::Float,
         PrimitiveValueType::Boolean,
         PrimitiveValueType::Embedding,
         PrimitiveValueType::Model,
@@ -361,6 +382,7 @@ impl Variants for ValueType {
         ValueType::Single(PrimitiveValueType::File),
         ValueType::Single(PrimitiveValueType::Folder),
         ValueType::Single(PrimitiveValueType::Number),
+        ValueType::Single(PrimitiveValueType::Float),
         ValueType::Single(PrimitiveValueType::Boolean),
         ValueType::Single(PrimitiveValueType::Embedding),
         ValueType::Single(PrimitiveValueType::Model),
@@ -373,6 +395,7 @@ impl Variants for ValueType {
         ValueType::Many(PrimitiveValueType::File),
         ValueType::Many(PrimitiveValueType::Folder),
         ValueType::Many(PrimitiveValueType::Number),
+        ValueType::Many(PrimitiveValueType::Float),
         ValueType::Many(PrimitiveValueType::Boolean),
         ValueType::Many(PrimitiveValueType::Embedding),
         ValueType::Many(PrimitiveValueType::Model),

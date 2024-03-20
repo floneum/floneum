@@ -75,6 +75,7 @@ interface types {
     embedding-model-type(embedding-model-type),
     database(embedding-db),
     number(s64),
+    float(f64),
     text(string),
     file(string),
     folder(string),
@@ -91,6 +92,7 @@ interface types {
 
   enum primitive-value-type {
     number,
+    float,
     text,
     file,
     folder,
@@ -303,6 +305,12 @@ impl IntoPrimitiveValue for bool {
 impl IntoPrimitiveValue for i64 {
     fn into_primitive_value(self) -> PrimitiveValue {
         PrimitiveValue::Number(self)
+    }
+}
+
+impl IntoPrimitiveValue for f64 {
+    fn into_primitive_value(self) -> PrimitiveValue {
+        PrimitiveValue::Float(self)
     }
 }
 
