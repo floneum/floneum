@@ -50,6 +50,7 @@ const BUILT_IN_PLUGINS: &[&str] = &[
     "Multiply",
     "Divide",
     "Power",
+    "Calculate"
 ];
 
 pub fn PluginSearch(cx: Scope) -> Element {

@@ -3657,6 +3657,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "floneum_calculate"
+version = "0.1.0"
+dependencies = [
+ "floneum_rust",
+ "meval",
+ "wit-bindgen",
+]
+
+[[package]]
 name = "floneum_click_node"
 version = "0.1.0"
 dependencies = [

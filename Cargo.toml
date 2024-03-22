@@ -78,6 +78,7 @@ members = [
     "floneum/plugins/number",
     "floneum/plugins/string",
     "interfaces/kalosm-common",
+    "floneum/plugins/calculate",
 ]
 
 [workspace.dependencies]
