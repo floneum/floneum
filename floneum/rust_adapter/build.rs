@@ -110,6 +110,12 @@ impl IntoPrimitiveValue for i64 {
     }
 }
 
+impl IntoPrimitiveValue for f64 {
+    fn into_primitive_value(self) -> PrimitiveValue {
+        PrimitiveValue::Float(self)
+    }
+}
+
 impl IntoPrimitiveValue for String {
     fn into_primitive_value(self) -> PrimitiveValue {
         PrimitiveValue::Text(self)
