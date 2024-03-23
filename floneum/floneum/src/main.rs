@@ -62,8 +62,16 @@ fn main() {
 
     logger.with(debug_log).init();
 
+    let config = match make_config() {
+        Ok(config) => config,
+        Err(err) => {
+            eprintln!("Failed to make config: {:?}", err);
+            return;
+        }
+    };
+
     dioxus::prelude::LaunchBuilder::new()
-        .with_cfg(make_config())
+        .with_cfg(config)
         .launch(App);
 }
 
