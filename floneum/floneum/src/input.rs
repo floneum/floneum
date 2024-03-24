@@ -1,5 +1,4 @@
 use dioxus::prelude::*;
-use dioxus_signals::*;
 use floneum_plugin::plugins::main::types::ValueType;
 
 use crate::{
@@ -20,39 +19,34 @@ pub fn Input(node: Signal<Node>, index: usize) -> Element {
     rsx! {
         if let Some(ValueType::Many(_)) = node_read.input_type(main_index) {
             if !node_read.inputs[index].read().value.is_empty() {
-                // rsx! {
-                //     path {
-                //         d: "M {plus_pos.x + 12.} {plus_pos.y} h-3v-3h-2v3h-3v2h3v3h2v-3h3z",
-                //         stroke: "black",
-                //         onmousedown: move |_| {
-                //             let node = props.node.read();
-                //             node.inputs[index].write().push_default_value();
-                //         },
-                //     }
-                //     path {
-                //         d: "M {minus_pos.x} {minus_pos.y} h 8 v 2 h -8 Z",
-                //         stroke: "black",
-                //         onmousedown: move |_| {
-                //             let node = props.node.read();
-                //             node.inputs[index].write().pop_value();
-                //         },
-                //     }
-                //     rect {
-                //         x: box_x as f64,
-                //         y: box_y as f64,
-                //         width: box_width,
-                //         height: box_height,
-                //         stroke: "black",
-                //         fill: "transparent",
-                //         stroke_width: 1,
-                //     }
-                //     for element_index in 0..inputs_len {
-                //         InputConnection {
-                //             node: props.node,
-                //             index: Connection { index, ty: crate::edge::ConnectionType::Element(element_index) },
-                //         }
-                //     }
-                // }
+                rsx! {
+                    svg {
+                        path {
+                            d: "M 0 0 h-3v-3h-2v3h-3v2h3v3h2v-3h3z",
+                            stroke: "black",
+                            onmousedown: move |_| {
+                                let node = props.node.read();
+                                node.inputs[index].write().push_default_value();
+                            },
+                        }
+                    }
+                    svg {
+                        path {
+                            d: "M 0 0 h 8 v 2 h -8 Z",
+                            stroke: "black",
+                            onmousedown: move |_| {
+                                let node = props.node.read();
+                                node.inputs[index].write().pop_value();
+                            },
+                        }
+                    }
+                    for element_index in 0..inputs_len {
+                        InputConnection {
+                            node: props.node,
+                            index: Connection { index, ty: crate::edge::ConnectionType::Element(element_index) },
+                        }
+                    }
+                }
             }
         }
         else {

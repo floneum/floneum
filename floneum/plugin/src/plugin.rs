@@ -159,7 +159,7 @@ impl Plugin {
             .unwrap();
 
         let (input_sender, mut input_receiver) =
-            broadcast::channel::<Vec<Vec<BorrowedPrimitiveValue>>>(100);
+            broadcast::channel::<Vec<Vec<PrimitiveValue>>>(100);
         let (output_sender, output_receiver) = broadcast::channel(100);
 
         tokio::spawn(async move {
@@ -196,7 +196,7 @@ pub struct PluginInstance {
     source: PackageIndexEntry,
     metadata: Definition,
     logs: Arc<RwLock<Vec<String>>>,
-    sender: broadcast::Sender<Vec<Vec<BorrowedPrimitiveValue>>>,
+    sender: broadcast::Sender<Vec<Vec<PrimitiveValue>>>,
     receiver: broadcast::Receiver<Arc<Result<Vec<Vec<PrimitiveValue>>, wasmtime::Error>>>,
 }
 
@@ -231,7 +231,7 @@ impl<'de> Deserialize<'de> for PluginInstance {
 impl PluginInstance {
     pub fn run(
         &self,
-        inputs: Vec<Vec<BorrowedPrimitiveValue>>,
+        inputs: Vec<Vec<PrimitiveValue>>,
     ) -> impl Future<Output = Option<Arc<Result<Vec<Vec<PrimitiveValue>>, Error>>>> + 'static {
         tracing::trace!("sending inputs to plugin: {inputs:?}");
         let sender = self.sender.clone();

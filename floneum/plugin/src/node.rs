@@ -1,18 +1,12 @@
 use crate::host::{AnyNodeRef, State};
-use crate::plugins::main;
 
 use crate::plugins::main::types::Node;
 
-use wasmtime::component::__internal::async_trait;
-
 impl State {
-    pub fn get_node(
-        &self,
-        node: wasmtime::component::Resource<Node>,
-    ) -> anyhow::Result<headless_chrome::Element> {
+    pub fn get_node(&self, node: Node) -> anyhow::Result<headless_chrome::Element> {
         let node = self
             .nodes
-            .get(node.rep() as usize)
+            .get(node.id as usize)
             .ok_or(anyhow::anyhow!("Node not found"))?;
         let tab = self
             .pages
@@ -22,28 +16,21 @@ impl State {
     }
 }
 
-#[async_trait]
-impl main::types::HostNode for State {
-    async fn get_element_text(
-        &mut self,
-        self_: wasmtime::component::Resource<Node>,
-    ) -> wasmtime::Result<String> {
+impl State {
+    pub(crate) async fn impl_get_element_text(&mut self, self_: Node) -> wasmtime::Result<String> {
         let node = self.get_node(self_)?;
         Ok(node.get_inner_text()?)
     }
 
-    async fn click_element(
-        &mut self,
-        self_: wasmtime::component::Resource<Node>,
-    ) -> wasmtime::Result<()> {
+    pub(crate) async fn impl_click_element(&mut self, self_: Node) -> wasmtime::Result<()> {
         let node = self.get_node(self_)?;
         node.click()?;
         Ok(())
     }
 
-    async fn type_into_element(
+    pub(crate) async fn impl_type_into_element(
         &mut self,
-        self_: wasmtime::component::Resource<Node>,
+        self_: Node,
         keys: String,
     ) -> wasmtime::Result<()> {
         let node = self.get_node(self_)?;
@@ -51,17 +38,17 @@ impl main::types::HostNode for State {
         Ok(())
     }
 
-    async fn get_element_outer_html(
+    pub(crate) async fn impl_get_element_outer_html(
         &mut self,
-        self_: wasmtime::component::Resource<Node>,
+        self_: Node,
     ) -> wasmtime::Result<String> {
         let node = self.get_node(self_)?;
         Ok(node.get_content()?)
     }
 
-    async fn screenshot_element(
+    pub(crate) async fn impl_screenshot_element(
         &mut self,
-        self_: wasmtime::component::Resource<Node>,
+        self_: Node,
     ) -> wasmtime::Result<Vec<u8>> {
         let node = self.get_node(self_)?;
         Ok(node.capture_screenshot(
@@ -69,14 +56,14 @@ impl main::types::HostNode for State {
         )?)
     }
 
-    async fn find_child_of_element(
+    pub(crate) async fn impl_find_child_of_element(
         &mut self,
-        self_: wasmtime::component::Resource<Node>,
+        self_: Node,
         query: String,
-    ) -> wasmtime::Result<wasmtime::component::Resource<Node>> {
+    ) -> wasmtime::Result<Node> {
         let node = self
             .nodes
-            .get(self_.rep() as usize)
+            .get(self_.id as usize)
             .ok_or(anyhow::anyhow!("Node not found"))?;
         let page_id = node.page_id;
         let tab = self
@@ -89,11 +76,14 @@ impl main::types::HostNode for State {
             page_id,
             node_id: child.node_id,
         });
-        Ok(wasmtime::component::Resource::new_own(child as u32))
+        Ok(Node {
+            id: child as u64,
+            owned: true,
+        })
     }
 
-    fn drop(&mut self, rep: wasmtime::component::Resource<Node>) -> wasmtime::Result<()> {
-        self.nodes.remove(rep.rep() as usize);
+    pub(crate) fn impl_drop_node(&mut self, rep: Node) -> wasmtime::Result<()> {
+        self.nodes.remove(rep.id as usize);
         Ok(())
     }
 }

@@ -1,6 +1,5 @@
 use crate::{use_application_state, ModifyInput, Node, ShowInput, ShowOutput};
 use dioxus::prelude::*;
-use dioxus_signals::Signal;
 
 #[derive(Clone, Copy)]
 pub(crate) struct FocusedNodeInfo {

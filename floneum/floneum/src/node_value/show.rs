@@ -1,6 +1,6 @@
+use crate::node_value::Named;
 use dioxus::prelude::*;
 use floneum_plugin::plugins::main::types::*;
-use crate::node_value::Named;
 
 #[derive(Clone, Props, PartialEq)]
 pub struct ShowOutputProps {
@@ -38,14 +38,14 @@ pub fn ShowOutput(props: ShowOutputProps) -> Element {
     }
 }
 
-pub fn show_primitive_value(value: &BorrowedPrimitiveValue) -> Element {
+pub fn show_primitive_value(value: &PrimitiveValue) -> Element {
     match value {
-        BorrowedPrimitiveValue::Text(value)
-        | BorrowedPrimitiveValue::File(value)
-        | BorrowedPrimitiveValue::Folder(value) => {
+        PrimitiveValue::Text(value)
+        | PrimitiveValue::File(value)
+        | PrimitiveValue::Folder(value) => {
             rsx! {"{value}"}
         }
-        BorrowedPrimitiveValue::Embedding(value) => {
+        PrimitiveValue::Embedding(value) => {
             let first_five = value
                 .vector
                 .iter()
@@ -55,31 +55,31 @@ pub fn show_primitive_value(value: &BorrowedPrimitiveValue) -> Element {
                 .join(", ");
             rsx! {"[{first_five}, ...]"}
         }
-        BorrowedPrimitiveValue::Model(id) => {
+        PrimitiveValue::Model(id) => {
             rsx! {"Model: {id:?}"}
         }
-        BorrowedPrimitiveValue::EmbeddingModel(id) => {
+        PrimitiveValue::EmbeddingModel(id) => {
             rsx! {"Embedding Model: {id:?}"}
         }
-        BorrowedPrimitiveValue::Database(id) => {
+        PrimitiveValue::Database(id) => {
             rsx! {"Database: {id:?}"}
         }
-        BorrowedPrimitiveValue::Number(value) => {
+        PrimitiveValue::Number(value) => {
             rsx! {"{value}"}
         }
-        BorrowedPrimitiveValue::ModelType(ty) => {
+        PrimitiveValue::ModelType(ty) => {
             rsx! {"{ty.name()}"}
         }
-        BorrowedPrimitiveValue::EmbeddingModelType(ty) => {
+        PrimitiveValue::EmbeddingModelType(ty) => {
             rsx! {"{ty.name()}"}
         }
-        BorrowedPrimitiveValue::Boolean(val) => {
+        PrimitiveValue::Boolean(val) => {
             rsx! {"{val:?}"}
         }
-        BorrowedPrimitiveValue::Page(id) => {
+        PrimitiveValue::Page(id) => {
             rsx! {"Page: {id:?}"}
         }
-        BorrowedPrimitiveValue::Node(id) => {
+        PrimitiveValue::Node(id) => {
             rsx! {"Node: {id:?}"}
         }
     }
@@ -89,7 +89,7 @@ pub fn show_primitive_value(value: &BorrowedPrimitiveValue) -> Element {
 pub struct ShowInputProps {
     label: String,
     ty: ValueType,
-    value: Vec<BorrowedPrimitiveValue>,
+    value: Vec<PrimitiveValue>,
 }
 
 pub fn ShowInput(props: ShowInputProps) -> Element {

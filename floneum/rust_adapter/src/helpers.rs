@@ -1,39 +1,22 @@
-use std::{env, path::PathBuf};
-
-const LIBRARY: &str = r##"
-use plugins::main::types::*;
-use exports::plugins::main::definitions::Guest;
-use plugins::main::imports::log_to_user;
+use crate::bindings::plugins::main::types::*;
 
 pub trait IntoInputValue<T = ()> {
-    fn into_input_value(self) -> Input;
+    fn into_input_value(self) -> Vec<PrimitiveValue>;
 }
 
 pub trait IntoReturnValue<T = ()> {
-    fn into_return_value(self) -> Output;
-}
-
-#[doc(hidden)]
-pub struct OptionMarker;
-
-impl<T: IntoReturnValue> IntoReturnValue<OptionMarker> for Option<T> {
-    fn into_return_value(self) -> Output {
-        match self {
-            Some(x) => x.into_return_value(),
-            None => Output::Halt,
-        }
-    }
+    fn into_return_value(self) -> Vec<PrimitiveValue>;
 }
 
 impl<T: IntoPrimitiveValue> IntoReturnValue for T {
-    fn into_return_value(self) -> Output {
-        Output::Single(self.into_primitive_value())
+    fn into_return_value(self) -> Vec<PrimitiveValue> {
+        vec![self.into_primitive_value()]
     }
 }
 
 impl<T: IntoPrimitiveValue> IntoInputValue for T {
-    fn into_input_value(self) -> Input {
-        Input::Single(self.into_primitive_value())
+    fn into_input_value(self) -> Vec<PrimitiveValue> {
+        vec![self.into_primitive_value()]
     }
 }
 
@@ -41,14 +24,14 @@ impl<T: IntoPrimitiveValue> IntoInputValue for T {
 pub struct VecMarker;
 
 impl<T: IntoPrimitiveValue> IntoReturnValue<VecMarker> for Vec<T> {
-    fn into_return_value(self) -> Output {
-        Output::Many(self.into_iter().map(|x| x.into_primitive_value()).collect())
+    fn into_return_value(self) -> Vec<PrimitiveValue> {
+        self.into_iter().map(|x| x.into_primitive_value()).collect()
     }
 }
 
 impl<T: IntoPrimitiveValue> IntoInputValue for Vec<T> {
-    fn into_input_value(self) -> Input {
-        Input::Many(self.into_iter().map(|x| x.into_primitive_value()).collect())
+    fn into_input_value(self) -> Vec<PrimitiveValue> {
+        self.into_iter().map(|x| x.into_primitive_value()).collect()
     }
 }
 
@@ -68,7 +51,7 @@ impl IntoPrimitiveValue for ModelType {
     }
 }
 
-impl IntoPrimitiveValue for Model {
+impl IntoPrimitiveValue for TextGenerationModel {
     fn into_primitive_value(self) -> PrimitiveValue {
         PrimitiveValue::Model(self)
     }
@@ -129,11 +112,11 @@ impl IntoPrimitiveValue for EmbeddingDb {
 }
 
 pub trait IntoReturnValues<T = ()> {
-    fn into_return_values(self) -> Vec<Output>;
+    fn into_return_values(self) -> Vec<Vec<PrimitiveValue>>;
 }
 
 impl<T: IntoReturnValue<I>, I> IntoReturnValues<I> for T {
-    fn into_return_values(self) -> Vec<Output> {
+    fn into_return_values(self) -> Vec<Vec<PrimitiveValue>> {
         vec![self.into_return_value()]
     }
 }
@@ -142,22 +125,20 @@ impl<T: IntoReturnValue<I>, I> IntoReturnValues<I> for T {
 pub struct UnitMarker;
 
 impl IntoReturnValues<UnitMarker> for () {
-    fn into_return_values(self) -> Vec<Output> {
+    fn into_return_values(self) -> Vec<Vec<PrimitiveValue>> {
         vec![]
     }
 }
 
 impl<A: IntoReturnValue<A2>, A2> IntoReturnValues<(A2,)> for (A,) {
-    fn into_return_values(self) -> Vec<Output> {
+    fn into_return_values(self) -> Vec<Vec<PrimitiveValue>> {
         let (a,) = self;
         vec![a.into_return_value()]
     }
 }
 
-impl<A: IntoReturnValue<A2>, A2, B: IntoReturnValue<B2>, B2> IntoReturnValues<(A2, B2)>
-    for (A, B)
-{
-    fn into_return_values(self) -> Vec<Output> {
+impl<A: IntoReturnValue<A2>, A2, B: IntoReturnValue<B2>, B2> IntoReturnValues<(A2, B2)> for (A, B) {
+    fn into_return_values(self) -> Vec<Vec<PrimitiveValue>> {
         let (a, b) = self;
         vec![a.into_return_value(), b.into_return_value()]
     }
@@ -166,7 +147,7 @@ impl<A: IntoReturnValue<A2>, A2, B: IntoReturnValue<B2>, B2> IntoReturnValues<(A
 impl<A: IntoReturnValue<A2>, A2, B: IntoReturnValue<B2>, B2, C: IntoReturnValue<C2>, C2>
     IntoReturnValues<(A2, B2, C2)> for (A, B, C)
 {
-    fn into_return_values(self) -> Vec<Output> {
+    fn into_return_values(self) -> Vec<Vec<PrimitiveValue>> {
         let (a, b, c) = self;
         vec![
             a.into_return_value(),
@@ -176,10 +157,18 @@ impl<A: IntoReturnValue<A2>, A2, B: IntoReturnValue<B2>, B2, C: IntoReturnValue<
     }
 }
 
-impl<A: IntoReturnValue<A2>, A2, B: IntoReturnValue<B2>, B2, C: IntoReturnValue<C2>, C2, D: IntoReturnValue<D2>, D2>
-    IntoReturnValues<(A2, B2, C2, D2)> for (A, B, C, D)
+impl<
+        A: IntoReturnValue<A2>,
+        A2,
+        B: IntoReturnValue<B2>,
+        B2,
+        C: IntoReturnValue<C2>,
+        C2,
+        D: IntoReturnValue<D2>,
+        D2,
+    > IntoReturnValues<(A2, B2, C2, D2)> for (A, B, C, D)
 {
-    fn into_return_values(self) -> Vec<Output> {
+    fn into_return_values(self) -> Vec<Vec<PrimitiveValue>> {
         let (a, b, c, d) = self;
         vec![
             a.into_return_value(),
@@ -190,10 +179,20 @@ impl<A: IntoReturnValue<A2>, A2, B: IntoReturnValue<B2>, B2, C: IntoReturnValue<
     }
 }
 
-impl<A: IntoReturnValue<A2>, A2, B: IntoReturnValue<B2>, B2, C: IntoReturnValue<C2>, C2, D: IntoReturnValue<D2>, D2, E: IntoReturnValue<E2>, E2>
-    IntoReturnValues<(A2, B2, C2, D2, E2)> for (A, B, C, D, E)
+impl<
+        A: IntoReturnValue<A2>,
+        A2,
+        B: IntoReturnValue<B2>,
+        B2,
+        C: IntoReturnValue<C2>,
+        C2,
+        D: IntoReturnValue<D2>,
+        D2,
+        E: IntoReturnValue<E2>,
+        E2,
+    > IntoReturnValues<(A2, B2, C2, D2, E2)> for (A, B, C, D, E)
 {
-    fn into_return_values(self) -> Vec<Output> {
+    fn into_return_values(self) -> Vec<Vec<PrimitiveValue>> {
         let (a, b, c, d, e) = self;
         vec![
             a.into_return_value(),
@@ -261,41 +260,4 @@ impl IntoPrimitiveValue for Folder {
     fn into_primitive_value(self) -> PrimitiveValue {
         PrimitiveValue::Folder(self.0.display().to_string())
     }
-}
-"##;
-
-fn main() {
-    let manifest_dir = PathBuf::from(
-        env::var("CARGO_MANIFEST_DIR").expect("`CARGO_MANIFEST_DIR` is always set by cargo."),
-    );
-
-    let head_ref = manifest_dir.join("./wit/plugin.wit");
-    if head_ref.exists() {
-        println!("cargo:rerun-if-changed={}", head_ref.display());
-    }
-
-    // Create a file with a macro rules macro that expands into a wit bindgen macro call with inline wit code
-    let wit_file = manifest_dir.join("../wit/plugin.wit");
-    let wit_source = std::fs::read_to_string(wit_file).unwrap();
-    let code = format!(
-        r#"#[macro_export]
-macro_rules! bindgen {{
-    ($name:ident) => {{
-        #[allow(clippy::all)]
-        mod bindings {{
-            ::wit_bindgen::generate!({{
-                inline: "{}",
-                world: "plugin-world",
-            }});
-        }}
-        use bindings::*;
-{LIBRARY}
-    }};
-}}
-"#,
-        wit_source
-    );
-
-    let out_dir = manifest_dir.join("./src/bindgen.rs");
-    std::fs::write(out_dir, code).unwrap();
 }

@@ -4,49 +4,53 @@ use crate::plugins::main;
 use crate::plugins::main::types::{Node, Page};
 
 use kalosm::language::Tab;
-use wasmtime::component::__internal::async_trait;
 
-#[async_trait]
-impl main::types::HostPage for State {
-    async fn new(
+impl State {
+    pub(crate) fn impl_create_page(
         &mut self,
         mode: main::types::BrowserMode,
         url: String,
-    ) -> wasmtime::Result<wasmtime::component::Resource<Page>> {
+    ) -> wasmtime::Result<Page> {
         let page = Tab::new(
             url.parse()?,
             matches!(mode, main::types::BrowserMode::Headless),
         )?;
         let page_id = self.pages.insert(page.inner());
-        Ok(wasmtime::component::Resource::new_own(page_id as u32))
+        Ok(Page {
+            id: page_id as u64,
+            owned: true,
+        })
     }
 
-    async fn find_in_current_page(
+    pub(crate) async fn impl_find_in_current_page(
         &mut self,
-        self_: wasmtime::component::Resource<Page>,
+        self_: Page,
         query: String,
-    ) -> wasmtime::Result<wasmtime::component::Resource<Node>> {
+    ) -> wasmtime::Result<Node> {
         let page = self
             .pages
-            .get(self_.rep() as usize)
+            .get(self_.id as usize)
             .ok_or(anyhow::anyhow!("Page not found"))?;
         let node = page.find_element(&query)?;
         let node_id = node.node_id;
         let node = AnyNodeRef {
             node_id: node_id as u32,
-            page_id: self_.rep() as usize,
+            page_id: self_.id as usize,
         };
         let node_id = self.nodes.insert(node);
-        Ok(wasmtime::component::Resource::new_own(node_id as u32))
+        Ok(Node {
+            id: node_id as u64,
+            owned: true,
+        })
     }
 
-    async fn screenshot_browser(
+    pub(crate) async fn impl_screenshot_browser(
         &mut self,
-        self_: wasmtime::component::Resource<Page>,
+        self_: Page,
     ) -> wasmtime::Result<Vec<u8>> {
         let page = self
             .pages
-            .get(self_.rep() as usize)
+            .get(self_.id as usize)
             .ok_or(anyhow::anyhow!("Page not found"))?;
         let bytes = page.capture_screenshot(
             headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Jpeg,
@@ -57,19 +61,16 @@ impl main::types::HostPage for State {
         Ok(bytes)
     }
 
-    async fn html(
-        &mut self,
-        self_: wasmtime::component::Resource<Page>,
-    ) -> wasmtime::Result<String> {
+    pub(crate) async fn impl_page_html(&mut self, self_: Page) -> wasmtime::Result<String> {
         let page = self
             .pages
-            .get(self_.rep() as usize)
+            .get(self_.id as usize)
             .ok_or(anyhow::anyhow!("Page not found"))?;
         Ok(page.get_content()?)
     }
 
-    fn drop(&mut self, rep: wasmtime::component::Resource<Page>) -> wasmtime::Result<()> {
-        self.pages.remove(rep.rep() as usize);
+    pub(crate) fn impl_drop_page(&mut self, rep: Page) -> wasmtime::Result<()> {
+        self.pages.remove(rep.id as usize);
         Ok(())
     }
 }

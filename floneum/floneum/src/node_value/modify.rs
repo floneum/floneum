@@ -1,12 +1,12 @@
 use crate::node_value::embedding_model_type_from_str;
 use crate::node_value::model_type_from_str;
+use crate::node_value::Named;
+use crate::node_value::Variants;
 use crate::show_primitive_value;
+use crate::{node_value::NodeInput, Signal};
 use dioxus::prelude::*;
 use floneum_plugin::plugins::main::types::*;
 use std::path::PathBuf;
-use crate::node_value::Named;
-use crate::{node_value::NodeInput, Signal};
-use crate::node_value::Variants;
 use std::rc::Rc;
 
 #[component]
@@ -53,9 +53,9 @@ pub fn ModifyInput(value: Signal<NodeInput>) -> Element {
 }
 
 #[derive(Clone, Props)]
-struct ModifySingleValueProps{
-    value: BorrowedPrimitiveValue,
-    set_value: Rc<dyn Fn(BorrowedPrimitiveValue)>,
+struct ModifySingleValueProps {
+    value: PrimitiveValue,
+    set_value: Rc<dyn Fn(PrimitiveValue)>,
 }
 
 impl PartialEq for ModifySingleValueProps {
@@ -64,23 +64,21 @@ impl PartialEq for ModifySingleValueProps {
     }
 }
 
-fn ModifySingleValue(
-    props: ModifySingleValueProps
-) -> Element {
+fn ModifySingleValue(props: ModifySingleValueProps) -> Element {
     let ModifySingleValueProps { value, set_value } = props;
     match value {
-        BorrowedPrimitiveValue::Text(value) => {
+        PrimitiveValue::Text(value) => {
             rsx! {
                 textarea {
                     class: "border rounded focus:outline-none focus:border-blue-500",
                     value: "{value}",
                     oninput: move |e| {
-                        set_value(BorrowedPrimitiveValue::Text(e.value()));
+                        set_value(PrimitiveValue::Text(e.value()));
                     }
                 }
             }
         }
-        BorrowedPrimitiveValue::File(file) => {
+        PrimitiveValue::File(file) => {
             rsx! {
                 button {
                     class: "border rounded focus:outline-none focus:border-blue-500",
@@ -90,15 +88,15 @@ fn ModifySingleValue(
                             .set_file_name("Floneum")
                             .set_title("Select File")
                             .save_file()
-                            .map(|path| BorrowedPrimitiveValue::File(path.strip_prefix(PathBuf::from("./sandbox").canonicalize().unwrap()).unwrap_or(&path).to_string_lossy().to_string()))
-                            .unwrap_or_else(|| BorrowedPrimitiveValue::File("".to_string())));
+                            .map(|path| PrimitiveValue::File(path.strip_prefix(PathBuf::from("./sandbox").canonicalize().unwrap()).unwrap_or(&path).to_string_lossy().to_string()))
+                            .unwrap_or_else(|| PrimitiveValue::File("".to_string())));
                     },
                     "Select File"
                 }
                 "{file}"
             }
         }
-        BorrowedPrimitiveValue::Folder(folder) => {
+        PrimitiveValue::Folder(folder) => {
             rsx! {
                 button {
                     class: "border rounded focus:outline-none focus:border-blue-500",
@@ -108,41 +106,41 @@ fn ModifySingleValue(
                             .set_file_name("Floneum")
                             .set_title("Select Folder")
                             .pick_folder()
-                            .map(|path| BorrowedPrimitiveValue::File(path.strip_prefix(PathBuf::from("./sandbox").canonicalize().unwrap()).unwrap_or(&path).to_string_lossy().to_string()
+                            .map(|path| PrimitiveValue::File(path.strip_prefix(PathBuf::from("./sandbox").canonicalize().unwrap()).unwrap_or(&path).to_string_lossy().to_string()
                         ))
-                            .unwrap_or_else(|| BorrowedPrimitiveValue::File("".to_string())))
+                            .unwrap_or_else(|| PrimitiveValue::File("".to_string())))
                     },
                     "Select Folder"
                 }
                 "{folder}"
             }
         }
-        BorrowedPrimitiveValue::Embedding(_)
-        | BorrowedPrimitiveValue::Model(_)
-        | BorrowedPrimitiveValue::EmbeddingModel(_)
-        | BorrowedPrimitiveValue::Database(_)
-        | BorrowedPrimitiveValue::Page(_)
-        | BorrowedPrimitiveValue::Node(_) => show_primitive_value(&value),
-        BorrowedPrimitiveValue::Number(value) => {
+        PrimitiveValue::Embedding(_)
+        | PrimitiveValue::Model(_)
+        | PrimitiveValue::EmbeddingModel(_)
+        | PrimitiveValue::Database(_)
+        | PrimitiveValue::Page(_)
+        | PrimitiveValue::Node(_) => show_primitive_value(&value),
+        PrimitiveValue::Number(value) => {
             rsx! {
                 input {
                     class: "border rounded focus:outline-none focus:border-blue-500",
                     r#type: "number",
                     value: "{value}",
                     oninput: move |e| {
-                        set_value(BorrowedPrimitiveValue::Number(e.value().parse().unwrap_or(0)));
+                        set_value(PrimitiveValue::Number(e.value().parse().unwrap_or(0)));
                     }
                 }
             }
         }
-        BorrowedPrimitiveValue::ModelType(ty) => {
+        PrimitiveValue::ModelType(ty) => {
             rsx! {
                 select {
                     class: "border rounded focus:outline-none focus:border-blue-500",
                     style: "-webkit-appearance:none; -moz-appearance:none; -ms-appearance:none; appearance: none;",
                     onchange: move |e| {
                         set_value(
-                            BorrowedPrimitiveValue::ModelType(
+                            PrimitiveValue::ModelType(
                                 model_type_from_str(&e.value())
                                     .unwrap_or(ModelType::MistralSeven),
                             ),
@@ -161,14 +159,14 @@ fn ModifySingleValue(
                 }
             }
         }
-        BorrowedPrimitiveValue::EmbeddingModelType(ty) => {
+        PrimitiveValue::EmbeddingModelType(ty) => {
             rsx! {
                 select {
                     class: "border rounded focus:outline-none focus:border-blue-500",
                     style: "-webkit-appearance:none; -moz-appearance:none; -ms-appearance:none; appearance: none;",
                     onchange: move |e| {
                         set_value(
-                            BorrowedPrimitiveValue::EmbeddingModelType(
+                            PrimitiveValue::EmbeddingModelType(
                                 embedding_model_type_from_str(&e.value())
                                     .unwrap_or(EmbeddingModelType::Bert),
                             ),
@@ -187,14 +185,14 @@ fn ModifySingleValue(
                 }
             }
         }
-        BorrowedPrimitiveValue::Boolean(val) => {
+        PrimitiveValue::Boolean(val) => {
             rsx! {
                 input {
                     class: "border rounded focus:outline-none focus:border-blue-500",
                     r#type: "checkbox",
                     checked: "{val}",
                     onchange: move |e| {
-                        set_value(BorrowedPrimitiveValue::Boolean(e.value() == "on"));
+                        set_value(PrimitiveValue::Boolean(e.value() == "on"));
                     }
                 }
             }

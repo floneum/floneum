@@ -11,6 +11,7 @@ mod inner {
     wit_bindgen::generate!({
         path: "../wit",
         world: "exports",
+        pub_export_macro: true
     });
 }
 

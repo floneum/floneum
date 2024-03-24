@@ -1,11 +1,13 @@
+use crate::embedding::LazyTextEmbeddingModel;
 use crate::embedding_db::VectorDBWithDocuments;
-use crate::plugins::main::imports::{self};
-use crate::plugins::main::{self};
+use crate::llm::LazyTextGenerationModel;
+use crate::plugins::main;
 use crate::Both;
+use main::imports::{self};
+use main::types::{EmbeddingDb, EmbeddingModel, TextGenerationModel};
 
 use headless_chrome::Tab;
 use kalosm::language::DynamicNodeId;
-use kalosm::language::*;
 use once_cell::sync::Lazy;
 
 use reqwest::header::{HeaderName, HeaderValue};
@@ -43,8 +45,8 @@ pub(crate) struct AnyNodeRef {
 
 pub struct State {
     pub(crate) logs: Arc<RwLock<Vec<String>>>,
-    pub(crate) models: Slab<DynModel>,
-    pub(crate) embedders: Slab<DynEmbedder>,
+    pub(crate) models: Slab<LazyTextGenerationModel>,
+    pub(crate) embedders: Slab<LazyTextEmbeddingModel>,
     pub(crate) embedding_dbs: Slab<VectorDBWithDocuments>,
     pub(crate) nodes: Slab<AnyNodeRef>,
     pub(crate) pages: Slab<Arc<Tab>>,
@@ -125,6 +127,165 @@ impl main::types::Host for State {
             .await
             .unwrap();
         Ok(res)
+    }
+
+    async fn create_page(
+        &mut self,
+        mode: main::types::BrowserMode,
+        url: String,
+    ) -> wasmtime::Result<main::types::Page> {
+        self.impl_create_page(mode, url)
+    }
+
+    async fn find_in_current_page(
+        &mut self,
+        self_: main::types::Page,
+        query: String,
+    ) -> wasmtime::Result<main::types::Node> {
+        self.impl_find_in_current_page(self_, query).await
+    }
+
+    async fn screenshot_browser(&mut self, self_: main::types::Page) -> wasmtime::Result<Vec<u8>> {
+        self.impl_screenshot_browser(self_).await
+    }
+
+    async fn page_html(&mut self, self_: main::types::Page) -> wasmtime::Result<String> {
+        self.impl_page_html(self_).await
+    }
+
+    async fn drop_node(&mut self, self_: main::types::Node) -> wasmtime::Result<()> {
+        self.impl_drop_node(self_)
+    }
+
+    async fn get_element_text(&mut self, self_: main::types::Node) -> wasmtime::Result<String> {
+        self.impl_get_element_text(self_).await
+    }
+
+    async fn click_element(&mut self, self_: main::types::Node) -> wasmtime::Result<()> {
+        self.impl_click_element(self_).await
+    }
+
+    async fn type_into_element(
+        &mut self,
+        self_: main::types::Node,
+        keys: String,
+    ) -> wasmtime::Result<()> {
+        self.impl_type_into_element(self_, keys).await
+    }
+
+    async fn get_element_outer_html(
+        &mut self,
+        self_: main::types::Node,
+    ) -> wasmtime::Result<String> {
+        self.impl_get_element_outer_html(self_).await
+    }
+
+    async fn screenshot_element(&mut self, self_: main::types::Node) -> wasmtime::Result<Vec<u8>> {
+        self.impl_screenshot_element(self_).await
+    }
+
+    async fn find_child_of_element(
+        &mut self,
+        self_: main::types::Node,
+        query: String,
+    ) -> wasmtime::Result<main::types::Node> {
+        self.impl_find_child_of_element(self_, query).await
+    }
+
+    async fn create_embedding_db(
+        &mut self,
+        embeddings: Vec<main::types::Embedding>,
+        documents: Vec<String>,
+    ) -> wasmtime::Result<EmbeddingDb> {
+        Ok(self.impl_create_embedding_db(embeddings, documents)?)
+    }
+
+    async fn drop_embedding_db(&mut self, rep: EmbeddingDb) -> wasmtime::Result<()> {
+        self.impl_drop_embedding_db(rep)
+    }
+
+    async fn add_embedding(
+        &mut self,
+        self_: EmbeddingDb,
+        embedding: main::types::Embedding,
+        document: String,
+    ) -> wasmtime::Result<()> {
+        self.impl_add_embedding(self_, embedding, document).await
+    }
+
+    async fn find_closest_documents(
+        &mut self,
+        self_: EmbeddingDb,
+        search: main::types::Embedding,
+        count: u32,
+    ) -> wasmtime::Result<Vec<String>> {
+        self.impl_find_closest_documents(self_, search, count).await
+    }
+
+    async fn create_model(
+        &mut self,
+        ty: main::types::ModelType,
+    ) -> wasmtime::Result<TextGenerationModel> {
+        Ok(self.impl_create_text_generation_model(ty))
+    }
+
+    async fn drop_model(
+        &mut self,
+        model: main::types::TextGenerationModel,
+    ) -> wasmtime::Result<()> {
+        self.impl_drop_text_generation_model(model)
+    }
+
+    async fn text_generation_model_downloaded(
+        &mut self,
+        ty: main::types::ModelType,
+    ) -> wasmtime::Result<bool> {
+        self.impl_text_generation_model_downloaded(ty).await
+    }
+
+    async fn infer(
+        &mut self,
+        self_: TextGenerationModel,
+        input: String,
+        max_tokens: Option<u32>,
+        stop_on: Option<String>,
+    ) -> wasmtime::Result<String> {
+        self.impl_infer(self_, input, max_tokens, stop_on).await
+    }
+
+    async fn infer_structured(
+        &mut self,
+        self_: TextGenerationModel,
+        input: String,
+        regex: String,
+    ) -> wasmtime::Result<String> {
+        self.impl_infer_structured(self_, input, regex).await
+    }
+
+    async fn create_embedding_model(
+        &mut self,
+        ty: main::types::EmbeddingModelType,
+    ) -> wasmtime::Result<EmbeddingModel> {
+        self.impl_create_embedding_model(ty)
+    }
+
+    async fn drop_embedding_model(&mut self, model: EmbeddingModel) -> wasmtime::Result<()> {
+        self.impl_drop_embedding_model(model)
+    }
+
+    async fn embedding_model_downloaded(
+        &mut self,
+        ty: main::types::EmbeddingModelType,
+    ) -> wasmtime::Result<bool> {
+        self.impl_embedding_model_downloaded(ty).await
+    }
+
+    async fn get_embedding(
+        &mut self,
+        self_: EmbeddingModel,
+        document: String,
+    ) -> wasmtime::Result<main::types::Embedding> {
+        self.impl_get_embedding(self_, document).await
     }
 }
 

@@ -103,9 +103,9 @@ dependencies = [
 
 [[package]]
 name = "aho-corasick"
-version = "1.1.2"
+version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2969dcb958b36655471fc61f7e416fa76033bdd4bfed0678d8fee1e2d07a1f0"
+checksum = "8e60d3430d3a69478ad0993f19238d2df97c507009a52b3c10addcd7f6bcb916"
 dependencies = [
  "memchr",
 ]
@@ -317,7 +317,7 @@ dependencies = [
  "arrow-schema",
  "chrono",
  "half 2.4.0",
- "hashbrown 0.14.4",
+ "hashbrown 0.14.3",
  "num",
 ]
 
@@ -1214,7 +1214,7 @@ dependencies = [
 [[package]]
 name = "candle-core"
 version = "0.4.2"
-source = "git+https://github.com/huggingface/candle#2a8679509eb55232b37378442c4366343f6dcb11"
+source = "git+https://github.com/huggingface/candle#c07e4057ab18c51d73c740a5950c02fd19d56cde"
 dependencies = [
  "accelerate-src",
  "byteorder",
@@ -1241,13 +1241,13 @@ dependencies = [
 [[package]]
 name = "candle-datasets"
 version = "0.4.2"
-source = "git+https://github.com/huggingface/candle#2a8679509eb55232b37378442c4366343f6dcb11"
+source = "git+https://github.com/huggingface/candle#c07e4057ab18c51d73c740a5950c02fd19d56cde"
 dependencies = [
  "byteorder",
  "candle-core",
  "candle-nn",
  "hf-hub",
- "image 0.24.9",
+ "image 0.25.0",
  "memmap2 0.9.4",
  "parquet",
  "rand 0.8.5",
@@ -1258,7 +1258,7 @@ dependencies = [
 [[package]]
 name = "candle-flash-attn"
 version = "0.4.2"
-source = "git+https://github.com/huggingface/candle#2a8679509eb55232b37378442c4366343f6dcb11"
+source = "git+https://github.com/huggingface/candle#c07e4057ab18c51d73c740a5950c02fd19d56cde"
 dependencies = [
  "anyhow",
  "bindgen_cuda",
@@ -1269,7 +1269,7 @@ dependencies = [
 [[package]]
 name = "candle-kernels"
 version = "0.4.2"
-source = "git+https://github.com/huggingface/candle#2a8679509eb55232b37378442c4366343f6dcb11"
+source = "git+https://github.com/huggingface/candle#c07e4057ab18c51d73c740a5950c02fd19d56cde"
 dependencies = [
  "bindgen_cuda",
 ]
@@ -1277,7 +1277,7 @@ dependencies = [
 [[package]]
 name = "candle-metal-kernels"
 version = "0.4.2"
-source = "git+https://github.com/huggingface/candle#2a8679509eb55232b37378442c4366343f6dcb11"
+source = "git+https://github.com/huggingface/candle#c07e4057ab18c51d73c740a5950c02fd19d56cde"
 dependencies = [
  "metal",
  "once_cell",
@@ -1288,7 +1288,7 @@ dependencies = [
 [[package]]
 name = "candle-nn"
 version = "0.4.2"
-source = "git+https://github.com/huggingface/candle#2a8679509eb55232b37378442c4366343f6dcb11"
+source = "git+https://github.com/huggingface/candle#c07e4057ab18c51d73c740a5950c02fd19d56cde"
 dependencies = [
  "accelerate-src",
  "candle-core",
@@ -1306,7 +1306,7 @@ dependencies = [
 [[package]]
 name = "candle-transformers"
 version = "0.4.2"
-source = "git+https://github.com/huggingface/candle#2a8679509eb55232b37378442c4366343f6dcb11"
+source = "git+https://github.com/huggingface/candle#c07e4057ab18c51d73c740a5950c02fd19d56cde"
 dependencies = [
  "accelerate-src",
  "byteorder",
@@ -2079,7 +2079,7 @@ dependencies = [
 [[package]]
 name = "cranelift-bforest"
 version = "0.107.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "cranelift-entity",
 ]
@@ -2087,7 +2087,7 @@ dependencies = [
 [[package]]
 name = "cranelift-codegen"
 version = "0.107.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "bumpalo",
  "cranelift-bforest",
@@ -2097,7 +2097,7 @@ dependencies = [
  "cranelift-entity",
  "cranelift-isle",
  "gimli",
- "hashbrown 0.14.4",
+ "hashbrown 0.14.3",
  "log",
  "regalloc2",
  "smallvec",
@@ -2107,7 +2107,7 @@ dependencies = [
 [[package]]
 name = "cranelift-codegen-meta"
 version = "0.107.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "cranelift-codegen-shared",
 ]
@@ -2115,12 +2115,12 @@ dependencies = [
 [[package]]
 name = "cranelift-codegen-shared"
 version = "0.107.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 
 [[package]]
 name = "cranelift-control"
 version = "0.107.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "arbitrary",
 ]
@@ -2128,7 +2128,7 @@ dependencies = [
 [[package]]
 name = "cranelift-entity"
 version = "0.107.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "serde",
  "serde_derive",
@@ -2137,7 +2137,7 @@ dependencies = [
 [[package]]
 name = "cranelift-frontend"
 version = "0.107.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "cranelift-codegen",
  "log",
@@ -2148,12 +2148,12 @@ dependencies = [
 [[package]]
 name = "cranelift-isle"
 version = "0.107.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 
 [[package]]
 name = "cranelift-native"
 version = "0.107.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "cranelift-codegen",
  "libc",
@@ -2163,7 +2163,7 @@ dependencies = [
 [[package]]
 name = "cranelift-wasm"
 version = "0.107.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "cranelift-codegen",
  "cranelift-entity",
@@ -2502,7 +2502,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "978747c1d849a7d2ee5e8adc0159961c48fb7e5db2f06af6723b80123bb53856"
 dependencies = [
  "cfg-if 1.0.0",
- "hashbrown 0.14.4",
+ "hashbrown 0.14.3",
  "lock_api",
  "once_cell",
  "parking_lot_core",
@@ -2724,24 +2724,37 @@ dependencies = [
 [[package]]
 name = "dioxus"
 version = "0.5.0-alpha.2"
-source = "git+https://github.com/DioxusLabs/dioxus#4bb807a3cef2ad518f4670389b873d2871eb6eb3"
 dependencies = [
- "dioxus-config-macro",
- "dioxus-core",
- "dioxus-core-macro",
+ "dioxus-config-macro 0.5.0-alpha.2",
+ "dioxus-core 0.5.0-alpha.2",
+ "dioxus-core-macro 0.5.0-alpha.2",
+ "dioxus-hooks 0.5.0-alpha.2",
+ "dioxus-hot-reload 0.5.0-alpha.2",
+ "dioxus-html 0.5.0-alpha.2",
+ "dioxus-signals 0.5.0-alpha.2",
+]
+
+[[package]]
+name = "dioxus"
+version = "0.5.0-alpha.2"
+source = "git+https://github.com/DioxusLabs/dioxus#b19a546c0ac639a5cf9e942fff7729ad30e91a5e"
+dependencies = [
+ "dioxus-config-macro 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-core 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-core-macro 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
  "dioxus-desktop",
  "dioxus-fullstack",
- "dioxus-hooks",
- "dioxus-hot-reload",
- "dioxus-html",
+ "dioxus-hooks 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-hot-reload 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-html 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
  "dioxus-router",
- "dioxus-signals",
+ "dioxus-signals 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
 ]
 
 [[package]]
 name = "dioxus-cli-config"
 version = "0.5.0-alpha.2"
-source = "git+https://github.com/DioxusLabs/dioxus#4bb807a3cef2ad518f4670389b873d2871eb6eb3"
+source = "git+https://github.com/DioxusLabs/dioxus#b19a546c0ac639a5cf9e942fff7729ad30e91a5e"
 dependencies = [
  "once_cell",
  "serde",
@@ -2752,7 +2765,15 @@ dependencies = [
 [[package]]
 name = "dioxus-config-macro"
 version = "0.5.0-alpha.2"
-source = "git+https://github.com/DioxusLabs/dioxus#4bb807a3cef2ad518f4670389b873d2871eb6eb3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+]
+
+[[package]]
+name = "dioxus-config-macro"
+version = "0.5.0-alpha.2"
+source = "git+https://github.com/DioxusLabs/dioxus#b19a546c0ac639a5cf9e942fff7729ad30e91a5e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2761,10 +2782,26 @@ dependencies = [
 [[package]]
 name = "dioxus-core"
 version = "0.5.0-alpha.2"
-source = "git+https://github.com/DioxusLabs/dioxus#4bb807a3cef2ad518f4670389b873d2871eb6eb3"
 dependencies = [
  "futures-channel",
  "futures-util",
+ "generational-box 0.5.0-alpha.2",
+ "longest-increasing-subsequence",
+ "rustc-hash",
+ "serde",
+ "slab",
+ "tracing",
+ "tracing-subscriber 0.3.18",
+]
+
+[[package]]
+name = "dioxus-core"
+version = "0.5.0-alpha.2"
+source = "git+https://github.com/DioxusLabs/dioxus#b19a546c0ac639a5cf9e942fff7729ad30e91a5e"
+dependencies = [
+ "futures-channel",
+ "futures-util",
+ "generational-box 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
  "longest-increasing-subsequence",
  "rustc-hash",
  "serde",
@@ -2776,11 +2813,24 @@ dependencies = [
 [[package]]
 name = "dioxus-core-macro"
 version = "0.5.0-alpha.2"
-source = "git+https://github.com/DioxusLabs/dioxus#4bb807a3cef2ad518f4670389b873d2871eb6eb3"
 dependencies = [
  "constcat",
  "convert_case 0.6.0",
- "dioxus-rsx",
+ "dioxus-rsx 0.5.0-alpha.2",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.53",
+]
+
+[[package]]
+name = "dioxus-core-macro"
+version = "0.5.0-alpha.2"
+source = "git+https://github.com/DioxusLabs/dioxus#b19a546c0ac639a5cf9e942fff7729ad30e91a5e"
+dependencies = [
+ "constcat",
+ "convert_case 0.6.0",
+ "dioxus-rsx 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
  "prettyplease",
  "proc-macro2",
  "quote",
@@ -2796,20 +2846,21 @@ checksum = "2ea539174bb236e0e7dc9c12b19b88eae3cb574dedbd0252a2d43ea7e6de13e2"
 [[package]]
 name = "dioxus-desktop"
 version = "0.5.0-alpha.2"
-source = "git+https://github.com/DioxusLabs/dioxus#4bb807a3cef2ad518f4670389b873d2871eb6eb3"
+source = "git+https://github.com/DioxusLabs/dioxus#b19a546c0ac639a5cf9e942fff7729ad30e91a5e"
 dependencies = [
  "async-trait",
+ "cocoa",
  "core-foundation",
  "dioxus-cli-config",
- "dioxus-core",
- "dioxus-hooks",
- "dioxus-hot-reload",
- "dioxus-html",
+ "dioxus-core 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-hooks 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-hot-reload 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-html 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
  "dioxus-interpreter-js",
  "dunce",
  "futures-channel",
  "futures-util",
- "generational-box",
+ "generational-box 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
  "global-hotkey",
  "infer",
  "muda",
@@ -2819,6 +2870,7 @@ dependencies = [
  "rustc-hash",
  "serde",
  "serde_json",
+ "signal-hook",
  "slab",
  "tao",
  "thiserror",
@@ -2834,20 +2886,20 @@ name = "dioxus-free-icons"
 version = "0.8.0"
 source = "git+https://github.com/dioxus-community/dioxus-free-icons?branch=feat/dioxus-0.5#58f601c7b717aa203cbee30616b4f3cd5b3b3148"
 dependencies = [
- "dioxus",
+ "dioxus 0.5.0-alpha.2",
 ]
 
 [[package]]
 name = "dioxus-fullstack"
 version = "0.5.0-alpha.2"
-source = "git+https://github.com/DioxusLabs/dioxus#4bb807a3cef2ad518f4670389b873d2871eb6eb3"
+source = "git+https://github.com/DioxusLabs/dioxus#b19a546c0ac639a5cf9e942fff7729ad30e91a5e"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
  "bytes",
  "ciborium",
  "dioxus-desktop",
- "dioxus-hot-reload",
+ "dioxus-hot-reload 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
  "dioxus-lib",
  "dioxus_server_macro",
  "futures-util",
@@ -2861,14 +2913,29 @@ dependencies = [
 [[package]]
 name = "dioxus-hooks"
 version = "0.5.0-alpha.2"
-source = "git+https://github.com/DioxusLabs/dioxus#4bb807a3cef2ad518f4670389b873d2871eb6eb3"
 dependencies = [
- "dioxus-core",
+ "dioxus-core 0.5.0-alpha.2",
  "dioxus-debug-cell",
- "dioxus-signals",
+ "dioxus-signals 0.5.0-alpha.2",
  "futures-channel",
  "futures-util",
- "generational-box",
+ "generational-box 0.5.0-alpha.2",
+ "slab",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
+name = "dioxus-hooks"
+version = "0.5.0-alpha.2"
+source = "git+https://github.com/DioxusLabs/dioxus#b19a546c0ac639a5cf9e942fff7729ad30e91a5e"
+dependencies = [
+ "dioxus-core 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-debug-cell",
+ "dioxus-signals 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
+ "futures-channel",
+ "futures-util",
+ "generational-box 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
  "slab",
  "thiserror",
  "tracing",
@@ -2877,11 +2944,23 @@ dependencies = [
 [[package]]
 name = "dioxus-hot-reload"
 version = "0.5.0-alpha.2"
-source = "git+https://github.com/DioxusLabs/dioxus#4bb807a3cef2ad518f4670389b873d2871eb6eb3"
 dependencies = [
- "dioxus-core",
- "dioxus-html",
- "dioxus-rsx",
+ "dioxus-core 0.5.0-alpha.2",
+ "dioxus-html 0.5.0-alpha.2",
+ "dioxus-rsx 0.5.0-alpha.2",
+ "interprocess",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "dioxus-hot-reload"
+version = "0.5.0-alpha.2"
+source = "git+https://github.com/DioxusLabs/dioxus#b19a546c0ac639a5cf9e942fff7729ad30e91a5e"
+dependencies = [
+ "dioxus-core 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-html 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-rsx 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
  "interprocess",
  "serde",
  "serde_json",
@@ -2890,15 +2969,34 @@ dependencies = [
 [[package]]
 name = "dioxus-html"
 version = "0.5.0-alpha.2"
-source = "git+https://github.com/DioxusLabs/dioxus#4bb807a3cef2ad518f4670389b873d2871eb6eb3"
 dependencies = [
  "async-trait",
- "dioxus-core",
- "dioxus-html-internal-macro",
+ "dioxus-core 0.5.0-alpha.2",
+ "dioxus-html-internal-macro 0.5.0-alpha.2",
  "enumset",
  "euclid",
  "futures-channel",
- "generational-box",
+ "generational-box 0.5.0-alpha.2",
+ "keyboard-types",
+ "serde",
+ "serde-value",
+ "serde_json",
+ "serde_repr",
+ "web-sys",
+]
+
+[[package]]
+name = "dioxus-html"
+version = "0.5.0-alpha.2"
+source = "git+https://github.com/DioxusLabs/dioxus#b19a546c0ac639a5cf9e942fff7729ad30e91a5e"
+dependencies = [
+ "async-trait",
+ "dioxus-core 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-html-internal-macro 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
+ "enumset",
+ "euclid",
+ "futures-channel",
+ "generational-box 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
  "keyboard-types",
  "serde",
  "serde-value",
@@ -2911,7 +3009,17 @@ dependencies = [
 [[package]]
 name = "dioxus-html-internal-macro"
 version = "0.5.0-alpha.2"
-source = "git+https://github.com/DioxusLabs/dioxus#4bb807a3cef2ad518f4670389b873d2871eb6eb3"
+dependencies = [
+ "convert_case 0.6.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.53",
+]
+
+[[package]]
+name = "dioxus-html-internal-macro"
+version = "0.5.0-alpha.2"
+source = "git+https://github.com/DioxusLabs/dioxus#b19a546c0ac639a5cf9e942fff7729ad30e91a5e"
 dependencies = [
  "convert_case 0.6.0",
  "proc-macro2",
@@ -2922,10 +3030,10 @@ dependencies = [
 [[package]]
 name = "dioxus-interpreter-js"
 version = "0.5.0-alpha.2"
-source = "git+https://github.com/DioxusLabs/dioxus#4bb807a3cef2ad518f4670389b873d2871eb6eb3"
+source = "git+https://github.com/DioxusLabs/dioxus#b19a546c0ac639a5cf9e942fff7729ad30e91a5e"
 dependencies = [
- "dioxus-core",
- "dioxus-html",
+ "dioxus-core 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-html 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
  "md5",
  "sledgehammer_bindgen",
  "sledgehammer_utils",
@@ -2934,20 +3042,20 @@ dependencies = [
 [[package]]
 name = "dioxus-lib"
 version = "0.5.0-alpha.2"
-source = "git+https://github.com/DioxusLabs/dioxus#4bb807a3cef2ad518f4670389b873d2871eb6eb3"
+source = "git+https://github.com/DioxusLabs/dioxus#b19a546c0ac639a5cf9e942fff7729ad30e91a5e"
 dependencies = [
- "dioxus-core",
- "dioxus-core-macro",
- "dioxus-hooks",
- "dioxus-html",
- "dioxus-rsx",
- "dioxus-signals",
+ "dioxus-core 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-core-macro 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-hooks 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-html 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-rsx 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
+ "dioxus-signals 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
 ]
 
 [[package]]
 name = "dioxus-router"
 version = "0.5.0-alpha.2"
-source = "git+https://github.com/DioxusLabs/dioxus#4bb807a3cef2ad518f4670389b873d2871eb6eb3"
+source = "git+https://github.com/DioxusLabs/dioxus#b19a546c0ac639a5cf9e942fff7729ad30e91a5e"
 dependencies = [
  "dioxus-cli-config",
  "dioxus-lib",
@@ -2960,7 +3068,7 @@ dependencies = [
 [[package]]
 name = "dioxus-router-macro"
 version = "0.5.0-alpha.2"
-source = "git+https://github.com/DioxusLabs/dioxus#4bb807a3cef2ad518f4670389b873d2871eb6eb3"
+source = "git+https://github.com/DioxusLabs/dioxus#b19a546c0ac639a5cf9e942fff7729ad30e91a5e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2971,7 +3079,17 @@ dependencies = [
 [[package]]
 name = "dioxus-rsx"
 version = "0.5.0-alpha.2"
-source = "git+https://github.com/DioxusLabs/dioxus#4bb807a3cef2ad518f4670389b873d2871eb6eb3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.53",
+ "tracing",
+]
+
+[[package]]
+name = "dioxus-rsx"
+version = "0.5.0-alpha.2"
+source = "git+https://github.com/DioxusLabs/dioxus#b19a546c0ac639a5cf9e942fff7729ad30e91a5e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2982,12 +3100,26 @@ dependencies = [
 [[package]]
 name = "dioxus-signals"
 version = "0.5.0-alpha.2"
-source = "git+https://github.com/DioxusLabs/dioxus#4bb807a3cef2ad518f4670389b873d2871eb6eb3"
 dependencies = [
- "dioxus-core",
+ "dioxus-core 0.5.0-alpha.2",
  "futures-channel",
  "futures-util",
- "generational-box",
+ "generational-box 0.5.0-alpha.2",
+ "once_cell",
+ "parking_lot",
+ "rustc-hash",
+ "tracing",
+]
+
+[[package]]
+name = "dioxus-signals"
+version = "0.5.0-alpha.2"
+source = "git+https://github.com/DioxusLabs/dioxus#b19a546c0ac639a5cf9e942fff7729ad30e91a5e"
+dependencies = [
+ "dioxus-core 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
+ "futures-channel",
+ "futures-util",
+ "generational-box 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
  "once_cell",
  "parking_lot",
  "rustc-hash",
@@ -3002,7 +3134,7 @@ source = "git+https://github.com/marc2332/dioxus-std/?branch=feat/dioxus-0.5#a07
 dependencies = [
  "cfg-if 1.0.0",
  "copypasta",
- "dioxus",
+ "dioxus 0.5.0-alpha.2",
  "js-sys",
  "uuid",
 ]
@@ -3010,7 +3142,7 @@ dependencies = [
 [[package]]
 name = "dioxus_server_macro"
 version = "0.5.0-alpha.2"
-source = "git+https://github.com/DioxusLabs/dioxus#4bb807a3cef2ad518f4670389b873d2871eb6eb3"
+source = "git+https://github.com/DioxusLabs/dioxus#b19a546c0ac639a5cf9e942fff7729ad30e91a5e"
 dependencies = [
  "convert_case 0.6.0",
  "proc-macro2",
@@ -3578,9 +3710,9 @@ dependencies = [
  "anyhow",
  "bytesize",
  "cargo-dist",
- "dioxus",
+ "dioxus 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
  "dioxus-free-icons",
- "dioxus-signals",
+ "dioxus-signals 0.5.0-alpha.2 (git+https://github.com/DioxusLabs/dioxus)",
  "dioxus-std",
  "directories 5.0.1",
  "floneum_plugin",
@@ -3923,6 +4055,7 @@ dependencies = [
  "image 0.24.9",
  "log",
  "serde",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -4533,7 +4666,14 @@ dependencies = [
 [[package]]
 name = "generational-box"
 version = "0.5.0-alpha.2"
-source = "git+https://github.com/DioxusLabs/dioxus#4bb807a3cef2ad518f4670389b873d2871eb6eb3"
+dependencies = [
+ "parking_lot",
+]
+
+[[package]]
+name = "generational-box"
+version = "0.5.0-alpha.2"
+source = "git+https://github.com/DioxusLabs/dioxus#b19a546c0ac639a5cf9e942fff7729ad30e91a5e"
 dependencies = [
  "parking_lot",
 ]
@@ -5075,9 +5215,9 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
-version = "0.14.4"
+version = "0.14.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e57fa0ae458eb99874f54c09f4f9174f8b45fb87e854536a4e608696247f0c23"
+checksum = "290f1a1d9242c78d09ce40a5e87e7554ee637af1351968159f4952f028f75604"
 dependencies = [
  "ahash 0.8.11",
  "allocator-api2",
@@ -5554,6 +5694,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "image"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a9b4f005360d32e9325029b38ba47ebd7a56f3316df09249368939562d518645"
+dependencies = [
+ "bytemuck",
+ "byteorder",
+ "num-traits",
+ "png 0.17.13",
+ "zune-core",
+ "zune-jpeg",
+]
+
+[[package]]
 name = "imageproc"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5589,7 +5743,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7b0b929d511467233429c45a44ac1dcaa21ba0f5ba11e4879e6ed28ddb4f9df4"
 dependencies = [
  "equivalent",
- "hashbrown 0.14.4",
+ "hashbrown 0.14.3",
  "serde",
 ]
 
@@ -6518,9 +6672,9 @@ dependencies = [
 
 [[package]]
 name = "libz-sys"
-version = "1.1.15"
+version = "1.1.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "037731f5d3aaa87a5675e895b63ddff1a87624bc29f77004ea829809654e48f6"
+checksum = "5e143b5e666b2695d28f6bca6497720813f699c9602dd7f5cac91008b8ada7f9"
 dependencies = [
  "cc",
  "pkg-config",
@@ -6685,7 +6839,7 @@ version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4a83fb7698b3643a0e34f9ae6f2e8f0178c0fd42f8b59d493aa271ff3a5bf21"
 dependencies = [
- "hashbrown 0.14.4",
+ "hashbrown 0.14.3",
 ]
 
 [[package]]
@@ -6694,7 +6848,7 @@ version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3262e75e648fce39813cb56ac41f3c3e3f65217ebf3844d818d1f9398cfb0dc"
 dependencies = [
- "hashbrown 0.14.4",
+ "hashbrown 0.14.3",
 ]
 
 [[package]]
@@ -6791,7 +6945,7 @@ version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e960ee0e7e1b8eec9229f5b20d6b191762574225144ea638eb961d065c97b55d"
 dependencies = [
- "hashbrown 0.14.4",
+ "hashbrown 0.14.3",
  "itertools 0.11.0",
  "libm",
  "ryu",
@@ -7101,9 +7255,9 @@ dependencies = [
 
 [[package]]
 name = "minijinja"
-version = "1.0.13"
+version = "1.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "562e7acc6adf9a8359061ea3e0634560a3f636dc0539d36cd300c82fd703f528"
+checksum = "fe5b00f90b3542f74bb9aaaccd2627920c16367787de103883461365580e5481"
 dependencies = [
  "serde",
 ]
@@ -7658,7 +7812,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8dd6c0cdf9429bce006e1362bfce61fa1bfd8c898a643ed8d2b471934701d3d"
 dependencies = [
  "crc32fast",
- "hashbrown 0.14.4",
+ "hashbrown 0.14.3",
  "indexmap 2.2.5",
  "memchr",
 ]
@@ -8024,7 +8178,7 @@ dependencies = [
  "chrono",
  "flate2",
  "half 2.4.0",
- "hashbrown 0.14.4",
+ "hashbrown 0.14.3",
  "lz4_flex",
  "num",
  "num-bigint",
@@ -8230,7 +8384,7 @@ dependencies = [
 [[package]]
 name = "pdf"
 version = "0.9.0"
-source = "git+https://github.com/pdf-rs/pdf#28c920049e353e73c7f31d3ae37ff9d2bc796675"
+source = "git+https://github.com/pdf-rs/pdf#c5481318fa4405567d914bb42009f33693a85127"
 dependencies = [
  "aes",
  "bitflags 1.3.2",
@@ -8258,7 +8412,7 @@ dependencies = [
 [[package]]
 name = "pdf_derive"
 version = "0.2.0"
-source = "git+https://github.com/pdf-rs/pdf#28c920049e353e73c7f31d3ae37ff9d2bc796675"
+source = "git+https://github.com/pdf-rs/pdf#c5481318fa4405567d914bb42009f33693a85127"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -8877,7 +9031,7 @@ checksum = "58c20af3800cee5134b79a3bd4a3d4b583c16ccfa5f53338f46400851a5b3819"
 dependencies = [
  "ahash 0.8.11",
  "equivalent",
- "hashbrown 0.14.4",
+ "hashbrown 0.14.3",
  "parking_lot",
 ]
 
@@ -9176,7 +9330,7 @@ version = "1.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b62dbe01f0b06f9d8dc7d49e05a0785f153b00b2c227856282f671e0318c9b15"
 dependencies = [
- "aho-corasick 1.1.2",
+ "aho-corasick 1.1.3",
  "memchr",
  "regex-automata 0.4.6",
  "regex-syntax 0.8.2",
@@ -9197,7 +9351,7 @@ version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "86b83b8b9847f9bf95ef68afb0b8e6cdb80f498442f5179a29fad448fcc1eaea"
 dependencies = [
- "aho-corasick 1.1.2",
+ "aho-corasick 1.1.3",
  "memchr",
  "regex-syntax 0.8.2",
 ]
@@ -9616,9 +9770,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "0.38.31"
+version = "0.38.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ea3e1a662af26cd7a3ba09c0297a31af215563ecf42817c98df621387f4e949"
+checksum = "65e04861e65f21776e67888bfbea442b3642beaa0138fdb1dd7a84a52dffdb89"
 dependencies = [
  "bitflags 2.5.0",
  "errno",
@@ -9729,7 +9883,7 @@ dependencies = [
 [[package]]
 name = "rustpython-codegen"
 version = "0.3.0"
-source = "git+https://github.com/RustPython/RustPython#426e582ba039492b789b114d26b29f3dfa86c56e"
+source = "git+https://github.com/RustPython/RustPython#85c427b8423bc8620d9b39bf22743da4ea05cb03"
 dependencies = [
  "ahash 0.8.11",
  "bitflags 2.5.0",
@@ -9746,7 +9900,7 @@ dependencies = [
 [[package]]
 name = "rustpython-common"
 version = "0.3.0"
-source = "git+https://github.com/RustPython/RustPython#426e582ba039492b789b114d26b29f3dfa86c56e"
+source = "git+https://github.com/RustPython/RustPython#85c427b8423bc8620d9b39bf22743da4ea05cb03"
 dependencies = [
  "ascii",
  "bitflags 2.5.0",
@@ -9772,7 +9926,7 @@ dependencies = [
 [[package]]
 name = "rustpython-compiler"
 version = "0.3.0"
-source = "git+https://github.com/RustPython/RustPython#426e582ba039492b789b114d26b29f3dfa86c56e"
+source = "git+https://github.com/RustPython/RustPython#85c427b8423bc8620d9b39bf22743da4ea05cb03"
 dependencies = [
  "rustpython-codegen",
  "rustpython-compiler-core",
@@ -9782,7 +9936,7 @@ dependencies = [
 [[package]]
 name = "rustpython-compiler-core"
 version = "0.3.0"
-source = "git+https://github.com/RustPython/RustPython#426e582ba039492b789b114d26b29f3dfa86c56e"
+source = "git+https://github.com/RustPython/RustPython#85c427b8423bc8620d9b39bf22743da4ea05cb03"
 dependencies = [
  "bitflags 2.5.0",
  "itertools 0.11.0",
@@ -9795,7 +9949,7 @@ dependencies = [
 [[package]]
 name = "rustpython-derive"
 version = "0.3.0"
-source = "git+https://github.com/RustPython/RustPython#426e582ba039492b789b114d26b29f3dfa86c56e"
+source = "git+https://github.com/RustPython/RustPython#85c427b8423bc8620d9b39bf22743da4ea05cb03"
 dependencies = [
  "rustpython-compiler",
  "rustpython-derive-impl",
@@ -9805,7 +9959,7 @@ dependencies = [
 [[package]]
 name = "rustpython-derive-impl"
 version = "0.3.0"
-source = "git+https://github.com/RustPython/RustPython#426e582ba039492b789b114d26b29f3dfa86c56e"
+source = "git+https://github.com/RustPython/RustPython#85c427b8423bc8620d9b39bf22743da4ea05cb03"
 dependencies = [
  "itertools 0.11.0",
  "maplit",
@@ -9916,7 +10070,7 @@ dependencies = [
 [[package]]
 name = "rustpython-vm"
 version = "0.3.0"
-source = "git+https://github.com/RustPython/RustPython#426e582ba039492b789b114d26b29f3dfa86c56e"
+source = "git+https://github.com/RustPython/RustPython#85c427b8423bc8620d9b39bf22743da4ea05cb03"
 dependencies = [
  "ahash 0.8.11",
  "ascii",
@@ -10600,6 +10754,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
+name = "signal-hook"
+version = "0.3.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8621587d4798caf8eb44879d42e56b9a93ea5dcd315a6487c357130095b62801"
+dependencies = [
+ "libc",
+ "signal-hook-registry",
+]
+
+[[package]]
 name = "signal-hook-registry"
 version = "1.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10739,9 +10903,9 @@ dependencies = [
 
 [[package]]
 name = "smallvec"
-version = "1.13.1"
+version = "1.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6ecd384b10a64542d77071bd64bd7b231f4ed5940fba55e98c3de13824cf3d7"
+checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 
 [[package]]
 name = "smawk"
@@ -10868,7 +11032,7 @@ version = "2.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "61addf9117b11d1f5b4bf6fe94242ba25f59d2d4b2080544b771bd647024fd00"
 dependencies = [
- "hashbrown 0.14.4",
+ "hashbrown 0.14.3",
  "num-traits",
  "robust",
  "smallvec",
@@ -11460,7 +11624,7 @@ version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6083cd777fa94271b8ce0fe4533772cb8110c3044bab048d20f70108329a1f2"
 dependencies = [
- "aho-corasick 1.1.2",
+ "aho-corasick 1.1.3",
  "arc-swap",
  "async-trait",
  "base64 0.21.7",
@@ -11941,7 +12105,7 @@ version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9be88c795d8b9f9c4002b3a8f26a6d0876103a6f523b32ea3bac52d8560c17c"
 dependencies = [
- "aho-corasick 1.1.2",
+ "aho-corasick 1.1.3",
  "clap",
  "derive_builder 0.12.0",
  "esaxx-rs",
@@ -11974,7 +12138,7 @@ version = "0.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3dd47962b0ba36e7fd33518fbf1754d136fd1474000162bbf2a8b5fcb2d3654d"
 dependencies = [
- "aho-corasick 1.1.2",
+ "aho-corasick 1.1.3",
  "clap",
  "derive_builder 0.12.0",
  "esaxx-rs",
@@ -12097,7 +12261,7 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "futures-util",
- "hashbrown 0.14.4",
+ "hashbrown 0.14.3",
  "pin-project-lite",
  "tokio",
  "tracing",
@@ -12134,7 +12298,7 @@ dependencies = [
  "serde",
  "serde_spanned",
  "toml_datetime 0.6.5",
- "toml_edit 0.22.8",
+ "toml_edit 0.22.9",
 ]
 
 [[package]]
@@ -12201,9 +12365,9 @@ dependencies = [
 
 [[package]]
 name = "toml_edit"
-version = "0.22.8"
+version = "0.22.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c12219811e0c1ba077867254e5ad62ee2c9c190b0d957110750ac0cda1ae96cd"
+checksum = "8e40bb779c5187258fd7aad0eb68cb8706a0a81fa712fbea808ab43c4b8374c4"
 dependencies = [
  "indexmap 2.2.5",
  "serde",
@@ -12828,7 +12992,7 @@ checksum = "9c8d87e72b64a3b4db28d11ce29237c246188f4f51057d65a7eab63b7987e423"
 [[package]]
 name = "wasi-common"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "anyhow",
  "bitflags 2.5.0",
@@ -13034,7 +13198,7 @@ dependencies = [
 [[package]]
 name = "wasmtime"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "addr2line",
  "anyhow",
@@ -13079,7 +13243,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-asm-macros"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "cfg-if 1.0.0",
 ]
@@ -13087,7 +13251,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-cache"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
@@ -13106,7 +13270,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-component-macro"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "anyhow",
  "proc-macro2",
@@ -13120,12 +13284,12 @@ dependencies = [
 [[package]]
 name = "wasmtime-component-util"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 
 [[package]]
 name = "wasmtime-cranelift"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "anyhow",
  "cfg-if 1.0.0",
@@ -13149,7 +13313,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-cranelift-shared"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
@@ -13164,7 +13328,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-environ"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "anyhow",
  "bincode",
@@ -13189,7 +13353,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-fiber"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "anyhow",
  "cc",
@@ -13203,7 +13367,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-jit-debug"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "object 0.33.0",
  "once_cell",
@@ -13214,7 +13378,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-jit-icache-coherence"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "cfg-if 1.0.0",
  "libc",
@@ -13224,7 +13388,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-runtime"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "anyhow",
  "cc",
@@ -13246,19 +13410,18 @@ dependencies = [
  "wasmtime-fiber",
  "wasmtime-jit-debug",
  "wasmtime-versioned-export-macros",
- "wasmtime-wmemcheck",
  "windows-sys 0.52.0",
 ]
 
 [[package]]
 name = "wasmtime-slab"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 
 [[package]]
 name = "wasmtime-types"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "cranelift-entity",
  "serde",
@@ -13270,7 +13433,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-versioned-export-macros"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -13280,7 +13443,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-wasi"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -13310,7 +13473,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-winch"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
@@ -13327,18 +13490,13 @@ dependencies = [
 [[package]]
 name = "wasmtime-wit-bindgen"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "anyhow",
  "heck 0.4.1",
  "indexmap 2.2.5",
  "wit-parser 0.201.0",
 ]
-
-[[package]]
-name = "wasmtime-wmemcheck"
-version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
 
 [[package]]
 name = "wasmtimer"
@@ -13610,7 +13768,7 @@ version = "0.16.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "471d1c1645d361eb782a1650b1786a8fb58dd625e681a04c09f5ff7c8764a7b0"
 dependencies = [
- "hashbrown 0.14.4",
+ "hashbrown 0.14.3",
  "once_cell",
 ]
 
@@ -13658,7 +13816,7 @@ checksum = "17882f045410753661207383517a6f62ec3dbeb6a4ed2acce01f0728238d1983"
 [[package]]
 name = "wiggle"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -13672,7 +13830,7 @@ dependencies = [
 [[package]]
 name = "wiggle-generate"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "anyhow",
  "heck 0.4.1",
@@ -13686,7 +13844,7 @@ dependencies = [
 [[package]]
 name = "wiggle-macro"
 version = "20.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -13737,7 +13895,7 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 [[package]]
 name = "winch-codegen"
 version = "0.18.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#afaf1c73f67c42e638590608579b2b02c7f65ca3"
+source = "git+https://github.com/bytecodealliance/wasmtime#a79cf76fe0995e8798db606495145ab80cb5cd4e"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
@@ -14097,7 +14255,7 @@ dependencies = [
 [[package]]
 name = "wit-bindgen"
 version = "0.22.0"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#6fbcb94ad9ae209b8db6a65fdfb5959ac3de8866"
+source = "git+https://github.com/bytecodealliance/wit-bindgen#f4851bb8dcb298ab6619b2353ce2b9b87d90cc90"
 dependencies = [
  "wit-bindgen-rt",
  "wit-bindgen-rust-macro",
@@ -14106,7 +14264,7 @@ dependencies = [
 [[package]]
 name = "wit-bindgen-core"
 version = "0.22.0"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#6fbcb94ad9ae209b8db6a65fdfb5959ac3de8866"
+source = "git+https://github.com/bytecodealliance/wit-bindgen#f4851bb8dcb298ab6619b2353ce2b9b87d90cc90"
 dependencies = [
  "anyhow",
  "wit-parser 0.201.0",
@@ -14115,7 +14273,7 @@ dependencies = [
 [[package]]
 name = "wit-bindgen-rt"
 version = "0.22.0"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#6fbcb94ad9ae209b8db6a65fdfb5959ac3de8866"
+source = "git+https://github.com/bytecodealliance/wit-bindgen#f4851bb8dcb298ab6619b2353ce2b9b87d90cc90"
 dependencies = [
  "bitflags 2.5.0",
 ]
@@ -14123,7 +14281,7 @@ dependencies = [
 [[package]]
 name = "wit-bindgen-rust"
 version = "0.22.0"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#6fbcb94ad9ae209b8db6a65fdfb5959ac3de8866"
+source = "git+https://github.com/bytecodealliance/wit-bindgen#f4851bb8dcb298ab6619b2353ce2b9b87d90cc90"
 dependencies = [
  "anyhow",
  "heck 0.4.1",
@@ -14136,7 +14294,7 @@ dependencies = [
 [[package]]
 name = "wit-bindgen-rust-macro"
 version = "0.22.0"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#6fbcb94ad9ae209b8db6a65fdfb5959ac3de8866"
+source = "git+https://github.com/bytecodealliance/wit-bindgen#f4851bb8dcb298ab6619b2353ce2b9b87d90cc90"
 dependencies = [
  "anyhow",
  "proc-macro2",
@@ -14564,6 +14722,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "zune-core"
+version = "0.4.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f423a2c17029964870cfaabb1f13dfab7d092a62a29a89264f4d36990ca414a"
+
+[[package]]
 name = "zune-inflate"
 version = "0.2.54"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -14571,3 +14735,32 @@ checksum = "73ab332fe2f6680068f3582b16a24f90ad7096d5d39b974d1c0aff0125116f02"
 dependencies = [
  "simd-adler32",
 ]
+
+[[package]]
+name = "zune-jpeg"
+version = "0.4.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec866b44a2a1fd6133d363f073ca1b179f438f99e7e5bfb1e33f7181facfe448"
+dependencies = [
+ "zune-core",
+]
+
+[[patch.unused]]
+name = "dioxus-cli-config"
+version = "0.5.0-alpha.2"
+
+[[patch.unused]]
+name = "dioxus-desktop"
+version = "0.5.0-alpha.2"
+
+[[patch.unused]]
+name = "dioxus-lib"
+version = "0.5.0-alpha.2"
+
+[[patch.unused]]
+name = "dioxus-router"
+version = "0.5.0-alpha.2"
+
+[[patch.unused]]
+name = "dioxus-router-macro"
+version = "0.5.0-alpha.2"
