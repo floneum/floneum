@@ -3990,6 +3990,7 @@ dependencies = [
  "floneumite",
  "futures-util",
  "headless_chrome",
+ "heed",
  "kalosm",
  "kalosm-common",
  "log",

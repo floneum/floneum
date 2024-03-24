@@ -1,4 +1,5 @@
 use std::ops::Deref;
+use std::sync::Arc;
 
 use crate::host::State;
 
@@ -59,16 +60,21 @@ impl State {
     }
 }
 
-#[derive(Default)]
 pub(crate) struct VectorDBWithDocuments {
-    db: Lazy<anyhow::Result<VectorDB<UnknownVectorSpace>>>,
+    db: Lazy<Result<VectorDB<UnknownVectorSpace>, Arc<heed::Error>>>,
     documents: Vec<Option<Document>>,
+}
+
+impl Default for VectorDBWithDocuments {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl VectorDBWithDocuments {
     pub fn new() -> Self {
         Self {
-            db: Lazy::new(VectorDB::new),
+            db: Lazy::new(|| VectorDB::new().map_err(Arc::new)),
             documents: Vec::new(),
         }
     }
@@ -81,7 +87,8 @@ impl VectorDBWithDocuments {
         let id = self
             .db
             .deref()
-            .as_ref()?
+            .as_ref()
+            .map_err(Clone::clone)?
             .add_embedding(embedding.vector.into())?;
         if id.0 as usize >= self.documents.len() {
             self.documents.resize(id.0 as usize + 1, None);
@@ -98,7 +105,8 @@ impl VectorDBWithDocuments {
         let results = self
             .db
             .deref()
-            .as_ref()?
+            .as_ref()
+            .map_err(Clone::clone)?
             .get_closest(embedding.vector.into(), count)?;
         Ok(results
             .into_iter()
