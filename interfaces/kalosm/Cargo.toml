@@ -94,9 +94,8 @@ workspace = true
 
 [features]
 cublas = ["kalosm-language/cublas"]
-default = ["language", "sound", "vision", "surrealdb"]
+default = ["language", "sound", "vision"]
 language = ["kalosm-language"]
-llamacpp = ["kalosm-language/llamacpp"]
 metal = ["kalosm-language/metal", "kalosm-vision/metal", "kalosm-sound/metal"]
 sound = ["kalosm-sound"]
 surrealdb = ["dep:surrealdb"]

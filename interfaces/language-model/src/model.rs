@@ -17,7 +17,6 @@ use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
-use url::Url;
 
 /// A model that can be used to embed text. This trait is generic over the vector space that the model uses to help keep track of what embeddings came from which model.
 ///
@@ -1371,73 +1370,3 @@ impl crate::model::GenerationParameters {
         self.stop_on.as_deref()
     }
 }
-
-/// The type of model to use.
-#[allow(missing_docs)]
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub enum ModelType {
-    Mpt(MptType),
-    GptNeoX(GptNeoXType),
-    Llama(LlamaType),
-}
-
-/// The type of Llama model to use.
-#[allow(missing_docs)]
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub enum LlamaType {
-    Vicuna,
-    Guanaco,
-    WizardLm,
-    Orca,
-    LlamaSevenChat,
-    LlamaThirteenChat,
-    Custom(Url),
-}
-
-/// The type of MPT model to use.
-#[allow(missing_docs)]
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub enum MptType {
-    Base,
-    Story,
-    Instruct,
-    Chat,
-    Custom(Url),
-}
-
-/// The type of GPT-NeoX model to use.
-#[allow(missing_docs)]
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub enum GptNeoXType {
-    LargePythia,
-    TinyPythia,
-    DollySevenB,
-    StableLm,
-    Custom(Url),
-}
-
-macro_rules! embedding {
-    ($ty: ident) => {
-        #[doc = "A vector space for the "]
-        #[doc = stringify!($ty)]
-        #[doc = " model."]
-        pub struct $ty;
-
-        impl VectorSpace for $ty {}
-    };
-}
-
-embedding!(VicunaSpace);
-embedding!(GuanacoSpace);
-embedding!(WizardLmSpace);
-embedding!(OrcaSpace);
-embedding!(LlamaSevenChatSpace);
-embedding!(LlamaThirteenChatSpace);
-embedding!(MptBaseSpace);
-embedding!(MptStorySpace);
-embedding!(MptInstructSpace);
-embedding!(MptChatSpace);
-embedding!(LargePythiaSpace);
-embedding!(TinyPythiaSpace);
-embedding!(DollySevenBSpace);
-embedding!(StableLmSpace);

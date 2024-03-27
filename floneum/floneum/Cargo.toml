@@ -20,7 +20,6 @@ floneumite = { path = "../floneumite" }
 serde = { version = "1.0.163", features = ["derive"] }
 slab = "0.4.8"
 simple_logger = "4.1.0"
-pollster = "0.3.0"
 cargo-dist = "0.0.7"
 once_cell = "1.18.0"
 wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", features = [

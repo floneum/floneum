@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 
 use candle_core::{Device, Tensor};
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// An untyped vector space that is not associated with a model. This can be used to erase the vector type from an embedding.
@@ -64,12 +65,14 @@ impl<S: VectorSpace> Clone for Embedding<S> {
     }
 }
 
+#[cfg(feature = "serde")]
 impl<S: VectorSpace> Serialize for Embedding<S> {
     fn serialize<Ser: Serializer>(&self, _serializer: Ser) -> Result<Ser::Ok, Ser::Error> {
         todo!()
     }
 }
 
+#[cfg(feature = "serde")]
 impl<'de, S: VectorSpace> Deserialize<'de> for Embedding<S> {
     fn deserialize<Des: Deserializer<'de>>(_deserializer: Des) -> Result<Self, Des::Error> {
         todo!()

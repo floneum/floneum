@@ -13,35 +13,22 @@ futures-util = "0.3.28"
 llm-samplers = { workspace = true }
 log = "0.4.17"
 rand = "0.8.5"
-reqwest = { version = "0.11.18", features = ["stream", "json"] }
-tokio = { version = "1.28.1", features = ["full"] }
-slab = { version = "0.4.8", features = ["serde"] }
-serde = { version = "1.0.163", features = ["derive"] }
+tokio = { version = "1.28.1", features = ["sync"] }
+serde = { version = "1.0.163", features = ["derive"], optional = true }
 once_cell = "1.18.0"
-url = "2.4.0"
 anyhow = "1.0.71"
 tracing = "0.1.37"
-num_cpus = "1.16.0"
-async-openai = "0.14.2"
+async-openai = { version = "0.14.2", optional = true }
 async-trait = "0.1.73"
-serde_json = "1.0.107"
-tempfile = "3.8.0"
 candle-core.workspace = true
-tokio-util = { version = "0.7.9", features = ["rt"] }
-pin-project = "1"
-itertools = "0.11.0"
-tokenizers = { version = "0.13.4" }
 rustc-hash = "1.1.0"
 kalosm-sample = { workspace = true }
 kalosm-common.workspace = true
 kalosm-streams.workspace = true
-# Required for LLM
-llm = { git = "https://github.com/rustformers/llm", optional = true }
-spinoff = "0.8.0"
-bytesize = "1.3.0"
-minijinja = "1.0.10"
+
+[dev-dependencies]
+tokio = { version = "1.28.1", features = ["full"] }
 
 [features]
-llamacpp = ["llm", "kalosm-sample/llamacpp"]
-metal = ["llm?/metal"]
-cublas = ["llm?/cublas"]
+remote = ["async-openai"]
+serde = ["dep:serde"]

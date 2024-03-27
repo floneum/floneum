@@ -101,10 +101,7 @@ impl State {
         let mut self_mut = self.resources.get_mut(index).ok_or(anyhow::anyhow!(
             "Model not found; It may have been already dropped"
         ))?;
-        let model = self_mut
-            
-            .value()
-            .await?;
+        let model = self_mut.value().await?;
         Ok(main::types::Embedding {
             vector: model.embed(&document).await?.to_vec(),
         })

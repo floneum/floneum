@@ -25,7 +25,10 @@ impl State {
 
 impl State {
     pub(crate) async fn impl_get_element_text(&mut self, self_: Node) -> wasmtime::Result<String> {
-        self.with_node(self_, |node| {node.get_inner_text();Ok(())})?;
+        self.with_node(self_, |node| {
+            node.get_inner_text();
+            Ok(())
+        })?;
         Ok(())
     }
 
@@ -53,7 +56,10 @@ impl State {
         &mut self,
         self_: Node,
     ) -> wasmtime::Result<String> {
-        self.with_node(self_, |node| {node.get_content();Ok(())})?;
+        self.with_node(self_, |node| {
+            node.get_content();
+            Ok(())
+        })?;
     }
 
     pub(crate) async fn impl_screenshot_element(

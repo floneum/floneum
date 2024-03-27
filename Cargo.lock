@@ -3739,7 +3739,6 @@ dependencies = [
  "muda",
  "once_cell",
  "petgraph",
- "pollster",
  "rand 0.8.5",
  "reqwest",
  "rfd",
@@ -4018,7 +4017,7 @@ dependencies = [
  "reqwest",
  "serde",
  "slab",
- "spinoff 0.7.0",
+ "spinoff",
  "tokio",
  "tracing",
  "url",
@@ -4832,24 +4831,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
-]
-
-[[package]]
-name = "ggml"
-version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm#9376078c12ea1990bd42e63432656819a056d379"
-dependencies = [
- "ggml-sys",
- "memmap2 0.5.10",
- "thiserror",
-]
-
-[[package]]
-name = "ggml-sys"
-version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm#9376078c12ea1990bd42e63432656819a056d379"
-dependencies = [
- "cc",
 ]
 
 [[package]]
@@ -6208,13 +6189,11 @@ dependencies = [
  "llm-samplers",
  "log",
  "meval",
- "num_cpus",
  "once_cell",
  "partial_sort",
  "pdf",
  "pdf_text",
  "pin-project",
- "pollster",
  "pulldown-cmark",
  "rand 0.8.5",
  "rbert",
@@ -6227,7 +6206,7 @@ dependencies = [
  "serde",
  "serde_json",
  "slab",
- "spinoff 0.7.0",
+ "spinoff",
  "tantivy",
  "tempfile",
  "texting_robots",
@@ -6246,33 +6225,19 @@ dependencies = [
  "anyhow",
  "async-openai",
  "async-trait",
- "bytesize",
  "candle-core",
  "futures-util",
- "itertools 0.11.0",
  "kalosm-common",
  "kalosm-sample",
  "kalosm-streams",
- "llm",
  "llm-samplers",
  "log",
- "minijinja",
- "num_cpus",
  "once_cell",
- "pin-project",
  "rand 0.8.5",
- "reqwest",
  "rustc-hash",
  "serde",
- "serde_json",
- "slab",
- "spinoff 0.8.0",
- "tempfile",
- "tokenizers 0.13.4",
  "tokio",
- "tokio-util",
  "tracing",
- "url",
 ]
 
 [[package]]
@@ -6313,7 +6278,6 @@ dependencies = [
  "criterion",
  "cudarc 0.9.15",
  "half 2.4.0",
- "hf-hub",
  "intel-mkl-src",
  "kalosm-common",
  "kalosm-language-model",
@@ -6341,7 +6305,6 @@ dependencies = [
  "candle-transformers",
  "cudarc 0.9.15",
  "half 2.4.0",
- "hf-hub",
  "image 0.24.9",
  "imageproc",
  "intel-mkl-src",
@@ -6379,7 +6342,6 @@ dependencies = [
  "candle-transformers",
  "cpal",
  "futures-util",
- "hf-hub",
  "hound",
  "itertools 0.10.5",
  "kalosm-streams",
@@ -6727,92 +6689,6 @@ name = "linux-raw-sys"
 version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "01cda141df6706de531b6c46c3a33ecca755538219bd484262fa09410c13539c"
-
-[[package]]
-name = "llm"
-version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm#9376078c12ea1990bd42e63432656819a056d379"
-dependencies = [
- "llm-base",
- "llm-bloom",
- "llm-gpt2",
- "llm-gptj",
- "llm-gptneox",
- "llm-llama",
- "llm-mpt",
- "serde",
- "tracing",
-]
-
-[[package]]
-name = "llm-base"
-version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm#9376078c12ea1990bd42e63432656819a056d379"
-dependencies = [
- "bytemuck",
- "ggml",
- "half 2.4.0",
- "llm-samplers",
- "memmap2 0.5.10",
- "partial_sort",
- "rand 0.8.5",
- "regex",
- "serde",
- "serde_bytes",
- "thiserror",
- "tokenizers 0.13.4",
- "tracing",
-]
-
-[[package]]
-name = "llm-bloom"
-version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm#9376078c12ea1990bd42e63432656819a056d379"
-dependencies = [
- "llm-base",
-]
-
-[[package]]
-name = "llm-gpt2"
-version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm#9376078c12ea1990bd42e63432656819a056d379"
-dependencies = [
- "bytemuck",
- "llm-base",
-]
-
-[[package]]
-name = "llm-gptj"
-version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm#9376078c12ea1990bd42e63432656819a056d379"
-dependencies = [
- "llm-base",
-]
-
-[[package]]
-name = "llm-gptneox"
-version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm#9376078c12ea1990bd42e63432656819a056d379"
-dependencies = [
- "llm-base",
-]
-
-[[package]]
-name = "llm-llama"
-version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm#9376078c12ea1990bd42e63432656819a056d379"
-dependencies = [
- "llm-base",
- "tracing",
-]
-
-[[package]]
-name = "llm-mpt"
-version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm#9376078c12ea1990bd42e63432656819a056d379"
-dependencies = [
- "llm-base",
-]
 
 [[package]]
 name = "llm-samplers"
@@ -7292,15 +7168,6 @@ checksum = "4192263c238a5f0d0c6bfd21f336a313a4ce1c450542449ca191bb657b4642ef"
 dependencies = [
  "mime",
  "unicase",
-]
-
-[[package]]
-name = "minijinja"
-version = "1.0.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe5b00f90b3542f74bb9aaaccd2627920c16367787de103883461365580e5481"
-dependencies = [
- "serde",
 ]
 
 [[package]]
@@ -9283,7 +9150,6 @@ dependencies = [
  "candle-transformers",
  "cudarc 0.9.15",
  "half 2.4.0",
- "hf-hub",
  "intel-mkl-src",
  "kalosm-common",
  "kalosm-language-model",
@@ -9696,7 +9562,6 @@ dependencies = [
  "candle-transformers",
  "cudarc 0.9.15",
  "half 2.4.0",
- "hf-hub",
  "intel-mkl-src",
  "kalosm-common",
  "kalosm-language-model",
@@ -10234,7 +10099,6 @@ dependencies = [
  "cudarc 0.9.15",
  "futures-util",
  "half 2.4.0",
- "hf-hub",
  "hound",
  "intel-mkl-src",
  "itertools 0.10.5",
@@ -10262,7 +10126,6 @@ dependencies = [
  "candle-transformers",
  "cudarc 0.9.15",
  "half 2.4.0",
- "hf-hub",
  "image 0.24.9",
  "intel-mkl-src",
  "kalosm-common",
@@ -10445,7 +10308,6 @@ dependencies = [
  "candle-transformers",
  "cudarc 0.9.15",
  "half 2.4.0",
- "hf-hub",
  "image 0.24.9",
  "imageproc",
  "intel-mkl-src",
@@ -10533,15 +10395,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f3a1a3341211875ef120e117ea7fd5228530ae7e7036a779fdc9117be6b3282c"
 dependencies = [
  "ordered-float 2.10.1",
- "serde",
-]
-
-[[package]]
-name = "serde_bytes"
-version = "0.11.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b8497c313fd43ab992087548117643f6fcd935cbf36f176ffda0aacf9591734"
-dependencies = [
  "serde",
 ]
 
@@ -11117,17 +10970,6 @@ name = "spinoff"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fee259f96b31e7a18657d11741fe30d63f98e07de70e7a19d2b705ab9b331cdc"
-dependencies = [
- "colored",
- "once_cell",
- "paste",
-]
-
-[[package]]
-name = "spinoff"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20aa2ed67fbb202e7b716ff8bfc6571dd9301617767380197d701c31124e88f6"
 dependencies = [
  "colored",
  "once_cell",

@@ -19,7 +19,6 @@ candle-core.workspace = true
 candle-nn.workspace = true
 candle-transformers.workspace = true
 byteorder = "1.4.3"
-hf-hub = "0.3.1"
 tokenizers = "0.14.0"
 serde_json = "1.0.107"
 hound = "3.5"

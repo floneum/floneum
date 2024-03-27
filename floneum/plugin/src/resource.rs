@@ -12,7 +12,8 @@ use std::sync::Arc;
 use wasmtime::component::Type;
 
 use crate::{
-    embedding::LazyTextEmbeddingModel, embedding_db::VectorDBWithDocuments, host::AnyNodeRef, llm::LazyTextGenerationModel, plugins::main
+    embedding::LazyTextEmbeddingModel, embedding_db::VectorDBWithDocuments, host::AnyNodeRef,
+    llm::LazyTextGenerationModel, plugins::main,
 };
 
 #[derive(Default)]

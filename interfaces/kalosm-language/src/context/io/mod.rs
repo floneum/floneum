@@ -150,22 +150,23 @@ impl IntoDocuments for DocumentFolder {
 }
 
 impl DocumentFolder {
-    #[async_recursion::async_recursion]
-    async fn start_into_documents(
+    fn start_into_documents(
         &self,
         set: &mut JoinSet<anyhow::Result<Document>>,
-    ) -> anyhow::Result<()> {
-        let mut read_dir = tokio::fs::read_dir(&self.path).await?;
-        while let Some(entry) = read_dir.next_entry().await? {
-            let path = entry.path();
-            if path.is_dir() {
-                if let Ok(folder) = DocumentFolder::try_from(path) {
-                    folder.start_into_documents(set).await?;
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + Sync>> {
+        Box::pin(async move {
+            let mut read_dir = tokio::fs::read_dir(&self.path).await?;
+            while let Some(entry) = read_dir.next_entry().await? {
+                let path = entry.path();
+                if path.is_dir() {
+                    if let Ok(folder) = DocumentFolder::try_from(path) {
+                        folder.start_into_documents(set).await?;
+                    }
+                } else if let Ok(document) = FsDocument::try_from(path) {
+                    set.spawn(document.into_document());
                 }
-            } else if let Ok(document) = FsDocument::try_from(path) {
-                set.spawn(document.into_document());
             }
-        }
-        Ok(())
+            Ok(())
+        })
     }
 }
