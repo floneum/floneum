@@ -6193,7 +6193,6 @@ dependencies = [
  "partial_sort",
  "pdf",
  "pdf_text",
- "pin-project",
  "pulldown-cmark",
  "rand 0.8.5",
  "rbert",
@@ -6287,7 +6286,6 @@ dependencies = [
  "once_cell",
  "rand 0.8.5",
  "rayon",
- "serde_json",
  "tokenizers 0.13.4",
  "tokio",
  "tracing",
@@ -6363,7 +6361,7 @@ version = "0.2.1"
 dependencies = [
  "anyhow",
  "futures-util",
- "pin-project",
+ "pin-project-lite",
  "tokio",
  "tracing",
 ]
