@@ -191,7 +191,6 @@ impl State {
         &mut self,
         ty: main::types::ModelType,
     ) -> TextGenerationModel {
-        let model_type_as_id = ty as usize;
         let model = LazyTextGenerationModel::Uninitialized(ty);
         let idx = self.models.insert(model);
 
@@ -237,7 +236,6 @@ impl State {
         regex: String,
     ) -> wasmtime::Result<String> {
         let structure = RegexParser::new(&regex)?;
-        let model = &mut self.models[self_.id as usize];
 
         let model = self.models[self_.id as usize].value().await?;
         match model {

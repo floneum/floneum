@@ -1,5 +1,4 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use wasmtime::component::Resource;
 
 use crate::{
     host::State,

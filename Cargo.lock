@@ -1411,7 +1411,7 @@ dependencies = [
  "axoproject",
  "camino",
  "cargo-dist-schema",
- "cargo_metadata",
+ "cargo_metadata 0.15.4",
  "clap",
  "clap-cargo",
  "console",
@@ -1469,6 +1469,20 @@ name = "cargo_metadata"
 version = "0.15.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eee4243f1f26fc7a42710e7439c149e2b10b05472f88090acce52632f231a73a"
+dependencies = [
+ "camino",
+ "cargo-platform",
+ "semver",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "cargo_metadata"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d886547e41f740c616ae73108f6eb70afe6d940c7bc697cb30f13daec073037"
 dependencies = [
  "camino",
  "cargo-platform",
@@ -3080,6 +3094,9 @@ dependencies = [
 name = "dioxus-rsx"
 version = "0.5.0-alpha.2"
 dependencies = [
+ "dioxus-core 0.5.0-alpha.2",
+ "internment",
+ "krates",
  "proc-macro2",
  "quote",
  "syn 2.0.53",
@@ -3741,7 +3758,7 @@ name = "floneum-cli"
 version = "0.1.0"
 dependencies = [
  "cargo-manifest",
- "cargo_metadata",
+ "cargo_metadata 0.15.4",
  "clap",
  "floneum_plugin",
  "floneumite",
@@ -3995,6 +4012,7 @@ dependencies = [
  "kalosm-common",
  "log",
  "once_cell",
+ "parking_lot",
  "pollster",
  "rand 0.8.5",
  "reqwest",
@@ -5093,7 +5111,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f822a2716041492e071691606474f5a7e4fa7c2acbfd7da7b29884fb448291c7"
 dependencies = [
  "camino",
- "cargo_metadata",
+ "cargo_metadata 0.15.4",
  "cfg-if 1.0.0",
  "debug-ignore",
  "fixedbitset",
@@ -5845,6 +5863,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "internment"
+version = "0.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e976188335292f66a1533fd41d5c2ce24b32dc2c000569b8dccf4e57f489806"
+dependencies = [
+ "hashbrown 0.12.3",
+ "parking_lot",
+]
+
+[[package]]
 name = "interprocess"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6397,6 +6425,18 @@ dependencies = [
  "bitflags 2.5.0",
  "serde",
  "unicode-segmentation",
+]
+
+[[package]]
+name = "krates"
+version = "0.16.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b315eaab6cde3e2bcbd21810067a7b8bf4ced8cc63683ab7a96b18360c4e9df9"
+dependencies = [
+ "cargo_metadata 0.18.1",
+ "cfg-expr",
+ "petgraph",
+ "semver",
 ]
 
 [[package]]

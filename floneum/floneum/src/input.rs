@@ -19,32 +19,30 @@ pub fn Input(node: Signal<Node>, index: usize) -> Element {
     rsx! {
         if let Some(ValueType::Many(_)) = node_read.input_type(main_index) {
             if !node_read.inputs[index].read().value.is_empty() {
-                rsx! {
-                    svg {
-                        path {
-                            d: "M 0 0 h-3v-3h-2v3h-3v2h3v3h2v-3h3z",
-                            stroke: "black",
-                            onmousedown: move |_| {
-                                let node = props.node.read();
-                                node.inputs[index].write().push_default_value();
-                            },
-                        }
+                svg {
+                    path {
+                        d: "M 0 0 h-3v-3h-2v3h-3v2h3v3h2v-3h3z",
+                        stroke: "black",
+                        onmousedown: move |_| {
+                            let node = node.read();
+                            node.inputs[index].write().push_default_value();
+                        },
                     }
-                    svg {
-                        path {
-                            d: "M 0 0 h 8 v 2 h -8 Z",
-                            stroke: "black",
-                            onmousedown: move |_| {
-                                let node = props.node.read();
-                                node.inputs[index].write().pop_value();
-                            },
-                        }
+                }
+                svg {
+                    path {
+                        d: "M 0 0 h 8 v 2 h -8 Z",
+                        stroke: "black",
+                        onmousedown: move |_| {
+                            let node = node.read();
+                            node.inputs[index].write().pop_value();
+                        },
                     }
-                    for element_index in 0..inputs_len {
-                        InputConnection {
-                            node: props.node,
-                            index: Connection { index, ty: crate::edge::ConnectionType::Element(element_index) },
-                        }
+                }
+                for element_index in 0..node_read.inputs[index].read().value.len() {
+                    InputConnection {
+                        node,
+                        index: Connection { index, ty: crate::edge::ConnectionType::Element(element_index) },
                     }
                 }
             }

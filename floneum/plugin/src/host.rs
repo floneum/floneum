@@ -157,6 +157,10 @@ impl main::types::Host for State {
         self.impl_drop_node(self_)
     }
 
+    async fn drop_page(&mut self, self_: main::types::Page) -> wasmtime::Result<()> {
+        self.impl_drop_page(self_)
+    }
+
     async fn get_element_text(&mut self, self_: main::types::Node) -> wasmtime::Result<String> {
         self.impl_get_element_text(self_).await
     }

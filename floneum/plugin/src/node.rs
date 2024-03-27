@@ -19,7 +19,7 @@ impl State {
 impl State {
     pub(crate) async fn impl_get_element_text(&mut self, self_: Node) -> wasmtime::Result<String> {
         let node = self.get_node(self_)?;
-        Ok(node.get_inner_text()?)
+        node.get_inner_text()
     }
 
     pub(crate) async fn impl_click_element(&mut self, self_: Node) -> wasmtime::Result<()> {

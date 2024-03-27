@@ -28,6 +28,7 @@ interface types {
     id: u64,
     owned: bool,
   }
+  drop-page: func(page: page);
   create-page: func(mode: browser-mode, url: string) -> page;
   find-in-current-page: func(page: page, selector: string) -> node;
   screenshot-browser: func(page: page) -> list<u8>;
