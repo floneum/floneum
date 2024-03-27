@@ -1,17 +1,13 @@
-use crate::embedding::LazyTextEmbeddingModel;
-use crate::embedding_db::VectorDBWithDocuments;
-use crate::llm::LazyTextGenerationModel;
 use crate::plugins::main;
+use crate::resource::ResourceStorage;
 use crate::Both;
 use main::imports::{self};
 use main::types::{EmbeddingDb, EmbeddingModel, TextGenerationModel};
 
-use headless_chrome::Tab;
 use kalosm::language::DynamicNodeId;
 use once_cell::sync::Lazy;
 
 use reqwest::header::{HeaderName, HeaderValue};
-use slab::Slab;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
@@ -45,18 +41,14 @@ pub(crate) struct AnyNodeRef {
 
 pub struct State {
     pub(crate) logs: Arc<RwLock<Vec<String>>>,
-    pub(crate) models: Slab<LazyTextGenerationModel>,
-    pub(crate) embedders: Slab<LazyTextEmbeddingModel>,
-    pub(crate) embedding_dbs: Slab<VectorDBWithDocuments>,
-    pub(crate) nodes: Slab<AnyNodeRef>,
-    pub(crate) pages: Slab<Arc<Tab>>,
+    pub(crate) resources: ResourceStorage,
     pub(crate) plugin_state: HashMap<Vec<u8>, Vec<u8>>,
     pub(crate) table: ResourceTable,
     pub(crate) ctx: WasiCtx,
 }
 
-impl Default for State {
-    fn default() -> Self {
+impl State {
+    pub fn new(resources: ResourceStorage) -> Self {
         let sandbox = Path::new("./sandbox");
         std::fs::create_dir_all(sandbox).unwrap();
         let mut ctx = WasiCtxBuilder::new();
@@ -75,11 +67,7 @@ impl Default for State {
         let ctx = ctx_builder.build();
         State {
             plugin_state: Default::default(),
-            embedders: Default::default(),
-            models: Default::default(),
-            embedding_dbs: Default::default(),
-            nodes: Default::default(),
-            pages: Default::default(),
+            resources,
             logs: Default::default(),
             table,
             ctx,

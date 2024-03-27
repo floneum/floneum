@@ -1,6 +1,8 @@
 use crate::host::State;
 use crate::plugins::main;
 use crate::plugins::main::types::{Embedding, EmbeddingModel, EmbeddingModelType};
+use crate::resource::Resource;
+use crate::resource::ResourceStorage;
 
 use kalosm::language::*;
 use kalosm_common::ModelLoadingProgress;
@@ -75,10 +77,10 @@ impl State {
         ty: main::types::EmbeddingModelType,
     ) -> wasmtime::Result<EmbeddingModel> {
         let model = LazyTextEmbeddingModel::Uninitialized(ty);
-        let idx = self.embedders.insert(model);
+        let idx = self.resources.insert(model);
 
         Ok(EmbeddingModel {
-            id: idx as u64,
+            id: idx.index() as u64,
             owned: true,
         })
     }
@@ -95,7 +97,14 @@ impl State {
         self_: EmbeddingModel,
         document: String,
     ) -> wasmtime::Result<Embedding> {
-        let model = self.embedders[self_.id as usize].value().await?;
+        let index = self_.into();
+        let mut self_mut = self.resources.get_mut(index).ok_or(anyhow::anyhow!(
+            "Model not found; It may have been already dropped"
+        ))?;
+        let model = self_mut
+            
+            .value()
+            .await?;
         Ok(main::types::Embedding {
             vector: model.embed(&document).await?.to_vec(),
         })
@@ -105,7 +114,8 @@ impl State {
         &mut self,
         rep: EmbeddingModel,
     ) -> wasmtime::Result<()> {
-        self.embedders.remove(rep.id as usize);
+        let index = rep.into();
+        self.resources.drop_key(index);
         Ok(())
     }
 }

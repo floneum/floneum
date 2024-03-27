@@ -23,9 +23,9 @@ impl State {
             db.add_embedding(embedding, document)?;
         }
 
-        let idx = self.embedding_dbs.insert(db);
+        let idx = self.resources.insert(db);
         Ok(EmbeddingDb {
-            id: idx as u64,
+            id: idx.index() as u64,
             owned: true,
         })
     }
@@ -36,7 +36,12 @@ impl State {
         embedding: Embedding,
         document: String,
     ) -> wasmtime::Result<()> {
-        self.embedding_dbs[self_.id as usize]
+        let index = self_.into();
+        self.resources
+            .get_mut(index)
+            .ok_or(anyhow::anyhow!(
+                "DB not found; It may have been already dropped"
+            ))?
             .add_embedding(embedding, Document::from_parts(String::new(), document))?;
         Ok(())
     }
@@ -47,15 +52,20 @@ impl State {
         search: Embedding,
         count: u32,
     ) -> wasmtime::Result<Vec<String>> {
-        let documents = self.embedding_dbs[self_.id as usize].get_closest(search, count as usize);
-        Ok(documents?
+        let index = self_.into();
+        let db = self.resources.get(index).ok_or(anyhow::anyhow!(
+            "DB not found; It may have been already dropped"
+        ))?;
+        let documents = db.get_closest(search, count as usize)?;
+        Ok(documents
             .into_iter()
             .map(|(_, document)| document.body().to_string())
             .collect())
     }
 
     pub(crate) fn impl_drop_embedding_db(&mut self, rep: EmbeddingDb) -> wasmtime::Result<()> {
-        self.embedding_dbs.remove(rep.id as usize);
+        let index = rep.into();
+        self.resources.drop_key(index);
         Ok(())
     }
 }

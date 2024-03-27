@@ -2,6 +2,8 @@ use crate::exports::plugins::main::definitions::*;
 use crate::host::State;
 use crate::host::ENGINE;
 use crate::host::LINKER;
+use crate::resource::Resource;
+use crate::resource::ResourceStorage;
 use crate::Both;
 use anyhow::Error;
 use floneumite::PackageIndexEntry;
@@ -120,12 +122,12 @@ impl Plugin {
         Ok(self.component.get().unwrap())
     }
 
-    async fn definition(&self) -> anyhow::Result<&Definition> {
+    async fn definition(&self, resources: ResourceStorage) -> anyhow::Result<&Definition> {
         if let Some(metadata) = self.definition.get() {
             return Ok(metadata);
         }
         // then we get the structure of the plugin.
-        let mut store = Store::new(&ENGINE, State::default());
+        let mut store = Store::new(&ENGINE, State::new(resources));
         let component = self.component().await?;
         let (world, _instance) = Both::instantiate_async(&mut store, component, &*LINKER).await?;
         let structure = world.interface0.call_structure(&mut store).await.unwrap();
@@ -147,9 +149,9 @@ impl Plugin {
         Ok(self.metadata.get().unwrap())
     }
 
-    pub async fn instance(&self) -> anyhow::Result<PluginInstance> {
+    pub async fn instance(&self, resources: ResourceStorage) -> anyhow::Result<PluginInstance> {
         // create the store of models
-        let state = State::default();
+        let state = State::new(resources);
         let logs = state.logs.clone();
         let mut store = Store::new(&ENGINE, state);
         let component = self.component().await?;
@@ -221,7 +223,7 @@ impl<'de> Deserialize<'de> for PluginInstance {
         // Just deserialize the source
         let source = PackageIndexEntry::deserialize(deserializer)?;
         Ok(
-            async move { load_plugin_from_source(source).instance().await }
+            async move { load_plugin_from_source(source).instance(todo!()).await }
                 .block_on()
                 .unwrap(),
         )

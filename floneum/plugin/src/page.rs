@@ -15,9 +15,9 @@ impl State {
             url.parse()?,
             matches!(mode, main::types::BrowserMode::Headless),
         )?;
-        let page_id = self.pages.insert(page.inner());
+        let page_id = self.resources.insert(page.inner());
         Ok(Page {
-            id: page_id as u64,
+            id: page_id.index() as u64,
             owned: true,
         })
     }
@@ -27,9 +27,10 @@ impl State {
         self_: Page,
         query: String,
     ) -> wasmtime::Result<Node> {
+        let index = self_.into();
         let page = self
-            .pages
-            .get(self_.id as usize)
+            .resources
+            .get(index)
             .ok_or(anyhow::anyhow!("Page not found"))?;
         let node = page.find_element(&query)?;
         let node_id = node.node_id;
@@ -37,9 +38,9 @@ impl State {
             node_id: node_id as u32,
             page_id: self_.id as usize,
         };
-        let node_id = self.nodes.insert(node);
+        let node_id = self.resources.insert(node);
         Ok(Node {
-            id: node_id as u64,
+            id: node_id.index() as u64,
             owned: true,
         })
     }
@@ -48,9 +49,10 @@ impl State {
         &mut self,
         self_: Page,
     ) -> wasmtime::Result<Vec<u8>> {
+        let index = self_.into();
         let page = self
-            .pages
-            .get(self_.id as usize)
+            .resources
+            .get(index)
             .ok_or(anyhow::anyhow!("Page not found"))?;
         let bytes = page.capture_screenshot(
             headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Jpeg,
@@ -62,15 +64,17 @@ impl State {
     }
 
     pub(crate) async fn impl_page_html(&mut self, self_: Page) -> wasmtime::Result<String> {
+        let index = self_.into();
         let page = self
-            .pages
-            .get(self_.id as usize)
+            .resources
+            .get(index)
             .ok_or(anyhow::anyhow!("Page not found"))?;
         Ok(page.get_content()?)
     }
 
     pub(crate) fn impl_drop_page(&mut self, rep: Page) -> wasmtime::Result<()> {
-        self.pages.remove(rep.id as usize);
+        let index = rep.into();
+        self.resources.drop_key(index);
         Ok(())
     }
 }

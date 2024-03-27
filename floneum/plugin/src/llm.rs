@@ -192,10 +192,10 @@ impl State {
         ty: main::types::ModelType,
     ) -> TextGenerationModel {
         let model = LazyTextGenerationModel::Uninitialized(ty);
-        let idx = self.models.insert(model);
+        let idx = self.resources.insert(model);
 
         TextGenerationModel {
-            id: idx as u64,
+            id: idx.index() as u64,
             owned: true,
         }
     }
@@ -214,7 +214,12 @@ impl State {
         max_tokens: Option<u32>,
         stop_on: Option<String>,
     ) -> wasmtime::Result<String> {
-        let model = self.models[self_.id as usize].value().await?;
+        let index = self_.into();
+        let mut borrow = self
+            .resources
+            .get_mut(index)
+            .ok_or(anyhow::anyhow!("Model not found"))?;
+        let model = borrow.value().await?;
         match model {
             ConcreteTextGenerationModel::Llama(model) => Ok(model
                 .generate_text(&input)
@@ -237,7 +242,12 @@ impl State {
     ) -> wasmtime::Result<String> {
         let structure = RegexParser::new(&regex)?;
 
-        let model = self.models[self_.id as usize].value().await?;
+        let index = self_.into();
+        let mut borrow = self
+            .resources
+            .get_mut(index)
+            .ok_or(anyhow::anyhow!("Model not found"))?;
+        let model = borrow.value().await?;
         match model {
             ConcreteTextGenerationModel::Llama(model) => Ok(model
                 .stream_structured_text(&input, structure)
@@ -256,7 +266,8 @@ impl State {
         &mut self,
         model: TextGenerationModel,
     ) -> wasmtime::Result<()> {
-        self.models.remove(model.id as usize);
+        let index = model.into();
+        self.resources.drop_key(index);
         Ok(())
     }
 }
