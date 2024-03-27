@@ -1,5 +1,6 @@
 use candle_core::{Device, Tensor};
 
+#[allow(unused)]
 pub(crate) fn fast_cpu_silu(tensor: &Tensor, device: &Device) -> candle_core::Result<Tensor> {
     #[cfg(feature = "rayon")]
     {
