@@ -1338,9 +1338,8 @@ dependencies = [
 
 [[package]]
 name = "candle-core"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f1b20174c1707e20f4cb364a355b449803c03e9b0c9193324623cf9787a4e00"
+version = "0.4.2"
+source = "git+https://github.com/huggingface/candle?rev=cdc8b57b5cf28ad92642b076d67e610bdb958b2d#cdc8b57b5cf28ad92642b076d67e610bdb958b2d"
 dependencies = [
  "accelerate-src",
  "byteorder",
@@ -1366,15 +1365,14 @@ dependencies = [
 
 [[package]]
 name = "candle-datasets"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4aec640ab558b8e04e2565b243e660e3f880b55e0c4e15e89941246fa9d34e2"
+version = "0.4.2"
+source = "git+https://github.com/huggingface/candle?rev=cdc8b57b5cf28ad92642b076d67e610bdb958b2d#cdc8b57b5cf28ad92642b076d67e610bdb958b2d"
 dependencies = [
  "byteorder",
  "candle-core",
  "candle-nn",
  "hf-hub",
- "image 0.24.8",
+ "image 0.25.0",
  "memmap2 0.9.4",
  "parquet",
  "rand 0.8.5",
@@ -1384,9 +1382,8 @@ dependencies = [
 
 [[package]]
 name = "candle-flash-attn"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75943670542635d12c507dfc52f4362e82a134b8d47e65da7b90a51ca9eb732c"
+version = "0.4.2"
+source = "git+https://github.com/huggingface/candle?rev=cdc8b57b5cf28ad92642b076d67e610bdb958b2d#cdc8b57b5cf28ad92642b076d67e610bdb958b2d"
 dependencies = [
  "anyhow",
  "bindgen_cuda",
@@ -1396,18 +1393,16 @@ dependencies = [
 
 [[package]]
 name = "candle-kernels"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5845911a44164ebb73b56a0e23793ba1b583bad102af7400fe4768babc5815b2"
+version = "0.4.2"
+source = "git+https://github.com/huggingface/candle?rev=cdc8b57b5cf28ad92642b076d67e610bdb958b2d#cdc8b57b5cf28ad92642b076d67e610bdb958b2d"
 dependencies = [
  "bindgen_cuda",
 ]
 
 [[package]]
 name = "candle-metal-kernels"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b20d6c0d49121e2709ed9faa958ba915ea59526036bcf27558817d1452a4ff09"
+version = "0.4.2"
+source = "git+https://github.com/huggingface/candle?rev=cdc8b57b5cf28ad92642b076d67e610bdb958b2d#cdc8b57b5cf28ad92642b076d67e610bdb958b2d"
 dependencies = [
  "metal",
  "once_cell",
@@ -1417,9 +1412,8 @@ dependencies = [
 
 [[package]]
 name = "candle-nn"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66a27533c8edfc915a6459f9850641ef523a829fa1a181c670766c1f752d873a"
+version = "0.4.2"
+source = "git+https://github.com/huggingface/candle?rev=cdc8b57b5cf28ad92642b076d67e610bdb958b2d#cdc8b57b5cf28ad92642b076d67e610bdb958b2d"
 dependencies = [
  "accelerate-src",
  "candle-core",
@@ -1436,15 +1430,15 @@ dependencies = [
 
 [[package]]
 name = "candle-transformers"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5847699f0643da05e57fc473672566e93dc36d82c1b7eeb970c6154d3434fe1"
+version = "0.4.2"
+source = "git+https://github.com/huggingface/candle?rev=cdc8b57b5cf28ad92642b076d67e610bdb958b2d#cdc8b57b5cf28ad92642b076d67e610bdb958b2d"
 dependencies = [
  "accelerate-src",
  "byteorder",
  "candle-core",
  "candle-flash-attn",
  "candle-nn",
+ "fancy-regex",
  "intel-mkl-src",
  "num-traits",
  "rand 0.8.5",
@@ -3448,6 +3442,17 @@ name = "fallible-iterator"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2acce4a10f12dc2fb14a218589d4f1f62ef011b2d0cc4b3cb1bba8e94da14649"
+
+[[package]]
+name = "fancy-regex"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "531e46835a22af56d1e3b66f04844bed63158bc094a628bec1d321d9b4c44bf2"
+dependencies = [
+ "bit-set",
+ "regex-automata 0.4.5",
+ "regex-syntax 0.8.2",
+]
 
 [[package]]
 name = "fastdivide"
@@ -5699,6 +5704,20 @@ dependencies = [
  "png 0.17.12",
  "qoi",
  "tiff",
+]
+
+[[package]]
+name = "image"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a9b4f005360d32e9325029b38ba47ebd7a56f3316df09249368939562d518645"
+dependencies = [
+ "bytemuck",
+ "byteorder",
+ "num-traits",
+ "png 0.17.12",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]
@@ -12716,7 +12735,7 @@ version = "1.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
- "cfg-if 1.0.0",
+ "cfg-if 0.1.10",
  "static_assertions",
 ]
 
@@ -15020,10 +15039,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "zune-core"
+version = "0.4.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f423a2c17029964870cfaabb1f13dfab7d092a62a29a89264f4d36990ca414a"
+
+[[package]]
 name = "zune-inflate"
 version = "0.2.54"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73ab332fe2f6680068f3582b16a24f90ad7096d5d39b974d1c0aff0125116f02"
 dependencies = [
  "simd-adler32",
+]
+
+[[package]]
+name = "zune-jpeg"
+version = "0.4.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec866b44a2a1fd6133d363f073ca1b179f438f99e7e5bfb1e33f7181facfe448"
+dependencies = [
+ "zune-core",
 ]

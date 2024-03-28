@@ -8,6 +8,7 @@ use candle_core::Module;
 use candle_core::{DType, Device, Result, Tensor};
 use candle_nn::Embedding;
 use mask::MaskCache;
+use candle_transformers::quantized_nn::RmsNorm;
 
 mod attention_layer;
 pub mod cache;
@@ -20,12 +21,11 @@ use cache::LlamaCache;
 fn decode_norm(
     tensor: QTensor,
     eps: f64,
-    device: &Device,
-) -> candle_core::Result<candle_nn::LayerNorm> {
-    Ok(candle_nn::LayerNorm::rms_norm(
-        tensor.dequantize(device)?,
+) -> candle_core::Result<RmsNorm> {
+RmsNorm::from_qtensor(
+        tensor,
         eps,
-    ))
+    )
 }
 
 #[allow(unused)]
@@ -49,7 +49,7 @@ pub struct Model {
     pub(crate) config: LlamaConfig,
     tok_embeddings: Embedding,
     layers: Vec<LlamaAttention>,
-    norm: candle_nn::LayerNorm,
+    norm: RmsNorm,
     output: QMatMul,
     masks: MaskCache,
 }
@@ -92,11 +92,11 @@ impl Model {
                 attention_wk: QMatMul::from_qtensor(attention_wk)?,
                 attention_wv: QMatMul::from_qtensor(attention_wv)?,
                 attention_wo: QMatMul::from_qtensor(attention_wo)?,
-                attention_norm: decode_norm(attention_norm, 1e-5, device)?,
+                attention_norm: decode_norm(attention_norm, 1e-5)?,
                 feed_forward_w1: QMatMul::from_qtensor(feed_forward_w1)?,
                 feed_forward_w2: QMatMul::from_qtensor(feed_forward_w2)?,
                 feed_forward_w3: QMatMul::from_qtensor(feed_forward_w3)?,
-                ffn_norm: decode_norm(ffn_norm, 1e-5, device)?,
+                ffn_norm: decode_norm(ffn_norm, 1e-5)?,
                 n_head: ct.hparams.n_head as usize,
                 n_kv_head: ct.hparams.n_head as usize / gqa,
                 head_dim: (ct.hparams.n_embd / ct.hparams.n_head) as usize,
@@ -108,7 +108,7 @@ impl Model {
             config,
             tok_embeddings: Embedding::new(tok_embeddings, ct.hparams.n_embd as usize),
             layers,
-            norm: decode_norm(ct.remove("norm.weight")?, 1e-5, device)?,
+            norm: decode_norm(ct.remove("norm.weight")?, 1e-5)?,
             output: QMatMul::from_qtensor(output)?,
             masks: Default::default(),
         })
@@ -154,7 +154,6 @@ impl Model {
         let norm = decode_norm(
             ct.tensor(reader, "output_norm.weight", device)?,
             rms_norm_eps,
-            device,
         )?;
         let output = ct.tensor(reader, "output.weight", device)?;
         let mut layers = Vec::with_capacity(block_count);
@@ -178,11 +177,11 @@ impl Model {
                 attention_wk: QMatMul::from_qtensor(attention_wk)?,
                 attention_wv: QMatMul::from_qtensor(attention_wv)?,
                 attention_wo: QMatMul::from_qtensor(attention_wo)?,
-                attention_norm: decode_norm(attention_norm, rms_norm_eps, device)?,
+                attention_norm: decode_norm(attention_norm, rms_norm_eps)?,
                 feed_forward_w1: QMatMul::from_qtensor(feed_forward_w1)?,
                 feed_forward_w2: QMatMul::from_qtensor(feed_forward_w2)?,
                 feed_forward_w3: QMatMul::from_qtensor(feed_forward_w3)?,
-                ffn_norm: decode_norm(ffn_norm, rms_norm_eps, device)?,
+                ffn_norm: decode_norm(ffn_norm, rms_norm_eps)?,
                 n_head: head_count,
                 n_kv_head: head_count_kv,
                 head_dim: embedding_length / head_count,

@@ -98,7 +98,7 @@ impl Llama {
     /// Create a default chat model.
     pub async fn new_chat() -> anyhow::Result<Self> {
         Llama::builder()
-            .with_source(LlamaSource::open_chat_7b())
+            .with_source(LlamaSource::starling_7b_beta())
             .build()
             .await
     }

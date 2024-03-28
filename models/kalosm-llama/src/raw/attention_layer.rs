@@ -2,18 +2,18 @@ use super::cache::{AttentionCache, AttentionCacheValue};
 use super::rope::RopeCache;
 use candle_core::Device;
 use candle_core::{quantized::QMatMul, Module, Tensor};
-use candle_nn::LayerNorm;
+use candle_transformers::quantized_nn::RmsNorm;
 
 pub struct LlamaAttention {
     pub attention_wq: QMatMul,
     pub attention_wk: QMatMul,
     pub attention_wv: QMatMul,
     pub attention_wo: QMatMul,
-    pub attention_norm: LayerNorm,
+    pub attention_norm: RmsNorm,
     pub feed_forward_w1: QMatMul,
     pub feed_forward_w2: QMatMul,
     pub feed_forward_w3: QMatMul,
-    pub ffn_norm: LayerNorm,
+    pub ffn_norm: RmsNorm,
     pub n_head: usize,
     pub n_kv_head: usize,
     pub head_dim: usize,
