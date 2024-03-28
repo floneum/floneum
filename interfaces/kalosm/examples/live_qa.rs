@@ -12,7 +12,8 @@ async fn main() -> Result<(), anyhow::Error> {
     // Set up the whisper model
     let model = WhisperBuilder::default()
         .with_source(WhisperSource::MediumEn)
-        .build()?;
+        .build()
+        .await?;
 
     // Create database connection
     let db = Surreal::new::<RocksDb>("./db/temp.db").await.unwrap();

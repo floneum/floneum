@@ -292,7 +292,8 @@ use tokio::{
 async fn main() -> Result<(), anyhow::Error> {
     let model = WhisperBuilder::default()
         .with_source(WhisperSource::MediumEn)
-        .build()?;
+        .build()
+        .await?;
 
     let document_engine = Arc::new(RwLock::new(FuzzySearchIndex::default()));
     {
@@ -359,7 +360,7 @@ In addition to language, audio, and embedding models, Kalosm also supports image
 ```rust, no_run
 use kalosm::vision::*;
 
-let model = Wuerstchen::builder().build().unwrap();
+let model = Wuerstchen::builder().build().await?.unwrap();
 let settings = WuerstchenInferenceSettings::new(
     "a cute cat with a hat in a room covered with fur with incredible detail",
 )
