@@ -1,7 +1,8 @@
+use std::path::PathBuf;
+
 use anyhow::{anyhow, Error as E, Result};
 use candle_core::{Device, IndexOp, Tensor};
 use candle_nn::{ops::softmax, VarBuilder};
-use hf_hub::{api::sync::Api, Repo, RepoType};
 use rand::{distributions::Distribution, SeedableRng};
 use tokenizers::Tokenizer;
 
@@ -21,30 +22,13 @@ pub(crate) struct WhisperInner {
 }
 
 impl WhisperInner {
-    pub(crate) fn new(settings: WhisperBuilder) -> anyhow::Result<Self> {
+    pub(crate) fn new(
+        settings: WhisperBuilder,
+        weights_filename: PathBuf,
+        tokenizer_filename: PathBuf,
+        config_filename: PathBuf,
+    ) -> anyhow::Result<Self> {
         let device = accelerated_device_if_available()?;
-        let (default_model, _) = settings.model.model_and_revision();
-        let default_model = default_model.to_string();
-        let path = std::path::PathBuf::from(default_model.clone());
-        let (model_id, revision) = (default_model, "main".to_string());
-
-        let (config_filename, tokenizer_filename, weights_filename) = if path.exists() {
-            let mut config_filename = path.clone();
-            config_filename.push("config.json");
-            let mut tokenizer_filename = path.clone();
-            tokenizer_filename.push("tokenizer.json");
-            let mut model_filename = path;
-            model_filename.push("model.safetensors");
-            (config_filename, tokenizer_filename, model_filename)
-        } else {
-            let api = Api::new()?;
-            let repo = api.repo(Repo::with_revision(model_id, RepoType::Model, revision));
-            (
-                repo.get("config.json")?,
-                repo.get("tokenizer.json")?,
-                repo.get("model.safetensors")?,
-            )
-        };
         let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(E::msg)?;
 
         let mel_bytes = include_bytes!("melfilters.bytes");

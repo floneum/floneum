@@ -10308,6 +10308,7 @@ dependencies = [
  "intel-mkl-src",
  "itertools 0.10.5",
  "kalosm-common",
+ "kalosm-language-model",
  "kalosm-sound",
  "kalosm-streams",
  "rand 0.8.5",

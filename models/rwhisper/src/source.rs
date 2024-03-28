@@ -1,3 +1,5 @@
+use kalosm_common::FileSource;
+
 /// The source whisper model to use.
 #[derive(Clone, Copy, Debug)]
 pub enum WhisperSource {
@@ -47,17 +49,32 @@ impl WhisperSource {
     pub(crate) fn model_and_revision(&self) -> (&'static str, &'static str) {
         match self {
             Self::Tiny => ("openai/whisper-tiny", "main"),
-            Self::TinyEn => ("openai/whisper-tiny.en", "refs/pr/15"),
-            Self::Base => ("openai/whisper-base", "refs/pr/22"),
-            Self::BaseEn => ("openai/whisper-base.en", "refs/pr/13"),
+            Self::TinyEn => ("openai/whisper-tiny.en", "main"),
+            Self::Base => ("openai/whisper-base", "main"),
+            Self::BaseEn => ("openai/whisper-base.en", "main"),
             Self::Small => ("openai/whisper-small", "main"),
-            Self::SmallEn => ("openai/whisper-small.en", "refs/pr/10"),
+            Self::SmallEn => ("openai/whisper-small.en", "main"),
             Self::Medium => ("openai/whisper-medium", "main"),
             Self::MediumEn => ("openai/whisper-medium.en", "main"),
-            Self::Large => ("openai/whisper-large", "refs/pr/36"),
-            Self::LargeV2 => ("openai/whisper-large-v2", "refs/pr/57"),
+            Self::Large => ("openai/whisper-large", "main"),
+            Self::LargeV2 => ("openai/whisper-large-v2", "main"),
             Self::DistilMediumEn => ("distil-whisper/distil-medium.en", "main"),
             Self::DistilLargeV2 => ("distil-whisper/distil-large-v2", "main"),
+        }
+    }
+}
+
+pub(crate) struct WhisperModelConfig {
+    pub(crate) model: FileSource,
+    pub(crate) tokenizer: FileSource,
+    pub(crate) config: FileSource,
+}
+impl WhisperModelConfig {
+    pub(crate) fn new(model: FileSource, tokenizer: FileSource, config: FileSource) -> Self {
+        Self {
+            model,
+            tokenizer,
+            config,
         }
     }
 }

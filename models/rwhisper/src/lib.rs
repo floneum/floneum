@@ -13,7 +13,8 @@
 //!     // Create a new small whisper model.
 //!     let model = WhisperBuilder::default()
 //!         .with_source(WhisperSource::SmallEn)
-//!         .build()?;
+//!         .build()
+//!         .await?;
 //!
 //!     // Record audio from the microphone for 5 seconds.
 //!     let audio = kalosm_sound::MicInput::default()
@@ -35,6 +36,8 @@
 #![warn(missing_docs)]
 
 use cpal::FromSample;
+use kalosm_common::{FileSource, ModelLoadingProgress};
+use kalosm_language_model::ModelBuilder;
 use kalosm_streams::text_stream::ChannelTextStream;
 use model::WhisperInner;
 use rodio::{source::UniformSourceIterator, Source};
@@ -160,16 +163,96 @@ impl Default for WhisperBuilder {
     }
 }
 
+#[async_trait::async_trait]
+impl ModelBuilder for WhisperBuilder {
+    type Model = Whisper;
+
+    async fn start_with_loading_handler(
+        self,
+        handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
+    ) -> anyhow::Result<Self::Model> {
+        self.build_with_loading_handler(handler).await
+    }
+
+    fn requires_download(&self) -> bool {
+        let whisper = self.get_whisper_model_config();
+        !whisper.model.downloaded()
+            || !whisper.tokenizer.downloaded()
+            || !whisper.config.downloaded()
+    }
+}
+
 impl WhisperBuilder {
+    fn get_whisper_model_config(&self) -> WhisperModelConfig {
+        let (model_id, revision) = self.model.model_and_revision();
+        let model = FileSource::huggingface(
+            model_id.to_owned(),
+            revision.to_owned(),
+            "model.safetensors".to_owned(),
+        );
+        let tokenizer = FileSource::huggingface(
+            model_id.to_owned(),
+            revision.to_owned(),
+            "tokenizer.json".to_owned(),
+        );
+        let config = FileSource::huggingface(
+            model_id.to_owned(),
+            revision.to_owned(),
+            "config.json".to_owned(),
+        );
+        WhisperModelConfig::new(model, tokenizer, config)
+    }
     /// Build the model.
-    pub fn build(self) -> anyhow::Result<Whisper> {
+    pub async fn build(self) -> anyhow::Result<Whisper> {
+        self.build_with_loading_handler(|_| {}).await
+    }
+
+    /// Build the model with a handler for progress as the download and loading progresses.
+    pub async fn build_with_loading_handler(
+        self,
+        mut progress_handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
+    ) -> anyhow::Result<Whisper> {
+        //Download section
+        let whisper = self.get_whisper_model_config();
+        let tokenizer_source = whisper.tokenizer;
+        let model_source = whisper.model;
+        let config_source = whisper.config;
+
+        let tokenizer_filename = tokenizer_source
+            .download(|progress| {
+                progress_handler(ModelLoadingProgress::downloading(
+                    format!("Tokenizer ({})", tokenizer_source),
+                    progress,
+                ))
+            })
+            .await?;
+
+        let filename = model_source
+            .download(|progress| {
+                progress_handler(ModelLoadingProgress::downloading(
+                    format!("Model ({})", model_source),
+                    progress,
+                ))
+            })
+            .await?;
+
+        let config = config_source
+            .download(|progress| {
+                progress_handler(ModelLoadingProgress::downloading(
+                    format!("Model ({})", config_source),
+                    progress,
+                ))
+            })
+            .await?;
+
         let (rx, tx) = std::sync::mpsc::channel();
         let thread = std::thread::spawn(move || {
             tokio::runtime::Builder::new_current_thread()
                 .build()
                 .unwrap()
                 .block_on(async move {
-                    let mut model = WhisperInner::new(self).unwrap();
+                    let mut model =
+                        WhisperInner::new(self, filename, tokenizer_filename, config).unwrap();
                     while let Ok(message) = tx.recv() {
                         match message {
                             WhisperMessage::Kill => return,
@@ -189,7 +272,7 @@ impl WhisperBuilder {
 
     /// Set the model to be used.
     pub fn with_source(mut self, model: WhisperSource) -> Self {
-        self.model = model;
+        self.model = model.into();
         self
     }
 
@@ -415,12 +498,6 @@ impl Display for WhisperLanguage {
 pub struct Whisper {
     thread: Option<std::thread::JoinHandle<()>>,
     sender: std::sync::mpsc::Sender<WhisperMessage>,
-}
-
-impl Default for Whisper {
-    fn default() -> Self {
-        Self::builder().build().unwrap()
-    }
 }
 
 impl Whisper {
