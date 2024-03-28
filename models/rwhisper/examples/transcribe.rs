@@ -7,7 +7,8 @@ async fn main() -> Result<(), anyhow::Error> {
     // Create a new small whisper model.
     let model = WhisperBuilder::default()
         .with_source(WhisperSource::SmallEn)
-        .build()?;
+        .build()
+        .await?;
 
     // Record audio from the microphone for 5 seconds.
     let audio = kalosm_sound::MicInput::default()

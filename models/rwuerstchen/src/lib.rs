@@ -8,15 +8,18 @@
 //!
 //! ```rust, no_run
 //! use rwuerstchen::*;
-//!
-//! let model = Wuerstchen::builder().build().unwrap();
-//! let settings = WuerstchenInferenceSettings::new(
-//!     "a cute cat with a hat in a room covered with fur with incredible detail",
-//! )
-//! .with_n_steps(2);
-//! let images = model.run(settings).unwrap();
-//! for (i, img) in images.iter().enumerate() {
-//!     img.save(&format!("{}.png", i)).unwrap();
+//! #[tokio::main]
+//! async fn main() -> Result<(), anyhow::Error> {
+//!     let model = Wuerstchen::builder().build().await.unwrap();
+//!     let settings = WuerstchenInferenceSettings::new(
+//!         "a cute cat with a hat in a room covered with fur with incredible detail",
+//!     )
+//!     .with_n_steps(2);
+//!     let images = model.run(settings).unwrap();
+//!     for (i, img) in images.iter().enumerate() {
+//!         img.save(&format!("{}.png", i)).unwrap();
+//!     }
+//!     Ok(())
 //! }
 //! ```
 
@@ -38,6 +41,9 @@ use candle_transformers::models::{stable_diffusion, wuerstchen::diffnext::WDiffN
 use anyhow::{Error as E, Result};
 use candle_core::{DType, Device, Tensor};
 use image::ImageBuffer;
+use kalosm_common::FileSource;
+pub use kalosm_common::ModelLoadingProgress;
+use kalosm_language_model::ModelBuilder;
 use tokenizers::Tokenizer;
 
 const PRIOR_GUIDANCE_SCALE: f64 = 4.0;
@@ -137,8 +143,53 @@ impl WuerstchenBuilder {
     }
 
     /// Build the model.
-    pub fn build(self) -> Result<Wuerstchen> {
-        Wuerstchen::new(self)
+    pub async fn build(self) -> Result<Wuerstchen> {
+        self.build_with_loading_handler(|_| {}).await
+    }
+
+    /// Build the model with a handler for progress as the download and loading progresses.
+    pub async fn build_with_loading_handler(
+        self,
+        progress_handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
+    ) -> Result<Wuerstchen> {
+        Wuerstchen::new(self, progress_handler).await
+    }
+}
+
+#[async_trait::async_trait]
+impl ModelBuilder for WuerstchenBuilder {
+    type Model = Wuerstchen;
+
+    async fn start_with_loading_handler(
+        self,
+        handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
+    ) -> anyhow::Result<Self::Model> {
+        self.build_with_loading_handler(handler).await
+    }
+
+    fn requires_download(&self) -> bool {
+        let downloaded_decoder_weights = self.decoder_weights.is_none()
+            || <&ModelFile as Into<FileSource>>::into(&ModelFile::Decoder).downloaded();
+        let downloaded_clip_weights = self.clip_weights.is_none()
+            || <&ModelFile as Into<FileSource>>::into(&ModelFile::Clip).downloaded();
+        let downloaded_prior_clip_weights = self.prior_clip_weights.is_none()
+            || <&ModelFile as Into<FileSource>>::into(&ModelFile::PriorClip).downloaded();
+        let downloaded_prior_weights = self.prior_weights.is_none()
+            || <&ModelFile as Into<FileSource>>::into(&ModelFile::Prior).downloaded();
+        let downloaded_vqgan_weights = self.vqgan_weights.is_none()
+            || <&ModelFile as Into<FileSource>>::into(&ModelFile::VqGan).downloaded();
+        let downloaded_tokenizer = self.tokenizer.is_none()
+            || <&ModelFile as Into<FileSource>>::into(&ModelFile::Tokenizer).downloaded();
+        let downloaded_prior_tokenizer = self.prior_tokenizer.is_none()
+            || <&ModelFile as Into<FileSource>>::into(&ModelFile::PriorTokenizer).downloaded();
+
+        !(downloaded_decoder_weights
+            && downloaded_clip_weights
+            && downloaded_prior_clip_weights
+            && downloaded_prior_weights
+            && downloaded_vqgan_weights
+            && downloaded_tokenizer
+            && downloaded_prior_tokenizer)
     }
 }
 
@@ -234,26 +285,38 @@ enum ModelFile {
 }
 
 impl ModelFile {
-    fn get(&self, filename: Option<String>) -> Result<std::path::PathBuf> {
-        use hf_hub::api::sync::Api;
+    fn get(&self, filename: Option<String>) -> FileSource {
         match filename {
-            Some(filename) => Ok(std::path::PathBuf::from(filename)),
+            Some(filename) => FileSource::local(std::path::PathBuf::from(filename)),
             None => {
-                let repo_main = "warp-ai/wuerstchen";
-                let repo_prior = "warp-ai/wuerstchen-prior";
-                let (repo, path) = match self {
-                    Self::Tokenizer => (repo_main, "tokenizer/tokenizer.json"),
-                    Self::PriorTokenizer => (repo_prior, "tokenizer/tokenizer.json"),
-                    Self::Clip => (repo_main, "text_encoder/model.safetensors"),
-                    Self::PriorClip => (repo_prior, "text_encoder/model.safetensors"),
-                    Self::Decoder => (repo_main, "decoder/diffusion_pytorch_model.safetensors"),
-                    Self::VqGan => (repo_main, "vqgan/diffusion_pytorch_model.safetensors"),
-                    Self::Prior => (repo_prior, "prior/diffusion_pytorch_model.safetensors"),
-                };
-                let filename = Api::new()?.model(repo.to_string()).get(path)?;
-                Ok(filename)
+                self.into()
+                // file_source
+                //     .download(|progress| {
+                //         progress_handler(ModelLoadingProgress::downloading(
+                //             format!("Model ({})", file_source),
+                //             progress,
+                //         ))
+                //     })
+                //     .await
             }
         }
+    }
+}
+
+impl Into<FileSource> for &ModelFile {
+    fn into(self) -> FileSource {
+        let repo_main = "warp-ai/wuerstchen";
+        let repo_prior = "warp-ai/wuerstchen-prior";
+        let (repo, path) = match self {
+            ModelFile::Tokenizer => (repo_main, "tokenizer/tokenizer.json"),
+            ModelFile::PriorTokenizer => (repo_prior, "tokenizer/tokenizer.json"),
+            ModelFile::Clip => (repo_main, "text_encoder/model.safetensors"),
+            ModelFile::PriorClip => (repo_prior, "text_encoder/model.safetensors"),
+            ModelFile::Decoder => (repo_main, "decoder/diffusion_pytorch_model.safetensors"),
+            ModelFile::VqGan => (repo_main, "vqgan/diffusion_pytorch_model.safetensors"),
+            ModelFile::Prior => (repo_prior, "prior/diffusion_pytorch_model.safetensors"),
+        };
+        FileSource::huggingface(repo.to_owned(), "main".to_owned(), path.to_owned())
     }
 }
 
@@ -277,7 +340,10 @@ impl Wuerstchen {
         WuerstchenBuilder::default()
     }
 
-    fn new(settings: WuerstchenBuilder) -> Result<Self> {
+    async fn new(
+        settings: WuerstchenBuilder,
+        mut progress_handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
+    ) -> Result<Self> {
         let WuerstchenBuilder {
             use_flash_attn,
             decoder_weights,
@@ -289,16 +355,42 @@ impl Wuerstchen {
             prior_tokenizer,
         } = settings;
 
-        let prior_tokenizer_path = ModelFile::PriorTokenizer.get(prior_tokenizer)?;
+        let prior_tokenizer_source = ModelFile::PriorTokenizer.get(prior_tokenizer);
+        let prior_tokenizer_path = prior_tokenizer_source
+            .download(|progress| {
+                progress_handler(ModelLoadingProgress::downloading(
+                    format!("Prior Tokenizer ({})", prior_tokenizer_source),
+                    progress,
+                ))
+            })
+            .await?;
         let prior_tokenizer = Tokenizer::from_file(prior_tokenizer_path).map_err(E::msg)?;
-        let tokenizer_path = ModelFile::Tokenizer.get(tokenizer)?;
+
+        let tokenizer_source = ModelFile::Tokenizer.get(tokenizer);
+        let tokenizer_path = tokenizer_source
+            .download(|progress| {
+                progress_handler(ModelLoadingProgress::downloading(
+                    format!("Tokenizer ({})", tokenizer_source),
+                    progress,
+                ))
+            })
+            .await?;
         let tokenizer = Tokenizer::from_file(tokenizer_path).map_err(E::msg)?;
 
         // Candle doesn't support some operations rwuerstchen needs, so we can't use it.
         // let device = kalosm_common::accelerated_device_if_available()?;
         let device = Device::Cpu;
 
-        let clip_weights = ModelFile::Clip.get(clip_weights)?;
+        let clip_weights_source = ModelFile::Clip.get(clip_weights);
+        let clip_weights = clip_weights_source
+            .download(|progress| {
+                progress_handler(ModelLoadingProgress::downloading(
+                    format!("Weights ({})", clip_weights_source),
+                    progress,
+                ))
+            })
+            .await?;
+
         let clip_config = stable_diffusion::clip::Config::wuerstchen();
         let clip = stable_diffusion::build_clip_transformer(
             &clip_config,
@@ -306,7 +398,17 @@ impl Wuerstchen {
             &device,
             DType::F32,
         )?;
-        let prior_clip_weights = ModelFile::PriorClip.get(prior_clip_weights)?;
+
+        let prior_clip_weights_source = ModelFile::PriorClip.get(prior_clip_weights);
+        let prior_clip_weights = prior_clip_weights_source
+            .download(|progress| {
+                progress_handler(ModelLoadingProgress::downloading(
+                    format!("Prior Weights ({})", prior_clip_weights_source),
+                    progress,
+                ))
+            })
+            .await?;
+
         let prior_clip_config = stable_diffusion::clip::Config::wuerstchen_prior();
         let prior_clip = stable_diffusion::build_clip_transformer(
             &prior_clip_config,
@@ -316,7 +418,16 @@ impl Wuerstchen {
         )?;
 
         let decoder = {
-            let file = ModelFile::Decoder.get(decoder_weights)?;
+            let file_source = ModelFile::Decoder.get(decoder_weights);
+            let file = file_source
+                .download(|progress| {
+                    progress_handler(ModelLoadingProgress::downloading(
+                        format!("Decoder ({})", file_source),
+                        progress,
+                    ))
+                })
+                .await?;
+
             let vb = unsafe {
                 candle_nn::VarBuilder::from_mmaped_safetensors(&[file], DType::F32, &device)?
             };
@@ -333,7 +444,16 @@ impl Wuerstchen {
         };
 
         let prior = {
-            let file = ModelFile::Prior.get(prior_weights)?;
+            let file_source = ModelFile::Prior.get(prior_weights);
+            let file = file_source
+                .download(|progress| {
+                    progress_handler(ModelLoadingProgress::downloading(
+                        format!("Decoder Prior ({})", file_source),
+                        progress,
+                    ))
+                })
+                .await?;
+
             let vb = unsafe {
                 candle_nn::VarBuilder::from_mmaped_safetensors(&[file], DType::F32, &device)?
             };
@@ -350,7 +470,16 @@ impl Wuerstchen {
         };
 
         let vqgan = {
-            let file = ModelFile::VqGan.get(vqgan_weights)?;
+            let file_source = ModelFile::VqGan.get(vqgan_weights);
+            let file = file_source
+                .download(|progress| {
+                    progress_handler(ModelLoadingProgress::downloading(
+                        format!("VqGan ({})", file_source),
+                        progress,
+                    ))
+                })
+                .await?;
+
             let vb = unsafe {
                 candle_nn::VarBuilder::from_mmaped_safetensors(&[file], DType::F32, &device)?
             };
