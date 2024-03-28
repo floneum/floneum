@@ -21,9 +21,15 @@ async fn main() {
     let prompt = "The capital of France is ";
     let mut result = model.stream_text(prompt).await.unwrap();
 
+    let start_time = std::time::Instant::now();
+    let mut tokens = 0;
     print!("{prompt}");
     while let Some(token) = result.next().await {
+        tokens += 1;
         print!("{token}");
         std::io::stdout().flush().unwrap();
     }
+    let elapsed = start_time.elapsed();
+    println!("\n\nGenerated {} tokens in {:?}", tokens, elapsed);
+    println!("Tokens per second: {:.2}", tokens as f64 / elapsed.as_secs_f64());
 }
