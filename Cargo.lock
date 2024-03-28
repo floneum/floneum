@@ -10327,6 +10327,7 @@ version = "0.2.1"
 dependencies = [
  "accelerate-src",
  "anyhow",
+ "async-trait",
  "candle-core",
  "candle-nn",
  "candle-transformers",
@@ -10336,7 +10337,9 @@ dependencies = [
  "image 0.24.8",
  "intel-mkl-src",
  "kalosm-common",
+ "kalosm-language-model",
  "tokenizers 0.13.4",
+ "tokio",
  "tracing",
 ]
 

@@ -36,7 +36,8 @@
 #![warn(missing_docs)]
 
 use cpal::FromSample;
-use kalosm_common::{FileSource, ModelLoadingProgress};
+use kalosm_common::FileSource;
+pub use kalosm_common::ModelLoadingProgress;
 use kalosm_language_model::ModelBuilder;
 use kalosm_streams::text_stream::ChannelTextStream;
 use model::WhisperInner;
@@ -272,7 +273,7 @@ impl WhisperBuilder {
 
     /// Set the model to be used.
     pub fn with_source(mut self, model: WhisperSource) -> Self {
-        self.model = model.into();
+        self.model = model;
         self
     }
 
