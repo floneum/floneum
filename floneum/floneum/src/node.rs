@@ -203,12 +203,10 @@ fn CenterNodeUI(props: NodeProps) -> Element {
     let mut application = use_application_state();
     let focused = application.read().currently_focused.map(|n| n.node) == Some(props.node);
     let mut node = props.node;
-    {
-        if node.with(|n| n.queued) {
-            node.with_mut(|node| node.queued = false);
-            let application = application.write();
-            application.graph.run_node(node);
-        }
+    if node.with(|n| n.queued) {
+        node.with_mut(|node| node.queued = false);
+        let application = application.write();
+        application.graph.run_node(node);
     }
     let current_node = node.read();
     let name = &current_node.instance.metadata().name;

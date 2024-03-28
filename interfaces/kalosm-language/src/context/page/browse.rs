@@ -5,6 +5,7 @@ use scraper::Html;
 use std::sync::Arc;
 use url::Url;
 
+use crate::prelude::AnyNode;
 use super::extract_article;
 use crate::context::document::Document;
 
@@ -202,5 +203,16 @@ impl<'a> Node<'a> {
     pub fn find_child(&self, selector: &str) -> Result<Self, anyhow::Error> {
         let child = self.inner.find_element(selector)?;
         Ok(Self { inner: child })
+    }
+
+    /// Get the inner scraper element.
+    pub fn into_inner(self) -> Element<'a> {
+        self.inner
+    }
+}
+
+impl<'a> Into<AnyNode<'a>> for Node<'a> {
+    fn into(self) -> AnyNode<'a> {
+        AnyNode::Dynamic(self.into_inner())
     }
 }

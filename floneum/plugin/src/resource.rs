@@ -1,3 +1,4 @@
+use kalosm::language::Tab;
 use std::{
     any::{Any, TypeId},
     borrow::BorrowMut,
@@ -130,7 +131,7 @@ impl From<main::types::EmbeddingDb> for Resource<VectorDBWithDocuments> {
     }
 }
 
-impl From<main::types::Page> for Resource<Page> {
+impl From<main::types::Page> for Resource<Arc<Tab>> {
     fn from(value: main::types::Page) -> Self {
         Self {
             index: value.id as usize,

@@ -27,13 +27,15 @@ impl State {
         self_: Page,
         query: String,
     ) -> wasmtime::Result<Node> {
-        let index = self_.into();
-        let page = self
-            .resources
-            .get(index)
-            .ok_or(anyhow::anyhow!("Page not found"))?;
-        let node = page.find_element(&query)?;
-        let node_id = node.node_id;
+        let node_id = {
+            let index = self_.into();
+            let page = self
+                .resources
+                .get(index)
+                .ok_or(anyhow::anyhow!("Page not found"))?;
+            let node = page.find(&query)?;
+            node.into_inner().node_id
+        };
         let node = AnyNodeRef {
             node_id: node_id as u32,
             page_id: self_.id as usize,
@@ -54,13 +56,8 @@ impl State {
             .resources
             .get(index)
             .ok_or(anyhow::anyhow!("Page not found"))?;
-        let bytes = page.capture_screenshot(
-            headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Jpeg,
-            None,
-            None,
-            false,
-        )?;
-        Ok(bytes)
+        let bytes = page.screenshot()?;
+        Ok(bytes.into_bytes())
     }
 
     pub(crate) async fn impl_page_html(&mut self, self_: Page) -> wasmtime::Result<String> {
@@ -69,7 +66,7 @@ impl State {
             .resources
             .get(index)
             .ok_or(anyhow::anyhow!("Page not found"))?;
-        Ok(page.get_content()?)
+        page.html().map(|html| html.html())
     }
 
     pub(crate) fn impl_drop_page(&mut self, rep: Page) -> wasmtime::Result<()> {
