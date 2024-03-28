@@ -31,5 +31,8 @@ async fn main() {
     }
     let elapsed = start_time.elapsed();
     println!("\n\nGenerated {} tokens in {:?}", tokens, elapsed);
-    println!("Tokens per second: {:.2}", tokens as f64 / elapsed.as_secs_f64());
+    println!(
+        "Tokens per second: {:.2}",
+        tokens as f64 / elapsed.as_secs_f64()
+    );
 }

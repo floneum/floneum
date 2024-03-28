@@ -290,7 +290,7 @@ impl LlamaSource {
                 end_user_marker: "<|end_of_turn|>",
                 assistant_marker: "GPT4 Correct Assistant: ",
                 end_assistant_marker: "<|end_of_turn|>",
-            })
+            }),
         }
     }
 

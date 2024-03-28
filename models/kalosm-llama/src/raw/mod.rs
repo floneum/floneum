@@ -7,8 +7,8 @@ use candle_core::IndexOp;
 use candle_core::Module;
 use candle_core::{DType, Device, Result, Tensor};
 use candle_nn::Embedding;
-use mask::MaskCache;
 use candle_transformers::quantized_nn::RmsNorm;
+use mask::MaskCache;
 
 mod attention_layer;
 pub mod cache;
@@ -18,14 +18,8 @@ mod silu;
 
 use cache::LlamaCache;
 
-fn decode_norm(
-    tensor: QTensor,
-    eps: f64,
-) -> candle_core::Result<RmsNorm> {
-RmsNorm::from_qtensor(
-        tensor,
-        eps,
-    )
+fn decode_norm(tensor: QTensor, eps: f64) -> candle_core::Result<RmsNorm> {
+    RmsNorm::from_qtensor(tensor, eps)
 }
 
 #[allow(unused)]
