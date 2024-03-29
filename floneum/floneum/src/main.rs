@@ -105,8 +105,6 @@ async fn main() {
     );
 }
 
-pub struct PluginId(usize);
-
 #[derive(Serialize, Deserialize, Default)]
 pub struct ApplicationState {
     graph: VisualGraph,

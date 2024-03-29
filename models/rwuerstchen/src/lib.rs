@@ -288,26 +288,16 @@ impl ModelFile {
     fn get(&self, filename: Option<String>) -> FileSource {
         match filename {
             Some(filename) => FileSource::local(std::path::PathBuf::from(filename)),
-            None => {
-                self.into()
-                // file_source
-                //     .download(|progress| {
-                //         progress_handler(ModelLoadingProgress::downloading(
-                //             format!("Model ({})", file_source),
-                //             progress,
-                //         ))
-                //     })
-                //     .await
-            }
+            None => self.into(),
         }
     }
 }
 
-impl Into<FileSource> for &ModelFile {
-    fn into(self) -> FileSource {
+impl From<&ModelFile> for FileSource {
+    fn from(val: &ModelFile) -> Self {
         let repo_main = "warp-ai/wuerstchen";
         let repo_prior = "warp-ai/wuerstchen-prior";
-        let (repo, path) = match self {
+        let (repo, path) = match val {
             ModelFile::Tokenizer => (repo_main, "tokenizer/tokenizer.json"),
             ModelFile::PriorTokenizer => (repo_prior, "tokenizer/tokenizer.json"),
             ModelFile::Clip => (repo_main, "text_encoder/model.safetensors"),

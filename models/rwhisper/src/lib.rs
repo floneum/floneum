@@ -240,7 +240,7 @@ impl WhisperBuilder {
         let config = config_source
             .download(|progress| {
                 progress_handler(ModelLoadingProgress::downloading(
-                    format!("Model ({})", config_source),
+                    format!("Config ({})", config_source),
                     progress,
                 ))
             })
