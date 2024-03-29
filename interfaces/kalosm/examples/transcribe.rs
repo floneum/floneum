@@ -7,7 +7,8 @@ async fn main() -> Result<(), anyhow::Error> {
     // Create a new small whisper model.
     let model = WhisperBuilder::default()
         .with_source(WhisperSource::DistilLargeV2)
-        .build()?;
+        .build()
+        .await?;
 
     let mut current_time_stamp = 0.0;
     loop {

@@ -9,7 +9,8 @@ async fn main() -> Result<(), anyhow::Error> {
     // Create a new small whisper model
     let model = WhisperBuilder::default()
         .with_source(WhisperSource::SmallEn)
-        .build()?;
+        .build()
+        .await?;
 
     // Load audio from a file
     let file = BufReader::new(File::open("./models/rwhisper/examples/samples_jfk.wav").unwrap());

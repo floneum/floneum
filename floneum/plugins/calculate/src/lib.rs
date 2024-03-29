@@ -1,5 +1,4 @@
 use floneum_rust::*;
-use meval;
 
 #[export_plugin]
 /// Evluate the value of an equation
