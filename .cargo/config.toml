@@ -1,8 +1,8 @@
-[build]
-rustflags = ["-C", "target-cpu=native"]
+# [build]
+# rustflags = ["-C", "target-cpu=native"]
 
-[target.x86_64-apple-darwin]
-rustflags = ["-C", "target-feature=-avx,-avx2"]
+# [target.x86_64-apple-darwin]
+# rustflags = ["-C", "target-feature=-avx,-avx2"]
 
 # [unstable]
 # build-std = ["std", "core", "alloc"]
