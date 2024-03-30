@@ -1,4 +1,5 @@
 use super::cache::{AttentionCache, AttentionCacheValue};
+use super::mask::AttentionMask;
 use super::rope::RopeCache;
 use candle_core::Device;
 use candle_core::{quantized::QMatMul, Module, Tensor};
@@ -25,7 +26,7 @@ impl LlamaAttention {
     pub(crate) fn forward(
         &self,
         hidden_states: &Tensor,
-        attention_mask: Option<&Tensor>,
+        attention_mask: Option<&AttentionMask>,
         start_pos: usize,
         cache: Option<&mut AttentionCache>,
     ) -> candle_core::Result<Tensor> {
@@ -134,11 +135,7 @@ impl LlamaAttention {
         let mut attn_weights = (query_states.matmul(&key_states.t()?)? / (head_dim as f64).sqrt())?;
 
         if let Some(attention_mask) = attention_mask {
-            let shape = attn_weights.shape();
-            let attention_mask = attention_mask.broadcast_as(shape)?;
-            let on_true =
-                Tensor::new(f32::NEG_INFINITY, attn_weights.device())?.broadcast_as(shape)?;
-            attn_weights = attention_mask.where_cond(&on_true, &attn_weights)?;
+            attention_mask.forward(&mut attn_weights)?;
         }
 
         attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights)?;

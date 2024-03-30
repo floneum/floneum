@@ -19,7 +19,11 @@ async fn main() {
         .await
         .unwrap();
     let prompt = "The capital of France is ";
-    let mut result = model.stream_text(prompt).await.unwrap();
+    let mut result = model
+        .stream_text(prompt)
+        .with_max_length(100)
+        .await
+        .unwrap();
 
     let start_time = std::time::Instant::now();
     let mut tokens = 0;
