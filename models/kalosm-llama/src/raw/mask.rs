@@ -58,7 +58,7 @@ pub struct AttentionMask {
 }
 
 impl AttentionMask {
-    pub fn forward(& self, attn_weights: &mut Tensor) -> candle_core::Result<()> {
+    pub fn forward(&self, attn_weights: &mut Tensor) -> candle_core::Result<()> {
         let shape = attn_weights.shape();
         let attention_mask = self.mask.broadcast_as(shape)?;
         let on_true = match self.on_true.get() {
