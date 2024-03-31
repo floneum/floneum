@@ -10,14 +10,14 @@
 //! use rwuerstchen::*;
 //! #[tokio::main]
 //! async fn main() -> Result<(), anyhow::Error> {
-//!     let model = Wuerstchen::builder().build().await.unwrap();
+//!     let model = Wuerstchen::builder().build().await?;
 //!     let settings = WuerstchenInferenceSettings::new(
 //!         "a cute cat with a hat in a room covered with fur with incredible detail",
 //!     )
 //!     .with_n_steps(2);
-//!     let images = model.run(settings).unwrap();
+//!     let images = model.run(settings)?;
 //!     for (i, img) in images.iter().enumerate() {
-//!         img.save(&format!("{}.png", i)).unwrap();
+//!         img.save(&format!("{}.png", i))?;
 //!     }
 //!     Ok(())
 //! }
@@ -46,7 +46,6 @@ pub use kalosm_common::ModelLoadingProgress;
 use kalosm_language_model::ModelBuilder;
 use tokenizers::Tokenizer;
 
-const PRIOR_GUIDANCE_SCALE: f64 = 4.0;
 const RESOLUTION_MULTIPLE: f64 = 42.67;
 const LATENT_DIM_SCALE: f64 = 10.67;
 const PRIOR_CIN: usize = 16;
@@ -206,14 +205,14 @@ pub struct WuerstchenInferenceSettings {
     /// The width in pixels of the generated image.
     width: usize,
 
-    /// The size of the sliced attention or 0 for automatic slicing (disabled by default)
-    sliced_attention_size: Option<usize>,
-
     /// The number of steps to run the diffusion for.
     n_steps: usize,
 
     /// The number of samples to generate.
     num_samples: i64,
+
+    /// Higher guidance scale encourages to generate images that are closely linked to the text prompt, usually at the expense of lower image quality.
+    prior_guidance_scale: f64,
 }
 
 impl WuerstchenInferenceSettings {
@@ -228,11 +227,11 @@ impl WuerstchenInferenceSettings {
 
             width: 1024,
 
-            sliced_attention_size: None,
-
             n_steps: 30,
 
             num_samples: 1,
+
+            prior_guidance_scale: 4.0,
         }
     }
 
@@ -254,12 +253,6 @@ impl WuerstchenInferenceSettings {
         self
     }
 
-    /// Set the size of the sliced attention or 0 for automatic slicing (disabled by default)
-    pub fn with_sliced_attention_size(mut self, sliced_attention_size: usize) -> Self {
-        self.sliced_attention_size = Some(sliced_attention_size);
-        self
-    }
-
     /// Set the number of steps to run the diffusion for.
     pub fn with_n_steps(mut self, n_steps: usize) -> Self {
         self.n_steps = n_steps;
@@ -269,6 +262,12 @@ impl WuerstchenInferenceSettings {
     /// Set the number of samples to generate.
     pub fn with_num_samples(mut self, num_samples: i64) -> Self {
         self.num_samples = num_samples;
+        self
+    }
+
+    /// Set the prior guidance scale.
+    pub fn with_prior_guidance_scale(mut self, prior_guidance_scale: f64) -> Self {
+        self.prior_guidance_scale = prior_guidance_scale;
         self
     }
 }
@@ -367,9 +366,7 @@ impl Wuerstchen {
             .await?;
         let tokenizer = Tokenizer::from_file(tokenizer_path).map_err(E::msg)?;
 
-        // Candle doesn't support some operations rwuerstchen needs, so we can't use it.
-        // let device = kalosm_common::accelerated_device_if_available()?;
-        let device = Device::Cpu;
+        let device = kalosm_common::accelerated_device_if_available()?;
 
         let clip_weights_source = ModelFile::Clip.get(clip_weights);
         let clip_weights = clip_weights_source
@@ -545,6 +542,16 @@ impl Wuerstchen {
         let height = settings.height;
         let width = settings.width;
 
+        if height < 1024 || width < 1024 {
+            println!("Warning: Würstchen was trained on image resolutions between 1024x1024 & 1536x1536. {}x{} is below the minimum resolution. Image quality may be poor.", height, width);
+        }
+        if height > 1536 || width > 1536 {
+            println!("Warning: Würstchen was trained on image resolutions between 1024x1024 & 1536x1536. {}x{} is above the maximum resolution. Image quality may be poor.", height, width);
+        }
+        if height % 128 != 0 || width % 128 != 0 {
+            return Err(E::msg("Image resolution must be a multiple of 128"));
+        }
+
         let prior_text_embeddings = {
             self.encode_prompt(
                 &settings.prompt,
@@ -552,8 +559,7 @@ impl Wuerstchen {
                 &self.prior_tokenizer,
                 &self.prior_clip,
                 &self.prior_clip_config,
-            )
-            .unwrap()
+            )?
         };
 
         let text_embeddings = {
@@ -563,8 +569,7 @@ impl Wuerstchen {
                 &self.tokenizer,
                 &self.clip,
                 &self.clip_config,
-            )
-            .unwrap()
+            )?
         };
 
         let b_size = 1;
@@ -577,34 +582,29 @@ impl Wuerstchen {
                 1f32,
                 (b_size, PRIOR_CIN, latent_height, latent_width),
                 &self.device,
-            )
-            .unwrap();
+            )?;
 
-            let prior_scheduler =
-                wuerstchen::ddpm::DDPMWScheduler::new(60, Default::default()).unwrap();
+            let prior_scheduler = wuerstchen::ddpm::DDPMWScheduler::new(60, Default::default())?;
             let timesteps = prior_scheduler.timesteps();
             let timesteps = &timesteps[..timesteps.len() - 1];
             for &t in timesteps {
-                let latent_model_input = Tensor::cat(&[&latents, &latents], 0).unwrap();
-                let ratio = (Tensor::ones(2, DType::F32, &self.device).unwrap() * t).unwrap();
-                let noise_pred = self
-                    .prior
-                    .forward(&latent_model_input, &ratio, &prior_text_embeddings)
-                    .unwrap();
-                let noise_pred = noise_pred.chunk(2, 0).unwrap();
+                let latent_model_input = Tensor::cat(&[&latents, &latents], 0)?;
+                let ratio = (Tensor::ones(2, DType::F32, &self.device)? * t)?;
+                let noise_pred =
+                    self.prior
+                        .forward(&latent_model_input, &ratio, &prior_text_embeddings)?;
+                let noise_pred = noise_pred.chunk(2, 0)?;
                 let (noise_pred_text, noise_pred_uncond) = (&noise_pred[0], &noise_pred[1]);
                 let noise_pred = (noise_pred_uncond
-                    + ((noise_pred_text - noise_pred_uncond).unwrap() * PRIOR_GUIDANCE_SCALE)
-                        .unwrap())
-                .unwrap();
-                latents = prior_scheduler.step(&noise_pred, t, &latents).unwrap();
+                    + ((noise_pred_text - noise_pred_uncond)? * settings.prior_guidance_scale)?)?;
+                latents = prior_scheduler.step(&noise_pred, t, &latents)?;
                 tracing::trace!(
                     "generating embeddings t: {}, noise_pred: {:?}",
                     t,
                     noise_pred
                 );
             }
-            ((latents * 42.).unwrap() - 1.).unwrap()
+            ((latents * 42.)? - 1.)?
         };
 
         let mut images = Vec::new();
@@ -615,49 +615,39 @@ impl Wuerstchen {
                 settings.num_samples
             );
             // https://huggingface.co/warp-ai/wuerstchen/blob/main/model_index.json
-            let latent_height =
-                (image_embeddings.dim(2).unwrap() as f64 * LATENT_DIM_SCALE) as usize;
-            let latent_width =
-                (image_embeddings.dim(3).unwrap() as f64 * LATENT_DIM_SCALE) as usize;
+            let latent_height = (image_embeddings.dim(2)? as f64 * LATENT_DIM_SCALE) as usize;
+            let latent_width = (image_embeddings.dim(3)? as f64 * LATENT_DIM_SCALE) as usize;
 
             let mut latents = Tensor::randn(
                 0f32,
                 1f32,
                 (b_size, DECODER_CIN, latent_height, latent_width),
                 &self.device,
-            )
-            .unwrap();
+            )?;
 
-            let scheduler = wuerstchen::ddpm::DDPMWScheduler::new(12, Default::default()).unwrap();
+            let scheduler = wuerstchen::ddpm::DDPMWScheduler::new(12, Default::default())?;
             let timesteps = scheduler.timesteps();
             let timesteps = &timesteps[..timesteps.len() - 1];
             for &t in timesteps {
-                let ratio = (Tensor::ones(1, DType::F32, &self.device).unwrap() * t).unwrap();
-                let noise_pred = self
-                    .decoder
-                    .forward(&latents, &ratio, &image_embeddings, Some(&text_embeddings))
-                    .unwrap();
-                latents = scheduler.step(&noise_pred, t, &latents).unwrap();
+                let ratio = (Tensor::ones(1, DType::F32, &self.device)? * t)?;
+                let noise_pred = self.decoder.forward(
+                    &latents,
+                    &ratio,
+                    &image_embeddings,
+                    Some(&text_embeddings),
+                )?;
+                latents = scheduler.step(&noise_pred, t, &latents)?;
                 tracing::trace!("t: {}, noise_pred: {:?}", t, noise_pred)
             }
-            let img_tensor = self.vqgan.decode(&(&latents * 0.3764).unwrap()).unwrap();
+            let img_tensor = self.vqgan.decode(&(&latents * 0.3764)?)?;
             // TODO: Add the clamping between 0 and 1.
-            let img_tensor = (img_tensor * 255.)
-                .unwrap()
-                .to_dtype(DType::U8)
-                .unwrap()
-                .i(0)
-                .unwrap();
-            let (channel, height, width) = img_tensor.dims3().unwrap();
+            let img_tensor = (img_tensor * 255.)?.to_dtype(DType::U8)?.i(0)?;
+            let (channel, height, width) = img_tensor.dims3()?;
             if channel != 3 {
                 anyhow::bail!("image must have 3 channels");
             }
-            let img = img_tensor
-                .permute((1, 2, 0))
-                .unwrap()
-                .flatten_all()
-                .unwrap();
-            let pixels = img.to_vec1::<u8>().unwrap();
+            let img = img_tensor.permute((1, 2, 0))?.flatten_all()?;
+            let pixels = img.to_vec1::<u8>()?;
             let image: image::ImageBuffer<image::Rgb<u8>, Vec<u8>> =
                 match image::ImageBuffer::from_raw(width as u32, height as u32, pixels) {
                     Some(image) => image,
