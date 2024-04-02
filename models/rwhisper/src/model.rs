@@ -1,4 +1,7 @@
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
 use anyhow::{anyhow, Error as E, Result};
 use candle_core::{Device, IndexOp, Tensor};
@@ -253,6 +256,7 @@ impl Decoder {
     ) {
         let (_, _, content_frames) = mel.dims3().unwrap();
         let mut seek = 0;
+        let start_time = Instant::now();
         while seek < content_frames {
             let time_offset = (seek * m::HOP_LENGTH) as f64 / m::SAMPLE_RATE as f64;
             let segment_size = usize::min(content_frames - seek, m::N_FRAMES);
@@ -264,9 +268,17 @@ impl Decoder {
                 tracing::trace!("no speech detected, skipping {seek} {dr:?}");
                 continue;
             }
+            let elapsed = start_time.elapsed();
+            let remaining = Duration::from_millis(
+                ((elapsed.as_millis() as usize / seek) * (content_frames - seek)) as u64,
+            );
+            let progress = seek as f32 / content_frames as f32;
             let segment = Segment {
                 start: time_offset,
                 duration: segment_duration,
+                remaining_time: remaining,
+                elapsed_time: elapsed,
+                progress,
                 result: dr,
             };
 
