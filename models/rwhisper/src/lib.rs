@@ -42,7 +42,7 @@ use kalosm_language_model::ModelBuilder;
 use kalosm_streams::text_stream::ChannelTextStream;
 use model::WhisperInner;
 use rodio::{source::UniformSourceIterator, Source};
-use std::fmt::Display;
+use std::{fmt::Display, str::FromStr, time::Duration};
 
 use anyhow::Result;
 
@@ -67,6 +67,9 @@ struct DecodingResult {
 pub struct Segment {
     start: f64,
     duration: f64,
+    elapsed_time: Duration,
+    remaining_time: Duration,
+    progress: f32,
     result: DecodingResult,
 }
 
@@ -89,6 +92,21 @@ impl Segment {
     /// Get the duration of the segment.
     pub fn duration(&self) -> f64 {
         self.duration
+    }
+
+    /// Get the elapsed time
+    pub fn elapsed_time(&self) -> Duration {
+        self.elapsed_time
+    }
+
+    /// Get the estimated time remaining to process the entire audio file
+    pub fn remaining_time(&self) -> Duration {
+        self.remaining_time
+    }
+
+    /// The progress of the transcription, from 0 to 1
+    pub fn progress(&self) -> f32 {
+        self.progress
     }
 }
 
@@ -387,6 +405,125 @@ pub enum WhisperLanguage {
     Bashkir,
     Javanese,
     Sundanese,
+}
+
+/// Error that reports the unsupported value
+#[derive(PartialEq, Eq)]
+pub struct ParseWhisperLanguageError(String);
+
+impl Display for ParseWhisperLanguageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Language {} not supported ", self.0)
+    }
+}
+
+impl FromStr for WhisperLanguage {
+    type Err = ParseWhisperLanguageError;
+
+    fn from_str(s: &str) -> std::prelude::v1::Result<Self, Self::Err> {
+        match s {
+            "en" => Ok(WhisperLanguage::English),
+            "zh" => Ok(WhisperLanguage::Chinese),
+            "de" => Ok(WhisperLanguage::German),
+            "es" => Ok(WhisperLanguage::Spanish),
+            "ru" => Ok(WhisperLanguage::Russian),
+            "ko" => Ok(WhisperLanguage::Korean),
+            "fr" => Ok(WhisperLanguage::French),
+            "ja" => Ok(WhisperLanguage::Japanese),
+            "pt" => Ok(WhisperLanguage::Portuguese),
+            "tr" => Ok(WhisperLanguage::Turkish),
+            "pl" => Ok(WhisperLanguage::Polish),
+            "ca" => Ok(WhisperLanguage::Catalan),
+            "nl" => Ok(WhisperLanguage::Dutch),
+            "ar" => Ok(WhisperLanguage::Arabic),
+            "sv" => Ok(WhisperLanguage::Swedish),
+            "it" => Ok(WhisperLanguage::Italian),
+            "id" => Ok(WhisperLanguage::Indonesian),
+            "hi" => Ok(WhisperLanguage::Hindi),
+            "fi" => Ok(WhisperLanguage::Finnish),
+            "vi" => Ok(WhisperLanguage::Vietnamese),
+            "he" => Ok(WhisperLanguage::Hebrew),
+            "uk" => Ok(WhisperLanguage::Ukrainian),
+            "el" => Ok(WhisperLanguage::Greek),
+            "ms" => Ok(WhisperLanguage::Malay),
+            "cs" => Ok(WhisperLanguage::Czech),
+            "ro" => Ok(WhisperLanguage::Romanian),
+            "da" => Ok(WhisperLanguage::Danish),
+            "hu" => Ok(WhisperLanguage::Hungarian),
+            "ta" => Ok(WhisperLanguage::Tamil),
+            "no" => Ok(WhisperLanguage::Norwegian),
+            "th" => Ok(WhisperLanguage::Thai),
+            "ur" => Ok(WhisperLanguage::Urdu),
+            "hr" => Ok(WhisperLanguage::Croatian),
+            "bg" => Ok(WhisperLanguage::Bulgarian),
+            "lt" => Ok(WhisperLanguage::Lithuanian),
+            "la" => Ok(WhisperLanguage::Latin),
+            "mi" => Ok(WhisperLanguage::Maori),
+            "ml" => Ok(WhisperLanguage::Malayalam),
+            "cy" => Ok(WhisperLanguage::Welsh),
+            "sk" => Ok(WhisperLanguage::Slovak),
+            "te" => Ok(WhisperLanguage::Telugu),
+            "fa" => Ok(WhisperLanguage::Persian),
+            "lv" => Ok(WhisperLanguage::Latvian),
+            "bn" => Ok(WhisperLanguage::Bengali),
+            "sr" => Ok(WhisperLanguage::Serbian),
+            "az" => Ok(WhisperLanguage::Azerbaijani),
+            "sl" => Ok(WhisperLanguage::Slovenian),
+            "kn" => Ok(WhisperLanguage::Kannada),
+            "et" => Ok(WhisperLanguage::Estonian),
+            "mk" => Ok(WhisperLanguage::Macedonian),
+            "br" => Ok(WhisperLanguage::Breton),
+            "eu" => Ok(WhisperLanguage::Basque),
+            "is" => Ok(WhisperLanguage::Icelandic),
+            "hy" => Ok(WhisperLanguage::Armenian),
+            "ne" => Ok(WhisperLanguage::Nepali),
+            "mn" => Ok(WhisperLanguage::Mongolian),
+            "bs" => Ok(WhisperLanguage::Bosnian),
+            "kk" => Ok(WhisperLanguage::Kazakh),
+            "sq" => Ok(WhisperLanguage::Albanian),
+            "sw" => Ok(WhisperLanguage::Swahili),
+            "gl" => Ok(WhisperLanguage::Galician),
+            "mr" => Ok(WhisperLanguage::Marathi),
+            "pa" => Ok(WhisperLanguage::Punjabi),
+            "si" => Ok(WhisperLanguage::Sinhala),
+            "km" => Ok(WhisperLanguage::Khmer),
+            "sn" => Ok(WhisperLanguage::Shona),
+            "yo" => Ok(WhisperLanguage::Yoruba),
+            "so" => Ok(WhisperLanguage::Somali),
+            "af" => Ok(WhisperLanguage::Afrikaans),
+            "oc" => Ok(WhisperLanguage::Occitan),
+            "ka" => Ok(WhisperLanguage::Georgian),
+            "be" => Ok(WhisperLanguage::Belarusian),
+            "tg" => Ok(WhisperLanguage::Tajik),
+            "sd" => Ok(WhisperLanguage::Sindhi),
+            "gu" => Ok(WhisperLanguage::Gujarati),
+            "am" => Ok(WhisperLanguage::Amharic),
+            "yi" => Ok(WhisperLanguage::Yiddish),
+            "lo" => Ok(WhisperLanguage::Lao),
+            "uz" => Ok(WhisperLanguage::Uzbek),
+            "fo" => Ok(WhisperLanguage::Faroese),
+            "ht" => Ok(WhisperLanguage::HaitianCreole),
+            "ps" => Ok(WhisperLanguage::Pashto),
+            "tk" => Ok(WhisperLanguage::Turkmen),
+            "nn" => Ok(WhisperLanguage::Nynorsk),
+            "mt" => Ok(WhisperLanguage::Maltese),
+            "sa" => Ok(WhisperLanguage::Sanskrit),
+            "lb" => Ok(WhisperLanguage::Luxembourgish),
+            "my" => Ok(WhisperLanguage::Myanmar),
+            "bo" => Ok(WhisperLanguage::Tibetan),
+            "tl" => Ok(WhisperLanguage::Tagalog),
+            "mg" => Ok(WhisperLanguage::Malagasy),
+            "as" => Ok(WhisperLanguage::Assamese),
+            "tt" => Ok(WhisperLanguage::Tatar),
+            "haw" => Ok(WhisperLanguage::Hawaiian),
+            "ln" => Ok(WhisperLanguage::Lingala),
+            "ha" => Ok(WhisperLanguage::Hausa),
+            "ba" => Ok(WhisperLanguage::Bashkir),
+            "jw" => Ok(WhisperLanguage::Javanese),
+            "su" => Ok(WhisperLanguage::Sundanese),
+            _ => Err(ParseWhisperLanguageError(s.to_owned())),
+        }
+    }
 }
 
 impl Display for WhisperLanguage {
