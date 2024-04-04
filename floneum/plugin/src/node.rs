@@ -69,27 +69,27 @@ impl State {
         self_: Node,
         query: String,
     ) -> wasmtime::Result<Node> {
-        let node = {
+        let (node_id, page_id) = {
             let index = self_.into();
             let node = self
                 .resources
                 .get(index)
                 .ok_or(anyhow::anyhow!("Node not found"))?;
-            node
+            let page_id = node.page_id;
+            let node_id = node.node_id;
+            (node_id, page_id)
         };
-        let child = {
+        let node_id = {
             let page = Resource::from_index_borrowed(page_id);
             let tab = self
                 .resources
                 .get(page)
                 .ok_or(anyhow::anyhow!("Page not found"))?;
-            let node = headless_chrome::Element::new(&*tab, node.node_id)?;
-            node.find_element(&query)?
+            let node = headless_chrome::Element::new(&*tab, node_id)?;
+            let child = node.find_element(&query)?;
+            child.node_id
         };
-        let child = self.resources.insert(AnyNodeRef {
-            page_id: node.page_id,
-            node_id: child.node_id,
-        });
+        let child = self.resources.insert(AnyNodeRef { page_id, node_id });
         Ok(Node {
             id: child.index() as u64,
             owned: true,

@@ -8,17 +8,24 @@ use kalosm::language::*;
 use kalosm_common::ModelLoadingProgress;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::RwLock;
 
 pub(crate) enum LazyTextEmbeddingModel {
     Uninitialized(EmbeddingModelType),
-    Bert(Bert),
+    Bert(Arc<Bert>),
 }
 
 impl LazyTextEmbeddingModel {
-    async fn value(&mut self) -> anyhow::Result<&mut Bert> {
-        if let LazyTextEmbeddingModel::Uninitialized(ty) = self {
-            let ty = ty.clone();
+    fn initialize(
+        &self,
+    ) -> impl std::future::Future<Output = anyhow::Result<Bert>> + Send + Sync + 'static {
+        let embedding_model_type = match self {
+            LazyTextEmbeddingModel::Uninitialized(ty) => Some(ty.clone()),
+            _ => None,
+        };
+        async move {
+            let ty = embedding_model_type.ok_or(anyhow::anyhow!("Model already initialized"))?;
             match ty {
                 main::types::EmbeddingModelType::Bert => {
                     let model = Bert::builder()
@@ -34,13 +41,16 @@ impl LazyTextEmbeddingModel {
                             }
                         })
                         .await?;
-                    *self = LazyTextEmbeddingModel::Bert(model);
+                    Ok(model)
                 }
             }
         }
+    }
+
+    fn value(&self) -> Option<Arc<Bert>> {
         match self {
-            LazyTextEmbeddingModel::Bert(model) => Ok(model),
-            _ => unreachable!(),
+            LazyTextEmbeddingModel::Bert(model) => Some(model.clone()),
+            _ => None,
         }
     }
 }
@@ -72,6 +82,38 @@ impl main::types::EmbeddingModelType {
 }
 
 impl State {
+    async fn initialize_text_embedding_model(
+        &mut self,
+        index: Resource<LazyTextEmbeddingModel>,
+    ) -> wasmtime::Result<Arc<Bert>> {
+        let raw_index = index.into();
+        {
+            let future = {
+                let borrow = self
+                    .resources
+                    .get_mut(raw_index)
+                    .ok_or(anyhow::anyhow!("Text Embedding Model not found"))?;
+                match &*borrow {
+                    LazyTextEmbeddingModel::Uninitialized(_) => Some(borrow.initialize()),
+                    _ => None,
+                }
+            };
+            if let Some(fut) = future {
+                let model = fut.await?;
+                let mut borrow = self
+                    .resources
+                    .get_mut(raw_index)
+                    .ok_or(anyhow::anyhow!("Text Embedding Model not found"))?;
+                *borrow = LazyTextEmbeddingModel::Bert(Arc::new(model));
+            }
+        }
+        let borrow = self
+            .resources
+            .get_mut(raw_index)
+            .ok_or(anyhow::anyhow!("Text Embedding Model not found"))?;
+        Ok(borrow.value().unwrap())
+    }
+
     pub(crate) fn impl_create_embedding_model(
         &mut self,
         ty: main::types::EmbeddingModelType,
@@ -98,10 +140,7 @@ impl State {
         document: String,
     ) -> wasmtime::Result<Embedding> {
         let index = self_.into();
-        let mut self_mut = self.resources.get_mut(index).ok_or(anyhow::anyhow!(
-            "Model not found; It may have been already dropped"
-        ))?;
-        let model = self_mut.value().await?;
+        let model = self.initialize_text_embedding_model(index).await?;
         Ok(main::types::Embedding {
             vector: model.embed(&document).await?.to_vec(),
         })

@@ -16,14 +16,15 @@ use wasmtime::component::__internal::async_trait;
 use wasmtime::component::{Linker, ResourceTable};
 use wasmtime::Config;
 use wasmtime::Engine;
+use wasmtime_wasi::bindings::Command;
 use wasmtime_wasi::WasiCtxBuilder;
-use wasmtime_wasi::{self, command, DirPerms, FilePerms, WasiCtx, WasiView};
+use wasmtime_wasi::{self, DirPerms, FilePerms, WasiCtx, WasiView};
 
 pub(crate) static LINKER: Lazy<Linker<State>> = Lazy::new(|| {
     let mut linker = Linker::new(&ENGINE);
     let l = &mut linker;
     Both::add_to_linker(l, |x| x).unwrap();
-    command::add_to_linker(l).unwrap();
+    Command::add_to_linker(l, |x| x).unwrap();
 
     linker
 });
@@ -57,12 +58,8 @@ impl State {
             .inherit_stdin()
             .inherit_stdio()
             .inherit_stdout()
-            .preopened_dir(
-                Dir::open_ambient_dir(sandbox, wasi_common::sync::ambient_authority()).unwrap(),
-                DirPerms::all(),
-                FilePerms::all(),
-                ".",
-            );
+            .preopened_dir(sandbox, "./", DirPerms::all(), FilePerms::all())
+            .unwrap();
         let table = ResourceTable::new();
         let ctx = ctx_builder.build();
         State {

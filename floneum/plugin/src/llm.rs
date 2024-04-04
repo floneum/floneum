@@ -1,27 +1,41 @@
 use crate::host::State;
 use crate::plugins::main;
 use crate::plugins::main::types::TextGenerationModel;
+use crate::resource::Resource;
 
+use anyhow::Ok;
 use kalosm::language::*;
 use kalosm_common::ModelLoadingProgress;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 pub(crate) enum LazyTextGenerationModel {
     Uninitialized(main::types::ModelType),
     Initialized(ConcreteTextGenerationModel),
 }
 
+#[derive(Clone)]
 pub(crate) enum ConcreteTextGenerationModel {
-    Llama(Llama),
-    Phi(Phi),
+    Llama(Arc<Llama>),
+    Phi(Arc<Phi>),
 }
 
 impl LazyTextGenerationModel {
-    async fn value(&mut self) -> anyhow::Result<&mut ConcreteTextGenerationModel> {
-        if let LazyTextGenerationModel::Uninitialized(ty) = self {
-            let model_type_as_id = *ty as usize;
+    fn initialize(
+        &self,
+    ) -> impl std::future::Future<Output = anyhow::Result<ConcreteTextGenerationModel>>
+           + Send
+           + Sync
+           + 'static {
+        let model_type = match self {
+            LazyTextGenerationModel::Uninitialized(ty) => Some(*ty),
+            LazyTextGenerationModel::Initialized(_) => None,
+        };
+        async move {
+            let model_type =
+                model_type.ok_or_else(|| anyhow::anyhow!("Model already initialized"))?;
+            let model_type_as_id = model_type as usize;
             let progress = move |progress: ModelLoadingProgress| {
                 if let Some(callbacks) = MODEL_DOWNLOAD_PROGRESS
                     .write()
@@ -33,25 +47,24 @@ impl LazyTextGenerationModel {
                     }
                 }
             };
-            let builder = ty.llm_builder();
+            let builder = model_type.llm_builder();
             match builder {
                 LlmBuilder::Llama(builder) => {
                     let model = builder.build_with_loading_handler(progress).await?;
-                    *self = LazyTextGenerationModel::Initialized(
-                        ConcreteTextGenerationModel::Llama(model),
-                    );
+                    Ok(ConcreteTextGenerationModel::Llama(Arc::new(model)))
                 }
                 LlmBuilder::Phi(builder) => {
                     let model = builder.build_with_loading_handler(progress).await?;
-                    *self = LazyTextGenerationModel::Initialized(ConcreteTextGenerationModel::Phi(
-                        model,
-                    ));
+                    Ok(ConcreteTextGenerationModel::Phi(Arc::new(model)))
                 }
             }
         }
+    }
+
+    fn value(&self) -> Option<ConcreteTextGenerationModel> {
         match self {
-            LazyTextGenerationModel::Initialized(model) => Ok(model),
-            _ => unreachable!(),
+            LazyTextGenerationModel::Uninitialized(_) => None,
+            LazyTextGenerationModel::Initialized(model) => Some(model.clone()),
         }
     }
 }
@@ -187,6 +200,38 @@ impl main::types::ModelType {
 }
 
 impl State {
+    async fn initialize_model(
+        &mut self,
+        index: Resource<LazyTextGenerationModel>,
+    ) -> wasmtime::Result<ConcreteTextGenerationModel> {
+        let raw_index = index.into();
+        {
+            let future = {
+                let borrow = self
+                    .resources
+                    .get_mut(raw_index)
+                    .ok_or(anyhow::anyhow!("Model not found"))?;
+                match &*borrow {
+                    LazyTextGenerationModel::Uninitialized(_) => Some(borrow.initialize()),
+                    _ => None,
+                }
+            };
+            if let Some(fut) = future {
+                let model = fut.await?;
+                let mut borrow = self
+                    .resources
+                    .get_mut(raw_index)
+                    .ok_or(anyhow::anyhow!("Model not found"))?;
+                *borrow = LazyTextGenerationModel::Initialized(model);
+            }
+        }
+        let borrow = self
+            .resources
+            .get_mut(raw_index)
+            .ok_or(anyhow::anyhow!("Model not found"))?;
+        Ok(borrow.value().unwrap())
+    }
+
     pub(crate) fn impl_create_text_generation_model(
         &mut self,
         ty: main::types::ModelType,
@@ -215,11 +260,7 @@ impl State {
         stop_on: Option<String>,
     ) -> wasmtime::Result<String> {
         let index = self_.into();
-        let mut borrow = self
-            .resources
-            .get_mut(index)
-            .ok_or(anyhow::anyhow!("Model not found"))?;
-        let model = borrow.value().await?;
+        let model = self.initialize_model(index).await?;
         match model {
             ConcreteTextGenerationModel::Llama(model) => Ok(model
                 .generate_text(&input)
@@ -243,11 +284,8 @@ impl State {
         let structure = RegexParser::new(&regex)?;
 
         let index = self_.into();
-        let mut borrow = self
-            .resources
-            .get_mut(index)
-            .ok_or(anyhow::anyhow!("Model not found"))?;
-        let model = borrow.value().await?;
+
+        let model = self.initialize_model(index).await?;
         match model {
             ConcreteTextGenerationModel::Llama(model) => Ok(model
                 .stream_structured_text(&input, structure)

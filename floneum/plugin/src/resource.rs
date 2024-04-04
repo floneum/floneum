@@ -17,7 +17,7 @@ use crate::{
     llm::LazyTextGenerationModel, plugins::main,
 };
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ResourceStorage {
     map: Arc<RwLock<HashMap<TypeId, Slab<Box<dyn Any + Send + Sync>>>>>,
 }
@@ -26,7 +26,7 @@ impl ResourceStorage {
     pub(crate) fn insert<T: Send + Sync + 'static>(&mut self, item: T) -> Resource<T> {
         let ty_id = TypeId::of::<T>();
         let mut binding = self.map.write();
-        let mut slab = binding.entry(ty_id).or_default();
+        let slab = binding.entry(ty_id).or_default();
         let id = slab.insert(Box::new(item));
         Resource {
             index: id,
@@ -72,6 +72,18 @@ pub(crate) struct Resource<T> {
     owned: bool,
     phantom: PhantomData<T>,
 }
+
+impl<T> Clone for Resource<T> {
+    fn clone(&self) -> Self {
+        Self {
+            index: self.index,
+            owned: self.owned,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<T> Copy for Resource<T> {}
 
 impl<T> Resource<T> {
     pub fn index(&self) -> usize {

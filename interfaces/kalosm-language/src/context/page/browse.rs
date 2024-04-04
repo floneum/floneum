@@ -5,9 +5,9 @@ use scraper::Html;
 use std::sync::Arc;
 use url::Url;
 
-use crate::prelude::AnyNode;
 use super::extract_article;
 use crate::context::document::Document;
+use crate::prelude::AnyNode;
 
 static BROWSER: Browser = Browser::new();
 
