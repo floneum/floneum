@@ -10,10 +10,7 @@ async fn main() -> Result<(), anyhow::Error> {
     use tokio::time::{Duration, Instant};
 
     // Set up the whisper model
-    let model = WhisperBuilder::default()
-        .with_source(WhisperSource::MediumEn)
-        .build()
-        .await?;
+    let model = Whisper::new().await?;
 
     // Create database connection
     let db = Surreal::new::<RocksDb>("./db/temp.db").await.unwrap();
