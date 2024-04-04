@@ -24,8 +24,8 @@ pub trait TimeSeriesStream<I: TimeStamped>: Stream<Item = I> {
     }
 }
 
-/// A stream of time series data chunked into windows of a certain duration.
 pin_project! {
+    /// A stream of time series data chunked into windows of a certain duration.
     pub struct WindowedStream<S: Stream<Item = I>, I: TimeStamped> {
         #[pin]
         backing: S,

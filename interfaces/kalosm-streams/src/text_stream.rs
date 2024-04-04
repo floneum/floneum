@@ -84,8 +84,8 @@ pub trait Pattern {
     fn matches(&self, char: char) -> bool;
 }
 
-/// A stream that output segments of text at a time.
 pin_project! {
+    /// A stream that output segments of text at a time.
     pub struct SegmentedStream<S: Stream<Item = I>, I: AsRef<str>, P: Pattern> {
         #[pin]
         backing: S,
@@ -164,8 +164,8 @@ impl Pattern for SentencePattern {
     }
 }
 
-/// A stream that output sentences of text at a time.
 pin_project! {
+    /// A stream that output sentences of text at a time.
     pub struct SentenceStream<S: Stream<Item = I>, I: AsRef<str>> {
         #[pin]
         segmented: SegmentedStream<S, I, SentencePattern>,
@@ -189,8 +189,8 @@ impl<S: Stream<Item = I>, I: AsRef<str>> Stream for SentenceStream<S, I> {
     }
 }
 
-/// A stream that output words of text at a time.
 pin_project! {
+    /// A stream that output words of text at a time.
     pub struct WordStream<S: Stream<Item = I>, I: AsRef<str>> {
         #[pin]
         segmented: SegmentedStream<S, I, WordPattern>,
@@ -222,8 +222,8 @@ impl Pattern for WordPattern {
     }
 }
 
-/// A stream that output paragraphs of text at a time.
 pin_project! {
+    /// A stream that output paragraphs of text at a time.
     pub struct ParagraphStream<S: Stream<Item = I>, I: AsRef<str>> {
         #[pin]
         segmented: SegmentedStream<S, I, ParagraphPattern>,
