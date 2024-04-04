@@ -176,7 +176,7 @@ pub struct WhisperBuilder {
 impl Default for WhisperBuilder {
     fn default() -> Self {
         Self {
-            model: WhisperSource::QuantizedTiny,
+            model: WhisperSource::default(),
             language: Some(WhisperLanguage::English),
         }
     }
@@ -703,6 +703,12 @@ impl Whisper {
     /// Create a builder for a Whisper model.
     pub fn builder() -> WhisperBuilder {
         WhisperBuilder::default()
+    }
+
+    /// Create a new default whisper model.
+    pub async fn new() -> Result<Self, anyhow::Error> {
+        let model = Self::builder().build().await?;
+        Ok(model)
     }
 
     /// Transcribe some audio into text.

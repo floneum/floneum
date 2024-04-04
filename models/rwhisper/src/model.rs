@@ -77,7 +77,10 @@ impl WhisperInner {
             nmel => anyhow::bail!("unexpected num_mel_bins {nmel}"),
         };
         let mut mel_filters = vec![0f32; mel_bytes.len() / 4];
-        <byteorder::LittleEndian as byteorder::ByteOrder>::read_f32_into(mel_bytes, &mut mel_filters);
+        <byteorder::LittleEndian as byteorder::ByteOrder>::read_f32_into(
+            mel_bytes,
+            &mut mel_filters,
+        );
 
         let model = ModelType::load(
             &weights_filename,

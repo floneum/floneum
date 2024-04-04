@@ -3,7 +3,7 @@ use std::{fmt::Display, str::FromStr};
 use kalosm_common::FileSource;
 
 /// The source whisper model to use.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub enum WhisperSource {
     /// The tiny model.
     Tiny,
@@ -35,6 +35,7 @@ pub enum WhisperSource {
     DistilLargeV2,
     /// The distil-large-v3 model.
     DistilLargeV3,
+    #[default]
     /// The quantized distil-large-v3 model.
     QuantizedDistilLargeV3,
 }
