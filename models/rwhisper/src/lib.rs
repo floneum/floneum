@@ -655,7 +655,7 @@ impl Whisper {
         Ok(ChannelTextStream::from(receiver))
     }
 
-    /// Transcribe some audio into a steam of text
+    /// Transcribe some audio into a stream of text
     pub fn transcribe_into<S: Source>(
         &self,
         input: S,

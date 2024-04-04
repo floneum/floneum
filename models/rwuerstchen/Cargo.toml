@@ -21,14 +21,15 @@ cudarc = { version = "0.9.14", features = ["f16"], optional = true }
 half = { version = "2.3.1", features = ["num-traits", "use-intrinsics", "rand_distr"], optional = true }
 kalosm-common = { version = "0.1.0", workspace = true }
 kalosm-language-model.workspace = true
+kalosm-streams.workspace = true
 
 anyhow = "1.0.75"
 async-trait = "0.1.73"
-tracing = "0.1.37"
+futures-util = "0.3.28"
 image = "0.24.7"
-
-[dev-dependencies]
 tokio = { version = "1.32.0", features = ["full"] }
+tracing = "0.1.37"
+
 
 [features]
 flash = ["candle-transformers/flash-attn"]
