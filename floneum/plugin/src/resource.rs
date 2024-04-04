@@ -1,25 +1,26 @@
 use kalosm::language::Tab;
 use std::{
     any::{Any, TypeId},
-    borrow::BorrowMut,
     collections::HashMap,
     marker::PhantomData,
 };
 
-use kalosm::language::{Node, Page};
+
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use slab::Slab;
 use std::sync::Arc;
-use wasmtime::component::Type;
+
 
 use crate::{
     embedding::LazyTextEmbeddingModel, embedding_db::VectorDBWithDocuments, host::AnyNodeRef,
     llm::LazyTextGenerationModel, plugins::main,
 };
 
+type ResourceMap = Arc<RwLock<HashMap<TypeId, Slab<Box<dyn Any + Send + Sync>>>>>;
+
 #[derive(Default, Clone)]
 pub struct ResourceStorage {
-    map: Arc<RwLock<HashMap<TypeId, Slab<Box<dyn Any + Send + Sync>>>>>,
+    map: ResourceMap,
 }
 
 impl ResourceStorage {
@@ -75,11 +76,7 @@ pub(crate) struct Resource<T> {
 
 impl<T> Clone for Resource<T> {
     fn clone(&self) -> Self {
-        Self {
-            index: self.index,
-            owned: self.owned,
-            phantom: PhantomData,
-        }
+        *self
     }
 }
 

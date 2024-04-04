@@ -2,7 +2,7 @@ use crate::host::State;
 use crate::plugins::main;
 use crate::plugins::main::types::{Embedding, EmbeddingModel, EmbeddingModelType};
 use crate::resource::Resource;
-use crate::resource::ResourceStorage;
+
 
 use kalosm::language::*;
 use kalosm_common::ModelLoadingProgress;
@@ -21,7 +21,7 @@ impl LazyTextEmbeddingModel {
         &self,
     ) -> impl std::future::Future<Output = anyhow::Result<Bert>> + Send + Sync + 'static {
         let embedding_model_type = match self {
-            LazyTextEmbeddingModel::Uninitialized(ty) => Some(ty.clone()),
+            LazyTextEmbeddingModel::Uninitialized(ty) => Some(*ty),
             _ => None,
         };
         async move {
@@ -86,7 +86,7 @@ impl State {
         &mut self,
         index: Resource<LazyTextEmbeddingModel>,
     ) -> wasmtime::Result<Arc<Bert>> {
-        let raw_index = index.into();
+        let raw_index = index;
         {
             let future = {
                 let borrow = self

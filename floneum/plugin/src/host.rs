@@ -11,7 +11,7 @@ use reqwest::header::{HeaderName, HeaderValue};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
-use wasi_common::sync::Dir;
+
 use wasmtime::component::__internal::async_trait;
 use wasmtime::component::{Linker, ResourceTable};
 use wasmtime::Config;

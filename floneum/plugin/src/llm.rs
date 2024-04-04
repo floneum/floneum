@@ -204,7 +204,7 @@ impl State {
         &mut self,
         index: Resource<LazyTextGenerationModel>,
     ) -> wasmtime::Result<ConcreteTextGenerationModel> {
-        let raw_index = index.into();
+        let raw_index = index;
         {
             let future = {
                 let borrow = self

@@ -1,6 +1,6 @@
 use crate::host::{AnyNodeRef, State};
 use crate::resource::Resource;
-use crate::resource::ResourceStorage;
+
 
 use crate::plugins::main::types::Node;
 
@@ -85,7 +85,7 @@ impl State {
                 .resources
                 .get(page)
                 .ok_or(anyhow::anyhow!("Page not found"))?;
-            let node = headless_chrome::Element::new(&*tab, node_id)?;
+            let node = headless_chrome::Element::new(&tab, node_id)?;
             let child = node.find_element(&query)?;
             child.node_id
         };

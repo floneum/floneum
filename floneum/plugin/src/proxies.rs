@@ -91,30 +91,30 @@ impl From<MyPrimitiveValue> for PrimitiveValue {
                 PrimitiveValue::Embedding(Embedding { vector: value })
             }
             MyPrimitiveValue::Model { id, owned } => PrimitiveValue::Model(TextGenerationModel {
-                id: id,
-                owned: owned,
+                id,
+                owned,
             }),
             MyPrimitiveValue::EmbeddingModel { id, owned } => {
                 PrimitiveValue::EmbeddingModel(EmbeddingModel {
-                    id: id,
-                    owned: owned,
+                    id,
+                    owned,
                 })
             }
             MyPrimitiveValue::Page { id, owned } => PrimitiveValue::Page(Page {
-                id: id,
-                owned: owned,
+                id,
+                owned,
             }),
             MyPrimitiveValue::Node { id, owned } => PrimitiveValue::Node(Node {
-                id: id,
-                owned: owned,
+                id,
+                owned,
             }),
             MyPrimitiveValue::ModelType(value) => PrimitiveValue::ModelType(value.into()),
             MyPrimitiveValue::EmbeddingModelType(value) => {
                 PrimitiveValue::EmbeddingModelType(value.into())
             }
             MyPrimitiveValue::Database { id, owned } => PrimitiveValue::Database(EmbeddingDb {
-                id: id,
-                owned: owned,
+                id,
+                owned,
             }),
             MyPrimitiveValue::Boolean(value) => PrimitiveValue::Boolean(value),
         }
