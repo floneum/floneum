@@ -11,7 +11,7 @@ async fn main() {
     if let Ok(mut images) = model.run(settings) {
         while let Some(image) = images.next().await {
             if let Some(buf) = image.generated_image() {
-                buf.save(&format!("{}.png",image.sample_num())).unwrap();
+                buf.save(&format!("{}.png", image.sample_num())).unwrap();
             }
         }
     }
