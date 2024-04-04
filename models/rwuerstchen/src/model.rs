@@ -240,7 +240,8 @@ impl WuerstchenInner {
                 &self.device,
             )?;
 
-            let prior_scheduler = wuerstchen::ddpm::DDPMWScheduler::new(60, Default::default())?;
+            let prior_scheduler =
+                wuerstchen::ddpm::DDPMWScheduler::new(settings.prior_steps, Default::default())?;
             let timesteps = prior_scheduler.timesteps();
             let timesteps = &timesteps[..timesteps.len() - 1];
             for &t in timesteps {
@@ -268,6 +269,7 @@ impl WuerstchenInner {
         &self,
         text_embeddings: &Tensor,
         image_embeddings: &Tensor,
+        settings: &WuerstchenInferenceSettings,
         b_size: usize,
     ) -> Result<ImageBuffer<image::Rgb<u8>, Vec<u8>>> {
         // https://huggingface.co/warp-ai/wuerstchen/blob/main/model_index.json
@@ -281,7 +283,8 @@ impl WuerstchenInner {
             &self.device,
         )?;
 
-        let scheduler = wuerstchen::ddpm::DDPMWScheduler::new(12, Default::default())?;
+        let scheduler =
+            wuerstchen::ddpm::DDPMWScheduler::new(settings.denoiser_steps, Default::default())?;
         let timesteps = scheduler.timesteps();
         let timesteps = &timesteps[..timesteps.len() - 1];
         for &t in timesteps {
@@ -374,7 +377,7 @@ impl WuerstchenInner {
             tracing::trace!("Generating image {}/{}", index, settings.num_samples);
 
             let image = self
-                .generate_image(&text_embeddings, &image_embeddings, b_size)
+                .generate_image(&text_embeddings, &image_embeddings, &settings, b_size)
                 .map(|val| DiffusionResult {
                     image: val,
                     height,

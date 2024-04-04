@@ -14,8 +14,7 @@
 //!     let model = Wuerstchen::builder().build().await?;
 //!     let settings = WuerstchenInferenceSettings::new(
 //!         "a cute cat with a hat in a room covered with fur with incredible detail",
-//!     )
-//!     .with_n_steps(2);
+//!     );
 //!     if let Ok(mut images) = model.run(settings) {
 //!         while let Some(image) = images.next().await {
 //!             if let Some(buf) = image.generated_image() {
@@ -460,8 +459,11 @@ pub struct WuerstchenInferenceSettings {
     /// The width in pixels of the generated image.
     width: usize,
 
-    /// The number of steps to run the diffusion for.
-    n_steps: usize,
+    /// The number of steps to run the inference for prior (stage C).
+    prior_steps: usize,
+
+    /// The number of steps to run the denoiser
+    denoiser_steps: usize,
 
     /// The number of samples to generate.
     num_samples: i64,
@@ -482,7 +484,9 @@ impl WuerstchenInferenceSettings {
 
             width: 1024,
 
-            n_steps: 30,
+            prior_steps: 60,
+
+            denoiser_steps: 12,
 
             num_samples: 1,
 
@@ -508,9 +512,15 @@ impl WuerstchenInferenceSettings {
         self
     }
 
-    /// Set the number of steps to run the diffusion for.
-    pub fn with_n_steps(mut self, n_steps: usize) -> Self {
-        self.n_steps = n_steps;
+    /// Set the number of steps to run the prior for.
+    pub fn with_prior_steps(mut self, prior_steps: usize) -> Self {
+        self.prior_steps = prior_steps;
+        self
+    }
+
+    /// Set the number of steps to run the denoiser for.
+    pub fn with_denoiser_steps(mut self, denoiser_steps: usize) -> Self {
+        self.denoiser_steps = denoiser_steps;
         self
     }
 
