@@ -5,17 +5,57 @@ use std::{
 
 use anyhow::{anyhow, Error as E, Result};
 use candle_core::{Device, IndexOp, Tensor};
-use candle_nn::{ops::softmax, VarBuilder};
+use candle_nn::ops::softmax;
 use rand::{distributions::Distribution, SeedableRng};
 use tokenizers::Tokenizer;
 
-use candle_transformers::models::whisper::{self as m, audio, model, Config};
+use candle_transformers::models::whisper::{self as m, audio, Config};
 use kalosm_common::accelerated_device_if_available;
-use model::Whisper;
 
 use crate::{Task, WhisperBuilder, WhisperLanguage};
 
 use super::{DecodingResult, Segment};
+
+enum ModelType {
+    Quantized(m::quantized_model::Whisper),
+    Unquantized(m::model::Whisper),
+}
+
+impl ModelType {
+    fn load(
+        weights_filename: &PathBuf,
+        device: &Device,
+        config: Config,
+        quantized: bool,
+    ) -> Result<Self> {
+        match quantized {
+            true => {
+                let vb =
+                    crate::m::quantized_model::VarBuilder::from_gguf(weights_filename, device)?;
+                Ok(Self::Quantized(m::quantized_model::Whisper::load(
+                    &vb, config,
+                )?))
+            }
+            false => {
+                let vb = unsafe {
+                    candle_nn::VarBuilder::from_mmaped_safetensors(
+                        &[weights_filename],
+                        m::DTYPE,
+                        device,
+                    )?
+                };
+                Ok(Self::Unquantized(m::model::Whisper::load(&vb, config)?))
+            }
+        }
+    }
+
+    fn config(&self) -> &Config {
+        match self {
+            Self::Quantized(model) => &model.config,
+            Self::Unquantized(model) => &model.config,
+        }
+    }
+}
 
 pub(crate) struct WhisperInner {
     mel_filters: Vec<f32>,
@@ -41,10 +81,13 @@ impl WhisperInner {
             &mut mel_filters,
         );
 
-        let vb =
-            unsafe { VarBuilder::from_mmaped_safetensors(&[weights_filename], m::DTYPE, &device)? };
         let config: Config = serde_json::from_str(&std::fs::read_to_string(config_filename)?)?;
-        let model = Whisper::load(&vb, config.clone())?;
+        let model = ModelType::load(
+            &weights_filename,
+            &device,
+            config.clone(),
+            settings.model.is_quantized(),
+        )?;
         let language_token = if settings.model.is_multilingual() {
             let language = settings.language.unwrap_or(WhisperLanguage::English);
             match token_id(&tokenizer, &format!("<|{language}|>")) {
@@ -87,7 +130,7 @@ impl WhisperInner {
 }
 
 struct Decoder {
-    model: Whisper,
+    model: ModelType,
     rng: rand::rngs::StdRng,
     tokenizer: Tokenizer,
     suppress_tokens: Tensor,
@@ -103,7 +146,7 @@ struct Decoder {
 impl Decoder {
     #[allow(clippy::too_many_arguments)]
     fn new(
-        model: Whisper,
+        model: ModelType,
         tokenizer: Tokenizer,
         seed: u64,
         device: &Device,
@@ -112,9 +155,9 @@ impl Decoder {
         let no_timestamps_token = token_id(&tokenizer, m::NO_TIMESTAMPS_TOKEN)?;
         // Suppress the notimestamps token when in timestamps mode.
         // https://github.com/openai/whisper/blob/e8622f9afc4eba139bf796c210f5c01081000472/whisper/decoding.py#L452
-        let suppress_tokens: Vec<f32> = (0..model.config.vocab_size as u32)
+        let suppress_tokens: Vec<f32> = (0..model.config().vocab_size as u32)
             .map(|i| {
-                if model.config.suppress_tokens.contains(&i) {
+                if model.config().suppress_tokens.contains(&i) {
                     f32::NEG_INFINITY
                 } else {
                     0f32
@@ -147,8 +190,11 @@ impl Decoder {
 
     fn decode(&mut self, mel: &Tensor, t: f64, task: Task) -> Result<DecodingResult> {
         let model = &mut self.model;
-        let audio_features = model.encoder.forward(mel, true)?;
-        let sample_len = model.config.max_target_positions / 2;
+        let audio_features = match model {
+            ModelType::Quantized(model) => model.encoder.forward(mel, true)?,
+            ModelType::Unquantized(model) => model.encoder.forward(mel, true)?,
+        };
+        let sample_len = model.config().max_target_positions / 2;
         let mut sum_logprob = 0f64;
         let mut no_speech_prob = f64::NAN;
         let mut tokens = vec![self.sot_token];
@@ -166,23 +212,40 @@ impl Decoder {
             // The model expects a batch dim but this inference loop does not handle
             // it so we add it at this point.
             let tokens_t = tokens_t.unsqueeze(0)?;
-            let ys = model.decoder.forward(&tokens_t, &audio_features, i == 0)?;
+            let ys = match model {
+                ModelType::Quantized(model) => {
+                    model.decoder.forward(&tokens_t, &audio_features, i == 0)?
+                }
+                ModelType::Unquantized(model) => {
+                    model.decoder.forward(&tokens_t, &audio_features, i == 0)?
+                }
+            };
 
             // Extract the no speech probability on the first iteration by looking at the first
             // token logits and the probability for the according token.
             if i == 0 {
-                let logits = model.decoder.final_linear(&ys.i(..1)?)?.i(0)?.i(0)?;
+                let logits = match model {
+                    ModelType::Quantized(model) => model.decoder.final_linear(&ys.i(..1)?)?,
+                    ModelType::Unquantized(model) => model.decoder.final_linear(&ys.i(..1)?)?,
+                }
+                .i(0)?
+                .i(0)?;
                 no_speech_prob = softmax(&logits, 0)?
                     .i(self.no_speech_token as usize)?
                     .to_scalar::<f32>()? as f64;
             }
 
             let (_, seq_len, _) = ys.dims3()?;
-            let logits = model
-                .decoder
-                .final_linear(&ys.i((..1, seq_len - 1..))?)?
-                .i(0)?
-                .i(0)?;
+            let logits = match model {
+                ModelType::Quantized(model) => {
+                    model.decoder.final_linear(&ys.i((..1, seq_len - 1..))?)?
+                }
+                ModelType::Unquantized(model) => {
+                    model.decoder.final_linear(&ys.i((..1, seq_len - 1..))?)?
+                }
+            }
+            .i(0)?
+            .i(0)?;
             // TODO: Besides suppress tokens, we should apply the heuristics from
             // ApplyTimestampRules, i.e.:
             // - Timestamps come in pairs, except before EOT.
@@ -209,7 +272,7 @@ impl Decoder {
             let prob = softmax(&logits, candle_core::D::Minus1)?
                 .i(next_token as usize)?
                 .to_scalar::<f32>()? as f64;
-            if next_token == self.eot_token || tokens.len() > model.config.max_target_positions {
+            if next_token == self.eot_token || tokens.len() > model.config().max_target_positions {
                 break;
             }
             sum_logprob += prob.ln();

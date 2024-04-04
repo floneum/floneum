@@ -7,8 +7,12 @@ use kalosm_common::FileSource;
 pub enum WhisperSource {
     /// The tiny model.
     Tiny,
+    /// The tiny model quantized to run faster.
+    QuantizedTiny,
     /// The tiny model with only English support.
     TinyEn,
+    /// The tiny model with only English support quantized to run faster.
+    QuantizedTinyEn,
     /// The base model.
     Base,
     /// The base model with only English support.
@@ -35,23 +39,34 @@ impl WhisperSource {
     /// Check if the model is multilingual.
     pub fn is_multilingual(&self) -> bool {
         match self {
-            Self::Tiny
+            Self::QuantizedTiny
+            | Self::Tiny
             | Self::Base
             | Self::Small
             | Self::Medium
             | Self::Large
             | Self::LargeV2
             | Self::DistilLargeV2 => true,
-            Self::TinyEn | Self::BaseEn | Self::SmallEn | Self::MediumEn | Self::DistilMediumEn => {
-                false
-            }
+            Self::QuantizedTinyEn
+            | Self::TinyEn
+            | Self::BaseEn
+            | Self::SmallEn
+            | Self::MediumEn
+            | Self::DistilMediumEn => false,
         }
+    }
+
+    /// Check if the model is quantized.
+    pub fn is_quantized(&self) -> bool {
+        matches!(self, Self::QuantizedTiny | Self::QuantizedTinyEn)
     }
 
     pub(crate) fn model_and_revision(&self) -> (&'static str, &'static str) {
         match self {
             Self::Tiny => ("openai/whisper-tiny", "main"),
+            Self::QuantizedTiny => ("lmz/candle-whisper", "main"),
             Self::TinyEn => ("openai/whisper-tiny.en", "main"),
+            Self::QuantizedTinyEn => ("lmz/candle-whisper", "main"),
             Self::Base => ("openai/whisper-base", "main"),
             Self::BaseEn => ("openai/whisper-base.en", "main"),
             Self::Small => ("openai/whisper-small", "main"),
@@ -82,7 +97,9 @@ impl FromStr for WhisperSource {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "tiny" => Ok(Self::Tiny),
+            "quantized_tiny" => Ok(Self::QuantizedTiny),
             "tiny_en" => Ok(Self::TinyEn),
+            "quantized_tiny_en" => Ok(Self::QuantizedTinyEn),
             "base" => Ok(Self::Base),
             "base_en" => Ok(Self::BaseEn),
             "small" => Ok(Self::Small),
@@ -101,18 +118,20 @@ impl FromStr for WhisperSource {
 impl Display for WhisperSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            WhisperSource::Tiny => write!(f, "tiny"),
-            WhisperSource::TinyEn => write!(f, "tiny_en"),
-            WhisperSource::Base => write!(f, "base"),
-            WhisperSource::BaseEn => write!(f, "base_en"),
-            WhisperSource::Small => write!(f, "small"),
-            WhisperSource::SmallEn => write!(f, "small_en"),
-            WhisperSource::Medium => write!(f, "medium"),
-            WhisperSource::MediumEn => write!(f, "medium_en"),
-            WhisperSource::Large => write!(f, "large"),
-            WhisperSource::LargeV2 => write!(f, "large_v2"),
-            WhisperSource::DistilMediumEn => write!(f, "distil_medium_en"),
-            WhisperSource::DistilLargeV2 => write!(f, "distil_large_v2"),
+            Self::Tiny => write!(f, "tiny"),
+            Self::QuantizedTiny => write!(f, "quantized_tiny"),
+            Self::TinyEn => write!(f, "tiny_en"),
+            Self::QuantizedTinyEn => write!(f, "quantized_tiny_en"),
+            Self::Base => write!(f, "base"),
+            Self::BaseEn => write!(f, "base_en"),
+            Self::Small => write!(f, "small"),
+            Self::SmallEn => write!(f, "small_en"),
+            Self::Medium => write!(f, "medium"),
+            Self::MediumEn => write!(f, "medium_en"),
+            Self::Large => write!(f, "large"),
+            Self::LargeV2 => write!(f, "large_v2"),
+            Self::DistilMediumEn => write!(f, "distil_medium_en"),
+            Self::DistilLargeV2 => write!(f, "distil_large_v2"),
         }
     }
 }

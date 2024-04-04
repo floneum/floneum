@@ -176,7 +176,7 @@ pub struct WhisperBuilder {
 impl Default for WhisperBuilder {
     fn default() -> Self {
         Self {
-            model: WhisperSource::LargeV2,
+            model: WhisperSource::QuantizedTiny,
             language: Some(WhisperLanguage::English),
         }
     }
@@ -204,23 +204,48 @@ impl ModelBuilder for WhisperBuilder {
 impl WhisperBuilder {
     fn get_whisper_model_config(&self) -> WhisperModelConfig {
         let (model_id, revision) = self.model.model_and_revision();
-        let model = FileSource::huggingface(
-            model_id.to_owned(),
-            revision.to_owned(),
-            "model.safetensors".to_owned(),
-        );
-        let tokenizer = FileSource::huggingface(
-            model_id.to_owned(),
-            revision.to_owned(),
-            "tokenizer.json".to_owned(),
-        );
-        let config = FileSource::huggingface(
-            model_id.to_owned(),
-            revision.to_owned(),
-            "config.json".to_owned(),
-        );
-        WhisperModelConfig::new(model, tokenizer, config)
+        if self.model.is_quantized() {
+            let ext = match self.model {
+                WhisperSource::QuantizedTinyEn => "tiny-en",
+                WhisperSource::QuantizedTiny => "tiny",
+                _ => unreachable!(),
+            };
+            let model = FileSource::huggingface(
+                model_id.to_owned(),
+                revision.to_owned(),
+                format!("model-{ext}-q80.gguf"),
+            );
+            let tokenizer = FileSource::huggingface(
+                model_id.to_owned(),
+                revision.to_owned(),
+                format!("tokenizer-{ext}.json"),
+            );
+            let config = FileSource::huggingface(
+                model_id.to_owned(),
+                revision.to_owned(),
+                format!("config-{ext}.json"),
+            );
+            WhisperModelConfig::new(model, tokenizer, config)
+        } else {
+            let model = FileSource::huggingface(
+                model_id.to_owned(),
+                revision.to_owned(),
+                "model.safetensors".to_owned(),
+            );
+            let tokenizer = FileSource::huggingface(
+                model_id.to_owned(),
+                revision.to_owned(),
+                "tokenizer.json".to_owned(),
+            );
+            let config = FileSource::huggingface(
+                model_id.to_owned(),
+                revision.to_owned(),
+                "config.json".to_owned(),
+            );
+            WhisperModelConfig::new(model, tokenizer, config)
+        }
     }
+
     /// Build the model.
     pub async fn build(self) -> anyhow::Result<Whisper> {
         self.build_with_loading_handler(|_| {}).await

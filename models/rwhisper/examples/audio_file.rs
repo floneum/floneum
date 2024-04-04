@@ -8,7 +8,7 @@ use std::io::BufReader;
 async fn main() -> Result<(), anyhow::Error> {
     // Create a new small whisper model
     let model = WhisperBuilder::default()
-        .with_source(WhisperSource::SmallEn)
+        .with_source(WhisperSource::TinyEn)
         .build()
         .await?;
 
