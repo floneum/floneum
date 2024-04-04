@@ -8,7 +8,6 @@ use floneumite::FloneumPackageIndex;
 use futures_util::stream::StreamExt;
 use petgraph::stable_graph::{DefaultIx, NodeIndex};
 use serde::{Deserialize, Serialize};
-use share::StorageId;
 use std::{collections::HashMap, fs::File, io::Read, rc::Rc};
 
 mod node;
@@ -25,7 +24,7 @@ use sidebar::Sidebar;
 mod current_node;
 use current_node::{CurrentNodeInfo, FocusedNodeInfo};
 mod node_value;
-mod share;
+// mod share;
 mod theme;
 use crate::window::{make_config, use_apply_menu_event};
 pub use node_value::*;
@@ -77,15 +76,12 @@ fn main() {
 
 pub struct PluginId(usize);
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Default)]
 pub struct ApplicationState {
     graph: VisualGraph,
-    #[serde(skip)]
     currently_focused: Option<FocusedNodeInfo>,
-    #[serde(skip)]
     plugins: HashMap<String, Plugin>,
-    #[serde(skip)]
-    last_save_id: Option<share::StorageId<ApplicationState>>,
+    // last_save_id: Option<share::StorageId<ApplicationState>>,
 }
 
 impl ApplicationState {
@@ -131,26 +127,26 @@ pub fn use_provide_application_state() -> Signal<ApplicationState> {
     use_context_provider(|| {
         let mut current_dir = std::env::current_dir().unwrap();
         current_dir.push(SAVE_NAME);
-        let state = if let Ok(mut file) = File::open(current_dir) {
-            let mut buffer = Vec::new();
+        // let state = if let Ok(mut file) = File::open(current_dir) {
+        //     let mut buffer = Vec::new();
 
-            if file.read_to_end(&mut buffer).is_err() {
-                ApplicationState::default()
-            } else {
-                let as_str = std::str::from_utf8(&buffer).unwrap();
-                match serde_json::from_str(as_str) {
-                    Ok(from_storage) => from_storage,
-                    Err(err) => {
-                        tracing::error!("Failed to deserialize state: {}", err);
-                        eprintln!("Failed to deserialize state: {}", err);
-                        ApplicationState::default()
-                    }
-                }
-            }
-        } else {
-            ApplicationState::default()
-        };
-        Signal::new(state)
+        //     if file.read_to_end(&mut buffer).is_err() {
+        //         ApplicationState::default()
+        //     } else {
+        //         let as_str = std::str::from_utf8(&buffer).unwrap();
+        //         match serde_json::from_str(as_str) {
+        //             Ok(from_storage) => from_storage,
+        //             Err(err) => {
+        //                 tracing::error!("Failed to deserialize state: {}", err);
+        //                 eprintln!("Failed to deserialize state: {}", err);
+        //                 ApplicationState::default()
+        //             }
+        //         }
+        //     }
+        // } else {
+        //     ApplicationState::default()
+        // };
+        Signal::new(ApplicationState::default())
     })
 }
 
@@ -162,9 +158,9 @@ pub fn application_state() -> Signal<ApplicationState> {
     consume_context()
 }
 
-struct DeserializeApplicationState {
-    new_state: StorageId<ApplicationState>,
-}
+// struct DeserializeApplicationState {
+//     new_state: StorageId<ApplicationState>,
+// }
 
 fn App() -> Element {
     use_package_manager_provider();
@@ -179,13 +175,13 @@ fn App() -> Element {
             package_manager.set(Some(Rc::new(new_package_manager)));
         });
     });
-    use_coroutine(|mut channel| async move {
-        while let Some(DeserializeApplicationState { new_state }) = channel.next().await {
-            let mut application = state.write();
-            *application = new_state.load().await.unwrap();
-            application.last_save_id = Some(new_state);
-        }
-    });
+    // use_coroutine(|mut channel| async move {
+    //     while let Some(DeserializeApplicationState { new_state }) = channel.next().await {
+    //         let mut application = state.write();
+    //         *application = new_state.load().await.unwrap();
+    //         application.last_save_id = Some(new_state);
+    //     }
+    // });
     let graph = state.read().graph;
     use_apply_menu_event(state);
 

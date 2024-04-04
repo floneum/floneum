@@ -36,7 +36,7 @@ impl NodeInput {
     pub fn push_default_value(&mut self) {
         if let ValueType::Many(values) = self.definition.ty {
             let value = values.create();
-            self.value.push(vec![value.borrow()]);
+            self.value.push(vec![value]);
         }
     }
 

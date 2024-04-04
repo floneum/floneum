@@ -18,14 +18,14 @@ const SNAP_DISTANCE: f32 = 15.;
 pub const NODE_KNOB_SIZE: f64 = 5.;
 pub const NODE_MARGIN: f64 = 2.;
 
-#[derive(Serialize, Deserialize)]
+// #[derive(Serialize, Deserialize)]
 pub struct Node {
     pub instance: PluginInstance,
-    #[serde(skip)]
+    // #[serde(skip)]
     pub running: bool,
-    #[serde(skip)]
+    // #[serde(skip)]
     pub queued: bool,
-    #[serde(skip)]
+    // #[serde(skip)]
     pub error: Option<String>,
     pub id: NodeIndex<DefaultIx>,
     pub position: Point,

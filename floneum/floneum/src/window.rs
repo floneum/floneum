@@ -40,8 +40,8 @@ pub(crate) fn make_config() -> anyhow::Result<dioxus::desktop::Config> {
     ])?;
 
     application_menu.append_items(&[
-        &SavePredefinedMenuItem::item(),
-        &SaveAsPredefinedMenuItem::item(),
+        // &SavePredefinedMenuItem::item(),
+        // &SaveAsPredefinedMenuItem::item(),
         &OpenPredefinedMenuItem::item(),
     ])?;
 
@@ -136,52 +136,52 @@ trait CustomMenuItem {
     }
 }
 
-struct SavePredefinedMenuItem;
+// struct SavePredefinedMenuItem;
 
-impl CustomMenuItem for SavePredefinedMenuItem {
-    fn name() -> &'static str {
-        "Save"
-    }
+// impl CustomMenuItem for SavePredefinedMenuItem {
+//     fn name() -> &'static str {
+//         "Save"
+//     }
 
-    fn accelerator() -> Option<Accelerator> {
-        Accelerator::new(Some(SHORTCUT_LEADER), Code::KeyS).into()
-    }
-}
+//     fn accelerator() -> Option<Accelerator> {
+//         Accelerator::new(Some(SHORTCUT_LEADER), Code::KeyS).into()
+//     }
+// }
 
-impl SavePredefinedMenuItem {
-    fn save(state: &ApplicationState) {
-        save_to_file(state, default_save_location());
-    }
-}
+// impl SavePredefinedMenuItem {
+//     fn save(state: &ApplicationState) {
+//         save_to_file(state, default_save_location());
+//     }
+// }
+// 
+// struct SaveAsPredefinedMenuItem;
 
-struct SaveAsPredefinedMenuItem;
+// impl CustomMenuItem for SaveAsPredefinedMenuItem {
+//     fn name() -> &'static str {
+//         "Save As"
+//     }
 
-impl CustomMenuItem for SaveAsPredefinedMenuItem {
-    fn name() -> &'static str {
-        "Save As"
-    }
+//     fn accelerator() -> Option<Accelerator> {
+//         Accelerator::new(
+//             Some(SHORTCUT_LEADER | muda::accelerator::Modifiers::SHIFT),
+//             Code::KeyS,
+//         )
+//         .into()
+//     }
+// }
 
-    fn accelerator() -> Option<Accelerator> {
-        Accelerator::new(
-            Some(SHORTCUT_LEADER | muda::accelerator::Modifiers::SHIFT),
-            Code::KeyS,
-        )
-        .into()
-    }
-}
-
-impl SaveAsPredefinedMenuItem {
-    pub fn save(state: &ApplicationState) {
-        if let Some(save_location) = rfd::FileDialog::new()
-            .set_file_name("Floneum")
-            .set_title("Save Location")
-            .add_filter("Json", &["json"])
-            .save_file()
-        {
-            save_to_file(state, save_location);
-        }
-    }
-}
+// impl SaveAsPredefinedMenuItem {
+//     pub fn save(state: &ApplicationState) {
+//         if let Some(save_location) = rfd::FileDialog::new()
+//             .set_file_name("Floneum")
+//             .set_title("Save Location")
+//             .add_filter("Json", &["json"])
+//             .save_file()
+//         {
+//             save_to_file(state, save_location);
+//         }
+//     }
+// }
 
 struct OpenPredefinedMenuItem;
 

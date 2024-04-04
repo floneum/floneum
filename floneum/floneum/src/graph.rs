@@ -17,7 +17,6 @@ use crate::{
     Connection, Edge, Node, Signal,
 };
 
-#[derive(Serialize, Deserialize)]
 pub struct VisualGraphInner {
     pub graph: StableGraph<Signal<Node>, Signal<Edge>>,
     pub connections: Slab<ConnectionProps>,
@@ -38,7 +37,7 @@ impl Default for VisualGraphInner {
     }
 }
 
-#[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
+#[derive(PartialEq, Clone, Copy)]
 pub enum CurrentlyDragging {
     Node(NodeDragInfo),
     Connection(CurrentlyDraggingProps),
@@ -53,19 +52,19 @@ impl Debug for CurrentlyDragging {
     }
 }
 
-#[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
+#[derive(PartialEq, Clone, Copy)]
 pub struct NodeDragInfo {
     pub element_offset: Point2D<f32, f32>,
     pub node: Signal<Node>,
 }
 
-#[derive(PartialEq, Clone, Copy, Serialize, Deserialize, Debug)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 pub enum DraggingIndex {
     Input(crate::edge::Connection),
     Output(usize),
 }
 
-#[derive(Props, PartialEq, Clone, Copy, Serialize, Deserialize)]
+#[derive(Props, PartialEq, Clone, Copy)]
 pub struct CurrentlyDraggingProps {
     pub from: Signal<Node>,
     pub index: DraggingIndex,
@@ -73,7 +72,7 @@ pub struct CurrentlyDraggingProps {
     pub to: Signal<Point2D<f32, f32>>,
 }
 
-#[derive(Props, Clone, Copy, Serialize, Deserialize, Default, PartialEq)]
+#[derive(Props, Clone, Copy, Default, PartialEq)]
 pub struct VisualGraph {
     pub inner: Signal<VisualGraphInner>,
 }
@@ -93,9 +92,7 @@ impl VisualGraph {
                     vec![input
                         .ty
                         .create()
-                        .into_iter()
-                        .map(|v| v.borrow().clone())
-                        .collect()],
+                        ],
                 ),
                 self.inner.origin_scope(),
             ));
@@ -506,7 +503,7 @@ pub fn FlowView(mut props: FlowViewProps) -> Element {
     }
 }
 
-#[derive(Clone, Props, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Props, PartialEq)]
 pub struct ConnectionProps {
     start: Signal<Node>,
     connection: Signal<Edge>,
