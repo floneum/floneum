@@ -47,7 +47,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
                         if let Ok(mut transcribed) = model.transcribe(input) {
                             while let Some(transcribed) = transcribed.next().await {
-                                if transcribed.probability_of_no_speech() < 0.90 {
+                                if transcribed.probability_of_no_speech() < 0.10 {
                                     let document =
                                         transcribed.text().into_document().await.unwrap();
                                     document_table.insert(document).await.unwrap();

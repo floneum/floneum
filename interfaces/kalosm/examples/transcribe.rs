@@ -36,7 +36,7 @@ async fn main() -> Result<(), anyhow::Error> {
         while let Some(transcribed) = transcribed.next().await {
             let start = current_time_stamp + transcribed.start();
             let end = start + transcribed.duration();
-            if transcribed.probability_of_no_speech() < 0.90 {
+            if transcribed.probability_of_no_speech() < 0.10 {
                 let text = transcribed.text();
                 println!("({:01} - {:01}): {}", start, end, text);
             } else {
