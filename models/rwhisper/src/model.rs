@@ -28,24 +28,20 @@ impl ModelType {
         config: Config,
         quantized: bool,
     ) -> Result<Self> {
-        match quantized {
-            true => {
-                let vb =
-                    crate::m::quantized_model::VarBuilder::from_gguf(weights_filename, device)?;
-                Ok(Self::Quantized(m::quantized_model::Whisper::load(
-                    &vb, config,
-                )?))
-            }
-            false => {
-                let vb = unsafe {
-                    candle_nn::VarBuilder::from_mmaped_safetensors(
-                        &[weights_filename],
-                        m::DTYPE,
-                        device,
-                    )?
-                };
-                Ok(Self::Unquantized(m::model::Whisper::load(&vb, config)?))
-            }
+        if quantized {
+            let vb = crate::m::quantized_model::VarBuilder::from_gguf(weights_filename, device)?;
+            Ok(Self::Quantized(m::quantized_model::Whisper::load(
+                &vb, config,
+            )?))
+        } else {
+            let vb = unsafe {
+                candle_nn::VarBuilder::from_mmaped_safetensors(
+                    &[weights_filename],
+                    m::DTYPE,
+                    device,
+                )?
+            };
+            Ok(Self::Unquantized(m::model::Whisper::load(&vb, config)?))
         }
     }
 
@@ -73,15 +69,19 @@ impl WhisperInner {
     ) -> anyhow::Result<Self> {
         let device = accelerated_device_if_available()?;
         let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(E::msg)?;
+        let config: Config = serde_json::from_str(&std::fs::read_to_string(config_filename)?)?;
 
-        let mel_bytes = include_bytes!("melfilters.bytes");
+        let mel_bytes = match config.num_mel_bins {
+            80 => include_bytes!("melfilters.bytes").as_slice(),
+            128 => include_bytes!("melfilters128.bytes").as_slice(),
+            nmel => anyhow::bail!("unexpected num_mel_bins {nmel}"),
+        };
         let mut mel_filters = vec![0f32; mel_bytes.len() / 4];
         <byteorder::LittleEndian as byteorder::ByteOrder>::read_f32_into(
             mel_bytes,
             &mut mel_filters,
         );
 
-        let config: Config = serde_json::from_str(&std::fs::read_to_string(config_filename)?)?;
         let model = ModelType::load(
             &weights_filename,
             &device,

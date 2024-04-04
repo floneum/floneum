@@ -5,10 +5,7 @@ use tokio::time::{Duration, Instant};
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     // Create a new small whisper model.
-    let model = WhisperBuilder::default()
-        .with_source(WhisperSource::QuantizedTinyEn)
-        .build()
-        .await?;
+    let model = Whisper::new().await?;
 
     let mut current_time_stamp = 0.0;
     // Record audio and add them to a queue in the background

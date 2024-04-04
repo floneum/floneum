@@ -3,7 +3,7 @@ use std::{fmt::Display, str::FromStr};
 use kalosm_common::FileSource;
 
 /// The source whisper model to use.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub enum WhisperSource {
     /// The tiny model.
     Tiny,
@@ -33,6 +33,11 @@ pub enum WhisperSource {
     DistilMediumEn,
     /// The distil-large model.
     DistilLargeV2,
+    /// The distil-large-v3 model.
+    DistilLargeV3,
+    #[default]
+    /// The quantized distil-large-v3 model.
+    QuantizedDistilLargeV3,
 }
 
 impl WhisperSource {
@@ -46,7 +51,9 @@ impl WhisperSource {
             | Self::Medium
             | Self::Large
             | Self::LargeV2
-            | Self::DistilLargeV2 => true,
+            | Self::DistilLargeV2
+            | Self::DistilLargeV3
+            | Self::QuantizedDistilLargeV3 => true,
             Self::QuantizedTinyEn
             | Self::TinyEn
             | Self::BaseEn
@@ -58,7 +65,10 @@ impl WhisperSource {
 
     /// Check if the model is quantized.
     pub fn is_quantized(&self) -> bool {
-        matches!(self, Self::QuantizedTiny | Self::QuantizedTinyEn)
+        matches!(
+            self,
+            Self::QuantizedTiny | Self::QuantizedTinyEn | Self::QuantizedDistilLargeV3
+        )
     }
 
     pub(crate) fn model_and_revision(&self) -> (&'static str, &'static str) {
@@ -77,6 +87,10 @@ impl WhisperSource {
             Self::LargeV2 => ("openai/whisper-large-v2", "main"),
             Self::DistilMediumEn => ("distil-whisper/distil-medium.en", "main"),
             Self::DistilLargeV2 => ("distil-whisper/distil-large-v2", "main"),
+            Self::DistilLargeV3 => ("distil-whisper/distil-large-v3", "main"),
+            Self::QuantizedDistilLargeV3 => {
+                ("Demonthos/candle-quantized-whisper-distil-v3", "main")
+            }
         }
     }
 }
@@ -110,6 +124,8 @@ impl FromStr for WhisperSource {
             "large_v2" => Ok(Self::LargeV2),
             "distil_medium_en" => Ok(Self::DistilMediumEn),
             "distil_large_v2" => Ok(Self::DistilLargeV2),
+            "distil_large_v3" => Ok(Self::DistilLargeV3),
+            "quantized_distil_large_v3" => Ok(Self::QuantizedDistilLargeV3),
             _ => Err(ParseWhisperSourceError(s.to_owned())),
         }
     }
@@ -132,6 +148,8 @@ impl Display for WhisperSource {
             Self::LargeV2 => write!(f, "large_v2"),
             Self::DistilMediumEn => write!(f, "distil_medium_en"),
             Self::DistilLargeV2 => write!(f, "distil_large_v2"),
+            Self::DistilLargeV3 => write!(f, "distil_large_v3"),
+            Self::QuantizedDistilLargeV3 => write!(f, "quantized_distil_large_v3"),
         }
     }
 }

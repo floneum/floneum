@@ -176,7 +176,7 @@ pub struct WhisperBuilder {
 impl Default for WhisperBuilder {
     fn default() -> Self {
         Self {
-            model: WhisperSource::QuantizedTiny,
+            model: WhisperSource::default(),
             language: Some(WhisperLanguage::English),
         }
     }
@@ -205,27 +205,63 @@ impl WhisperBuilder {
     fn get_whisper_model_config(&self) -> WhisperModelConfig {
         let (model_id, revision) = self.model.model_and_revision();
         if self.model.is_quantized() {
-            let ext = match self.model {
-                WhisperSource::QuantizedTinyEn => "tiny-en",
-                WhisperSource::QuantizedTiny => "tiny",
+            match self.model {
+                WhisperSource::QuantizedTinyEn => {
+                    let model = FileSource::huggingface(
+                        model_id.to_owned(),
+                        revision.to_owned(),
+                        "model-tiny-en-q80.gguf".to_owned(),
+                    );
+                    let tokenizer = FileSource::huggingface(
+                        model_id.to_owned(),
+                        revision.to_owned(),
+                        "tokenizer-tiny-en.json".to_owned(),
+                    );
+                    let config = FileSource::huggingface(
+                        model_id.to_owned(),
+                        revision.to_owned(),
+                        "config-tiny-en.json".to_owned(),
+                    );
+                    WhisperModelConfig::new(model, tokenizer, config)
+                }
+                WhisperSource::QuantizedTiny => {
+                    let model = FileSource::huggingface(
+                        model_id.to_owned(),
+                        revision.to_owned(),
+                        "model-tiny-q80.gguf".to_owned(),
+                    );
+                    let tokenizer = FileSource::huggingface(
+                        model_id.to_owned(),
+                        revision.to_owned(),
+                        "tokenizer-tiny.json".to_owned(),
+                    );
+                    let config = FileSource::huggingface(
+                        model_id.to_owned(),
+                        revision.to_owned(),
+                        "config-tiny.json".to_owned(),
+                    );
+                    WhisperModelConfig::new(model, tokenizer, config)
+                }
+                WhisperSource::QuantizedDistilLargeV3 => {
+                    let model = FileSource::huggingface(
+                        model_id.to_owned(),
+                        revision.to_owned(),
+                        "model.gguf".to_owned(),
+                    );
+                    let tokenizer = FileSource::huggingface(
+                        model_id.to_owned(),
+                        revision.to_owned(),
+                        "tokenizer.json".to_owned(),
+                    );
+                    let config = FileSource::huggingface(
+                        model_id.to_owned(),
+                        revision.to_owned(),
+                        "config.json".to_owned(),
+                    );
+                    WhisperModelConfig::new(model, tokenizer, config)
+                }
                 _ => unreachable!(),
-            };
-            let model = FileSource::huggingface(
-                model_id.to_owned(),
-                revision.to_owned(),
-                format!("model-{ext}-q80.gguf"),
-            );
-            let tokenizer = FileSource::huggingface(
-                model_id.to_owned(),
-                revision.to_owned(),
-                format!("tokenizer-{ext}.json"),
-            );
-            let config = FileSource::huggingface(
-                model_id.to_owned(),
-                revision.to_owned(),
-                format!("config-{ext}.json"),
-            );
-            WhisperModelConfig::new(model, tokenizer, config)
+            }
         } else {
             let model = FileSource::huggingface(
                 model_id.to_owned(),
@@ -667,6 +703,12 @@ impl Whisper {
     /// Create a builder for a Whisper model.
     pub fn builder() -> WhisperBuilder {
         WhisperBuilder::default()
+    }
+
+    /// Create a new default whisper model.
+    pub async fn new() -> Result<Self, anyhow::Error> {
+        let model = Self::builder().build().await?;
+        Ok(model)
     }
 
     /// Transcribe some audio into text.
