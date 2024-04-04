@@ -40,7 +40,9 @@ impl<S: AsRef<ImageBuffer<image::Rgb<u8>, Vec<u8>>>> std::fmt::Debug for Channel
     }
 }
 
-impl<S: AsRef<ImageBuffer<image::Rgb<u8>, Vec<u8>>>> From<tokio::sync::mpsc::UnboundedReceiver<S>> for ChannelImageStream<S> {
+impl<S: AsRef<ImageBuffer<image::Rgb<u8>, Vec<u8>>>> From<tokio::sync::mpsc::UnboundedReceiver<S>>
+    for ChannelImageStream<S>
+{
     fn from(receiver: tokio::sync::mpsc::UnboundedReceiver<S>) -> Self {
         Self { receiver }
     }
