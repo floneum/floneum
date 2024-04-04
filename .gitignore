@@ -7,5 +7,6 @@
 .DS_Store
 /docs/nightly
 /plugin/Cargo.lock
+/interfaces/kalosm/db
 debug.log
 workflow.json

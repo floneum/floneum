@@ -36,8 +36,9 @@ async fn main() -> Result<(), anyhow::Error> {
                 .unwrap()
                 .block_on(async move {
                     let recording_time = Duration::from_secs(30);
+                    let mic_input = MicInput::default();
                     loop {
-                        let input = MicInput::default()
+                        let input = mic_input
                             .record_until(Instant::now() + recording_time)
                             .await
                             .unwrap();
