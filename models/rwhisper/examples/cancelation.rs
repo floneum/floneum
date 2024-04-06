@@ -9,7 +9,7 @@ use std::io::BufReader;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    // Read a path from the CLI arguments 
+    // Read a path from the CLI arguments
     let path = std::env::args().nth(1).unwrap();
 
     // Create a new small whisper model
