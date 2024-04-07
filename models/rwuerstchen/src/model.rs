@@ -304,11 +304,6 @@ impl WuerstchenInner {
         }
         let img = img_tensor.permute((1, 2, 0))?.flatten_all()?;
         let pixels = img.to_vec1::<u8>()?;
-        // let image: image::ImageBuffer<image::Rgb<u8>, Vec<u8>> =
-        //     match image::ImageBuffer::from_raw(width as u32, height as u32, pixels) {
-        //         Some(image) => image,
-        //         None => anyhow::bail!("error creating image {img_tensor:?}"),
-        //     };
         ImageBuffer::from_raw(width as u32, height as u32, pixels)
             .ok_or(E::msg(format!("error creating image {img_tensor:?}")))
     }
@@ -319,6 +314,15 @@ impl WuerstchenInner {
         settings: WuerstchenInferenceSettings,
         result: tokio::sync::mpsc::UnboundedSender<Image>,
     ) {
+        // If the channel is closed, we know that the result will never be read so we can stop early.
+        macro_rules! return_if_closed {
+            () => {
+                if result.is_closed() {
+                    return;
+                }
+            };
+        }
+
         let start_time = Instant::now();
         let height = settings.height;
         let width = settings.width;
@@ -347,6 +351,8 @@ impl WuerstchenInner {
             )
         };
 
+        return_if_closed!();
+
         let image_embeddings = self.image_embeddings(&settings, b_size);
         if chech_dims.is_err() || text_embeddings.is_err() || image_embeddings.is_err() {
             let err = Err(chech_dims
@@ -368,6 +374,8 @@ impl WuerstchenInner {
 
         let text_embeddings = text_embeddings.unwrap();
         let image_embeddings = image_embeddings.unwrap();
+
+        return_if_closed!();
 
         for index in 1..=settings.num_samples {
             let iter_start_time = Instant::now();

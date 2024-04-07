@@ -217,7 +217,7 @@ impl WuerstchenBuilder {
         self
     }
 
-    /// Set the VQGAN weight file, in .safetensors format.
+    /// Set the Vector Quantized Generative Adversarial Network weight file, in .safetensors format.
     pub fn with_vqgan_weights(mut self, vqgan_weights: impl Into<String>) -> Self {
         self.vqgan_weights = Some(vqgan_weights.into());
         self
@@ -525,8 +525,8 @@ impl WuerstchenInferenceSettings {
     }
 
     /// Set the number of samples to generate.
-    pub fn with_num_samples(mut self, num_samples: i64) -> Self {
-        self.num_samples = num_samples;
+    pub fn with_sample_count(mut self, sample_count: i64) -> Self {
+        self.num_samples = sample_count;
         self
     }
 
