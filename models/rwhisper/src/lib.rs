@@ -712,6 +712,8 @@ impl Whisper {
     }
 
     /// Transcribe some audio into text.
+    ///
+    /// Dropping the returned channel will stop the transcription early.
     pub fn transcribe<S: Source>(&self, input: S) -> Result<ChannelTextStream<Segment>>
     where
         <S as Iterator>::Item: rodio::Sample,
@@ -723,6 +725,8 @@ impl Whisper {
     }
 
     /// Transcribe some audio into a stream of text
+    ///
+    /// Dropping the receiver will stop the transcription early.
     pub fn transcribe_into<S: Source>(
         &self,
         input: S,

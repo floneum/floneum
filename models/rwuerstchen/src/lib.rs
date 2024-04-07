@@ -413,6 +413,8 @@ impl Wuerstchen {
     }
 
     /// Run inference with the given settings.
+    ///
+    /// Dropping the returned channel will stop the inference early.
     pub fn run(&self, settings: WuerstchenInferenceSettings) -> Result<ChannelImageStream<Image>> {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         self.run_into(settings, sender)?;
@@ -420,6 +422,8 @@ impl Wuerstchen {
     }
 
     /// Run inference with the given settings into a stream of images
+    ///
+    /// Dropping the receiver will stop the inference early.
     pub fn run_into(
         &self,
         settings: WuerstchenInferenceSettings,
