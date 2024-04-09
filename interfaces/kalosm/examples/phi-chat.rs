@@ -9,9 +9,7 @@ async fn main() {
         .build()
         .await
         .unwrap();
-    let mut chat = Chat::builder(model)
-        .with_system_prompt(description)
-        .build();
+    let mut chat = Chat::builder(model).with_system_prompt(description).build();
 
     loop {
         chat.add_message(prompt_input("\n> ").unwrap())
