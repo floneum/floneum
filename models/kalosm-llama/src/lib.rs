@@ -80,6 +80,7 @@ type SyncCallback = Box<
 >;
 
 /// A quantized Llama language model with support for streaming generation.
+#[derive(Clone)]
 pub struct Llama {
     task_sender: tokio::sync::mpsc::UnboundedSender<Task>,
     tokenizer: Arc<Tokenizer>,

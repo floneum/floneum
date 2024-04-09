@@ -80,6 +80,7 @@ type SyncCallback = Box<
 >;
 
 /// A quantized Phi-1.5 language model with support for streaming generation.
+#[derive(Clone)]
 pub struct Phi {
     task_sender: tokio::sync::mpsc::UnboundedSender<Task>,
     tokenizer: Arc<Tokenizer>,
