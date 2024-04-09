@@ -1,3 +1,4 @@
+use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 
 pub use crate::Llama;
@@ -82,6 +83,6 @@ impl Model for Llama {
     }
 
     fn chat_markers(&self) -> Option<ChatMarkers> {
-        self.chat_markers.clone()
+        self.chat_markers.deref().clone()
     }
 }

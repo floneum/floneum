@@ -80,17 +80,18 @@ type SyncCallback = Box<
 >;
 
 /// A quantized Phi-1.5 language model with support for streaming generation.
+#[derive(Clone)]
 pub struct Phi {
     task_sender: tokio::sync::mpsc::UnboundedSender<Task>,
-    thread_handle: Option<std::thread::JoinHandle<()>>,
     tokenizer: Arc<Tokenizer>,
-    chat_markers: Option<ChatMarkers>,
+    chat_markers: Arc<Option<ChatMarkers>>,
 }
 
 impl Drop for Phi {
     fn drop(&mut self) {
-        self.task_sender.send(Task::Kill).unwrap();
-        self.thread_handle.take().unwrap().join().unwrap();
+        if std::sync::Arc::strong_count(&self.chat_markers) == 1 {
+            self.task_sender.send(Task::Kill).unwrap();
+        }
     }
 }
 
@@ -124,7 +125,7 @@ impl Phi {
         let (task_sender, mut task_receiver) = tokio::sync::mpsc::unbounded_channel();
         let arc_tokenizer = Arc::new(tokenizer);
 
-        let thread_handle = std::thread::spawn({
+        std::thread::spawn({
             let arc_tokenizer = arc_tokenizer.clone();
             move || {
                 let mut inner = PhiModel::new(model, arc_tokenizer, device, cache);
@@ -153,11 +154,11 @@ impl Phi {
                     })
             }
         });
+
         Self {
             task_sender,
-            thread_handle: Some(thread_handle),
             tokenizer: arc_tokenizer,
-            chat_markers,
+            chat_markers: chat_markers.into(),
         }
     }
 
