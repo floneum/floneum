@@ -1,3 +1,5 @@
+//! You can have multiple chat instances with the same model.
+
 use kalosm::language::*;
 use std::io::Write;
 
@@ -11,10 +13,10 @@ async fn main() {
         .with_system_prompt("The assistant will act like a user who asks questions about the world")
         .build();
 
-    let mut response = String::from("Do you have any questions?");
+    let mut response = String::from("Is there anything you want to know about the world?");
     loop {
+        println!("User:");
         let mut stream = agent2.add_message(&response).await.unwrap();
-        print!("User: ");
         let mut user_question = String::new();
         while let Some(token) = stream.next().await {
             print!("{token}");
@@ -22,6 +24,8 @@ async fn main() {
             user_question += &token;
         }
         println!();
+
+        println!("Assistant:");
         let mut stream = agent1.add_message(user_question).await.unwrap();
         response.clear();
         while let Some(token) = stream.next().await {
@@ -29,5 +33,6 @@ async fn main() {
             std::io::stdout().flush().unwrap();
             response += &token;
         }
+        println!();
     }
 }
