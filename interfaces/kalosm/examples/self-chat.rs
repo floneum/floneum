@@ -7,10 +7,10 @@ use std::io::Write;
 async fn main() {
     let model = Llama::new_chat().await.unwrap();
     let mut agent1 = Chat::builder(model.clone())
-        .with_system_prompt("The assistant will act like a pirate")
+        .with_system_prompt("The assistant will act like a pirate.")
         .build();
     let mut agent2 = Chat::builder(model)
-        .with_system_prompt("The assistant will act like a user who asks questions about the world")
+        .with_system_prompt("The assistant is curious and will ask questions about the world.")
         .build();
 
     let mut response = String::from("Is there anything you want to know about the world?");
