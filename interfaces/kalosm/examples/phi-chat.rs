@@ -4,12 +4,12 @@ use kalosm::language::*;
 async fn main() {
     let description = prompt_input("What is your character like? ").unwrap();
 
-    let mut model = Phi::builder()
+    let model = Phi::builder()
         .with_source(PhiSource::dolphin_phi_v2())
         .build()
         .await
         .unwrap();
-    let mut chat = Chat::builder(&mut model)
+    let mut chat = Chat::builder(model)
         .with_system_prompt(description)
         .build();
 

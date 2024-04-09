@@ -373,7 +373,7 @@ where
 {
     type Output = StructureParserResult<ChannelTextStream<String>, P::Output>;
 
-    fn run<M: Model>(&self, input: String, model: & M) -> Self::Output where <<M as kalosm_language_model::Model>::SyncModel as kalosm_language_model::SyncModel>::Session: Send + Sync{
+    fn run<M: Model>(&self, input: String, model: &M) -> Self::Output where <<M as kalosm_language_model::Model>::SyncModel as kalosm_language_model::SyncModel>::Session: Send + Sync{
         let (tx, rx) = unbounded_channel();
         let (parsed_tx, parsed_rx) = oneshot::channel();
         let arc_parser = self.parser.clone();

@@ -2,8 +2,8 @@ use kalosm::language::*;
 
 #[tokio::main]
 async fn main() {
-    let mut model = Llama::new_chat().await.unwrap();
-    let mut chat = Chat::builder(&mut model)
+    let model = Llama::new_chat().await.unwrap();
+    let mut chat = Chat::builder(model)
         .with_system_prompt("The assistant will act like a pirate")
         .build();
 
