@@ -54,6 +54,8 @@ impl LlamaSource {
     /// Set the group query attention for the model
     /// For the llama family of models, this is typically 1
     /// For the mistral family of models, this is typically 8
+    ///
+    /// If the model source is in the gguf format, this is automatically set
     pub fn with_group_query_attention(mut self, group_query_attention: u8) -> Self {
         self.group_query_attention = group_query_attention;
 
@@ -85,7 +87,7 @@ impl LlamaSource {
             ),
             tokenizer: mistral_tokenizer(),
             group_query_attention: 8,
-            ..Default::default()
+            markers: None
         }
     }
 
@@ -128,6 +130,25 @@ impl LlamaSource {
                 assistant_marker: "",
                 end_assistant_marker: "</s>",
             }),
+        }
+    }
+
+    // https://huggingface.co/meetkai/functionary-small-v2.4-GGUF/blob/main/functionary-small-v2.4.Q4_0.gguf
+    /// A preset for FunctionarySmall
+    pub fn functionary_7b() -> Self {
+        Self {
+            model: FileSource::huggingface(
+                "meetkai/functionary-small-v2.4-GGUF".to_string(),
+                "main".to_string(),
+                "functionary-small-v2.4.Q4_0.gguf".to_string(),
+            ),
+            tokenizer: FileSource::huggingface(
+                "meetkai/functionary-small-v2.4-GGUF".to_string(),
+                "main".to_string(),
+                "tokenizer.json".to_string(),
+            ),
+            group_query_attention: 8,
+            ..Default::default()
         }
     }
 
@@ -529,6 +550,13 @@ impl LlamaSource {
 
 impl Default for LlamaSource {
     fn default() -> Self {
-        Self::llama_13b()
+        Self::mistral_7b()
     }
+}
+
+#[tokio::test]
+async fn llama_model_location() {
+    let model = LlamaSource::default();
+    let model = model.model.download(|_|{}).await;
+    println!("model: {model:?}");
 }

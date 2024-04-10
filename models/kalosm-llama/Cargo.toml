@@ -33,6 +33,7 @@ kalosm-sample.workspace = true
 kalosm-language-model.workspace = true
 kalosm-streams.workspace = true
 kalosm-common = { version = "0.1.0", workspace = true }
+indicatif = "0.17.8"
 
 [dev-dependencies]
 criterion = "0.5.1"
