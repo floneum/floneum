@@ -46,11 +46,15 @@ use candle_core::{
     quantized::{ggml_file, gguf_file},
     Device,
 };
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 pub use kalosm_common::*;
 use kalosm_language_model::ChatMarkers;
 use llm_samplers::types::Sampler;
 pub use source::*;
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 use tokenizers::Tokenizer;
 
 /// A prelude of commonly used items in kalosm-llama.
@@ -266,7 +270,30 @@ impl LlamaBuilder {
 
     /// Build the model (this will download the model if it is not already downloaded)
     pub async fn build(self) -> anyhow::Result<Llama> {
-        self.build_with_loading_handler(|_| {}).await
+        let m = MultiProgress::new();
+        let sty = ProgressStyle::default_bar();
+        let mut progress_bars = HashMap::new();
+
+        self.build_with_loading_handler(move |progress| match progress {
+            ModelLoadingProgress::Downloading { source, progress } => {
+                let n = 1000;
+                let progress_bar = progress_bars.entry(source).or_insert_with(|| {
+                    let pb = m.add(ProgressBar::new(n));
+                    pb.set_style(sty.clone());
+                    pb
+                });
+                let progress = progress * n as f32;
+                progress_bar.set_position(progress as u64);
+            }
+            ModelLoadingProgress::Loading { progress } => {
+                for pb in progress_bars.values_mut() {
+                    pb.finish();
+                }
+                let progress = progress * 100.;
+                m.println(format!("Loading {progress:.2}%")).unwrap();
+            }
+        })
+        .await
     }
 }
 
