@@ -221,8 +221,8 @@ impl<'a, M: Model> StreamTextBuilder<'a, M> {
     }
 
     /// Set the string to stop on when generating text.
-    pub fn with_stop_on(mut self, stop_on: impl Into<Option<String>>) -> Self {
-        self.parameters.stop_on = stop_on.into();
+    pub fn with_stop_on<S: Display>(mut self, stop_on: impl Into<Option<S>>) -> Self {
+        self.parameters.stop_on = stop_on.into().map(|s| s.to_string());
         self
     }
 }
