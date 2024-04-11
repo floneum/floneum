@@ -82,7 +82,7 @@ impl<S: Session> TaskSessionEntry<S> {
 
     fn create_new_session(&mut self, model: &mut impl SyncModel<Session = S>) -> Result<S> {
         let mut session = model.new_session()?;
-        model.feed_text(&mut session, &self.cached_prompt, Some(0))?;
+        model.feed_text(&mut session, &self.cached_prompt)?;
 
         self.session = session.try_clone().ok();
 
@@ -114,7 +114,7 @@ impl<S: Session> TaskSessionEntry<S> {
         let prompt = message.to_string() + &self.after_input;
 
         // Feed the message to the model.
-        model.feed_text(&mut session, &prompt, Some(0))?;
+        model.feed_text(&mut session, &prompt)?;
 
         Ok(session)
     }
@@ -423,6 +423,7 @@ where
                     state,
                     sampler,
                     on_token,
+                    Some(32),
                 );
                 if parsed_tx.send(result).is_err() {
                     tracing::error!("Failed to send parsed result");

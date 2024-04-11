@@ -2,10 +2,8 @@ use anyhow::{Error as E, Result};
 use kalosm_language_model::Session;
 use kalosm_language_model::SyncModel;
 use kalosm_language_model::SyncModelExt;
-use llm_samplers::prelude::*;
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::fmt::Formatter;
 use std::sync::Arc;
 
 use crate::raw::MixFormerSequentialForCausalLM as QMixFormer;
@@ -102,36 +100,20 @@ impl SyncModel for PhiModel {
         })
     }
 
-    fn feed_text(
-        &self,
-        session: &mut Self::Session,
-        prompt: &str,
-        top_k: Option<usize>,
-    ) -> anyhow::Result<Logits> {
+    fn feed_text(&self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Vec<f32>> {
         let tokens = self
             .tokenizer
             .encode(prompt, true)
             .map_err(E::msg)?
             .get_ids()
             .to_vec();
-        self.feed_tokens(session, &tokens, top_k)
+        self.feed_tokens(session, &tokens)
     }
 
-    fn feed_tokens(
-        &self,
-        session: &mut Self::Session,
-        tokens: &[u32],
-        top_k: Option<usize>,
-    ) -> anyhow::Result<Logits> {
+    fn feed_tokens(&self, session: &mut Self::Session, tokens: &[u32]) -> anyhow::Result<Vec<f32>> {
         session.current_tokens.extend(tokens.iter().copied());
 
-        Self::forward(
-            &self.model,
-            &self.device,
-            tokens,
-            Some(&mut session.cache),
-            top_k,
-        )
+        Self::forward(&self.model, &self.device, tokens, Some(&mut session.cache))
     }
 
     fn stop_token(&self) -> anyhow::Result<u32> {
@@ -153,8 +135,7 @@ impl PhiModel {
         device: &Device,
         mut tokens: &[u32],
         cache: Option<&mut PhiCache>,
-        top_k: Option<usize>,
-    ) -> anyhow::Result<Logits> {
+    ) -> anyhow::Result<Vec<f32>> {
         if tokens.is_empty() {
             return Err(anyhow::anyhow!("Cannot run model on empty input"));
         }
@@ -167,10 +148,7 @@ impl PhiModel {
         let logits = model.forward(&input, cache)?;
         let logits = logits.squeeze(0)?.to_dtype(DType::F32)?;
         let logits: Vec<f32> = logits.to_vec1()?;
-        match top_k {
-            Some(top_k) => Ok(Logits::try_from_iter_top_k(logits, top_k)?),
-            None => Ok(Logits::try_from_iter(logits)?),
-        }
+        Ok(logits)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -215,40 +193,6 @@ impl PhiModel {
             },
         )?;
 
-        Ok(())
-    }
-}
-
-struct SamplerResources<'a, 'b, R: rand::Rng> {
-    rng: &'a mut R,
-    previous_tokens: &'b [u32],
-}
-
-impl<R> Debug for SamplerResources<'_, '_, R>
-where
-    R: rand::Rng,
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SamplerResources")
-            .field("previous_tokens", &self.previous_tokens)
-            .finish()
-    }
-}
-
-impl<R> HasSamplerResources for SamplerResources<'_, '_, R>
-where
-    R: rand::Rng,
-{
-    fn with_rng_mut(
-        &mut self,
-        fun: &mut dyn FnMut(&mut dyn rand::RngCore),
-    ) -> Result<(), SamplerError> {
-        fun(self.rng);
-        Ok(())
-    }
-
-    fn with_last_tokens(&self, fun: &mut dyn FnMut(&[u32])) -> Result<(), SamplerError> {
-        fun(self.previous_tokens);
         Ok(())
     }
 }

@@ -37,7 +37,7 @@ dioxus-signals = { git = "https://github.com/ealmloff/dioxus", branch = "improve
 ] }
 dioxus-free-icons = { version = "0.7.0", features = ["ionicons"] }
 rfd = "0.11.4"
-dioxus-std = { git = "https://github.com/DioxusLabs/dioxus-std/", version = "0.4.0", features = [
+dioxus-std = { git = "https://github.com/DioxusLabs/dioxus-std/", rev = "191a66b", version = "0.4.0", features = [
     "clipboard",
 ] }
 directories = "5.0.1"

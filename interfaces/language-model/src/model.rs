@@ -8,7 +8,6 @@ use kalosm_sample::{Parser, Tokenizer};
 use kalosm_streams::text_stream::ChannelTextStream;
 use llm_samplers::configure::SamplerChainBuilder;
 use llm_samplers::prelude::*;
-use llm_samplers::types::Logits;
 use std::any::Any;
 use std::fmt::Display;
 use std::future::IntoFuture;
@@ -493,6 +492,7 @@ pub trait ModelExt: Model + Send + Sync + 'static {
                     parser_state,
                     sampler,
                     |token| Ok(sender.send(token)?),
+                    Some(32),
                 );
                 match result_sender.send(result) {
                     Ok(()) => {}
@@ -597,20 +597,10 @@ pub trait SyncModel {
     fn new_session(&self) -> anyhow::Result<Self::Session>;
 
     /// Run the model synchronously. The model implementation may choose to return only the top k logits.
-    fn feed_text(
-        &self,
-        session: &mut Self::Session,
-        prompt: &str,
-        top_k: Option<usize>,
-    ) -> anyhow::Result<Logits>;
+    fn feed_text(&self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Vec<f32>>;
 
     /// Run the model synchronously with a pre-tokenized input. The model implementation may choose to return only the top k logits.
-    fn feed_tokens(
-        &self,
-        session: &mut Self::Session,
-        tokens: &[u32],
-        top_k: Option<usize>,
-    ) -> anyhow::Result<Logits>;
+    fn feed_tokens(&self, session: &mut Self::Session, tokens: &[u32]) -> anyhow::Result<Vec<f32>>;
 
     /// Get the token ID that represents the end of a sequence.
     fn stop_token(&self) -> anyhow::Result<u32>;
@@ -664,27 +654,20 @@ pub trait SyncModelExt: SyncModel {
         parser_state: P::PartialState,
         sampler: Arc<Mutex<dyn Sampler>>,
         on_token: impl FnMut(String) -> anyhow::Result<()>,
+        top_k: Option<usize>,
     ) -> anyhow::Result<P::Output>
     where
         P::Output: Clone,
     {
-        let tokenizer = self.tokenizer();
-        let stop_token = self
-            .stop_token()
-            .ok()
-            .and_then(|token_id| tokenizer.decode(&[token_id]).ok())
-            .map(|s| s.to_string())
-            .unwrap_or("<|endoftext|>".to_string());
         generate_structured(
             prompt,
             self,
             session,
-            &tokenizer,
-            stop_token,
             parser,
             parser_state,
             sampler,
             on_token,
+            top_k,
         )
     }
 
@@ -700,9 +683,13 @@ pub trait SyncModelExt: SyncModel {
         mut on_token: impl FnMut(String) -> anyhow::Result<ModelFeedback>,
     ) -> anyhow::Result<()> {
         let tokens = self.tokenizer().encode(prompt, true)?;
-        let mut text_stream = TokenOutputStream::new(self.tokenizer(), tokens.clone());
+        let mut text_stream = TokenOutputStream::new(self.tokenizer());
+        for token in tokens.iter().copied() {
+            text_stream.next_token(token)?;
+        }
 
-        let mut logits = self.feed_tokens(session, &tokens, Some(512))?;
+        let logit_probs = self.feed_tokens(session, &tokens)?;
+        let mut logits = Logits::try_from_iter_top_k(logit_probs, 512)?;
         let mut tokens_generated = 0;
         // This stores a buffer of text that has been generated to check against the stop_on string. It should never be longer than the stop_on string.
         let mut queued_text_matching_stop_on = String::new();
@@ -775,7 +762,8 @@ pub trait SyncModelExt: SyncModel {
                     break;
                 }
             }
-            logits = self.feed_tokens(session, &[new_token], Some(512))?;
+            let logit_probs = self.feed_tokens(session, &[new_token])?;
+            logits = Logits::try_from_iter_top_k(logit_probs, 512)?;
         }
 
         // Flush the queued text
@@ -809,21 +797,11 @@ impl SyncModel for SyncModelNotSupported {
         Err(anyhow::Error::msg("Not implemented"))
     }
 
-    fn feed_text(
-        &self,
-        _session: &mut (),
-        _prompt: &str,
-        _: Option<usize>,
-    ) -> anyhow::Result<Logits> {
+    fn feed_text(&self, _session: &mut (), _prompt: &str) -> anyhow::Result<Vec<f32>> {
         Err(anyhow::Error::msg("Not implemented"))
     }
 
-    fn feed_tokens(
-        &self,
-        _session: &mut (),
-        _tokens: &[u32],
-        _: Option<usize>,
-    ) -> anyhow::Result<Logits> {
+    fn feed_tokens(&self, _session: &mut (), _tokens: &[u32]) -> anyhow::Result<Vec<f32>> {
         Err(anyhow::Error::msg("Not implemented"))
     }
 
@@ -1032,24 +1010,14 @@ impl SyncModel for BoxedSyncModel {
         self_ref.new_session()
     }
 
-    fn feed_text(
-        &self,
-        session: &mut Self::Session,
-        prompt: &str,
-        top_k: Option<usize>,
-    ) -> anyhow::Result<Logits> {
+    fn feed_text(&self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Vec<f32>> {
         let self_ref: &(dyn SyncModel<Session = AnySession>) = self.as_ref();
-        self_ref.feed_text(session, prompt, top_k)
+        self_ref.feed_text(session, prompt)
     }
 
-    fn feed_tokens(
-        &self,
-        session: &mut Self::Session,
-        tokens: &[u32],
-        top_k: Option<usize>,
-    ) -> anyhow::Result<Logits> {
+    fn feed_tokens(&self, session: &mut Self::Session, tokens: &[u32]) -> anyhow::Result<Vec<f32>> {
         let self_ref: &(dyn SyncModel<Session = AnySession>) = self.as_ref();
-        self_ref.feed_tokens(session, tokens, top_k)
+        self_ref.feed_tokens(session, tokens)
     }
 
     fn stop_token(&self) -> anyhow::Result<u32> {
@@ -1074,12 +1042,7 @@ impl<M: SyncModel<Session = S>, S: Session + Any> SyncModel for AnySyncModel<M, 
         })
     }
 
-    fn feed_text(
-        &self,
-        session: &mut Self::Session,
-        prompt: &str,
-        top_k: Option<usize>,
-    ) -> anyhow::Result<Logits> {
+    fn feed_text(&self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Vec<f32>> {
         self.0.feed_text(
             match session.as_any_mut().downcast_mut() {
                 Some(s) => s,
@@ -1091,16 +1054,10 @@ impl<M: SyncModel<Session = S>, S: Session + Any> SyncModel for AnySyncModel<M, 
                 }
             },
             prompt,
-            top_k,
         )
     }
 
-    fn feed_tokens(
-        &self,
-        session: &mut Self::Session,
-        tokens: &[u32],
-        top_k: Option<usize>,
-    ) -> anyhow::Result<Logits> {
+    fn feed_tokens(&self, session: &mut Self::Session, tokens: &[u32]) -> anyhow::Result<Vec<f32>> {
         self.0.feed_tokens(
             match session.as_any_mut().downcast_mut() {
                 Some(s) => s,
@@ -1112,7 +1069,6 @@ impl<M: SyncModel<Session = S>, S: Session + Any> SyncModel for AnySyncModel<M, 
                 }
             },
             tokens,
-            top_k,
         )
     }
 
