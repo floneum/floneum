@@ -6337,6 +6337,7 @@ dependencies = [
  "cudarc 0.9.15",
  "half 2.3.1",
  "hf-hub",
+ "indicatif 0.17.8",
  "intel-mkl-src",
  "kalosm-common",
  "kalosm-language-model",
