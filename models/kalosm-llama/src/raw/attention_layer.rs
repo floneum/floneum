@@ -165,10 +165,11 @@ fn repeat_kv(x: Tensor, num_key_value_groups: usize) -> candle_core::Result<Tens
         Ok(x)
     } else {
         let (b_sz, n_kv_head, seq_len, head_dim) = x.dims4()?;
-        let x = x
-            .unsqueeze(2)?
-            .expand((b_sz, n_kv_head, num_key_value_groups, seq_len, head_dim))?
-            .reshape((b_sz, n_kv_head * num_key_value_groups, seq_len, head_dim))?;
-        Ok(x)
+        Tensor::cat(&vec![&x; num_key_value_groups], 2)?.reshape((
+            b_sz,
+            n_kv_head * num_key_value_groups,
+            seq_len,
+            head_dim,
+        ))
     }
 }

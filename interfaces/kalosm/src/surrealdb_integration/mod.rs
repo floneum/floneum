@@ -1,6 +1,4 @@
-use kalosm_language::kalosm_language_model::{UnknownVectorSpace, VectorSpace};
 use kalosm_language::prelude::*;
-use kalosm_language::vector_db::VectorDB;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use surrealdb::sql::{Id, Thing};

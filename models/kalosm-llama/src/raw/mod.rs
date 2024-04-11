@@ -2,7 +2,6 @@ use crate::raw::attention_layer::LlamaAttention;
 use crate::raw::rope::RopeCache;
 use crate::raw::silu::fast_cpu_silu;
 use candle_core::quantized::*;
-use candle_core::quantized::{ggml_file, gguf_file};
 use candle_core::IndexOp;
 use candle_core::Module;
 use candle_core::{DType, Device, Result, Tensor};

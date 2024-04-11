@@ -3,99 +3,123 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use kalosm_sample::{
-    LiteralParser, ParseResult, Parser, ParserExt, SequenceParserState, Tokenizer,
-};
+use crate::SyncModel;
+use crate::TokenOutputStream;
+use kalosm_sample::{ParseResult, Parser, Tokenizer};
+use llm_samplers::prelude::{Logit, Logits};
 use llm_samplers::types::{HasSamplerResources, Sampler, SamplerError};
 use rustc_hash::FxHashMap;
-
-use crate::SyncModel;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
     prompt: impl Display,
     llm: &M,
     session: &mut M::Session,
-    tokenizer: &Arc<dyn Tokenizer + Send + Sync>,
-    stop_token: String,
     parser: P,
-    parser_state: P::PartialState,
+    mut parser_state: P::PartialState,
     mut sampler: Arc<Mutex<dyn Sampler>>,
     mut on_token: impl FnMut(String) -> anyhow::Result<()>,
+    top_k: Option<usize>,
 ) -> anyhow::Result<P::Output>
 where
     P::Output: Clone,
 {
-    // We wrap the parser in a LiteralParser so that we can stop the parser when we reach the stop token automatically if the sequence is unterminated
-    let parser = parser
-        .then(LiteralParser::new(stop_token.clone()))
-        .map_output(|(output, _)| output);
-    let mut parser_state = SequenceParserState::FirstParser(parser_state);
-
-    let mut on_token = move |token: String| -> anyhow::Result<()> {
-        on_token(token.replace(stop_token.as_str().trim(), ""))
-    };
+    let tokenizer = llm.tokenizer();
 
     let prompt_text = prompt.to_string();
-    let mut tokens = tokenizer.encode(&prompt_text, true)?;
-    let mut prev_index = tokens.len();
-    let mut current_index = tokens.len();
-    let mut unprocessed_token_count = tokens.len();
+    let prompt_tokens = tokenizer.encode(&prompt_text, true)?;
+    let mut unprocessed_token_count = prompt_tokens.len();
+    let mut token_stream = TokenOutputStream::new(tokenizer.clone());
+    for token in prompt_tokens {
+        token_stream.next_token(token)?;
+    }
     let mut rng = rand::thread_rng();
-    let mut current_result = None;
 
     loop {
-        let mut logits = llm.feed_tokens(
-            session,
-            &tokens[tokens.len() - unprocessed_token_count..],
-            None,
-        )?;
+        let tokens = token_stream.tokens();
+        let logit_probs =
+            llm.feed_tokens(session, &tokens[tokens.len() - unprocessed_token_count..])?;
         let resources = &mut SamplerResources {
-            previous_tokens: &tokens,
+            previous_tokens: tokens,
             rng: &mut rng,
         };
         let mut state_map = FxHashMap::default();
-        let prev_text = if tokens.is_empty() {
-            "".into()
-        } else {
-            let tokens = &tokens[prev_index..current_index];
-            tokenizer.decode(tokens)?
-        };
 
-        logits.retain_mut(|logit| {
-            let mut potential_new_tokens = tokens[prev_index..].to_vec();
-            potential_new_tokens.push(logit.token_id);
-            let Ok(token_text) = tokenizer.decode(&potential_new_tokens) else {
-                return false;
+        let mut logits = Logits::default();
+
+        let next_tokens = token_stream.peek_tokens((0..logit_probs.len() as u32).collect())?;
+
+        let mut logits_indexed = (0..)
+            .zip(logit_probs.iter().copied())
+            .map(|(id, prob)| Logit {
+                token_id: id as u32,
+                logit: prob,
+                prob: 0f32,
+            })
+            .collect::<Vec<_>>();
+
+        // We can partition the logits into two groups: the top k and the rest
+        if let Some(top_k) = top_k {
+            if top_k < logits_indexed.len() {
+                logits_indexed
+                    .select_nth_unstable_by(top_k, |a, b| b.logit.partial_cmp(&a.logit).unwrap());
+                assert!(
+                    logits_indexed[..top_k]
+                        .iter()
+                        .max_by(|a, b| a.logit.partial_cmp(&b.logit).unwrap())
+                        .unwrap()
+                        .logit
+                        > logits_indexed[top_k..]
+                            .iter()
+                            .max_by(|a, b| a.logit.partial_cmp(&b.logit).unwrap())
+                            .unwrap()
+                            .logit
+                );
+            }
+        }
+
+        for i in 0..logits_indexed.len() {
+            let Logit {
+                token_id, logit, ..
+            } = logits_indexed[i];
+            let Some(text) = next_tokens[token_id as usize].as_ref() else {
+                continue;
             };
-            if token_text.len() > prev_text.len() {
-                if !token_text.chars().last().unwrap().is_ascii() {
-                    return false;
-                }
-                let text = token_text.split_at(prev_text.len());
-                let new_text = text.1.to_string();
-                if new_text.is_empty() {
-                    return false;
-                }
-                if let Ok(result) = parser.parse(&parser_state, new_text.as_bytes()) {
-                    let result = result.without_remaining();
-                    state_map.insert(logit.token_id, Some((new_text.to_string(), result)));
-                    true
-                } else {
-                    false
+            if let Ok(result) = parser.parse(&parser_state, text.as_bytes()) {
+                let parsed_bytes = match result {
+                    ParseResult::Finished { remaining, .. } => text.len() - remaining.len(),
+                    ParseResult::Incomplete { .. } => text.len(),
+                };
+                let result = result.without_remaining();
+                state_map.insert(token_id, (result, parsed_bytes));
+                logits.push(Logit {
+                    token_id,
+                    logit,
+                    prob: 0f32,
+                });
+                // If we only need to keep the top k logits, then we can quit early once we have enough
+                if let Some(top_k) = top_k {
+                    if logits.len() >= top_k {
+                        break;
+                    }
                 }
             } else {
-                state_map.insert(logit.token_id, None);
-                true
+                if let Some(top_k) = top_k {
+                    // If the remaining logits are less than the top k, no need to partition
+                    let remaining_needed = (top_k - logits.len()).min(logits_indexed.len() - i);
+                    let remaining_possible = logits_indexed.len() - i;
+                    if remaining_possible < remaining_needed {
+                        // If we eliminated a logit, our partitioning of the logits is no longer valid
+                        logits_indexed[i..].select_nth_unstable_by(remaining_needed, |a, b| {
+                            b.logit.partial_cmp(&a.logit).unwrap()
+                        });
+                    }
+                }
             }
-        });
+        }
 
+        // If there are no valid tokens, return an error
         if state_map.is_empty() {
-            // We may already be at a finished state, so try to finish the parser
-            if let Some(result) = current_result.take() {
-                return Ok(result);
-            }
-            // Otherwise, return an error
             return Err(anyhow::anyhow!("No valid tokens found"));
         }
         let token_id = sampler
@@ -103,28 +127,24 @@ where
             .ok_or(anyhow::anyhow!("Failed to sample constrained tokens"))?;
 
         unprocessed_token_count = 1;
-        tokens.push(token_id);
-        if let Some((token, result)) = state_map
+        let (result, parsed_bytes) = state_map
             .remove(&token_id)
-            .ok_or(anyhow::anyhow!("Token {} not found in state map", token_id))?
-        {
-            tracing::trace!("Adding token {} to parser", token);
-            on_token(token)?;
+            .ok_or(anyhow::anyhow!("Token {} not found in state map", token_id))?;
+        let mut token = token_stream.next_token(token_id)?.unwrap();
+        token.truncate(parsed_bytes);
+        tracing::trace!("Adding token {} to parser", token);
+        on_token(token)?;
 
-            if let Some(result) = update_state(
-                &parser,
-                &mut parser_state,
-                result,
-                tokenizer,
-                &mut tokens,
-                &mut on_token,
-                &mut unprocessed_token_count,
-            )? {
-                return Ok(result);
-            }
-
-            prev_index = current_index;
-            current_index = tokens.len();
+        if let Some(result) = update_state(
+            &parser,
+            &mut parser_state,
+            result,
+            &tokenizer,
+            &mut token_stream,
+            &mut on_token,
+            &mut unprocessed_token_count,
+        )? {
+            return Ok(result);
         }
     }
 }
@@ -135,7 +155,7 @@ fn update_state<P: Parser>(
     parser_state: &mut P::PartialState,
     result: ParseResult<P::PartialState, P::Output>,
     tokenizer: &Arc<dyn Tokenizer + Send + Sync>,
-    tokens: &mut Vec<u32>,
+    token_stream: &mut TokenOutputStream,
     on_token: &mut impl FnMut(String) -> anyhow::Result<()>,
     unprocessed_token_count: &mut usize,
 ) -> anyhow::Result<Option<P::Output>> {
@@ -149,27 +169,34 @@ fn update_state<P: Parser>(
                 Ok(None)
             } else {
                 tracing::trace!("Required next: {}", required_next);
+                let mut extra_tokens = tokenizer.encode(&required_next, false)?;
+                // Remove the last token to avoid influencing the next token
+                extra_tokens.pop();
+                if extra_tokens.is_empty() {
+                    return Ok(None);
+                }
+                let required_next = tokenizer.decode(&extra_tokens)?;
+                if required_next.is_empty() {
+                    return Ok(None);
+                }
                 let result = parser
                     .parse(parser_state, required_next.as_bytes())
                     .unwrap_or_else(|_| {
                         unreachable!("Required next should always be valid attempted to add {} but got error", required_next)
                 });
-                let mut extra_tokens = tokenizer.encode(&required_next, false)?;
-                if extra_tokens.len() == 1 {
-                    return Ok(None);
+                for token in extra_tokens {
+                    if let Some(token) = token_stream.next_token(token)? {
+                        on_token(token)?;
+                    }
+
+                    *unprocessed_token_count += 1;
                 }
-                tokens.extend(extra_tokens.iter().copied());
-                // Remove the last token to avoid influencing the next token
-                tokens.pop();
-                let required_next = tokenizer.decode(&extra_tokens)?;
-                *unprocessed_token_count += extra_tokens.len();
-                on_token(required_next.to_string())?;
                 update_state(
                     parser,
                     parser_state,
                     result,
                     tokenizer,
-                    tokens,
+                    token_stream,
                     on_token,
                     unprocessed_token_count,
                 )
