@@ -63,18 +63,6 @@ where
             if top_k < logits_indexed.len() {
                 logits_indexed
                     .select_nth_unstable_by(top_k, |a, b| b.logit.partial_cmp(&a.logit).unwrap());
-                assert!(
-                    logits_indexed[..top_k]
-                        .iter()
-                        .max_by(|a, b| a.logit.partial_cmp(&b.logit).unwrap())
-                        .unwrap()
-                        .logit
-                        > logits_indexed[top_k..]
-                            .iter()
-                            .max_by(|a, b| a.logit.partial_cmp(&b.logit).unwrap())
-                            .unwrap()
-                            .logit
-                );
             }
         }
 
@@ -103,17 +91,15 @@ where
                         break;
                     }
                 }
-            } else {
-                if let Some(top_k) = top_k {
-                    // If the remaining logits are less than the top k, no need to partition
-                    let remaining_needed = (top_k - logits.len()).min(logits_indexed.len() - i);
-                    let remaining_possible = logits_indexed.len() - i;
-                    if remaining_possible < remaining_needed {
-                        // If we eliminated a logit, our partitioning of the logits is no longer valid
-                        logits_indexed[i..].select_nth_unstable_by(remaining_needed, |a, b| {
-                            b.logit.partial_cmp(&a.logit).unwrap()
-                        });
-                    }
+            } else if let Some(top_k) = top_k {
+                // If the remaining logits are less than the top k, no need to partition
+                let remaining_needed = (top_k - logits.len()).min(logits_indexed.len() - i);
+                let remaining_possible = logits_indexed.len() - i;
+                if remaining_possible < remaining_needed {
+                    // If we eliminated a logit, our partitioning of the logits is no longer valid
+                    logits_indexed[i..].select_nth_unstable_by(remaining_needed, |a, b| {
+                        b.logit.partial_cmp(&a.logit).unwrap()
+                    });
                 }
             }
         }
