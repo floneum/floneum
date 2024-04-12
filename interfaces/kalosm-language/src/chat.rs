@@ -190,6 +190,7 @@ impl<Model: SyncModel> ChatSession<Model> {
                                 state,
                                 self.sampler.clone(),
                                 on_token,
+                                Some(32),
                             )?;
                         }
                         None => {
@@ -241,6 +242,7 @@ impl<Model: SyncModel> ChatSession<Model> {
                         state,
                         self.sampler.clone(),
                         on_token,
+                        Some(32),
                     )?;
                 }
                 None => {

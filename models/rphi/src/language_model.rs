@@ -87,7 +87,3 @@ impl Model for Phi {
         self.chat_markers.deref().clone()
     }
 }
-
-pub struct PhiSpace;
-
-impl VectorSpace for PhiSpace {}

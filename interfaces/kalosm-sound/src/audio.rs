@@ -9,10 +9,6 @@ use std::{
 use cpal::{FromSample, Sample};
 use ringbuffer::{GrowableAllocRingBuffer, RingBuffer};
 
-trait AudioData {
-    fn read(&mut self) -> anyhow::Result<u8>;
-}
-
 /// The specification of an audio stream.
 #[derive(Clone)]
 pub struct AudioSpec {

@@ -2,13 +2,13 @@ use std::{collections::HashMap, sync::RwLock};
 
 use crate::{CreateParserState, Parser};
 use regex_automata::{
-    dfa::{sparse, Automaton},
+    dfa::{dense, Automaton},
     util::primitives::StateID,
 };
 
 /// A parser that uses a regex pattern to parse input.
 pub struct RegexParser {
-    dfa: sparse::DFA<Vec<u8>>,
+    dfa: dense::DFA<Vec<u32>>,
     config: regex_automata::util::start::Config,
     // A cache for the required next bytes for each state
     jump_table: RwLock<HashMap<StateID, String>>,
@@ -17,7 +17,7 @@ pub struct RegexParser {
 impl RegexParser {
     /// Create a new `RegexParser` from a regex pattern.
     pub fn new(regex: &str) -> anyhow::Result<Self> {
-        let dfa = sparse::DFA::new(regex)?;
+        let dfa = dense::DFA::new(regex)?;
 
         let config =
             regex_automata::util::start::Config::new().anchored(regex_automata::Anchored::Yes);

@@ -56,7 +56,7 @@ async fn main() {
     let model_stream = model
         .stream_text(&prompt)
         .with_max_length(1000)
-        .with_stop_on("<|stop|>")
+        // .with_stop_on("<|stop|>")
         .await
         .unwrap();
 
