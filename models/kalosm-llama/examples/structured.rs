@@ -17,11 +17,8 @@ async fn main() {
         println!("# with constraints");
         print!("{}", prompt);
 
-        let validator = RegexParser::new(&regex).unwrap();
-        let stream = llm
-            .stream_structured_text(&prompt, validator)
-            .await
-            .unwrap();
+        let validator = RegexParser::new(regex).unwrap();
+        let stream = llm.stream_structured_text(prompt, validator).await.unwrap();
 
         time_stream(stream).await;
     }
@@ -30,7 +27,7 @@ async fn main() {
         println!("\n\n# without constraints");
         print!("{}", prompt);
 
-        let stream = llm.stream_text(&prompt).with_max_length(100).await.unwrap();
+        let stream = llm.stream_text(prompt).with_max_length(100).await.unwrap();
 
         time_stream(stream).await;
     }

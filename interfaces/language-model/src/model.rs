@@ -646,6 +646,7 @@ impl Session for () {
 /// An extension trait for sync models.
 pub trait SyncModelExt: SyncModel {
     /// Generate new text with the given prompt that conforms to the given parser.
+    #[allow(clippy::too_many_arguments)]
     fn generate_structured<P: Parser>(
         &self,
         session: &mut Self::Session,

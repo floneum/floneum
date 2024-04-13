@@ -20,7 +20,7 @@ async fn main() {
 
         for _ in 0..100 {
             let mut session = model.new_session().unwrap();
-            model.feed_text(&mut session, prompt, Some(0)).unwrap();
+            model.feed_text(&mut session, prompt).unwrap();
         }
     }
 
@@ -36,7 +36,7 @@ async fn main() {
 
         for _ in 0..100 {
             let mut session = model.new_session().unwrap();
-            model.feed_text(&mut session, &prompt, Some(0)).unwrap();
+            model.feed_text(&mut session, &prompt).unwrap();
         }
     }
 
