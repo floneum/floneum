@@ -1,4 +1,6 @@
-use crate::{CreateParserState, ParseResult, Parser};
+use crate::bail;
+
+use crate::{CreateParserState, ParseStatus, Parser};
 
 /// A parser for a literal.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -28,7 +30,7 @@ impl<S: AsRef<str>> LiteralParser<S> {
 /// The state of a literal parser.
 #[derive(Default, Debug, PartialEq, Eq, Copy, Clone)]
 pub struct LiteralParserOffset {
-    offset: usize,
+    pub(crate) offset: usize,
 }
 
 impl LiteralParserOffset {
@@ -51,7 +53,6 @@ impl std::fmt::Display for LiteralMismatchError {
 impl std::error::Error for LiteralMismatchError {}
 
 impl<S: AsRef<str>> Parser for LiteralParser<S> {
-    type Error = LiteralMismatchError;
     type Output = ();
     type PartialState = LiteralParserOffset;
 
@@ -59,7 +60,7 @@ impl<S: AsRef<str>> Parser for LiteralParser<S> {
         &self,
         state: &LiteralParserOffset,
         input: &'a [u8],
-    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+    ) -> crate::ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>> {
         let mut bytes_consumed = 0;
 
         for (input_byte, literal_byte) in input
@@ -67,18 +68,18 @@ impl<S: AsRef<str>> Parser for LiteralParser<S> {
             .zip(self.literal.as_ref().as_bytes()[state.offset..].iter())
         {
             if input_byte != literal_byte {
-                return Err(LiteralMismatchError);
+                bail!(LiteralMismatchError);
             }
             bytes_consumed += 1;
         }
 
         if state.offset + bytes_consumed == self.literal.as_ref().len() {
-            Ok(ParseResult::Finished {
+            Ok(ParseStatus::Finished {
                 result: (),
                 remaining: &input[bytes_consumed..],
             })
         } else {
-            Ok(ParseResult::Incomplete {
+            Ok(ParseStatus::Incomplete {
                 new_state: LiteralParserOffset {
                     offset: state.offset + bytes_consumed,
                 },
@@ -101,35 +102,34 @@ fn literal_parser() {
     };
     let state = LiteralParserOffset { offset: 0 };
     assert_eq!(
-        parser.parse(&state, b"Hello, world!"),
-        Ok(ParseResult::Finished {
+        parser.parse(&state, b"Hello, world!").unwrap(),
+        ParseStatus::Finished {
             result: (),
             remaining: &[]
-        })
+        }
     );
     assert_eq!(
-        parser.parse(&state, b"Hello, "),
-        Ok(ParseResult::Incomplete {
+        parser.parse(&state, b"Hello, ").unwrap(),
+        ParseStatus::Incomplete {
             new_state: LiteralParserOffset { offset: 7 },
             required_next: "world!".into()
-        })
+        }
     );
     assert_eq!(
-        parser.parse(
-            &parser
-                .parse(&state, b"Hello, ")
-                .unwrap()
-                .unwrap_incomplete()
-                .0,
-            b"world!"
-        ),
-        Ok(ParseResult::Finished {
+        parser
+            .parse(
+                &parser
+                    .parse(&state, b"Hello, ")
+                    .unwrap()
+                    .unwrap_incomplete()
+                    .0,
+                b"world!"
+            )
+            .unwrap(),
+        ParseStatus::Finished {
             result: (),
             remaining: &[]
-        })
+        }
     );
-    assert_eq!(
-        parser.parse(&state, b"Goodbye, world!"),
-        Err(LiteralMismatchError)
-    );
+    assert!(parser.parse(&state, b"Goodbye, world!").is_err(),);
 }

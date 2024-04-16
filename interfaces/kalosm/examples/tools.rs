@@ -21,9 +21,12 @@ async fn main() {
                         println!("\n\nAnswer: {}", result);
                         break;
                     }
-                    ToolManagerStepResult::Action(result) => {
+                    ToolManagerStepResult::Action {
+                        index,
+                        output: result,
+                    } => {
                         prompt = format!("{result}\n");
-                        println!("Action Result: {}", result)
+                        println!("Action {index} Result: {}", result)
                     }
                     ToolManagerStepResult::Thought(thought) => {
                         prompt = format!("{thought}\n");

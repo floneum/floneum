@@ -1,4 +1,9 @@
-use crate::{CreateParserState, ParseResult, Parser};
+use crate::bail;
+
+use crate::{
+    CreateParserState, EmptyNumber, InvalidSignLocation, LeadingZeroError, OutOfRangeError,
+    ParseStatus, Parser,
+};
 use std::ops::RangeInclusive;
 
 /// A parser for an integer.
@@ -141,7 +146,6 @@ impl Default for IntegerParserState {
 }
 
 impl Parser for IntegerParser {
-    type Error = ();
     type Output = i128;
     type PartialState = IntegerParserState;
 
@@ -149,7 +153,7 @@ impl Parser for IntegerParser {
         &self,
         state: &IntegerParserState,
         input: &'a [u8],
-    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+    ) -> crate::ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>> {
         let mut value = state.value;
         let mut positive = state.positive;
         let mut state = state.state;
@@ -162,34 +166,34 @@ impl Parser for IntegerParser {
                         && value == 0
                         && input_byte == b'0'
                     {
-                        return Err(()); // Multiple leading zeros
+                        bail!(LeadingZeroError);
                     }
                     input_byte - b'0'
                 }
-                b'-' => {
+                b'+' | b'-' => {
                     if state == IntegerParserProgress::Initial {
                         state = IntegerParserProgress::AfterSign;
                         positive = input_byte == b'+';
                         if !self.sign_valid(positive) {
-                            return Err(());
+                            bail!(OutOfRangeError)
                         }
                         continue;
                     } else {
-                        return Err(());
+                        bail!(InvalidSignLocation)
                     }
                 }
                 _ => {
                     if state.is_after_digit() {
                         let result = value as i128 * if positive { 1 } else { -1 };
                         if self.is_number_valid(result) {
-                            return Ok(ParseResult::Finished {
+                            return Ok(ParseStatus::Finished {
                                 result,
                                 remaining: &input[index..],
                             });
                         }
-                        return Err(());
+                        bail!(OutOfRangeError)
                     } else {
-                        return Err(());
+                        bail!(EmptyNumber)
                     }
                 }
             };
@@ -200,19 +204,19 @@ impl Parser for IntegerParser {
                 None => {
                     let signed_value = value as i128 * if positive { 1 } else { -1 };
                     if self.is_number_valid(signed_value) {
-                        return Ok(ParseResult::Finished {
+                        return Ok(ParseStatus::Finished {
                             result: signed_value,
                             remaining: &input[index..],
                         });
                     }
-                    return Err(());
+                    bail!(OutOfRangeError)
                 }
             }
 
             let signed_value = value as i128 * if positive { 1 } else { -1 };
 
             if self.should_stop(signed_value) {
-                return Ok(ParseResult::Finished {
+                return Ok(ParseStatus::Finished {
                     result: signed_value,
                     remaining: &input[index + 1..],
                 });
@@ -220,16 +224,16 @@ impl Parser for IntegerParser {
 
             if !self.could_number_become_valid(signed_value) {
                 if self.is_number_valid(signed_value) {
-                    return Ok(ParseResult::Finished {
+                    return Ok(ParseStatus::Finished {
                         result: signed_value,
                         remaining: &input[index + 1..],
                     });
                 }
-                return Err(());
+                bail!(OutOfRangeError)
             }
         }
 
-        Ok(ParseResult::Incomplete {
+        Ok(ParseStatus::Incomplete {
             new_state: IntegerParserState {
                 state,
                 value,
@@ -262,10 +266,10 @@ fn integer_parser() {
             let taken = bytes.drain(..take_count).collect::<Vec<_>>();
             match parser.parse(&state, &taken) {
                 Ok(result) => match result {
-                    ParseResult::Incomplete { new_state, .. } => {
+                    ParseStatus::Incomplete { new_state, .. } => {
                         state = new_state;
                     }
-                    ParseResult::Finished { result, remaining } => {
+                    ParseStatus::Finished { result, remaining } => {
                         assert_eq!(result, random_number);
                         assert!(cap_string.as_bytes().starts_with(remaining));
                         break;

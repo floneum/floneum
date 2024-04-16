@@ -1,4 +1,4 @@
-use crate::{CreateParserState, ParseResult, Parser};
+use crate::{CreateParserState, ParseStatus, Parser};
 
 type CharFilter = fn(char) -> bool;
 
@@ -79,7 +79,6 @@ impl StopOnOffset {
 }
 
 impl<S: AsRef<str>, F: Fn(char) -> bool + 'static> Parser for StopOn<S, F> {
-    type Error = StopOnParseError;
     type Output = String;
     type PartialState = StopOnOffset;
 
@@ -87,7 +86,7 @@ impl<S: AsRef<str>, F: Fn(char) -> bool + 'static> Parser for StopOn<S, F> {
         &self,
         state: &StopOnOffset,
         input: &'a [u8],
-    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+    ) -> crate::ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>> {
         let mut new_offset = state.offset;
         let mut text = state.text.clone();
 
@@ -97,7 +96,7 @@ impl<S: AsRef<str>, F: Fn(char) -> bool + 'static> Parser for StopOn<S, F> {
 
         for (i, input_char) in input_str.char_indices() {
             if !(self.character_filter)(input_char) {
-                return Err(StopOnParseError);
+                crate::bail!(StopOnParseError);
             }
 
             let literal_char = literal_iter.next();
@@ -107,7 +106,7 @@ impl<S: AsRef<str>, F: Fn(char) -> bool + 'static> Parser for StopOn<S, F> {
 
                 if new_offset == literal_length {
                     text += std::str::from_utf8(&input[..i + 1]).unwrap();
-                    return Ok(ParseResult::Finished {
+                    return Ok(ParseStatus::Finished {
                         result: text,
                         remaining: &input[i + 1..],
                     });
@@ -120,7 +119,7 @@ impl<S: AsRef<str>, F: Fn(char) -> bool + 'static> Parser for StopOn<S, F> {
 
         text.push_str(input_str);
 
-        Ok(ParseResult::Incomplete {
+        Ok(ParseStatus::Incomplete {
             new_state: StopOnOffset {
                 offset: new_offset,
                 text,
@@ -139,21 +138,21 @@ fn literal_parser() {
     };
     assert_eq!(
         parser.parse(&state, b"Hello, world!"),
-        Ok(ParseResult::Finished {
+        Ok(ParseStatus::Finished {
             result: "Hello, world!".to_string(),
             remaining: &[]
         })
     );
     assert_eq!(
         parser.parse(&state, b"Hello, world! This is a test"),
-        Ok(ParseResult::Finished {
+        Ok(ParseStatus::Finished {
             result: "Hello, world!".to_string(),
             remaining: b" This is a test"
         })
     );
     assert_eq!(
         parser.parse(&state, b"Hello, "),
-        Ok(ParseResult::Incomplete {
+        Ok(ParseStatus::Incomplete {
             new_state: StopOnOffset {
                 offset: 7,
                 text: "Hello, ".into()
@@ -170,14 +169,14 @@ fn literal_parser() {
                 .0,
             b"world!"
         ),
-        Ok(ParseResult::Finished {
+        Ok(ParseStatus::Finished {
             result: "Hello, world!".to_string(),
             remaining: &[]
         })
     );
     assert_eq!(
         parser.parse(&state, b"Goodbye, world!"),
-        Ok(ParseResult::Incomplete {
+        Ok(ParseStatus::Incomplete {
             new_state: StopOnOffset {
                 offset: 0,
                 text: "Goodbye, world!".into()

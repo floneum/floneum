@@ -5,7 +5,7 @@ use std::{
 
 use crate::SyncModel;
 use crate::TokenOutputStream;
-use kalosm_sample::{ParseResult, Parser, Tokenizer};
+use kalosm_sample::{ParseStatus, Parser, Tokenizer};
 use llm_samplers::prelude::{Logit, Logits};
 use llm_samplers::types::{HasSamplerResources, Sampler, SamplerError};
 use rustc_hash::FxHashMap;
@@ -20,10 +20,7 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
     mut sampler: Arc<Mutex<dyn Sampler>>,
     mut on_token: impl FnMut(String) -> anyhow::Result<()>,
     top_k: Option<usize>,
-) -> anyhow::Result<P::Output>
-where
-    P::Output: Clone,
-{
+) -> anyhow::Result<P::Output> {
     let tokenizer = llm.tokenizer();
 
     let prompt_text = prompt.to_string();
@@ -75,8 +72,8 @@ where
             };
             if let Ok(result) = parser.parse(&parser_state, text.as_bytes()) {
                 let parsed_bytes = match result {
-                    ParseResult::Finished { remaining, .. } => text.len() - remaining.len(),
-                    ParseResult::Incomplete { .. } => text.len(),
+                    ParseStatus::Finished { remaining, .. } => text.len() - remaining.len(),
+                    ParseStatus::Incomplete { .. } => text.len(),
                 };
                 let result = result.without_remaining();
                 state_map.insert(token_id, (result, parsed_bytes));
@@ -139,14 +136,14 @@ where
 fn update_state<P: Parser>(
     parser: &P,
     parser_state: &mut P::PartialState,
-    result: ParseResult<P::PartialState, P::Output>,
+    result: ParseStatus<P::PartialState, P::Output>,
     tokenizer: &Arc<dyn Tokenizer + Send + Sync>,
     token_stream: &mut TokenOutputStream,
     on_token: &mut impl FnMut(String) -> anyhow::Result<()>,
     unprocessed_token_count: &mut usize,
 ) -> anyhow::Result<Option<P::Output>> {
     match result {
-        kalosm_sample::ParseResult::Incomplete {
+        kalosm_sample::ParseStatus::Incomplete {
             new_state,
             required_next,
         } => {
@@ -188,7 +185,7 @@ fn update_state<P: Parser>(
                 )
             }
         }
-        kalosm_sample::ParseResult::Finished { result, .. } => Ok(Some(result)),
+        kalosm_sample::ParseStatus::Finished { result, .. } => Ok(Some(result)),
     }
 }
 

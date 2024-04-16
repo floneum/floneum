@@ -1,7 +1,7 @@
 use crate::{CreateParserState, SeparatedParser};
 use crate::{
-    IntegerParser, LiteralParser, ParseResult, Parser, RepeatParser, SequenceParser,
-    SequenceParserState, StringParser,
+    IntegerParser, LiteralParser, ParseStatus, Parser, SequenceParser, SequenceParserState,
+    StringParser,
 };
 
 /// Data that can be parsed incrementally.
@@ -41,7 +41,6 @@ macro_rules! int_parser {
         }
 
         impl Parser for $ty {
-            type Error = <IntegerParser as Parser>::Error;
             type Output = $num;
             type PartialState = <IntegerParser as Parser>::PartialState;
 
@@ -49,7 +48,7 @@ macro_rules! int_parser {
                 &self,
                 state: &Self::PartialState,
                 input: &'a [u8],
-            ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+            ) -> crate::ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>> {
                 self.parser
                     .parse(state, input)
                     .map(|result| result.map(|output| output as $num))
@@ -78,11 +77,11 @@ macro_rules! int_parser {
                 println!("input: {:?}", input_str);
                 let result = parser.parse(&state, input_str.as_bytes());
                 assert_eq!(
-                    result,
-                    Ok(ParseResult::Finished {
+                    result.unwrap(),
+                    ParseStatus::Finished {
                         result: input,
                         remaining: b"\n",
-                    })
+                    }
                 );
             }
         }
@@ -158,13 +157,6 @@ where
     <T::Parser as Parser>::Output: Clone,
     <T as HasParser>::Parser: CreateParserState,
 {
-    type Error = <SequenceParser<
-        LiteralParser<&'static str>,
-        SequenceParser<
-            RepeatParser<SequenceParser<T::Parser, LiteralParser<&'static str>>>,
-            LiteralParser<&'static str>,
-        >,
-    > as Parser>::Error;
     type Output = Vec<<T::Parser as Parser>::Output>;
     type PartialState = <SequenceParser<
         LiteralParser<&'static str>,
@@ -178,7 +170,7 @@ where
         &self,
         state: &Self::PartialState,
         input: &'a [u8],
-    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+    ) -> crate::ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>> {
         self.parser
             .parse(state, input)
             .map(|result| result.map(|((), (outputs, ()))| outputs))
@@ -249,13 +241,6 @@ where
     <T::Parser as Parser>::Output: Clone,
     <T as HasParser>::Parser: CreateParserState,
 {
-    type Error = <SequenceParser<
-        LiteralParser<&'static str>,
-        SequenceParser<
-            RepeatParser<SequenceParser<T::Parser, LiteralParser<&'static str>>>,
-            LiteralParser<&'static str>,
-        >,
-    > as Parser>::Error;
     type Output = [<T::Parser as Parser>::Output; N];
     type PartialState = <SequenceParser<
         LiteralParser<&'static str>,
@@ -269,7 +254,7 @@ where
         &self,
         state: &Self::PartialState,
         input: &'a [u8],
-    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+    ) -> crate::ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>> {
         self.parser.parse(state, input).map(|result| {
             result.map(|((), (outputs, ()))| {
                 outputs

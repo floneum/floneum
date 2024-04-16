@@ -1,13 +1,15 @@
-use kalosm_sample::LiteralMismatchError;
+use kalosm_sample::{ArcParser, ParseResult};
 use kalosm_sample::{
-    ChoiceParser, ChoiceParserState, CreateParserState, Either, FloatParser, FloatParserState,
-    LiteralParser, LiteralParserOffset, ParseResult, Parser, ParserExt, SequenceParser,
-    SequenceParserState,
+    CreateParserState, FloatParser, LiteralParser, ParseStatus, Parser, ParserExt,
 };
-use once_cell::sync::{Lazy, OnceCell};
+use once_cell::sync::Lazy;
+use std::fmt::Debug;
 use std::ops::Deref;
+use std::sync::Arc;
 
 use crate::tool::Tool;
+
+use super::IndexParser;
 
 #[derive(Debug)]
 struct LazyParser<T>(Box<Lazy<T>>);
@@ -26,8 +28,6 @@ impl<T: Parser + Default> Default for LazyParser<T> {
 }
 
 impl<T: Parser> Parser for LazyParser<T> {
-    type Error = T::Error;
-
     type Output = T::Output;
 
     type PartialState = T::PartialState;
@@ -36,51 +36,53 @@ impl<T: Parser> Parser for LazyParser<T> {
         &self,
         state: &Self::PartialState,
         input: &'a [u8],
-    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+    ) -> ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>> {
         self.0.parse(state, input)
     }
 }
 
-type InnerParser = ChoiceParser<ChoiceParser<FloatParser, SequenceParser<SequenceParser<SequenceParser<ChoiceParser<ChoiceParser<ChoiceParser<ChoiceParser<ChoiceParser<ChoiceParser<ChoiceParser<ChoiceParser<ChoiceParser<ChoiceParser<ChoiceParser<ChoiceParser<ChoiceParser<ChoiceParser<ChoiceParser<ChoiceParser<ChoiceParser<ChoiceParser<ChoiceParser<ChoiceParser<ChoiceParser<ChoiceParser<LiteralParser<&'static str>, LiteralParser<&'static str>>, LiteralParser<&'static str>>, LiteralParser<&'static str>>, LiteralParser<&'static str>>, LiteralParser<&'static str>>, LiteralParser<&'static str>>, LiteralParser<&'static str>>, LiteralParser<&'static str>>, LiteralParser<&'static str>>, LiteralParser<&'static str>>, LiteralParser<&'static str>>, LiteralParser<&'static str>>, LiteralParser<&'static str>>, LiteralParser<&'static str>>, LiteralParser<&'static str>>, LiteralParser<&'static str>>, LiteralParser<&'static str>>, LiteralParser<&'static str>>, LiteralParser<&'static str>>, LiteralParser<&'static str>>, LiteralParser<&'static str>>, LiteralParser<&'static str>>, LiteralParser<&'static str>>, LazyParser<EquationParser>>, LiteralParser<&'static str>>>, SequenceParser<SequenceParser<SequenceParser<SequenceParser<LiteralParser<&'static str>, LazyParser<EquationParser>>, ChoiceParser<ChoiceParser<ChoiceParser<LiteralParser<&'static str>, LiteralParser<&'static str>>, LiteralParser<&'static str>>, LiteralParser<&'static str>>>, LazyParser<EquationParser>>, LiteralParser<&'static str>>> ;
-type InnerParserState =ChoiceParserState<ChoiceParserState<FloatParserState, SequenceParserState<SequenceParserState<SequenceParserState<ChoiceParserState<ChoiceParserState<ChoiceParserState<ChoiceParserState<ChoiceParserState<ChoiceParserState<ChoiceParserState<ChoiceParserState<ChoiceParserState<ChoiceParserState<ChoiceParserState<ChoiceParserState<ChoiceParserState<ChoiceParserState<ChoiceParserState<ChoiceParserState<ChoiceParserState<ChoiceParserState<ChoiceParserState<ChoiceParserState<ChoiceParserState<ChoiceParserState<LiteralParserOffset, LiteralParserOffset, LiteralMismatchError, LiteralMismatchError>, LiteralParserOffset, Either<LiteralMismatchError, LiteralMismatchError>, LiteralMismatchError>, LiteralParserOffset, Either<Either<LiteralMismatchError, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralParserOffset, Either<Either<Either<LiteralMismatchError, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralParserOffset, Either<Either<Either<Either<LiteralMismatchError, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralParserOffset, Either<Either<Either<Either<Either<LiteralMismatchError, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralParserOffset, Either<Either<Either<Either<Either<Either<LiteralMismatchError, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralParserOffset, Either<Either<Either<Either<Either<Either<Either<LiteralMismatchError, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralParserOffset, Either<Either<Either<Either<Either<Either<Either<Either<LiteralMismatchError, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralParserOffset, Either<Either<Either<Either<Either<Either<Either<Either<Either<LiteralMismatchError, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralParserOffset, Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<LiteralMismatchError, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralParserOffset, Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<LiteralMismatchError, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralParserOffset, Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<LiteralMismatchError, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralParserOffset, Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<LiteralMismatchError, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralParserOffset, Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<LiteralMismatchError, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralParserOffset, Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<LiteralMismatchError, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralParserOffset, Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<LiteralMismatchError, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralParserOffset, Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<LiteralMismatchError, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralParserOffset, Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<LiteralMismatchError, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralParserOffset, Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<LiteralMismatchError, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralParserOffset, Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<LiteralMismatchError, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralParserOffset, Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<LiteralMismatchError, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralParserOffset, Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<(), ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>>, EquationParserState, (Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<(), ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ())>, LiteralParserOffset, ((Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<(), ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()>, ()), String)>, (), Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<LiteralMismatchError, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, EquationParserParseError>, LiteralMismatchError>>, SequenceParserState<SequenceParserState<SequenceParserState<SequenceParserState<LiteralParserOffset, EquationParserState, ()>, ChoiceParserState<ChoiceParserState<ChoiceParserState<LiteralParserOffset, LiteralParserOffset, LiteralMismatchError, LiteralMismatchError>, LiteralParserOffset, Either<LiteralMismatchError, LiteralMismatchError>, LiteralMismatchError>, LiteralParserOffset, Either<Either<LiteralMismatchError, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, ((), String)>, EquationParserState, (((), String), Either<Either<Either<(), ()>, ()>, ()>)>, LiteralParserOffset, ((((), String), Either<Either<Either<(), ()>, ()>, ()>), String)>, Either<(), Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<Either<LiteralMismatchError, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>, EquationParserParseError>, LiteralMismatchError>>, Either<Either<Either<Either<LiteralMismatchError, EquationParserParseError>, Either<Either<Either<LiteralMismatchError, LiteralMismatchError>, LiteralMismatchError>, LiteralMismatchError>>, EquationParserParseError>, LiteralMismatchError>>;
-
 /// A parser for mathematical equations
 pub struct EquationParser {
-    parser: InnerParser,
+    parser: ArcParser,
 }
 
 impl CreateParserState for EquationParser {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState {
-        Default::default()
+        EquationParserState {
+            state: self.parser.create_parser_state(),
+            current_text: String::new(),
+        }
     }
 }
 
 impl Default for EquationParser {
     fn default() -> Self {
         let number = FloatParser::new(f64::MIN..=f64::MAX);
-        let function = LiteralParser::new("sqrt")
-            .or(LiteralParser::new("abs"))
-            .or(LiteralParser::new("exp"))
-            .or(LiteralParser::new("ln"))
-            .or(LiteralParser::new("sin"))
-            .or(LiteralParser::new("cos"))
-            .or(LiteralParser::new("tan"))
-            .or(LiteralParser::new("asin"))
-            .or(LiteralParser::new("acos"))
-            .or(LiteralParser::new("atan"))
-            .or(LiteralParser::new("atan2"))
-            .or(LiteralParser::new("sinh"))
-            .or(LiteralParser::new("cosh"))
-            .or(LiteralParser::new("tanh"))
-            .or(LiteralParser::new("asinh"))
-            .or(LiteralParser::new("acosh"))
-            .or(LiteralParser::new("atanh"))
-            .or(LiteralParser::new("floor"))
-            .or(LiteralParser::new("ceil"))
-            .or(LiteralParser::new("round"))
-            .or(LiteralParser::new("signum"))
-            .or(LiteralParser::new("pi"))
-            .or(LiteralParser::new("e"));
+        let function = IndexParser::new(vec![
+            LiteralParser::new("sqrt"),
+            LiteralParser::new("abs"),
+            LiteralParser::new("exp"),
+            LiteralParser::new("ln"),
+            LiteralParser::new("sin"),
+            LiteralParser::new("cos"),
+            LiteralParser::new("tan"),
+            LiteralParser::new("asin"),
+            LiteralParser::new("acos"),
+            LiteralParser::new("atan"),
+            LiteralParser::new("atan2"),
+            LiteralParser::new("sinh"),
+            LiteralParser::new("cosh"),
+            LiteralParser::new("tanh"),
+            LiteralParser::new("asinh"),
+            LiteralParser::new("acosh"),
+            LiteralParser::new("atanh"),
+            LiteralParser::new("floor"),
+            LiteralParser::new("ceil"),
+            LiteralParser::new("round"),
+            LiteralParser::new("signum"),
+            LiteralParser::new("pi"),
+            LiteralParser::new("e"),
+        ]);
 
         let addition = LiteralParser::new(" + ");
         let subtraction = LiteralParser::new(" - ");
@@ -101,7 +103,9 @@ impl Default for EquationParser {
 
         let expression = number.or(function_call).or(binary_operation);
 
-        Self { parser: expression }
+        Self {
+            parser: expression.map_output(|_| ()).boxed(),
+        }
     }
 }
 
@@ -118,8 +122,6 @@ impl std::fmt::Display for EquationParserParseError {
 impl std::error::Error for EquationParserParseError {}
 
 impl Parser for EquationParser {
-    type Error = EquationParserParseError;
-
     type Output = String;
 
     type PartialState = EquationParserState;
@@ -128,53 +130,41 @@ impl Parser for EquationParser {
         &self,
         state: &Self::PartialState,
         input: &'a [u8],
-    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
-        self.parser
-            .parse(&*state.state, input)
-            .map(|result| {
-                let new_text = state.current_text.clone() + std::str::from_utf8(input).unwrap();
-                match result {
-                    ParseResult::Incomplete {
-                        new_state,
-                        required_next,
-                    } => ParseResult::Incomplete {
-                        new_state: EquationParserState {
-                            state: LazyState(Box::new(OnceCell::from(new_state))),
-                            current_text: new_text,
-                        },
-                        required_next,
+    ) -> ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>> {
+        self.parser.parse(&state.state, input).map(|result| {
+            let new_text = state.current_text.clone() + std::str::from_utf8(input).unwrap();
+            match result {
+                ParseStatus::Incomplete {
+                    new_state,
+                    required_next,
+                } => ParseStatus::Incomplete {
+                    new_state: EquationParserState {
+                        state: new_state,
+                        current_text: new_text,
                     },
-                    ParseResult::Finished { remaining, .. } => ParseResult::Finished {
-                        remaining,
-                        result: new_text,
-                    },
-                }
-            })
-            .map_err(|_| EquationParserParseError)
+                    required_next,
+                },
+                ParseStatus::Finished { remaining, .. } => ParseStatus::Finished {
+                    remaining,
+                    result: new_text,
+                },
+            }
+        })
     }
 }
 
 /// The state of an equation parser.
-#[derive(Default, Debug, Clone)]
+#[derive(Clone)]
 pub struct EquationParserState {
-    state: LazyState<InnerParserState>,
+    state: Arc<dyn std::any::Any + Send + Sync>,
     current_text: String,
 }
 
-#[derive(Debug, Clone, Default)]
-struct LazyState<T>(Box<OnceCell<T>>);
-
-impl<T: Default> Deref for LazyState<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        match self.0.get() {
-            Some(state) => state,
-            None => {
-                let _ = self.0.set(Default::default());
-                self.0.get().unwrap()
-            }
-        }
+impl Debug for EquationParserState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EquationParserState")
+            .field("current_text", &self.current_text)
+            .finish()
     }
 }
 
@@ -229,6 +219,7 @@ impl Tool for CalculatorTool {
     }
 
     async fn run(&mut self, expr: String) -> String {
+        println!("{expr}");
         match meval::eval_str(expr){
             Ok(result) => result.to_string(),
             Err(e) => format!("Input was invalid, try again making sure to only use numbers and one of the prebuilt math functions. {e}"),

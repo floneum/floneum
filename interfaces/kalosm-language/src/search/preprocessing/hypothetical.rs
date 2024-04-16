@@ -23,12 +23,7 @@ type Constraints = kalosm_sample::SequenceParser<
     LiteralParser<&'static str>,
     kalosm_sample::RepeatParser<
         kalosm_sample::SequenceParser<
-            IndexParser<
-                LiteralParser<&'static str>,
-                kalosm_sample::LiteralMismatchError,
-                (),
-                kalosm_sample::LiteralParserOffset,
-            >,
+            IndexParser<LiteralParser<&'static str>, (), kalosm_sample::LiteralParserOffset>,
             StopOn<&'static str>,
         >,
     >,
