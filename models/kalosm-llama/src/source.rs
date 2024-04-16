@@ -294,6 +294,27 @@ impl LlamaSource {
         }
     }
 
+    /// A preset for WizardLM 2 7B
+    pub fn wizard_lm_7b_v2() -> Self {
+        Self {
+            model: FileSource::huggingface(
+                "bartowski/WizardLM-2-7B-GGUF".to_string(),
+                "main".to_string(),
+                "WizardLM-2-7B-Q4_K_M.gguf".to_string(),
+            ),
+            tokenizer: mistral_tokenizer(),
+            group_query_attention: 8,
+            markers: Some(ChatMarkers {
+                system_prompt_marker: "",
+                end_system_prompt_marker: "",
+                user_marker: "USER: ",
+                end_user_marker: "</s>",
+                assistant_marker: "ASSISTANT: ",
+                end_assistant_marker: "</s>",
+            }),
+        }
+    }
+
     /// A preset for tiny llama 1.1b 1.0 Chat
     pub fn tiny_llama_1_1b_chat() -> Self {
         Self {
