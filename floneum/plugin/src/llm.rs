@@ -212,7 +212,8 @@ impl main::types::HostModel for State {
         input: String,
         regex: String,
     ) -> wasmtime::Result<String> {
-        let structure = RegexParser::new(&regex).map_err(|e| wasmtime::Error::msg(format!("{e:?}")))?;
+        let structure =
+            RegexParser::new(&regex).map_err(|e| wasmtime::Error::msg(format!("{e:?}")))?;
         let model = &mut self.models[self_.rep() as usize];
 
         Ok(model
