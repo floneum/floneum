@@ -1,4 +1,4 @@
-use crate::{CreateParserState, ParseResult, Parser};
+use crate::{CreateParserState, ParseStatus, Parser};
 use std::ops::RangeInclusive;
 
 #[derive(Debug, PartialEq, Eq, Default, Copy, Clone)]
@@ -132,8 +132,76 @@ impl FloatParser {
     }
 }
 
+/// An error that can occur while parsing a float literal when the number starts with a leading zero.
+#[derive(Debug)]
+pub struct LeadingZeroError;
+
+impl std::fmt::Display for LeadingZeroError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Found leading zero. Leading zeros are not allowed when parsing a number"
+        )
+    }
+}
+
+impl std::error::Error for LeadingZeroError {}
+
+/// An error that can occur while parsing a float literal when the number is out of range.
+#[derive(Debug)]
+pub struct OutOfRangeError;
+
+impl std::fmt::Display for OutOfRangeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Attempted to parse a number that was out of range")
+    }
+}
+
+impl std::error::Error for OutOfRangeError {}
+
+/// An error that can occur while parsing a float literal when the number contains a decimal point in the wrong place.
+#[derive(Debug)]
+pub struct InvalidDecimalLocation;
+
+impl std::fmt::Display for InvalidDecimalLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Failed to parse a number with a decimal before the first digit or multiple decimals"
+        )
+    }
+}
+
+impl std::error::Error for InvalidDecimalLocation {}
+
+/// An error that can occur while parsing a float literal when the number contains a sign in the wrong place.
+#[derive(Debug)]
+pub struct InvalidSignLocation;
+
+impl std::fmt::Display for InvalidSignLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Failed to parse a number with a sign after the first character"
+        )
+    }
+}
+
+impl std::error::Error for InvalidSignLocation {}
+
+/// An error that can occur while parsing a float literal when trying to parse a number with no characters.
+#[derive(Debug)]
+pub struct EmptyNumber;
+
+impl std::fmt::Display for EmptyNumber {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Failed to parse a number with no digits")
+    }
+}
+
+impl std::error::Error for EmptyNumber {}
+
 impl Parser for FloatParser {
-    type Error = ();
     type Output = f64;
     type PartialState = FloatParserState;
 
@@ -141,7 +209,7 @@ impl Parser for FloatParser {
         &self,
         state: &FloatParserState,
         input: &'a [u8],
-    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+    ) -> crate::ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>> {
         let mut value = state.value;
         let mut positive = state.positive;
         let mut state = state.state;
@@ -154,7 +222,7 @@ impl Parser for FloatParser {
                         || state == FloatParserProgress::AfterSign)
                         && input_byte == b'0'
                     {
-                        return Err(()); // Leading zeros are not allowed
+                        crate::bail!(LeadingZeroError);
                     }
                     input_byte - b'0'
                 }
@@ -164,10 +232,10 @@ impl Parser for FloatParser {
                     let end_digits = self.range.end().abs().log10() + 1.;
                     if positive {
                         if value_digits > end_digits {
-                            return Err(());
+                            crate::bail!(OutOfRangeError);
                         }
                     } else if value_digits > start_digits {
-                        return Err(());
+                        crate::bail!(OutOfRangeError);
                     }
                     if state == FloatParserProgress::AfterDigit {
                         state = FloatParserProgress::AfterDecimalPoint {
@@ -175,7 +243,7 @@ impl Parser for FloatParser {
                         };
                         continue;
                     } else {
-                        return Err(());
+                        crate::bail!(InvalidDecimalLocation);
                     }
                 }
                 b'+' | b'-' => {
@@ -184,28 +252,28 @@ impl Parser for FloatParser {
                         positive = input_byte == b'+';
 
                         if !self.sign_valid(positive) {
-                            return Err(());
+                            crate::bail!(InvalidSignLocation);
                         }
                         continue;
                     } else {
-                        return Err(());
+                        crate::bail!(InvalidSignLocation);
                     }
                 }
                 _ => {
                     if state.is_after_digit() {
                         let result = value * if positive { 1.0 } else { -1.0 };
                         if self.is_number_valid(result) {
-                            return Ok(ParseResult::Finished {
+                            return Ok(ParseStatus::Finished {
                                 result,
                                 remaining: &input[index..],
                             });
                         }
-                        return Ok(ParseResult::Finished {
+                        return Ok(ParseStatus::Finished {
                             result,
                             remaining: &input[index..],
                         });
                     } else {
-                        return Err(());
+                        crate::bail!(EmptyNumber)
                     }
                 }
             };
@@ -226,7 +294,7 @@ impl Parser for FloatParser {
                         value * if positive { 1.0 } else { -1.0 },
                         FloatParserProgress::AfterDigit,
                     ) {
-                        return Err(());
+                        crate::bail!(OutOfRangeError);
                     }
                 }
                 FloatParserProgress::AfterDecimalPoint {
@@ -243,13 +311,13 @@ impl Parser for FloatParser {
                             *digits_after_decimal_point,
                         )
                     {
-                        return Err(());
+                        crate::bail!(OutOfRangeError);
                     }
                 }
             }
         }
 
-        Ok(ParseResult::Incomplete {
+        Ok(ParseStatus::Incomplete {
             new_state: FloatParserState {
                 state,
                 value,
@@ -267,19 +335,19 @@ fn float_parser() {
     };
     let state = FloatParserState::default();
     assert_eq!(
-        parser.parse(&state, b"123"),
-        Ok(ParseResult::Incomplete {
+        parser.parse(&state, b"123").unwrap(),
+        ParseStatus::Incomplete {
             new_state: FloatParserState {
                 state: FloatParserProgress::AfterDigit,
                 value: 123.0,
                 positive: true
             },
             required_next: Default::default()
-        })
+        }
     );
     assert_eq!(
-        parser.parse(&state, b"123.456"),
-        Ok(ParseResult::Incomplete {
+        parser.parse(&state, b"123.456").unwrap(),
+        ParseStatus::Incomplete {
             new_state: FloatParserState {
                 state: FloatParserProgress::AfterDecimalPoint {
                     digits_after_decimal_point: 3
@@ -288,28 +356,30 @@ fn float_parser() {
                 positive: true
             },
             required_next: Default::default()
-        })
+        }
     );
     assert_eq!(
-        parser.parse(
-            &parser
-                .parse(&state, b"123.456")
-                .unwrap()
-                .unwrap_incomplete()
-                .0,
-            b"789x"
-        ),
-        Ok(ParseResult::Finished {
+        parser
+            .parse(
+                &parser
+                    .parse(&state, b"123.456")
+                    .unwrap()
+                    .unwrap_incomplete()
+                    .0,
+                b"789x"
+            )
+            .unwrap(),
+        ParseStatus::Finished {
             result: 123.456789,
             remaining: b"x"
-        })
+        }
     );
     assert_eq!(
-        parser.parse(&state, b"123.456x"),
-        Ok(ParseResult::Finished {
+        parser.parse(&state, b"123.456x").unwrap(),
+        ParseStatus::Finished {
             result: 123.456,
             remaining: b"x"
-        })
+        }
     );
-    assert_eq!(parser.parse(&state, b"abc"), Err(()));
+    assert!(parser.parse(&state, b"abc").is_err());
 }

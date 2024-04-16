@@ -1,4 +1,4 @@
-use crate::{CreateParserState, ParseResult, Parser};
+use crate::{CreateParserState, ParseStatus, Parser};
 
 /// State of a repeat parser.
 #[derive(Debug, PartialEq, Eq)]
@@ -75,8 +75,8 @@ impl<P> RepeatParser<P> {
     }
 }
 
-impl<E, O, PA, P: Parser<Error = E, Output = O, PartialState = PA> + CreateParserState>
-    CreateParserState for RepeatParser<P>
+impl<O, PA, P: Parser<Output = O, PartialState = PA> + CreateParserState> CreateParserState
+    for RepeatParser<P>
 where
     P::PartialState: Clone,
     P::Output: Clone,
@@ -90,13 +90,11 @@ where
     }
 }
 
-impl<E, O, PA, P: Parser<Error = E, Output = O, PartialState = PA> + CreateParserState> Parser
-    for RepeatParser<P>
+impl<O, PA, P: Parser<Output = O, PartialState = PA> + CreateParserState> Parser for RepeatParser<P>
 where
     P::PartialState: Clone,
     P::Output: Clone,
 {
-    type Error = E;
     type Output = Vec<O>;
     type PartialState = RepeatParserState<P>;
 
@@ -104,14 +102,14 @@ where
         &self,
         state: &Self::PartialState,
         input: &'a [u8],
-    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+    ) -> crate::ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>> {
         let mut state = state.clone();
         let mut remaining = input;
         let required_next;
         loop {
             let result = self.parser.parse(&state.last_state, remaining);
             match result {
-                Ok(ParseResult::Finished {
+                Ok(ParseStatus::Finished {
                     result,
                     remaining: new_remaining,
                 }) => {
@@ -120,14 +118,14 @@ where
                     state.new_state_in_progress = false;
                     remaining = new_remaining;
                     if self.length_range.end() == &state.outputs.len() {
-                        return Ok(ParseResult::Finished {
+                        return Ok(ParseStatus::Finished {
                             result: state.outputs,
                             remaining,
                         });
                     }
                     if remaining.is_empty() {
                         match self.parser.parse(&state.last_state, remaining) {
-                            Ok(ParseResult::Incomplete {
+                            Ok(ParseStatus::Incomplete {
                                 required_next: new_required_next,
                                 ..
                             }) => required_next = Some(new_required_next),
@@ -136,7 +134,7 @@ where
                         break;
                     }
                 }
-                Ok(ParseResult::Incomplete {
+                Ok(ParseStatus::Incomplete {
                     new_state,
                     required_next: new_required_next,
                 }) => {
@@ -149,7 +147,7 @@ where
                     if !state.new_state_in_progress
                         && self.length_range.contains(&state.outputs.len())
                     {
-                        return Ok(ParseResult::Finished {
+                        return Ok(ParseStatus::Finished {
                             result: state.outputs,
                             remaining,
                         });
@@ -160,7 +158,7 @@ where
             }
         }
 
-        Ok(ParseResult::Incomplete {
+        Ok(ParseStatus::Incomplete {
             new_state: state,
             required_next: required_next.unwrap_or_default(),
         })
@@ -175,7 +173,7 @@ fn repeat_parser() {
     let result = parser.parse(&state, b"aaa");
     assert_eq!(
         result,
-        Ok(ParseResult::Finished {
+        Ok(ParseStatus::Finished {
             result: vec![(); 3],
             remaining: b"",
         })
@@ -186,7 +184,7 @@ fn repeat_parser() {
     let result = parser.parse(&state, b"123");
     assert_eq!(
         result,
-        Ok(ParseResult::Finished {
+        Ok(ParseStatus::Finished {
             result: vec![1, 2, 3],
             remaining: b"",
         })
@@ -197,7 +195,7 @@ fn repeat_parser() {
     let result = parser.parse(&state, b"12");
     assert_eq!(
         result,
-        Ok(ParseResult::Incomplete {
+        Ok(ParseStatus::Incomplete {
             new_state: RepeatParserState {
                 new_state_in_progress: false,
                 last_state: IntegerParser::new(1..=3).create_parser_state(),

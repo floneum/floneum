@@ -1,7 +1,7 @@
 use std::ops::{Deref, DerefMut};
 
 use crate::{CreateParserState, HasParser};
-use crate::{ParseResult, Parser, StringParser};
+use crate::{ParseStatus, Parser, StringParser};
 
 #[derive(Clone, Debug)]
 /// A single word.
@@ -76,7 +76,6 @@ impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> CreateParserState
 impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Parser
     for SentenceParser<MIN_LENGTH, MAX_LENGTH>
 {
-    type Error = <StringParser<fn(char) -> bool> as Parser>::Error;
     type Output = Sentence<MIN_LENGTH, MAX_LENGTH>;
     type PartialState = <StringParser<fn(char) -> bool> as Parser>::PartialState;
 
@@ -84,7 +83,7 @@ impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Parser
         &self,
         state: &Self::PartialState,
         input: &'a [u8],
-    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+    ) -> crate::ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>> {
         self.parser
             .parse(state, input)
             .map(|result| result.map(Into::into))

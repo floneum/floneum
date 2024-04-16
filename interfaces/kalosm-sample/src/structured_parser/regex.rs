@@ -16,7 +16,7 @@ pub struct RegexParser {
 
 impl RegexParser {
     /// Create a new `RegexParser` from a regex pattern.
-    pub fn new(regex: &str) -> anyhow::Result<Self> {
+    pub fn new(regex: &str) -> crate::ParseResult<Self> {
         let dfa = dense::DFA::new(regex)?;
 
         let config =
@@ -37,7 +37,6 @@ impl CreateParserState for RegexParser {
 }
 
 impl Parser for RegexParser {
-    type Error = regex_automata::MatchError;
     type Output = ();
     type PartialState = StateID;
 
@@ -45,22 +44,22 @@ impl Parser for RegexParser {
         &self,
         state: &Self::PartialState,
         input: &'a [u8],
-    ) -> Result<crate::ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+    ) -> crate::ParseResult<crate::ParseStatus<'a, Self::PartialState, Self::Output>> {
         let mut state = *state;
         for (idx, &b) in input.iter().enumerate() {
             state = self.dfa.next_state(state, b);
             if self.dfa.is_match_state(state) {
                 // If this is a match state, accept it only if it's the last byte
                 return if idx == input.len() - 1 {
-                    Ok(crate::ParseResult::Finished {
+                    Ok(crate::ParseStatus::Finished {
                         result: (),
                         remaining: Default::default(),
                     })
                 } else {
-                    Err(regex_automata::MatchError::quit(b, 0))
+                    crate::bail!(regex_automata::MatchError::quit(b, 0))
                 };
             } else if self.dfa.is_dead_state(state) || self.dfa.is_quit_state(state) {
-                return Err(regex_automata::MatchError::quit(b, 0));
+                crate::bail!(regex_automata::MatchError::quit(b, 0));
             }
         }
 
@@ -107,7 +106,7 @@ impl Parser for RegexParser {
             }
         }
 
-        Ok(crate::ParseResult::Incomplete {
+        Ok(crate::ParseStatus::Incomplete {
             new_state: state,
             required_next: required_next.into(),
         })

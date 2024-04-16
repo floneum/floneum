@@ -6230,7 +6230,6 @@ dependencies = [
  "serde",
  "serde_json",
  "slab",
- "spinoff 0.7.0",
  "tantivy",
  "tempfile",
  "texting_robots",
@@ -6368,6 +6367,7 @@ dependencies = [
  "rand 0.8.5",
  "regex-automata 0.4.6",
  "rustc-hash",
+ "thiserror",
  "tokenizers 0.13.4",
  "tracing",
 ]

@@ -4,16 +4,16 @@ use std::{
     fmt::{Display, Formatter},
 };
 
-use crate::{CreateParserState, ParseResult, Parser};
+use crate::{CreateParserState, ParseResult, ParseStatus, Parser};
 
 /// State of a choice parser.
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub struct ChoiceParserState<P1, P2, E1, E2> {
-    pub(crate) state1: Result<P1, E1>,
-    pub(crate) state2: Result<P2, E2>,
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct ChoiceParserState<P1, P2> {
+    pub(crate) state1: ParseResult<P1>,
+    pub(crate) state2: ParseResult<P2>,
 }
 
-impl<P1, P2, E1, E2> ChoiceParserState<P1, P2, E1, E2> {
+impl<P1, P2> ChoiceParserState<P1, P2> {
     /// Create a new choice parser state.
     pub fn new(state1: P1, state2: P2) -> Self {
         Self {
@@ -23,7 +23,7 @@ impl<P1, P2, E1, E2> ChoiceParserState<P1, P2, E1, E2> {
     }
 }
 
-impl<P1: Default, P2: Default, E1, E2> Default for ChoiceParserState<P1, P2, E1, E2> {
+impl<P1: Default, P2: Default> Default for ChoiceParserState<P1, P2> {
     fn default() -> Self {
         ChoiceParserState {
             state1: Ok(Default::default()),
@@ -47,14 +47,12 @@ impl<P1, P2> ChoiceParser<P1, P2> {
 }
 
 impl<
-        E1: Clone,
-        E2: Clone,
         O1,
         O2,
         PA1,
         PA2,
-        P1: Parser<Error = E1, Output = O1, PartialState = PA1> + CreateParserState,
-        P2: Parser<Error = E2, Output = O2, PartialState = PA2> + CreateParserState,
+        P1: Parser<Output = O1, PartialState = PA1> + CreateParserState,
+        P2: Parser<Output = O2, PartialState = PA2> + CreateParserState,
     > CreateParserState for ChoiceParser<P1, P2>
 {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState {
@@ -93,48 +91,45 @@ impl<L: Error + 'static, R: Error + 'static> Error for Either<L, R> {
 }
 
 impl<
-        E1: Clone,
-        E2: Clone,
         O1,
         O2,
         PA1,
         PA2,
-        P1: Parser<Error = E1, Output = O1, PartialState = PA1>,
-        P2: Parser<Error = E2, Output = O2, PartialState = PA2>,
+        P1: Parser<Output = O1, PartialState = PA1>,
+        P2: Parser<Output = O2, PartialState = PA2>,
     > Parser for ChoiceParser<P1, P2>
 {
-    type Error = Either<E1, E2>;
     type Output = Either<O1, O2>;
-    type PartialState = ChoiceParserState<PA1, PA2, E1, E2>;
+    type PartialState = ChoiceParserState<PA1, PA2>;
 
     fn parse<'a>(
         &self,
         state: &Self::PartialState,
         input: &'a [u8],
-    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+    ) -> crate::ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>> {
         match (&state.state1, &state.state2) {
             (Ok(p1), Ok(p2)) => {
                 match (self.parser1.parse(p1, input), self.parser2.parse(p2, input)) {
                     // If one parser finishes, we return the result of that parser
-                    (Ok(ParseResult::Finished { result, remaining }), _) => {
-                        Ok(ParseResult::Finished {
+                    (Ok(ParseStatus::Finished { result, remaining }), _) => {
+                        Ok(ParseStatus::Finished {
                             result: Either::Left(result),
                             remaining,
                         })
                     }
-                    (_, Ok(ParseResult::Finished { result, remaining })) => {
-                        Ok(ParseResult::Finished {
+                    (_, Ok(ParseStatus::Finished { result, remaining })) => {
+                        Ok(ParseStatus::Finished {
                             result: Either::Right(result),
                             remaining,
                         })
                     }
                     // If either parser is incomplete, we return the incomplete state
                     (
-                        Ok(ParseResult::Incomplete {
+                        Ok(ParseStatus::Incomplete {
                             new_state: p1,
                             required_next: required_next1,
                         }),
-                        Ok(ParseResult::Incomplete {
+                        Ok(ParseStatus::Incomplete {
                             new_state: p2,
                             required_next: required_next2,
                         }),
@@ -150,7 +145,7 @@ impl<
                             }
                             common_bytes += 1;
                         }
-                        Ok(ParseResult::Incomplete {
+                        Ok(ParseStatus::Incomplete {
                             new_state,
                             required_next: match (required_next1, required_next2) {
                                 (Cow::Borrowed(required_next), _) => {
@@ -167,7 +162,7 @@ impl<
                         })
                     }
                     (
-                        Ok(ParseResult::Incomplete {
+                        Ok(ParseStatus::Incomplete {
                             new_state: p1,
                             required_next,
                         }),
@@ -177,14 +172,14 @@ impl<
                             state1: Ok(p1),
                             state2: Err(err2),
                         };
-                        Ok(ParseResult::Incomplete {
+                        Ok(ParseStatus::Incomplete {
                             new_state,
                             required_next,
                         })
                     }
                     (
                         Err(err1),
-                        Ok(ParseResult::Incomplete {
+                        Ok(ParseStatus::Incomplete {
                             new_state: p2,
                             required_next,
                         }),
@@ -193,24 +188,24 @@ impl<
                             state1: Err(err1),
                             state2: Ok(p2),
                         };
-                        Ok(ParseResult::Incomplete {
+                        Ok(ParseStatus::Incomplete {
                             new_state,
                             required_next,
                         })
                     }
 
                     // If both parsers fail, we return the error from the first parser
-                    (Err(err1), Err(_)) => Err(Either::Left(err1.clone())),
+                    (Err(err1), Err(_)) => Err(err1),
                 }
             }
             (Ok(p1), Err(err2)) => {
-                let result = self.parser1.parse(p1, input).map_err(Either::Left)?;
+                let result = self.parser1.parse(p1, input)?;
                 match result {
-                    ParseResult::Finished { result, remaining } => Ok(ParseResult::Finished {
+                    ParseStatus::Finished { result, remaining } => Ok(ParseStatus::Finished {
                         result: Either::Left(result),
                         remaining,
                     }),
-                    ParseResult::Incomplete {
+                    ParseStatus::Incomplete {
                         new_state: p1,
                         required_next,
                     } => {
@@ -218,7 +213,7 @@ impl<
                             state1: Ok(p1),
                             state2: Err(err2.clone()),
                         };
-                        Ok(ParseResult::Incomplete {
+                        Ok(ParseStatus::Incomplete {
                             new_state,
                             required_next,
                         })
@@ -226,13 +221,13 @@ impl<
                 }
             }
             (Err(err1), Ok(p2)) => {
-                let result = self.parser2.parse(p2, input).map_err(Either::Right)?;
+                let result = self.parser2.parse(p2, input)?;
                 match result {
-                    ParseResult::Finished { result, remaining } => Ok(ParseResult::Finished {
+                    ParseStatus::Finished { result, remaining } => Ok(ParseStatus::Finished {
                         result: Either::Right(result),
                         remaining,
                     }),
-                    ParseResult::Incomplete {
+                    ParseStatus::Incomplete {
                         new_state: p2,
                         required_next,
                     } => {
@@ -240,7 +235,7 @@ impl<
                             state1: Err(err1.clone()),
                             state2: Ok(p2),
                         };
-                        Ok(ParseResult::Incomplete {
+                        Ok(ParseStatus::Incomplete {
                             new_state,
                             required_next,
                         })
@@ -256,7 +251,6 @@ impl<
 
 #[test]
 fn choice_parser() {
-    use crate::LiteralMismatchError;
     use crate::{LiteralParser, LiteralParserOffset};
     let parser = ChoiceParser {
         parser1: LiteralParser::new("Hello, "),
@@ -264,44 +258,41 @@ fn choice_parser() {
     };
     let state = ChoiceParserState::default();
     assert_eq!(
-        parser.parse(&state, b"Hello, "),
-        Ok(ParseResult::Finished {
+        parser.parse(&state, b"Hello, ").unwrap(),
+        ParseStatus::Finished {
             result: Either::Left(()),
             remaining: &[]
-        })
+        }
     );
     assert_eq!(
-        parser.parse(&state, b"Hello, "),
-        Ok(ParseResult::Finished {
+        parser.parse(&state, b"Hello, ").unwrap(),
+        ParseStatus::Finished {
             result: Either::Left(()),
             remaining: &[]
-        })
+        }
     );
     assert_eq!(
-        parser.parse(&state, b"world!"),
-        Ok(ParseResult::Finished {
+        parser.parse(&state, b"world!").unwrap(),
+        ParseStatus::Finished {
             result: Either::Right(()),
             remaining: &[]
-        })
+        }
     );
-    assert_eq!(
-        parser.parse(&state, b"Goodbye, world!"),
-        Err(Either::Left(LiteralMismatchError))
-    );
+    assert!(parser.parse(&state, b"Goodbye, world!").is_err());
 
     let parser = ChoiceParser::new(
         LiteralParser::new("This isn't a test"),
         LiteralParser::new("This is a test"),
     );
     let state = ChoiceParserState::default();
-    assert_eq!(
-        parser.parse(&state, b"This isn"),
-        Ok(ParseResult::Incomplete {
+    assert!(matches!(
+        parser.parse(&state, b"This isn").unwrap(),
+        ParseStatus::Incomplete {
             new_state: ChoiceParserState {
-                state1: Ok(LiteralParserOffset::new(8)),
-                state2: Err(LiteralMismatchError),
+                state1: Ok(LiteralParserOffset { offset: 8 }),
+                state2: Err(_),
             },
-            required_next: "'t a test".into()
-        })
-    );
+            required_next: Cow::Borrowed("'t a test")
+        },
+    ));
 }

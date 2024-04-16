@@ -1,4 +1,4 @@
-use crate::{CreateParserState, Either, ParseResult, Parser};
+use crate::{CreateParserState, ParseStatus, Parser};
 
 /// State of a sequence parser.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -23,14 +23,12 @@ impl<P1: Default, P2, O1> Default for SequenceParserState<P1, P2, O1> {
 }
 
 impl<
-        E1,
-        E2,
         O1: Clone,
         O2,
         PA1,
         PA2,
-        P1: Parser<Error = E1, Output = O1, PartialState = PA1> + CreateParserState,
-        P2: Parser<Error = E2, Output = O2, PartialState = PA2> + CreateParserState,
+        P1: Parser<Output = O1, PartialState = PA1> + CreateParserState,
+        P2: Parser<Output = O2, PartialState = PA2> + CreateParserState,
     > CreateParserState for SequenceParser<P1, P2>
 {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState {
@@ -53,17 +51,14 @@ impl<P1, P2> SequenceParser<P1, P2> {
 }
 
 impl<
-        E1,
-        E2,
         O1: Clone,
         O2,
         PA1,
         PA2,
-        P1: Parser<Error = E1, Output = O1, PartialState = PA1>,
-        P2: Parser<Error = E2, Output = O2, PartialState = PA2> + CreateParserState,
+        P1: Parser<Output = O1, PartialState = PA1>,
+        P2: Parser<Output = O2, PartialState = PA2> + CreateParserState,
     > Parser for SequenceParser<P1, P2>
 {
-    type Error = Either<E1, E2>;
     type Output = (O1, O2);
     type PartialState = SequenceParserState<PA1, PA2, O1>;
 
@@ -71,45 +66,42 @@ impl<
         &self,
         state: &Self::PartialState,
         input: &'a [u8],
-    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+    ) -> crate::ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>> {
         match state {
             SequenceParserState::FirstParser(p1) => {
-                let result = self.parser1.parse(p1, input).map_err(Either::Left)?;
+                let result = self.parser1.parse(p1, input)?;
                 match result {
-                    ParseResult::Finished {
+                    ParseStatus::Finished {
                         result: o1,
                         remaining,
                     } => {
                         let second_parser_state = self.parser2.create_parser_state();
-                        let result = self
-                            .parser2
-                            .parse(&second_parser_state, remaining)
-                            .map_err(Either::Right)?;
+                        let result = self.parser2.parse(&second_parser_state, remaining)?;
                         match result {
-                            ParseResult::Finished { result, remaining } => {
-                                Ok(ParseResult::Finished {
+                            ParseStatus::Finished { result, remaining } => {
+                                Ok(ParseStatus::Finished {
                                     result: (o1, result),
                                     remaining,
                                 })
                             }
-                            ParseResult::Incomplete {
+                            ParseStatus::Incomplete {
                                 new_state: p2,
                                 required_next,
                             } => {
                                 let new_state = SequenceParserState::SecondParser(p2, o1);
-                                Ok(ParseResult::Incomplete {
+                                Ok(ParseStatus::Incomplete {
                                     new_state,
                                     required_next,
                                 })
                             }
                         }
                     }
-                    ParseResult::Incomplete {
+                    ParseStatus::Incomplete {
                         new_state: p1,
                         required_next,
                     } => {
                         let new_state = SequenceParserState::FirstParser(p1);
-                        Ok(ParseResult::Incomplete {
+                        Ok(ParseStatus::Incomplete {
                             new_state,
                             required_next,
                         })
@@ -117,18 +109,18 @@ impl<
                 }
             }
             SequenceParserState::SecondParser(p2, o1) => {
-                let result = self.parser2.parse(p2, input).map_err(Either::Right)?;
+                let result = self.parser2.parse(p2, input)?;
                 match result {
-                    ParseResult::Finished { result, remaining } => Ok(ParseResult::Finished {
+                    ParseStatus::Finished { result, remaining } => Ok(ParseStatus::Finished {
                         result: (o1.clone(), result),
                         remaining,
                     }),
-                    ParseResult::Incomplete {
+                    ParseStatus::Incomplete {
                         new_state: p2,
                         required_next,
                     } => {
                         let new_state = SequenceParserState::SecondParser(p2, o1.clone());
-                        Ok(ParseResult::Incomplete {
+                        Ok(ParseStatus::Incomplete {
                             new_state,
                             required_next,
                         })
@@ -149,14 +141,14 @@ fn sequence_parser() {
     let state = SequenceParserState::FirstParser(LiteralParserOffset::default());
     assert_eq!(
         parser.parse(&state, b"Hello, world!"),
-        Ok(ParseResult::Finished {
+        Ok(ParseStatus::Finished {
             result: ((), ()),
             remaining: &[]
         })
     );
     assert_eq!(
         parser.parse(&state, b"Hello, "),
-        Ok(ParseResult::Incomplete {
+        Ok(ParseStatus::Incomplete {
             new_state: SequenceParserState::SecondParser(LiteralParserOffset::new(0), ()),
             required_next: "world!".into()
         })
@@ -170,13 +162,10 @@ fn sequence_parser() {
                 .0,
             b"world!"
         ),
-        Ok(ParseResult::Finished {
+        Ok(ParseStatus::Finished {
             result: ((), ()),
             remaining: &[]
         })
     );
-    assert_eq!(
-        parser.parse(&state, b"Goodbye, world!"),
-        Err(Either::Left(crate::LiteralMismatchError))
-    );
+    assert!(parser.parse(&state, b"Goodbye, world!").is_err(),);
 }

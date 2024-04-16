@@ -656,10 +656,7 @@ pub trait SyncModelExt: SyncModel {
         sampler: Arc<Mutex<dyn Sampler>>,
         on_token: impl FnMut(String) -> anyhow::Result<()>,
         top_k: Option<usize>,
-    ) -> anyhow::Result<P::Output>
-    where
-        P::Output: Clone,
-    {
+    ) -> anyhow::Result<P::Output> {
         generate_structured(
             prompt,
             self,
