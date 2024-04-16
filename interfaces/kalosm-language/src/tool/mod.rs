@@ -231,38 +231,26 @@ Question: {question}
         (!parsers.is_empty()).then_some(IndexParser { parsers }.boxed())
     }
 
-    /// Get the constraints for the thought action
-    pub(crate) fn thought_constraints(&self) -> ArcParser<String> {
-        let constraints = "Thought: ";
-        LiteralParser::from(constraints)
-            .then(OneLine)
-            .map_output(|(_, result)| result)
-            .boxed()
-    }
-
-    /// Get the constraints for the action action
-    pub(crate) fn action_constraints(&self) -> ArcParser<(usize, Box<dyn Any + Send + Sync>)> {
-        let constraints = LiteralParser::from("Action: ");
-        constraints
-            .then(self.tool_choices().unwrap())
-            .map_output(|(_, value)| value)
-            .boxed()
-    }
-
-    /// Get the constraints for the answer action
-    pub(crate) fn answer_constraints(&self) -> ArcParser<String> {
-        let constraints = LiteralParser::from("Final Answer: ");
-        constraints
-            .then(OneLine)
-            .map_output(|(_, result)| result)
-            .boxed()
-    }
-
     /// Get the constraints for any action
     pub(crate) fn any_action_constraint(&self) -> ArcParser<Action> {
-        self.thought_constraints()
-            .or(self.action_constraints())
-            .or(self.answer_constraints())
+        // The constraints for the thought action
+        let thought_constraints = LiteralParser::from("Thought: ")
+            .then(OneLine)
+            .map_output(|(_, result)| result);
+
+        // The constraints for the action action
+        let action_constraints = LiteralParser::from("Action: ")
+            .then(self.tool_choices().unwrap())
+            .map_output(|(_, value)| value);
+
+        // The constraints for the answer action
+        let answer_constraints = LiteralParser::from("Final Answer: ")
+            .then(OneLine)
+            .map_output(|(_, result)| result);
+
+        thought_constraints
+            .or(action_constraints)
+            .or(answer_constraints)
             .map_output(|action| match action {
                 Either::Left(Either::Left(thought)) => Action::Thought(thought),
                 Either::Left(Either::Right((index, input))) => Action::Tool { index, input },
