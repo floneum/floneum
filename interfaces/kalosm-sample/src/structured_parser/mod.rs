@@ -506,7 +506,7 @@ impl<'a, P, R> ParseStatus<'a, P, R> {
 #[derive(Debug, Clone)]
 pub enum StructureParser {
     /// A literal string
-    Literal(String),
+    Literal(Cow<'static, str>),
     /// A number
     Num {
         /// The minimum value of the number
@@ -546,9 +546,9 @@ pub enum StructureParserState {
 impl CreateParserState for StructureParser {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState {
         match self {
-            StructureParser::Literal(literal) => {
-                StructureParserState::Literal(LiteralParser::from(literal).create_parser_state())
-            }
+            StructureParser::Literal(literal) => StructureParserState::Literal(
+                LiteralParser::from(literal.clone()).create_parser_state(),
+            ),
             StructureParser::Num { min, max, integer } => {
                 if *integer {
                     StructureParserState::NumInt(
@@ -582,7 +582,7 @@ impl Parser for StructureParser {
     ) -> ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>> {
         match (self, state) {
             (StructureParser::Literal(lit_parser), StructureParserState::Literal(state)) => {
-                LiteralParser::from(lit_parser)
+                LiteralParser::from(lit_parser.clone())
                     .parse(state, input)
                     .map(|result| result.map(|_| ()).map_state(StructureParserState::Literal))
             }

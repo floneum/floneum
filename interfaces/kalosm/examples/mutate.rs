@@ -47,7 +47,7 @@ const EXAMPLES: [(&str, &str); 4] = [
 
 const PREFIX: &str = "A variant of the previous task: ";
 
-type Constraints = kalosm_sample::SequenceParser<LiteralParser<&'static str>, StopOn<&'static str>>;
+type Constraints = kalosm_sample::SequenceParser<LiteralParser, StopOn<&'static str>>;
 
 fn create_constraints() -> Constraints {
     LiteralParser::new(PREFIX).then(

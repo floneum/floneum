@@ -1,29 +1,35 @@
+use std::borrow::Cow;
+
 use crate::bail;
 
 use crate::{CreateParserState, ParseStatus, Parser};
 
 /// A parser for a literal.
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub struct LiteralParser<S: AsRef<str>> {
-    literal: S,
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct LiteralParser {
+    literal: Cow<'static, str>,
 }
 
-impl<S: AsRef<str>> CreateParserState for LiteralParser<S> {
+impl CreateParserState for LiteralParser {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState {
         LiteralParserOffset::default()
     }
 }
 
-impl<S: AsRef<str>> From<S> for LiteralParser<S> {
+impl<S: Into<Cow<'static, str>>> From<S> for LiteralParser {
     fn from(literal: S) -> Self {
-        Self { literal }
+        Self {
+            literal: literal.into(),
+        }
     }
 }
 
-impl<S: AsRef<str>> LiteralParser<S> {
+impl LiteralParser {
     /// Create a new literal parser.
-    pub fn new(literal: S) -> Self {
-        Self { literal }
+    pub fn new<S: Into<Cow<'static, str>>>(literal: S) -> Self {
+        Self {
+            literal: literal.into(),
+        }
     }
 }
 
@@ -52,7 +58,7 @@ impl std::fmt::Display for LiteralMismatchError {
 
 impl std::error::Error for LiteralMismatchError {}
 
-impl<S: AsRef<str>> Parser for LiteralParser<S> {
+impl Parser for LiteralParser {
     type Output = ();
     type PartialState = LiteralParserOffset;
 
@@ -65,7 +71,7 @@ impl<S: AsRef<str>> Parser for LiteralParser<S> {
 
         for (input_byte, literal_byte) in input
             .iter()
-            .zip(self.literal.as_ref().as_bytes()[state.offset..].iter())
+            .zip(self.literal.as_bytes()[state.offset..].iter())
         {
             if input_byte != literal_byte {
                 bail!(LiteralMismatchError);
@@ -73,7 +79,7 @@ impl<S: AsRef<str>> Parser for LiteralParser<S> {
             bytes_consumed += 1;
         }
 
-        if state.offset + bytes_consumed == self.literal.as_ref().len() {
+        if state.offset + bytes_consumed == self.literal.len() {
             Ok(ParseStatus::Finished {
                 result: (),
                 remaining: &input[bytes_consumed..],
@@ -83,13 +89,16 @@ impl<S: AsRef<str>> Parser for LiteralParser<S> {
                 new_state: LiteralParserOffset {
                     offset: state.offset + bytes_consumed,
                 },
-                required_next: self
-                    .literal
-                    .as_ref()
-                    .split_at(state.offset + bytes_consumed)
-                    .1
-                    .to_string()
-                    .into(),
+                required_next: {
+                    match &self.literal {
+                        Cow::Borrowed(cow) => {
+                            Cow::Borrowed(cow.split_at(state.offset + bytes_consumed).1)
+                        }
+                        Cow::Owned(cow) => {
+                            Cow::Owned(cow.split_at(state.offset + bytes_consumed).1.to_string())
+                        }
+                    }
+                },
             })
         }
     }
@@ -97,9 +106,7 @@ impl<S: AsRef<str>> Parser for LiteralParser<S> {
 
 #[test]
 fn literal_parser() {
-    let parser = LiteralParser {
-        literal: "Hello, world!",
-    };
+    let parser = LiteralParser::new("Hello, world!");
     let state = LiteralParserOffset { offset: 0 };
     assert_eq!(
         parser.parse(&state, b"Hello, world!").unwrap(),

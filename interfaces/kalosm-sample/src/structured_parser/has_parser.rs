@@ -113,11 +113,8 @@ impl HasParser for String {
 #[derive(Clone, Debug)]
 pub struct VecParser<T: HasParser> {
     parser: SequenceParser<
-        LiteralParser<&'static str>,
-        SequenceParser<
-            SeparatedParser<T::Parser, LiteralParser<&'static str>>,
-            LiteralParser<&'static str>,
-        >,
+        LiteralParser,
+        SequenceParser<SeparatedParser<T::Parser, LiteralParser>, LiteralParser>,
     >,
 }
 
@@ -159,11 +156,8 @@ where
 {
     type Output = Vec<<T::Parser as Parser>::Output>;
     type PartialState = <SequenceParser<
-        LiteralParser<&'static str>,
-        SequenceParser<
-            SeparatedParser<T::Parser, LiteralParser<&'static str>>,
-            LiteralParser<&'static str>,
-        >,
+        LiteralParser,
+        SequenceParser<SeparatedParser<T::Parser, LiteralParser>, LiteralParser>,
     > as Parser>::PartialState;
 
     fn parse<'a>(
@@ -197,11 +191,8 @@ where
 /// A parser for a fixed size array of a type.
 pub struct ArrayParser<const N: usize, T: HasParser> {
     parser: SequenceParser<
-        LiteralParser<&'static str>,
-        SequenceParser<
-            SeparatedParser<T::Parser, LiteralParser<&'static str>>,
-            LiteralParser<&'static str>,
-        >,
+        LiteralParser,
+        SequenceParser<SeparatedParser<T::Parser, LiteralParser>, LiteralParser>,
     >,
 }
 
@@ -243,11 +234,8 @@ where
 {
     type Output = [<T::Parser as Parser>::Output; N];
     type PartialState = <SequenceParser<
-        LiteralParser<&'static str>,
-        SequenceParser<
-            SeparatedParser<T::Parser, LiteralParser<&'static str>>,
-            LiteralParser<&'static str>,
-        >,
+        LiteralParser,
+        SequenceParser<SeparatedParser<T::Parser, LiteralParser>, LiteralParser>,
     > as Parser>::PartialState;
 
     fn parse<'a>(

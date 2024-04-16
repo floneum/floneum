@@ -20,10 +20,10 @@ const QUESTION_STARTERS: [&str; 9] = [
 const PREFIX: &str = "Questions that are answered by the previous text: ";
 
 type Constraints = kalosm_sample::SequenceParser<
-    LiteralParser<&'static str>,
+    LiteralParser,
     kalosm_sample::RepeatParser<
         kalosm_sample::SequenceParser<
-            IndexParser<LiteralParser<&'static str>, (), kalosm_sample::LiteralParserOffset>,
+            IndexParser<LiteralParser, (), kalosm_sample::LiteralParserOffset>,
             StopOn<&'static str>,
         >,
     >,
