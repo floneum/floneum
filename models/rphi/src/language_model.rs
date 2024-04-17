@@ -6,6 +6,7 @@ use crate::Task;
 use kalosm_common::ModelLoadingProgress;
 use kalosm_language_model::*;
 use kalosm_streams::text_stream::ChannelTextStream;
+use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -83,10 +84,6 @@ impl Model for Phi {
     }
 
     fn chat_markers(&self) -> Option<ChatMarkers> {
-        self.chat_markers.clone()
+        self.chat_markers.deref().clone()
     }
 }
-
-pub struct PhiSpace;
-
-impl VectorSpace for PhiSpace {}

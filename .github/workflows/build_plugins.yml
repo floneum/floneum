@@ -3,7 +3,7 @@ name: Build Plugins
 on:
   push:
     branches:
-      - master
+      - main
     paths:
       - interfaces/*/src/**
       - interfaces/*/examples/**

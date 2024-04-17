@@ -94,7 +94,7 @@ workspace = true
 
 [features]
 cublas = ["kalosm-language/cublas"]
-default = ["language", "sound", "vision"]
+mkl = ["kalosm-language/mkl", "kalosm-vision/mkl", "kalosm-sound/mkl"]
 language = ["kalosm-language"]
 metal = ["kalosm-language/metal", "kalosm-vision/metal", "kalosm-sound/metal"]
 sound = ["kalosm-sound"]

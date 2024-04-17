@@ -3,25 +3,7 @@ name: Build nightly Floneum
 on:
   push:
     branches:
-      - master
-    paths:
-      - interfaces/*/src/**
-      - interfaces/*/examples/**
-      - interfaces/*/Cargo.toml
-      - models/*/src/**
-      - models/*/examples/**
-      - models/*/Cargo.toml
-      - floneum/*/src/**
-      - floneum/*/examples/**
-      - floneum/*/Cargo.toml
-      - src/**
-      - .github/**
-      - Cargo.toml
-
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    branches:
-      - master
+      - main
     paths:
       - interfaces/*/src/**
       - interfaces/*/examples/**
@@ -153,7 +135,7 @@ jobs:
         toolchain:
           - stable
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Cache cargo & target directories
         uses: Swatinem/rust-cache@v2
       - name: Configure Git
@@ -187,7 +169,7 @@ jobs:
         if: |
           matrix.toolchain == 'stable'
       - name: Publish release artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: floneum-${{ matrix.platform.os_name }}
           path: "floneum-*"

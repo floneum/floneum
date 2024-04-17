@@ -1,7 +1,7 @@
 use std::ops::{Deref, DerefMut};
 
 use crate::{CreateParserState, HasParser};
-use crate::{ParseResult, Parser, StringParser};
+use crate::{ParseStatus, Parser, StringParser};
 
 #[derive(Clone, Debug)]
 /// A single word.
@@ -47,8 +47,15 @@ impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> DerefMut for Word<MIN_LEN
 }
 
 /// A parser for a word.
-pub struct WordParser<const MIN_LENGTH: usize, const MAX_LENGTH: usize> {
+pub struct WordParser<const MIN_LENGTH: usize = 1, const MAX_LENGTH: usize = 20> {
     parser: StringParser<fn(char) -> bool>,
+}
+
+impl WordParser {
+    /// Create a new default word parser
+    pub fn new() -> Self {
+        Self::default()
+    }
 }
 
 impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Default
@@ -73,7 +80,6 @@ impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> CreateParserState
 impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Parser
     for WordParser<MIN_LENGTH, MAX_LENGTH>
 {
-    type Error = <StringParser<fn(char) -> bool> as Parser>::Error;
     type Output = Word<MIN_LENGTH, MAX_LENGTH>;
     type PartialState = <StringParser<fn(char) -> bool> as Parser>::PartialState;
 
@@ -81,7 +87,7 @@ impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Parser
         &self,
         state: &Self::PartialState,
         input: &'a [u8],
-    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+    ) -> crate::ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>> {
         self.parser
             .parse(state, input)
             .map(|result| result.map(Into::into))

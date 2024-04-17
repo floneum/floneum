@@ -203,6 +203,9 @@ impl IoDefinitionType {
             PrimitiveValueType::Number => quote! {
                 PrimitiveValue::Number(inner)
             },
+            PrimitiveValueType::Float => quote! {
+                PrimitiveValue::Float(inner)
+            },
             PrimitiveValueType::Text => quote! {
                 PrimitiveValue::Text(inner)
             },
@@ -289,6 +292,9 @@ impl ToTokens for IoDefinitionType {
         let quote_inner = match inner {
             PrimitiveValueType::Number => quote! {
                 PrimitiveValueType::Number
+            },
+            PrimitiveValueType::Float => quote! {
+                PrimitiveValueType::Float
             },
             PrimitiveValueType::Text => quote! {
                 PrimitiveValueType::Text
@@ -411,6 +417,8 @@ impl Parse for IoDefinitionType {
 fn parse_primitive_value_type(ident: &Ident) -> syn::Result<PrimitiveValueType> {
     if ident == "i64" {
         Ok(PrimitiveValueType::Number)
+    } else if ident == "f64" {
+        Ok(PrimitiveValueType::Float)
     } else if ident == "String" {
         Ok(PrimitiveValueType::Text)
     } else if ident == "Model" {

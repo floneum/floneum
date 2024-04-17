@@ -28,9 +28,9 @@ WASI is a set of interfaces for WASM programs. It is a set of resources you can 
 
 The WASM component model allows the environment that runs WASM (Floneum) to declare a typed interface that Plugins (Nodes) can use. Because the interface is typed, each language can read the common environment declaration and create wrappers that work well with that language.
 
-In Floneum, the interface is declared in the [plugin.wit](https://github.com/floneum/floneum/blob/master/wit/plugin.wit) file.
+In Floneum, the interface is declared in the [plugin.wit](https://github.com/floneum/floneum/blob/main/wit/plugin.wit) file.
 
-This file is used to create the language specific types in each plugin using [wit-bindgen](https://github.com/bytecodealliance/wit-bindgen). We also provide an extra level of wrapping with a rust macro and some special functions specific to rust in the [rust adapter](https://github.com/floneum/floneum/tree/master/rust_adapter) package
+This file is used to create the language specific types in each plugin using [wit-bindgen](https://github.com/bytecodealliance/wit-bindgen). We also provide an extra level of wrapping with a rust macro and some special functions specific to rust in the [rust adapter](https://github.com/floneum/floneum/tree/main/rust_adapter) package
 
 It is also used to declare the interface in wasmtime [here](https://github.com/floneum/floneum/blob/cd83ac7d3487826c54789619529db53125859923/plugin/src/lib.rs#L218). 
 
@@ -40,4 +40,4 @@ It is also used to declare the interface in wasmtime [here](https://github.com/f
 
 UI:
 
-The main UI for Floneum is written in [Diouxs](https://lib.rs/crates/dioxus). The code for the UI of floneum can be found in the [main package](https://github.com/floneum/floneum/tree/master/src)
+The main UI for Floneum is written in [Diouxs](https://lib.rs/crates/dioxus). The code for the UI of floneum can be found in the [main package](https://github.com/floneum/floneum/tree/main/src)

@@ -1,4 +1,4 @@
-use crate::{CreateParserState, ParseResult, Parser};
+use crate::{CreateParserState, ParseStatus, Parser};
 
 type CharFilter = fn(char) -> bool;
 
@@ -82,7 +82,6 @@ impl std::fmt::Display for StringParseError {
 impl std::error::Error for StringParseError {}
 
 impl<F: Fn(char) -> bool + 'static> Parser for StringParser<F> {
-    type Error = StringParseError;
     type Output = String;
     type PartialState = StringParserState;
 
@@ -90,7 +89,7 @@ impl<F: Fn(char) -> bool + 'static> Parser for StringParser<F> {
         &self,
         state: &StringParserState,
         input: &'a [u8],
-    ) -> Result<ParseResult<'a, Self::PartialState, Self::Output>, Self::Error> {
+    ) -> crate::ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>> {
         let StringParserState {
             mut progress,
             mut string,
@@ -103,18 +102,18 @@ impl<F: Fn(char) -> bool + 'static> Parser for StringParser<F> {
                     if *byte == b'"' {
                         progress = StringParserProgress::InString;
                     } else {
-                        return Err(StringParseError);
+                        crate::bail!(StringParseError);
                     }
                 }
                 StringParserProgress::InString => {
                     if (state.next_char_escaped || *byte != b'"')
                         && !(self.character_filter)(*byte as char)
                     {
-                        return Err(StringParseError);
+                        crate::bail!(StringParseError);
                     }
 
                     if string.len() == *self.len_range.end() && *byte != b'"' {
-                        return Err(StringParseError);
+                        crate::bail!(StringParseError);
                     }
 
                     if next_char_escaped {
@@ -122,9 +121,9 @@ impl<F: Fn(char) -> bool + 'static> Parser for StringParser<F> {
                         string.push(*byte as char);
                     } else if *byte == b'"' {
                         if !self.len_range.contains(&string.len()) {
-                            return Err(StringParseError);
+                            crate::bail!(StringParseError);
                         }
-                        return Ok(ParseResult::Finished {
+                        return Ok(ParseStatus::Finished {
                             remaining: &input[i + 1..],
                             result: string,
                         });
@@ -137,7 +136,7 @@ impl<F: Fn(char) -> bool + 'static> Parser for StringParser<F> {
             }
         }
 
-        Ok(ParseResult::Incomplete {
+        Ok(ParseStatus::Incomplete {
             new_state: StringParserState {
                 progress,
                 string,
@@ -154,7 +153,7 @@ fn literal_parser() {
     let state = StringParserState::default();
     assert_eq!(
         parser.parse(&state, b"\"Hello, \\\"world!\""),
-        Ok(ParseResult::Finished {
+        Ok(ParseStatus::Finished {
             result: "Hello, \"world!".to_string(),
             remaining: &[]
         })
@@ -162,7 +161,7 @@ fn literal_parser() {
 
     assert_eq!(
         parser.parse(&state, b"\"Hello, "),
-        Ok(ParseResult::Incomplete {
+        Ok(ParseStatus::Incomplete {
             new_state: StringParserState {
                 progress: StringParserProgress::InString,
                 string: "Hello, ".to_string(),
@@ -181,7 +180,7 @@ fn literal_parser() {
                 .0,
             b"world!\""
         ),
-        Ok(ParseResult::Finished {
+        Ok(ParseStatus::Finished {
             result: "Hello, world!".to_string(),
             remaining: &[]
         })

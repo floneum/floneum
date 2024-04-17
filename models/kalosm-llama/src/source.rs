@@ -266,6 +266,52 @@ impl LlamaSource {
         }
     }
 
+    /// A preset for Starling 7b Beta
+    pub fn starling_7b_beta() -> Self {
+        Self {
+            model: FileSource::huggingface(
+                "bartowski/Starling-LM-7B-beta-GGUF".to_string(),
+                "main".to_string(),
+                "Starling-LM-7B-beta-Q4_K_M.gguf".to_string(),
+            ),
+            tokenizer: FileSource::huggingface(
+                "Nexusflow/Starling-LM-7B-beta".to_string(),
+                "main".to_string(),
+                "tokenizer.json".to_string(),
+            ),
+            group_query_attention: 8,
+            markers: Some(ChatMarkers {
+                system_prompt_marker: "",
+                end_system_prompt_marker: "<|end_of_turn|>",
+                user_marker: "GPT4 Correct User: ",
+                end_user_marker: "<|end_of_turn|>",
+                assistant_marker: "GPT4 Correct Assistant: ",
+                end_assistant_marker: "<|end_of_turn|>",
+            }),
+        }
+    }
+
+    /// A preset for WizardLM 2 7B
+    pub fn wizard_lm_7b_v2() -> Self {
+        Self {
+            model: FileSource::huggingface(
+                "bartowski/WizardLM-2-7B-GGUF".to_string(),
+                "main".to_string(),
+                "WizardLM-2-7B-Q4_K_M.gguf".to_string(),
+            ),
+            tokenizer: mistral_tokenizer(),
+            group_query_attention: 8,
+            markers: Some(ChatMarkers {
+                system_prompt_marker: "",
+                end_system_prompt_marker: "",
+                user_marker: "USER: ",
+                end_user_marker: "</s>",
+                assistant_marker: "ASSISTANT: ",
+                end_assistant_marker: "</s>",
+            }),
+        }
+    }
+
     /// A preset for tiny llama 1.1b 1.0 Chat
     pub fn tiny_llama_1_1b_chat() -> Self {
         Self {

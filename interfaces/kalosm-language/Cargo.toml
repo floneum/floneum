@@ -15,7 +15,6 @@ llm-samplers = { workspace = true }
 log = "0.4.17"
 rand = "0.8.5"
 reqwest = { version = "0.11.18", features = ["stream", "json"] }
-spinoff = "0.7.0"
 tokio = { version = "1.28.1", features = ["full"] }
 slab = { version = "0.4.8", features = ["serde"] }
 arroy = "0.2.0"
@@ -65,3 +64,4 @@ half = "2.3.1"
 [features]
 metal = ["rphi/metal", "rbert/metal", "kalosm-llama/metal"]
 cublas = ["rbert/cuda", "rbert/cudnn", "rphi/cuda", "rphi/cudnn", "kalosm-llama/cuda", "kalosm-llama/cudnn"]
+mkl = ["rphi/mkl", "rbert/mkl", "kalosm-llama/mkl"]

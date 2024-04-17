@@ -10,7 +10,7 @@ use super::{ChunkStrategy, Chunker};
 
 const TASK_DESCRIPTION: &str = "You generate summaries of the given text.";
 
-type Constraints = kalosm_sample::SequenceParser<LiteralParser<&'static str>, OneLine>;
+type Constraints = kalosm_sample::SequenceParser<LiteralParser, OneLine>;
 
 /// Generates summaries for a document.
 pub struct Summarizer {

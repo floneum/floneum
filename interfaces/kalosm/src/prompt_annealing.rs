@@ -1,11 +1,6 @@
 use std::any::{Any, TypeId};
 
 use kalosm_language::prelude::*;
-use kalosm_language::{
-    kalosm_language_model::{Embedder, Embedding, Model, SyncModel},
-    rbert::{Bert, BertSpace},
-    task::TaskBuilderReturn,
-};
 use rand::{random, seq::index::sample, Rng};
 
 use crate::{BertDistance, Metric, TestCases};

@@ -26,7 +26,7 @@ There are three different packages in Kalosm:
 - `kalosm::audio` - A simple interface for audio transcription and surrounding tools. It includes support for microphone input and the `whisper` model.
 - `kalosm::vision` - A simple interface for image generation and segmentation models and surrounding tools. It includes support for the `wuerstchen` and `segment-anything` models and integration with the [image](https://docs.rs/image/latest/image/) crate.
 
-A complete guide for Kalosm is available on the [Kalosm website](https://floneum.com/kalosm/), and examples are available in the [examples folder](https://github.com/floneum/floneum/tree/master/interfaces/kalosm/examples).
+A complete guide for Kalosm is available on the [Kalosm website](https://floneum.com/kalosm/), and examples are available in the [examples folder](https://github.com/floneum/floneum/tree/main/interfaces/kalosm/examples).
 
 ## Quickstart!
 
@@ -292,7 +292,8 @@ use tokio::{
 async fn main() -> Result<(), anyhow::Error> {
     let model = WhisperBuilder::default()
         .with_source(WhisperSource::MediumEn)
-        .build()?;
+        .build()
+        .await?;
 
     let document_engine = Arc::new(RwLock::new(FuzzySearchIndex::default()));
     {
@@ -322,7 +323,7 @@ async fn main() -> Result<(), anyhow::Error> {
     }
 
     let mut model = Llama::new_chat();
-    let mut chat = Chat::builder(&mut model).with_system_prompt("The assistant help answer questions based on the context given by the user. The model knows that the information the user gives it is always true.").build();
+    let mut chat = Chat::builder(model).with_system_prompt("The assistant help answer questions based on the context given by the user. The model knows that the information the user gives it is always true.").build();
 
     loop {
         let user_question = prompt_input("\n> ").unwrap();
@@ -359,14 +360,16 @@ In addition to language, audio, and embedding models, Kalosm also supports image
 ```rust, no_run
 use kalosm::vision::*;
 
-let model = Wuerstchen::builder().build().unwrap();
+let model = Wuerstchen::builder().build().await.unwrap();
 let settings = WuerstchenInferenceSettings::new(
     "a cute cat with a hat in a room covered with fur with incredible detail",
-)
-.with_n_steps(2);
-let images = model.run(settings).unwrap();
-for (i, img) in images.iter().enumerate() {
-    img.save(&format!("{}.png", i)).unwrap();
+);
+if let Ok(mut images) = model.run(settings) {
+    while let Some(image) = images.next().await {
+        if let Some(buf) = image.generated_image() {
+            buf.save(&format!("{}.png",image.sample_num())).unwrap();
+        }
+    }
 }
 ```
 

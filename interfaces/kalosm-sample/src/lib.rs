@@ -20,6 +20,9 @@ use tokenizers::PreTokenizer;
 use tokenizers::PreTokenizerWrapper;
 use tokenizers::TokenizerImpl;
 
+#[doc(hidden)]
+pub use anyhow;
+
 mod structured_parser;
 pub use structured_parser::*;
 

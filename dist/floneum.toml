@@ -118,7 +118,7 @@ binding_version = "^0.1.0"
 [[packages]]
 name = "Run Python"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
-category = "Other"
+category = "Utility"
 description = "Runs a python script. Returns the value in the last line"
 package_version = "0.1.0"
 binding_version = "^0.1.0"

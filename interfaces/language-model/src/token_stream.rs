@@ -1,8 +1,9 @@
-use std::sync::Arc;
-
 use anyhow::Result;
 use kalosm_sample::Tokenizer;
 use llm_samplers::types::{HasSamplerResources, Logits, Sampler, SamplerError};
+use rayon::iter::IntoParallelRefIterator;
+use rayon::iter::ParallelIterator;
+use std::sync::Arc;
 
 /// This is a wrapper around a tokenizer to ensure that tokens can be returned to the user in a
 /// streaming way rather than having to wait for the full decoding.
@@ -15,13 +16,12 @@ pub struct TokenOutputStream {
 
 impl TokenOutputStream {
     /// Creates a new token output stream.
-    pub fn new(tokenizer: Arc<dyn Tokenizer + Send + Sync>, tokens: impl Into<Vec<u32>>) -> Self {
-        let tokens = tokens.into();
+    pub fn new(tokenizer: Arc<dyn Tokenizer + Send + Sync>) -> Self {
         Self {
             tokenizer,
-            prev_index: tokens.len(),
-            current_index: tokens.len(),
-            tokens,
+            prev_index: 0,
+            current_index: 0,
+            tokens: Vec::new(),
         }
     }
 
@@ -136,6 +136,37 @@ impl TokenOutputStream {
         } else {
             Ok(None)
         }
+    }
+
+    /// Peek the next token.
+    pub fn peek_tokens(&self, tokens: Vec<u32>) -> Result<Vec<Option<String>>> {
+        let prev_text = if self.tokens.is_empty() {
+            Default::default()
+        } else {
+            let tokens = &self.tokens[self.prev_index..self.current_index];
+            self.decode(tokens)?.to_string()
+        };
+        let prev_text_len = prev_text.len();
+        let results = tokens
+            .par_iter()
+            .map(|token| {
+                let mut tokens = self.tokens[self.prev_index..].to_vec();
+                tokens.push(*token);
+                let text = self.decode(&tokens).ok()?;
+                if text.len() > prev_text_len && text.chars().last().unwrap().is_ascii() {
+                    let text = text.split_at(prev_text_len);
+                    Some(text.1.to_string())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        Ok(results)
+    }
+
+    /// Get the tokens
+    pub fn tokens(&self) -> &[u32] {
+        &self.tokens
     }
 
     /// Decode the remaining tokens.

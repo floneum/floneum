@@ -11,7 +11,7 @@ pub use crate::sender::*;
 use futures_util::{Stream, StreamExt};
 
 /// A stream of text. This is automatically implemented for all streams of something that acts like a string (String, &str).
-pub trait TextStream<I: AsRef<str>>: Stream<Item = I> {
+pub trait TextStream<I: AsRef<str> = String>: Stream<Item = I> {
     /// Split the stream into words.
     fn words(self) -> WordStream<Self, I>
     where

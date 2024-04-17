@@ -13,13 +13,13 @@ use kalosm_language_model::{GenerationParameters, Model, ModelExt, SyncModel, Sy
 use kalosm_sample::{ArcParser, CreateParserState, ParserExt};
 use kalosm_streams::text_stream::ChannelTextStream;
 use llm_samplers::types::Sampler;
-use tokio::sync::mpsc::unbounded_channel;
+use tokio::sync::{mpsc::unbounded_channel, oneshot};
 
 type MessageFilter<M> =
     Arc<Mutex<Box<dyn for<'a> FnMut(&'a str, &mut M) -> Option<&'a str> + Send + Sync>>>;
 type UserMessageMapping<M> = Arc<Mutex<Box<dyn FnMut(&str, &mut M) -> String + Send + Sync>>>;
-type ResponseConstraintGenerator<M> =
-    Arc<Mutex<Box<dyn FnMut(&[ChatHistoryItem], &mut M) -> ArcParser + Send + Sync>>>;
+type ResponseConstraintGenerator<M, R> =
+    Arc<Mutex<Box<dyn FnMut(&[ChatHistoryItem], &mut M) -> ArcParser<R> + Send + Sync>>>;
 
 /// A simple helper function for prompting the user for input.
 pub fn prompt_input(prompt: impl Display) -> Result<String> {
@@ -70,21 +70,21 @@ impl ChatHistoryItem {
 }
 
 /// The history of a chat session.
-struct ChatSession<Session, Model: SyncModel<Session = Session>> {
+struct ChatSession<Model: SyncModel, R = ()> {
     user_marker: String,
     end_user_marker: String,
     assistant_marker: String,
     end_assistant_marker: String,
     history: Vec<ChatHistoryItem>,
-    session: Session,
+    session: Model::Session,
     unfed_text: String,
     map_user_message_prompt: Option<UserMessageMapping<Model>>,
-    bot_constraints: Option<ResponseConstraintGenerator<Model>>,
+    bot_constraints: Option<ResponseConstraintGenerator<Model, R>>,
     filter_map_bot_response: Option<MessageFilter<Model>>,
     sampler: Arc<Mutex<dyn Sampler + Send + Sync>>,
 }
 
-impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
+impl<Model: SyncModel, R: Clone> ChatSession<Model, R> {
     #[allow(clippy::too_many_arguments)]
     /// Creates a new chat history.
     pub(crate) fn new(
@@ -97,10 +97,10 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
         end_assistant_marker: String,
         system_prompt: String,
         map_user_message_prompt: Option<UserMessageMapping<Model>>,
-        bot_constraints: Option<ResponseConstraintGenerator<Model>>,
+        bot_constraints: Option<ResponseConstraintGenerator<Model, R>>,
         filter_map_bot_response: Option<MessageFilter<Model>>,
         sampler: Arc<Mutex<dyn Sampler + Send + Sync>>,
-        session: Option<Session>,
+        session: Option<Model::Session>,
         initial_history: Vec<ChatHistoryItem>,
     ) -> Self {
         let feed_initial_messages = session.is_none();
@@ -190,6 +190,7 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
                                 state,
                                 self.sampler.clone(),
                                 on_token,
+                                Some(32),
                             )?;
                         }
                         None => {
@@ -241,6 +242,7 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
                         state,
                         self.sampler.clone(),
                         on_token,
+                        Some(32),
                     )?;
                 }
                 None => {
@@ -301,20 +303,20 @@ impl<Session, Model: SyncModel<Session = Session>> ChatSession<Session, Model> {
 }
 
 /// A builder for [`Chat`].
-pub struct ChatBuilder<'a, M: Model> {
-    model: &'a mut M,
+pub struct ChatBuilder<M: Model, R = ()> {
+    model: M,
     chat_markers: ChatMarkers,
     session: Option<<M::SyncModel as kalosm_language_model::SyncModel>::Session>,
     system_prompt: String,
     sampler: Arc<Mutex<dyn Sampler + Send + Sync>>,
     map_user_message_prompt: Option<UserMessageMapping<M::SyncModel>>,
-    bot_constraints: Option<ResponseConstraintGenerator<M::SyncModel>>,
+    bot_constraints: Option<ResponseConstraintGenerator<M::SyncModel, R>>,
     filter_map_bot_response: Option<MessageFilter<M::SyncModel>>,
     initial_history: Vec<ChatHistoryItem>,
 }
 
-impl<'a, M: Model> ChatBuilder<'a, M> {
-    fn new(model: &'a mut M) -> ChatBuilder<M> {
+impl<M: Model, R: Clone + 'static> ChatBuilder<M, R> {
+    fn new(model: M) -> ChatBuilder<M> {
         let chat_markers = model.chat_markers().expect("Model does not support chat");
 
         ChatBuilder {
@@ -370,27 +372,37 @@ impl<'a, M: Model> ChatBuilder<'a, M> {
 
     /// Constrains the model's response to the given parser. This can be used to make the model start with a certain phrase, or to make the model respond in a certain way.
     pub fn constrain_response<P>(
-        mut self,
+        self,
         mut bot_constraints: impl FnMut(&[ChatHistoryItem], &mut M::SyncModel) -> P
             + Send
             + Sync
             + 'static,
-    ) -> Self
+    ) -> ChatBuilder<M, P::Output>
     where
         P: CreateParserState + Sized + Send + Sync + 'static,
-        P::Error: std::error::Error + Send + Sync + 'static,
         P::Output: Send + Sync + 'static,
         P::PartialState: Send + Sync + 'static,
     {
-        self.bot_constraints = Some(Arc::new(Mutex::new(Box::new(
-            move |history: &[ChatHistoryItem], model: &mut M::SyncModel| {
-                bot_constraints(history, model).boxed()
-            },
-        )
-            as Box<
-                dyn FnMut(&[ChatHistoryItem], &mut M::SyncModel) -> ArcParser + Send + Sync,
-            >)));
-        self
+        ChatBuilder {
+            model: self.model,
+            chat_markers: self.chat_markers,
+            session: self.session,
+            system_prompt: self.system_prompt,
+            sampler: self.sampler,
+            map_user_message_prompt: self.map_user_message_prompt,
+            bot_constraints: Some(Arc::new(Mutex::new(Box::new(
+                move |history: &[ChatHistoryItem], model: &mut M::SyncModel| {
+                    bot_constraints(history, model).boxed()
+                },
+            )
+                as Box<
+                    dyn FnMut(&[ChatHistoryItem], &mut M::SyncModel) -> ArcParser<P::Output>
+                        + Send
+                        + Sync,
+                >))),
+            filter_map_bot_response: self.filter_map_bot_response,
+            initial_history: self.initial_history,
+        }
     }
 
     /// Filters out bot responses that do not match the given filter, and maps the bot response before it is sent to the stream.
@@ -474,42 +486,58 @@ impl<'a, M: Model> ChatBuilder<'a, M> {
         let end_assistant_marker = chat_markers.end_assistant_marker.to_string();
         let (sender_tx, mut sender_rx) = unbounded_channel();
         let (result_tx, result_rx) = unbounded_channel();
-        model
-            .run_sync(move |model| {
-                Box::pin(async move {
-                    let mut session = ChatSession::new(
-                        model,
-                        system_prompt_marker,
-                        end_system_prompt_marker,
-                        user_marker,
-                        end_user_marker,
-                        assistant_marker,
-                        end_assistant_marker,
-                        system_prompt,
-                        map_user_message_prompt,
-                        bot_constraints,
-                        filter_map_bot_response,
-                        sampler,
-                        session,
-                        initial_history,
-                    );
+        tokio::spawn(async move {
+            let (tx, rx) = oneshot::channel();
+            {
+                model
+                    .run_sync(move |model| {
+                        Box::pin(async move {
+                            let _ = tx.send(ChatSession::new(
+                                model,
+                                system_prompt_marker,
+                                end_system_prompt_marker,
+                                user_marker,
+                                end_user_marker,
+                                assistant_marker,
+                                end_assistant_marker,
+                                system_prompt,
+                                map_user_message_prompt,
+                                bot_constraints,
+                                filter_map_bot_response,
+                                sampler,
+                                session,
+                                initial_history,
+                            ));
+                        })
+                    })
+                    .unwrap();
+            }
 
-                    while let Some(message) = sender_rx.recv().await {
-                        match message {
-                            Message::AddMessage(message) => {
-                                let (tx, rx) = unbounded_channel();
-                                result_tx.send(Response::AddMessage(rx.into())).unwrap();
-                                session.add_message(message, model, tx).unwrap();
-                            }
-                            Message::SaveSession(path) => {
-                                session.session.save_to(path).unwrap();
-                                result_tx.send(Response::SaveSession).unwrap();
-                            }
-                        }
+            let chat_session = Arc::new(Mutex::new(rx.await.unwrap()));
+
+            while let Some(message) = sender_rx.recv().await {
+                match message {
+                    Message::AddMessage(message) => {
+                        let (tx, rx) = unbounded_channel();
+                        result_tx.send(Response::AddMessage(rx.into())).unwrap();
+                        let chat_session = chat_session.clone();
+                        model
+                            .run_sync(move |model| {
+                                Box::pin(async move {
+                                    let mut chat_session = chat_session.lock().unwrap();
+                                    chat_session.add_message(message, model, tx).unwrap();
+                                })
+                            })
+                            .unwrap();
                     }
-                })
-            })
-            .unwrap();
+                    Message::SaveSession(path) => {
+                        let chat_session = chat_session.lock().unwrap();
+                        chat_session.session.save_to(path).unwrap();
+                        result_tx.send(Response::SaveSession).unwrap();
+                    }
+                }
+            }
+        });
 
         Chat {
             sender: sender_tx,
@@ -536,11 +564,11 @@ pub struct Chat {
 
 impl Chat {
     /// Creates a new builder for a chat session.
-    pub fn builder<M: Model>(model: &mut M) -> ChatBuilder<'_, M>
+    pub fn builder<M: Model>(model: M) -> ChatBuilder<M>
     where
         <M::SyncModel as SyncModel>::Session: Send,
     {
-        ChatBuilder::new(model)
+        ChatBuilder::<M, ()>::new(model)
     }
 
     /// Adds a message to the history.

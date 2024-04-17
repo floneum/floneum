@@ -1,19 +1,20 @@
 use super::cache::{AttentionCache, AttentionCacheValue};
+use super::mask::AttentionMask;
 use super::rope::RopeCache;
 use candle_core::Device;
 use candle_core::{quantized::QMatMul, Module, Tensor};
-use candle_nn::LayerNorm;
+use candle_transformers::quantized_nn::RmsNorm;
 
 pub struct LlamaAttention {
     pub attention_wq: QMatMul,
     pub attention_wk: QMatMul,
     pub attention_wv: QMatMul,
     pub attention_wo: QMatMul,
-    pub attention_norm: LayerNorm,
+    pub attention_norm: RmsNorm,
     pub feed_forward_w1: QMatMul,
     pub feed_forward_w2: QMatMul,
     pub feed_forward_w3: QMatMul,
-    pub ffn_norm: LayerNorm,
+    pub ffn_norm: RmsNorm,
     pub n_head: usize,
     pub n_kv_head: usize,
     pub head_dim: usize,
@@ -25,7 +26,7 @@ impl LlamaAttention {
     pub(crate) fn forward(
         &self,
         hidden_states: &Tensor,
-        attention_mask: Option<&Tensor>,
+        attention_mask: Option<&AttentionMask>,
         start_pos: usize,
         cache: Option<&mut AttentionCache>,
     ) -> candle_core::Result<Tensor> {
@@ -134,11 +135,7 @@ impl LlamaAttention {
         let mut attn_weights = (query_states.matmul(&key_states.t()?)? / (head_dim as f64).sqrt())?;
 
         if let Some(attention_mask) = attention_mask {
-            let shape = attn_weights.shape();
-            let attention_mask = attention_mask.broadcast_as(shape)?;
-            let on_true =
-                Tensor::new(f32::NEG_INFINITY, attn_weights.device())?.broadcast_as(shape)?;
-            attn_weights = attention_mask.where_cond(&on_true, &attn_weights)?;
+            attention_mask.forward(&mut attn_weights)?;
         }
 
         attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights)?;
@@ -168,10 +165,11 @@ fn repeat_kv(x: Tensor, num_key_value_groups: usize) -> candle_core::Result<Tens
         Ok(x)
     } else {
         let (b_sz, n_kv_head, seq_len, head_dim) = x.dims4()?;
-        let x = x
-            .unsqueeze(2)?
-            .expand((b_sz, n_kv_head, num_key_value_groups, seq_len, head_dim))?
-            .reshape((b_sz, n_kv_head * num_key_value_groups, seq_len, head_dim))?;
-        Ok(x)
+        Tensor::cat(&vec![&x; num_key_value_groups], 2)?.reshape((
+            b_sz,
+            n_kv_head * num_key_value_groups,
+            seq_len,
+            head_dim,
+        ))
     }
 }

@@ -21,7 +21,7 @@ A clear and concise description of what you expected to happen.
 
 **Environment:**
 
-- Renderer version: [`Kalosm master`]
+- Renderer version: [`Kalosm main`]
 - Rust version: [e.g. 1.43.0, `nightly`]
 - OS info: [e.g. Windows, Linux, macOS]
 

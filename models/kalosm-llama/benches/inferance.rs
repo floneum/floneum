@@ -28,7 +28,7 @@ fn generation(c: &mut Criterion) {
 
         b.iter(|| {
             let mut session = model.new_session().unwrap();
-            model.feed_text(&mut session, prompt, Some(0))
+            model.feed_text(&mut session, prompt)
         })
     });
 
@@ -39,7 +39,7 @@ fn generation(c: &mut Criterion) {
         b.iter(|| {
             let mut session = model.new_session().unwrap();
             for _ in 0..5 {
-                model.feed_text(&mut session, prompt, Some(0)).unwrap();
+                model.feed_text(&mut session, prompt).unwrap();
             }
         })
     });
@@ -50,7 +50,7 @@ fn generation(c: &mut Criterion) {
 
         b.iter(|| {
             let mut session = model.new_session().unwrap();
-            model.feed_text(&mut session, &prompt, Some(0))
+            model.feed_text(&mut session, &prompt)
         })
     });
 

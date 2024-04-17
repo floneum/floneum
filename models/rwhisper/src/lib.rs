@@ -13,7 +13,8 @@
 //!     // Create a new small whisper model.
 //!     let model = WhisperBuilder::default()
 //!         .with_source(WhisperSource::SmallEn)
-//!         .build()?;
+//!         .build()
+//!         .await?;
 //!
 //!     // Record audio from the microphone for 5 seconds.
 //!     let audio = kalosm_sound::MicInput::default()
@@ -35,10 +36,13 @@
 #![warn(missing_docs)]
 
 use cpal::FromSample;
+use kalosm_common::FileSource;
+pub use kalosm_common::ModelLoadingProgress;
+use kalosm_language_model::ModelBuilder;
 use kalosm_streams::text_stream::ChannelTextStream;
 use model::WhisperInner;
 use rodio::{source::UniformSourceIterator, Source};
-use std::fmt::Display;
+use std::{fmt::Display, str::FromStr, time::Duration};
 
 use anyhow::Result;
 
@@ -63,6 +67,9 @@ struct DecodingResult {
 pub struct Segment {
     start: f64,
     duration: f64,
+    elapsed_time: Duration,
+    remaining_time: Duration,
+    progress: f32,
     result: DecodingResult,
 }
 
@@ -86,11 +93,26 @@ impl Segment {
     pub fn duration(&self) -> f64 {
         self.duration
     }
+
+    /// Get the elapsed time
+    pub fn elapsed_time(&self) -> Duration {
+        self.elapsed_time
+    }
+
+    /// Get the estimated time remaining to process the entire audio file
+    pub fn remaining_time(&self) -> Duration {
+        self.remaining_time
+    }
+
+    /// The progress of the transcription, from 0 to 1
+    pub fn progress(&self) -> f32 {
+        self.progress
+    }
 }
 
 impl AsRef<str> for Segment {
     fn as_ref(&self) -> &str {
-        if self.probability_of_no_speech() < 0.90 {
+        if self.probability_of_no_speech() < 0.10 {
             self.text()
         } else {
             ""
@@ -154,22 +176,163 @@ pub struct WhisperBuilder {
 impl Default for WhisperBuilder {
     fn default() -> Self {
         Self {
-            model: WhisperSource::LargeV2,
+            model: WhisperSource::default(),
             language: Some(WhisperLanguage::English),
         }
     }
 }
 
+#[async_trait::async_trait]
+impl ModelBuilder for WhisperBuilder {
+    type Model = Whisper;
+
+    async fn start_with_loading_handler(
+        self,
+        handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
+    ) -> anyhow::Result<Self::Model> {
+        self.build_with_loading_handler(handler).await
+    }
+
+    fn requires_download(&self) -> bool {
+        let whisper = self.get_whisper_model_config();
+        !whisper.model.downloaded()
+            || !whisper.tokenizer.downloaded()
+            || !whisper.config.downloaded()
+    }
+}
+
 impl WhisperBuilder {
+    fn get_whisper_model_config(&self) -> WhisperModelConfig {
+        let (model_id, revision) = self.model.model_and_revision();
+        if self.model.is_quantized() {
+            match self.model {
+                WhisperSource::QuantizedTinyEn => {
+                    let model = FileSource::huggingface(
+                        model_id.to_owned(),
+                        revision.to_owned(),
+                        "model-tiny-en-q80.gguf".to_owned(),
+                    );
+                    let tokenizer = FileSource::huggingface(
+                        model_id.to_owned(),
+                        revision.to_owned(),
+                        "tokenizer-tiny-en.json".to_owned(),
+                    );
+                    let config = FileSource::huggingface(
+                        model_id.to_owned(),
+                        revision.to_owned(),
+                        "config-tiny-en.json".to_owned(),
+                    );
+                    WhisperModelConfig::new(model, tokenizer, config)
+                }
+                WhisperSource::QuantizedTiny => {
+                    let model = FileSource::huggingface(
+                        model_id.to_owned(),
+                        revision.to_owned(),
+                        "model-tiny-q80.gguf".to_owned(),
+                    );
+                    let tokenizer = FileSource::huggingface(
+                        model_id.to_owned(),
+                        revision.to_owned(),
+                        "tokenizer-tiny.json".to_owned(),
+                    );
+                    let config = FileSource::huggingface(
+                        model_id.to_owned(),
+                        revision.to_owned(),
+                        "config-tiny.json".to_owned(),
+                    );
+                    WhisperModelConfig::new(model, tokenizer, config)
+                }
+                WhisperSource::QuantizedDistilLargeV3 => {
+                    let model = FileSource::huggingface(
+                        model_id.to_owned(),
+                        revision.to_owned(),
+                        "model.gguf".to_owned(),
+                    );
+                    let tokenizer = FileSource::huggingface(
+                        model_id.to_owned(),
+                        revision.to_owned(),
+                        "tokenizer.json".to_owned(),
+                    );
+                    let config = FileSource::huggingface(
+                        model_id.to_owned(),
+                        revision.to_owned(),
+                        "config.json".to_owned(),
+                    );
+                    WhisperModelConfig::new(model, tokenizer, config)
+                }
+                _ => unreachable!(),
+            }
+        } else {
+            let model = FileSource::huggingface(
+                model_id.to_owned(),
+                revision.to_owned(),
+                "model.safetensors".to_owned(),
+            );
+            let tokenizer = FileSource::huggingface(
+                model_id.to_owned(),
+                revision.to_owned(),
+                "tokenizer.json".to_owned(),
+            );
+            let config = FileSource::huggingface(
+                model_id.to_owned(),
+                revision.to_owned(),
+                "config.json".to_owned(),
+            );
+            WhisperModelConfig::new(model, tokenizer, config)
+        }
+    }
+
     /// Build the model.
-    pub fn build(self) -> anyhow::Result<Whisper> {
+    pub async fn build(self) -> anyhow::Result<Whisper> {
+        self.build_with_loading_handler(|_| {}).await
+    }
+
+    /// Build the model with a handler for progress as the download and loading progresses.
+    pub async fn build_with_loading_handler(
+        self,
+        mut progress_handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
+    ) -> anyhow::Result<Whisper> {
+        //Download section
+        let whisper = self.get_whisper_model_config();
+        let tokenizer_source = whisper.tokenizer;
+        let model_source = whisper.model;
+        let config_source = whisper.config;
+
+        let tokenizer_filename = tokenizer_source
+            .download(|progress| {
+                progress_handler(ModelLoadingProgress::downloading(
+                    format!("Tokenizer ({})", tokenizer_source),
+                    progress,
+                ))
+            })
+            .await?;
+
+        let filename = model_source
+            .download(|progress| {
+                progress_handler(ModelLoadingProgress::downloading(
+                    format!("Model ({})", model_source),
+                    progress,
+                ))
+            })
+            .await?;
+
+        let config = config_source
+            .download(|progress| {
+                progress_handler(ModelLoadingProgress::downloading(
+                    format!("Config ({})", config_source),
+                    progress,
+                ))
+            })
+            .await?;
+
         let (rx, tx) = std::sync::mpsc::channel();
         let thread = std::thread::spawn(move || {
             tokio::runtime::Builder::new_current_thread()
                 .build()
                 .unwrap()
                 .block_on(async move {
-                    let mut model = WhisperInner::new(self).unwrap();
+                    let mut model =
+                        WhisperInner::new(self, filename, tokenizer_filename, config).unwrap();
                     while let Ok(message) = tx.recv() {
                         match message {
                             WhisperMessage::Kill => return,
@@ -305,6 +468,125 @@ pub enum WhisperLanguage {
     Sundanese,
 }
 
+/// Error that reports the unsupported value
+#[derive(PartialEq, Eq)]
+pub struct ParseWhisperLanguageError(String);
+
+impl Display for ParseWhisperLanguageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Language {} not supported ", self.0)
+    }
+}
+
+impl FromStr for WhisperLanguage {
+    type Err = ParseWhisperLanguageError;
+
+    fn from_str(s: &str) -> std::prelude::v1::Result<Self, Self::Err> {
+        match s {
+            "en" => Ok(WhisperLanguage::English),
+            "zh" => Ok(WhisperLanguage::Chinese),
+            "de" => Ok(WhisperLanguage::German),
+            "es" => Ok(WhisperLanguage::Spanish),
+            "ru" => Ok(WhisperLanguage::Russian),
+            "ko" => Ok(WhisperLanguage::Korean),
+            "fr" => Ok(WhisperLanguage::French),
+            "ja" => Ok(WhisperLanguage::Japanese),
+            "pt" => Ok(WhisperLanguage::Portuguese),
+            "tr" => Ok(WhisperLanguage::Turkish),
+            "pl" => Ok(WhisperLanguage::Polish),
+            "ca" => Ok(WhisperLanguage::Catalan),
+            "nl" => Ok(WhisperLanguage::Dutch),
+            "ar" => Ok(WhisperLanguage::Arabic),
+            "sv" => Ok(WhisperLanguage::Swedish),
+            "it" => Ok(WhisperLanguage::Italian),
+            "id" => Ok(WhisperLanguage::Indonesian),
+            "hi" => Ok(WhisperLanguage::Hindi),
+            "fi" => Ok(WhisperLanguage::Finnish),
+            "vi" => Ok(WhisperLanguage::Vietnamese),
+            "he" => Ok(WhisperLanguage::Hebrew),
+            "uk" => Ok(WhisperLanguage::Ukrainian),
+            "el" => Ok(WhisperLanguage::Greek),
+            "ms" => Ok(WhisperLanguage::Malay),
+            "cs" => Ok(WhisperLanguage::Czech),
+            "ro" => Ok(WhisperLanguage::Romanian),
+            "da" => Ok(WhisperLanguage::Danish),
+            "hu" => Ok(WhisperLanguage::Hungarian),
+            "ta" => Ok(WhisperLanguage::Tamil),
+            "no" => Ok(WhisperLanguage::Norwegian),
+            "th" => Ok(WhisperLanguage::Thai),
+            "ur" => Ok(WhisperLanguage::Urdu),
+            "hr" => Ok(WhisperLanguage::Croatian),
+            "bg" => Ok(WhisperLanguage::Bulgarian),
+            "lt" => Ok(WhisperLanguage::Lithuanian),
+            "la" => Ok(WhisperLanguage::Latin),
+            "mi" => Ok(WhisperLanguage::Maori),
+            "ml" => Ok(WhisperLanguage::Malayalam),
+            "cy" => Ok(WhisperLanguage::Welsh),
+            "sk" => Ok(WhisperLanguage::Slovak),
+            "te" => Ok(WhisperLanguage::Telugu),
+            "fa" => Ok(WhisperLanguage::Persian),
+            "lv" => Ok(WhisperLanguage::Latvian),
+            "bn" => Ok(WhisperLanguage::Bengali),
+            "sr" => Ok(WhisperLanguage::Serbian),
+            "az" => Ok(WhisperLanguage::Azerbaijani),
+            "sl" => Ok(WhisperLanguage::Slovenian),
+            "kn" => Ok(WhisperLanguage::Kannada),
+            "et" => Ok(WhisperLanguage::Estonian),
+            "mk" => Ok(WhisperLanguage::Macedonian),
+            "br" => Ok(WhisperLanguage::Breton),
+            "eu" => Ok(WhisperLanguage::Basque),
+            "is" => Ok(WhisperLanguage::Icelandic),
+            "hy" => Ok(WhisperLanguage::Armenian),
+            "ne" => Ok(WhisperLanguage::Nepali),
+            "mn" => Ok(WhisperLanguage::Mongolian),
+            "bs" => Ok(WhisperLanguage::Bosnian),
+            "kk" => Ok(WhisperLanguage::Kazakh),
+            "sq" => Ok(WhisperLanguage::Albanian),
+            "sw" => Ok(WhisperLanguage::Swahili),
+            "gl" => Ok(WhisperLanguage::Galician),
+            "mr" => Ok(WhisperLanguage::Marathi),
+            "pa" => Ok(WhisperLanguage::Punjabi),
+            "si" => Ok(WhisperLanguage::Sinhala),
+            "km" => Ok(WhisperLanguage::Khmer),
+            "sn" => Ok(WhisperLanguage::Shona),
+            "yo" => Ok(WhisperLanguage::Yoruba),
+            "so" => Ok(WhisperLanguage::Somali),
+            "af" => Ok(WhisperLanguage::Afrikaans),
+            "oc" => Ok(WhisperLanguage::Occitan),
+            "ka" => Ok(WhisperLanguage::Georgian),
+            "be" => Ok(WhisperLanguage::Belarusian),
+            "tg" => Ok(WhisperLanguage::Tajik),
+            "sd" => Ok(WhisperLanguage::Sindhi),
+            "gu" => Ok(WhisperLanguage::Gujarati),
+            "am" => Ok(WhisperLanguage::Amharic),
+            "yi" => Ok(WhisperLanguage::Yiddish),
+            "lo" => Ok(WhisperLanguage::Lao),
+            "uz" => Ok(WhisperLanguage::Uzbek),
+            "fo" => Ok(WhisperLanguage::Faroese),
+            "ht" => Ok(WhisperLanguage::HaitianCreole),
+            "ps" => Ok(WhisperLanguage::Pashto),
+            "tk" => Ok(WhisperLanguage::Turkmen),
+            "nn" => Ok(WhisperLanguage::Nynorsk),
+            "mt" => Ok(WhisperLanguage::Maltese),
+            "sa" => Ok(WhisperLanguage::Sanskrit),
+            "lb" => Ok(WhisperLanguage::Luxembourgish),
+            "my" => Ok(WhisperLanguage::Myanmar),
+            "bo" => Ok(WhisperLanguage::Tibetan),
+            "tl" => Ok(WhisperLanguage::Tagalog),
+            "mg" => Ok(WhisperLanguage::Malagasy),
+            "as" => Ok(WhisperLanguage::Assamese),
+            "tt" => Ok(WhisperLanguage::Tatar),
+            "haw" => Ok(WhisperLanguage::Hawaiian),
+            "ln" => Ok(WhisperLanguage::Lingala),
+            "ha" => Ok(WhisperLanguage::Hausa),
+            "ba" => Ok(WhisperLanguage::Bashkir),
+            "jw" => Ok(WhisperLanguage::Javanese),
+            "su" => Ok(WhisperLanguage::Sundanese),
+            _ => Err(ParseWhisperLanguageError(s.to_owned())),
+        }
+    }
+}
+
 impl Display for WhisperLanguage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -417,19 +699,21 @@ pub struct Whisper {
     sender: std::sync::mpsc::Sender<WhisperMessage>,
 }
 
-impl Default for Whisper {
-    fn default() -> Self {
-        Self::builder().build().unwrap()
-    }
-}
-
 impl Whisper {
     /// Create a builder for a Whisper model.
     pub fn builder() -> WhisperBuilder {
         WhisperBuilder::default()
     }
 
+    /// Create a new default whisper model.
+    pub async fn new() -> Result<Self, anyhow::Error> {
+        let model = Self::builder().build().await?;
+        Ok(model)
+    }
+
     /// Transcribe some audio into text.
+    ///
+    /// Dropping the returned channel will stop the transcription early.
     pub fn transcribe<S: Source>(&self, input: S) -> Result<ChannelTextStream<Segment>>
     where
         <S as Iterator>::Item: rodio::Sample,
@@ -440,7 +724,9 @@ impl Whisper {
         Ok(ChannelTextStream::from(receiver))
     }
 
-    /// Transcribe some audio into a steam of text
+    /// Transcribe some audio into a stream of text
+    ///
+    /// Dropping the receiver will stop the transcription early.
     pub fn transcribe_into<S: Source>(
         &self,
         input: S,

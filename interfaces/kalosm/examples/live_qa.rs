@@ -10,9 +10,7 @@ async fn main() -> Result<(), anyhow::Error> {
     use tokio::time::{Duration, Instant};
 
     // Set up the whisper model
-    let model = WhisperBuilder::default()
-        .with_source(WhisperSource::MediumEn)
-        .build()?;
+    let model = Whisper::new().await?;
 
     // Create database connection
     let db = Surreal::new::<RocksDb>("./db/temp.db").await.unwrap();
@@ -38,15 +36,16 @@ async fn main() -> Result<(), anyhow::Error> {
                 .unwrap()
                 .block_on(async move {
                     let recording_time = Duration::from_secs(30);
+                    let mic_input = MicInput::default();
                     loop {
-                        let input = MicInput::default()
+                        let input = mic_input
                             .record_until(Instant::now() + recording_time)
                             .await
                             .unwrap();
 
                         if let Ok(mut transcribed) = model.transcribe(input) {
                             while let Some(transcribed) = transcribed.next().await {
-                                if transcribed.probability_of_no_speech() < 0.90 {
+                                if transcribed.probability_of_no_speech() < 0.10 {
                                     let document =
                                         transcribed.text().into_document().await.unwrap();
                                     document_table.insert(document).await.unwrap();
@@ -59,8 +58,8 @@ async fn main() -> Result<(), anyhow::Error> {
     }
 
     // Create a llama chat model
-    let mut model = Llama::new_chat().await.unwrap();
-    let mut chat = Chat::builder(&mut model).with_system_prompt("The assistant help answer questions based on the context given by the user. The model knows that the information the user gives it is always true.").build();
+    let model = Llama::new_chat().await.unwrap();
+    let mut chat = Chat::builder(model).with_system_prompt("The assistant help answer questions based on the context given by the user. The model knows that the information the user gives it is always true.").build();
 
     loop {
         // Ask the user for a question

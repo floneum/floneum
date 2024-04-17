@@ -1,10 +1,11 @@
 use candle_core::*;
+use once_cell::sync::OnceCell;
 use std::collections::HashMap;
 use std::sync::RwLock;
 
 #[derive(Default)]
 pub struct MaskCache {
-    masks: RwLock<HashMap<usize, Tensor>>,
+    masks: RwLock<HashMap<usize, AttentionMask>>,
 }
 
 impl MaskCache {
@@ -13,7 +14,7 @@ impl MaskCache {
         seq_len: usize,
         seqlen_offset: usize,
         device: &Device,
-    ) -> Result<Tensor> {
+    ) -> Result<AttentionMask> {
         let mask = if let Some(mask) = {
             let masks = self.masks.read().unwrap();
             masks.get(&seq_len).cloned()
@@ -25,20 +26,51 @@ impl MaskCache {
                 .collect();
             let mask = Tensor::from_slice(&mask, (seq_len, seq_len), device)?;
             let mut masks = self.masks.write().unwrap();
+            let mask = AttentionMask {
+                mask,
+                on_true: OnceCell::new(),
+            };
             masks.insert(seq_len, mask.clone());
             mask
         };
 
-        let mask = if seqlen_offset > 0 {
+        let mask_tensor = if seqlen_offset > 0 {
             // If this isn't the first token, we need to pad the mask with zeros for the previous tokens.
             let mask0 = Tensor::zeros((seq_len, seqlen_offset), DType::U8, device)?;
-            Tensor::cat(&[&mask0, &mask], D::Minus1)?
+            Tensor::cat(&[&mask0, &mask.mask], D::Minus1)?
         } else {
-            mask
+            mask.mask
         };
 
-        let mask = mask.unsqueeze(0)?.unsqueeze(0)?;
+        let mask_tensor = mask_tensor.unsqueeze(0)?.unsqueeze(0)?;
 
-        Ok(mask)
+        Ok(AttentionMask {
+            mask: mask_tensor,
+            on_true: mask.on_true,
+        })
+    }
+}
+
+#[derive(Clone)]
+pub struct AttentionMask {
+    pub mask: Tensor,
+    pub on_true: OnceCell<Tensor>,
+}
+
+impl AttentionMask {
+    pub fn forward(&self, attn_weights: &mut Tensor) -> candle_core::Result<()> {
+        let shape = attn_weights.shape();
+        let attention_mask = self.mask.broadcast_as(shape)?;
+        let on_true = match self.on_true.get() {
+            Some(on_true) => on_true.clone(),
+            None => {
+                let on_true =
+                    Tensor::new(f32::NEG_INFINITY, attn_weights.device())?.broadcast_as(shape)?;
+                self.on_true.set(on_true.clone()).unwrap();
+                on_true
+            }
+        };
+        *attn_weights = attention_mask.where_cond(&on_true, attn_weights)?;
+        Ok(())
     }
 }
