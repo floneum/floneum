@@ -100,20 +100,6 @@ segment-anything-rs = { path = "./models/segment-anything-rs", version = "0.2.1"
 kalosm-ocr = { path = "./models/kalosm-ocr", version = "0.2.1" }
 llm-samplers = "=0.0.7"
 
-[patch.crates-io]
-dioxus = { path = "/Users/evanalmloff/Desktop/Github/dioxus/packages/dioxus" }
-dioxus-lib = { path = "/Users/evanalmloff/Desktop/Github/dioxus/packages/dioxus-lib" }
-dioxus-core = { path = "/Users/evanalmloff/Desktop/Github/dioxus/packages/core" }
-dioxus-core-macro = { path = "/Users/evanalmloff/Desktop/Github/dioxus/packages/core-macro" }
-dioxus-signals = { path = "/Users/evanalmloff/Desktop/Github/dioxus/packages/signals" }
-dioxus-html = { path = "/Users/evanalmloff/Desktop/Github/dioxus/packages/html" }
-dioxus-cli-config = { path = "/Users/evanalmloff/Desktop/Github/dioxus/packages/cli-config" }
-dioxus-router = { path = "/Users/evanalmloff/Desktop/Github/dioxus/packages/router" }
-dioxus-router-macro = { path = "/Users/evanalmloff/Desktop/Github/dioxus/packages/router-macro" }
-dioxus-rsx = { path = "/Users/evanalmloff/Desktop/Github/dioxus/packages/rsx" }
-
-dioxus-desktop = { path = "/Users/evanalmloff/Desktop/Github/dioxus/packages/desktop" }
-
 [profile.dist]
 inherits = "release"
 lto = "thin"

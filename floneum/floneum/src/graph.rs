@@ -91,7 +91,7 @@ impl VisualGraph {
                     input.clone(),
                     vec![input
                         .ty
-                        .create()
+                        .create()?
                         ],
                 ),
                 self.inner.origin_scope(),

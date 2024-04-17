@@ -2,7 +2,7 @@ use crate::DeserializeApplicationState;
 use dioxus::prelude::*;
 use std::{fmt::Display, str::FromStr};
 
-use dioxus_std::clipboard::use_clipboard;
+use dioxus_sdk::clipboard::use_clipboard;
 use serde::{de::DeserializeOwned, Serialize};
 
 use crate::use_application_state;
