@@ -16,7 +16,7 @@ pub struct RegexParser {
 
 impl RegexParser {
     /// Create a new `RegexParser` from a regex pattern.
-    pub fn new(regex: &str) -> crate::ParseResult<Self> {
+    pub fn new(regex: &str) -> std::result::Result<Self, regex_automata::dfa::dense::BuildError> {
         let dfa = dense::DFA::new(regex)?;
 
         let config =

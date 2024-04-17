@@ -82,6 +82,8 @@ impl WasiView for State {
     }
 }
 
+// This implementation defines the interface for the plugin to use.
+// Most functions call out to another method for the implementation so that this file doesn't get too long.
 #[async_trait]
 impl main::types::Host for State {
     async fn get_request(
