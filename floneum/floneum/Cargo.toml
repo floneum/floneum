@@ -35,9 +35,9 @@ petgraph = { version = "0.6.4", features = ["serde-1"] }
 dioxus-signals = { git = "https://github.com/DioxusLabs/dioxus", features = [
     "serialize",
 ] }
-dioxus-free-icons = { git = "https://github.com/dioxus-community/dioxus-free-icons", branch = "feat/dioxus-0.5", features = ["ionicons"] }
+dioxus-free-icons = { git = "https://github.com/dioxus-community/dioxus-free-icons", features = ["ionicons"] }
 rfd = "0.12"
-dioxus-std = { git = "https://github.com/marc2332/dioxus-std/", branch = "feat/dioxus-0.5", features = [
+dioxus-std = { git = "https://github.com/DioxusLabs/sdk", features = [
     "clipboard",
 ] }
 directories = "5.0.1"
