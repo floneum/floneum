@@ -41,7 +41,8 @@ impl SyncModel for LlamaModel {
     }
 
     fn stop_token(&self) -> anyhow::Result<u32> {
-        let eos_token = match self.tokenizer.get_vocab(true).get("</s>") {
+        let vocab = self.tokenizer.get_vocab(true);
+        let eos_token = match vocab.get("</s>").or(vocab.get("<|end_of_text|>")) {
             Some(token) => *token,
             None => anyhow::bail!("cannot find the </s> token"),
         };
