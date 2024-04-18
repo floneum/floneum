@@ -412,7 +412,6 @@ impl LlamaSource {
                 assistant_marker: "<|begin_of_text|><|start_header_id|>assistant<|end_header_id|>",
                 end_assistant_marker: "<|eot_id|>",
             }),
-            ..Default::default()
         }
     }
 
