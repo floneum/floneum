@@ -7,7 +7,7 @@ authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 [dependencies]
 floneum_rust_macro = { path = "../rust_macro" }
 image = "0.24.6"
-log = {version = "0.4", features = ["std"]}
+log = { version = "0.4", features = ["std"] }
 bincode = "1.3.3"
 serde = { version = "1.0.173", features = ["derive"] }
 wit-bindgen = { version = "0.24.0" }
