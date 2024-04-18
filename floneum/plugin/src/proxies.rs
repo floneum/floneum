@@ -1,7 +1,6 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
-    host::{SharedPluginState, State},
     plugins::main::{self, types::*},
     resource::ResourceStorage,
 };

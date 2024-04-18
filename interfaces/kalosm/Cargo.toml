@@ -88,8 +88,8 @@ workspace = true
 features = []
 workspace = true
 
-[dev-dependencies.kalosm-llama]
-features = []
+[dev-dependencies.kalosm]
+features = ["sound", "language", "vision"]
 workspace = true
 
 [features]

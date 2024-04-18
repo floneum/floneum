@@ -110,7 +110,7 @@ async fn package_and_build(
         build_path = build_path
             .join(this_package.name.replace('-', "_"))
             .with_extension("wasm");
-        let plugin = load_plugin(&build_path);
+        let plugin = load_plugin(&build_path, Default::default());
         let instance = plugin.instance().await.unwrap();
         let info = instance.metadata();
         let name = &info.name;

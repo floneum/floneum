@@ -3921,7 +3921,7 @@ name = "floneum_add"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -3929,7 +3929,7 @@ name = "floneum_add_embedding"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -3937,7 +3937,7 @@ name = "floneum_add_to_list"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -3945,7 +3945,7 @@ name = "floneum_and"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -3954,7 +3954,7 @@ version = "0.1.0"
 dependencies = [
  "floneum_rust",
  "meval",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -3962,7 +3962,7 @@ name = "floneum_click_node"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -3970,7 +3970,7 @@ name = "floneum_contains"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -3978,7 +3978,7 @@ name = "floneum_divide"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -3986,7 +3986,7 @@ name = "floneum_embedding"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -3994,7 +3994,7 @@ name = "floneum_embedding_db"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4002,7 +4002,7 @@ name = "floneum_equals"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4010,7 +4010,7 @@ name = "floneum_find_child_node"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4018,7 +4018,7 @@ name = "floneum_find_node"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4026,7 +4026,7 @@ name = "floneum_format"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4035,7 +4035,7 @@ version = "0.1.0"
 dependencies = [
  "floneum_rust",
  "log",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4044,7 +4044,7 @@ version = "0.1.0"
 dependencies = [
  "floneum_rust",
  "log",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4054,7 +4054,7 @@ dependencies = [
  "floneum_rust",
  "readability",
  "url",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4062,7 +4062,7 @@ name = "floneum_if"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4070,7 +4070,7 @@ name = "floneum_join"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4078,7 +4078,7 @@ name = "floneum_length"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4086,7 +4086,7 @@ name = "floneum_less_than"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4094,7 +4094,7 @@ name = "floneum_more_than"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4102,7 +4102,7 @@ name = "floneum_multiply"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4110,7 +4110,7 @@ name = "floneum_navigate_to"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4118,7 +4118,7 @@ name = "floneum_new_list"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4126,7 +4126,7 @@ name = "floneum_node_text"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4134,7 +4134,7 @@ name = "floneum_not"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4142,7 +4142,7 @@ name = "floneum_number"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4150,7 +4150,7 @@ name = "floneum_or"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4189,7 +4189,7 @@ name = "floneum_power"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4199,7 +4199,7 @@ dependencies = [
  "floneum_rust",
  "rustpython-ast 0.3.1 (git+https://github.com/RustPython/Parser)",
  "rustpython-vm",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4207,7 +4207,7 @@ name = "floneum_read_from_file"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4218,7 +4218,7 @@ dependencies = [
  "readability",
  "rss",
  "url",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4230,7 +4230,7 @@ dependencies = [
  "image 0.24.9",
  "log",
  "serde",
- "wit-bindgen",
+ "wit-bindgen 0.24.0",
 ]
 
 [[package]]
@@ -4241,7 +4241,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.59",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4249,7 +4249,7 @@ name = "floneum_search"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4258,7 +4258,7 @@ version = "0.1.0"
 dependencies = [
  "floneum_rust",
  "nipper",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4266,7 +4266,7 @@ name = "floneum_slice"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4274,7 +4274,7 @@ name = "floneum_split"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4282,7 +4282,7 @@ name = "floneum_string"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4290,7 +4290,7 @@ name = "floneum_subtract"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4298,7 +4298,7 @@ name = "floneum_type_in_node"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -4306,7 +4306,7 @@ name = "floneum_write_to_file"
 version = "0.1.0"
 dependencies = [
  "floneum_rust",
- "wit-bindgen",
+ "wit-bindgen 0.18.0",
 ]
 
 [[package]]
@@ -6283,9 +6283,9 @@ dependencies = [
  "futures-util",
  "hdrhistogram",
  "image 0.24.9",
+ "kalosm",
  "kalosm-common",
  "kalosm-language",
- "kalosm-llama",
  "kalosm-sound",
  "kalosm-streams",
  "kalosm-vision",
@@ -13347,6 +13347,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasm-metadata"
+version = "0.202.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "094aea3cb90e09f16ee25a4c0e324b3e8c934e7fd838bfa039aef5352f44a917"
+dependencies = [
+ "anyhow",
+ "indexmap 2.2.6",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "spdx",
+ "wasm-encoder 0.202.0",
+ "wasmparser 0.202.0",
+]
+
+[[package]]
 name = "wasm-streams"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -14787,7 +14803,17 @@ version = "0.18.0"
 source = "git+https://github.com/bytecodealliance/wit-bindgen?rev=285f0c6ad5da3d6cd8ef2e0635df51f229d6578f#285f0c6ad5da3d6cd8ef2e0635df51f229d6578f"
 dependencies = [
  "bitflags 2.5.0",
- "wit-bindgen-rust-macro",
+ "wit-bindgen-rust-macro 0.18.1",
+]
+
+[[package]]
+name = "wit-bindgen"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9fb4e7653763780be47e38f479e9aa83c768aa6a3b2ed086dc2826fdbbb7e7f5"
+dependencies = [
+ "wit-bindgen-rt",
+ "wit-bindgen-rust-macro 0.24.0",
 ]
 
 [[package]]
@@ -14800,15 +14826,48 @@ dependencies = [
 ]
 
 [[package]]
+name = "wit-bindgen-core"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b67e11c950041849a10828c7600ea62a4077c01e8af72e8593253575428f91b"
+dependencies = [
+ "anyhow",
+ "wit-parser 0.202.0",
+]
+
+[[package]]
+name = "wit-bindgen-rt"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b0780cf7046630ed70f689a098cd8d56c5c3b22f2a7379bbdb088879963ff96"
+dependencies = [
+ "bitflags 2.5.0",
+]
+
+[[package]]
 name = "wit-bindgen-rust"
 version = "0.18.0"
 source = "git+https://github.com/bytecodealliance/wit-bindgen?rev=285f0c6ad5da3d6cd8ef2e0635df51f229d6578f#285f0c6ad5da3d6cd8ef2e0635df51f229d6578f"
 dependencies = [
  "anyhow",
  "heck 0.4.1",
- "wasm-metadata",
- "wit-bindgen-core",
+ "wasm-metadata 0.10.20",
+ "wit-bindgen-core 0.18.0",
  "wit-component 0.21.0",
+]
+
+[[package]]
+name = "wit-bindgen-rust"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "30acbe8fb708c3a830a33c4cb705df82659bf831b492ec6ca1a17a369cfeeafb"
+dependencies = [
+ "anyhow",
+ "heck 0.4.1",
+ "indexmap 2.2.6",
+ "wasm-metadata 0.202.0",
+ "wit-bindgen-core 0.24.0",
+ "wit-component 0.202.0",
 ]
 
 [[package]]
@@ -14820,8 +14879,22 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.59",
- "wit-bindgen-core",
- "wit-bindgen-rust",
+ "wit-bindgen-core 0.18.0",
+ "wit-bindgen-rust 0.18.0",
+]
+
+[[package]]
+name = "wit-bindgen-rust-macro"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b1b06eae85feaecdf9f2854f7cac124e00d5a6e5014bfb02eb1ecdeb5f265b9"
+dependencies = [
+ "anyhow",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.59",
+ "wit-bindgen-core 0.24.0",
+ "wit-bindgen-rust 0.24.0",
 ]
 
 [[package]]
@@ -14838,7 +14911,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "wasm-encoder 0.39.0",
- "wasm-metadata",
+ "wasm-metadata 0.10.20",
  "wasmparser 0.119.0",
  "wit-parser 0.13.2",
 ]
@@ -14857,9 +14930,28 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "wasm-encoder 0.41.2",
- "wasm-metadata",
+ "wasm-metadata 0.10.20",
  "wasmparser 0.121.2",
  "wit-parser 0.14.0",
+]
+
+[[package]]
+name = "wit-component"
+version = "0.202.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c836b1fd9932de0431c1758d8be08212071b6bba0151f7bac826dbc4312a2a9"
+dependencies = [
+ "anyhow",
+ "bitflags 2.5.0",
+ "indexmap 2.2.6",
+ "log",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "wasm-encoder 0.202.0",
+ "wasm-metadata 0.202.0",
+ "wasmparser 0.202.0",
+ "wit-parser 0.202.0",
 ]
 
 [[package]]

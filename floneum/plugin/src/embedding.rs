@@ -1,4 +1,3 @@
-use crate::host::{SharedPluginState, State};
 use crate::plugins::main;
 use crate::plugins::main::types::{Embedding, EmbeddingModel, EmbeddingModelType};
 use crate::resource::{Resource, ResourceStorage};

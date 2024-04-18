@@ -1,4 +1,4 @@
-use crate::host::{AnyNodeRef, SharedPluginState, State};
+use crate::host::AnyNodeRef;
 use crate::plugins::main;
 
 use crate::plugins::main::types::{Node, Page};

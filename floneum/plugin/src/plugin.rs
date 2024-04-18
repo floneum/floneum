@@ -13,7 +13,6 @@ use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::LockResult;
-use std::sync::RwLock;
 use std::sync::RwLockReadGuard;
 use tokio::sync::broadcast;
 use wasmtime::component::Component;

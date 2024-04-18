@@ -66,7 +66,8 @@ impl ResourceStorage {
     }
 }
 
-pub(crate) struct Resource<T> {
+/// A typed resource that is stored in [`ResourceStorage`].
+pub struct Resource<T> {
     index: usize,
     owned: bool,
     phantom: PhantomData<T>,
@@ -91,14 +92,6 @@ impl<T> Resource<T> {
 }
 
 impl<T> Resource<T> {
-    pub(crate) fn from_index_owned(index: usize) -> Self {
-        Self {
-            index,
-            owned: true,
-            phantom: PhantomData,
-        }
-    }
-
     pub(crate) fn from_index_borrowed(index: usize) -> Self {
         Self {
             index,

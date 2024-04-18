@@ -1,8 +1,6 @@
 use std::ops::Deref;
 use std::sync::Arc;
 
-use crate::host::{SharedPluginState, State};
-
 use crate::plugins::main::types::{Embedding, EmbeddingDb};
 use crate::resource::ResourceStorage;
 

@@ -10,4 +10,4 @@ image = "0.24.6"
 log = {version = "0.4", features = ["std"]}
 bincode = "1.3.3"
 serde = { version = "1.0.173", features = ["derive"] }
-wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen", rev = "285f0c6ad5da3d6cd8ef2e0635df51f229d6578f" }
+wit-bindgen = { version = "0.24.0" }
