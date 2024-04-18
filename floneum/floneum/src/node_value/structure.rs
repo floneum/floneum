@@ -1,7 +1,8 @@
+use dioxus_signals::Readable;
 use floneum_plugin::plugins::main::types::*;
 use serde::{Deserialize, Serialize};
 
-use crate::edge::ConnectionType;
+use crate::{application_state, edge::ConnectionType};
 
 #[derive(Serialize, Deserialize)]
 pub struct NodeInput {
@@ -33,11 +34,15 @@ impl NodeInput {
         }
     }
 
-    pub fn push_default_value(&mut self) {
+    pub fn push_default_value(&mut self) -> anyhow::Result<()> {
         if let ValueType::Many(values) = self.definition.ty {
-            let value = values.create();
+            let application_state = application_state();
+            let read = application_state.read();
+            let value = values.create(&read.resource_storage)?;
             self.value.push(vec![value]);
         }
+
+        Ok(())
     }
 
     pub fn pop_value(&mut self) {

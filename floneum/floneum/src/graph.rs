@@ -9,7 +9,6 @@ use petgraph::{
     stable_graph::StableGraph,
     visit::{EdgeRef, IntoEdgeReferences, IntoNodeIdentifiers},
 };
-use serde::{Deserialize, Serialize};
 use slab::Slab;
 
 use crate::{
@@ -78,7 +77,7 @@ pub struct VisualGraph {
 }
 
 impl VisualGraph {
-    pub fn create_node(&self, instance: PluginInstance) {
+    pub fn create_node(&self, instance: PluginInstance) -> anyhow::Result<()> {
         let position = self.scale_screen_pos(PagePoint::new(0., 0.));
         let mut inner_mut = self.inner;
         let mut inner = inner_mut.write();
@@ -87,13 +86,7 @@ impl VisualGraph {
 
         for input in &instance.metadata().inputs {
             inputs.push(Signal::new_in_scope(
-                NodeInput::new(
-                    input.clone(),
-                    vec![input
-                        .ty
-                        .create()?
-                        ],
-                ),
+                NodeInput::new(input.clone(), vec![input.ty.create(instance.resources())?]),
                 self.inner.origin_scope(),
             ));
         }
@@ -104,7 +97,7 @@ impl VisualGraph {
             outputs.push(Signal::new_in_scope(
                 NodeOutput {
                     definition: output.clone(),
-                    value: output.ty.create(),
+                    value: output.ty.create(instance.resources())?,
                 },
                 self.inner.origin_scope(),
             ));
@@ -125,6 +118,8 @@ impl VisualGraph {
         );
         let idx = inner.graph.add_node(node);
         inner.graph[idx].write().id = idx;
+
+        Ok(())
     }
 
     pub fn scale_screen_pos(&self, pos: PagePoint) -> Point2D<f32, f32> {
@@ -514,19 +509,14 @@ fn CurrentlyDragging(props: CurrentlyDraggingProps) -> Element {
     let start = props.from;
     let current_start = start.read();
     let start_pos = props.from_pos;
-    let color;
-    match props.index {
-        DraggingIndex::Input(index) => {
-            color = current_start.input_color(index);
-        }
-        DraggingIndex::Output(index) => {
-            color = current_start.output_color(index);
-        }
+    let color = match props.index {
+        DraggingIndex::Input(index) => current_start.input_color(index),
+        DraggingIndex::Output(index) => current_start.output_color(index),
     };
     let end = props.to;
     let end_pos = end.read();
 
-    rsx! { Connection { start_pos: start_pos, end_pos: *end_pos, color: color } }
+    rsx! { Connection { start_pos: start_pos, end_pos: *end_pos, color } }
 }
 
 fn NodeConnection(props: ConnectionProps) -> Element {

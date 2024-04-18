@@ -5,7 +5,6 @@ use floneum_plugin::plugins::main::types::ValueType;
 use floneum_plugin::PluginInstance;
 use floneumite::Category;
 use petgraph::{graph::NodeIndex, stable_graph::DefaultIx};
-use serde::{Deserialize, Serialize};
 
 use crate::edge::{Connection, ConnectionType};
 use crate::input::Input;
@@ -14,9 +13,7 @@ use crate::output::Output;
 use crate::{theme, use_application_state, Colored};
 use crate::{Point, VisualGraph};
 
-const SNAP_DISTANCE: f32 = 15.;
 pub const NODE_KNOB_SIZE: f64 = 5.;
-pub const NODE_MARGIN: f64 = 2.;
 
 // #[derive(Serialize, Deserialize)]
 pub struct Node {

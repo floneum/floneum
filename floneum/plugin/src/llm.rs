@@ -1,7 +1,7 @@
-use crate::host::State;
+use crate::host::{SharedPluginState, State};
 use crate::plugins::main;
 use crate::plugins::main::types::TextGenerationModel;
-use crate::resource::Resource;
+use crate::resource::{Resource, ResourceStorage};
 
 use anyhow::Ok;
 use kalosm::language::*;
@@ -199,16 +199,15 @@ impl main::types::ModelType {
     }
 }
 
-impl State {
+impl ResourceStorage {
     async fn initialize_model(
-        &mut self,
+        &self,
         index: Resource<LazyTextGenerationModel>,
     ) -> wasmtime::Result<ConcreteTextGenerationModel> {
         let raw_index = index;
         {
             let future = {
                 let borrow = self
-                    .resources
                     .get_mut(raw_index)
                     .ok_or(anyhow::anyhow!("Model not found"))?;
                 match &*borrow {
@@ -219,25 +218,23 @@ impl State {
             if let Some(fut) = future {
                 let model = fut.await?;
                 let mut borrow = self
-                    .resources
                     .get_mut(raw_index)
                     .ok_or(anyhow::anyhow!("Model not found"))?;
                 *borrow = LazyTextGenerationModel::Initialized(model);
             }
         }
         let borrow = self
-            .resources
             .get_mut(raw_index)
             .ok_or(anyhow::anyhow!("Model not found"))?;
         Ok(borrow.value().unwrap())
     }
 
     pub(crate) fn impl_create_text_generation_model(
-        &mut self,
+        &self,
         ty: main::types::ModelType,
     ) -> TextGenerationModel {
         let model = LazyTextGenerationModel::Uninitialized(ty);
-        let idx = self.resources.insert(model);
+        let idx = self.insert(model);
 
         TextGenerationModel {
             id: idx.index() as u64,
@@ -246,14 +243,14 @@ impl State {
     }
 
     pub(crate) async fn impl_text_generation_model_downloaded(
-        &mut self,
+        &self,
         ty: main::types::ModelType,
     ) -> wasmtime::Result<bool> {
         Ok(ty.model_downloaded_sync())
     }
 
     pub(crate) async fn impl_infer(
-        &mut self,
+        &self,
         self_: TextGenerationModel,
         input: String,
         max_tokens: Option<u32>,
@@ -276,7 +273,7 @@ impl State {
     }
 
     pub(crate) async fn impl_infer_structured(
-        &mut self,
+        &self,
         self_: TextGenerationModel,
         input: String,
         regex: String,
@@ -301,11 +298,11 @@ impl State {
     }
 
     pub(crate) fn impl_drop_text_generation_model(
-        &mut self,
+        &self,
         model: TextGenerationModel,
     ) -> wasmtime::Result<()> {
         let index = model.into();
-        self.resources.drop_key(index);
+        self.drop_key(index);
         Ok(())
     }
 }

@@ -5,11 +5,9 @@ use std::{
     marker::PhantomData,
 };
 
-
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use slab::Slab;
 use std::sync::Arc;
-
 
 use crate::{
     embedding::LazyTextEmbeddingModel, embedding_db::VectorDBWithDocuments, host::AnyNodeRef,
@@ -24,7 +22,7 @@ pub struct ResourceStorage {
 }
 
 impl ResourceStorage {
-    pub(crate) fn insert<T: Send + Sync + 'static>(&mut self, item: T) -> Resource<T> {
+    pub(crate) fn insert<T: Send + Sync + 'static>(&self, item: T) -> Resource<T> {
         let ty_id = TypeId::of::<T>();
         let mut binding = self.map.write();
         let slab = binding.entry(ty_id).or_default();
@@ -49,7 +47,7 @@ impl ResourceStorage {
     }
 
     pub(crate) fn get_mut<T: Send + Sync + 'static>(
-        &mut self,
+        &self,
         key: Resource<T>,
     ) -> Option<parking_lot::lock_api::MappedRwLockWriteGuard<'_, parking_lot::RawRwLock, T>> {
         RwLockWriteGuard::try_map(self.map.write(), |r| {
@@ -60,7 +58,7 @@ impl ResourceStorage {
         .ok()
     }
 
-    pub(crate) fn drop_key<T: 'static>(&mut self, key: Resource<T>) {
+    pub(crate) fn drop_key<T: 'static>(&self, key: Resource<T>) {
         assert!(key.owned);
         if let Some(slab) = self.map.write().get_mut(&TypeId::of::<T>()) {
             slab.remove(key.index);

@@ -1,8 +1,7 @@
-use crate::host::State;
+use crate::host::{SharedPluginState, State};
 use crate::plugins::main;
 use crate::plugins::main::types::{Embedding, EmbeddingModel, EmbeddingModelType};
-use crate::resource::Resource;
-
+use crate::resource::{Resource, ResourceStorage};
 
 use kalosm::language::*;
 use kalosm_common::ModelLoadingProgress;
@@ -81,16 +80,15 @@ impl main::types::EmbeddingModelType {
     }
 }
 
-impl State {
+impl ResourceStorage {
     async fn initialize_text_embedding_model(
-        &mut self,
+        &self,
         index: Resource<LazyTextEmbeddingModel>,
     ) -> wasmtime::Result<Arc<Bert>> {
         let raw_index = index;
         {
             let future = {
                 let borrow = self
-                    .resources
                     .get_mut(raw_index)
                     .ok_or(anyhow::anyhow!("Text Embedding Model not found"))?;
                 match &*borrow {
@@ -101,25 +99,23 @@ impl State {
             if let Some(fut) = future {
                 let model = fut.await?;
                 let mut borrow = self
-                    .resources
                     .get_mut(raw_index)
                     .ok_or(anyhow::anyhow!("Text Embedding Model not found"))?;
                 *borrow = LazyTextEmbeddingModel::Bert(Arc::new(model));
             }
         }
         let borrow = self
-            .resources
             .get_mut(raw_index)
             .ok_or(anyhow::anyhow!("Text Embedding Model not found"))?;
         Ok(borrow.value().unwrap())
     }
 
     pub(crate) fn impl_create_embedding_model(
-        &mut self,
+        &self,
         ty: main::types::EmbeddingModelType,
     ) -> wasmtime::Result<EmbeddingModel> {
         let model = LazyTextEmbeddingModel::Uninitialized(ty);
-        let idx = self.resources.insert(model);
+        let idx = self.insert(model);
 
         Ok(EmbeddingModel {
             id: idx.index() as u64,
@@ -128,14 +124,14 @@ impl State {
     }
 
     pub(crate) async fn impl_embedding_model_downloaded(
-        &mut self,
+        &self,
         ty: main::types::EmbeddingModelType,
     ) -> wasmtime::Result<bool> {
         Ok(ty.model_downloaded_sync())
     }
 
     pub(crate) async fn impl_get_embedding(
-        &mut self,
+        &self,
         self_: EmbeddingModel,
         document: String,
     ) -> wasmtime::Result<Embedding> {
@@ -146,12 +142,9 @@ impl State {
         })
     }
 
-    pub(crate) fn impl_drop_embedding_model(
-        &mut self,
-        rep: EmbeddingModel,
-    ) -> wasmtime::Result<()> {
+    pub(crate) fn impl_drop_embedding_model(&self, rep: EmbeddingModel) -> wasmtime::Result<()> {
         let index = rep.into();
-        self.resources.drop_key(index);
+        self.drop_key(index);
         Ok(())
     }
 }

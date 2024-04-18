@@ -1,8 +1,9 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
-    host::State,
+    host::{SharedPluginState, State},
     plugins::main::{self, types::*},
+    resource::ResourceStorage,
 };
 use main::types::PrimitiveValueType;
 
@@ -94,32 +95,21 @@ impl From<MyPrimitiveValue> for PrimitiveValue {
             MyPrimitiveValue::Embedding(value) => {
                 PrimitiveValue::Embedding(Embedding { vector: value })
             }
-            MyPrimitiveValue::Model { id, owned } => PrimitiveValue::Model(TextGenerationModel {
-                id,
-                owned,
-            }),
-            MyPrimitiveValue::EmbeddingModel { id, owned } => {
-                PrimitiveValue::EmbeddingModel(EmbeddingModel {
-                    id,
-                    owned,
-                })
+            MyPrimitiveValue::Model { id, owned } => {
+                PrimitiveValue::Model(TextGenerationModel { id, owned })
             }
-            MyPrimitiveValue::Page { id, owned } => PrimitiveValue::Page(Page {
-                id,
-                owned,
-            }),
-            MyPrimitiveValue::Node { id, owned } => PrimitiveValue::Node(Node {
-                id,
-                owned,
-            }),
+            MyPrimitiveValue::EmbeddingModel { id, owned } => {
+                PrimitiveValue::EmbeddingModel(EmbeddingModel { id, owned })
+            }
+            MyPrimitiveValue::Page { id, owned } => PrimitiveValue::Page(Page { id, owned }),
+            MyPrimitiveValue::Node { id, owned } => PrimitiveValue::Node(Node { id, owned }),
             MyPrimitiveValue::ModelType(value) => PrimitiveValue::ModelType(value.into()),
             MyPrimitiveValue::EmbeddingModelType(value) => {
                 PrimitiveValue::EmbeddingModelType(value.into())
             }
-            MyPrimitiveValue::Database { id, owned } => PrimitiveValue::Database(EmbeddingDb {
-                id,
-                owned,
-            }),
+            MyPrimitiveValue::Database { id, owned } => {
+                PrimitiveValue::Database(EmbeddingDb { id, owned })
+            }
             MyPrimitiveValue::Boolean(value) => PrimitiveValue::Boolean(value),
         }
     }
@@ -372,16 +362,16 @@ impl ValueType {
         }
     }
 
-    pub fn create(&self, host: &mut State) -> anyhow::Result<Vec<PrimitiveValue>> {
+    pub fn create(&self, storage: &ResourceStorage) -> anyhow::Result<Vec<PrimitiveValue>> {
         Ok(match self {
-            ValueType::Single(ty) => vec![ty.create(host)?],
+            ValueType::Single(ty) => vec![ty.create(storage)?],
             ValueType::Many(_) => Vec::new(),
         })
     }
 }
 
 impl PrimitiveValueType {
-    pub fn create(&self, host: &mut State) -> anyhow::Result<PrimitiveValue> {
+    pub fn create(&self, storage: &ResourceStorage) -> anyhow::Result<PrimitiveValue> {
         Ok(match self {
             PrimitiveValueType::Number => PrimitiveValue::Number(0),
             PrimitiveValueType::Float => PrimitiveValue::Float(0.),
@@ -392,20 +382,20 @@ impl PrimitiveValueType {
                 PrimitiveValue::Embedding(Embedding { vector: vec![0.0] })
             }
             PrimitiveValueType::Database => {
-                PrimitiveValue::Database(host.impl_create_embedding_db(Vec::new(), Vec::new())?)
+                PrimitiveValue::Database(storage.impl_create_embedding_db(Vec::new(), Vec::new())?)
             }
             PrimitiveValueType::Model => PrimitiveValue::Model(
-                host.impl_create_text_generation_model(ModelType::StarlingSevenAlpha),
+                storage.impl_create_text_generation_model(ModelType::StarlingSevenAlpha),
             ),
             PrimitiveValueType::EmbeddingModel => PrimitiveValue::EmbeddingModel(
-                host.impl_create_embedding_model(EmbeddingModelType::Bert)?,
+                storage.impl_create_embedding_model(EmbeddingModelType::Bert)?,
             ),
             PrimitiveValueType::ModelType => PrimitiveValue::ModelType(ModelType::LlamaSevenChat),
             PrimitiveValueType::EmbeddingModelType => {
                 PrimitiveValue::EmbeddingModelType(EmbeddingModelType::Bert)
             }
             PrimitiveValueType::Boolean => PrimitiveValue::Boolean(false),
-            PrimitiveValueType::Page => PrimitiveValue::Page(host.impl_create_page(
+            PrimitiveValueType::Page => PrimitiveValue::Page(storage.impl_create_page(
                 main::types::BrowserMode::Headless,
                 "http://floneum.com".into(),
             )?),

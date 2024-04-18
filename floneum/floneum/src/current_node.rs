@@ -46,7 +46,7 @@ pub fn CurrentNodeInfo() -> Element {
                                 div {
                                     ShowInput {
                                         key: "{input.read().definition.name}",
-                                        ty: md.inputs[i].ty.clone(),
+                                        ty: md.inputs[i].ty,
                                         label: md.inputs[i].name.clone(),
                                         value: input.clone()
                                     }
@@ -63,7 +63,7 @@ pub fn CurrentNodeInfo() -> Element {
                                 div {
                                     ShowOutput {
                                         key: "{output.read().definition.name}",
-                                        ty: md.outputs[i].ty.clone(),
+                                        ty: md.outputs[i].ty,
                                         name: md.outputs[i].name.clone(),
                                         value: output.clone()
                                     }
@@ -79,11 +79,11 @@ pub fn CurrentNodeInfo() -> Element {
                                 class: "text-xl font-bold",
                                 "inputs:"
                             }
-                            for input in &node.inputs {
+                            for &node in &node.inputs {
                                 div {
                                     ModifyInput {
-                                        key: "{input.read().definition.name}",
-                                        value: *input
+                                        key: "{node.read().definition.name}",
+                                        node
                                     }
                                 }
                             }
@@ -100,7 +100,7 @@ pub fn CurrentNodeInfo() -> Element {
                                 div {
                                     ShowOutput {
                                         key: "{output.read().definition.name}",
-                                        ty: output.read().definition.ty.clone(),
+                                        ty: output.read().definition.ty,
                                         name: output.read().definition.name.clone(),
                                         value: output.read().value.clone()
                                     }

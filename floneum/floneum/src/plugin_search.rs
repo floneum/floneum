@@ -6,7 +6,7 @@ use floneumite::PackageIndexEntry;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::{use_application_state, use_package_manager};
+use crate::{application_state, use_application_state, use_package_manager};
 
 const BUILT_IN_PLUGINS: &[&str] = &[
     "Add Embedding",
@@ -135,7 +135,11 @@ fn Category(category: Category, plugins: Vec<PackageIndexEntry>) -> Element {
                         onclick: {
                             let entry = entry.clone();
                             move |_| {
-                                let plugin = load_plugin_from_source(entry.clone());
+                                let application_state = application_state();
+                                let plugin = {
+                                    let read = application_state.read();
+                                    load_plugin_from_source(entry.clone(), read.resource_storage.clone())
+                                };
                                 to_owned![application];
                                 async move {
                                     let mut application = application.write();
@@ -200,7 +204,10 @@ fn LoadLocalPlugin() -> Element {
                 class: "border rounded-md p-2 m-2",
                 onclick: move |_| {
                     let path = PathBuf::from(search_text());
-                    let plugin = load_plugin(&path);
+                    let plugin = {
+                        let read = application.read();
+                        load_plugin(&path, read.resource_storage.clone())
+                    };
                     to_owned![application];
                     async move {
                         let mut application = application.write();

@@ -2,10 +2,8 @@ use dioxus::prelude::*;
 use floneum_plugin::plugins::main::types::ValueType;
 
 use crate::{
-    edge::Connection,
-    graph::CurrentlyDragging,
-    node::{NODE_KNOB_SIZE, NODE_MARGIN},
-    CurrentlyDraggingProps, DraggingIndex, Node, VisualGraph,
+    edge::Connection, graph::CurrentlyDragging, node::NODE_KNOB_SIZE, CurrentlyDraggingProps,
+    DraggingIndex, Node, VisualGraph,
 };
 
 #[component]
@@ -25,7 +23,7 @@ pub fn Input(node: Signal<Node>, index: usize) -> Element {
                         stroke: "black",
                         onmousedown: move |_| {
                             let node = node.read();
-                            node.inputs[index].write().push_default_value();
+                            node.inputs[index].write_unchecked().push_default_value();
                         },
                     }
                 }
@@ -35,7 +33,7 @@ pub fn Input(node: Signal<Node>, index: usize) -> Element {
                         stroke: "black",
                         onmousedown: move |_| {
                             let node = node.read();
-                            node.inputs[index].write().pop_value();
+                            node.inputs[index].write_unchecked().pop_value();
                         },
                     }
                 }

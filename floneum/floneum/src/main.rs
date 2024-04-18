@@ -3,7 +3,7 @@
 
 use anyhow::Result;
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
-use floneum_plugin::Plugin;
+use floneum_plugin::{Plugin, ResourceStorage};
 use floneumite::FloneumPackageIndex;
 use futures_util::stream::StreamExt;
 use petgraph::stable_graph::{DefaultIx, NodeIndex};
@@ -103,6 +103,7 @@ pub struct PluginId(usize);
 pub struct ApplicationState {
     graph: VisualGraph,
     currently_focused: Option<FocusedNodeInfo>,
+    resource_storage: ResourceStorage,
     plugins: HashMap<String, Plugin>,
     // last_save_id: Option<share::StorageId<ApplicationState>>,
 }
@@ -112,7 +113,7 @@ impl ApplicationState {
         match self.get_plugin(name) {
             Some(plugin) => {
                 let instance = plugin.instance().await?;
-                self.graph.create_node(instance);
+                self.graph.create_node(instance)?;
                 Ok(())
             }
             None => Err(anyhow::anyhow!("Plugin not found")),

@@ -153,7 +153,7 @@ trait CustomMenuItem {
 //         save_to_file(state, default_save_location());
 //     }
 // }
-// 
+//
 // struct SaveAsPredefinedMenuItem;
 
 // impl CustomMenuItem for SaveAsPredefinedMenuItem {

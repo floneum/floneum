@@ -1,16 +1,17 @@
 use std::ops::Deref;
 use std::sync::Arc;
 
-use crate::host::State;
+use crate::host::{SharedPluginState, State};
 
 use crate::plugins::main::types::{Embedding, EmbeddingDb};
+use crate::resource::ResourceStorage;
 
 use kalosm::language::{Document, UnknownVectorSpace, VectorDB};
 use once_cell::sync::Lazy;
 
-impl State {
+impl ResourceStorage {
     pub(crate) fn impl_create_embedding_db(
-        &mut self,
+        &self,
         embeddings: Vec<Embedding>,
         documents: Vec<String>,
     ) -> anyhow::Result<EmbeddingDb> {
@@ -23,7 +24,7 @@ impl State {
             db.add_embedding(embedding, document)?;
         }
 
-        let idx = self.resources.insert(db);
+        let idx = self.insert(db);
         Ok(EmbeddingDb {
             id: idx.index() as u64,
             owned: true,
@@ -31,14 +32,13 @@ impl State {
     }
 
     pub(crate) async fn impl_add_embedding(
-        &mut self,
+        &self,
         self_: EmbeddingDb,
         embedding: Embedding,
         document: String,
     ) -> wasmtime::Result<()> {
         let index = self_.into();
-        self.resources
-            .get_mut(index)
+        self.get_mut(index)
             .ok_or(anyhow::anyhow!(
                 "DB not found; It may have been already dropped"
             ))?
@@ -47,13 +47,13 @@ impl State {
     }
 
     pub(crate) async fn impl_find_closest_documents(
-        &mut self,
+        &self,
         self_: EmbeddingDb,
         search: Embedding,
         count: u32,
     ) -> wasmtime::Result<Vec<String>> {
         let index = self_.into();
-        let db = self.resources.get(index).ok_or(anyhow::anyhow!(
+        let db = self.get(index).ok_or(anyhow::anyhow!(
             "DB not found; It may have been already dropped"
         ))?;
         let documents = db.get_closest(search, count as usize)?;
@@ -63,9 +63,9 @@ impl State {
             .collect())
     }
 
-    pub(crate) fn impl_drop_embedding_db(&mut self, rep: EmbeddingDb) -> wasmtime::Result<()> {
+    pub(crate) fn impl_drop_embedding_db(&self, rep: EmbeddingDb) -> wasmtime::Result<()> {
         let index = rep.into();
-        self.resources.drop_key(index);
+        self.drop_key(index);
         Ok(())
     }
 }

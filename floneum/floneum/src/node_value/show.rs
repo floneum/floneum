@@ -67,6 +67,9 @@ pub fn show_primitive_value(value: &PrimitiveValue) -> Element {
         PrimitiveValue::Number(value) => {
             rsx! {"{value}"}
         }
+        PrimitiveValue::Float(value) => {
+            rsx! {"{value}"}
+        }
         PrimitiveValue::ModelType(ty) => {
             rsx! {"{ty.name()}"}
         }

@@ -1,4 +1,5 @@
 use crate::exports::plugins::main::definitions::*;
+use crate::host::SharedPluginState;
 use crate::host::State;
 use crate::host::ENGINE;
 use crate::host::LINKER;
@@ -7,11 +8,6 @@ use crate::resource::ResourceStorage;
 use crate::Both;
 use anyhow::Error;
 use floneumite::PackageIndexEntry;
-
-
-
-
-
 
 use std::future::Future;
 use std::path::Path;
@@ -43,7 +39,7 @@ pub fn load_plugin_from_source(source: PackageIndexEntry, resources: ResourceSto
 
     Plugin {
         source,
-        resources,
+        shared: SharedPluginState::new(resources),
         component: once_cell::sync::OnceCell::new(),
         definition: once_cell::sync::OnceCell::new(),
         metadata: md,
@@ -67,7 +63,7 @@ impl PluginMetadata {
 }
 
 pub struct Plugin {
-    resources: ResourceStorage,
+    shared: SharedPluginState,
     source: PackageIndexEntry,
     component: once_cell::sync::OnceCell<Component>,
     definition: once_cell::sync::OnceCell<Definition>,
@@ -130,7 +126,7 @@ impl Plugin {
             return Ok(metadata);
         }
         // then we get the structure of the plugin.
-        let (_, mut store, world) = self.create_world().await?;
+        let (mut store, world) = self.create_world().await?;
         let structure = world.interface0.call_structure(&mut store).await.unwrap();
 
         let _ = self.definition.set(structure);
@@ -150,22 +146,19 @@ impl Plugin {
         Ok(self.metadata.get().unwrap())
     }
 
-    async fn create_world(
-        &self,
-    ) -> anyhow::Result<(Arc<RwLock<Vec<String>>>, wasmtime::Store<State>, Both)> {
+    async fn create_world(&self) -> anyhow::Result<(wasmtime::Store<State>, Both)> {
         // create the store of models
-        let state = State::new(self.resources.clone());
-        let logs = state.logs.clone();
+        let state = State::new(self.shared.clone());
         let mut store = Store::new(&ENGINE, state);
         let component = self.component().await?;
         let (world, _instance) = Both::instantiate_async(&mut store, component, &LINKER)
             .await
             .unwrap();
-        Ok((logs, store, world))
+        Ok((store, world))
     }
 
     pub async fn instance(&self) -> anyhow::Result<PluginInstance> {
-        let (logs, mut store, world) = self.create_world().await?;
+        let (mut store, world) = self.create_world().await?;
         let definition = self.definition().await?;
 
         let (input_sender, mut input_receiver) =
@@ -189,7 +182,7 @@ impl Plugin {
             sender: input_sender,
             receiver: output_receiver,
             metadata: definition.clone(),
-            logs,
+            shared_plugin_state: self.shared.clone(),
         })
     }
 
@@ -205,7 +198,7 @@ impl Plugin {
 pub struct PluginInstance {
     source: PackageIndexEntry,
     metadata: Definition,
-    logs: Arc<RwLock<Vec<String>>>,
+    shared_plugin_state: SharedPluginState,
     sender: broadcast::Sender<Vec<Vec<PrimitiveValue>>>,
     receiver: broadcast::Receiver<Arc<Result<Vec<Vec<PrimitiveValue>>, wasmtime::Error>>>,
 }
@@ -214,7 +207,7 @@ impl std::fmt::Debug for PluginInstance {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PluginInstance")
             .field("metadata", &self.metadata)
-            .field("logs", &self.logs)
+            .field("logs", &self.shared_plugin_state.logs)
             .finish()
     }
 }
@@ -257,10 +250,18 @@ impl PluginInstance {
     }
 
     pub fn read_logs(&self) -> LockResult<RwLockReadGuard<Vec<String>>> {
-        self.logs.read()
+        self.shared_plugin_state.logs.read()
     }
 
     pub fn metadata(&self) -> &Definition {
         &self.metadata
+    }
+
+    pub fn shared_state(&self) -> &SharedPluginState {
+        &self.shared_plugin_state
+    }
+
+    pub fn resources(&self) -> &ResourceStorage {
+        &self.shared_plugin_state.resources
     }
 }

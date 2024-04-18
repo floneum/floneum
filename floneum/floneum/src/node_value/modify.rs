@@ -10,8 +10,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 #[component]
-pub fn ModifyInput(value: Signal<NodeInput>) -> Element {
-    let mut node = value;
+pub fn ModifyInput(node: Signal<NodeInput>) -> Element {
     let current_value = node.read();
     let name = &current_value.definition.name;
     let values = current_value.value();
@@ -129,6 +128,18 @@ fn ModifySingleValue(props: ModifySingleValueProps) -> Element {
                     value: "{value}",
                     oninput: move |e| {
                         set_value(PrimitiveValue::Number(e.value().parse().unwrap_or(0)));
+                    }
+                }
+            }
+        }
+        PrimitiveValue::Float(value) => {
+            rsx! {
+                input {
+                    class: "border rounded focus:outline-none focus:border-blue-500",
+                    r#type: "number",
+                    value: "{value}",
+                    oninput: move |e| {
+                        set_value(PrimitiveValue::Float(e.value().parse().unwrap_or(0.)));
                     }
                 }
             }
