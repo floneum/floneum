@@ -30,12 +30,12 @@ llm-samplers.workspace = true
 kalosm-sample.workspace = true
 kalosm-language-model.workspace = true
 kalosm-streams.workspace = true
-kalosm-common = { version = "0.1.0", workspace = true }
+kalosm-common = { workspace = true }
 
 [dev-dependencies]
 tracing-subscriber = "0.3.18"
 criterion = "0.5.1"
-kalosm = { path = "../../interfaces/kalosm", version = "0.2.1" }
+kalosm = { path = "../../interfaces/kalosm" }
 
 [features]
 default = []

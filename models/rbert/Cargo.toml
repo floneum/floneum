@@ -25,7 +25,7 @@ serde_json = "1.0.106"
 async-trait = "0.1.73"
 tokio = { version = "1.33.0", features = ["full"] }
 
-kalosm-common = { version = "0.1.0", workspace = true }
+kalosm-common = { workspace = true }
 kalosm-language-model.workspace = true
 
 [features]

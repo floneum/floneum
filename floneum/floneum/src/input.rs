@@ -23,7 +23,7 @@ pub fn Input(node: Signal<Node>, index: usize) -> Element {
                         stroke: "black",
                         onmousedown: move |_| {
                             let node = node.read();
-                            node.inputs[index].write_unchecked().push_default_value();
+                            node.inputs[index].write_unchecked().push_default_value().throw();
                         },
                     }
                 }
