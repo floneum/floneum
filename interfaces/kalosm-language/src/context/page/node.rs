@@ -1,13 +1,15 @@
 pub use ego_tree::NodeId as StaticNodeId;
 pub use headless_chrome::protocol::cdp::DOM::NodeId as DynamicNodeId;
-use scraper::Selector;
+use scraper::{ElementRef, Selector};
+
+use super::Node;
 
 /// A node in either a static or dynamic page.
 pub enum AnyNode<'a> {
     /// A node in a static page.
     Static(scraper::ElementRef<'a>),
     /// A node in a dynamic (headless) page.
-    Dynamic(headless_chrome::Element<'a>),
+    Dynamic(Node<'a>),
 }
 
 impl<'a> AnyNode<'a> {
@@ -15,7 +17,27 @@ impl<'a> AnyNode<'a> {
     pub fn node_ref(&self) -> NodeRef {
         match self {
             Self::Static(node) => NodeRef::Static(node.id()),
-            Self::Dynamic(node) => NodeRef::Dynamic(node.node_id),
+            Self::Dynamic(node) => node.id(),
+        }
+    }
+
+    /// Get the name of the element.
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Static(node) => node.value().name(),
+            Self::Dynamic(node) => node.name(),
+        }
+    }
+
+    /// Get the attributes of the element.
+    pub fn attributes(&self) -> anyhow::Result<Vec<(String, String)>> {
+        match self {
+            Self::Static(node) => Ok(node
+                .value()
+                .attrs()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect()),
+            Self::Dynamic(node) => node.attributes(),
         }
     }
 
@@ -23,7 +45,7 @@ impl<'a> AnyNode<'a> {
     pub fn text(&self) -> anyhow::Result<String> {
         match self {
             Self::Static(node) => Ok(node.text().collect::<Vec<_>>().join("")),
-            Self::Dynamic(node) => Ok(node.get_inner_text()?),
+            Self::Dynamic(node) => Ok(node.get_text()?),
         }
     }
 
@@ -43,7 +65,7 @@ impl<'a> AnyNode<'a> {
         match self {
             Self::Static(_) => Err(anyhow::anyhow!("Cannot type into static node")),
             Self::Dynamic(node) => {
-                node.type_into(keys)?;
+                node.send_keys(keys)?;
                 Ok(())
             }
         }
@@ -53,17 +75,7 @@ impl<'a> AnyNode<'a> {
     pub fn outer_html(&self) -> anyhow::Result<String> {
         match self {
             Self::Static(node) => Ok(node.html()),
-            Self::Dynamic(node) => Ok(node.get_content()?),
-        }
-    }
-
-    /// Screen shot the node if it is in a headless browser.
-    pub fn screenshot(&self) -> anyhow::Result<Vec<u8>> {
-        match self {
-            Self::Static(_) => Err(anyhow::anyhow!("Cannot take screenshot of static node")),
-            Self::Dynamic(node) => Ok(node.capture_screenshot(
-                headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Jpeg,
-            )?),
+            Self::Dynamic(node) => Ok(node.outer_html()?),
         }
     }
 
@@ -79,7 +91,18 @@ impl<'a> AnyNode<'a> {
                         .ok_or_else(|| anyhow::anyhow!("No child found"))?,
                 ))
             }
-            Self::Dynamic(node) => Ok(Self::Dynamic(node.find_element(selector)?)),
+            Self::Dynamic(node) => Ok(Self::Dynamic(node.find_child(selector)?)),
+        }
+    }
+
+    /// return all the children of the current node
+    pub fn children(&self) -> anyhow::Result<Vec<NodeRef>> {
+        match self {
+            Self::Static(node) => Ok(node
+                .children()
+                .filter_map(|child| ElementRef::wrap(child).map(|node| NodeRef::Static(node.id())))
+                .collect()),
+            Self::Dynamic(node) => node.children(),
         }
     }
 }
