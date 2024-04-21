@@ -89,7 +89,7 @@ features = []
 workspace = true
 
 [dev-dependencies.kalosm]
-features = ["sound", "language", "vision"]
+features = ["sound", "language", "vision", "remote"]
 workspace = true
 
 [features]
@@ -100,3 +100,4 @@ metal = ["kalosm-language/metal", "kalosm-vision/metal", "kalosm-sound/metal"]
 sound = ["kalosm-sound"]
 surrealdb = ["dep:surrealdb"]
 vision = ["kalosm-vision"]
+remote = ["kalosm-language?/remote"]

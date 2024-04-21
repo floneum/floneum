@@ -1,4 +1,158 @@
-use crate::bindings::plugins::main::types::*;
+pub use crate::plugins::main::types::*;
+pub use crate::exports::plugins::main::definitions::Guest;
+
+pub struct Page {
+    page: PageResource,
+}
+
+impl Page {
+    pub fn new(mode: BrowserMode, url: &str) -> Self {
+        Self {
+            page: create_page(mode, url),
+        }
+    }
+    
+    pub fn html(&self) -> String {
+        page_html(self.page)
+    }
+
+    pub fn screenshot(&self) -> Vec<u8> {
+        screenshot_browser(self.page)
+    }
+}
+
+impl Drop for Page {
+    fn drop(&mut self) {
+        drop_page(self.page);
+    }
+}
+
+pub struct Node {
+    node: NodeResource,
+}
+
+impl Node {
+    pub fn new(node: NodeResource) -> Self {
+        Self { node }
+    }
+
+    pub fn get_text(&self) -> String {
+        get_element_text(self.node)
+    }
+
+    pub fn click(&self) {
+        click_element(self.node);
+    }
+
+    pub fn send_keys(&self, keys: &str) {
+        type_into_element(self.node, keys);
+    }
+
+    pub fn outer_html(&self) -> String {
+        get_element_outer_html(self.node)
+    }
+
+    pub fn screenshot_element(&self) -> Vec<u8> {
+        screenshot_element(self.node)
+    }
+
+    pub fn find_child(&self, selector: &str) -> Node {
+        let resource = find_child_of_element(self.node, selector);
+        Node {
+            node: resource,
+        }
+    }
+}
+
+impl Drop for Node {
+    fn drop(&mut self) {
+        drop_node(self.node);
+    }
+}
+
+pub struct EmbeddingDb {
+    db: EmbeddingDbResource,
+}
+
+impl EmbeddingDb {
+    pub fn new(embeddings: &[Embedding], documents: &[String]) -> Self {
+        Self {
+            db: create_embedding_db(embeddings, documents),
+        }
+    }
+
+    pub fn add_embedding(&self, embedding: &Embedding, document: &str) {
+        add_embedding(self.db, embedding, document);
+    }
+
+    pub fn find_closest_documents(&self, search: &Embedding, count: u32) -> Vec<String> {
+        find_closest_documents(self.db, search, count)
+    }
+}
+
+impl Drop for EmbeddingDb {
+    fn drop(&mut self) {
+        drop_embedding_db(self.db);
+    }
+}
+
+pub struct TextGenerationModel {
+    model: TextGenerationModelResource,
+}
+
+impl TextGenerationModel {
+    pub fn new(model: ModelType) -> Self {
+        let model = create_model(model);
+        Self { model }
+    }
+
+    pub fn model_downloaded(model: ModelType) -> bool {
+        text_generation_model_downloaded(model)
+    }
+
+    pub fn infer(&self, input: &str, max_tokens: Option<u32>, stop_on: Option<&str>) -> String {
+        infer(self.model, input, max_tokens, stop_on)
+    }
+
+    pub fn infer_structured(
+        &self,
+        input: &str,
+        regex: &str,
+    ) -> String {
+        infer_structured(self.model, input, regex)
+    }
+}
+
+impl Drop for TextGenerationModel {
+    fn drop(&mut self) {
+        drop_model(self.model);
+    }
+}
+
+pub struct EmbeddingModel {
+    model: EmbeddingModelResource,
+}
+
+impl EmbeddingModel {
+    pub fn new(model: EmbeddingModelType) -> Self {
+        let model = create_embedding_model(model);
+        Self { model }
+    }
+
+    pub fn model_downloaded(model: EmbeddingModelType) -> bool {
+        embedding_model_downloaded(model)
+    }
+
+    pub fn get_embedding(&self, document: &str) -> Embedding {
+        get_embedding(self.model, document)
+    }
+}
+
+impl Drop for EmbeddingModel {
+    fn drop(&mut self) {
+        drop_embedding_model(self.model);
+    }
+}
 
 pub trait IntoInputValue<T = ()> {
     fn into_input_value(self) -> Vec<PrimitiveValue>;
@@ -53,13 +207,13 @@ impl IntoPrimitiveValue for ModelType {
 
 impl IntoPrimitiveValue for TextGenerationModel {
     fn into_primitive_value(self) -> PrimitiveValue {
-        PrimitiveValue::Model(self)
+        PrimitiveValue::Model(self.model)
     }
 }
 
 impl IntoPrimitiveValue for EmbeddingModel {
     fn into_primitive_value(self) -> PrimitiveValue {
-        PrimitiveValue::EmbeddingModel(self)
+        PrimitiveValue::EmbeddingModel(self.model)
     }
 }
 
@@ -71,13 +225,13 @@ impl IntoPrimitiveValue for EmbeddingModelType {
 
 impl IntoPrimitiveValue for Node {
     fn into_primitive_value(self) -> PrimitiveValue {
-        PrimitiveValue::Node(self)
+        PrimitiveValue::Node(self.node)
     }
 }
 
 impl IntoPrimitiveValue for Page {
     fn into_primitive_value(self) -> PrimitiveValue {
-        PrimitiveValue::Page(self)
+        PrimitiveValue::Page(self.page)
     }
 }
 
@@ -113,7 +267,7 @@ impl IntoPrimitiveValue for Embedding {
 
 impl IntoPrimitiveValue for EmbeddingDb {
     fn into_primitive_value(self) -> PrimitiveValue {
-        PrimitiveValue::Database(self)
+        PrimitiveValue::Database(self.db)
     }
 }
 

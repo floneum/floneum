@@ -144,7 +144,7 @@ pub fn export_plugin(args: TokenStream, input: TokenStream) -> TokenStream {
 
     // Hand the resulting function body back to the compiler.
     TokenStream::from(quote! {
-        ::floneum_rust::bindgen!(Plugin);
+        ::floneum_rust::export!(Plugin);
 
         #input
 
@@ -175,8 +175,7 @@ pub fn export_plugin(args: TokenStream, input: TokenStream) -> TokenStream {
                 }
             }
 
-
-            fn run(input: Vec<Input>) -> Vec<Output> {
+            fn run(input: Vec<Vec<PrimitiveValue>>) -> Vec<Vec<PrimitiveValue>> {
                 let mut input = input.into_iter();
                 let __inner_fn = #function_ident;
                 #(
