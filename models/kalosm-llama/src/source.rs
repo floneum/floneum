@@ -407,9 +407,9 @@ impl LlamaSource {
             markers: Some(ChatMarkers {
                 system_prompt_marker: "<|begin_of_text|><|start_header_id|>system<|end_header_id|>",
                 end_system_prompt_marker: "<|eot_id|>",
-                user_marker: "<|begin_of_text|><|start_header_id|>user<|end_header_id|>",
+                user_marker: "<|start_header_id|>user<|end_header_id|>",
                 end_user_marker: "<|eot_id|>",
-                assistant_marker: "<|begin_of_text|><|start_header_id|>assistant<|end_header_id|>",
+                assistant_marker: "<|start_header_id|>assistant<|end_header_id|>",
                 end_assistant_marker: "<|eot_id|>",
             }),
         }

@@ -67,7 +67,10 @@ async fn time_stream(mut stream: impl TextStream + Unpin) {
         std::io::stdout().flush().unwrap();
     }
     let elapsed = start_time.elapsed();
-    println!("\n\nGenerated {} tokens ({} characters) in {:?}", tokens, string_length, elapsed);
+    println!(
+        "\n\nGenerated {} tokens ({} characters) in {:?}",
+        tokens, string_length, elapsed
+    );
     println!(
         "Tokens per second: {:.2}",
         tokens as f64 / elapsed.as_secs_f64()
