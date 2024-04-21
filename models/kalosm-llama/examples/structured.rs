@@ -9,14 +9,13 @@ async fn main() {
     let prompt = r#"```json
 [
 { name: "bob", description: "An adorable cute cat", color: "black", size: "small", diet: "carnivore", breeds: ["Persian", "Maine Coon"] },
-
 "#;
 
     {
         println!("# with constraints");
         print!("{}", prompt);
 
-        let regex = r#"(\{ name: "\w+", description: "[\w ]+", color: "\w+", size: "\w+", diet: "\w+", breeds: \[("[\w ]+", )*"[\w ]+"\] \},\n){4}\n\]"#;
+        let regex = r#"(\{ name: "\w+", description: "[\w ]+", color: "\w+", size: "\w+", diet: "\w+", breeds: \[("[\w ]+", )*"[\w ]+"\] \},){4}\n\]"#;
         let validator = RegexParser::new(regex).unwrap();
         let stream = llm.stream_structured_text(prompt, validator).await.unwrap();
 
@@ -30,7 +29,7 @@ async fn main() {
         let validator = LiteralParser::new("{ name: ")
             .then(WordParser::new())
             .then(LiteralParser::new(", description: "))
-            .then(StringParser::new(0..=50))
+            .then(StringParser::new(1..=50))
             .then(LiteralParser::new(", color: "))
             .then(WordParser::new())
             .then(LiteralParser::new(", size: "))
@@ -40,7 +39,8 @@ async fn main() {
             .then(LiteralParser::new(", breeds: "))
             .then(RegexParser::new(r#"\[("[\w ]+", )*"[\w ]+"\]"#).unwrap())
             .then(LiteralParser::new(" },\n"))
-            .repeat(4..=4);
+            .repeat(4..=4)
+            .then(LiteralParser::new("]"));
         let stream = llm.stream_structured_text(prompt, validator).await.unwrap();
 
         time_stream(stream).await;

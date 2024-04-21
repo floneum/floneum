@@ -99,7 +99,7 @@ impl Llama {
     /// Create a default chat model.
     pub async fn new_chat() -> anyhow::Result<Self> {
         Llama::builder()
-            .with_source(LlamaSource::wizard_lm_7b_v2())
+            .with_source(LlamaSource::llama_8b_chat())
             .build()
             .await
     }
@@ -107,7 +107,7 @@ impl Llama {
     /// Create a default text generation model.
     pub async fn new() -> anyhow::Result<Self> {
         Llama::builder()
-            .with_source(LlamaSource::mistral_7b())
+            .with_source(LlamaSource::llama_8b())
             .build()
             .await
     }
