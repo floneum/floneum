@@ -15,7 +15,7 @@ async fn main() {
         println!("# with constraints");
         print!("{}", prompt);
 
-        let regex = r#"(\{ name: "\w+", description: "[\w ]+", color: "\w+", size: "\w+", diet: "\w+", breeds: \[("[\w ]+", )*"[\w ]+"\] \},){4}\n\]"#;
+        let regex = r#"(\{ name: "\w+", description: "[\w ]+", color: "\w+", size: "\w+", diet: "\w+", breeds: \[("[\w ]+", )*"[\w ]+"\] \},\n){4}\]"#;
         let validator = RegexParser::new(regex).unwrap();
         let stream = llm.stream_structured_text(prompt, validator).await.unwrap();
 
@@ -59,13 +59,15 @@ async fn main() {
 async fn time_stream(mut stream: impl TextStream + Unpin) {
     let start_time = std::time::Instant::now();
     let mut tokens = 0;
+    let mut string_length = 0;
     while let Some(token) = stream.next().await {
         tokens += 1;
+        string_length += token.len();
         print!("{token}");
         std::io::stdout().flush().unwrap();
     }
     let elapsed = start_time.elapsed();
-    println!("\n\nGenerated {} tokens in {:?}", tokens, elapsed);
+    println!("\n\nGenerated {} tokens ({} characters) in {:?}", tokens, string_length, elapsed);
     println!(
         "Tokens per second: {:.2}",
         tokens as f64 / elapsed.as_secs_f64()
