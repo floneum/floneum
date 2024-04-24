@@ -200,7 +200,7 @@ impl PhiBuilder {
 
     /// Build the model (this will download the model if it is not already downloaded)
     pub async fn build(self) -> anyhow::Result<Phi> {
-        self.build_with_loading_handler(|_| {}).await
+        self.build_with_loading_handler(ModelLoadingProgress::multi_bar_loading_indicator()).await
     }
 
     /// Build the model with a handler for progress as the download and loading progresses.

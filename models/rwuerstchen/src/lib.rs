@@ -237,7 +237,7 @@ impl WuerstchenBuilder {
 
     /// Build the model.
     pub async fn build(self) -> Result<Wuerstchen> {
-        self.build_with_loading_handler(|_| {}).await
+        self.build_with_loading_handler(ModelLoadingProgress::multi_bar_loading_indicator()).await
     }
 
     /// Build the model with a handler for progress as the download and loading progresses.
