@@ -9,6 +9,7 @@ use url::Url;
 
 use super::{extract_article, NodeRef};
 use crate::context::document::Document;
+use crate::prelude::AnyNode;
 
 static BROWSER: Browser = Browser::new();
 

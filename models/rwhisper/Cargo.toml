@@ -34,7 +34,7 @@ accelerate-src = { version = "0.3.2", optional = true }
 intel-mkl-src = { version = "0.8.1", features = ["mkl-static-lp64-iomp"], optional = true }
 cudarc = { version = "0.9.14", features = ["f16"], optional = true }
 half = { version = "2.3.1", features = ["num-traits", "use-intrinsics", "rand_distr"], optional = true }
-kalosm-common = { version = "0.1.0", workspace = true }
+kalosm-common = { workspace = true }
 kalosm-language-model.workspace = true
 
 [dev-dependencies]

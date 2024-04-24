@@ -68,17 +68,14 @@ impl LlamaSource {
         self
     }
 
-    pub(crate) async fn tokenizer(
-        &self,
-        progress: impl FnMut(f32) + Send + Sync,
-    ) -> anyhow::Result<Tokenizer> {
+    pub(crate) async fn tokenizer(&self, progress: impl FnMut(f32)) -> anyhow::Result<Tokenizer> {
         let tokenizer_path = self.tokenizer.download(progress).await?;
         Tokenizer::from_file(tokenizer_path).map_err(anyhow::Error::msg)
     }
 
     pub(crate) async fn model(
         &self,
-        progress: impl FnMut(f32) + Send + Sync,
+        progress: impl FnMut(f32),
     ) -> anyhow::Result<std::path::PathBuf> {
         self.model.download(progress).await
     }

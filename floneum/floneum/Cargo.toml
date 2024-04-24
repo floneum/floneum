@@ -20,7 +20,6 @@ floneumite = { path = "../floneumite" }
 serde = { version = "1.0.163", features = ["derive"] }
 slab = "0.4.8"
 simple_logger = "4.1.0"
-pollster = "0.3.0"
 cargo-dist = "0.0.7"
 once_cell = "1.18.0"
 wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", rev = "b736585e2515f253d4507ae32f2e3180f4385192", features = [
@@ -28,36 +27,25 @@ wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", rev = "b73658
 ] }
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
-dioxus = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
+dioxus = { version = "0.5", features = [
+    "desktop",
+    "router",
+]}
 petgraph = { version = "0.6.4", features = ["serde-1"] }
-dioxus-desktop = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
-dioxus-router = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
-dioxus-signals = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals", features = [
+dioxus-signals = { version = "0.5", features = [
     "serialize",
 ] }
-dioxus-free-icons = { version = "0.7.0", features = ["ionicons"] }
-rfd = "0.11.4"
-dioxus-std = { git = "https://github.com/DioxusLabs/dioxus-std/", rev = "191a66b", version = "0.4.0", features = [
+dioxus-free-icons = { git = "https://github.com/dioxus-community/dioxus-free-icons", features = ["ionicons"] }
+rfd = "0.12"
+dioxus-sdk = { git = "https://github.com/DioxusLabs/sdk", features = [
     "clipboard",
 ] }
 directories = "5.0.1"
-winit = "0.29"
+muda = "0.11.3"
 
 [target."cfg(any(target_os = \"linux\", target_os = \"dragonfly\", target_os = \"freebsd\", target_os = \"openbsd\", target_os = \"netbsd\"))".dependencies]
-gtk = { version = "0.16" }
+gtk = { version = "0.18" }
 x11-dl = "2.21.0"
-
-[patch.crates-io]
-dioxus-core = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
-dioxus-rsx = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
-dioxus = { git = "https://github.com/ealmloff/dioxus", branch = "improved-signals" }
-
-[profile.dist]
-inherits = "release"
-lto = "thin"
-
-[profile.dev.package."*"]
-opt-level = 3
 
 [features]
 metal = ["floneum_plugin/metal"]

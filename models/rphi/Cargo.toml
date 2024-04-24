@@ -13,7 +13,6 @@ candle-core.workspace = true
 candle-nn.workspace = true
 candle-transformers.workspace = true
 tokenizers = { version = "0.13.4" }
-hf-hub = "0.3.0"
 
 accelerate-src = { version = "0.3.2", optional = true }
 intel-mkl-src = { version = "0.8.1", features = ["mkl-static-lp64-iomp"], optional = true }
@@ -30,7 +29,7 @@ async-trait = "0.1.73"
 kalosm-sample.workspace = true
 kalosm-language-model.workspace = true
 kalosm-streams.workspace = true
-kalosm-common = { version = "0.1.0", workspace = true }
+kalosm-common = { workspace = true }
 
 [features]
 accelerate = ["dep:accelerate-src", "candle-core/accelerate", "candle-nn/accelerate", "candle-transformers/accelerate"]

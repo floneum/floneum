@@ -8,5 +8,5 @@ fn find_child_node(
     /// The selector to find the element with
     selector: String,
 ) -> Node {
-    node.find_child_of_element(&selector)
+    node.find_child(&selector)
 }

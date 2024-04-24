@@ -121,7 +121,7 @@ authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 category = "Utility"
 description = "Runs a python script. Returns the value in the last line"
 package_version = "0.1.0"
-binding_version = "^0.1.0"
+binding_version = "*"
 
 [[packages]]
 name = "Find Node"
@@ -272,6 +272,14 @@ name = "Or"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 category = "Logic"
 description = "Check if either input is true"
+package_version = "0.1.0"
+binding_version = "^0.1.0"
+
+[[packages]]
+name = "Calculate"
+authors = ["Corentin Lafond <corentin.lafond@gmail.com>"]
+category = "Other"
+description = "Evluate the value of an equation"
 package_version = "0.1.0"
 binding_version = "^0.1.0"
 

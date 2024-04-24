@@ -6,5 +6,5 @@ fn node_text(
     /// The node to extract the text from
     node: Node,
 ) -> (String, Node) {
-    (node.get_element_text(), node)
+    (node.get_text(), node)
 }

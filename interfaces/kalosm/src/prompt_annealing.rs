@@ -329,13 +329,6 @@ impl ExamplesInstance {
             random::<usize>() % 3
         };
 
-        let accept_regardless = random::<f64>() < self.temperature;
-
-        if accept_regardless {
-            println!("temperature: {}", self.temperature);
-            println!("accepting regardless of score");
-        }
-
         let mut mutated_examples = self.current_examples.clone();
 
         match action {
@@ -345,6 +338,9 @@ impl ExamplesInstance {
                 let removed = mutated_examples.remove(index);
 
                 let new_evaluation = evaluate(&mutated_examples, test, llm, metric, task).await;
+                let accept_regardless = std::f64::consts::E
+                    .powf((self.current_evaluation - new_evaluation) / self.temperature)
+                    > random::<f64>();
 
                 if accept_regardless || new_evaluation > self.current_evaluation {
                     self.current_evaluation = new_evaluation;
@@ -360,6 +356,9 @@ impl ExamplesInstance {
                 mutated_examples.swap(index1, index2);
 
                 let new_evaluation = evaluate(&mutated_examples, test, llm, metric, task).await;
+                let accept_regardless = std::f64::consts::E
+                    .powf((self.current_evaluation - new_evaluation) / self.temperature)
+                    > random::<f64>();
 
                 if accept_regardless || new_evaluation > self.current_evaluation {
                     self.current_evaluation = new_evaluation;
@@ -373,6 +372,9 @@ impl ExamplesInstance {
                 mutated_examples.push(added);
 
                 let new_evaluation = evaluate(&mutated_examples, test, llm, metric, task).await;
+                let accept_regardless = std::f64::consts::E
+                    .powf((self.current_evaluation - new_evaluation) / self.temperature)
+                    > random::<f64>();
 
                 if accept_regardless || new_evaluation > self.current_evaluation {
                     self.current_evaluation = new_evaluation;
