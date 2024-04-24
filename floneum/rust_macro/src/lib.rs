@@ -245,22 +245,18 @@ impl IoDefinitionType {
                 inner
             },
         };
-        let quote = match &self.value_type {
-            ValueType::Single(_) => {
-                quote! {
-                    Input::Single(#match_inner)
-                }
-            }
-            ValueType::Many(_) => {
-                quote! {
-                    Input::Many(inner)
-                }
-            }
-        };
         let get_return_value = match &self.value_type {
             ValueType::Single(_) => {
                 quote! {
-                    inner.into()
+                    if inner.len() == 1 {
+                        if let Some(#match_inner) = inner.into_iter().next() {
+                            inner.into()
+                        } else {
+                            panic!("Unexpected input type {:?}", inner)
+                        }
+                    } else {
+                        panic!("Expected a single value, got {:?}", inner)
+                    }
                 }
             }
             ValueType::Many(_) => {
@@ -274,9 +270,9 @@ impl IoDefinitionType {
         };
         quote! {
             let __value = input.next().unwrap();
-            let #ident = match __value {
-                #quote => #get_return_value,
-                _ => panic!("unexpected input type {:?}", __value),
+            let #ident = {
+                let inner = __value;
+                #get_return_value
             };
         }
     }

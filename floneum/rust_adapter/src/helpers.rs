@@ -1,8 +1,14 @@
-pub use crate::plugins::main::types::*;
 pub use crate::exports::plugins::main::definitions::Guest;
+pub use crate::plugins::main::types::*;
 
 pub struct Page {
     page: PageResource,
+}
+
+impl From<PageResource> for Page {
+    fn from(page: PageResource) -> Self {
+        Self { page }
+    }
 }
 
 impl Page {
@@ -11,7 +17,7 @@ impl Page {
             page: create_page(mode, url),
         }
     }
-    
+
     pub fn html(&self) -> String {
         page_html(self.page)
     }
@@ -29,6 +35,12 @@ impl Drop for Page {
 
 pub struct Node {
     node: NodeResource,
+}
+
+impl From<NodeResource> for Node {
+    fn from(node: NodeResource) -> Self {
+        Self { node }
+    }
 }
 
 impl Node {
@@ -58,9 +70,7 @@ impl Node {
 
     pub fn find_child(&self, selector: &str) -> Node {
         let resource = find_child_of_element(self.node, selector);
-        Node {
-            node: resource,
-        }
+        Node { node: resource }
     }
 }
 
@@ -72,6 +82,12 @@ impl Drop for Node {
 
 pub struct EmbeddingDb {
     db: EmbeddingDbResource,
+}
+
+impl From<EmbeddingDbResource> for EmbeddingDb {
+    fn from(db: EmbeddingDbResource) -> Self {
+        Self { db }
+    }
 }
 
 impl EmbeddingDb {
@@ -100,6 +116,12 @@ pub struct TextGenerationModel {
     model: TextGenerationModelResource,
 }
 
+impl From<TextGenerationModelResource> for TextGenerationModel {
+    fn from(model: TextGenerationModelResource) -> Self {
+        Self { model }
+    }
+}
+
 impl TextGenerationModel {
     pub fn new(model: ModelType) -> Self {
         let model = create_model(model);
@@ -114,11 +136,7 @@ impl TextGenerationModel {
         infer(self.model, input, max_tokens, stop_on)
     }
 
-    pub fn infer_structured(
-        &self,
-        input: &str,
-        regex: &str,
-    ) -> String {
+    pub fn infer_structured(&self, input: &str, regex: &str) -> String {
         infer_structured(self.model, input, regex)
     }
 }
@@ -131,6 +149,12 @@ impl Drop for TextGenerationModel {
 
 pub struct EmbeddingModel {
     model: EmbeddingModelResource,
+}
+
+impl From<EmbeddingModelResource> for EmbeddingModel {
+    fn from(model: EmbeddingModelResource) -> Self {
+        Self { model }
+    }
 }
 
 impl EmbeddingModel {
