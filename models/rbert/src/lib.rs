@@ -203,7 +203,8 @@ impl BertBuilder {
 
     /// Build the model
     pub async fn build(self) -> anyhow::Result<Bert> {
-        self.build_with_loading_handler(ModelLoadingProgress::multi_bar_loading_indicator()).await
+        self.build_with_loading_handler(ModelLoadingProgress::multi_bar_loading_indicator())
+            .await
     }
 
     /// Build the model with a loading handler
@@ -243,29 +244,20 @@ impl Bert {
             model,
         } = source;
 
+        let source = format!("Config ({})", config);
+        let mut create_progress = ModelLoadingProgress::downloading_progress(source);
         let config_filename = config
-            .download(|progress| {
-                progress_handler(ModelLoadingProgress::downloading(
-                    format!("Config ({})", config),
-                    progress,
-                ))
-            })
+            .download(|progress| progress_handler(create_progress(progress)))
             .await?;
+        let tokenizer_source = format!("Tokenizer ({})", tokenizer);
+        let mut create_progress = ModelLoadingProgress::downloading_progress(tokenizer_source);
         let tokenizer_filename = tokenizer
-            .download(|progress| {
-                progress_handler(ModelLoadingProgress::downloading(
-                    format!("Tokenizer ({})", tokenizer),
-                    progress,
-                ))
-            })
+            .download(|progress| progress_handler(create_progress(progress)))
             .await?;
+        let model_source = format!("Model ({})", model);
+        let mut create_progress = ModelLoadingProgress::downloading_progress(model_source);
         let weights_filename = model
-            .download(|progress| {
-                progress_handler(ModelLoadingProgress::downloading(
-                    format!("Model ({})", model),
-                    progress,
-                ))
-            })
+            .download(|progress| progress_handler(create_progress(progress)))
             .await?;
 
         let config = std::fs::read_to_string(config_filename)?;

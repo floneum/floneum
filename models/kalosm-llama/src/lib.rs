@@ -218,25 +218,20 @@ impl LlamaBuilder {
             let handler = handler.clone();
             async move {
                 let source_display = format!("Model ({})", source.model);
+                let mut create_progress =
+                    ModelLoadingProgress::downloading_progress(source_display);
                 source
-                    .model(move |progress| {
-                        (handler.lock().unwrap())(ModelLoadingProgress::Downloading {
-                            source: source_display.clone(),
-                            progress,
-                        })
-                    })
+                    .model(move |progress| (handler.lock().unwrap())(create_progress(progress)))
                     .await
             }
         });
-        let tokenizer = self
-            .source
-            .tokenizer(|progress| {
-                (handler.lock().unwrap())(ModelLoadingProgress::Downloading {
-                    source: format!("Tokenizer ({})", self.source.tokenizer),
-                    progress,
-                })
-            })
-            .await?;
+        let tokenizer = {
+            let source = format!("Tokenizer ({})", self.source.tokenizer);
+            let mut create_progress = ModelLoadingProgress::downloading_progress(source);
+            self.source
+                .tokenizer(|progress| (handler.lock().unwrap())(create_progress(progress)))
+                .await?
+        };
         let filename = filename.await??;
 
         let device = accelerated_device_if_available()?;
@@ -266,7 +261,8 @@ impl LlamaBuilder {
 
     /// Build the model (this will download the model if it is not already downloaded)
     pub async fn build(self) -> anyhow::Result<Llama> {
-        self.build_with_loading_handler(ModelLoadingProgress::multi_bar_loading_indicator()).await
+        self.build_with_loading_handler(ModelLoadingProgress::multi_bar_loading_indicator())
+            .await
     }
 }
 

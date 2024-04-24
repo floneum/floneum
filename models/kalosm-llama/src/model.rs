@@ -77,25 +77,19 @@ impl LlamaModel {
         builder: crate::LlamaBuilder,
         mut handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
     ) -> anyhow::Result<Self> {
+        let tokenizer_source = format!("Tokenizer ({})", builder.source.tokenizer);
+        let mut create_progress = ModelLoadingProgress::downloading_progress(tokenizer_source);
         let tokenizer = builder
             .source
-            .tokenizer(|progress| {
-                handler(ModelLoadingProgress::Downloading {
-                    source: format!("Tokenizer ({})", builder.source.tokenizer),
-                    progress,
-                })
-            })
+            .tokenizer(|progress| handler(create_progress(progress)))
             .await?;
 
         let device = accelerated_device_if_available()?;
+        let source = format!("Model ({})", builder.source.model);
+        let mut create_progress = ModelLoadingProgress::downloading_progress(source);
         let filename = builder
             .source
-            .model(|progress| {
-                handler(ModelLoadingProgress::Downloading {
-                    source: format!("Model ({})", builder.source.tokenizer),
-                    progress,
-                })
-            })
+            .model(|progress| handler(create_progress(progress)))
             .await?;
         let mut file = std::fs::File::open(&filename)?;
         let model = match filename.extension().and_then(|v| v.to_str()) {

@@ -18,6 +18,8 @@ pub enum ModelLoadingProgress {
     Downloading {
         /// The source of the download. This is not a path or URL, but a description of the source
         source: String,
+        /// The time stamp the download started
+        start_time: std::time::Instant,
         /// The progress of the download, from 0 to 1
         progress: f32,
     },
@@ -30,15 +32,18 @@ pub enum ModelLoadingProgress {
 
 impl ModelLoadingProgress {
     /// Create a new downloading progress
-    pub fn downloading(source: String, progress: f32) -> Self {
-        Self::Downloading { source, progress }
+    pub fn downloading(source: String, progress: f32, start_time: std::time::Instant) -> Self {
+        Self::Downloading {
+            source,
+            progress,
+            start_time,
+        }
     }
 
     /// Create a new downloading progress
-    pub fn downloading_progress(source: String) -> impl FnMut(f32) + Send + Sync {
-        move |progress| {
-            ModelLoadingProgress::downloading(source.clone(), progress);
-        }
+    pub fn downloading_progress(source: String) -> impl FnMut(f32) -> Self + Send + Sync {
+        let start = std::time::Instant::now();
+        move |progress| ModelLoadingProgress::downloading(source.clone(), progress, start)
     }
 
     /// Create a new loading progress
@@ -46,23 +51,48 @@ impl ModelLoadingProgress {
         Self::Loading { progress }
     }
 
+    /// Try to estimate the time remaining for a download
+    pub fn estimate_time_remaining(&self) -> Option<std::time::Duration> {
+        match self {
+            Self::Downloading {
+                start_time,
+                progress,
+                ..
+            } => {
+                let elapsed = start_time.elapsed();
+                let remaining = (1. - progress) * elapsed.as_secs_f32();
+                Some(std::time::Duration::from_secs_f32(remaining))
+            }
+            _ => None,
+        }
+    }
+
     /// A default loading progress bar
-    pub fn multi_bar_loading_indicator() -> impl FnMut(ModelLoadingProgress) + Send + Sync + 'static {
-        use std::collections::HashMap;
+    pub fn multi_bar_loading_indicator() -> impl FnMut(ModelLoadingProgress) + Send + Sync + 'static
+    {
         use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+        use std::collections::HashMap;
         let m = MultiProgress::new();
-        let sty = ProgressStyle::default_bar();
+        let sty = ProgressStyle::with_template(
+            "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] ({pos}/{len}, ETA {eta})",
+        )
+        .unwrap();
         let mut progress_bars = HashMap::new();
 
         move |progress| match progress {
-            ModelLoadingProgress::Downloading { source, progress } => {
+            ModelLoadingProgress::Downloading {
+                source, progress, ..
+            } => {
                 let n = 100;
-                let progress_bar = progress_bars.entry(source).or_insert_with(|| {
+                let progress = progress * n as f32;
+
+                let progress_bar = progress_bars.entry(source.clone()).or_insert_with(|| {
                     let pb = m.add(ProgressBar::new(n));
+                    pb.set_message(format!("Downloading {source}"));
                     pb.set_style(sty.clone());
                     pb
                 });
-                let progress = progress * n as f32;
+
                 progress_bar.set_position(progress as u64);
             }
             ModelLoadingProgress::Loading { progress } => {
