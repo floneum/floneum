@@ -155,7 +155,10 @@ impl main::types::Host for State {
         self.resources.impl_find_in_current_page(self_, query).await
     }
 
-    async fn screenshot_browser(&mut self, self_: main::types::PageResource) -> wasmtime::Result<Vec<u8>> {
+    async fn screenshot_browser(
+        &mut self,
+        self_: main::types::PageResource,
+    ) -> wasmtime::Result<Vec<u8>> {
         self.resources.impl_screenshot_browser(self_).await
     }
 
@@ -171,7 +174,10 @@ impl main::types::Host for State {
         self.resources.impl_drop_page(self_)
     }
 
-    async fn get_element_text(&mut self, self_: main::types::NodeResource) -> wasmtime::Result<String> {
+    async fn get_element_text(
+        &mut self,
+        self_: main::types::NodeResource,
+    ) -> wasmtime::Result<String> {
         self.resources.impl_get_element_text(self_).await
     }
 
@@ -194,7 +200,10 @@ impl main::types::Host for State {
         self.resources.impl_get_element_outer_html(self_).await
     }
 
-    async fn screenshot_element(&mut self, self_: main::types::NodeResource) -> wasmtime::Result<Vec<u8>> {
+    async fn screenshot_element(
+        &mut self,
+        self_: main::types::NodeResource,
+    ) -> wasmtime::Result<Vec<u8>> {
         self.resources.impl_screenshot_element(self_).await
     }
 
@@ -297,7 +306,10 @@ impl main::types::Host for State {
         self.resources.impl_create_embedding_model(ty)
     }
 
-    async fn drop_embedding_model(&mut self, model: EmbeddingModelResource) -> wasmtime::Result<()> {
+    async fn drop_embedding_model(
+        &mut self,
+        model: EmbeddingModelResource,
+    ) -> wasmtime::Result<()> {
         self.resources.impl_drop_embedding_model(model)
     }
 

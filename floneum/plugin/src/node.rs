@@ -20,7 +20,10 @@ impl ResourceStorage {
         f(headless_chrome::Element::new(&tab, node.node_id)?)
     }
 
-    pub(crate) async fn impl_get_element_text(&self, self_: NodeResource) -> wasmtime::Result<String> {
+    pub(crate) async fn impl_get_element_text(
+        &self,
+        self_: NodeResource,
+    ) -> wasmtime::Result<String> {
         self.with_node(self_, |node| node.get_inner_text())
     }
 
@@ -50,7 +53,10 @@ impl ResourceStorage {
         self.with_node(self_, |node| node.get_content())
     }
 
-    pub(crate) async fn impl_screenshot_element(&self, self_: NodeResource) -> wasmtime::Result<Vec<u8>> {
+    pub(crate) async fn impl_screenshot_element(
+        &self,
+        self_: NodeResource,
+    ) -> wasmtime::Result<Vec<u8>> {
         self.with_node(self_, |node| {
             node.capture_screenshot(
                 headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Jpeg,

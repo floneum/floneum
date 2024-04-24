@@ -141,7 +141,10 @@ impl ResourceStorage {
         })
     }
 
-    pub(crate) fn impl_drop_embedding_model(&self, rep: EmbeddingModelResource) -> wasmtime::Result<()> {
+    pub(crate) fn impl_drop_embedding_model(
+        &self,
+        rep: EmbeddingModelResource,
+    ) -> wasmtime::Result<()> {
         let index = rep.into();
         self.drop_key(index);
         Ok(())

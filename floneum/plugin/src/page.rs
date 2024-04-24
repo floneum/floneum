@@ -45,7 +45,10 @@ impl ResourceStorage {
         })
     }
 
-    pub(crate) async fn impl_screenshot_browser(&self, self_: PageResource) -> wasmtime::Result<Vec<u8>> {
+    pub(crate) async fn impl_screenshot_browser(
+        &self,
+        self_: PageResource,
+    ) -> wasmtime::Result<Vec<u8>> {
         let index = self_.into();
         let page = self.get(index).ok_or(anyhow::anyhow!("Page not found"))?;
         let bytes = page.screenshot()?;

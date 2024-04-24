@@ -1,6 +1,6 @@
 pub use crate::exports::plugins::main::definitions::Guest;
-pub use crate::plugins::main::types::*;
 pub use crate::plugins::main::imports::log_to_user;
+pub use crate::plugins::main::types::*;
 
 pub struct Page {
     page: PageResource,
@@ -310,7 +310,7 @@ impl<T: IntoReturnValue<I>, I> IntoReturnValues<I> for T {
 pub struct OptionMarker;
 
 impl<T: IntoReturnValue> IntoReturnValue<OptionMarker> for Option<T> {
-    fn into_return_value(self) -> Vec<PrimitiveValue> { 
+    fn into_return_value(self) -> Vec<PrimitiveValue> {
         match self {
             Some(value) => value.into_return_value(),
             None => vec![],

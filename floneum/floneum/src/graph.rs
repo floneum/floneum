@@ -268,7 +268,7 @@ impl VisualGraph {
                     current_node_write.instance.run(inputs)
                 };
                 // Don't hold the write over an await point
-                let result = fut.await ;
+                let result = fut.await;
                 let mut current_node_write = node.write();
                 match result.as_deref() {
                     Some(Ok(result)) => {

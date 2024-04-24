@@ -100,8 +100,12 @@ impl From<MyPrimitiveValue> for PrimitiveValue {
             MyPrimitiveValue::EmbeddingModel { id, owned } => {
                 PrimitiveValue::EmbeddingModel(EmbeddingModelResource { id, owned })
             }
-            MyPrimitiveValue::Page { id, owned } => PrimitiveValue::Page(PageResource { id, owned }),
-            MyPrimitiveValue::Node { id, owned } => PrimitiveValue::Node(NodeResource { id, owned }),
+            MyPrimitiveValue::Page { id, owned } => {
+                PrimitiveValue::Page(PageResource { id, owned })
+            }
+            MyPrimitiveValue::Node { id, owned } => {
+                PrimitiveValue::Node(NodeResource { id, owned })
+            }
             MyPrimitiveValue::ModelType(value) => PrimitiveValue::ModelType(value.into()),
             MyPrimitiveValue::EmbeddingModelType(value) => {
                 PrimitiveValue::EmbeddingModelType(value.into())
