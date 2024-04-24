@@ -8,6 +8,6 @@ fn type_in_node(
     /// The text to type
     text: String,
 ) -> Node {
-    node.type_into_element(&text);
+    node.send_keys(&text);
     node
 }

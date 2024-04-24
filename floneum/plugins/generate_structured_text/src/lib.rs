@@ -28,11 +28,11 @@ fn generate_structured_text(
     /// the structure the model output will follow
     regex: String,
 ) -> String {
-    if !Model::model_downloaded(model) {
+    if !TextGenerationModel::model_downloaded(model) {
         log_to_user("downloading model... This could take several minutes");
     }
 
-    let session = Model::new(model);
+    let session = TextGenerationModel::new(model);
 
     let mut responce = session.infer_structured(&prompt, &regex);
     responce += "\n";

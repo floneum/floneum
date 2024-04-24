@@ -1,5 +1,6 @@
 pub use crate::exports::plugins::main::definitions::Guest;
 pub use crate::plugins::main::types::*;
+pub use crate::plugins::main::imports::log_to_user;
 
 pub struct Page {
     page: PageResource,
@@ -302,6 +303,18 @@ pub trait IntoReturnValues<T = ()> {
 impl<T: IntoReturnValue<I>, I> IntoReturnValues<I> for T {
     fn into_return_values(self) -> Vec<Vec<PrimitiveValue>> {
         vec![self.into_return_value()]
+    }
+}
+
+#[doc(hidden)]
+pub struct OptionMarker;
+
+impl<T: IntoReturnValue> IntoReturnValue<OptionMarker> for Option<T> {
+    fn into_return_value(self) -> Vec<PrimitiveValue> { 
+        match self {
+            Some(value) => value.into_return_value(),
+            None => vec![],
+        }
     }
 }
 
