@@ -263,9 +263,13 @@ impl VisualGraph {
 
             let graph = self.inner;
             spawn(async move {
+                let fut = {
+                    let mut current_node_write = node.write();
+                    current_node_write.instance.run(inputs)
+                };
+                // Don't hold the write over an await point
+                let result = fut.await ;
                 let mut current_node_write = node.write();
-                let fut = current_node_write.instance.run(inputs);
-                let result = { fut.await };
                 match result.as_deref() {
                     Some(Ok(result)) => {
                         for (out, current) in result.iter().zip(current_node_write.outputs.iter()) {
