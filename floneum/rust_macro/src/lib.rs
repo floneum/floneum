@@ -249,7 +249,8 @@ impl IoDefinitionType {
             ValueType::Single(_) => {
                 quote! {
                     if inner.len() == 1 {
-                        if let Some(#match_inner) = inner.into_iter().next() {
+                        let inner = inner.into_iter().next();
+                        if let Some(#match_inner) = inner {
                             inner.into()
                         } else {
                             panic!("Unexpected input type {:?}", inner)
@@ -261,7 +262,7 @@ impl IoDefinitionType {
             }
             ValueType::Many(_) => {
                 quote! {
-                    inner.iter().map(|inner| match inner {
+                    inner.into_iter().map(|inner| match inner {
                         #match_inner => inner.into(),
                         _ => panic!("unexpected input type {:?}", inner),
                     }).collect()
