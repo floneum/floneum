@@ -95,19 +95,19 @@ impl From<MyPrimitiveValue> for PrimitiveValue {
                 PrimitiveValue::Embedding(Embedding { vector: value })
             }
             MyPrimitiveValue::Model { id, owned } => {
-                PrimitiveValue::Model(TextGenerationModel { id, owned })
+                PrimitiveValue::Model(TextGenerationModelResource { id, owned })
             }
             MyPrimitiveValue::EmbeddingModel { id, owned } => {
-                PrimitiveValue::EmbeddingModel(EmbeddingModel { id, owned })
+                PrimitiveValue::EmbeddingModel(EmbeddingModelResource { id, owned })
             }
-            MyPrimitiveValue::Page { id, owned } => PrimitiveValue::Page(Page { id, owned }),
-            MyPrimitiveValue::Node { id, owned } => PrimitiveValue::Node(Node { id, owned }),
+            MyPrimitiveValue::Page { id, owned } => PrimitiveValue::Page(PageResource { id, owned }),
+            MyPrimitiveValue::Node { id, owned } => PrimitiveValue::Node(NodeResource { id, owned }),
             MyPrimitiveValue::ModelType(value) => PrimitiveValue::ModelType(value.into()),
             MyPrimitiveValue::EmbeddingModelType(value) => {
                 PrimitiveValue::EmbeddingModelType(value.into())
             }
             MyPrimitiveValue::Database { id, owned } => {
-                PrimitiveValue::Database(EmbeddingDb { id, owned })
+                PrimitiveValue::Database(EmbeddingDbResource { id, owned })
             }
             MyPrimitiveValue::Boolean(value) => PrimitiveValue::Boolean(value),
         }
@@ -610,25 +610,25 @@ impl PrimitiveValue {
 
     pub fn borrow(&self) -> PrimitiveValue {
         match self {
-            PrimitiveValue::Database(value) => PrimitiveValue::Database(EmbeddingDb {
+            PrimitiveValue::Database(value) => PrimitiveValue::Database(EmbeddingDbResource {
                 id: value.id,
                 owned: false,
             }),
-            PrimitiveValue::Model(value) => PrimitiveValue::Model(TextGenerationModel {
+            PrimitiveValue::Model(value) => PrimitiveValue::Model(TextGenerationModelResource {
                 id: value.id,
                 owned: false,
             }),
             PrimitiveValue::EmbeddingModel(value) => {
-                PrimitiveValue::EmbeddingModel(EmbeddingModel {
+                PrimitiveValue::EmbeddingModel(EmbeddingModelResource {
                     id: value.id,
                     owned: false,
                 })
             }
-            PrimitiveValue::Page(value) => PrimitiveValue::Page(Page {
+            PrimitiveValue::Page(value) => PrimitiveValue::Page(PageResource {
                 id: value.id,
                 owned: false,
             }),
-            PrimitiveValue::Node(value) => PrimitiveValue::Node(Node {
+            PrimitiveValue::Node(value) => PrimitiveValue::Node(NodeResource {
                 id: value.id,
                 owned: false,
             }),

@@ -1,5 +1,5 @@
 use crate::plugins::main;
-use crate::plugins::main::types::{Embedding, EmbeddingModel, EmbeddingModelType};
+use crate::plugins::main::types::{Embedding, EmbeddingModelResource, EmbeddingModelType};
 use crate::resource::{Resource, ResourceStorage};
 
 use kalosm::language::*;
@@ -112,11 +112,11 @@ impl ResourceStorage {
     pub(crate) fn impl_create_embedding_model(
         &self,
         ty: main::types::EmbeddingModelType,
-    ) -> wasmtime::Result<EmbeddingModel> {
+    ) -> wasmtime::Result<EmbeddingModelResource> {
         let model = LazyTextEmbeddingModel::Uninitialized(ty);
         let idx = self.insert(model);
 
-        Ok(EmbeddingModel {
+        Ok(EmbeddingModelResource {
             id: idx.index() as u64,
             owned: true,
         })
@@ -131,7 +131,7 @@ impl ResourceStorage {
 
     pub(crate) async fn impl_get_embedding(
         &self,
-        self_: EmbeddingModel,
+        self_: EmbeddingModelResource,
         document: String,
     ) -> wasmtime::Result<Embedding> {
         let index = self_.into();
@@ -141,7 +141,7 @@ impl ResourceStorage {
         })
     }
 
-    pub(crate) fn impl_drop_embedding_model(&self, rep: EmbeddingModel) -> wasmtime::Result<()> {
+    pub(crate) fn impl_drop_embedding_model(&self, rep: EmbeddingModelResource) -> wasmtime::Result<()> {
         let index = rep.into();
         self.drop_key(index);
         Ok(())

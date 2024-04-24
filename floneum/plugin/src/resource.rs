@@ -101,8 +101,8 @@ impl<T> Resource<T> {
     }
 }
 
-impl From<main::types::EmbeddingModel> for Resource<LazyTextEmbeddingModel> {
-    fn from(value: main::types::EmbeddingModel) -> Self {
+impl From<main::types::EmbeddingModelResource> for Resource<LazyTextEmbeddingModel> {
+    fn from(value: main::types::EmbeddingModelResource) -> Self {
         Self {
             index: value.id as usize,
             owned: value.owned,
@@ -111,8 +111,8 @@ impl From<main::types::EmbeddingModel> for Resource<LazyTextEmbeddingModel> {
     }
 }
 
-impl From<main::types::TextGenerationModel> for Resource<LazyTextGenerationModel> {
-    fn from(value: main::types::TextGenerationModel) -> Self {
+impl From<main::types::TextGenerationModelResource> for Resource<LazyTextGenerationModel> {
+    fn from(value: main::types::TextGenerationModelResource) -> Self {
         Self {
             index: value.id as usize,
             owned: value.owned,
@@ -121,8 +121,8 @@ impl From<main::types::TextGenerationModel> for Resource<LazyTextGenerationModel
     }
 }
 
-impl From<main::types::EmbeddingDb> for Resource<VectorDBWithDocuments> {
-    fn from(value: main::types::EmbeddingDb) -> Self {
+impl From<main::types::EmbeddingDbResource> for Resource<VectorDBWithDocuments> {
+    fn from(value: main::types::EmbeddingDbResource) -> Self {
         Self {
             index: value.id as usize,
             owned: value.owned,
@@ -131,8 +131,8 @@ impl From<main::types::EmbeddingDb> for Resource<VectorDBWithDocuments> {
     }
 }
 
-impl From<main::types::Page> for Resource<Arc<Tab>> {
-    fn from(value: main::types::Page) -> Self {
+impl From<main::types::PageResource> for Resource<Arc<Tab>> {
+    fn from(value: main::types::PageResource) -> Self {
         Self {
             index: value.id as usize,
             owned: value.owned,
@@ -141,8 +141,8 @@ impl From<main::types::Page> for Resource<Arc<Tab>> {
     }
 }
 
-impl From<main::types::Node> for Resource<AnyNodeRef> {
-    fn from(value: main::types::Node) -> Self {
+impl From<main::types::NodeResource> for Resource<AnyNodeRef> {
+    fn from(value: main::types::NodeResource) -> Self {
         Self {
             index: value.id as usize,
             owned: value.owned,

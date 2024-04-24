@@ -2,7 +2,7 @@ use crate::plugins::main;
 use crate::resource::ResourceStorage;
 use crate::Both;
 use main::imports::{self};
-use main::types::{EmbeddingDb, EmbeddingModel, TextGenerationModel};
+use main::types::{EmbeddingDbResource, EmbeddingModelResource, TextGenerationModelResource};
 use std::ops::Deref;
 
 use kalosm::language::DynamicNodeId;
@@ -143,45 +143,45 @@ impl main::types::Host for State {
         &mut self,
         mode: main::types::BrowserMode,
         url: String,
-    ) -> wasmtime::Result<main::types::Page> {
+    ) -> wasmtime::Result<main::types::PageResource> {
         self.resources.impl_create_page(mode, url)
     }
 
     async fn find_in_current_page(
         &mut self,
-        self_: main::types::Page,
+        self_: main::types::PageResource,
         query: String,
-    ) -> wasmtime::Result<main::types::Node> {
+    ) -> wasmtime::Result<main::types::NodeResource> {
         self.resources.impl_find_in_current_page(self_, query).await
     }
 
-    async fn screenshot_browser(&mut self, self_: main::types::Page) -> wasmtime::Result<Vec<u8>> {
+    async fn screenshot_browser(&mut self, self_: main::types::PageResource) -> wasmtime::Result<Vec<u8>> {
         self.resources.impl_screenshot_browser(self_).await
     }
 
-    async fn page_html(&mut self, self_: main::types::Page) -> wasmtime::Result<String> {
+    async fn page_html(&mut self, self_: main::types::PageResource) -> wasmtime::Result<String> {
         self.resources.impl_page_html(self_).await
     }
 
-    async fn drop_node(&mut self, self_: main::types::Node) -> wasmtime::Result<()> {
+    async fn drop_node(&mut self, self_: main::types::NodeResource) -> wasmtime::Result<()> {
         self.resources.impl_drop_node(self_)
     }
 
-    async fn drop_page(&mut self, self_: main::types::Page) -> wasmtime::Result<()> {
+    async fn drop_page(&mut self, self_: main::types::PageResource) -> wasmtime::Result<()> {
         self.resources.impl_drop_page(self_)
     }
 
-    async fn get_element_text(&mut self, self_: main::types::Node) -> wasmtime::Result<String> {
+    async fn get_element_text(&mut self, self_: main::types::NodeResource) -> wasmtime::Result<String> {
         self.resources.impl_get_element_text(self_).await
     }
 
-    async fn click_element(&mut self, self_: main::types::Node) -> wasmtime::Result<()> {
+    async fn click_element(&mut self, self_: main::types::NodeResource) -> wasmtime::Result<()> {
         self.resources.impl_click_element(self_).await
     }
 
     async fn type_into_element(
         &mut self,
-        self_: main::types::Node,
+        self_: main::types::NodeResource,
         keys: String,
     ) -> wasmtime::Result<()> {
         self.resources.impl_type_into_element(self_, keys).await
@@ -189,20 +189,20 @@ impl main::types::Host for State {
 
     async fn get_element_outer_html(
         &mut self,
-        self_: main::types::Node,
+        self_: main::types::NodeResource,
     ) -> wasmtime::Result<String> {
         self.resources.impl_get_element_outer_html(self_).await
     }
 
-    async fn screenshot_element(&mut self, self_: main::types::Node) -> wasmtime::Result<Vec<u8>> {
+    async fn screenshot_element(&mut self, self_: main::types::NodeResource) -> wasmtime::Result<Vec<u8>> {
         self.resources.impl_screenshot_element(self_).await
     }
 
     async fn find_child_of_element(
         &mut self,
-        self_: main::types::Node,
+        self_: main::types::NodeResource,
         query: String,
-    ) -> wasmtime::Result<main::types::Node> {
+    ) -> wasmtime::Result<main::types::NodeResource> {
         self.resources
             .impl_find_child_of_element(self_, query)
             .await
@@ -212,19 +212,19 @@ impl main::types::Host for State {
         &mut self,
         embeddings: Vec<main::types::Embedding>,
         documents: Vec<String>,
-    ) -> wasmtime::Result<EmbeddingDb> {
+    ) -> wasmtime::Result<EmbeddingDbResource> {
         Ok(self
             .resources
             .impl_create_embedding_db(embeddings, documents)?)
     }
 
-    async fn drop_embedding_db(&mut self, rep: EmbeddingDb) -> wasmtime::Result<()> {
+    async fn drop_embedding_db(&mut self, rep: EmbeddingDbResource) -> wasmtime::Result<()> {
         self.resources.impl_drop_embedding_db(rep)
     }
 
     async fn add_embedding(
         &mut self,
-        self_: EmbeddingDb,
+        self_: EmbeddingDbResource,
         embedding: main::types::Embedding,
         document: String,
     ) -> wasmtime::Result<()> {
@@ -235,7 +235,7 @@ impl main::types::Host for State {
 
     async fn find_closest_documents(
         &mut self,
-        self_: EmbeddingDb,
+        self_: EmbeddingDbResource,
         search: main::types::Embedding,
         count: u32,
     ) -> wasmtime::Result<Vec<String>> {
@@ -247,13 +247,13 @@ impl main::types::Host for State {
     async fn create_model(
         &mut self,
         ty: main::types::ModelType,
-    ) -> wasmtime::Result<TextGenerationModel> {
+    ) -> wasmtime::Result<TextGenerationModelResource> {
         Ok(self.resources.impl_create_text_generation_model(ty))
     }
 
     async fn drop_model(
         &mut self,
-        model: main::types::TextGenerationModel,
+        model: main::types::TextGenerationModelResource,
     ) -> wasmtime::Result<()> {
         self.resources.impl_drop_text_generation_model(model)
     }
@@ -269,7 +269,7 @@ impl main::types::Host for State {
 
     async fn infer(
         &mut self,
-        self_: TextGenerationModel,
+        self_: TextGenerationModelResource,
         input: String,
         max_tokens: Option<u32>,
         stop_on: Option<String>,
@@ -281,7 +281,7 @@ impl main::types::Host for State {
 
     async fn infer_structured(
         &mut self,
-        self_: TextGenerationModel,
+        self_: TextGenerationModelResource,
         input: String,
         regex: String,
     ) -> wasmtime::Result<String> {
@@ -293,11 +293,11 @@ impl main::types::Host for State {
     async fn create_embedding_model(
         &mut self,
         ty: main::types::EmbeddingModelType,
-    ) -> wasmtime::Result<EmbeddingModel> {
+    ) -> wasmtime::Result<EmbeddingModelResource> {
         self.resources.impl_create_embedding_model(ty)
     }
 
-    async fn drop_embedding_model(&mut self, model: EmbeddingModel) -> wasmtime::Result<()> {
+    async fn drop_embedding_model(&mut self, model: EmbeddingModelResource) -> wasmtime::Result<()> {
         self.resources.impl_drop_embedding_model(model)
     }
 
@@ -310,7 +310,7 @@ impl main::types::Host for State {
 
     async fn get_embedding(
         &mut self,
-        self_: EmbeddingModel,
+        self_: EmbeddingModelResource,
         document: String,
     ) -> wasmtime::Result<main::types::Embedding> {
         self.resources.impl_get_embedding(self_, document).await

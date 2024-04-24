@@ -1,12 +1,12 @@
 use crate::host::AnyNodeRef;
 use crate::resource::{Resource, ResourceStorage};
 
-use crate::plugins::main::types::Node;
+use crate::plugins::main::types::NodeResource;
 
 impl ResourceStorage {
     pub fn with_node<O>(
         &self,
-        node: Node,
+        node: NodeResource,
         f: impl FnOnce(headless_chrome::Element) -> anyhow::Result<O>,
     ) -> anyhow::Result<O> {
         let index = node.into();
@@ -20,11 +20,11 @@ impl ResourceStorage {
         f(headless_chrome::Element::new(&tab, node.node_id)?)
     }
 
-    pub(crate) async fn impl_get_element_text(&self, self_: Node) -> wasmtime::Result<String> {
+    pub(crate) async fn impl_get_element_text(&self, self_: NodeResource) -> wasmtime::Result<String> {
         self.with_node(self_, |node| node.get_inner_text())
     }
 
-    pub(crate) async fn impl_click_element(&self, self_: Node) -> wasmtime::Result<()> {
+    pub(crate) async fn impl_click_element(&self, self_: NodeResource) -> wasmtime::Result<()> {
         self.with_node(self_, |node| {
             node.click()?;
             Ok(())
@@ -34,7 +34,7 @@ impl ResourceStorage {
 
     pub(crate) async fn impl_type_into_element(
         &self,
-        self_: Node,
+        self_: NodeResource,
         keys: String,
     ) -> wasmtime::Result<()> {
         self.with_node(self_, |node| {
@@ -45,12 +45,12 @@ impl ResourceStorage {
 
     pub(crate) async fn impl_get_element_outer_html(
         &self,
-        self_: Node,
+        self_: NodeResource,
     ) -> wasmtime::Result<String> {
         self.with_node(self_, |node| node.get_content())
     }
 
-    pub(crate) async fn impl_screenshot_element(&self, self_: Node) -> wasmtime::Result<Vec<u8>> {
+    pub(crate) async fn impl_screenshot_element(&self, self_: NodeResource) -> wasmtime::Result<Vec<u8>> {
         self.with_node(self_, |node| {
             node.capture_screenshot(
                 headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Jpeg,
@@ -60,9 +60,9 @@ impl ResourceStorage {
 
     pub(crate) async fn impl_find_child_of_element(
         &self,
-        self_: Node,
+        self_: NodeResource,
         query: String,
-    ) -> wasmtime::Result<Node> {
+    ) -> wasmtime::Result<NodeResource> {
         let (node_id, page_id) = {
             let index = self_.into();
             let node = self.get(index).ok_or(anyhow::anyhow!("Node not found"))?;
@@ -78,13 +78,13 @@ impl ResourceStorage {
             child.node_id
         };
         let child = self.insert(AnyNodeRef { page_id, node_id });
-        Ok(Node {
+        Ok(NodeResource {
             id: child.index() as u64,
             owned: true,
         })
     }
 
-    pub(crate) fn impl_drop_node(&self, rep: Node) -> wasmtime::Result<()> {
+    pub(crate) fn impl_drop_node(&self, rep: NodeResource) -> wasmtime::Result<()> {
         let index = rep.into();
         self.drop_key(index);
         Ok(())

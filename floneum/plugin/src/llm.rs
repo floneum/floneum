@@ -1,5 +1,5 @@
 use crate::plugins::main;
-use crate::plugins::main::types::TextGenerationModel;
+use crate::plugins::main::types::TextGenerationModelResource;
 use crate::resource::{Resource, ResourceStorage};
 
 use anyhow::Ok;
@@ -231,11 +231,11 @@ impl ResourceStorage {
     pub(crate) fn impl_create_text_generation_model(
         &self,
         ty: main::types::ModelType,
-    ) -> TextGenerationModel {
+    ) -> TextGenerationModelResource {
         let model = LazyTextGenerationModel::Uninitialized(ty);
         let idx = self.insert(model);
 
-        TextGenerationModel {
+        TextGenerationModelResource {
             id: idx.index() as u64,
             owned: true,
         }
@@ -250,7 +250,7 @@ impl ResourceStorage {
 
     pub(crate) async fn impl_infer(
         &self,
-        self_: TextGenerationModel,
+        self_: TextGenerationModelResource,
         input: String,
         max_tokens: Option<u32>,
         stop_on: Option<String>,
@@ -273,7 +273,7 @@ impl ResourceStorage {
 
     pub(crate) async fn impl_infer_structured(
         &self,
-        self_: TextGenerationModel,
+        self_: TextGenerationModelResource,
         input: String,
         regex: String,
     ) -> wasmtime::Result<String> {
@@ -298,7 +298,7 @@ impl ResourceStorage {
 
     pub(crate) fn impl_drop_text_generation_model(
         &self,
-        model: TextGenerationModel,
+        model: TextGenerationModelResource,
     ) -> wasmtime::Result<()> {
         let index = model.into();
         self.drop_key(index);

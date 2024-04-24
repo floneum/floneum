@@ -1,7 +1,7 @@
 use std::ops::Deref;
 use std::sync::Arc;
 
-use crate::plugins::main::types::{Embedding, EmbeddingDb};
+use crate::plugins::main::types::{Embedding, EmbeddingDbResource};
 use crate::resource::ResourceStorage;
 
 use kalosm::language::{Document, UnknownVectorSpace, VectorDB};
@@ -12,7 +12,7 @@ impl ResourceStorage {
         &self,
         embeddings: Vec<Embedding>,
         documents: Vec<String>,
-    ) -> anyhow::Result<EmbeddingDb> {
+    ) -> anyhow::Result<EmbeddingDbResource> {
         let documents = documents
             .into_iter()
             .map(|x| Document::from_parts(String::new(), x));
@@ -23,7 +23,7 @@ impl ResourceStorage {
         }
 
         let idx = self.insert(db);
-        Ok(EmbeddingDb {
+        Ok(EmbeddingDbResource {
             id: idx.index() as u64,
             owned: true,
         })
@@ -31,7 +31,7 @@ impl ResourceStorage {
 
     pub(crate) async fn impl_add_embedding(
         &self,
-        self_: EmbeddingDb,
+        self_: EmbeddingDbResource,
         embedding: Embedding,
         document: String,
     ) -> wasmtime::Result<()> {
@@ -46,7 +46,7 @@ impl ResourceStorage {
 
     pub(crate) async fn impl_find_closest_documents(
         &self,
-        self_: EmbeddingDb,
+        self_: EmbeddingDbResource,
         search: Embedding,
         count: u32,
     ) -> wasmtime::Result<Vec<String>> {
@@ -61,7 +61,7 @@ impl ResourceStorage {
             .collect())
     }
 
-    pub(crate) fn impl_drop_embedding_db(&self, rep: EmbeddingDb) -> wasmtime::Result<()> {
+    pub(crate) fn impl_drop_embedding_db(&self, rep: EmbeddingDbResource) -> wasmtime::Result<()> {
         let index = rep.into();
         self.drop_key(index);
         Ok(())
