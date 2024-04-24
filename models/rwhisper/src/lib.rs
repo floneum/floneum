@@ -284,7 +284,8 @@ impl WhisperBuilder {
 
     /// Build the model.
     pub async fn build(self) -> anyhow::Result<Whisper> {
-        self.build_with_loading_handler(ModelLoadingProgress::multi_bar_loading_indicator()).await
+        self.build_with_loading_handler(ModelLoadingProgress::multi_bar_loading_indicator())
+            .await
     }
 
     /// Build the model with a handler for progress as the download and loading progresses.
@@ -298,31 +299,23 @@ impl WhisperBuilder {
         let model_source = whisper.model;
         let config_source = whisper.config;
 
+        let display_tokenizer_source = format!("Tokenizer ({})", tokenizer_source);
+        let mut create_progress =
+            ModelLoadingProgress::downloading_progress(display_tokenizer_source);
         let tokenizer_filename = tokenizer_source
-            .download(|progress| {
-                progress_handler(ModelLoadingProgress::downloading(
-                    format!("Tokenizer ({})", tokenizer_source),
-                    progress,
-                ))
-            })
+            .download(|progress| progress_handler(create_progress(progress)))
             .await?;
 
+        let display_model_source = format!("Model ({})", model_source);
+        let mut create_progress = ModelLoadingProgress::downloading_progress(display_model_source);
         let filename = model_source
-            .download(|progress| {
-                progress_handler(ModelLoadingProgress::downloading(
-                    format!("Model ({})", model_source),
-                    progress,
-                ))
-            })
+            .download(|progress| progress_handler(create_progress(progress)))
             .await?;
 
+        let display_config_source = format!("Config ({})", config_source);
+        let mut create_progress = ModelLoadingProgress::downloading_progress(display_config_source);
         let config = config_source
-            .download(|progress| {
-                progress_handler(ModelLoadingProgress::downloading(
-                    format!("Config ({})", config_source),
-                    progress,
-                ))
-            })
+            .download(|progress| progress_handler(create_progress(progress)))
             .await?;
 
         let (rx, tx) = std::sync::mpsc::channel();

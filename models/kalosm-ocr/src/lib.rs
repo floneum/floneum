@@ -147,14 +147,11 @@ impl OcrSource {
         device: &Device,
         mut handler: impl FnMut(ModelLoadingProgress) + Send + Sync,
     ) -> anyhow::Result<VarBuilder> {
+        let source = format!("Model ({})", self.model);
+        let mut create_progress = ModelLoadingProgress::downloading_progress(source);
         let filename = self
             .model
-            .download(|progress| {
-                handler(ModelLoadingProgress::downloading(
-                    format!("Model ({})", self.model),
-                    progress,
-                ))
-            })
+            .download(|progress| handler(create_progress(progress)))
             .await?;
         Ok(unsafe { VarBuilder::from_mmaped_safetensors(&[filename], DType::F32, device)? })
     }
@@ -170,14 +167,11 @@ impl OcrSource {
         }
 
         let (encoder_config, decoder_config) = {
+            let source = format!("Config ({})", self.model);
+            let mut create_progress = ModelLoadingProgress::downloading_progress(source);
             let config_filename = self
                 .config
-                .download(|progress| {
-                    handler(ModelLoadingProgress::downloading(
-                        format!("Config ({})", self.model),
-                        progress,
-                    ))
-                })
+                .download(|progress| handler(create_progress(progress)))
                 .await?;
             let config: Config = serde_json::from_reader(std::fs::File::open(config_filename)?)?;
             (config.encoder, config.decoder)

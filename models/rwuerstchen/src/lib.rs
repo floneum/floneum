@@ -237,7 +237,8 @@ impl WuerstchenBuilder {
 
     /// Build the model.
     pub async fn build(self) -> Result<Wuerstchen> {
-        self.build_with_loading_handler(ModelLoadingProgress::multi_bar_loading_indicator()).await
+        self.build_with_loading_handler(ModelLoadingProgress::multi_bar_loading_indicator())
+            .await
     }
 
     /// Build the model with a handler for progress as the download and loading progresses.
@@ -258,73 +259,62 @@ impl WuerstchenBuilder {
 
         // Download section
         let prior_tokenizer_source = ModelFile::PriorTokenizer.get(prior_tokenizer);
+        let prior_tokenizer_source_display =
+            format!("Prior Tokenizer ({})", prior_tokenizer_source);
+        let mut create_progress =
+            ModelLoadingProgress::downloading_progress(prior_tokenizer_source_display);
         let prior_tokenizer = prior_tokenizer_source
-            .download(|progress| {
-                progress_handler(ModelLoadingProgress::downloading(
-                    format!("Prior Tokenizer ({})", prior_tokenizer_source),
-                    progress,
-                ))
-            })
+            .download(|progress| progress_handler(create_progress(progress)))
             .await?;
 
         let tokenizer_source = ModelFile::Tokenizer.get(tokenizer);
+        let tokenizer_source_display = format!("Tokenizer ({})", tokenizer_source);
+        let mut create_progress =
+            ModelLoadingProgress::downloading_progress(tokenizer_source_display);
         let tokenizer = tokenizer_source
-            .download(|progress| {
-                progress_handler(ModelLoadingProgress::downloading(
-                    format!("Tokenizer ({})", tokenizer_source),
-                    progress,
-                ))
-            })
+            .download(|progress| progress_handler(create_progress(progress)))
             .await?;
 
         let clip_weights_source = ModelFile::Clip.get(clip_weights);
+        let clip_weights_source_display = format!("Clip Weights ({})", clip_weights_source);
+        let mut create_progress =
+            ModelLoadingProgress::downloading_progress(clip_weights_source_display);
         let clip_weights = clip_weights_source
-            .download(|progress| {
-                progress_handler(ModelLoadingProgress::downloading(
-                    format!("Weights ({})", clip_weights_source),
-                    progress,
-                ))
-            })
+            .download(|progress| progress_handler(create_progress(progress)))
             .await?;
 
         let prior_clip_weights_source = ModelFile::PriorClip.get(prior_clip_weights);
+        let prior_clip_weights_source_display =
+            format!("Prior Clip Weights ({})", prior_clip_weights_source);
+        let mut create_progress =
+            ModelLoadingProgress::downloading_progress(prior_clip_weights_source_display);
         let prior_clip_weights = prior_clip_weights_source
-            .download(|progress| {
-                progress_handler(ModelLoadingProgress::downloading(
-                    format!("Prior Weights ({})", prior_clip_weights_source),
-                    progress,
-                ))
-            })
+            .download(|progress| progress_handler(create_progress(progress)))
             .await?;
 
         let decoder_weights_source = ModelFile::Decoder.get(decoder_weights);
+        let decoder_weights_source_display =
+            format!("Decoder Weights ({})", decoder_weights_source);
+        let mut create_progress =
+            ModelLoadingProgress::downloading_progress(decoder_weights_source_display);
         let decoder_weights = decoder_weights_source
-            .download(|progress| {
-                progress_handler(ModelLoadingProgress::downloading(
-                    format!("Decoder ({})", decoder_weights_source),
-                    progress,
-                ))
-            })
+            .download(|progress| progress_handler(create_progress(progress)))
             .await?;
 
         let prior_weights_source = ModelFile::Prior.get(prior_weights);
+        let prior_weights_source_display = format!("Prior Weights ({})", prior_weights_source);
+        let mut create_progress =
+            ModelLoadingProgress::downloading_progress(prior_weights_source_display);
         let prior_weights = prior_weights_source
-            .download(|progress| {
-                progress_handler(ModelLoadingProgress::downloading(
-                    format!("Decoder Prior ({})", prior_weights_source),
-                    progress,
-                ))
-            })
+            .download(|progress| progress_handler(create_progress(progress)))
             .await?;
 
         let vqgan_weights_source = ModelFile::VqGan.get(vqgan_weights);
+        let vqgan_weights_source_display = format!("VQGAN Weights ({})", vqgan_weights_source);
+        let mut create_progress =
+            ModelLoadingProgress::downloading_progress(vqgan_weights_source_display);
         let vqgan_weights = vqgan_weights_source
-            .download(|progress| {
-                progress_handler(ModelLoadingProgress::downloading(
-                    format!("VqGan ({})", vqgan_weights_source),
-                    progress,
-                ))
-            })
+            .download(|progress| progress_handler(create_progress(progress)))
             .await?;
 
         let settings = WuerstcheModelSettings {

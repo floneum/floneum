@@ -200,7 +200,8 @@ impl PhiBuilder {
 
     /// Build the model (this will download the model if it is not already downloaded)
     pub async fn build(self) -> anyhow::Result<Phi> {
-        self.build_with_loading_handler(ModelLoadingProgress::multi_bar_loading_indicator()).await
+        self.build_with_loading_handler(ModelLoadingProgress::multi_bar_loading_indicator())
+            .await
     }
 
     /// Build the model with a handler for progress as the download and loading progresses.
@@ -211,21 +212,15 @@ impl PhiBuilder {
         let PhiSource {
             tokenizer, model, ..
         } = self.source;
+        let tokenizer_source = format!("Tokenizer ({})", tokenizer);
+        let mut create_progress = ModelLoadingProgress::downloading_progress(tokenizer_source);
         let tokenizer_filename = tokenizer
-            .download(|progress| {
-                progress_handler(ModelLoadingProgress::downloading(
-                    format!("Tokenizer ({})", tokenizer),
-                    progress,
-                ))
-            })
+            .download(|progress| progress_handler(create_progress(progress)))
             .await?;
+        let model_source = format!("Model ({})", model);
+        let mut create_progress = ModelLoadingProgress::downloading_progress(model_source);
         let filename = model
-            .download(|progress| {
-                progress_handler(ModelLoadingProgress::downloading(
-                    format!("Model ({})", model),
-                    progress,
-                ))
-            })
+            .download(|progress| progress_handler(create_progress(progress)))
             .await?;
         let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(E::msg)?;
 
