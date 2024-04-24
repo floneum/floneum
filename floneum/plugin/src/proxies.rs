@@ -1,98 +1,10 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use wasmtime::component::Resource;
 
-use crate::plugins::main::{self, types::*};
+use crate::{
+    plugins::main::{self, types::*},
+    resource::ResourceStorage,
+};
 use main::types::PrimitiveValueType;
-
-#[derive(serde::Serialize, serde::Deserialize)]
-enum MyValue {
-    Single(MyPrimitiveValue),
-    List(Vec<MyPrimitiveValue>),
-    Unset,
-}
-
-impl From<&Input> for MyValue {
-    fn from(value: &Input) -> Self {
-        match value {
-            Input::Single(value) => MyValue::Single(value.into()),
-            Input::Many(values) => MyValue::List(values.iter().map(|v| v.into()).collect()),
-        }
-    }
-}
-
-impl From<MyValue> for Input {
-    fn from(value: MyValue) -> Self {
-        match value {
-            MyValue::Single(value) => Input::Single(value.into()),
-            MyValue::List(values) => Input::Many(values.into_iter().map(|v| v.into()).collect()),
-            MyValue::Unset => Input::Many(Vec::new()),
-        }
-    }
-}
-
-impl Serialize for Input {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        MyValue::from(self).serialize(serializer)
-    }
-}
-
-impl<'a> Deserialize<'a> for Input {
-    fn deserialize<D: serde::Deserializer<'a>>(deserializer: D) -> Result<Self, D::Error> {
-        MyValue::deserialize(deserializer).map(|v| v.into())
-    }
-}
-
-impl PartialEq for Input {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Input::Single(a), Input::Single(b)) => a == b,
-            (Input::Many(a), Input::Many(b)) => a == b,
-            _ => false,
-        }
-    }
-}
-
-impl From<&Output> for MyValue {
-    fn from(output: &Output) -> Self {
-        match output {
-            Output::Single(value) => MyValue::Single(value.into()),
-            Output::Many(values) => MyValue::List(values.iter().map(|v| v.into()).collect()),
-            Output::Halt => MyValue::Unset,
-        }
-    }
-}
-
-impl From<MyValue> for Output {
-    fn from(value: MyValue) -> Self {
-        match value {
-            MyValue::Single(value) => Output::Single(value.into()),
-            MyValue::List(values) => Output::Many(values.into_iter().map(|v| v.into()).collect()),
-            MyValue::Unset => Output::Halt,
-        }
-    }
-}
-
-impl Serialize for Output {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        MyValue::from(self).serialize(serializer)
-    }
-}
-
-impl<'a> Deserialize<'a> for Output {
-    fn deserialize<D: serde::Deserializer<'a>>(deserializer: D) -> Result<Self, D::Error> {
-        MyValue::deserialize(deserializer).map(|v| v.into())
-    }
-}
-
-impl PartialEq for Output {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Output::Single(a), Output::Single(b)) => a == b,
-            (Output::Many(a), Output::Many(b)) => a == b,
-            _ => false,
-        }
-    }
-}
 
 impl PartialEq for PrimitiveValue {
     fn eq(&self, other: &Self) -> bool {
@@ -103,15 +15,13 @@ impl PartialEq for PrimitiveValue {
             (PrimitiveValue::File(a), PrimitiveValue::File(b)) => a == b,
             (PrimitiveValue::Folder(a), PrimitiveValue::Folder(b)) => a == b,
             (PrimitiveValue::Embedding(a), PrimitiveValue::Embedding(b)) => a.vector == b.vector,
-            (PrimitiveValue::Database(a), PrimitiveValue::Database(b)) => a.rep() == b.rep(),
-            (PrimitiveValue::Model(a), PrimitiveValue::Model(b)) => a.rep() == b.rep(),
-            (PrimitiveValue::EmbeddingModel(a), PrimitiveValue::EmbeddingModel(b)) => {
-                a.rep() == b.rep()
-            }
+            (PrimitiveValue::Database(a), PrimitiveValue::Database(b)) => a.id == b.id,
+            (PrimitiveValue::Model(a), PrimitiveValue::Model(b)) => a.id == b.id,
+            (PrimitiveValue::EmbeddingModel(a), PrimitiveValue::EmbeddingModel(b)) => a.id == b.id,
             (PrimitiveValue::ModelType(a), PrimitiveValue::ModelType(b)) => a == b,
             (PrimitiveValue::Boolean(a), PrimitiveValue::Boolean(b)) => a == b,
-            (PrimitiveValue::Page(a), PrimitiveValue::Page(b)) => a.rep() == b.rep(),
-            (PrimitiveValue::Node(a), PrimitiveValue::Node(b)) => a.rep() == b.rep(),
+            (PrimitiveValue::Page(a), PrimitiveValue::Page(b)) => a.id == b.id,
+            (PrimitiveValue::Node(a), PrimitiveValue::Node(b)) => a.id == b.id,
             _ => false,
         }
     }
@@ -125,14 +35,14 @@ enum MyPrimitiveValue {
     File(String),
     Folder(String),
     Embedding(Vec<f32>),
-    Model(u32),
-    EmbeddingModel(u32),
-    Database(u32),
     ModelType(MyModelType),
     EmbeddingModelType(MyEmbeddingModelType),
     Boolean(bool),
-    Page(u32),
-    Node(u32),
+    Model { id: u64, owned: bool },
+    EmbeddingModel { id: u64, owned: bool },
+    Database { id: u64, owned: bool },
+    Page { id: u64, owned: bool },
+    Node { id: u64, owned: bool },
 }
 
 impl From<&PrimitiveValue> for MyPrimitiveValue {
@@ -144,16 +54,31 @@ impl From<&PrimitiveValue> for MyPrimitiveValue {
             PrimitiveValue::File(value) => MyPrimitiveValue::File(value.clone()),
             PrimitiveValue::Folder(value) => MyPrimitiveValue::Folder(value.clone()),
             PrimitiveValue::Embedding(value) => MyPrimitiveValue::Embedding(value.vector.clone()),
-            PrimitiveValue::Model(value) => MyPrimitiveValue::Model(value.rep()),
-            PrimitiveValue::EmbeddingModel(value) => MyPrimitiveValue::Model(value.rep()),
-            PrimitiveValue::Database(value) => MyPrimitiveValue::Database(value.rep()),
+            PrimitiveValue::Model(value) => MyPrimitiveValue::Model {
+                id: value.id,
+                owned: value.owned,
+            },
+            PrimitiveValue::EmbeddingModel(value) => MyPrimitiveValue::Model {
+                id: value.id,
+                owned: value.owned,
+            },
+            PrimitiveValue::Database(value) => MyPrimitiveValue::Database {
+                id: value.id,
+                owned: value.owned,
+            },
+            PrimitiveValue::Page(value) => MyPrimitiveValue::Page {
+                id: value.id,
+                owned: value.owned,
+            },
+            PrimitiveValue::Node(value) => MyPrimitiveValue::Node {
+                id: value.id,
+                owned: value.owned,
+            },
             PrimitiveValue::ModelType(value) => MyPrimitiveValue::ModelType(value.into()),
             PrimitiveValue::EmbeddingModelType(value) => {
                 MyPrimitiveValue::EmbeddingModelType(value.into())
             }
             PrimitiveValue::Boolean(value) => MyPrimitiveValue::Boolean(*value),
-            PrimitiveValue::Page(value) => MyPrimitiveValue::Page(value.rep()),
-            PrimitiveValue::Node(value) => MyPrimitiveValue::Node(value.rep()),
         }
     }
 }
@@ -169,19 +94,43 @@ impl From<MyPrimitiveValue> for PrimitiveValue {
             MyPrimitiveValue::Embedding(value) => {
                 PrimitiveValue::Embedding(Embedding { vector: value })
             }
-            MyPrimitiveValue::Model(value) => PrimitiveValue::Model(Resource::new_own(value)),
-            MyPrimitiveValue::EmbeddingModel(value) => {
-                PrimitiveValue::EmbeddingModel(Resource::new_own(value))
+            MyPrimitiveValue::Model { id, owned } => {
+                PrimitiveValue::Model(TextGenerationModelResource { id, owned })
             }
+            MyPrimitiveValue::EmbeddingModel { id, owned } => {
+                PrimitiveValue::EmbeddingModel(EmbeddingModelResource { id, owned })
+            }
+            MyPrimitiveValue::Page { id, owned } => PrimitiveValue::Page(PageResource { id, owned }),
+            MyPrimitiveValue::Node { id, owned } => PrimitiveValue::Node(NodeResource { id, owned }),
             MyPrimitiveValue::ModelType(value) => PrimitiveValue::ModelType(value.into()),
             MyPrimitiveValue::EmbeddingModelType(value) => {
                 PrimitiveValue::EmbeddingModelType(value.into())
             }
-            MyPrimitiveValue::Database(value) => PrimitiveValue::Database(Resource::new_own(value)),
+            MyPrimitiveValue::Database { id, owned } => {
+                PrimitiveValue::Database(EmbeddingDbResource { id, owned })
+            }
             MyPrimitiveValue::Boolean(value) => PrimitiveValue::Boolean(value),
-            MyPrimitiveValue::Page(value) => PrimitiveValue::Page(Resource::new_own(value)),
-            MyPrimitiveValue::Node(value) => PrimitiveValue::Node(Resource::new_own(value)),
         }
+    }
+}
+
+impl Serialize for PrimitiveValue {
+    fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error>
+    where
+        S: Serializer,
+    {
+        let my_primitive_value = MyPrimitiveValue::from(self);
+        my_primitive_value.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for PrimitiveValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let my_primitive_value = MyPrimitiveValue::deserialize(deserializer)?;
+        Ok(PrimitiveValue::from(my_primitive_value))
     }
 }
 
@@ -412,24 +361,17 @@ impl ValueType {
         }
     }
 
-    pub fn create(&self) -> Input {
-        match self {
-            ValueType::Single(single) => Input::Single(single.create()),
-            ValueType::Many(many) => Input::Many(vec![many.create()]),
-        }
-    }
-
-    pub fn create_output(&self) -> Output {
-        match self {
-            ValueType::Single(single) => Output::Single(single.create()),
-            ValueType::Many(many) => Output::Many(vec![many.create()]),
-        }
+    pub fn create(&self, storage: &ResourceStorage) -> anyhow::Result<Vec<PrimitiveValue>> {
+        Ok(match self {
+            ValueType::Single(ty) => vec![ty.create(storage)?],
+            ValueType::Many(_) => Vec::new(),
+        })
     }
 }
 
 impl PrimitiveValueType {
-    pub fn create(&self) -> PrimitiveValue {
-        match self {
+    pub fn create(&self, storage: &ResourceStorage) -> anyhow::Result<PrimitiveValue> {
+        Ok(match self {
             PrimitiveValueType::Number => PrimitiveValue::Number(0),
             PrimitiveValueType::Float => PrimitiveValue::Float(0.),
             PrimitiveValueType::Text => PrimitiveValue::Text("".to_string()),
@@ -438,20 +380,27 @@ impl PrimitiveValueType {
             PrimitiveValueType::Embedding => {
                 PrimitiveValue::Embedding(Embedding { vector: vec![0.0] })
             }
-            PrimitiveValueType::Database => PrimitiveValue::Database(Resource::new_own(0)),
-            PrimitiveValueType::Model => PrimitiveValue::Model(Resource::new_own(0)),
-            PrimitiveValueType::EmbeddingModel => {
-                PrimitiveValue::EmbeddingModel(Resource::new_own(0))
+            PrimitiveValueType::Database => {
+                PrimitiveValue::Database(storage.impl_create_embedding_db(Vec::new(), Vec::new())?)
             }
+            PrimitiveValueType::Model => PrimitiveValue::Model(
+                storage.impl_create_text_generation_model(ModelType::StarlingSevenAlpha),
+            ),
+            PrimitiveValueType::EmbeddingModel => PrimitiveValue::EmbeddingModel(
+                storage.impl_create_embedding_model(EmbeddingModelType::Bert)?,
+            ),
             PrimitiveValueType::ModelType => PrimitiveValue::ModelType(ModelType::LlamaSevenChat),
             PrimitiveValueType::EmbeddingModelType => {
                 PrimitiveValue::EmbeddingModelType(EmbeddingModelType::Bert)
             }
             PrimitiveValueType::Boolean => PrimitiveValue::Boolean(false),
-            PrimitiveValueType::Page => PrimitiveValue::Page(Resource::new_own(0)),
-            PrimitiveValueType::Node => PrimitiveValue::Node(Resource::new_own(0)),
+            PrimitiveValueType::Page => PrimitiveValue::Page(storage.impl_create_page(
+                main::types::BrowserMode::Headless,
+                "http://floneum.com".into(),
+            )?),
+            PrimitiveValueType::Node => return Err(anyhow::anyhow!("Cannot create a node")),
             PrimitiveValueType::Any => PrimitiveValue::Number(0),
-        }
+        })
     }
 
     pub fn compatible(&self, other: &Self) -> bool {
@@ -658,96 +607,32 @@ impl PrimitiveValue {
                 | (PrimitiveValue::Node(_), PrimitiveValueType::Node)
         )
     }
-}
 
-impl Input {
-    pub fn is_of_type(&self, ty: ValueType) -> bool {
-        match (self, ty) {
-            (Input::Single(value), ValueType::Single(ty)) => value.is_of_type(ty),
-            (Input::Many(values), ValueType::Many(ty)) => {
-                values.iter().all(|value| value.is_of_type(ty))
-            }
-            _ => false,
-        }
-    }
-}
-
-impl Output {
-    pub fn is_of_type(&self, ty: ValueType) -> bool {
-        match (self, ty) {
-            (Output::Single(value), ValueType::Single(ty)) => value.is_of_type(ty),
-            (Output::Many(values), ValueType::Many(ty)) => {
-                values.iter().all(|value| value.is_of_type(ty))
-            }
-            _ => false,
-        }
-    }
-}
-
-impl Clone for Definition {
-    fn clone(&self) -> Self {
-        Definition {
-            name: self.name.clone(),
-            description: self.description.clone(),
-            inputs: self.inputs.clone(),
-            outputs: self.outputs.clone(),
-            examples: self.examples.clone(),
-        }
-    }
-}
-
-impl Clone for Example {
-    fn clone(&self) -> Self {
-        Example {
-            name: self.name.clone(),
-            inputs: self.inputs.clone(),
-            outputs: self.outputs.clone(),
-        }
-    }
-}
-
-impl Clone for Input {
-    fn clone(&self) -> Self {
+    pub fn borrow(&self) -> PrimitiveValue {
         match self {
-            Input::Single(value) => Input::Single(value.clone()),
-            Input::Many(values) => Input::Many(values.clone()),
-        }
-    }
-}
-
-impl Clone for Output {
-    fn clone(&self) -> Self {
-        match self {
-            Output::Single(value) => Output::Single(value.clone()),
-            Output::Many(values) => Output::Many(values.clone()),
-            Output::Halt => Output::Halt,
-        }
-    }
-}
-
-impl Clone for PrimitiveValue {
-    fn clone(&self) -> Self {
-        match self {
-            PrimitiveValue::Number(value) => PrimitiveValue::Number(*value),
-            PrimitiveValue::Float(value) => PrimitiveValue::Float(*value),
-            PrimitiveValue::Text(value) => PrimitiveValue::Text(value.clone()),
-            PrimitiveValue::File(value) => PrimitiveValue::File(value.clone()),
-            PrimitiveValue::Folder(value) => PrimitiveValue::Folder(value.clone()),
-            PrimitiveValue::Embedding(value) => PrimitiveValue::Embedding(value.clone()),
-            PrimitiveValue::Database(value) => {
-                PrimitiveValue::Database(Resource::new_borrow(value.rep()))
-            }
-            PrimitiveValue::Model(value) => {
-                PrimitiveValue::Model(Resource::new_borrow(value.rep()))
-            }
+            PrimitiveValue::Database(value) => PrimitiveValue::Database(EmbeddingDbResource {
+                id: value.id,
+                owned: false,
+            }),
+            PrimitiveValue::Model(value) => PrimitiveValue::Model(TextGenerationModelResource {
+                id: value.id,
+                owned: false,
+            }),
             PrimitiveValue::EmbeddingModel(value) => {
-                PrimitiveValue::EmbeddingModel(Resource::new_borrow(value.rep()))
+                PrimitiveValue::EmbeddingModel(EmbeddingModelResource {
+                    id: value.id,
+                    owned: false,
+                })
             }
-            PrimitiveValue::ModelType(value) => PrimitiveValue::ModelType(*value),
-            PrimitiveValue::EmbeddingModelType(value) => PrimitiveValue::EmbeddingModelType(*value),
-            PrimitiveValue::Boolean(value) => PrimitiveValue::Boolean(*value),
-            PrimitiveValue::Page(value) => PrimitiveValue::Page(Resource::new_borrow(value.rep())),
-            PrimitiveValue::Node(value) => PrimitiveValue::Node(Resource::new_borrow(value.rep())),
+            PrimitiveValue::Page(value) => PrimitiveValue::Page(PageResource {
+                id: value.id,
+                owned: false,
+            }),
+            PrimitiveValue::Node(value) => PrimitiveValue::Node(NodeResource {
+                id: value.id,
+                owned: false,
+            }),
+            other => other.clone(),
         }
     }
 }

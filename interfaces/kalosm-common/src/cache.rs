@@ -12,6 +12,7 @@ use crate::FileSource;
 
 #[derive(Debug)]
 /// The progress starting a model
+#[derive(Clone)]
 pub enum ModelLoadingProgress {
     /// The model is downloading
     Downloading {

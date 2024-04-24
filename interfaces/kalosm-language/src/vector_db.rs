@@ -83,14 +83,14 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
 
     /// Create a new temporary vector database.
     #[tracing::instrument]
-    pub fn new() -> anyhow::Result<Self> {
+    pub fn new() -> heed::Result<Self> {
         let dir = tempfile::tempdir()?;
 
         Self::new_at(dir.path())
     }
 
     /// Create a new vector database at the given path.
-    pub fn new_at(path: impl AsRef<std::path::Path>) -> anyhow::Result<Self> {
+    pub fn new_at(path: impl AsRef<std::path::Path>) -> heed::Result<Self> {
         const TWENTY_HUNDRED_MIB: usize = 2 * 1024 * 1024 * 1024;
 
         std::fs::create_dir_all(&path)?;

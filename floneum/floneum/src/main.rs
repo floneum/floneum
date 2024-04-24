@@ -1,18 +1,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 #![allow(non_snake_case)]
 
-use crate::theme::Color;
 use anyhow::Result;
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
-use dioxus_signals::*;
-use floneum_plugin::Plugin;
+use floneum_plugin::{Plugin, ResourceStorage};
 use floneumite::FloneumPackageIndex;
 use futures_util::stream::StreamExt;
 use petgraph::stable_graph::{DefaultIx, NodeIndex};
 use serde::{Deserialize, Serialize};
-use share::StorageId;
 use std::{collections::HashMap, fs::File, io::Read, rc::Rc};
-use tokio::sync::oneshot::Receiver;
 
 mod node;
 pub use node::Node;
@@ -22,28 +18,25 @@ mod graph;
 pub use graph::{CurrentlyDraggingProps, DraggingIndex, FlowView, VisualGraph, VisualGraphInner};
 mod connection;
 pub use connection::Connection;
-mod value;
-pub use value::*;
 mod plugin_search;
 mod sidebar;
 use sidebar::Sidebar;
 mod current_node;
 use current_node::{CurrentNodeInfo, FocusedNodeInfo};
-mod share;
-
-use crate::window::{make_config, use_apply_menu_event};
-mod input;
 mod node_value;
-mod output;
+// mod share;
 mod theme;
+use crate::window::{make_config, use_apply_menu_event};
+pub use node_value::*;
+mod input;
+mod output;
 mod window;
 
 const SAVE_NAME: &str = "workflow.json";
 
 pub type Point = Point2D<f32, f32>;
 
-#[tokio::main]
-async fn main() {
+fn main() {
     use tracing_subscriber::filter::LevelFilter;
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
@@ -83,7 +76,7 @@ async fn main() {
     let logger = tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::builder()
-                .with_default_directive(LevelFilter::DEBUG.into())
+                .with_default_directive(LevelFilter::ERROR.into())
                 .from_env_lossy(),
         )
         .pretty()
@@ -91,29 +84,28 @@ async fn main() {
 
     logger.with(debug_log).init();
 
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    tokio::spawn(async move {
-        tx.send(FloneumPackageIndex::load().await).unwrap();
-    });
+    let config = match make_config() {
+        Ok(config) => config,
+        Err(err) => {
+            eprintln!("Failed to make config: {:?}", err);
+            return;
+        }
+    };
 
-    dioxus_desktop::launch_with_props(
-        App,
-        AppProps {
-            channel: RefCell::new(Some(rx)),
-        },
-        make_config(),
-    );
+    dioxus::prelude::LaunchBuilder::new()
+        .with_cfg(config)
+        .launch(App);
 }
 
-#[derive(Serialize, Deserialize, Default)]
+pub struct PluginId(usize);
+
+#[derive(Default)]
 pub struct ApplicationState {
     graph: VisualGraph,
-    #[serde(skip)]
     currently_focused: Option<FocusedNodeInfo>,
-    #[serde(skip)]
+    resource_storage: ResourceStorage,
     plugins: HashMap<String, Plugin>,
-    #[serde(skip)]
-    last_save_id: Option<share::StorageId<ApplicationState>>,
+    // last_save_id: Option<share::StorageId<ApplicationState>>,
 }
 
 impl ApplicationState {
@@ -121,7 +113,7 @@ impl ApplicationState {
         match self.get_plugin(name) {
             Some(plugin) => {
                 let instance = plugin.instance().await?;
-                self.graph.create_node(instance);
+                self.graph.create_node(instance)?;
                 Ok(())
             }
             None => Err(anyhow::anyhow!("Plugin not found")),
@@ -155,91 +147,81 @@ impl PartialEq for ApplicationState {
     }
 }
 
-pub fn use_provide_application_state(cx: &ScopeState) -> Signal<ApplicationState> {
-    *use_context_provider(cx, || {
+pub fn use_provide_application_state() -> Signal<ApplicationState> {
+    use_context_provider(|| {
         let mut current_dir = std::env::current_dir().unwrap();
         current_dir.push(SAVE_NAME);
-        let state = if let Ok(mut file) = File::open(current_dir) {
-            let mut buffer = Vec::new();
+        // let state = if let Ok(mut file) = File::open(current_dir) {
+        //     let mut buffer = Vec::new();
 
-            if file.read_to_end(&mut buffer).is_err() {
-                ApplicationState::default()
-            } else {
-                let as_str = std::str::from_utf8(&buffer).unwrap();
-                match serde_json::from_str(as_str) {
-                    Ok(from_storage) => from_storage,
-                    Err(err) => {
-                        tracing::error!("Failed to deserialize state: {}", err);
-                        eprintln!("Failed to deserialize state: {}", err);
-                        ApplicationState::default()
-                    }
-                }
-            }
-        } else {
-            ApplicationState::default()
-        };
-        Signal::new(state)
+        //     if file.read_to_end(&mut buffer).is_err() {
+        //         ApplicationState::default()
+        //     } else {
+        //         let as_str = std::str::from_utf8(&buffer).unwrap();
+        //         match serde_json::from_str(as_str) {
+        //             Ok(from_storage) => from_storage,
+        //             Err(err) => {
+        //                 tracing::error!("Failed to deserialize state: {}", err);
+        //                 eprintln!("Failed to deserialize state: {}", err);
+        //                 ApplicationState::default()
+        //             }
+        //         }
+        //     }
+        // } else {
+        //     ApplicationState::default()
+        // };
+        Signal::new(ApplicationState::default())
     })
 }
 
-pub fn use_application_state(cx: &ScopeState) -> Signal<ApplicationState> {
-    *use_context::<Signal<ApplicationState>>(cx).unwrap()
+pub fn use_application_state() -> Signal<ApplicationState> {
+    use_context::<Signal<ApplicationState>>()
 }
 
-struct DeserializeApplicationState {
-    new_state: StorageId<ApplicationState>,
+pub fn application_state() -> Signal<ApplicationState> {
+    consume_context()
 }
 
-#[derive(Props)]
-pub struct AppProps {
-    #[props(into)]
-    channel: RefCell<Option<Receiver<FloneumPackageIndex>>>,
-}
+// struct DeserializeApplicationState {
+//     new_state: StorageId<ApplicationState>,
+// }
 
-impl PartialEq for AppProps {
-    fn eq(&self, _: &Self) -> bool {
-        true
-    }
-}
-
-fn App(cx: Scope<AppProps>) -> Element {
-    use_package_manager_provider(cx);
-    let package_manager = use_shared_state::<Option<Rc<FloneumPackageIndex>>>(cx).unwrap();
-    let state = use_provide_application_state(cx);
-    cx.use_hook(|| {
-        let channel = cx.props.channel.borrow_mut().take().unwrap();
-        to_owned![package_manager];
-        cx.spawn(async move {
-            let new_package_manager = channel.await;
-            *package_manager.write() = Some(Rc::new(new_package_manager.unwrap()));
+fn App() -> Element {
+    use_package_manager_provider();
+    let mut package_manager = use_context::<Signal<Option<Rc<FloneumPackageIndex>>>>();
+    let mut state = use_provide_application_state();
+    use_hook(|| {
+        spawn(async move {
+            let new_package_manager =
+                tokio::spawn(async move { FloneumPackageIndex::load().await })
+                    .await
+                    .unwrap();
+            package_manager.set(Some(Rc::new(new_package_manager)));
         });
     });
-    use_coroutine(cx, |mut channel| async move {
-        while let Some(DeserializeApplicationState { new_state }) = channel.next().await {
-            let mut application = state.write();
-            *application = new_state.load().await.unwrap();
-            application.last_save_id = Some(new_state);
-        }
-    });
-    let graph = state.read().graph.clone();
-    use_apply_menu_event(cx, state);
+    // use_coroutine(|mut channel| async move {
+    //     while let Some(DeserializeApplicationState { new_state }) = channel.next().await {
+    //         let mut application = state.write();
+    //         *application = new_state.load().await.unwrap();
+    //         application.last_save_id = Some(new_state);
+    //     }
+    // });
+    let graph = state.read().graph;
+    use_apply_menu_event(state);
 
-    render! {
+    rsx! {
         FlowView { graph: graph }
         Sidebar {}
     }
 }
 
-fn use_package_manager_provider(cx: &ScopeState) {
-    use_shared_state_provider(cx, || {
+fn use_package_manager_provider() {
+    use_context_provider(|| {
         let state: Option<Rc<FloneumPackageIndex>> = None;
-        state
+        Signal::new(state)
     });
 }
 
-pub fn use_package_manager(cx: &ScopeState) -> Option<Rc<FloneumPackageIndex>> {
-    use_shared_state::<Option<Rc<FloneumPackageIndex>>>(cx)
-        .unwrap()
-        .read()
-        .clone()
+pub fn use_package_manager() -> Option<Rc<FloneumPackageIndex>> {
+    use_context::<Signal<Option<Rc<FloneumPackageIndex>>>>().cloned()
 }

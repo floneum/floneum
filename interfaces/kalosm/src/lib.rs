@@ -26,10 +26,14 @@ pub use kalosm_sound as audio;
 #[cfg(feature = "vision")]
 pub use kalosm_vision as vision;
 
+#[cfg(feature = "language")]
 mod evaluate;
+#[cfg(feature = "language")]
 pub use evaluate::*;
 
+#[cfg(feature = "language")]
 mod prompt_annealing;
+#[cfg(feature = "language")]
 pub use prompt_annealing::*;
 
 #[cfg(feature = "surrealdb")]

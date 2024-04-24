@@ -1,42 +1,40 @@
-use crate::{Color, DeserializeApplicationState};
+use crate::DeserializeApplicationState;
 use dioxus::prelude::*;
-use dioxus_signals::use_signal;
 use std::{fmt::Display, str::FromStr};
 
-use dioxus_std::clipboard::use_clipboard;
+use dioxus_sdk::clipboard::use_clipboard;
 use serde::{de::DeserializeOwned, Serialize};
 
 use crate::use_application_state;
 
-pub(crate) fn SaveMenu(cx: Scope) -> Element {
-    let set_application_state: &Coroutine<DeserializeApplicationState> =
-        use_coroutine_handle(cx).unwrap();
-    let application = use_application_state(cx);
+pub(crate) fn SaveMenu() -> Element {
+    let set_application_state: Coroutine<DeserializeApplicationState> = use_coroutine_handle();
+    let mut application = use_application_state();
     let current_application = application.read();
     let current_save_id = &current_application.last_save_id;
     let current_save_string = current_save_id
         .as_ref()
         .map(|id| id.to_string())
         .unwrap_or_default();
-    let error = use_signal(cx, || None);
+    let mut error: Signal<Option<String>> = use_signal(|| None);
     let current_error = error.read();
-    let clipboard = use_clipboard(cx);
+    let clipboard = use_clipboard();
 
-    render! {
+    rsx! {
         div {
-            class: "flex flex-col {Color::text_color()}",
+            class: "flex flex-col ",
             div {
                 class: "flex flex-row",
                 input {
-                    class: "border-2 rounded-md p-2 {Color::foreground_color()} {Color::text_color()} {Color::outline_color()}",
+                    class: "border-2 rounded-md p-2 ",
                     value: "{current_save_string}",
                     oninput: move |event| {
-                        application.write().last_save_id = event.value.parse().ok();
+                        application.write().last_save_id = event.value().parse().ok();
                     },
                 }
 
                 button {
-                    class: "p-2 {Color::foreground_color()} {Color::text_color()}",
+                    class: "p-2 ",
                     onclick: move |_| {
                         to_owned![clipboard];
                         async move {
@@ -54,7 +52,7 @@ pub(crate) fn SaveMenu(cx: Scope) -> Element {
             }
 
             button {
-                class: "border-2 rounded-md p-2 {Color::outline_color()}",
+                class: "border-2 rounded-md p-2 ",
                 onclick: move |_| {
                     async move {
                         let mut application = application.write();
@@ -81,7 +79,7 @@ pub(crate) fn SaveMenu(cx: Scope) -> Element {
             }
 
             button {
-                class: "border-2 rounded-md p-2 {Color::outline_color()}",
+                class: "border-2 rounded-md p-2 ",
                 onclick: move |_| {
                     to_owned![set_application_state];
                     async move {
@@ -104,11 +102,9 @@ pub(crate) fn SaveMenu(cx: Scope) -> Element {
             }
 
             if let Some(error) = &*current_error {
-                rsx! {
-                    p {
-                        class: "text-sm text-red-500",
-                        "{error}"
-                    }
+                p {
+                    class: "text-sm text-red-500",
+                    "{error}"
                 }
             }
         }

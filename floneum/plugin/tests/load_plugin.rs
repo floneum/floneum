@@ -15,7 +15,7 @@ async fn load_plugin_works() {
         .join("add")
         .join("package.wasm");
     println!("path: {:?}", path);
-    let module = load_plugin(&path);
+    let module = load_plugin(&path, Default::default());
     let description = module.description().await.unwrap();
 
     println!("description: {:?}", description);

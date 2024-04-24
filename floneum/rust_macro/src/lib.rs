@@ -6,16 +6,15 @@ use syn::{
     Meta, Path, PathArguments, PathSegment, ReturnType, Type,
 };
 
+#[allow(clippy::all)]
 mod inner {
     wit_bindgen::generate!({
         path: "../wit",
         world: "exports",
-
-        exports: {
-            world: MyHost,
-        },
+        // pub_export_macro: true
     });
 }
+
 use inner::plugins::main::types::{PrimitiveValueType, ValueType};
 
 macro_rules! try_parse_quote {
@@ -145,7 +144,7 @@ pub fn export_plugin(args: TokenStream, input: TokenStream) -> TokenStream {
 
     // Hand the resulting function body back to the compiler.
     TokenStream::from(quote! {
-        ::floneum_rust::bindgen!(Plugin);
+        ::floneum_rust::export!(Plugin);
 
         #input
 
@@ -176,8 +175,7 @@ pub fn export_plugin(args: TokenStream, input: TokenStream) -> TokenStream {
                 }
             }
 
-
-            fn run(input: Vec<Input>) -> Vec<Output> {
+            fn run(input: Vec<Vec<PrimitiveValue>>) -> Vec<Vec<PrimitiveValue>> {
                 let mut input = input.into_iter();
                 let __inner_fn = #function_ident;
                 #(
@@ -247,27 +245,24 @@ impl IoDefinitionType {
                 inner
             },
         };
-        let quote = match &self.value_type {
-            ValueType::Single(_) => {
-                quote! {
-                    Input::Single(#match_inner)
-                }
-            }
-            ValueType::Many(_) => {
-                quote! {
-                    Input::Many(inner)
-                }
-            }
-        };
         let get_return_value = match &self.value_type {
             ValueType::Single(_) => {
                 quote! {
-                    inner.into()
+                    if inner.len() == 1 {
+                        let inner = inner.into_iter().next();
+                        if let Some(#match_inner) = inner {
+                            inner.into()
+                        } else {
+                            panic!("Unexpected input type {:?}", inner)
+                        }
+                    } else {
+                        panic!("Expected a single value, got {:?}", inner)
+                    }
                 }
             }
             ValueType::Many(_) => {
                 quote! {
-                    inner.iter().map(|inner| match inner {
+                    inner.into_iter().map(|inner| match inner {
                         #match_inner => inner.into(),
                         _ => panic!("unexpected input type {:?}", inner),
                     }).collect()
@@ -276,9 +271,9 @@ impl IoDefinitionType {
         };
         quote! {
             let __value = input.next().unwrap();
-            let #ident = match __value {
-                #quote => #get_return_value,
-                _ => panic!("unexpected input type {:?}", __value),
+            let #ident = {
+                let inner = __value;
+                #get_return_value
             };
         }
     }

@@ -1,9 +1,7 @@
 use crate::plugin_search::PluginSearch;
-use crate::share::SaveMenu;
-use crate::Color;
+// use crate::share::SaveMenu;
 use crate::CurrentNodeInfo;
 use dioxus::prelude::*;
-use dioxus_router::prelude::*;
 
 #[derive(Routable, Clone)]
 #[rustfmt::skip]
@@ -13,15 +11,15 @@ enum SidebarRoute {
         PluginSearch {},
         #[route("/node")]
         CurrentNodeInfo {},
-        #[route("/save")]
-        SaveMenu {}
+        // #[route("/save")]
+        // SaveMenu {}
 }
 
-pub fn Sidebar(cx: Scope) -> Element {
-    render! { Router::<SidebarRoute> {} }
+pub fn Sidebar() -> Element {
+    rsx! { Router::<SidebarRoute> {} }
 }
 
-fn Links(cx: Scope) -> Element {
+fn Links() -> Element {
     let script = r#"
 const BORDER_SIZE = 4;
 const panel = document.getElementById("left_panel");
@@ -44,26 +42,26 @@ document.addEventListener("mouseup", function(){
     document.removeEventListener("mousemove", resize, false);
 }, false);
 "#;
-    render! {
+    rsx! {
         div {
             id: "left_panel",
-            class: "h-full w-64 cursor-ew-resize select-none {Color::foreground_color()} {Color::text_color()} border-l-4 {Color::outline_color()} top-0 bottom-0 right-0 z-10 fixed overflow-scroll text-center",
-            div { class: "flex flex-row overflow-x-scroll divide-x border-b {Color::outline_color()}",
+            class: "h-full w-64 cursor-ew-resize select-none border-l-4 border-black top-0 bottom-0 right-0 z-10 fixed overflow-scroll text-center",
+            div { class: "flex flex-row overflow-x-scroll divide-x divide-black border-b border-black",
                 Link {
-                    class: "{Color::foreground_hover()} {Color::outline_color()} px-3 py-2 text-sm font-medium w-full",
+                    class: "px-3 py-2 text-sm font-medium w-full",
                     to: SidebarRoute::PluginSearch {},
                     "Plugin Search"
                 }
                 Link {
-                    class: "{Color::foreground_hover()} {Color::outline_color()} px-3 py-2 text-sm font-medium w-full",
+                    class: "px-3 py-2 text-sm font-medium w-full",
                     to: SidebarRoute::CurrentNodeInfo {},
                     "Current Node"
                 }
-                Link {
-                    class: "{Color::foreground_hover()} {Color::outline_color()} px-3 py-2 text-sm font-medium w-full",
-                    to: SidebarRoute::SaveMenu {},
-                    "Save/Load Cloud"
-                }
+                // Link {
+                //     class: "px-3 py-2 text-sm font-medium w-full",
+                //     to: SidebarRoute::SaveMenu {},
+                //     "Save/Load Cloud"
+                // }
             }
             Outlet::<SidebarRoute> {}
         }

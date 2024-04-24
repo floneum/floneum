@@ -25,7 +25,9 @@ impl Config {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    Debug, Serialize, Deserialize, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord,
+)]
 pub enum Category {
     Utility,
     Logic,

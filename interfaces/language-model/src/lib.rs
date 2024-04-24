@@ -22,18 +22,19 @@
 
 #![warn(missing_docs)]
 
+pub use futures_util::StreamExt;
+pub use kalosm_sample;
+
+#[cfg(feature = "remote")]
+mod remote;
+#[cfg(feature = "remote")]
+pub use remote::*;
+
+mod structured;
+mod token_stream;
+pub use token_stream::*;
+
 mod embedding;
 pub use embedding::*;
 mod model;
 pub use model::*;
-#[cfg(feature = "llamacpp")]
-mod local;
-#[cfg(feature = "llamacpp")]
-pub use local::*;
-mod remote;
-pub use futures_util::StreamExt;
-pub use kalosm_sample;
-pub use remote::*;
-mod structured;
-mod token_stream;
-pub use token_stream::*;

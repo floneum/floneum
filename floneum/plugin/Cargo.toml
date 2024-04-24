@@ -5,8 +5,9 @@ edition = "2021"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 
 [dependencies]
-wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", rev = "b736585e2515f253d4507ae32f2e3180f4385192", features = ['component-model'] }
-wasmtime-wasi = { git = "https://github.com/bytecodealliance/wasmtime", rev = "b736585e2515f253d4507ae32f2e3180f4385192", features = ['preview2'] }
+wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", rev = "c76e1fdc4afaaafb509367f2d09ef50b520efa65", features = ['component-model'] }
+wasmtime-wasi = { git = "https://github.com/bytecodealliance/wasmtime", rev = "c76e1fdc4afaaafb509367f2d09ef50b520efa65" }
+wasi-common = { git = "https://github.com/bytecodealliance/wasmtime", rev = "c76e1fdc4afaaafb509367f2d09ef50b520efa65" }
 wit-component = "0.19.0"
 bytesize = "1.2.0"
 futures-util = "0.3.28"
@@ -21,10 +22,14 @@ once_cell = "1.18.0"
 pollster = "0.3.0"
 url = "2.4.0"
 anyhow = "1.0.71"
+parking_lot = "0.12.1"
 tracing = "0.1.37"
 headless_chrome = { version = "1.0", features = ["fetch"]}
+heed = "0.20.0-alpha.9"
 floneumite = { path = "../floneumite" }
-kalosm = { workspace = true }
+kalosm = { workspace = true, features = ["language", "surrealdb"] }
+kalosm-common.workspace = true
+zstd-sys = "=2.0.9"
 
 [features]
 metal = ["kalosm/metal"]

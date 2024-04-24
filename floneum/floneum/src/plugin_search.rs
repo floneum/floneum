@@ -1,4 +1,4 @@
-use crate::Color;
+use crate::theme::category_bg_color;
 use dioxus::prelude::*;
 use floneum_plugin::{load_plugin, load_plugin_from_source};
 use floneumite::Category;
@@ -6,7 +6,7 @@ use floneumite::PackageIndexEntry;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::{use_application_state, use_package_manager};
+use crate::{application_state, use_application_state, use_package_manager};
 
 const BUILT_IN_PLUGINS: &[&str] = &[
     "Add Embedding",
@@ -53,28 +53,26 @@ const BUILT_IN_PLUGINS: &[&str] = &[
     "Calculate",
 ];
 
-pub fn PluginSearch(cx: Scope) -> Element {
-    render! {
+pub fn PluginSearch() -> Element {
+    rsx! {
         LoadRegisteredPlugin {}
         LoadLocalPlugin {}
     }
 }
 
-fn LoadRegisteredPlugin(cx: Scope) -> Element {
-    let plugins = use_package_manager(cx);
-    let search_text = use_state(cx, || "".to_string());
-    let text_words: Vec<&str> = search_text.split_whitespace().collect();
+fn LoadRegisteredPlugin() -> Element {
+    let plugins = use_package_manager();
+    let mut search_text = use_signal(|| "".to_string());
+    let current_search_text = search_text();
+    let text_words: Vec<&str> = current_search_text.split_whitespace().collect();
 
-    render! {
+    rsx! {
         "Add Plugin"
         input {
-            class: "border {Color::outline_color()} {Color::foreground_color()} rounded-md p-2 m-2",
+            class: "border rounded-md p-2 m-2",
             r#type: "text",
-            oninput: {
-                let search_text = search_text.clone();
-                move |event| {
-                    search_text.set(event.value.clone());
-                }
+            oninput: move |event| {
+                search_text.set(event.value());
             },
         }
         match &plugins {
@@ -100,11 +98,11 @@ fn LoadRegisteredPlugin(cx: Scope) -> Element {
                 rsx! {
                     nav { "aria-label": "Directory", class: "h-full overflow-y-auto",
                         div { class: "relative",
-                            for (name, category) in categories_sorted {
+                            for (category, plugins) in categories_sorted {
                                 Category {
-                                    key: "{name}",
-                                    name: "{name}",
-                                    plugins: category,
+                                    key: "{category}",
+                                    category,
+                                    plugins,
                                 }
                             }
                         }
@@ -120,15 +118,16 @@ fn LoadRegisteredPlugin(cx: Scope) -> Element {
     }
 }
 
-#[inline_props]
-fn Category<'a>(cx: Scope<'a>, name: &'a str, plugins: Vec<PackageIndexEntry>) -> Element<'a> {
-    let application = use_application_state(cx);
+#[component]
+fn Category(category: Category, plugins: Vec<PackageIndexEntry>) -> Element {
+    let application = use_application_state();
+    let color = category_bg_color(category);
 
-    render! {
-        div { class: "sticky top-0 z-10 border-y border-b-gray-200 border-t-gray-100 {Color::foreground_color()} px-3 py-1.5 text-sm font-semibold leading-6",
-            h3 { "{name}" }
+    rsx! {
+        div { class: "sticky top-0 z-10 border-y border-b-black border-t-black px-3 py-1.5 text-sm font-semibold leading-6 {color}",
+            h3 { "{category}" }
         }
-        ul { role: "list", class: "divide-y {Color::divide_color()} {Color::background_color()}",
+        ul { role: "list", class: "divide-y divide-black",
             for entry in plugins {
                 li { class: "flex gap-x-4 px-3 py-5",
                     button {
@@ -136,7 +135,11 @@ fn Category<'a>(cx: Scope<'a>, name: &'a str, plugins: Vec<PackageIndexEntry>) -
                         onclick: {
                             let entry = entry.clone();
                             move |_| {
-                                let plugin = load_plugin_from_source(entry.clone());
+                                let application_state = application_state();
+                                let plugin = {
+                                    let read = application_state.read();
+                                    load_plugin_from_source(entry.clone(), read.resource_storage.clone())
+                                };
                                 to_owned![application];
                                 async move {
                                     let mut application = application.write();
@@ -153,27 +156,25 @@ fn Category<'a>(cx: Scope<'a>, name: &'a str, plugins: Vec<PackageIndexEntry>) -
                         },
                         p { class: "text-sm font-semibold leading-6",
                             if let Some(meta) = entry.meta() {
-                                let name = &meta.name;
-                                let built_in = BUILT_IN_PLUGINS.contains(&name.as_str());
-                                let extra = if built_in {
-                                    ""
-                                } else {
-                                    " (community)"
-                                };
-                                rsx! {
-                                    "{name}{extra}"
+                                {
+                                    let name = &meta.name;
+                                    let built_in = BUILT_IN_PLUGINS.contains(&name.as_str());
+                                    let extra = if built_in {
+                                        ""
+                                    } else {
+                                        " (community)"
+                                    };
+                                    rsx! {
+                                        "{name}{extra}"
+                                    }
                                 }
                             } else {
-                                rsx! {
-                                    "{entry.path().display()}"
-                                }
+                                "{entry.path().display()}"
                             }
                         }
                         if let Some(meta) = entry.meta() {
-                            render! {
-                                p { class: "mt-1 truncate text-xs leading-5",
-                                    "{meta.description}"
-                                }
+                            p { class: "mt-1 truncate text-xs leading-5",
+                                "{meta.description}"
                             }
                         }
                     }
@@ -183,27 +184,30 @@ fn Category<'a>(cx: Scope<'a>, name: &'a str, plugins: Vec<PackageIndexEntry>) -
     }
 }
 
-fn LoadLocalPlugin(cx: Scope) -> Element {
-    let search_text = use_state(cx, String::new);
-    let application = use_application_state(cx);
+fn LoadLocalPlugin() -> Element {
+    let mut search_text = use_signal(String::new);
+    let application = use_application_state();
 
-    render! {
+    rsx! {
         div {
             class: "flex flex-col items-left",
             "Add Plugin from File"
             input {
-                class: "border {Color::outline_color()} {Color::foreground_color()} rounded-md p-2 m-2",
+                class: "border rounded-md p-2 m-2",
                 value: "{search_text}",
                 oninput: move |event| {
-                    search_text.set(event.value.clone());
+                    search_text.set(event.value());
                 },
             }
 
             button {
-                class: "{Color::foreground_hover()} border {Color::outline_color()} rounded-md p-2 m-2",
+                class: "border rounded-md p-2 m-2",
                 onclick: move |_| {
-                    let path = PathBuf::from(search_text.get());
-                    let plugin = load_plugin(&path);
+                    let path = PathBuf::from(search_text());
+                    let plugin = {
+                        let read = application.read();
+                        load_plugin(&path, read.resource_storage.clone())
+                    };
                     to_owned![application];
                     async move {
                         let mut application = application.write();

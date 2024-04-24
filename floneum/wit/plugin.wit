@@ -1,8 +1,7 @@
 package plugins:main;
 
 interface imports {
-  use types.{embedding, model, model-type, embedding-db, node, page};
-  
+
   store: func(key: list<u8>, value: list<u8>);
 
   load: func(key: list<u8>) -> list<u8>;
@@ -25,51 +24,66 @@ interface types {
     headfull,
   }
 
-  resource page {
-    constructor(mode: browser-mode, url: string);
-    find-in-current-page: func(selector: string) -> node;
-    screenshot-browser: func() -> list<u8>;
-    html: func() -> string;
+  record page-resource {
+    id: u64,
+    owned: bool,
   }
+  drop-page: func(page: page-resource);
+  create-page: func(mode: browser-mode, url: string) -> page-resource;
+  find-in-current-page: func(page: page-resource, selector: string) -> node-resource;
+  screenshot-browser: func(page: page-resource) -> list<u8>;
+  page-html: func(page: page-resource) -> string;
+  
+  record node-resource {
+    id: u64,
+    owned: bool,
+  }
+  drop-node: func(node: node-resource);
+  get-element-text: func(node: node-resource) -> string;
+  click-element: func(node: node-resource);
+  type-into-element: func(node: node-resource, keys: string);
+  get-element-outer-html: func(node: node-resource) -> string;
+  screenshot-element: func(node: node-resource) -> list<u8>;
+  find-child-of-element: func(node: node-resource, selector: string) -> node-resource;
 
-  resource node {
-    get-element-text: func() -> string;
-    click-element: func();
-    type-into-element: func(keys: string);
-    get-element-outer-html: func() -> string;
-    screenshot-element: func() -> list<u8>;
-    find-child-of-element: func(selector: string) -> node;
+  record embedding-db-resource {
+    id: u64,
+    owned: bool,
   }
+  create-embedding-db: func(embeddings: list<embedding>, documents: list<string>) -> embedding-db-resource;
+  drop-embedding-db: func(model: embedding-db-resource);
+  add-embedding: func(db: embedding-db-resource, embedding: embedding, documents: string);
+  find-closest-documents: func(db: embedding-db-resource, search: embedding, count: u32) -> list<string>;
 
-  resource embedding-db {
-    constructor(embeddings: list<embedding>, documents: list<string>);
-    add-embedding: func(embedding: embedding, documents: string);
-    find-closest-documents: func(search: embedding, count: u32) -> list<string>;
+  record text-generation-model-resource {
+    id: u64,
+    owned: bool,
   }
+  create-model: func(ty: model-type) -> text-generation-model-resource;
+  drop-model: func(model: text-generation-model-resource);
+  text-generation-model-downloaded: func(ty: model-type) -> bool;
+  infer: func(model: text-generation-model-resource, input: string, max-tokens: option<u32>, stop-on: option<string>) -> string;
+  infer-structured: func(model: text-generation-model-resource, input: string, regex: string) -> string;
 
-  resource model {
-    constructor(ty: model-type);
-    model-downloaded: static func(ty: model-type) -> bool;
-    infer: func(input: string, max-tokens: option<u32>, stop-on: option<string>) -> string;
-    infer-structured: func(input: string, regex: string) -> string;
+  record embedding-model-resource {
+    id: u64,
+    owned: bool,
   }
-
-  resource embedding-model {
-    constructor(ty: embedding-model-type);
-    model-downloaded: static func(ty: embedding-model-type) -> bool;
-    get-embedding: func(document: string) -> embedding;
-  }
+  create-embedding-model: func(ty: embedding-model-type) -> embedding-model-resource;
+  drop-embedding-model: func(model: embedding-model-resource);
+  embedding-model-downloaded: func(ty: embedding-model-type) -> bool;
+  get-embedding: func(model: embedding-model-resource, document: string) -> embedding;
 
   record embedding {
     vector: list<float32>
   }
 
   variant primitive-value {
-    model(model),
-    embedding-model(embedding-model),
+    model(text-generation-model-resource),
+    embedding-model(embedding-model-resource),
     model-type(model-type),
     embedding-model-type(embedding-model-type),
-    database(embedding-db),
+    database(embedding-db-resource),
     number(s64),
     float(f64),
     text(string),
@@ -77,10 +91,10 @@ interface types {
     folder(string),
     embedding(embedding),
     boolean(bool),
-    page(page),
-    node(node)
+    page(page-resource),
+    node(node-resource)
   }
-
+  
   variant value-type {
     single(primitive-value-type),
     many(primitive-value-type),
@@ -114,24 +128,13 @@ interface types {
 
   record example {
     name: string,
-    inputs: list<input>,
-    outputs: list<output>,
+    inputs: list<list<primitive-value>>,
+    outputs: list<list<primitive-value>>,
   }
 
   record io-definition {
     name: string,
     ty: value-type,
-  }
-
-  variant input {
-    single(primitive-value),
-    many(list<primitive-value>),
-  }
-
-  variant output {
-    single(primitive-value),
-    many(list<primitive-value>),
-    halt,
   }
 
   variant model-type {
@@ -165,11 +168,11 @@ interface types {
 }
 
 interface definitions {
-  use types.{definition, input, output};
+  use types.{definition, primitive-value};
 
   structure: func() -> definition;
 
-  run: func(inputs: list<input>) -> list<output>;
+  run: func(inputs: list<list<primitive-value>>) -> list<list<primitive-value>>;
 }
 
 world exports {

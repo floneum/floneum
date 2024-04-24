@@ -6,6 +6,6 @@ fn click_node(
     /// The node to click
     node: Node,
 ) -> Node {
-    node.click_element();
+    node.click();
     node
 }
