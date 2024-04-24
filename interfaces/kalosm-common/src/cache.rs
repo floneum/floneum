@@ -45,6 +45,35 @@ impl ModelLoadingProgress {
     pub fn loading(progress: f32) -> Self {
         Self::Loading { progress }
     }
+
+    /// A default loading progress bar
+    pub fn multi_bar_loading_indicator() -> impl FnMut(ModelLoadingProgress) + Send + Sync + 'static {
+        use std::collections::HashMap;
+        use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+        let m = MultiProgress::new();
+        let sty = ProgressStyle::default_bar();
+        let mut progress_bars = HashMap::new();
+
+        move |progress| match progress {
+            ModelLoadingProgress::Downloading { source, progress } => {
+                let n = 100;
+                let progress_bar = progress_bars.entry(source).or_insert_with(|| {
+                    let pb = m.add(ProgressBar::new(n));
+                    pb.set_style(sty.clone());
+                    pb
+                });
+                let progress = progress * n as f32;
+                progress_bar.set_position(progress as u64);
+            }
+            ModelLoadingProgress::Loading { progress } => {
+                for pb in progress_bars.values_mut() {
+                    pb.finish();
+                }
+                let progress = progress * 100.;
+                m.println(format!("Loading {progress:.2}%")).unwrap();
+            }
+        }
+    }
 }
 
 pub struct Cache {

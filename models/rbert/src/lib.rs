@@ -203,7 +203,7 @@ impl BertBuilder {
 
     /// Build the model
     pub async fn build(self) -> anyhow::Result<Bert> {
-        self.build_with_loading_handler(|_| {}).await
+        self.build_with_loading_handler(ModelLoadingProgress::multi_bar_loading_indicator()).await
     }
 
     /// Build the model with a loading handler

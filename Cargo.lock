@@ -6280,6 +6280,7 @@ dependencies = [
  "dirs 5.0.1",
  "hf-hub",
  "httpdate",
+ "indicatif 0.17.8",
  "reqwest",
  "tokio",
  "tracing",
