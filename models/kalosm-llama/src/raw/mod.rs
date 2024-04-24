@@ -130,9 +130,11 @@ impl Model {
             .and_then(|m| m.to_f32())
             .unwrap_or(10000f32);
 
+        let context_length = md_get("llama.context_length")?.to_u32()? as usize;
+
         let config = LlamaConfig {
             rope_theta: rope_freq_base,
-            context_length: 4096,
+            context_length,
             head_dimension: embedding_length / head_count,
             rope_dimension: rope_dim,
             n_head: head_count,

@@ -10,6 +10,14 @@ fn llama_tokenizer() -> FileSource {
     )
 }
 
+fn llama_v3_tokenizer() -> FileSource {
+    FileSource::huggingface(
+        "NousResearch/Meta-Llama-3-8B-Instruct".to_string(),
+        "main".to_string(),
+        "tokenizer.json".to_string(),
+    )
+}
+
 fn mistral_tokenizer() -> FileSource {
     FileSource::huggingface(
         "mistralai/Mistral-7B-v0.1".to_string(),
@@ -355,7 +363,7 @@ impl LlamaSource {
         }
     }
 
-    /// A preset for Llama7b
+    /// A preset for Llama7b v2
     pub fn llama_7b() -> Self {
         Self {
             model: FileSource::huggingface(
@@ -366,6 +374,41 @@ impl LlamaSource {
             tokenizer: llama_tokenizer(),
             group_query_attention: 1,
             ..Default::default()
+        }
+    }
+
+    /// A preset for Llama8b v3
+    pub fn llama_8b() -> Self {
+        Self {
+            model: FileSource::huggingface(
+                "NousResearch/Meta-Llama-3-8B-GGUF".to_string(),
+                "main".to_string(),
+                "Meta-Llama-3-8B-Q4_K_M.gguf".to_string(),
+            ),
+            tokenizer: llama_v3_tokenizer(),
+            group_query_attention: 1,
+            ..Default::default()
+        }
+    }
+
+    /// A preset for Llama8b v3
+    pub fn llama_8b_chat() -> Self {
+        Self {
+            model: FileSource::huggingface(
+                "bartowski/Meta-Llama-3-8B-Instruct-GGUF".to_string(),
+                "main".to_string(),
+                "Meta-Llama-3-8B-Instruct-Q4_K_M.gguf".to_string(),
+            ),
+            tokenizer: llama_v3_tokenizer(),
+            group_query_attention: 1,
+            markers: Some(ChatMarkers {
+                system_prompt_marker: "<|begin_of_text|><|start_header_id|>system<|end_header_id|>",
+                end_system_prompt_marker: "<|eot_id|>",
+                user_marker: "<|start_header_id|>user<|end_header_id|>",
+                end_user_marker: "<|eot_id|>",
+                assistant_marker: "<|start_header_id|>assistant<|end_header_id|>",
+                end_assistant_marker: "<|eot_id|>",
+            }),
         }
     }
 
