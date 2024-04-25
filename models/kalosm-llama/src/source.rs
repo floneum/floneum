@@ -422,7 +422,7 @@ impl LlamaSource {
             model: FileSource::huggingface(
                 "bartowski/Meta-Llama-3-8B-Instruct-GGUF".to_string(),
                 "main".to_string(),
-                "Meta-Llama-3-8B-Instruct-Q4_K_M.gguf".to_string(),
+                "Meta-Llama-3-8B-Instruct-Q5_K_M.gguf".to_string(),
             ),
             tokenizer: llama_v3_tokenizer(),
             group_query_attention: 1,
