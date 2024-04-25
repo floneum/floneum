@@ -5,10 +5,8 @@ use anyhow::Result;
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
 use floneum_plugin::{Plugin, ResourceStorage};
 use floneumite::FloneumPackageIndex;
-use futures_util::stream::StreamExt;
 use petgraph::stable_graph::{DefaultIx, NodeIndex};
-use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fs::File, io::Read, rc::Rc};
+use std::{collections::HashMap, fs::File, rc::Rc};
 
 mod node;
 pub use node::Node;

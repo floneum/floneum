@@ -264,7 +264,7 @@ impl VisualGraph {
             let graph = self.inner;
             spawn(async move {
                 let fut = {
-                    let mut current_node_write = node.write();
+                    let current_node_write = node.read();
                     current_node_write.instance.run(inputs)
                 };
                 // Don't hold the write over an await point

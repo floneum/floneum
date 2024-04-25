@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
-use dioxus::desktop::use_wry_event_handler;
+use dioxus::desktop::use_muda_event_handler;
 use dioxus::desktop::{tao::window::Icon, WindowBuilder};
 use dioxus::prelude::*;
 use muda::accelerator::Accelerator;
@@ -45,11 +45,11 @@ pub(crate) fn make_config() -> anyhow::Result<dioxus::desktop::Config> {
         &OpenPredefinedMenuItem::item(),
     ])?;
 
-    examples_menu.append_items(&[
-        &QAndAPredefinedMenuItem::item(),
-        &StarRepoPredefinedMenuItem::item(),
-        &SummarizeNewsPredefinedMenuItem::item(),
-    ])?;
+    // examples_menu.append_items(&[
+    //     &QAndAPredefinedMenuItem::item(),
+    //     &StarRepoPredefinedMenuItem::item(),
+    //     &SummarizeNewsPredefinedMenuItem::item(),
+    // ])?;
 
     main_menu.append_items(&[&edit_menu, &window_menu, &application_menu, &examples_menu])?;
 
@@ -86,25 +86,25 @@ pub(crate) fn make_config() -> anyhow::Result<dioxus::desktop::Config> {
 }
 
 pub fn use_apply_menu_event(state: Signal<ApplicationState>) {
-    // let open_application = use_signal(|| None);
-    // use_wry_event_handler(move |event, _| {
-    //     if let dioxus::desktop::tao::event::Event::UserEvent(UserWindowEvent::MudaMenuEvent(muda_event)) = event {
-    //         let menu_id = muda_event.menu_id;
-    //         if menu_id == SavePredefinedMenuItem::id() {
-    //             SavePredefinedMenuItem::save(&state.read());
-    //         } else if menu_id == SaveAsPredefinedMenuItem::id() {
-    //             SaveAsPredefinedMenuItem::save(&state.read());
-    //         } else if menu_id == OpenPredefinedMenuItem::id() {
-    //             OpenPredefinedMenuItem::open(open_application);
-    //         } else if menu_id == QAndAPredefinedMenuItem::id() {
-    //             QAndAPredefinedMenuItem::open(open_application);
-    //         } else if menu_id == StarRepoPredefinedMenuItem::id() {
-    //             StarRepoPredefinedMenuItem::open(open_application);
-    //         } else if menu_id == SummarizeNewsPredefinedMenuItem::id() {
-    //             SummarizeNewsPredefinedMenuItem::open(open_application);
-    //         }
-    //     }
-    // });
+    let open_application = use_signal(|| None);
+    use_muda_event_handler(move |muda_event| {
+        // let menu_id = muda_event.menu_id;
+        // if menu_id == SavePredefinedMenuItem::id() {
+        //     SavePredefinedMenuItem::save(&state.read());
+        // } else if menu_id == SaveAsPredefinedMenuItem::id() {
+        //     SaveAsPredefinedMenuItem::save(&state.read());
+        // } else
+        if menu_id == OpenPredefinedMenuItem::id() {
+            OpenPredefinedMenuItem::open(open_application);
+        }
+        //else if menu_id == QAndAPredefinedMenuItem::id() {
+        //     QAndAPredefinedMenuItem::open(open_application);
+        // } else if menu_id == StarRepoPredefinedMenuItem::id() {
+        //     StarRepoPredefinedMenuItem::open(open_application);
+        // } else if menu_id == SummarizeNewsPredefinedMenuItem::id() {
+        //     SummarizeNewsPredefinedMenuItem::open(open_application);
+        // }
+    });
 
     // if let Some(buffer) = open_application.take() {
     //     let as_str = std::str::from_utf8(&buffer).unwrap();
@@ -214,62 +214,62 @@ impl OpenPredefinedMenuItem {
     }
 }
 
-struct QAndAPredefinedMenuItem;
+// struct QAndAPredefinedMenuItem;
 
-impl CustomMenuItem for QAndAPredefinedMenuItem {
-    fn name() -> &'static str {
-        "Open Q&A Example"
-    }
+// impl CustomMenuItem for QAndAPredefinedMenuItem {
+//     fn name() -> &'static str {
+//         "Open Q&A Example"
+//     }
 
-    fn accelerator() -> Option<Accelerator> {
-        None
-    }
-}
+//     fn accelerator() -> Option<Accelerator> {
+//         None
+//     }
+// }
 
-impl QAndAPredefinedMenuItem {
-    pub fn open(mut state: Signal<Option<Vec<u8>>>) {
-        let bytes = include_bytes!("../example_workflows/Q&A.json");
-        state.set(Some(bytes.to_vec()));
-    }
-}
+// impl QAndAPredefinedMenuItem {
+//     pub fn open(mut state: Signal<Option<Vec<u8>>>) {
+//         let bytes = include_bytes!("../example_workflows/Q&A.json");
+//         state.set(Some(bytes.to_vec()));
+//     }
+// }
 
-struct StarRepoPredefinedMenuItem;
+// struct StarRepoPredefinedMenuItem;
 
-impl CustomMenuItem for StarRepoPredefinedMenuItem {
-    fn name() -> &'static str {
-        "Open Star Repo Example"
-    }
+// impl CustomMenuItem for StarRepoPredefinedMenuItem {
+//     fn name() -> &'static str {
+//         "Open Star Repo Example"
+//     }
 
-    fn accelerator() -> Option<Accelerator> {
-        None
-    }
-}
+//     fn accelerator() -> Option<Accelerator> {
+//         None
+//     }
+// }
 
-impl StarRepoPredefinedMenuItem {
-    pub fn open(mut state: Signal<Option<Vec<u8>>>) {
-        let bytes = include_bytes!("../example_workflows/StarRepo.json");
-        state.set(Some(bytes.to_vec()));
-    }
-}
+// impl StarRepoPredefinedMenuItem {
+//     pub fn open(mut state: Signal<Option<Vec<u8>>>) {
+//         let bytes = include_bytes!("../example_workflows/StarRepo.json");
+//         state.set(Some(bytes.to_vec()));
+//     }
+// }
 
-struct SummarizeNewsPredefinedMenuItem;
+// struct SummarizeNewsPredefinedMenuItem;
 
-impl CustomMenuItem for SummarizeNewsPredefinedMenuItem {
-    fn name() -> &'static str {
-        "Open Summarize News Example"
-    }
+// impl CustomMenuItem for SummarizeNewsPredefinedMenuItem {
+//     fn name() -> &'static str {
+//         "Open Summarize News Example"
+//     }
 
-    fn accelerator() -> Option<Accelerator> {
-        None
-    }
-}
+//     fn accelerator() -> Option<Accelerator> {
+//         None
+//     }
+// }
 
-impl SummarizeNewsPredefinedMenuItem {
-    pub fn open(mut state: Signal<Option<Vec<u8>>>) {
-        let bytes = include_bytes!("../example_workflows/SummarizeNews.json");
-        state.set(Some(bytes.to_vec()));
-    }
-}
+// impl SummarizeNewsPredefinedMenuItem {
+//     pub fn open(mut state: Signal<Option<Vec<u8>>>) {
+//         let bytes = include_bytes!("../example_workflows/SummarizeNews.json");
+//         state.set(Some(bytes.to_vec()));
+//     }
+// }
 
 fn default_save_location() -> PathBuf {
     let mut current_dir = std::env::current_dir().unwrap();

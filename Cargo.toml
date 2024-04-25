@@ -100,6 +100,14 @@ segment-anything-rs = { path = "./models/segment-anything-rs", version = "0.2.1"
 kalosm-ocr = { path = "./models/kalosm-ocr", version = "0.2.1" }
 llm-samplers = "=0.0.7"
 
+[patch.crates-io]
+dioxus = { git = "https://github.com/dioxuslabs/dioxus" }
+dioxus-core = { git = "https://github.com/dioxuslabs/dioxus" }
+dioxus-rsx = { git = "https://github.com/dioxuslabs/dioxus" }
+dioxus-html = { git = "https://github.com/dioxuslabs/dioxus" }
+dioxus-hooks = { git = "https://github.com/dioxuslabs/dioxus" }
+dioxus-desktop = { git = "https://github.com/dioxuslabs/dioxus" }
+
 [profile.dist]
 inherits = "release"
 lto = "thin"
