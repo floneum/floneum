@@ -1,4 +1,5 @@
 use crate::current_node::FocusedNodeInfo;
+use dioxus::html::geometry::euclid::Rect;
 use dioxus::prelude::*;
 use dioxus_free_icons::Icon;
 use floneum_plugin::plugins::main::types::ValueType;
@@ -26,6 +27,7 @@ pub struct Node {
     pub error: Option<String>,
     pub id: NodeIndex<DefaultIx>,
     pub position: Point,
+    pub rendered_size: Option<Rect<f64, f64>>,
     pub inputs: Vec<Signal<NodeInput>>,
     pub outputs: Vec<Signal<NodeOutput>>,
 }
@@ -129,14 +131,14 @@ impl Node {
     }
 }
 
-#[derive(Props, Clone, PartialEq)]
+#[derive(Props, Clone, Copy, PartialEq)]
 pub struct NodeProps {
     node: Signal<Node>,
 }
 
 pub fn Node(props: NodeProps) -> Element {
     let mut application = use_application_state();
-    let node = props.node;
+    let mut node = props.node;
     let current_node = node.read();
     let pos = current_node.position;
 
@@ -146,6 +148,10 @@ pub fn Node(props: NodeProps) -> Element {
             position: "absolute",
             left: "{pos.x}px",
             top: "{pos.y}px",
+            onmounted: move |mount| async move {
+                let size = mount.get_client_rect().await.ok();
+                node.with_mut(|node| node.rendered_size = size);
+            },
             onmousedown: move |evt| {
                 let mut graph: VisualGraph = consume_context();
                 graph.start_dragging_node(&evt, props.node);
@@ -174,14 +180,14 @@ pub fn Node(props: NodeProps) -> Element {
             },
 
             CenterNodeUI {
-                node: props.node,
+                node,
             }
         }
 
         // inputs
         for index in 0..current_node.inputs.len() {
             Input {
-                node: props.node,
+                node,
                 index,
             }
         }
@@ -189,17 +195,18 @@ pub fn Node(props: NodeProps) -> Element {
         // outputs
         for index in 0..current_node.outputs.len() {
             Output {
-                node: props.node,
+                node,
                 index,
             }
         }
     }
 }
 
-fn CenterNodeUI(props: NodeProps) -> Element {
+#[component]
+fn CenterNodeUI(mut node: Signal<Node>) -> Element {
     let mut application = use_application_state();
-    let focused = application.read().currently_focused.map(|n| n.node) == Some(props.node);
-    let mut node = props.node;
+    let focused = application.read().currently_focused.map(|n| n.node) == Some(node);
+
     if node.with(|n| n.queued) {
         node.with_mut(|node| node.queued = false);
         let application = application.write();
@@ -233,8 +240,18 @@ fn CenterNodeUI(props: NodeProps) -> Element {
                 class: "flex flex-col justify-center items-center",
                 button {
                     class: "p-2 border top-0 right-0",
-                    onclick: move |_| {
+                    onclick: move |evt| {
+                        evt.stop_propagation();
                         application.write().remove(node.read().id)
+                    },
+                    onmousedown: move |evt| {
+                        evt.stop_propagation();
+                    },
+                    onmousemove: |evt| {
+                        evt.stop_propagation();
+                    },
+                    onmouseup: move |evt| {
+                        evt.stop_propagation();
                     },
                     Icon {
                         width: 15,
@@ -247,8 +264,18 @@ fn CenterNodeUI(props: NodeProps) -> Element {
                 } else {
                     button {
                         class: "p-1 border rounded-md ",
-                        onclick: move |_| {
+                        onclick: move |evt| {
+                            evt.stop_propagation();
                             node.write().queued = true;
+                        },
+                        onmousedown: move |evt| {
+                            evt.stop_propagation();
+                        },
+                        onmousemove: |evt| {
+                            evt.stop_propagation();
+                        },
+                        onmouseup: move |evt| {
+                            evt.stop_propagation();
                         },
                         "Run"
                     }

@@ -110,6 +110,7 @@ impl VisualGraph {
                 running: false,
                 queued: false,
                 error: None,
+                rendered_size: None,
                 id: Default::default(),
                 inputs,
                 outputs,
