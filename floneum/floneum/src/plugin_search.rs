@@ -99,10 +99,12 @@ fn LoadRegisteredPlugin() -> Element {
                     nav { "aria-label": "Directory", class: "h-full overflow-y-auto",
                         div { class: "relative",
                             for (category, plugins) in categories_sorted {
-                                Category {
-                                    key: "{category}",
-                                    category,
-                                    plugins,
+                                if !plugins.is_empty() {
+                                    Category {
+                                        key: "{category}",
+                                        category,
+                                        plugins,
+                                    }
                                 }
                             }
                         }

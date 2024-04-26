@@ -13,7 +13,7 @@ use slab::Slab;
 
 use crate::{
     node_value::{NodeInput, NodeOutput},
-    Connection, Edge, Node, Signal,
+    Colored, Connection, Edge, Node, Signal,
 };
 
 pub struct VisualGraphInner {
@@ -532,13 +532,12 @@ fn NodeConnection(props: ConnectionProps) -> Element {
     let current_connection = connection.read();
     let start_index = current_connection.end;
     let start_node = start.read();
-    // let start = start_node.input_pos(start_index);
-    // let end_index = current_connection.start;
-    // let end = end.read().output_pos(end_index);
+    let start = start_node.input_pos(start_index);
+    let end_index = current_connection.start;
+    let end = end.read().output_pos(end_index);
 
-    // let ty = start_node.input_type(start_index).unwrap();
-    // let color = ty.color();
+    let ty = start_node.input_type(start_index).unwrap();
+    let color = ty.color();
 
-    // rsx! { Connection { start_pos: start, end_pos: end, color: color } }
-    None
+    rsx! { Connection { start_pos: start, end_pos: end, color: color } }
 }

@@ -15467,3 +15467,33 @@ dependencies = [
  "quote",
  "syn 1.0.109",
 ]
+
+[[patch.unused]]
+name = "dioxus"
+version = "0.5.2"
+source = "git+https://github.com/dioxuslabs/dioxus#88f355841946d4c825910801194c56cb4f3ad496"
+
+[[patch.unused]]
+name = "dioxus-core"
+version = "0.5.2"
+source = "git+https://github.com/dioxuslabs/dioxus#88f355841946d4c825910801194c56cb4f3ad496"
+
+[[patch.unused]]
+name = "dioxus-desktop"
+version = "0.5.2"
+source = "git+https://github.com/dioxuslabs/dioxus#88f355841946d4c825910801194c56cb4f3ad496"
+
+[[patch.unused]]
+name = "dioxus-hooks"
+version = "0.5.2"
+source = "git+https://github.com/dioxuslabs/dioxus#88f355841946d4c825910801194c56cb4f3ad496"
+
+[[patch.unused]]
+name = "dioxus-html"
+version = "0.5.2"
+source = "git+https://github.com/dioxuslabs/dioxus#88f355841946d4c825910801194c56cb4f3ad496"
+
+[[patch.unused]]
+name = "dioxus-rsx"
+version = "0.5.2"
+source = "git+https://github.com/dioxuslabs/dioxus#88f355841946d4c825910801194c56cb4f3ad496"

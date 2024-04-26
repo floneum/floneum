@@ -14,7 +14,13 @@ use crate::output::Output;
 use crate::{theme, use_application_state, Colored};
 use crate::{Point, VisualGraph};
 
-pub const NODE_KNOB_SIZE: f64 = 5.;
+pub const NODE_KNOB_SIZE: f64 = 10.;
+
+pub fn stop_dragging<T>(evt: &Event<T>) {
+    evt.stop_propagation();
+    let mut graph: VisualGraph = consume_context();
+    graph.clear_dragging();
+}
 
 // #[derive(Serialize, Deserialize)]
 pub struct Node {
@@ -140,11 +146,25 @@ pub fn Node(props: NodeProps) -> Element {
     let mut application = use_application_state();
     let mut node = props.node;
     let current_node = node.read();
+    let name = &current_node.instance.metadata().name;
+    let category = match current_node.instance.source().meta() {
+        Some(meta) => meta.category,
+        None => Category::Other,
+    };
+    let color = theme::category_bg_color(category);
     let pos = current_node.position;
+    let focused = application.read().currently_focused.map(|n| n.node) == Some(node);
+    let focused_class = if focused {
+        "border-2 border-blue-500"
+    } else {
+        "border"
+    };
 
     rsx! {
         // center UI/Configuration
         div {
+            style: "-webkit-user-select: none; -ms-user-select: none; user-select: none;",
+            class: "shadow-sm resize w-32 h-32 flex flex-col rounded-md {focused_class}",
             position: "absolute",
             left: "{pos.x}px",
             top: "{pos.y}px",
@@ -179,56 +199,7 @@ pub fn Node(props: NodeProps) -> Element {
                 }
             },
 
-            CenterNodeUI {
-                node,
-            }
-        }
-
-        // inputs
-        for index in 0..current_node.inputs.len() {
-            Input {
-                node,
-                index,
-            }
-        }
-
-        // outputs
-        for index in 0..current_node.outputs.len() {
-            Output {
-                node,
-                index,
-            }
-        }
-    }
-}
-
-#[component]
-fn CenterNodeUI(mut node: Signal<Node>) -> Element {
-    let mut application = use_application_state();
-    let focused = application.read().currently_focused.map(|n| n.node) == Some(node);
-
-    if node.with(|n| n.queued) {
-        node.with_mut(|node| node.queued = false);
-        let application = application.write();
-        application.graph.run_node(node);
-    }
-    let current_node = node.read();
-    let name = &current_node.instance.metadata().name;
-    let focused_class = if focused {
-        "border-2 border-blue-500"
-    } else {
-        "border"
-    };
-    let category = match current_node.instance.source().meta() {
-        Some(meta) => meta.category,
-        None => Category::Other,
-    };
-    let color = theme::category_bg_color(category);
-
-    rsx! {
-        div {
-            style: "-webkit-user-select: none; -ms-user-select: none; user-select: none;",
-            class: "shadow-sm resize w-32 h-32 flex flex-col rounded-md {focused_class}",
+            // The node name
             div {
                 class: "flex w-full h-8 flex-shrink-0 items-center justify-center {color} rounded-t-md text-sm font-medium text-black",
                 h1 {
@@ -236,13 +207,63 @@ fn CenterNodeUI(mut node: Signal<Node>) -> Element {
                     "{name}"
                 }
             }
+
+            // Everything else horizontally spread underneath it
             div {
-                class: "flex flex-col justify-center items-center",
+                class: "flex flex-row items-center justify-between h-full",
+
+                // inputs
+                div {
+                    class: "flex flex-col justify-around h-full",
+                    for index in 0..current_node.inputs.len() {
+                        Input {
+                            node,
+                            index,
+                        }
+                    }
+                }
+
+                CenterNodeUI {
+                    node,
+                }
+
+                div {
+                    class: "flex flex-col justify-around h-full",
+                    // outputs
+                    for index in 0..current_node.outputs.len() {
+                        Output {
+                            node,
+                            index,
+                        }
+                    }
+                }
+            }
+        }
+
+    }
+}
+
+#[component]
+fn CenterNodeUI(mut node: Signal<Node>) -> Element {
+    let mut application = use_application_state();
+
+    if node.with(|n| n.queued) {
+        node.with_mut(|node| node.queued = false);
+        let application = application.write();
+        application.graph.run_node(node);
+    }
+    let current_node = node.read();
+
+    rsx! {
+        div {
+            class: "flex flex-col",
+            class: "flex flex-col justify-center items-center",
+            div {
                 button {
                     class: "p-2 border top-0 right-0",
                     onclick: move |evt| {
                         evt.stop_propagation();
-                        application.write().remove(node.read().id)
+                        application.write().remove(node.read().id);
                     },
                     onmousedown: move |evt| {
                         evt.stop_propagation();
@@ -250,9 +271,7 @@ fn CenterNodeUI(mut node: Signal<Node>) -> Element {
                     onmousemove: |evt| {
                         evt.stop_propagation();
                     },
-                    onmouseup: move |evt| {
-                        evt.stop_propagation();
-                    },
+                    onmouseup: |evt| stop_dragging(&evt),
                     Icon {
                         width: 15,
                         height: 15,
@@ -274,9 +293,7 @@ fn CenterNodeUI(mut node: Signal<Node>) -> Element {
                         onmousemove: |evt| {
                             evt.stop_propagation();
                         },
-                        onmouseup: move |evt| {
-                            evt.stop_propagation();
-                        },
+                        onmouseup: |evt| stop_dragging(&evt),
                         "Run"
                     }
                 }
