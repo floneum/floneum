@@ -1,8 +1,10 @@
+#![allow(unused)]
+
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
-use dioxus::desktop::use_wry_event_handler;
+use dioxus::desktop::use_muda_event_handler;
 use dioxus::desktop::{tao::window::Icon, WindowBuilder};
 use dioxus::prelude::*;
 use muda::accelerator::Accelerator;
@@ -17,7 +19,7 @@ pub(crate) fn make_config() -> anyhow::Result<dioxus::desktop::Config> {
     let edit_menu = Submenu::new("Edit", true);
     let window_menu = Submenu::new("Window", true);
     let application_menu = Submenu::new("Floneum", true);
-    let examples_menu = Submenu::new("Examples", true);
+    // let examples_menu = Submenu::new("Examples", true);
 
     edit_menu.append_items(&[
         &PredefinedMenuItem::undo(None),
@@ -42,16 +44,22 @@ pub(crate) fn make_config() -> anyhow::Result<dioxus::desktop::Config> {
     application_menu.append_items(&[
         // &SavePredefinedMenuItem::item(),
         // &SaveAsPredefinedMenuItem::item(),
-        &OpenPredefinedMenuItem::item(),
+        // &OpenPredefinedMenuItem::item(),
+        &ClearWorkflowPredefinedMenuItem::item(),
     ])?;
 
-    examples_menu.append_items(&[
-        &QAndAPredefinedMenuItem::item(),
-        &StarRepoPredefinedMenuItem::item(),
-        &SummarizeNewsPredefinedMenuItem::item(),
-    ])?;
+    // examples_menu.append_items(&[
+    //     &QAndAPredefinedMenuItem::item(),
+    //     &StarRepoPredefinedMenuItem::item(),
+    //     &SummarizeNewsPredefinedMenuItem::item(),
+    // ])?;
 
-    main_menu.append_items(&[&edit_menu, &window_menu, &application_menu, &examples_menu])?;
+    main_menu.append_items(&[
+        &edit_menu,
+        &window_menu,
+        &application_menu,
+        // &examples_menu
+    ])?;
 
     let tailwind = include_str!("../public/tailwind.css");
     let cfg = dioxus::desktop::Config::default()
@@ -85,26 +93,27 @@ pub(crate) fn make_config() -> anyhow::Result<dioxus::desktop::Config> {
     Ok(cfg)
 }
 
-pub fn use_apply_menu_event(state: Signal<ApplicationState>) {
+pub fn use_apply_menu_event(mut state: Signal<ApplicationState>) {
     // let open_application = use_signal(|| None);
-    // use_wry_event_handler(move |event, _| {
-    //     if let dioxus::desktop::tao::event::Event::UserEvent(UserWindowEvent::MudaMenuEvent(muda_event)) = event {
-    //         let menu_id = muda_event.menu_id;
-    //         if menu_id == SavePredefinedMenuItem::id() {
-    //             SavePredefinedMenuItem::save(&state.read());
-    //         } else if menu_id == SaveAsPredefinedMenuItem::id() {
-    //             SaveAsPredefinedMenuItem::save(&state.read());
-    //         } else if menu_id == OpenPredefinedMenuItem::id() {
-    //             OpenPredefinedMenuItem::open(open_application);
-    //         } else if menu_id == QAndAPredefinedMenuItem::id() {
-    //             QAndAPredefinedMenuItem::open(open_application);
-    //         } else if menu_id == StarRepoPredefinedMenuItem::id() {
-    //             StarRepoPredefinedMenuItem::open(open_application);
-    //         } else if menu_id == SummarizeNewsPredefinedMenuItem::id() {
-    //             SummarizeNewsPredefinedMenuItem::open(open_application);
-    //         }
-    //     }
-    // });
+    use_muda_event_handler(move |muda_event| {
+        let menu_id = muda_event.id.clone();
+        if menu_id == ClearWorkflowPredefinedMenuItem::id() {
+            ClearWorkflowPredefinedMenuItem::clear_workflow(&mut state.write());
+        }
+        //         else if menu_id == SavePredefinedMenuItem::id() {
+        //             SavePredefinedMenuItem::save(&state.read());
+        //         } else if menu_id == SaveAsPredefinedMenuItem::id() {
+        //             SaveAsPredefinedMenuItem::save(&state.read());
+        //         } else if menu_id == OpenPredefinedMenuItem::id() {
+        //             OpenPredefinedMenuItem::open(open_application);
+        //         } else if menu_id == QAndAPredefinedMenuItem::id() {
+        //             QAndAPredefinedMenuItem::open(open_application);
+        //         } else if menu_id == StarRepoPredefinedMenuItem::id() {
+        //             StarRepoPredefinedMenuItem::open(open_application);
+        //         } else if menu_id == SummarizeNewsPredefinedMenuItem::id() {
+        //             SummarizeNewsPredefinedMenuItem::open(open_application);
+        //         }
+    });
 
     // if let Some(buffer) = open_application.take() {
     //     let as_str = std::str::from_utf8(&buffer).unwrap();
@@ -132,7 +141,25 @@ trait CustomMenuItem {
         MenuId::new(Self::name())
     }
     fn item() -> MenuItem {
-        MenuItem::new(Self::name(), true, Self::accelerator())
+        MenuItem::with_id(Self::name(), Self::name(), true, Self::accelerator())
+    }
+}
+
+struct ClearWorkflowPredefinedMenuItem;
+
+impl CustomMenuItem for ClearWorkflowPredefinedMenuItem {
+    fn name() -> &'static str {
+        "Clear Workflow"
+    }
+
+    fn accelerator() -> Option<Accelerator> {
+        None
+    }
+}
+
+impl ClearWorkflowPredefinedMenuItem {
+    fn clear_workflow(state: &mut ApplicationState) {
+        state.clear();
     }
 }
 

@@ -211,8 +211,8 @@ impl<'a> Node<'a> {
     }
 }
 
-impl<'a> Into<AnyNode<'a>> for Node<'a> {
-    fn into(self) -> AnyNode<'a> {
-        AnyNode::Dynamic(self.into_inner())
+impl<'a> From<Node<'a>> for AnyNode<'a> {
+    fn from(val: Node<'a>) -> Self {
+        AnyNode::Dynamic(val.into_inner())
     }
 }

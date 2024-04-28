@@ -97,8 +97,6 @@ fn main() {
         .launch(App);
 }
 
-pub struct PluginId(usize);
-
 #[derive(Default)]
 pub struct ApplicationState {
     graph: VisualGraph,
@@ -138,6 +136,12 @@ impl ApplicationState {
                 self.currently_focused = None;
             }
         }
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.graph.clear();
+        self.currently_focused = None;
+        self.resource_storage.clear();
     }
 }
 
