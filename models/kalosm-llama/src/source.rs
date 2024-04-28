@@ -438,7 +438,7 @@ impl LlamaSource {
     }
 
     /// A preset for Llama8b v3 at the Q8_0 quantization level. This file will be larger than [`llama_8b_chat`](Self::llama_8b_chat) but the model output will be more accurate.
-    pub fn llama_8b_chat_8q() -> Self {
+    pub fn llama_8b_chat_q8() -> Self {
         Self {
             model: FileSource::huggingface(
                 "bartowski/Meta-Llama-3-8B-Instruct-GGUF".to_string(),
