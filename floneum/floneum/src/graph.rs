@@ -98,6 +98,7 @@ impl VisualGraph {
                 NodeOutput {
                     definition: output.clone(),
                     value: output.ty.create(instance.resources())?,
+                    rendered_size: None,
                 },
                 self.inner.origin_scope(),
             ));
@@ -312,6 +313,7 @@ impl VisualGraph {
             .output_type(edge.start)
             .unwrap();
         let output = graph.graph[output_id].read().input_type(edge.end).unwrap();
+        println!("{:?} {:?}", input, output);
         input.compatible(&output)
     }
 
@@ -322,6 +324,12 @@ impl VisualGraph {
         edge: Signal<Edge>,
     ) {
         if !self.check_connection_validity(input_id, output_id, edge) {
+            tracing::trace!(
+                "Connection between {:?} and {:?} (edge {:?}) is invalid",
+                input_id,
+                output_id,
+                edge
+            );
             return;
         }
         let mut current_graph = self.inner.write();

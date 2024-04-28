@@ -2,10 +2,8 @@ use dioxus::prelude::*;
 use floneum_plugin::plugins::main::types::ValueType;
 
 use crate::{
-    edge::Connection,
-    graph::CurrentlyDragging,
-    node::{stop_dragging, NODE_KNOB_SIZE},
-    CurrentlyDraggingProps, DraggingIndex, Node, VisualGraph,
+    edge::Connection, graph::CurrentlyDragging, node::NODE_KNOB_SIZE, CurrentlyDraggingProps,
+    DraggingIndex, Node, VisualGraph,
 };
 
 #[component]
@@ -70,6 +68,10 @@ pub fn InputConnection(node: Signal<Node>, index: Connection) -> Element {
             border_radius: "50%",
             background_color: "{color}",
             display: "inline-block",
+            onmounted: move |mount| async move {
+                let size = mount.get_client_rect().await.ok();
+                node.with_mut(|node| node.inputs[index.index].write_unchecked().rendered_size = size);
+            },
             onmousedown: move |evt| {
                 let mut graph: VisualGraph = consume_context();
                 let new_connection = Some(CurrentlyDragging::Connection(CurrentlyDraggingProps {

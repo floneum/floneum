@@ -20,6 +20,10 @@ pub fn Output(node: Signal<Node>, index: usize) -> Element {
             border_radius: "50%",
             background_color: "{color}",
             display: "inline-block",
+            onmounted: move |mount| async move {
+                let size = mount.get_client_rect().await.ok();
+                node.with_mut(|node| node.outputs[index].write_unchecked().rendered_size = size);
+            },
             onmousedown: move |evt| {
                 let mut graph: VisualGraph = consume_context();
                 let scaled_pos = graph.scale_screen_pos(evt.page_coordinates());

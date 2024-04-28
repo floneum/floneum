@@ -135,6 +135,18 @@ impl Node {
     pub fn help_text(&self) -> String {
         self.instance.metadata().description.to_string()
     }
+
+    pub fn input_pos(&self, index: Connection) -> Point {
+        let input = self.inputs[index.index];
+        let pos = input.read().rendered_size.unwrap_or_default().center();
+        Point::new(pos.x as f32, pos.y as f32)
+    }
+
+    pub fn output_pos(&self, index: usize) -> Point {
+        let output = self.outputs[index];
+        let pos = output.read().rendered_size.unwrap_or_default().center();
+        Point::new(pos.x as f32, pos.y as f32)
+    }
 }
 
 #[derive(Props, Clone, Copy, PartialEq)]
