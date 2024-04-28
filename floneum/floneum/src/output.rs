@@ -22,21 +22,28 @@ pub fn Output(node: Signal<Node>, index: usize) -> Element {
             display: "inline-block",
             onmounted: move |mount| async move {
                 let size = mount.get_client_rect().await.ok();
-                node.with_mut(|node| node.outputs[index].write_unchecked().rendered_size = size);
+                node.with_mut(|node| {
+                    let pos = node.position;
+                    node.outputs[index].write_unchecked().rendered_size = size.map(|mut size| {
+                        size.origin += -node.offset();
+                        size
+                    });
+                });
             },
             onmousedown: move |evt| {
                 let mut graph: VisualGraph = consume_context();
                 let scaled_pos = graph.scale_screen_pos(evt.page_coordinates());
-                graph.inner.write().currently_dragging = Some(CurrentlyDragging::Connection(CurrentlyDraggingProps {
-                    from: node,
-                    from_pos: scaled_pos,
-                    index: DraggingIndex::Output(index),
-                    to: Signal::new(scaled_pos),
-                }));
+                graph.inner.write().currently_dragging = Some(
+                    CurrentlyDragging::Connection(CurrentlyDraggingProps {
+                        from: node,
+                        from_pos: scaled_pos,
+                        index: DraggingIndex::Output(index),
+                        to: Signal::new(scaled_pos),
+                    }),
+                );
                 evt.stop_propagation();
             },
             onmouseup: move |evt| {
-                // Set this as the end of the connection if we're currently dragging and this is the right type of connection
                 let mut graph: VisualGraph = consume_context();
                 graph.finish_connection(current_node_id, DraggingIndex::Output(index));
                 evt.stop_propagation();

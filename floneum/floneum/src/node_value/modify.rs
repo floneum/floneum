@@ -16,31 +16,28 @@ pub fn ModifyInput(node: Signal<NodeInput>) -> Element {
     let values = current_value.value();
     match &current_value.definition.ty {
         ValueType::Single(_) => rsx! {
-            div {
-                class: "flex flex-col",
+            div { class: "flex flex-col",
                 "{name}: "
                 ModifySingleValue {
                     value: values[0].clone(),
                     set_value: Rc::new(move |value| {
                         node.write_unchecked().value = vec![vec![value]];
-                    }),
+                    })
                 }
             }
         },
         ValueType::Many(_) => {
             rsx! {
                 div {
-                    div {
-                        class: "flex flex-col",
+                    div { class: "flex flex-col",
                         "{name}: "
-                        for (i, value) in values.into_iter().enumerate() {
-                            div {
-                                class: "whitespace-pre-line",
+                        for (i , value) in values.into_iter().enumerate() {
+                            div { class: "whitespace-pre-line",
                                 ModifySingleValue {
                                     value,
                                     set_value: Rc::new(move |value| {
                                         node.write_unchecked().value[0][i] = value;
-                                    }),
+                                    })
                                 }
                             }
                         }
@@ -82,13 +79,21 @@ fn ModifySingleValue(props: ModifySingleValueProps) -> Element {
                 button {
                     class: "border rounded focus:outline-none focus:border-blue-500",
                     onclick: move |_| {
-                        set_value(rfd::FileDialog::new()
-                            .set_directory("./sandbox")
-                            .set_file_name("Floneum")
-                            .set_title("Select File")
-                            .save_file()
-                            .map(|path| PrimitiveValue::File(path.strip_prefix(PathBuf::from("./sandbox").canonicalize().unwrap()).unwrap_or(&path).to_string_lossy().to_string()))
-                            .unwrap_or_else(|| PrimitiveValue::File("".to_string())));
+                        set_value(
+                            rfd::FileDialog::new()
+                                .set_directory("./sandbox")
+                                .set_file_name("Floneum")
+                                .set_title("Select File")
+                                .save_file()
+                                .map(|path| PrimitiveValue::File(
+                                    path
+                                        .strip_prefix(PathBuf::from("./sandbox").canonicalize().unwrap())
+                                        .unwrap_or(&path)
+                                        .to_string_lossy()
+                                        .to_string(),
+                                ))
+                                .unwrap_or_else(|| PrimitiveValue::File("".to_string())),
+                        );
                     },
                     "Select File"
                 }
@@ -100,14 +105,21 @@ fn ModifySingleValue(props: ModifySingleValueProps) -> Element {
                 button {
                     class: "border rounded focus:outline-none focus:border-blue-500",
                     onclick: move |_| {
-                        set_value(rfd::FileDialog::new()
-                            .set_directory("./sandbox")
-                            .set_file_name("Floneum")
-                            .set_title("Select Folder")
-                            .pick_folder()
-                            .map(|path| PrimitiveValue::File(path.strip_prefix(PathBuf::from("./sandbox").canonicalize().unwrap()).unwrap_or(&path).to_string_lossy().to_string()
-                        ))
-                            .unwrap_or_else(|| PrimitiveValue::File("".to_string())))
+                        set_value(
+                            rfd::FileDialog::new()
+                                .set_directory("./sandbox")
+                                .set_file_name("Floneum")
+                                .set_title("Select Folder")
+                                .pick_folder()
+                                .map(|path| PrimitiveValue::File(
+                                    path
+                                        .strip_prefix(PathBuf::from("./sandbox").canonicalize().unwrap())
+                                        .unwrap_or(&path)
+                                        .to_string_lossy()
+                                        .to_string(),
+                                ))
+                                .unwrap_or_else(|| PrimitiveValue::File("".to_string())),
+                        )
                     },
                     "Select Folder"
                 }
@@ -152,8 +164,7 @@ fn ModifySingleValue(props: ModifySingleValueProps) -> Element {
                     onchange: move |e| {
                         set_value(
                             PrimitiveValue::ModelType(
-                                model_type_from_str(&e.value())
-                                    .unwrap_or(ModelType::MistralSeven),
+                                model_type_from_str(&e.value()).unwrap_or(ModelType::MistralSeven),
                             ),
                         );
                     },

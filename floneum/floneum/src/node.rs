@@ -1,5 +1,6 @@
 use crate::current_node::FocusedNodeInfo;
 use dioxus::html::geometry::euclid::Rect;
+use dioxus::html::geometry::euclid::Vector2D;
 use dioxus::prelude::*;
 use dioxus_free_icons::Icon;
 use floneum_plugin::plugins::main::types::ValueType;
@@ -138,14 +139,20 @@ impl Node {
 
     pub fn input_pos(&self, index: Connection) -> Point {
         let input = self.inputs[index.index];
-        let pos = input.read().rendered_size.unwrap_or_default().center();
+        let mut pos = input.read().rendered_size.unwrap_or_default().center();
+        pos += self.offset();
         Point::new(pos.x as f32, pos.y as f32)
     }
 
     pub fn output_pos(&self, index: usize) -> Point {
         let output = self.outputs[index];
-        let pos = output.read().rendered_size.unwrap_or_default().center();
+        let mut pos = output.read().rendered_size.unwrap_or_default().center();
+        pos += self.offset();
         Point::new(pos.x as f32, pos.y as f32)
+    }
+
+    pub(crate) fn offset(&self) -> Vector2D<f64, f64> {
+        self.position.to_vector().cast().cast_unit()
     }
 }
 
@@ -182,76 +189,63 @@ pub fn Node(props: NodeProps) -> Element {
             top: "{pos.y}px",
             onmounted: move |mount| async move {
                 let size = mount.get_client_rect().await.ok();
-                node.with_mut(|node| node.rendered_size = size);
+                node.with_mut(|node| node.rendered_size = size.map(|mut size| {
+                    size.origin += -node.offset();
+                    size
+                }));
             },
             onmousedown: move |evt| {
                 let mut graph: VisualGraph = consume_context();
                 graph.start_dragging_node(&evt, props.node);
             },
             onmousemove: |evt| {
-                let mut  graph: VisualGraph = consume_context();
+                let mut graph: VisualGraph = consume_context();
                 graph.update_mouse(&evt);
             },
             onmouseup: move |_| {
                 let mut graph: VisualGraph = consume_context();
                 graph.clear_dragging();
-
-                // Focus or unfocus this node
                 let mut application = application.write();
                 match &application.currently_focused {
-                    Some(currently_focused_node) if currently_focused_node.node == props.node => {
+                    Some(
+                        currently_focused_node,
+                    ) if currently_focused_node.node == props.node => {
                         application.currently_focused = None;
                     }
                     _ => {
-                        application.currently_focused = Some(FocusedNodeInfo{
+                        application.currently_focused = Some(FocusedNodeInfo {
                             node: props.node,
                             active_example_index: None,
-                        } );
+                        });
                     }
                 }
             },
 
             // The node name
-            div {
-                class: "flex w-full h-8 flex-shrink-0 items-center justify-center {color} rounded-t-md text-sm font-medium text-black",
-                h1 {
-                    class: "text-md",
-                    "{name}"
-                }
+            div { class: "flex w-full h-8 flex-shrink-0 items-center justify-center {color} rounded-t-md text-sm font-medium text-black",
+                h1 { class: "text-md", "{name}" }
             }
 
             // Everything else horizontally spread underneath it
-            div {
-                class: "flex flex-row items-center justify-between h-full",
+            div { class: "flex flex-row items-center justify-between h-full",
 
                 // inputs
-                div {
-                    class: "flex flex-col justify-around h-full",
+                div { class: "flex flex-col justify-around h-full",
                     for index in 0..current_node.inputs.len() {
-                        Input {
-                            node,
-                            index,
-                        }
+                        Input { node, index }
                     }
                 }
 
-                CenterNodeUI {
-                    node,
-                }
+                CenterNodeUI { node }
 
-                div {
-                    class: "flex flex-col justify-around h-full",
+                div { class: "flex flex-col justify-around h-full",
                     // outputs
                     for index in 0..current_node.outputs.len() {
-                        Output {
-                            node,
-                            index,
-                        }
+                        Output { node, index }
                     }
                 }
             }
         }
-
     }
 }
 
@@ -287,7 +281,7 @@ fn CenterNodeUI(mut node: Signal<Node>) -> Element {
                     Icon {
                         width: 15,
                         height: 15,
-                        icon: dioxus_free_icons::icons::io_icons::IoTrashOutline,
+                        icon: dioxus_free_icons::icons::io_icons::IoTrashOutline
                     }
                 }
                 if current_node.running {

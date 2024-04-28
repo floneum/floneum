@@ -14,8 +14,7 @@ pub fn ShowOutput(props: ShowOutputProps) -> Element {
     match ty {
         ValueType::Single(_) => {
             rsx! {
-                div {
-                    class: "flex flex-col whitespace-pre-line",
+                div { class: "flex flex-col whitespace-pre-line",
                     "{name}:\n"
                     {show_primitive_value(&value.first().unwrap().borrow())}
                 }
@@ -23,14 +22,10 @@ pub fn ShowOutput(props: ShowOutputProps) -> Element {
         }
         ValueType::Many(_) => {
             rsx! {
-                div {
-                    class: "flex flex-col",
+                div { class: "flex flex-col",
                     "{name}:"
                     for value in &value {
-                        div {
-                            class: "whitespace-pre-line",
-                            {show_primitive_value(&value.borrow())}
-                        }
+                        div { class: "whitespace-pre-line", {show_primitive_value(&value.borrow())} }
                     }
                 }
             }
@@ -43,7 +38,7 @@ pub fn show_primitive_value(value: &PrimitiveValue) -> Element {
         PrimitiveValue::Text(value)
         | PrimitiveValue::File(value)
         | PrimitiveValue::Folder(value) => {
-            rsx! {"{value}"}
+            rsx! { "{value}" }
         }
         PrimitiveValue::Embedding(value) => {
             let first_five = value
@@ -53,37 +48,37 @@ pub fn show_primitive_value(value: &PrimitiveValue) -> Element {
                 .map(ToString::to_string)
                 .collect::<Vec<_>>()
                 .join(", ");
-            rsx! {"[{first_five}, ...]"}
+            rsx! { "[{first_five}, ...]" }
         }
         PrimitiveValue::Model(id) => {
-            rsx! {"Model: {id:?}"}
+            rsx! { "Model: {id:?}" }
         }
         PrimitiveValue::EmbeddingModel(id) => {
-            rsx! {"Embedding Model: {id:?}"}
+            rsx! { "Embedding Model: {id:?}" }
         }
         PrimitiveValue::Database(id) => {
-            rsx! {"Database: {id:?}"}
+            rsx! { "Database: {id:?}" }
         }
         PrimitiveValue::Number(value) => {
-            rsx! {"{value}"}
+            rsx! { "{value}" }
         }
         PrimitiveValue::Float(value) => {
-            rsx! {"{value}"}
+            rsx! { "{value}" }
         }
         PrimitiveValue::ModelType(ty) => {
-            rsx! {"{ty.name()}"}
+            rsx! { "{ty.name()}" }
         }
         PrimitiveValue::EmbeddingModelType(ty) => {
-            rsx! {"{ty.name()}"}
+            rsx! { "{ty.name()}" }
         }
         PrimitiveValue::Boolean(val) => {
-            rsx! {"{val:?}"}
+            rsx! { "{val:?}" }
         }
         PrimitiveValue::Page(id) => {
-            rsx! {"Page: {id:?}"}
+            rsx! { "Page: {id:?}" }
         }
         PrimitiveValue::Node(id) => {
-            rsx! {"Node: {id:?}"}
+            rsx! { "Node: {id:?}" }
         }
     }
 }
@@ -101,8 +96,7 @@ pub fn ShowInput(props: ShowInputProps) -> Element {
         ValueType::Single(_) => {
             let value = value.first()?;
             rsx! {
-                div {
-                    class: "flex flex-col whitespace-pre-line",
+                div { class: "flex flex-col whitespace-pre-line",
                     "{label}:\n"
                     {show_primitive_value(value)}
                 }
@@ -110,14 +104,10 @@ pub fn ShowInput(props: ShowInputProps) -> Element {
         }
         ValueType::Many(_) => {
             rsx! {
-                div {
-                    class: "flex flex-col",
+                div { class: "flex flex-col",
                     "{label}:"
                     for value in &value {
-                        div {
-                            class: "whitespace-pre-line",
-                            {show_primitive_value(value)}
-                        }
+                        div { class: "whitespace-pre-line", {show_primitive_value(value)} }
                     }
                 }
             }

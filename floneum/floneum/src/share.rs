@@ -21,16 +21,14 @@ pub(crate) fn SaveMenu() -> Element {
     let clipboard = use_clipboard();
 
     rsx! {
-        div {
-            class: "flex flex-col ",
-            div {
-                class: "flex flex-row",
+        div { class: "flex flex-col ",
+            div { class: "flex flex-row",
                 input {
                     class: "border-2 rounded-md p-2 ",
                     value: "{current_save_string}",
                     oninput: move |event| {
                         application.write().last_save_id = event.value().parse().ok();
-                    },
+                    }
                 }
 
                 button {
@@ -44,10 +42,7 @@ pub(crate) fn SaveMenu() -> Element {
                             }
                         }
                     },
-                    dioxus_free_icons::Icon {
-                        class: "w-4 h-4",
-                        icon: dioxus_free_icons::icons::io_icons::IoClipboard,
-                    }
+                    dioxus_free_icons::Icon { class: "w-4 h-4", icon: dioxus_free_icons::icons::io_icons::IoClipboard }
                 }
             }
 
@@ -63,7 +58,7 @@ pub(crate) fn SaveMenu() -> Element {
                                 }
                             }
                             None => {
-                                match StorageId::new(&*application).await{
+                                match StorageId::new(&*application).await {
                                     Ok(id) => {
                                         application.last_save_id = Some(id);
                                     }
@@ -83,29 +78,24 @@ pub(crate) fn SaveMenu() -> Element {
                 onclick: move |_| {
                     to_owned![set_application_state];
                     async move {
-                        let last_save_id = {
-                            application.read().last_save_id.clone()
-                        };
+                        let last_save_id = { application.read().last_save_id.clone() };
                         if let Some(id) = last_save_id {
-                            set_application_state.send(DeserializeApplicationState {
-                                new_state: id,
-                            });
+                            set_application_state
+                                .send(DeserializeApplicationState {
+                                    new_state: id,
+                                });
                         }
                     }
                 },
                 "Load"
             }
 
-            p {
-                class: "text-sm opacity-50",
+            p { class: "text-sm opacity-50",
                 "Note workflows that are shared is public. Do not store sensitive data. Data will be removed after 30 days of inactivity."
             }
 
             if let Some(error) = &*current_error {
-                p {
-                    class: "text-sm text-red-500",
-                    "{error}"
-                }
+                p { class: "text-sm text-red-500", "{error}" }
             }
         }
     }

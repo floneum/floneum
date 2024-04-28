@@ -190,6 +190,7 @@ fn App() -> Element {
     use_package_manager_provider();
     let mut package_manager = use_context::<Signal<Option<Rc<FloneumPackageIndex>>>>();
     let mut state = use_provide_application_state();
+    use_apply_menu_event(state);
     use_hook(|| {
         spawn(async move {
             let new_package_manager =
@@ -207,10 +208,9 @@ fn App() -> Element {
     //     }
     // });
     let graph = state.read().graph;
-    use_apply_menu_event(state);
 
     rsx! {
-        FlowView { graph: graph }
+        FlowView { graph }
         Sidebar {}
     }
 }
