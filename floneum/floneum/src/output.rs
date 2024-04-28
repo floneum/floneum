@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 
 use crate::{
     graph::CurrentlyDragging,
-    node::{stop_dragging, NODE_KNOB_SIZE},
+    node::{NODE_KNOB_SIZE},
     CurrentlyDraggingProps, DraggingIndex, Node, VisualGraph,
 };
 
@@ -23,7 +23,7 @@ pub fn Output(node: Signal<Node>, index: usize) -> Element {
             onmounted: move |mount| async move {
                 let size = mount.get_client_rect().await.ok();
                 node.with_mut(|node| {
-                    let pos = node.position;
+                    let _pos = node.position;
                     node.outputs[index].write_unchecked().rendered_size = size
                         .map(|mut size| {
                             size.origin += -node.offset();

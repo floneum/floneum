@@ -64,6 +64,10 @@ impl ResourceStorage {
             slab.remove(key.index);
         }
     }
+
+    pub fn clear(&self) {
+        self.map.write().clear();
+    }
 }
 
 /// A typed resource that is stored in [`ResourceStorage`].

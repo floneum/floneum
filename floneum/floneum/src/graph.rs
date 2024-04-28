@@ -36,6 +36,16 @@ impl Default for VisualGraphInner {
     }
 }
 
+impl VisualGraphInner {
+    pub fn clear(&mut self) {
+        self.graph.clear();
+        self.connections.clear();
+        self.currently_dragging = None;
+        self.pan_pos = Point2D::new(0.0, 0.0);
+        self.zoom = 1.0;
+    }
+}
+
 #[derive(PartialEq, Clone, Copy)]
 pub enum CurrentlyDragging {
     Node(NodeDragInfo),
@@ -266,7 +276,7 @@ impl VisualGraph {
             let graph = self.inner;
             spawn(async move {
                 let fut = {
-                    let mut current_node_write = node.write();
+                    let current_node_write = node.write();
                     current_node_write.instance.run(inputs)
                 };
                 // Don't hold the write over an await point
@@ -381,6 +391,10 @@ impl VisualGraph {
             drop(current_graph);
         }
         self.inner.write().currently_dragging = None;
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.inner.write().clear();
     }
 }
 
