@@ -1,9 +1,8 @@
 use dioxus::prelude::*;
 
 use crate::{
-    graph::CurrentlyDragging,
-    node::{NODE_KNOB_SIZE},
-    CurrentlyDraggingProps, DraggingIndex, Node, VisualGraph,
+    graph::CurrentlyDragging, node::NODE_KNOB_SIZE, CurrentlyDraggingProps, DraggingIndex, Node,
+    VisualGraph,
 };
 
 #[component]
