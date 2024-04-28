@@ -1,7 +1,7 @@
 use floneum_rust::*;
 
 #[export_plugin]
-/// Evluate the value of an equation
+/// Evaluate the value of an equation
 ///
 /// ### Examples
 /// vec![

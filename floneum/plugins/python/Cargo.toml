@@ -11,6 +11,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen", rev = "285f0c6ad5da3d6cd8ef2e0635df51f229d6578f" }
-floneum_rust = { path = "../../rust_adapter" }
+floneum_rust = { path = "../../rust_adapter", version = "0.1.0" }
 rustpython-vm = { git = "https://github.com/RustPython/RustPython" }
 rustpython-ast = { git = "https://github.com/RustPython/Parser" }
