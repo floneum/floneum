@@ -71,10 +71,11 @@ pub fn InputConnection(node: Signal<Node>, index: Connection) -> Element {
                 let size = mount.get_client_rect().await.ok();
                 node.with_mut(|node| {
                     let pos = node.position;
-                    node.inputs[index.index].write_unchecked().rendered_size = size.map(|mut size| {
-                        size.origin += -node.offset();
-                        size
-                    });
+                    node.inputs[index.index].write_unchecked().rendered_size = size
+                        .map(|mut size| {
+                            size.origin += -node.offset();
+                            size
+                        });
                 });
             },
             onmousedown: move |evt| {

@@ -189,10 +189,13 @@ pub fn Node(props: NodeProps) -> Element {
             top: "{pos.y}px",
             onmounted: move |mount| async move {
                 let size = mount.get_client_rect().await.ok();
-                node.with_mut(|node| node.rendered_size = size.map(|mut size| {
-                    size.origin += -node.offset();
-                    size
-                }));
+                node.with_mut(|node| {
+                    node.rendered_size = size
+                        .map(|mut size| {
+                            size.origin += -node.offset();
+                            size
+                        });
+                });
             },
             onmousedown: move |evt| {
                 let mut graph: VisualGraph = consume_context();

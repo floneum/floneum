@@ -24,10 +24,11 @@ pub fn Output(node: Signal<Node>, index: usize) -> Element {
                 let size = mount.get_client_rect().await.ok();
                 node.with_mut(|node| {
                     let pos = node.position;
-                    node.outputs[index].write_unchecked().rendered_size = size.map(|mut size| {
-                        size.origin += -node.offset();
-                        size
-                    });
+                    node.outputs[index].write_unchecked().rendered_size = size
+                        .map(|mut size| {
+                            size.origin += -node.offset();
+                            size
+                        });
                 });
             },
             onmousedown: move |evt| {
