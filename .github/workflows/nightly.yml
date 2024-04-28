@@ -31,8 +31,6 @@ jobs:
   test:
     name: ${{ matrix.platform.os_name }} with rust ${{ matrix.toolchain }}
     runs-on: ${{ matrix.platform.os }}
-    env:
-      OPENSSL_DIR: /usr/include/openssl
     strategy:
       fail-fast: false
       matrix:
@@ -150,11 +148,8 @@ jobs:
       - name: Install musl-tools on Linux
         run: sudo apt-get update --yes && sudo apt-get install --yes musl-tools
         if: contains(matrix.platform.name, 'musl')
-      - name: Install openssl on Linux
-        run: sudo apt-get update --yes && sudo apt-get install --yes libssl-dev pkg-config
-        if: contains(matrix.platform.name, 'musl')
       - name: Install libwebkit2gtk-4.1-dev on Linux
-        run: sudo apt-get update && sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev libxdo-dev
+        run: sudo apt-get update --yes && sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev libxdo-dev
         if: contains(matrix.platform.target, 'linux')
       - name: Build binary
         uses: houseabsolute/actions-rust-cross@v0
