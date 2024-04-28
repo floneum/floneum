@@ -5,9 +5,9 @@ use anyhow::Result;
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
 use floneum_plugin::{Plugin, ResourceStorage};
 use floneumite::FloneumPackageIndex;
-use futures_util::stream::StreamExt;
+
 use petgraph::stable_graph::{DefaultIx, NodeIndex};
-use serde::{Deserialize, Serialize};
+
 use std::{collections::HashMap, fs::File, io::Read, rc::Rc};
 
 mod node;
@@ -193,7 +193,7 @@ pub fn application_state() -> Signal<ApplicationState> {
 fn App() -> Element {
     use_package_manager_provider();
     let mut package_manager = use_context::<Signal<Option<Rc<FloneumPackageIndex>>>>();
-    let mut state = use_provide_application_state();
+    let state = use_provide_application_state();
     use_apply_menu_event(state);
     use_hook(|| {
         spawn(async move {
