@@ -49,6 +49,7 @@ impl Variants for EmbeddingModelType {
 impl Variants for PrimitiveValueType {
     const VARIANTS: &'static [Self] = &[
         PrimitiveValueType::Text,
+        PrimitiveValueType::Float,
         PrimitiveValueType::File,
         PrimitiveValueType::Folder,
         PrimitiveValueType::Number,
@@ -190,7 +191,16 @@ impl Colored for ValueType {
 impl Colored for PrimitiveValueType {
     fn color(&self) -> String {
         let index = Self::VARIANTS.iter().position(|v| v == self).unwrap();
-        let hue = index * 360 / Self::VARIANTS.len();
-        format!("hsl({hue}, 100%, 50%)")
+        let hue_index = index;
+        let saturation_scale = (index % 4) as f32 / 4.;
+        let brightness_scale = (index % 8) as f32 / 8.;
+        let hue = 360. * hue_index as f32 / Self::VARIANTS.len() as f32;
+        let min_saturation = 50.;
+        let max_saturation = 100.;
+        let saturation = min_saturation + saturation_scale * (max_saturation - min_saturation);
+        let min_brightness = 30.;
+        let max_brightness = 60.;
+        let brightness = min_brightness + brightness_scale * (max_brightness - min_brightness);
+        format!("hsl({hue}, {saturation}%, {brightness}%)")
     }
 }

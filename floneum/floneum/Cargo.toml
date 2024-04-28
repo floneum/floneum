@@ -27,12 +27,12 @@ wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", rev = "b73658
 ] }
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
-dioxus = { version = "0.5", features = [
+dioxus = { git = "https://github.com/dioxuslabs/dioxus", features = [
     "desktop",
     "router",
 ]}
 petgraph = { version = "0.6.4", features = ["serde-1"] }
-dioxus-signals = { version = "0.5", features = [
+dioxus-signals = { git = "https://github.com/dioxuslabs/dioxus", features = [
     "serialize",
 ] }
 dioxus-free-icons = { git = "https://github.com/dioxus-community/dioxus-free-icons", features = ["ionicons"] }

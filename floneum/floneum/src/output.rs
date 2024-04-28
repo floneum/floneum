@@ -1,8 +1,9 @@
 use dioxus::prelude::*;
 
 use crate::{
-    graph::CurrentlyDragging, node::NODE_KNOB_SIZE, CurrentlyDraggingProps, DraggingIndex, Node,
-    VisualGraph,
+    graph::CurrentlyDragging,
+    node::{stop_dragging, NODE_KNOB_SIZE},
+    CurrentlyDraggingProps, DraggingIndex, Node, VisualGraph,
 };
 
 #[component]
@@ -13,10 +14,16 @@ pub fn Output(node: Signal<Node>, index: usize) -> Element {
     let is_list = current_node.output_is_list(index);
 
     rsx! {
-        div {
-            padding: NODE_KNOB_SIZE,
-            border_radius: NODE_KNOB_SIZE,
+        button {
+            height: "{NODE_KNOB_SIZE}px",
+            width: "{NODE_KNOB_SIZE}px",
+            border_radius: "50%",
             background_color: "{color}",
+            display: "inline-block",
+            onmounted: move |mount| async move {
+                let size = mount.get_client_rect().await.ok();
+                node.with_mut(|node| node.outputs[index].write_unchecked().rendered_size = size);
+            },
             onmousedown: move |evt| {
                 let mut graph: VisualGraph = consume_context();
                 let scaled_pos = graph.scale_screen_pos(evt.page_coordinates());
@@ -26,11 +33,13 @@ pub fn Output(node: Signal<Node>, index: usize) -> Element {
                     index: DraggingIndex::Output(index),
                     to: Signal::new(scaled_pos),
                 }));
+                evt.stop_propagation();
             },
-            onmouseup: move |_| {
+            onmouseup: move |evt| {
                 // Set this as the end of the connection if we're currently dragging and this is the right type of connection
                 let mut graph: VisualGraph = consume_context();
                 graph.finish_connection(current_node_id, DraggingIndex::Output(index));
+                evt.stop_propagation();
             },
             onmousemove: move |evt| {
                 let mut graph: VisualGraph = consume_context();

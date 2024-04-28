@@ -13,7 +13,7 @@ use slab::Slab;
 
 use crate::{
     node_value::{NodeInput, NodeOutput},
-    Connection, Edge, Node, Signal,
+    Colored, Connection, Edge, Node, Signal,
 };
 
 pub struct VisualGraphInner {
@@ -98,6 +98,7 @@ impl VisualGraph {
                 NodeOutput {
                     definition: output.clone(),
                     value: output.ty.create(instance.resources())?,
+                    rendered_size: None,
                 },
                 self.inner.origin_scope(),
             ));
@@ -110,6 +111,7 @@ impl VisualGraph {
                 running: false,
                 queued: false,
                 error: None,
+                rendered_size: None,
                 id: Default::default(),
                 inputs,
                 outputs,
@@ -311,6 +313,7 @@ impl VisualGraph {
             .output_type(edge.start)
             .unwrap();
         let output = graph.graph[output_id].read().input_type(edge.end).unwrap();
+        println!("{:?} {:?}", input, output);
         input.compatible(&output)
     }
 
@@ -321,6 +324,12 @@ impl VisualGraph {
         edge: Signal<Edge>,
     ) {
         if !self.check_connection_validity(input_id, output_id, edge) {
+            tracing::trace!(
+                "Connection between {:?} and {:?} (edge {:?}) is invalid",
+                input_id,
+                output_id,
+                edge
+            );
             return;
         }
         let mut current_graph = self.inner.write();
@@ -531,13 +540,12 @@ fn NodeConnection(props: ConnectionProps) -> Element {
     let current_connection = connection.read();
     let start_index = current_connection.end;
     let start_node = start.read();
-    // let start = start_node.input_pos(start_index);
-    // let end_index = current_connection.start;
-    // let end = end.read().output_pos(end_index);
+    let start = start_node.input_pos(start_index);
+    let end_index = current_connection.start;
+    let end = end.read().output_pos(end_index);
 
-    // let ty = start_node.input_type(start_index).unwrap();
-    // let color = ty.color();
+    let ty = start_node.input_type(start_index).unwrap();
+    let color = ty.color();
 
-    // rsx! { Connection { start_pos: start, end_pos: end, color: color } }
-    None
+    rsx! { Connection { start_pos: start, end_pos: end, color: color } }
 }

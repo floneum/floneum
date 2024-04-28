@@ -62,10 +62,16 @@ pub fn InputConnection(node: Signal<Node>, index: Connection) -> Element {
     let is_list = current_node.input_is_list(index);
 
     rsx! {
-        div {
-            padding: NODE_KNOB_SIZE,
-            border_radius: NODE_KNOB_SIZE,
+        button {
+            width: "{NODE_KNOB_SIZE}px",
+            height: "{NODE_KNOB_SIZE}px",
+            border_radius: "50%",
             background_color: "{color}",
+            display: "inline-block",
+            onmounted: move |mount| async move {
+                let size = mount.get_client_rect().await.ok();
+                node.with_mut(|node| node.inputs[index.index].write_unchecked().rendered_size = size);
+            },
             onmousedown: move |evt| {
                 let mut graph: VisualGraph = consume_context();
                 let new_connection = Some(CurrentlyDragging::Connection(CurrentlyDraggingProps {
@@ -75,11 +81,13 @@ pub fn InputConnection(node: Signal<Node>, index: Connection) -> Element {
                     to: Signal::new(graph.scale_screen_pos(evt.page_coordinates())),
                 }));
                 graph.inner.write().currently_dragging = new_connection;
+                evt.stop_propagation();
             },
-            onmouseup: move |_| {
+            onmouseup: move |evt| {
                 // Set this as the end of the connection if we're currently dragging and this is the right type of connection
                 let mut graph: VisualGraph = consume_context();
                 graph.finish_connection(current_node_id, DraggingIndex::Input(index));
+                evt.stop_propagation();
             },
             onmousemove: move |evt| {
                 let mut graph: VisualGraph = consume_context();

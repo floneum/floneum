@@ -1,3 +1,4 @@
+use dioxus::html::geometry::euclid::Rect;
 use dioxus_signals::Readable;
 use floneum_plugin::plugins::main::types::*;
 use serde::{Deserialize, Serialize};
@@ -8,11 +9,16 @@ use crate::{application_state, edge::ConnectionType};
 pub struct NodeInput {
     pub definition: IoDefinition,
     pub value: Vec<Vec<PrimitiveValue>>,
+    pub rendered_size: Option<Rect<f64, f64>>,
 }
 
 impl NodeInput {
     pub fn new(definition: IoDefinition, value: Vec<Vec<PrimitiveValue>>) -> Self {
-        Self { definition, value }
+        Self {
+            definition,
+            value,
+            rendered_size: None,
+        }
     }
 
     pub fn set_connection(&mut self, connection: ConnectionType, value: Vec<PrimitiveValue>) {
@@ -60,6 +66,7 @@ impl NodeInput {
 pub struct NodeOutput {
     pub definition: IoDefinition,
     pub value: Vec<PrimitiveValue>,
+    pub rendered_size: Option<Rect<f64, f64>>,
 }
 
 impl NodeOutput {
