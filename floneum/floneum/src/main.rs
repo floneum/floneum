@@ -8,7 +8,7 @@ use floneumite::FloneumPackageIndex;
 
 use petgraph::stable_graph::{DefaultIx, NodeIndex};
 
-use std::{collections::HashMap, fs::File, io::Read, rc::Rc};
+use std::{collections::HashMap, fs::File, rc::Rc};
 
 mod node;
 pub use node::Node;

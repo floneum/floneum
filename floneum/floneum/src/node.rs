@@ -46,46 +46,6 @@ impl PartialEq for Node {
 }
 
 impl Node {
-    fn input_connections(&self) -> impl Iterator<Item = Connection> + '_ {
-        (0..self.inputs.len())
-            .filter_map(|index| {
-                let input = self.inputs[index].read();
-                if let ValueType::Single(_) = input.definition.ty {
-                    Some(Connection {
-                        index,
-                        ty: ConnectionType::Single,
-                    })
-                } else {
-                    None
-                }
-            })
-            .chain((0..self.inputs.len()).flat_map(|index| {
-                let input = self.inputs[index].read();
-                let indexes = if let ValueType::Many(_) = input.definition.ty {
-                    0..input.value.len()
-                } else {
-                    0..0
-                };
-                indexes.map(move |inner| Connection {
-                    index,
-                    ty: ConnectionType::Element(inner),
-                })
-            }))
-    }
-
-    fn input_count(&self) -> usize {
-        let mut inputs = self.inputs.len();
-        for input_idx in 0..self.inputs.len() {
-            if let Some(ValueType::Many(_)) = self.input_type(Connection {
-                index: input_idx,
-                ty: ConnectionType::Single,
-            }) {
-                inputs += self.inputs[input_idx].read().value.len();
-            }
-        }
-        inputs
-    }
-
     pub fn input_type(&self, index: Connection) -> Option<ValueType> {
         match index.ty {
             ConnectionType::Single => self
