@@ -197,7 +197,7 @@ impl Cache {
 impl Default for Cache {
     fn default() -> Self {
         Self {
-            location: dirs::cache_dir().unwrap().join("kalosm").join("cache"),
+            location: dirs::data_dir().unwrap().join("kalosm").join("cache"),
         }
     }
 }
