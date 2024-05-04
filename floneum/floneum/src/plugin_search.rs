@@ -73,7 +73,7 @@ fn LoadRegisteredPlugin() -> Element {
             r#type: "text",
             oninput: move |event| {
                 search_text.set(event.value());
-            },
+            }
         }
         match &plugins {
             Some(plugins) => {
@@ -149,7 +149,6 @@ fn Category(category: Category, plugins: Vec<PackageIndexEntry>) -> Element {
                                     if application.get_plugin(&name).is_none() {
                                         let _ = application.add_plugin(plugin).await;
                                     }
-
                                     if let Err(err) = application.insert_plugin(&name).await {
                                         log::error!("Failed to insert plugin: {}", err);
                                     }
@@ -175,9 +174,7 @@ fn Category(category: Category, plugins: Vec<PackageIndexEntry>) -> Element {
                             }
                         }
                         if let Some(meta) = entry.meta() {
-                            p { class: "mt-1 truncate text-xs leading-5",
-                                "{meta.description}"
-                            }
+                            p { class: "mt-1 truncate text-xs leading-5", "{meta.description}" }
                         }
                     }
                 }
@@ -191,15 +188,14 @@ fn LoadLocalPlugin() -> Element {
     let application = use_application_state();
 
     rsx! {
-        div {
-            class: "flex flex-col items-left",
+        div { class: "flex flex-col items-left",
             "Add Plugin from File"
             input {
                 class: "border rounded-md p-2 m-2",
                 value: "{search_text}",
                 oninput: move |event| {
                     search_text.set(event.value());
-                },
+                }
             }
 
             button {
@@ -217,7 +213,6 @@ fn LoadLocalPlugin() -> Element {
                         if application.get_plugin(&name).is_none() {
                             let _ = application.add_plugin(plugin).await;
                         }
-
                         application.insert_plugin(&name).await.unwrap();
                     }
                 },

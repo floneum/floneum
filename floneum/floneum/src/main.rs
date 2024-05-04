@@ -5,10 +5,10 @@ use anyhow::Result;
 use dioxus::{html::geometry::euclid::Point2D, prelude::*};
 use floneum_plugin::{Plugin, ResourceStorage};
 use floneumite::FloneumPackageIndex;
-use futures_util::stream::StreamExt;
+
 use petgraph::stable_graph::{DefaultIx, NodeIndex};
-use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fs::File, io::Read, rc::Rc};
+
+use std::{collections::HashMap, fs::File, rc::Rc};
 
 mod node;
 pub use node::Node;
@@ -42,29 +42,6 @@ fn main() {
     use tracing_subscriber::util::SubscriberInitExt;
     use tracing_subscriber::EnvFilter;
 
-    #[cfg(any(
-        target_os = "linux",
-        target_os = "dragonfly",
-        target_os = "freebsd",
-        target_os = "netbsd",
-        target_os = "openbsd",
-    ))]
-    {
-        use gtk::prelude::DisplayExtManual;
-
-        gtk::init().unwrap();
-        if gtk::gdk::Display::default().unwrap().backend().is_wayland() {
-            panic!("This example doesn't support wayland!");
-        }
-
-        // we need to ignore this error here otherwise it will be catched by winit and will be
-        // make the example crash
-        winit::platform::x11::register_xlib_error_hook(Box::new(|_display, error| {
-            let error = error as *mut x11_dl::xlib::XErrorEvent;
-            (unsafe { (*error).error_code }) == 170
-        }));
-    }
-
     let log_path = directories::ProjectDirs::from("com", "floneum", "floneum")
         .unwrap()
         .data_dir()
@@ -96,8 +73,6 @@ fn main() {
         .with_cfg(config)
         .launch(App);
 }
-
-pub struct PluginId(usize);
 
 #[derive(Default)]
 pub struct ApplicationState {
@@ -138,6 +113,12 @@ impl ApplicationState {
                 self.currently_focused = None;
             }
         }
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.graph.clear();
+        self.currently_focused = None;
+        self.resource_storage.clear();
     }
 }
 
@@ -189,7 +170,8 @@ pub fn application_state() -> Signal<ApplicationState> {
 fn App() -> Element {
     use_package_manager_provider();
     let mut package_manager = use_context::<Signal<Option<Rc<FloneumPackageIndex>>>>();
-    let mut state = use_provide_application_state();
+    let state = use_provide_application_state();
+    use_apply_menu_event(state);
     use_hook(|| {
         spawn(async move {
             let new_package_manager =
@@ -207,10 +189,9 @@ fn App() -> Element {
     //     }
     // });
     let graph = state.read().graph;
-    use_apply_menu_event(state);
 
     rsx! {
-        FlowView { graph: graph }
+        FlowView { graph }
         Sidebar {}
     }
 }

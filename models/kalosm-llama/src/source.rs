@@ -368,7 +368,7 @@ impl LlamaSource {
         Self {
             model: FileSource::huggingface(
                 "microsoft/Phi-3-mini-4k-instruct-gguf".to_string(),
-                "main".to_string(),
+                "5eef2ce24766d31909c0b269fe90c817a8f263fb".to_string(),
                 "Phi-3-mini-4k-instruct-q4.gguf".to_string(),
             ),
             tokenizer: FileSource::huggingface(

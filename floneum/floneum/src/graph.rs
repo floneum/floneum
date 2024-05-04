@@ -36,6 +36,16 @@ impl Default for VisualGraphInner {
     }
 }
 
+impl VisualGraphInner {
+    pub fn clear(&mut self) {
+        self.graph.clear();
+        self.connections.clear();
+        self.currently_dragging = None;
+        self.pan_pos = Point2D::new(0.0, 0.0);
+        self.zoom = 1.0;
+    }
+}
+
 #[derive(PartialEq, Clone, Copy)]
 pub enum CurrentlyDragging {
     Node(NodeDragInfo),
@@ -266,7 +276,7 @@ impl VisualGraph {
             let graph = self.inner;
             spawn(async move {
                 let fut = {
-                    let mut current_node_write = node.write();
+                    let current_node_write = node.write();
                     current_node_write.instance.run(inputs)
                 };
                 // Don't hold the write over an await point
@@ -313,7 +323,6 @@ impl VisualGraph {
             .output_type(edge.start)
             .unwrap();
         let output = graph.graph[output_id].read().input_type(edge.end).unwrap();
-        println!("{:?} {:?}", input, output);
         input.compatible(&output)
     }
 
@@ -383,6 +392,10 @@ impl VisualGraph {
         }
         self.inner.write().currently_dragging = None;
     }
+
+    pub(crate) fn clear(&mut self) {
+        self.inner.write().clear();
+    }
 }
 
 #[derive(Props, PartialEq, Clone)]
@@ -417,7 +430,8 @@ pub fn FlowView(mut props: FlowViewProps) -> Element {
     );
 
     rsx! {
-        div { position: "relative",
+        div {
+            position: "relative",
             style: "-webkit-user-select: none; -ms-user-select: none; user-select: none;",
             width: "100%",
             height: "100%",
@@ -431,9 +445,10 @@ pub fn FlowView(mut props: FlowViewProps) -> Element {
                     class: "m-1",
                     onclick: move |_| {
                         let new_zoom = zoom * 1.1;
-                        graph.with_mut(|graph| {
-                            graph.zoom = new_zoom;
-                        });
+                        graph
+                            .with_mut(|graph| {
+                                graph.zoom = new_zoom;
+                            });
                     },
                     "+"
                 }
@@ -441,19 +456,17 @@ pub fn FlowView(mut props: FlowViewProps) -> Element {
                     class: "m-1",
                     onclick: move |_| {
                         let new_zoom = zoom * 0.9;
-                        graph.with_mut(|graph| {
-                            graph.zoom = new_zoom;
-                        });
+                        graph
+                            .with_mut(|graph| {
+                                graph.zoom = new_zoom;
+                            });
                     },
                     "-"
                 }
             }
 
             for id in current_graph.graph.node_identifiers() {
-                Node {
-                    key: "{id:?}",
-                    node: current_graph.graph[id],
-                }
+                Node { key: "{id:?}", node: current_graph.graph[id] }
             }
 
             svg {
@@ -474,26 +487,28 @@ pub fn FlowView(mut props: FlowViewProps) -> Element {
                     props.graph.clear_dragging();
                 },
                 onmousemove: move |evt| {
-                    if let (Some(drag_start_pos), Some(drag_pan_pos)) = (drag_start_pos(), drag_pan_pos()) {
+                    if let (Some(drag_start_pos), Some(drag_pan_pos)) = (
+                        drag_start_pos(),
+                        drag_pan_pos(),
+                    ) {
                         let pos = evt.element_coordinates();
                         let end_pos = Point2D::new(pos.x as f32, pos.y as f32);
                         let diff = end_pos - drag_start_pos;
-                        graph.with_mut(|graph| {
-                            graph.pan_pos.x = drag_pan_pos.x + diff.x;
-                            graph.pan_pos.y = drag_pan_pos.y + diff.y;
-                        });
+                        graph
+                            .with_mut(|graph| {
+                                graph.pan_pos.x = drag_pan_pos.x + diff.x;
+                                graph.pan_pos.y = drag_pan_pos.y + diff.y;
+                            });
                     }
                     props.graph.update_mouse(&evt);
                 },
 
-                g {
-                    transform: "{transform}",
+                g { transform: "{transform}",
                     for edge_ref in current_graph.graph.edge_references() {
-                        NodeConnection {
-                            key: "{edge_ref.id():?}",
+                        NodeConnection {key: "{edge_ref.id():?}",
                             start: current_graph.graph[edge_ref.target()],
                             connection: current_graph.graph[edge_ref.id()],
-                            end: current_graph.graph[edge_ref.source()],
+                            end: current_graph.graph[edge_ref.source()]
                         }
                     }
 
@@ -502,7 +517,7 @@ pub fn FlowView(mut props: FlowViewProps) -> Element {
                             from_pos: current_graph_dragging.from_pos,
                             from: current_graph_dragging.from,
                             index: current_graph_dragging.index,
-                            to: current_graph_dragging.to,
+                            to: current_graph_dragging.to
                         }
                     }
                 }
@@ -529,7 +544,9 @@ fn CurrentlyDragging(props: CurrentlyDraggingProps) -> Element {
     let end = props.to;
     let end_pos = end.read();
 
-    rsx! { Connection { start_pos: start_pos, end_pos: *end_pos, color } }
+    rsx! {
+        Connection { start_pos, end_pos: *end_pos, color }
+    }
 }
 
 fn NodeConnection(props: ConnectionProps) -> Element {
@@ -547,5 +564,7 @@ fn NodeConnection(props: ConnectionProps) -> Element {
     let ty = start_node.input_type(start_index).unwrap();
     let color = ty.color();
 
-    rsx! { Connection { start_pos: start, end_pos: end, color: color } }
+    rsx! {
+        Connection { start_pos: start, end_pos: end, color }
+    }
 }

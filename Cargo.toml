@@ -101,15 +101,15 @@ kalosm-ocr = { path = "./models/kalosm-ocr", version = "0.2.1" }
 llm-samplers = "=0.0.7"
 
 [patch.crates-io]
-dioxus = { git = "https://github.com/dioxuslabs/dioxus" }
-dioxus-core = { git = "https://github.com/dioxuslabs/dioxus" }
-dioxus-core-macro = { git = "https://github.com/dioxuslabs/dioxus" }
-dioxus-rsx = { git = "https://github.com/dioxuslabs/dioxus" }
-dioxus-html = { git = "https://github.com/dioxuslabs/dioxus" }
-dioxus-hooks = { git = "https://github.com/dioxuslabs/dioxus" }
-dioxus-desktop = { git = "https://github.com/dioxuslabs/dioxus" }
-dioxus-signals = { git = "https://github.com/dioxuslabs/dioxus" }
-generational-box = { git = "https://github.com/dioxuslabs/dioxus" }
+dioxus = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }
+dioxus-core = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }
+dioxus-core-macro = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }
+dioxus-rsx = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }
+dioxus-html = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }
+dioxus-hooks = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }
+dioxus-desktop = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }
+dioxus-signals = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }
+generational-box = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }
 
 [profile.dist]
 inherits = "release"

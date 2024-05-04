@@ -16,7 +16,9 @@ enum SidebarRoute {
 }
 
 pub fn Sidebar() -> Element {
-    rsx! { Router::<SidebarRoute> {} }
+    rsx! {
+        Router::<SidebarRoute> {}
+    }
 }
 
 fn Links() -> Element {
@@ -57,11 +59,6 @@ document.addEventListener("mouseup", function(){
                     to: SidebarRoute::CurrentNodeInfo {},
                     "Current Node"
                 }
-                // Link {
-                //     class: "px-3 py-2 text-sm font-medium w-full",
-                //     to: SidebarRoute::SaveMenu {},
-                //     "Save/Load Cloud"
-                // }
             }
             Outlet::<SidebarRoute> {}
         }
