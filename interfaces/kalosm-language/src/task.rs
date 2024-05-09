@@ -162,7 +162,7 @@ impl TaskBuilder {
 
 impl<P: TaskBuilderReturn + Send + Sync + 'static> TaskBuilder<P> {
     /// Sets the [`Sampler`] to use for generating responses.
-    pub fn with_sampler(mut self, sampler: impl Sampler + Send + Sync + 'static) -> Self {
+    pub fn with_sampler(mut self, sampler: impl Sampler + 'static) -> Self {
         self.sampler = Arc::new(std::sync::Mutex::new(sampler));
         self
     }

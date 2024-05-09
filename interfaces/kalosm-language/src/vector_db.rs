@@ -95,11 +95,9 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
 
         std::fs::create_dir_all(&path)?;
 
-        let env = unsafe {
-            EnvOpenOptions::new()
-                .map_size(TWENTY_HUNDRED_MIB)
-                .open(path)
-        }?;
+        let env = EnvOpenOptions::new()
+            .map_size(TWENTY_HUNDRED_MIB)
+            .open(path)?;
 
         let mut wtxn = env.write_txn()?;
         let db: ArroyDatabase<Euclidean> = env.create_database(&mut wtxn, None)?;

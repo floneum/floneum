@@ -285,7 +285,7 @@ impl VisualGraph {
                 match result.as_deref() {
                     Some(Ok(result)) => {
                         for (out, current) in result.iter().zip(current_node_write.outputs.iter()) {
-                            current.write_unchecked().value = out.clone();
+                            current.write_unchecked().value.clone_from(out);
                         }
 
                         let current_graph = graph.read();

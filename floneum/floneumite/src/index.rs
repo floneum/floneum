@@ -367,12 +367,6 @@ impl PackageIndexEntry {
     }
 }
 
-#[derive(Debug)]
-pub struct Package {
-    pub path: std::path::PathBuf,
-    pub structure: package::PackageStructure,
-}
-
 #[tokio::test]
 async fn fetch_registry() -> anyhow::Result<()> {
     let index = FloneumPackageIndex::fetch().await?;
