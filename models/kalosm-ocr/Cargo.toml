@@ -12,7 +12,7 @@ keywords = ["ai", "ocr", "transformers"]
 candle-core.workspace = true
 candle-nn.workspace = true
 candle-transformers.workspace = true
-tokenizers = { version = "0.13.4" }
+tokenizers = { version = "0.19.1" }
 hf-hub = "0.3.0"
 
 accelerate-src = { version = "0.3.2", optional = true }
