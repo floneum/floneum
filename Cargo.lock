@@ -1306,7 +1306,7 @@ dependencies = [
 [[package]]
 name = "candle-core"
 version = "0.5.1"
-source = "git+https://github.com/huggingface/candle?rev=84328e2b607793b185148fa32489616c4bb7c749#84328e2b607793b185148fa32489616c4bb7c749"
+source = "git+https://github.com/huggingface/candle?rev=d9bc5ec15164ecb583dbb25653edd89e08e6cbd0#d9bc5ec15164ecb583dbb25653edd89e08e6cbd0"
 dependencies = [
  "accelerate-src",
  "byteorder",
@@ -1333,7 +1333,7 @@ dependencies = [
 [[package]]
 name = "candle-datasets"
 version = "0.5.1"
-source = "git+https://github.com/huggingface/candle?rev=84328e2b607793b185148fa32489616c4bb7c749#84328e2b607793b185148fa32489616c4bb7c749"
+source = "git+https://github.com/huggingface/candle?rev=d9bc5ec15164ecb583dbb25653edd89e08e6cbd0#d9bc5ec15164ecb583dbb25653edd89e08e6cbd0"
 dependencies = [
  "byteorder",
  "candle-core",
@@ -1350,7 +1350,7 @@ dependencies = [
 [[package]]
 name = "candle-flash-attn"
 version = "0.5.1"
-source = "git+https://github.com/huggingface/candle?rev=84328e2b607793b185148fa32489616c4bb7c749#84328e2b607793b185148fa32489616c4bb7c749"
+source = "git+https://github.com/huggingface/candle?rev=d9bc5ec15164ecb583dbb25653edd89e08e6cbd0#d9bc5ec15164ecb583dbb25653edd89e08e6cbd0"
 dependencies = [
  "anyhow",
  "bindgen_cuda",
@@ -1361,7 +1361,7 @@ dependencies = [
 [[package]]
 name = "candle-kernels"
 version = "0.5.1"
-source = "git+https://github.com/huggingface/candle?rev=84328e2b607793b185148fa32489616c4bb7c749#84328e2b607793b185148fa32489616c4bb7c749"
+source = "git+https://github.com/huggingface/candle?rev=d9bc5ec15164ecb583dbb25653edd89e08e6cbd0#d9bc5ec15164ecb583dbb25653edd89e08e6cbd0"
 dependencies = [
  "bindgen_cuda",
 ]
@@ -1369,7 +1369,7 @@ dependencies = [
 [[package]]
 name = "candle-metal-kernels"
 version = "0.5.1"
-source = "git+https://github.com/huggingface/candle?rev=84328e2b607793b185148fa32489616c4bb7c749#84328e2b607793b185148fa32489616c4bb7c749"
+source = "git+https://github.com/huggingface/candle?rev=d9bc5ec15164ecb583dbb25653edd89e08e6cbd0#d9bc5ec15164ecb583dbb25653edd89e08e6cbd0"
 dependencies = [
  "metal",
  "once_cell",
@@ -1380,7 +1380,7 @@ dependencies = [
 [[package]]
 name = "candle-nn"
 version = "0.5.1"
-source = "git+https://github.com/huggingface/candle?rev=84328e2b607793b185148fa32489616c4bb7c749#84328e2b607793b185148fa32489616c4bb7c749"
+source = "git+https://github.com/huggingface/candle?rev=d9bc5ec15164ecb583dbb25653edd89e08e6cbd0#d9bc5ec15164ecb583dbb25653edd89e08e6cbd0"
 dependencies = [
  "accelerate-src",
  "candle-core",
@@ -1398,7 +1398,7 @@ dependencies = [
 [[package]]
 name = "candle-transformers"
 version = "0.5.1"
-source = "git+https://github.com/huggingface/candle?rev=84328e2b607793b185148fa32489616c4bb7c749#84328e2b607793b185148fa32489616c4bb7c749"
+source = "git+https://github.com/huggingface/candle?rev=d9bc5ec15164ecb583dbb25653edd89e08e6cbd0#d9bc5ec15164ecb583dbb25653edd89e08e6cbd0"
 dependencies = [
  "accelerate-src",
  "byteorder",
