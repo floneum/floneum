@@ -51,7 +51,7 @@ pdf_text = { git = "https://github.com/pdf-rs/pdf_text" }
 convert_case = "0.6.0"
 itertools = "0.11.0"
 async-recursion = "1.0.5"
-tokenizers = { version = "0.13.4" }
+tokenizers = { version = "0.19.1" }
 rustc-hash = "1.1.0"
 kalosm-sample = { workspace = true }
 ego-tree = "0.6.2"
