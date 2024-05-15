@@ -31,6 +31,10 @@ Floneum makes it easy to develop applications that use local pre-trained AI mode
 
 [Kalosm](./interfaces/kalosm/) is a simple interface for pre-trained models in Rust that backs Floneum. It makes it easy to interact with pre-trained, language, audio, and image models.
 
+### Model Support
+
+Kalosm supports a variety of models. Here is a list of the models that are currently supported:
+
 | Model    | Modality | Size | Description | Quantized | CUDA + Metal Accelerated | Example |
 | -------- | ------- | ---- | ----------- | --------- | ----------- | --------------------- |
 | Llama | Text    | 1b-70b | General purpose language model | ✅ | ✅ | [llama 3 chat](interfaces/kalosm/examples/chat.rs) |
@@ -42,15 +46,16 @@ Floneum makes it easy to develop applications that use local pre-trained AI mode
 | Segment Anything | Image | 50MB-400MB | Image segmentation model | ❌ | ❌ | [Image Segmentation](interfaces/kalosm/examples/segment-image.rs) |
 | Bert | Text    | 100MB-1GB | Text embedding model | ❌ | ✅ | [Semantic Search](interfaces/kalosm/examples/semantic-search.rs) |
 
-Kalosm also supports a variety of helpers around pre-trained models. These include:
-- [Extracting, formatting and retrieving context for LLMs](./interfaces/kalosm/examples/context_extraction.rs): Extract context from a text document
-  - [Extract context from txt/html/docx/md/pdf](./interfaces/kalosm/examples/context_extraction.rs)
-  - [Chunk that context](./interfaces/kalosm/examples/chunking.rs)
-  - [Then search for relevant context with vector database integrations](./interfaces/kalosm/examples/semantic-search.rs)
+### Utilities
+
+Kalosm also supports a variety of utilities around pre-trained models. These include:
+- [Extracting, formatting and retrieving context for LLMs](./interfaces/kalosm/examples/context_extraction.rs): [Extract context from txt/html/docx/md/pdf](./interfaces/kalosm/examples/context_extraction.rs) [chunk that context](./interfaces/kalosm/examples/chunking.rs) [then search for relevant context with vector database integrations](./interfaces/kalosm/examples/semantic-search.rs)
+- [Transcribing audio from your microphone or file](./interfaces/kalosm/examples/transcribe.rs)
+- [Crawling and scraping content from web pages](./interfaces/kalosm/examples/crawl.rs)
 
 ### Performance
 
-Kalosm uses the [candle](https://github.com/huggingface/candle) machine learning library to run models in pure rust. It supports quantized and accelerated models with performance on par with `llama.cpp`.
+Kalosm uses the [candle](https://github.com/huggingface/candle) machine learning library to run models in pure rust. It supports quantized and accelerated models with performance on par with `llama.cpp`:
 
 **Mistral 7b** 
 | Accelerator | Kalosm | llama.cpp |
