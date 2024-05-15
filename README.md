@@ -1,5 +1,4 @@
-# [Floneum](./floneum/floneum)
-
+<p align="center">Floneum</p>
 <div align="center">
   <!-- Crates version -->
   <a href="https://crates.io/crates/kalosm">
@@ -66,7 +65,7 @@ Kalosm uses the [candle](https://github.com/huggingface/candle) machine learning
 
 Kalosm supports structured generation with a regex grammar. Because the grammar runs in rust code, it doesn't add any overhead to text generation. In fact, using a grammar can be even faster than uncontrolled text generation because Kalosm supports grammar acceleration!
 
-<video src="./media/structured.mov" autoplay loop muted></video>
+![Structured Generation Demo](./media/structured.webm)
 
 In addition to regex, you can provide your own grammar to generate structured data. This lets you constrain the response to any structure you want including complex data structures like JSON, HTML, and XML.
 
@@ -108,14 +107,15 @@ async fn main() {
             .unwrap();
     }
 }
-
 ```
+
 5) Run your application with:
+
 ```sh
 cargo run --release
 ```
 
-<video src="./media/hello-world.mov" autoplay loop muted></video>
+![Hello World Demo](./media/hello-world.webm)
 
 ## Community
 
