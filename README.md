@@ -1,4 +1,4 @@
-# [Floneum](./floneum/floneum)/[Kalosm](./interfaces/kalosm/README.md)
+# [Floneum](./floneum/floneum)
 
 <div align="center">
   <!-- Crates version -->
@@ -16,93 +16,101 @@
     <img src="https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square"
       alt="docs.rs docs" />
   </a>
-
   <!-- Discord -->
   <a href="https://discord.gg/dQdmhuB8q5">
     <img src="https://img.shields.io/discord/1120130300236800062?logo=discord&style=flat-square" alt="Discord Link" />
   </a>
 </div>
 
-Floneum is a graph editor that makes it easy to develop your own AI workflows
+Floneum makes it easy to develop applications that use local pre-trained AI models. There are two projects in this repository:
 
-<img width="1512" alt="Screenshot 2023-06-18 at 4 26 11 PM" src="https://floneum.com/assets/question_answer_example.png">
-
-## Features
-
-- Visual interface: You can use Floneum without any knowledge of programming. The visual graph editor makes it easy to combine community-made plugins with local AI models
-- Instantly run local large language models: Floneum does not require any external dependencies or even a GPU to run. It uses [LLM](https://github.com/rustformers/llm) to run large language models locally. Because of this, you can run Floneum with your data without worrying about privacy
-- Plugins: By combining large language models with plugins, you can improve their performance and make models work better for your specific use case. All plugins run in an isolated environment so you don't need to trust any plugins you load. Plugins can only interact with their environment in a safe way
-- Multi-language plugins: Plugins can be used in any language that supports web assembly. In addition to the API that can be accessed in any language, Floneum has a rust wrapper with ergonomic macros that make it simple to create plugins
-- Controlled text generation: Plugins can control the output of the large language models with a process similar to JSONformer or guidance. This allows plugins to force models to output valid JSON, or any other structure they define. This can be useful when communicating between a language model and a typed API
-
-## Floneum Quickstart
-
-[Download the latest release](https://github.com/floneum/floneum/releases/tag/v0.2.0), run the binary, wait a few seconds for all of the plugins to download and start building!
-
-## Documentation
-
-- If you are looking to use Floneum, you can read the [User Documentation](https://floneum.com/docs/user/).
-
-- If you are looking to develop plugins for Floneum, you can read the [Developer Documentation](https://floneum.com/docs/developer/)
+- [Kalosm](./interfaces/kalosm): A simple interface for pre-trained models in rust
+- [Floneum Editor (preview)](./floneum/floneum): A graphical editor for local AI workflows. See the [user documentation](https://floneum.com/docs/user/) or [plugin documentation](https://floneum.com/docs/developer/) for more information.
 
 ## Kalosm
 
-[Kalosm](./interfaces/kalosm/) is a simple interface for pre-trained models in rust that backs Floneum. It makes it easy to interact with pre-trained, language, audio, and image models.
+[Kalosm](./interfaces/kalosm/) is a simple interface for pre-trained models in Rust that backs Floneum. It makes it easy to interact with pre-trained, language, audio, and image models.
 
-There are three different packages in Kalosm:
+| Model    | Modality | Size | Description | Quantized | CUDA + Metal Accelerated | Example |
+| -------- | ------- | ---- | ----------- | --------- | ----------- | --------------------- |
+| Llama | Text    | 1b-70b | General purpose language model | ✅ | ✅ | [llama 3 chat](interfaces/kalosm/examples/chat.rs) |
+| Mistral | Text    | 7-13b | General purpose language model | ✅ | ✅ | [mistral chat](interfaces/kalosm/examples/chat-mistral-2.rs) |
+| Phi | Text    | 2b-4b | Small reasoning focused language model | ✅ | ✅ | [phi 3 chat](interfaces/kalosm/examples/chat-phi-3.rs) |
+| Whisper | Audio   | 20MB-1GB | Audio transcription model | ✅ | ✅ | [live whisper transcription](interfaces/kalosm/examples/transcribe.rs) |
+| RWuerstchen | Image | 5gb | Image generation model | ❌ | ✅ | [rwuerstchen image generation](interfaces/kalosm/examples/generate_image.rs) |
+| TrOcr | Image | 3gb | Optical character recognition model | ❌ | ✅ | [Text Recognition](interfaces/kalosm/examples/ocr.rs) |
+| Segment Anything | Image | 50MB-400MB | Image segmentation model | ❌ | ❌ | [Image Segmentation](interfaces/kalosm/examples/segment-image.rs) |
+| Bert | Text    | 100MB-1GB | Text embedding model | ❌ | ✅ | [Semantic Search](interfaces/kalosm/examples/semantic-search.rs) |
 
-kalosm::language - A simple interface for text generation and embedding models and surrounding tools. It includes support for search databases, and text collection from websites, RSS feeds, and search engines.
-kalosm::audio - A simple interface for audio transcription and surrounding tools. It includes support for microphone input and the whisper model.
-kalosm::vision - A simple interface for image generation and segmentation models and surrounding tools. It includes support for the wuerstchen and segment-anything models and integration with the image crate.
-A complete guide for Kalosm is available on the Kalosm website, and examples are available in the examples folder.
+Kalosm also supports a variety of helpers around pre-trained models. These include:
+- [Extracting, formatting and retrieving context for LLMs](./interfaces/kalosm/examples/context_extraction.rs): Extract context from a text document
+  - [Extract context from txt/html/docx/md/pdf](./interfaces/kalosm/examples/context_extraction.rs)
+  - [Chunk that context](./interfaces/kalosm/examples/chunking.rs)
+  - [Then search for relevant context with vector database integrations](./interfaces/kalosm/examples/semantic-search.rs)
 
-Kalosm is a simple interface for pre-trained models in rust. It makes it easy to interact with pre-trained, language, audio, and image models.
+### Performance
 
-There are three different packages in Kalosm:
-- `kalosm::language` - A simple interface for text generation and embedding models and surrounding tools. It includes support for search databases, and text collection from websites, RSS feeds, and search engines.
-- `kalosm::audio` - A simple interface for audio transcription and surrounding tools. It includes support for microphone input and the `whisper` model.
-- `kalosm::vision` - A simple interface for image generation and segmentation models and surrounding tools. It includes support for the `wuerstchen` and `segment-anything` models and integration with the [image](https://docs.rs/image/latest/image/) crate.
+Kalosm uses the [candle](https://github.com/huggingface/candle) machine learning library to run models in pure rust. It supports quantized and accelerated models with performance on par with `llama.cpp`.
 
-A complete guide for Kalosm is available on the [Kalosm website](https://floneum.com/kalosm/), and examples are available in the [examples folder](https://github.com/floneum/floneum/tree/main/interfaces/kalosm/examples).
+**Mistral 7b** 
+| Accelerator | Kalosm | llama.cpp |
+| ------ | --------- | --------- |
+| Metal (M2) | 26 t/s | 27 t/s |
+
+### Structured Generation
+
+Kalosm supports structured generation with a regex grammar. Because the grammar runs in rust code, it doesn't add any overhead to text generation. In fact, using a grammar can be even faster than uncontrolled text generation because Kalosm supports grammar acceleration!
+
+<video src="./media/structured.mov" autoplay loop muted></video>
+
+In addition to regex, you can provide your own grammar to generate structured data. This lets you constrain the response to any structure you want including complex data structures like JSON, HTML, and XML.
 
 ### Kalosm Quickstart!
+
+This quickstart will get you up and running with a simple chatbot. Let's get started!
+
+> A more complete guide for Kalosm is available on the [Kalosm website](https://floneum.com/kalosm/), and examples are available in the [examples folder](https://github.com/floneum/floneum/tree/main/interfaces/kalosm/examples).
 
 1) Install [rust](https://rustup.rs/)
 2) Create a new project:
 ```sh
-cargo new next-gen-ai
-cd ./next-gen-ai
+cargo new kalosm-hello-world
+cd ./kalosm-hello-world
 ```
 3) Add Kalosm as a dependency
 ```sh
-cargo add kalosm
+cargo add kalosm --git https://github.com/floneum/floneum --features language
+# You can use `--features language,metal`, `--features language,cublas`, or `--features language,mkl` if your machine supports an accelerator
 cargo add tokio --features full
 ```
 4) Add this code to your `main.rs` file
 ```rust, no_run
-use std::io::Write;
-
-use kalosm::{*, language::*};
+use kalosm::language::*;
 
 #[tokio::main]
 async fn main() {
-    let mut llm = Phi::start().await;
-    let prompt = "The following is a 300 word essay about Paris:";
-    print!("{}", prompt);
+    let model = Llama::phi_3().await.unwrap();
+    let mut chat = Chat::builder(model)
+        .with_system_prompt("You are a pirate called Blackbeard")
+        .build();
 
-    let stream = llm.stream_text(prompt).with_max_length(1000).await.unwrap();
-
-    let mut sentences = stream.words();
-    while let Some(text) = sentences.next().await {
-        print!("{}", text);
-        std::io::stdout().flush().unwrap();
+    loop {
+        chat.add_message(prompt_input("\n> ").unwrap())
+            .await
+            .unwrap()
+            .to_std_out()
+            .await
+            .unwrap();
     }
 }
+
 ```
 5) Run your application with:
 ```sh
 cargo run --release
 ```
+
+<video src="./media/hello-world.mov" autoplay loop muted></video>
 
 ## Community
 

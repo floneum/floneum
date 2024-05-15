@@ -211,7 +211,7 @@ impl OcrInferenceSettings {
     }
 }
 
-/// The [segment anything](https://segment-anything.com/) model.
+/// The [trocs](https://www.microsoft.com/en-us/research/publication/trocr-transformer-based-optical-character-recognition-with-pre-trained-models/) optical character recognition model.
 pub struct Ocr {
     device: Device,
     decoder: trocr::TrOCRModel,

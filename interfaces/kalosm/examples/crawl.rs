@@ -1,6 +1,6 @@
-use scraper::{ElementRef, Node};
 use kalosm::language::*;
 use scraper::Html;
+use scraper::{ElementRef, Node};
 use std::future::Future;
 use std::io::Write;
 use std::pin::Pin;
@@ -19,10 +19,10 @@ async fn main() {
             Box::pin(async move {
                 let visited = real_visited.fetch_add(1, Ordering::SeqCst);
 
-                if page.url().domain() != Some("floneum.com") {
-                    println!("skipping {:?}", page.url());
-                    return CrawlFeedback::follow_none();
-                }
+                // if page.url().domain() != Some("floneum.com") {
+                //     println!("skipping {:?}", page.url());
+                //     return CrawlFeedback::follow_none();
+                // }
 
                 let Ok(document) = page.html().await else {
                     println!("failed to get article {:?}", page.url());
@@ -33,10 +33,10 @@ async fn main() {
 
                 // write the page to disk
                 let _ = std::fs::create_dir_all("scraped");
-                if let Ok(mut file) = std::fs::File::create(format!("scraped/{visited}.html")){
+                if let Ok(mut file) = std::fs::File::create(format!("scraped/{visited}.html")) {
                     _ = file.write_all(simplified.as_bytes());
                 }
-                
+
                 CrawlFeedback::follow_all()
             }) as Pin<Box<dyn Future<Output = CrawlFeedback>>>
         },
@@ -48,11 +48,8 @@ async fn main() {
 const IMPORTANT_ATTRIBUTES: &[&str] = &["id", "href", "alt", "title", "role", "type", "src"];
 const IGNORE_ELEMENTS: &[&str] = &["script", "style"];
 const IMPORTANT_ELEMENTS: &[&str] = &[
-    "a", "img", "p", "h1", "h2", "h3", "h4", "h5", "h6",
-    "ul", "ol", "li",
-    "dl", "dt", "dd",
-    "table", "tr", "td", "th",
-    "select", "option", "form", "label",
+    "a", "img", "p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "dl", "dt", "dd",
+    "table", "tr", "td", "th", "select", "option", "form", "label",
 ];
 
 fn clean_html(html: Html) -> String {
@@ -95,7 +92,7 @@ fn visit_element(element: ElementRef, result: &mut String, last_node_text: &mut 
         match child.value() {
             Node::Element(_) => {
                 visit_element(ElementRef::wrap(child).unwrap(), result, last_node_text);
-            },
+            }
             Node::Text(t) => {
                 let trimmed = t.trim();
                 if !trimmed.is_empty() {
@@ -105,7 +102,7 @@ fn visit_element(element: ElementRef, result: &mut String, last_node_text: &mut 
                     *last_node_text = true;
                     result.push_str(trimmed);
                 }
-            },
+            }
             _ => {}
         }
     }
