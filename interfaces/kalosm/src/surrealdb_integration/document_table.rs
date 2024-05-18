@@ -203,7 +203,7 @@ impl<C: Connection, E, K: Chunker> DocumentTableBuilder<C, E, K> {
             Some(embedding_model) => embedding_model,
             None => {
                 if TypeId::of::<E>() == TypeId::of::<Bert>() {
-                    let embedding_model = Bert::builder().build().await?;
+                    let embedding_model = Bert::new().await?;
                     *(Box::new(embedding_model) as Box<dyn Any>)
                         .downcast::<E>()
                         .unwrap()

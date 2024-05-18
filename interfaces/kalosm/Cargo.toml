@@ -101,3 +101,11 @@ sound = ["kalosm-sound"]
 surrealdb = ["dep:surrealdb"]
 vision = ["kalosm-vision"]
 remote = ["kalosm-language?/remote"]
+
+[[example]]
+name = "semantic-search"
+required-features = ["surrealdb"]
+
+[[example]]
+name = "live-qa"
+required-features = ["surrealdb"]
