@@ -9,18 +9,6 @@ use surrealdb::sql::Id;
 use surrealdb::Connection;
 use surrealdb::Surreal;
 
-/// A struct that has a document associated with it.
-pub trait HasDocument {
-    /// Get the document associated with this struct.
-    fn document(&self) -> &Document;
-}
-
-impl HasDocument for Document {
-    fn document(&self) -> &Document {
-        self
-    }
-}
-
 /// A table in a surreal database that is indexed by embeddings from a vector database.
 pub struct DocumentTable<C: Connection, R, M: Embedder, K: Chunker> {
     embedding_model: M,
@@ -57,14 +45,14 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
         &mut self.embedding_model
     }
 
-    /// Insert a new record into the table with the given embedding.
+    /// Insert a new record into the table and return the id of the record.
     pub async fn insert(&self, value: R) -> anyhow::Result<Id>
     where
-        R: HasDocument + Serialize + DeserializeOwned,
+        R: AsRef<Document> + Serialize + DeserializeOwned,
     {
         let embeddings = self
             .chunker
-            .chunk(value.document(), &self.embedding_model)
+            .chunk(value.as_ref(), &self.embedding_model)
             .await?;
         self.table
             .insert(
@@ -74,6 +62,37 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
                 value,
             )
             .await
+    }
+
+    /// Extend the table with a iterator of new records.
+    pub async fn extend<T: IntoIterator<Item = R> + Send>(
+        &mut self,
+        iter: T,
+    ) -> anyhow::Result<Vec<Id>>
+    where
+        R: AsRef<Document> + Serialize + DeserializeOwned,
+        K: Sync,
+    {
+        let entries = iter.into_iter().collect::<Vec<_>>();
+        let documents = entries.iter().map(|v| v.as_ref()).collect::<Vec<_>>();
+        let embeddings = self
+            .chunker
+            .chunk_batch(documents, &self.embedding_model)
+            .await?;
+        let mut ids = Vec::new();
+        for (value, embeddings) in entries.into_iter().zip(embeddings) {
+            let id = self
+                .table
+                .insert(
+                    embeddings
+                        .into_iter()
+                        .flat_map(|embedding| embedding.embeddings),
+                    value,
+                )
+                .await?;
+            ids.push(id);
+        }
+        Ok(ids)
     }
 
     /// Update a record in the table with the given embedding id.
@@ -134,6 +153,19 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
         R: DeserializeOwned,
     {
         self.table.select_nearest(embedding, k).await
+    }
+}
+
+impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
+    /// Extend the table from `[IntoDocuments]`
+    pub async fn add_context(&mut self, context: impl IntoDocuments) -> anyhow::Result<Vec<Id>>
+    where
+        R: From<Document> + AsRef<Document> + Serialize + DeserializeOwned,
+        K: Sync,
+    {
+        let documents = context.into_documents().await?;
+        let iter = documents.into_iter().map(|v| v.into());
+        self.extend(iter).await
     }
 }
 

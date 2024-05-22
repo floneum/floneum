@@ -1,7 +1,7 @@
 use comfy_table::{Cell, Color, Row, Table};
+use kalosm::language::Url;
 use kalosm::language::*;
 use kalosm::*;
-use std::path::PathBuf;
 use surrealdb::{engine::local::RocksDb, Surreal};
 
 #[tokio::main]
@@ -18,20 +18,37 @@ async fn main() {
 
     let mut document_table = db
         .document_table_builder("documents")
+        .with_embedding_model(
+            Bert::builder()
+                .with_source(BertSource::snowflake_arctic_embed_large())
+                .build()
+                .await
+                .unwrap(),
+        )
+        .with_chunker(ChunkStrategy::Sentence {
+            sentence_count: 3,
+            overlap: 2
+        })
         .at("./db/embeddings.db")
-        .build()
+        .build::<Document>()
         .await
         .unwrap();
 
     if !exists {
         std::fs::create_dir_all("documents").unwrap();
-        let documents = DocumentFolder::try_from(PathBuf::from("./documents")).unwrap();
+        let context = [
+            "https://floneum.com/kalosm/docs",
+            "https://floneum.com/kalosm/docs/reference/web_scraping",
+            "https://floneum.com/kalosm/docs/guides/retrieval_augmented_generation",
+            "https://floneum.com/kalosm/docs/reference/llms/structured_generation",
+            "https://floneum.com/kalosm/docs/reference/llms/context",
+            "https://floneum.com/kalosm/docs/reference/llms",
+        ]
+        .iter()
+        .map(|url| Url::parse(url).unwrap());
 
         // Create a new document database table
-        let documents = documents.into_documents().await.unwrap();
-        for document in documents {
-            document_table.insert(document).await.unwrap();
-        }
+        document_table.add_context(context).await.unwrap();
     }
 
     loop {
