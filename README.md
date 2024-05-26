@@ -40,7 +40,7 @@ Kalosm supports a variety of models. Here is a list of the models that are curre
 | Mistral | Text    | 7-13b | General purpose language model | ✅ | ✅ | [mistral chat](interfaces/kalosm/examples/chat-mistral-2.rs) |
 | Phi | Text    | 2b-4b | Small reasoning focused language model | ✅ | ✅ | [phi 3 chat](interfaces/kalosm/examples/chat-phi-3.rs) |
 | Whisper | Audio   | 20MB-1GB | Audio transcription model | ✅ | ✅ | [live whisper transcription](interfaces/kalosm/examples/transcribe.rs) |
-| RWuerstchen | Image | 5gb | Image generation model | ❌ | ✅ | [rwuerstchen image generation](interfaces/kalosm/examples/generate_image.rs) |
+| RWuerstchen | Image | 5gb | Image generation model | ❌ | ✅ | [rwuerstchen image generation](interfaces/kalosm/examples/generate-image.rs) |
 | TrOcr | Image | 3gb | Optical character recognition model | ❌ | ✅ | [Text Recognition](interfaces/kalosm/examples/ocr.rs) |
 | Segment Anything | Image | 50MB-400MB | Image segmentation model | ❌ | ❌ | [Image Segmentation](interfaces/kalosm/examples/segment-image.rs) |
 | Bert | Text    | 100MB-1GB | Text embedding model | ❌ | ✅ | [Semantic Search](interfaces/kalosm/examples/semantic-search.rs) |
