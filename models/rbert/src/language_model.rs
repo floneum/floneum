@@ -1,5 +1,6 @@
 pub use crate::Bert;
 use crate::BertBuilder;
+use crate::Pooling;
 use kalosm_common::*;
 use kalosm_language_model::Embedding;
 use kalosm_language_model::VectorSpace;
@@ -21,17 +22,25 @@ impl ModelBuilder for BertBuilder {
     }
 }
 
-#[async_trait::async_trait]
-impl Embedder for Bert {
-    type VectorSpace = BertSpace;
+impl Bert {
+    /// Embed a sentence with a specific pooling strategy.
+    pub fn embed_with_pooling(
+        &self,
+        input: &str,
+        pooling: Pooling,
+    ) -> anyhow::Result<Embedding<BertSpace>> {
+        let mut tensors = self.embed_batch_raw(&[input], pooling)?;
 
-    async fn embed(&self, input: &str) -> anyhow::Result<Embedding<BertSpace>> {
-        let tensor = self.embed_batch_raw(&[input])?.pop().unwrap();
-        Ok(Embedding::new(tensor))
+        Ok(Embedding::new(tensors.pop().unwrap()))
     }
 
-    async fn embed_batch(&self, inputs: &[&str]) -> anyhow::Result<Vec<Embedding<BertSpace>>> {
-        let tensors = self.embed_batch_raw(inputs)?;
+    /// Embed a batch of sentences with a specific pooling strategy.
+    pub fn embed_batch_with_pooling(
+        &self,
+        inputs: &[&str],
+        pooling: Pooling,
+    ) -> anyhow::Result<Vec<Embedding<BertSpace>>> {
+        let tensors = self.embed_batch_raw(inputs, pooling)?;
 
         let mut embeddings = Vec::with_capacity(tensors.len());
         for tensor in tensors {
@@ -39,6 +48,19 @@ impl Embedder for Bert {
         }
 
         Ok(embeddings)
+    }
+}
+
+#[async_trait::async_trait]
+impl Embedder for Bert {
+    type VectorSpace = BertSpace;
+
+    async fn embed(&self, input: &str) -> anyhow::Result<Embedding<BertSpace>> {
+        self.embed_with_pooling(input, Pooling::CLS)
+    }
+
+    async fn embed_batch(&self, inputs: &[&str]) -> anyhow::Result<Vec<Embedding<BertSpace>>> {
+        self.embed_batch_with_pooling(inputs, Pooling::CLS)
     }
 }
 
