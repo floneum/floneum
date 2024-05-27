@@ -1,7 +1,7 @@
 use kalosm_language_model::{Embedder, VectorSpace};
 use std::ops::Range;
 
-use super::Chunker;
+use super::{Chunker, SentenceChunker};
 use crate::{prelude::Document, search::Chunk};
 
 /// A strategy for chunking a document into smaller pieces.
@@ -68,24 +68,17 @@ impl ChunkStrategy {
                 overlap,
             } => {
                 let mut chunks = Vec::new();
-                let mut start = 0;
-                let mut sentance_start_indexes = Vec::new();
-                for (i, c) in string.char_indices() {
-                    if c == '.' {
-                        sentance_start_indexes.push(i + 1);
-                        if sentance_start_indexes.len() >= *sentence_count {
-                            if !string[start..i].trim().is_empty() {
-                                chunks.push(start..i);
-                            }
-                            for _ in 0..(sentance_start_indexes.len() - *overlap) {
-                                start = sentance_start_indexes.remove(0);
-                            }
-                        }
-                    }
-                }
+                
+                let splits = SentenceChunker::default().split_sentences(string);
 
-                if !string[start..].trim().is_empty() {
-                    chunks.push(start..string.len());
+                
+                for window in splits.windows(*sentence_count).step_by(*sentence_count - *overlap) {
+                    if window.len() < *sentence_count {
+                        break;
+                    }
+                    let start = window.first().unwrap().start;
+                    let end = window.last().unwrap().end;
+                    chunks.push(start..end);
                 }
 
                 chunks
@@ -166,20 +159,19 @@ fn test_chunking() {
     let string = "first sentence. second sentence. third sentence. fourth sentence.";
 
     let chunks = chunks.chunk_str(string);
-    assert_eq!(chunks.len(), 4);
+    assert_eq!(chunks.len(), 3);
     assert_eq!(
         string[chunks[0].clone()].trim(),
-        "first sentence. second sentence"
+        "first sentence. second sentence."
     );
     assert_eq!(
         string[chunks[1].clone()].trim(),
-        "second sentence. third sentence"
+        "second sentence. third sentence."
     );
     assert_eq!(
         string[chunks[2].clone()].trim(),
-        "third sentence. fourth sentence"
+        "third sentence. fourth sentence."
     );
-    assert_eq!(string[chunks[3].clone()].trim(), "fourth sentence.");
 
     let chunks = ChunkStrategy::Paragraph {
         paragraph_count: 3,
@@ -219,7 +211,6 @@ impl<S: VectorSpace> std::fmt::Debug for EmbeddedDocument<S> {
     }
 }
 
-#[async_trait::async_trait]
 impl Chunker for ChunkStrategy {
     async fn chunk<E: Embedder + Send>(
         &self,

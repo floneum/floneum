@@ -59,6 +59,7 @@ meval = "0.2.0"
 whatlang = "0.16.3"
 texting_robots = "0.2.2"
 half = "2.3.1"
+srx = { version = "0.1.4", features = ["from_xml"] }
 
 [features]
 metal = ["rphi/metal", "rbert/metal", "kalosm-llama/metal"]

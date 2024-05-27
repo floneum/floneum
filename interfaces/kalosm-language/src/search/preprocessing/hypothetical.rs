@@ -155,7 +155,6 @@ where
     model: &'a M,
 }
 
-#[async_trait::async_trait]
 impl<'a, M> Chunker for HypotheticalChunker<'a, M>
 where
     M: Model,
