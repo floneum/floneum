@@ -1,10 +1,6 @@
-use candle_core::{DType, Device, Result, Tensor};
-use candle_nn::{embedding, Dropout, Embedding, Module, ModuleT, VarBuilder};
-use candle_transformers::models::{
-    stable_diffusion::attention,
-    with_tracing::{layer_norm, linear, LayerNorm, Linear},
-};
-use serde::Deserialize;
+use candle_core::{DType, Result, Tensor};
+use candle_nn::{Dropout, Module, ModuleT, VarBuilder};
+use candle_transformers::models::with_tracing::{linear, Linear};
 
 pub(crate) struct BertSelfAttention {
     query: Linear,

@@ -27,7 +27,7 @@ async fn main() {
         )
         .with_chunker(ChunkStrategy::Sentence {
             sentence_count: 3,
-            overlap: 2
+            overlap: 2,
         })
         .at("./db/embeddings.db")
         .build::<Document>()

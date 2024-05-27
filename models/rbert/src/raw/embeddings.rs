@@ -2,12 +2,10 @@
 //!
 //! Bert embeddings contain word embeddings, embeddings about the token type and position information.
 
-use super::Config;
-use candle_core::{DType, Device, Result, Tensor};
+use candle_core::{Result, Tensor};
 use candle_nn::Dropout;
 use candle_nn::{embedding, Embedding, Module, ModuleT, VarBuilder};
-use candle_transformers::models::with_tracing::{layer_norm, linear, LayerNorm, Linear};
-use serde::Deserialize;
+use candle_transformers::models::with_tracing::{layer_norm, LayerNorm};
 
 // https://github.com/huggingface/transformers/blob/6eedfa6dd15dc1e22a55ae036f681914e5a0d9a1/src/transformers/models/bert/modeling_bert.py#L180
 pub(crate) struct BertEmbeddings {

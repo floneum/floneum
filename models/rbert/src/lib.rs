@@ -49,11 +49,10 @@ extern crate intel_mkl_src;
 extern crate accelerate_src;
 
 use kalosm_common::*;
-use sysinfo::System;
 
 use std::sync::RwLock;
 
-use candle_core::{Device, IndexOp, Tensor};
+use candle_core::{IndexOp, Tensor};
 use candle_nn::VarBuilder;
 use tokenizers::{PaddingParams, Tokenizer};
 
@@ -251,44 +250,4 @@ impl Bert {
 
 fn normalize_l2(v: &Tensor) -> anyhow::Result<Tensor> {
     Ok(v.broadcast_div(&v.sqr()?.sum_keepdim(1)?.sqrt()?)?)
-}
-
-fn allocated_memory(device: &Device) -> Option<u64> {
-    match device {
-        Device::Metal(metal) => {
-            #[cfg(feature = "metal")]
-            {
-                Some(metal.current_allocated_size())
-            }
-            #[cfg(not(feature = "metal"))]
-            {
-                None
-            }
-        }
-        Device::Cuda(_) => None,
-        Device::Cpu => {
-            let system = System::new_all();
-            Some(system.used_memory())
-        }
-    }
-}
-
-fn available_memory(device: &Device) -> Option<u64> {
-    match device {
-        Device::Metal(metal) => {
-            #[cfg(feature = "metal")]
-            {
-                Some(metal.recommended_max_working_set_size())
-            }
-            #[cfg(not(feature = "metal"))]
-            {
-                None
-            }
-        }
-        Device::Cuda(_) => None,
-        Device::Cpu => {
-            let system = System::new_all();
-            Some(system.available_memory())
-        }
-    }
 }

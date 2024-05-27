@@ -22,6 +22,7 @@ half = { version = "2.3.1", features = ["num-traits", "use-intrinsics", "rand_di
 anyhow = "1.0.75"
 tracing = "0.1.37"
 serde_json = "1.0.106"
+serde = { version = "1", features = ["derive"] }
 async-trait = "0.1.73"
 tokio = { version = "1.33.0", features = ["full"] }
 

@@ -1,7 +1,5 @@
-use candle_core::{DType, Device, Result, Tensor};
-use candle_nn::{embedding, Dropout, Embedding, Module, ModuleT, VarBuilder};
-use candle_transformers::models::with_tracing::{layer_norm, linear, LayerNorm, Linear};
-use serde::Deserialize;
+use candle_core::{Result, Tensor};
+use candle_nn::VarBuilder;
 
 use super::{BertSelfAttention, BertSelfOutput};
 
