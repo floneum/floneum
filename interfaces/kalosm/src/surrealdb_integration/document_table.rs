@@ -208,9 +208,14 @@ impl<C: Connection, E, K: Chunker> DocumentTableBuilder<C, E, K> {
     }
 
     /// Set the chunking strategy for the table.
-    pub fn with_chunker(mut self, chunker: K) -> Self {
-        self.chunker = chunker;
-        self
+    pub fn with_chunker<K2: Chunker>(self, chunker: K2) -> DocumentTableBuilder<C, E, K2> {
+        DocumentTableBuilder {
+            chunker,
+            table: self.table,
+            db: self.db,
+            location: self.location,
+            embedding_model: self.embedding_model,
+        }
     }
 
     /// Build the document table.
