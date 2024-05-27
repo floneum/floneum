@@ -56,11 +56,11 @@ impl Embedder for Bert {
     type VectorSpace = BertSpace;
 
     async fn embed(&self, input: &str) -> anyhow::Result<Embedding<BertSpace>> {
-        self.embed_with_pooling(input, Pooling::CLS)
+        self.embed_with_pooling(input, Pooling::Mean)
     }
 
     async fn embed_batch(&self, inputs: &[&str]) -> anyhow::Result<Vec<Embedding<BertSpace>>> {
-        self.embed_batch_with_pooling(inputs, Pooling::CLS)
+        self.embed_batch_with_pooling(inputs, Pooling::Mean)
     }
 }
 

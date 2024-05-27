@@ -63,27 +63,26 @@ impl BertSelfAttention {
         let value_layer = self.transpose_for_scores(&value_layer)?;
 
         let attention_scores = query_layer.matmul(&key_layer.t()?)?;
-        let attention_scores = (attention_scores / (self.attention_head_size as f64).sqrt())?;
+        let mut attention_scores = (attention_scores / (self.attention_head_size as f64).sqrt())?;
+        // If there is an attention mask, filter the attention scores by that mask
+        if let Some(attention_mask) = attention_mask {
+            // The attention mask is a tensor of shape (bsize, seq_len)
+            // the attention scores are a tensor of shape (bsize, _, seq_len, seq_len)
+            // We expand the attention mask to (bsize, 1, 1, seq_len)
+            let mask = attention_mask.unsqueeze(1)?.unsqueeze(2)?;
+            let shape = attention_scores.shape();
+            let mask = mask.broadcast_as(shape)?.to_dtype(DType::U8)?;
+            // We use a value slightly larger that the true f32 min value to avoid NaN
+            const FALSE_MIN: f32 = -3.4028235e34f32;
+            let on_false = Tensor::new(FALSE_MIN, mask.device())?.broadcast_as(shape)?;
+            attention_scores = mask.where_cond(&attention_scores, &on_false)?;
+        }
+
         let attention_probs = {
             let _enter_sm = self.span_softmax.enter();
             candle_nn::ops::softmax(&attention_scores, candle_core::D::Minus1)?
         };
-        let mut attention_probs = self.dropout.forward_t(&attention_probs, train)?;
-
-        // If there is an attention mask, filter the attention scores by that mask
-        if let Some(attention_mask) = attention_mask {
-            // The attention mask is a tensor of shape (bsize, seq_len)
-            // the attention probs are a tensor of shape (bsize, _, seq_len, seq_len)
-            // We expand the attention mask to (bsize, 1, 1, seq_len)
-            let mask = attention_mask.unsqueeze(1)?.unsqueeze(2)?;
-            let shape = attention_probs.shape();
-            let mask = mask.broadcast_as(shape)?.to_dtype(DType::U8)?;
-            // We use a value slightly larger that the true f32 min value to avoid NaN
-            const FALSE_MIN: f32 = -3.4028235e30f32;
-            let on_false = Tensor::new(FALSE_MIN, mask.device())?.broadcast_as(shape)?;
-            attention_probs = mask.where_cond(&attention_probs, &on_false)?;
-        }
-
+        let attention_probs = self.dropout.forward_t(&attention_probs, train)?;
         let context_layer = attention_probs.matmul(&value_layer)?;
         let context_layer = context_layer.transpose(1, 2)?.contiguous()?;
         let context_layer = context_layer.flatten_from(candle_core::D::Minus2)?;

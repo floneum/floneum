@@ -62,7 +62,8 @@ mod raw;
 mod source;
 
 pub use crate::language_model::*;
-pub use crate::raw::{BertModel, Config, DTYPE};
+use crate::raw::DTYPE;
+pub use crate::raw::{BertModel, Config};
 pub use crate::source::*;
 
 /// A builder for a [`Bert`] model
@@ -92,7 +93,6 @@ impl BertBuilder {
         Bert::from_builder(self, loading_handler).await
     }
 }
-
 
 /// The pooling strategy to use when embedding text.
 #[derive(Debug, Clone, Copy)]
@@ -169,7 +169,7 @@ impl Bert {
         pooling: Pooling,
     ) -> anyhow::Result<Vec<Tensor>> {
         let mut combined = Vec::new();
-        let chunk_size = 18;
+        let chunk_size = 36;
         for batch in sentences.chunks(chunk_size) {
             let embeddings = self.embed_batch_raw_inner(batch, pooling)?;
             combined.extend(embeddings);
@@ -232,7 +232,7 @@ impl Bert {
                 // Take the mean embedding value for all tokens (except padding)
                 let embeddings = embeddings.mul(
                     &attention_mask
-                        .to_dtype(candle_core::DType::F32)?
+                        .to_dtype(DTYPE)?
                         .unsqueeze(2)?
                         .broadcast_as(embeddings.shape())?,
                 )?;
