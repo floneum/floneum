@@ -140,7 +140,7 @@ impl LlamaAttention {
 
         attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights)?;
 
-        let mut attn_output = attn_weights.matmul(&value_states.contiguous()?)?;
+        let mut attn_output = attn_weights.matmul(&value_states)?;
 
         if attn_output.dims() != [bsz, num_heads, q_len, head_dim] {
             return Err(candle_core::Error::Msg(format!(

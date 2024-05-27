@@ -1,7 +1,7 @@
 use candle_core::{Device, Tensor};
 use std::collections::HashMap;
 
-/// A cache for Llama inference. This cache will speed up generation of sequential text significantly.
+/// A cache for llama inference. This cache will speed up generation of sequential text significantly.
 #[derive(Debug, Clone)]
 pub struct LlamaCache {
     pub(crate) tokens: Vec<u32>,
@@ -33,12 +33,12 @@ impl LlamaCache {
         let mut map = HashMap::with_capacity(self.blocks.len());
         for (i, block) in self.blocks.iter().enumerate() {
             if let AttentionCache(Some(AttentionCacheValue { key, value })) = block {
-                map.insert(format!("Llama.cache.blocks.{}.key", i), key.clone());
-                map.insert(format!("Llama.cache.blocks.{}.value", i), value.clone());
+                map.insert(format!("llama.cache.blocks.{}.key", i), key.clone());
+                map.insert(format!("llama.cache.blocks.{}.value", i), value.clone());
             }
         }
         map.insert(
-            "Llama.cache.tokens".to_string(),
+            "llama.cache.tokens".to_string(),
             Tensor::from_iter(self.tokens.iter().copied(), device).unwrap(),
         );
         map
@@ -47,12 +47,12 @@ impl LlamaCache {
     /// Create a cache from a tensor map. This can be used to load a cache from disk.
     pub fn from_tensor_map(map: HashMap<String, Tensor>) -> Self {
         let tokens = map
-            .get("Llama.cache.tokens")
+            .get("llama.cache.tokens")
             .and_then(|tokens| tokens.to_vec1().ok())
             .unwrap_or_default();
         let mut blocks = Vec::with_capacity(24);
         for (k, v) in map {
-            if let Some(i) = k.strip_prefix("Llama.cache.blocks.") {
+            if let Some(i) = k.strip_prefix("llama.cache.blocks.") {
                 let i = i
                     .strip_suffix(".key")
                     .unwrap_or_else(|| i.strip_suffix(".value").unwrap());

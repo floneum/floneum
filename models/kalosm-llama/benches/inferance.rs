@@ -13,7 +13,7 @@ fn create_model_sync() -> LlamaModel {
         .unwrap()
         .block_on(async move {
             LlamaModel::from_builder(
-                Llama::builder().with_source(LlamaSource::mistral_7b()),
+                Llama::builder().with_source(LlamaSource::llama_8b()),
                 |_| {},
             )
             .await
