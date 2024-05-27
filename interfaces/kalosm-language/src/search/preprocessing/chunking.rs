@@ -68,11 +68,13 @@ impl ChunkStrategy {
                 overlap,
             } => {
                 let mut chunks = Vec::new();
-                
+
                 let splits = SentenceChunker::default().split_sentences(string);
 
-                
-                for window in splits.windows(*sentence_count).step_by(*sentence_count - *overlap) {
+                for window in splits
+                    .windows(*sentence_count)
+                    .step_by(*sentence_count - *overlap)
+                {
                     if window.len() < *sentence_count {
                         break;
                     }
