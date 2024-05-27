@@ -48,12 +48,12 @@ impl TryFrom<PathBuf> for FsDocument {
         if !path.is_file() {
             return Err(anyhow::anyhow!("Path is not a file"));
         }
-        match path.extension().unwrap().to_str().unwrap() {
-            "docx" => Ok(Self::Docx(DocxDocument::try_from(path)?)),
-            "html" => Ok(Self::Html(HtmlDocument::try_from(path)?)),
-            "md" => Ok(Self::Md(MdDocument::try_from(path)?)),
-            "pdf" => Ok(Self::Pdf(PdfDocument::try_from(path)?)),
-            "txt" => Ok(Self::Txt(TextDocument::try_from(path)?)),
+        match path.extension().and_then(|ext| ext.to_str()) {
+            Some("docx") => Ok(Self::Docx(DocxDocument::try_from(path)?)),
+            Some("html") => Ok(Self::Html(HtmlDocument::try_from(path)?)),
+            Some("md") => Ok(Self::Md(MdDocument::try_from(path)?)),
+            Some("pdf") => Ok(Self::Pdf(PdfDocument::try_from(path)?)),
+            Some("txt") => Ok(Self::Txt(TextDocument::try_from(path)?)),
             _ => Err(anyhow::anyhow!("Path is not a supported file type")),
         }
     }
@@ -150,6 +150,18 @@ impl IntoDocuments for DocumentFolder {
 }
 
 impl DocumentFolder {
+    /// Try to create a new document folder from a path.
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// use kalosm_language::prelude::*;
+    ///
+    /// let folder = DocumentFolder::new("./documents").unwrap();
+    /// ```
+    pub fn new(path: impl Into<PathBuf>) -> anyhow::Result<Self> {
+        Self::try_from(path.into())
+    }
+
     fn start_into_documents<'a>(
         &'a self,
         set: &'a mut JoinSet<anyhow::Result<Document>>,
