@@ -48,232 +48,23 @@ extern crate intel_mkl_src;
 #[cfg(feature = "accelerate")]
 extern crate accelerate_src;
 
-mod language_model;
 use kalosm_common::*;
-pub use language_model::*;
+use sysinfo::System;
 
 use std::sync::RwLock;
 
-use candle_core::Tensor;
+use candle_core::{Device, IndexOp, Tensor};
 use candle_nn::VarBuilder;
-use candle_transformers::models::bert::{BertModel, Config, DTYPE};
 use tokenizers::{PaddingParams, Tokenizer};
 
-/// A the source of a [`Bert`] model
-pub struct BertSource {
-    config: FileSource,
-    tokenizer: FileSource,
-    model: FileSource,
-}
+mod language_model;
+mod raw;
+mod source;
 
-impl BertSource {
-    /// Set the model to use, check out available models: <https://huggingface.co/models?library=sentence-transformers&sort=trending>
-    pub fn with_model(mut self, model: FileSource) -> Self {
-        self.model = model;
-        self
-    }
-
-    /// Set the tokenizer to use
-    pub fn with_tokenizer(mut self, tokenizer: FileSource) -> Self {
-        self.tokenizer = tokenizer;
-        self
-    }
-
-    /// Set the config to use
-    pub fn with_config(mut self, config: FileSource) -> Self {
-        self.config = config;
-        self
-    }
-
-    /// Create a new [`BertSource`] with the BGE large english preset
-    pub fn bge_large_en() -> Self {
-        Self::default()
-            .with_model(FileSource::huggingface(
-                "BAAI/bge-large-en-v1.5".to_string(),
-                "refs/pr/5".to_string(),
-                "model.safetensors".to_string(),
-            ))
-            .with_tokenizer(FileSource::huggingface(
-                "BAAI/bge-large-en-v1.5".to_string(),
-                "refs/pr/5".to_string(),
-                "tokenizer.json".to_string(),
-            ))
-            .with_config(FileSource::huggingface(
-                "BAAI/bge-large-en-v1.5".to_string(),
-                "refs/pr/5".to_string(),
-                "config.json".to_string(),
-            ))
-    }
-
-    /// Create a new [`BertSource`] with the BGE base english preset
-    pub fn bge_base_en() -> Self {
-        Self::default()
-            .with_model(FileSource::huggingface(
-                "BAAI/bge-base-en-v1.5".to_string(),
-                "refs/pr/1".to_string(),
-                "model.safetensors".to_string(),
-            ))
-            .with_tokenizer(FileSource::huggingface(
-                "BAAI/bge-base-en-v1.5".to_string(),
-                "refs/pr/1".to_string(),
-                "tokenizer.json".to_string(),
-            ))
-            .with_config(FileSource::huggingface(
-                "BAAI/bge-base-en-v1.5".to_string(),
-                "refs/pr/1".to_string(),
-                "config.json".to_string(),
-            ))
-    }
-
-    /// Create a new [`BertSource`] with the BGE small english preset
-    pub fn bge_small_en() -> Self {
-        Self::default()
-            .with_model(FileSource::huggingface(
-                "BAAI/bge-small-en-v1.5".to_string(),
-                "refs/pr/3".to_string(),
-                "model.safetensors".to_string(),
-            ))
-            .with_tokenizer(FileSource::huggingface(
-                "BAAI/bge-small-en-v1.5".to_string(),
-                "refs/pr/3".to_string(),
-                "tokenizer.json".to_string(),
-            ))
-            .with_config(FileSource::huggingface(
-                "BAAI/bge-small-en-v1.5".to_string(),
-                "refs/pr/3".to_string(),
-                "config.json".to_string(),
-            ))
-    }
-
-    /// Create a new [`BertSource`] with the MiniLM-L6-v2 preset
-    pub fn mini_lm_l6_v2() -> Self {
-        Self::default()
-            .with_model(FileSource::huggingface(
-                "sentence-transformers/all-MiniLM-L6-v2".to_string(),
-                "refs/pr/21".to_string(),
-                "model.safetensors".to_string(),
-            ))
-            .with_tokenizer(FileSource::huggingface(
-                "sentence-transformers/all-MiniLM-L6-v2".to_string(),
-                "refs/pr/21".to_string(),
-                "tokenizer.json".to_string(),
-            ))
-            .with_config(FileSource::huggingface(
-                "sentence-transformers/all-MiniLM-L6-v2".to_string(),
-                "refs/pr/21".to_string(),
-                "config.json".to_string(),
-            ))
-    }
-
-    /// Create a new [`BertSource`] with the [snowflake-arctic-embed-xs](https://huggingface.co/Snowflake/snowflake-arctic-embed-xs) model
-    pub fn snowflake_arctic_embed_extra_small() -> Self {
-        Self::default()
-            .with_model(FileSource::huggingface(
-                "Snowflake/snowflake-arctic-embed-xs".to_string(),
-                "main".to_string(),
-                "model.safetensors".to_string(),
-            ))
-            .with_tokenizer(FileSource::huggingface(
-                "Snowflake/snowflake-arctic-embed-xs".to_string(),
-                "main".to_string(),
-                "tokenizer.json".to_string(),
-            ))
-            .with_config(FileSource::huggingface(
-                "Snowflake/snowflake-arctic-embed-xs".to_string(),
-                "main".to_string(),
-                "config.json".to_string(),
-            ))
-    }
-
-    /// Create a new [`BertSource`] with the [snowflake-arctic-embed-s](https://huggingface.co/Snowflake/snowflake-arctic-embed-s) model
-    pub fn snowflake_arctic_embed_small() -> Self {
-        Self::default()
-            .with_model(FileSource::huggingface(
-                "Snowflake/snowflake-arctic-embed-s".to_string(),
-                "main".to_string(),
-                "model.safetensors".to_string(),
-            ))
-            .with_tokenizer(FileSource::huggingface(
-                "Snowflake/snowflake-arctic-embed-s".to_string(),
-                "main".to_string(),
-                "tokenizer.json".to_string(),
-            ))
-            .with_config(FileSource::huggingface(
-                "Snowflake/snowflake-arctic-embed-s".to_string(),
-                "main".to_string(),
-                "config.json".to_string(),
-            ))
-    }
-
-    /// Create a new [`BertSource`] with the [snowflake-arctic-embed-m](https://huggingface.co/Snowflake/snowflake-arctic-embed-m) model
-    pub fn snowflake_arctic_embed_medium() -> Self {
-        Self {
-            config: FileSource::huggingface(
-                "Snowflake/snowflake-arctic-embed-m".to_string(),
-                "main".to_string(),
-                "config.json".to_string(),
-            ),
-            tokenizer: FileSource::huggingface(
-                "Snowflake/snowflake-arctic-embed-m".to_string(),
-                "main".to_string(),
-                "tokenizer.json".to_string(),
-            ),
-            model: FileSource::huggingface(
-                "Snowflake/snowflake-arctic-embed-m".to_string(),
-                "main".to_string(),
-                "model.safetensors".to_string(),
-            ),
-        }
-    }
-
-    /// Create a new [`BertSource`] with the [snowflake-arctic-embed-m-long](https://huggingface.co/Snowflake/snowflake-arctic-embed-m-long) model
-    ///
-    /// This model is slightly larger than [`Self::snowflake_arctic_embed_medium`] and supports longer contexts (up to 2048 tokens).
-    pub fn snowflake_arctic_embed_medium_long() -> Self {
-        Self::default()
-            .with_model(FileSource::huggingface(
-                "Snowflake/snowflake-arctic-embed-m-long".to_string(),
-                "main".to_string(),
-                "model.safetensors".to_string(),
-            ))
-            .with_tokenizer(FileSource::huggingface(
-                "Snowflake/snowflake-arctic-embed-m-long".to_string(),
-                "main".to_string(),
-                "tokenizer.json".to_string(),
-            ))
-            .with_config(FileSource::huggingface(
-                "Snowflake/snowflake-arctic-embed-m-long".to_string(),
-                "main".to_string(),
-                "config.json".to_string(),
-            ))
-    }
-
-    /// Create a new [`BertSource`] with the [snowflake-arctic-embed-l](https://huggingface.co/Snowflake/snowflake-arctic-embed-l) model
-    pub fn snowflake_arctic_embed_large() -> Self {
-        Self::default()
-            .with_model(FileSource::huggingface(
-                "Snowflake/snowflake-arctic-embed-l".to_string(),
-                "main".to_string(),
-                "model.safetensors".to_string(),
-            ))
-            .with_tokenizer(FileSource::huggingface(
-                "Snowflake/snowflake-arctic-embed-l".to_string(),
-                "main".to_string(),
-                "tokenizer.json".to_string(),
-            ))
-            .with_config(FileSource::huggingface(
-                "Snowflake/snowflake-arctic-embed-l".to_string(),
-                "main".to_string(),
-                "config.json".to_string(),
-            ))
-    }
-}
-
-impl Default for BertSource {
-    fn default() -> Self {
-        Self::snowflake_arctic_embed_medium()
-    }
-}
+pub use crate::language_model::*;
+use crate::raw::DTYPE;
+pub use crate::raw::{BertModel, Config};
+pub use crate::source::*;
 
 /// A builder for a [`Bert`] model
 #[derive(Default)]
@@ -301,6 +92,15 @@ impl BertBuilder {
     ) -> anyhow::Result<Bert> {
         Bert::from_builder(self, loading_handler).await
     }
+}
+
+/// The pooling strategy to use when embedding text.
+#[derive(Debug, Clone, Copy)]
+pub enum Pooling {
+    /// Take the mean embedding value for all tokens (except padding)
+    Mean,
+    /// Take the embedding of the CLS token for each sequence
+    CLS,
 }
 
 /// A bert model
@@ -363,16 +163,25 @@ impl Bert {
     }
 
     /// Embed a batch of sentences
-    pub(crate) fn embed_batch_raw(&self, sentences: &[&str]) -> anyhow::Result<Vec<Tensor>> {
+    pub(crate) fn embed_batch_raw(
+        &self,
+        sentences: &[&str],
+        pooling: Pooling,
+    ) -> anyhow::Result<Vec<Tensor>> {
         let mut combined = Vec::new();
-        for batch in sentences.chunks(4) {
-            let embeddings = self.embed_batch_raw_inner(batch)?;
+        let chunk_size = 36;
+        for batch in sentences.chunks(chunk_size) {
+            let embeddings = self.embed_batch_raw_inner(batch, pooling)?;
             combined.extend(embeddings);
         }
         Ok(combined)
     }
 
-    fn embed_batch_raw_inner(&self, sentences: &[&str]) -> anyhow::Result<Vec<Tensor>> {
+    fn embed_batch_raw_inner(
+        &self,
+        sentences: &[&str],
+        pooling: Pooling,
+    ) -> anyhow::Result<Vec<Tensor>> {
         let device = &self.model.device;
 
         let n_sentences = sentences.len();
@@ -398,20 +207,88 @@ impl Bert {
                 Ok(Tensor::new(tokens.as_slice(), device)?)
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
-
         let token_ids = Tensor::stack(&token_ids, 0)?;
-        let token_type_ids = token_ids.zeros_like()?;
-        let embeddings = self.model.forward(&token_ids, &token_type_ids)?;
-        // Apply some avg-pooling by taking the mean embedding value for all tokens (including padding)
-        let (_n_sentence, n_tokens, _hidden_size) = embeddings.dims3()?;
-        let embeddings = (embeddings.sum(1)? / (n_tokens as f64))?;
-        let embeddings = normalize_l2(&embeddings)?;
-        let embeddings = embeddings.chunk(n_sentences, 0)?;
 
-        Ok(embeddings)
+        let attention_masks = tokens
+            .iter()
+            .map(|tokens| {
+                let attention_mask = tokens.get_attention_mask();
+                let attention_mask = Tensor::new(attention_mask, device)?;
+                Ok(attention_mask)
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        let attention_mask = Tensor::stack(&attention_masks, 0)?;
+
+        // The token type ids are only used for next sentence prediction. We can just set them to zero for embedding tasks.
+        let token_type_ids = token_ids.zeros_like()?;
+        let embeddings =
+            self.model
+                .forward(&token_ids, &token_type_ids, Some(&attention_mask), false)?;
+
+        let (_n_sentence, n_tokens, _hidden_size) = embeddings.dims3()?;
+
+        match pooling {
+            Pooling::Mean => {
+                // Take the mean embedding value for all tokens (except padding)
+                let embeddings = embeddings.mul(
+                    &attention_mask
+                        .to_dtype(DTYPE)?
+                        .unsqueeze(2)?
+                        .broadcast_as(embeddings.shape())?,
+                )?;
+                let embeddings = (embeddings.sum(1)? / (n_tokens as f64))?;
+                let embeddings = normalize_l2(&embeddings)?;
+                Ok(embeddings.chunk(n_sentences, 0)?)
+            }
+            Pooling::CLS => {
+                // Index into the first token of each sentence which is the CLS token that contains the sentence embedding
+                let indexed_embeddings = embeddings.i((.., 0, ..))?;
+                Ok(indexed_embeddings.chunk(n_sentences, 0)?)
+            }
+        }
     }
 }
 
 fn normalize_l2(v: &Tensor) -> anyhow::Result<Tensor> {
     Ok(v.broadcast_div(&v.sqr()?.sum_keepdim(1)?.sqrt()?)?)
+}
+
+fn allocated_memory(device: &Device) -> Option<u64> {
+    match device {
+        Device::Metal(metal) => {
+            #[cfg(feature = "metal")]
+            {
+                Some(metal.current_allocated_size())
+            }
+            #[cfg(not(feature = "metal"))]
+            {
+                None
+            }
+        }
+        Device::Cuda(_) => None,
+        Device::Cpu => {
+            let system = System::new_all();
+            Some(system.used_memory())
+        }
+    }
+}
+
+fn available_memory(device: &Device) -> Option<u64> {
+    match device {
+        Device::Metal(metal) => {
+            #[cfg(feature = "metal")]
+            {
+                Some(metal.recommended_max_working_set_size())
+            }
+            #[cfg(not(feature = "metal"))]
+            {
+                None
+            }
+        }
+        Device::Cuda(_) => None,
+        Device::Cpu => {
+            let system = System::new_all();
+            Some(system.available_memory())
+        }
+    }
 }
