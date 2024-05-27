@@ -26,6 +26,7 @@ members = [
     "interfaces/kalosm-streams",
     "interfaces/kalosm-learning",
     "interfaces/kalosm-learning-macro",
+    "interfaces/kalosm-common",
     "floneum/floneum",
     "floneum/plugin",
     "floneum/rust_adapter",
@@ -72,8 +73,7 @@ members = [
     "floneum/plugins/power",
     "floneum/plugins/number",
     "floneum/plugins/string",
-    "interfaces/kalosm-common",
-    "floneum/plugins/calculate",
+    "floneum/plugins/calculate", 
 ]
 
 [workspace.dependencies]

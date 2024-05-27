@@ -60,7 +60,6 @@ pub struct SummaryChunker<'a, M> {
     model: &'a M,
 }
 
-#[async_trait::async_trait]
 impl<'a, M> Chunker for SummaryChunker<'a, M>
 where
     M: Model,
