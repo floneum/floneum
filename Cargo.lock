@@ -6152,6 +6152,7 @@ dependencies = [
  "candle-nn",
  "candle-transformers",
  "comfy-table",
+ "ego-tree",
  "futures-util",
  "hdrhistogram",
  "image 0.24.9",
