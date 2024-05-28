@@ -52,7 +52,7 @@ version = "1.0.163"
 features = ["derive"]
 
 [dependencies.surrealdb]
-version = "1.1.1"
+version = "1.5.1"
 features = ["kv-rocksdb"]
 optional = true
 
@@ -67,7 +67,6 @@ default-features = false
 
 [dev-dependencies]
 axum = "0.7.2"
-ego-tree = "0.6.2"
 scraper = "0.18.1"
 tokenizers = "0.19.1"
 tracing-subscriber = "0.2"
