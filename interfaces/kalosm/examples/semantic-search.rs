@@ -15,7 +15,7 @@ async fn main() {
     // Select a specific namespace / database
     db.use_ns("test").use_db("test").await.unwrap();
 
-    let chunker = SemanticChunker::new(SemanticChunkerConfig ::new(0.65));
+    let chunker = SemanticChunker::new(SemanticChunkerConfig::new(0.65));
 
     let mut document_table = db
         .document_table_builder("documents")
@@ -35,19 +35,17 @@ async fn main() {
     if !exists {
         let start_time = std::time::Instant::now();
         std::fs::create_dir_all("documents").unwrap();
-        // let context = [
-        //     "https://floneum.com/kalosm/docs",
-        //     "https://floneum.com/kalosm/docs/reference/web_scraping",
-        //     "https://floneum.com/kalosm/docs/guides/retrieval_augmented_generation",
-        //     "https://floneum.com/kalosm/docs/reference/llms/structured_generation",
-        //     "https://floneum.com/kalosm/docs/reference/llms/context",
-        //     "https://floneum.com/kalosm/docs/reference/llms",
-        // ]
-        // .iter()
-        // .map(|url| Url::parse(url).unwrap());
-        let context =
-            DocumentFolder::new("/Users/evanalmloff/Desktop/Github/docsite/docs").unwrap();
-
+        let context = [
+            "https://floneum.com/kalosm/docs",
+            "https://floneum.com/kalosm/docs/reference/web_scraping",
+            "https://floneum.com/kalosm/docs/guides/retrieval_augmented_generation",
+            "https://floneum.com/kalosm/docs/reference/llms/structured_generation",
+            "https://floneum.com/kalosm/docs/reference/llms/context",
+            "https://floneum.com/kalosm/docs/reference/llms",
+        ]
+        .iter()
+        .map(|url| Url::parse(url).unwrap());
+    
         // Create a new document database table
         document_table.add_context(context).await.unwrap();
         println!("Added context in {:?}", start_time.elapsed());
@@ -71,6 +69,9 @@ async fn main() {
             .unwrap();
 
         let mut table = Table::new();
+        table.set_content_arrangement(comfy_table::ContentArrangement::DynamicFullWidth);
+        table.load_preset(comfy_table::presets::UTF8_FULL);
+        table.apply_modifier(comfy_table::modifiers::UTF8_ROUND_CORNERS);
         table.set_header(vec!["Score", "Value"]);
 
         for result in nearest_5 {
@@ -83,7 +84,9 @@ async fn main() {
                 Color::Red
             };
             row.add_cell(Cell::new(result.distance).fg(color))
-                .add_cell(Cell::new(result.record.body()[..250.min(result.record.body().len())].to_string() + "..."));
+                .add_cell(Cell::new(
+                    result.text(),
+                ));
             table.add_row(row);
         }
 

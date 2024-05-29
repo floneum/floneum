@@ -6,9 +6,9 @@
 // - Chunk small sentences with the previous sentence?
 // - Chunk parentheses, and quotes together?
 
+use crate::prelude::*;
 use kalosm_language_model::*;
 use rbert::{Bert, BertSpace};
-use crate::prelude::*;
 
 pub struct SemanticChunkerConfig {
     target_score: f32,
@@ -45,8 +45,8 @@ pub struct SemanticChunker {
 }
 
 impl SemanticChunker {
-    pub fn new( config: SemanticChunkerConfig) -> Self {
-        Self {  config }
+    pub fn new(config: SemanticChunkerConfig) -> Self {
+        Self { config }
     }
 }
 
@@ -74,7 +74,7 @@ impl Chunker for SemanticChunker {
                 initial_chunks.push(trimmed);
             }
         }
-        
+
         let embeddings = embedder.embed_batch(&initial_chunks).await?;
 
         let mut chunks = Vec::new();
@@ -101,7 +101,6 @@ impl Chunker for SemanticChunker {
             };
             chunks.push(chunk);
         }
-
 
         // Now loop until we have the right number of chunks merging the two closest chunks
         // Find the lowest distance chunk
@@ -158,8 +157,10 @@ impl Chunker for SemanticChunker {
 
         let mut final_chunks = Vec::new();
         for chunk in chunks {
-            let SemanticChunk { range, embedding, .. } = chunk;
-            final_chunks.push(Chunk{
+            let SemanticChunk {
+                range, embedding, ..
+            } = chunk;
+            final_chunks.push(Chunk {
                 byte_range: range,
                 embeddings: vec![embedding],
             });

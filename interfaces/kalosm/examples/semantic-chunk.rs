@@ -3,8 +3,6 @@ use std::time::Instant;
 use anyhow::Ok;
 use kalosm::language::*;
 
-
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // read target_chunks from the command line
@@ -20,8 +18,8 @@ async fn main() -> anyhow::Result<()> {
         .await?;
     println!("Loaded in {:?}", start_loading_time.elapsed());
 
-    let semantic_chunker = SemanticChunker::new(SemanticChunkerConfig ::new(target_score));
-    
+    let semantic_chunker = SemanticChunker::new(SemanticChunkerConfig::new(target_score));
+
     let document = PARAGRAPH.into();
     let start_time = Instant::now();
     let chunks = semantic_chunker.chunk(&document, &bert).await?;

@@ -54,14 +54,7 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
             .chunker
             .chunk(value.as_ref(), &self.embedding_model)
             .await?;
-        self.table
-            .insert(
-                embeddings
-                    .into_iter()
-                    .flat_map(|embedding| embedding.embeddings),
-                value,
-            )
-            .await
+        self.table.insert(embeddings, value).await
     }
 
     /// Extend the table with a iterator of new records.
@@ -81,15 +74,7 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
             .await?;
         let mut ids = Vec::new();
         for (value, embeddings) in entries.into_iter().zip(embeddings) {
-            let id = self
-                .table
-                .insert(
-                    embeddings
-                        .into_iter()
-                        .flat_map(|embedding| embedding.embeddings),
-                    value,
-                )
-                .await?;
+            let id = self.table.insert(embeddings, value).await?;
             ids.push(id);
         }
         Ok(ids)
