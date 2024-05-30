@@ -12,6 +12,7 @@ pub use document_table::*;
 #[derive(Serialize, Deserialize)]
 struct DocumentLink {
     document_id: Id,
+    byte_range: std::ops::Range<usize>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -53,33 +54,38 @@ impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
     /// Insert a new record into the table with the given embedding.
     pub async fn insert(
         &self,
-        embeddings: impl IntoIterator<Item = Embedding<S>>,
+        chunks: impl IntoIterator<Item = Chunk<S>>,
         value: R,
     ) -> anyhow::Result<Id>
     where
         R: Serialize + DeserializeOwned,
     {
         let id = Id::uuid();
-        let embedding_ids = embeddings
-            .into_iter()
-            .map(|embedding| self.vector_db.add_embedding(embedding))
-            .collect::<anyhow::Result<Vec<_>>>()?;
+
+        let mut embedding_ids = Vec::new();
         let thing = Thing {
             tb: self.table.clone(),
             id: id.clone(),
         };
 
-        for embedding_id in &embedding_ids {
-            let link = Thing {
-                tb: self.table_links(),
-                id: Id::Number(embedding_id.0 as i64),
-            };
-            self.db
-                .create::<Option<DocumentLink>>(link)
-                .content(DocumentLink {
-                    document_id: id.clone(),
-                })
-                .await?;
+        for chunk in chunks {
+            let chunk_embedding_ids = self.vector_db.add_embeddings(chunk.embeddings)?;
+            for embedding_id in chunk_embedding_ids {
+                let byte_range = chunk.byte_range.clone();
+                embedding_ids.push(embedding_id);
+
+                let link = Thing {
+                    tb: self.table_links(),
+                    id: Id::Number(embedding_id.0 as i64),
+                };
+                self.db
+                    .create::<Option<DocumentLink>>(link)
+                    .content(DocumentLink {
+                        document_id: id.clone(),
+                        byte_range,
+                    })
+                    .await?;
+            }
         }
 
         self.db
@@ -194,6 +200,7 @@ impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
                 distance: id.distance,
                 id: id.value,
                 record_id: main_table_id.document_id,
+                byte_range: main_table_id.byte_range,
                 record,
             });
         }
@@ -210,8 +217,23 @@ pub struct EmbeddingIndexedTableSearchResult<R> {
     pub id: EmbeddingId,
     /// The record id.
     pub record_id: Id,
+    /// The byte range of the record.
+    pub byte_range: std::ops::Range<usize>,
     /// The record.
     pub record: R,
+}
+
+impl<R> EmbeddingIndexedTableSearchResult<R>
+where
+    R: DeserializeOwned,
+{
+    /// Get the text of the search result.
+    pub fn text(&self) -> String
+    where
+        R: AsRef<Document>,
+    {
+        self.record.as_ref().body()[self.byte_range.clone()].to_string()
+    }
 }
 
 /// A builder for creating a new document table.

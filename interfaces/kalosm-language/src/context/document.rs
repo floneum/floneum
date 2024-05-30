@@ -59,6 +59,18 @@ impl Document {
     }
 }
 
+impl From<String> for Document {
+    fn from(value: String) -> Self {
+        Self::from_parts("", value)
+    }
+}
+
+impl From<&str> for Document {
+    fn from(value: &str) -> Self {
+        Self::from_parts("", value)
+    }
+}
+
 impl AsRef<Document> for Document {
     fn as_ref(&self) -> &Document {
         self

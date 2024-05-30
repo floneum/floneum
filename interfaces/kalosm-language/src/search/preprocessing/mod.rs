@@ -26,6 +26,8 @@ mod summary;
 pub use summary::*;
 mod sentence;
 pub use sentence::*;
+mod semantic;
+pub use semantic::*;
 
 /// A strategy for chunking a document into smaller pieces.
 pub trait Chunker {

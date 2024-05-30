@@ -1,5 +1,4 @@
 use comfy_table::{Cell, Color, Row, Table};
-use kalosm::language::Url;
 use kalosm::language::*;
 use kalosm::*;
 use surrealdb::{engine::local::RocksDb, Surreal};
@@ -16,43 +15,51 @@ async fn main() {
     // Select a specific namespace / database
     db.use_ns("test").use_db("test").await.unwrap();
 
+    let chunker = SemanticChunker::new();
+
     let mut document_table = db
         .document_table_builder("documents")
         .with_embedding_model(
             Bert::builder()
-                .with_source(BertSource::snowflake_arctic_embed_large())
+                .with_source(BertSource::snowflake_arctic_embed_extra_small())
                 .build()
                 .await
                 .unwrap(),
         )
-        .with_chunker(ChunkStrategy::Sentence {
-            sentence_count: 3,
-            overlap: 2,
-        })
+        .with_chunker(chunker)
         .at("./db/embeddings.db")
         .build::<Document>()
         .await
         .unwrap();
 
     if !exists {
+        let start_time = std::time::Instant::now();
         std::fs::create_dir_all("documents").unwrap();
         let context = [
             "https://floneum.com/kalosm/docs",
             "https://floneum.com/kalosm/docs/reference/web_scraping",
-            "https://floneum.com/kalosm/docs/guides/retrieval_augmented_generation",
+            "https://floneum.com/kalosm/docs/reference/transcription",
+            "https://floneum.com/kalosm/docs/reference/image_segmentation",
+            "https://floneum.com/kalosm/docs/reference/image_generation",
+            "https://floneum.com/kalosm/docs/reference/llms",
             "https://floneum.com/kalosm/docs/reference/llms/structured_generation",
             "https://floneum.com/kalosm/docs/reference/llms/context",
-            "https://floneum.com/kalosm/docs/reference/llms",
+            "https://floneum.com/kalosm/docs/guides/retrieval_augmented_generation",
         ]
         .iter()
         .map(|url| Url::parse(url).unwrap());
 
         // Create a new document database table
         document_table.add_context(context).await.unwrap();
+        println!("Added context in {:?}", start_time.elapsed());
     }
 
     loop {
         let user_question = prompt_input("Query: ").unwrap();
+        let user_question = format!(
+            "Represent this sentence for searching relevant passages: {}",
+            user_question
+        );
         let user_question_embedding = document_table
             .embedding_model_mut()
             .embed(&user_question)
@@ -65,6 +72,9 @@ async fn main() {
             .unwrap();
 
         let mut table = Table::new();
+        table.set_content_arrangement(comfy_table::ContentArrangement::DynamicFullWidth);
+        table.load_preset(comfy_table::presets::UTF8_FULL);
+        table.apply_modifier(comfy_table::modifiers::UTF8_ROUND_CORNERS);
         table.set_header(vec!["Score", "Value"]);
 
         for result in nearest_5 {
@@ -77,7 +87,7 @@ async fn main() {
                 Color::Red
             };
             row.add_cell(Cell::new(result.distance).fg(color))
-                .add_cell(Cell::new(result.record.body()[0..50].to_string() + "..."));
+                .add_cell(Cell::new(result.text()));
             table.add_row(row);
         }
 
