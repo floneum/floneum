@@ -50,6 +50,7 @@ impl Default for SemanticChunker {
 }
 
 impl SemanticChunker {
+    /// Create a new [`SemanticChunker`].
     pub const fn new() -> Self {
         Self {
             target_score: 0.65,
