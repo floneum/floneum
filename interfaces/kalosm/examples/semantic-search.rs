@@ -15,7 +15,7 @@ async fn main() {
     // Select a specific namespace / database
     db.use_ns("test").use_db("test").await.unwrap();
 
-    let chunker = SemanticChunker::new(SemanticChunkerConfig::new(0.65));
+    let chunker = SemanticChunker::new();
 
     let mut document_table = db
         .document_table_builder("documents")
@@ -38,14 +38,17 @@ async fn main() {
         let context = [
             "https://floneum.com/kalosm/docs",
             "https://floneum.com/kalosm/docs/reference/web_scraping",
-            "https://floneum.com/kalosm/docs/guides/retrieval_augmented_generation",
+            "https://floneum.com/kalosm/docs/reference/transcription",
+            "https://floneum.com/kalosm/docs/reference/image_segmentation",
+            "https://floneum.com/kalosm/docs/reference/image_generation",
+            "https://floneum.com/kalosm/docs/reference/llms",
             "https://floneum.com/kalosm/docs/reference/llms/structured_generation",
             "https://floneum.com/kalosm/docs/reference/llms/context",
-            "https://floneum.com/kalosm/docs/reference/llms",
+            "https://floneum.com/kalosm/docs/guides/retrieval_augmented_generation",
         ]
         .iter()
         .map(|url| Url::parse(url).unwrap());
-    
+
         // Create a new document database table
         document_table.add_context(context).await.unwrap();
         println!("Added context in {:?}", start_time.elapsed());
@@ -84,9 +87,7 @@ async fn main() {
                 Color::Red
             };
             row.add_cell(Cell::new(result.distance).fg(color))
-                .add_cell(Cell::new(
-                    result.text(),
-                ));
+                .add_cell(Cell::new(result.text()));
             table.add_row(row);
         }
 

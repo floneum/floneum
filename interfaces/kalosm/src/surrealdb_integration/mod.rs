@@ -223,9 +223,15 @@ pub struct EmbeddingIndexedTableSearchResult<R> {
     pub record: R,
 }
 
-impl<R> EmbeddingIndexedTableSearchResult<R> where R: DeserializeOwned {
+impl<R> EmbeddingIndexedTableSearchResult<R>
+where
+    R: DeserializeOwned,
+{
     /// Get the text of the search result.
-    pub fn text(&self) -> String where R: AsRef<Document> {
+    pub fn text(&self) -> String
+    where
+        R: AsRef<Document>,
+    {
         self.record.as_ref().body()[self.byte_range.clone()].to_string()
     }
 }
