@@ -104,7 +104,7 @@ impl LlamaModel {
             }
         };
 
-        let cache = LlamaCache::new(model.config.n_layer);
+        let cache = LlamaCache::new(&model.config);
         Ok(Self {
             model,
             tokenizer: Arc::new(tokenizer),

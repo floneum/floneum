@@ -24,7 +24,7 @@ impl Session for LlamaSession {
         let device = accelerated_device_if_available()?;
         let tensors = candle_core::safetensors::load(path, &device)?;
 
-        Ok(Self::from_tensor_map(tensors))
+        Ok(Self::from_tensor_map(tensors)?)
     }
 
     fn try_clone(&self) -> anyhow::Result<Self>
@@ -42,14 +42,15 @@ impl LlamaSession {
     }
 
     /// Import a cache tensor map.
-    pub fn set_tensor_map(&mut self, map: HashMap<String, Tensor>) {
-        self.cache = LlamaCache::from_tensor_map(map);
+    pub fn set_tensor_map(&mut self, map: HashMap<String, Tensor>) -> candle_core::Result<()> {
+        self.cache = LlamaCache::from_tensor_map(map)?;
+        Ok(())
     }
 
     /// Create a cache from a tensor map. This can be used to load a cache from disk.
-    pub fn from_tensor_map(map: HashMap<String, Tensor>) -> Self {
-        Self {
-            cache: LlamaCache::from_tensor_map(map),
-        }
+    pub fn from_tensor_map(map: HashMap<String, Tensor>) -> candle_core::Result<Self> {
+        Ok(Self {
+            cache: LlamaCache::from_tensor_map(map)?,
+        })
     }
 }
