@@ -21,10 +21,11 @@ fn decode_norm(tensor: QTensor, eps: f64) -> candle_core::Result<RmsNorm> {
     RmsNorm::from_qtensor(tensor, eps)
 }
 
+/// The configuration of a Llama model.
 #[allow(unused)]
-pub(crate) struct LlamaConfig {
+pub struct LlamaConfig {
     rope_theta: f32,
-    context_length: usize,
+    pub(crate) context_length: usize,
     head_dimension: usize,
     rope_dimension: usize,
     n_head: usize,

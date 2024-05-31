@@ -40,7 +40,7 @@ async fn main() {
         )
         .await
         .unwrap();
-        let prompt = "Hello world".repeat(10);
+        let prompt = "Hello world".repeat(600);
 
         let tokens = model.tokenizer().encode(&prompt, true).unwrap().len();
         for _ in 0..100 {
@@ -69,7 +69,7 @@ async fn main() {
         for _ in 0..100 {
             let mut session = model.new_session().unwrap();
             let start_time = std::time::Instant::now();
-            let tokens = 100;
+            let tokens = 200;
             model
                 .stream_text_with_sampler(
                     &mut session,
@@ -90,6 +90,6 @@ async fn main() {
     }
 
     load_small().await;
-    load_large().await;
     generate().await;
+    load_large().await;
 }

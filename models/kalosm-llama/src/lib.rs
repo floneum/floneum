@@ -256,7 +256,7 @@ impl LlamaBuilder {
             }
         };
 
-        let cache = LlamaCache::new(model.config.n_layer);
+        let cache = LlamaCache::new(&model.config);
 
         Ok(Llama::from_build(
             model,

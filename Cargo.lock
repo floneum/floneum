@@ -990,7 +990,7 @@ dependencies = [
  "bitflags 2.5.0",
  "cexpr",
  "clang-sys",
- "itertools 0.12.1",
+ "itertools 0.10.5",
  "lazy_static",
  "lazycell",
  "proc-macro2",
@@ -1302,13 +1302,13 @@ dependencies = [
 [[package]]
 name = "candle-core"
 version = "0.5.1"
-source = "git+https://github.com/huggingface/candle?rev=d9bc5ec15164ecb583dbb25653edd89e08e6cbd0#d9bc5ec15164ecb583dbb25653edd89e08e6cbd0"
+source = "git+https://github.com/huggingface/candle?rev=f3fade3b03d8ce9e832c8ed57be8dfee74b8822a#f3fade3b03d8ce9e832c8ed57be8dfee74b8822a"
 dependencies = [
  "accelerate-src",
  "byteorder",
  "candle-kernels",
  "candle-metal-kernels",
- "cudarc 0.11.1",
+ "cudarc 0.11.2",
  "gemm",
  "half 2.4.1",
  "intel-mkl-src",
@@ -1329,7 +1329,7 @@ dependencies = [
 [[package]]
 name = "candle-datasets"
 version = "0.5.1"
-source = "git+https://github.com/huggingface/candle?rev=d9bc5ec15164ecb583dbb25653edd89e08e6cbd0#d9bc5ec15164ecb583dbb25653edd89e08e6cbd0"
+source = "git+https://github.com/huggingface/candle?rev=f3fade3b03d8ce9e832c8ed57be8dfee74b8822a#f3fade3b03d8ce9e832c8ed57be8dfee74b8822a"
 dependencies = [
  "byteorder",
  "candle-core",
@@ -1346,7 +1346,7 @@ dependencies = [
 [[package]]
 name = "candle-flash-attn"
 version = "0.5.1"
-source = "git+https://github.com/huggingface/candle?rev=d9bc5ec15164ecb583dbb25653edd89e08e6cbd0#d9bc5ec15164ecb583dbb25653edd89e08e6cbd0"
+source = "git+https://github.com/huggingface/candle?rev=f3fade3b03d8ce9e832c8ed57be8dfee74b8822a#f3fade3b03d8ce9e832c8ed57be8dfee74b8822a"
 dependencies = [
  "anyhow",
  "bindgen_cuda",
@@ -1357,7 +1357,7 @@ dependencies = [
 [[package]]
 name = "candle-kernels"
 version = "0.5.1"
-source = "git+https://github.com/huggingface/candle?rev=d9bc5ec15164ecb583dbb25653edd89e08e6cbd0#d9bc5ec15164ecb583dbb25653edd89e08e6cbd0"
+source = "git+https://github.com/huggingface/candle?rev=f3fade3b03d8ce9e832c8ed57be8dfee74b8822a#f3fade3b03d8ce9e832c8ed57be8dfee74b8822a"
 dependencies = [
  "bindgen_cuda",
 ]
@@ -1365,7 +1365,7 @@ dependencies = [
 [[package]]
 name = "candle-metal-kernels"
 version = "0.5.1"
-source = "git+https://github.com/huggingface/candle?rev=d9bc5ec15164ecb583dbb25653edd89e08e6cbd0#d9bc5ec15164ecb583dbb25653edd89e08e6cbd0"
+source = "git+https://github.com/huggingface/candle?rev=f3fade3b03d8ce9e832c8ed57be8dfee74b8822a#f3fade3b03d8ce9e832c8ed57be8dfee74b8822a"
 dependencies = [
  "metal",
  "once_cell",
@@ -1376,7 +1376,7 @@ dependencies = [
 [[package]]
 name = "candle-nn"
 version = "0.5.1"
-source = "git+https://github.com/huggingface/candle?rev=d9bc5ec15164ecb583dbb25653edd89e08e6cbd0#d9bc5ec15164ecb583dbb25653edd89e08e6cbd0"
+source = "git+https://github.com/huggingface/candle?rev=f3fade3b03d8ce9e832c8ed57be8dfee74b8822a#f3fade3b03d8ce9e832c8ed57be8dfee74b8822a"
 dependencies = [
  "accelerate-src",
  "candle-core",
@@ -1394,7 +1394,7 @@ dependencies = [
 [[package]]
 name = "candle-transformers"
 version = "0.5.1"
-source = "git+https://github.com/huggingface/candle?rev=d9bc5ec15164ecb583dbb25653edd89e08e6cbd0#d9bc5ec15164ecb583dbb25653edd89e08e6cbd0"
+source = "git+https://github.com/huggingface/candle?rev=f3fade3b03d8ce9e832c8ed57be8dfee74b8822a#f3fade3b03d8ce9e832c8ed57be8dfee74b8822a"
 dependencies = [
  "accelerate-src",
  "byteorder",
@@ -2588,9 +2588,9 @@ dependencies = [
 
 [[package]]
 name = "cudarc"
-version = "0.11.1"
+version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c415f24c56f0bd4e0568e3ceea0bae6e5a1a96bda8ac177d0b6d7fcc7fa8de7a"
+checksum = "37e813aae0d2ce7db2f748094229f5e4c7eac118b78225a17d6bd6d0b5885cec"
 dependencies = [
  "half 2.4.1",
  "libloading",
@@ -7691,7 +7691,7 @@ version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "681030a937600a36906c185595136d26abfebb4aa9c65701cefcaf8578bb982b"
 dependencies = [
- "proc-macro-crate 3.1.0",
+ "proc-macro-crate 1.3.1",
  "proc-macro2",
  "quote",
  "syn 2.0.66",
@@ -12512,7 +12512,7 @@ version = "1.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
- "cfg-if 1.0.0",
+ "cfg-if 0.1.10",
  "static_assertions",
 ]
 
