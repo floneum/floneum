@@ -105,7 +105,7 @@ impl LlamaAttention {
 
         let (key_states, value_states) = match cache {
             None => (key_states, value_states),
-            Some(cache) => cache.0.append(&key_states, &value_states)?,
+            Some(cache) => cache.append(&key_states, &value_states)?,
         };
 
         let mut attn_weights = (query_states.matmul(&key_states.t()?)? / (head_dim as f64).sqrt())?;
