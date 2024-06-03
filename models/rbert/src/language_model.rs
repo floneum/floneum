@@ -56,11 +56,25 @@ impl Embedder for Bert {
     type VectorSpace = BertSpace;
 
     async fn embed(&self, input: &str) -> anyhow::Result<Embedding<BertSpace>> {
-        self.embed_with_pooling(input, Pooling::Mean)
+        let input = input.to_string();
+        let self_clone = self.clone();
+        Ok(tokio::task::spawn_blocking(move || {
+            self_clone.embed_with_pooling(&input, Pooling::Mean)
+        })
+        .await??)
     }
 
     async fn embed_batch(&self, inputs: &[&str]) -> anyhow::Result<Vec<Embedding<BertSpace>>> {
-        self.embed_batch_with_pooling(inputs, Pooling::Mean)
+        let inputs = inputs
+            .iter()
+            .map(|input| input.to_string())
+            .collect::<Vec<_>>();
+        let self_clone = self.clone();
+        Ok(tokio::task::spawn_blocking(move || {
+            let inputs_borrowed = inputs.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+            self_clone.embed_batch_with_pooling(&inputs_borrowed, Pooling::Mean)
+        })
+        .await??)
     }
 }
 

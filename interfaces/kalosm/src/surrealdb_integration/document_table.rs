@@ -40,9 +40,24 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
         &self.embedding_model
     }
 
-    /// Get the raw embedding model mutably.
-    pub fn embedding_model_mut(&mut self) -> &mut M {
-        &mut self.embedding_model
+    /// Delete the table from the database and clear the vector database. Returns the contents of the table.
+    pub async fn delete_table(self) -> anyhow::Result<Vec<(R, Vec<Chunk<M::VectorSpace>>)>>
+    where
+        R: DeserializeOwned,
+    {
+        self.table.delete_table().await
+    }
+
+    /// Insert a new record into the table with pre-computed chunks.
+    pub async fn insert_with_chunks(
+        &self,
+        value: R,
+        chunks: impl IntoIterator<Item = Chunk<M::VectorSpace>>,
+    ) -> anyhow::Result<Id>
+    where
+        R: Serialize + DeserializeOwned,
+    {
+        self.table.insert(chunks, value).await
     }
 
     /// Insert a new record into the table and return the id of the record.
@@ -50,18 +65,15 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     where
         R: AsRef<Document> + Serialize + DeserializeOwned,
     {
-        let embeddings = self
+        let chunks = self
             .chunker
             .chunk(value.as_ref(), &self.embedding_model)
             .await?;
-        self.table.insert(embeddings, value).await
+        self.insert_with_chunks(value, chunks).await
     }
 
     /// Extend the table with a iterator of new records.
-    pub async fn extend<T: IntoIterator<Item = R> + Send>(
-        &mut self,
-        iter: T,
-    ) -> anyhow::Result<Vec<Id>>
+    pub async fn extend<T: IntoIterator<Item = R> + Send>(&self, iter: T) -> anyhow::Result<Vec<Id>>
     where
         R: AsRef<Document> + Serialize + DeserializeOwned,
         K: Sync,
@@ -142,8 +154,8 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
 }
 
 impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
-    /// Extend the table from `[IntoDocuments]`
-    pub async fn add_context(&mut self, context: impl IntoDocuments) -> anyhow::Result<Vec<Id>>
+    /// Extend the table from [`IntoDocuments`]
+    pub async fn add_context(&self, context: impl IntoDocuments) -> anyhow::Result<Vec<Id>>
     where
         R: From<Document> + AsRef<Document> + Serialize + DeserializeOwned,
         K: Sync,

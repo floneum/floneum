@@ -4,10 +4,12 @@ use std::fmt::Debug;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Mutex;
 
-use arroy::distances::Euclidean;
+use arroy::distances::Angular;
 use arroy::{Database as ArroyDatabase, Reader, Writer};
+use candle_core::Tensor;
 use heed::EnvOpenOptions;
 use kalosm_language_model::*;
+use kalosm_llama::accelerated_device_if_available;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
@@ -48,7 +50,7 @@ use serde::{Deserialize, Serialize};
 /// }
 /// ```
 pub struct VectorDB<S = UnknownVectorSpace> {
-    database: ArroyDatabase<Euclidean>,
+    database: ArroyDatabase<Angular>,
     env: heed::Env,
     max_id: Mutex<EmbeddingId>,
     recycled_ids: Mutex<Vec<EmbeddingId>>,
@@ -74,7 +76,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
         let mut dims = self.dim.load(std::sync::atomic::Ordering::Relaxed);
         if dims == 0 {
             let rtxn = self.env.read_txn()?;
-            let reader = Reader::<Euclidean>::open(&rtxn, 0, self.database)?;
+            let reader = Reader::<Angular>::open(&rtxn, 0, self.database)?;
             dims = reader.dimensions();
             self.set_dim(dims);
         }
@@ -102,7 +104,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
         }?;
 
         let mut wtxn = env.write_txn()?;
-        let db: ArroyDatabase<Euclidean> = env.create_database(&mut wtxn, None)?;
+        let db: ArroyDatabase<Angular> = env.create_database(&mut wtxn, None)?;
         wtxn.commit()?;
 
         Ok(Self {
@@ -129,8 +131,23 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
     }
 
     /// Get the underlying database.
-    pub fn raw(&self) -> (&ArroyDatabase<Euclidean>, &heed::Env) {
+    pub fn raw(&self) -> (&ArroyDatabase<Angular>, &heed::Env) {
         (&self.database, &self.env)
+    }
+
+    /// Clear the vector database.
+    pub async fn clear(&self) -> anyhow::Result<()> {
+        let mut wtxn = self.env.write_txn()?;
+        let dims = self.get_dim()?;
+        let writer = Writer::<Angular>::new(self.database, 0, dims);
+        writer.clear(&mut wtxn)?;
+        wtxn.commit()?;
+
+        // Reset the ids
+        self.max_id.lock().unwrap().0 = 0;
+        self.recycled_ids.lock().unwrap().clear();
+
+        Ok(())
     }
 
     /// Remove an embedding from the vector database.
@@ -139,7 +156,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
 
         let mut wtxn = self.env.write_txn()?;
 
-        let writer = Writer::<Euclidean>::new(self.database, 0, dims)?;
+        let writer = Writer::<Angular>::new(self.database, 0, dims);
 
         writer.del_item(&mut wtxn, embedding_id.0)?;
         self.recycle_id(embedding_id);
@@ -163,7 +180,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
 
         let mut wtxn = self.env.write_txn()?;
 
-        let writer = Writer::<Euclidean>::new(self.database, 0, embedding.len())?;
+        let writer = Writer::<Angular>::new(self.database, 0, embedding.len());
 
         let id = self.take_id();
 
@@ -191,7 +208,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
         self.set_dim(first_embedding.len());
 
         let mut wtxn = self.env.write_txn()?;
-        let writer = Writer::<Euclidean>::new(self.database, 0, first_embedding.len())?;
+        let writer = Writer::<Angular>::new(self.database, 0, first_embedding.len());
 
         let mut ids: Vec<_> = Vec::with_capacity(embeddings.size_hint().0 + 1);
 
@@ -216,6 +233,23 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
         Ok(ids)
     }
 
+    /// Get the embedding for an embedding id.
+    pub fn get_embedding(&self, embedding_id: EmbeddingId) -> anyhow::Result<Embedding<S>> {
+        let rtxn = self.env.read_txn()?;
+        let reader = Reader::<Angular>::open(&rtxn, 0, self.database)?;
+
+        let embedding = reader
+            .item_vector(&rtxn, embedding_id.0)?
+            .ok_or_else(|| anyhow::anyhow!("Embedding not found"))?;
+
+        let shape = (embedding.len(),);
+        Ok(Embedding::new(Tensor::from_vec(
+            embedding,
+            shape,
+            &accelerated_device_if_available()?,
+        )?))
+    }
+
     /// Get the closest N embeddings to the given embedding.
     pub fn get_closest(
         &self,
@@ -223,7 +257,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
         n: usize,
     ) -> anyhow::Result<Vec<VectorDBSearchResult>> {
         let rtxn = self.env.read_txn()?;
-        let reader = Reader::<Euclidean>::open(&rtxn, 0, self.database)?;
+        let reader = Reader::<Angular>::open(&rtxn, 0, self.database)?;
 
         let vector = embedding.vector().to_vec1()?;
         let arroy_results = reader.nns_by_vector(&rtxn, &vector, n, None, None)?;

@@ -50,7 +50,7 @@ extern crate accelerate_src;
 
 use kalosm_common::*;
 
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 use candle_core::{IndexOp, Tensor};
 use candle_nn::VarBuilder;
@@ -103,9 +103,10 @@ pub enum Pooling {
 }
 
 /// A bert model
+#[derive(Clone)]
 pub struct Bert {
-    model: BertModel,
-    tokenizer: RwLock<Tokenizer>,
+    model: Arc<BertModel>,
+    tokenizer: Arc<RwLock<Tokenizer>>,
 }
 
 impl Bert {
@@ -156,8 +157,8 @@ impl Bert {
         let tokenizer = Tokenizer::from_file(&tokenizer_filename).map_err(anyhow::Error::msg)?;
 
         Ok(Bert {
-            tokenizer: RwLock::new(tokenizer),
-            model,
+            tokenizer: Arc::new(RwLock::new(tokenizer)),
+            model: Arc::new(model),
         })
     }
 
