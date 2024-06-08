@@ -358,7 +358,10 @@ impl<T: CrawlingCallback> DomainQueue<T> {
         self.task.abort();
     }
 
-    fn push(&mut self, url: Url) {
+    fn push(&mut self, mut url: Url) {
+        // Strip the fragment and query from the url to avoid duplicates
+        url.set_fragment(None);
+        url.set_query(None);
         if self.visited.contains(&url) {
             return;
         }

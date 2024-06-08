@@ -29,7 +29,6 @@ heed = "0.20.0-alpha.9"
 floneumite = { path = "../floneumite" }
 kalosm = { workspace = true, features = ["language", "surrealdb"] }
 kalosm-common.workspace = true
-zstd-sys = "=2.0.9"
 
 [features]
 metal = ["kalosm/metal"]

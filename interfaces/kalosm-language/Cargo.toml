@@ -31,7 +31,7 @@ chrono = { version = "0.4.31", features = ["serde"] }
 readability = { version = "0.2.0", default_features = false }
 tempfile = "3.8.0"
 rss = { version = "2.0.6", features = ["atom"] }
-scraper = { version = "0.18.0", features = ["atomic"] }
+scraper = { version = "0.19.0", features = ["atomic"] }
 kalosm-language-model = { workspace = true }
 headless_chrome = { version = "1.0" }
 candle-core.workspace = true
