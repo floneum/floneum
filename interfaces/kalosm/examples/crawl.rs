@@ -1,5 +1,7 @@
+use ego_tree::NodeMut;
 use kalosm::language::*;
 use scraper::Html;
+use scraper::StrTendril;
 use std::collections::HashSet;
 use std::future::Future;
 use std::io::Write;
@@ -12,7 +14,7 @@ use std::sync::Arc;
 async fn main() {
     let real_visited = Arc::new(AtomicUsize::new(0));
     Page::crawl(
-        Url::parse("https://dioxuslabs.com").unwrap(),
+        Url::parse("https://dioxuslabs.com/learn/0.5/").unwrap(),
         BrowserMode::Static,
         move |page: Page| {
             let real_visited = real_visited.clone();
@@ -20,6 +22,10 @@ async fn main() {
                 let visited = real_visited.fetch_add(1, Ordering::SeqCst);
 
                 if page.url().domain() != Some("dioxuslabs.com") {
+                    return CrawlFeedback::follow_none();
+                }
+                let path_prefix = "/learn/0.5/";
+                if !page.url().path().starts_with(path_prefix) {
                     return CrawlFeedback::follow_none();
                 }
 
@@ -56,8 +62,9 @@ async fn main() {
 }
 
 fn clean_html(mut html: Html) -> String {
-    let mut chunker = SmartHtmlChunker::default();
+    let mut chunker = HtmlSimplifier::default();
     chunker.transform(&mut html);
+    remove_unnecessary_whitespace(&mut html);
 
     html.root_element().html()
 }
@@ -68,7 +75,9 @@ fn element_hidden(element: &scraper::node::Element) -> bool {
         None => false,
     };
     let class_hidden = match element.attr("class") {
-        Some(class) => class.split(' ').any(|c| c.rsplit_once(':').map_or(c, |(_, c)| c) == "hidden"),
+        Some(class) => class
+            .split(' ')
+            .any(|c| c.rsplit_once(':').map_or(c, |(_, c)| c) == "hidden"),
         None => false,
     };
     style_hidden || class_hidden
@@ -109,19 +118,19 @@ fn element_hidden(element: &scraper::node::Element) -> bool {
 /// - <option> - select box option
 /// - <form> - form
 /// - <label> - form label
-struct SmartHtmlChunker {
+struct HtmlSimplifier {
     important_attributes: HashSet<String>,
     important_elements: HashSet<String>,
     ignore_elements: HashSet<String>,
     standalone_elements: HashSet<String>,
 }
 
-impl Default for SmartHtmlChunker {
+impl Default for HtmlSimplifier {
     fn default() -> Self {
         const IMPORTANT_ATTRIBUTES: &[&str] = &["title", "role", "type"];
         const IGNORE_ELEMENTS: &[&str] = &[
             "script", "style", "input", "textarea", "form", "select", "option", "label", "head",
-            "link", "meta", "title", "iframe", "button",
+            "link", "meta", "title", "iframe", "button", "nav",
         ];
         const IMPORTANT_ELEMENTS: &[&str] = &[
             "p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "dl", "dt", "dd", "table",
@@ -137,7 +146,7 @@ impl Default for SmartHtmlChunker {
     }
 }
 
-impl SmartHtmlChunker {
+impl HtmlSimplifier {
     fn include_links(&mut self) {
         self.important_elements.insert("a".to_string());
         self.important_attributes.insert("href".to_string());
@@ -323,12 +332,103 @@ fn move_children_to_parent(
     child_ids.first().copied()
 }
 
+fn remove_unnecessary_whitespace(html: &mut Html) {
+    let current_node = html.tree.root_mut();
+    visit_node(current_node, false);
+
+    fn visit_node(mut node: NodeMut<'_, scraper::Node>, preserve_whitespace: bool) {
+        match node.value() {
+            scraper::Node::Text(text_node) => {
+                let mut text = text_node.text.clone();
+                fn merge_text(text: &mut StrTendril, mut node: NodeMut<'_, scraper::Node>) {
+                    let scraper::Node::Text(text_node) = node.value() else {
+                        return;
+                    };
+                    text.push_tendril(&text_node.text);
+                    if let Some(next) = node.next_sibling() {
+                        merge_text(text, next);
+                    }
+                    node.detach();
+                }
+                // merge any following text nodes into this one
+                let next_child = node.next_sibling();
+                if let Some(next) = next_child {
+                    merge_text(&mut text, next);
+                }
+
+                // then replace any runs of whitespace with the highest-priority whitespace character found in that span
+                const WHITESPACE_PRIORITY: [char; 3] = [' ', '\t', '\n'];
+
+                if preserve_whitespace {
+                    let scraper::Node::Text(text_node) = node.value() else {
+                        unreachable!()
+                    };
+
+                    text_node.text = text;
+                } else {
+                    let mut new_text = String::new();
+                    let mut highest_whitespace_priority_in_run = None;
+                    for char in text.chars() {
+                        match highest_whitespace_priority_in_run {
+                            Some(highest_priority_index) => {
+                                if char.is_whitespace() {
+                                    let index = WHITESPACE_PRIORITY
+                                        .iter()
+                                        .position(|&c| c == char)
+                                        .unwrap();
+                                    if index > highest_priority_index {
+                                        highest_whitespace_priority_in_run = Some(index);
+                                    }
+                                } else {
+                                    highest_whitespace_priority_in_run = None;
+                                    new_text.push(WHITESPACE_PRIORITY[highest_priority_index]);
+                                    new_text.push(char);
+                                }
+                            }
+                            None => {
+                                if char.is_whitespace() {
+                                    highest_whitespace_priority_in_run =
+                                        WHITESPACE_PRIORITY.iter().position(|&c| c == char);
+                                } else {
+                                    new_text.push(char);
+                                }
+                            }
+                        }
+                    }
+
+                    let scraper::Node::Text(text_node) = node.value() else {
+                        unreachable!()
+                    };
+
+                    text_node.text = new_text.into();
+                }
+            }
+            scraper::Node::Element(element) => {
+                let preserve_whitespace =
+                    preserve_whitespace || element.name().to_lowercase() == "pre";
+                if let Some(child) = node.first_child() {
+                    visit_node(child, preserve_whitespace);
+                }
+            }
+            _ => {
+                if let Some(child) = node.first_child() {
+                    visit_node(child, preserve_whitespace);
+                }
+            }
+        }
+
+        if let Some(next) = node.next_sibling() {
+            visit_node(next, preserve_whitespace);
+        }
+    }
+}
+
 #[test]
 fn scripts_removed() {
     let html =
         r#"<p>Hello world!</p><script>console.log("Hello world!")</script><p>Hello world 2!</p>"#;
     let mut html = Html::parse_fragment(html);
-    let mut chunker = SmartHtmlChunker::default();
+    let mut chunker = HtmlSimplifier::default();
     chunker.transform(&mut html);
     assert_eq!(
         html.root_element().html(),
@@ -340,7 +440,7 @@ fn scripts_removed() {
 fn divs_removed() {
     let html = r#"<div>Hello world!</div>"#;
     let mut html = Html::parse_fragment(html);
-    let mut chunker = SmartHtmlChunker::default();
+    let mut chunker = HtmlSimplifier::default();
     chunker.transform(&mut html);
     assert_eq!(html.root_element().html(), "<html>Hello world!</html>");
 }
@@ -349,7 +449,7 @@ fn divs_removed() {
 fn spaces_added_between_removed_elements() {
     let html = r#"<div>Hello world 1!</div><div>Hello world 2!</div>"#;
     let mut html = Html::parse_fragment(html);
-    let mut chunker = SmartHtmlChunker::default();
+    let mut chunker = HtmlSimplifier::default();
     chunker.transform(&mut html);
     assert_eq!(
         html.root_element().html(),
@@ -361,7 +461,7 @@ fn spaces_added_between_removed_elements() {
 fn non_important_attributes_removed() {
     let html = r#"<p id="hello" class="world" style="color: red;">Hello world!</p>"#;
     let mut html = Html::parse_fragment(html);
-    let mut chunker = SmartHtmlChunker::default();
+    let mut chunker = HtmlSimplifier::default();
     chunker.transform(&mut html);
     assert_eq!(
         html.root_element().html(),
