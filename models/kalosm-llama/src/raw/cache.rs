@@ -145,6 +145,8 @@ impl AttentionCache {
 
     /// Append a new key/value pair to the cache.
     pub fn append(&mut self, k: &Tensor, v: &Tensor) -> candle_core::Result<(Tensor, Tensor)> {
+        let k = k.contiguous()?;
+        let v = v.contiguous()?;
         let seq_len = k.dim(CONCAT_DIMENSION)?;
         // The key and value token length must be the same.
         debug_assert_eq!(seq_len, v.dim(CONCAT_DIMENSION)?);
@@ -170,6 +172,6 @@ impl AttentionCache {
             self.cache = new_cache;
         }
 
-        self.cache.append(k, v)
+        self.cache.append(&k, &v)
     }
 }
