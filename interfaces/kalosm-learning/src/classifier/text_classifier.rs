@@ -27,6 +27,19 @@ impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
         Ok(())
     }
 
+    /// Add many examples to the dataset.
+    pub async fn extend(
+        &mut self,
+        examples: impl IntoIterator<Item = (&str, T)>,
+    ) -> anyhow::Result<()> {
+        let (texts, classes): (Vec<_>, Vec<_>) = examples.into_iter().unzip();
+        let embeddings = self.embedder.embed_batch(&texts).await?;
+        for (embedding, class) in embeddings.into_iter().zip(classes) {
+            self.dataset.add(embedding.to_vec(), class);
+        }
+        Ok(())
+    }
+
     /// Builds the dataset.
     pub fn build(self, device: &Device) -> candle_core::Result<ClassificationDataset> {
         self.dataset.build(device)
@@ -185,8 +198,9 @@ impl<T: Class, S: VectorSpace + Send + Sync + 'static> TextClassifier<T, S> {
         dataset: &ClassificationDataset,
         device: &Device,
         epochs: usize,
+        learning_rate: f64,
     ) -> anyhow::Result<f32> {
-        self.model.train(dataset, device, epochs)
+        self.model.train(dataset, device, epochs, learning_rate)
     }
 
     /// Get the configuration of the classifier.
@@ -297,7 +311,7 @@ async fn simplified() -> anyhow::Result<()> {
             &dev,
             ClassifierConfig::new(384).layers_dims(layers.clone()),
         )?);
-        if let Err(error) = classifier.train(&dataset, &dev, 100) {
+        if let Err(error) = classifier.train(&dataset, &dev, 100, 0.05) {
             println!("Error: {:?}", error);
         } else {
             break;
