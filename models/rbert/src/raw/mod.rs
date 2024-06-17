@@ -144,4 +144,8 @@ impl BertModel {
             .forward(&embedding_output, attention_mask, train)?;
         Ok(sequence_output)
     }
+
+    pub(crate) fn embedding_dim(&self) -> usize {
+        self.embeddings.embedding_dim()
+    }
 }
