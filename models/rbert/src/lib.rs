@@ -54,7 +54,7 @@ use std::sync::{Arc, RwLock};
 
 use candle_core::{IndexOp, Tensor};
 use candle_nn::VarBuilder;
-use tokenizers::{PaddingParams, Tokenizer};
+use tokenizers::{Encoding, PaddingParams, Tokenizer};
 
 mod language_model;
 mod raw;
@@ -154,7 +154,9 @@ impl Bert {
         let vb =
             unsafe { VarBuilder::from_mmaped_safetensors(&[&weights_filename], DTYPE, &device)? };
         let model = BertModel::load(vb, &config)?;
-        let tokenizer = Tokenizer::from_file(&tokenizer_filename).map_err(anyhow::Error::msg)?;
+        let mut tokenizer =
+            Tokenizer::from_file(&tokenizer_filename).map_err(anyhow::Error::msg)?;
+        tokenizer.with_padding(None);
 
         Ok(Bert {
             tokenizer: Arc::new(RwLock::new(tokenizer)),
@@ -163,43 +165,77 @@ impl Bert {
     }
 
     /// Embed a batch of sentences
-    pub(crate) fn embed_batch_raw(
+    pub(crate) fn embed_batch_raw<'a>(
         &self,
-        sentences: &[&str],
+        sentences: impl IntoIterator<Item = &'a str>,
         pooling: Pooling,
     ) -> anyhow::Result<Vec<Tensor>> {
-        let mut combined = Vec::new();
-        let chunk_size = 36;
-        for batch in sentences.chunks(chunk_size) {
-            let embeddings = self.embed_batch_raw_inner(batch, pooling)?;
-            combined.extend(embeddings);
+        let embedding_dim = self.model.embedding_dim();
+        // The batch size limit (input length * memory per token)
+        let limit = embedding_dim * 512usize.pow(2) * 2;
+
+        // The sentences we are embedding may have a very different length. First we sort them so that similar length sentences are grouped together in the same batch to reduce the overhead of padding.
+        let sentences = sentences.into_iter().collect::<Vec<_>>();
+        let encodings = {
+            let tokenizer_read = self.tokenizer.read().unwrap();
+            tokenizer_read.encode_batch(sentences, true)
         }
-        Ok(combined)
+        .map_err(anyhow::Error::msg)?;
+        let mut encodings_with_indices = encodings.into_iter().enumerate().collect::<Vec<_>>();
+
+        encodings_with_indices.sort_unstable_by_key(|(_, encoding)| encoding.len());
+
+        let mut combined: Vec<Option<Tensor>> = vec![None; encodings_with_indices.len()];
+        let mut chunks = Vec::new();
+        let mut current_chunk_len = 0;
+        let mut current_chunk_max_token_len = 0;
+        let mut current_chunk_indices = Vec::new();
+        let mut current_chunk_text: Vec<Encoding> = Vec::new();
+        for (index, encoding) in encodings_with_indices {
+            let len = encoding.get_ids().len();
+            current_chunk_max_token_len = current_chunk_max_token_len.max(len);
+            current_chunk_len += 1;
+            let score = current_chunk_len
+                * (embedding_dim * 2 + embedding_dim * current_chunk_max_token_len.pow(2));
+            if score > limit {
+                chunks.push((
+                    std::mem::take(&mut current_chunk_indices),
+                    std::mem::take(&mut current_chunk_text),
+                ));
+                current_chunk_max_token_len = len;
+                current_chunk_len = 1;
+            }
+            current_chunk_indices.push(index);
+            current_chunk_text.push(encoding);
+        }
+        // Add the last chunk even if the score isn't maxed out
+        chunks.push((
+            std::mem::take(&mut current_chunk_indices),
+            std::mem::take(&mut current_chunk_text),
+        ));
+
+        for (indices, encodings) in chunks {
+            let embeddings = self.embed_batch_raw_inner(encodings, pooling)?;
+            for (i, embedding) in indices.iter().zip(embeddings) {
+                combined[*i] = Some(embedding);
+            }
+        }
+        Ok(combined.into_iter().map(|x| x.unwrap()).collect())
     }
 
     fn embed_batch_raw_inner(
         &self,
-        sentences: &[&str],
+        mut tokens: Vec<Encoding>,
         pooling: Pooling,
     ) -> anyhow::Result<Vec<Tensor>> {
         let device = &self.model.device;
-
-        let n_sentences = sentences.len();
-        let tokens = {
-            let mut tokenizer_write = self.tokenizer.write().unwrap();
-            if let Some(pp) = tokenizer_write.get_padding_mut() {
-                pp.strategy = tokenizers::PaddingStrategy::BatchLongest
-            } else {
-                let pp = PaddingParams {
-                    strategy: tokenizers::PaddingStrategy::BatchLongest,
-                    ..Default::default()
-                };
-                tokenizer_write.with_padding(Some(pp));
-            }
-            tokenizer_write
-                .encode_batch(sentences.to_vec(), true)
-                .map_err(anyhow::Error::msg)?
+        let pp = PaddingParams {
+            strategy: tokenizers::PaddingStrategy::BatchLongest,
+            ..Default::default()
         };
+        tokenizers::pad_encodings(&mut tokens, &pp).map_err(anyhow::Error::msg)?;
+
+        let n_sentences = tokens.len();
         let token_ids = tokens
             .iter()
             .map(|tokens| {
