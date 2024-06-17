@@ -1310,14 +1310,14 @@ dependencies = [
 
 [[package]]
 name = "candle-core"
-version = "0.5.1"
-source = "git+https://github.com/huggingface/candle?rev=f3fade3b03d8ce9e832c8ed57be8dfee74b8822a#f3fade3b03d8ce9e832c8ed57be8dfee74b8822a"
+version = "0.6.0"
+source = "git+https://github.com/huggingface/candle?rev=2b10aaa#2b10aaa05d3752186899bd5b5364d92164edc7ef"
 dependencies = [
  "accelerate-src",
  "byteorder",
  "candle-kernels",
  "candle-metal-kernels",
- "cudarc 0.11.4",
+ "cudarc 0.11.6",
  "gemm",
  "half 2.4.1",
  "intel-mkl-src",
@@ -1337,8 +1337,8 @@ dependencies = [
 
 [[package]]
 name = "candle-datasets"
-version = "0.5.1"
-source = "git+https://github.com/huggingface/candle?rev=f3fade3b03d8ce9e832c8ed57be8dfee74b8822a#f3fade3b03d8ce9e832c8ed57be8dfee74b8822a"
+version = "0.6.0"
+source = "git+https://github.com/huggingface/candle?rev=2b10aaa#2b10aaa05d3752186899bd5b5364d92164edc7ef"
 dependencies = [
  "byteorder",
  "candle-core",
@@ -1354,8 +1354,8 @@ dependencies = [
 
 [[package]]
 name = "candle-flash-attn"
-version = "0.5.1"
-source = "git+https://github.com/huggingface/candle?rev=f3fade3b03d8ce9e832c8ed57be8dfee74b8822a#f3fade3b03d8ce9e832c8ed57be8dfee74b8822a"
+version = "0.6.0"
+source = "git+https://github.com/huggingface/candle?rev=2b10aaa#2b10aaa05d3752186899bd5b5364d92164edc7ef"
 dependencies = [
  "anyhow",
  "bindgen_cuda",
@@ -1365,16 +1365,16 @@ dependencies = [
 
 [[package]]
 name = "candle-kernels"
-version = "0.5.1"
-source = "git+https://github.com/huggingface/candle?rev=f3fade3b03d8ce9e832c8ed57be8dfee74b8822a#f3fade3b03d8ce9e832c8ed57be8dfee74b8822a"
+version = "0.6.0"
+source = "git+https://github.com/huggingface/candle?rev=2b10aaa#2b10aaa05d3752186899bd5b5364d92164edc7ef"
 dependencies = [
  "bindgen_cuda",
 ]
 
 [[package]]
 name = "candle-metal-kernels"
-version = "0.5.1"
-source = "git+https://github.com/huggingface/candle?rev=f3fade3b03d8ce9e832c8ed57be8dfee74b8822a#f3fade3b03d8ce9e832c8ed57be8dfee74b8822a"
+version = "0.6.0"
+source = "git+https://github.com/huggingface/candle?rev=2b10aaa#2b10aaa05d3752186899bd5b5364d92164edc7ef"
 dependencies = [
  "metal",
  "once_cell",
@@ -1384,8 +1384,8 @@ dependencies = [
 
 [[package]]
 name = "candle-nn"
-version = "0.5.1"
-source = "git+https://github.com/huggingface/candle?rev=f3fade3b03d8ce9e832c8ed57be8dfee74b8822a#f3fade3b03d8ce9e832c8ed57be8dfee74b8822a"
+version = "0.6.0"
+source = "git+https://github.com/huggingface/candle?rev=2b10aaa#2b10aaa05d3752186899bd5b5364d92164edc7ef"
 dependencies = [
  "accelerate-src",
  "candle-core",
@@ -1402,8 +1402,8 @@ dependencies = [
 
 [[package]]
 name = "candle-transformers"
-version = "0.5.1"
-source = "git+https://github.com/huggingface/candle?rev=f3fade3b03d8ce9e832c8ed57be8dfee74b8822a#f3fade3b03d8ce9e832c8ed57be8dfee74b8822a"
+version = "0.6.0"
+source = "git+https://github.com/huggingface/candle?rev=2b10aaa#2b10aaa05d3752186899bd5b5364d92164edc7ef"
 dependencies = [
  "accelerate-src",
  "byteorder",
@@ -2603,9 +2603,9 @@ dependencies = [
 
 [[package]]
 name = "cudarc"
-version = "0.11.4"
+version = "0.11.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "983d9c3634d3ebf37cb1a4a24a15ffe3fad4eaf92ed1e2a4fda571da8d0a3eec"
+checksum = "89df33b4eb35d6d3f19ce8015fda23079131afef42cf6ede03e961ab8aeb29af"
 dependencies = [
  "half 2.4.1",
  "libloading",

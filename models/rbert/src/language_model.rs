@@ -29,7 +29,7 @@ impl Bert {
         input: &str,
         pooling: Pooling,
     ) -> anyhow::Result<Embedding<BertSpace>> {
-        let mut tensors = self.embed_batch_raw(&[input], pooling)?;
+        let mut tensors = self.embed_batch_raw(std::iter::once(input), pooling)?;
 
         Ok(Embedding::new(tensors.pop().unwrap()))
     }
@@ -40,7 +40,7 @@ impl Bert {
         inputs: &[&str],
         pooling: Pooling,
     ) -> anyhow::Result<Vec<Embedding<BertSpace>>> {
-        let tensors = self.embed_batch_raw(inputs, pooling)?;
+        let tensors = self.embed_batch_raw(inputs.iter().copied(), pooling)?;
 
         let mut embeddings = Vec::with_capacity(tensors.len());
         for tensor in tensors {
@@ -58,10 +58,12 @@ impl Embedder for Bert {
     async fn embed(&self, input: &str) -> anyhow::Result<Embedding<BertSpace>> {
         let input = input.to_string();
         let self_clone = self.clone();
-        Ok(tokio::task::spawn_blocking(move || {
-            self_clone.embed_with_pooling(&input, Pooling::Mean)
-        })
-        .await??)
+        Ok(
+            tokio::task::spawn_blocking(move || {
+                self_clone.embed_with_pooling(&input, Pooling::CLS)
+            })
+            .await??,
+        )
     }
 
     async fn embed_batch(&self, inputs: &[&str]) -> anyhow::Result<Vec<Embedding<BertSpace>>> {
@@ -72,7 +74,7 @@ impl Embedder for Bert {
         let self_clone = self.clone();
         Ok(tokio::task::spawn_blocking(move || {
             let inputs_borrowed = inputs.iter().map(|s| s.as_str()).collect::<Vec<_>>();
-            self_clone.embed_batch_with_pooling(&inputs_borrowed, Pooling::Mean)
+            self_clone.embed_batch_with_pooling(&inputs_borrowed, Pooling::CLS)
         })
         .await??)
     }

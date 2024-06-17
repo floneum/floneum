@@ -68,4 +68,8 @@ impl BertEmbeddings {
         let embeddings = self.dropout.forward_t(&embeddings, train)?;
         Ok(embeddings)
     }
+
+    pub(crate) fn embedding_dim(&self) -> usize {
+        self.word_embeddings.hidden_size()
+    }
 }
