@@ -164,8 +164,27 @@ impl HtmlSimplifier {
 
         if let scraper::Node::Element(element) = node.value() {
             let tag = element.name().to_lowercase();
-            // If this isn't a standalone element and it doesn't have any children, we can safely remove the element. It is just noise.
-            if !node.has_children() && !self.standalone_elements.contains(tag.as_str()) {
+            // If this isn't a standalone element and it doesn't have any non-whitespace children, we can safely remove the element. It is just noise.
+            let mut has_non_whitespace_children = false;
+            {
+                let id = node.id();
+                let node_ref = node.tree().get(id).unwrap();
+                for child in node_ref.children() {
+                    match child.value() {
+                        scraper::Node::Text(text) => {
+                            if !text.chars().all(|c| c.is_whitespace()) {
+                                has_non_whitespace_children = true;
+                                break;
+                            }
+                        }
+                        _ => {
+                            has_non_whitespace_children = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if !has_non_whitespace_children && !self.standalone_elements.contains(tag.as_str()) {
                 if let Some(next) = node.next_sibling() {
                     self.transform_node(next);
                 }
