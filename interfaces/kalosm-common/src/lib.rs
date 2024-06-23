@@ -80,3 +80,16 @@ impl FileSource {
         cache.exists(self)
     }
 }
+
+/// Wrap a closure in a release pool if the metal feature is enabled
+pub fn maybe_autoreleasepool<T>(f: impl FnOnce() -> T) -> T {
+    #[cfg(feature = "metal")]
+    // Adding a manual autoreleasepool here is necessary to avoid a memory leak https://github.com/huggingface/candle/issues/2271
+    {
+        metal::objc::rc::autoreleasepool(f)
+    }
+    #[cfg(not(feature = "metal"))]
+    {
+        f()
+    }
+}
