@@ -3426,6 +3426,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "drawille"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e64e461c3f1e69d99372620640b3fd5f0309eeda2e26e4af69f6760c0e1df845"
+dependencies = [
+ "colored",
+ "fnv",
+]
+
+[[package]]
 name = "dtoa"
 version = "1.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6305,6 +6315,7 @@ dependencies = [
  "kalosm-learning-macro",
  "rand 0.8.5",
  "rbert",
+ "textplots",
  "tokio",
  "tokio-util",
 ]
@@ -9519,6 +9530,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rgb"
+version = "0.8.37"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05aaa8004b64fd573fc9d002f4e632d51ad4f026c2b5ba95fcb6c2f32c2c47d8"
+dependencies = [
+ "bytemuck",
+]
+
+[[package]]
 name = "ring"
 version = "0.16.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11887,6 +11907,16 @@ dependencies = [
  "regex",
  "thiserror",
  "url",
+]
+
+[[package]]
+name = "textplots"
+version = "0.8.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f59b64803118dbff62f92842b3154a2c802dfd8e18660132bbcbfb141c637ae3"
+dependencies = [
+ "drawille",
+ "rgb",
 ]
 
 [[package]]
