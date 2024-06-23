@@ -199,8 +199,10 @@ impl<T: Class, S: VectorSpace + Send + Sync + 'static> TextClassifier<T, S> {
         device: &Device,
         epochs: usize,
         learning_rate: f64,
+        batch_size: usize,
     ) -> anyhow::Result<f32> {
-        self.model.train(dataset, device, epochs, learning_rate)
+        self.model
+            .train(dataset, device, epochs, learning_rate, batch_size)
     }
 
     /// Get the configuration of the classifier.
@@ -311,7 +313,7 @@ async fn simplified() -> anyhow::Result<()> {
             &dev,
             ClassifierConfig::new(384).layers_dims(layers.clone()),
         )?);
-        if let Err(error) = classifier.train(&dataset, &dev, 100, 0.05) {
+        if let Err(error) = classifier.train(&dataset, &dev, 100, 0.05, 100) {
             println!("Error: {:?}", error);
         } else {
             break;
