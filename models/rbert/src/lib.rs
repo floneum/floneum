@@ -196,7 +196,7 @@ impl Bert {
             current_chunk_max_token_len = current_chunk_max_token_len.max(len);
             current_chunk_len += 1;
             let score = current_chunk_len
-                * (embedding_dim * 2 + embedding_dim * current_chunk_max_token_len.pow(2));
+                * (embedding_dim * 8 + embedding_dim * current_chunk_max_token_len.pow(2));
             if score > limit {
                 chunks.push((
                     std::mem::take(&mut current_chunk_indices),
@@ -215,7 +215,8 @@ impl Bert {
         ));
 
         for (indices, encodings) in chunks {
-            let embeddings = self.embed_batch_raw_inner(encodings, pooling)?;
+            let embeddings =
+                maybe_autoreleasepool(|| self.embed_batch_raw_inner(encodings, pooling))?;
             for (i, embedding) in indices.iter().zip(embeddings) {
                 combined[*i] = Some(embedding);
             }

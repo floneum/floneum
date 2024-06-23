@@ -9208,6 +9208,7 @@ dependencies = [
  "intel-mkl-src",
  "kalosm-common",
  "kalosm-language-model",
+ "metal",
  "serde",
  "serde_json",
  "tokenizers",
