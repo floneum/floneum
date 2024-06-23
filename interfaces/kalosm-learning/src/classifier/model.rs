@@ -1,3 +1,4 @@
+use rand::prelude::SliceRandom;
 use std::collections::HashMap;
 
 use candle_core::{
@@ -5,6 +6,7 @@ use candle_core::{
     DType, Device, Result, Tensor, Var, D,
 };
 use candle_nn::{loss, ops, Dropout, Linear, Module, ModuleT, Optimizer, VarBuilder, VarMap};
+use kalosm_common::maybe_autoreleasepool;
 use rand::Rng;
 
 /// A class that a [`Classifier`] can predict.
@@ -282,37 +284,67 @@ impl<C: Class> Classifier<C> {
         dev: &Device,
         epochs: usize,
         learning_rate: f64,
+        batch_size: usize,
     ) -> anyhow::Result<f32> {
-        let train_results = m.train_classes.to_device(dev)?;
-        let train_votes = m.train_inputs.to_device(dev)?;
+        // unstack both tensors into a list of tensors
+        let train_len = m.train_inputs.dims()[0];
+        let train_results = m.train_classes.chunk(train_len, 0)?;
+        let train_votes = m.train_inputs.chunk(train_len, 0)?;
 
         let mut sgd = candle_nn::AdamW::new_lr(self.varmap.all_vars(), learning_rate)?;
         let test_votes = m.test_inputs.to_device(dev)?;
         let test_results = m.test_classes.to_device(dev)?;
         let mut final_accuracy: f32 = 0.0;
+        let mut rng = rand::thread_rng();
+        let mut batch = 0;
         for epoch in 1..epochs + 1 {
-            let logits = self.forward_t(&train_votes, true)?;
-            let log_sm = ops::log_softmax(&logits, D::Minus1)?;
-            let loss = loss::nll(&log_sm, &train_results)?;
-            sgd.backward_step(&loss)?;
+            // create a random batch of indices
+            let mut indices = (0..train_len).collect::<Vec<_>>();
+            indices.shuffle(&mut rng);
+            maybe_autoreleasepool(|| {
+                for indices in indices.chunks(batch_size) {
+                    let train_results = Tensor::cat(
+                        &indices
+                            .iter()
+                            .copied()
+                            .map(|i| train_results[i].clone())
+                            .collect::<Vec<_>>(),
+                        0,
+                    )?
+                    .to_device(dev)?;
+                    let train_votes = Tensor::cat(
+                        &indices
+                            .iter()
+                            .copied()
+                            .map(|i| train_votes[i].clone())
+                            .collect::<Vec<_>>(),
+                        0,
+                    )?
+                    .to_device(dev)?;
 
-            let test_logits = self.forward_t(&test_votes, false)?;
-            let test_cases_passed = test_logits
-                .argmax(D::Minus1)?
-                .eq(&test_results)?
-                .to_dtype(DType::U32)?
-                .sum_all()?
-                .to_scalar::<u32>()?;
-            let test_cases = test_results.dims1()?;
-            let test_accuracy: f32 = test_cases_passed as f32 / test_cases as f32;
-            final_accuracy = f32::from(100u8) * test_accuracy;
-            println!(
-                "Epoch: {epoch:3} Train loss: {:8.5} Test accuracy: {:5.5}% ({}/{})",
-                loss.to_scalar::<f32>()?,
-                final_accuracy,
-                test_cases_passed,
-                test_cases,
-            );
+                    let logits = self.forward_t(&train_votes, true)?;
+                    let log_sm = ops::log_softmax(&logits, D::Minus1)?;
+                    let loss = loss::nll(&log_sm, &train_results)?;
+                    sgd.backward_step(&loss)?;
+                    println!("Batch: {batch:5} Loss: {:5.5}", loss.to_scalar::<f32>()?);
+                    batch += 1;
+                }
+                let test_logits = self.forward_t(&test_votes, false)?;
+                let test_cases_passed = test_logits
+                    .argmax(D::Minus1)?
+                    .eq(&test_results)?
+                    .to_dtype(DType::U32)?
+                    .sum_all()?
+                    .to_scalar::<u32>()?;
+                let test_cases = test_results.dims1()?;
+                let test_accuracy: f32 = test_cases_passed as f32 / test_cases as f32;
+                final_accuracy = f32::from(100u8) * test_accuracy;
+                println!(
+                    "Epoch: {epoch:5} Test accuracy: {:5.5}% ({}/{})",
+                    final_accuracy, test_cases_passed, test_cases,
+                );
+                Ok::<_, anyhow::Error>(())
+            })?;
         }
         Ok(final_accuracy)
     }
