@@ -2,7 +2,7 @@ use candle_core::Device;
 use kalosm_language_model::{Embedder, Embedding, VectorSpace};
 
 use crate::{
-    Class, ClassificationDataset, ClassificationDatasetBuilder, Classifier, ClassifierConfig,
+    Class, ClassificationDataset, ClassificationDatasetBuilder, Classifier, ClassifierConfig, ClassifierOutput,
 };
 
 /// A builder for [`TextClassifier`].
@@ -188,7 +188,7 @@ impl<T: Class, S: VectorSpace + Send + Sync + 'static> TextClassifier<T, S> {
     }
 
     /// Runs the classifier on the given input.
-    pub fn run(&mut self, input: Embedding<S>) -> candle_core::Result<T> {
+    pub fn run(&mut self, input: Embedding<S>) -> candle_core::Result<ClassifierOutput<T>> {
         self.model.run(&input.to_vec())
     }
 
