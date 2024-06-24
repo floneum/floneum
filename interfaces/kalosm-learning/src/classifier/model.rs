@@ -422,14 +422,42 @@ impl<C: Class> Classifier<C> {
     /// let result = classifier.run(&[1.0, 2.0, 3.0, 4.0]).unwrap();
     /// println!("Result: {:?}", result);
     /// ```
-    pub fn run(&mut self, input: &[f32]) -> Result<C> {
+    pub fn run(&mut self, input: &[f32]) -> Result<ClassifierOutput<C>> {
         let input = Tensor::from_vec(input.to_vec(), (1, input.len()), &self.device)?;
         let logits = self.forward_t(&input, false)?;
-        let class = logits
-            .flatten_to(1)?
-            .argmax(D::Minus1)?
-            .to_scalar::<u32>()?;
-        Ok(C::from_class(class))
+        let classes = logits
+            .flatten_all()?;
+        let classes = ops::softmax(&classes, D::Minus1)?;
+        let classes = classes.to_vec1()?;
+        Ok(ClassifierOutput {
+            classes: classes
+                .into_iter().enumerate()
+                .map(|(i, c)| (C::from_class(i as u32), c))
+                .collect(),
+        })
+    }
+}
+
+/// The output of a classifier.
+#[derive(Debug, Clone)]
+pub struct ClassifierOutput<C: Class> {
+    /// The classes along with their probabilities.
+    classes: Box<[(C, f32)]>,
+}
+
+impl<C: Class> ClassifierOutput<C> {
+    /// Get the probabilities of each class.
+    pub fn classes(&self) -> &[(C, f32)] {
+        &self.classes
+    }
+
+    /// Get the top class with the highest probability.
+    pub fn top(&self) -> C where C: Clone {
+        self.classes
+            .iter()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .map(|(c, _)| c.clone())
+            .unwrap()
     }
 }
 
