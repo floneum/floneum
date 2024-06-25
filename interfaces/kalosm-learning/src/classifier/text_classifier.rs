@@ -2,7 +2,8 @@ use candle_core::Device;
 use kalosm_language_model::{Embedder, Embedding, VectorSpace};
 
 use crate::{
-    Class, ClassificationDataset, ClassificationDatasetBuilder, Classifier, ClassifierConfig, ClassifierOutput,
+    Class, ClassificationDataset, ClassificationDatasetBuilder, Classifier, ClassifierConfig,
+    ClassifierOutput,
 };
 
 /// A builder for [`TextClassifier`].

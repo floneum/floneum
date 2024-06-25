@@ -430,13 +430,13 @@ impl<C: Class> Classifier<C> {
     pub fn run(&mut self, input: &[f32]) -> Result<ClassifierOutput<C>> {
         let input = Tensor::from_vec(input.to_vec(), (1, input.len()), &self.device)?;
         let logits = self.forward_t(&input, false)?;
-        let classes = logits
-            .flatten_all()?;
+        let classes = logits.flatten_all()?;
         let classes = ops::softmax(&classes, D::Minus1)?;
         let classes = classes.to_vec1()?;
         Ok(ClassifierOutput {
             classes: classes
-                .into_iter().enumerate()
+                .into_iter()
+                .enumerate()
                 .map(|(i, c)| (C::from_class(i as u32), c))
                 .collect(),
         })
@@ -457,7 +457,10 @@ impl<C: Class> ClassifierOutput<C> {
     }
 
     /// Get the top class with the highest probability.
-    pub fn top(&self) -> C where C: Clone {
+    pub fn top(&self) -> C
+    where
+        C: Clone,
+    {
         self.classes
             .iter()
             .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
