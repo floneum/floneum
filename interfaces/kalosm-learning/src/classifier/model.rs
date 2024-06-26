@@ -30,6 +30,11 @@ pub struct ClassificationDataset {
 }
 
 impl ClassificationDataset {
+    /// Create a builder for a classification dataset.
+    pub fn builder<C: Class>() -> ClassificationDatasetBuilder<C> {
+        ClassificationDatasetBuilder::default()
+    }
+
     /// Save the dataset to the given path.
     pub fn save<P: AsRef<std::path::Path>>(&self, path: P) -> Result<()> {
         let safetensors = HashMap::from([

@@ -28,6 +28,8 @@ mod sentence;
 pub use sentence::*;
 mod semantic;
 pub use semantic::*;
+mod html;
+pub use html::*;
 
 /// A strategy for chunking a document into smaller pieces.
 pub trait Chunker {

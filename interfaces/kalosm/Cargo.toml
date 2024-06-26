@@ -12,6 +12,7 @@ repository = "https://github.com/floneum/floneum"
 anyhow = "1.0.75"
 async-trait = "0.1.74"
 comfy-table = "7.1.0"
+ego-tree = "0.6.2"
 futures-util = "0.3.28"
 hdrhistogram = "7.5.4"
 image = "0.24.7"
@@ -67,7 +68,7 @@ default-features = false
 
 [dev-dependencies]
 axum = "0.7.2"
-scraper = "0.18.1"
+scraper = "0.19.0"
 tokenizers = "0.19.1"
 tracing-subscriber = "0.2"
 
