@@ -230,7 +230,6 @@ impl<T: Class, S: VectorSpace + Send + Sync + 'static> TextClassifier<T, S> {
 #[tokio::test]
 async fn simplified() -> anyhow::Result<()> {
     use crate::{Class, Classifier, ClassifierConfig};
-    use candle_core::Device;
     use kalosm_language_model::Embedder;
     use rbert::{Bert, BertSpace};
 
@@ -241,8 +240,9 @@ async fn simplified() -> anyhow::Result<()> {
     }
 
     let mut bert = Bert::builder().build().await?;
+    println!("bert built");
 
-    let dev = Device::cuda_if_available(0)?;
+    let dev = kalosm_common::accelerated_device_if_available()?;
     let person_questions = vec![
         "What is the author's name?",
         "What is the author's age?",
@@ -314,6 +314,7 @@ async fn simplified() -> anyhow::Result<()> {
             &dev,
             ClassifierConfig::new(384).layers_dims(layers.clone()),
         )?);
+        println!("Training...");
         if let Err(error) = classifier.train(&dataset, &dev, 100, 0.05, 100) {
             println!("Error: {:?}", error);
         } else {
