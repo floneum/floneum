@@ -10,6 +10,7 @@ use petgraph::stable_graph::{DefaultIx, NodeIndex};
 
 use std::{collections::HashMap, fs::File, rc::Rc};
 
+mod icons;
 mod node;
 pub use node::Node;
 mod edge;
