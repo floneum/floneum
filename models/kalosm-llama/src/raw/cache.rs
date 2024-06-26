@@ -165,8 +165,8 @@ impl AttentionCache {
             let mut new_cache = KvCache::new(CONCAT_DIMENSION, new_cache_max_seq_len);
             // Append the old cache to the new cache.
             if let (Ok(Some(k)), Ok(Some(v))) = (self.cache.k(), self.cache.v()) {
-                new_cache.k_cache_mut().append(&k)?;
-                new_cache.v_cache_mut().append(&v)?;
+                new_cache.k_cache_mut().append(&k.contiguous()?)?;
+                new_cache.v_cache_mut().append(&v.contiguous()?)?;
             }
             // Replace the old cache with the new cache.
             self.cache = new_cache;
