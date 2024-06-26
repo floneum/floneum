@@ -458,6 +458,6 @@ fn non_important_attributes_removed() {
     chunker.simplify(&mut html);
     assert_eq!(
         html.root_element().html(),
-        "<html><p id=\"hello\">Hello world!</p></html>"
+        "<html><p>Hello world!</p></html>"
     );
 }
