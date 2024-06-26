@@ -42,4 +42,5 @@ pub mod prelude {
     pub use kalosm_streams::text_stream::*;
     pub use rbert::{Bert, BertBuilder, BertSource, BertSpace};
     pub use rphi::{Phi, PhiBuilder, PhiSource};
+    pub use scraper::Html;
 }

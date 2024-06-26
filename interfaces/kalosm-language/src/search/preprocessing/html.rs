@@ -81,11 +81,13 @@ impl Default for HtmlSimplifier {
 }
 
 impl HtmlSimplifier {
+    /// Retain links while simplifying the HTML.
     pub fn include_links(&mut self) {
         self.important_elements.insert("a".to_string());
         self.important_attributes.insert("href".to_string());
     }
 
+    /// Retain images while simplifying the HTML.
     pub fn include_images(&mut self) {
         self.important_elements.insert("img".to_string());
         self.important_attributes.insert("src".to_string());
@@ -93,6 +95,7 @@ impl HtmlSimplifier {
         self.standalone_elements.insert("img".to_string());
     }
 
+    /// Retain elements passed into this method while simplifying the HTML.
     pub fn include_elements<D: ToString>(&mut self, elements: impl IntoIterator<Item = D>) {
         for element in elements {
             let as_string = element.to_string();
@@ -100,6 +103,7 @@ impl HtmlSimplifier {
         }
     }
 
+    /// Retain attributes passed into this method while simplifying the HTML.
     pub fn include_attributes<D: ToString>(&mut self, attributes: impl IntoIterator<Item = D>) {
         for attribute in attributes {
             let as_string = attribute.to_string();
@@ -107,12 +111,26 @@ impl HtmlSimplifier {
         }
     }
 
+    /// Ignore elements along with all of their children while simplifying the HTML.
     pub fn ignore_elements<D: ToString>(&mut self, elements: impl IntoIterator<Item = D>) {
         for element in elements {
             self.ignore_elements.insert(element.to_string());
         }
     }
 
+    /// Simplify the HTML by removing unnecessary whitespace, elements, and attributes.
+    /// This method simplifies the HTML in place, you can get the simplified HTML as text by calling the [`Html::html`] method.
+    ///
+    /// # Example
+    /// ```rust
+    /// use kalosm_language::prelude::*;
+    ///
+    /// let document = String::from("<html><head><title>Hello, world!</title></head><body><h1>Hello, world!</h1><p>This is a paragraph.</p><div><form><input type=\"text\" name=\"name\" placeholder=\"Enter your name\"><button type=\"submit\">Submit</button></form></div></body></html>");
+    /// let mut html = Html::parse_document(&document);
+    /// let mut simplifier = HtmlSimplifier::default();
+    /// simplifier.simplify(&mut html);
+    /// println!("{}", html.html());
+    /// ```
     pub fn simplify(&mut self, html: &mut Html) {
         self.transform_node(html.tree.root_mut());
         remove_unnecessary_whitespace(html);

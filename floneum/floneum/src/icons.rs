@@ -5,7 +5,7 @@ use dioxus::prelude::*;
 #[component]
 pub fn IoClipboard(
     #[props(extends = GlobalAttributes)] attrs: Vec<Attribute>,
-    children: Element
+    children: Element,
 ) -> Element {
     rsx! {
         svg {
@@ -38,7 +38,7 @@ pub fn IoClipboard(
 #[component]
 pub fn IoTrashOutline(
     #[props(extends = GlobalAttributes)] attrs: Vec<Attribute>,
-    children: Element
+    children: Element,
 ) -> Element {
     rsx! {
         svg {
