@@ -51,7 +51,7 @@ jobs:
       # max-parallel:
       # fail-fast: false
       matrix:
-        target: [x86_64-pc-windows-gnu, x86_64-pc-windows-msvc]
+        target: [x86_64-pc-windows-msvc]
         cfg_release_channel: [stable]
 
     steps:
@@ -70,11 +70,6 @@ jobs:
           del rustup-init.exe
           rustup target add ${{ matrix.target }}
         shell: powershell
-
-      - name: Add mingw64 to path for x86_64-gnu
-        run: echo "C:\msys64\mingw64\bin" >> $GITHUB_PATH
-        if: matrix.target == 'x86_64-pc-windows-gnu' && matrix.channel == 'nightly'
-        shell: bash
 
       - name: Checkout
         run: |
