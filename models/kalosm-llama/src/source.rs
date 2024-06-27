@@ -458,6 +458,27 @@ impl LlamaSource {
         }
     }
 
+    /// A preset for Llama8b SPPO Iter3
+    pub fn llama_8b_sppo_iter3() -> Self {
+        Self {
+            model: FileSource::huggingface(
+                "bartowski/Llama-3-Instruct-8B-SPPO-Iter3-GGUF".to_string(),
+                "main".to_string(),
+                "Llama-3-Instruct-8B-SPPO-Iter3-Q4_K_M.gguf".to_string(),
+            ),
+            tokenizer: llama_v3_tokenizer(),
+            group_query_attention: 1,
+            markers: Some(ChatMarkers {
+                system_prompt_marker: "<|begin_of_text|><|start_header_id|>system<|end_header_id|>",
+                end_system_prompt_marker: "<|eot_id|>",
+                user_marker: "<|start_header_id|>user<|end_header_id|>",
+                end_user_marker: "<|eot_id|>",
+                assistant_marker: "<|start_header_id|>assistant<|end_header_id|>",
+                end_assistant_marker: "<|eot_id|>",
+            }),
+        }
+    }
+
     /// A preset for Llama13b
     pub fn llama_13b() -> Self {
         Self {
