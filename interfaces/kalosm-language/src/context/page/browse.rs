@@ -323,7 +323,7 @@ impl<'a> Node<'a> {
         self.inner.move_mouse_over()?;
         Ok(())
     }
-    
+
     /// Find the children of the current node.
     pub fn children(&self) -> anyhow::Result<Vec<NodeRef>> {
         let node_info = self.inner.get_description()?;
