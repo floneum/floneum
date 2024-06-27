@@ -21,7 +21,7 @@
   </a>
 </div>
 
-Floneum makes it easy to develop applications that use local pre-trained AI models. There are two projects in this repository:
+Floneum makes it easy to develop applications that use local pre-trained AI models. There are two main projects in this monorepo:
 
 - [Kalosm](./interfaces/kalosm): A simple interface for pre-trained models in rust
 - [Floneum Editor (preview)](./floneum/floneum): A graphical editor for local AI workflows. See the [user documentation](https://floneum.com/docs/user/) or [plugin documentation](https://floneum.com/docs/developer/) for more information.
