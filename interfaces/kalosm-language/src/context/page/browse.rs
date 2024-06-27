@@ -1,11 +1,13 @@
+pub use headless_chrome::protocol::cdp::CSS::CSSComputedStyleProperty;
 use headless_chrome::{Browser as HeadlessBrowser, Element, LaunchOptions};
 use image::DynamicImage;
 use once_cell::sync::Lazy;
 use scraper::Html;
+use serde::de::DeserializeOwned;
 use std::sync::Arc;
 use url::Url;
 
-use super::extract_article;
+use super::{extract_article, NodeRef};
 use crate::context::document::Document;
 use crate::prelude::AnyNode;
 
@@ -138,6 +140,15 @@ impl Tab {
     pub fn html(&self) -> anyhow::Result<Html> {
         Ok(Html::parse_document(&self.inner.get_content()?))
     }
+
+    /// Get a node from the current page.
+    pub fn node(&self, node_ref: NodeRef) -> anyhow::Result<Node<'_>> {
+        if let NodeRef::Dynamic(node_id) = node_ref {
+            Ok(Element::new(&self.inner, node_id)?.into())
+        } else {
+            anyhow::bail!("NodeRef is not a DynamicNodeRef")
+        }
+    }
 }
 
 impl Drop for Tab {
@@ -159,7 +170,18 @@ pub struct Node<'a> {
     inner: Element<'a>,
 }
 
+impl<'a> From<Element<'a>> for Node<'a> {
+    fn from(inner: Element<'a>) -> Self {
+        Self { inner }
+    }
+}
+
 impl<'a> Node<'a> {
+    /// Get the id of the node.
+    pub fn id(&self) -> NodeRef {
+        NodeRef::Dynamic(self.inner.node_id)
+    }
+
     /// Get the text of the node.
     #[tracing::instrument]
     pub fn get_text(&self) -> Result<String, anyhow::Error> {
@@ -188,6 +210,44 @@ impl<'a> Node<'a> {
         Ok(html)
     }
 
+    /// Get the outer HTML of the node filtering out any nodes that are not visible.
+    #[tracing::instrument]
+    pub fn outer_html_visible(&self) -> Result<String, anyhow::Error> {
+        self.call_js_fn(
+            r#"
+            function(...args) {
+                function node_to_html(node) {
+                    // If this is a text node, return the text content
+                    if (node instanceof Text) {
+                        return node.textContent;
+                    }
+
+                    if (node instanceof HTMLElement && node.checkVisibility()) {
+                        let tag = node.tagName.toLowerCase();
+                        let text = "<" + tag;
+                        for (const attr of node.attributes) {
+                            text += " " + attr.name + "=\"" + attr.value + "\"";
+                        }
+                        text += ">";
+                        if (node.hasChildNodes()) {
+                            for (const child of node.childNodes) {
+                                text += node_to_html(child);
+                            }
+                        }
+                        text += "</" + tag + ">";
+                        return text;
+                    }
+                    return "";
+                }
+
+                return node_to_html(this);
+            }
+        "#,
+            vec![],
+            false,
+        )
+    }
+
     /// Screen shot the node.
     #[tracing::instrument]
     pub fn screenshot(&self) -> Result<DynamicImage, anyhow::Error> {
@@ -205,14 +265,73 @@ impl<'a> Node<'a> {
         Ok(Self { inner: child })
     }
 
-    /// Get the inner scraper element.
-    pub fn into_inner(self) -> Element<'a> {
-        self.inner
+    /// Get the name of the element.
+    #[tracing::instrument]
+    pub fn name(&self) -> &str {
+        &self.inner.tag_name
     }
-}
 
-impl<'a> From<Node<'a>> for AnyNode<'a> {
-    fn from(val: Node<'a>) -> Self {
-        AnyNode::Dynamic(val.into_inner())
+    /// Get the attributes of the element.
+    #[tracing::instrument]
+    pub fn attributes(&self) -> Result<Vec<(String, String)>, anyhow::Error> {
+        let Some(attributes) = self.inner.get_attributes()? else {
+            return Ok(Vec::new());
+        };
+        Ok(attributes
+            .into_iter()
+            .filter_map(|attribute| {
+                let value = self.inner.get_attribute_value(&attribute).ok()??;
+                Some((attribute, value))
+            })
+            .collect())
+    }
+
+    /// Try to get all the computed style of the current node. This will return an error if the node is not a dynamic node.
+    pub fn computed_style(&self) -> anyhow::Result<Vec<CSSComputedStyleProperty>> {
+        self.inner.get_computed_styles()
+    }
+
+    /// Try to find out if the current node is visible.
+    ///
+    /// On static pages, this will always return true. On dynamic pages, this will return true if the node is not hidden.
+    pub fn is_visible(&self) -> anyhow::Result<bool> {
+        self.call_js_fn(
+            "function(...args) { return this.checkVisibility(); }",
+            vec![],
+            false,
+        )
+    }
+
+    /// Call a function on the node.
+    pub fn call_js_fn<R: DeserializeOwned>(
+        &self,
+        function: &str,
+        args: Vec<serde_json::Value>,
+        async_function: bool,
+    ) -> anyhow::Result<R> {
+        let result = self.inner.call_js_fn(function, args, async_function)?;
+
+        match result.value {
+            Some(value) => Ok(serde_json::from_value(value)?),
+            None => Err(anyhow::anyhow!("No value returned from function")),
+        }
+    }
+
+    /// Hover over the node.
+    #[tracing::instrument]
+    pub fn hover(&self) -> anyhow::Result<()> {
+        self.inner.move_mouse_over()?;
+        Ok(())
+    }
+    
+    /// Find the children of the current node.
+    pub fn children(&self) -> anyhow::Result<Vec<NodeRef>> {
+        let node_info = self.inner.get_description()?;
+        let children = node_info.children.unwrap_or_default();
+        let children = children.iter().map(|child| {
+            let child_id = child.node_id;
+            NodeRef::Dynamic(child_id)
+        });
+        Ok(children.collect())
     }
 }

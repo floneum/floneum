@@ -58,7 +58,7 @@ impl Page {
                 ))
             }
             (Self::Dynamic(page), NodeRef::Dynamic(node_id)) => Ok(AnyNode::Dynamic(
-                headless_chrome::Element::new(&page.inner, node_id)?,
+                headless_chrome::Element::new(&page.inner, node_id)?.into(),
             )),
             _ => Err(anyhow::anyhow!("Invalid node reference")),
         }
@@ -80,7 +80,7 @@ impl Page {
                 .inner
                 .wait_for_elements(selector)?
                 .into_iter()
-                .map(AnyNode::Dynamic)
+                .map(|node| AnyNode::Dynamic(node.into()))
                 .collect()),
         }
     }
