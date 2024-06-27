@@ -1,8 +1,4 @@
-use ego_tree::NodeMut;
 use kalosm::language::*;
-use scraper::Html;
-use scraper::StrTendril;
-use std::collections::HashSet;
 use std::future::Future;
 use std::io::Write;
 use std::pin::Pin;
@@ -29,13 +25,15 @@ async fn main() {
                     return CrawlFeedback::follow_none();
                 }
 
-                let Ok(document) = page.html().await else {
+                let Ok(mut document) = page.html().await else {
                     return CrawlFeedback::follow_none();
                 };
 
                 let original_length = document.html().len();
 
-                let simplified = clean_html(document);
+                let mut simplifier = HtmlSimplifier::default();
+                simplifier.simplify(&mut document);
+                let simplified = document.html();
                 let simplified_length = simplified.len();
                 let percentage_decrease =
                     (original_length - simplified_length) as f32 / original_length as f32;

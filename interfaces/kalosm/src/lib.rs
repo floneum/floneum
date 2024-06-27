@@ -13,6 +13,7 @@ pub mod language {
     pub use kalosm_language::kalosm_language_model::{Model as _, ModelExt as _, *};
     pub use kalosm_language::kalosm_llama::{Llama, LlamaBuilder, LlamaSession, LlamaSource};
     pub use kalosm_language::kalosm_sample::*;
+    pub use kalosm_language::prelude::Html;
     pub use kalosm_language::rbert::{Bert, BertBuilder, BertSource, BertSpace};
     pub use kalosm_language::rphi::{Phi, PhiBuilder, PhiSource};
     pub use kalosm_language::search::*;

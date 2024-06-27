@@ -108,22 +108,23 @@ impl BertSource {
 
     /// Create a new [`BertSource`] with the [snowflake-arctic-embed-xs](https://huggingface.co/Snowflake/snowflake-arctic-embed-xs) model
     pub fn snowflake_arctic_embed_extra_small() -> Self {
-        Self::default()
-            .with_model(FileSource::huggingface(
-                "Snowflake/snowflake-arctic-embed-xs".to_string(),
-                "main".to_string(),
-                "model.safetensors".to_string(),
-            ))
-            .with_tokenizer(FileSource::huggingface(
-                "Snowflake/snowflake-arctic-embed-xs".to_string(),
-                "main".to_string(),
-                "tokenizer.json".to_string(),
-            ))
-            .with_config(FileSource::huggingface(
+        Self {
+            config: FileSource::huggingface(
                 "Snowflake/snowflake-arctic-embed-xs".to_string(),
                 "main".to_string(),
                 "config.json".to_string(),
-            ))
+            ),
+            tokenizer: FileSource::huggingface(
+                "Snowflake/snowflake-arctic-embed-xs".to_string(),
+                "main".to_string(),
+                "tokenizer.json".to_string(),
+            ),
+            model: FileSource::huggingface(
+                "Snowflake/snowflake-arctic-embed-xs".to_string(),
+                "main".to_string(),
+                "model.safetensors".to_string(),
+            ),
+        }
     }
 
     /// Create a new [`BertSource`] with the [snowflake-arctic-embed-s](https://huggingface.co/Snowflake/snowflake-arctic-embed-s) model
@@ -148,23 +149,22 @@ impl BertSource {
 
     /// Create a new [`BertSource`] with the [snowflake-arctic-embed-m](https://huggingface.co/Snowflake/snowflake-arctic-embed-m) model
     pub fn snowflake_arctic_embed_medium() -> Self {
-        Self {
-            config: FileSource::huggingface(
+        Self::default()
+            .with_config(FileSource::huggingface(
                 "Snowflake/snowflake-arctic-embed-m".to_string(),
                 "main".to_string(),
                 "config.json".to_string(),
-            ),
-            tokenizer: FileSource::huggingface(
+            ))
+            .with_tokenizer(FileSource::huggingface(
                 "Snowflake/snowflake-arctic-embed-m".to_string(),
                 "main".to_string(),
                 "tokenizer.json".to_string(),
-            ),
-            model: FileSource::huggingface(
+            ))
+            .with_model(FileSource::huggingface(
                 "Snowflake/snowflake-arctic-embed-m".to_string(),
                 "main".to_string(),
                 "model.safetensors".to_string(),
-            ),
-        }
+            ))
     }
 
     /// Create a new [`BertSource`] with the [snowflake-arctic-embed-m-long](https://huggingface.co/Snowflake/snowflake-arctic-embed-m-long) model
@@ -212,6 +212,6 @@ impl BertSource {
 
 impl Default for BertSource {
     fn default() -> Self {
-        Self::snowflake_arctic_embed_medium()
+        Self::snowflake_arctic_embed_extra_small()
     }
 }

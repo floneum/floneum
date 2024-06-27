@@ -43,6 +43,24 @@ pub(crate) fn SaveMenu() -> Element {
                         }
                     },
                     dioxus_free_icons::Icon { class: "w-4 h-4", icon: dioxus_free_icons::icons::io_icons::IoClipboard }
+                    svg {
+                        class: "w-4 h-4",
+                        height: "{props.height}",
+                        width: "{props.width}",
+                        view_box: "{props.icon.view_box()}",
+                        xmlns: "{props.icon.xmlns()}",
+                        fill,
+                        stroke,
+                        stroke_width,
+                        stroke_linecap: "{props.icon.stroke_linecap()}",
+                        stroke_linejoin: "{props.icon.stroke_linejoin()}",
+                        if let Some(title_text) = props.title {
+                            title {
+                                "{title_text}"
+                            }
+                        },
+                        {props.icon.child_elements()}
+                    }
                 }
             }
 

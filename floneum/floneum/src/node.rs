@@ -1,8 +1,8 @@
 use crate::current_node::FocusedNodeInfo;
+use crate::icons::IoTrashOutline;
 use dioxus::html::geometry::euclid::Rect;
 use dioxus::html::geometry::euclid::Vector2D;
 use dioxus::prelude::*;
-use dioxus_free_icons::Icon;
 use floneum_plugin::plugins::main::types::ValueType;
 use floneum_plugin::PluginInstance;
 use floneumite::Category;
@@ -241,10 +241,9 @@ fn CenterNodeUI(mut node: Signal<Node>) -> Element {
                         evt.stop_propagation();
                     },
                     onmouseup: |evt| stop_dragging(&evt),
-                    Icon {
-                        width: 15,
-                        height: 15,
-                        icon: dioxus_free_icons::icons::io_icons::IoTrashOutline
+                    IoTrashOutline {
+                        width: "15px",
+                        height: "15px",
                     }
                 }
                 if current_node.running {

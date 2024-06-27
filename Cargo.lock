@@ -3056,14 +3056,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dioxus-free-icons"
-version = "0.8.6"
-source = "git+https://github.com/dioxus-community/dioxus-free-icons#0cc4ba43a8590a933487e600baf8a4c6e73c7021"
-dependencies = [
- "dioxus",
-]
-
-[[package]]
 name = "dioxus-fullstack"
 version = "0.5.2"
 source = "git+https://github.com/ealmloff/dioxus/?branch=create-race-condition-desktop#eb318b7efa9b7e08b36c4a99c03e73864f7a2f30"
@@ -3838,7 +3830,6 @@ dependencies = [
  "bytesize",
  "cargo-dist",
  "dioxus",
- "dioxus-free-icons",
  "dioxus-sdk",
  "dioxus-signals",
  "directories",
