@@ -1,4 +1,7 @@
-use std::marker::PhantomData;
+use std::{
+    marker::PhantomData,
+    ops::{Add, Div, Mul, Sub},
+};
 
 use candle_core::{Device, Tensor};
 #[cfg(feature = "serde")]
@@ -44,6 +47,54 @@ impl<S: VectorSpace> Embedding<S> {
             .to_scalar::<f32>()
             .unwrap();
         sum_ij / (sum_i2 * sum_j2).sqrt()
+    }
+}
+
+impl<S: VectorSpace> Add for Embedding<S> {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self::Output {
+        let embedding = (self.embedding + other.embedding).unwrap();
+        Embedding {
+            embedding,
+            model: PhantomData,
+        }
+    }
+}
+
+impl<S: VectorSpace> Sub for Embedding<S> {
+    type Output = Self;
+
+    fn sub(self, other: Self) -> Self::Output {
+        let embedding = (self.embedding - other.embedding).unwrap();
+        Embedding {
+            embedding,
+            model: PhantomData,
+        }
+    }
+}
+
+impl<S: VectorSpace> Mul<f64> for Embedding<S> {
+    type Output = Self;
+
+    fn mul(self, other: f64) -> Self::Output {
+        let embedding = (self.embedding * other).unwrap();
+        Embedding {
+            embedding,
+            model: PhantomData,
+        }
+    }
+}
+
+impl<S: VectorSpace> Div<f64> for Embedding<S> {
+    type Output = Self;
+
+    fn div(self, other: f64) -> Self::Output {
+        let embedding = (self.embedding / other).unwrap();
+        Embedding {
+            embedding,
+            model: PhantomData,
+        }
     }
 }
 

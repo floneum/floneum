@@ -12,7 +12,7 @@ keywords = ["ai", "llm", "bert", "nlp", "transformers"]
 candle-core.workspace = true
 candle-nn.workspace = true
 candle-transformers.workspace = true
-tokenizers = { version = "0.13.4" }
+tokenizers = { version = "0.19.1" }
 
 accelerate-src = { version = "0.3.2", optional = true }
 intel-mkl-src = { version = "0.8.1", features = ["mkl-static-lp64-iomp"], optional = true }
@@ -22,11 +22,13 @@ half = { version = "2.3.1", features = ["num-traits", "use-intrinsics", "rand_di
 anyhow = "1.0.75"
 tracing = "0.1.37"
 serde_json = "1.0.106"
+serde = { version = "1", features = ["derive"] }
 async-trait = "0.1.73"
 tokio = { version = "1.33.0", features = ["full"] }
 
 kalosm-common = { workspace = true }
 kalosm-language-model.workspace = true
+metal = { version = "0.27.0", features = ["mps"], optional = true }
 
 [features]
 accelerate = ["dep:accelerate-src", "candle-core/accelerate", "candle-nn/accelerate", "candle-transformers/accelerate"]
@@ -34,4 +36,4 @@ cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
 cudnn = ["candle-core/cudnn"]
 mkl = ["dep:intel-mkl-src", "candle-core/mkl", "candle-nn/mkl", "candle-transformers/mkl"]
 nccl = ["cuda", "cudarc/nccl", "dep:half"]
-metal = ["candle-core/metal", "candle-nn/metal", "candle-transformers/metal"]
+metal = ["candle-core/metal", "candle-nn/metal", "candle-transformers/metal", "dep:metal"]

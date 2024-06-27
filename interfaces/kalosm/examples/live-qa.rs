@@ -65,6 +65,11 @@ async fn main() -> Result<(), anyhow::Error> {
         // Ask the user for a question
         let user_question = prompt_input("\n> ").unwrap();
 
+        let user_question = format!(
+            "Represent this sentence for searching relevant passages: {}",
+            user_question
+        );
+
         // Search for relevant context in the document engine
         let context = document_table
             .select_nearest(&user_question, 5)

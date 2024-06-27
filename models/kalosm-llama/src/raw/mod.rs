@@ -21,10 +21,11 @@ fn decode_norm(tensor: QTensor, eps: f64) -> candle_core::Result<RmsNorm> {
     RmsNorm::from_qtensor(tensor, eps)
 }
 
+/// The configuration of a Llama model.
 #[allow(unused)]
-pub(crate) struct LlamaConfig {
+pub struct LlamaConfig {
     rope_theta: f32,
-    context_length: usize,
+    pub(crate) context_length: usize,
     head_dimension: usize,
     rope_dimension: usize,
     n_head: usize,
@@ -112,25 +113,34 @@ impl Model {
         reader: &mut R,
         device: &Device,
     ) -> Result<Self> {
-        let md_get = |s: &str| match ct.metadata.get(s) {
-            None => candle_core::bail!("cannot find {s} in metadata"),
-            Some(v) => Ok(v),
+        let md_get = |s: &str| {
+            let value = if s.starts_with('.') {
+                ct.metadata
+                    .iter()
+                    .find_map(|(k, value)| k.ends_with(s).then_some(value))
+            } else {
+                ct.metadata.get(s)
+            };
+            match value {
+                None => candle_core::bail!("cannot find {s} in metadata"),
+                Some(v) => Ok(v),
+            }
         };
 
         // Parameter extraction from metadata.
-        let head_count = md_get("llama.attention.head_count")?.to_u32()? as usize;
-        let head_count_kv = md_get("llama.attention.head_count_kv")?.to_u32()? as usize;
-        let block_count = md_get("llama.block_count")?.to_u32()? as usize;
-        let embedding_length = md_get("llama.embedding_length")?.to_u32()? as usize;
-        let rope_dim = md_get("llama.rope.dimension_count")?.to_u32()? as usize;
+        let head_count = md_get(".attention.head_count")?.to_u32()? as usize;
+        let head_count_kv = md_get(".attention.head_count_kv")?.to_u32()? as usize;
+        let block_count = md_get(".block_count")?.to_u32()? as usize;
+        let embedding_length = md_get(".embedding_length")?.to_u32()? as usize;
+        let rope_dim = md_get(".rope.dimension_count")?.to_u32()? as usize;
         // Strangely this value is generally 1e-6 in GGUF file but used to be 1e-5 by default.
-        let rms_norm_eps = md_get("llama.attention.layer_norm_rms_epsilon")?.to_f32()? as f64;
+        let rms_norm_eps = md_get(".attention.layer_norm_rms_epsilon")?.to_f32()? as f64;
 
-        let rope_freq_base = md_get("llama.rope.freq_base")
+        let rope_freq_base = md_get(".rope.freq_base")
             .and_then(|m| m.to_f32())
             .unwrap_or(10000f32);
 
-        let context_length = md_get("llama.context_length")?.to_u32()? as usize;
+        let context_length = md_get(".context_length")?.to_u32()? as usize;
 
         let config = LlamaConfig {
             rope_theta: rope_freq_base,

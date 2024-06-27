@@ -3,6 +3,7 @@ use kalosm_language_model::{Embedder, Embedding, VectorSpace};
 
 use crate::{
     Class, ClassificationDataset, ClassificationDatasetBuilder, Classifier, ClassifierConfig,
+    ClassifierOutput,
 };
 
 /// A builder for [`TextClassifier`].
@@ -24,6 +25,19 @@ impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
     pub async fn add(&mut self, text: &str, class: T) -> anyhow::Result<()> {
         let embedding = self.embedder.embed(text).await?;
         self.dataset.add(embedding.to_vec(), class);
+        Ok(())
+    }
+
+    /// Add many examples to the dataset.
+    pub async fn extend(
+        &mut self,
+        examples: impl IntoIterator<Item = (&str, T)>,
+    ) -> anyhow::Result<()> {
+        let (texts, classes): (Vec<_>, Vec<_>) = examples.into_iter().unzip();
+        let embeddings = self.embedder.embed_batch(&texts).await?;
+        for (embedding, class) in embeddings.into_iter().zip(classes) {
+            self.dataset.add(embedding.to_vec(), class);
+        }
         Ok(())
     }
 
@@ -175,7 +189,7 @@ impl<T: Class, S: VectorSpace + Send + Sync + 'static> TextClassifier<T, S> {
     }
 
     /// Runs the classifier on the given input.
-    pub fn run(&mut self, input: Embedding<S>) -> candle_core::Result<T> {
+    pub fn run(&mut self, input: Embedding<S>) -> candle_core::Result<ClassifierOutput<T>> {
         self.model.run(&input.to_vec())
     }
 
@@ -185,8 +199,11 @@ impl<T: Class, S: VectorSpace + Send + Sync + 'static> TextClassifier<T, S> {
         dataset: &ClassificationDataset,
         device: &Device,
         epochs: usize,
+        learning_rate: f64,
+        batch_size: usize,
     ) -> anyhow::Result<f32> {
-        self.model.train(dataset, device, epochs)
+        self.model
+            .train(dataset, device, epochs, learning_rate, batch_size)
     }
 
     /// Get the configuration of the classifier.
@@ -213,7 +230,6 @@ impl<T: Class, S: VectorSpace + Send + Sync + 'static> TextClassifier<T, S> {
 #[tokio::test]
 async fn simplified() -> anyhow::Result<()> {
     use crate::{Class, Classifier, ClassifierConfig};
-    use candle_core::Device;
     use kalosm_language_model::Embedder;
     use rbert::{Bert, BertSpace};
 
@@ -224,8 +240,9 @@ async fn simplified() -> anyhow::Result<()> {
     }
 
     let mut bert = Bert::builder().build().await?;
+    println!("bert built");
 
-    let dev = Device::cuda_if_available(0)?;
+    let dev = kalosm_common::accelerated_device_if_available()?;
     let person_questions = vec![
         "What is the author's name?",
         "What is the author's age?",
@@ -297,7 +314,8 @@ async fn simplified() -> anyhow::Result<()> {
             &dev,
             ClassifierConfig::new(384).layers_dims(layers.clone()),
         )?);
-        if let Err(error) = classifier.train(&dataset, &dev, 100) {
+        println!("Training...");
+        if let Err(error) = classifier.train(&dataset, &dev, 100, 0.05, 100) {
             println!("Error: {:?}", error);
         } else {
             break;

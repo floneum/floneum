@@ -1,5 +1,12 @@
-use candle_core::{safetensors::Load, DType, Device, Result, Tensor, Var, D};
-use candle_nn::{loss, ops, Linear, Module, Optimizer, VarBuilder, VarMap};
+use rand::prelude::SliceRandom;
+use std::collections::HashMap;
+
+use candle_core::{
+    safetensors::{self, Load},
+    DType, Device, Result, Tensor, Var, D,
+};
+use candle_nn::{loss, ops, Dropout, Linear, Module, ModuleT, Optimizer, VarBuilder, VarMap};
+use kalosm_common::maybe_autoreleasepool;
 use rand::Rng;
 
 /// A class that a [`Classifier`] can predict.
@@ -20,6 +27,37 @@ pub struct ClassificationDataset {
     train_classes: Tensor,
     test_inputs: Tensor,
     test_classes: Tensor,
+}
+
+impl ClassificationDataset {
+    /// Create a builder for a classification dataset.
+    pub fn builder<C: Class>() -> ClassificationDatasetBuilder<C> {
+        ClassificationDatasetBuilder::default()
+    }
+
+    /// Save the dataset to the given path.
+    pub fn save<P: AsRef<std::path::Path>>(&self, path: P) -> Result<()> {
+        let safetensors = HashMap::from([
+            ("train_inputs".to_string(), self.train_inputs.clone()),
+            ("train_classes".to_string(), self.train_classes.clone()),
+            ("test_inputs".to_string(), self.test_inputs.clone()),
+            ("test_classes".to_string(), self.test_classes.clone()),
+        ]);
+
+        safetensors::save(&safetensors, path)?;
+        Ok(())
+    }
+
+    /// Load the dataset from the given path.
+    pub fn load<P: AsRef<std::path::Path>>(path: P, dev: &Device) -> Result<Self> {
+        let mut safetensors = safetensors::load(path, dev)?;
+        Ok(Self {
+            train_inputs: safetensors.remove("train_inputs").unwrap(),
+            train_classes: safetensors.remove("train_classes").unwrap(),
+            test_inputs: safetensors.remove("test_inputs").unwrap(),
+            test_classes: safetensors.remove("test_classes").unwrap(),
+        })
+    }
 }
 
 /// A builder for [`ClassificationDataset`].
@@ -74,7 +112,7 @@ impl<C: Class> ClassificationDatasetBuilder<C> {
             let index = rng.gen_range(0..self.classes.len());
             let mut input = self.inputs.remove(index);
             let class = self.classes.remove(index);
-            if input_test.len() <= first_quarter {
+            if class_test.len() <= first_quarter {
                 input_test.append(&mut input);
                 class_test.push(class.to_class());
             } else {
@@ -113,6 +151,8 @@ pub struct Classifier<C: Class> {
     device: Device,
     varmap: VarMap,
     layers: Vec<Linear>,
+    dropout: Dropout,
+    dropout_rate: f32,
     phantom: std::marker::PhantomData<C>,
 }
 
@@ -151,6 +191,7 @@ impl<C: Class> Classifier<C> {
                 layers.pop();
                 layers
             },
+            dropout_rate: self.dropout_rate,
         }
     }
 
@@ -163,6 +204,7 @@ impl<C: Class> Classifier<C> {
         let ClassifierConfig {
             input_dim,
             layers_dims,
+            dropout_rate,
         } = config;
         let output_dim = C::CLASSES;
         if layers_dims.is_empty() {
@@ -174,6 +216,8 @@ impl<C: Class> Classifier<C> {
                     output_dim as usize,
                     vs.pp("ln0"),
                 )?],
+                dropout: Dropout::new(dropout_rate),
+                dropout_rate,
                 phantom: std::marker::PhantomData,
             });
         }
@@ -203,15 +247,18 @@ impl<C: Class> Classifier<C> {
             device: dev,
             layers,
             varmap,
+            dropout: Dropout::new(dropout_rate),
+            dropout_rate,
             phantom: std::marker::PhantomData,
         })
     }
 
-    fn forward(&self, xs: &Tensor) -> Result<Tensor> {
-        let mut xs = xs.clone();
+    fn forward_t(&self, xs: &Tensor, train: bool) -> Result<Tensor> {
+        let xs = xs.clone();
+        let mut xs = self.dropout.forward_t(&xs, train)?;
         for layer in &self.layers {
             xs = layer.forward(&xs)?;
-            xs = xs.relu()?;
+            xs = xs.gelu_erf()?;
         }
         Ok(xs)
     }
@@ -234,41 +281,75 @@ impl<C: Class> Classifier<C> {
     /// dataset.add(vec![1.0, 2.0, 3.0, 4.0], MyClass::Person);
     /// dataset.add(vec![4.0, 3.0, 2.0, 1.0], MyClass::Thing);
     ///
-    /// classifier.train(&dataset.build(&dev).unwrap(), &dev, 20).unwrap();
+    /// classifier.train(&dataset.build(&dev).unwrap(), &dev, 20, 0.05).unwrap();
     /// ```
     pub fn train(
         &mut self,
         m: &ClassificationDataset,
         dev: &Device,
         epochs: usize,
+        learning_rate: f64,
+        batch_size: usize,
     ) -> anyhow::Result<f32> {
-        let train_results = m.train_classes.to_device(dev)?;
-        let train_votes = m.train_inputs.to_device(dev)?;
+        // unstack both tensors into a list of tensors
+        let train_len = m.train_inputs.dims()[0];
+        let train_results = m.train_classes.chunk(train_len, 0)?;
+        let train_votes = m.train_inputs.chunk(train_len, 0)?;
 
-        let mut sgd = candle_nn::AdamW::new_lr(self.varmap.all_vars(), 0.05)?;
+        let mut sgd = candle_nn::AdamW::new_lr(self.varmap.all_vars(), learning_rate)?;
         let test_votes = m.test_inputs.to_device(dev)?;
         let test_results = m.test_classes.to_device(dev)?;
         let mut final_accuracy: f32 = 0.0;
+        let mut rng = rand::thread_rng();
+        let mut batch = 0;
         for epoch in 1..epochs + 1 {
-            let logits = self.forward(&train_votes)?;
-            let log_sm = ops::log_softmax(&logits, D::Minus1)?;
-            let loss = loss::nll(&log_sm, &train_results)?;
-            sgd.backward_step(&loss)?;
+            // create a random batch of indices
+            let mut indices = (0..train_len).collect::<Vec<_>>();
+            indices.shuffle(&mut rng);
+            maybe_autoreleasepool(|| {
+                for indices in indices.chunks(batch_size) {
+                    let train_results = Tensor::cat(
+                        &indices
+                            .iter()
+                            .copied()
+                            .map(|i| train_results[i].clone())
+                            .collect::<Vec<_>>(),
+                        0,
+                    )?
+                    .to_device(dev)?;
+                    let train_votes = Tensor::cat(
+                        &indices
+                            .iter()
+                            .copied()
+                            .map(|i| train_votes[i].clone())
+                            .collect::<Vec<_>>(),
+                        0,
+                    )?
+                    .to_device(dev)?;
 
-            let test_logits = self.forward(&test_votes)?;
-            let sum_ok = test_logits
-                .argmax(D::Minus1)?
-                .eq(&test_results)?
-                .to_dtype(DType::F32)?
-                .sum_all()?
-                .to_scalar::<f32>()?;
-            let test_accuracy: f32 = sum_ok / test_results.dims1()? as f32;
-            final_accuracy = f32::from(100u8) * test_accuracy;
-            println!(
-                "Epoch: {epoch:3} Train loss: {:8.5} Test accuracy: {:5.2}%",
-                loss.to_scalar::<f32>()?,
-                final_accuracy
-            );
+                    let logits = self.forward_t(&train_votes, true)?;
+                    let log_sm = ops::log_softmax(&logits, D::Minus1)?;
+                    let loss = loss::nll(&log_sm, &train_results)?;
+                    sgd.backward_step(&loss)?;
+                    println!("Batch: {batch:5} Loss: {:5.5}", loss.to_scalar::<f32>()?);
+                    batch += 1;
+                }
+                let test_logits = self.forward_t(&test_votes, false)?;
+                let test_cases_passed = test_logits
+                    .argmax(D::Minus1)?
+                    .eq(&test_results)?
+                    .to_dtype(DType::U32)?
+                    .sum_all()?
+                    .to_scalar::<u32>()?;
+                let test_cases = test_results.dims1()?;
+                let test_accuracy: f32 = test_cases_passed as f32 / test_cases as f32;
+                final_accuracy = f32::from(100u8) * test_accuracy;
+                println!(
+                    "Epoch: {epoch:5} Test accuracy: {:5.5}% ({}/{})",
+                    final_accuracy, test_cases_passed, test_cases,
+                );
+                Ok::<_, anyhow::Error>(())
+            })?;
         }
         Ok(final_accuracy)
     }
@@ -346,14 +427,45 @@ impl<C: Class> Classifier<C> {
     /// let result = classifier.run(&[1.0, 2.0, 3.0, 4.0]).unwrap();
     /// println!("Result: {:?}", result);
     /// ```
-    pub fn run(&mut self, input: &[f32]) -> Result<C> {
+    pub fn run(&mut self, input: &[f32]) -> Result<ClassifierOutput<C>> {
         let input = Tensor::from_vec(input.to_vec(), (1, input.len()), &self.device)?;
-        let logits = self.forward(&input)?;
-        let class = logits
-            .flatten_to(1)?
-            .argmax(D::Minus1)?
-            .to_scalar::<u32>()?;
-        Ok(C::from_class(class))
+        let logits = self.forward_t(&input, false)?;
+        let classes = logits.flatten_all()?;
+        let classes = ops::softmax(&classes, D::Minus1)?;
+        let classes = classes.to_vec1()?;
+        Ok(ClassifierOutput {
+            classes: classes
+                .into_iter()
+                .enumerate()
+                .map(|(i, c)| (C::from_class(i as u32), c))
+                .collect(),
+        })
+    }
+}
+
+/// The output of a classifier.
+#[derive(Debug, Clone)]
+pub struct ClassifierOutput<C: Class> {
+    /// The classes along with their probabilities.
+    classes: Box<[(C, f32)]>,
+}
+
+impl<C: Class> ClassifierOutput<C> {
+    /// Get the probabilities of each class.
+    pub fn classes(&self) -> &[(C, f32)] {
+        &self.classes
+    }
+
+    /// Get the top class with the highest probability.
+    pub fn top(&self) -> C
+    where
+        C: Clone,
+    {
+        self.classes
+            .iter()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .map(|(c, _)| c.clone())
+            .unwrap()
     }
 }
 
@@ -364,6 +476,8 @@ pub struct ClassifierConfig {
     input_dim: usize,
     /// The dimensions of the layers.
     layers_dims: Vec<usize>,
+    /// The dropout rate.
+    dropout_rate: f32,
 }
 
 impl ClassifierConfig {
@@ -372,12 +486,19 @@ impl ClassifierConfig {
         Self {
             input_dim,
             layers_dims: vec![4, 8, 4],
+            dropout_rate: 0.1,
         }
     }
 
     /// Set the dimensions of the layers.
     pub fn layers_dims(mut self, layers_dims: Vec<usize>) -> Self {
         self.layers_dims = layers_dims;
+        self
+    }
+
+    /// Set the dropout rate.
+    pub fn dropout_rate(mut self, dropout_rate: f32) -> Self {
+        self.dropout_rate = dropout_rate;
         self
     }
 }

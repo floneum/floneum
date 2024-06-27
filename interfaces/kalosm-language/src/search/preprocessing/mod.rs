@@ -24,31 +24,39 @@ mod hypothetical;
 pub use hypothetical::*;
 mod summary;
 pub use summary::*;
+mod sentence;
+pub use sentence::*;
+mod semantic;
+pub use semantic::*;
+mod html;
+pub use html::*;
 
 /// A strategy for chunking a document into smaller pieces.
-#[async_trait::async_trait]
 pub trait Chunker {
     /// Chunk a document into embedded snippets.
-    async fn chunk<E: Embedder + Send>(
+    fn chunk<E: Embedder + Send>(
         &self,
         document: &Document,
         embedder: &E,
-    ) -> anyhow::Result<Vec<Chunk<E::VectorSpace>>>;
+    ) -> impl std::future::Future<Output = anyhow::Result<Vec<Chunk<E::VectorSpace>>>> + Send;
 
     /// Chunk a batch of documents into embedded snippets.
-    async fn chunk_batch<'a, I, E: Embedder + Send>(
+    fn chunk_batch<'a, I, E: Embedder + Send>(
         &self,
         documents: I,
         embedder: &E,
-    ) -> anyhow::Result<Vec<Vec<Chunk<E::VectorSpace>>>>
+    ) -> impl std::future::Future<Output = anyhow::Result<Vec<Vec<Chunk<E::VectorSpace>>>>> + Send
     where
         I: IntoIterator<Item = &'a Document> + Send,
         I::IntoIter: Send,
+        Self: Sync,
     {
-        let mut chunks = Vec::new();
-        for document in documents {
-            chunks.push(self.chunk(document, embedder).await?);
+        async {
+            let mut chunks = Vec::new();
+            for document in documents {
+                chunks.push(self.chunk(document, embedder).await?);
+            }
+            Ok(chunks)
         }
-        Ok(chunks)
     }
 }

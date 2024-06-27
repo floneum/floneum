@@ -9,18 +9,6 @@ use surrealdb::sql::Id;
 use surrealdb::Connection;
 use surrealdb::Surreal;
 
-/// A struct that has a document associated with it.
-pub trait HasDocument {
-    /// Get the document associated with this struct.
-    fn document(&self) -> &Document;
-}
-
-impl HasDocument for Document {
-    fn document(&self) -> &Document {
-        self
-    }
-}
-
 /// A table in a surreal database that is indexed by embeddings from a vector database.
 pub struct DocumentTable<C: Connection, R, M: Embedder, K: Chunker> {
     embedding_model: M,
@@ -52,28 +40,56 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
         &self.embedding_model
     }
 
-    /// Get the raw embedding model mutably.
-    pub fn embedding_model_mut(&mut self) -> &mut M {
-        &mut self.embedding_model
+    /// Delete the table from the database and clear the vector database. Returns the contents of the table.
+    pub async fn delete_table(self) -> anyhow::Result<Vec<(R, Vec<Chunk<M::VectorSpace>>)>>
+    where
+        R: DeserializeOwned,
+    {
+        self.table.delete_table().await
     }
 
-    /// Insert a new record into the table with the given embedding.
+    /// Insert a new record into the table with pre-computed chunks.
+    pub async fn insert_with_chunks(
+        &self,
+        value: R,
+        chunks: impl IntoIterator<Item = Chunk<M::VectorSpace>>,
+    ) -> anyhow::Result<Id>
+    where
+        R: Serialize + DeserializeOwned,
+    {
+        self.table.insert(chunks, value).await
+    }
+
+    /// Insert a new record into the table and return the id of the record.
     pub async fn insert(&self, value: R) -> anyhow::Result<Id>
     where
-        R: HasDocument + Serialize + DeserializeOwned,
+        R: AsRef<Document> + Serialize + DeserializeOwned,
     {
+        let chunks = self
+            .chunker
+            .chunk(value.as_ref(), &self.embedding_model)
+            .await?;
+        self.insert_with_chunks(value, chunks).await
+    }
+
+    /// Extend the table with a iterator of new records.
+    pub async fn extend<T: IntoIterator<Item = R> + Send>(&self, iter: T) -> anyhow::Result<Vec<Id>>
+    where
+        R: AsRef<Document> + Serialize + DeserializeOwned,
+        K: Sync,
+    {
+        let entries = iter.into_iter().collect::<Vec<_>>();
+        let documents = entries.iter().map(|v| v.as_ref()).collect::<Vec<_>>();
         let embeddings = self
             .chunker
-            .chunk(value.document(), &self.embedding_model)
+            .chunk_batch(documents, &self.embedding_model)
             .await?;
-        self.table
-            .insert(
-                embeddings
-                    .into_iter()
-                    .flat_map(|embedding| embedding.embeddings),
-                value,
-            )
-            .await
+        let mut ids = Vec::new();
+        for (value, embeddings) in entries.into_iter().zip(embeddings) {
+            let id = self.table.insert(embeddings, value).await?;
+            ids.push(id);
+        }
+        Ok(ids)
     }
 
     /// Update a record in the table with the given embedding id.
@@ -137,6 +153,19 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     }
 }
 
+impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
+    /// Extend the table from [`IntoDocuments`]
+    pub async fn add_context(&self, context: impl IntoDocuments) -> anyhow::Result<Vec<Id>>
+    where
+        R: From<Document> + AsRef<Document> + Serialize + DeserializeOwned,
+        K: Sync,
+    {
+        let documents = context.into_documents().await?;
+        let iter = documents.into_iter().map(|v| v.into());
+        self.extend(iter).await
+    }
+}
+
 /// A builder for creating a new document table.
 pub struct DocumentTableBuilder<C: Connection, E, K: Chunker> {
     table: String,
@@ -176,9 +205,14 @@ impl<C: Connection, E, K: Chunker> DocumentTableBuilder<C, E, K> {
     }
 
     /// Set the chunking strategy for the table.
-    pub fn with_chunker(mut self, chunker: K) -> Self {
-        self.chunker = chunker;
-        self
+    pub fn with_chunker<K2: Chunker>(self, chunker: K2) -> DocumentTableBuilder<C, E, K2> {
+        DocumentTableBuilder {
+            chunker,
+            table: self.table,
+            db: self.db,
+            location: self.location,
+            embedding_model: self.embedding_model,
+        }
     }
 
     /// Build the document table.
@@ -203,7 +237,7 @@ impl<C: Connection, E, K: Chunker> DocumentTableBuilder<C, E, K> {
             Some(embedding_model) => embedding_model,
             None => {
                 if TypeId::of::<E>() == TypeId::of::<Bert>() {
-                    let embedding_model = Bert::builder().build().await?;
+                    let embedding_model = Bert::new().await?;
                     *(Box::new(embedding_model) as Box<dyn Any>)
                         .downcast::<E>()
                         .unwrap()

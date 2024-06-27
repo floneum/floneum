@@ -12,6 +12,7 @@ repository = "https://github.com/floneum/floneum"
 anyhow = "1.0.75"
 async-trait = "0.1.74"
 comfy-table = "7.1.0"
+ego-tree = "0.6.2"
 futures-util = "0.3.28"
 hdrhistogram = "7.5.4"
 image = "0.24.7"
@@ -52,7 +53,7 @@ version = "1.0.163"
 features = ["derive"]
 
 [dependencies.surrealdb]
-version = "1.1.1"
+version = "1.5.1"
 features = ["kv-rocksdb"]
 optional = true
 
@@ -67,9 +68,8 @@ default-features = false
 
 [dev-dependencies]
 axum = "0.7.2"
-ego-tree = "0.6.2"
-scraper = "0.18.1"
-tokenizers = "0.15.0"
+scraper = "0.19.0"
+tokenizers = "0.19.1"
 tracing-subscriber = "0.2"
 
 [dev-dependencies.candle-core]
@@ -101,3 +101,123 @@ sound = ["kalosm-sound"]
 surrealdb = ["dep:surrealdb"]
 vision = ["kalosm-vision"]
 remote = ["kalosm-language?/remote"]
+
+[[example]]
+name = "axum"
+required-features = ["language"]
+
+[[example]]
+name = "chat-mistral-2"
+required-features = ["language"]
+
+[[example]]
+name = "chat-phi-3"
+required-features = ["language"]
+
+[[example]]
+name = "chat-tiny-llama"
+required-features = ["language"]
+
+[[example]]
+name = "chat-with-character"
+required-features = ["language"]
+
+[[example]]
+name = "chat"
+required-features = ["language"]
+
+[[example]]
+name = "chunking"
+required-features = ["language"]
+
+[[example]]
+name = "constrained-regex"
+required-features = ["language"]
+
+[[example]]
+name = "constrained-rust-types"
+required-features = ["language"]
+
+[[example]]
+name = "constrained"
+required-features = ["language"]
+
+[[example]]
+name = "crawl"
+required-features = ["language"]
+
+[[example]]
+name = "evaluation"
+required-features = ["language"]
+
+[[example]]
+name = "generate-image"
+required-features = ["language"]
+
+[[example]]
+name = "generate-text"
+required-features = ["language"]
+
+[[example]]
+name = "live-qa"
+required-features = ["language", "sound", "surrealdb"]
+
+[[example]]
+name = "llama"
+required-features = ["language"]
+
+[[example]]
+name = "mistral"
+required-features = ["language"]
+
+[[example]]
+name = "mutate"
+required-features = ["language"]
+
+[[example]]
+name = "ocr"
+required-features = ["vision"]
+
+[[example]]
+name = "phi"
+required-features = ["language"]
+
+[[example]]
+name = "prompt-annealing"
+required-features = ["language"]
+
+[[example]]
+name = "remote-open-ai-compatable"
+required-features = ["language"]
+
+[[example]]
+name = "remote"
+required-features = ["language"]
+
+[[example]]
+name = "resume-chat"
+required-features = ["language"]
+
+[[example]]
+name = "segment-image"
+required-features = ["vision"]
+
+[[example]]
+name = "self-chat"
+required-features = ["language"]
+
+[[example]]
+name = "semantic-search"
+required-features = ["language", "surrealdb"]
+
+[[example]]
+name = "task"
+required-features = ["language"]
+
+[[example]]
+name = "tools"
+required-features = ["language"]
+
+[[example]]
+name = "transcribe"
+required-features = ["audio"]

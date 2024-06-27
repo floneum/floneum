@@ -92,7 +92,7 @@ impl MutatorBuilder {
         let examples = self.examples.unwrap_or_else(|| {
             EXAMPLES
                 .iter()
-                .map(|(a, b)| (a.to_string(), { PREFIX.to_string() + &b }))
+                .map(|(a, b)| (a.to_string(), { PREFIX.to_string() + b }))
                 .collect::<Vec<_>>()
         });
 

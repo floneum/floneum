@@ -104,6 +104,14 @@ impl Llama {
             .await
     }
 
+    /// Create a default phi-3 chat model.
+    pub async fn phi_3() -> anyhow::Result<Self> {
+        Llama::builder()
+            .with_source(LlamaSource::phi_3_mini_4k_instruct())
+            .build()
+            .await
+    }
+
     /// Create a default text generation model.
     pub async fn new() -> anyhow::Result<Self> {
         Llama::builder()
@@ -248,7 +256,7 @@ impl LlamaBuilder {
             }
         };
 
-        let cache = LlamaCache::new(model.config.n_layer);
+        let cache = LlamaCache::new(&model.config);
 
         Ok(Llama::from_build(
             model,

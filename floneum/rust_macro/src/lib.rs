@@ -42,7 +42,7 @@ pub fn export_plugin(args: TokenStream, input: TokenStream) -> TokenStream {
             if let Meta::NameValue(meta) = &attr.meta {
                 let value = &meta.value;
                 let lit: LitStr = try_parse_quote!(#value);
-                description += &lit.value().trim();
+                description += lit.value().trim();
                 description += "\n";
             }
         }

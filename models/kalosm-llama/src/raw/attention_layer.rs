@@ -1,4 +1,4 @@
-use super::cache::{AttentionCache, AttentionCacheValue};
+use super::cache::AttentionCache;
 use super::mask::AttentionMask;
 use super::rope::RopeCache;
 use candle_core::Device;
@@ -105,31 +105,7 @@ impl LlamaAttention {
 
         let (key_states, value_states) = match cache {
             None => (key_states, value_states),
-            Some(cache) => match &mut cache.0 {
-                Some(AttentionCacheValue { key, value }) => {
-                    let kv_seq_len = key_states.dim(candle_core::D::Minus2)?;
-                    let (k, v) = if kv_seq_len == 0 {
-                        (key_states, value_states)
-                    } else {
-                        let key_states = Tensor::cat(&[&*key, &key_states], 2)?.contiguous()?;
-                        let value_states =
-                            Tensor::cat(&[&*value, &value_states], 2)?.contiguous()?;
-                        (key_states, value_states)
-                    };
-
-                    *key = k.clone();
-                    *value = v.clone();
-
-                    (k, v)
-                }
-                None => {
-                    cache.0 = Some(AttentionCacheValue {
-                        key: key_states.clone(),
-                        value: value_states.clone(),
-                    });
-                    (key_states, value_states)
-                }
-            },
+            Some(cache) => cache.append(&key_states, &value_states)?,
         };
 
         let mut attn_weights = (query_states.matmul(&key_states.t()?)? / (head_dim as f64).sqrt())?;
@@ -140,7 +116,7 @@ impl LlamaAttention {
 
         attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights)?;
 
-        let mut attn_output = attn_weights.matmul(&value_states.contiguous()?)?;
+        let mut attn_output = attn_weights.matmul(&value_states)?;
 
         if attn_output.dims() != [bsz, num_heads, q_len, head_dim] {
             return Err(candle_core::Error::Msg(format!(

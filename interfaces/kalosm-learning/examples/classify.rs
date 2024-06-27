@@ -87,7 +87,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             &dev,
             ClassifierConfig::new(384).layers_dims(layers.clone()),
         )?);
-        if let Err(error) = classifier.train(&dataset, &dev, 100) {
+        if let Err(error) = classifier.train(&dataset, &dev, 100, 0.0003, 100) {
             println!("Error: {:?}", error);
         } else {
             break;

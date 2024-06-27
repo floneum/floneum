@@ -59,6 +59,24 @@ impl Document {
     }
 }
 
+impl From<String> for Document {
+    fn from(value: String) -> Self {
+        Self::from_parts("", value)
+    }
+}
+
+impl From<&str> for Document {
+    fn from(value: &str) -> Self {
+        Self::from_parts("", value)
+    }
+}
+
+impl AsRef<Document> for Document {
+    fn as_ref(&self) -> &Document {
+        self
+    }
+}
+
 impl std::fmt::Display for Document {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}\n{}", self.title, self.body)

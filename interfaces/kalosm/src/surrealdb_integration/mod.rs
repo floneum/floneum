@@ -1,6 +1,7 @@
 use kalosm_language::prelude::*;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use std::ops::Range;
 use surrealdb::sql::{Id, Thing};
 use surrealdb::{Connection, Surreal};
 
@@ -9,16 +10,23 @@ mod document_table;
 #[cfg(feature = "language")]
 pub use document_table::*;
 
+/// A link between a document and an embedding.
+///
+/// This type is stored in the [`EmbeddingIndexedTable::table_links`] table.
 #[derive(Serialize, Deserialize)]
-struct DocumentLink {
+pub struct DocumentLink {
     document_id: Id,
+    byte_range: std::ops::Range<usize>,
 }
 
+/// An object with associated embedding ids.
+///
+/// This type is stored in the [`EmbeddingIndexedTable::table`] table.
 #[derive(Serialize, Deserialize)]
-struct ObjectWithEmbeddingIds<T> {
+pub struct ObjectWithEmbeddingIds<T> {
     #[serde(flatten)]
     object: T,
-    embedding_ids: Vec<EmbeddingId>,
+    chunks: Vec<(Range<usize>, Vec<EmbeddingId>)>,
 }
 
 /// A table in a surreal database with a primary key tied to an embedding in a vector database.
@@ -35,8 +43,8 @@ impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
         &self.table
     }
 
-    /// Get the name of the table. The table has a id with the same number as an embedding id and the value of the id of the object in the table
-    fn table_links(&self) -> String {
+    /// Get the name of the table that links embedding ids to byte ranges in documents.
+    pub fn table_links(&self) -> String {
         format!("{}-links", &self.table)
     }
 
@@ -50,43 +58,78 @@ impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
         &self.db
     }
 
+    /// Delete the table from the database and clear the vector database. Returns the contents of the table.
+    pub async fn delete_table(self) -> anyhow::Result<Vec<(R, Vec<Chunk<S>>)>>
+    where
+        R: DeserializeOwned,
+    {
+        let _: Vec<DocumentLink> = self.db.delete(&self.table_links()).await?;
+        let embeddings: Vec<ObjectWithEmbeddingIds<R>> = self.db.delete(&self.table).await?;
+
+        let mut documents = Vec::with_capacity(embeddings.len());
+
+        for embedding in embeddings {
+            let mut chunks = Vec::with_capacity(embedding.chunks.len());
+            for (byte_range, embedding_ids) in embedding.chunks {
+                let mut embeddings = Vec::with_capacity(embedding_ids.len());
+                for embedding_id in embedding_ids {
+                    let embedding = self.vector_db.get_embedding(embedding_id)?;
+                    embeddings.push(embedding);
+                }
+                chunks.push(Chunk {
+                    byte_range,
+                    embeddings,
+                });
+            }
+            documents.push((embedding.object, chunks));
+        }
+        self.vector_db.clear().await?;
+
+        Ok(documents)
+    }
+
     /// Insert a new record into the table with the given embedding.
     pub async fn insert(
         &self,
-        embeddings: impl IntoIterator<Item = Embedding<S>>,
+        chunks: impl IntoIterator<Item = Chunk<S>>,
         value: R,
     ) -> anyhow::Result<Id>
     where
         R: Serialize + DeserializeOwned,
     {
         let id = Id::uuid();
-        let embedding_ids = embeddings
-            .into_iter()
-            .map(|embedding| self.vector_db.add_embedding(embedding))
-            .collect::<anyhow::Result<Vec<_>>>()?;
+
+        let mut embedding_ids = Vec::new();
         let thing = Thing {
             tb: self.table.clone(),
             id: id.clone(),
         };
 
-        for embedding_id in &embedding_ids {
-            let link = Thing {
-                tb: self.table_links(),
-                id: Id::Number(embedding_id.0 as i64),
-            };
-            self.db
-                .create::<Option<DocumentLink>>(link)
-                .content(DocumentLink {
-                    document_id: id.clone(),
-                })
-                .await?;
+        for chunk in chunks {
+            let chunk_embedding_ids = self.vector_db.add_embeddings(chunk.embeddings)?;
+            for embedding_id in &chunk_embedding_ids {
+                let byte_range = chunk.byte_range.clone();
+
+                let link = Thing {
+                    tb: self.table_links(),
+                    id: Id::Number(embedding_id.0 as i64),
+                };
+                self.db
+                    .create::<Option<DocumentLink>>(link)
+                    .content(DocumentLink {
+                        document_id: id.clone(),
+                        byte_range,
+                    })
+                    .await?;
+            }
+            embedding_ids.push((chunk.byte_range.clone(), chunk_embedding_ids));
         }
 
         self.db
             .create::<Option<ObjectWithEmbeddingIds<R>>>(thing)
             .content(ObjectWithEmbeddingIds {
                 object: value,
-                embedding_ids,
+                chunks: embedding_ids,
             })
             .await?;
 
@@ -141,10 +184,14 @@ impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
         if let Some(old) = old {
             let ObjectWithEmbeddingIds {
                 object,
-                embedding_ids,
+                chunks: embedding_ids,
             } = old;
             // Then delete the links from the links table
-            for id in embedding_ids {
+            for id in embedding_ids
+                .iter()
+                .flat_map(|(_, ids)| ids.iter())
+                .copied()
+            {
                 let link = Thing {
                     tb: self.table_links(),
                     id: Id::Number(id.0 as i64),
@@ -194,6 +241,7 @@ impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
                 distance: id.distance,
                 id: id.value,
                 record_id: main_table_id.document_id,
+                byte_range: main_table_id.byte_range,
                 record,
             });
         }
@@ -210,8 +258,23 @@ pub struct EmbeddingIndexedTableSearchResult<R> {
     pub id: EmbeddingId,
     /// The record id.
     pub record_id: Id,
+    /// The byte range of the record.
+    pub byte_range: std::ops::Range<usize>,
     /// The record.
     pub record: R,
+}
+
+impl<R> EmbeddingIndexedTableSearchResult<R>
+where
+    R: DeserializeOwned,
+{
+    /// Get the text of the search result.
+    pub fn text(&self) -> String
+    where
+        R: AsRef<Document>,
+    {
+        self.record.as_ref().body()[self.byte_range.clone()].to_string()
+    }
 }
 
 /// A builder for creating a new document table.

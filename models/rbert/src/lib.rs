@@ -48,145 +48,22 @@ extern crate intel_mkl_src;
 #[cfg(feature = "accelerate")]
 extern crate accelerate_src;
 
-mod language_model;
 use kalosm_common::*;
-pub use language_model::*;
 
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
-use candle_core::Tensor;
+use candle_core::{IndexOp, Tensor};
 use candle_nn::VarBuilder;
-use candle_transformers::models::bert::{BertModel, Config, DTYPE};
-use tokenizers::{PaddingParams, Tokenizer};
+use tokenizers::{Encoding, PaddingParams, Tokenizer};
 
-/// A the source of a [`Bert`] model
-pub struct BertSource {
-    config: FileSource,
-    tokenizer: FileSource,
-    model: FileSource,
-}
+mod language_model;
+mod raw;
+mod source;
 
-impl BertSource {
-    /// Set the model to use, check out available models: <https://huggingface.co/models?library=sentence-transformers&sort=trending>
-    pub fn with_model(mut self, model: FileSource) -> Self {
-        self.model = model;
-        self
-    }
-
-    /// Set the tokenizer to use
-    pub fn with_tokenizer(mut self, tokenizer: FileSource) -> Self {
-        self.tokenizer = tokenizer;
-        self
-    }
-
-    /// Set the config to use
-    pub fn with_config(mut self, config: FileSource) -> Self {
-        self.config = config;
-        self
-    }
-
-    /// Create a new [`BertSource`] with the BGE large english preset
-    pub fn bge_large_en() -> Self {
-        Self::default()
-            .with_model(FileSource::huggingface(
-                "BAAI/bge-large-en-v1.5".to_string(),
-                "refs/pr/5".to_string(),
-                "model.safetensors".to_string(),
-            ))
-            .with_tokenizer(FileSource::huggingface(
-                "BAAI/bge-large-en-v1.5".to_string(),
-                "refs/pr/5".to_string(),
-                "tokenizer.json".to_string(),
-            ))
-            .with_config(FileSource::huggingface(
-                "BAAI/bge-large-en-v1.5".to_string(),
-                "refs/pr/5".to_string(),
-                "config.json".to_string(),
-            ))
-    }
-
-    /// Create a new [`BertSource`] with the BGE base english preset
-    pub fn bge_base_en() -> Self {
-        Self::default()
-            .with_model(FileSource::huggingface(
-                "BAAI/bge-base-en-v1.5".to_string(),
-                "refs/pr/1".to_string(),
-                "model.safetensors".to_string(),
-            ))
-            .with_tokenizer(FileSource::huggingface(
-                "BAAI/bge-base-en-v1.5".to_string(),
-                "refs/pr/1".to_string(),
-                "tokenizer.json".to_string(),
-            ))
-            .with_config(FileSource::huggingface(
-                "BAAI/bge-base-en-v1.5".to_string(),
-                "refs/pr/1".to_string(),
-                "config.json".to_string(),
-            ))
-    }
-
-    /// Create a new [`BertSource`] with the BGE small english preset
-    pub fn bge_small_en() -> Self {
-        Self::default()
-            .with_model(FileSource::huggingface(
-                "BAAI/bge-small-en-v1.5".to_string(),
-                "refs/pr/3".to_string(),
-                "model.safetensors".to_string(),
-            ))
-            .with_tokenizer(FileSource::huggingface(
-                "BAAI/bge-small-en-v1.5".to_string(),
-                "refs/pr/3".to_string(),
-                "tokenizer.json".to_string(),
-            ))
-            .with_config(FileSource::huggingface(
-                "BAAI/bge-small-en-v1.5".to_string(),
-                "refs/pr/3".to_string(),
-                "config.json".to_string(),
-            ))
-    }
-
-    /// Create a new [`BertSource`] with the MiniLM-L6-v2 preset
-    pub fn mini_lm_l6_v2() -> Self {
-        Self::default()
-            .with_model(FileSource::huggingface(
-                "sentence-transformers/all-MiniLM-L6-v2".to_string(),
-                "refs/pr/21".to_string(),
-                "model.safetensors".to_string(),
-            ))
-            .with_tokenizer(FileSource::huggingface(
-                "sentence-transformers/all-MiniLM-L6-v2".to_string(),
-                "refs/pr/21".to_string(),
-                "tokenizer.json".to_string(),
-            ))
-            .with_config(FileSource::huggingface(
-                "sentence-transformers/all-MiniLM-L6-v2".to_string(),
-                "refs/pr/21".to_string(),
-                "config.json".to_string(),
-            ))
-    }
-}
-
-impl Default for BertSource {
-    fn default() -> Self {
-        Self {
-            config: FileSource::huggingface(
-                "sentence-transformers/all-MiniLM-L6-v2".to_string(),
-                "refs/pr/21".to_string(),
-                "config.json".to_string(),
-            ),
-            tokenizer: FileSource::huggingface(
-                "sentence-transformers/all-MiniLM-L6-v2".to_string(),
-                "refs/pr/21".to_string(),
-                "tokenizer.json".to_string(),
-            ),
-            model: FileSource::huggingface(
-                "sentence-transformers/all-MiniLM-L6-v2".to_string(),
-                "refs/pr/21".to_string(),
-                "model.safetensors".to_string(),
-            ),
-        }
-    }
-}
+pub use crate::language_model::*;
+use crate::raw::DTYPE;
+pub use crate::raw::{BertModel, Config};
+pub use crate::source::*;
 
 /// A builder for a [`Bert`] model
 #[derive(Default)]
@@ -216,10 +93,20 @@ impl BertBuilder {
     }
 }
 
+/// The pooling strategy to use when embedding text.
+#[derive(Debug, Clone, Copy)]
+pub enum Pooling {
+    /// Take the mean embedding value for all tokens (except padding)
+    Mean,
+    /// Take the embedding of the CLS token for each sequence
+    CLS,
+}
+
 /// A bert model
+#[derive(Clone)]
 pub struct Bert {
-    model: BertModel,
-    tokenizer: RwLock<Tokenizer>,
+    model: Arc<BertModel>,
+    tokenizer: Arc<RwLock<Tokenizer>>,
 }
 
 impl Bert {
@@ -267,43 +154,89 @@ impl Bert {
         let vb =
             unsafe { VarBuilder::from_mmaped_safetensors(&[&weights_filename], DTYPE, &device)? };
         let model = BertModel::load(vb, &config)?;
-        let tokenizer = Tokenizer::from_file(&tokenizer_filename).map_err(anyhow::Error::msg)?;
+        let mut tokenizer =
+            Tokenizer::from_file(&tokenizer_filename).map_err(anyhow::Error::msg)?;
+        tokenizer.with_padding(None);
 
         Ok(Bert {
-            tokenizer: RwLock::new(tokenizer),
-            model,
+            tokenizer: Arc::new(RwLock::new(tokenizer)),
+            model: Arc::new(model),
         })
     }
 
     /// Embed a batch of sentences
-    pub(crate) fn embed_batch_raw(&self, sentences: &[&str]) -> anyhow::Result<Vec<Tensor>> {
-        let mut combined = Vec::new();
-        for batch in sentences.chunks(4) {
-            let embeddings = self.embed_batch_raw_inner(batch)?;
-            combined.extend(embeddings);
+    pub(crate) fn embed_batch_raw<'a>(
+        &self,
+        sentences: impl IntoIterator<Item = &'a str>,
+        pooling: Pooling,
+    ) -> anyhow::Result<Vec<Tensor>> {
+        let embedding_dim = self.model.embedding_dim();
+        // The batch size limit (input length * memory per token)
+        let limit = embedding_dim * 512usize.pow(2) * 2;
+
+        // The sentences we are embedding may have a very different length. First we sort them so that similar length sentences are grouped together in the same batch to reduce the overhead of padding.
+        let sentences = sentences.into_iter().collect::<Vec<_>>();
+        let encodings = {
+            let tokenizer_read = self.tokenizer.read().unwrap();
+            tokenizer_read.encode_batch(sentences, true)
         }
-        Ok(combined)
+        .map_err(anyhow::Error::msg)?;
+        let mut encodings_with_indices = encodings.into_iter().enumerate().collect::<Vec<_>>();
+
+        encodings_with_indices.sort_unstable_by_key(|(_, encoding)| encoding.len());
+
+        let mut combined: Vec<Option<Tensor>> = vec![None; encodings_with_indices.len()];
+        let mut chunks = Vec::new();
+        let mut current_chunk_len = 0;
+        let mut current_chunk_max_token_len = 0;
+        let mut current_chunk_indices = Vec::new();
+        let mut current_chunk_text: Vec<Encoding> = Vec::new();
+        for (index, encoding) in encodings_with_indices {
+            let len = encoding.get_ids().len();
+            current_chunk_max_token_len = current_chunk_max_token_len.max(len);
+            current_chunk_len += 1;
+            let score = current_chunk_len
+                * (embedding_dim * 8 + embedding_dim * current_chunk_max_token_len.pow(2));
+            if score > limit {
+                chunks.push((
+                    std::mem::take(&mut current_chunk_indices),
+                    std::mem::take(&mut current_chunk_text),
+                ));
+                current_chunk_max_token_len = len;
+                current_chunk_len = 1;
+            }
+            current_chunk_indices.push(index);
+            current_chunk_text.push(encoding);
+        }
+        // Add the last chunk even if the score isn't maxed out
+        chunks.push((
+            std::mem::take(&mut current_chunk_indices),
+            std::mem::take(&mut current_chunk_text),
+        ));
+
+        for (indices, encodings) in chunks {
+            let embeddings =
+                maybe_autoreleasepool(|| self.embed_batch_raw_inner(encodings, pooling))?;
+            for (i, embedding) in indices.iter().zip(embeddings) {
+                combined[*i] = Some(embedding);
+            }
+        }
+        Ok(combined.into_iter().map(|x| x.unwrap()).collect())
     }
 
-    fn embed_batch_raw_inner(&self, sentences: &[&str]) -> anyhow::Result<Vec<Tensor>> {
+    fn embed_batch_raw_inner(
+        &self,
+        mut tokens: Vec<Encoding>,
+        pooling: Pooling,
+    ) -> anyhow::Result<Vec<Tensor>> {
         let device = &self.model.device;
-
-        let n_sentences = sentences.len();
-        let tokens = {
-            let mut tokenizer_write = self.tokenizer.write().unwrap();
-            if let Some(pp) = tokenizer_write.get_padding_mut() {
-                pp.strategy = tokenizers::PaddingStrategy::BatchLongest
-            } else {
-                let pp = PaddingParams {
-                    strategy: tokenizers::PaddingStrategy::BatchLongest,
-                    ..Default::default()
-                };
-                tokenizer_write.with_padding(Some(pp));
-            }
-            tokenizer_write
-                .encode_batch(sentences.to_vec(), true)
-                .map_err(anyhow::Error::msg)?
+        let pp = PaddingParams {
+            strategy: tokenizers::PaddingStrategy::BatchLongest,
+            ..Default::default()
         };
+        tokenizers::pad_encodings(&mut tokens, &pp).map_err(anyhow::Error::msg)?;
+
+        let n_sentences = tokens.len();
         let token_ids = tokens
             .iter()
             .map(|tokens| {
@@ -311,17 +244,45 @@ impl Bert {
                 Ok(Tensor::new(tokens.as_slice(), device)?)
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
-
         let token_ids = Tensor::stack(&token_ids, 0)?;
-        let token_type_ids = token_ids.zeros_like()?;
-        let embeddings = self.model.forward(&token_ids, &token_type_ids)?;
-        // Apply some avg-pooling by taking the mean embedding value for all tokens (including padding)
-        let (_n_sentence, n_tokens, _hidden_size) = embeddings.dims3()?;
-        let embeddings = (embeddings.sum(1)? / (n_tokens as f64))?;
-        let embeddings = normalize_l2(&embeddings)?;
-        let embeddings = embeddings.chunk(n_sentences, 0)?;
 
-        Ok(embeddings)
+        let attention_masks = tokens
+            .iter()
+            .map(|tokens| {
+                let attention_mask = tokens.get_attention_mask();
+                let attention_mask = Tensor::new(attention_mask, device)?;
+                Ok(attention_mask)
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        let attention_mask = Tensor::stack(&attention_masks, 0)?;
+
+        // The token type ids are only used for next sentence prediction. We can just set them to zero for embedding tasks.
+        let token_type_ids = token_ids.zeros_like()?;
+        let embeddings =
+            self.model
+                .forward(&token_ids, &token_type_ids, Some(&attention_mask), false)?;
+
+        let (_n_sentence, n_tokens, _hidden_size) = embeddings.dims3()?;
+
+        match pooling {
+            Pooling::Mean => {
+                // Take the mean embedding value for all tokens (except padding)
+                let embeddings = embeddings.mul(
+                    &attention_mask
+                        .to_dtype(DTYPE)?
+                        .unsqueeze(2)?
+                        .broadcast_as(embeddings.shape())?,
+                )?;
+                let embeddings = (embeddings.sum(1)? / (n_tokens as f64))?;
+                let embeddings = normalize_l2(&embeddings)?;
+                Ok(embeddings.chunk(n_sentences, 0)?)
+            }
+            Pooling::CLS => {
+                // Index into the first token of each sentence which is the CLS token that contains the sentence embedding
+                let indexed_embeddings = embeddings.i((.., 0, ..))?;
+                Ok(indexed_embeddings.chunk(n_sentences, 0)?)
+            }
+        }
     }
 }
 
