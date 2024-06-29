@@ -32,7 +32,10 @@ impl ResourceStorage {
             let index = self_.into();
             let page = self.get(index).ok_or(anyhow::anyhow!("Page not found"))?;
             let node = page.find(&query)?;
-            node.into_inner().node_id
+            match node.id() {
+                kalosm::language::NodeRef::Dynamic(node_id) => node_id,
+                kalosm::language::NodeRef::Static(_) => anyhow::bail!("Static node not supported"),
+            }
         };
         let node = AnyNodeRef {
             node_id: node_id as u32,
