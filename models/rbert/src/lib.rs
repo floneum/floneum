@@ -11,14 +11,14 @@
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
 //!     let mut bert = Bert::builder().build()?;
-//!     let sentences = vec![
+//!     let sentences = [
 //!         "Cats are cool",
 //!         "The geopolitical situation is dire",
 //!         "Pets are great",
 //!         "Napoleon was a tyrant",
 //!         "Napoleon was a great general",
 //!     ];
-//!     let embeddings = bert.embed_batch(&sentences).await?;
+//!     let embeddings = bert.embed_batch(sentences).await?;
 //!     println!("embeddings {:?}", embeddings);
 //!
 //!     // Find the cosine similarity between the first two sentences

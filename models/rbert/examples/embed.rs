@@ -1,17 +1,14 @@
-use kalosm_language_model::Embedder;
 use rbert::*;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let bert = Bert::builder().build().await?;
-    let sentences = vec![
-        "Cats are cool",
-        "The geopolitical situation is dire",
-        "Pets are great",
-        "Napoleon was a tyrant",
-        "Napoleon was a great general",
+    let sentences = [
+        "Kalosm can be used to build local AI applications",
+        "With private LLMs data never leaves your computer",
+        "The quick brown fox jumps over the lazy dog",
     ];
-    let embeddings = bert.embed_batch(&sentences).await?;
+    let embeddings = bert.embed_batch(sentences).await?;
     println!("embeddings {:?}", embeddings);
 
     // Find the cosine similarity between the first two sentences

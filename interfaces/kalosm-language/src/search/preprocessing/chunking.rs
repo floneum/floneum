@@ -224,9 +224,9 @@ impl Chunker for ChunkStrategy {
         let mut documents = Vec::new();
         let chunk_ranges = self.chunk_str(body);
         for byte_range in &chunk_ranges {
-            documents.push(&document.body()[byte_range.clone()]);
+            documents.push(document.body()[byte_range.clone()].to_string());
         }
-        let embeddings = embedder.embed_batch(&documents).await?;
+        let embeddings = embedder.embed_vec(documents).await?;
         for (byte_range, embedding) in chunk_ranges.into_iter().zip(embeddings) {
             chunks.push(Chunk {
                 byte_range,
@@ -251,12 +251,12 @@ impl Chunker for ChunkStrategy {
             let body = document.body();
             let chunk = self.chunk_str(body);
             for byte_range in &chunk {
-                chunk_strings.push(&body[byte_range.clone()]);
+                chunk_strings.push(body[byte_range.clone()].to_string());
             }
             chunks.push(chunk);
         }
 
-        let mut embeddings = embedder.embed_batch(&chunk_strings).await?;
+        let mut embeddings = embedder.embed_vec(chunk_strings).await?;
         let mut embeddings = embeddings.drain(..);
         let mut embedded_chunks = Vec::new();
 

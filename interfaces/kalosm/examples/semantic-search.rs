@@ -62,7 +62,7 @@ async fn main() {
         );
         let user_question_embedding = document_table
             .embedding_model()
-            .embed(&user_question)
+            .embed(user_question)
             .await
             .unwrap();
 

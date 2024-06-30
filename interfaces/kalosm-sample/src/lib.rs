@@ -109,6 +109,20 @@ pub trait Tokenizer {
     fn get_all_tokens(&self) -> anyhow::Result<Cow<'_, [u32]>>;
 }
 
+impl Tokenizer for Box<dyn Tokenizer + Send + Sync + 'static> {
+    fn encode(&self, text: &str, special_tokens: bool) -> anyhow::Result<Vec<u32>> {
+        self.as_ref().encode(text, special_tokens)
+    }
+
+    fn decode(&self, ids: &[u32]) -> anyhow::Result<Cow<'_, str>> {
+        self.as_ref().decode(ids)
+    }
+
+    fn get_all_tokens(&self) -> anyhow::Result<Cow<'_, [u32]>> {
+        self.as_ref().get_all_tokens()
+    }
+}
+
 impl<M, N, PT, PP, D> Tokenizer for tokenizers::tokenizer::TokenizerImpl<M, N, PT, PP, D>
 where
     M: Model,

@@ -139,11 +139,11 @@ impl Chunker for SemanticChunker {
             let trimmed = text[chunk.clone()].trim();
             if !trimmed.is_empty() {
                 current_chunks.push(chunk);
-                initial_chunks.push(trimmed);
+                initial_chunks.push(trimmed.to_string());
             }
         }
 
-        let embeddings = embedder.embed_batch(&initial_chunks).await?;
+        let embeddings = embedder.embed_vec(initial_chunks).await?;
 
         let mut chunks = Vec::new();
 

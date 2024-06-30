@@ -1,9 +1,10 @@
 use async_openai::types::CreateEmbeddingRequestArgs;
 use async_openai::{types::CreateCompletionRequestArgs, Client};
-use futures_util::StreamExt;
+use futures_util::{Future, StreamExt};
 use kalosm_common::*;
 use kalosm_sample::Tokenizer;
 use kalosm_streams::text_stream::ChannelTextStream;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use crate::{Embedder, Embedding, GenerationParameters, ModelBuilder, VectorSpace};
@@ -231,21 +232,50 @@ pub struct AdaEmbedding;
 
 impl VectorSpace for AdaEmbedding {}
 
-#[async_trait::async_trait]
+impl AdaEmbedder {
+    /// The model ID for the Ada embedding model.
+    pub const MODEL_ID: &'static str = "text-embedding-ada-002";
+}
+
 impl Embedder for AdaEmbedder {
     type VectorSpace = AdaEmbedding;
 
     /// Embed a single string.
-    async fn embed(&self, input: &str) -> anyhow::Result<Embedding<AdaEmbedding>> {
-        let request = CreateEmbeddingRequestArgs::default()
-            .model("text-embedding-ada-002")
-            .input([input])
-            .build()?;
+    fn embed_string(
+        &self,
+        input: String,
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<Embedding<AdaEmbedding>>> + Send + '_>> {
+        Box::pin(async move {
+            let request = CreateEmbeddingRequestArgs::default()
+                .model(Self::MODEL_ID)
+                .input([input])
+                .build()?;
+            let response = self.client.embeddings().create(request).await?;
 
-        let response = self.client.embeddings().create(request).await?;
+            let embedding = Embedding::from(response.data[0].embedding.iter().copied());
 
-        let embedding = Embedding::from(response.data[0].embedding.iter().copied());
+            Ok(embedding)
+        })
+    }
 
-        Ok(embedding)
+    /// Embed a single string.
+    fn embed_vec(
+        &self,
+        input: Vec<String>,
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<Vec<Embedding<AdaEmbedding>>>> + Send + '_>>
+    {
+        Box::pin(async move {
+            let request = CreateEmbeddingRequestArgs::default()
+                .model(Self::MODEL_ID)
+                .input(input)
+                .build()?;
+            let response = self.client.embeddings().create(request).await?;
+
+            Ok(response
+                .data
+                .into_iter()
+                .map(|data| Embedding::from(data.embedding.into_iter()))
+                .collect())
+        })
     }
 }

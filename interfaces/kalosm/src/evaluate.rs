@@ -33,18 +33,16 @@ impl BertDistance {
 }
 
 #[async_trait]
-impl<S: AsRef<str> + Send + Sync> Metric<S> for BertDistance {
+impl<S: ToString + Send + Sync> Metric<S> for BertDistance {
     async fn distance(&mut self, first: &S, other: &S) -> f64 {
-        let first_embedding = self
+        let embeddings = self
             .bert
-            .embed(first.as_ref())
+            .embed_vec(vec![first.to_string(), other.to_string()])
             .await
-            .expect("Failed to embed this string");
-        let other_embedding = self
-            .bert
-            .embed(other.as_ref())
-            .await
-            .expect("Failed to embed other string");
+            .expect("Failed to embed text with Bert");
+        let [first_embedding, other_embedding] = embeddings
+            .try_into()
+            .expect("Failed to get two embeddings from the batch of two input texts from Bert");
         first_embedding.cosine_similarity(&other_embedding).into()
     }
 }

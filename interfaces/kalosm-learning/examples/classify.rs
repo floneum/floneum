@@ -1,5 +1,5 @@
 use kalosm_common::accelerated_device_if_available;
-use kalosm_language_model::Embedder;
+use kalosm_language_model::EmbedderExt;
 use kalosm_learning::{
     Class, Classifier, ClassifierConfig, TextClassifier, TextClassifierDatasetBuilder,
 };

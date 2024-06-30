@@ -79,12 +79,12 @@ impl Chunker for SentenceChunker {
         let body = document.body();
         let ranges = self.split_sentences(document.body());
         for chunk in &ranges {
-            initial_chunks.push(&body[chunk.clone()]);
+            initial_chunks.push(body[chunk.clone()].to_string());
         }
 
         async move {
             // Next embed them all in one big batch
-            let embeddings = embedder.embed_batch(&initial_chunks).await?;
+            let embeddings = embedder.embed_vec(initial_chunks).await?;
 
             // Now merge the embeddings and ranges into chunks
             let mut chunks = Vec::new();
