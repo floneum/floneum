@@ -1,7 +1,5 @@
-use crate::embedding::{Embedding, VectorSpace};
 use crate::structured::generate_structured;
 use crate::TokenOutputStream;
-use crate::UnknownVectorSpace;
 use futures_util::{Stream, StreamExt};
 use kalosm_common::*;
 use kalosm_sample::{Parser, Tokenizer};
@@ -16,83 +14,6 @@ use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
-
-/// A model that can be used to embed text. This trait is generic over the vector space that the model uses to help keep track of what embeddings came from which model.
-///
-/// # Example
-///
-/// ```rust, no_run
-/// use kalosm_language_model::Embedder;
-/// use rbert::*;
-///
-/// #[tokio::main]
-/// async fn main() {
-///     // Bert implements Embedder
-///     let mut bert = Bert::builder().build().unwrap();
-///     let sentences = vec![
-///         "Cats are cool",
-///         "The geopolitical situation is dire",
-///         "Pets are great",
-///         "Napoleon was a tyrant",
-///         "Napoleon was a great general",
-///     ];
-///     // Embed a batch of documents into the bert vector space
-///     let embeddings = bert.embed_batch(&sentences).await.unwrap();
-///     println!("embeddings {:?}", embeddings);
-/// }
-/// ```
-#[async_trait::async_trait]
-pub trait Embedder: Send + Sync + 'static {
-    /// The vector space that this embedder uses.
-    type VectorSpace: VectorSpace + Send + Sync + 'static;
-
-    /// Embed a single string.
-    async fn embed(&self, input: &str) -> anyhow::Result<Embedding<Self::VectorSpace>>;
-
-    /// Embed a batch of strings.
-    async fn embed_batch(
-        &self,
-        inputs: &[&str],
-    ) -> anyhow::Result<Vec<Embedding<Self::VectorSpace>>> {
-        let mut embeddings = Vec::with_capacity(inputs.len());
-        for input in inputs {
-            embeddings.push(self.embed(input).await?);
-        }
-        Ok(embeddings)
-    }
-
-    /// Convert this embedder into an embedder trait object.
-    fn into_any_embedder(self) -> DynEmbedder
-    where
-        Self: Sized,
-    {
-        Box::new(AnyEmbedder::<Self>(self))
-    }
-}
-
-/// A trait object for an embedder.
-pub type DynEmbedder = Box<dyn Embedder<VectorSpace = UnknownVectorSpace>>;
-
-struct AnyEmbedder<E: Embedder + Send + Sync + 'static>(E);
-
-#[async_trait::async_trait]
-impl<E: Embedder + Send + Sync + 'static> Embedder for AnyEmbedder<E> {
-    type VectorSpace = UnknownVectorSpace;
-
-    async fn embed(&self, input: &str) -> anyhow::Result<Embedding<UnknownVectorSpace>> {
-        self.0.embed(input).await.map(|e| e.cast())
-    }
-
-    async fn embed_batch(
-        &self,
-        inputs: &[&str],
-    ) -> anyhow::Result<Vec<Embedding<UnknownVectorSpace>>> {
-        self.0
-            .embed_batch(inputs)
-            .await
-            .map(|e| e.into_iter().map(|e| e.cast()).collect())
-    }
-}
 
 /// A builder that can create a model asynchronously.
 ///

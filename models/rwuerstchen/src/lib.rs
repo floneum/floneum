@@ -174,7 +174,7 @@ pub struct WuerstchenBuilder {
 impl Default for WuerstchenBuilder {
     fn default() -> Self {
         Self {
-            use_flash_attn: { cfg!(feature = "flash-attn") },
+            use_flash_attn: { cfg!(feature = "flash") },
             decoder_weights: None,
             clip_weights: None,
             prior_clip_weights: None,

@@ -99,6 +99,7 @@ rwuerstchen = { path = "./models/rwuerstchen", version = "0.2.1" }
 segment-anything-rs = { path = "./models/segment-anything-rs", version = "0.2.1" }
 kalosm-ocr = { path = "./models/kalosm-ocr", version = "0.2.1" }
 llm-samplers = "=0.0.7"
+parking_lot = "0.12.1"
 
 [patch.crates-io]
 dioxus = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }

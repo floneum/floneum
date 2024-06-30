@@ -137,7 +137,7 @@ impl ResourceStorage {
         let index = self_.into();
         let model = self.initialize_text_embedding_model(index).await?;
         Ok(main::types::Embedding {
-            vector: model.embed(&document).await?.to_vec(),
+            vector: model.embed_string(document).await?.to_vec(),
         })
     }
 

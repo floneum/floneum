@@ -1,5 +1,5 @@
 use candle_core::Device;
-use kalosm_language_model::{Embedder, Embedding, VectorSpace};
+use kalosm_language_model::{Embedder, EmbedderExt, Embedding, VectorSpace};
 
 use crate::{
     Class, ClassificationDataset, ClassificationDatasetBuilder, Classifier, ClassifierConfig,
@@ -22,7 +22,7 @@ impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
     }
 
     /// Adds a new example to the dataset.
-    pub async fn add(&mut self, text: &str, class: T) -> anyhow::Result<()> {
+    pub async fn add(&mut self, text: impl ToString, class: T) -> anyhow::Result<()> {
         let embedding = self.embedder.embed(text).await?;
         self.dataset.add(embedding.to_vec(), class);
         Ok(())
@@ -31,10 +31,10 @@ impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
     /// Add many examples to the dataset.
     pub async fn extend(
         &mut self,
-        examples: impl IntoIterator<Item = (&str, T)>,
+        examples: impl IntoIterator<Item = (impl ToString, T)>,
     ) -> anyhow::Result<()> {
         let (texts, classes): (Vec<_>, Vec<_>) = examples.into_iter().unzip();
-        let embeddings = self.embedder.embed_batch(&texts).await?;
+        let embeddings = self.embedder.embed_batch(texts).await?;
         for (embedding, class) in embeddings.into_iter().zip(classes) {
             self.dataset.add(embedding.to_vec(), class);
         }
@@ -230,7 +230,6 @@ impl<T: Class, S: VectorSpace + Send + Sync + 'static> TextClassifier<T, S> {
 #[tokio::test]
 async fn simplified() -> anyhow::Result<()> {
     use crate::{Class, Classifier, ClassifierConfig};
-    use kalosm_language_model::Embedder;
     use rbert::{Bert, BertSpace};
 
     #[derive(Debug, Copy, Clone, PartialEq, Eq, Class)]

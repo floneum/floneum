@@ -2,9 +2,11 @@ pub use crate::Bert;
 use crate::BertBuilder;
 use crate::Pooling;
 use kalosm_common::*;
-use kalosm_language_model::Embedding;
-use kalosm_language_model::VectorSpace;
-use kalosm_language_model::{Embedder, ModelBuilder};
+pub use kalosm_language_model::{
+    Embedder, EmbedderCacheExt, EmbedderExt, Embedding, ModelBuilder, VectorSpace,
+};
+use serde::Deserialize;
+use serde::Serialize;
 
 #[async_trait::async_trait]
 impl ModelBuilder for BertBuilder {
@@ -51,36 +53,34 @@ impl Bert {
     }
 }
 
-#[async_trait::async_trait]
 impl Embedder for Bert {
     type VectorSpace = BertSpace;
 
-    async fn embed(&self, input: &str) -> anyhow::Result<Embedding<BertSpace>> {
-        let input = input.to_string();
-        let self_clone = self.clone();
-        Ok(
-            tokio::task::spawn_blocking(move || {
-                self_clone.embed_with_pooling(&input, Pooling::CLS)
-            })
-            .await??,
-        )
+    fn embed_string(&self, input: String) -> BoxedFuture<'_, anyhow::Result<Embedding<BertSpace>>> {
+        Box::pin(async move {
+            let self_clone = self.clone();
+            tokio::task::spawn_blocking(move || self_clone.embed_with_pooling(&input, Pooling::CLS))
+                .await?
+        })
     }
 
-    async fn embed_batch(&self, inputs: &[&str]) -> anyhow::Result<Vec<Embedding<BertSpace>>> {
-        let inputs = inputs
-            .iter()
-            .map(|input| input.to_string())
-            .collect::<Vec<_>>();
-        let self_clone = self.clone();
-        Ok(tokio::task::spawn_blocking(move || {
-            let inputs_borrowed = inputs.iter().map(|s| s.as_str()).collect::<Vec<_>>();
-            self_clone.embed_batch_with_pooling(&inputs_borrowed, Pooling::CLS)
+    fn embed_vec(
+        &self,
+        inputs: Vec<String>,
+    ) -> BoxedFuture<'_, anyhow::Result<Vec<Embedding<BertSpace>>>> {
+        Box::pin(async move {
+            let self_clone = self.clone();
+            tokio::task::spawn_blocking(move || {
+                let inputs_borrowed = inputs.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+                self_clone.embed_batch_with_pooling(&inputs_borrowed, Pooling::CLS)
+            })
+            .await?
         })
-        .await??)
     }
 }
 
 /// A vector space for BERT sentence embeddings.
+#[derive(Serialize, Deserialize)]
 pub struct BertSpace;
 
 impl VectorSpace for BertSpace {}

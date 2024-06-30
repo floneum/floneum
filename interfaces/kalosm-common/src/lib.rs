@@ -1,4 +1,4 @@
-use std::{fmt::Display, path::PathBuf, sync::OnceLock};
+use std::{fmt::Display, future::Future, path::PathBuf, pin::Pin, sync::OnceLock};
 
 use candle_core::{utils::*, Device};
 
@@ -93,3 +93,6 @@ pub fn maybe_autoreleasepool<T>(f: impl FnOnce() -> T) -> T {
         f()
     }
 }
+
+/// A future that is boxed and pinned.
+pub type BoxedFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
