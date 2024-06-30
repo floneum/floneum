@@ -76,10 +76,10 @@ members = [
 ]
 
 [workspace.dependencies]
-candle-core = { git = "https://github.com/huggingface/candle" }
-candle-nn = { git = "https://github.com/huggingface/candle" }
-candle-transformers = { git = "https://github.com/huggingface/candle" }
-candle-datasets = { git = "https://github.com/huggingface/candle" }
+candle-core = "=0.3.2"
+candle-nn = "=0.3.2"
+candle-transformers = "=0.3.2"
+candle-datasets = "=0.3.2"
 kalosm = { path = "./interfaces/kalosm", version = "0.2.1" }
 kalosm-sample = { path = "./interfaces/kalosm-sample", version = "0.2.1" }
 kalosm-common = { path = "./interfaces/kalosm-common", version = "0.1.0" }
