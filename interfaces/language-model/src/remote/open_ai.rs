@@ -230,12 +230,12 @@ impl ModelBuilder for AdaEmbedderBuilder {
 /// The embedding space for the Ada embedding model.
 pub struct AdaEmbedding;
 
-impl AdaEmbedding {
+impl VectorSpace for AdaEmbedding {}
+
+impl AdaEmbedder {
     /// The model ID for the Ada embedding model.
     pub const MODEL_ID: &'static str = "text-embedding-ada-002";
 }
-
-impl VectorSpace for AdaEmbedding {}
 
 impl Embedder for AdaEmbedder {
     type VectorSpace = AdaEmbedding;
