@@ -35,7 +35,7 @@ use serde::{Deserialize, Serialize};
 ///         "Napoleon was a tyrant",
 ///         "Napoleon was a great general",
 ///     ];
-///     let embeddings = bert.embed_batch(&sentences).await?;
+///     let embeddings = bert.embed_batch(sentences).await?;
 ///     println!("embeddings {:?}", embeddings);
 ///
 ///     // Create a vector database from the embeddings

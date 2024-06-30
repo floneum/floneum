@@ -23,7 +23,7 @@ use crate::UnknownVectorSpace;
 ///         "Napoleon was a great general",
 ///     ];
 ///     // Embed a batch of documents into the bert vector space
-///     let embeddings = bert.embed_batch(&sentences).await.unwrap();
+///     let embeddings = bert.embed_batch(sentences).await.unwrap();
 ///     println!("embeddings {:?}", embeddings);
 /// }
 /// ```

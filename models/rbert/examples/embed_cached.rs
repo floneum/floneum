@@ -23,13 +23,13 @@ async fn main() -> anyhow::Result<()> {
         "Napoleon was a great general",
     ];
     // When you embed a new sentence, the cache will store the embedding for that sentence.
-    let embeddings = bert.embed_batch(&sentences).await?;
+    let embeddings = bert.embed_batch(sentences).await?;
     println!("{:?}", embeddings);
     println!("embedding uncached took {:?}", start_time.elapsed());
 
     let start_time = std::time::Instant::now();
     // If you embed the same sentences again, the cache will be used.
-    let embeddings = bert.embed_batch(&sentences).await?;
+    let embeddings = bert.embed_batch(sentences).await?;
     println!("{:?}", embeddings);
     println!("embedding cached took {:?}", start_time.elapsed());
 
@@ -41,7 +41,7 @@ async fn main() -> anyhow::Result<()> {
         "Kalosm supports embedding models",
     ];
     // When you embed a new sentence, the cache will store the embedding for that sentence.
-    let embeddings = bert.embed_batch(&sentences).await?;
+    let embeddings = bert.embed_batch(sentences).await?;
     println!("{:?}", embeddings);
     println!("embedding partially cached took {:?}", start_time.elapsed());
 

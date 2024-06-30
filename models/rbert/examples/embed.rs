@@ -8,7 +8,7 @@ async fn main() -> anyhow::Result<()> {
         "With private LLMs data never leaves your computer",
         "The quick brown fox jumps over the lazy dog",
     ];
-    let embeddings = bert.embed_batch(&sentences).await?;
+    let embeddings = bert.embed_batch(sentences).await?;
     println!("embeddings {:?}", embeddings);
 
     // Find the cosine similarity between the first two sentences

@@ -33,13 +33,13 @@ use crate::{Embedder, Embedding};
 ///         "Napoleon was a great general",
 ///     ];
 ///     // When you embed a new sentence, the cache will store the embedding for that sentence.
-///     let embeddings = bert.embed_batch(&sentences).await?;
+///     let embeddings = bert.embed_batch(sentences).await?;
 ///     println!("{:?}", embeddings);
 ///     println!("embedding uncached took {:?}", start_time.elapsed());
 ///
 ///     let start_time = std::time::Instant::now();
 ///     // If you embed the same sentences again, the cache will be used.
-///     let embeddings = bert.embed_batch(&sentences).await?;
+///     let embeddings = bert.embed_batch(sentences).await?;
 ///     println!("{:?}", embeddings);
 ///     println!("embedding cached took {:?}", start_time.elapsed());
 ///
@@ -51,7 +51,7 @@ use crate::{Embedder, Embedding};
 ///         "Napoleon was kind of not a great guy",
 ///     ];
 ///     // When you embed a new sentence, the cache will store the embedding for that sentence.
-///     let embeddings = bert.embed_batch(&sentences).await?;
+///     let embeddings = bert.embed_batch(sentences).await?;
 ///     println!("{:?}", embeddings);
 ///     println!("embedding partially cached took {:?}", start_time.elapsed());
 ///
@@ -118,7 +118,7 @@ impl<M: Embedder, S: BuildHasher> CachedEmbeddingModel<M, S> {
     ///     "Napoleon was a great general",
     /// ];
     /// // When you embed a new sentence, the cache will store the embedding for that sentence.
-    /// let embeddings = bert.embed_batch(&sentences).await?;
+    /// let embeddings = bert.embed_batch(sentences).await?;
     /// println!("{:?}", embeddings);
     /// // Save the cache to the filesystem for future use
     /// bert.save_cache("cache.bin").unwrap();
@@ -164,7 +164,7 @@ impl<M: Embedder, S: BuildHasher> CachedEmbeddingModel<M, S> {
     ///     "Napoleon was a great general",
     /// ];
     /// // If the sentence is already in the cache, it will be returned from the cache instead of running the model
-    /// let embeddings = bert.embed_batch(&sentences).await?;
+    /// let embeddings = bert.embed_batch(sentences).await?;
     /// println!("{:?}", embeddings);
     /// # Ok(())
     /// # }

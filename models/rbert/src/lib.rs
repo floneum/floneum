@@ -18,7 +18,7 @@
 //!         "Napoleon was a tyrant",
 //!         "Napoleon was a great general",
 //!     ];
-//!     let embeddings = bert.embed_batch(&sentences).await?;
+//!     let embeddings = bert.embed_batch(sentences).await?;
 //!     println!("embeddings {:?}", embeddings);
 //!
 //!     // Find the cosine similarity between the first two sentences
