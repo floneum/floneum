@@ -1,8 +1,8 @@
 [package]
 name = "kalosm-language"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
-description = "A set of pretrained language models "
+description = "A set of pretrained language models for language tasks in rust"
 license = "MIT/Apache-2.0"
 repository = "https://github.com/floneum/floneum"
 authors = ["Evan Almloff"]
