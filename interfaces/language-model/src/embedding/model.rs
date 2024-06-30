@@ -15,7 +15,7 @@ use crate::UnknownVectorSpace;
 /// async fn main() {
 ///     // Bert implements Embedder
 ///     let mut bert = Bert::builder().build().unwrap();
-///     let sentences = vec![
+///     let sentences = [
 ///         "Cats are cool",
 ///         "The geopolitical situation is dire",
 ///         "Pets are great",

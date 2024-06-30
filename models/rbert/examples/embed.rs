@@ -3,7 +3,7 @@ use rbert::*;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let bert = Bert::builder().build().await?;
-    let sentences = vec![
+    let sentences = [
         "Kalosm can be used to build local AI applications",
         "With private LLMs data never leaves your computer",
         "The quick brown fox jumps over the lazy dog",

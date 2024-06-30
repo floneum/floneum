@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 /// #[tokio::main]
 /// async fn main() -> anyhow::Result<()> {
 ///     let mut bert = Bert::builder().build()?;
-///     let sentences = vec![
+///     let sentences = [
 ///         "Cats are cool",
 ///         "The geopolitical situation is dire",
 ///         "Pets are great",
