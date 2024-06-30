@@ -1,5 +1,3 @@
-use std::any::{Any, TypeId};
-
 use kalosm_language::prelude::*;
 use kalosm_language::{
     kalosm_language_model::{Embedder, Embedding, Model, SyncModel},
@@ -20,7 +18,7 @@ pub struct PromptAnnealerBuilder<
     <<M as Model>::SyncModel as SyncModel>::Session: Sync + Send,
 {
     llm: &'a mut M,
-    metric: Option<Met>,
+    metric: Met,
     train: &'a [(&'static str, &'static str)],
     test: &'a [(&'static str, &'static str)],
     task: TaskBuilder<P>,
@@ -52,12 +50,12 @@ where
             cutoff_temperature: 0.10,
             initial_population: 10,
             initial_choice_range: 1..3,
-            metric: None,
+            metric: BertDistance::default(),
         }
     }
 }
 
-impl<'a, M: Model, P, Met: Metric<String> + 'static> PromptAnnealerBuilder<'a, M, P, Met>
+impl<'a, M: Model, P, Met: Metric<String>> PromptAnnealerBuilder<'a, M, P, Met>
 where
     <<M as Model>::SyncModel as SyncModel>::Session: Sync + Send,
     P: Clone + TaskBuilderReturn + Send + Sync + 'static,
@@ -99,20 +97,7 @@ where
     }
 
     /// Build the [`PromptAnnealer`].
-    pub async fn build(self) -> anyhow::Result<PromptAnnealer<'a, M, P, Met>> {
-        let mut metric = match self.metric {
-            Some(metric) => metric,
-            None => {
-                if TypeId::of::<Met>() == TypeId::of::<BertDistance>() {
-                    *(Box::new(BertDistance::new(Bert::builder().build().await?)) as Box<dyn Any>)
-                        .downcast::<Met>()
-                        .unwrap()
-                } else {
-                    return Err(anyhow::anyhow!("No metric provided"));
-                }
-            }
-        };
-
+    pub async fn build(mut self) -> PromptAnnealer<'a, M, P, Met> {
         let (train_set, test_set) = if self.test.is_empty() {
             tracing::warn!("No test set provided, using a subset of the train set for evaluation");
 
@@ -128,7 +113,7 @@ where
             (self.train, self.test)
         };
 
-        let bert = Bert::builder().build().await?;
+        let bert = Bert::default();
 
         // Calculate embeddings for all examples
         let mut embedded_train_set = Vec::new();
@@ -201,22 +186,22 @@ where
                     remaining_cases,
                     self.initial_temperature,
                     &test_set,
-                    &mut metric,
+                    &mut self.metric,
                     self.task.clone(),
                 )
                 .await,
             );
         }
 
-        Ok(PromptAnnealer {
+        PromptAnnealer {
             task: self.task,
             llm: self.llm,
             test: test_set,
             population,
-            metric,
+            metric: self.metric,
             decay_rate: self.decay_rate,
             cutoff_temperature: self.cutoff_temperature,
-        })
+        }
     }
 }
 
@@ -334,6 +319,13 @@ impl ExamplesInstance {
             random::<usize>() % 3
         };
 
+        let accept_regardless = random::<f64>() < self.temperature;
+
+        if accept_regardless {
+            println!("temperature: {}", self.temperature);
+            println!("accepting regardless of score");
+        }
+
         let mut mutated_examples = self.current_examples.clone();
 
         match action {
@@ -343,9 +335,6 @@ impl ExamplesInstance {
                 let removed = mutated_examples.remove(index);
 
                 let new_evaluation = evaluate(&mutated_examples, test, llm, metric, task).await;
-                let accept_regardless = std::f64::consts::E
-                    .powf((self.current_evaluation - new_evaluation) / self.temperature)
-                    > random::<f64>();
 
                 if accept_regardless || new_evaluation > self.current_evaluation {
                     self.current_evaluation = new_evaluation;
@@ -361,9 +350,6 @@ impl ExamplesInstance {
                 mutated_examples.swap(index1, index2);
 
                 let new_evaluation = evaluate(&mutated_examples, test, llm, metric, task).await;
-                let accept_regardless = std::f64::consts::E
-                    .powf((self.current_evaluation - new_evaluation) / self.temperature)
-                    > random::<f64>();
 
                 if accept_regardless || new_evaluation > self.current_evaluation {
                     self.current_evaluation = new_evaluation;
@@ -377,9 +363,6 @@ impl ExamplesInstance {
                 mutated_examples.push(added);
 
                 let new_evaluation = evaluate(&mutated_examples, test, llm, metric, task).await;
-                let accept_regardless = std::f64::consts::E
-                    .powf((self.current_evaluation - new_evaluation) / self.temperature)
-                    > random::<f64>();
 
                 if accept_regardless || new_evaluation > self.current_evaluation {
                     self.current_evaluation = new_evaluation;

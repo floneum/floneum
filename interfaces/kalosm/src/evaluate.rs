@@ -20,6 +20,7 @@ pub trait Metric<T> {
     async fn distance(&mut self, first: &T, other: &T) -> f64;
 }
 
+#[derive(Default)]
 /// A metric that uses the Bert model to compute the distance between two strings.
 pub struct BertDistance {
     bert: Bert,

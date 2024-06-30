@@ -6019,7 +6019,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm"
-version = "0.2.3"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6033,12 +6033,11 @@ dependencies = [
  "futures-util",
  "hdrhistogram",
  "image",
- "kalosm-common",
- "kalosm-language",
- "kalosm-llama",
- "kalosm-sound",
- "kalosm-streams",
- "kalosm-vision",
+ "kalosm-language 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "kalosm-llama 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "kalosm-sound 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "kalosm-streams 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "kalosm-vision 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "llm-samplers",
  "num-traits",
  "once_cell",
@@ -6069,7 +6068,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-language"
-version = "0.2.3"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "arroy",
@@ -6090,10 +6089,10 @@ dependencies = [
  "heed",
  "image",
  "itertools 0.11.0",
- "kalosm-language-model",
- "kalosm-llama",
- "kalosm-sample",
- "kalosm-streams",
+ "kalosm-language-model 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "kalosm-llama 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "kalosm-sample 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "kalosm-streams 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "llm-samplers",
  "log",
  "meval",
@@ -6104,10 +6103,72 @@ dependencies = [
  "pollster",
  "pulldown-cmark",
  "rand 0.8.5",
- "rbert",
+ "rbert 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "readability",
  "reqwest",
- "rphi",
+ "rphi 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rss",
+ "rustc-hash",
+ "scraper",
+ "serde",
+ "serde_json",
+ "slab",
+ "spinoff 0.7.0",
+ "tantivy",
+ "tempfile",
+ "texting_robots",
+ "tokenizers 0.13.4",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
+ "whatlang",
+ "zstd-sys",
+]
+
+[[package]]
+name = "kalosm-language"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d72eb13d80381cc4154a2137ecfe20f8146fce65eca8dad3be45025c27499535"
+dependencies = [
+ "anyhow",
+ "arroy",
+ "async-recursion",
+ "async-trait",
+ "bytesize",
+ "candle-core",
+ "candle-nn",
+ "chrono",
+ "convert_case 0.6.0",
+ "crossbeam",
+ "dashmap",
+ "docx-rs",
+ "ego-tree",
+ "futures-util",
+ "half 2.4.0",
+ "headless_chrome",
+ "heed",
+ "image",
+ "itertools 0.11.0",
+ "kalosm-language-model 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "kalosm-llama 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "kalosm-sample 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "kalosm-streams 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "llm-samplers",
+ "log",
+ "meval",
+ "num_cpus",
+ "once_cell",
+ "partial_sort",
+ "pin-project",
+ "pollster",
+ "pulldown-cmark",
+ "rand 0.8.5",
+ "rbert 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "readability",
+ "reqwest",
+ "rphi 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "rss",
  "rustc-hash",
  "scraper",
@@ -6138,9 +6199,45 @@ dependencies = [
  "futures-util",
  "itertools 0.11.0",
  "kalosm-common",
- "kalosm-sample",
- "kalosm-streams",
+ "kalosm-sample 0.2.1",
+ "kalosm-streams 0.2.1",
  "llm",
+ "llm-samplers",
+ "log",
+ "minijinja",
+ "num_cpus",
+ "once_cell",
+ "pin-project",
+ "rand 0.8.5",
+ "reqwest",
+ "rustc-hash",
+ "serde",
+ "serde_json",
+ "slab",
+ "spinoff 0.8.0",
+ "tempfile",
+ "tokenizers 0.13.4",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "kalosm-language-model"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de90a8c7781006f2adecb26c597044dea52d6825152499dc5fee8f37b3ae92f3"
+dependencies = [
+ "anyhow",
+ "async-openai",
+ "async-trait",
+ "bytesize",
+ "candle-core",
+ "futures-util",
+ "itertools 0.11.0",
+ "kalosm-sample 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "kalosm-streams 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "llm-samplers",
  "log",
  "minijinja",
@@ -6171,10 +6268,10 @@ dependencies = [
  "candle-nn",
  "half 2.4.0",
  "kalosm-common",
- "kalosm-language-model",
+ "kalosm-language-model 0.2.1",
  "kalosm-learning-macro",
  "rand 0.8.5",
- "rbert",
+ "rbert 0.2.1",
  "tokio",
  "tokio-util",
 ]
@@ -6203,9 +6300,9 @@ dependencies = [
  "hf-hub",
  "intel-mkl-src",
  "kalosm-common",
- "kalosm-language-model",
- "kalosm-sample",
- "kalosm-streams",
+ "kalosm-language-model 0.2.1",
+ "kalosm-sample 0.2.1",
+ "kalosm-streams 0.2.1",
  "llm-samplers",
  "once_cell",
  "rand 0.8.5",
@@ -6215,6 +6312,33 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber 0.3.18",
+]
+
+[[package]]
+name = "kalosm-llama"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cee4b9ef7d5aa2fd8c1edfa0062c51af5f8db8afb588197c0b87fca4f3f66c36"
+dependencies = [
+ "accelerate-src",
+ "anyhow",
+ "async-trait",
+ "candle-core",
+ "candle-nn",
+ "candle-transformers",
+ "half 2.4.0",
+ "hf-hub",
+ "kalosm-language-model 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "kalosm-sample 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "kalosm-streams 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "llm-samplers",
+ "once_cell",
+ "rand 0.8.5",
+ "rayon",
+ "serde_json",
+ "tokenizers 0.13.4",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -6241,8 +6365,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "kalosm-ocr"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68b0a2aa5304c296f8dc5b783fda24dfdaf069bb295c3fe4fbc6ac08e9c52bfb"
+dependencies = [
+ "anyhow",
+ "candle-core",
+ "candle-nn",
+ "candle-transformers",
+ "hf-hub",
+ "image",
+ "imageproc",
+ "serde",
+ "serde_json",
+ "tokenizers 0.13.4",
+ "tracing",
+]
+
+[[package]]
 name = "kalosm-sample"
 version = "0.2.1"
+dependencies = [
+ "anyhow",
+ "candle-core",
+ "llm-samplers",
+ "rand 0.8.5",
+ "regex-automata 0.4.6",
+ "rustc-hash",
+ "tokenizers 0.13.4",
+ "tracing",
+]
+
+[[package]]
+name = "kalosm-sample"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7480507a0a322bfa322c4878609bf61c10a62cd3e56c329165034d4200cd689"
 dependencies = [
  "anyhow",
  "candle-core",
@@ -6269,12 +6428,42 @@ dependencies = [
  "hf-hub",
  "hound",
  "itertools 0.10.5",
- "kalosm-streams",
+ "kalosm-streams 0.2.1",
  "rand 0.8.5",
  "ringbuf",
  "ringbuffer",
  "rodio",
- "rwhisper",
+ "rwhisper 0.2.1",
+ "serde_json",
+ "tokenizers 0.14.1",
+ "tokio",
+ "tracing",
+ "webrtc-vad",
+]
+
+[[package]]
+name = "kalosm-sound"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bcbcf4ac21ed0b561a92fab02251bc16cc18ee80bbb05ea1ba86a97a2f09c3b2"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "byteorder",
+ "candle-core",
+ "candle-nn",
+ "candle-transformers",
+ "cpal",
+ "futures-util",
+ "hf-hub",
+ "hound",
+ "itertools 0.10.5",
+ "kalosm-streams 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rand 0.8.5",
+ "ringbuf",
+ "ringbuffer",
+ "rodio",
+ "rwhisper 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json",
  "tokenizers 0.14.1",
  "tokio",
@@ -6294,13 +6483,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "kalosm-streams"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9aed327174951757e6928a8b8447be41f0c62f823bf82744b55b9ddda9ddac4d"
+dependencies = [
+ "anyhow",
+ "futures-util",
+ "pin-project",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "kalosm-vision"
 version = "0.2.1"
 dependencies = [
  "image",
- "kalosm-ocr",
- "rwuerstchen",
- "segment-anything-rs",
+ "kalosm-ocr 0.2.1",
+ "rwuerstchen 0.2.1",
+ "segment-anything-rs 0.2.1",
+]
+
+[[package]]
+name = "kalosm-vision"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ca0c87f1dfd8bbd880d0421200771da74bb12169046e59259542d1de70a3595"
+dependencies = [
+ "image",
+ "kalosm-ocr 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rwuerstchen 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "segment-anything-rs 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -8918,7 +9132,27 @@ dependencies = [
  "hf-hub",
  "intel-mkl-src",
  "kalosm-common",
- "kalosm-language-model",
+ "kalosm-language-model 0.2.1",
+ "serde_json",
+ "tokenizers 0.13.4",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "rbert"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a1c02b9dbb7e0ea84ca09c087474b768d388ca0c0ec67e3368efc89a6ac7663"
+dependencies = [
+ "accelerate-src",
+ "anyhow",
+ "async-trait",
+ "candle-core",
+ "candle-nn",
+ "candle-transformers",
+ "hf-hub",
+ "kalosm-language-model 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json",
  "tokenizers 0.13.4",
  "tokio",
@@ -9331,9 +9565,33 @@ dependencies = [
  "hf-hub",
  "intel-mkl-src",
  "kalosm-common",
- "kalosm-language-model",
- "kalosm-sample",
- "kalosm-streams",
+ "kalosm-language-model 0.2.1",
+ "kalosm-sample 0.2.1",
+ "kalosm-streams 0.2.1",
+ "llm-samplers",
+ "rand 0.8.5",
+ "serde_json",
+ "tokenizers 0.13.4",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "rphi"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e68d04a0126631257e160a469adf4c07eeed35e7ad365469d400a53cbd29b4b"
+dependencies = [
+ "accelerate-src",
+ "anyhow",
+ "async-trait",
+ "candle-core",
+ "candle-nn",
+ "candle-transformers",
+ "hf-hub",
+ "kalosm-language-model 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "kalosm-sample 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "kalosm-streams 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "llm-samplers",
  "rand 0.8.5",
  "serde_json",
@@ -9871,8 +10129,36 @@ dependencies = [
  "intel-mkl-src",
  "itertools 0.10.5",
  "kalosm-common",
- "kalosm-sound",
- "kalosm-streams",
+ "kalosm-sound 0.2.1",
+ "kalosm-streams 0.2.1",
+ "rand 0.8.5",
+ "ringbuf",
+ "rodio",
+ "serde_json",
+ "tokenizers 0.14.1",
+ "tokio",
+ "tracing",
+ "webrtc-vad",
+]
+
+[[package]]
+name = "rwhisper"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa1b4bea4809f5447fc66f16b66e978fad5c6beea2b0de1ebb6979e54952c45d"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "byteorder",
+ "candle-core",
+ "candle-nn",
+ "candle-transformers",
+ "cpal",
+ "futures-util",
+ "hf-hub",
+ "hound",
+ "itertools 0.10.5",
+ "kalosm-streams 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.8.5",
  "ringbuf",
  "rodio",
@@ -9898,6 +10184,22 @@ dependencies = [
  "image",
  "intel-mkl-src",
  "kalosm-common",
+ "tokenizers 0.13.4",
+ "tracing",
+]
+
+[[package]]
+name = "rwuerstchen"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9597ab527113a0eaed98ab0ef6ca88f23507f570da1523b0131f924ad4c34264"
+dependencies = [
+ "anyhow",
+ "candle-core",
+ "candle-nn",
+ "candle-transformers",
+ "hf-hub",
+ "image",
  "tokenizers 0.13.4",
  "tracing",
 ]
@@ -10082,6 +10384,23 @@ dependencies = [
  "imageproc",
  "intel-mkl-src",
  "kalosm-common",
+ "tokenizers 0.13.4",
+ "tracing",
+]
+
+[[package]]
+name = "segment-anything-rs"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ead53343e9cc587e9cb220680bd4b0fbcd6bce07de458267d5480a8c2089e8e2"
+dependencies = [
+ "anyhow",
+ "candle-core",
+ "candle-nn",
+ "candle-transformers",
+ "hf-hub",
+ "image",
+ "imageproc",
  "tokenizers 0.13.4",
  "tracing",
 ]

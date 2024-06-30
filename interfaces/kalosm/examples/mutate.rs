@@ -5,7 +5,7 @@ use kalosm_language::search::Hypothetical;
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let mut llm = Llama::new_chat().await.unwrap();
+    let mut llm = Llama::new_chat();
 
     let mutator = Mutator::builder().build().unwrap();
 
@@ -177,7 +177,7 @@ async fn eval_with_prompt(llm: &mut Llama, prompt: &str) -> anyhow::Result<f64> 
         llama_test_cases.push_case(expected.to_string(), actual.clone());
     }
 
-    let mut bert_distance = BertDistance::new(Bert::new().await.unwrap());
+    let mut bert_distance = BertDistance::default();
     let llama_distance = llama_test_cases
         .evaluate(&mut bert_distance)
         .await

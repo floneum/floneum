@@ -2,7 +2,7 @@ use kalosm::language::*;
 
 #[tokio::main]
 async fn main() {
-    let llm = Llama::new().await.unwrap();
+    let llm = Llama::default();
 
     let question = prompt_input("Question: ").unwrap();
 

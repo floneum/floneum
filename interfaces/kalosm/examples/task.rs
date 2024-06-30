@@ -4,7 +4,7 @@ use kalosm::language::*;
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let llm = Llama::new_chat().await.unwrap();
+    let llm = Llama::new_chat();
 
     let constraints =
         RegexParser::new(r"(Step \d: \d+ [+\-*/] \d+ = \d+\n){1,3}Output: \d+").unwrap();

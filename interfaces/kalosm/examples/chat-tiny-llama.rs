@@ -5,7 +5,6 @@ async fn main() {
     let mut model = Llama::builder()
         .with_source(LlamaSource::tiny_llama_1_1b_chat())
         .build()
-        .await
         .unwrap();
     let mut chat = Chat::builder(&mut model)
         .with_system_prompt("The assistant will act like a pirate")

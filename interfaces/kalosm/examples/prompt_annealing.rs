@@ -31,7 +31,7 @@ const EXAMPLES: &[(&str, &str)]= &[
 
 #[tokio::main]
 async fn main() {
-    let mut llm = Phi::v2().await.unwrap();
+    let mut llm = Phi::v2();
     const PREFIX: &str = "Questions that are answered by the previous text: ";
     const QUESTION_STARTERS: [&str; 9] = [
         "Who", "What", "When", "Where", "Why", "How", "Which", "Whom", "Whose",
@@ -55,8 +55,7 @@ async fn main() {
         .with_initial_temperature(0.6)
         .with_initial_choice_range(1..4)
         .build()
-        .await
-        .unwrap();
+        .await;
 
     let result = annealing.run().await;
 

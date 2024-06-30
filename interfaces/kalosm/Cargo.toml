@@ -1,53 +1,68 @@
 [package]
-name = "kalosm"
 edition = "2021"
-version = "0.2.3"
+name = "kalosm"
+version = "0.2.1"
 authors = ["Evan Almloff"]
 description = "A simple interface for pretrained AI models "
-keywords = ["llm", "llama", "whisper", "ocr", "nlp"]
+readme = "README.md"
+keywords = [
+    "llm",
+    "llama",
+    "whisper",
+    "ocr",
+    "nlp",
+]
 license = "MIT/Apache-2.0"
 repository = "https://github.com/floneum/floneum"
 
 [dependencies]
-anyhow = "1.0.75"
-async-trait = "0.1.74"
-comfy-table = "7.1.0"
-futures-util = "0.3.28"
-hdrhistogram = "7.5.4"
-image = "0.24.7"
-num-traits = "0.2.17"
-once_cell = "1.19.0"
-rand = "0.8.5"
 # https://github.com/floneum/floneum/issues/204
 zstd-sys = { version = "=2.0.9", optional = true }
 
-[dependencies.kalosm-common]
-version = "0.1.0"
-path = "../kalosm-common"
-features = []
+[dependencies.anyhow]
+version = "1.0.75"
+
+[dependencies.async-trait]
+version = "0.1.74"
+
+[dependencies.comfy-table]
+version = "7.1.0"
+
+[dependencies.futures-util]
+version = "0.3.28"
+
+[dependencies.hdrhistogram]
+version = "7.5.4"
+
+[dependencies.image]
+version = "0.24.7"
 
 [dependencies.kalosm-language]
-features = []
+version = "0.2.1"
 optional = true
-workspace = true
 
 [dependencies.kalosm-sound]
-features = []
+version = "0.2.1"
 optional = true
-workspace = true
 
 [dependencies.kalosm-streams]
-features = []
-workspace = true
+version = "0.2.1"
 
 [dependencies.kalosm-vision]
-features = []
+version = "0.2.1"
 optional = true
-workspace = true
 
 [dependencies.llm-samplers]
-features = []
-workspace = true
+version = "=0.0.7"
+
+[dependencies.num-traits]
+version = "0.2.17"
+
+[dependencies.once_cell]
+version = "1.19.0"
+
+[dependencies.rand]
+version = "0.8.5"
 
 [dependencies.serde]
 version = "1.0.163"
@@ -60,46 +75,56 @@ optional = true
 
 [dependencies.tokio]
 version = "1.32.0"
-features = ["full", "macros", "rt-multi-thread"]
+features = [
+    "full",
+    "macros",
+    "rt-multi-thread",
+]
 
 [dependencies.tracing]
 version = "0.1.40"
-features = ["std"]
-default-features = false
 
-[dev-dependencies]
-axum = "0.7.2"
-ego-tree = "0.6.2"
-scraper = "0.18.1"
-tokenizers = "0.15.0"
-tracing-subscriber = "0.2"
+[dev-dependencies.axum]
+version = "0.7.2"
 
 [dev-dependencies.candle-core]
-features = []
-workspace = true
+version = "=0.3.2"
 
 [dev-dependencies.candle-datasets]
-features = []
-workspace = true
+version = "=0.3.2"
 
 [dev-dependencies.candle-nn]
-features = []
-workspace = true
+version = "=0.3.2"
 
 [dev-dependencies.candle-transformers]
-features = []
-workspace = true
+version = "=0.3.2"
+
+[dev-dependencies.ego-tree]
+version = "0.6.2"
 
 [dev-dependencies.kalosm-llama]
-features = []
-workspace = true
+version = "0.2.1"
+
+[dev-dependencies.scraper]
+version = "0.18.1"
+
+[dev-dependencies.tokenizers]
+version = "0.15.0"
+
+[dev-dependencies.tracing-subscriber]
+version = "0.2"
 
 [features]
 cublas = ["kalosm-language/cublas"]
-default = ["language", "sound", "vision", "surrealdb"]
+default = [
+    "language",
+    "sound",
+    "vision",
+    "surrealdb",
+]
 language = ["kalosm-language"]
 llamacpp = ["kalosm-language/llamacpp"]
-metal = ["kalosm-language/metal", "kalosm-vision/metal", "kalosm-sound/metal"]
+metal = ["kalosm-language/metal"]
 sound = ["kalosm-sound"]
 surrealdb = ["dep:surrealdb", "dep:zstd-sys"]
 vision = ["kalosm-vision"]

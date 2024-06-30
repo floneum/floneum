@@ -20,7 +20,6 @@ async fn main() {
         .document_table_builder("documents")
         .at("./db/embeddings.db")
         .build()
-        .await
         .unwrap();
 
     if !exists {
