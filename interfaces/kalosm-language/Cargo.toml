@@ -12,7 +12,7 @@
 [package]
 edition = "2021"
 name = "kalosm-language"
-version = "0.2.2"
+version = "0.2.3"
 authors = ["Evan Almloff"]
 description = "A set of pretrained language models "
 keywords = [
