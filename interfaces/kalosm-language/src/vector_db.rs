@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// #[tokio::main]
 /// async fn main() -> anyhow::Result<()> {
-///     let mut bert = Bert::builder().build()?;
+///     let mut bert = Bert::new_for_search()?;
 ///     let sentences = [
 ///         "Cats are cool",
 ///         "The geopolitical situation is dire",
@@ -42,8 +42,7 @@ use serde::{Deserialize, Serialize};
 ///     let mut db = VectorDB::new()?;
 ///     println!("added {:?}", db.add_embeddings(embeddings)?);
 ///     // Find the closest sentence to "Cats are good"
-///     let embedding = bert.embed("Cats are good").await?;
-///     let closest = db.get_closest(embedding, 1)?;
+///     let closest = db.get_closest("Cats are good", 1)?;
 ///     println!("closest: {:?}", closest);
 ///
 ///     Ok(())

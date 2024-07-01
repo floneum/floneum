@@ -240,6 +240,24 @@ impl AdaEmbedder {
 impl Embedder for AdaEmbedder {
     type VectorSpace = AdaEmbedding;
 
+    fn embed_for(
+        &self,
+        input: crate::EmbeddingInput,
+    ) -> BoxedFuture<'_, anyhow::Result<Embedding<Self::VectorSpace>>> {
+        self.embed_string(input.text)
+    }
+
+    fn embed_vec_for(
+        &self,
+        inputs: Vec<crate::EmbeddingInput>,
+    ) -> BoxedFuture<'_, anyhow::Result<Vec<Embedding<Self::VectorSpace>>>> {
+        let inputs = inputs
+            .into_iter()
+            .map(|input| input.text)
+            .collect::<Vec<_>>();
+        self.embed_vec(inputs)
+    }
+
     /// Embed a single string.
     fn embed_string(
         &self,

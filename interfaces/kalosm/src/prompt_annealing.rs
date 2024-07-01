@@ -123,7 +123,7 @@ where
             (self.train, self.test)
         };
 
-        let bert = Bert::builder().build().await?;
+        let bert = Bert::new().await?;
 
         // Calculate embeddings for all examples
         let mut embedded_train_set = Vec::new();

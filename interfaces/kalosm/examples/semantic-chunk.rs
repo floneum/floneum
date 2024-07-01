@@ -15,10 +15,7 @@ async fn main() -> anyhow::Result<()> {
         .parse()?;
 
     let start_loading_time = Instant::now();
-    let bert = Bert::builder()
-        .with_source(BertSource::snowflake_arctic_embed_extra_small())
-        .build()
-        .await?;
+    let bert = Bert::new_for_search().await?;
     println!("Loaded in {:?}", start_loading_time.elapsed());
 
     let semantic_chunker = SemanticChunker::new().with_target_score(target_score);
