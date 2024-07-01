@@ -13,6 +13,8 @@ mod cache;
 pub use cache::*;
 mod model;
 pub use model::*;
+mod into_embedding;
+pub use into_embedding::*;
 
 /// An untyped vector space that is not associated with a model. This can be used to erase the vector type from an embedding.
 pub struct UnknownVectorSpace;

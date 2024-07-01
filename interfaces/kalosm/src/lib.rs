@@ -10,7 +10,9 @@ pub mod language {
     pub use kalosm_common::FileSource;
     pub use kalosm_language::chat::*;
     pub use kalosm_language::context::*;
-    pub use kalosm_language::kalosm_language_model::{Model as _, ModelExt as _, *};
+    pub use kalosm_language::kalosm_language_model::{
+        Embedder as _, EmbedderExt as _, Model as _, ModelExt as _, *,
+    };
     pub use kalosm_language::kalosm_llama::{Llama, LlamaBuilder, LlamaSession, LlamaSource};
     pub use kalosm_language::kalosm_sample::*;
     pub use kalosm_language::prelude::Html;

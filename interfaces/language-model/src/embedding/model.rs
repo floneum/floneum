@@ -35,14 +35,18 @@ pub trait Embedder: Send + Sync + 'static {
     fn embed_string(
         &self,
         input: String,
-    ) -> BoxedFuture<'_, anyhow::Result<Embedding<Self::VectorSpace>>>;
+    ) -> BoxedFuture<'_, anyhow::Result<Embedding<Self::VectorSpace>>> {
+        self.embed_for(EmbeddingInput {
+            text: input,
+            variant: EmbeddingVariant::Document,
+        })
+    }
 
     /// Embed a [`Vec<String>`] into a vector space. Returns a list of embeddings in the same order as the inputs.
     fn embed_vec(
         &self,
         inputs: Vec<String>,
     ) -> BoxedFuture<'_, anyhow::Result<Vec<Embedding<Self::VectorSpace>>>> {
-        let inputs = inputs.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         Box::pin(async move {
             let mut embeddings = Vec::with_capacity(inputs.len());
             for input in inputs {
@@ -51,6 +55,59 @@ pub trait Embedder: Send + Sync + 'static {
             Ok(embeddings)
         })
     }
+
+    /// Embed a [`EmbeddingInput`] into a vector space
+    fn embed_for(
+        &self,
+        input: EmbeddingInput,
+    ) -> BoxedFuture<'_, anyhow::Result<Embedding<Self::VectorSpace>>>;
+
+    /// Embed a [`Vec<String>`] into a vector space. Returns a list of embeddings in the same order as the inputs.
+    fn embed_vec_for(
+        &self,
+        inputs: Vec<EmbeddingInput>,
+    ) -> BoxedFuture<'_, anyhow::Result<Vec<Embedding<Self::VectorSpace>>>> {
+        Box::pin(async move {
+            let mut embeddings = Vec::with_capacity(inputs.len());
+            for input in inputs {
+                embeddings.push(self.embed_for(input).await?);
+            }
+            Ok(embeddings)
+        })
+    }
+}
+
+/// The input to an embedding model. This includes the text to be embedded and the type of embedding to output.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct EmbeddingInput {
+    /// The text to embed.
+    pub text: String,
+    /// The type of embedding to embed the text into.
+    pub variant: EmbeddingVariant,
+}
+
+impl EmbeddingInput {
+    /// Create a new embedding input.
+    pub fn new(text: impl ToString, variant: EmbeddingVariant) -> Self {
+        Self {
+            text: text.to_string(),
+            variant,
+        }
+    }
+}
+
+/// The type of embedding the model should output. For models that output different embeddings for queries and documents, this
+///
+/// For most models, the type will not effect the output.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum EmbeddingVariant {
+    /// The model should output an embedding for a query.
+    Query,
+    /// The model should output an embedding for documents.
+    #[default]
+    Document,
 }
 
 /// An extension trait for [`Embedder`] with helper methods for iterators, and types that can be converted into a string.
@@ -73,6 +130,17 @@ pub trait EmbedderExt: Embedder {
         self.embed_string(input.to_string())
     }
 
+    /// Embed a query into a vector space
+    fn embed_query(
+        &self,
+        input: impl ToString,
+    ) -> BoxedFuture<'_, anyhow::Result<Embedding<Self::VectorSpace>>> {
+        self.embed_for(EmbeddingInput {
+            text: input.to_string(),
+            variant: EmbeddingVariant::Query,
+        })
+    }
+
     /// Embed a batch of text into a vector space. Returns a list of embeddings in the same order as the inputs.
     fn embed_batch(
         &self,
@@ -83,6 +151,14 @@ pub trait EmbedderExt: Embedder {
             .map(|s| s.to_string())
             .collect::<Vec<_>>();
         self.embed_vec(inputs)
+    }
+
+    /// Embed a batch of [`EmbeddingInput`] into a vector space. Returns a list of embeddings in the same order as the inputs.
+    fn embed_batch_for(
+        &self,
+        inputs: impl IntoIterator<Item = EmbeddingInput>,
+    ) -> BoxedFuture<'_, anyhow::Result<Vec<Embedding<Self::VectorSpace>>>> {
+        self.embed_vec_for(inputs.into_iter().collect())
     }
 }
 
@@ -109,6 +185,26 @@ impl<E: Embedder + Send + Sync + 'static> Embedder for AnyEmbedder<E> {
         inputs: Vec<String>,
     ) -> BoxedFuture<'_, anyhow::Result<Vec<Embedding<UnknownVectorSpace>>>> {
         let future = self.0.embed_vec(inputs);
+        Box::pin(async move {
+            future
+                .await
+                .map(|e| e.into_iter().map(|e| e.cast()).collect())
+        })
+    }
+
+    fn embed_for(
+        &self,
+        input: EmbeddingInput,
+    ) -> BoxedFuture<'_, anyhow::Result<Embedding<UnknownVectorSpace>>> {
+        let future = self.0.embed_for(input);
+        Box::pin(async move { future.await.map(|e| e.cast()) })
+    }
+
+    fn embed_vec_for(
+        &self,
+        inputs: Vec<EmbeddingInput>,
+    ) -> BoxedFuture<'_, anyhow::Result<Vec<Embedding<Self::VectorSpace>>>> {
+        let future = self.0.embed_vec_for(inputs);
         Box::pin(async move {
             future
                 .await
