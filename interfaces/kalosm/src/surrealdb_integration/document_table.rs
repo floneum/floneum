@@ -236,3 +236,15 @@ impl<C: Connection, E, K: Chunker> DocumentTableBuilder<C, E, K> {
         Ok(DocumentTable::new(embedding_model, table, self.chunker))
     }
 }
+
+/// An extension trait for the surreal database to interact with document tables.
+pub trait DocumentTableSurrealExt<C: Connection> {
+    /// Create a new document table builder.    
+    fn document_table_builder(&self, table: &str) -> DocumentTableBuilder<C, Bert, ChunkStrategy>;
+}
+
+impl<C: Connection> DocumentTableSurrealExt<C> for Surreal<C> {
+    fn document_table_builder(&self, table: &str) -> DocumentTableBuilder<C, Bert, ChunkStrategy> {
+        DocumentTableBuilder::new(table, self.clone())
+    }
+}

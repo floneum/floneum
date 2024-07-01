@@ -6291,6 +6291,7 @@ dependencies = [
  "async-trait",
  "candle-core",
  "futures-util",
+ "kalosm",
  "kalosm-common",
  "kalosm-sample",
  "kalosm-streams",
