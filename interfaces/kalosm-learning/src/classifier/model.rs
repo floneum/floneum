@@ -141,28 +141,44 @@ impl<C: Class> ClassificationDatasetBuilder<C> {
     pub fn build(mut self, dev: &Device) -> Result<ClassificationDataset> {
         // split into train and test
         let mut rng = rand::thread_rng();
-        let first_quarter = self.inputs.len() / 4;
-        println!(
-            "{} train/{} tests",
-            self.inputs.len() - first_quarter,
-            first_quarter
-        );
-        let mut input_test: Vec<f32> = Vec::with_capacity(first_quarter);
-        let mut class_test: Vec<u32> = Vec::with_capacity(first_quarter);
-        let mut inputs: Vec<f32> = Vec::with_capacity(self.inputs.len() - first_quarter);
-        let mut classes: Vec<u32> = Vec::with_capacity(self.classes.len() - first_quarter);
+
+        // We want to try to maintain a balance of classes in the test and train sets
+        let mut class_counts: HashMap<u32, usize> = HashMap::new();
+        for class in &self.classes {
+            *class_counts.entry(class.to_class()).or_default() += 1;
+        }
+
+        // The test classes are 1/4 of the train classes
+        let test_class_counts_goal = class_counts
+            .iter()
+            .map(|(class, count)| (*class, *count / 4))
+            .collect::<HashMap<_, _>>();
+        let mut test_class_counts = HashMap::new();
+
+        let test_len = test_class_counts_goal.values().copied().sum::<usize>();
+        let mut input_test: Vec<f32> = Vec::with_capacity(test_len);
+        let mut class_test: Vec<u32> = Vec::with_capacity(test_len);
+        let mut inputs: Vec<f32> = Vec::with_capacity(self.inputs.len() - test_len);
+        let mut classes: Vec<u32> = Vec::with_capacity(self.classes.len() - test_len);
         while !self.classes.is_empty() {
             let index = rng.gen_range(0..self.classes.len());
             let mut input = self.inputs.remove(index);
             let class = self.classes.remove(index);
-            if class_test.len() <= first_quarter {
+
+            let class_u32 = class.to_class();
+            let test_class_counts_goal = test_class_counts_goal.get(&class_u32).unwrap();
+            let test_class_count: &mut usize = test_class_counts.entry(class_u32).or_default();
+            if *test_class_count < *test_class_counts_goal {
                 input_test.append(&mut input);
-                class_test.push(class.to_class());
+                class_test.push(class_u32);
+                *test_class_count += 1;
             } else {
                 inputs.append(&mut input);
-                classes.push(class.to_class());
+                classes.push(class_u32);
             }
         }
+
+        println!("{} train/{} tests", classes.len(), class_test.len());
 
         let input_size = self.input_size.unwrap_or_default();
 

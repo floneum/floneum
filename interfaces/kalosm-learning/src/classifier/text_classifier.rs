@@ -28,12 +28,12 @@ use crate::{
 /// ```
 pub struct TextClassifierDatasetBuilder<'a, T: Class, E: Embedder> {
     dataset: ClassificationDatasetBuilder<T>,
-    embedder: &'a mut E,
+    embedder: &'a E,
 }
 
 impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
     /// Creates a new [`TextClassifierDatasetBuilder`].
-    pub fn new(embedder: &'a mut E) -> Self {
+    pub fn new(embedder: &'a E) -> Self {
         Self {
             dataset: ClassificationDatasetBuilder::new(),
             embedder,
@@ -329,7 +329,7 @@ async fn simplified() -> anyhow::Result<()> {
         "What is the most spoken language in the United States?",
     ];
 
-    let mut dataset = TextClassifierDatasetBuilder::<MyClass, _>::new(&mut bert);
+    let mut dataset = TextClassifierDatasetBuilder::<MyClass, _>::new(&bert);
 
     for question in &person_questions {
         dataset.add(question, MyClass::Person).await?;
