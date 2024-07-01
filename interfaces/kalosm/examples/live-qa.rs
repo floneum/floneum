@@ -5,7 +5,6 @@ async fn main() -> Result<(), anyhow::Error> {
     use futures_util::StreamExt;
     use kalosm::audio::*;
     use kalosm::language::*;
-    use kalosm::*;
     use std::sync::Arc;
     use tokio::time::{Duration, Instant};
 

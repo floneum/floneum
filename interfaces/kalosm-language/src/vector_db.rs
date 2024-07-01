@@ -21,33 +21,44 @@ use serde::{Deserialize, Serialize};
 /// # Example
 ///
 /// ```rust, no_run
-/// use kalosm_language::prelude::VectorDB;
-/// use kalosm_language_model::Embedder;
-/// use rbert::*;
-///
-/// #[tokio::main]
-/// async fn main() -> anyhow::Result<()> {
-///     let mut bert = Bert::new_for_search()?;
-///     let sentences = [
-///         "Cats are cool",
-///         "The geopolitical situation is dire",
-///         "Pets are great",
-///         "Napoleon was a tyrant",
-///         "Napoleon was a great general",
-///     ];
-///     let embeddings = bert.embed_batch(sentences).await?;
-///     println!("embeddings {:?}", embeddings);
-///
-///     // Create a vector database from the embeddings
-///     let mut db = VectorDB::new()?;
-///     println!("added {:?}", db.add_embeddings(embeddings)?);
-///     // Find the closest sentence to "Cats are good"
-///     let closest = db.get_closest("Cats are good", 1)?;
-///     println!("closest: {:?}", closest);
-///
-///     Ok(())
+/// # use kalosm_language::prelude::*;
+/// # use kalosm_language_model::*;
+/// # use rbert::*;
+/// # use std::collections::HashMap;
+/// # #[tokio::main]
+/// # async fn main() {
+/// // Create a good default Bert model for search
+/// let bert = Bert::new_for_search().await.unwrap();
+/// let sentences = [
+///     "Kalosm can be used to build local AI applications",
+///     "With private LLMs data never leaves your computer",
+///     "The quick brown fox jumps over the lazy dog",
+/// ];
+/// // Embed sentences into the vector space
+/// let embeddings = bert.embed_batch(sentences).await.unwrap();
+/// println!("embeddings {:?}", embeddings);
+/// 
+/// // Create a vector database from the embeddings along with a map between the embedding ids and the sentences
+/// let db = VectorDB::new().unwrap();
+/// let embeddings = db.add_embeddings(embeddings).unwrap();
+/// let embedding_id_to_sentence: HashMap<EmbeddingId, &str> =
+///     HashMap::from_iter(embeddings.into_iter().zip(sentences));
+/// 
+/// // Find the closest sentence to "What is Kalosm?"
+/// let query = "What is Kalosm?";
+/// // Embed the query into the vector space. We use `embed_query` instead of `embed` because some models embed queries differently than normal text.
+/// let embedding = bert.embed_query(query).await.unwrap();
+/// let closest = db.get_closest(embedding, 1).unwrap();
+/// if let [closest] = closest.as_slice() {
+///     let distance = closest.distance;
+///     let text = embedding_id_to_sentence.get(&closest.value).unwrap();
+///     println!("distance: {distance}");
+///     println!("closest:  {text}");
 /// }
+/// # }
 /// ```
+#[doc(alias = "VectorDatabase")]
+#[doc(alias = "Vector Database")]
 pub struct VectorDB<S = UnknownVectorSpace> {
     database: ArroyDatabase<Angular>,
     env: heed::Env,

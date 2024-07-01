@@ -1,6 +1,5 @@
 use comfy_table::{Cell, Color, Row, Table};
 use kalosm::language::*;
-use kalosm::*;
 use surrealdb::{engine::local::RocksDb, Surreal};
 
 #[tokio::main]
@@ -21,13 +20,6 @@ async fn main() {
     // Create a table in the surreal database to store the embeddings
     let document_table = db
         .document_table_builder("documents")
-        .with_embedding_model(
-            Bert::builder()
-                .with_source(BertSource::snowflake_arctic_embed_extra_small())
-                .build()
-                .await
-                .unwrap(),
-        )
         .with_chunker(chunker)
         .at("./db/embeddings.db")
         .build::<Document>()

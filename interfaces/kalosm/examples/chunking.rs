@@ -1,5 +1,4 @@
 use kalosm::language::*;
-use kalosm_language::search::Chunker;
 
 #[tokio::main]
 async fn main() {
@@ -15,7 +14,7 @@ async fn main() {
         Floneum is a single executable that runs models locally, eliminating the need for complex installations. The heart of Floneum is its graph-based editor, designed to enable users without programming knowledge to build and manage their AI workflows seamlessly.")
     ];
 
-    let hypothetical = kalosm_language::search::ChunkStrategy::Paragraph {
+    let hypothetical = ChunkStrategy::Paragraph {
         paragraph_count: 1,
         overlap: 0,
     };

@@ -23,6 +23,9 @@ pub mod language {
     pub use kalosm_language::tool::*;
     pub use kalosm_language::vector_db::*;
     pub use kalosm_streams::text_stream::*;
+
+    #[cfg(feature = "surrealdb")]
+    pub use crate::surrealdb_integration::document_table::*;
 }
 #[cfg(feature = "sound")]
 pub use kalosm_sound as audio;
