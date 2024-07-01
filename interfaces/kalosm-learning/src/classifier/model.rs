@@ -46,7 +46,7 @@ impl ClassificationDataset {
     }
 
     /// Save the dataset to the given path.
-    /// 
+    ///
     /// # Example
     /// ```rust
     /// # use kalosm_learning::*;
@@ -67,7 +67,7 @@ impl ClassificationDataset {
     }
 
     /// Load the dataset from the given path.
-    /// 
+    ///
     /// # Example
     /// ```rust
     /// # use kalosm_learning::*;
@@ -109,7 +109,7 @@ impl<C: Class> ClassificationDatasetBuilder<C> {
     }
 
     /// Adds a pair of input and class to the dataset.
-    /// 
+    ///
     /// # Example
     /// ```rust
     /// # use kalosm_learning::*;
@@ -128,7 +128,7 @@ impl<C: Class> ClassificationDatasetBuilder<C> {
     }
 
     /// Builds the dataset and copies the data to the device passed in.
-    /// 
+    ///
     /// # Example
     /// ```rust
     /// # use kalosm_learning::*;
