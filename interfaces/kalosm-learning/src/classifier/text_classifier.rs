@@ -272,7 +272,7 @@ async fn simplified() -> anyhow::Result<()> {
         Thing,
     }
 
-    let mut bert = Bert::builder()
+    let bert = Bert::builder()
         .with_source(BertSource::snowflake_arctic_embed_extra_small())
         .build()
         .await?;

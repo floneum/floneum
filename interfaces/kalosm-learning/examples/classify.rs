@@ -65,11 +65,11 @@ const THING_QUESTIONS: &[&str] = &[
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create a new Bert model
-    let mut bert = Bert::new().await?;
+    let bert = Bert::new().await?;
 
     // Create a dataset for the classifier
     let dev = accelerated_device_if_available()?;
-    let mut dataset = TextClassifierDatasetBuilder::<MyClass, _>::new(&mut bert);
+    let mut dataset = TextClassifierDatasetBuilder::<MyClass, _>::new(&bert);
     for question in PEOPLE_QUESTIONS {
         dataset.add(question, MyClass::Person).await?;
     }
