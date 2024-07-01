@@ -37,13 +37,13 @@ use serde::{Deserialize, Serialize};
 /// // Embed sentences into the vector space
 /// let embeddings = bert.embed_batch(sentences).await.unwrap();
 /// println!("embeddings {:?}", embeddings);
-/// 
+///
 /// // Create a vector database from the embeddings along with a map between the embedding ids and the sentences
 /// let db = VectorDB::new().unwrap();
 /// let embeddings = db.add_embeddings(embeddings).unwrap();
 /// let embedding_id_to_sentence: HashMap<EmbeddingId, &str> =
 ///     HashMap::from_iter(embeddings.into_iter().zip(sentences));
-/// 
+///
 /// // Find the closest sentence to "What is Kalosm?"
 /// let query = "What is Kalosm?";
 /// // Embed the query into the vector space. We use `embed_query` instead of `embed` because some models embed queries differently than normal text.
