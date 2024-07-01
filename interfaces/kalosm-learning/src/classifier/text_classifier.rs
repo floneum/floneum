@@ -7,6 +7,25 @@ use crate::{
 };
 
 /// A builder for [`TextClassifier`].
+///
+/// # Example
+/// ```rust
+/// # use kalosm_learning::*;
+/// # use rbert::*;
+/// # use std::collections::HashMap;
+/// # #[tokio::main]
+/// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// // Create a dataset for the classifier
+/// let mut dataset = ClassificationDataset::builder();
+/// for question in ["What is the author's name?", "What is the author's age?"] {
+///     dataset.add(question, MyClass::Person).await?;
+/// }
+/// for question in ["What is the capital of France?", "What is the capital of England?"] {
+///     dataset.add(question, MyClass::Thing).await?;
+/// }
+/// # Ok::<(), anyhow::Error>(())
+/// # }
+/// ```
 pub struct TextClassifierDatasetBuilder<'a, T: Class, E: Embedder> {
     dataset: ClassificationDatasetBuilder<T>,
     embedder: &'a mut E,
@@ -28,7 +47,22 @@ impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
         Ok(())
     }
 
-    /// Add many examples to the dataset.
+    /// Add many examples to the dataset at once. This may be faster than adding each example individually depending on the embedding model.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use kalosm_learning::*;
+    /// # use rbert::*;
+    /// # use std::collections::HashMap;
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// // Create a dataset for the classifier
+    /// let mut dataset = ClassificationDataset::builder();
+    /// dataset.extend(["What is the author's name?", "What is the author's age?"].into_iter().map(|q| (q, MyClass::Person))).await?;
+    /// dataset.extend(["What is the capital of France?", "What is the capital of England?"].into_iter().map(|q| (q, MyClass::Thing))).await?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// # }
+    /// ```
     pub async fn extend(
         &mut self,
         examples: impl IntoIterator<Item = (impl ToString, T)>,
@@ -230,7 +264,7 @@ impl<T: Class, S: VectorSpace + Send + Sync + 'static> TextClassifier<T, S> {
 #[tokio::test]
 async fn simplified() -> anyhow::Result<()> {
     use crate::{Class, Classifier, ClassifierConfig};
-    use rbert::{Bert, BertSpace};
+    use rbert::{Bert, BertSource, BertSpace};
 
     #[derive(Debug, Copy, Clone, PartialEq, Eq, Class)]
     enum MyClass {
@@ -238,11 +272,13 @@ async fn simplified() -> anyhow::Result<()> {
         Thing,
     }
 
-    let mut bert = Bert::builder().build().await?;
-    println!("bert built");
+    let mut bert = Bert::builder()
+        .with_source(BertSource::snowflake_arctic_embed_extra_small())
+        .build()
+        .await?;
 
     let dev = kalosm_common::accelerated_device_if_available()?;
-    let person_questions = vec![
+    let person_questions = [
         "What is the author's name?",
         "What is the author's age?",
         "Who is the queen of England?",
@@ -267,7 +303,7 @@ async fn simplified() -> anyhow::Result<()> {
         "What is the name of the leader of the United States?",
         "What is the name of the leader of France?",
     ];
-    let thing_sentences = vec![
+    let thing_sentences = [
         "What is the capital of France?",
         "What is the capital of England?",
         "What is the name of the biggest city in the world?",
@@ -311,7 +347,7 @@ async fn simplified() -> anyhow::Result<()> {
     loop {
         classifier = TextClassifier::<MyClass, BertSpace>::new(Classifier::new(
             &dev,
-            ClassifierConfig::new(384).layers_dims(layers.clone()),
+            ClassifierConfig::new().layers_dims(layers.clone()),
         )?);
         println!("Training...");
         if let Err(error) = classifier.train(&dataset, &dev, 100, 0.05, 100) {
