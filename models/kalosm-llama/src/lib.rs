@@ -198,7 +198,7 @@ impl Llama {
 #[derive(Default)]
 pub struct LlamaBuilder {
     source: source::LlamaSource,
-
+    device: Option<Device>,
     flash_attn: bool,
 }
 
@@ -215,11 +215,27 @@ impl LlamaBuilder {
         self
     }
 
+    /// Set the device to run the model with. (Defaults to an accelerator if available, otherwise the CPU)
+    pub fn with_device(mut self, device: Device) -> Self {
+        self.device = Some(device);
+        self
+    }
+
+    /// Get the device or the default device if not set.
+    pub(crate) fn get_device(&self) -> anyhow::Result<Device> {
+        match self.device.clone() {
+            Some(device) => Ok(device),
+            None => Ok(accelerated_device_if_available()?),
+        }
+    }
+
     /// Build the model with a handler for progress as the download and loading progresses.
     pub async fn build_with_loading_handler(
         self,
         handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
     ) -> anyhow::Result<Llama> {
+        let device = self.get_device()?;
+
         let handler = Arc::new(Mutex::new(handler));
         let filename = tokio::spawn({
             let source = self.source.clone();
@@ -242,7 +258,6 @@ impl LlamaBuilder {
         };
         let filename = filename.await??;
 
-        let device = accelerated_device_if_available()?;
         let mut file = std::fs::File::open(&filename)?;
         let model = match filename.extension().and_then(|v| v.to_str()) {
             Some("gguf") => {
