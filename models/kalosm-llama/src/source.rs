@@ -39,6 +39,7 @@ pub struct LlamaSource {
     pub(crate) tokenizer: FileSource,
     pub(crate) group_query_attention: u8,
     pub(crate) markers: Option<ChatMarkers>,
+    pub(crate) cache: kalosm_common::Cache,
 }
 
 impl LlamaSource {
@@ -49,7 +50,15 @@ impl LlamaSource {
             tokenizer,
             group_query_attention: 1,
             markers: Default::default(),
+            cache: Default::default(),
         }
+    }
+
+    /// Set the cache location to use for the model (defaults DATA_DIR/kalosm/cache)
+    pub fn with_cache(mut self, cache: kalosm_common::Cache) -> Self {
+        self.cache = cache;
+
+        self
     }
 
     /// Set the marker text for a user message
@@ -69,7 +78,7 @@ impl LlamaSource {
     }
 
     pub(crate) async fn tokenizer(&self, progress: impl FnMut(f32)) -> anyhow::Result<Tokenizer> {
-        let tokenizer_path = self.tokenizer.download(progress).await?;
+        let tokenizer_path = self.cache.get(&self.tokenizer, progress).await?;
         Tokenizer::from_file(tokenizer_path).map_err(anyhow::Error::msg)
     }
 
@@ -77,7 +86,7 @@ impl LlamaSource {
         &self,
         progress: impl FnMut(f32),
     ) -> anyhow::Result<std::path::PathBuf> {
-        self.model.download(progress).await
+        self.cache.get(&self.model, progress).await
     }
 
     /// A preset for Mistral7b
@@ -112,6 +121,7 @@ impl LlamaSource {
                 assistant_marker: "",
                 end_assistant_marker: "</s>",
             }),
+            cache: Default::default(),
         }
     }
 
@@ -133,6 +143,7 @@ impl LlamaSource {
                 assistant_marker: "",
                 end_assistant_marker: "</s>",
             }),
+            cache: Default::default(),
         }
     }
 
@@ -154,6 +165,7 @@ impl LlamaSource {
                 assistant_marker: "<|im_start|>assistant\n",
                 end_assistant_marker: "<|im_end|>",
             }),
+            cache: Default::default(),
         }
     }
 
@@ -179,6 +191,7 @@ impl LlamaSource {
                 assistant_marker: "### Assistant:\n",
                 end_assistant_marker: "\n",
             }),
+            cache: Default::default(),
         }
     }
 
@@ -200,6 +213,7 @@ impl LlamaSource {
                 end_user_marker: "</s>",
                 end_assistant_marker: "</s>",
             }),
+            cache: Default::default(),
         }
     }
 
@@ -221,6 +235,7 @@ impl LlamaSource {
                 end_user_marker: "</s>",
                 end_assistant_marker: "</s>",
             }),
+            cache: Default::default(),
         }
     }
 
@@ -246,6 +261,7 @@ impl LlamaSource {
                 assistant_marker: "GPT4 Correct Assistant: ",
                 end_assistant_marker: "<|end_of_turn|>",
             }),
+            cache: Default::default(),
         }
     }
 
@@ -271,6 +287,7 @@ impl LlamaSource {
                 assistant_marker: "GPT4 Correct Assistant: ",
                 end_assistant_marker: "<|end_of_turn|>",
             }),
+            cache: Default::default(),
         }
     }
 
@@ -296,6 +313,7 @@ impl LlamaSource {
                 assistant_marker: "GPT4 Correct Assistant: ",
                 end_assistant_marker: "<|end_of_turn|>",
             }),
+            cache: Default::default(),
         }
     }
 
@@ -317,6 +335,7 @@ impl LlamaSource {
                 assistant_marker: "ASSISTANT: ",
                 end_assistant_marker: "</s>",
             }),
+            cache: Default::default(),
         }
     }
 
@@ -342,6 +361,7 @@ impl LlamaSource {
                 end_user_marker: "</s>",
                 end_assistant_marker: "</s>",
             }),
+            cache: Default::default(),
         }
     }
 
@@ -385,6 +405,7 @@ impl LlamaSource {
                 assistant_marker: "<|assistant|>\n",
                 end_assistant_marker: "<|end|>",
             }),
+            cache: Default::default(),
         }
     }
 
@@ -434,6 +455,7 @@ impl LlamaSource {
                 assistant_marker: "<|start_header_id|>assistant<|end_header_id|>",
                 end_assistant_marker: "<|eot_id|>",
             }),
+            cache: Default::default(),
         }
     }
 
@@ -455,6 +477,7 @@ impl LlamaSource {
                 assistant_marker: "<|start_header_id|>assistant<|end_header_id|>",
                 end_assistant_marker: "<|eot_id|>",
             }),
+            cache: Default::default(),
         }
     }
 
@@ -476,6 +499,7 @@ impl LlamaSource {
                 assistant_marker: "<|start_header_id|>assistant<|end_header_id|>",
                 end_assistant_marker: "<|eot_id|>",
             }),
+            cache: Default::default(),
         }
     }
 
@@ -490,6 +514,7 @@ impl LlamaSource {
             tokenizer: llama_tokenizer(),
             group_query_attention: 1,
             markers: Default::default(),
+            cache: Default::default(),
         }
     }
 
@@ -525,6 +550,7 @@ impl LlamaSource {
                 end_user_marker: "</s>",
                 end_assistant_marker: "</s>",
             }),
+            cache: Default::default(),
         }
     }
 
@@ -546,6 +572,7 @@ impl LlamaSource {
                 end_user_marker: "</s>",
                 end_assistant_marker: "</s>",
             }),
+            cache: Default::default(),
         }
     }
 
@@ -567,6 +594,7 @@ impl LlamaSource {
                 end_user_marker: "</s>",
                 end_assistant_marker: "</s>",
             }),
+            cache: Default::default(),
         }
     }
 

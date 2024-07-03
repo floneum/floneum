@@ -106,14 +106,26 @@ impl ModelLoadingProgress {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Cache {
     location: PathBuf,
+    /// The huggingface token to use (defaults to the token set with `huggingface-cli login`)
+    huggingface_token: Option<String>,
 }
 
 impl Cache {
     /// Create a new cache with a specific location
     pub fn new(location: PathBuf) -> Self {
-        Self { location }
+        Self {
+            location,
+            huggingface_token: None,
+        }
+    }
+
+    /// Set the Hugging Face token to use for downloading (defaults to the token set with `huggingface-cli login`, and then the environment variable `HF_TOKEN`)
+    pub fn with_huggingface_token(mut self, token: Option<String>) -> Self {
+        self.huggingface_token = token;
+        self
     }
 
     /// Check if the file exists locally (if it is a local file or if it has been downloaded)
@@ -123,6 +135,7 @@ impl Cache {
                 model_id,
                 revision,
                 file,
+                ..
             } => {
                 let path = self.location.join(model_id).join(revision);
                 let complete_download = path.join(file);
@@ -144,6 +157,8 @@ impl Cache {
                 revision,
                 file,
             } => {
+                let token = self.huggingface_token.clone().or_else(huggingface_token);
+
                 let path = self.location.join(model_id).join(revision);
                 let complete_download = path.join(file);
 
@@ -157,7 +172,11 @@ impl Cache {
                 let url = api.url(file);
                 let url = Url::from_str(&url)?;
                 let client = reqwest::Client::new();
-                let response = client.head(url.clone()).send().await;
+                let response = client
+                    .head(url.clone())
+                    .with_authorization_header(token.clone())
+                    .send()
+                    .await;
 
                 if complete_download.exists() {
                     let metadata = tokio::fs::metadata(&complete_download).await?;
@@ -182,7 +201,15 @@ impl Cache {
 
                 tracing::trace!("Downloading into {:?}", incomplete_download);
 
-                download_into(url, &incomplete_download, response?, progress).await?;
+                download_into(
+                    url,
+                    &incomplete_download,
+                    response?,
+                    client,
+                    token,
+                    progress,
+                )
+                .await?;
 
                 // Rename the file to remove the .partial extension
                 tokio::fs::rename(&incomplete_download, &complete_download).await?;
@@ -198,6 +225,7 @@ impl Default for Cache {
     fn default() -> Self {
         Self {
             location: dirs::data_dir().unwrap().join("kalosm").join("cache"),
+            huggingface_token: None,
         }
     }
 }
@@ -214,9 +242,10 @@ async fn download_into(
     url: Url,
     file: &PathBuf,
     head: Response,
+    client: reqwest::Client,
+    token: Option<String>,
     mut progress: impl FnMut(f32),
 ) -> anyhow::Result<()> {
-    let client = reqwest::Client::new();
     let length = head
         .headers()
         .get(CONTENT_LENGTH)
@@ -247,7 +276,7 @@ async fn download_into(
         .and_then(|length| HeaderValue::from_str(&format!("bytes={}-{}", start, length - 1)).ok());
 
     tracing::trace!("Fetching range {:?}", range);
-    let mut request = client.get(url);
+    let mut request = client.get(url).with_authorization_header(token);
     if let Some(range) = range {
         request = request.header(RANGE, range);
     }
@@ -275,6 +304,20 @@ async fn download_into(
     Ok(())
 }
 
+trait RequestBuilderExt {
+    fn with_authorization_header(self, token: Option<String>) -> Self;
+}
+
+impl RequestBuilderExt for reqwest::RequestBuilder {
+    fn with_authorization_header(self, token: Option<String>) -> Self {
+        if let Some(token) = token {
+            self.header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
+        } else {
+            self
+        }
+    }
+}
+
 #[tokio::test]
 async fn downloads_work() {
     let url = "https://httpbin.org/range/102400?duration=2";
@@ -284,9 +327,21 @@ async fn downloads_work() {
     };
     let client = reqwest::Client::new();
     let response = client.head(url).send().await.unwrap();
-    download_into(Url::from_str(url).unwrap(), &file, response, progress)
-        .await
-        .unwrap();
+    download_into(
+        Url::from_str(url).unwrap(),
+        &file,
+        response,
+        client,
+        None,
+        progress,
+    )
+    .await
+    .unwrap();
     assert!(file.exists());
     tokio::fs::remove_file(file).await.unwrap();
+}
+
+fn huggingface_token() -> Option<String> {
+    let cache = hf_hub::Cache::default();
+    cache.token().or_else(|| std::env::var("HF_TOKEN").ok())
 }
