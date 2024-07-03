@@ -171,6 +171,9 @@ pub struct WhisperBuilder {
 
     /// Language.
     language: Option<WhisperLanguage>,
+
+    /// The cache location to use for the model (defaults DATA_DIR/kalosm/cache)
+    cache: kalosm_common::Cache,
 }
 
 impl Default for WhisperBuilder {
@@ -178,6 +181,7 @@ impl Default for WhisperBuilder {
         Self {
             model: WhisperSource::default(),
             language: Some(WhisperLanguage::English),
+            cache: kalosm_common::Cache::default(),
         }
     }
 }
@@ -293,7 +297,7 @@ impl WhisperBuilder {
         self,
         mut progress_handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
     ) -> anyhow::Result<Whisper> {
-        //Download section
+        // Download section
         let whisper = self.get_whisper_model_config();
         let tokenizer_source = whisper.tokenizer;
         let model_source = whisper.model;
@@ -302,20 +306,29 @@ impl WhisperBuilder {
         let display_tokenizer_source = format!("Tokenizer ({})", tokenizer_source);
         let mut create_progress =
             ModelLoadingProgress::downloading_progress(display_tokenizer_source);
-        let tokenizer_filename = tokenizer_source
-            .download(|progress| progress_handler(create_progress(progress)))
+        let tokenizer_filename = self
+            .cache
+            .get(&tokenizer_source, |progress| {
+                progress_handler(create_progress(progress))
+            })
             .await?;
 
         let display_model_source = format!("Model ({})", model_source);
         let mut create_progress = ModelLoadingProgress::downloading_progress(display_model_source);
-        let filename = model_source
-            .download(|progress| progress_handler(create_progress(progress)))
+        let filename = self
+            .cache
+            .get(&model_source, |progress| {
+                progress_handler(create_progress(progress))
+            })
             .await?;
 
         let display_config_source = format!("Config ({})", config_source);
         let mut create_progress = ModelLoadingProgress::downloading_progress(display_config_source);
-        let config = config_source
-            .download(|progress| progress_handler(create_progress(progress)))
+        let config = self
+            .cache
+            .get(&config_source, |progress| {
+                progress_handler(create_progress(progress))
+            })
             .await?;
 
         let (rx, tx) = std::sync::mpsc::channel();
@@ -352,6 +365,13 @@ impl WhisperBuilder {
     /// Set the language to be used.
     pub fn with_language(mut self, language: Option<WhisperLanguage>) -> Self {
         self.language = language;
+        self
+    }
+
+    /// Set the cache location to use for the model (defaults DATA_DIR/kalosm/cache)
+    pub fn with_cache(mut self, cache: kalosm_common::Cache) -> Self {
+        self.cache = cache;
+
         self
     }
 }

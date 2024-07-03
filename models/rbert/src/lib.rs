@@ -69,6 +69,7 @@ pub use crate::source::*;
 #[derive(Default)]
 pub struct BertBuilder {
     source: BertSource,
+    cache: kalosm_common::Cache,
 }
 
 impl BertBuilder {
@@ -82,6 +83,13 @@ impl BertBuilder {
     pub async fn build(self) -> anyhow::Result<Bert> {
         self.build_with_loading_handler(ModelLoadingProgress::multi_bar_loading_indicator())
             .await
+    }
+
+    /// Set the cache location to use for the model (defaults DATA_DIR/kalosm/cache)
+    pub fn with_cache(mut self, cache: kalosm_common::Cache) -> Self {
+        self.cache = cache;
+
+        self
     }
 
     /// Build the model with a loading handler
@@ -133,7 +141,7 @@ impl Bert {
         builder: BertBuilder,
         mut progress_handler: impl FnMut(ModelLoadingProgress) + Send + 'static,
     ) -> anyhow::Result<Self> {
-        let BertBuilder { source } = builder;
+        let BertBuilder { source, cache } = builder;
         let BertSource {
             config,
             tokenizer,
@@ -143,18 +151,24 @@ impl Bert {
 
         let source = format!("Config ({})", config);
         let mut create_progress = ModelLoadingProgress::downloading_progress(source);
-        let config_filename = config
-            .download(|progress| progress_handler(create_progress(progress)))
+        let config_filename = cache
+            .get(&config, |progress| {
+                progress_handler(create_progress(progress))
+            })
             .await?;
         let tokenizer_source = format!("Tokenizer ({})", tokenizer);
         let mut create_progress = ModelLoadingProgress::downloading_progress(tokenizer_source);
-        let tokenizer_filename = tokenizer
-            .download(|progress| progress_handler(create_progress(progress)))
+        let tokenizer_filename = cache
+            .get(&tokenizer, |progress| {
+                progress_handler(create_progress(progress))
+            })
             .await?;
         let model_source = format!("Model ({})", model);
         let mut create_progress = ModelLoadingProgress::downloading_progress(model_source);
-        let weights_filename = model
-            .download(|progress| progress_handler(create_progress(progress)))
+        let weights_filename = cache
+            .get(&model, |progress| {
+                progress_handler(create_progress(progress))
+            })
             .await?;
 
         let config = std::fs::read_to_string(config_filename)?;

@@ -61,11 +61,15 @@ impl Display for FileSource {
 
 impl FileSource {
     /// Create a new source for a file from Hugging Face
-    pub fn huggingface(model_id: String, revision: String, file: String) -> Self {
+    pub fn huggingface(
+        model_id: impl ToString,
+        revision: impl ToString,
+        file: impl ToString,
+    ) -> Self {
         Self::HuggingFace {
-            model_id,
-            revision,
-            file,
+            model_id: model_id.to_string(),
+            revision: revision.to_string(),
+            file: file.to_string(),
         }
     }
 
