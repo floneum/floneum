@@ -4,7 +4,7 @@ type CharFilter = fn(char) -> bool;
 
 /// A parser that parses until a literal is found.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub struct StopOn<S: AsRef<str>, F: Fn(char) -> bool + 'static = CharFilter> {
+pub struct StopOn<S: AsRef<str> = &'static str, F: Fn(char) -> bool + 'static = CharFilter> {
     literal: S,
     character_filter: F,
 }

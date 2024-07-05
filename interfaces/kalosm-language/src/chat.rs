@@ -16,8 +16,8 @@ use kalosm_streams::text_stream::ChannelTextStream;
 use llm_samplers::types::Sampler;
 use tokio::sync::{mpsc::unbounded_channel, oneshot};
 
-type ResponseConstraintGenerator<M> =
-    Arc<Mutex<Box<dyn FnMut(&[ChatHistoryItem], &mut M) -> ArcParser<()> + Send + Sync>>>;
+type ResponseConstraintGenerator =
+    Arc<Mutex<Box<dyn FnMut(&[ChatHistoryItem]) -> ArcParser<()> + Send + Sync>>>;
 
 /// A simple helper function for prompting the user for input.
 pub fn prompt_input(prompt: impl Display) -> Result<String> {
@@ -77,7 +77,7 @@ struct ChatSession<Model: SyncModel> {
     history: Arc<RwLock<Vec<ChatHistoryItem>>>,
     session: Model::Session,
     unfed_text: String,
-    bot_constraints: Option<ResponseConstraintGenerator<Model>>,
+    bot_constraints: Option<ResponseConstraintGenerator>,
     sampler: Arc<Mutex<dyn Sampler + Send + Sync>>,
 }
 
@@ -93,7 +93,7 @@ impl<Model: SyncModel> ChatSession<Model> {
         assistant_marker: String,
         end_assistant_marker: String,
         system_prompt: String,
-        bot_constraints: Option<ResponseConstraintGenerator<Model>>,
+        bot_constraints: Option<ResponseConstraintGenerator>,
         sampler: Arc<Mutex<dyn Sampler + Send + Sync>>,
         session: Option<Model::Session>,
         initial_history: Vec<ChatHistoryItem>,
@@ -175,7 +175,7 @@ impl<Model: SyncModel> ChatSession<Model> {
             match bot_constraints {
                 Some(constraints) => {
                     let mut constraints = constraints.lock().unwrap();
-                    let constraints = constraints(&self.history.read().unwrap(), model);
+                    let constraints = constraints(&self.history.read().unwrap());
                     let state = constraints.create_parser_state();
                     model.generate_structured(
                         &mut self.session,
@@ -232,7 +232,7 @@ pub struct ChatBuilder<M: Model> {
     session: Option<<M::SyncModel as kalosm_language_model::SyncModel>::Session>,
     system_prompt: String,
     sampler: Arc<Mutex<dyn Sampler + Send + Sync>>,
-    bot_constraints: Option<ResponseConstraintGenerator<M::SyncModel>>,
+    bot_constraints: Option<ResponseConstraintGenerator>,
     initial_history: Vec<ChatHistoryItem>,
 }
 
@@ -253,6 +253,17 @@ impl<M: Model> ChatBuilder<M> {
 
     /// Adds a system prompt to the chat. The system prompt guides the model to respond in a certain way.
     /// If no system prompt is added, the model will use a default system prompt that instructs the model to respond in a way that is safe and respectful.
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// # use kalosm::language::*;
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let mut chat = Chat::builder(Llama::new_chat().await.unwrap())
+    ///     .with_system_prompt("The assistant will act like a pirate.")
+    ///     .build();
+    /// # }
+    /// ```
     pub fn with_system_prompt(mut self, system_prompt: impl Into<String>) -> Self {
         self.system_prompt = system_prompt.into();
         self
@@ -265,12 +276,32 @@ impl<M: Model> ChatBuilder<M> {
     }
 
     /// Constrains the model's response to the given parser. This can be used to make the model start with a certain phrase, or to make the model respond in a certain way.
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// # use kalosm::language::*;
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let model = Llama::new_chat().await.unwrap();
+    /// // Create constraints that parses Yes! and then stops on the end of the assistant's response
+    /// let constraints = LiteralParser::new("Yes!")
+    ///     .then(model.default_assistant_constraints().unwrap());
+    /// // Create a chat session with the model and the constraints
+    /// let mut chat = Chat::builder(model)
+    ///     .with_system_prompt(character_description)
+    ///     .constrain_response(move |_history| constraints.clone())
+    ///     .build();
+    ///
+    /// // Chat with the user
+    /// loop {
+    ///     let output_stream = chat.add_message(prompt_input("\n> ").unwrap());
+    ///     output_stream.to_std_out().await.unwrap();
+    /// }
+    /// # }
+    /// ```
     pub fn constrain_response<P>(
         self,
-        mut bot_constraints: impl FnMut(&[ChatHistoryItem], &mut M::SyncModel) -> P
-            + Send
-            + Sync
-            + 'static,
+        mut bot_constraints: impl FnMut(&[ChatHistoryItem]) -> P + Send + Sync + 'static,
     ) -> ChatBuilder<M>
     where
         P: CreateParserState + Sized + Send + Sync + 'static,
@@ -284,18 +315,31 @@ impl<M: Model> ChatBuilder<M> {
             system_prompt: self.system_prompt,
             sampler: self.sampler,
             bot_constraints: Some(Arc::new(Mutex::new(Box::new(
-                move |history: &[ChatHistoryItem], model: &mut M::SyncModel| {
-                    bot_constraints(history, model).map_output(|_| ()).boxed()
+                move |history: &[ChatHistoryItem]| {
+                    bot_constraints(history).map_output(|_| ()).boxed()
                 },
             )
-                as Box<
-                    dyn FnMut(&[ChatHistoryItem], &mut M::SyncModel) -> ArcParser + Send + Sync,
-                >))),
+                as Box<dyn FnMut(&[ChatHistoryItem]) -> ArcParser + Send + Sync>))),
             initial_history: self.initial_history,
         }
     }
 
-    /// Starts the chat instance with the given session. This can be useful for resuming a chat session.
+    /// Starts the chat instance with the given model session. This can be useful for resuming a chat session with a long context that has already been processed.
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// # use kalosm::language::*;
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let model = Llama::new_chat().await.unwrap();
+    /// // Load the model session from the filesystem
+    /// let session = LlamaModel::load_from(std::path::PathBuf::from("./chat.llama")).unwrap();
+    /// // Start the chat session with the cached session
+    /// let mut chat = Chat::builder(Llama::new_chat().await.unwrap())
+    ///     .with_session(session)
+    ///     .build();
+    /// # }
+    /// ```
     pub fn with_session(
         mut self,
         session: <M::SyncModel as kalosm_language_model::SyncModel>::Session,
@@ -305,6 +349,17 @@ impl<M: Model> ChatBuilder<M> {
     }
 
     /// Try to load the chat session from the given path. If the session is not found, the default session will be used.
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// # use kalosm::language::*;
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let mut chat = Chat::builder(Llama::new_chat().await.unwrap())
+    ///     .with_try_session_path("./chat.llama")
+    ///     .build();
+    /// # }
+    /// ```
     pub fn with_try_session_path(self, path: impl AsRef<std::path::Path>) -> Self {
         let session = <M::SyncModel as kalosm_language_model::SyncModel>::Session::load_from(path);
         if let Ok(session) = session {
@@ -317,6 +372,21 @@ impl<M: Model> ChatBuilder<M> {
     /// Set the initial history of the chat. Each message in the original history will be added to the chat history, and the model will be fed the user messages.
     ///
     /// > **Note**: The system prompt automatically added to the chat history and should not be included in the initial history.
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// # use kalosm::language::*;
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let mut chat = Chat::builder(Llama::new_chat().await.unwrap())
+    ///     .with_initial_history(vec![
+    ///         ChatHistoryItem::new(MessageType::SystemPrompt, "The assistant will act like a pirate."),
+    ///         ChatHistoryItem::new(MessageType::UserMessage, "Hello!"),
+    ///         ChatHistoryItem::new(MessageType::ModelAnswer, "Arrr matey, how ar ya?"),
+    ///     ])
+    ///     .build();
+    /// # }
+    /// ```
     pub fn with_initial_history(mut self, initial_history: Vec<ChatHistoryItem>) -> Self {
         self.initial_history = initial_history;
         self
@@ -428,11 +498,8 @@ enum Message {
 
 /// [`Chat`] is a chat interface that builds on top of [`kalosm_language_model::Model`]. It makes it easy to create a chat session with streaming responses, and constraints.
 ///
-/// You can save and load chat sessions from the filesystem using the [`Self::save_session`] and [`Self::load_session`] methods.
+/// Let's start with a simple chat application:
 ///
-/// # Examples
-///
-/// Simple chat:
 /// ```rust, no_run
 /// # use kalosm::language::*;
 /// # #[tokio::main]
@@ -455,9 +522,14 @@ enum Message {
 /// #}
 /// ```
 ///
-/// Saving and loading chat sessions:
+/// If you run the application, you may notice that it takes more time for the assistant to start responding to long prompts.
+/// The LLM needs to read and transform the prompt into a format it understands before it can start generating a response.
+/// Kalosm stores that state in a chat session, which can be saved and loaded from the filesystem to make loading existing chat sessions faster.
+///
+/// You can save and load chat sessions from the filesystem using the [`Self::save_session`] and [`Self::load_session`] methods:
+///
 /// ```rust, no_run
-/// /// # use kalosm::language::*;
+/// # use kalosm::language::*;
 /// # #[tokio::main]
 /// # async fn main() {
 /// // First, create a model to chat with
@@ -478,10 +550,34 @@ enum Message {
 /// chat.save_session(&save_path).await.unwrap();
 /// # }
 /// ```
-/// 
-/// Guiding the model response with constraints:
+///
+/// LLMs are powerful because of their generality, but sometimes you need more control over the output. For example, you might want the assistant to start with a certain phrase, or to follow a certain format.
+///
+/// In kalosm, you can use constraints to guide the model's response. Constraints are a way to specify the format of the output. When generating with constraints, the model will always respond with the specified format.
+///
+///
+/// Let's create a chat application that uses constraints to guide the assistant's response to always start with "Yes!":
+///
 /// ```rust, no_run
-/// todo
+/// /// # use kalosm::language::*;
+/// # #[tokio::main]
+/// # async fn main() {
+/// let model = Llama::new_chat().await.unwrap();
+/// // Create constraints that parses Yes! and then stops on the end of the assistant's response
+/// let constraints = LiteralParser::new("Yes!")
+///     .then(model.default_assistant_constraints().unwrap());
+/// // Create a chat session with the model and the constraints
+/// let mut chat = Chat::builder(model)
+///     .with_system_prompt(character_description)
+///     .constrain_response(move |_history| constraints.clone())
+///     .build();
+///
+/// // Chat with the user
+/// loop {
+///     let output_stream = chat.add_message(prompt_input("\n> ").unwrap());
+///     output_stream.to_std_out().await.unwrap();
+/// }
+/// # }
 /// ```
 pub struct Chat {
     sender: tokio::sync::mpsc::UnboundedSender<Message>,
@@ -565,6 +661,17 @@ impl Chat {
     }
 
     /// Saves the session to the given path.
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// # use kalosm::language::*;
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let mut chat = Chat::new(Llama::new_chat().await.unwrap());
+    /// let save_path = std::path::PathBuf::from("./chat.llama");
+    /// chat.save_session(&save_path).await.unwrap();
+    /// # }
+    /// ```
     pub fn save_session(
         &mut self,
         path: impl AsRef<std::path::Path>,
@@ -581,6 +688,20 @@ impl Chat {
     }
 
     /// Get the current chat history.
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// # use kalosm::language::*;
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let mut chat = Chat::new(Llama::new_chat().await.unwrap());
+    /// // Add a message to the chat history
+    /// chat.add_message("Hello, world!").to_std_out().await.unwrap();
+    /// // Get the chat history
+    /// let history = chat.history();
+    /// println!("{:?}", history);
+    /// # }
+    /// ```
     pub fn history(&self) -> Vec<ChatHistoryItem> {
         self.shared_history.read().unwrap().clone()
     }

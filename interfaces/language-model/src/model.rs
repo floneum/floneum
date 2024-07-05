@@ -2,6 +2,7 @@ use crate::structured::generate_structured;
 use crate::TokenOutputStream;
 use futures_util::{Stream, StreamExt};
 use kalosm_common::*;
+use kalosm_sample::{LiteralParser, StopOn};
 use kalosm_sample::{Parser, Tokenizer};
 use kalosm_streams::text_stream::ChannelTextStream;
 use llm_samplers::configure::SamplerChainBuilder;
@@ -430,6 +431,13 @@ pub trait ModelExt: Model + Send + Sync + 'static {
             Self::TextStream::from(receiver),
             result_receiver,
         ))
+    }
+
+    /// Get the default constraints for an assistant response. It parses any text until the end of the assistant's response.
+    fn default_assistant_constraints(&self) -> Option<StopOn> {
+        let end_assistant_marker = self.chat_markers()?.end_assistant_marker;
+
+        Some(StopOn::from(end_assistant_marker))
     }
 }
 
