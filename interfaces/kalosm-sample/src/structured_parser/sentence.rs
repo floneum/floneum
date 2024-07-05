@@ -1,6 +1,6 @@
 use std::ops::{Deref, DerefMut};
 
-use crate::{CreateParserState, HasParser};
+use crate::{CreateParserState, Parse};
 use crate::{ParseStatus, Parser, StringParser};
 
 #[derive(Clone, Debug)]
@@ -90,9 +90,7 @@ impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Parser
     }
 }
 
-impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> HasParser
-    for Sentence<MIN_LENGTH, MAX_LENGTH>
-{
+impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Parse for Sentence<MIN_LENGTH, MAX_LENGTH> {
     type Parser = SentenceParser<MIN_LENGTH, MAX_LENGTH>;
 
     fn new_parser() -> Self::Parser {

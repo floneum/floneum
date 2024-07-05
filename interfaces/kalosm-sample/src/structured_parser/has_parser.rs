@@ -5,7 +5,7 @@ use crate::{
 };
 
 /// Data that can be parsed incrementally.
-pub trait HasParser {
+pub trait Parse {
     /// The parser for the data.
     type Parser: Parser<Output = Self>;
 
@@ -55,7 +55,7 @@ macro_rules! int_parser {
             }
         }
 
-        impl HasParser for $num {
+        impl Parse for $num {
             type Parser = $ty;
 
             fn new_parser() -> Self::Parser {
@@ -69,8 +69,8 @@ macro_rules! int_parser {
 
         #[test]
         fn $test() {
-            let parser = <$num as HasParser>::new_parser();
-            let state = <$num as HasParser>::create_parser_state();
+            let parser = <$num as Parse>::new_parser();
+            let state = <$num as Parse>::create_parser_state();
             for _ in 0..100 {
                 let input = rand::random::<$num>();
                 let input_str = input.to_string() + "\n";
@@ -97,7 +97,7 @@ int_parser!(I16Parser, i16, test_i16);
 int_parser!(I32Parser, i32, test_i32);
 int_parser!(I64Parser, i64, test_i64);
 
-impl HasParser for String {
+impl Parse for String {
     type Parser = StringParser<fn(char) -> bool>;
 
     fn new_parser() -> Self::Parser {
@@ -111,18 +111,18 @@ impl HasParser for String {
 
 /// A parser for a vector of a type.
 #[derive(Clone, Debug)]
-pub struct VecParser<T: HasParser> {
+pub struct VecParser<T: Parse> {
     parser: SequenceParser<
         LiteralParser,
         SequenceParser<SeparatedParser<T::Parser, LiteralParser>, LiteralParser>,
     >,
 }
 
-impl<T: HasParser> Default for VecParser<T>
+impl<T: Parse> Default for VecParser<T>
 where
     <T::Parser as Parser>::PartialState: Clone,
     <T::Parser as Parser>::Output: Clone,
-    <T as HasParser>::Parser: CreateParserState,
+    <T as Parse>::Parser: CreateParserState,
 {
     fn default() -> Self {
         Self {
@@ -137,22 +137,22 @@ where
     }
 }
 
-impl<T: HasParser> CreateParserState for VecParser<T>
+impl<T: Parse> CreateParserState for VecParser<T>
 where
     <T::Parser as Parser>::PartialState: Clone,
     <T::Parser as Parser>::Output: Clone,
-    <T as HasParser>::Parser: CreateParserState,
+    <T as Parse>::Parser: CreateParserState,
 {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState {
         self.parser.create_parser_state()
     }
 }
 
-impl<T: HasParser> Parser for VecParser<T>
+impl<T: Parse> Parser for VecParser<T>
 where
     <T::Parser as Parser>::PartialState: Clone,
     <T::Parser as Parser>::Output: Clone,
-    <T as HasParser>::Parser: CreateParserState,
+    <T as Parse>::Parser: CreateParserState,
 {
     type Output = Vec<<T::Parser as Parser>::Output>;
     type PartialState = <SequenceParser<
@@ -171,11 +171,11 @@ where
     }
 }
 
-impl<T: HasParser> HasParser for Vec<T>
+impl<T: Parse> Parse for Vec<T>
 where
     <T::Parser as Parser>::PartialState: Clone,
     <T::Parser as Parser>::Output: Clone,
-    <T as HasParser>::Parser: CreateParserState,
+    <T as Parse>::Parser: CreateParserState,
 {
     type Parser = VecParser<T>;
 
@@ -189,18 +189,18 @@ where
 }
 
 /// A parser for a fixed size array of a type.
-pub struct ArrayParser<const N: usize, T: HasParser> {
+pub struct ArrayParser<const N: usize, T: Parse> {
     parser: SequenceParser<
         LiteralParser,
         SequenceParser<SeparatedParser<T::Parser, LiteralParser>, LiteralParser>,
     >,
 }
 
-impl<const N: usize, T: HasParser> Default for ArrayParser<N, T>
+impl<const N: usize, T: Parse> Default for ArrayParser<N, T>
 where
     <T::Parser as Parser>::PartialState: Clone,
     <T::Parser as Parser>::Output: Clone,
-    <T as HasParser>::Parser: CreateParserState,
+    <T as Parse>::Parser: CreateParserState,
 {
     fn default() -> Self {
         Self {
@@ -215,22 +215,22 @@ where
     }
 }
 
-impl<const N: usize, T: HasParser> CreateParserState for ArrayParser<N, T>
+impl<const N: usize, T: Parse> CreateParserState for ArrayParser<N, T>
 where
     <T::Parser as Parser>::PartialState: Clone,
     <T::Parser as Parser>::Output: Clone,
-    <T as HasParser>::Parser: CreateParserState,
+    <T as Parse>::Parser: CreateParserState,
 {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState {
         self.parser.create_parser_state()
     }
 }
 
-impl<const N: usize, T: HasParser> Parser for ArrayParser<N, T>
+impl<const N: usize, T: Parse> Parser for ArrayParser<N, T>
 where
     <T::Parser as Parser>::PartialState: Clone,
     <T::Parser as Parser>::Output: Clone,
-    <T as HasParser>::Parser: CreateParserState,
+    <T as Parse>::Parser: CreateParserState,
 {
     type Output = [<T::Parser as Parser>::Output; N];
     type PartialState = <SequenceParser<
@@ -253,11 +253,11 @@ where
     }
 }
 
-impl<const N: usize, T: HasParser> HasParser for [T; N]
+impl<const N: usize, T: Parse> Parse for [T; N]
 where
     <T::Parser as Parser>::PartialState: Clone,
     <T::Parser as Parser>::Output: Clone,
-    <T as HasParser>::Parser: CreateParserState,
+    <T as Parse>::Parser: CreateParserState,
 {
     type Parser = ArrayParser<N, T>;
 
