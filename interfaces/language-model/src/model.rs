@@ -2,7 +2,7 @@ use crate::structured::generate_structured;
 use crate::TokenOutputStream;
 use futures_util::{Stream, StreamExt};
 use kalosm_common::*;
-use kalosm_sample::{LiteralParser, StopOn};
+use kalosm_sample::StopOn;
 use kalosm_sample::{Parser, Tokenizer};
 use kalosm_streams::text_stream::ChannelTextStream;
 use llm_samplers::configure::SamplerChainBuilder;

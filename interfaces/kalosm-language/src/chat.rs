@@ -288,7 +288,6 @@ impl<M: Model> ChatBuilder<M> {
     ///     .then(model.default_assistant_constraints().unwrap());
     /// // Create a chat session with the model and the constraints
     /// let mut chat = Chat::builder(model)
-    ///     .with_system_prompt(character_description)
     ///     .constrain_response(move |_history| constraints.clone())
     ///     .build();
     ///
@@ -568,7 +567,6 @@ enum Message {
 ///     .then(model.default_assistant_constraints().unwrap());
 /// // Create a chat session with the model and the constraints
 /// let mut chat = Chat::builder(model)
-///     .with_system_prompt(character_description)
 ///     .constrain_response(move |_history| constraints.clone())
 ///     .build();
 ///
