@@ -13,8 +13,6 @@ async fn main() {
 
     loop {
         chat.add_message(prompt_input("\n> ").unwrap())
-            .await
-            .unwrap()
             .to_std_out()
             .await
             .unwrap();

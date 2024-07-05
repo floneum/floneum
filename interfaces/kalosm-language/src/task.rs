@@ -246,7 +246,7 @@ pub struct UnstructuredRunner {
 }
 
 impl TaskRunner for UnstructuredRunner {
-    type Output = ChannelTextStream<String>;
+    type Output = ChannelTextStream;
 
     fn run<M: Model>(&self, input: String, model: & M) -> Self::Output  where <<M as kalosm_language_model::Model>::SyncModel as kalosm_language_model::SyncModel>::Session: Send + Sync{
         let chat_markers = model.chat_markers();
@@ -361,7 +361,7 @@ where
     <P as Parser>::Output: Clone + Send + 'static,
     <P as Parser>::PartialState: Sync + Send,
 {
-    type Output = StructureParserResult<ChannelTextStream<String>, P::Output>;
+    type Output = StructureParserResult<ChannelTextStream, P::Output>;
 
     fn run<M: Model>(&self, input: String, model: &M) -> Self::Output where <<M as kalosm_language_model::Model>::SyncModel as kalosm_language_model::SyncModel>::Session: Send + Sync{
         let (tx, rx) = unbounded_channel();

@@ -16,7 +16,7 @@ async fn main() {
     let mut response = String::from("Is there anything you want to know about the world?");
     loop {
         println!("User:");
-        let mut stream = agent2.add_message(&response).await.unwrap();
+        let mut stream = agent2.add_message(&response);
         let mut user_question = String::new();
         while let Some(token) = stream.next().await {
             print!("{token}");
@@ -26,7 +26,7 @@ async fn main() {
         println!();
 
         println!("Assistant:");
-        let mut stream = agent1.add_message(user_question).await.unwrap();
+        let mut stream = agent1.add_message(user_question);
         response.clear();
         while let Some(token) = stream.next().await {
             print!("{token}");
