@@ -158,50 +158,49 @@ impl<Model: SyncModel> ChatSession<Model> {
         self.unfed_text += &self.assistant_marker;
         let prompt = std::mem::take(&mut self.unfed_text);
         let bot_constraints = &self.bot_constraints;
-        loop {
-            bot_response.clear();
 
-            let mut on_token = |tok: String| {
-                let tok = tok
-                    .strip_suffix(&self.end_assistant_marker)
-                    .unwrap_or(&tok)
-                    .to_string();
-                bot_response += &tok;
-                // Send the new token to the stream
-                stream.send(tok)?;
-                Ok(())
-            };
+        let mut on_token = |tok: String| {
+            let tok = tok
+                .strip_suffix(&self.end_assistant_marker)
+                .unwrap_or(&tok)
+                .to_string();
+            bot_response += &tok;
+            // Send the new token to the stream
+            stream.send(tok)?;
+            Ok(())
+        };
 
-            match bot_constraints {
-                Some(constraints) => {
-                    let mut constraints = constraints.lock().unwrap();
-                    let constraints = constraints(&self.history.read().unwrap());
-                    let state = constraints.create_parser_state();
-                    model.generate_structured(
-                        &mut self.session,
-                        &prompt,
-                        constraints,
-                        state,
-                        self.sampler.clone(),
-                        on_token,
-                        Some(32),
-                    )?;
-                }
-                None => {
-                    model.stream_text_with_sampler(
-                        &mut self.session,
-                        &prompt,
-                        None,
-                        Some(&self.end_assistant_marker),
-                        self.sampler.clone(),
-                        |tok| {
-                            on_token(tok)?;
-                            Ok(kalosm_language_model::ModelFeedback::Continue)
-                        },
-                    )?;
-                }
+        match bot_constraints {
+            Some(constraints) => {
+                let mut constraints = constraints.lock().unwrap();
+                let constraints = constraints(&self.history.read().unwrap());
+                let state = constraints.create_parser_state();
+                model.generate_structured(
+                    &mut self.session,
+                    &prompt,
+                    constraints,
+                    state,
+                    self.sampler.clone(),
+                    on_token,
+                    Some(32),
+                )?;
+            }
+            None => {
+                model.stream_text_with_sampler(
+                    &mut self.session,
+                    &prompt,
+                    None,
+                    Some(&self.end_assistant_marker),
+                    self.sampler.clone(),
+                    |tok| {
+                        on_token(tok)?;
+                        Ok(kalosm_language_model::ModelFeedback::Continue)
+                    },
+                )?;
             }
         }
+
+        Ok(())
     }
 
     fn add_user_message(&mut self, message: String) {
