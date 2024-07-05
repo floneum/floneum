@@ -28,7 +28,7 @@ impl ModelBuilder for PhiBuilder {
 
 #[async_trait::async_trait]
 impl Model for Phi {
-    type TextStream = ChannelTextStream<String>;
+    type TextStream = ChannelTextStream;
     type SyncModel = PhiModel;
 
     fn tokenizer(&self) -> Arc<dyn kalosm_sample::Tokenizer + Send + Sync> {

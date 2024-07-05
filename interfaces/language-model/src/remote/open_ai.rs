@@ -89,7 +89,7 @@ macro_rules! openai_model {
 
         #[async_trait::async_trait]
         impl crate::model::Model for $ty {
-            type TextStream = ChannelTextStream<String>;
+            type TextStream = ChannelTextStream;
             type SyncModel = crate::SyncModelNotSupported;
 
             fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {

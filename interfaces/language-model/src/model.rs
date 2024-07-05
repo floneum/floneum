@@ -826,9 +826,7 @@ pub trait Model: Send + Sync + 'static {
 }
 
 /// An extension trait for models that can be converted into a trait object.
-pub trait AnyModelExt:
-    Model<TextStream = ChannelTextStream<String>> + Send + Sync + 'static
-{
+pub trait AnyModelExt: Model<TextStream = ChannelTextStream> + Send + Sync + 'static {
     /// Convert this model into a model trait object.
     fn into_any_model(self) -> DynModel
     where
@@ -838,7 +836,7 @@ pub trait AnyModelExt:
     }
 }
 
-impl<M: Model<TextStream = ChannelTextStream<String>> + Send + Sync + 'static> AnyModelExt for M {}
+impl<M: Model<TextStream = ChannelTextStream> + Send + Sync + 'static> AnyModelExt for M {}
 
 /// The chat markers to use for the model.
 #[derive(Default, Clone, Debug)]
@@ -859,15 +857,15 @@ pub struct ChatMarkers {
 
 /// A trait object for a model.
 pub type DynModel =
-    Box<dyn Model<TextStream = ChannelTextStream<String>, SyncModel = BoxedSyncModel> + Send>;
+    Box<dyn Model<TextStream = ChannelTextStream, SyncModel = BoxedSyncModel> + Send>;
 
 #[async_trait::async_trait]
 impl Model for DynModel {
-    type TextStream = ChannelTextStream<String>;
+    type TextStream = ChannelTextStream;
     type SyncModel = BoxedSyncModel;
 
     fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
-        let self_ref: &(dyn Model<TextStream = ChannelTextStream<String>, SyncModel = BoxedSyncModel>
+        let self_ref: &(dyn Model<TextStream = ChannelTextStream, SyncModel = BoxedSyncModel>
               + Send) = self.as_ref();
         self_ref.tokenizer()
     }
@@ -877,7 +875,7 @@ impl Model for DynModel {
         prompt: &str,
         parameters: GenerationParameters,
     ) -> anyhow::Result<Self::TextStream> {
-        let self_ref: &(dyn Model<TextStream = ChannelTextStream<String>, SyncModel = BoxedSyncModel>
+        let self_ref: &(dyn Model<TextStream = ChannelTextStream, SyncModel = BoxedSyncModel>
               + Send) = self.as_ref();
         self_ref.stream_text_inner(prompt, parameters).await
     }
@@ -1004,9 +1002,9 @@ struct AnyModel<M>(M);
 #[async_trait::async_trait]
 impl<M> Model for AnyModel<M>
 where
-    M: Model<TextStream = ChannelTextStream<String>> + Send + Sync,
+    M: Model<TextStream = ChannelTextStream> + Send + Sync,
 {
-    type TextStream = ChannelTextStream<String>;
+    type TextStream = ChannelTextStream;
     type SyncModel = BoxedSyncModel;
 
     fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
