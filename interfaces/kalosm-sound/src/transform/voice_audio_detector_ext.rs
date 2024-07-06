@@ -21,15 +21,23 @@ pub trait VoiceActivityStreamExt: futures_core::Stream<Item = VoiceActivityDetec
     }
 
     /// Rechunk the audio into chunks of audio with a rolling average over the given duration more than the given threshold
-    fn rechunk_voice_activity(
-        self,
-        chunk_size: Duration,
-        threshold: f32,
-    ) -> VoiceActivityRechunkerStream<Self>
+    fn rechunk_voice_activity(self) -> VoiceActivityRechunkerStream<Self>
     where
         Self: Sized + Unpin,
     {
-        VoiceActivityRechunkerStream::new(self, chunk_size, threshold)
+        let start_threshold = 0.6;
+        let start_window = Duration::from_millis(100);
+        let end_threshold = 0.2;
+        let end_window = Duration::from_millis(2000);
+        let time_before_speech = Duration::from_millis(500);
+        VoiceActivityRechunkerStream::new(
+            self,
+            start_threshold,
+            start_window,
+            end_threshold,
+            end_window,
+            time_before_speech,
+        )
     }
 }
 
@@ -74,10 +82,14 @@ impl<S: futures_core::Stream<Item = VoiceActivityDetectorOutput> + Unpin> future
 /// A stream of audio chunks with a voice activity probability rolling average above a given threshold
 pub struct VoiceActivityRechunkerStream<S> {
     source: S,
-    threshold: f32,
-    chunk_size: Duration,
+    start_threshold: f32,
+    start_window: Duration,
+    end_threshold: f32,
+    end_window: Duration,
+    include_duration_before: Duration,
+    duration_before_window: Duration,
     in_voice_run: bool,
-    buffer: Vec<SamplesBuffer<f32>>,
+    buffer: VecDeque<SamplesBuffer<f32>>,
     channels: u16,
     sample_rate: u32,
     voice_probabilities_window: VecDeque<(f32, Duration)>,
@@ -86,13 +98,56 @@ pub struct VoiceActivityRechunkerStream<S> {
 }
 
 impl<S> VoiceActivityRechunkerStream<S> {
-    fn new(source: S, chunk_size: Duration, threshold: f32) -> Self {
+    /// Set the threshold for the start of a voice activity run
+    pub fn with_start_threshold(mut self, start_threshold: f32) -> Self {
+        self.start_threshold = start_threshold;
+        self
+    }
+
+    /// Set the window for the start of a voice activity run
+    pub fn with_start_window(mut self, start_window: Duration) -> Self {
+        self.start_window = start_window;
+        self
+    }
+
+    /// Set the threshold for the end of a voice activity run
+    pub fn with_end_threshold(mut self, end_threshold: f32) -> Self {
+        self.end_threshold = end_threshold;
+        self
+    }
+
+    /// Set the window for the end of a voice activity run
+    pub fn with_end_window(mut self, end_window: Duration) -> Self {
+        self.end_window = end_window;
+        self
+    }
+
+    /// Set the time before the speech run starts to include in the output
+    pub fn with_time_before_speech(mut self, time_before_speech: Duration) -> Self {
+        self.include_duration_before = time_before_speech;
+        self
+    }
+}
+
+impl<S> VoiceActivityRechunkerStream<S> {
+    fn new(
+        source: S,
+        start_threshold: f32,
+        start_window: Duration,
+        end_threshold: f32,
+        end_window: Duration,
+        include_duration_before: Duration,
+    ) -> Self {
         Self {
             source,
-            threshold,
-            chunk_size,
+            start_threshold,
+            start_window,
+            end_threshold,
+            end_window,
+            include_duration_before,
+            duration_before_window: Duration::ZERO,
             in_voice_run: false,
-            buffer: Vec::new(),
+            buffer: VecDeque::new(),
             channels: 1,
             sample_rate: 0,
             voice_probabilities_window: VecDeque::new(),
@@ -101,14 +156,14 @@ impl<S> VoiceActivityRechunkerStream<S> {
         }
     }
 
-    fn add_sample(&mut self, probability: f32, len: Duration) {
+    fn add_sample(&mut self, probability: f32, len: Duration, window: Duration) {
         // Add the samples to the rolling average
         self.voice_probabilities_window
             .push_front((probability, len));
         self.sum += probability;
         self.duration_in_window += len;
         // If the buffer is full, remove the first probability from the rolling average
-        while self.duration_in_window >= self.chunk_size {
+        while self.duration_in_window > window {
             self.pop_last_sample();
         }
     }
@@ -132,7 +187,12 @@ impl<S> VoiceActivityRechunkerStream<S> {
                 .flatten()
                 .collect::<Vec<_>>(),
         );
+        self.sum = 0.0;
+        self.duration_in_window = Duration::ZERO;
+        self.voice_probabilities_window.clear();
         self.in_voice_run = false;
+        self.duration_before_window = Duration::ZERO;
+        self.buffer.clear();
         samples
     }
 }
@@ -153,28 +213,35 @@ impl<S: futures_core::Stream<Item = VoiceActivityDetectorOutput> + Unpin> future
             if let Some(next) = next {
                 // Set the sample rate from the stream
                 this.sample_rate = rodio::Source::sample_rate(&next.samples);
-                this.add_sample(
-                    next.probability,
-                    rodio::Source::total_duration(&next.samples).unwrap(),
-                );
-
-                // Add the samples to the buffer
-                this.buffer.push(next.samples);
+                let sample_duration = rodio::Source::total_duration(&next.samples)
+                    .expect("samples must have a duration");
+                let window = if this.in_voice_run {
+                    this.end_window
+                } else {
+                    this.start_window
+                };
+                this.add_sample(next.probability, sample_duration, window);
                 // If we are inside a chunk that looks like voice, set the in voice run flag
-                if this.rolling_average() > this.threshold {
+                if this.rolling_average() > this.start_threshold {
                     this.in_voice_run = true;
                 }
-                // Otherwise, if we just left a chunk that looks like voice, add the buffer to the output
-                else if this.in_voice_run {
-                    let samples = this.finish_voice_run();
-                    return Poll::Ready(Some(samples));
-                }
-                // Or if not, remove the first sample from the buffer while the probability is very low
-                else {
-                    this.buffer.remove(0);
-                    while this.rolling_average() < this.threshold / 2. && this.buffer.len() > 1 {
-                        this.buffer.remove(0);
-                        this.pop_last_sample();
+                // Add the samples to the buffer
+                this.buffer.push_back(next.samples);
+                // If this is inside a voice run, add the sample to the buffer
+                if this.in_voice_run {
+                    // Otherwise, if we just left a chunk that looks like voice, add the buffer to the output
+                    if this.rolling_average() < this.end_threshold {
+                        let samples = this.finish_voice_run();
+                        return Poll::Ready(Some(samples));
+                    }
+                } else {
+                    // Otherwise, add it to the pre-voice buffer
+                    this.duration_before_window += sample_duration;
+                    // If the pre-voice buffer is full, remove the first sample from it
+                    while this.duration_before_window >= this.include_duration_before {
+                        let sample = this.buffer.pop_front().unwrap();
+                        this.duration_before_window -= rodio::Source::total_duration(&sample)
+                            .expect("samples must have a duration");
                     }
                 }
             } else {

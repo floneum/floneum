@@ -1,7 +1,8 @@
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
-    Sample,
+    SizedSample,
 };
+use dasp::sample::ToSample;
 use futures_channel::mpsc;
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -60,72 +61,72 @@ impl MicInput {
 
     /// Creates a new stream of audio data from the microphone.
     pub fn stream(&self) -> Result<MicStream, anyhow::Error> {
-        let err_fn = move |err| {
-            tracing::error!("an error occurred on stream: {}", err);
-        };
-        let (mut tx, rx) = mpsc::unbounded::<Vec<f32>>();
-        let channels = self.config.channels() as usize;
+        let (tx, rx) = mpsc::unbounded::<Vec<f32>>();
 
-        let stream = match self.config.sample_format() {
-            cpal::SampleFormat::I8 => self.device.build_input_stream(
-                &self.config.config(),
-                move |data: &[i8], _: &_| {
-                    let _ = tx.start_send(
-                        data.iter()
-                            .step_by(channels)
-                            .map(|&x| x.to_sample())
-                            .collect(),
-                    );
-                },
-                err_fn,
-                None,
-            )?,
-            cpal::SampleFormat::I16 => self.device.build_input_stream(
-                &self.config.config(),
-                move |data: &[i16], _: &_| {
-                    let _ = tx.start_send(
-                        data.iter()
-                            .step_by(channels)
-                            .map(|&x| x.to_sample())
-                            .collect(),
-                    );
-                },
-                err_fn,
-                None,
-            )?,
-            cpal::SampleFormat::I32 => self.device.build_input_stream(
-                &self.config.config(),
-                move |data: &[i32], _: &_| {
-                    let _ = tx.start_send(
-                        data.iter()
-                            .step_by(channels)
-                            .map(|&x| x.to_sample())
-                            .collect(),
-                    );
-                },
-                err_fn,
-                None,
-            )?,
-            cpal::SampleFormat::F32 => self.device.build_input_stream(
-                &self.config.config(),
-                move |data: &[f32], _: &_| {
-                    let _ = tx.start_send(data.iter().step_by(channels).copied().collect());
-                },
-                err_fn,
-                None,
-            )?,
-            sample_format => {
-                return Err(anyhow::Error::msg(format!(
-                    "Unsupported sample format '{sample_format}'"
-                )))
+        let config = self.config.clone();
+        let device: cpal::Device = self.device.clone();
+        let (drop_tx, drop_rx) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            fn build_stream<S: ToSample<f32> + SizedSample>(
+                device: &cpal::Device,
+                config: &cpal::SupportedStreamConfig,
+                mut tx: mpsc::UnboundedSender<Vec<f32>>,
+            ) -> Result<cpal::Stream, cpal::BuildStreamError> {
+                let channels = config.channels() as usize;
+                device.build_input_stream::<S, _, _>(
+                    &config.config(),
+                    move |data: &[S], _: &_| {
+                        let _ = tx.start_send(
+                            data.iter()
+                                .step_by(channels)
+                                .map(|&x| x.to_sample())
+                                .collect(),
+                        );
+                    },
+                    |err| {
+                        tracing::error!("an error occurred on stream: {}", err);
+                    },
+                    None,
+                )
             }
-        };
 
-        stream.play()?;
+            let start_stream = || {
+                let stream = match config.sample_format() {
+                    cpal::SampleFormat::I8 => build_stream::<i8>(&device, &config, tx)?,
+                    cpal::SampleFormat::I16 => build_stream::<i16>(&device, &config, tx)?,
+                    cpal::SampleFormat::I32 => build_stream::<i32>(&device, &config, tx)?,
+                    cpal::SampleFormat::F32 => build_stream::<f32>(&device, &config, tx)?,
+                    sample_format => {
+                        return Err(anyhow::Error::msg(format!(
+                            "Unsupported sample format '{sample_format}'"
+                        )))
+                    }
+                };
+
+                stream.play()?;
+
+                Ok(stream)
+            };
+
+            let stream = match start_stream() {
+                Ok(stream) => stream,
+                Err(err) => {
+                    tracing::error!("Error starting stream: {}", err);
+                    return;
+                }
+            };
+
+            // Wait for the stream to be dropped
+            drop_rx.recv().unwrap();
+
+            // Then drop the stream
+            drop(stream);
+        });
 
         let receiver = rx.map(futures_util::stream::iter).flatten();
         Ok(MicStream {
-            _audio: stream,
+            drop_tx,
             config: self.config.clone(),
             receiver: Box::pin(receiver),
             read_data: Vec::new(),
@@ -135,10 +136,16 @@ impl MicInput {
 
 /// A stream of audio data from the microphone.
 pub struct MicStream {
-    _audio: cpal::Stream,
+    drop_tx: std::sync::mpsc::Sender<()>,
     config: cpal::SupportedStreamConfig,
     read_data: Vec<f32>,
-    receiver: Pin<Box<dyn futures_core::Stream<Item = f32> + Send>>,
+    receiver: Pin<Box<dyn futures_core::Stream<Item = f32> + Send + Sync>>,
+}
+
+impl Drop for MicStream {
+    fn drop(&mut self) {
+        self.drop_tx.send(()).unwrap();
+    }
 }
 
 impl Stream for MicStream {
@@ -190,4 +197,12 @@ impl AsyncSource for MicStream {
     fn sample_rate(&self) -> u32 {
         self.config.sample_rate().0
     }
+}
+
+#[test]
+fn assert_mic_stream_send_sync() {
+    fn assert_sync<T: Sync>() {}
+    assert_sync::<MicStream>();
+    fn assert_send<T: Send>() {}
+    assert_send::<MicStream>();
 }
