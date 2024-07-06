@@ -108,6 +108,11 @@ impl Segment {
     pub fn progress(&self) -> f32 {
         self.progress
     }
+
+    /// Return the confidence of the transcription result (between 0 and 1)
+    pub fn confidence(&self) -> f64 {
+        self.result.avg_logprob.exp()
+    }
 }
 
 impl AsRef<str> for Segment {
@@ -138,7 +143,7 @@ where
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         tokio::spawn(async move {
             while let Some(source) = stream.next().await {
-                let result = { model.transcribe(source) };
+                let result = model.transcribe(source);
                 match result {
                     Ok(mut stream) => {
                         while let Some(segment) = stream.next().await {

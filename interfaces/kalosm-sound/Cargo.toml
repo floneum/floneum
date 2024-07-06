@@ -14,7 +14,6 @@ cpal = "0.15.1"
 itertools = "0.10.5"
 rand = "0.8.5"
 ringbuf = "0.3.2"
-webrtc-vad = "0.4"
 candle-core.workspace = true
 candle-nn.workspace = true
 candle-transformers.workspace = true
@@ -23,15 +22,26 @@ tokenizers = "0.19.1"
 serde_json = "1.0.107"
 hound = "3.5"
 rodio = "0.17.1"
+dasp = { version = "0.11.0", features = ["all"] }
 tokio = { version = "1.32.0", features = ["full"] }
 tracing = "0.1.37"
-ringbuffer = "0.15.0"
-futures-util = "0.3.28"
+
+futures-core = "0.3.30"
+futures-util = "0.3.30"
+futures-channel = "0.3.30"
 async-trait = "0.1.73"
+
 kalosm-streams.workspace = true
 rwhisper.workspace = true
 
+
+voice_activity_detector = { version = "0.1.0", features = ["async"], optional = true }
+nnnoiseless = { version = "0.5.1", optional = true }
+
 [features]
+default = ["voice_detection", "denoise"]
 metal = ["candle-core/metal", "rwhisper/accelerate", "rwhisper/metal"]
 cuda = ["candle-core/cuda", "rwhisper/cuda", "rwhisper/cudnn"]
 mkl = ["candle-core/mkl", "rwhisper/mkl"]
+denoise = ["nnnoiseless"]
+voice_detection = ["voice_activity_detector"]
