@@ -10,10 +10,10 @@ use voice_activity_detector::VoiceActivityDetector;
 
 use crate::{AsyncSource, ResampledAsyncSource};
 
-/// An extension trait for audio streams that adds a voice activity detection information
+/// An extension trait for audio streams that adds a voice activity detection information. Based on the [voice_activity_detector](https://github.com/nkeenan38/voice_activity_detector) crate.
 pub trait VoiceActivityDetectorExt: AsyncSource {
     /// Transform the audio stream to a stream of [`SamplesBuffer`]s with voice activity detection information
-    fn voice_activity_stream(self) -> VoiceActivityDetectorStream<ResampledAsyncSource<Self>>
+    fn voice_activity_stream(self) -> VoiceActivityDetectorStream<Self>
     where
         Self: Sized + Unpin,
     {
@@ -28,14 +28,14 @@ impl<S: AsyncSource> VoiceActivityDetectorExt for S {}
 
 /// A stream of [`SamplesBuffer`]s with voice activity detection information
 pub struct VoiceActivityDetectorStream<S: AsyncSource + Unpin> {
-    source: S,
+    source: ResampledAsyncSource<S>,
     buffer: Vec<f32>,
     chunk_size: usize,
     vad: VoiceActivityDetector,
 }
 
 impl<S: AsyncSource + Unpin> VoiceActivityDetectorStream<S> {
-    fn new(source: S, vad: VoiceActivityDetector, chunk_size: usize) -> Self {
+    fn new(source: ResampledAsyncSource<S>, vad: VoiceActivityDetector, chunk_size: usize) -> Self {
         Self {
             source,
             buffer: Vec::with_capacity(chunk_size),
@@ -88,14 +88,6 @@ fn resample_to_nearest_supported_rate<S: AsyncSource + Unpin>(
     let resampled = source.resample(closet.sample_rate);
     (resampled, closet)
 }
-
-// let chunk = vec![0i16; 512];
-// let mut vad = VoiceActivityDetector::builder()
-//     .sample_rate(8000)
-//     .chunk_size(512usize)
-//     .build()?;
-// let probability = vad.predict(chunk);
-// println!("probability: {}", probability);
 
 #[derive(Clone, Copy)]
 struct SupportedSampleRate {

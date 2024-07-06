@@ -1,3 +1,4 @@
+use denoised::DenoisedExt;
 use futures_util::StreamExt;
 use kalosm_sound::*;
 use rodio::OutputStream;
@@ -6,7 +7,7 @@ use rodio::OutputStream;
 async fn main() -> Result<(), anyhow::Error> {
     let mic_input = MicInput::default();
     let stream = mic_input.stream()?;
-    let mut vad = stream.voice_activity_stream();
+    let mut vad = stream.denoise();
     let (_device, stream_handle) = OutputStream::try_default().unwrap();
     let sink = rodio::Sink::try_new(&stream_handle)?;
     while let Some(VoiceActivityDetectorOutput {
@@ -15,9 +16,7 @@ async fn main() -> Result<(), anyhow::Error> {
     }) = vad.next().await
     {
         println!("probability: {probability}");
-        if probability > 0.5 {
-            sink.append(samples);
-        }
+        sink.append(samples);
     }
 
     Ok(())
