@@ -17,7 +17,7 @@ async fn main() -> Result<(), anyhow::Error> {
             .unwrap()
             .block_on(async move {
                 let file = PathBuf::from("examples/samples_jfk.wav");
-    let stream = rodio::Decoder::new(std::fs::File::open(file).unwrap()).unwrap();
+                let stream = rodio::Decoder::new(std::fs::File::open(file).unwrap()).unwrap();
                 let mut vad = stream
                     .denoise_and_detect_voice_activity()
                     .rechunk_voice_activity(Duration::from_millis(600), 0.15);
@@ -30,7 +30,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // Create a new small whisper model.
     let model = WhisperBuilder::default()
-        .with_source(WhisperSource::MediumEn)
+        .with_source(WhisperSource::QuantizedDistilLargeV3)
         .build()
         .await?;
 
@@ -40,7 +40,8 @@ async fn main() -> Result<(), anyhow::Error> {
         println!("received: {:?}", samples.total_duration());
         let sample_rate = rodio::Source::sample_rate(&samples);
         let samples_cloned = samples.collect::<Vec<_>>();
-        let samples: rodio::buffer::SamplesBuffer<f32> = rodio::buffer::SamplesBuffer::new(1, sample_rate, samples_cloned.clone());
+        let samples: rodio::buffer::SamplesBuffer<f32> =
+            rodio::buffer::SamplesBuffer::new(1, sample_rate, samples_cloned.clone());
         let samples_clone = rodio::buffer::SamplesBuffer::new(1, sample_rate, samples_cloned);
         sink.append(samples);
         // Transcribe the audio.

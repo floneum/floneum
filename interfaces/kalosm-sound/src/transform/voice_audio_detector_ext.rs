@@ -172,7 +172,7 @@ impl<S: futures_core::Stream<Item = VoiceActivityDetectorOutput> + Unpin> future
                 // Or if not, remove the first sample from the buffer while the probability is very low
                 else {
                     this.buffer.remove(0);
-                    while this.rolling_average() < this.threshold/2. && this.buffer.len() > 1 {
+                    while this.rolling_average() < this.threshold / 2. && this.buffer.len() > 1 {
                         this.buffer.remove(0);
                         this.pop_last_sample();
                     }
