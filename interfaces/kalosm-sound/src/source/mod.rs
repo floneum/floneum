@@ -1,123 +1,131 @@
-use std::ops::{Deref, DerefMut};
-
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use dasp::interpolate::Interpolator as _;
+use futures_core::{Future, Stream};
+use futures_util::StreamExt;
 use rodio::buffer::SamplesBuffer;
+use std::time::Duration;
 
-use tokio::time::Instant;
+mod mic;
+pub use mic::*;
 
-use crate::AudioStream;
+/// A streaming audio source for single channel audio. This trait is implemented for all types that implement `rodio::Source` automatically.
+pub trait AsyncSource {
+    /// Get the stream of the source
+    fn as_stream(&mut self) -> impl Stream<Item = f32> + '_;
 
-/// A microphone input.
-pub struct MicInput {
-    #[allow(dead_code)]
-    host: cpal::Host,
-    device: cpal::Device,
-    config: cpal::SupportedStreamConfig,
+    /// Get the sample rate of the stream
+    fn sample_rate(&self) -> u32;
+
+    /// Read the next n samples from the stream or until the stream is exhausted
+    fn read_samples(&mut self, samples: usize) -> impl Future<Output = SamplesBuffer<f32>> {
+        async move {
+            let channels = 1;
+            let sample_rate = self.sample_rate();
+            let stream = self.as_stream();
+            let mut stream = std::pin::pin!(stream);
+            let mut buffer = Vec::with_capacity(samples);
+            for _ in 0..samples {
+                match stream.next().await {
+                    Some(data) => buffer.push(data),
+                    None => break,
+                }
+            }
+
+            SamplesBuffer::new(channels, sample_rate, buffer)
+        }
+    }
+
+    /// Read the next duration of samples from the stream
+    fn read_duration(&mut self, duration: Duration) -> impl Future<Output = SamplesBuffer<f32>> {
+        let samples = duration.as_secs_f32() * self.sample_rate() as f32;
+        self.read_samples(samples as usize)
+    }
+
+    /// Resample the stream to the given sample rate
+    fn resample(self, sample_rate: u32) -> ResampledAsyncSource<Self>
+    where
+        Self: Sized + Unpin,
+    {
+        ResampledAsyncSource::new(self, sample_rate)
+    }
 }
 
-impl Default for MicInput {
-    fn default() -> Self {
-        let host = cpal::default_host();
-        let device = host
-            .default_input_device()
-            .expect("Failed to get default input device");
-        let config = device
-            .default_input_config()
-            .expect("Failed to get default input config");
+impl<S: rodio::Source> AsyncSource for S
+where
+    <S as std::iter::Iterator>::Item: rodio::Sample + dasp::sample::ToSample<f32>,
+{
+    fn as_stream(&mut self) -> impl Stream<Item = f32> + '_ {
+        futures_util::stream::iter(
+            self.step_by(self.channels() as usize)
+                .map(dasp::Sample::to_sample),
+        )
+    }
+
+    fn sample_rate(&self) -> u32 {
+        self.sample_rate()
+    }
+}
+
+/// A resampled async audio source
+pub struct ResampledAsyncSource<S: AsyncSource> {
+    source: S,
+    source_output_sample_ratio: f64,
+    sample_position: f64,
+    sample_rate: u32,
+    resampler: dasp::interpolate::linear::Linear<f32>,
+}
+
+impl<S: AsyncSource> ResampledAsyncSource<S> {
+    fn new(source: S, sample_rate: u32) -> Self {
+        let source_output_sample_ratio = source.sample_rate() as f64 / sample_rate as f64;
         Self {
-            host,
-            device,
-            config,
+            source,
+            source_output_sample_ratio,
+            sample_position: source_output_sample_ratio,
+            sample_rate,
+            resampler: dasp::interpolate::linear::Linear::new(0.0, 0.0),
         }
     }
 }
 
-impl MicInput {
-    /// The sample size in bytes.
-    pub async fn record_until(
-        &self,
-        deadline: Instant,
-    ) -> Result<SamplesBuffer<f32>, anyhow::Error> {
-        let stream = self.stream()?;
-        tokio::time::sleep_until(deadline).await;
-        stream.reader()
-    }
+impl<S: AsyncSource + Unpin> Stream for ResampledAsyncSource<S> {
+    type Item = f32;
 
-    /// Records audio for a given duration.
-    pub fn record_until_blocking(
-        &self,
-        deadline: std::time::Instant,
-    ) -> Result<SamplesBuffer<f32>, anyhow::Error> {
-        let stream = self.stream()?;
-        std::thread::sleep(deadline - std::time::Instant::now());
-        stream.reader()
-    }
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        let myself = self.get_mut();
+        let mut source = myself.source.as_stream();
+        let mut source = std::pin::pin!(source);
+        let source_output_sample_ratio = myself.source_output_sample_ratio;
 
-    /// Creates a new stream of audio data from the microphone.
-    pub fn stream(&self) -> Result<MicStream, anyhow::Error> {
-        let err_fn = move |err| {
-            eprintln!("an error occurred on stream: {}", err);
-        };
-        let writer = AudioStream::new(60., &self.config);
-        let writer_2 = writer.clone();
+        while myself.sample_position >= 1.0 {
+            myself.sample_position -= 1.0;
+            myself
+                .resampler
+                .next_source_frame(match source.as_mut().poll_next(cx) {
+                    std::task::Poll::Ready(Some(frame)) => frame,
+                    std::task::Poll::Ready(None) => return std::task::Poll::Ready(None),
+                    std::task::Poll::Pending => return std::task::Poll::Pending,
+                })
+        }
 
-        let stream = match self.config.sample_format() {
-            cpal::SampleFormat::I8 => self.device.build_input_stream(
-                &self.config.config(),
-                move |data: &[i8], _: &_| writer_2.write(data),
-                err_fn,
-                None,
-            )?,
-            cpal::SampleFormat::I16 => self.device.build_input_stream(
-                &self.config.config(),
-                move |data: &[i16], _: &_| writer_2.write(data),
-                err_fn,
-                None,
-            )?,
-            cpal::SampleFormat::I32 => self.device.build_input_stream(
-                &self.config.config(),
-                move |data: &[i32], _: &_| writer_2.write(data),
-                err_fn,
-                None,
-            )?,
-            cpal::SampleFormat::F32 => self.device.build_input_stream(
-                &self.config.config(),
-                move |data: &[f32], _: &_| writer_2.write(data),
-                err_fn,
-                None,
-            )?,
-            sample_format => {
-                return Err(anyhow::Error::msg(format!(
-                    "Unsupported sample format '{sample_format}'"
-                )))
-            }
-        };
+        // Get the interpolated value
+        let interpolated = myself.resampler.interpolate(myself.sample_position);
 
-        stream.play()?;
+        // Advance the sample position
+        myself.sample_position += source_output_sample_ratio;
 
-        Ok(MicStream {
-            _audio: stream,
-            writer,
-        })
+        std::task::Poll::Ready(Some(interpolated))
     }
 }
 
-/// A stream of audio data from the microphone.
-pub struct MicStream {
-    _audio: cpal::Stream,
-    writer: AudioStream<u16>,
-}
-
-impl Deref for MicStream {
-    type Target = AudioStream<u16>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.writer
+impl<S: AsyncSource + Unpin> AsyncSource for ResampledAsyncSource<S> {
+    fn as_stream(&mut self) -> impl Stream<Item = f32> + '_ {
+        self
     }
-}
 
-impl DerefMut for MicStream {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.writer
+    fn sample_rate(&self) -> u32 {
+        self.sample_rate
     }
 }

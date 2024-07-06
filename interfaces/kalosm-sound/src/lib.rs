@@ -10,9 +10,17 @@
 
 #![warn(missing_docs)]
 
-mod audio;
-pub use audio::*;
 mod source;
+pub use source::*;
+
+pub use dasp;
 pub use rodio;
 pub use rwhisper::*;
-pub use source::*;
+
+#[cfg(feature = "denoise")]
+pub mod denoised;
+
+#[cfg(feature = "voice_detection")]
+mod voice_audio_detector;
+#[cfg(feature = "voice_detection")]
+pub use voice_audio_detector::*;
