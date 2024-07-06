@@ -8,7 +8,7 @@ use futures_core::{ready, Stream};
 use rodio::buffer::SamplesBuffer;
 use voice_activity_detector::VoiceActivityDetector;
 
-use crate::{AsyncSource, ResampledAsyncSource};
+use crate::{AsyncSource, ResampledAsyncSource, VoiceActivityDetectorOutput};
 
 /// An extension trait for audio streams that adds a voice activity detection information. Based on the [voice_activity_detector](https://github.com/nkeenan38/voice_activity_detector) crate.
 pub trait VoiceActivityDetectorExt: AsyncSource {
@@ -43,14 +43,6 @@ impl<S: AsyncSource + Unpin> VoiceActivityDetectorStream<S> {
             vad,
         }
     }
-}
-
-/// The output of a [`VoiceActivityDetectorStream`]
-pub struct VoiceActivityDetectorOutput {
-    /// The probability of voice activity (between 0 and 1)
-    pub probability: f32,
-    /// The audio sample associated with the voice activity probability
-    pub samples: SamplesBuffer<f32>,
 }
 
 impl<S: AsyncSource + Unpin> Stream for VoiceActivityDetectorStream<S> {

@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use denoised::DenoisedExt;
 use futures_util::StreamExt;
 use kalosm_sound::*;
 use rodio::OutputStream;
