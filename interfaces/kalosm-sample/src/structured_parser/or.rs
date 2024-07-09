@@ -90,17 +90,9 @@ impl<L: Error + 'static, R: Error + 'static> Error for Either<L, R> {
     }
 }
 
-impl<
-        O1,
-        O2,
-        PA1,
-        PA2,
-        P1: Parser<Output = O1, PartialState = PA1>,
-        P2: Parser<Output = O2, PartialState = PA2>,
-    > Parser for ChoiceParser<P1, P2>
-{
-    type Output = Either<O1, O2>;
-    type PartialState = ChoiceParserState<PA1, PA2>;
+impl<P1: Parser, P2: Parser> Parser for ChoiceParser<P1, P2> {
+    type Output = Either<P1::Output, P2::Output>;
+    type PartialState = ChoiceParserState<P1::PartialState, P2::PartialState>;
 
     fn parse<'a>(
         &self,

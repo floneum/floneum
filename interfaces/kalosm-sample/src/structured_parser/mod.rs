@@ -25,8 +25,8 @@ mod repeat;
 pub use repeat::*;
 mod separated;
 pub use separated::*;
-mod has_parser;
-pub use has_parser::*;
+mod parse;
+pub use parse::*;
 mod word;
 pub use word::*;
 mod sentence;
@@ -106,6 +106,14 @@ where
 /// A result type for parsers.
 pub type ParseResult<T> = std::result::Result<T, ParserError>;
 
+/// An auto trait for a Send parser with a default state.
+pub trait SendCreateParserState:
+    Send + CreateParserState<PartialState: Send, Output: Send>
+{
+}
+
+impl<P: CreateParserState<PartialState: Send, Output: Send> + Send> SendCreateParserState for P {}
+
 /// A trait for a parser with a default state.
 pub trait CreateParserState: Parser {
     /// Create the default state of the parser.
@@ -130,7 +138,7 @@ impl<P: ?Sized + CreateParserState> CreateParserState for Arc<P> {
     }
 }
 
-impl<O> CreateParserState for ArcParser<O> {
+impl<O: Clone> CreateParserState for ArcParser<O> {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState {
         self.0.create_parser_state()
     }
@@ -139,9 +147,9 @@ impl<O> CreateParserState for ArcParser<O> {
 /// An incremental parser for a structured input.
 pub trait Parser {
     /// The output of the parser.
-    type Output;
+    type Output: Clone;
     /// The state of the parser.
-    type PartialState;
+    type PartialState: Clone;
 
     /// Parse the given input.
     fn parse<'a>(
@@ -208,23 +216,18 @@ impl<P: ?Sized + Parser> Parser for Arc<P> {
     }
 }
 
-trait AnyCreateParserState<O>:
-    Parser<Output = O, PartialState = Arc<dyn Any + Send + Sync>> + CreateParserState + Send + Sync
+trait AnyCreateParserState:
+    Parser<PartialState = Arc<dyn Any + Send + Sync>> + CreateParserState + Send + Sync
 {
 }
 
-impl<
-        O,
-        P: Parser<Output = O, PartialState = Arc<dyn Any + Send + Sync>>
-            + CreateParserState
-            + Send
-            + Sync,
-    > AnyCreateParserState<O> for P
+impl<P: Parser<PartialState = Arc<dyn Any + Send + Sync>> + CreateParserState + Send + Sync>
+    AnyCreateParserState for P
 {
 }
 
 /// A boxed parser.
-pub struct ArcParser<O = ()>(Arc<dyn AnyCreateParserState<O> + Send + Sync>);
+pub struct ArcParser<O = ()>(Arc<dyn AnyCreateParserState<Output = O> + Send + Sync>);
 
 impl<O> Clone for ArcParser<O> {
     fn clone(&self) -> Self {
@@ -245,7 +248,7 @@ impl<O> ArcParser<O> {
     }
 }
 
-impl<O> Parser for ArcParser<O> {
+impl<O: Clone> Parser for ArcParser<O> {
     type Output = O;
     type PartialState = Arc<dyn Any + Send + Sync>;
 
@@ -310,7 +313,7 @@ where
 /// An extension trait for parsers.
 pub trait ParserExt: Parser {
     /// Parse this parser, or another other parser.
-    fn or<V: Parser<Output = O, PartialState = PA>, O, PA>(self, other: V) -> ChoiceParser<Self, V>
+    fn or<V: Parser>(self, other: V) -> ChoiceParser<Self, V>
     where
         Self: Sized,
     {
@@ -321,14 +324,44 @@ pub trait ParserExt: Parser {
     }
 
     /// Parse this parser, then the other parser.
-    fn then<V: Parser<Output = O, PartialState = PA>, O, PA>(
-        self,
-        other: V,
-    ) -> SequenceParser<Self, V>
+    fn then<V: Parser>(self, other: V) -> SequenceParser<Self, V>
     where
         Self: Sized,
     {
         SequenceParser::new(self, other)
+    }
+
+    /// Parse this parser, then the other parser while ignoring the current parser's output.
+    fn ignore_output_then<V: CreateParserState>(
+        self,
+        other: V,
+    ) -> MapOutputParser<SequenceParser<Self, V>, <V as Parser>::Output>
+    where
+        Self: Sized,
+    {
+        SequenceParser::new(self, other).map_output(|(_, second)| second)
+    }
+
+    /// Parse this parser, then the other parser while ignoring the output of the other parser.
+    fn then_ignore_output<V: CreateParserState>(
+        self,
+        other: V,
+    ) -> MapOutputParser<SequenceParser<Self, V>, <Self as Parser>::Output>
+    where
+        Self: Sized,
+    {
+        SequenceParser::new(self, other).map_output(|(first, _)| first)
+    }
+
+    /// Parse this parser, then a literal. This is equivalent to `.then_ignore_output(LiteralParser::new(literal))`.
+    fn then_literal(
+        self,
+        literal: impl Into<Cow<'static, str>>,
+    ) -> MapOutputParser<SequenceParser<Self, LiteralParser>, <Self as Parser>::Output>
+    where
+        Self: Sized,
+    {
+        self.then_ignore_output(LiteralParser::new(literal))
     }
 
     /// Repeat this parser a number of times.
@@ -340,7 +373,7 @@ pub trait ParserExt: Parser {
     }
 
     /// Map the output of this parser.
-    fn map_output<F, O>(self, f: F) -> MapOutputParser<Self, F, O>
+    fn map_output<F, O>(self, f: F) -> MapOutputParser<Self, O, F>
     where
         Self: Sized,
         F: Fn(Self::Output) -> O,

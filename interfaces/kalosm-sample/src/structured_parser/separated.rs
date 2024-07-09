@@ -20,7 +20,6 @@ pub struct SeparatedParserState<P: Parser, S: Parser> {
 impl<P: Parser, S: Parser> Clone for SeparatedParserState<P, S>
 where
     P::PartialState: Clone,
-    P::Output: Clone,
     S::PartialState: Clone,
 {
     fn clone(&self) -> Self {
@@ -92,19 +91,7 @@ impl<P, S> SeparatedParser<P, S> {
     }
 }
 
-impl<
-        O1,
-        O2,
-        PA1,
-        PA2,
-        P: Parser<Output = O1, PartialState = PA1> + CreateParserState,
-        S: Parser<Output = O2, PartialState = PA2> + CreateParserState,
-    > CreateParserState for SeparatedParser<P, S>
-where
-    P::PartialState: Clone,
-    P::Output: Clone,
-    S::PartialState: Clone,
-{
+impl<P: CreateParserState, S: CreateParserState> CreateParserState for SeparatedParser<P, S> {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState {
         SeparatedParserState {
             new_state_in_progress: false,
@@ -114,20 +101,8 @@ where
     }
 }
 
-impl<
-        O1,
-        O2,
-        PA1,
-        PA2,
-        P: Parser<Output = O1, PartialState = PA1> + CreateParserState,
-        S: Parser<Output = O2, PartialState = PA2> + CreateParserState,
-    > Parser for SeparatedParser<P, S>
-where
-    P::PartialState: Clone,
-    P::Output: Clone,
-    S::PartialState: Clone,
-{
-    type Output = Vec<O1>;
+impl<P: CreateParserState, S: CreateParserState> Parser for SeparatedParser<P, S> {
+    type Output = Vec<P::Output>;
     type PartialState = SeparatedParserState<P, S>;
 
     fn parse<'a>(

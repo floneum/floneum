@@ -5,9 +5,11 @@ use std::{
     any::Any,
     borrow::Cow,
     error::Error,
+    pin::Pin,
     sync::{Arc, Mutex},
 };
 
+use futures_util::Future;
 use kalosm_language_model::{GenerationParameters, SyncModel, SyncModelExt};
 use kalosm_sample::{
     ArcParser, CreateParserState, Either, LiteralParser, ParseResult, ParseStatus, Parser,
@@ -19,12 +21,17 @@ pub use calculator::*;
 
 /// A tool that can be used by a [`kalosm_language_model::Model`]
 // TODO: Add example
-#[async_trait::async_trait]
 pub trait Tool {
-    /// The constraints for the input to the tool
-    type Constraint: Parser + CreateParserState;
-    /// The constraints for the input to the tool
-    fn constraints(&self) -> Self::Constraint;
+    /// The input to the tool
+    type Input: Clone + Send + Sync + 'static;
+
+    /// Get the parser for the input to the tool
+    fn input_parser(
+        &self,
+    ) -> impl CreateParserState<Output = Self::Input, PartialState: Send + Sync + 'static>
+           + Send
+           + Sync
+           + 'static;
 
     /// The name of the tool
     fn name(&self) -> String;
@@ -34,7 +41,7 @@ pub trait Tool {
     fn description(&self) -> String;
 
     /// Run the tool with the given arguments
-    async fn run(&mut self, args: <<Self as Tool>::Constraint as Parser>::Output) -> String;
+    fn run<'a>(&'a mut self, args: &'a Self::Input) -> impl Future<Output = String> + Send + 'a;
 }
 
 /// An extension trait for [`Tool`] that allows for dynamic dispatch
@@ -43,57 +50,75 @@ pub trait DynToolExt {
     fn boxed(self) -> BoxedTool;
 }
 
-impl DynToolExt for BoxedTool {
+impl<T: Tool + Send + Sync + 'static> DynToolExt for T {
     fn boxed(self) -> BoxedTool {
-        self
-    }
-}
-
-struct DynToolWrapper<T: Tool>
-where
-    <T::Constraint as Parser>::Output: Clone + Send + Sync + 'static,
-    <T::Constraint as Parser>::PartialState: Send + Sync + 'static,
-    <T as Tool>::Constraint: std::marker::Send + std::marker::Sync + 'static,
-{
-    tool: T,
-}
-
-#[async_trait::async_trait]
-impl<T: Tool + Send> Tool for DynToolWrapper<T>
-where
-    <T::Constraint as Parser>::Output: Clone + Send + Sync + 'static,
-    <T::Constraint as Parser>::PartialState: Send + Sync + 'static,
-    <T as Tool>::Constraint: std::marker::Send + std::marker::Sync + 'static,
-{
-    type Constraint = ArcParser<Box<dyn Any + Send + Sync>>;
-
-    fn constraints(&self) -> Self::Constraint {
-        self.tool
-            .constraints()
-            .map_output(|out| Box::new(out) as Box<dyn Any + Send + Sync>)
-            .boxed()
-    }
-
-    fn name(&self) -> String {
-        self.tool.name()
-    }
-    fn input_prompt(&self) -> String {
-        self.tool.input_prompt()
-    }
-    fn description(&self) -> String {
-        self.tool.description()
-    }
-    async fn run(&mut self, args: <<Self as Tool>::Constraint as Parser>::Output) -> String {
-        let args = *args
-            .downcast::<<T::Constraint as Parser>::Output>()
-            .unwrap();
-        self.tool.run(args).await
+        BoxedTool {
+            tool: Box::new(self),
+            input_parser: |tool| {
+                let this: &T = tool.downcast_ref().unwrap();
+                this.input_parser()
+                    .map_output(|out| Arc::new(out) as Arc<dyn Any + Send + Sync>)
+                    .boxed()
+            },
+            name: |tool| {
+                let this: &T = tool.downcast_ref().unwrap();
+                this.name()
+            },
+            input_prompt: |tool| {
+                let this: &T = tool.downcast_ref().unwrap();
+                this.input_prompt()
+            },
+            description: |tool| {
+                let this: &T = tool.downcast_ref().unwrap();
+                this.description()
+            },
+            run: |tool, args| {
+                let this: &mut T = tool.downcast_mut().unwrap();
+                let args: &<Self as Tool>::Input = args.downcast_ref().unwrap();
+                Box::pin(this.run(args)) as Pin<Box<dyn Future<Output = String> + Send + '_>>
+            },
+        }
     }
 }
 
 /// A dynamic tool that can be used by a [`kalosm_language_model::Model`]
-pub type BoxedTool =
-    Box<dyn Tool<Constraint = ArcParser<Box<dyn Any + Send + Sync>>> + Sync + Send>;
+pub struct BoxedTool {
+    tool: Box<dyn Any + Send + Sync>,
+    input_parser: fn(&dyn Any) -> ArcParser<Arc<dyn Any + Send + Sync>>,
+    name: fn(&dyn Any) -> String,
+    input_prompt: fn(&dyn Any) -> String,
+    description: fn(&dyn Any) -> String,
+    run: for<'a> fn(
+        &'a mut dyn Any,
+        &'a Arc<dyn Any + Send + Sync>,
+    ) -> Pin<Box<dyn Future<Output = String> + Send + 'a>>,
+}
+
+impl Tool for BoxedTool {
+    type Input = Arc<dyn Any + Send + Sync>;
+
+    fn input_parser(
+        &self,
+    ) -> impl CreateParserState<Output = Self::Input, PartialState: Send + Sync + 'static>
+           + Send
+           + Sync
+           + 'static {
+        (self.input_parser)(&self.tool)
+    }
+
+    fn name(&self) -> String {
+        (self.name)(&self.tool)
+    }
+    fn input_prompt(&self) -> String {
+        (self.input_prompt)(&self.tool)
+    }
+    fn description(&self) -> String {
+        (self.description)(&self.tool)
+    }
+    fn run<'a>(&'a mut self, args: &'a Self::Input) -> impl Future<Output = String> + Send + 'a {
+        (self.run)(&mut self.tool, args)
+    }
+}
 
 /// A set of tools that can be used by a [`kalosm_language_model::Model`]
 #[derive(Default)]
@@ -113,14 +138,14 @@ impl std::fmt::Debug for ToolManager {
 }
 
 /// The type of action that can be taken
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) enum Action {
     /// The chatbot has thought
     Thought(String),
     /// The chatbot interacts with a tool
     Tool {
         index: usize,
-        input: Box<dyn Any + Send + Sync>,
+        input: Arc<dyn Any + Send + Sync>,
     },
     /// The chatbot answers the question
     Answer(String),
@@ -136,9 +161,6 @@ impl ToolManager {
     pub fn with_tool<T>(mut self, tool: T) -> Self
     where
         T: Tool + Send + Sync + 'static,
-        <T::Constraint as Parser>::Output: Clone + Send + Sync + 'static,
-        <T::Constraint as Parser>::PartialState: Send + Sync + 'static,
-        <T as Tool>::Constraint: std::marker::Send + std::marker::Sync + 'static,
     {
         self.add_tool(tool);
         self
@@ -148,11 +170,8 @@ impl ToolManager {
     pub fn add_tool<T>(&mut self, tool: T)
     where
         T: Tool + Send + Sync + 'static,
-        <T::Constraint as Parser>::Output: Clone + Send + Sync + 'static,
-        <T::Constraint as Parser>::PartialState: Send + Sync + 'static,
-        <T as Tool>::Constraint: std::marker::Send + std::marker::Sync + 'static,
     {
-        self.tools.push(Box::new(DynToolWrapper { tool }));
+        self.tools.push(tool.boxed());
     }
 
     /// Get the tools in the manager
@@ -217,12 +236,12 @@ Question: {question}
     }
 
     /// Get the constraints for the tools in the manager
-    pub fn tool_choices(&self) -> Option<ArcParser<(usize, Box<dyn Any + Send + Sync>)>> {
+    pub fn tool_choices(&self) -> Option<ArcParser<(usize, Arc<dyn Any + Send + Sync>)>> {
         let mut parsers = Vec::with_capacity(self.tools.len());
         for tool in self.tools.iter() {
             let name = tool.name();
             let prompt = tool.input_prompt();
-            let input_constraint = tool.constraints();
+            let input_constraint = tool.input_parser();
             let tool_input_parser = LiteralParser::from(format!("{name}\n{prompt}"))
                 .then(input_constraint)
                 .map_output(|(_, out)| out);
@@ -289,7 +308,7 @@ Question: {question}
                 ToolManagerStepResult::Thought(thought)
             }
             Action::Tool { index, input } => {
-                let result = self.get_tool_mut_by_index(index).unwrap().run(input).await;
+                let result = self.get_tool_mut_by_index(index).unwrap().run(&input).await;
                 new_text += &result;
                 new_text += "\n";
                 add_token(new_text)?;
@@ -326,22 +345,18 @@ pub struct IndexParserState<PA> {
 
 /// A parser that parses a sequence of parsers and returns the index of the first parser that succeeds
 #[derive(Debug, Clone)]
-pub struct IndexParser<S: Parser<Output = O, PartialState = PA>, O, PA> {
+pub struct IndexParser<S: Parser> {
     parsers: Vec<S>,
 }
 
-impl<S: Parser<Output = O, PartialState = PA>, O, PA> IndexParser<S, O, PA> {
+impl<S: Parser> IndexParser<S> {
     /// Create a new index parser
     pub fn new(parsers: Vec<S>) -> Self {
         Self { parsers }
     }
 }
 
-impl<S, O, PA> CreateParserState for IndexParser<S, O, PA>
-where
-    S: Parser<Output = O, PartialState = PA> + CreateParserState,
-    PA: Clone,
-{
+impl<S: CreateParserState> CreateParserState for IndexParser<S> {
     fn create_parser_state(&self) -> Self::PartialState {
         IndexParserState {
             states: self
@@ -353,13 +368,9 @@ where
     }
 }
 
-impl<S, O, PA> Parser for IndexParser<S, O, PA>
-where
-    S: Parser<Output = O, PartialState = PA>,
-    PA: Clone,
-{
+impl<S: Parser> Parser for IndexParser<S> {
     type Output = (usize, S::Output);
-    type PartialState = IndexParserState<PA>;
+    type PartialState = IndexParserState<S::PartialState>;
 
     fn parse<'a>(
         &self,
@@ -520,13 +531,7 @@ impl Parser for OneLine {
 macro_rules! impl_from_tool_tuple {
     ($($name:ident),*) => {
         #[allow(non_snake_case)]
-        impl<$($name: Tool + Send + Sync + 'static),*> From<($($name,)*)> for ToolManager where
-            $(
-                <$name::Constraint as Parser>::Output: Clone+Send + Sync + 'static,
-                <$name::Constraint as Parser>::PartialState: Send + Sync + 'static,
-                <$name as Tool>::Constraint: std::marker::Send + std::marker::Sync + 'static,
-            )*
-        {
+        impl<$($name: Tool + Send + Sync + 'static),*> From<($($name,)*)> for ToolManager {
             fn from(tools: ($($name,)*)) -> Self {
                 let ($($name,)*) = tools;
                 Self::new()$(.with_tool($name))*

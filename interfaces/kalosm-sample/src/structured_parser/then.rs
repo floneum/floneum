@@ -22,15 +22,7 @@ impl<P1: Default, P2, O1> Default for SequenceParserState<P1, P2, O1> {
     }
 }
 
-impl<
-        O1: Clone,
-        O2,
-        PA1,
-        PA2,
-        P1: Parser<Output = O1, PartialState = PA1> + CreateParserState,
-        P2: Parser<Output = O2, PartialState = PA2> + CreateParserState,
-    > CreateParserState for SequenceParser<P1, P2>
-{
+impl<P1: CreateParserState, P2: CreateParserState> CreateParserState for SequenceParser<P1, P2> {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState {
         SequenceParserState::FirstParser(self.parser1.create_parser_state())
     }
@@ -50,17 +42,9 @@ impl<P1, P2> SequenceParser<P1, P2> {
     }
 }
 
-impl<
-        O1: Clone,
-        O2,
-        PA1,
-        PA2,
-        P1: Parser<Output = O1, PartialState = PA1>,
-        P2: Parser<Output = O2, PartialState = PA2> + CreateParserState,
-    > Parser for SequenceParser<P1, P2>
-{
-    type Output = (O1, O2);
-    type PartialState = SequenceParserState<PA1, PA2, O1>;
+impl<P1: Parser, P2: CreateParserState> Parser for SequenceParser<P1, P2> {
+    type Output = (P1::Output, P2::Output);
+    type PartialState = SequenceParserState<P1::PartialState, P2::PartialState, P1::Output>;
 
     fn parse<'a>(
         &self,

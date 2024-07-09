@@ -2,6 +2,7 @@ use crate::structured::generate_structured;
 use crate::TokenOutputStream;
 use futures_util::{Stream, StreamExt};
 use kalosm_common::*;
+use kalosm_sample::CreateParserState;
 use kalosm_sample::{Parser, Tokenizer};
 use kalosm_streams::text_stream::ChannelTextStream;
 use llm_samplers::configure::SamplerChainBuilder;
@@ -374,9 +375,7 @@ pub trait ModelExt: Model + Send + Sync + 'static {
     ) -> anyhow::Result<StructureParserResult<Self::TextStream, P::Output>>
     where
         Self::TextStream: From<tokio::sync::mpsc::UnboundedReceiver<String>>,
-        P: kalosm_sample::CreateParserState + Parser + Send + 'static,
-        P::PartialState: Send + 'static,
-        P::Output: Clone + Send + 'static,
+        P: CreateParserState<PartialState: Send, Output: Send> + Send + 'static,
     {
         let sampler = Arc::new(Mutex::new(GenerationParameters::default().sampler()));
         let parser_state = parser.create_parser_state();
@@ -394,9 +393,7 @@ pub trait ModelExt: Model + Send + Sync + 'static {
     ) -> anyhow::Result<StructureParserResult<Self::TextStream, P::Output>>
     where
         Self::TextStream: From<tokio::sync::mpsc::UnboundedReceiver<String>>,
-        P: Parser + Send + 'static,
-        P::PartialState: Send + 'static,
-        P::Output: Clone + Send + 'static,
+        P: CreateParserState<PartialState: Send, Output: Send> + Send + 'static,
     {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         let (result_sender, result_receiver) = tokio::sync::oneshot::channel();
