@@ -247,7 +247,7 @@ pub struct UnstructuredRunner {
 }
 
 impl TaskRunner for UnstructuredRunner {
-    type Output = ChannelTextStream<String>;
+    type Output = ChannelTextStream;
 
     fn run<M: Model>(&self, input: String, model: & M) -> Self::Output  where <<M as kalosm_language_model::Model>::SyncModel as kalosm_language_model::SyncModel>::Session: Send + Sync{
         let chat_markers = model.chat_markers();
@@ -356,7 +356,7 @@ impl<P> TaskRunner for StructuredRunner<P>
 where
     P: SendCreateParserState + Sync + 'static,
 {
-    type Output = StructureParserResult<ChannelTextStream<String>, P::Output>;
+    type Output = StructureParserResult<ChannelTextStream, P::Output>;
 
     fn run<M: Model>(&self, input: String, model: &M) -> Self::Output where <<M as kalosm_language_model::Model>::SyncModel as kalosm_language_model::SyncModel>::Session: Send + Sync{
         let (tx, rx) = unbounded_channel();
@@ -434,28 +434,24 @@ pub trait TaskRunner {
 /// A task session lets you efficiently run a task with a model. The task session will reuse the model's cache to avoid re-feeding the task prompt repeatedly.
 ///
 /// # Example
-/// ```rust
+/// ```rust, no_run
 /// use kalosm_language::prelude::*;
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     let mut llm = Llama::new_chat();
-///     let mut task = Task::new(&mut llm, "You are a math assistant who helps students with their homework. You solve equations and answer questions. When solving problems, you will always solve problems step by step.");
+///     let mut llm = Llama::new_chat().await.unwrap();
+///     let mut task = Task::new("You are a math assistant who helps students with their homework. You solve equations and answer questions. When solving problems, you will always solve problems step by step.");
 ///
 ///     println!("question 1");
 ///     // The first time we use the task, it will load the model and prompt.
-///     task.run("What is 2 + 2?", &mut llm)
-///         .await
-///         .unwrap()
+///     task.run("What is 2 + 2?", &llm)
 ///         .to_std_out()
 ///         .await
 ///         .unwrap();
 ///     
 ///     println!("question 2");
 ///     // After the first time, the model and prompt are cached.
-///     task.run("What is 4 + 4?", &mut llm)
-///         .await
-///         .unwrap()
+///     task.run("What is 4 + 4?", &llm)
 ///         .to_std_out()
 ///         .await
 ///         .unwrap();
@@ -479,7 +475,7 @@ impl Task {
 
 impl<R: TaskRunner> Task<R> {
     /// Run the task with a message.
-    pub fn run<M>(&self, message: impl Into<String>, model: & M) -> R::Output
+    pub fn run<M>(&self, message: impl Into<String>, model: &M) -> R::Output
     where
         M: Model,
          <<M as kalosm_language_model::Model>::SyncModel as kalosm_language_model::SyncModel>::Session: Send + Sync

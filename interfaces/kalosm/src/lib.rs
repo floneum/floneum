@@ -7,10 +7,12 @@ pub use kalosm_streams::timed_stream::*;
 #[cfg(feature = "language")]
 pub mod language {
     //! Language processing utilities for the Kalosm framework.
-    pub use kalosm_common::FileSource;
+    pub use kalosm_common::{accelerated_device_if_available, FileSource};
     pub use kalosm_language::chat::*;
     pub use kalosm_language::context::*;
-    pub use kalosm_language::kalosm_language_model::{Model as _, ModelExt as _, *};
+    pub use kalosm_language::kalosm_language_model::{
+        Embedder as _, EmbedderExt as _, Model as _, ModelExt as _, *,
+    };
     pub use kalosm_language::kalosm_llama::{Llama, LlamaBuilder, LlamaSession, LlamaSource};
     pub use kalosm_language::kalosm_sample::*;
     pub use kalosm_language::prelude::Html;
@@ -21,6 +23,9 @@ pub mod language {
     pub use kalosm_language::tool::*;
     pub use kalosm_language::vector_db::*;
     pub use kalosm_streams::text_stream::*;
+
+    #[cfg(feature = "surrealdb")]
+    pub use crate::surrealdb_integration::document_table::*;
 }
 #[cfg(feature = "sound")]
 pub use kalosm_sound as audio;

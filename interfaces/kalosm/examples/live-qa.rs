@@ -5,7 +5,6 @@ async fn main() -> Result<(), anyhow::Error> {
     use futures_util::StreamExt;
     use kalosm::audio::*;
     use kalosm::language::*;
-    use kalosm::*;
     use std::sync::Arc;
     use tokio::time::{Duration, Instant};
 
@@ -65,11 +64,6 @@ async fn main() -> Result<(), anyhow::Error> {
         // Ask the user for a question
         let user_question = prompt_input("\n> ").unwrap();
 
-        let user_question = format!(
-            "Represent this sentence for searching relevant passages: {}",
-            user_question
-        );
-
         // Search for relevant context in the document engine
         let context = document_table
             .select_nearest(&user_question, 5)
@@ -94,7 +88,7 @@ async fn main() -> Result<(), anyhow::Error> {
         println!("{}", prompt);
 
         // And finally, respond to the user
-        let output_stream = chat.add_message(prompt).await.unwrap();
+        let output_stream = chat.add_message(prompt);
         print!("Bot: ");
         output_stream.to_std_out().await.unwrap();
     }

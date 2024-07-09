@@ -1,5 +1,5 @@
 use rand::prelude::SliceRandom;
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::OnceLock};
 
 use candle_core::{
     safetensors::{self, Load},
@@ -9,7 +9,17 @@ use candle_nn::{loss, ops, Dropout, Linear, Module, ModuleT, Optimizer, VarBuild
 use kalosm_common::maybe_autoreleasepool;
 use rand::Rng;
 
-/// A class that a [`Classifier`] can predict.
+/// A class that a [`Classifier`] can predict. You can derive this trait for any enum with only unit values.
+///
+/// # Example
+/// ```rust
+/// # use kalosm_learning::*;
+/// #[derive(Debug, Clone, Copy, Class)]
+/// enum MyClass {
+///     Person,
+///     Thing,
+/// }
+///```
 pub trait Class {
     /// The number of classes.
     const CLASSES: u32;
@@ -36,6 +46,14 @@ impl ClassificationDataset {
     }
 
     /// Save the dataset to the given path.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use kalosm_learning::*;
+    /// let dev = candle_core::Device::Cpu;
+    /// let dataset = ClassificationDataset::load("dataset.safetensors", &dev).unwrap();
+    /// dataset.save("dataset_copy.safetensors").unwrap();
+    /// ```
     pub fn save<P: AsRef<std::path::Path>>(&self, path: P) -> Result<()> {
         let safetensors = HashMap::from([
             ("train_inputs".to_string(), self.train_inputs.clone()),
@@ -49,6 +67,13 @@ impl ClassificationDataset {
     }
 
     /// Load the dataset from the given path.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use kalosm_learning::*;
+    /// let dev = candle_core::Device::Cpu;
+    /// let dataset = ClassificationDataset::load("dataset.safetensors", &dev).unwrap();
+    /// ```
     pub fn load<P: AsRef<std::path::Path>>(path: P, dev: &Device) -> Result<Self> {
         let mut safetensors = safetensors::load(path, dev)?;
         Ok(Self {
@@ -84,6 +109,14 @@ impl<C: Class> ClassificationDatasetBuilder<C> {
     }
 
     /// Adds a pair of input and class to the dataset.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use kalosm_learning::*;
+    /// let mut dataset = ClassificationDatasetBuilder::new();
+    /// dataset.add(vec![1.0, 2.0, 3.0, 4.0], MyClass::Person);
+    /// dataset.add(vec![4.0, 3.0, 2.0, 1.0], MyClass::Thing);
+    /// ```
     pub fn add(&mut self, input: Vec<f32>, class: C) {
         if let Some(input_size) = self.input_size {
             debug_assert_eq!(input.len(), input_size, "input size mismatch");
@@ -94,32 +127,58 @@ impl<C: Class> ClassificationDatasetBuilder<C> {
         self.classes.push(class);
     }
 
-    /// Builds the dataset.
+    /// Builds the dataset and copies the data to the device passed in.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use kalosm_learning::*;
+    /// let dev = candle_core::Device::Cpu;
+    /// let mut dataset = ClassificationDatasetBuilder::new();
+    /// dataset.add(vec![1.0, 2.0, 3.0, 4.0], MyClass::Person);
+    /// dataset.add(vec![4.0, 3.0, 2.0, 1.0], MyClass::Thing);
+    /// let dataset = dataset.build(&dev).unwrap();
+    /// ```
     pub fn build(mut self, dev: &Device) -> Result<ClassificationDataset> {
         // split into train and test
         let mut rng = rand::thread_rng();
-        let first_quarter = self.inputs.len() / 4;
-        println!(
-            "{} train/{} tests",
-            self.inputs.len() - first_quarter,
-            first_quarter
-        );
-        let mut input_test: Vec<f32> = Vec::with_capacity(first_quarter);
-        let mut class_test: Vec<u32> = Vec::with_capacity(first_quarter);
-        let mut inputs: Vec<f32> = Vec::with_capacity(self.inputs.len() - first_quarter);
-        let mut classes: Vec<u32> = Vec::with_capacity(self.classes.len() - first_quarter);
+
+        // We want to try to maintain a balance of classes in the test and train sets
+        let mut class_counts: HashMap<u32, usize> = HashMap::new();
+        for class in &self.classes {
+            *class_counts.entry(class.to_class()).or_default() += 1;
+        }
+
+        // The test classes are 1/4 of the train classes
+        let test_class_counts_goal = class_counts
+            .iter()
+            .map(|(class, count)| (*class, *count / 4))
+            .collect::<HashMap<_, _>>();
+        let mut test_class_counts = HashMap::new();
+
+        let test_len = test_class_counts_goal.values().copied().sum::<usize>();
+        let mut input_test: Vec<f32> = Vec::with_capacity(test_len);
+        let mut class_test: Vec<u32> = Vec::with_capacity(test_len);
+        let mut inputs: Vec<f32> = Vec::with_capacity(self.inputs.len() - test_len);
+        let mut classes: Vec<u32> = Vec::with_capacity(self.classes.len() - test_len);
         while !self.classes.is_empty() {
             let index = rng.gen_range(0..self.classes.len());
             let mut input = self.inputs.remove(index);
             let class = self.classes.remove(index);
-            if class_test.len() <= first_quarter {
+
+            let class_u32 = class.to_class();
+            let test_class_counts_goal = test_class_counts_goal.get(&class_u32).unwrap();
+            let test_class_count: &mut usize = test_class_counts.entry(class_u32).or_default();
+            if *test_class_count < *test_class_counts_goal {
                 input_test.append(&mut input);
-                class_test.push(class.to_class());
+                class_test.push(class_u32);
+                *test_class_count += 1;
             } else {
                 inputs.append(&mut input);
-                classes.push(class.to_class());
+                classes.push(class_u32);
             }
         }
+
+        println!("{} train/{} tests", classes.len(), class_test.len());
 
         let input_size = self.input_size.unwrap_or_default();
 
@@ -150,7 +209,8 @@ impl<C: Class> ClassificationDatasetBuilder<C> {
 pub struct Classifier<C: Class> {
     device: Device,
     varmap: VarMap,
-    layers: Vec<Linear>,
+    layers_dims: Vec<usize>,
+    layers: OnceLock<Vec<Linear>>,
     dropout: Dropout,
     dropout_rate: f32,
     phantom: std::marker::PhantomData<C>,
@@ -174,78 +234,26 @@ impl<C: Class> Classifier<C> {
     /// ```
     pub fn new(dev: &Device, config: ClassifierConfig) -> Result<Self> {
         let varmap = VarMap::new();
-        let vs = VarBuilder::from_varmap(&varmap, DType::F32, dev);
-        Self::new_inner(dev.clone(), varmap, vs, config)
+        Self::new_inner(dev.clone(), varmap, config)
     }
 
     /// Get the config of the classifier.
     pub fn config(&self) -> ClassifierConfig {
         ClassifierConfig {
-            input_dim: self.layers.first().unwrap().weight().dims2().unwrap().1,
-            layers_dims: {
-                let mut layers = self
-                    .layers
-                    .iter()
-                    .map(|l| l.weight().dims2().unwrap().0)
-                    .collect::<Vec<_>>();
-                layers.pop();
-                layers
-            },
+            layers_dims: self.layers_dims.clone(),
             dropout_rate: self.dropout_rate,
         }
     }
 
-    fn new_inner(
-        dev: Device,
-        varmap: VarMap,
-        vs: VarBuilder,
-        config: ClassifierConfig,
-    ) -> Result<Self> {
+    fn new_inner(dev: Device, varmap: VarMap, config: ClassifierConfig) -> Result<Self> {
         let ClassifierConfig {
-            input_dim,
             layers_dims,
             dropout_rate,
         } = config;
-        let output_dim = C::CLASSES;
-        if layers_dims.is_empty() {
-            return Ok(Self {
-                device: dev,
-                varmap,
-                layers: vec![candle_nn::linear(
-                    input_dim,
-                    output_dim as usize,
-                    vs.pp("ln0"),
-                )?],
-                dropout: Dropout::new(dropout_rate),
-                dropout_rate,
-                phantom: std::marker::PhantomData,
-            });
-        }
-        let mut layers = Vec::with_capacity(layers_dims.len() + 1);
-        layers.push(candle_nn::linear(
-            input_dim,
-            *layers_dims.first().unwrap(),
-            vs.pp("ln0"),
-        )?);
-        for (i, (in_dim, out_dim)) in layers_dims
-            .iter()
-            .zip(layers_dims.iter().skip(1))
-            .enumerate()
-        {
-            layers.push(candle_nn::linear(
-                *in_dim,
-                *out_dim,
-                vs.pp(&format!("ln{}", i + 1)),
-            )?);
-        }
-        layers.push(candle_nn::linear(
-            *layers_dims.last().unwrap(),
-            output_dim as usize,
-            vs.pp(format!("ln{}", layers_dims.len() + 1)),
-        )?);
         Ok(Self {
             device: dev,
-            layers,
+            layers: OnceLock::new(),
+            layers_dims,
             varmap,
             dropout: Dropout::new(dropout_rate),
             dropout_rate,
@@ -253,10 +261,49 @@ impl<C: Class> Classifier<C> {
         })
     }
 
+    fn layers(&self, input_dim: usize) -> candle_core::Result<&Vec<Linear>> {
+        if let Some(layers) = self.layers.get() {
+            return Ok(layers);
+        }
+        let vs = VarBuilder::from_varmap(&self.varmap, DType::F32, &self.device);
+        let output_dim = C::CLASSES;
+        let mut layers = Vec::with_capacity(self.layers_dims.len() + 1);
+        if self.layers_dims.is_empty() {
+            let layer = candle_nn::linear(input_dim, output_dim as usize, vs.pp("ln0"))?;
+            layers.push(layer);
+        } else {
+            layers.push(candle_nn::linear(
+                input_dim,
+                *self.layers_dims.first().unwrap(),
+                vs.pp("ln0"),
+            )?);
+            for (i, (in_dim, out_dim)) in self
+                .layers_dims
+                .iter()
+                .zip(self.layers_dims.iter().skip(1))
+                .enumerate()
+            {
+                layers.push(candle_nn::linear(
+                    *in_dim,
+                    *out_dim,
+                    vs.pp(&format!("ln{}", i + 1)),
+                )?);
+            }
+            layers.push(candle_nn::linear(
+                *self.layers_dims.last().unwrap(),
+                output_dim as usize,
+                vs.pp(format!("ln{}", self.layers_dims.len() + 1)),
+            )?);
+        }
+
+        Ok(self.layers.get_or_init(|| layers))
+    }
+
     fn forward_t(&self, xs: &Tensor, train: bool) -> Result<Tensor> {
         let xs = xs.clone();
         let mut xs = self.dropout.forward_t(&xs, train)?;
-        for layer in &self.layers {
+        let input_dim = *xs.dims().last().unwrap();
+        for layer in self.layers(input_dim)? {
             xs = layer.forward(&xs)?;
             xs = xs.gelu_erf()?;
         }
@@ -397,7 +444,6 @@ impl<C: Class> Classifier<C> {
         config: ClassifierConfig,
     ) -> Result<Self> {
         let varmap = VarMap::new();
-        let vs = VarBuilder::from_varmap(&varmap, DType::F32, dev);
         {
             let safetensors = unsafe { candle_core::safetensors::MmapedSafetensors::new(path) }?;
             let tensors = safetensors.tensors();
@@ -407,7 +453,7 @@ impl<C: Class> Classifier<C> {
                 tensor_data.insert(name.to_string(), Var::from_tensor(&tensor)?);
             }
         }
-        Self::new_inner(dev.clone(), varmap, vs, config)
+        Self::new_inner(dev.clone(), varmap, config)
     }
 
     /// Run the model on the given input.
@@ -472,27 +518,30 @@ impl<C: Class> ClassifierOutput<C> {
 #[derive(Debug, Clone)]
 /// A config for a [`Classifier`].
 pub struct ClassifierConfig {
-    /// The input dimension.
-    input_dim: usize,
     /// The dimensions of the layers.
     layers_dims: Vec<usize>,
     /// The dropout rate.
     dropout_rate: f32,
 }
 
+impl Default for ClassifierConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ClassifierConfig {
     /// Create a new config.
-    pub fn new(input_dim: usize) -> Self {
+    pub fn new() -> Self {
         Self {
-            input_dim,
             layers_dims: vec![4, 8, 4],
             dropout_rate: 0.1,
         }
     }
 
     /// Set the dimensions of the layers.
-    pub fn layers_dims(mut self, layers_dims: Vec<usize>) -> Self {
-        self.layers_dims = layers_dims;
+    pub fn layers_dims(mut self, layers_dims: impl IntoIterator<Item = usize>) -> Self {
+        self.layers_dims = layers_dims.into_iter().collect();
         self
     }
 

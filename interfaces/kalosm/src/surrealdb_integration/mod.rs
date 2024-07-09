@@ -6,9 +6,7 @@ use surrealdb::sql::{Id, Thing};
 use surrealdb::{Connection, Surreal};
 
 #[cfg(feature = "language")]
-mod document_table;
-#[cfg(feature = "language")]
-pub use document_table::*;
+pub(crate) mod document_table;
 
 /// A link between a document and an embedding.
 ///
@@ -322,17 +320,10 @@ impl<C: Connection> EmbeddingIndexedTableBuilder<C> {
 pub trait VectorDbSurrealExt<C: Connection> {
     /// Create a new vector indexed table builder.
     fn vector_indexed_table_builder(&self, table: &str) -> EmbeddingIndexedTableBuilder<C>;
-
-    /// Create a new document table builder.    
-    fn document_table_builder(&self, table: &str) -> DocumentTableBuilder<C, Bert, ChunkStrategy>;
 }
 
 impl<C: Connection> VectorDbSurrealExt<C> for Surreal<C> {
     fn vector_indexed_table_builder(&self, table: &str) -> EmbeddingIndexedTableBuilder<C> {
         EmbeddingIndexedTableBuilder::new(table, self.clone())
-    }
-
-    fn document_table_builder(&self, table: &str) -> DocumentTableBuilder<C, Bert, ChunkStrategy> {
-        DocumentTableBuilder::new(table, self.clone())
     }
 }

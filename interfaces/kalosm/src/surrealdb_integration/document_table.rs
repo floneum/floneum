@@ -124,31 +124,18 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
         self.table.select_all().await
     }
 
-    /// Select the top k records nearest records to the given record.
+    /// Select the top k records nearest records to the given item.
+    ///
+    /// NOTE: If your embedding model has a different query embedding and you pass in a raw embedding, that embedding will perform best if it was created with [`EmbedderExt::embed_query`].
     pub async fn select_nearest(
         &self,
-        record: impl IntoDocument,
+        embedding: impl IntoEmbedding<M::VectorSpace>,
         k: usize,
     ) -> anyhow::Result<Vec<EmbeddingIndexedTableSearchResult<R>>>
     where
         R: DeserializeOwned,
     {
-        let embedding = self
-            .embedding_model
-            .embed(record.into_document().await?.body())
-            .await?;
-        self.select_nearest_embedding(embedding, k).await
-    }
-
-    /// Select the top k records nearest records to the given embedding.
-    pub async fn select_nearest_embedding(
-        &self,
-        embedding: Embedding<M::VectorSpace>,
-        k: usize,
-    ) -> anyhow::Result<Vec<EmbeddingIndexedTableSearchResult<R>>>
-    where
-        R: DeserializeOwned,
-    {
+        let embedding = embedding.into_embedding(&self.embedding_model).await?;
         self.table.select_nearest(embedding, k).await
     }
 }
@@ -237,7 +224,7 @@ impl<C: Connection, E, K: Chunker> DocumentTableBuilder<C, E, K> {
             Some(embedding_model) => embedding_model,
             None => {
                 if TypeId::of::<E>() == TypeId::of::<Bert>() {
-                    let embedding_model = Bert::new().await?;
+                    let embedding_model = Bert::new_for_search().await?;
                     *(Box::new(embedding_model) as Box<dyn Any>)
                         .downcast::<E>()
                         .unwrap()
@@ -247,5 +234,17 @@ impl<C: Connection, E, K: Chunker> DocumentTableBuilder<C, E, K> {
             }
         };
         Ok(DocumentTable::new(embedding_model, table, self.chunker))
+    }
+}
+
+/// An extension trait for the surreal database to interact with document tables.
+pub trait DocumentTableSurrealExt<C: Connection> {
+    /// Create a new document table builder.    
+    fn document_table_builder(&self, table: &str) -> DocumentTableBuilder<C, Bert, ChunkStrategy>;
+}
+
+impl<C: Connection> DocumentTableSurrealExt<C> for Surreal<C> {
+    fn document_table_builder(&self, table: &str) -> DocumentTableBuilder<C, Bert, ChunkStrategy> {
+        DocumentTableBuilder::new(table, self.clone())
     }
 }

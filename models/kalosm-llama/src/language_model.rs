@@ -27,7 +27,7 @@ impl ModelBuilder for LlamaBuilder {
 
 #[async_trait::async_trait]
 impl Model for Llama {
-    type TextStream = ChannelTextStream<String>;
+    type TextStream = ChannelTextStream;
     type SyncModel = LlamaModel;
 
     fn tokenizer(&self) -> Arc<dyn kalosm_sample::Tokenizer + Send + Sync> {

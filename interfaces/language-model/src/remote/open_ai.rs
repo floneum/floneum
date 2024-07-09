@@ -89,7 +89,7 @@ macro_rules! openai_model {
 
         #[async_trait::async_trait]
         impl crate::model::Model for $ty {
-            type TextStream = ChannelTextStream<String>;
+            type TextStream = ChannelTextStream;
             type SyncModel = crate::SyncModelNotSupported;
 
             fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
@@ -239,6 +239,24 @@ impl AdaEmbedder {
 
 impl Embedder for AdaEmbedder {
     type VectorSpace = AdaEmbedding;
+
+    fn embed_for(
+        &self,
+        input: crate::EmbeddingInput,
+    ) -> BoxedFuture<'_, anyhow::Result<Embedding<Self::VectorSpace>>> {
+        self.embed_string(input.text)
+    }
+
+    fn embed_vec_for(
+        &self,
+        inputs: Vec<crate::EmbeddingInput>,
+    ) -> BoxedFuture<'_, anyhow::Result<Vec<Embedding<Self::VectorSpace>>>> {
+        let inputs = inputs
+            .into_iter()
+            .map(|input| input.text)
+            .collect::<Vec<_>>();
+        self.embed_vec(inputs)
+    }
 
     /// Embed a single string.
     fn embed_string(

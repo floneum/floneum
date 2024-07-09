@@ -4,7 +4,7 @@ use std::{hash::BuildHasher, io::BufWriter, num::NonZeroUsize, path::Path, sync:
 use postcard::{from_bytes, to_io};
 use serde::{de::DeserializeOwned, Serialize};
 
-use crate::{Embedder, Embedding};
+use crate::{Embedder, Embedding, EmbeddingInput};
 
 /// Embedding models can be expensive to run. This struct wraps an embedding model with a cache that stores embeddings that have been computed before.
 ///
@@ -63,7 +63,7 @@ use crate::{Embedder, Embedding};
 /// ```
 pub struct CachedEmbeddingModel<M: Embedder, S = lru::DefaultHasher> {
     model: M,
-    cache: Mutex<lru::LruCache<String, Embedding<M::VectorSpace>, S>>,
+    cache: Mutex<lru::LruCache<EmbeddingInput, Embedding<M::VectorSpace>, S>>,
 }
 
 impl<M: Embedder> CachedEmbeddingModel<M> {
@@ -188,9 +188,9 @@ impl<M: Embedder> Embedder for CachedEmbeddingModel<M> {
     type VectorSpace = M::VectorSpace;
 
     /// Embed a single string.
-    fn embed_string(
+    fn embed_for(
         &self,
-        input: String,
+        input: EmbeddingInput,
     ) -> BoxFuture<'_, anyhow::Result<Embedding<Self::VectorSpace>>> {
         Box::pin(async move {
             {
@@ -201,7 +201,7 @@ impl<M: Embedder> Embedder for CachedEmbeddingModel<M> {
                 }
             }
             // if not, embed the string and add it to the cache
-            let embedding = self.model.embed_string(input.clone()).await?;
+            let embedding = self.model.embed_for(input.clone()).await?;
             let mut cache = self.cache.lock().unwrap();
             cache.put(input, embedding.clone());
             Ok(embedding)
@@ -209,9 +209,9 @@ impl<M: Embedder> Embedder for CachedEmbeddingModel<M> {
     }
 
     /// Embed a batch of strings.
-    fn embed_vec(
+    fn embed_vec_for(
         &self,
-        inputs: Vec<String>,
+        inputs: Vec<EmbeddingInput>,
     ) -> BoxFuture<'_, anyhow::Result<Vec<Embedding<Self::VectorSpace>>>> {
         Box::pin(async move {
             let mut embeddings = vec![Embedding::from([]); inputs.len()];
@@ -236,7 +236,8 @@ impl<M: Embedder> Embedder for CachedEmbeddingModel<M> {
             }
 
             // Otherwise embed any text that was not in the cache
-            let embeddings_not_in_cache = self.model.embed_vec(text_not_in_cache.clone()).await?;
+            let embeddings_not_in_cache =
+                self.model.embed_vec_for(text_not_in_cache.clone()).await?;
             // And add the embeddings to the cache
             for ((i, input), text) in indices_not_in_cache
                 .into_iter()

@@ -2,7 +2,7 @@ use futures_util::Stream;
 use image::ImageBuffer;
 
 /// A stream of text from a tokio channel.
-pub struct ChannelTextStream<S: AsRef<str>> {
+pub struct ChannelTextStream<S: AsRef<str> = String> {
     receiver: tokio::sync::mpsc::UnboundedReceiver<S>,
 }
 

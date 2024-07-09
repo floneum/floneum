@@ -13,6 +13,8 @@ mod cache;
 pub use cache::*;
 mod model;
 pub use model::*;
+mod into_embedding;
+pub use into_embedding::*;
 
 /// An untyped vector space that is not associated with a model. This can be used to erase the vector type from an embedding.
 pub struct UnknownVectorSpace;
@@ -26,7 +28,7 @@ impl VectorSpace for UnknownVectorSpace {}
 /// If you want to cast an embedding from one vector space to another, you can use the [`Embedding::cast`] method. You can cast to the UnknownVectorSpace to erase the vector space type.
 pub trait VectorSpace: Sync + Send + 'static {}
 
-/// An embedding represents something about the meaning of data. It can be used to compare the meaning of different pieces of data, cluster data, or as input to a machine learning model.
+#[doc = include_str!("../../docs/embedding.md")]
 pub struct Embedding<S: VectorSpace> {
     embedding: Tensor,
     model: PhantomData<S>,

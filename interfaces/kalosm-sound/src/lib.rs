@@ -10,9 +10,13 @@
 
 #![warn(missing_docs)]
 
-mod audio;
-pub use audio::*;
 mod source;
+pub use source::*;
+
+pub use dasp;
 pub use rodio;
 pub use rwhisper::*;
-pub use source::*;
+
+mod transform;
+#[allow(unused)]
+pub use transform::*;

@@ -85,7 +85,7 @@ impl IntoDocument for FsDocument {
 ///     let documents = DocumentFolder::try_from(PathBuf::from("./documents")).unwrap();
 ///
 ///     let mut database = DocumentDatabase::new(
-///         Bert::builder().build().unwrap(),
+///         Bert::new_for_search().unwrap(),
 ///         ChunkStrategy::Sentence {
 ///             sentence_count: 1,
 ///             overlap: 0,
