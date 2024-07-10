@@ -33,8 +33,7 @@ impl RegexParser {
 
 impl CreateParserState for RegexParser {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState {
-        let start_state =
-        self.dfa.start_state(&self.config).unwrap();
+        let start_state = self.dfa.start_state(&self.config).unwrap();
         RegexParserState {
             state: start_state,
             value: Vec::new(),
