@@ -33,7 +33,6 @@ pub fn derive_parse(input: TokenStream) -> TokenStream {
                     literal_text
                         .push_str(&format!("\"{}\":", field.ident.as_ref().unwrap().unraw()));
                     let literal_text = LitStr::new(&literal_text, ident.span());
-                    let ty = &field.ty;
                     // Try to grab the parser from the `#[parse(with = expr)]` attribute, otherwise use the default parser
                     let field_parser = if let Some(attr) = field
                         .attrs
@@ -56,7 +55,8 @@ pub fn derive_parse(input: TokenStream) -> TokenStream {
                         }
                         parser.to_token_stream()
                     } else {
-                        quote! {#ty::new_parser()}
+                        let ty = &field.ty;
+                        quote! {<#ty as kalosm_sample::Parse>::new_parser()}
                     };
 
                     parsers.push(quote! {
