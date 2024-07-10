@@ -1,11 +1,11 @@
 use std::ops::{Deref, DerefMut};
 
-use crate::{CreateParserState, HasParser};
+use crate::{CreateParserState, Parse, SendCreateParserState};
 use crate::{ParseStatus, Parser, StringParser};
 
 #[derive(Clone, Debug)]
 /// A single word.
-pub struct Sentence<const MIN_LENGTH: usize = 1, const MAX_LENGTH: usize = 20>(pub String);
+pub struct Sentence<const MIN_LENGTH: usize = 1, const MAX_LENGTH: usize = 200>(pub String);
 
 impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Sentence<MIN_LENGTH, MAX_LENGTH> {
     /// Create a new word.
@@ -49,8 +49,15 @@ impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> DerefMut
 }
 
 /// A parser for a word.
-pub struct SentenceParser<const MIN_LENGTH: usize, const MAX_LENGTH: usize> {
+pub struct SentenceParser<const MIN_LENGTH: usize = 1, const MAX_LENGTH: usize = 200> {
     parser: StringParser<fn(char) -> bool>,
+}
+
+impl SentenceParser {
+    /// Create a new default sentence parser
+    pub fn new() -> Self {
+        Self::default()
+    }
 }
 
 impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Default
@@ -90,16 +97,8 @@ impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Parser
     }
 }
 
-impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> HasParser
-    for Sentence<MIN_LENGTH, MAX_LENGTH>
-{
-    type Parser = SentenceParser<MIN_LENGTH, MAX_LENGTH>;
-
-    fn new_parser() -> Self::Parser {
+impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Parse for Sentence<MIN_LENGTH, MAX_LENGTH> {
+    fn new_parser() -> impl SendCreateParserState<Output = Self> {
         SentenceParser::default()
-    }
-
-    fn create_parser_state() -> <Self::Parser as Parser>::PartialState {
-        Default::default()
     }
 }

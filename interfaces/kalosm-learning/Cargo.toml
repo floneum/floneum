@@ -25,4 +25,4 @@ textplots = "0.8"
 rbert.workspace = true
 
 [features]
-metal = ["candle-core/metal", "candle-nn/metal"]
+metal = ["candle-core/metal", "candle-nn/metal", "kalosm-common/metal"]

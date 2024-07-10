@@ -1317,7 +1317,7 @@ dependencies = [
  "intel-mkl-src",
  "libc",
  "memmap2 0.9.4",
- "metal",
+ "metal 0.27.0",
  "num-traits",
  "num_cpus",
  "rand 0.8.5",
@@ -1370,7 +1370,7 @@ name = "candle-metal-kernels"
 version = "0.6.0"
 source = "git+https://github.com/huggingface/candle?rev=2b10aaa#2b10aaa05d3752186899bd5b5364d92164edc7ef"
 dependencies = [
- "metal",
+ "metal 0.27.0",
  "once_cell",
  "thiserror",
  "tracing",
@@ -1386,7 +1386,7 @@ dependencies = [
  "candle-metal-kernels",
  "half 2.4.1",
  "intel-mkl-src",
- "metal",
+ "metal 0.27.0",
  "num-traits",
  "rayon",
  "safetensors",
@@ -6358,6 +6358,7 @@ dependencies = [
  "hf-hub",
  "httpdate",
  "indicatif",
+ "metal 0.29.0",
  "reqwest",
  "tokio",
  "tracing",
@@ -6528,11 +6529,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "kalosm-parse-macro"
+version = "0.2.1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "regex-automata 0.4.7",
+ "syn 2.0.68",
+]
+
+[[package]]
 name = "kalosm-sample"
 version = "0.2.1"
 dependencies = [
  "anyhow",
  "candle-core",
+ "criterion",
+ "kalosm-parse-macro",
  "llm-samplers",
  "rand 0.8.5",
  "regex-automata 0.4.7",
@@ -6540,6 +6553,7 @@ dependencies = [
  "thiserror",
  "tokenizers",
  "tracing",
+ "tracing-subscriber 0.3.18",
 ]
 
 [[package]]
@@ -7274,6 +7288,21 @@ name = "metal"
 version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c43f73953f8cbe511f021b58f18c3ce1c3d1ae13fe953293e13345bf83217f25"
+dependencies = [
+ "bitflags 2.6.0",
+ "block",
+ "core-graphics-types",
+ "foreign-types 0.5.0",
+ "log",
+ "objc",
+ "paste",
+]
+
+[[package]]
+name = "metal"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ecfd3296f8c56b7c1f6fbac3c71cefa9d78ce009850c45000015f206dc7fa21"
 dependencies = [
  "bitflags 2.6.0",
  "block",
@@ -9427,7 +9456,7 @@ dependencies = [
  "intel-mkl-src",
  "kalosm-common",
  "kalosm-language-model",
- "metal",
+ "metal 0.27.0",
  "serde",
  "serde_json",
  "tokenizers",

@@ -90,17 +90,9 @@ impl<L: Error + 'static, R: Error + 'static> Error for Either<L, R> {
     }
 }
 
-impl<
-        O1,
-        O2,
-        PA1,
-        PA2,
-        P1: Parser<Output = O1, PartialState = PA1>,
-        P2: Parser<Output = O2, PartialState = PA2>,
-    > Parser for ChoiceParser<P1, P2>
-{
-    type Output = Either<O1, O2>;
-    type PartialState = ChoiceParserState<PA1, PA2>;
+impl<P1: Parser, P2: Parser> Parser for ChoiceParser<P1, P2> {
+    type Output = Either<P1::Output, P2::Output>;
+    type PartialState = ChoiceParserState<P1::PartialState, P2::PartialState>;
 
     fn parse<'a>(
         &self,
@@ -149,10 +141,10 @@ impl<
                             new_state,
                             required_next: match (required_next1, required_next2) {
                                 (Cow::Borrowed(required_next), _) => {
-                                    Cow::Borrowed(&required_next[common_bytes..])
+                                    Cow::Borrowed(&required_next[..common_bytes])
                                 }
                                 (_, Cow::Borrowed(required_next)) => {
-                                    Cow::Borrowed(&required_next[common_bytes..])
+                                    Cow::Borrowed(&required_next[..common_bytes])
                                 }
                                 (Cow::Owned(mut required_next), _) => {
                                     required_next.truncate(common_bytes);
@@ -293,6 +285,22 @@ fn choice_parser() {
                 state2: Err(_),
             },
             required_next: Cow::Borrowed("'t a test")
+        },
+    ));
+
+    let parser = ChoiceParser::new(
+        LiteralParser::new("Hello world"),
+        LiteralParser::new("Hi world"),
+    );
+    let state = ChoiceParserState::default();
+    assert!(matches!(
+        parser.parse(&state, b"H").unwrap(),
+        ParseStatus::Incomplete {
+            new_state: ChoiceParserState {
+                state1: Ok(LiteralParserOffset { offset: 1 }),
+                state2: Ok(LiteralParserOffset { offset: 1 }),
+            },
+            required_next: Cow::Borrowed("")
         },
     ));
 }

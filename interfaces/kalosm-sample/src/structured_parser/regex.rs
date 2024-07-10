@@ -33,39 +33,44 @@ impl RegexParser {
 
 impl CreateParserState for RegexParser {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState {
-        self.dfa.start_state(&self.config).unwrap()
+        let start_state = self.dfa.start_state(&self.config).unwrap();
+        RegexParserState {
+            state: start_state,
+            value: Vec::new(),
+        }
     }
 }
 
 impl Parser for RegexParser {
-    type Output = ();
-    type PartialState = StateID;
+    type Output = String;
+    type PartialState = RegexParserState;
 
     fn parse<'a>(
         &self,
         state: &Self::PartialState,
         input: &'a [u8],
     ) -> crate::ParseResult<crate::ParseStatus<'a, Self::PartialState, Self::Output>> {
-        let mut state = *state;
+        let mut state = state.clone();
         for (idx, &b) in input.iter().enumerate() {
-            state = self.dfa.next_state(state, b);
-            if self.dfa.is_match_state(state) {
+            state.state = self.dfa.next_state(state.state, b);
+            state.value.push(b);
+            if self.dfa.is_match_state(state.state) {
                 // If this is a match state, accept it only if it's the last byte
                 return if idx == input.len() - 1 {
                     Ok(crate::ParseStatus::Finished {
-                        result: (),
+                        result: String::from_utf8_lossy(&state.value).to_string(),
                         remaining: Default::default(),
                     })
                 } else {
                     crate::bail!(regex_automata::MatchError::quit(b, 0))
                 };
-            } else if self.dfa.is_dead_state(state) || self.dfa.is_quit_state(state) {
+            } else if self.dfa.is_dead_state(state.state) || self.dfa.is_quit_state(state.state) {
                 crate::bail!(regex_automata::MatchError::quit(b, 0));
             }
         }
 
         let mut required_next = String::new();
-        let mut required_next_state = state;
+        let mut required_next_state = state.state;
         let jump_table_read = self.jump_table.read().unwrap();
 
         if let Some(string) = jump_table_read.get(&required_next_state) {
@@ -103,7 +108,7 @@ impl Parser for RegexParser {
                 self.jump_table
                     .write()
                     .unwrap()
-                    .insert(state, required_next.clone());
+                    .insert(state.state, required_next.clone());
             }
         }
 
@@ -112,4 +117,11 @@ impl Parser for RegexParser {
             required_next: required_next.into(),
         })
     }
+}
+
+/// The state of a regex parser.
+#[derive(Default, Debug, PartialEq, Eq, Clone)]
+pub struct RegexParserState {
+    state: StateID,
+    value: Vec<u8>,
 }
