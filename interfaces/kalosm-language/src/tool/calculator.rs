@@ -89,7 +89,10 @@ impl Default for EquationParser {
         let multiplication = LiteralParser::new(" * ");
         let division = LiteralParser::new(" / ");
 
-        let operation = addition.or(subtraction).or(multiplication).or(division);
+        let operation = addition
+            .otherwise(subtraction)
+            .otherwise(multiplication)
+            .otherwise(division);
         let binary_operation = LiteralParser::new("(")
             .then(LazyParser::<Self>::default())
             .then(operation)
@@ -101,7 +104,7 @@ impl Default for EquationParser {
             .then(LazyParser::<Self>::default())
             .then(LiteralParser::new(")"));
 
-        let expression = number.or(function_call).or(binary_operation);
+        let expression = number.otherwise(function_call).otherwise(binary_operation);
 
         Self {
             parser: expression.map_output(|_| ()).boxed(),

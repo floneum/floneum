@@ -1,5 +1,6 @@
 #![allow(clippy::type_complexity)]
 
+pub use kalosm_parse_macro::Parse;
 mod integer;
 use std::{
     any::Any,
@@ -313,7 +314,7 @@ where
 /// An extension trait for parsers.
 pub trait ParserExt: Parser {
     /// Parse this parser, or another other parser.
-    fn or<V: Parser>(self, other: V) -> ChoiceParser<Self, V>
+    fn otherwise<V: Parser>(self, other: V) -> ChoiceParser<Self, V>
     where
         Self: Sized,
     {
@@ -321,6 +322,20 @@ pub trait ParserExt: Parser {
             parser1: self,
             parser2: other,
         }
+    }
+
+    /// Parse this parser, or another other parser with the same type
+    fn or<V: Parser<Output = Self::Output>>(
+        self,
+        other: V,
+    ) -> MapOutputParser<ChoiceParser<Self, V>, Self::Output>
+    where
+        Self: Sized,
+    {
+        self.otherwise(other).map_output(|either| match either {
+            Either::Left(left) => left,
+            Either::Right(right) => right,
+        })
     }
 
     /// Parse this parser, then the other parser.

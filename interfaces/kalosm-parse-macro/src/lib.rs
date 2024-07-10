@@ -1,0 +1,169 @@
+use proc_macro::TokenStream;
+use proc_macro2::TokenStream as TokenStream2;
+use quote::{format_ident, quote, ToTokens};
+use syn::{ext::IdentExt, parse_macro_input, DeriveInput, Ident, LitStr};
+
+#[proc_macro_derive(Parse)]
+pub fn derive_parse(input: TokenStream) -> TokenStream {
+    // Parse the input tokens into a syntax tree
+    let input = parse_macro_input!(input as DeriveInput);
+
+    match input.data {
+        syn::Data::Struct(data) => match data.fields {
+            syn::Fields::Named(fields) => {
+                let ty = input.ident;
+                if fields.named.is_empty() {
+                    return TokenStream::from(unit_parser(&ty));
+                }
+                let mut parsers = Vec::new();
+                let idents: Vec<_> = fields
+                    .named
+                    .iter()
+                    .map(|f| format_ident!("{}_parser", f.ident.as_ref().unwrap().unraw()))
+                    .collect();
+                for (i, (field, parser_ident)) in fields.named.iter().zip(idents.iter()).enumerate()
+                {
+                    let ident = field.ident.as_ref().unwrap().unraw();
+                    let mut literal_text = String::new();
+                    if i == 0 {
+                        literal_text.push('{');
+                    } else {
+                        literal_text.push(',');
+                    }
+                    literal_text
+                        .push_str(&format!("\"{}\":", field.ident.as_ref().unwrap().unraw()));
+                    let literal_text = LitStr::new(&literal_text, ident.span());
+                    let ty = &field.ty;
+                    parsers.push(quote! {
+                        let #parser_ident = kalosm_sample::LiteralParser::from(#literal_text)
+                            .ignore_output_then(#ty::new_parser());
+                    });
+                }
+
+                let wrap_tuple = |ident: &Ident, current: TokenStream2| {
+                    quote! {
+                        (#current, #ident)
+                    }
+                };
+
+                let mut output_tuple = None;
+                for field in fields.named.iter() {
+                    let name = field.ident.as_ref().unwrap();
+                    match output_tuple {
+                        Some(current) => {
+                            output_tuple = Some(wrap_tuple(name, current));
+                        }
+                        None => {
+                            output_tuple = Some(name.to_token_stream());
+                        }
+                    }
+                }
+
+                let field_names = fields.named.iter().map(|f| f.ident.as_ref().unwrap());
+
+                let mut join_parser: Option<TokenStream2> = None;
+                for ident in idents.iter() {
+                    match &mut join_parser {
+                        Some(current) => {
+                            *current = quote! {
+                                #current
+                                    .then(#ident)
+                            };
+                        }
+                        None => {
+                            join_parser = Some(ident.to_token_stream());
+                        }
+                    }
+                }
+
+                let parse_block = quote! {
+                    #(
+                        #parsers
+                    )*
+
+                    #join_parser
+                        .then_literal(r#"}"#)
+                        .map_output(|#output_tuple| Self {
+                            #(
+                                #field_names
+                            ),*
+                        })
+                };
+
+                let expanded = quote! {
+                    impl kalosm_sample::Parse for #ty {
+                        fn new_parser() -> impl kalosm_sample::SendCreateParserState<Output = Self> {
+                            #parse_block
+                        }
+                    }
+                };
+                TokenStream::from(expanded)
+            }
+            _ => panic!("Structs with more than one field are not supported"),
+        },
+        syn::Data::Enum(data) => {
+            let ty = input.ident;
+            if data.variants.is_empty() {
+                return TokenStream::from(unit_parser(&ty));
+            }
+
+            let mut parser = None;
+            for variant in data.variants.iter() {
+                let variant_name = &variant.ident;
+                let fields = &variant.fields;
+                if !fields.is_empty() {
+                    return TokenStream::from(
+                        syn::Error::new(
+                            variant.ident.span(),
+                            "Enums with non-unit variants are not supported",
+                        )
+                        .to_compile_error(),
+                    );
+                }
+                let lit_str_name =
+                    LitStr::new(&variant_name.unraw().to_string(), variant.ident.span());
+                let construct_variant = quote! {
+                    Self::#variant_name #fields
+                };
+                let parse_variant = quote! {
+                    kalosm_sample::LiteralParser::from(#lit_str_name).map_output(|_| #construct_variant)
+                };
+                match &mut parser {
+                    Some(current) => {
+                        *current = quote! {
+                            #current
+                                .or(
+                                    #parse_variant
+                                )
+                        };
+                    }
+                    None => {
+                        parser = Some(parse_variant);
+                    }
+                }
+            }
+
+            quote! {
+                impl kalosm_sample::Parse for #ty {
+                    fn new_parser() -> impl kalosm_sample::SendCreateParserState<Output = Self> {
+                        #parser
+                    }
+                }
+            }
+            .into()
+        }
+        _ => panic!("Only structs and unit value enums are supported"),
+    }
+}
+
+fn unit_parser(ty: &Ident) -> TokenStream2 {
+    let ty_string = LitStr::new(&format!("\"{}\"", ty.unraw()), ty.span());
+    quote! {
+        impl kalosm_sample::Parse for #ty {
+            fn new_parser() -> impl kalosm_sample::SendCreateParserState<Output = Self> {
+                kalosm_sample::CreateParserState::LiteralParser::new(#ty_string)
+                    .map_output(|_| Self {})
+            }
+        }
+    }
+}

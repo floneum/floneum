@@ -18,6 +18,7 @@ tokenizers = { version = "0.19.1" }
 rustc-hash = "1.1.0"
 regex-automata = "0.4.5"
 thiserror = "1.0.58"
+kalosm-parse-macro = { workspace = true }
 
 [dev-dependencies]
 tracing-subscriber = "0.3.18"

@@ -6528,11 +6528,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "kalosm-parse-macro"
+version = "0.2.1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.68",
+]
+
+[[package]]
 name = "kalosm-sample"
 version = "0.2.1"
 dependencies = [
  "anyhow",
  "candle-core",
+ "criterion",
+ "kalosm-parse-macro",
  "llm-samplers",
  "rand 0.8.5",
  "regex-automata 0.4.7",
@@ -6540,6 +6551,7 @@ dependencies = [
  "thiserror",
  "tokenizers",
  "tracing",
+ "tracing-subscriber 0.3.18",
 ]
 
 [[package]]

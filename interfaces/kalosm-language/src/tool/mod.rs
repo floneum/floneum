@@ -268,8 +268,8 @@ Question: {question}
             .map_output(|(_, result)| result);
 
         thought_constraints
-            .or(action_constraints)
-            .or(answer_constraints)
+            .otherwise(action_constraints)
+            .otherwise(answer_constraints)
             .map_output(|action| match action {
                 Either::Left(Either::Left(thought)) => Action::Thought(thought),
                 Either::Left(Either::Right((index, input))) => Action::Tool { index, input },
