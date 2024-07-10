@@ -98,8 +98,12 @@ pub fn derive_parse(input: TokenStream) -> TokenStream {
                     }
                 };
                 TokenStream::from(expanded)
+            },
+            syn::Fields::Unit => {
+                let ty = input.ident;
+                TokenStream::from(unit_parser(&ty))
             }
-            _ => panic!("Structs with more than one field are not supported"),
+            _ => panic!("Only structs with named fields are supported"),
         },
         syn::Data::Enum(data) => {
             let ty = input.ident;
@@ -121,7 +125,7 @@ pub fn derive_parse(input: TokenStream) -> TokenStream {
                     );
                 }
                 let lit_str_name =
-                    LitStr::new(&variant_name.unraw().to_string(), variant.ident.span());
+                    LitStr::new(&format!("\"{}\"", variant_name.unraw()), variant.ident.span());
                 let construct_variant = quote! {
                     Self::#variant_name #fields
                 };
@@ -161,7 +165,7 @@ fn unit_parser(ty: &Ident) -> TokenStream2 {
     quote! {
         impl kalosm_sample::Parse for #ty {
             fn new_parser() -> impl kalosm_sample::SendCreateParserState<Output = Self> {
-                kalosm_sample::CreateParserState::LiteralParser::new(#ty_string)
+                kalosm_sample::LiteralParser::new(#ty_string)
                     .map_output(|_| Self {})
             }
         }
