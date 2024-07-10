@@ -19,6 +19,21 @@ macro_rules! int_parser {
             parser: IntegerParser,
         }
 
+        impl $ty {
+            /// Create a new parser.
+            pub fn new() -> Self {
+                Self::default()
+            }
+
+            /// Set the range of the integers that this parser can parse.
+            pub fn with_range(mut self, range: std::ops::RangeInclusive<$num>) -> Self {
+                let start = range.start();
+                let end = range.end();
+                self.parser = IntegerParser::new(*start as i128..=*end as i128);
+                self
+            }
+        }
+
         impl Default for $ty {
             fn default() -> Self {
                 Self {

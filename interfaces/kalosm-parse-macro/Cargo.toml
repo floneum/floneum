@@ -12,6 +12,7 @@ keywords = ["ai", "bert", "nlp", "machine-learning", "transformers"]
 syn = "2.0"
 quote = "1.0"
 proc-macro2 = "1.0.86"
+regex-automata = "0.4.5"
 
 [lib]
 proc-macro = true

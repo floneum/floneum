@@ -3,7 +3,7 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote, ToTokens};
 use syn::{ext::IdentExt, parse_macro_input, DeriveInput, Ident, LitStr};
 
-#[proc_macro_derive(Parse)]
+#[proc_macro_derive(Parse, attributes(parse))]
 pub fn derive_parse(input: TokenStream) -> TokenStream {
     // Parse the input tokens into a syntax tree
     let input = parse_macro_input!(input as DeriveInput);
@@ -34,9 +34,34 @@ pub fn derive_parse(input: TokenStream) -> TokenStream {
                         .push_str(&format!("\"{}\":", field.ident.as_ref().unwrap().unraw()));
                     let literal_text = LitStr::new(&literal_text, ident.span());
                     let ty = &field.ty;
+                    // Try to grab the parser from the `#[parse(with = expr)]` attribute, otherwise use the default parser
+                    let field_parser = if let Some(attr) = field
+                        .attrs
+                        .iter()
+                        .find(|attr| attr.path().is_ident("parse"))
+                    {
+                        let mut parser = None;
+                        let result = attr.parse_nested_meta(|meta| {
+                            if meta.path.is_ident("with") {
+                                let value =
+                                    meta.value().and_then(|value| value.parse::<syn::Expr>())?;
+                                parser = Some(value.into_token_stream());
+                                Ok(())
+                            } else {
+                                Err(meta.error("expected `with`"))
+                            }
+                        });
+                        if let Err(err) = result {
+                            return err.to_compile_error().into();
+                        }
+                        parser.to_token_stream()
+                    } else {
+                        quote! {#ty::new_parser()}
+                    };
+
                     parsers.push(quote! {
                         let #parser_ident = kalosm_sample::LiteralParser::from(#literal_text)
-                            .ignore_output_then(#ty::new_parser());
+                            .ignore_output_then(#field_parser);
                     });
                 }
 
@@ -98,7 +123,7 @@ pub fn derive_parse(input: TokenStream) -> TokenStream {
                     }
                 };
                 TokenStream::from(expanded)
-            },
+            }
             syn::Fields::Unit => {
                 let ty = input.ident;
                 TokenStream::from(unit_parser(&ty))
@@ -124,8 +149,10 @@ pub fn derive_parse(input: TokenStream) -> TokenStream {
                         .to_compile_error(),
                     );
                 }
-                let lit_str_name =
-                    LitStr::new(&format!("\"{}\"", variant_name.unraw()), variant.ident.span());
+                let lit_str_name = LitStr::new(
+                    &format!("\"{}\"", variant_name.unraw()),
+                    variant.ident.span(),
+                );
                 let construct_variant = quote! {
                     Self::#variant_name #fields
                 };
