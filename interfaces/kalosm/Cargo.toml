@@ -93,7 +93,7 @@ features = ["sound", "language", "vision", "remote"]
 workspace = true
 
 [features]
-cublas = ["kalosm-language/cublas"]
+cublas = ["kalosm-language/cublas", "kalosm-vision/cublas", "kalosm-sound/cuda"]
 mkl = ["kalosm-language/mkl", "kalosm-vision/mkl", "kalosm-sound/mkl"]
 language = ["kalosm-language"]
 metal = ["kalosm-language/metal", "kalosm-vision/metal", "kalosm-sound/metal", "kalosm-common/metal"]
