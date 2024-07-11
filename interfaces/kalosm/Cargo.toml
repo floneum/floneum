@@ -53,7 +53,7 @@ version = "1.0.163"
 features = ["derive"]
 
 [dependencies.surrealdb]
-version = "1.5.1"
+version = "1.5.4"
 features = ["kv-rocksdb"]
 optional = true
 

@@ -4992,7 +4992,7 @@ version = "0.7.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ff16065e5720f376fbced200a5ae0f47ace85fd70b7e54269790281353b6d61"
 dependencies = [
- "approx 0.5.1",
+ "approx 0.4.0",
  "arbitrary",
  "num-traits",
  "rstar",
@@ -7897,7 +7897,7 @@ version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "681030a937600a36906c185595136d26abfebb4aa9c65701cefcaf8578bb982b"
 dependencies = [
- "proc-macro-crate 3.1.0",
+ "proc-macro-crate 1.3.1",
  "proc-macro2",
  "quote",
  "syn 2.0.68",
@@ -11626,9 +11626,9 @@ dependencies = [
 
 [[package]]
 name = "surrealdb"
-version = "1.5.3"
+version = "1.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "31819be880ed2c134afc1350dc29c22b1f1d9b93715d25eac07ba65677235eed"
+checksum = "430b7d33686ece41796236416707398574da147f78c6b4e5dc9a10592907029b"
 dependencies = [
  "async-channel 1.9.0",
  "bincode",
@@ -11650,8 +11650,8 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
- "surrealdb-core 1.5.0",
- "surrealdb-core 2.0.0-1.5.3",
+ "surrealdb-core 1.5.1",
+ "surrealdb-core 2.0.0-1.5.4",
  "thiserror",
  "tokio",
  "tokio-tungstenite",
@@ -11666,9 +11666,9 @@ dependencies = [
 
 [[package]]
 name = "surrealdb-core"
-version = "1.5.0"
+version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d765dbd25b093d89242c4eef253f49d9f026a6acf47b6dee07f86209a78a4080"
+checksum = "c3e0c2ab384286d025809460c65e6e24aef7919a6bfb98e961828d687560c2b8"
 dependencies = [
  "addr",
  "any_ascii",
@@ -11735,9 +11735,9 @@ dependencies = [
 
 [[package]]
 name = "surrealdb-core"
-version = "2.0.0-1.5.3"
+version = "2.0.0-1.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9fce39d305d5ef3f81bf4e08b97675bb00b90d0a72df2dc952af0fa98c405e19"
+checksum = "4da0070ee77cc4a6938000a365c3c2cf0233708d2ac16feb680a6d90a3535025"
 dependencies = [
  "addr",
  "ahash 0.8.11",
@@ -12850,7 +12850,7 @@ version = "1.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
- "cfg-if 1.0.0",
+ "cfg-if 0.1.10",
  "static_assertions",
 ]
 
