@@ -10,7 +10,7 @@
 /// - We also want to keep those chunks as small as possible while retaining that meaning to make them cheaper to feed to the LLM
 /// - Ideally the chunks have unique embeddings so it easier to find them with a query vector
 //
-/// Potential ways we could improve the quality of the chunks:
+///   Potential ways we could improve the quality of the chunks:
 /// - Word embeddings for first level pass? The sentence embeddings this implementation uses are very slow for large documents.
 /// - Estimating merges by averaging the embeddings of the two chunks? Very similar chunks tend to have an embedding after merging that is very similar to the average of the embeddings of the two chunks (cos similarity of > 0.95)
 /// - Find Keywords to detect what chunks refer to similar concepts? It is difficult to tell the meaning of some text that only refers to previous chunks. For example, "This further emphasizes the importance of the previous paragraph." means nothing on its own. It would be nice to know to chunk that with the previous paragraph.

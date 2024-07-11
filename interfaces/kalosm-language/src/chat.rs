@@ -19,6 +19,8 @@ use tokio::sync::{mpsc::unbounded_channel, oneshot};
 type ResponseConstraintGenerator =
     Arc<Mutex<Box<dyn FnMut(&[ChatHistoryItem]) -> ArcParser<()> + Send + Sync>>>;
 
+const DEFAULT_SYSTEM_PROMPT: &str = "Always assist with care, respect, and truth. Respond with utmost utility yet securely. Avoid harmful, unethical, prejudiced, or negative content. Ensure replies promote fairness and positivity.";
+
 /// A simple helper function for prompting the user for input.
 pub fn prompt_input(prompt: impl Display) -> Result<String> {
     use std::io::Write;
@@ -42,7 +44,7 @@ pub enum MessageType {
 }
 
 /// A single item in the chat history.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ChatHistoryItem {
     ty: MessageType,
     contents: String,
@@ -70,6 +72,8 @@ impl ChatHistoryItem {
 
 /// The history of a chat session.
 struct ChatSession<Model: SyncModel> {
+    system_prompt_marker: String,
+    end_system_prompt_marker: String,
     user_marker: String,
     end_user_marker: String,
     assistant_marker: String,
@@ -92,7 +96,7 @@ impl<Model: SyncModel> ChatSession<Model> {
         end_user_marker: String,
         assistant_marker: String,
         end_assistant_marker: String,
-        system_prompt: String,
+        system_prompt: Option<String>,
         bot_constraints: Option<ResponseConstraintGenerator>,
         sampler: Arc<Mutex<dyn Sampler + Send + Sync>>,
         session: Option<Model::Session>,
@@ -101,21 +105,12 @@ impl<Model: SyncModel> ChatSession<Model> {
     ) -> Self {
         let feed_initial_messages = session.is_none();
         let session = session.unwrap_or_else(|| model.new_session().unwrap());
-        let unfed_text = if feed_initial_messages {
-            let mut unfed_text = String::new();
-            unfed_text += &system_prompt_marker;
-            unfed_text += &system_prompt;
-            unfed_text += &end_system_prompt_marker;
-            unfed_text
-        } else {
-            String::new()
-        };
-        *shared_history.write().unwrap() = vec![ChatHistoryItem {
-            ty: MessageType::SystemPrompt,
-            contents: system_prompt,
-        }];
+        let unfed_text = String::new();
+        shared_history.write().unwrap().clear();
 
         let mut myself = Self {
+            system_prompt_marker,
+            end_system_prompt_marker,
             user_marker,
             end_user_marker,
             assistant_marker,
@@ -128,10 +123,19 @@ impl<Model: SyncModel> ChatSession<Model> {
         };
 
         if feed_initial_messages {
+            // If the first item is not a system prompt, add one
+            if initial_history
+                .first()
+                .filter(|item| item.ty() != MessageType::SystemPrompt)
+                .is_none()
+            {
+                let system_prompt = system_prompt.unwrap_or(DEFAULT_SYSTEM_PROMPT.into());
+                myself.add_system_message(system_prompt);
+            }
             for item in initial_history {
                 match item.ty() {
                     MessageType::SystemPrompt => {
-                        panic!("Initial history cannot contain a system prompt");
+                        myself.add_system_message(item.contents);
                     }
                     MessageType::UserMessage => {
                         myself.add_user_message(item.contents);
@@ -203,6 +207,20 @@ impl<Model: SyncModel> ChatSession<Model> {
         Ok(())
     }
 
+    fn add_system_message(&mut self, message: String) {
+        self.unfed_text += &self.system_prompt_marker;
+        self.unfed_text += &message;
+        self.unfed_text += &self.end_system_prompt_marker;
+        let mut history = self.history.write().unwrap();
+        if !history.is_empty() {
+            tracing::error!("System prompt should be the first message in the history. System prompt was added to the end of the history: {history:?}");
+        }
+        history.push(ChatHistoryItem {
+            ty: MessageType::SystemPrompt,
+            contents: message,
+        });
+    }
+
     fn add_user_message(&mut self, message: String) {
         self.unfed_text += &self.user_marker;
         self.unfed_text += &message;
@@ -229,7 +247,7 @@ pub struct ChatBuilder<M: Model> {
     model: M,
     chat_markers: ChatMarkers,
     session: Option<<M::SyncModel as kalosm_language_model::SyncModel>::Session>,
-    system_prompt: String,
+    system_prompt: Option<String>,
     sampler: Arc<Mutex<dyn Sampler + Send + Sync>>,
     bot_constraints: Option<ResponseConstraintGenerator>,
     initial_history: Vec<ChatHistoryItem>,
@@ -243,7 +261,7 @@ impl<M: Model> ChatBuilder<M> {
             model,
             chat_markers,
             session: None,
-            system_prompt: "Always assist with care, respect, and truth. Respond with utmost utility yet securely. Avoid harmful, unethical, prejudiced, or negative content. Ensure replies promote fairness and positivity.".into(),
+            system_prompt: None,
             sampler: Arc::new(Mutex::new(GenerationParameters::default().sampler())),
             bot_constraints: None,
             initial_history: Vec::new(),
@@ -263,8 +281,8 @@ impl<M: Model> ChatBuilder<M> {
     ///     .build();
     /// # }
     /// ```
-    pub fn with_system_prompt(mut self, system_prompt: impl Into<String>) -> Self {
-        self.system_prompt = system_prompt.into();
+    pub fn with_system_prompt(mut self, system_prompt: impl ToString) -> Self {
+        self.system_prompt = Some(system_prompt.to_string());
         self
     }
 

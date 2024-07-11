@@ -1,4 +1,4 @@
-use kalosm_language_model::{Embedder, VectorSpace};
+use kalosm_language_model::Embedder;
 use std::ops::Range;
 
 use super::{Chunker, SentenceChunker};
@@ -196,21 +196,6 @@ fn test_chunking() {
         string[chunks[2].clone()].trim(),
         "third paragraph\n\nfourth paragraph"
     );
-}
-
-/// A document that has been split into smaller chunks and embedded.
-pub struct EmbeddedDocument<S: VectorSpace> {
-    raw: Document,
-    chunks: Vec<Chunk<S>>,
-}
-
-impl<S: VectorSpace> std::fmt::Debug for EmbeddedDocument<S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("EmbeddedDocument")
-            .field("raw", &self.raw)
-            .field("chunks", &self.chunks)
-            .finish()
-    }
 }
 
 impl Chunker for ChunkStrategy {

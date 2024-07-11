@@ -11,7 +11,6 @@ use llm_samplers::prelude::*;
 use std::any::Any;
 use std::fmt::Display;
 use std::future::IntoFuture;
-use std::marker::PhantomData;
 use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -890,15 +889,10 @@ impl Model for DynModel {
 pub type BoxedSyncModel = Box<dyn SyncModel<Session = AnySession>>;
 
 trait AnySessionTrait {
-    fn as_any_mut(&mut self) -> &mut dyn Any;
     fn save_to(&self, path: &Path) -> anyhow::Result<()>;
 }
 
 impl<S: Any + Session> AnySessionTrait for S {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
     fn save_to(&self, path: &Path) -> anyhow::Result<()> {
         Session::save_to(self, path)
     }
@@ -909,12 +903,6 @@ impl<S: Any + Session> AnySessionTrait for S {
 /// > Note: boxed sessions do not support loading from a path.
 pub struct AnySession {
     session: Box<dyn AnySessionTrait>,
-}
-
-impl AnySession {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self.session.as_any_mut()
-    }
 }
 
 impl Session for AnySession {
@@ -949,56 +937,6 @@ impl SyncModel for BoxedSyncModel {
     fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
         let self_ref: &(dyn SyncModel<Session = AnySession>) = self.as_ref();
         self_ref.tokenizer()
-    }
-}
-
-struct AnySyncModel<M: SyncModel<Session = S>, S: Any>(M, PhantomData<S>);
-
-impl<M: SyncModel<Session = S>, S: Session + Any> SyncModel for AnySyncModel<M, S> {
-    type Session = AnySession;
-
-    fn new_session(&self) -> anyhow::Result<Self::Session> {
-        self.0.new_session().map(|s| AnySession {
-            session: Box::new(s),
-        })
-    }
-
-    fn feed_text(&self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Vec<f32>> {
-        self.0.feed_text(
-            match session.as_any_mut().downcast_mut() {
-                Some(s) => s,
-                None => {
-                    return Err(anyhow::Error::msg(format!(
-                        "Invalid session type expected {:?}",
-                        std::any::type_name::<S>()
-                    )))
-                }
-            },
-            prompt,
-        )
-    }
-
-    fn feed_tokens(&self, session: &mut Self::Session, tokens: &[u32]) -> anyhow::Result<Vec<f32>> {
-        self.0.feed_tokens(
-            match session.as_any_mut().downcast_mut() {
-                Some(s) => s,
-                None => {
-                    return Err(anyhow::Error::msg(format!(
-                        "Invalid session type expected {:?}",
-                        std::any::type_name::<S>()
-                    )))
-                }
-            },
-            tokens,
-        )
-    }
-
-    fn stop_token(&self) -> anyhow::Result<u32> {
-        self.0.stop_token()
-    }
-
-    fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
-        self.0.tokenizer()
     }
 }
 

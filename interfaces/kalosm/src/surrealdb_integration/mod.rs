@@ -61,7 +61,7 @@ impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
     where
         R: DeserializeOwned,
     {
-        let _: Vec<DocumentLink> = self.db.delete(&self.table_links()).await?;
+        let _: Vec<DocumentLink> = self.db.delete(self.table_links()).await?;
         let embeddings: Vec<ObjectWithEmbeddingIds<R>> = self.db.delete(&self.table).await?;
 
         let mut documents = Vec::with_capacity(embeddings.len());
