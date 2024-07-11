@@ -32,4 +32,4 @@ kalosm-common.workspace = true
 
 [features]
 metal = ["kalosm/metal"]
-cublas = ["kalosm/cublas"]
+cublas = ["kalosm/cuda"]

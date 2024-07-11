@@ -84,7 +84,7 @@ cd ./kalosm-hello-world
 3) Add Kalosm as a dependency
 ```sh
 cargo add kalosm --git https://github.com/floneum/floneum --features language
-# You can use `--features language,metal`, `--features language,cublas`, or `--features language,mkl` if your machine supports an accelerator
+# You can use `--features language,metal`, `--features language,cuda`, or `--features language,mkl` if your machine supports an accelerator
 cargo add tokio --features full
 ```
 4) Add this code to your `main.rs` file
