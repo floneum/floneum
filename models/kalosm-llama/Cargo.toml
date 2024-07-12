@@ -35,7 +35,7 @@ kalosm-common = { workspace = true }
 [dev-dependencies]
 tracing-subscriber = "0.3.18"
 criterion = "0.5.1"
-kalosm = { path = "../../interfaces/kalosm" }
+kalosm = { path = "../../interfaces/kalosm", features = ["language"] }
 
 [features]
 default = []
