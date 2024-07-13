@@ -8,7 +8,6 @@ use crate::TokenOutputStream;
 use kalosm_sample::{ParseStatus, Parser};
 use llm_samplers::prelude::{Logit, Logits};
 use llm_samplers::types::{HasSamplerResources, Sampler, SamplerError};
-use rustc_hash::FxHashMap;
 use tokenizers::tokenizer::Tokenizer;
 
 #[allow(clippy::too_many_arguments)]
@@ -35,6 +34,7 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
         token_stream.next_token(*token)?;
     }
     let mut rng = rand::thread_rng();
+    let mut state_map = vec![];
 
     loop {
         let tokens = token_stream.tokens();
@@ -44,11 +44,10 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
             previous_tokens: tokens,
             rng: &mut rng,
         };
-        let mut state_map = FxHashMap::default();
 
         let mut logits = Logits::default();
 
-        let next_tokens = token_stream.peek_tokens((0..logit_probs.len() as u32).collect())?;
+        let mut token_cache = DetokenizationCache::new(logit_probs.len());
 
         let mut logits_indexed = (0..)
             .zip(logit_probs.iter().copied())
@@ -59,19 +58,63 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
             })
             .collect::<Vec<_>>();
 
-        // We can partition the logits into two groups: the top k and the rest
-        if let Some(top_k) = top_k {
-            if top_k < logits_indexed.len() {
-                logits_indexed
-                    .select_nth_unstable_by(top_k, |a, b| b.logit.partial_cmp(&a.logit).unwrap());
-            }
+        // fill the state map with None for each token
+        state_map.clear();
+        for _ in 0..logits_indexed.len() {
+            state_map.push(None);
+        }
+        let mut valid_tokens = false;
+
+        // If we don't have a top k, then we can just cache the entire detokenization
+        if top_k.is_none() {
+            token_cache.expand(
+                &(0..logit_probs.len() as u32).collect::<Vec<_>>(),
+                &token_stream,
+            )?;
         }
 
+        const DETOKENIZATION_INITIAL_BATCH_SIZE: usize = 64;
+
+        // Constraints tend to be either very difficult to satisfy or very easy to satisfy
+        // We exponentially increase the batch size as a balance between the two
+        // If the first half of the tokens are invalid, it is unlikely that the first 64 tokens of the second half will be valid
+        let mut detokenization_batch_size = DETOKENIZATION_INITIAL_BATCH_SIZE;
+
+        let mut partitioned_logits_index = top_k.map(|_| 0);
+
         for i in 0..logits_indexed.len() {
+            // If we have top k enabled, and there are less than top k - committed logits sorted, we need to expand the partitioned logits
+            if let (Some(top_k), Some(partitioned_index)) = (top_k, partitioned_logits_index) {
+                // If the remaining logits are less than the top k, no need to partition
+                let remaining_needed = top_k - logits.len();
+                let remaining_possible = partitioned_index - i;
+                if remaining_possible <= remaining_needed {
+                    // We batch together updates to the cache by DETOKENIZATION_BATCH_SIZE
+                    let logits_to_update = (remaining_needed.max(detokenization_batch_size))
+                        .min(logits_indexed.len() - 1 - i);
+                    let new_partitioned_index = i + logits_to_update;
+
+                    // If we eliminated a logit, our partitioning of the logits is no longer valid
+                    logits_indexed[i..].select_nth_unstable_by(logits_to_update, |a, b| {
+                        b.logit.partial_cmp(&a.logit).unwrap()
+                    });
+                    // Expand the cache to include the new logits
+                    partitioned_logits_index = Some(new_partitioned_index);
+                    let tokens = logits_indexed[i..=new_partitioned_index]
+                        .iter()
+                        .map(|logit| logit.token_id)
+                        .collect::<Vec<_>>();
+                    token_cache.expand(&tokens, &token_stream)?;
+
+                    // Double the batch size for next time
+                    detokenization_batch_size = detokenization_batch_size.saturating_mul(4);
+                }
+            }
+
             let Logit {
                 token_id, logit, ..
             } = logits_indexed[i];
-            let Some(text) = next_tokens[token_id as usize].as_ref() else {
+            let Some(text) = token_cache.get(token_id as usize) else {
                 continue;
             };
             if let Ok(result) = parser.parse(&parser_state, text.as_bytes()) {
@@ -80,7 +123,8 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
                     ParseStatus::Incomplete { .. } => text.len(),
                 };
                 let result = result.without_remaining();
-                state_map.insert(token_id, (result, parsed_bytes));
+                state_map[token_id as usize] = Some((result, parsed_bytes));
+                valid_tokens = true;
                 logits.push(Logit {
                     token_id,
                     logit,
@@ -92,21 +136,11 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
                         break;
                     }
                 }
-            } else if let Some(top_k) = top_k {
-                // If the remaining logits are less than the top k, no need to partition
-                let remaining_needed = (top_k - logits.len()).min(logits_indexed.len() - i);
-                let remaining_possible = logits_indexed.len() - i;
-                if remaining_possible < remaining_needed {
-                    // If we eliminated a logit, our partitioning of the logits is no longer valid
-                    logits_indexed[i..].select_nth_unstable_by(remaining_needed, |a, b| {
-                        b.logit.partial_cmp(&a.logit).unwrap()
-                    });
-                }
             }
         }
 
         // If there are no valid tokens, return an error
-        if state_map.is_empty() {
+        if !valid_tokens {
             return Err(anyhow::anyhow!("No valid tokens found"));
         }
         let token_id = sampler
@@ -115,7 +149,9 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
 
         unprocessed_token_count = 1;
         let (result, parsed_bytes) = state_map
-            .remove(&token_id)
+            .get_mut(token_id as usize)
+            .unwrap()
+            .take()
             .ok_or(anyhow::anyhow!("Token {} not found in state map", token_id))?;
         let mut token = token_stream.next_token(token_id)?.unwrap();
         token.truncate(parsed_bytes);
@@ -225,6 +261,46 @@ where
 
     fn with_last_tokens(&self, fun: &mut dyn FnMut(&[u32])) -> Result<(), SamplerError> {
         fun(self.previous_tokens);
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
+enum TokenCacheStatus {
+    Empty,
+    Invalid,
+    Valid(String),
+}
+
+struct DetokenizationCache {
+    cache: Box<[TokenCacheStatus]>,
+}
+
+impl DetokenizationCache {
+    fn new(len: usize) -> Self {
+        Self {
+            cache: vec![TokenCacheStatus::Empty; len].into_boxed_slice(),
+        }
+    }
+
+    fn get(&self, index: usize) -> Option<&str> {
+        match &self.cache[index] {
+            TokenCacheStatus::Empty => panic!("cache for token {} is empty", index),
+            TokenCacheStatus::Invalid => None,
+            TokenCacheStatus::Valid(token) => Some(token),
+        }
+    }
+
+    fn expand(&mut self, tokens: &[u32], stream: &TokenOutputStream) -> anyhow::Result<()> {
+        let new_tokens = stream.peek_tokens(tokens)?;
+
+        for (&i, token) in tokens.iter().zip(new_tokens.into_iter()) {
+            self.cache[i as usize] = match token {
+                Some(token) => TokenCacheStatus::Valid(token),
+                None => TokenCacheStatus::Invalid,
+            };
+        }
+
         Ok(())
     }
 }
