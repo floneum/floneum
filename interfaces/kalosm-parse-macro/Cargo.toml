@@ -14,5 +14,9 @@ quote = "1.0"
 proc-macro2 = "1.0.86"
 regex-automata = "0.4.5"
 
+[dev-dependencies]
+kalosm = { workspace = true, features = ["language"] }
+tokio = { version = "1.28.1", features = ["full"] }
+
 [lib]
 proc-macro = true

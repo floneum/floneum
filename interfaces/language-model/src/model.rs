@@ -1,5 +1,6 @@
 use crate::structured::generate_structured;
 use crate::TokenOutputStream;
+use futures_util::{Future, FutureExt};
 use futures_util::{Stream, StreamExt};
 use kalosm_common::*;
 use kalosm_sample::CreateParserState;
@@ -452,7 +453,7 @@ impl<S: Stream<Item = String> + Send + Unpin + 'static, O> StructureParserResult
 
     /// Get the final result of the structured parser.
     pub async fn result(self) -> anyhow::Result<O> {
-        self.result.await.unwrap()
+        self.result.await?
     }
 
     /// Get all the text from the stream.
@@ -468,6 +469,18 @@ impl<S: Stream<Item = String> + Send + Unpin + 'static, O> StructureParserResult
     /// Split the stream into a token stream and a result.
     pub fn split(self) -> (S, tokio::sync::oneshot::Receiver<anyhow::Result<O>>) {
         (self.stream, self.result)
+    }
+}
+
+impl<S: Stream<Item = String> + Send + Unpin + 'static, O> Future for StructureParserResult<S, O> {
+    type Output = anyhow::Result<O>;
+
+    fn poll(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        let myself = self.get_mut();
+        myself.result.poll_unpin(cx).map(|result| result?)
     }
 }
 
