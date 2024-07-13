@@ -6533,10 +6533,12 @@ dependencies = [
 name = "kalosm-parse-macro"
 version = "0.2.1"
 dependencies = [
+ "kalosm",
  "proc-macro2",
  "quote",
  "regex-automata 0.4.7",
  "syn 2.0.68",
+ "tokio",
 ]
 
 [[package]]
