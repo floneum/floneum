@@ -149,17 +149,20 @@ impl TokenOutputStream {
         let prev_text_len = prev_text.len();
         let results = tokens
             .par_iter()
-            .map(|token| {
-                let mut tokens = self.tokens[self.prev_index..].to_vec();
-                tokens.push(*token);
-                let text = self.decode(&tokens).ok()?;
-                if text.len() > prev_text_len && text.chars().last().unwrap().is_ascii() {
-                    let text = text.split_at(prev_text_len);
-                    Some(text.1.to_string())
-                } else {
-                    None
-                }
-            })
+            .map_init(
+                || self.tokens[self.prev_index..].to_vec(),
+                |tokens, token| {
+                    tokens.push(*token);
+                    let text = self.decode(tokens).ok()?;
+                    tokens.pop();
+                    if text.len() > prev_text_len && text.chars().last().unwrap().is_ascii() {
+                        let text = text.split_at(prev_text_len);
+                        Some(text.1.to_string())
+                    } else {
+                        None
+                    }
+                },
+            )
             .collect();
         Ok(results)
     }
