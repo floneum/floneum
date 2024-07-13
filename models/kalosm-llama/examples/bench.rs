@@ -42,7 +42,7 @@ async fn main() {
         .unwrap();
         let prompt = "Hello world".repeat(600);
 
-        let tokens = model.tokenizer().encode(&prompt, true).unwrap().len();
+        let tokens = model.tokenizer().encode(prompt.clone(), true).unwrap().len();
         for _ in 0..100 {
             let start_time = std::time::Instant::now();
             let mut session = model.new_session().unwrap();
