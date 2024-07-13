@@ -9,6 +9,7 @@ use kalosm_streams::text_stream::ChannelTextStream;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::Mutex;
+use tokenizers::Tokenizer;
 
 #[async_trait::async_trait]
 impl ModelBuilder for PhiBuilder {
@@ -31,8 +32,8 @@ impl Model for Phi {
     type TextStream = ChannelTextStream;
     type SyncModel = PhiModel;
 
-    fn tokenizer(&self) -> Arc<dyn kalosm_sample::Tokenizer + Send + Sync> {
-        self.get_tokenizer() as Arc<dyn kalosm_sample::Tokenizer + Send + Sync>
+    fn tokenizer(&self) -> Arc<Tokenizer> {
+        self.get_tokenizer()
     }
 
     fn run_sync_raw(

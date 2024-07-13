@@ -49,8 +49,8 @@ impl SyncModel for LlamaModel {
         Ok(eos_token)
     }
 
-    fn tokenizer(&self) -> std::sync::Arc<dyn kalosm_sample::Tokenizer + Send + Sync> {
-        self.tokenizer.clone() as std::sync::Arc<dyn kalosm_sample::Tokenizer + Send + Sync>
+    fn tokenizer(&self) -> Arc<Tokenizer> {
+        self.tokenizer.clone()
     }
 }
 

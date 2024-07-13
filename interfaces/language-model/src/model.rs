@@ -3,8 +3,8 @@ use crate::TokenOutputStream;
 use futures_util::{Stream, StreamExt};
 use kalosm_common::*;
 use kalosm_sample::CreateParserState;
+use kalosm_sample::Parser;
 use kalosm_sample::StopOn;
-use kalosm_sample::{Parser, Tokenizer};
 use kalosm_streams::text_stream::ChannelTextStream;
 use llm_samplers::configure::SamplerChainBuilder;
 use llm_samplers::prelude::*;
@@ -15,6 +15,7 @@ use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
+use tokenizers::tokenizer::Tokenizer;
 
 /// A builder that can create a model asynchronously.
 ///
@@ -530,7 +531,7 @@ pub trait SyncModel {
     fn stop_token(&self) -> anyhow::Result<u32>;
 
     /// Return the tokenizer associated with this model.
-    fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync>;
+    fn tokenizer(&self) -> Arc<Tokenizer>;
 }
 
 /// A session for a model.
@@ -604,13 +605,17 @@ pub trait SyncModelExt: SyncModel {
         mut sampler: Arc<Mutex<dyn Sampler>>,
         mut on_token: impl FnMut(String) -> anyhow::Result<ModelFeedback>,
     ) -> anyhow::Result<()> {
-        let tokens = self.tokenizer().encode(prompt, true)?;
+        let tokens = self
+            .tokenizer()
+            .encode(prompt, true)
+            .map_err(|e| anyhow::anyhow!(e))?;
+        let tokens = tokens.get_ids();
         let mut text_stream = TokenOutputStream::new(self.tokenizer());
-        for token in tokens.iter().copied() {
+        for &token in tokens {
             text_stream.next_token(token)?;
         }
 
-        let logit_probs = self.feed_tokens(session, &tokens)?;
+        let logit_probs = self.feed_tokens(session, tokens)?;
         let mut logits = Logits::try_from_iter_top_k(logit_probs, 512)?;
         let mut tokens_generated = 0;
         // This stores a buffer of text that has been generated to check against the stop_on string. It should never be longer than the stop_on string.
@@ -731,7 +736,7 @@ impl SyncModel for SyncModelNotSupported {
         Err(anyhow::Error::msg("Not implemented"))
     }
 
-    fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
+    fn tokenizer(&self) -> Arc<Tokenizer> {
         unimplemented!()
     }
 }
@@ -745,7 +750,7 @@ pub trait Model: Send + Sync + 'static {
     type TextStream: Stream<Item = String> + Send + Sync + Unpin + 'static;
 
     /// Get the tokenizer associated with this model to use for constrained generation.
-    fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync>;
+    fn tokenizer(&self) -> Arc<Tokenizer>;
 
     /// The raw sync model that backs this model.
     type SyncModel: SyncModel;
@@ -868,7 +873,7 @@ impl Model for DynModel {
     type TextStream = ChannelTextStream;
     type SyncModel = BoxedSyncModel;
 
-    fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
+    fn tokenizer(&self) -> Arc<Tokenizer> {
         let self_ref: &(dyn Model<TextStream = ChannelTextStream, SyncModel = BoxedSyncModel>
               + Send) = self.as_ref();
         self_ref.tokenizer()
@@ -934,7 +939,7 @@ impl SyncModel for BoxedSyncModel {
         self_ref.stop_token()
     }
 
-    fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
+    fn tokenizer(&self) -> Arc<Tokenizer> {
         let self_ref: &(dyn SyncModel<Session = AnySession>) = self.as_ref();
         self_ref.tokenizer()
     }
@@ -950,7 +955,7 @@ where
     type TextStream = ChannelTextStream;
     type SyncModel = BoxedSyncModel;
 
-    fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
+    fn tokenizer(&self) -> Arc<Tokenizer> {
         self.0.tokenizer()
     }
 

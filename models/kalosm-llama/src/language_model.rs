@@ -8,6 +8,7 @@ use kalosm_common::ModelLoadingProgress;
 use kalosm_language_model::ChatMarkers;
 use kalosm_language_model::{GenerationParameters, Model, ModelBuilder};
 use kalosm_streams::text_stream::ChannelTextStream;
+use tokenizers::Tokenizer;
 
 #[async_trait::async_trait]
 impl ModelBuilder for LlamaBuilder {
@@ -30,8 +31,8 @@ impl Model for Llama {
     type TextStream = ChannelTextStream;
     type SyncModel = LlamaModel;
 
-    fn tokenizer(&self) -> Arc<dyn kalosm_sample::Tokenizer + Send + Sync> {
-        self.get_tokenizer() as Arc<dyn kalosm_sample::Tokenizer + Send + Sync>
+    fn tokenizer(&self) -> Arc<Tokenizer> {
+        self.get_tokenizer()
     }
 
     fn run_sync_raw(

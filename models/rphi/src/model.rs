@@ -124,7 +124,7 @@ impl SyncModel for PhiModel {
         Ok(eos_token)
     }
 
-    fn tokenizer(&self) -> Arc<dyn kalosm_sample::Tokenizer + Send + Sync> {
+    fn tokenizer(&self) -> Arc<Tokenizer> {
         self.tokenizer.clone()
     }
 }

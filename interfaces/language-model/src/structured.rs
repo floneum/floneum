@@ -5,10 +5,11 @@ use std::{
 
 use crate::SyncModel;
 use crate::TokenOutputStream;
-use kalosm_sample::{ParseStatus, Parser, Tokenizer};
+use kalosm_sample::{ParseStatus, Parser};
 use llm_samplers::prelude::{Logit, Logits};
 use llm_samplers::types::{HasSamplerResources, Sampler, SamplerError};
 use rustc_hash::FxHashMap;
+use tokenizers::tokenizer::Tokenizer;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
@@ -24,11 +25,14 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
     let tokenizer = llm.tokenizer();
 
     let prompt_text = prompt.to_string();
-    let prompt_tokens = tokenizer.encode(&prompt_text, true)?;
+    let prompt_tokens = tokenizer
+        .encode(prompt_text, true)
+        .map_err(|e| anyhow::anyhow!(e))?;
+    let prompt_tokens = prompt_tokens.get_ids();
     let mut unprocessed_token_count = prompt_tokens.len();
     let mut token_stream = TokenOutputStream::new(tokenizer.clone());
     for token in prompt_tokens {
-        token_stream.next_token(token)?;
+        token_stream.next_token(*token)?;
     }
     let mut rng = rand::thread_rng();
 
@@ -137,7 +141,7 @@ fn update_state<P: Parser>(
     parser: &P,
     parser_state: &mut P::PartialState,
     result: ParseStatus<P::PartialState, P::Output>,
-    tokenizer: &Arc<dyn Tokenizer + Send + Sync>,
+    tokenizer: &Tokenizer,
     token_stream: &mut TokenOutputStream,
     on_token: &mut impl FnMut(String) -> anyhow::Result<()>,
     unprocessed_token_count: &mut usize,
@@ -151,29 +155,31 @@ fn update_state<P: Parser>(
             if required_next.is_empty() {
                 Ok(None)
             } else {
-                tracing::trace!("Required next: {}", required_next);
-                let mut extra_tokens = tokenizer.encode(&required_next, false)?;
+                // The token may decode to a string that is a valid prefix of the required next token, but in a way that doesn't let us decode the required next tokens
+                let Some(mut extra_tokens) = token_stream.encode_after(&required_next)? else {
+                    return Ok(None);
+                };
                 // Remove the last token to avoid influencing the next token
                 extra_tokens.pop();
+                // If there are no new tokens, continue generating tokens normally
                 if extra_tokens.is_empty() {
                     return Ok(None);
                 }
-                let required_next = tokenizer.decode(&extra_tokens)?;
-                if required_next.is_empty() {
-                    return Ok(None);
-                }
-                let result = parser
-                    .parse(parser_state, required_next.as_bytes())
-                    .unwrap_or_else(|_| {
-                        unreachable!("Required next should always be valid attempted to add {} but got error", required_next)
-                });
+
+                let mut all_required_next = String::new();
                 for token in extra_tokens {
                     if let Some(token) = token_stream.next_token(token)? {
+                        all_required_next += &token;
                         on_token(token)?;
                     }
 
                     *unprocessed_token_count += 1;
                 }
+                let mut result = parser
+                    .parse(parser_state, all_required_next.as_bytes())
+                    .unwrap_or_else(|_| {
+                        unreachable!("Required next should always be valid attempted to add {} but got error", required_next)
+                });
                 update_state(
                     parser,
                     parser_state,
