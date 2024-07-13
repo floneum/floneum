@@ -188,7 +188,7 @@ impl TokenOutputStream {
     }
 
     /// Peek the next token.
-    pub fn peek_tokens(&self, tokens: Vec<u32>) -> Result<Vec<Option<String>>> {
+    pub fn peek_tokens(&self, tokens: &[u32]) -> Result<Vec<Option<String>>> {
         let prev_text = &self.current_text;
         let prev_text_len = prev_text.len();
         let results = tokens

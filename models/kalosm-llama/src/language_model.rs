@@ -47,7 +47,7 @@ impl Model for Llama {
     ) -> anyhow::Result<()> {
         match self.task_sender.send(Task::RunSync { callback: f }) {
             Ok(_) => Ok(()),
-            Err(_) => Err(anyhow::anyhow!("Failed to send task to Phi thread")),
+            Err(_) => Err(anyhow::anyhow!("Failed to send task to Llama thread")),
         }
     }
 

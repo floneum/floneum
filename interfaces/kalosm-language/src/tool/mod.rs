@@ -297,7 +297,7 @@ Question: {question}
             validator_state,
             Arc::new(Mutex::new(GenerationParameters::default().sampler())),
             &mut add_token,
-            Some(32),
+            Some(64),
         )?;
 
         Ok(match result {

@@ -410,7 +410,7 @@ pub trait ModelExt: Model + Send + Sync + 'static {
                     parser_state,
                     sampler,
                     |token| Ok(sender.send(token)?),
-                    Some(32),
+                    Some(64),
                 );
                 match result_sender.send(result) {
                     Ok(()) => {}
