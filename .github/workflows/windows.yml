@@ -82,6 +82,6 @@ jobs:
           rustc -Vv
           cargo -V
           set RUST_BACKTRACE=1
-          cargo build --all --tests --examples
-          cargo test --all --tests
+          cargo build --all --tests --examples --features kalosm/language,kalosm/sound,kalosm/vision,kalosm/remote
+          cargo test --all --tests --features kalosm/language,kalosm/sound,kalosm/vision,kalosm/remote
         shell: cmd

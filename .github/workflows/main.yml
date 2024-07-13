@@ -47,7 +47,7 @@ jobs:
       - run: sudo apt-get update
       - run: sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libasound2-dev libayatana-appindicator3-dev libxdo-dev
       - uses: actions/checkout@v4
-      - run: cargo check --all --examples --tests
+      - run: cargo check --all --examples --tests --features kalosm/language,kalosm/sound,kalosm/vision,kalosm/remote
 
   test:
     if: github.event.pull_request.draft == false
@@ -59,7 +59,7 @@ jobs:
       - run: sudo apt-get update
       - run: sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libasound2-dev libayatana-appindicator3-dev libxdo-dev
       - uses: actions/checkout@v4
-      - run: cargo test --lib --bins --tests --examples --workspace
+      - run: cargo test --lib --bins --tests --examples --workspace --features kalosm/language,kalosm/sound,kalosm/vision,kalosm/remote
 
   fmt:
     if: github.event.pull_request.draft == false
@@ -83,4 +83,4 @@ jobs:
       - run: sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libasound2-dev libayatana-appindicator3-dev libxdo-dev
       - run: rustup component add clippy
       - uses: actions/checkout@v4
-      - run: cargo clippy --workspace --examples --tests -- -D warnings
+      - run: cargo clippy --workspace --examples --tests --features kalosm/language,kalosm/sound,kalosm/vision,kalosm/remote -- -D warnings
