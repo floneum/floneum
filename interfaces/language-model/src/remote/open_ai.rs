@@ -2,10 +2,10 @@ use async_openai::types::CreateEmbeddingRequestArgs;
 use async_openai::{types::CreateCompletionRequestArgs, Client};
 use futures_util::{Future, StreamExt};
 use kalosm_common::*;
-use kalosm_sample::Tokenizer;
 use kalosm_streams::text_stream::ChannelTextStream;
 use std::pin::Pin;
 use std::sync::Arc;
+use tokenizers::tokenizer::Tokenizer;
 
 use crate::{Embedder, Embedding, GenerationParameters, ModelBuilder, VectorSpace};
 
@@ -92,7 +92,7 @@ macro_rules! openai_model {
             type TextStream = ChannelTextStream;
             type SyncModel = crate::SyncModelNotSupported;
 
-            fn tokenizer(&self) -> Arc<dyn Tokenizer + Send + Sync> {
+            fn tokenizer(&self) -> Arc<Tokenizer> {
                 panic!("OpenAI does not expose tokenization")
             }
 

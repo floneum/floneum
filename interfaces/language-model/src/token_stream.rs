@@ -1,24 +1,27 @@
+use std::sync::Arc;
+
 use anyhow::Result;
-use kalosm_sample::Tokenizer;
 use llm_samplers::types::{HasSamplerResources, Logits, Sampler, SamplerError};
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
-use std::sync::Arc;
+use tokenizers::tokenizer::Tokenizer;
 
 /// This is a wrapper around a tokenizer to ensure that tokens can be returned to the user in a
 /// streaming way rather than having to wait for the full decoding.
 pub struct TokenOutputStream {
-    tokenizer: Arc<dyn Tokenizer + Send + Sync>,
+    tokenizer: Arc<Tokenizer>,
     tokens: Vec<u32>,
+    current_text: String,
     prev_index: usize,
     current_index: usize,
 }
 
 impl TokenOutputStream {
     /// Creates a new token output stream.
-    pub fn new(tokenizer: Arc<dyn Tokenizer + Send + Sync>) -> Self {
+    pub fn new(tokenizer: Arc<Tokenizer>) -> Self {
         Self {
             tokenizer,
+            current_text: Default::default(),
             prev_index: 0,
             current_index: 0,
             tokens: Vec::new(),
@@ -26,7 +29,7 @@ impl TokenOutputStream {
     }
 
     fn decode(&self, tokens: &[u32]) -> Result<String> {
-        match self.tokenizer.decode(tokens) {
+        match self.tokenizer.decode(tokens, true) {
             Ok(str) => Ok(str.to_string()),
             Err(err) => anyhow::bail!("cannot decode: {err}"),
         }
@@ -73,7 +76,7 @@ impl TokenOutputStream {
             }
         }
         let mut rng = rand::thread_rng();
-        let tokenizer = self.tokenizer.as_ref();
+        let tokenizer = &self.tokenizer;
         let previous_tokens = &self.tokens;
 
         let mut end_tokens = String::new();
@@ -85,7 +88,7 @@ impl TokenOutputStream {
                 match previous_token_iter.next() {
                     Some(token) => {
                         end_tokens = tokenizer
-                            .decode(&[*token])
+                            .decode(&[*token], true)
                             .map_err(anyhow::Error::msg)?
                             .to_string()
                             + &end_tokens;
@@ -99,7 +102,7 @@ impl TokenOutputStream {
         for logit in logits.iter_mut() {
             let tid = logit.token_id;
             if let Some(stop_on) = stop_on {
-                let token = tokenizer.decode(&[tid]).unwrap();
+                let token = tokenizer.decode(&[tid], true).unwrap();
                 let combined = end_tokens.clone() + &token;
                 if combined.contains(stop_on) && !combined.ends_with(stop_on) {
                     // if the token contains a stop_on token, but not the end of the string, set the probability to 0
@@ -118,20 +121,66 @@ impl TokenOutputStream {
             .ok_or_else(|| anyhow::anyhow!("No token sampled"))
     }
 
-    /// Returns the next token.
-    pub fn next_token(&mut self, token: u32) -> Result<Option<String>> {
-        let prev_text = if self.tokens.is_empty() {
+    /// Encode a string into a list of tokens after the current tokens.
+    pub(crate) fn encode_after(&self, text: &str) -> Result<Option<Vec<u32>>> {
+        let all_text = self.current_text.clone() + text;
+        let tokens_with_current_tokens = self
+            .tokenizer
+            .encode(all_text, false)
+            .map_err(|e| anyhow::anyhow!(e))?;
+        let tokens_with_current_tokens = tokens_with_current_tokens.get_ids();
+
+        let index_length = self.current_index - self.prev_index;
+        let (current_tokens, new_tokens) = tokens_with_current_tokens.split_at(index_length);
+
+        // Some tokenizers may tokenize new text differently than the two tokens concatenated together. If they do, this function returns None
+        if current_tokens != &self.tokens[self.prev_index..self.current_index] {
+            return Ok(None);
+        }
+
+        Ok(Some(new_tokens.to_vec()))
+    }
+
+    /// Recalculate the current text
+    pub(crate) fn recalculate_current_text(&mut self) -> Result<()> {
+        let current_text = if self.tokens.is_empty() {
             Default::default()
         } else {
             let tokens = &self.tokens[self.prev_index..self.current_index];
             self.decode(tokens)?.to_string()
         };
+
+        self.current_text = current_text;
+
+        Ok(())
+    }
+
+    /// Returns the next token.
+    pub fn next_token(&mut self, token: u32) -> Result<Option<String>> {
+        let prev_text = &self.current_text;
         self.tokens.push(token);
         let text = self.decode(&self.tokens[self.prev_index..])?;
         if text.len() > prev_text.len() && text.chars().last().unwrap().is_ascii() {
             let text = text.split_at(prev_text.len());
             self.prev_index = self.current_index;
             self.current_index = self.tokens.len();
+            self.recalculate_current_text()?;
+            Ok(Some(text.1.to_string()))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Returns the next tokens
+    pub fn next_tokens(&mut self, tokens: &[u32]) -> Result<Option<String>> {
+        let prev_text = &self.current_text;
+        self.tokens.extend(tokens.iter().copied());
+        let text = self.decode(&self.tokens[self.prev_index..])?;
+        if text.len() > prev_text.len() && text.chars().last().unwrap().is_ascii() {
+            let text = text.split_at(prev_text.len());
+            self.prev_index = self.current_index;
+            self.current_index = self.tokens.len();
+            self.recalculate_current_text()?;
             Ok(Some(text.1.to_string()))
         } else {
             Ok(None)
@@ -140,12 +189,7 @@ impl TokenOutputStream {
 
     /// Peek the next token.
     pub fn peek_tokens(&self, tokens: Vec<u32>) -> Result<Vec<Option<String>>> {
-        let prev_text = if self.tokens.is_empty() {
-            Default::default()
-        } else {
-            let tokens = &self.tokens[self.prev_index..self.current_index];
-            self.decode(tokens)?.to_string()
-        };
+        let prev_text = &self.current_text;
         let prev_text_len = prev_text.len();
         let results = tokens
             .par_iter()
@@ -174,12 +218,7 @@ impl TokenOutputStream {
 
     /// Decode the remaining tokens.
     pub fn decode_rest(&self) -> Result<Option<String>> {
-        let prev_text = if self.tokens.is_empty() {
-            Default::default()
-        } else {
-            let tokens = &self.tokens[self.prev_index..self.current_index];
-            self.decode(tokens)?
-        };
+        let prev_text = &self.current_text;
         let text = self.decode(&self.tokens[self.prev_index..])?;
         if text.len() > prev_text.len() {
             let text = text.split_at(prev_text.len());
@@ -195,8 +234,8 @@ impl TokenOutputStream {
     }
 
     /// Returns the tokenizer.
-    pub fn tokenizer(&self) -> &(dyn Tokenizer + Send + Sync) {
-        &*self.tokenizer
+    pub fn tokenizer(&self) -> &Tokenizer {
+        &self.tokenizer
     }
 
     /// Clears the token stream.
