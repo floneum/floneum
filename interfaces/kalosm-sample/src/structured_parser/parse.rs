@@ -4,8 +4,52 @@ use crate::{
 };
 
 /// Data that can be parsed incrementally.
+///
+/// You can derive this trait for unit values, unit enums or structs or implement it manually for custom types.
+///
+/// # Example
+/// ```rust
+/// use kalosm_sample::{Parse, SendCreateParserState, StringParser, IntegerParser};
+///
+/// // You can derive parse for structs with named fields that implement Parse
+/// #[derive(Parse)]
+/// struct Person {
+///     name: String,
+///     favorite_color: Color,
+/// }
+///
+/// // You can derive parse for enums with only unit variants
+/// #[derive(Parse)]
+/// enum Color {
+///     Red,
+///     Blue,
+///     Green,
+///     Yellow,
+///     Orange,
+///     Purple,
+///     Pink,
+///     Black,
+/// }
+///
+/// // Or you can implement parse manually for custom types
+/// struct MyStruct(i64, String);
+///
+/// impl Parse for MyStruct {
+///     // The only method on parse is new_parser, which returns a parser that outputs the current type
+///     fn new_parser() -> impl kalosm_sample::SendCreateParserState<Output = Self> {
+///         let number_parser = i64::new_parser();
+///         let string_parser = StringParser::new(0..=usize::MAX);
+///         kalosm_sample::LiteralParser::new("MyStruct(")
+///             .ignore_output_then(number_parser)
+///             .then_literal(", ")
+///             .then(string_parser)
+///             .then_literal(")")
+///             .map_output(|(a, b)| Self(a, b))
+///     }
+/// }
+/// ```
 pub trait Parse: Clone + Send {
-    /// Create a new parser.
+    /// Create a new parser that parses the current type and can be sent between threads.
     fn new_parser() -> impl SendCreateParserState<Output = Self>;
 }
 

@@ -39,7 +39,7 @@ pub use map::*;
 mod regex;
 pub use regex::*;
 
-/// A parser error.
+/// An error that occurred while parsing.
 #[derive(Debug, Clone)]
 pub struct ParserError(Arc<anyhow::Error>);
 
