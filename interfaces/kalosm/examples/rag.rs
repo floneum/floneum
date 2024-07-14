@@ -65,7 +65,7 @@ async fn main() -> anyhow::Result<()> {
         println!("{}", prompt);
 
         // And finally, respond to the user
-        let output_stream = chat.add_message(prompt);
+        let mut output_stream = chat.add_message(prompt);
         print!("Bot: ");
         output_stream.to_std_out().await?;
     }

@@ -283,16 +283,12 @@ impl ResourceStorage {
 
         let model = self.initialize_model(index).await?;
         match model {
-            ConcreteTextGenerationModel::Llama(model) => Ok(model
-                .stream_structured_text(&input, structure)
-                .await?
-                .text()
-                .await),
-            ConcreteTextGenerationModel::Phi(model) => Ok(model
-                .stream_structured_text(&input, structure)
-                .await?
-                .text()
-                .await),
+            ConcreteTextGenerationModel::Llama(model) => {
+                Ok(model.stream_structured_text(&input, structure).await?)
+            }
+            ConcreteTextGenerationModel::Phi(model) => {
+                Ok(model.stream_structured_text(&input, structure).await?)
+            }
         }
     }
 

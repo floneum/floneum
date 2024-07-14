@@ -31,7 +31,7 @@ async fn named_enum() {
 
     assert!(output.contains("\"ty\":"));
     assert!(output.contains("\"contents\":"));
-    assert!(output.contains("\"ty\":\"person\"") || output.contains("\"ty\":\"animal\""));
+    assert!(output.contains("\"ty\": \"person\"") || output.contains("\"ty\": \"animal\""));
     assert!(output.contains("\"name\":"));
     assert!(output.contains("\"age\":") || output.contains("\"species\":"));
 }
@@ -116,5 +116,5 @@ async fn tuple_enum() {
         .await;
     println!("{output}");
 
-    assert!(output.contains("\"type\":\"First\"") || output.contains("\"type\":\"Second\""));
+    assert!(output.contains("\"type\": \"First\"") || output.contains("\"type\": \"Second\""));
 }

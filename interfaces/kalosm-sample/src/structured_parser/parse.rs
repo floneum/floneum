@@ -48,7 +48,7 @@ use crate::{
 ///     }
 /// }
 /// ```
-pub trait Parse: Clone + Send {
+pub trait Parse: Clone + Send + Sync {
     /// Create a new parser that parses the current type and can be sent between threads.
     fn new_parser() -> impl SendCreateParserState<Output = Self>;
 }
@@ -151,7 +151,7 @@ impl Parse for String {
     }
 }
 
-impl<T: Parse + Clone + Send> Parse for std::vec::Vec<T> {
+impl<T: Parse + Clone + Send + Sync> Parse for std::vec::Vec<T> {
     fn new_parser() -> impl SendCreateParserState<Output = Self> {
         SequenceParser::new(
             LiteralParser::new("["),
@@ -164,7 +164,7 @@ impl<T: Parse + Clone + Send> Parse for std::vec::Vec<T> {
     }
 }
 
-impl<const N: usize, T: Parse + Clone + Send> Parse for [T; N] {
+impl<const N: usize, T: Parse + Clone + Send + Sync> Parse for [T; N] {
     fn new_parser() -> impl SendCreateParserState<Output = Self> {
         SequenceParser::new(
             LiteralParser::new("["),

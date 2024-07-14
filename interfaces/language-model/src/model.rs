@@ -3,9 +3,9 @@ use crate::TokenOutputStream;
 use futures_util::{Future, FutureExt};
 use futures_util::{Stream, StreamExt};
 use kalosm_common::*;
-use kalosm_sample::CreateParserState;
 use kalosm_sample::Parser;
 use kalosm_sample::StopOn;
+use kalosm_sample::{CreateParserState, Parse};
 use kalosm_streams::text_stream::ChannelTextStream;
 use llm_samplers::configure::SamplerChainBuilder;
 use llm_samplers::prelude::*;
@@ -369,12 +369,64 @@ pub trait ModelExt: Model + Send + Sync + 'static {
         self.run_sync_raw(Box::new(f))
     }
 
-    /// Generate structured text with the given prompt.
-    async fn stream_structured_text<P>(
+    /// Generate a type that implements [`Parse`] with the given prompt.
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// use kalosm::language::*;
+    ///
+    /// // You can derive an efficient parser for your struct with the `Parse` trait
+    /// #[derive(Parse, Clone, Debug)]
+    /// struct Account {
+    ///     username: String,
+    ///     age: u8,
+    /// }
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> anyhow::Result<()> {
+    /// let llm = Llama::new().await?;
+    /// let prompt = "A list of accounts with random realistic usernames and ages in JSON format: ";
+    ///
+    /// let accounts: [Account; 10] = llm.generate_parsed(prompt).await?;
+    /// println!("{:#?}", accounts);
+    /// # Ok(())
+    /// # }
+    /// ```
+    fn generate_parsed<P: Parse + 'static>(
+        &self,
+        prompt: &str,
+    ) -> StructureParserResult<Self::TextStream, P>
+    where
+        Self::TextStream: From<tokio::sync::mpsc::UnboundedReceiver<String>>,
+    {
+        self.stream_structured_text(prompt, P::new_parser())
+    }
+
+    /// Generate structured text with the given prompt and constraints.
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// # use kalosm::language::*;
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let llm = Llama::new().await.unwrap();
+    ///
+    /// #[derive(Debug, Clone, Parse)]
+    /// enum Size {
+    ///     Small,
+    ///     Medium,
+    ///     Large,
+    /// }
+    ///
+    /// let size = llm.stream_structured_text("A elephant is ", Size::new_parser()).await.unwrap();
+    /// println!("{size:?}");
+    /// }
+    /// ```
+    fn stream_structured_text<P>(
         &self,
         prompt: &str,
         parser: P,
-    ) -> anyhow::Result<StructureParserResult<Self::TextStream, P::Output>>
+    ) -> StructureParserResult<Self::TextStream, P::Output>
     where
         Self::TextStream: From<tokio::sync::mpsc::UnboundedReceiver<String>>,
         P: CreateParserState<PartialState: Send, Output: Send> + Send + 'static,
@@ -382,17 +434,16 @@ pub trait ModelExt: Model + Send + Sync + 'static {
         let sampler = Arc::new(Mutex::new(GenerationParameters::default().sampler()));
         let parser_state = parser.create_parser_state();
         self.stream_structured_text_with_sampler(prompt, parser, parser_state, sampler)
-            .await
     }
 
-    /// Generate structured text with the given prompt and sampler.
-    async fn stream_structured_text_with_sampler<P>(
+    /// Generate structured text with the given prompt and sampler. See [`ModelExt::stream_structured_text`] for more information.
+    fn stream_structured_text_with_sampler<P>(
         &self,
         prompt: &str,
         parser: P,
         parser_state: P::PartialState,
         sampler: Arc<Mutex<dyn Sampler>>,
-    ) -> anyhow::Result<StructureParserResult<Self::TextStream, P::Output>>
+    ) -> StructureParserResult<Self::TextStream, P::Output>
     where
         Self::TextStream: From<tokio::sync::mpsc::UnboundedReceiver<String>>,
         P: CreateParserState<PartialState: Send, Output: Send> + Send + 'static,
@@ -401,7 +452,9 @@ pub trait ModelExt: Model + Send + Sync + 'static {
         let (result_sender, result_receiver) = tokio::sync::oneshot::channel();
 
         let prompt = prompt.to_string();
-        self.run_sync(move |llm: &mut Self::SyncModel| {
+        let result_sender = Arc::new(Mutex::new(Some(result_sender)));
+        let result_sender_clone = result_sender.clone();
+        if let Err(err) = self.run_sync(move |llm: &mut Self::SyncModel| {
             let mut session = llm.new_session().unwrap();
             Box::pin(async move {
                 let result = llm.generate_structured(
@@ -413,22 +466,17 @@ pub trait ModelExt: Model + Send + Sync + 'static {
                     |token| Ok(sender.send(token)?),
                     Some(64),
                 );
-                match result_sender.send(result) {
-                    Ok(()) => {}
-                    Err(Ok(_)) => {
-                        log::error!("Error generating structured text: cancelled");
-                    }
-                    Err(Err(err)) => {
-                        log::error!("Error generating structured text: {:?}", err);
-                    }
+                if let Some(sender) = result_sender.lock().unwrap().take() {
+                    _ = sender.send(result);
                 }
             })
-        })?;
+        }) {
+            if let Some(sender) = result_sender_clone.lock().unwrap().take() {
+                _ = sender.send(Err(err));
+            }
+        }
 
-        Ok(StructureParserResult::new(
-            Self::TextStream::from(receiver),
-            result_receiver,
-        ))
+        StructureParserResult::new(Self::TextStream::from(receiver), result_receiver)
     }
 
     /// Get the default constraints for an assistant response. It parses any text until the end of the assistant's response.

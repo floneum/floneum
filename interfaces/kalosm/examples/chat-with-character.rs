@@ -19,7 +19,7 @@ async fn main() {
 
     // Chat with the user
     loop {
-        let output_stream = chat.add_message(prompt_input("\n> ").unwrap());
+        let mut output_stream = chat.add_message(prompt_input("\n> ").unwrap());
         print!("Bot: ");
         output_stream.to_std_out().await.unwrap();
     }

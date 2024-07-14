@@ -67,19 +67,14 @@ async fn main() {
     let index_parser = IndexParser::new(states_parser);
 
     let validator = index_parser.then(LiteralParser::from(", ")).repeat(1..=5);
-    let (stream, result) = llm
-        .stream_structured_text(prompt, validator)
-        .await
-        .unwrap()
-        .split();
+    let mut stream = llm.stream_structured_text(prompt, validator);
 
     stream.to_std_out().await.unwrap();
 
     println!(
         "\n{:#?}",
-        result
+        stream
             .await
-            .unwrap()
             .unwrap()
             .iter()
             .map(|x| states[x.0 .0])
@@ -89,6 +84,6 @@ async fn main() {
     println!("\n\n# without constraints");
     print!("{}", prompt);
 
-    let stream = llm.stream_text(prompt).with_max_length(100).await.unwrap();
+    let mut stream = llm.stream_text(prompt).with_max_length(100).await.unwrap();
     stream.to_std_out().await.unwrap();
 }

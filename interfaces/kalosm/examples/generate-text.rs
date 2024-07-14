@@ -4,7 +4,7 @@ use kalosm::language::*;
 async fn main() {
     tracing_subscriber::fmt::init();
     let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
-    let stream = Llama::new()
+    let mut stream = Llama::new()
         .await
         .unwrap()
         .stream_text(prompt)

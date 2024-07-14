@@ -109,11 +109,14 @@ pub type ParseResult<T> = std::result::Result<T, ParserError>;
 
 /// An auto trait for a Send parser with a default state.
 pub trait SendCreateParserState:
-    Send + CreateParserState<PartialState: Send, Output: Send>
+    Send + Sync + CreateParserState<PartialState: Send + Sync, Output: Send + Sync>
 {
 }
 
-impl<P: CreateParserState<PartialState: Send, Output: Send> + Send> SendCreateParserState for P {}
+impl<P: CreateParserState<PartialState: Send + Sync, Output: Send + Sync> + Send + Sync>
+    SendCreateParserState for P
+{
+}
 
 /// A trait for a parser with a default state.
 pub trait CreateParserState: Parser {

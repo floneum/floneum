@@ -106,13 +106,12 @@ impl<F: Fn(char) -> bool + 'static> Parser for StringParser<F> {
                     }
                 }
                 StringParserProgress::InString => {
-                    if (state.next_char_escaped || *byte != b'"')
-                        && !(self.character_filter)(*byte as char)
-                    {
+                    let byte_unescaped_quote = !state.next_char_escaped && *byte == b'"';
+                    if !byte_unescaped_quote && !(self.character_filter)(*byte as char) {
                         crate::bail!(StringParseError);
                     }
 
-                    if string.len() == *self.len_range.end() && *byte != b'"' {
+                    if string.len() == *self.len_range.end() && !byte_unescaped_quote {
                         crate::bail!(StringParseError);
                     }
 
@@ -148,7 +147,7 @@ impl<F: Fn(char) -> bool + 'static> Parser for StringParser<F> {
 }
 
 #[test]
-fn literal_parser() {
+fn string_parser() {
     let parser = StringParser::new(1..=20);
     let state = StringParserState::default();
     assert_eq!(
