@@ -7,19 +7,15 @@ authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 [dependencies]
 wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", rev = "c76e1fdc4afaaafb509367f2d09ef50b520efa65", features = ['component-model'] }
 wasmtime-wasi = { git = "https://github.com/bytecodealliance/wasmtime", rev = "c76e1fdc4afaaafb509367f2d09ef50b520efa65" }
-wasi-common = { git = "https://github.com/bytecodealliance/wasmtime", rev = "c76e1fdc4afaaafb509367f2d09ef50b520efa65" }
 wit-component = "0.19.0"
-bytesize = "1.2.0"
 futures-util = "0.3.28"
 log = "0.4.17"
 rand = "0.8.5"
 reqwest = { version = "0.11.18", features = ["stream"] }
-spinoff = "0.7.0"
 tokio = { version = "1.28.1", features = ["full"] }
 slab = { version = "0.4.8", features = ["serde"] }
 serde = { version = "1.0.163", features = ["derive"] }
 once_cell = "1.18.0"
-pollster = "0.3.0"
 url = "2.4.0"
 anyhow = "1.0.71"
 parking_lot = { workspace = true }
