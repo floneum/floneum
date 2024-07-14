@@ -10,7 +10,64 @@ use surrealdb::Connection;
 use surrealdb::Surreal;
 
 /// A table in a surreal database that is indexed by embeddings from a vector database.
-pub struct DocumentTable<C: Connection, R, M: Embedder, K: Chunker> {
+///
+/// # Example
+/// ```rust, no_run
+/// use kalosm::language::*;
+/// use surrealdb::{engine::local::RocksDb, Surreal};
+///
+/// #[tokio::main]
+/// async fn main() {
+///     let exists = std::path::Path::new("./db").exists();
+///
+///     // Create or open a database
+///     let db = Surreal::new::<RocksDb>("./db/temp.db").await.unwrap();
+///
+///     // Select a specific namespace / database
+///     db.use_ns("rag").use_db("rag").await.unwrap();
+///
+///     // Create a chunker splits the document into chunks to be embedded
+///     let chunker = SemanticChunker::new();
+///
+///     // Create a table in the surreal database to store the embeddings
+///     let document_table = db
+///         .document_table_builder("documents")
+///         .with_chunker(chunker)
+///         .at("./db/embeddings.db")
+///         .build::<Document>()
+///         .await
+///         .unwrap();
+///
+///     // If the database is new, add documents to it
+///     if !exists {
+///         std::fs::create_dir_all("documents").unwrap();
+///         let context = [
+///             "https://floneum.com/kalosm/docs",
+///             "https://floneum.com/kalosm/docs/guides/retrieval_augmented_generation",
+///         ]
+///         .iter()
+///         .map(|url| Url::parse(url).unwrap());
+///
+///         document_table.add_context(context).await.unwrap();
+///     }
+///
+///     // Search for data from the database
+///     let user_question = prompt_input("Query: ").unwrap();
+///
+///     let nearest_5 = document_table
+///         .select_nearest(user_question, 5)
+///         .await
+///         .unwrap();
+///
+///     println!("{:?}", nearest_5);
+/// }
+/// ```
+pub struct DocumentTable<
+    C: Connection,
+    R = Document,
+    M: Embedder = Bert,
+    K: Chunker = SemanticChunker,
+> {
     embedding_model: M,
     chunker: K,
     table: EmbeddingIndexedTable<C, R, M::VectorSpace>,
@@ -154,7 +211,7 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
 }
 
 /// A builder for creating a new document table.
-pub struct DocumentTableBuilder<C: Connection, E, K: Chunker> {
+pub struct DocumentTableBuilder<C: Connection, E = Bert, K: Chunker = SemanticChunker> {
     table: String,
     db: Surreal<C>,
     embedding_model: Option<E>,

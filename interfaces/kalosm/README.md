@@ -23,7 +23,7 @@ Kalosm is a simple interface for pre-trained models in rust. It makes it easy to
 
 There are three different packages in Kalosm:
 - `kalosm::language` - A simple interface for text generation and embedding models and surrounding tools. It includes support for search databases, and text collection from websites, RSS feeds, and search engines.
-- `kalosm::audio` - A simple interface for audio transcription and surrounding tools. It includes support for microphone input and the `whisper` model.
+- `kalosm::audio` - A simple interface for audio transcription and surrounding tools. It includes support for microphone input, transcription with the `whisper` model, and voice activity detection. 
 - `kalosm::vision` - A simple interface for image generation and segmentation models and surrounding tools. It includes support for the `wuerstchen` and `segment-anything` models and integration with the [image](https://docs.rs/image/latest/image/) crate.
 
 A complete guide for Kalosm is available on the [Kalosm website](https://floneum.com/kalosm/), and examples are available in the [examples folder](https://github.com/floneum/floneum/tree/main/interfaces/kalosm/examples).
@@ -38,7 +38,7 @@ cd ./next-gen-ai
 ```
 3) Add Kalosm as a dependency
 ```sh
-cargo add kalosm
+cargo add kalosm --features full
 cargo add tokio --features full
 ```
 4) Add this code to your `main.rs` file
@@ -49,17 +49,13 @@ use kalosm::{*, language::*};
 
 #[tokio::main]
 async fn main() {
-    let mut llm = Phi::start().await;
+    let mut llm = Llama::new().await.unwrap();
     let prompt = "The following is a 300 word essay about Paris:";
     print!("{}", prompt);
 
     let stream = llm.stream_text(prompt).with_max_length(1000).await.unwrap();
 
-    let mut sentences = stream.words();
-    while let Some(text) = sentences.next().await {
-        print!("{}", text);
-        std::io::stdout().flush().unwrap();
-    }
+    stream.to_std_out().await.unwrap();
 }
 ```
 5) Run your application with:
@@ -73,29 +69,50 @@ You can think of Kalosm as the plumbing between different pre-trained models and
 
 ### Local text generation
 
-The simplest way to use Kalosm is to pull in one of the local large language models and use it to generate text. Kalosm supports a streaming API that allows you to generate text in real time without blocking your main thread:
+The simplest way to get started with Kalosm language is to pull in one of the local large language models and use it to generate text. Kalosm supports a streaming API that allows you to generate text in real time without blocking your main thread:
 
 ```rust, no_run
-use std::io::Write;
-
-use futures_util::stream::StreamExt;
 use kalosm::language::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut llm = Phi::start().await;
+    let mut llm = Llama::phi_3().await.unwrap();
     let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
     print!("{}", prompt);
 
     let stream = llm.stream_text(prompt).with_max_length(1000).await.unwrap();
 
-    let mut words = stream.words();
-    while let Some(text) = words.next().await {
-        print!("{}", text);
-        std::io::stdout().flush().unwrap();
-    }
+    stream.to_std_out().await.unwrap();
 
     Ok(())
+}
+```
+
+### Structured generation
+
+Natural language generation is interesting, but the more interesting aspect of text is as a universal data format. You can encode any kind of data into text with a format like json. Kalosm lets you use LLMs with structured generation to create arbitrary types from natural language inputs:
+
+```rust, no_run
+use kalosm::language::*;
+
+// First, derive an efficient parser for your structured data
+#[derive(Parse, Clone, Debug)]
+enum Class {
+    Thing,
+    Animal,
+    Person,
+}
+
+#[tokio::main]
+async fn main() {
+    // Then set up a task with a prompt and constraints
+    let llm = Llama::new_chat().await.unwrap();
+    let task = Task::builder("You classify the user's message as about a person, animal or thing")
+        .with_constraints(Class::new_parser())
+        .build();
+
+    // Finally, run the task
+    println!("Classification: {:#?}", task.run("Kalosm lets you create structured data from natural language inputs", &llm).await.unwrap());
 }
 ```
 
@@ -105,24 +122,17 @@ Kalosm also supports cloud models like GPT4 with the same streaming API:
 
 ```rust, no_run
 // You must set the environment variable OPENAI_API_KEY (https://platform.openai.com/account/api-keys) to run this example.
-
-use std::io::Write;
-use futures_util::stream::StreamExt;
-use kalosm::{language::*};
+use kalosm::language::*; 
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut llm = Gpt4::start().await;
+    let mut llm = Gpt4::default();
     let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
     print!("{}", prompt);
 
     let stream = llm.stream_text(prompt).with_max_length(300).await.unwrap();
 
-    let mut words = stream.words();
-    while let Some(text) = words.next().await {
-        print!("{}", text);
-        std::io::stdout().flush().unwrap();
-    }
+    stream.to_std_out().await.unwrap();
 
     Ok(())
 }
@@ -169,53 +179,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ### Embedding powered search
 
-Once you have your data, Kalosm includes tools to create traditional fuzzy search indexes and vector search indexes. These indexes can be used to search for specific text in a large corpus of documents. Fuzzy search indexes are useful for finding documents that contain a specific word or phrase. Vector search indexes are useful for finding documents that are semantically similar to a specific word or phrase. Kalosm makes it easy to create and use these indexes with your embedding model of choice:
+Once you have your data, Kalosm includes tools to create embedding-powered search indexes. Embedding-based search lets you find documents that are semantically similar to a specific word or phrase even if no words are an exact match:
 
 ```rust, no_run
 use kalosm::language::*;
-use std::io::Write;
-use std::path::PathBuf;
+use surrealdb::{engine::local::RocksDb, Surreal};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let documents = DocumentFolder::try_from(PathBuf::from("./documents")).unwrap();
+async fn main() {
+    // Create database connection
+    let db = Surreal::new::<RocksDb>(std::env::temp_dir().join("temp.db")).await.unwrap();
 
-    let mut database = DocumentDatabase::new(
-        Bert::new_for_search().unwrap(),
-        ChunkStrategy::Sentence {
-            sentence_count: 1,
-            overlap: 0,
-        },
-    );
-    database.extend(documents.clone()).await.unwrap();
-    let mut fuzzy = FuzzySearchIndex::default();
-    fuzzy.extend(documents).await.unwrap();
+    // Select a specific namespace / database
+    db.use_ns("search").use_db("documents").await.unwrap();
+
+    // Create a table in the surreal database to store the embeddings
+    let document_table = db
+        .document_table_builder("documents")
+        .build::<Document>()
+        .await
+        .unwrap();
+
+    // Add documents to the database
+    document_table.add_context(DocumentFolder::new("./documents").unwrap()).await.unwrap();
 
     loop {
-        print!("Query: ");
-        std::io::stdout().flush().unwrap();
-        let mut user_question = String::new();
-        std::io::stdin().read_line(&mut user_question).unwrap();
+        // Get the user's question
+        let user_question = prompt_input("Query: ").unwrap();
 
-        println!(
-            "vector: {:?}",
-            database
-                .search(&user_question, 5)
-                .await
-                .iter()
-                .collect::<Vec<_>>()
-        );
-        println!(
-            "fuzzy: {:?}",
-            fuzzy
-                .search(&user_question, 5)
-                .await
-                .iter()
-                .collect::<Vec<_>>()
-        );
+        let nearest_5 = document_table
+            .select_nearest(user_question, 5)
+            .await
+            .unwrap();
+
+        println!("{:?}", nearest_5);
     }
-
-    Ok(())
 }
 ```
 
@@ -224,132 +222,102 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 A large part of making modern LLMs performant is curating the context the models have access to. Resource augmented generation (or RAG) helps you do this by inserting context into the prompt based on a search query. For example, you can Kalosm to create a chatbot that uses context from local documents to answer questions:
 
 ```rust, no_run
-use futures_util::StreamExt;
 use kalosm::language::*;
-use std::io::Write;
+use surrealdb::{engine::local::RocksDb, Surreal};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let nyt =
-        RssFeed::new(Url::parse("https://rss.nytimes.com/services/xml/rss/nyt/US.xml").unwrap());
+async fn main() -> anyhow::Result<()> {
+    let exists = std::path::Path::new("./db").exists();
 
-    let mut fuzzy = FuzzySearchIndex::default();
-    fuzzy.extend(nyt).await.unwrap();
+    // Create database connection
+    let db = Surreal::new::<RocksDb>("./db/temp.db").await?;
+
+    // Select a specific namespace / database
+    db.use_ns("test").use_db("test").await?;
+
+    // Create a table in the surreal database to store the embeddings
+    let document_table = db
+        .document_table_builder("documents")
+        .at("./db/embeddings.db")
+        .build::<Document>()
+        .await?;
+
+    // If the database is new, add documents to it
+    if !exists {
+        std::fs::create_dir_all("documents")?;
+        let context = [
+            "https://floneum.com/kalosm/docs",
+            "https://floneum.com/kalosm/docs/guides/retrieval_augmented_generation",
+        ]
+        .iter()
+        .map(|url| Url::parse(url).unwrap());
+
+        document_table.add_context(context).await?;
+    }
+
+    // Create a llama chat model
+    let model = Llama::new_chat().await?;
+    let mut chat = Chat::builder(model).with_system_prompt("The assistant help answer questions based on the context given by the user. The model knows that the information the user gives it is always true.").build();
 
     loop {
-        print!("Query: ");
-        std::io::stdout().flush().unwrap();
-        let mut user_question = String::new();
-        std::io::stdin().read_line(&mut user_question).unwrap();
-        let context = fuzzy.search(&user_question, 5).await;
+        // Ask the user for a question
+        let user_question = prompt_input("\n> ")?;
 
-        let mut llm = Llama::default();
-
-        let context = context
-            .iter()
-            .take(2)
-            .map(|x| x.to_string())
+        // Search for relevant context in the document engine
+        let context = document_table
+            .select_nearest(&user_question, 1)
+            .await?
+            .into_iter()
+            .map(|document| {
+                format!(
+                    "Title: {}\nBody: {}\n",
+                    document.record.title(),
+                    document.record.body()
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n");
 
+        // Format a prompt with the question and context
         let prompt = format!(
-            "# Question:
-    {user_question}
-    # Context:
-    {context}
-    # Answer:
-    "
+            "{context}\n{user_question}"
         );
 
-        let mut stream = llm.stream_text(&prompt).with_max_length(300).await.unwrap();
+        // Display the prompt to the user for debugging purposes
+        println!("{}", prompt);
 
-        while let Some(text) = stream.next().await {
-            print!("{}", text);
-            std::io::stdout().flush().unwrap();
-        }
+        // And finally, respond to the user
+        let output_stream = chat.add_message(prompt);
+        print!("Bot: ");
+        output_stream.to_std_out().await?;
     }
-
-    Ok(())
 }
 ```
 
 ### Voice transcription
 
-Kalosm makes it easy to build up context about the world around your application and use it to generate text. For example, you can use Kalosm to transcribe audio from a microphone, insert that into a vector database and answer questions about the audio in real-time:
+Kalosm makes it easy to build up context about the world around your application. 
 
 ```rust, no_run
-use futures_util::StreamExt;
-use kalosm::*;
-use kalosm::language::*;
-use kalosm::audio::*;
-use std::sync::Arc;
-use tokio::{
-    sync::RwLock,
-    time::{Duration, Instant},
-};
+use kalosm::sound::*;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    let model = WhisperBuilder::default()
-        .with_source(WhisperSource::MediumEn)
-        .build()
-        .await?;
+    // Create a new whisper model
+    let model = Whisper::new().await?;
 
-    let document_engine = Arc::new(RwLock::new(FuzzySearchIndex::default()));
-    {
-        let document_engine = document_engine.clone();
-        std::thread::spawn(move || {
-            tokio::runtime::Runtime::new()
-                .unwrap()
-                .block_on(async move {
-                    let recording_time = Duration::from_secs(30);
-                    loop {
-                        let input = kalosm::audio::MicInput::default()
-                            .record_until(Instant::now() + recording_time)
-                            .await
-                            .unwrap();
+    // Stream audio from the microphone
+    let mic = MicInput::default();
+    let stream = mic.stream().unwrap();
 
-                        if let Ok(mut transcribed) = model.transcribe(input) {
-                            while let Some(transcribed) = transcribed.next().await {
-                                if transcribed.probability_of_no_speech() < 0.90 {
-                                    let text = transcribed.text();
-                                    document_engine.write().await.add(text).await.unwrap();
-                                }
-                            }
-                        }
-                    }
-                })
-        });
-    }
+    // The audio into chunks based on voice activity and then transcribe those chunks
+    // The model will transcribe chunks of speech that are separated by silence
+    let text_stream = stream.transcribe(model);
 
-    let mut model = Llama::new_chat();
-    let mut chat = Chat::builder(model).with_system_prompt("The assistant help answer questions based on the context given by the user. The model knows that the information the user gives it is always true.").build();
+    // Finally, print the text to the console
+    text_stream.to_std_out().await.unwrap();
 
-    loop {
-        let user_question = prompt_input("\n> ").unwrap();
-
-        let mut engine = document_engine.write().await;
-
-        let context = {
-            let context = engine.search(&user_question, 5).await;
-            let context = context
-                .iter()
-                .take(5)
-                .map(|x| x.to_string())
-                .collect::<Vec<_>>();
-            context.join("\n")
-        };
-
-        let prompt = format!(
-            "Here is the relevant context:\n{context}\nGiven that context, answer the following question:\n{user_question}"
-        );
-
-        println!("{}", prompt);
-
-        let output_stream = chat.add_message(prompt).await.unwrap();
-        print!("Bot: ");
-        output_stream.to_std_out().await.unwrap();
-    }
+    Ok(())
 }
 ```
 
@@ -360,14 +328,17 @@ In addition to language, audio, and embedding models, Kalosm also supports image
 ```rust, no_run
 use kalosm::vision::*;
 
-let model = Wuerstchen::builder().build().await.unwrap();
-let settings = WuerstchenInferenceSettings::new(
-    "a cute cat with a hat in a room covered with fur with incredible detail",
-);
-if let Ok(mut images) = model.run(settings) {
-    while let Some(image) = images.next().await {
-        if let Some(buf) = image.generated_image() {
-            buf.save(&format!("{}.png",image.sample_num())).unwrap();
+#[tokio::main]
+async fn main() {
+    let model = Wuerstchen::new().await.unwrap();
+    let settings = WuerstchenInferenceSettings::new(
+        "a cute cat with a hat in a room covered with fur with incredible detail",
+    );
+    if let Ok(mut images) = model.run(settings) {
+        while let Some(image) = images.next().await {
+            if let Some(buf) = image.generated_image() {
+                buf.save(&format!("{}.png",image.sample_num())).unwrap();
+            }
         }
     }
 }
@@ -380,10 +351,13 @@ Kalosm also supports image segmentation with the segment-anything model:
 ```rust, no_run
 use kalosm::vision::*;
 
-let model = SegmentAnything::builder().build().unwrap();
-let image = image::open("examples/landscape.jpg").unwrap();
-let images = model.segment_everything(image).unwrap();
-for (i, img) in images.iter().enumerate() {
-    img.save(&format!("{}.png", i)).unwrap();
+#[tokio::main]
+async fn main() {
+    let model = SegmentAnything::builder().build().unwrap();
+    let image = image::open("examples/landscape.jpg").unwrap();
+    let images = model.segment_everything(image).unwrap();
+    for (i, img) in images.iter().enumerate() {
+        img.save(&format!("{}.png", i)).unwrap();
+    }
 }
 ```

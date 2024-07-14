@@ -1,13 +1,11 @@
+use futures_util::StreamExt;
+use kalosm::language::*;
+use kalosm::sound::*;
+use std::sync::Arc;
 use surrealdb::{engine::local::RocksDb, Surreal};
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    use futures_util::StreamExt;
-    use kalosm::audio::*;
-    use kalosm::language::*;
-    use std::sync::Arc;
-    use tokio::time::{Duration, Instant};
-
     // Set up the whisper model
     let model = Whisper::new().await?;
 
@@ -15,7 +13,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let db = Surreal::new::<RocksDb>("./db/temp.db").await.unwrap();
 
     // Select a specific namespace / database
-    db.use_ns("test").use_db("test").await.unwrap();
+    db.use_ns("live_qa").use_db("documents").await.unwrap();
 
     // Create a new document database table
     let document_table = Arc::new(
@@ -27,34 +25,29 @@ async fn main() -> Result<(), anyhow::Error> {
             .unwrap(),
     );
 
-    // Record 30s snippets of audio and transcribe them
-    {
+    // Record snippets of audio based on voice activity and transcribe them
+    tokio::spawn({
         let document_table = document_table.clone();
-        std::thread::spawn(move || {
-            tokio::runtime::Runtime::new()
+        async move {
+            let mic_input = MicInput::default();
+            // Chunk the audio into chunks based on voice activity
+            let mut audio_chunks = mic_input
+                .stream()
                 .unwrap()
-                .block_on(async move {
-                    let recording_time = Duration::from_secs(30);
-                    let mic_input = MicInput::default();
-                    loop {
-                        let input = mic_input
-                            .record_until(Instant::now() + recording_time)
-                            .await
-                            .unwrap();
-
-                        if let Ok(mut transcribed) = model.transcribe(input) {
-                            while let Some(transcribed) = transcribed.next().await {
-                                if transcribed.probability_of_no_speech() < 0.10 {
-                                    let document =
-                                        transcribed.text().into_document().await.unwrap();
-                                    document_table.insert(document).await.unwrap();
-                                }
-                            }
+                .voice_activity_stream()
+                .rechunk_voice_activity();
+            while let Some(input) = audio_chunks.next().await {
+                if let Ok(mut transcribed) = model.transcribe(input) {
+                    while let Some(transcribed) = transcribed.next().await {
+                        if transcribed.probability_of_no_speech() < 0.10 {
+                            let document = transcribed.text().into_document().await.unwrap();
+                            document_table.insert(document).await.unwrap();
                         }
                     }
-                })
-        });
-    }
+                }
+            }
+        }
+    });
 
     // Create a llama chat model
     let model = Llama::new_chat().await.unwrap();

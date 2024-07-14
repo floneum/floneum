@@ -93,6 +93,7 @@ features = ["sound", "language", "vision", "remote"]
 workspace = true
 
 [features]
+full = ["language", "vision", "sound", "surrealdb"]
 cuda = ["kalosm-language?/cublas", "kalosm-vision?/cublas", "kalosm-sound?/cuda"]
 mkl = ["kalosm-language?/mkl", "kalosm-vision?/mkl", "kalosm-sound?/mkl"]
 language = ["kalosm-language"]
@@ -208,6 +209,10 @@ required-features = ["language"]
 
 [[example]]
 name = "semantic-search"
+required-features = ["language", "surrealdb"]
+
+[[example]]
+name = "rag"
 required-features = ["language", "surrealdb"]
 
 [[example]]

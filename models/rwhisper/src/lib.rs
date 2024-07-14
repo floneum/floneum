@@ -125,20 +125,20 @@ impl AsRef<str> for Segment {
     }
 }
 
-/// An extension trait for transcribing audio streams.
-pub trait TranscribeAudioStreamExt {
-    /// Transcribe the audio stream.
-    fn text(self, model: Whisper) -> ChannelTextStream<Segment>;
+/// An extension trait to transcribe pre-chunked audio streams
+pub trait TranscribeChunkedAudioStreamExt {
+    /// Transcribe each chunk of the audio stream with whisper and stream the result
+    fn transcribe(self, model: Whisper) -> ChannelTextStream<Segment>;
 }
 
-impl<S> TranscribeAudioStreamExt for S
+impl<S> TranscribeChunkedAudioStreamExt for S
 where
     S: Stream + std::marker::Unpin + Send + 'static,
     <S as Stream>::Item: Source + Send + 'static,
     <<S as Stream>::Item as Iterator>::Item: rodio::Sample,
     f32: FromSample<<<S as Stream>::Item as Iterator>::Item>,
 {
-    fn text(self, model: Whisper) -> ChannelTextStream<Segment> {
+    fn transcribe(self, model: Whisper) -> ChannelTextStream<Segment> {
         let mut stream = self;
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         tokio::spawn(async move {

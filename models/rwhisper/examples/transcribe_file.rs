@@ -1,4 +1,4 @@
-use futures_util::StreamExt;
+use kalosm::language::*;
 use rodio::Decoder;
 use rwhisper::*;
 use std::fs::File;
@@ -18,12 +18,10 @@ async fn main() -> Result<(), anyhow::Error> {
     let audio = Decoder::new(file).unwrap();
 
     // Transcribe the source audio into text
-    let mut text = model.transcribe(audio)?;
+    let text = model.transcribe(audio)?;
 
     // As the model transcribes the audio, print the text to the console
-    while let Some(text) = text.next().await {
-        print!("{}", text.text());
-    }
+    text.to_std_out().await.unwrap();
 
     Ok(())
 }

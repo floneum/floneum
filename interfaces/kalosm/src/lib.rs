@@ -28,9 +28,18 @@ pub mod language {
     pub use crate::surrealdb_integration::document_table::*;
 }
 #[cfg(feature = "sound")]
-pub use kalosm_sound as audio;
+pub mod sound {
+    //! Audio processing utilities for the Kalosm framework.
+    pub use kalosm_sound::*;
+    pub use kalosm_streams::text_stream::*;
+    pub use kalosm_streams::timed_stream::*;
+}
 #[cfg(feature = "vision")]
-pub use kalosm_vision as vision;
+pub mod vision {
+    //! Image generation utilities for the Kalosm framework.
+    pub use futures_util::StreamExt as _;
+    pub use kalosm_vision::*;
+}
 
 #[cfg(feature = "language")]
 mod evaluate;

@@ -12,3 +12,8 @@ pub use voice_audio_detector::*;
 mod voice_audio_detector_ext;
 #[cfg(any(feature = "voice_detection", feature = "denoise"))]
 pub use voice_audio_detector_ext::*;
+
+#[cfg(feature = "voice_detection")]
+mod transcribe;
+#[cfg(feature = "voice_detection")]
+pub use transcribe::*;

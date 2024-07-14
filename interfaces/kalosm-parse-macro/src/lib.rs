@@ -5,9 +5,9 @@ use syn::{ext::IdentExt, parse_macro_input, DeriveInput, Field, Ident, LitStr};
 use syn::{DataEnum, Fields};
 
 /// Derive a default JSON parser for a unit value, struct or enum.
-/// 
+///
 /// # Examples
-/// 
+///
 /// You can derive a parser for a struct with fields that implement the `Parse` trait:
 ///
 /// ```rust
@@ -17,12 +17,12 @@ use syn::{DataEnum, Fields};
 ///     name: String,
 ///     age: u32,
 /// }
-/// 
+///
 /// let person = Person::new_parser().parse("{\"name\":\"John\",\"age\":30}").unwrap().unwrap_finished();
 /// assert_eq!(person.name, "John");
 /// assert_eq!(person.age, 30);
 /// ```
-/// 
+///
 /// Or an enum with unit variants:
 /// ```rust
 /// # use kalosm::language::*;
@@ -32,11 +32,11 @@ use syn::{DataEnum, Fields};
 ///     Blue,
 ///     Green,
 /// }
-/// 
+///
 /// let color = Color::new_parser().parse("\"Red\"").unwrap().unwrap_finished();
 /// assert_eq!(color, Color::Red);
 /// ```
-/// 
+///
 /// You can even derive Parse for an enum with data variants:
 /// ```rust
 /// # use kalosm::language::*;
@@ -45,17 +45,17 @@ use syn::{DataEnum, Fields};
 ///     Search { query: String },
 ///     Quit,
 /// }
-/// 
+///
 /// let action = Action::new_parser().parse("{\"type\":\"Search\",\"data\":{\"query\":\"my query\"}}").unwrap().unwrap_finished();
 /// assert_eq!(action, Action::Search { query: "my query".to_string() });
 /// ```
-/// 
+///
 /// ## Attributes
-/// 
+///
 /// The `#[parse]` attribute modifies the default behavior of the parser. It can be used in the following forms:
-/// 
+///
 /// - `#[parse(rename = "name")]` renames the field or type to `name` (defaults to the field name)
-/// 
+///
 /// ```rust
 /// # use kalosm::language::*;
 /// #[derive(Parse)]
@@ -64,7 +64,7 @@ use syn::{DataEnum, Fields};
 ///     name: String,
 ///     age: u32,
 /// }
-/// 
+///
 /// #[derive(Parse)]
 /// enum Color {
 ///     #[parse(rename = "red")]
@@ -73,9 +73,9 @@ use syn::{DataEnum, Fields};
 ///     Green,
 /// }
 /// ```
-/// 
+///
 /// - `#[parse(with = expression)]` uses the expression to parse the field (defaults to the parser provided by the `Parse` implementation for the field type)
-/// 
+///
 /// ```rust
 /// # use kalosm::language::*;
 /// #[derive(Parse, Clone)]
@@ -85,9 +85,9 @@ use syn::{DataEnum, Fields};
 ///     age: u32,
 /// }
 /// ```
-/// 
+///
 /// - `#[parse(tag = "tag")]` changes the name of the tag for enum variants (defaults to "type")
-/// 
+///
 /// ```rust
 /// # use kalosm::language::*;
 /// #[derive(Parse, Clone)]
@@ -97,9 +97,9 @@ use syn::{DataEnum, Fields};
 ///     Quit,
 /// }
 /// ```
-/// 
+///
 /// - `#[parse(content = "content")]` changes the name of the content for enum variants (defaults to "data")
-/// 
+///
 /// ```rust
 /// # use kalosm::language::*;
 /// #[derive(Parse, Clone)]
@@ -109,12 +109,7 @@ use syn::{DataEnum, Fields};
 ///     Quit,
 /// }
 /// ```
-#[proc_macro_derive(
-    Parse,
-    attributes(
-        parse
-    )
-)]
+#[proc_macro_derive(Parse, attributes(parse))]
 pub fn derive_parse(input: TokenStream) -> TokenStream {
     // Parse the input tokens into a syntax tree
     let input = parse_macro_input!(input as DeriveInput);

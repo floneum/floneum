@@ -1,12 +1,11 @@
-use futures_util::StreamExt;
-use rwhisper::*;
+use kalosm::sound::*;
 use tokio::time::{Duration, Instant};
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    // Record audio from the microphone for 5 seconds.
-    let audio = kalosm_sound::MicInput::default()
-        .record_until(Instant::now() + Duration::from_secs(5))
+    // Record audio from the microphone for 60 seconds.
+    let audio = MicInput::default()
+        .record_until(Instant::now() + Duration::from_secs(60))
         .await?;
 
     // Create a new small whisper model.
@@ -16,12 +15,10 @@ async fn main() -> Result<(), anyhow::Error> {
         .await?;
 
     // Transcribe the audio.
-    let mut text = model.transcribe(audio)?;
+    let text = model.transcribe(audio)?;
 
     // As the model transcribes the audio, print the text to the console.
-    while let Some(text) = text.next().await {
-        print!("{}", text.text());
-    }
+    text.to_std_out().await?;
 
     Ok(())
 }

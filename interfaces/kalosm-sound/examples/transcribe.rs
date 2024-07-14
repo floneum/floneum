@@ -17,7 +17,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let vad = stream.voice_activity_stream().rechunk_voice_activity();
 
     // And then transcribe the audio into text
-    let text_stream = vad.text(model);
+    let text_stream = vad.transcribe(model);
 
     // Finally, print the text to the console
     text_stream.to_std_out().await.unwrap();

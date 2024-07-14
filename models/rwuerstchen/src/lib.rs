@@ -397,6 +397,11 @@ pub struct Wuerstchen {
 }
 
 impl Wuerstchen {
+    /// Create a default Wuerstchen model.
+    pub async fn new() -> anyhow::Result<Self> {
+        Self::builder().build().await
+    }
+
     /// Create a new builder for the Wuerstchen model.
     pub fn builder() -> WuerstchenBuilder {
         WuerstchenBuilder::default()

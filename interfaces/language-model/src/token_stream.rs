@@ -29,7 +29,7 @@ impl TokenOutputStream {
     }
 
     fn decode(&self, tokens: &[u32]) -> Result<String> {
-        match self.tokenizer.decode(tokens, true) {
+        match self.tokenizer.decode(tokens, false) {
             Ok(str) => Ok(str.to_string()),
             Err(err) => anyhow::bail!("cannot decode: {err}"),
         }
@@ -102,7 +102,7 @@ impl TokenOutputStream {
         for logit in logits.iter_mut() {
             let tid = logit.token_id;
             if let Some(stop_on) = stop_on {
-                let token = tokenizer.decode(&[tid], true).unwrap();
+                let token = tokenizer.decode(&[tid], false).unwrap();
                 let combined = end_tokens.clone() + &token;
                 if combined.contains(stop_on) && !combined.ends_with(stop_on) {
                     // if the token contains a stop_on token, but not the end of the string, set the probability to 0

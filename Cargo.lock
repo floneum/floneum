@@ -6579,7 +6579,6 @@ dependencies = [
  "kalosm-streams",
  "nnnoiseless",
  "rand 0.8.5",
- "ringbuf",
  "rodio",
  "rwhisper",
  "serde_json",
@@ -9810,15 +9809,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ringbuf"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "79abed428d1fd2a128201cec72c5f6938e2da607c6f3745f769fabea399d950a"
-dependencies = [
- "crossbeam-utils 0.8.20",
-]
-
-[[package]]
 name = "rkyv"
 version = "0.7.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10505,18 +10495,16 @@ dependencies = [
  "hound",
  "intel-mkl-src",
  "itertools 0.10.5",
+ "kalosm",
  "kalosm-common",
  "kalosm-language-model",
- "kalosm-sound",
  "kalosm-streams",
  "rand 0.8.5",
- "ringbuf",
  "rodio",
  "serde_json",
  "tokenizers",
  "tokio",
  "tracing",
- "webrtc-vad",
 ]
 
 [[package]]
@@ -14289,15 +14277,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bd7c23921eeb1713a4e851530e9b9756e4fb0e89978582942612524cf09f01cd"
 dependencies = [
  "rustls-pki-types",
-]
-
-[[package]]
-name = "webrtc-vad"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39a1e40fd6ca90be95459152a2537f2ba4286ee1b13073f7ebcaa74fc94e3008"
-dependencies = [
- "cc",
 ]
 
 [[package]]

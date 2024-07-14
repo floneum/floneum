@@ -91,9 +91,7 @@ impl IntoDocument for FsDocument {
 ///             overlap: 0,
 ///         },
 ///     );
-///     database.extend(documents.clone()).await.unwrap();
-///     let mut fuzzy = FuzzySearchIndex::default();
-///     fuzzy.extend(documents).await.unwrap();
+///     database.extend(documents)).await.unwrap();
 ///
 ///     loop {
 ///         print!("Query: ");
@@ -102,16 +100,8 @@ impl IntoDocument for FsDocument {
 ///         std::io::stdin().read_line(&mut user_question).unwrap();
 ///
 ///         println!(
-///             "vector: {:?}",
+///             "{:?}",
 ///             database
-///                 .search(&user_question, 5)
-///                 .await
-///                 .iter()
-///                 .collect::<Vec<_>>()
-///         );
-///         println!(
-///             "fuzzy: {:?}",
-///             fuzzy
 ///                 .search(&user_question, 5)
 ///                 .await
 ///                 .iter()
