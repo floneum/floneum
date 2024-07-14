@@ -1,14 +1,20 @@
+#![warn(missing_docs)]
+
 //! # Kalosm Sound
 //!
 //! This crate is a collection of audio utilities for the Kalosm project.
 //!
-//! There are four main parts of this crate:
-//! - The [`AudioStream`] struct for streaming audio data
-//! - The [`AudioBuffer`] struct for storing audio data
-//! - The [`MicInput`] struct for reading audio data from a microphone
-//! - The [`Whisper`] transcription model for converting audio data into text
-
-#![warn(missing_docs)]
+//! The central trait in this crate is the [`AsyncSource`] trait. It defines the behavior of an audio source that can be used to stream audio data. There are several implementations of this trait:
+//! - Synchronous audio sources, that implement [`rodio::Source`] like files
+//! - [`MicInput`], which reads audio data from a microphone
+//! 
+//! You can transform the audio data with:
+//! - [`VoiceActivityDetectorExt::voice_activity_stream`]: Detect voice activity in the audio data
+//! - [`DenoisedExt::denoise_and_detect_voice_activity`]: Denoise the audio data and detect voice activity
+//! - [`AsyncSourceTranscribeExt::transcribe`]: Chunk an audio stream based on voice activity and then transcribe the chunked audio data
+//! - [`VoiceActivityStreamExt::rechunk_voice_activity`]: Chunk an audio stream based on voice activity
+//! - [`VoiceActivityStreamExt::filter_voice_activity`]: Filter chunks of audio data based on voice activity
+//! - [`TranscribeChunkedAudioStreamExt::transcribe`]: Transcribe a chunked audio stream
 
 mod source;
 pub use source::*;

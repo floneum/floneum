@@ -17,41 +17,42 @@ fn element_hidden(element: &scraper::node::Element) -> bool {
     style_hidden || class_hidden
 }
 
-/// Chunk HTML into paragraphs
-///
-/// Special elements:
-/// - <p> - paragraph
-/// - <h1> - heading 1
-/// - <h2> - heading 2
-/// - <h3> - heading 3
-/// - <h4> - heading 4
-/// - <h5> - heading 5
-/// - <h6> - heading 6
-/// - <ul> - unordered list
-/// - <ol> - ordered list
-/// - <li> - list item
-/// - <dl> - definition list
-/// - <dt> - definition term
-/// - <dd> - definition description
-///
-/// Table elements:
-/// Should be summarized
-/// - <table> - table
-/// - <thead> - table header
-/// - <tbody> - table body
-/// - <tr> - table row
-/// - <td> - table cell
-/// - <th> - table header cell
-///
-/// Special elements that need to be translated:
-/// - <a> - anchor
-/// - <img> - image (summarize?)
-///
-/// Interactive Elements to be ignored:
-/// - <select> - select box
-/// - <option> - select box option
-/// - <form> - form
-/// - <label> - form label
+// Chunk HTML into paragraphs
+//
+// Special elements:
+// - `<p>` - paragraph
+// - `<h1>` - heading 1
+// - `<h2>` - heading 2
+// - `<h3>` - heading 3
+// - `<h4>` - heading 4
+// - `<h5>` - heading 5
+// - `<h6>` - heading 6
+// - `<ul>` - unordered list
+// - `<ol>` - ordered list
+// - `<li>` - list item
+// - `<dl>` - definition list
+// - `<dt>` - definition term
+// - `<dd>` - definition description
+//
+// Table elements:
+// Should be summarized
+// - `<table>` - table
+// - `<thead>` - table header
+// - `<tbody>` - table body
+// - `<tr>` - table row
+// - `<td>` - table cell
+// - `<th>` - table header cell
+//
+// Special elements that need to be translated:
+// - `<a>` - anchor
+// - `<img>` - image (summarize?)
+//
+// Interactive Elements to be ignored:
+// - `<select>` - select box
+// - `<option>` - select box option
+// - `<form>` - form
+// - `<label>` - form label
+/// Simplifies HTML by removing attributes and elements that does not affect the content
 pub struct HtmlSimplifier {
     important_attributes: HashSet<String>,
     important_elements: HashSet<String>,

@@ -99,20 +99,26 @@ use kalosm::language::*;
 #[derive(Parse, Clone, Debug)]
 enum Class {
     Thing,
-    Animal,
     Person,
+    Animal,
+}
+
+#[derive(Parse, Clone, Debug)]
+struct Response {
+    classification: Class,
 }
 
 #[tokio::main]
 async fn main() {
     // Then set up a task with a prompt and constraints
     let llm = Llama::new_chat().await.unwrap();
-    let task = Task::builder("You classify the user's message as about a person, animal or thing")
-        .with_constraints(Class::new_parser())
+    let task = Task::builder("You classify the user's message as about a person, animal or thing in a JSON format")
+        .with_constraints(Response::new_parser())
         .build();
 
     // Finally, run the task
-    println!("Classification: {:#?}", task.run("Kalosm lets you create structured data from natural language inputs", &llm).await.unwrap());
+    let response = task.run("The Kalosm library lets you create structured data from natural language inputs", &llm).await.unwrap();
+    println!("{:?}", response);
 }
 ```
 
