@@ -18,7 +18,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let audio = Decoder::new(file).unwrap();
 
     // Transcribe the source audio into text
-    let text = model.transcribe(audio)?;
+    let mut text = model.transcribe(audio)?;
 
     // As the model transcribes the audio, print the text to the console
     text.to_std_out().await.unwrap();

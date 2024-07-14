@@ -1,59 +1,56 @@
+#![allow(unused)]
 use kalosm::language::*;
 use std::io::Write;
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
+    let llm = Llama::phi_3().await.unwrap();
+    let prompt = "Generate a list of 4 pets in JSON form with a name, description, color, and diet";
 
-    let llm = Llama::new().await.unwrap();
-    let prompt = r#"```json
-[
-{ name: "bob", description: "An adorable cute cat", color: "black", size: "small", diet: "carnivore", breeds: ["Persian", "Maine Coon"] },
-"#;
-
-    {
-        println!("# with constraints");
-        print!("{}", prompt);
-
-        let regex = r#"(\{ name: "\w+", description: "[\w ]+", color: "\w+", size: "\w+", diet: "\w+", breeds: \[("[\w ]+", )*"[\w ]+"\] \},\n){4}\]"#;
-        let validator = RegexParser::new(regex).unwrap();
-        let stream = llm.stream_structured_text(prompt, validator).await.unwrap();
-
-        time_stream(stream).await;
+    #[derive(Debug, Clone, Parse)]
+    struct Pet {
+        name: String,
+        description: String,
+        color: String,
+        size: Size,
+        diet: Diet,
     }
 
-    {
-        println!("# with constraints 2");
-        print!("{}", prompt);
-
-        let validator = LiteralParser::new("{ name: ")
-            .then(WordParser::new())
-            .then(LiteralParser::new(", description: "))
-            .then(StringParser::new(1..=50))
-            .then(LiteralParser::new(", color: "))
-            .then(WordParser::new())
-            .then(LiteralParser::new(", size: "))
-            .then(WordParser::new())
-            .then(LiteralParser::new(", diet: "))
-            .then(WordParser::new())
-            .then(LiteralParser::new(", breeds: "))
-            .then(RegexParser::new(r#"\[("[\w ]+", )*"[\w ]+"\]"#).unwrap())
-            .then(LiteralParser::new(" },\n"))
-            .repeat(4..=4)
-            .then(LiteralParser::new("]"));
-        let stream = llm.stream_structured_text(prompt, validator).await.unwrap();
-
-        time_stream(stream).await;
+    #[derive(Debug, Clone, Parse)]
+    enum Diet {
+        #[parse(rename = "carnivore")]
+        Carnivore,
+        #[parse(rename = "herbivore")]
+        Herbivore,
+        #[parse(rename = "omnivore")]
+        Omnivore,
     }
 
-    {
-        println!("\n\n# without constraints");
-        print!("{}", prompt);
-
-        let stream = llm.stream_text(prompt).with_max_length(100).await.unwrap();
-
-        time_stream(stream).await;
+    #[derive(Debug, Clone, Parse)]
+    enum Size {
+        #[parse(rename = "small")]
+        Small,
+        #[parse(rename = "medium")]
+        Medium,
+        #[parse(rename = "large")]
+        Large,
     }
+
+    println!("# with constraints");
+
+    let task = Task::builder("You generate realistic JSON placeholders")
+        .with_constraints(<[Pet; 4] as Parse>::new_parser())
+        .build();
+    let stream = task.run(prompt, &llm);
+
+    time_stream(stream).await;
+
+    println!("\n\n# without constraints");
+
+    let task = Task::builder("You generate realistic JSON placeholders").build();
+    let stream = task.run(prompt, &llm);
+
+    time_stream(stream).await;
 }
 
 async fn time_stream(mut stream: impl TextStream + Unpin) {

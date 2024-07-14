@@ -422,7 +422,7 @@ where
     let mut llama_test_cases = TestCases::new();
 
     for example in test {
-        let actual = task.run(example.input, llm);
+        let mut actual = task.run(example.input, llm);
 
         let all_text = actual.all_text().await;
 

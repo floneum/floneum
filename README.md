@@ -63,7 +63,50 @@ Kalosm uses the [candle](https://github.com/huggingface/candle) machine learning
 
 ### Structured Generation
 
-Kalosm supports structured generation with a regex grammar. Because the grammar runs in rust code, it doesn't add any overhead to text generation. In fact, using a grammar can be even faster than uncontrolled text generation because Kalosm supports grammar acceleration!
+Kalosm supports structured generation with arbitrary parsers. It uses a custom parser engine and sampler and structure-aware acceleration to make structure generation even faster than uncontrolled text generation:
+
+```rust
+use kalosm::language::*;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+  // Download phi-3 or get the model from the cache
+  let llm = Llama::phi_3().await?;
+
+  // Derive an efficient parser for your struct with the `Parse` trait
+  #[derive(Debug, Clone, Parse)]
+  struct Pet {
+    name: String,
+    description: String,
+    color: String,
+    size: Size,
+    diet: Diet,
+  }
+
+  #[derive(Debug, Clone, Parse)]
+  enum Diet {
+    Carnivore,
+    Herbivore,
+    Omnivore,
+  }
+      
+  #[derive(Debug, Clone, Parse)]
+  enum Size {
+    Small,
+    Medium,
+    Large,
+  }
+
+  let task = Task::builder("You generate realistic JSON placeholders")
+    .with_constraints(<[Pet; 4] as Parse>::new_parser())
+    .build();
+  let mut stream = task.run("Generate a list of 4 pets in JSON form with a name, description, color, and diet", &llm);
+
+  stream.to_std_out().await?;
+
+  Ok(())
+}
+```
 
 [structured generation demo](https://github.com/floneum/floneum/assets/66571940/7bdee1fb-204f-4e24-b738-1d4da6b593d9)
 
@@ -83,8 +126,8 @@ cd ./kalosm-hello-world
 ```
 3) Add Kalosm as a dependency
 ```sh
-cargo add kalosm --git https://github.com/floneum/floneum --features language
 # You can use `--features language,metal`, `--features language,cuda`, or `--features language,mkl` if your machine supports an accelerator
+cargo add kalosm --git https://github.com/floneum/floneum --features language
 cargo add tokio --features full
 ```
 4) Add this code to your `main.rs` file
@@ -93,16 +136,16 @@ use kalosm::language::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let model = Llama::phi_3().await?;
-    let mut chat = Chat::builder(model)
-        .with_system_prompt("You are a pirate called Blackbeard")
-        .build();
+  let model = Llama::phi_3().await?;
+  let mut chat = Chat::builder(model)
+    .with_system_prompt("You are a pirate called Blackbeard")
+    .build();
 
-    loop {
-        chat.add_message(prompt_input("\n> ")?)
-            .to_std_out()
-            .await?;
-    }
+  loop {
+    chat.add_message(prompt_input("\n> ")?)
+      .to_std_out()
+      .await?;
+  }
 }
 ```
 

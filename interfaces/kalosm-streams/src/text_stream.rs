@@ -37,10 +37,10 @@ pub trait TextStream<I: AsRef<str> = String>: Stream<Item = I> {
     }
 
     /// Write the stream to a writer.
-    fn write_to<W: std::io::Write + Send>(
-        mut self,
+    fn write_to<'a, W: std::io::Write + Send + 'a>(
+        &'a mut self,
         mut writer: W,
-    ) -> impl std::future::Future<Output = std::io::Result<()>> + Send
+    ) -> impl std::future::Future<Output = std::io::Result<()>> + Send + 'a
     where
         Self: Sized + Unpin + Send,
     {
@@ -54,7 +54,7 @@ pub trait TextStream<I: AsRef<str> = String>: Stream<Item = I> {
     }
 
     /// Get all the text from the stream.
-    fn all_text(mut self) -> impl std::future::Future<Output = String> + Send
+    fn all_text(&mut self) -> impl std::future::Future<Output = String> + Send + '_
     where
         Self: Sized + Unpin + Send,
     {
@@ -68,7 +68,7 @@ pub trait TextStream<I: AsRef<str> = String>: Stream<Item = I> {
     }
 
     /// Write the stream to standard output.
-    fn to_std_out(self) -> impl std::future::Future<Output = std::io::Result<()>> + Send
+    fn to_std_out(&mut self) -> impl std::future::Future<Output = std::io::Result<()>> + Send + '_
     where
         Self: Sized + Unpin + Send,
     {

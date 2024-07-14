@@ -18,7 +18,7 @@ use syn::{DataEnum, Fields};
 ///     age: u32,
 /// }
 ///
-/// let person = Person::new_parser().parse("{\"name\":\"John\",\"age\":30}").unwrap().unwrap_finished();
+/// let person = Person::new_parser().parse("{ \"name\": \"John\", \"age\": 30 }").unwrap().unwrap_finished();
 /// assert_eq!(person.name, "John");
 /// assert_eq!(person.age, 30);
 /// ```
@@ -46,7 +46,7 @@ use syn::{DataEnum, Fields};
 ///     Quit,
 /// }
 ///
-/// let action = Action::new_parser().parse("{\"type\":\"Search\",\"data\":{\"query\":\"my query\"}}").unwrap().unwrap_finished();
+/// let action = Action::new_parser().parse("{ \"type\": \"Search\", \"data\": { \"query\": \"my query\" } }").unwrap().unwrap_finished();
 /// assert_eq!(action, Action::Search { query: "my query".to_string() });
 /// ```
 ///
@@ -321,7 +321,7 @@ fn full_enum_parser(
         let parse_variant = match &variant.fields {
             syn::Fields::Named(fields) => {
                 let parse_name_and_data = LitStr::new(
-                    &format!("{}\",\"{content}\":", variant_name),
+                    &format!("{}\", \"{content}\": ", variant_name),
                     variant.ident.span(),
                 );
                 let fields = fields.named.iter().collect::<Vec<_>>();
@@ -340,7 +340,7 @@ fn full_enum_parser(
                 };
 
                 let parse_name_and_data = LitStr::new(
-                    &format!("{}\",\"{content}\":", variant_name),
+                    &format!("{}\", \"{content}\": ", variant_name),
                     variant.ident.span(),
                 );
                 let ty = &inner.ty;
@@ -372,14 +372,14 @@ fn full_enum_parser(
         }
     }
 
-    let struct_start = format!("{{\"{tag}\":\"");
+    let struct_start = format!("{{ \"{tag}\": \"");
 
     Ok(quote! {
         impl kalosm_sample::Parse for #ty {
             fn new_parser() -> impl kalosm_sample::SendCreateParserState<Output = Self> {
                 kalosm_sample::LiteralParser::from(#struct_start)
                     .ignore_output_then(#parser)
-                    .then_literal(r#"}"#)
+                    .then_literal(r#" }"#)
             }
         }
     })
@@ -393,7 +393,7 @@ fn unit_enum_parser(data: DataEnum, ty: Ident) -> TokenStream2 {
         let construct_variant = quote! {
             Self::#variant_name #fields
         };
-        let unit_parser = unit_parser(&variant.attrs, &ty);
+        let unit_parser = unit_parser(&variant.attrs, variant_name);
         let parse_variant = quote! {
             #unit_parser.map_output(|_| #construct_variant)
         };
@@ -464,11 +464,11 @@ fn field_parser(fields: &[&Field], construct: TokenStream2) -> syn::Result<Token
 
         let mut literal_text = String::new();
         if i == 0 {
-            literal_text.push('{');
+            literal_text.push_str("{ ");
         } else {
-            literal_text.push(',');
+            literal_text.push_str(", ");
         }
-        literal_text.push_str(&format!("\"{field_name}\":"));
+        literal_text.push_str(&format!("\"{field_name}\": "));
         let literal_text = LitStr::new(&literal_text, ident.span());
 
         parsers.push(quote! {
@@ -512,7 +512,7 @@ fn field_parser(fields: &[&Field], construct: TokenStream2) -> syn::Result<Token
             )*
 
             #join_parser
-                .then_literal(r#"}"#)
+                .then_literal(r#" }"#)
                 .map_output(|#output_tuple| #construct)
         }
     })
