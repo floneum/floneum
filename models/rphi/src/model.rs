@@ -27,6 +27,10 @@ impl Session for PhiSession {
         Ok(candle_core::safetensors::save(&tensors, path)?)
     }
 
+    fn tokens(&self) -> &[u32] {
+        &self.current_tokens
+    }
+
     fn load_from(path: impl AsRef<std::path::Path>) -> anyhow::Result<Self>
     where
         Self: std::marker::Sized,
@@ -103,7 +107,7 @@ impl SyncModel for PhiModel {
     fn feed_text(&self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Vec<f32>> {
         let tokens = self
             .tokenizer
-            .encode(prompt, true)
+            .encode(prompt, false)
             .map_err(E::msg)?
             .get_ids()
             .to_vec();

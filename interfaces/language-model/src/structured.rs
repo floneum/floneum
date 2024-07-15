@@ -25,7 +25,7 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
 
     let prompt_text = prompt.to_string();
     let prompt_tokens = tokenizer
-        .encode(prompt_text, true)
+        .encode(prompt_text, false)
         .map_err(|e| anyhow::anyhow!(e))?;
     let prompt_tokens = prompt_tokens.get_ids();
     let mut unprocessed_token_count = prompt_tokens.len();

@@ -3,9 +3,9 @@ use crate::TokenOutputStream;
 use futures_util::{Future, FutureExt};
 use futures_util::{Stream, StreamExt};
 use kalosm_common::*;
-use kalosm_sample::Parser;
 use kalosm_sample::StopOn;
 use kalosm_sample::{CreateParserState, Parse};
+use kalosm_sample::{LiteralParser, Parser};
 use kalosm_streams::text_stream::ChannelTextStream;
 use llm_samplers::configure::SamplerChainBuilder;
 use llm_samplers::prelude::*;
@@ -485,6 +485,13 @@ pub trait ModelExt: Model + Send + Sync + 'static {
 
         Some(StopOn::from(end_assistant_marker))
     }
+
+    /// Get the constraints that end the assistant's response.
+    fn end_assistant_marker_constraints(&self) -> Option<LiteralParser> {
+        let end_assistant_marker = self.chat_markers()?.end_assistant_marker;
+
+        Some(LiteralParser::from(end_assistant_marker))
+    }
 }
 
 /// The result of a structured parser stream.
@@ -610,6 +617,11 @@ pub trait Session {
         Err(anyhow::Error::msg("Not implemented"))
     }
 
+    /// Get a reference to the tokens in the session.
+    fn tokens(&self) -> &[u32] {
+        &[]
+    }
+
     /// Try to clone the session.
     fn try_clone(&self) -> anyhow::Result<Self>
     where
@@ -668,7 +680,7 @@ pub trait SyncModelExt: SyncModel {
     ) -> anyhow::Result<()> {
         let tokens = self
             .tokenizer()
-            .encode(prompt, true)
+            .encode(prompt, false)
             .map_err(|e| anyhow::anyhow!(e))?;
         let tokens = tokens.get_ids();
         let mut text_stream = TokenOutputStream::new(self.tokenizer());

@@ -188,6 +188,14 @@ impl<Model: SyncModel> ChatSession<Model> {
                     on_token,
                     Some(64),
                 )?;
+                let end_assistant_token = model
+                    .tokenizer()
+                    .token_to_id(&self.end_assistant_marker)
+                    .unwrap();
+                // If it doesn't end with the end assistant marker, but the constraints are finished, add the end assistant marker
+                if self.session.tokens().last() != Some(&end_assistant_token) {
+                    model.feed_tokens(&mut self.session, &[end_assistant_token])?;
+                }
             }
             None => {
                 model.stream_text_with_sampler(

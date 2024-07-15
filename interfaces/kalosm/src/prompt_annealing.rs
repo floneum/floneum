@@ -404,10 +404,10 @@ where
         .iter()
         .filter_map(|example| {
             llm.tokenizer()
-                .encode(example.input, true)
+                .encode(example.input, false)
                 .ok()
                 .map(|x| x.len())
-                .and_then(|x| Some(x + llm.tokenizer().encode(example.output, true).ok()?.len()))
+                .and_then(|x| Some(x + llm.tokenizer().encode(example.output, false).ok()?.len()))
         })
         .sum();
 

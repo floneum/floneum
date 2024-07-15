@@ -31,7 +31,7 @@ impl SyncModel for LlamaModel {
     }
 
     fn feed_text(&self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Vec<f32>> {
-        let encoded = self.tokenizer.encode(prompt, true).map_err(E::msg)?;
+        let encoded = self.tokenizer.encode(prompt, false).map_err(E::msg)?;
         let tokens = encoded.get_ids();
         self.feed_tokens(session, tokens)
     }

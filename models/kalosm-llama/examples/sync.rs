@@ -15,7 +15,7 @@ async fn main() {
                 let logits = model.feed_text(&mut session, &prompt).unwrap();
                 println!("{:?}", logits);
                 let prompt = "paris";
-                println!("{:?}", model.tokenizer().encode(prompt, true));
+                println!("{:?}", model.tokenizer().encode(prompt, false));
                 let logits = model.feed_text(&mut session, prompt).unwrap();
                 println!("{:?}", logits);
             })

@@ -17,6 +17,10 @@ impl Session for LlamaSession {
         Ok(candle_core::safetensors::save(&tensors, path)?)
     }
 
+    fn tokens(&self) -> &[u32] {
+        &self.cache.tokens
+    }
+
     fn load_from(path: impl AsRef<std::path::Path>) -> anyhow::Result<Self>
     where
         Self: std::marker::Sized,
