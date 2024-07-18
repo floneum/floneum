@@ -6,7 +6,7 @@ pub use kalosm_streams::timed_stream::*;
 
 #[cfg(feature = "language")]
 pub mod language {
-    //! Language processing utilities for the Kalosm framework.
+    #![doc = include_str!("../docs/language.md")]
     pub use kalosm_common::{accelerated_device_if_available, FileSource};
     pub use kalosm_language::chat::*;
     pub use kalosm_language::context::*;
