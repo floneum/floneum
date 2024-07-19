@@ -2,7 +2,7 @@ use futures_core::ready;
 use rodio::buffer::SamplesBuffer;
 use std::{collections::VecDeque, task::Poll, time::Duration};
 
-/// The output of a [`VoiceActivityDetectorStream`]
+/// The output of a [`crate::VoiceActivityDetectorStream`]
 pub struct VoiceActivityDetectorOutput {
     /// The probability of voice activity (between 0 and 1)
     pub probability: f32,

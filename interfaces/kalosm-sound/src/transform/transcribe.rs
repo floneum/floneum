@@ -4,7 +4,7 @@ use super::voice_audio_detector::*;
 use super::voice_audio_detector_ext::*;
 use crate::AsyncSource;
 
-/// An extension trait for [`AsyncSource`] that integrates with [`Whisper`].
+/// An extension trait for [`AsyncSource`] that integrates with [`crate::Whisper`].
 pub trait AsyncSourceTranscribeExt: AsyncSource + Unpin + Send + Sized + 'static {
     /// Chunk the audio stream into segments based on voice activity and then transcribe those segments.  The model will transcribe segments of speech that are separated by silence.
     ///

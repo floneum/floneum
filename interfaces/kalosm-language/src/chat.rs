@@ -11,7 +11,7 @@ use futures_util::Future;
 use kalosm_language_model::ChatMarkers;
 use kalosm_language_model::Session;
 use kalosm_language_model::{GenerationParameters, Model, ModelExt, SyncModel, SyncModelExt};
-use kalosm_sample::{ArcParser, CreateParserState, ParserExt};
+use kalosm_sample::{ArcParser, CreateParserState, ParserExt, SendCreateParserState};
 use kalosm_streams::text_stream::ChannelTextStream;
 use llm_samplers::types::Sampler;
 use tokio::sync::{mpsc::unbounded_channel, oneshot};
@@ -275,7 +275,9 @@ impl<M: Model> ChatBuilder<M> {
             initial_history: Vec::new(),
         }
     }
+}
 
+impl<M: Model> ChatBuilder<M> {
     /// Adds a system prompt to the chat. The system prompt guides the model to respond in a certain way.
     /// If no system prompt is added, the model will use a default system prompt that instructs the model to respond in a way that is safe and respectful.
     ///
@@ -298,6 +300,15 @@ impl<M: Model> ChatBuilder<M> {
     pub fn with_sampler(mut self, sampler: impl Sampler + 'static) -> Self {
         self.sampler = Arc::new(Mutex::new(sampler));
         self
+    }
+
+    /// See [`ChatBuilder::with_constraints`]
+    #[deprecated(note = "renamed to `with_constraints`")]
+    pub fn constrain_response<Parser: SendCreateParserState + 'static>(
+        self,
+        bot_constraints: impl FnMut(&[ChatHistoryItem]) -> Parser + Send + Sync + 'static,
+    ) -> ChatBuilder<M> {
+        Self::with_constraints(self, bot_constraints)
     }
 
     /// Constrains the model's response to the given parser. This can be used to make the model start with a certain phrase, or to make the model respond in a certain way.
@@ -323,15 +334,10 @@ impl<M: Model> ChatBuilder<M> {
     /// }
     /// # }
     /// ```
-    pub fn constrain_response<P>(
+    pub fn with_constraints<Parser: SendCreateParserState + 'static>(
         self,
-        mut bot_constraints: impl FnMut(&[ChatHistoryItem]) -> P + Send + Sync + 'static,
-    ) -> ChatBuilder<M>
-    where
-        P: CreateParserState + Sized + Send + Sync + 'static,
-        P::Output: Send + Sync + 'static,
-        P::PartialState: Send + Sync + 'static,
-    {
+        mut bot_constraints: impl FnMut(&[ChatHistoryItem]) -> Parser + Send + Sync + 'static,
+    ) -> ChatBuilder<M> {
         ChatBuilder {
             model: self.model,
             chat_markers: self.chat_markers,
@@ -550,7 +556,7 @@ enum Message {
 /// The LLM needs to read and transform the prompt into a format it understands before it can start generating a response.
 /// Kalosm stores that state in a chat session, which can be saved and loaded from the filesystem to make loading existing chat sessions faster.
 ///
-/// You can save and load chat sessions from the filesystem using the [`Self::save_session`] and [`Self::load_session`] methods:
+/// You can save and load chat sessions from the filesystem using the [`Self::save_session`] and [`ChatBuilder::with_try_session_path`] methods:
 ///
 /// ```rust, no_run
 /// # use kalosm::language::*;

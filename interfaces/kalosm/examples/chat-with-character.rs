@@ -14,7 +14,7 @@ async fn main() {
     // Create a chat session with the model and the constraints
     let mut chat = Chat::builder(model)
         .with_system_prompt(character_description)
-        .constrain_response(move |_history| constraints.clone())
+        .with_constraints(move |_history| constraints.clone())
         .build();
 
     // Chat with the user

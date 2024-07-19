@@ -63,11 +63,12 @@ async fn main() {
 cargo run --release
 ```
 
-## What can you build with Kalosm?
+## What can you do with Kalosm?
 
 You can think of Kalosm as the plumbing between different pre-trained models and each other or the surrounding world. Kalosm makes it easy to build applications that use pre-trained models to generate text, audio, and images. Here are some examples of what you can build with Kalosm:
 
-### Local text generation
+<details>
+<summary>Local text generation</summary>
 
 The simplest way to get started with Kalosm language is to pull in one of the local large language models and use it to generate text. Kalosm supports a streaming API that allows you to generate text in real time without blocking your main thread:
 
@@ -88,7 +89,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### Structured generation
+</details>
+
+<details>
+<summary>Structured generation</summary>
 
 Natural language generation is interesting, but the more interesting aspect of text is as a universal data format. You can encode any kind of data into text with a format like json. Kalosm lets you use LLMs with structured generation to create arbitrary types from natural language inputs:
 
@@ -122,7 +126,10 @@ async fn main() {
 }
 ```
 
-### Cloud models
+</details>
+
+<details>
+<summary>Cloud models</summary>
 
 Kalosm also supports cloud models like GPT4 with the same streaming API:
 
@@ -144,7 +151,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### Collecting text data
+</details>
+
+<details>
+<summary>Gather context from RSS, websites, local files, search results, and more</summary>
 
 Kalosm makes it easy to collect text data from a variety of sources. For example, you can use Kalosm to collect text from a local folder of documents, an RSS stream, a website, or a search engine:
 
@@ -183,7 +193,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### Embedding powered search
+</details>
+
+
+<details>
+<summary>Embedding powered search</summary>
 
 Once you have your data, Kalosm includes tools to create embedding-powered search indexes. Embedding-based search lets you find documents that are semantically similar to a specific word or phrase even if no words are an exact match:
 
@@ -223,7 +237,10 @@ async fn main() {
 }
 ```
 
-### Resource augmented generation
+</details>
+
+<details>
+<summary>Resource augmented generation</summary>
 
 A large part of making modern LLMs performant is curating the context the models have access to. Resource augmented generation (or RAG) helps you do this by inserting context into the prompt based on a search query. For example, you can Kalosm to create a chatbot that uses context from local documents to answer questions:
 
@@ -300,7 +317,11 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
-### Voice transcription
+</details>
+
+
+<details>
+<summary>Live audio transcription</summary>
 
 Kalosm makes it easy to build up context about the world around your application. 
 
@@ -327,7 +348,11 @@ async fn main() -> Result<(), anyhow::Error> {
 }
 ```
 
-### Image generation
+</details>
+
+
+<details>
+<summary>Image generation</summary>
 
 In addition to language, audio, and embedding models, Kalosm also supports image generation. For example, you can use Kalosm to generate images from text:
 
@@ -350,7 +375,10 @@ async fn main() {
 }
 ```
 
-### Image segmentation
+</details>
+
+<details>
+<summary>Image segmentation</summary>
 
 Kalosm also supports image segmentation with the segment-anything model:
 
@@ -367,3 +395,5 @@ async fn main() {
     }
 }
 ```
+
+</details>

@@ -3,7 +3,7 @@ use kalosm_common::FileSource;
 const SNOWFLAKE_EMBEDDING_PREFIX: &str =
     "Represent this sentence for searching relevant passages: ";
 
-/// A the source of a [`Bert`] model
+/// A the source of a [`crate::Bert`] model
 pub struct BertSource {
     pub(crate) search_embedding_prefix: Option<String>,
     pub(crate) config: FileSource,
