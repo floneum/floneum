@@ -75,7 +75,7 @@ impl IntoDocument for FsDocument {
 /// A folder full of documents.
 ///
 /// # Example
-/// ```rust, ignore
+/// ```rust, no_run
 /// use kalosm_language::prelude::*;
 /// use std::io::Write;
 /// use std::path::PathBuf;
@@ -91,7 +91,7 @@ impl IntoDocument for FsDocument {
 ///             overlap: 0,
 ///         },
 ///     );
-///     database.extend(documents)).await.unwrap();
+///     database.extend(documents).await.unwrap();
 ///
 ///     loop {
 ///         print!("Query: ");

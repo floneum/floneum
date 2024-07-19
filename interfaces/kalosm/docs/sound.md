@@ -28,7 +28,7 @@ async fn main() {
 }
 ```
 
-Kalosm also provides [`VoiceActivityDetectorExt::rechunk_voice_activity`] to collect chunks of consecutive audio samples with a high vad probability. This can be useful for applications like speech recognition where context between consecutive audio samples is important.
+Kalosm also provides [`VoiceActivityStreamExt::rechunk_voice_activity`] to collect chunks of consecutive audio samples with a high vad probability. This can be useful for applications like speech recognition where context between consecutive audio samples is important.
 
 ```rust, no_run
 use kalosm::sound::*;

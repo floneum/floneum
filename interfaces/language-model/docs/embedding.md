@@ -41,7 +41,7 @@ for (i, e_i) in embeddings.iter().enumerate() {
 
 You should see that the first two sentences are similar to each other, while the third sentence not similar to either of the first two:
 
-```
+```text
 score: 0.82 'Kalosm can be used to build local AI applications' 'With private LLMs data never leaves your computer'
 score: 0.72 'With private LLMs data never leaves your computer' 'The quick brown fox jumps over the lazy dog'
 score: 0.72 'Kalosm can be used to build local AI applications' 'The quick brown fox jumps over the lazy dog'

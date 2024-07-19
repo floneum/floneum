@@ -126,7 +126,7 @@ Kalosm provides utilities for collecting context from a variety of sources:
 - RSS feeds
 - Websites
 - Search engines
-- Microphone input and audio input through [whisper transcriptions](kalosm::sound::Whisper)
+- Microphone input and audio input through [whisper transcriptions](crate::sound::Whisper)
 
 Each of these sources implement either [`IntoDocument`] or [`IntoDocuments`] to convert the data into a [`Document`] with the contents and metadata about the document.
 

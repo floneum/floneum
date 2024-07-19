@@ -556,7 +556,7 @@ enum Message {
 /// The LLM needs to read and transform the prompt into a format it understands before it can start generating a response.
 /// Kalosm stores that state in a chat session, which can be saved and loaded from the filesystem to make loading existing chat sessions faster.
 ///
-/// You can save and load chat sessions from the filesystem using the [`Self::save_session`] and [`Self::load_session`] methods:
+/// You can save and load chat sessions from the filesystem using the [`Self::save_session`] and [`ChatBuilder::with_try_session_path`] methods:
 ///
 /// ```rust, no_run
 /// # use kalosm::language::*;

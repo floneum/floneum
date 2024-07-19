@@ -14,7 +14,7 @@ use crate::{AsyncSource, ResampledAsyncSource, VoiceActivityDetectorOutput};
 pub trait DenoisedExt: AsyncSource {
     /// Transform the audio stream to a stream of [`SamplesBuffer`]s that have been denoised
     ///
-    /// NOTE: From testing, the detection in [`voice_activity_stream`] seems to be more general than this method.
+    /// NOTE: The detection in [`crate::VoiceActivityDetectorExt::voice_activity_stream`] tends to be more consistent than this method.
     fn denoise_and_detect_voice_activity(self) -> DenoisedStream<Self>
     where
         Self: Sized + Unpin,

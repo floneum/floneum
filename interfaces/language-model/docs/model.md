@@ -60,7 +60,7 @@ struct Pet {
 }
 ```
 
-Then you can generate text that works with the parser in a [`Task`]:
+Then you can generate text that works with the parser in a [`Task`](https://docs.rs/kalosm/latest/kalosm/language/struct.Task.html):
 
 ```rust, no_run
 # use kalosm::language::*;
