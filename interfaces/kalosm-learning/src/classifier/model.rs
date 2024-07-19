@@ -286,7 +286,7 @@ impl<C: Class> Classifier<C> {
                 layers.push(candle_nn::linear(
                     *in_dim,
                     *out_dim,
-                    vs.pp(&format!("ln{}", i + 1)),
+                    vs.pp(format!("ln{}", i + 1)),
                 )?);
             }
             layers.push(candle_nn::linear(

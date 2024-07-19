@@ -270,7 +270,7 @@ impl<'a, M: Model> IntoFuture for GenerateTextBuilder<'a, M> {
     }
 }
 
-/// An extension trait for models.
+#[doc = include_str!("../docs/model.md")]
 #[async_trait::async_trait]
 pub trait ModelExt: Model + Send + Sync + 'static {
     /// Generate text with the given prompt. This function generates a builder with extra parameters that can be set. To execute the builder, just call `await` on it.
@@ -814,9 +814,7 @@ impl SyncModel for SyncModelNotSupported {
     }
 }
 
-/// A model that can be used to generate text with an associated tokenizer.
-///
-/// The model may support using a custom sampler. If a specific model does not support a specific method, it will return an error.
+#[doc = include_str!("../docs/model.md")]
 #[async_trait::async_trait]
 pub trait Model: Send + Sync + 'static {
     /// The type of stream that this model generates.

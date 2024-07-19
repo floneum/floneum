@@ -307,8 +307,7 @@ impl<M: Model> ChatBuilder<M> {
     pub fn constrain_response<Parser: SendCreateParserState + 'static>(
         self,
         bot_constraints: impl FnMut(&[ChatHistoryItem]) -> Parser + Send + Sync + 'static,
-    ) -> ChatBuilder<M>
-    {
+    ) -> ChatBuilder<M> {
         Self::with_constraints(self, bot_constraints)
     }
 
@@ -338,7 +337,7 @@ impl<M: Model> ChatBuilder<M> {
     pub fn with_constraints<Parser: SendCreateParserState + 'static>(
         self,
         mut bot_constraints: impl FnMut(&[ChatHistoryItem]) -> Parser + Send + Sync + 'static,
-    )  -> ChatBuilder<M>  {
+    ) -> ChatBuilder<M> {
         ChatBuilder {
             model: self.model,
             chat_markers: self.chat_markers,

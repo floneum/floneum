@@ -1,6 +1,6 @@
 #![allow(unused)]
-use std::sync::Arc;
 use kalosm::language::*;
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() {

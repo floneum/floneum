@@ -291,10 +291,10 @@ impl<'a, I: Display> std::fmt::Display for EvaluationResult<'a, I> {
                     }
                     if remaining_matching_tests > 0 {
                         let mut row = Row::new();
-                        row.add_cell(Cell::new(&format!("... {} more", remaining_matching_tests)))
+                        row.add_cell(Cell::new(format!("... {} more", remaining_matching_tests)))
                             .add_cell(Cell::new(""))
                             .add_cell(
-                                Cell::new(&format!(
+                                Cell::new(format!(
                                     "{:.2} (average)",
                                     total_score / remaining_matching_tests as f64
                                 ))

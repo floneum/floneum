@@ -29,14 +29,14 @@ pub mod language {
 }
 #[cfg(feature = "sound")]
 pub mod sound {
-    //! Audio processing utilities for the Kalosm framework.
+    #![doc = include_str!("../docs/sound.md")]
     pub use kalosm_sound::*;
     pub use kalosm_streams::text_stream::*;
     pub use kalosm_streams::timed_stream::*;
 }
 #[cfg(feature = "vision")]
 pub mod vision {
-    //! Image generation utilities for the Kalosm framework.
+    #![doc = include_str!("../docs/vision.md")]
     pub use futures_util::StreamExt as _;
     pub use kalosm_vision::*;
 }
