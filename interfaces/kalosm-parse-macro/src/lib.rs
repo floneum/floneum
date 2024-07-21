@@ -494,7 +494,7 @@ fn unit_enum_parser(data: DataEnum, ty: Ident) -> TokenStream2 {
         if !required_next.is_empty() {
             let required_next_str = String::from_utf8_lossy(&required_next);
             match_required_next.push(quote! {
-                #state => std::borrow::Cow::Borrowed(#required_next_str),
+                #state => #required_next_str,
             });
         }
     }
@@ -549,10 +549,10 @@ fn unit_enum_parser(data: DataEnum, ty: Ident) -> TokenStream2 {
                 }
                 kalosm_sample::ParseResult::Ok(kalosm_sample::ParseStatus::Incomplete {
                     new_state: state,
-                    required_next: match state.0 {
+                    required_next: std::borrow::Cow::Borrowed(match state.0 {
                         #(#match_required_next)*
-                        _ => std::borrow::Cow::Borrowed("")
-                    },
+                        _ => ""
+                    }),
                 })
             }
         }
