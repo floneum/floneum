@@ -188,7 +188,7 @@ pub fn derive_parse(input: TokenStream) -> TokenStream {
                     Err(err) => err.to_compile_error(),
                 }
             } else {
-                unit_enum_parser(data, ty)
+                unit_enum_parser(input.attrs, data, ty)
             }
             .into()
         }
@@ -241,7 +241,7 @@ fn impl_unit_parser(attrs: &[syn::Attribute], ty: &Ident, construct: TokenStream
     }
 }
 
-fn unit_parse_literal(attrs: &[syn::Attribute], ty: &Ident) -> syn::Result<String> {
+fn unit_parse_literal(attrs: &[syn::Attribute], ty: &Ident, unquoted: bool) -> syn::Result<String> {
     // Look for #[parse(rename = "name")] attribute
     let mut ty_string = ty.unraw().to_string();
     for attr in attrs.iter() {
@@ -260,11 +260,15 @@ fn unit_parse_literal(attrs: &[syn::Attribute], ty: &Ident) -> syn::Result<Strin
         }
     }
 
-    Ok(format!("\"{ty_string}\""))
+    Ok(if unquoted {
+        ty_string
+    } else {
+        format!("\"{ty_string}\"")
+    })
 }
 
 fn unit_parser(attrs: &[syn::Attribute], ty: &Ident) -> TokenStream2 {
-    let ty_string = match unit_parse_literal(attrs, ty) {
+    let ty_string = match unit_parse_literal(attrs, ty, false) {
         Ok(ty_string) => ty_string,
         Err(err) => return err.to_compile_error(),
     };
@@ -398,9 +402,26 @@ fn full_enum_parser(
     })
 }
 
-fn unit_enum_parser(data: DataEnum, ty: Ident) -> TokenStream2 {
+fn unit_enum_parser(attrs: Vec<syn::Attribute>, data: DataEnum, ty: Ident) -> TokenStream2 {
     // We can derive an efficient state machine for unit enums
     let parser_state = format_ident!("{}ParserState", ty);
+
+    // Look for #[parse(unquoted)] on the enum
+    let mut unquoted = false;
+    for attr in attrs.iter() {
+        if attr.path().is_ident("parse") {
+            let result = attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("unquoted") {
+                    unquoted = true;
+                    return Ok(());
+                }
+                Err(meta.error("expected `unquoted`"))
+            });
+            if let Err(err) = result {
+                return err.to_compile_error();
+            }
+        }
+    }
 
     let mut parse_construction_map = HashMap::new();
     for variant in data.variants.iter() {
@@ -409,7 +430,7 @@ fn unit_enum_parser(data: DataEnum, ty: Ident) -> TokenStream2 {
         let construct_variant = quote! {
             #ty::#variant_name #fields
         };
-        let literal_string = match unit_parse_literal(&variant.attrs, variant_name) {
+        let literal_string = match unit_parse_literal(&variant.attrs, variant_name, unquoted) {
             Ok(literal_string) => literal_string,
             Err(err) => return err.to_compile_error(),
         };

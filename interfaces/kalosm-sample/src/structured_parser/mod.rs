@@ -8,7 +8,7 @@ use std::{
     error::Error,
     fmt::{Debug, Display},
     ops::Deref,
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
 pub use integer::*;
@@ -349,6 +349,16 @@ pub trait ParserExt: Parser {
         SequenceParser::new(self, other)
     }
 
+    /// Parse this parser, then the other parser that is created base on the output of this parser.
+    fn then_lazy<V, F>(self, other: F) -> ThenLazy<Self, V, F>
+    where
+        Self: Sized,
+        V: CreateParserState,
+        F: FnOnce(&Self::Output) -> V + Copy,
+    {
+        ThenLazy::new(self, other)
+    }
+
     /// Parse this parser, then the other parser while ignoring the current parser's output.
     fn ignore_output_then<V: CreateParserState>(
         self,
@@ -415,6 +425,51 @@ pub trait ParserExt: Parser {
 }
 
 impl<P: Parser> ParserExt for P {}
+
+/// A parser that is lazily initialized.
+pub struct LazyParser<P, F> {
+    parser: OnceLock<P>,
+    parser_fn: F,
+}
+
+impl<P: Parser, F: FnOnce() -> P + Copy> LazyParser<P, F> {
+    /// Create a new parser that is lazily initialized.
+    pub fn new(parser_fn: F) -> Self {
+        Self {
+            parser: OnceLock::new(),
+            parser_fn,
+        }
+    }
+
+    fn get_parser(&self) -> &P {
+        self.parser.get_or_init(self.parser_fn)
+    }
+}
+
+impl<P: CreateParserState, F: FnOnce() -> P + Copy> CreateParserState for LazyParser<P, F> {
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState {
+        self.get_parser().create_parser_state()
+    }
+}
+
+impl<P: CreateParserState, F: FnOnce() -> P + Copy> From<F> for LazyParser<P, F> {
+    fn from(parser_fn: F) -> Self {
+        Self::new(parser_fn)
+    }
+}
+
+impl<P: Parser, F: FnOnce() -> P + Copy> Parser for LazyParser<P, F> {
+    type Output = P::Output;
+    type PartialState = P::PartialState;
+
+    fn parse<'a>(
+        &self,
+        state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>> {
+        self.get_parser().parse(state, input)
+    }
+}
 
 /// A parser for a choice between two parsers.
 #[derive(Debug, PartialEq, Eq, Clone)]

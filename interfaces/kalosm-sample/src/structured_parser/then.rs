@@ -1,4 +1,6 @@
-use crate::{CreateParserState, ParseStatus, Parser};
+use std::sync::OnceLock;
+
+use crate::{CreateParserState, ParseResult, ParseStatus, Parser, ParserError};
 
 /// State of a sequence parser.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -152,4 +154,113 @@ fn sequence_parser() {
         })
     );
     assert!(parser.parse(&state, b"Goodbye, world!").is_err(),);
+}
+
+/// A parser that is initialized lazily based on the state of the previous parser.
+pub struct ThenLazy<P1, P2, F> {
+    parser1: P1,
+    parser2: OnceLock<P2>,
+    parser_fn: F,
+}
+
+impl<P1: Parser, P2: CreateParserState, F: FnOnce(&P1::Output) -> P2 + Copy> ThenLazy<P1, P2, F> {
+    /// Create a new parser that is lazily initialized based on the output of the first parser.
+    pub fn new(parser1: P1, parser_fn: F) -> Self {
+        Self {
+            parser1,
+            parser2: OnceLock::new(),
+            parser_fn,
+        }
+    }
+
+    fn get_parser2(&self) -> &P2 {
+        self.parser2.get().unwrap()
+    }
+}
+
+impl<P1: CreateParserState, P2: CreateParserState, F: FnOnce(&P1::Output) -> P2 + Copy>
+    CreateParserState for ThenLazy<P1, P2, F>
+{
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState {
+        SequenceParserState::FirstParser(self.parser1.create_parser_state())
+    }
+}
+
+impl<P1: Parser, P2: CreateParserState, F: FnOnce(&P1::Output) -> P2 + Copy> Parser
+    for ThenLazy<P1, P2, F>
+{
+    type Output = (P1::Output, P2::Output);
+    type PartialState = SequenceParserState<P1::PartialState, P2::PartialState, P1::Output>;
+
+    fn parse<'a>(
+        &self,
+        state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>> {
+        match state {
+            SequenceParserState::FirstParser(p1) => {
+                let result = self.parser1.parse(p1, input)?;
+                match result {
+                    ParseStatus::Finished {
+                        result: o1,
+                        remaining,
+                    } => {
+                        self.parser2
+                            .set((self.parser_fn)(&o1))
+                            .map_err(|_| ParserError::msg("Parser was initialized twice"))?;
+                        let parser2 = self.get_parser2();
+                        let second_parser_state = parser2.create_parser_state();
+                        let result = parser2.parse(&second_parser_state, remaining)?;
+                        match result {
+                            ParseStatus::Finished { result, remaining } => {
+                                Ok(ParseStatus::Finished {
+                                    result: (o1, result),
+                                    remaining,
+                                })
+                            }
+                            ParseStatus::Incomplete {
+                                new_state: p2,
+                                required_next,
+                            } => {
+                                let new_state = SequenceParserState::SecondParser(p2, o1);
+                                Ok(ParseStatus::Incomplete {
+                                    new_state,
+                                    required_next,
+                                })
+                            }
+                        }
+                    }
+                    ParseStatus::Incomplete {
+                        new_state: p1,
+                        required_next,
+                    } => {
+                        let new_state = SequenceParserState::FirstParser(p1);
+                        Ok(ParseStatus::Incomplete {
+                            new_state,
+                            required_next,
+                        })
+                    }
+                }
+            }
+            SequenceParserState::SecondParser(p2, o1) => {
+                let result = self.get_parser2().parse(p2, input)?;
+                match result {
+                    ParseStatus::Finished { result, remaining } => Ok(ParseStatus::Finished {
+                        result: (o1.clone(), result),
+                        remaining,
+                    }),
+                    ParseStatus::Incomplete {
+                        new_state: p2,
+                        required_next,
+                    } => {
+                        let new_state = SequenceParserState::SecondParser(p2, o1.clone());
+                        Ok(ParseStatus::Incomplete {
+                            new_state,
+                            required_next,
+                        })
+                    }
+                }
+            }
+        }
+    }
 }
