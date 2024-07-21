@@ -118,3 +118,18 @@ async fn tuple_enum() {
 
     assert!(output.contains("\"type\": \"First\"") || output.contains("\"type\": \"Second\""));
 }
+
+#[test]
+fn unit_enum_parses() {
+    #[derive(Parse, Debug, Clone, PartialEq)]
+    enum Color {
+        Red,
+        Blue,
+        Green,
+    }
+
+    let parser = Color::new_parser();
+    let state = parser.create_parser_state();
+    let color = parser.parse(&state, b"\"Red\" ").unwrap().unwrap_finished();
+    assert_eq!(color, Color::Red);
+}
