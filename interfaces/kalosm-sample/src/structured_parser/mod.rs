@@ -350,7 +350,7 @@ pub trait ParserExt: Parser {
     }
 
     /// Parse this parser, then the other parser that is created base on the output of this parser.
-    fn then_lazy<V, F>(self, other: F) -> ThenLazy<Self, V, F>
+    fn then_lazy<V, F>(self, other: F) -> ThenLazy<Self, F>
     where
         Self: Sized,
         V: CreateParserState,
