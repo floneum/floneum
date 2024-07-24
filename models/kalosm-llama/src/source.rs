@@ -459,6 +459,29 @@ impl LlamaSource {
         }
     }
 
+    /// A preset for Llama8b v3.1 Instruct
+    pub fn llama_3_1_8b_chat() -> Self {
+        Self {
+            model: FileSource::huggingface(
+                "lmstudio-community/Meta-Llama-3.1-8B-Instruct-GGUF".to_string(),
+                "main".to_string(),
+                "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf".to_string(),
+            ),
+            tokenizer: llama_v3_tokenizer(),
+            group_query_attention: 1,
+            markers: Some(ChatMarkers {
+                system_prompt_marker:
+                    "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n",
+                end_system_prompt_marker: "<|eot_id|>",
+                user_marker: "<|start_header_id|>user<|end_header_id|>\n",
+                end_user_marker: "<|eot_id|>",
+                assistant_marker: "<|start_header_id|>assistant<|end_header_id|>\n",
+                end_assistant_marker: "<|eot_id|>",
+            }),
+            cache: Default::default(),
+        }
+    }
+
     /// A preset for Llama8b v3 at the Q8_0 quantization level. This file will be larger than [`llama_8b_chat`](Self::llama_8b_chat) but the model output will be more accurate.
     pub fn llama_8b_chat_q8() -> Self {
         Self {
