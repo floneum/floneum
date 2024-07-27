@@ -9,17 +9,17 @@ use crate::{
 ///
 /// # Example
 /// ```rust
-/// use kalosm_sample::{Parse, SendCreateParserState, StringParser, IntegerParser};
+/// use kalosm_sample::*;
 ///
 /// // You can derive parse for structs with named fields that implement Parse
-/// #[derive(Parse)]
+/// #[derive(Parse, Clone)]
 /// struct Person {
 ///     name: String,
 ///     favorite_color: Color,
 /// }
 ///
 /// // You can derive parse for enums with only unit variants
-/// #[derive(Parse)]
+/// #[derive(Parse, Clone)]
 /// enum Color {
 ///     Red,
 ///     Blue,
@@ -32,6 +32,7 @@ use crate::{
 /// }
 ///
 /// // Or you can implement parse manually for custom types
+/// #[derive(Clone)]
 /// struct MyStruct(i64, String);
 ///
 /// impl Parse for MyStruct {

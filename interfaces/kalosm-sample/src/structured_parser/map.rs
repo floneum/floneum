@@ -1,3 +1,5 @@
+use std::{fmt::Debug, marker::PhantomData};
+
 use crate::{CreateParserState, ParseStatus, Parser};
 
 /// A parser that maps the output of another parser.
@@ -5,6 +7,28 @@ pub struct MapOutputParser<P: Parser, O, F = fn(<P as Parser>::Output) -> O> {
     pub(crate) parser: P,
     pub(crate) map: F,
     pub(crate) _output: std::marker::PhantomData<O>,
+}
+
+impl<P: Parser + Debug, O, F> Debug for MapOutputParser<P, O, F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.parser.fmt(f)
+    }
+}
+
+impl<P: Parser + PartialEq, O, F: PartialEq> PartialEq for MapOutputParser<P, O, F> {
+    fn eq(&self, other: &Self) -> bool {
+        self.parser == other.parser && self.map == other.map
+    }
+}
+
+impl<P: Parser + Clone, O, F: Clone> Clone for MapOutputParser<P, O, F> {
+    fn clone(&self) -> Self {
+        Self {
+            parser: self.parser.clone(),
+            map: self.map.clone(),
+            _output: PhantomData,
+        }
+    }
 }
 
 impl<P: CreateParserState, O: Clone, F: Fn(P::Output) -> O> CreateParserState
