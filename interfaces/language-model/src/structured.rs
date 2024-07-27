@@ -96,7 +96,10 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
 
                     // If we eliminated a logit, our partitioning of the logits is no longer valid
                     logits_indexed[i..].select_nth_unstable_by(logits_to_update, |a, b| {
-                        b.logit.partial_cmp(&a.logit).unwrap()
+                        // SAFETY: Logits should never be NaN or Inf
+                        let compare = b.logit.partial_cmp(&a.logit);
+                        debug_assert!(compare.is_some());
+                        unsafe { compare.unwrap_unchecked() }
                     });
                     // Expand the cache to include the new logits
                     partitioned_logits_index = Some(new_partitioned_index);
