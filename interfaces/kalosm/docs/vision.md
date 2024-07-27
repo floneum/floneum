@@ -34,19 +34,17 @@ Kalosm supports image segmentation with the [`SegmentAnything`] model. You can u
 ```rust, no_run
 use kalosm::vision::*;
 
-fn main() {
-    let model = SegmentAnything::builder().build().unwrap();
-    let image = image::open("examples/landscape.jpg").unwrap();
-    let x = image.width() / 2;
-    let y = image.height() / 4;
-    let images = model
-        .segment_from_points(
-            SegmentAnythingInferenceSettings::new(image)
-                .unwrap()
-                .add_goal_point(x, y),
-        )
-        .unwrap();
+let model = SegmentAnything::builder().build().unwrap();
+let image = image::open("examples/landscape.jpg").unwrap();
+let x = image.width() / 2;
+let y = image.height() / 4;
+let images = model
+    .segment_from_points(
+        SegmentAnythingInferenceSettings::new(image)
+            .unwrap()
+            .add_goal_point(x, y),
+    )
+    .unwrap();
 
-    images.save("out.png").unwrap();
-}
+images.save("out.png").unwrap();
 ```
