@@ -9,7 +9,7 @@ pub struct StringParser<F: Fn(char) -> bool + 'static = CharFilter> {
     character_filter: F,
 }
 
-impl CreateParserState for StringParser<fn(char) -> bool> {
+impl<F: Fn(char) -> bool + 'static> CreateParserState for StringParser<F> {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState {
         StringParserState::default()
     }
