@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::{CreateParserState, ParseStatus, Parser};
 
 /// State of a repeat parser.
@@ -105,7 +107,6 @@ where
     ) -> crate::ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>> {
         let mut state = state.clone();
         let mut remaining = input;
-        let required_next;
         loop {
             let result = self.parser.parse(&state.last_state, remaining);
             match result {
@@ -117,32 +118,52 @@ where
                     state.last_state = self.parser.create_parser_state();
                     state.new_state_in_progress = false;
                     remaining = new_remaining;
+                    // If this is the maximum number of times we are repeating the parser,
+                    // return the finished state immediately
                     if self.length_range.end() == &state.outputs.len() {
                         return Ok(ParseStatus::Finished {
                             result: state.outputs,
                             remaining,
                         });
                     }
+                    // Otherwise, if we are out of input, return an empty required next state
                     if remaining.is_empty() {
-                        match self.parser.parse(&state.last_state, remaining) {
-                            Ok(ParseStatus::Incomplete {
+                        // If this is a valid place for the sequence to stop, there is no required next state
+                        // parsing an invalid sequence would be valid to stop the sequence
+                        let mut required_next = Cow::default();
+                        // Otherwise, the sequence must continue with another item
+                        // Grab the required next state from that item
+                        if !self.length_range.contains(&state.outputs.len()) {
+                            if let Ok(ParseStatus::Incomplete {
                                 required_next: new_required_next,
                                 ..
-                            }) => required_next = Some(new_required_next),
-                            _ => required_next = None,
+                            }) = self.parser.parse(&state.last_state, remaining)
+                            {
+                                required_next = new_required_next;
+                            }
                         }
-                        break;
+
+                        return Ok(ParseStatus::Incomplete {
+                            new_state: state,
+                            required_next,
+                        });
                     }
                 }
+                // If the parser is incomplete, we are out of input and we need to return
                 Ok(ParseStatus::Incomplete {
                     new_state,
-                    required_next: new_required_next,
+                    required_next,
                 }) => {
                     state.last_state = new_state;
                     state.new_state_in_progress = true;
-                    required_next = Some(new_required_next);
-                    break;
+                    return Ok(ParseStatus::Incomplete {
+                        new_state: state,
+                        required_next,
+                    });
                 }
+                // If we fail to parse, try to end the sequence
+                // We can only end the sequence if the current state is not in progress
+                // and this is in the valid range of times to repeat
                 Err(e) => {
                     if !state.new_state_in_progress
                         && self.length_range.contains(&state.outputs.len())
@@ -157,17 +178,12 @@ where
                 }
             }
         }
-
-        Ok(ParseStatus::Incomplete {
-            new_state: state,
-            required_next: required_next.unwrap_or_default(),
-        })
     }
 }
 
 #[test]
 fn repeat_parser() {
-    use crate::{IntegerParser, LiteralParser};
+    use crate::{IntegerParser, LiteralParser, ParserExt};
     let parser = RepeatParser::new(LiteralParser::from("a"), 1..=3);
     let state = parser.create_parser_state();
     let result = parser.parse(&state, b"aaa");
@@ -179,7 +195,8 @@ fn repeat_parser() {
         })
     );
 
-    let parser = RepeatParser::new(IntegerParser::new(1..=3), 1..=3);
+    let int_parser = IntegerParser::new(1..=3);
+    let parser = RepeatParser::new(int_parser.clone(), 1..=3);
     let state = parser.create_parser_state();
     let result = parser.parse(&state, b"123");
     assert_eq!(
@@ -190,7 +207,7 @@ fn repeat_parser() {
         })
     );
 
-    let parser = RepeatParser::new(IntegerParser::new(1..=3), 1..=3);
+    let parser = RepeatParser::new(int_parser.clone(), 1..=3);
     let state = parser.create_parser_state();
     let result = parser.parse(&state, b"12");
     assert_eq!(
@@ -198,8 +215,40 @@ fn repeat_parser() {
         Ok(ParseStatus::Incomplete {
             new_state: RepeatParserState {
                 new_state_in_progress: false,
-                last_state: IntegerParser::new(1..=3).create_parser_state(),
+                last_state: int_parser.create_parser_state(),
                 outputs: vec![1, 2],
+            },
+            required_next: Default::default()
+        })
+    );
+
+    // It is not valid to stop the sequence here, required next must be some
+    let separated_int_parser = LiteralParser::new("  ").ignore_output_then(int_parser);
+    let repeat_separated_int_parser = RepeatParser::new(separated_int_parser.clone(), 3..=5);
+    let state = repeat_separated_int_parser.create_parser_state();
+    let result = repeat_separated_int_parser.parse(&state, b"  1  2");
+    assert_eq!(
+        result,
+        Ok(ParseStatus::Incomplete {
+            new_state: RepeatParserState {
+                new_state_in_progress: false,
+                last_state: separated_int_parser.create_parser_state(),
+                outputs: vec![1, 2],
+            },
+            required_next: "  ".into()
+        })
+    );
+
+    // It is valid to stop here. Required next must be none
+    let state = repeat_separated_int_parser.create_parser_state();
+    let result = repeat_separated_int_parser.parse(&state, b"  1  2  3");
+    assert_eq!(
+        result,
+        Ok(ParseStatus::Incomplete {
+            new_state: RepeatParserState {
+                new_state_in_progress: false,
+                last_state: separated_int_parser.create_parser_state(),
+                outputs: vec![1, 2, 3],
             },
             required_next: Default::default()
         })
