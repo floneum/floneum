@@ -29,12 +29,6 @@ fn mistral_tokenizer() -> FileSource {
 /// A source for the Llama model.
 #[derive(Clone, Debug)]
 pub struct LlamaSource {
-    /// The model to use, check out available models: <https://huggingface.co/models?library=sentence-transformers&sort=trending>
-    // pub(crate) model_id: String,
-    // pub(crate) revision: String,
-    // pub(crate) gguf_file: String,
-    // pub(crate) tokenizer_repo: String,
-    // pub(crate) tokenizer_file: String,
     pub(crate) model: FileSource,
     pub(crate) tokenizer: FileSource,
     pub(crate) group_query_attention: u8,
@@ -432,6 +426,7 @@ impl LlamaSource {
                 assistant_marker: "<|assistant|>\n",
                 end_assistant_marker: "<|end|>",
             }),
+            cache: Default::default(),
         }
     }
 

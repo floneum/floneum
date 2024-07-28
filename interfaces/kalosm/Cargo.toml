@@ -112,7 +112,7 @@ name = "chat-mistral-2"
 required-features = ["language"]
 
 [[example]]
-name = "chat-phi-3"
+name = "phi-3"
 required-features = ["language"]
 
 [[example]]
@@ -178,10 +178,6 @@ required-features = ["language"]
 [[example]]
 name = "ocr"
 required-features = ["vision"]
-
-[[example]]
-name = "phi"
-required-features = ["language"]
 
 [[example]]
 name = "prompt-annealing"
