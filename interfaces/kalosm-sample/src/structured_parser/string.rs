@@ -36,6 +36,26 @@ impl<F: Fn(char) -> bool + 'static> StringParser<F> {
             character_filter,
         }
     }
+
+    /// Only parse plain text that matches the character filter 'a'..'z' | 'A'..'Z' | '0'..'9' | ' ' | ',' | '.'
+    pub fn plain_text(self) -> StringParser {
+        self.with_allowed_characters(|c| {
+            matches!(
+                c,
+                'a'..='z' | 'A'..='Z' | ' ' | '0'..='9' | ',' | '.'
+            )
+        })
+    }
+
+    /// Only parse alphanumeric text and spaces (the character filter 'a'..'z' | 'A'..'Z' | '0'..'9' | ' ')
+    pub fn alphanumeric_with_spaces(self) -> StringParser {
+        self.with_allowed_characters(|c| {
+            matches!(
+                c,
+                'a'..='z' | 'A'..='Z' | '0'..='9' | ' '
+            )
+        })
+    }
 }
 
 #[derive(Default, Debug, PartialEq, Eq, Clone)]

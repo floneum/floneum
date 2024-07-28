@@ -32,12 +32,8 @@ impl CreateParserState for IntegerParser {
 }
 
 impl IntegerParser {
-    fn sign_valid(&self, positive: bool) -> bool {
-        if positive {
-            *self.range.end() >= 0
-        } else {
-            *self.range.start() <= 0
-        }
+    fn can_be_negative(&self) -> bool {
+        *self.range.start() < 0
     }
 
     fn is_number_valid(&self, value: i128) -> bool {
@@ -170,11 +166,11 @@ impl Parser for IntegerParser {
                     }
                     input_byte - b'0'
                 }
-                b'+' | b'-' => {
+                b'-' => {
                     if state == IntegerParserProgress::Initial {
                         state = IntegerParserProgress::AfterSign;
-                        positive = input_byte == b'+';
-                        if !self.sign_valid(positive) {
+                        positive = false;
+                        if !self.can_be_negative() {
                             bail!(OutOfRangeError)
                         }
                         continue;

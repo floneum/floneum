@@ -1,4 +1,8 @@
+use std::{borrow::Cow, sync::Arc};
+
 use crate::{CreateParserState, ParseStatus, Parser};
+
+use super::ArcLinkedList;
 
 /// The state of the item in the separated parser.
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -14,7 +18,7 @@ pub enum SeparatedItemState<Item, Separator> {
 pub struct SeparatedParserState<P: Parser, S: Parser> {
     pub(crate) new_state_in_progress: bool,
     pub(crate) last_state: SeparatedItemState<P::PartialState, S::PartialState>,
-    pub(crate) outputs: Vec<P::Output>,
+    pub(crate) outputs: ArcLinkedList<P::Output>,
 }
 
 impl<P: Parser, S: Parser> Clone for SeparatedParserState<P, S>
@@ -37,10 +41,14 @@ impl<P: Parser, S: Parser> SeparatedParserState<P, S> {
         state: SeparatedItemState<P::PartialState, S::PartialState>,
         outputs: Vec<P::Output>,
     ) -> Self {
+        let mut outputs_ll = ArcLinkedList::default();
+        for output in outputs {
+            outputs_ll.push(Arc::new(output));
+        }
         Self {
             new_state_in_progress: false,
             last_state: state,
-            outputs,
+            outputs: outputs_ll,
         }
     }
 }
@@ -96,7 +104,7 @@ impl<P: CreateParserState, S: CreateParserState> CreateParserState for Separated
         SeparatedParserState {
             new_state_in_progress: false,
             last_state: SeparatedItemState::Item(self.parser.create_parser_state()),
-            outputs: Vec::new(),
+            outputs: Default::default(),
         }
     }
 }
@@ -122,26 +130,37 @@ impl<P: CreateParserState, S: CreateParserState> Parser for SeparatedParser<P, S
                             result,
                             remaining: new_remaining,
                         }) => {
-                            state.outputs.push(result);
+                            state.outputs.push(Arc::new(result));
                             let separator_state = self.separator.create_parser_state();
                             state.new_state_in_progress = false;
                             remaining = new_remaining;
                             if self.length_range.end() == &state.outputs.len() {
                                 return Ok(ParseStatus::Finished {
-                                    result: state.outputs,
+                                    result: state.outputs.vec(),
                                     remaining,
                                 });
                             }
                             if remaining.is_empty() {
-                                match self.separator.parse(&separator_state, remaining) {
-                                    Ok(ParseStatus::Incomplete {
+                                // If this is a valid place for the sequence to stop, there is no required next state
+                                // parsing an invalid sequence would be valid to stop the sequence
+                                let mut required_next = Cow::default();
+                                // Otherwise, the sequence must continue with another item
+                                // Grab the required next state from that item
+                                if !self.length_range.contains(&state.outputs.len()) {
+                                    if let Ok(ParseStatus::Incomplete {
                                         required_next: new_required_next,
                                         ..
-                                    }) => required_next = Some(new_required_next),
-                                    _ => required_next = None,
+                                    }) = self.separator.parse(&separator_state, remaining)
+                                    {
+                                        required_next = new_required_next;
+                                    }
                                 }
                                 state.last_state = SeparatedItemState::Separator(separator_state);
-                                break;
+
+                                return Ok(ParseStatus::Incomplete {
+                                    new_state: state,
+                                    required_next,
+                                });
                             }
                             state.last_state = SeparatedItemState::Separator(separator_state);
                         }
@@ -159,7 +178,7 @@ impl<P: CreateParserState, S: CreateParserState> Parser for SeparatedParser<P, S
                                 && self.length_range.contains(&state.outputs.len())
                             {
                                 return Ok(ParseStatus::Finished {
-                                    result: state.outputs,
+                                    result: state.outputs.vec(),
                                     remaining,
                                 });
                             } else {
@@ -180,7 +199,7 @@ impl<P: CreateParserState, S: CreateParserState> Parser for SeparatedParser<P, S
                             remaining = new_remaining;
                             if self.length_range.end() == &state.outputs.len() {
                                 return Ok(ParseStatus::Finished {
-                                    result: state.outputs,
+                                    result: state.outputs.vec(),
                                     remaining,
                                 });
                             }
@@ -208,7 +227,7 @@ impl<P: CreateParserState, S: CreateParserState> Parser for SeparatedParser<P, S
                         Err(e) => {
                             if self.length_range.contains(&state.outputs.len()) {
                                 return Ok(ParseStatus::Finished {
-                                    result: state.outputs,
+                                    result: state.outputs.vec(),
                                     remaining,
                                 });
                             } else {
@@ -229,7 +248,9 @@ impl<P: CreateParserState, S: CreateParserState> Parser for SeparatedParser<P, S
 
 #[test]
 fn repeat_parser() {
-    use crate::{CreateParserState, IntegerParser, LiteralParser, LiteralParserOffset};
+    use crate::{
+        ArcLinkedListNode, CreateParserState, IntegerParser, LiteralParser, LiteralParserOffset,
+    };
     let parser = SeparatedParser::new(LiteralParser::from("a"), LiteralParser::from("b"), 1..=3);
     let state = parser.create_parser_state();
     let result = parser.parse(&state, b"ababa");
@@ -261,9 +282,38 @@ fn repeat_parser() {
             new_state: SeparatedParserState {
                 new_state_in_progress: true,
                 last_state: SeparatedItemState::Separator(LiteralParserOffset::new(1)),
-                outputs: vec![1, 2],
+                outputs: ArcLinkedList {
+                    len: 2,
+                    tail: Some(ArcLinkedListNode {
+                        prev: Some(Arc::new(ArcLinkedListNode {
+                            prev: None,
+                            value: Arc::new(1)
+                        })),
+                        value: Arc::new(2)
+                    })
+                },
             },
             required_next: "b".into()
         })
     );
+
+    // There must be at least three numbers, which means the separator is required next
+    let parser = SeparatedParser::new(IntegerParser::new(1..=3), LiteralParser::from("b"), 3..=5);
+    let state = parser.create_parser_state();
+    let result = parser.parse(&state, b"1b2");
+    if let ParseStatus::Incomplete { required_next, .. } = result.unwrap() {
+        assert_eq!(required_next, "b");
+    } else {
+        panic!("expected incomplete");
+    }
+
+    // If we already parsed the required number of items, the separator is not required next
+    let parser = SeparatedParser::new(IntegerParser::new(1..=3), LiteralParser::from("b"), 3..=5);
+    let state = parser.create_parser_state();
+    let result = parser.parse(&state, b"1b2b3");
+    if let ParseStatus::Incomplete { required_next, .. } = result.unwrap() {
+        assert_eq!(required_next, "");
+    } else {
+        panic!("expected incomplete");
+    }
 }
