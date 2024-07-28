@@ -35,24 +35,19 @@ impl RopeCache {
         Ok(Self { sin, cos })
     }
 
-    pub fn forward(
+    fn forward_with_embed(
         &self,
         q: &Tensor,
         k: &Tensor,
         start_pos: usize,
+        apply_rotary_emb: fn(&Tensor, &Tensor, &Tensor) -> candle_core::Result<Tensor>,
     ) -> candle_core::Result<(Tensor, Tensor)> {
-        fn apply_rotary_emb(
-            sin: &Tensor,
-            cos: &Tensor,
-            x: &Tensor,
-            index_pos: usize,
-        ) -> candle_core::Result<Tensor> {
+        let apply_rotary_emb = |sin: &Tensor, cos: &Tensor, x: &Tensor, index_pos| {
             let (_b_sz, _n_head, seq_len, _n_embd) = x.dims4()?;
             let cos = cos.narrow(0, index_pos, seq_len)?;
             let sin = sin.narrow(0, index_pos, seq_len)?;
-            candle_nn::rotary_emb::rope_i(&x.contiguous()?, &cos, &sin)
-        }
-
+            apply_rotary_emb(&x.contiguous()?, &cos, &sin)
+        };
         let device = q.device();
         let (q, k) = if matches!(device, Device::Cpu) {
             std::thread::scope(|s| {
@@ -71,6 +66,24 @@ impl RopeCache {
         };
 
         Ok((q, k))
+    }
+
+    pub fn forward(
+        &self,
+        q: &Tensor,
+        k: &Tensor,
+        start_pos: usize,
+    ) -> candle_core::Result<(Tensor, Tensor)> {
+        self.forward_with_embed(q, k, start_pos, candle_nn::rotary_emb::rope)
+    }
+
+    pub fn forward_i(
+        &self,
+        q: &Tensor,
+        k: &Tensor,
+        start_pos: usize,
+    ) -> candle_core::Result<(Tensor, Tensor)> {
+        self.forward_with_embed(q, k, start_pos, candle_nn::rotary_emb::rope_i)
     }
 }
 

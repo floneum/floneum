@@ -1,7 +1,7 @@
-use candle_core::{Device, Tensor};
+use candle_core::Tensor;
 
 #[allow(unused)]
-pub(crate) fn fast_cpu_silu(tensor: &Tensor, device: &Device) -> candle_core::Result<Tensor> {
+pub(crate) fn fast_cpu_silu(tensor: &Tensor) -> candle_core::Result<Tensor> {
     #[cfg(feature = "rayon")]
     {
         use rayon::iter::ParallelIterator;
@@ -33,7 +33,9 @@ pub(crate) fn fast_cpu_silu(tensor: &Tensor, device: &Device) -> candle_core::Re
             }
         }
 
-        if matches!(device, Device::Cpu) {
+        let device = tensor.device();
+
+        if matches!(device, candle_core::Device::Cpu) {
             let shape = tensor.shape();
 
             let mut as_vec = tensor.flatten_all()?.to_vec1::<f32>()?;

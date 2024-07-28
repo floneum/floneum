@@ -1,6 +1,11 @@
 use crate::raw::attention_layer::LlamaAttention;
 use crate::raw::rope::RopeCache;
-use crate::raw::silu::fast_cpu_silu;
+use attention_layer::AttentionVariant;
+use attention_layer::FeedForwardVariant;
+use attention_layer::GroupedAttention;
+use attention_layer::LlamaFeedForward;
+use attention_layer::PhiFeedForward;
+use attention_layer::SeparateAttention;
 use candle_core::quantized::*;
 use candle_core::IndexOp;
 use candle_core::Module;
@@ -81,15 +86,21 @@ impl Model {
             let feed_forward_w3 = ct.remove(&format!("{prefix}.feed_forward.w3.weight"))?;
             let attention_norm = ct.remove(&format!("{prefix}.attention_norm.weight"))?;
             let ffn_norm = ct.remove(&format!("{prefix}.ffn_norm.weight"))?;
-            layers.push(LlamaAttention {
+            let attention_variant = AttentionVariant::Separate(SeparateAttention {
                 attention_wq: QMatMul::from_qtensor(attention_wq)?,
                 attention_wk: QMatMul::from_qtensor(attention_wk)?,
                 attention_wv: QMatMul::from_qtensor(attention_wv)?,
-                attention_wo: QMatMul::from_qtensor(attention_wo)?,
-                attention_norm: decode_norm(attention_norm, 1e-5)?,
+            });
+            let feed_forward_variant = FeedForwardVariant::Llama(LlamaFeedForward {
                 feed_forward_w1: QMatMul::from_qtensor(feed_forward_w1)?,
                 feed_forward_w2: QMatMul::from_qtensor(feed_forward_w2)?,
                 feed_forward_w3: QMatMul::from_qtensor(feed_forward_w3)?,
+            });
+            layers.push(LlamaAttention {
+                attention_variant,
+                attention_wo: QMatMul::from_qtensor(attention_wo)?,
+                attention_norm: decode_norm(attention_norm, 1e-5)?,
+                feed_forward_variant,
                 ffn_norm: decode_norm(ffn_norm, 1e-5)?,
                 n_head: ct.hparams.n_head as usize,
                 n_kv_head: ct.hparams.n_head as usize / gqa,
@@ -138,14 +149,15 @@ impl Model {
 
         let rope_freq_base = md_get(".rope.freq_base")
             .and_then(|m| m.to_f32())
-            .unwrap_or(10000f32);
+            .unwrap_or(10_000f32);
 
         let context_length = md_get(".context_length")?.to_u32()? as usize;
+        let head_dim = embedding_length / head_count;
 
         let config = LlamaConfig {
             rope_theta: rope_freq_base,
             context_length,
-            head_dimension: embedding_length / head_count,
+            head_dimension: head_dim,
             rope_dimension: rope_dim,
             n_head: head_count,
             n_kv_head: head_count_kv,
@@ -156,40 +168,69 @@ impl Model {
 
         let tok_embeddings = ct.tensor(reader, "token_embd.weight", device)?;
         let tok_embeddings = tok_embeddings.dequantize(device)?;
-        let norm = decode_norm(
-            ct.tensor(reader, "output_norm.weight", device)?,
-            rms_norm_eps,
-        )?;
+
+        let norm = ct.tensor(reader, "output_norm.weight", device)?;
+        let norm = decode_norm(norm, rms_norm_eps)?;
         let output = ct.tensor(reader, "output.weight", device)?;
         let mut layers = Vec::with_capacity(block_count);
         for layer_idx in 0..block_count {
             let prefix = format!("blk.{layer_idx}");
-            let attention_wq = ct.tensor(reader, &format!("{prefix}.attn_q.weight"), device)?;
-            let attention_wk = ct.tensor(reader, &format!("{prefix}.attn_k.weight"), device)?;
-            let attention_wv = ct.tensor(reader, &format!("{prefix}.attn_v.weight"), device)?;
+            let attention_variant =
+                if let Ok(qkv) = ct.tensor(reader, &format!("{prefix}.attn_qkv.weight"), device) {
+                    AttentionVariant::Grouped(GroupedAttention {
+                        attention_qkv: QMatMul::from_qtensor(qkv)?,
+                    })
+                } else {
+                    let q = ct.tensor(reader, &format!("{prefix}.attn_q.weight"), device)?;
+                    let k = ct.tensor(reader, &format!("{prefix}.attn_k.weight"), device)?;
+                    let v = ct.tensor(reader, &format!("{prefix}.attn_v.weight"), device)?;
+                    AttentionVariant::Separate(SeparateAttention {
+                        attention_wq: QMatMul::from_qtensor(q)?,
+                        attention_wk: QMatMul::from_qtensor(k)?,
+                        attention_wv: QMatMul::from_qtensor(v)?,
+                    })
+                };
             let attention_wo =
                 ct.tensor(reader, &format!("{prefix}.attn_output.weight"), device)?;
-            let feed_forward_w1 =
-                ct.tensor(reader, &format!("{prefix}.ffn_gate.weight"), device)?;
-            let feed_forward_w2 =
-                ct.tensor(reader, &format!("{prefix}.ffn_down.weight"), device)?;
-            let feed_forward_w3 = ct.tensor(reader, &format!("{prefix}.ffn_up.weight"), device)?;
+            // Try to read from the up, down and gate weights
+            let feed_forward_variant = if let Ok(ffn_gate) =
+                ct.tensor(reader, &format!("{prefix}.ffn_gate.weight"), device)
+            {
+                let feed_forward_w1 = ffn_gate;
+                let feed_forward_w2 =
+                    ct.tensor(reader, &format!("{prefix}.ffn_down.weight"), device)?;
+                let feed_forward_w3 =
+                    ct.tensor(reader, &format!("{prefix}.ffn_up.weight"), device)?;
+                FeedForwardVariant::Llama(LlamaFeedForward {
+                    feed_forward_w1: QMatMul::from_qtensor(feed_forward_w1)?,
+                    feed_forward_w2: QMatMul::from_qtensor(feed_forward_w2)?,
+                    feed_forward_w3: QMatMul::from_qtensor(feed_forward_w3)?,
+                })
+            } else {
+                // Otherwise, try to read from the up, and down weights
+                let up = ct.tensor(reader, &format!("{prefix}.ffn_up.weight"), device)?;
+                // Transpose the down tensor
+                let down = ct.tensor(reader, &format!("{prefix}.ffn_down.weight"), device)?;
+                let feed_forward_length = md_get(".feed_forward_length")?.to_u32()? as usize;
+
+                FeedForwardVariant::Phi(PhiFeedForward {
+                    up: QMatMul::from_qtensor(up)?,
+                    down: QMatMul::from_qtensor(down)?,
+                    feed_forward_length,
+                })
+            };
             let attention_norm =
                 ct.tensor(reader, &format!("{prefix}.attn_norm.weight"), device)?;
             let ffn_norm = ct.tensor(reader, &format!("{prefix}.ffn_norm.weight"), device)?;
             layers.push(LlamaAttention {
-                attention_wq: QMatMul::from_qtensor(attention_wq)?,
-                attention_wk: QMatMul::from_qtensor(attention_wk)?,
-                attention_wv: QMatMul::from_qtensor(attention_wv)?,
+                attention_variant,
                 attention_wo: QMatMul::from_qtensor(attention_wo)?,
                 attention_norm: decode_norm(attention_norm, rms_norm_eps)?,
-                feed_forward_w1: QMatMul::from_qtensor(feed_forward_w1)?,
-                feed_forward_w2: QMatMul::from_qtensor(feed_forward_w2)?,
-                feed_forward_w3: QMatMul::from_qtensor(feed_forward_w3)?,
+                feed_forward_variant,
                 ffn_norm: decode_norm(ffn_norm, rms_norm_eps)?,
                 n_head: head_count,
                 n_kv_head: head_count_kv,
-                head_dim: embedding_length / head_count,
+                head_dim,
                 hidden_size: config.hidden_size(),
                 rope_cache: rope.clone(),
             })
@@ -255,32 +296,7 @@ impl Model {
             let residual = &x;
             let x = layer.ffn_norm.forward(&x)?;
 
-            layer_in = if matches!(device, Device::Cpu) {
-                std::thread::scope(|scope| {
-                    let w1 = scope.spawn(|| {
-                        let w1 = layer.feed_forward_w1.forward(&x)?;
-                        fast_cpu_silu(&w1, device)
-                    });
-
-                    let w3 = layer.feed_forward_w3.forward(&x)?;
-                    let w1 = w1.join().map_err(|_| {
-                        candle_core::Error::Msg("Failed to join thread".to_string())
-                    })??;
-
-                    let mlp = layer.feed_forward_w2.forward(&(&w1 * w3)?)?;
-
-                    mlp + residual
-                })?
-            } else {
-                let w1 = layer.feed_forward_w1.forward(&x)?;
-                let w1 = fast_cpu_silu(&w1, device)?;
-
-                let w3 = layer.feed_forward_w3.forward(&x)?;
-
-                let mlp = layer.feed_forward_w2.forward(&(&w1 * w3)?)?;
-
-                (mlp + residual)?
-            }
+            layer_in = (&layer.feed_forward_variant.forward(&x)? + residual)?;
         }
         let x = self.norm.forward(&layer_in)?;
         let x = x.i((.., seq_len - 1, ..))?;
