@@ -2,82 +2,14 @@ use std::{borrow::Cow, sync::Arc};
 
 use crate::{CreateParserState, ParseStatus, Parser};
 
+use super::ArcLinkedList;
+
 /// State of a repeat parser.
 #[derive(Debug, PartialEq, Eq)]
 pub struct RepeatParserState<P: Parser> {
     pub(crate) new_state_in_progress: bool,
     pub(crate) last_state: P::PartialState,
     outputs: ArcLinkedList<P::Output>,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-struct ArcLinkedList<T> {
-    len: usize,
-    tail: Option<ArcLinkedListNode<T>>,
-}
-
-impl<T> ArcLinkedList<T> {
-    fn push(&mut self, value: Arc<T>) {
-        self.len += 1;
-        match self.tail.take() {
-            Some(tail) => {
-                let node = ArcLinkedListNode {
-                    prev: Some(Arc::new(tail)),
-                    value,
-                };
-                self.tail = Some(node);
-            }
-            None => {
-                self.tail = Some(ArcLinkedListNode { prev: None, value });
-            }
-        }
-    }
-
-    fn vec(&self) -> Vec<T>
-    where
-        T: Clone,
-    {
-        let mut vec = Vec::with_capacity(self.len);
-        if let Some(mut node) = self.tail.as_ref() {
-            vec.push((*node.value).clone());
-            while let Some(prev) = node.prev.as_ref() {
-                vec.push((*prev.value).clone());
-                node = prev;
-            }
-            vec.reverse();
-        }
-        vec
-    }
-}
-
-impl<T> Default for ArcLinkedList<T> {
-    fn default() -> Self {
-        Self { len: 0, tail: None }
-    }
-}
-
-impl<T> Clone for ArcLinkedList<T> {
-    fn clone(&self) -> Self {
-        Self {
-            len: self.len,
-            tail: self.tail.clone(),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-struct ArcLinkedListNode<T> {
-    prev: Option<Arc<ArcLinkedListNode<T>>>,
-    value: Arc<T>,
-}
-
-impl<T> Clone for ArcLinkedListNode<T> {
-    fn clone(&self) -> Self {
-        Self {
-            prev: self.prev.clone(),
-            value: self.value.clone(),
-        }
-    }
 }
 
 impl<P: Parser> Clone for RepeatParserState<P>
@@ -193,7 +125,7 @@ where
                     remaining = new_remaining;
                     // If this is the maximum number of times we are repeating the parser,
                     // return the finished state immediately
-                    if self.length_range.end() == &state.outputs.len {
+                    if self.length_range.end() == &state.outputs.len() {
                         return Ok(ParseStatus::Finished {
                             result: state.outputs.vec(),
                             remaining,
@@ -206,7 +138,7 @@ where
                         let mut required_next = Cow::default();
                         // Otherwise, the sequence must continue with another item
                         // Grab the required next state from that item
-                        if !self.length_range.contains(&state.outputs.len) {
+                        if !self.length_range.contains(&state.outputs.len()) {
                             if let Ok(ParseStatus::Incomplete {
                                 required_next: new_required_next,
                                 ..
@@ -239,7 +171,7 @@ where
                 // and this is in the valid range of times to repeat
                 Err(e) => {
                     if !state.new_state_in_progress
-                        && self.length_range.contains(&state.outputs.len)
+                        && self.length_range.contains(&state.outputs.len())
                     {
                         return Ok(ParseStatus::Finished {
                             result: state.outputs.vec(),
@@ -256,7 +188,7 @@ where
 
 #[test]
 fn repeat_parser() {
-    use crate::{IntegerParser, LiteralParser, ParserExt};
+    use crate::{ArcLinkedListNode, IntegerParser, LiteralParser, ParserExt};
     let parser = RepeatParser::new(LiteralParser::from("a"), 1..=3);
     let state = parser.create_parser_state();
     let result = parser.parse(&state, b"aaa");

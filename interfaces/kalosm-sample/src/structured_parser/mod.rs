@@ -38,6 +38,8 @@ mod map;
 pub use map::*;
 mod regex;
 pub use regex::*;
+mod arc_linked_list;
+pub(crate) use arc_linked_list::*;
 
 /// An error that occurred while parsing.
 #[derive(Debug, Clone)]
