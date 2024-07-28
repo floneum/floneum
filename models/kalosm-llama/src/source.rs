@@ -388,6 +388,32 @@ impl LlamaSource {
         }
     }
 
+    /// A preset for Phi-3-mini-4k-instruct with the updated version of the model
+    pub fn phi_3_1_mini_4k_instruct() -> Self {
+        Self {
+            //https://huggingface.co/bartowski/Phi-3.1-mini-4k-instruct-GGUF/blob/main/Phi-3.1-mini-4k-instruct-Q4_K_M.gguf
+            model: FileSource::huggingface(
+                "bartowski/Phi-3.1-mini-4k-instruct-GGUF".to_string(),
+                "main".to_string(),
+                "Phi-3.1-mini-4k-instruct-Q4_K_M.gguf".to_string(),
+            ),
+            tokenizer: FileSource::huggingface(
+                "microsoft/Phi-3-mini-4k-instruct".to_string(),
+                "main".to_string(),
+                "tokenizer.json".to_string(),
+            ),
+            group_query_attention: 1,
+            markers: Some(ChatMarkers {
+                system_prompt_marker: "<|system|>\n",
+                end_system_prompt_marker: "<|end|>",
+                user_marker: "<|user|>\n",
+                end_user_marker: "<|end|>",
+                assistant_marker: "<|assistant|>\n",
+                end_assistant_marker: "<|end|>",
+            }),
+        }
+    }
+
     /// A preset for Llama7b v2
     pub fn llama_7b() -> Self {
         Self {
