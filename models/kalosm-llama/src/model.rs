@@ -30,14 +30,30 @@ impl SyncModel for LlamaModel {
         Ok(Self::Session { cache })
     }
 
-    fn feed_text(&self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Vec<f32>> {
+    fn feed_text(
+        &self,
+        session: &mut Self::Session,
+        prompt: &str,
+        logits: &mut Vec<f32>,
+    ) -> anyhow::Result<()> {
         let encoded = self.tokenizer.encode(prompt, false).map_err(E::msg)?;
         let tokens = encoded.get_ids();
-        self.feed_tokens(session, tokens)
+        self.feed_tokens(session, tokens, logits)
     }
 
-    fn feed_tokens(&self, session: &mut Self::Session, tokens: &[u32]) -> anyhow::Result<Vec<f32>> {
-        Self::forward(&self.model, &self.device, tokens, Some(&mut session.cache))
+    fn feed_tokens(
+        &self,
+        session: &mut Self::Session,
+        tokens: &[u32],
+        logits: &mut Vec<f32>,
+    ) -> anyhow::Result<()> {
+        Self::forward(
+            &self.model,
+            &self.device,
+            tokens,
+            Some(&mut session.cache),
+            logits,
+        )
     }
 
     fn stop_token(&self) -> anyhow::Result<u32> {
@@ -60,7 +76,8 @@ impl LlamaModel {
         device: &Device,
         tokens: &[u32],
         cache: Option<&mut LlamaCache>,
-    ) -> anyhow::Result<Vec<f32>> {
+        logits_vec: &mut Vec<f32>,
+    ) -> anyhow::Result<()> {
         if tokens.is_empty() {
             return Err(anyhow::anyhow!("Cannot run model on empty input"));
         }
@@ -68,8 +85,9 @@ impl LlamaModel {
         let logits = model.forward(tokens, device, cache)?;
 
         let logits = logits.squeeze(0)?.to_dtype(DType::F32)?;
-        let logits: Vec<f32> = logits.to_vec1()?;
-        Ok(logits)
+        copy_tensor_into_vec(&logits, logits_vec)?;
+
+        Ok(())
     }
 
     /// Create a new sync Llama model from a builder.

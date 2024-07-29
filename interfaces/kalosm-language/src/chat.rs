@@ -72,6 +72,7 @@ impl ChatHistoryItem {
 
 /// The history of a chat session.
 struct ChatSession<Model: SyncModel> {
+    logits_scratch: Vec<f32>,
     system_prompt_marker: String,
     end_system_prompt_marker: String,
     user_marker: String,
@@ -109,6 +110,7 @@ impl<Model: SyncModel> ChatSession<Model> {
         shared_history.write().unwrap().clear();
 
         let mut myself = Self {
+            logits_scratch: Vec::new(),
             system_prompt_marker,
             end_system_prompt_marker,
             user_marker,
@@ -194,7 +196,11 @@ impl<Model: SyncModel> ChatSession<Model> {
                     .unwrap();
                 // If it doesn't end with the end assistant marker, but the constraints are finished, add the end assistant marker
                 if self.session.tokens().last() != Some(&end_assistant_token) {
-                    model.feed_tokens(&mut self.session, &[end_assistant_token])?;
+                    model.feed_tokens(
+                        &mut self.session,
+                        &[end_assistant_token],
+                        &mut self.logits_scratch,
+                    )?;
                 }
             }
             None => {

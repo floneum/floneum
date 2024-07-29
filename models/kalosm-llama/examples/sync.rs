@@ -7,16 +7,17 @@ async fn main() {
         .build()
         .await
         .unwrap();
+    let mut logits = Vec::new();
     model
         .run_sync(move |model| {
             Box::pin(async move {
                 let prompt = "The capital of France is ".repeat(1000);
                 let mut session = model.new_session().unwrap();
-                let logits = model.feed_text(&mut session, &prompt).unwrap();
+                model.feed_text(&mut session, &prompt, &mut logits).unwrap();
                 println!("{:?}", logits);
                 let prompt = "paris";
                 println!("{:?}", model.tokenizer().encode(prompt, false));
-                let logits = model.feed_text(&mut session, prompt).unwrap();
+                model.feed_text(&mut session, prompt, &mut logits).unwrap();
                 println!("{:?}", logits);
             })
         })

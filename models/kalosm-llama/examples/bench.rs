@@ -19,10 +19,11 @@ async fn main() {
         let prompt = "Hello world";
 
         let tokens = model.tokenizer().encode(prompt, false).unwrap().len();
+        let mut logits = Vec::new();
         for _ in 0..100 {
             let start_time = std::time::Instant::now();
             let mut session = model.new_session().unwrap();
-            model.feed_text(&mut session, prompt).unwrap();
+            model.feed_text(&mut session, prompt, &mut logits).unwrap();
             let elapsed = start_time.elapsed();
             println!("\n\nLoaded {} tokens in {:?}", tokens, elapsed);
             println!(
@@ -47,10 +48,11 @@ async fn main() {
             .encode(prompt.clone(), false)
             .unwrap()
             .len();
+        let mut logits = Vec::new();
         for _ in 0..100 {
             let start_time = std::time::Instant::now();
             let mut session = model.new_session().unwrap();
-            model.feed_text(&mut session, &prompt).unwrap();
+            model.feed_text(&mut session, &prompt, &mut logits).unwrap();
             let elapsed = start_time.elapsed();
             println!("\n\nLoaded {} tokens in {:?}", tokens, elapsed);
             println!(

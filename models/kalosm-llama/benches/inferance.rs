@@ -25,21 +25,23 @@ fn generation(c: &mut Criterion) {
     c.bench_function("feed text short", |b| {
         let model = create_model_sync();
         let prompt = "Hello world";
+        let mut logits = Vec::new();
 
         b.iter(|| {
             let mut session = model.new_session().unwrap();
-            model.feed_text(&mut session, prompt)
+            model.feed_text(&mut session, prompt, &mut logits)
         })
     });
 
     c.bench_function("feed text repeated", |b| {
         let model = create_model_sync();
         let prompt = "Hello world";
+        let mut logits = Vec::new();
 
         b.iter(|| {
             let mut session = model.new_session().unwrap();
             for _ in 0..5 {
-                model.feed_text(&mut session, prompt).unwrap();
+                model.feed_text(&mut session, prompt, &mut logits).unwrap();
             }
         })
     });
@@ -47,10 +49,11 @@ fn generation(c: &mut Criterion) {
     c.bench_function("feed text long", |b| {
         let model = create_model_sync();
         let prompt = "Hello world".repeat(10);
+        let mut logits = Vec::new();
 
         b.iter(|| {
             let mut session = model.new_session().unwrap();
-            model.feed_text(&mut session, &prompt)
+            model.feed_text(&mut session, &prompt, &mut logits)
         })
     });
 

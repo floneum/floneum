@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use llm_samplers::types::{HasSamplerResources, Logits, Sampler, SamplerError};
-use rayon::iter::IntoParallelRefIterator;
+use rayon::iter::IntoParallelIterator;
+use rayon::iter::ParallelExtend;
 use rayon::iter::ParallelIterator;
 use tokenizers::tokenizer::Tokenizer;
 
@@ -188,27 +189,28 @@ impl TokenOutputStream {
     }
 
     /// Peek the next token.
-    pub fn peek_tokens(&self, tokens: &[u32]) -> Result<Vec<Option<String>>> {
+    pub fn peek_tokens(
+        &self,
+        tokens: impl IntoParallelIterator<Item = u32>,
+        into: &mut impl ParallelExtend<Option<String>>,
+    ) -> Result<()> {
         let prev_text = &self.current_text;
         let prev_text_len = prev_text.len();
-        let results = tokens
-            .par_iter()
-            .map_init(
-                || self.tokens[self.prev_index..].to_vec(),
-                |tokens, token| {
-                    tokens.push(*token);
-                    let text = self.decode(tokens).ok()?;
-                    tokens.pop();
-                    if text.len() > prev_text_len && text.chars().last().unwrap().is_ascii() {
-                        let text = text.split_at(prev_text_len);
-                        Some(text.1.to_string())
-                    } else {
-                        None
-                    }
-                },
-            )
-            .collect();
-        Ok(results)
+        into.par_extend(tokens.into_par_iter().map_init(
+            || self.tokens[self.prev_index..].to_vec(),
+            |tokens, token| {
+                tokens.push(token);
+                let text = self.decode(tokens).ok()?;
+                tokens.pop();
+                if text.len() > prev_text_len && text.chars().last().unwrap().is_ascii() {
+                    let text = text.split_at(prev_text_len);
+                    Some(text.1.to_string())
+                } else {
+                    None
+                }
+            },
+        ));
+        Ok(())
     }
 
     /// Get the tokens

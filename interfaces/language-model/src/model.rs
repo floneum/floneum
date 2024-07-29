@@ -590,10 +590,20 @@ pub trait SyncModel {
     fn new_session(&self) -> anyhow::Result<Self::Session>;
 
     /// Run the model synchronously. The model implementation may choose to return only the top k logits.
-    fn feed_text(&self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Vec<f32>>;
+    fn feed_text(
+        &self,
+        session: &mut Self::Session,
+        prompt: &str,
+        into: &mut Vec<f32>,
+    ) -> anyhow::Result<()>;
 
     /// Run the model synchronously with a pre-tokenized input. The model implementation may choose to return only the top k logits.
-    fn feed_tokens(&self, session: &mut Self::Session, tokens: &[u32]) -> anyhow::Result<Vec<f32>>;
+    fn feed_tokens(
+        &self,
+        session: &mut Self::Session,
+        tokens: &[u32],
+        into: &mut Vec<f32>,
+    ) -> anyhow::Result<()>;
 
     /// Get the token ID that represents the end of a sequence.
     fn stop_token(&self) -> anyhow::Result<u32>;
@@ -688,7 +698,8 @@ pub trait SyncModelExt: SyncModel {
             text_stream.next_token(token)?;
         }
 
-        let logit_probs = self.feed_tokens(session, tokens)?;
+        let mut logit_probs = Vec::new();
+        self.feed_tokens(session, tokens, &mut logit_probs)?;
         let mut logits = Logits::try_from_iter_top_k(logit_probs, 512)?;
         let mut tokens_generated = 0;
         // This stores a buffer of text that has been generated to check against the stop_on string. It should never be longer than the stop_on string.
@@ -696,6 +707,7 @@ pub trait SyncModelExt: SyncModel {
         let stop_on_lowercase = stop_on.map(|s| s.to_lowercase());
         let stop_on_lowercase = stop_on_lowercase.as_deref();
         let stop_token = self.stop_token()?;
+        let mut logit_probs = Vec::new();
 
         'generate: loop {
             let new_token = text_stream.sample_token(&mut sampler, logits, stop_on)?;
@@ -762,8 +774,8 @@ pub trait SyncModelExt: SyncModel {
                     break;
                 }
             }
-            let logit_probs = self.feed_tokens(session, &[new_token])?;
-            logits = Logits::try_from_iter_top_k(logit_probs, 512)?;
+            self.feed_tokens(session, &[new_token], &mut logit_probs)?;
+            logits = Logits::try_from_iter_top_k(logit_probs.iter().copied(), 512)?;
         }
 
         // Flush the queued text
@@ -797,11 +809,16 @@ impl SyncModel for SyncModelNotSupported {
         Err(anyhow::Error::msg("Not implemented"))
     }
 
-    fn feed_text(&self, _session: &mut (), _prompt: &str) -> anyhow::Result<Vec<f32>> {
+    fn feed_text(&self, _session: &mut (), _prompt: &str, _: &mut Vec<f32>) -> anyhow::Result<()> {
         Err(anyhow::Error::msg("Not implemented"))
     }
 
-    fn feed_tokens(&self, _session: &mut (), _tokens: &[u32]) -> anyhow::Result<Vec<f32>> {
+    fn feed_tokens(
+        &self,
+        _session: &mut (),
+        _tokens: &[u32],
+        _: &mut Vec<f32>,
+    ) -> anyhow::Result<()> {
         Err(anyhow::Error::msg("Not implemented"))
     }
 
@@ -995,14 +1012,24 @@ impl SyncModel for BoxedSyncModel {
         self_ref.new_session()
     }
 
-    fn feed_text(&self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Vec<f32>> {
+    fn feed_text(
+        &self,
+        session: &mut Self::Session,
+        prompt: &str,
+        into: &mut Vec<f32>,
+    ) -> anyhow::Result<()> {
         let self_ref: &(dyn SyncModel<Session = AnySession>) = self.as_ref();
-        self_ref.feed_text(session, prompt)
+        self_ref.feed_text(session, prompt, into)
     }
 
-    fn feed_tokens(&self, session: &mut Self::Session, tokens: &[u32]) -> anyhow::Result<Vec<f32>> {
+    fn feed_tokens(
+        &self,
+        session: &mut Self::Session,
+        tokens: &[u32],
+        into: &mut Vec<f32>,
+    ) -> anyhow::Result<()> {
         let self_ref: &(dyn SyncModel<Session = AnySession>) = self.as_ref();
-        self_ref.feed_tokens(session, tokens)
+        self_ref.feed_tokens(session, tokens, into)
     }
 
     fn stop_token(&self) -> anyhow::Result<u32> {
