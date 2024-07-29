@@ -1,4 +1,5 @@
 use anyhow::{Error as E, Result};
+use kalosm_common::copy_tensor_into_vec;
 use kalosm_language_model::Session;
 use kalosm_language_model::SyncModel;
 use kalosm_language_model::SyncModelExt;
@@ -104,20 +105,36 @@ impl SyncModel for PhiModel {
         })
     }
 
-    fn feed_text(&self, session: &mut Self::Session, prompt: &str) -> anyhow::Result<Vec<f32>> {
+    fn feed_text(
+        &self,
+        session: &mut Self::Session,
+        prompt: &str,
+        logits: &mut Vec<f32>,
+    ) -> anyhow::Result<()> {
         let tokens = self
             .tokenizer
             .encode(prompt, false)
             .map_err(E::msg)?
             .get_ids()
             .to_vec();
-        self.feed_tokens(session, &tokens)
+        self.feed_tokens(session, &tokens, logits)
     }
 
-    fn feed_tokens(&self, session: &mut Self::Session, tokens: &[u32]) -> anyhow::Result<Vec<f32>> {
+    fn feed_tokens(
+        &self,
+        session: &mut Self::Session,
+        tokens: &[u32],
+        logits: &mut Vec<f32>,
+    ) -> anyhow::Result<()> {
         session.current_tokens.extend(tokens.iter().copied());
 
-        Self::forward(&self.model, &self.device, tokens, Some(&mut session.cache))
+        Self::forward(
+            &self.model,
+            &self.device,
+            tokens,
+            Some(&mut session.cache),
+            logits,
+        )
     }
 
     fn stop_token(&self) -> anyhow::Result<u32> {
@@ -139,7 +156,8 @@ impl PhiModel {
         device: &Device,
         mut tokens: &[u32],
         cache: Option<&mut PhiCache>,
-    ) -> anyhow::Result<Vec<f32>> {
+        logits_vec: &mut Vec<f32>,
+    ) -> anyhow::Result<()> {
         if tokens.is_empty() {
             return Err(anyhow::anyhow!("Cannot run model on empty input"));
         }
@@ -151,8 +169,8 @@ impl PhiModel {
         let input = Tensor::new(tokens, device)?.unsqueeze(0)?;
         let logits = model.forward(&input, cache)?;
         let logits = logits.squeeze(0)?.to_dtype(DType::F32)?;
-        let logits: Vec<f32> = logits.to_vec1()?;
-        Ok(logits)
+        copy_tensor_into_vec(&logits, logits_vec)?;
+        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]

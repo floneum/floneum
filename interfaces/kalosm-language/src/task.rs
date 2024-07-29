@@ -83,7 +83,7 @@ impl<S: Session> TaskSessionEntry<S> {
 
     fn create_new_session(&mut self, model: &mut impl SyncModel<Session = S>) -> Result<S> {
         let mut session = model.new_session()?;
-        model.feed_text(&mut session, &self.cached_prompt)?;
+        model.feed_text(&mut session, &self.cached_prompt, &mut Vec::new())?;
 
         self.session = session.try_clone().ok();
 

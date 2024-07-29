@@ -8,6 +8,7 @@ use crate::TokenOutputStream;
 use kalosm_sample::{ParseStatus, Parser};
 use llm_samplers::prelude::{Logit, Logits};
 use llm_samplers::types::{HasSamplerResources, Sampler, SamplerError};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use tokenizers::tokenizer::Tokenizer;
 
 #[allow(clippy::too_many_arguments)]
@@ -35,34 +36,37 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
     }
     let mut rng = rand::thread_rng();
     let mut state_map = vec![];
+    let mut logits_indexed = Vec::new();
+    let mut token_cache = DetokenizationCache::new();
+    let mut logits = Logits::default();
+    let mut logit_probs = Vec::new();
 
     loop {
         let tokens = token_stream.tokens();
-        let logit_probs =
-            llm.feed_tokens(session, &tokens[tokens.len() - unprocessed_token_count..])?;
+        llm.feed_tokens(
+            session,
+            &tokens[tokens.len() - unprocessed_token_count..],
+            &mut logit_probs,
+        )?;
         let resources = &mut SamplerResources {
             previous_tokens: tokens,
             rng: &mut rng,
         };
 
-        let mut logits = Logits::default();
-
-        let mut token_cache = DetokenizationCache::new(logit_probs.len());
-
-        let mut logits_indexed = (0..)
-            .zip(logit_probs.iter().copied())
-            .map(|(id, prob)| Logit {
-                token_id: id as u32,
-                logit: prob,
-                prob: 0f32,
-            })
-            .collect::<Vec<_>>();
-
         // fill the state map with None for each token
+        token_cache.clear(logit_probs.len());
         state_map.clear();
-        for _ in 0..logits_indexed.len() {
+        logits_indexed.clear();
+        logits.clear();
+        for (id, prob) in logit_probs.iter().enumerate() {
+            logits_indexed.push(Logit {
+                token_id: id as u32,
+                logit: *prob,
+                prob: 0f32,
+            });
             state_map.push(None);
         }
+
         let mut valid_tokens = false;
 
         // If we don't have a top k, then we can just cache the entire detokenization
@@ -95,19 +99,13 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
                     let new_partitioned_index = i + logits_to_update;
 
                     // If we eliminated a logit, our partitioning of the logits is no longer valid
-                    logits_indexed[i..].select_nth_unstable_by(logits_to_update, |a, b| {
-                        // SAFETY: Logits should never be NaN or Inf
-                        let compare = b.logit.partial_cmp(&a.logit);
-                        debug_assert!(compare.is_some());
-                        unsafe { compare.unwrap_unchecked() }
-                    });
+                    logits_indexed[i..].select_nth_unstable_by(logits_to_update, cmp_logits);
                     // Expand the cache to include the new logits
                     partitioned_logits_index = Some(new_partitioned_index);
-                    let tokens = logits_indexed[i..=new_partitioned_index]
-                        .iter()
-                        .map(|logit| logit.token_id)
-                        .collect::<Vec<_>>();
-                    token_cache.expand(&tokens, &token_stream)?;
+                    token_cache.expand_with_logits(
+                        &logits_indexed[i..=new_partitioned_index],
+                        &token_stream,
+                    )?;
 
                     // Double the batch size for next time
                     detokenization_batch_size = detokenization_batch_size.saturating_mul(4);
@@ -173,6 +171,13 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
             return Ok(result);
         }
     }
+}
+
+fn cmp_logits(a: &Logit, b: &Logit) -> std::cmp::Ordering {
+    // SAFETY: Logits should never be NaN or Inf
+    let compare = b.logit.partial_cmp(&a.logit);
+    debug_assert!(compare.is_some());
+    unsafe { compare.unwrap_unchecked() }
 }
 
 #[allow(unused, clippy::all)]
@@ -277,12 +282,14 @@ enum TokenCacheStatus {
 
 struct DetokenizationCache {
     cache: Box<[TokenCacheStatus]>,
+    vec: Vec<Option<String>>,
 }
 
 impl DetokenizationCache {
-    fn new(len: usize) -> Self {
+    fn new() -> Self {
         Self {
-            cache: vec![TokenCacheStatus::Empty; len].into_boxed_slice(),
+            cache: Box::new([]),
+            vec: Vec::new(),
         }
     }
 
@@ -294,10 +301,30 @@ impl DetokenizationCache {
         }
     }
 
-    fn expand(&mut self, tokens: &[u32], stream: &TokenOutputStream) -> anyhow::Result<()> {
-        let new_tokens = stream.peek_tokens(tokens)?;
+    fn expand_with_logits(
+        &mut self,
+        tokens: &[Logit],
+        stream: &TokenOutputStream,
+    ) -> anyhow::Result<()> {
+        stream.peek_tokens(
+            tokens.into_par_iter().map(|logit| logit.token_id),
+            &mut self.vec,
+        )?;
 
-        for (&i, token) in tokens.iter().zip(new_tokens.into_iter()) {
+        for (logit, token) in tokens.iter().zip(self.vec.drain(..)) {
+            self.cache[logit.token_id as usize] = match token {
+                Some(token) => TokenCacheStatus::Valid(token),
+                None => TokenCacheStatus::Invalid,
+            };
+        }
+
+        Ok(())
+    }
+
+    fn expand(&mut self, tokens: &[u32], stream: &TokenOutputStream) -> anyhow::Result<()> {
+        stream.peek_tokens(tokens.into_par_iter().copied(), &mut self.vec)?;
+
+        for (&i, token) in tokens.iter().zip(self.vec.drain(..)) {
             self.cache[i as usize] = match token {
                 Some(token) => TokenCacheStatus::Valid(token),
                 None => TokenCacheStatus::Invalid,
@@ -305,5 +332,16 @@ impl DetokenizationCache {
         }
 
         Ok(())
+    }
+
+    fn clear(&mut self, size: usize) {
+        if self.cache.len() == size {
+            for token in self.cache.iter_mut() {
+                *token = TokenCacheStatus::Empty;
+            }
+        } else {
+            self.cache = vec![TokenCacheStatus::Empty; size].into_boxed_slice();
+        }
+        self.vec.clear();
     }
 }

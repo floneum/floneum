@@ -54,6 +54,12 @@ pub trait Parse: Clone + Send + Sync {
     fn new_parser() -> impl SendCreateParserState<Output = Self>;
 }
 
+impl<T: Parse> Parse for Box<T> {
+    fn new_parser() -> impl SendCreateParserState<Output = Self> {
+        T::new_parser().map_output(Box::new)
+    }
+}
+
 macro_rules! int_parser {
     ($ty:ident, $num:ty, $test:ident) => {
         #[doc = "A parser for `"]
