@@ -1,10 +1,13 @@
-use std::collections::HashMap;
-
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
+use quote::quote_spanned;
 use quote::{format_ident, quote, ToTokens};
+use std::cmp::Ordering;
+use std::collections::HashMap;
+use syn::parse::{Parse, ParseStream};
+use syn::spanned::Spanned;
 use syn::{ext::IdentExt, parse_macro_input, DeriveInput, Field, Ident, LitStr};
-use syn::{DataEnum, Fields, LitInt};
+use syn::{DataEnum, Fields, LitInt, Path, TypePath};
 
 /// Derive a default JSON parser for a unit value, struct or enum.
 ///
@@ -607,10 +610,7 @@ fn field_parser(fields: &[&Field], construct: TokenStream2) -> syn::Result<Token
         let ident = field.ident.as_ref().unwrap().unraw();
 
         let mut field_name = field.ident.as_ref().unwrap().unraw().to_string();
-        let mut field_parser = {
-            let ty = &field.ty;
-            quote! {<#ty as kalosm_sample::Parse>::new_parser()}
-        };
+        let mut field_parser: Parser = syn::parse2(field.ty.to_token_stream())?;
         // Look for #[parse(rename = "name")] or #[parse(with = expr)] attributes
         for attr in field.attrs.iter() {
             if attr.path().is_ident("parse") {
@@ -621,12 +621,14 @@ fn field_parser(fields: &[&Field], construct: TokenStream2) -> syn::Result<Token
                             .and_then(|value| value.parse::<syn::LitStr>())?;
                         field_name = value.value();
                         Ok(())
-                    } else if meta.path.is_ident("with") {
-                        let value = meta.value().and_then(|value| value.parse::<syn::Expr>())?;
-                        field_parser = value.into_token_stream();
-                        Ok(())
                     } else {
-                        Err(meta.error("expected `rename` or `with`"))
+                        let attribute_applied = field_parser.apply_attribute(&meta)?;
+                        if !attribute_applied {
+                            let mut possible_attributes = vec!["rename"];
+                            possible_attributes.extend(field_parser.possible_attributes());
+                            return Err(meta.error(expected_attributes_error(possible_attributes)));
+                        }
+                        Ok(())
                     }
                 })?;
             }
@@ -686,4 +688,487 @@ fn field_parser(fields: &[&Field], construct: TokenStream2) -> syn::Result<Token
                 .map_output(|#output_tuple| #construct)
         }
     })
+}
+
+fn expected_attributes_error(
+    expected_attributes: impl IntoIterator<Item = &'static str>,
+) -> String {
+    let mut error_message = String::from("Expected one of the following attributes: ");
+    let expected_attributes = expected_attributes.into_iter().collect::<Vec<_>>();
+    for (i, attribute) in expected_attributes.iter().enumerate() {
+        error_message.push_str(attribute);
+        match i.cmp(&(expected_attributes.len().saturating_sub(2))) {
+            Ordering::Less => {
+                error_message.push_str(", ");
+            }
+            Ordering::Equal => {
+                error_message.push_str(" or ");
+            }
+            Ordering::Greater => {}
+        }
+    }
+    error_message
+}
+
+#[derive(Debug)]
+enum ParserType {
+    String(StringParserOptions),
+    Number(NumberParserOptions),
+    Integer(NumberParserOptions),
+    Boolean(BoolOptions),
+    Custom(proc_macro2::TokenStream),
+}
+
+impl Parse for ParserType {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        if input.peek(Ident) {
+            let path = input.parse::<Path>()?;
+            if let Ok(string) = StringParserOptions::from_path(&path) {
+                return Ok(Self::String(string));
+            } else if let Ok(number) = NumberParserOptions::from_path(&path) {
+                return Ok(match number.ty {
+                    NumberType::F64 | NumberType::F32 => Self::Number(number),
+                    _ => Self::Integer(number),
+                });
+            } else if let Ok(boolean) = BoolOptions::from_path(&path) {
+                return Ok(Self::Boolean(boolean));
+            }
+            Ok(Self::Custom(path.to_token_stream()))
+        } else {
+            Ok(Self::Custom(input.parse()?))
+        }
+    }
+}
+
+#[test]
+fn type_parses() {
+    assert!(matches!(
+        dbg!(syn::parse2::<ParserType>(quote! { String })).unwrap(),
+        ParserType::String(_)
+    ));
+    assert!(matches!(
+        dbg!(syn::parse2::<ParserType>(quote! { std::string::String })).unwrap(),
+        ParserType::String(_)
+    ));
+    assert!(matches!(
+        dbg!(syn::parse2::<ParserType>(quote! { i32 })).unwrap(),
+        ParserType::Integer(_)
+    ));
+    assert!(matches!(
+        dbg!(syn::parse2::<ParserType>(quote! { f32 })).unwrap(),
+        ParserType::Number(_)
+    ));
+}
+
+#[derive(Debug)]
+struct Parser {
+    ty: ParserType,
+    with: Option<proc_macro2::TokenStream>,
+}
+
+impl Parse for Parser {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        Ok(Self {
+            ty: input.parse()?,
+            with: None,
+        })
+    }
+}
+
+impl Parser {
+    fn apply_attribute(&mut self, input: &syn::meta::ParseNestedMeta) -> syn::Result<bool> {
+        if input.path.is_ident("with") {
+            self.with = Some(input.value()?.parse()?);
+            Ok(true)
+        } else {
+            match &mut self.ty {
+                ParserType::String(options) => options.apply_attribute(input),
+                ParserType::Number(options) => options.apply_attribute(input),
+                ParserType::Integer(options) => options.apply_attribute(input),
+                ParserType::Boolean(options) => options.apply_attribute(input),
+                ParserType::Custom(_) => Ok(false),
+            }
+        }
+    }
+
+    fn possible_attributes(&self) -> Vec<&'static str> {
+        let mut attributes = vec!["with"];
+        match &self.ty {
+            ParserType::String(_) => attributes.extend(StringParserOptions::ATTRIBUTES),
+            ParserType::Integer(_) | ParserType::Number(_) => {
+                attributes.extend(NumberParserOptions::ATTRIBUTES)
+            }
+            ParserType::Boolean(_) => attributes.extend(BoolOptions::ATTRIBUTES),
+            _ => {}
+        }
+        attributes
+    }
+}
+
+impl ToTokens for Parser {
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+        if let Some(with) = &self.with {
+            with.to_tokens(tokens);
+            return;
+        }
+
+        match &self.ty {
+            ParserType::String(options) => {
+                options.to_tokens(tokens);
+            }
+            ParserType::Integer(options) => {
+                options.to_tokens(tokens);
+            }
+            ParserType::Number(options) => {
+                options.to_tokens(tokens);
+            }
+            ParserType::Boolean(options) => {
+                options.to_tokens(tokens);
+            }
+            ParserType::Custom(ty) => {
+                let quote = quote! {
+                    <#ty as kalosm_sample::Parse>::new_parser()
+                };
+                tokens.extend(quote);
+            }
+        }
+    }
+}
+
+// Strings accept these attributes:
+// - #[parse(character_filter = |c| ...)]
+// - #[parse(len = 1..=10)]
+// - #[parse(pattern = "a+")]
+#[derive(Debug)]
+struct StringParserOptions {
+    path: Path,
+    character_filter: Option<proc_macro2::TokenStream>,
+    len: Option<proc_macro2::TokenStream>,
+    pattern: Option<proc_macro2::TokenStream>,
+}
+
+impl Parse for StringParserOptions {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let path = input.parse()?;
+        Self::from_path(&path)
+    }
+}
+
+impl StringParserOptions {
+    fn from_path(path: &Path) -> syn::Result<Self> {
+        if !is_string(path) {
+            return Err(syn::Error::new(path.span(), "Expected a string type"));
+        }
+        Ok(Self {
+            path: path.clone(),
+            character_filter: None,
+            len: None,
+            pattern: None,
+        })
+    }
+}
+
+impl ToTokens for StringParserOptions {
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+        if let Some(pattern) = &self.pattern {
+            let quote = quote_spanned! {
+                pattern.span() =>
+                kalosm_sample::RegexParser::new(#pattern).unwrap()
+            };
+            tokens.extend(quote);
+            return;
+        }
+
+        let character_filter = self.character_filter.as_ref().map(|filter| {
+            let quote = quote_spanned! {
+                filter.span() =>
+                .with_allowed_characters(#filter)
+            };
+            quote
+        });
+        let len = self
+            .len
+            .as_ref()
+            .map(|len| len.to_token_stream())
+            .unwrap_or_else(|| {
+                quote! {
+                    0..=usize::MAX
+                }
+            });
+        let quote = quote_spanned! {
+            self.path.span() =>
+            kalosm_sample::StringParser::new(#len)
+            #character_filter
+        };
+        tokens.extend(quote);
+    }
+}
+
+impl StringParserOptions {
+    const ATTRIBUTES: &'static [&'static str] = &["character_filter", "len", "pattern"];
+
+    fn apply_attribute(&mut self, input: &syn::meta::ParseNestedMeta) -> syn::Result<bool> {
+        if input.path.is_ident("character_filter") {
+            self.character_filter = Some(input.value()?.parse()?);
+            Ok(true)
+        } else if input.path.is_ident("len") {
+            self.len = Some(input.value()?.parse()?);
+            Ok(true)
+        } else if input.path.is_ident("pattern") {
+            self.pattern = Some(input.value()?.parse()?);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+}
+
+fn is_string(ty: &syn::Path) -> bool {
+    let string_path = syn::parse_quote!(::std::string::String);
+    is_path_type(ty, &string_path)
+}
+
+#[derive(Debug)]
+enum NumberType {
+    F64,
+    F32,
+    I128,
+    I64,
+    I32,
+    I16,
+    I8,
+    Isize,
+    U128,
+    U64,
+    U32,
+    U16,
+    U8,
+    Usize,
+}
+
+impl Parse for NumberType {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let ty = input.parse()?;
+
+        Self::from_path(&ty)
+    }
+}
+
+impl NumberType {
+    fn from_path(ty: &Path) -> syn::Result<Self> {
+        let f64_path = syn::parse_quote!(::std::primitive::f64);
+        if is_path_type(ty, &f64_path) {
+            return Ok(Self::F64);
+        }
+
+        let f32_path = syn::parse_quote!(::std::primitive::f32);
+        if is_path_type(ty, &f32_path) {
+            return Ok(Self::F32);
+        }
+
+        let i128_path = syn::parse_quote!(::std::primitive::i128);
+        if is_path_type(ty, &i128_path) {
+            return Ok(Self::I128);
+        }
+
+        let i64_path = syn::parse_quote!(::std::primitive::i64);
+        if is_path_type(ty, &i64_path) {
+            return Ok(Self::I64);
+        }
+
+        let i32_path = syn::parse_quote!(::std::primitive::i32);
+        if is_path_type(ty, &i32_path) {
+            return Ok(Self::I32);
+        }
+
+        let i16_path = syn::parse_quote!(::std::primitive::i16);
+        if is_path_type(ty, &i16_path) {
+            return Ok(Self::I16);
+        }
+
+        let i8_path = syn::parse_quote!(::std::primitive::i8);
+        if is_path_type(ty, &i8_path) {
+            return Ok(Self::I8);
+        }
+
+        let isize_path = syn::parse_quote!(::std::primitive::isize);
+        if is_path_type(ty, &isize_path) {
+            return Ok(Self::Isize);
+        }
+
+        let u128_path = syn::parse_quote!(::std::primitive::u128);
+        if is_path_type(ty, &u128_path) {
+            return Ok(Self::U128);
+        }
+
+        let u64_path = syn::parse_quote!(::std::primitive::u64);
+        if is_path_type(ty, &u64_path) {
+            return Ok(Self::U64);
+        }
+
+        let u32_path = syn::parse_quote!(::std::primitive::u32);
+        if is_path_type(ty, &u32_path) {
+            return Ok(Self::U32);
+        }
+
+        let u16_path = syn::parse_quote!(::std::primitive::u16);
+        if is_path_type(ty, &u16_path) {
+            return Ok(Self::U16);
+        }
+
+        let u8_path = syn::parse_quote!(::std::primitive::u8);
+        if is_path_type(ty, &u8_path) {
+            return Ok(Self::U8);
+        }
+
+        let usize_path = syn::parse_quote!(::std::primitive::usize);
+        if is_path_type(ty, &usize_path) {
+            return Ok(Self::Usize);
+        }
+
+        Err(syn::Error::new(ty.span(), "Expected a number type"))
+    }
+}
+
+impl ToTokens for NumberType {
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+        let quote = match self {
+            Self::F64 => quote! {F64Parser::new()},
+            Self::F32 => quote! {F32Parser::new()},
+            Self::I128 => quote! {I128Parser::new()},
+            Self::I64 => quote! {I64Parser::new()},
+            Self::I32 => quote! {I32Parser::new()},
+            Self::I16 => quote! {I16Parser::new()},
+            Self::I8 => quote! {I8Parser::new()},
+            Self::Isize => quote! {IsizeParser::new()},
+            Self::U128 => quote! {U128Parser::new()},
+            Self::U64 => quote! {U64Parser::new()},
+            Self::U32 => quote! {U32Parser::new()},
+            Self::U16 => quote! {U16Parser::new()},
+            Self::U8 => quote! {U8Parser::new()},
+            Self::Usize => quote! {UsizeParser::new()},
+        };
+
+        tokens.extend(quote);
+    }
+}
+
+// Numbers accept these attributes:
+// - #[parse(range = 0.0..=100.0)]
+#[derive(Debug)]
+struct NumberParserOptions {
+    path: Path,
+    ty: NumberType,
+    range: Option<proc_macro2::TokenStream>,
+}
+
+impl Parse for NumberParserOptions {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let path = input.parse::<Path>()?;
+
+        Self::from_path(&path)
+    }
+}
+
+impl NumberParserOptions {
+    fn from_path(path: &Path) -> syn::Result<Self> {
+        let ty = NumberType::from_path(path)?;
+        Ok(Self {
+            path: path.clone(),
+            ty,
+            range: None,
+        })
+    }
+}
+
+impl ToTokens for NumberParserOptions {
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+        let range = self.range.as_ref().map(|range| {
+            let quote = quote_spanned! {
+                range.span() =>
+                .with_range(#range)
+            };
+            quote
+        });
+        let ty = &self.ty;
+        let quote = quote_spanned! {
+            self.path.span() =>
+            #ty
+            #range
+        };
+        tokens.extend(quote);
+    }
+}
+
+impl NumberParserOptions {
+    const ATTRIBUTES: &'static [&'static str] = &["range"];
+
+    fn apply_attribute(&mut self, input: &syn::meta::ParseNestedMeta) -> syn::Result<bool> {
+        if input.path.is_ident("range") {
+            self.range = Some(input.value()?.parse()?);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+}
+
+#[derive(Debug)]
+struct BoolOptions {
+    path: Path,
+}
+
+impl BoolOptions {
+    const ATTRIBUTES: &'static [&'static str] = &[];
+
+    fn apply_attribute(&mut self, _input: &syn::meta::ParseNestedMeta) -> syn::Result<bool> {
+        Ok(false)
+    }
+
+    fn from_path(path: &Path) -> syn::Result<Self> {
+        if !is_bool(path) {
+            return Err(syn::Error::new(path.span(), "Expected a boolean type"));
+        }
+        Ok(Self { path: path.clone() })
+    }
+}
+
+impl Parse for BoolOptions {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let path = input.parse()?;
+        Self::from_path(&path)
+    }
+}
+
+impl ToTokens for BoolOptions {
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+        let path = &self.path;
+        let quote = quote! {
+            <#path as kalosm_sample::Parse>::new_parser()
+        };
+        tokens.extend(quote);
+    }
+}
+
+fn is_bool(ty: &syn::Path) -> bool {
+    let bool_path = syn::parse_quote!(::std::bool);
+    is_path_type(ty, &bool_path)
+}
+
+// Check if the last type segment matches a value
+fn is_path_type(path: &syn::Path, match_path: &TypePath) -> bool {
+    let mut path_segments = path.segments.iter().rev();
+    let mut match_path_segments = match_path.path.segments.iter().rev();
+    loop {
+        match (path_segments.next(), match_path_segments.next()) {
+            (Some(first), Some(second)) => {
+                if first.ident != second.ident {
+                    return false;
+                }
+            }
+            (None, None) => return true,
+            (Some(_), None) => return false,
+            (None, Some(_)) => return true,
+        }
+    }
 }

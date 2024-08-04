@@ -6,9 +6,18 @@ use kalosm::language::*;
 #[parse(tag = "ty", content = "contents")]
 enum NamedEnum {
     #[parse(rename = "person")]
-    Person { name: String, age: u32 },
+    Person {
+        name: String,
+        #[parse(range = 0..=100)]
+        age: u32,
+    },
     #[parse(rename = "animal")]
-    Animal { name: String, species: String },
+    Animal {
+        #[parse(len = 1..=20)]
+        name: String,
+        #[parse(pattern = "cat|dog|bird")]
+        species: String,
+    },
 }
 
 #[tokio::test]
