@@ -81,6 +81,10 @@ pub enum SchemaType {
     Enum(EnumSchema),
     /// A schema that matches any of the composite schemas
     AnyOf(AnyOfSchema),
+    /// A constant schema
+    Const(ConstSchema),
+    /// An if-then schema
+    IfThen(IfThenSchema),
     /// The null schema
     Null,
 }
@@ -96,8 +100,41 @@ impl Display for SchemaType {
             SchemaType::Object(schema) => schema.fmt(f),
             SchemaType::Enum(schema) => schema.fmt(f),
             SchemaType::AnyOf(schema) => schema.fmt(f),
+            SchemaType::Const(schema) => schema.fmt(f),
+            SchemaType::IfThen(schema) => schema.fmt(f),
             SchemaType::Null => f.write_str("{ \"type\": \"null\" }"),
         }
+    }
+}
+
+/// A schema for an conditional schema
+#[derive(Debug, Clone)]
+pub struct IfThenSchema {
+    if_schema: Box<SchemaType>,
+    then_schema: Box<SchemaType>,
+}
+
+impl IfThenSchema {
+    /// Create a new if-then schema
+    pub fn new(if_schema: SchemaType, then_schema: SchemaType) -> Self {
+        Self {
+            if_schema: Box::new(if_schema),
+            then_schema: Box::new(then_schema),
+        }
+    }
+}
+
+impl Display for IfThenSchema {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_char('{')?;
+        {
+            let mut writer = IndentationWriter::new(1, f);
+            writer.write_str("\n\"if\": ")?;
+            write!(&mut writer, "{}", self.if_schema)?;
+            writer.write_str(",\n\"then\": ")?;
+            write!(&mut writer, "{}", self.then_schema)?;
+        }
+        f.write_str("\n}")
     }
 }
 
@@ -138,6 +175,36 @@ impl Display for AnyOfSchema {
         }
         f.write_str(" }")
     }
+}
+
+/// A schema for a constant
+#[derive(Debug, Clone)]
+pub struct ConstSchema {
+    value: SchemaLiteral,
+}
+
+impl ConstSchema {
+    /// Create a new const schema
+    pub fn new(value: impl Into<SchemaLiteral>) -> Self {
+        Self {
+            value: value.into(),
+        }
+    }
+}
+
+impl Display for ConstSchema {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("{ \"const\": ")?;
+        write!(f, "{}", self.value)?;
+        f.write_str(" }")
+    }
+}
+
+#[test]
+fn test_const_schema() {
+    let schema = ConstSchema::new(SchemaLiteral::String("hello".to_string()));
+
+    assert_eq!(schema.to_string(), "{ \"const\": \"hello\" }");
 }
 
 /// A schema for an enum
@@ -320,6 +387,13 @@ fn test_number_schema() {
 #[derive(Debug, Clone, Default)]
 
 pub struct IntegerSchema;
+
+impl IntegerSchema {
+    /// Create a new integer schema
+    pub fn new() -> Self {
+        Self
+    }
+}
 
 macro_rules! impl_schema_for_integer {
     ($ty:ty) => {
