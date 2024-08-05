@@ -583,10 +583,10 @@ impl Display for JsonObjectSchema {
             if let Some(title) = &self.title {
                 writer.write_str("\"title\": \"")?;
                 writer.write_str(title)?;
-                writer.write_str("\",")?;
+                writer.write_str("\",\n")?;
             }
             if let Some(description) = &self.description {
-                writer.write_fmt(format_args!("\"description\": \"{}\",", description))?;
+                writer.write_fmt(format_args!("\"description\": \"{}\",\n", description))?;
             }
             writer.write_str("\"properties\": {")?;
             if !self.properties.is_empty() {

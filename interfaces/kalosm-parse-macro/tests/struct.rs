@@ -26,11 +26,36 @@ async fn empty_struct() {
     assert_eq!(output, EmptyNamedStruct {});
 }
 
+/// A named struct
 #[derive(Parse, Schema, Clone)]
 struct NamedStruct {
     #[parse(rename = "field name")]
     name: String,
+    /// The age of the person
     age: u32,
+}
+
+#[test]
+fn named_struct_schema()  {
+    let schema = NamedStruct::schema();
+    let json = serde_json::from_str::<serde_json::Value>(&schema.to_string()).unwrap();
+    assert_eq!(json, serde_json::json!({
+        "title": "NamedStruct",
+        "description": "A named struct",
+        "properties": {
+            "field name": {
+                "type": "string"
+            },
+            "age": {
+                "description": "The age of the person",
+                "type": "integer"
+            }
+        },
+        "required": [
+            "field name",
+            "age"
+        ]
+    }));
 }
 
 #[tokio::test]

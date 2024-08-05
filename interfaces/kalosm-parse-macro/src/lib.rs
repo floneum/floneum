@@ -321,6 +321,7 @@ impl StructParser {
         let title = &self.name;
         let ty = &self.ty;
         let description = doc_comment(&self.attributes);
+        let description = description.map(|description| quote! { .with_description(#description) });
         let schema = self.fields.quote_schema();
 
         quote! {
@@ -329,7 +330,7 @@ impl StructParser {
                     kalosm_sample::SchemaType::Object(
                         #schema
                         .with_title(#title)
-                        .with_description(#description)
+                        #description
                     )
                 }
             }
@@ -1175,28 +1176,37 @@ impl FieldParser {
         let schema = self.parser.quote_schema();
         let name = &self.name;
         let description = doc_comment(&self.field.attrs);
+        let description = description.map(|description| quote! { .with_description(#description) });
         quote! {
             kalosm_sample::JsonPropertySchema::new(#name.to_string(), #schema)
-                .with_description(#description)
                 .with_required(true)
+                #description
         }
     }
 }
 
-fn doc_comment(attrs: &[syn::Attribute]) -> String {
+fn doc_comment(attrs: &[syn::Attribute]) -> Option<String> {
     let mut description = String::new();
     for attr in attrs {
         if !attr.path().is_ident("doc") {
             continue;
         }
-        if let Ok(lit_str) = attr.parse_args::<syn::LitStr>() {
+        let syn::Meta::NameValue(meta) = &attr.meta else {
+            continue;
+        };
+        if let Ok(lit_str) = syn::parse2::<syn::LitStr>(meta.value.to_token_stream()) { 
             if !description.is_empty() {
                 description.push('\n');
             }
-            description.push_str(&lit_str.value());
+            let value = lit_str.value();
+            let mut borrowed = &*value;
+            if borrowed.starts_with(' ') {
+                borrowed = &borrowed[1..];
+            }
+            description.push_str(borrowed);
         }
     }
-    description
+    (!description.is_empty()).then_some(description)
 }
 
 fn expected_attributes_error(
