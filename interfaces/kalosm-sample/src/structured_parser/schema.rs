@@ -282,8 +282,8 @@ impl StringSchema {
     }
 
     /// Set a regex pattern the string must match
-    pub fn with_pattern(mut self, pattern: impl Into<Option<String>>) -> Self {
-        self.pattern = pattern.into();
+    pub fn with_pattern(mut self, pattern: impl ToString) -> Self {
+        self.pattern = Some(pattern.to_string());
         self
     }
 }
@@ -562,8 +562,8 @@ impl JsonObjectSchema {
     }
 
     /// Set the title of the object
-    pub fn with_title(mut self, title: impl Into<Option<String>>) -> Self {
-        self.title = title.into();
+    pub fn with_title(mut self, title: impl ToString) -> Self {
+        self.title = Some(title.to_string());
         self
     }
 

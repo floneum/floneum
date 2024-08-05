@@ -2,7 +2,7 @@
 
 use kalosm::language::*;
 
-#[derive(Parse, Clone)]
+#[derive(Parse, Schema, Clone)]
 #[parse(tag = "ty", content = "contents")]
 enum NamedEnum {
     #[parse(rename = "person")]
@@ -45,7 +45,7 @@ async fn named_enum() {
     assert!(output.contains("\"age\":") || output.contains("\"species\":"));
 }
 
-#[derive(Parse, Clone)]
+#[derive(Parse, Schema, Clone)]
 enum MixedEnum {
     Person {
         #[parse(rename = "person")]
@@ -75,7 +75,7 @@ async fn mixed_enum() {
     println!("{output}");
 }
 
-#[derive(Parse, Clone)]
+#[derive(Parse, Schema, Clone)]
 enum UnitEnum {
     First,
     #[parse(rename = "second")]
@@ -101,7 +101,7 @@ async fn unit_enum() {
     println!("{output}");
 }
 
-#[derive(Parse, Clone)]
+#[derive(Parse, Schema, Clone)]
 enum TupleEnum {
     First(String),
     Second(String),
@@ -130,7 +130,7 @@ async fn tuple_enum() {
 
 #[test]
 fn unit_enum_parses() {
-    #[derive(Parse, Debug, Clone, PartialEq)]
+    #[derive(Parse, Schema, Debug, Clone, PartialEq)]
     enum Color {
         Red,
         Blue,

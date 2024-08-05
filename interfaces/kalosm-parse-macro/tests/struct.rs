@@ -2,7 +2,7 @@
 
 use kalosm::language::*;
 
-#[derive(Parse, Clone, PartialEq, Debug)]
+#[derive(Parse, Schema, Clone, PartialEq, Debug)]
 #[parse(rename = "empty struct")]
 struct EmptyNamedStruct {}
 
@@ -26,7 +26,7 @@ async fn empty_struct() {
     assert_eq!(output, EmptyNamedStruct {});
 }
 
-#[derive(Parse, Clone)]
+#[derive(Parse, Schema, Clone)]
 struct NamedStruct {
     #[parse(rename = "field name")]
     name: String,
@@ -55,7 +55,7 @@ async fn named_struct() {
     assert!(output.contains("\"age\":"));
 }
 
-#[derive(Parse, Clone)]
+#[derive(Parse, Schema, Clone)]
 struct WithStruct {
     #[parse(with = StringParser::new(1..=10))]
     name: String,

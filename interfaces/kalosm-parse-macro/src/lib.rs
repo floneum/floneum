@@ -19,7 +19,7 @@ use syn::{DataEnum, Fields, FieldsNamed, LitInt, Path, TypePath, Variant};
 ///
 /// ```rust
 /// # use kalosm::language::*;
-/// #[derive(Parse, Debug, Clone, PartialEq)]
+/// #[derive(Parse, Schema, Debug, Clone, PartialEq)]
 /// struct Person {
 ///     name: String,
 ///     age: u32,
@@ -35,7 +35,7 @@ use syn::{DataEnum, Fields, FieldsNamed, LitInt, Path, TypePath, Variant};
 /// Or an enum with unit variants:
 /// ```rust
 /// # use kalosm::language::*;
-/// #[derive(Parse, Debug, Clone, PartialEq)]
+/// #[derive(Parse, Schema, Debug, Clone, PartialEq)]
 /// enum Color {
 ///     Red,
 ///     Blue,
@@ -51,7 +51,7 @@ use syn::{DataEnum, Fields, FieldsNamed, LitInt, Path, TypePath, Variant};
 /// You can even derive Parse for an enum with data variants:
 /// ```rust
 /// # use kalosm::language::*;
-/// #[derive(Parse, Debug, Clone, PartialEq)]
+/// #[derive(Parse, Schema, Debug, Clone, PartialEq)]
 /// enum Action {
 ///     Search { query: String },
 ///     Quit,
@@ -71,14 +71,14 @@ use syn::{DataEnum, Fields, FieldsNamed, LitInt, Path, TypePath, Variant};
 ///
 /// ```rust
 /// # use kalosm::language::*;
-/// #[derive(Parse, Clone)]
+/// #[derive(Parse, Schema, Clone)]
 /// struct Person {
 ///     #[parse(rename = "full name")]
 ///     name: String,
 ///     age: u32,
 /// }
 ///
-/// #[derive(Parse, Clone)]
+/// #[derive(Parse, Schema, Clone)]
 /// enum Color {
 ///     #[parse(rename = "red")]
 ///     Red,
@@ -91,7 +91,7 @@ use syn::{DataEnum, Fields, FieldsNamed, LitInt, Path, TypePath, Variant};
 ///
 /// ```rust
 /// # use kalosm::language::*;
-/// #[derive(Parse, Clone)]
+/// #[derive(Parse, Schema, Clone)]
 /// struct Person {
 ///     #[parse(with = StringParser::new(1..=10))]
 ///     name: String,
@@ -103,7 +103,7 @@ use syn::{DataEnum, Fields, FieldsNamed, LitInt, Path, TypePath, Variant};
 ///
 /// ```rust
 /// # use kalosm::language::*;
-/// #[derive(Parse, Clone)]
+/// #[derive(Parse, Schema, Clone)]
 /// #[parse(tag = "action")]
 /// enum Action {
 ///     Search { query: String },
@@ -115,7 +115,7 @@ use syn::{DataEnum, Fields, FieldsNamed, LitInt, Path, TypePath, Variant};
 ///
 /// ```rust
 /// # use kalosm::language::*;
-/// #[derive(Parse, Clone)]
+/// #[derive(Parse, Schema, Clone)]
 /// #[parse(content = "arguments")]
 /// enum Action {
 ///     Search { query: String },
@@ -319,15 +319,20 @@ impl StructParser {
 
     fn quote_schema(&self) -> proc_macro2::TokenStream {
         let title = &self.name;
+        let ty = &self.ty;
         let description = doc_comment(&self.attributes);
-        let properties = self.fields.fields.iter().map(|field| field.quote_schema());
+        let schema = self.fields.quote_schema();
 
         quote! {
-            kalosm_sample::JsonObjectSchema::new(
-                vec![#(#properties),*]
-            )
-            .with_title(#title)
-            .with_description(#description)
+            impl kalosm_sample::Schema for #ty {
+                fn schema() -> kalosm_sample::SchemaType {
+                    kalosm_sample::SchemaType::Object(
+                        #schema
+                        .with_title(#title)
+                        .with_description(#description)
+                    )
+                }
+            }
         }
     }
 }
@@ -381,7 +386,7 @@ fn unit_schema(attrs: &[syn::Attribute], ty: &Ident) -> TokenStream2 {
     quote! {
         impl kalosm_sample::Schema for #ty {
             fn schema() -> kalosm_sample::SchemaType {
-                kalosm_sample::SchemaType::Const(kalosm_sample::SchemaLiteral::String(#name.to_string()))
+                kalosm_sample::SchemaType::Const(kalosm_sample::ConstSchema::new(kalosm_sample::SchemaLiteral::String(#name.to_string())))
             }
         }
     }
@@ -514,36 +519,30 @@ impl EnumParser {
     fn quote_schema(&self) -> syn::Result<proc_macro2::TokenStream> {
         let tag = &self.tag;
         let content = &self.data;
+        let ty = &self.ty;
 
-        let variants: Vec<_> = self.variants
+        let variants: Vec<_> = self
+            .variants
             .iter()
-            .map(|variant|{
+            .map(|variant| {
                 let variant_name = &variant.name;
-                let variant_parser = variant.quote_parser(content)?;
+                let variant_parser = variant.quote_schema(tag, content, variant_name)?;
                 Ok(quote! {
-                    kalosm_sample::SchemaType::IfThen(IfThenSchema::new(
-                        kalosm_sample::SchemaType::Object(
-                            JsonObjectSchema::new([
-                                JsonPropertySchema::new(
-                                    #tag,
-                                    kalosm_sample::SchemaType::Const(
-                                        kalosm_sample::ConstSchema::new(
-                                            kalosm_sample::SchemaLiteral::String(#variant_name.to_string())
-                                        )
-                                    )
-                                )
-                            ])
-                        ),
-                        #variant_parser
-                    ))
+                    #variant_parser
                 })
             })
             .collect::<syn::Result<_>>()?;
 
         Ok(quote! {
-            kalosm_sample::AnyOfSchema::new([
-                #(#variants),*
-            ])
+            impl kalosm_sample::Schema for #ty {
+                fn schema() -> kalosm_sample::SchemaType {
+                    kalosm_sample::SchemaType::AnyOf(
+                        kalosm_sample::AnyOfSchema::new([
+                            #(#variants),*
+                        ])
+                    )
+                }
+            }
         })
     }
 }
@@ -618,6 +617,19 @@ impl EnumVariant {
             EnumVariantType::Unit(parser) => parser.quote_parser(&self.name, construct_variant),
         }
     }
+
+    fn quote_schema(
+        &self,
+        tag: &str,
+        content: &str,
+        variant_name: &str,
+    ) -> syn::Result<proc_macro2::TokenStream> {
+        match &self.ty {
+            EnumVariantType::Struct(parser) => parser.quote_schema(tag, content, variant_name),
+            EnumVariantType::Tuple(parser) => parser.quote_schema(tag, content, variant_name),
+            EnumVariantType::Unit(parser) => parser.quote_schema(tag, variant_name),
+        }
+    }
 }
 
 enum EnumVariantType {
@@ -641,6 +653,23 @@ impl UnitEnumVariantParser {
         let lit_str_name = LitStr::new(&format!("{variant_name}\""), Span::call_site());
         Ok(quote! {
             kalosm_sample::LiteralParser::from(#lit_str_name).map_output(|_| #construct_variant)
+        })
+    }
+
+    fn quote_schema(&self, tag: &str, variant_name: &str) -> syn::Result<proc_macro2::TokenStream> {
+        Ok(quote! {
+            kalosm_sample::SchemaType::Object(
+                kalosm_sample::JsonObjectSchema::new([
+                    kalosm_sample::JsonPropertySchema::new(
+                        #tag,
+                        kalosm_sample::SchemaType::Const(
+                            kalosm_sample::ConstSchema::new(
+                                kalosm_sample::SchemaLiteral::String(#variant_name.to_string())
+                            )
+                        )
+                    )
+                ])
+            )
         })
     }
 }
@@ -672,6 +701,41 @@ impl StructEnumVariantParser {
             kalosm_sample::LiteralParser::from(#parse_name_and_data).ignore_output_then(#field_parser)
         })
     }
+
+    fn quote_schema(
+        &self,
+        tag: &str,
+        content: &str,
+        variant_name: &str,
+    ) -> syn::Result<proc_macro2::TokenStream> {
+        let variant_parser = self.fields.quote_schema();
+        Ok(quote! {
+            kalosm_sample::SchemaType::IfThen(IfThenSchema::new(
+                kalosm_sample::SchemaType::Object(
+                    kalosm_sample::JsonObjectSchema::new([
+                        kalosm_sample::JsonPropertySchema::new(
+                            #tag,
+                            kalosm_sample::SchemaType::Const(
+                                kalosm_sample::ConstSchema::new(
+                                    kalosm_sample::SchemaLiteral::String(#variant_name.to_string())
+                                )
+                            )
+                        )
+                    ])
+                ),
+                kalosm_sample::SchemaType::Object(
+                    kalosm_sample::JsonObjectSchema::new([
+                        kalosm_sample::JsonPropertySchema::new(
+                            #content,
+                            kalosm_sample::SchemaType::Object(
+                                #variant_parser
+                            )
+                        )
+                    ])
+                )
+            ))
+        })
+    }
 }
 
 struct TupleEnumVariantParser {
@@ -698,6 +762,39 @@ impl TupleEnumVariantParser {
         let ty = &self.field.ty;
         Ok(quote! {
             kalosm_sample::LiteralParser::from(#parse_name_and_data).ignore_output_then(<#ty as kalosm_sample::Parse>::new_parser()).map_output(|data0| #construct_variant)
+        })
+    }
+
+    fn quote_schema(
+        &self,
+        tag: &str,
+        content: &str,
+        variant_name: &str,
+    ) -> syn::Result<proc_macro2::TokenStream> {
+        let ty = &self.field.ty;
+        Ok(quote! {
+            kalosm_sample::SchemaType::IfThen(IfThenSchema::new(
+                kalosm_sample::SchemaType::Object(
+                    kalosm_sample::JsonObjectSchema::new([
+                        kalosm_sample::JsonPropertySchema::new(
+                            #tag,
+                            kalosm_sample::SchemaType::Const(
+                                kalosm_sample::ConstSchema::new(
+                                    kalosm_sample::SchemaLiteral::String(#variant_name.to_string())
+                                )
+                            )
+                        )
+                    ])
+                ),
+                kalosm_sample::SchemaType::Object(
+                    kalosm_sample::JsonObjectSchema::new([
+                        kalosm_sample::JsonPropertySchema::new(
+                            #content,
+                            <#ty as kalosm_sample::Schema>::schema()
+                        )
+                    ])
+                )
+            ))
         })
     }
 }
@@ -1025,6 +1122,15 @@ impl FieldsParser {
             }
         })
     }
+
+    fn quote_schema(&self) -> proc_macro2::TokenStream {
+        let properties = self.fields.iter().map(|field| field.quote_schema());
+        quote! {
+            kalosm_sample::JsonObjectSchema::new(
+                vec![#(#properties),*]
+            )
+        }
+    }
 }
 
 struct FieldParser {
@@ -1072,7 +1178,7 @@ impl FieldParser {
         quote! {
             kalosm_sample::JsonPropertySchema::new(#name.to_string(), #schema)
                 .with_description(#description)
-                .required(true)
+                .with_required(true)
         }
     }
 }
@@ -1218,10 +1324,30 @@ impl Parser {
         }
 
         match &self.ty {
-            ParserType::String(options) => options.quote_schema(),
-            ParserType::Number(options) => options.quote_schema(),
-            ParserType::Integer(options) => options.quote_schema(),
-            ParserType::Boolean(options) => options.quote_schema(),
+            ParserType::String(options) => {
+                let schema = options.quote_schema();
+                quote! {
+                    kalosm_sample::SchemaType::String(#schema)
+                }
+            }
+            ParserType::Number(options) => {
+                let schema = options.quote_schema();
+                quote! {
+                    kalosm_sample::SchemaType::Number(#schema)
+                }
+            }
+            ParserType::Integer(options) => {
+                let schema = options.quote_schema();
+                quote! {
+                    kalosm_sample::SchemaType::Integer(#schema)
+                }
+            }
+            ParserType::Boolean(options) => {
+                let schema = options.quote_schema();
+                quote! {
+                    kalosm_sample::SchemaType::Boolean(#schema)
+                }
+            }
             ParserType::Custom(ty) => {
                 quote_spanned! {
                     ty.span() =>
@@ -1239,26 +1365,33 @@ impl ToTokens for Parser {
             return;
         }
 
-        match &self.ty {
+        tokens.extend(match &self.ty {
             ParserType::String(options) => {
-                options.to_tokens(tokens);
+                quote! {
+                    #options
+                }
             }
             ParserType::Integer(options) => {
-                options.to_tokens(tokens);
+                quote! {
+                    #options
+                }
             }
             ParserType::Number(options) => {
-                options.to_tokens(tokens);
+                quote! {
+                    #options
+                }
             }
             ParserType::Boolean(options) => {
-                options.to_tokens(tokens);
+                quote! {
+                    #options
+                }
             }
             ParserType::Custom(ty) => {
-                let quote = quote! {
+                quote! {
                     <#ty as kalosm_sample::Parse>::new_parser()
-                };
-                tokens.extend(quote);
+                }
             }
-        }
+        })
     }
 }
 
@@ -1645,9 +1778,8 @@ impl Parse for BoolOptions {
 
 impl ToTokens for BoolOptions {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
-        let path = &self.path;
         let quote = quote! {
-            <#path as kalosm_sample::Parse>::new_parser()
+            kalosm_sample::BoolParser::new()
         };
         tokens.extend(quote);
     }

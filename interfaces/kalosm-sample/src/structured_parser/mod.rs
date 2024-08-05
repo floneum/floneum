@@ -1,6 +1,6 @@
 #![allow(clippy::type_complexity)]
 
-pub use kalosm_parse_macro::Parse;
+pub use kalosm_parse_macro::*;
 mod integer;
 use std::{
     any::Any,
