@@ -1,13 +1,15 @@
 use proc_macro::TokenStream;
-use proc_macro2::TokenStream as TokenStream2;
+use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::quote_spanned;
 use quote::{format_ident, quote, ToTokens};
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::fmt::Debug;
+use syn::meta::ParseNestedMeta;
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
 use syn::{ext::IdentExt, parse_macro_input, DeriveInput, Field, Ident, LitStr};
-use syn::{DataEnum, Fields, LitInt, Path, TypePath};
+use syn::{DataEnum, Fields, FieldsNamed, LitInt, Path, TypePath, Variant};
 
 /// Derive a default JSON parser for a unit value, struct or enum.
 ///
@@ -136,30 +138,12 @@ pub fn derive_parse(input: TokenStream) -> TokenStream {
                         quote! { Self {} },
                     ));
                 }
-
-                let field_names = fields.named.iter().map(|f| f.ident.as_ref().unwrap());
-                let construct = quote! {
-                    Self {
-                        #(
-                            #field_names
-                        ),*
-                    }
-                };
-
-                let parser = match field_parser(&fields.named.iter().collect::<Vec<_>>(), construct)
-                {
+                let struct_parser = match StructParser::new(fields, ty) {
                     Ok(parser) => parser,
                     Err(err) => return err.to_compile_error().into(),
                 };
-                let expanded = quote! {
-                    impl kalosm_sample::Parse for #ty {
-                        fn new_parser() -> impl kalosm_sample::SendCreateParserState<Output = Self> {
-                            #parser
-                        }
-                    }
-                };
 
-                TokenStream::from(expanded)
+                TokenStream::from(struct_parser.parser())
             }
             syn::Fields::Unit => {
                 let ty = input.ident;
@@ -186,7 +170,9 @@ pub fn derive_parse(input: TokenStream) -> TokenStream {
                 .any(|variant| !matches!(&variant.fields, syn::Fields::Unit));
 
             if has_fields {
-                match full_enum_parser(input.attrs, data, ty) {
+                match EnumParser::new(input.attrs, data, ty)
+                    .and_then(|parser| parser.quote_parser())
+                {
                     Ok(parser) => parser,
                     Err(err) => err.to_compile_error(),
                 }
@@ -201,6 +187,51 @@ pub fn derive_parse(input: TokenStream) -> TokenStream {
         )
         .to_compile_error()
         .into(),
+    }
+}
+
+struct StructParser {
+    ty: Ident,
+    fields: FieldsParser,
+}
+
+impl StructParser {
+    fn new(fields: FieldsNamed, ty: Ident) -> syn::Result<Self> {
+        let named = fields.named.into_iter().collect::<Vec<_>>();
+        Ok(Self {
+            ty,
+            fields: FieldsParser::new(&named)?,
+        })
+    }
+
+    fn parser(&self) -> TokenStream2 {
+        let field_names = self
+            .fields
+            .fields
+            .iter()
+            .map(|f| f.field.ident.as_ref().unwrap());
+        let construct = quote! {
+            Self {
+                #(
+                    #field_names
+                ),*
+            }
+        };
+
+        let parser = match self.fields.parser(construct) {
+            Ok(parser) => parser,
+            Err(err) => return err.to_compile_error(),
+        };
+
+        let ty = &self.ty;
+
+        quote! {
+            impl kalosm_sample::Parse for #ty {
+                fn new_parser() -> impl kalosm_sample::SendCreateParserState<Output = Self> {
+                    #parser
+                }
+            }
+        }
     }
 }
 
@@ -244,16 +275,38 @@ fn impl_unit_parser(attrs: &[syn::Attribute], ty: &Ident, construct: TokenStream
     }
 }
 
+fn unit_schema(attrs: &[syn::Attribute], ty: &Ident) -> TokenStream2 {
+    let name = match unit_parse_literal_name(attrs, ty) {
+        Ok(name) => name,
+        Err(err) => return err.to_compile_error(),
+    };
+
+    quote! {
+        impl kalosm_sample::Schema for #ty {
+            fn schema() -> kalosm_sample::SchemaType {
+                kalosm_sample::SchemaType::Const(kalosm_sample::SchemaLiteral::String(#name.to_string()))
+            }
+        }
+    }
+}
+
 fn unit_parse_literal(attrs: &[syn::Attribute], ty: &Ident, unquoted: bool) -> syn::Result<String> {
+    let ty_string = unit_parse_literal_name(attrs, ty)?;
+
+    Ok(if unquoted {
+        ty_string
+    } else {
+        format!("\"{ty_string}\"")
+    })
+}
+
+fn unit_parse_literal_name(attrs: &[syn::Attribute], ty: &Ident) -> syn::Result<String> {
     // Look for #[parse(rename = "name")] attribute
     let mut ty_string = ty.unraw().to_string();
     for attr in attrs.iter() {
         if attr.path().is_ident("parse") {
             attr.parse_nested_meta(|meta| {
-                if meta.path.is_ident("rename") {
-                    let value = meta
-                        .value()
-                        .and_then(|value| value.parse::<syn::LitStr>())?;
+                if let Some(value) = parse_rename_attribute(&meta)? {
                     ty_string = value.value();
                     Ok(())
                 } else {
@@ -263,11 +316,7 @@ fn unit_parse_literal(attrs: &[syn::Attribute], ty: &Ident, unquoted: bool) -> s
         }
     }
 
-    Ok(if unquoted {
-        ty_string
-    } else {
-        format!("\"{ty_string}\"")
-    })
+    Ok(ty_string)
 }
 
 fn unit_parser(attrs: &[syn::Attribute], ty: &Ident) -> TokenStream2 {
@@ -281,48 +330,110 @@ fn unit_parser(attrs: &[syn::Attribute], ty: &Ident) -> TokenStream2 {
     }
 }
 
-fn full_enum_parser(
+struct EnumParser {
     attrs: Vec<syn::Attribute>,
-    data: DataEnum,
     ty: Ident,
-) -> syn::Result<TokenStream2> {
-    // Look for the tag and content attributes within the #[parse] attribute
-    let mut tag = "type".to_string();
-    let mut content = "data".to_string();
-    for attr in attrs.iter() {
-        if attr.path().is_ident("parse") {
-            attr.parse_nested_meta(|meta| {
-                if meta.path.is_ident("tag") {
-                    let value = meta
-                        .value()
-                        .and_then(|value| value.parse::<syn::LitStr>())?;
-                    tag = value.value();
-                    Ok(())
-                } else if meta.path.is_ident("content") {
-                    let value = meta
-                        .value()
-                        .and_then(|value| value.parse::<syn::LitStr>())?;
-                    content = value.value();
-                    Ok(())
-                } else {
-                    Err(meta.error("expected `tag` or `content`"))
-                }
-            })?;
+    enum_data: DataEnum,
+    tag: String,
+    data: String,
+    variants: Vec<EnumVariant>,
+}
+
+impl EnumParser {
+    fn new(attrs: Vec<syn::Attribute>, data: DataEnum, ty: Ident) -> syn::Result<Self> {
+        // Look for the tag and content attributes within the #[parse] attribute
+        let mut tag = "type".to_string();
+        let mut content = "data".to_string();
+        for attr in attrs.iter() {
+            if attr.path().is_ident("parse") {
+                attr.parse_nested_meta(|meta| {
+                    if meta.path.is_ident("tag") {
+                        let value = meta
+                            .value()
+                            .and_then(|value| value.parse::<syn::LitStr>())?;
+                        tag = value.value();
+                        Ok(())
+                    } else if meta.path.is_ident("content") {
+                        let value = meta
+                            .value()
+                            .and_then(|value| value.parse::<syn::LitStr>())?;
+                        content = value.value();
+                        Ok(())
+                    } else {
+                        Err(meta.error("expected `tag` or `content`"))
+                    }
+                })?;
+            }
         }
+
+        let variants = data
+            .variants
+            .iter()
+            .map(EnumVariant::new)
+            .collect::<syn::Result<_>>()?;
+
+        Ok(EnumParser {
+            attrs,
+            ty,
+            enum_data: data,
+            tag,
+            data: content,
+            variants,
+        })
     }
 
-    let mut parser = None;
-    for variant in data.variants.iter() {
+    fn quote_parser(&self) -> syn::Result<TokenStream2> {
+        let tag = &self.tag;
+        let ty = &self.ty;
+        let content = &self.data;
+        let mut parser = None;
+
+        for variant in &self.variants {
+            let parse_variant = variant.quote_parser(content)?;
+            match &mut parser {
+                Some(current) => {
+                    *current = quote! {
+                        #current
+                            .or(
+                                #parse_variant
+                            )
+                    };
+                }
+                None => {
+                    parser = Some(parse_variant);
+                }
+            }
+        }
+
+        let struct_start = format!("{{ \"{tag}\": \"");
+
+        Ok(quote! {
+            impl kalosm_sample::Parse for #ty {
+                fn new_parser() -> impl kalosm_sample::SendCreateParserState<Output = Self> {
+                    kalosm_sample::LiteralParser::from(#struct_start)
+                        .ignore_output_then(#parser)
+                        .then_literal(r#" }"#)
+                }
+            }
+        })
+    }
+}
+
+struct EnumVariant {
+    variant: Variant,
+    name: String,
+    ty: EnumVariantType,
+}
+
+impl EnumVariant {
+    fn new(variant: &Variant) -> syn::Result<Self> {
         let variant_ident = &variant.ident;
         let mut variant_name = variant_ident.unraw().to_string();
         // Look for #[parse(rename = "name")] attribute
         for attr in variant.attrs.iter() {
             if attr.path().is_ident("parse") {
                 attr.parse_nested_meta(|meta| {
-                    if meta.path.is_ident("rename") {
-                        let value = meta
-                            .value()
-                            .and_then(|value| value.parse::<syn::LitStr>())?;
+                    if let Some(value) = parse_rename_attribute(&meta)? {
                         variant_name = value.value();
                         Ok(())
                     } else {
@@ -332,23 +443,9 @@ fn full_enum_parser(
             }
         }
 
-        let construct_variant = {
-            let fields = quote_fields(variant.fields.clone());
-            quote! {
-                Self::#variant_ident #fields
-            }
-        };
         let parse_variant = match &variant.fields {
             syn::Fields::Named(fields) => {
-                let parse_name_and_data = LitStr::new(
-                    &format!("{}\", \"{content}\": ", variant_name),
-                    variant.ident.span(),
-                );
-                let fields = fields.named.iter().collect::<Vec<_>>();
-                let field_parser = field_parser(&fields, construct_variant)?;
-                quote! {
-                    kalosm_sample::LiteralParser::from(#parse_name_and_data).ignore_output_then(#field_parser)
-                }
+                EnumVariantType::Struct(StructEnumVariantParser::new(fields)?)
             }
             syn::Fields::Unnamed(fields) => {
                 let field_vec = fields.unnamed.iter().collect::<Vec<_>>();
@@ -359,50 +456,121 @@ fn full_enum_parser(
                     ));
                 };
 
-                let parse_name_and_data = LitStr::new(
-                    &format!("{}\", \"{content}\": ", variant_name),
-                    variant.ident.span(),
-                );
-                let ty = &inner.ty;
-                quote! {
-                    kalosm_sample::LiteralParser::from(#parse_name_and_data).ignore_output_then(<#ty as kalosm_sample::Parse>::new_parser()).map_output(|data0| #construct_variant)
-                }
+                EnumVariantType::Tuple(TupleEnumVariantParser::new(inner))
             }
             // If this is a unit variant, we can just parse the type
-            syn::Fields::Unit => {
-                let lit_str_name =
-                    LitStr::new(&format!("{}\"", variant_name), variant.ident.span());
-                quote! {
-                    kalosm_sample::LiteralParser::from(#lit_str_name).map_output(|_| #construct_variant)
-                }
-            }
+            syn::Fields::Unit => EnumVariantType::Unit(UnitEnumVariantParser::new()),
         };
-        match &mut parser {
-            Some(current) => {
-                *current = quote! {
-                    #current
-                        .or(
-                            #parse_variant
-                        )
-                };
-            }
-            None => {
-                parser = Some(parse_variant);
-            }
+
+        Ok(Self {
+            variant: variant.clone(),
+            name: variant_name,
+            ty: parse_variant,
+        })
+    }
+
+    fn construct_variant(&self) -> TokenStream2 {
+        let fields = quote_fields(self.variant.fields.clone());
+        let variant_ident = &self.variant.ident;
+        quote! {
+            Self::#variant_ident #fields
         }
     }
 
-    let struct_start = format!("{{ \"{tag}\": \"");
-
-    Ok(quote! {
-        impl kalosm_sample::Parse for #ty {
-            fn new_parser() -> impl kalosm_sample::SendCreateParserState<Output = Self> {
-                kalosm_sample::LiteralParser::from(#struct_start)
-                    .ignore_output_then(#parser)
-                    .then_literal(r#" }"#)
+    fn quote_parser(&self, content_name: &str) -> syn::Result<TokenStream2> {
+        let construct_variant = self.construct_variant();
+        match &self.ty {
+            EnumVariantType::Struct(parser) => {
+                parser.quote_parser(&self.name, content_name, construct_variant)
             }
+            EnumVariantType::Tuple(parser) => {
+                parser.quote_parser(&self.name, content_name, construct_variant)
+            }
+            EnumVariantType::Unit(parser) => parser.quote_parser(&self.name, construct_variant),
         }
-    })
+    }
+}
+
+enum EnumVariantType {
+    Unit(UnitEnumVariantParser),
+    Tuple(TupleEnumVariantParser),
+    Struct(StructEnumVariantParser),
+}
+
+struct UnitEnumVariantParser {}
+
+impl UnitEnumVariantParser {
+    fn new() -> Self {
+        Self {}
+    }
+
+    fn quote_parser(
+        &self,
+        variant_name: &str,
+        construct_variant: TokenStream2,
+    ) -> syn::Result<TokenStream2> {
+        let lit_str_name = LitStr::new(&format!("{variant_name}\""), Span::call_site());
+        Ok(quote! {
+            kalosm_sample::LiteralParser::from(#lit_str_name).map_output(|_| #construct_variant)
+        })
+    }
+}
+
+struct StructEnumVariantParser {
+    fields: FieldsParser,
+}
+
+impl StructEnumVariantParser {
+    fn new(fields: &FieldsNamed) -> syn::Result<Self> {
+        let fields = fields.named.iter().cloned().collect::<Vec<_>>();
+        Ok(Self {
+            fields: FieldsParser::new(&fields)?,
+        })
+    }
+
+    fn quote_parser(
+        &self,
+        variant_name: &str,
+        content_name: &str,
+        construct_variant: TokenStream2,
+    ) -> syn::Result<TokenStream2> {
+        let parse_name_and_data = LitStr::new(
+            &format!("{variant_name}\", \"{content_name}\": "),
+            Span::call_site(),
+        );
+        let field_parser = self.fields.parser(construct_variant)?;
+        Ok(quote! {
+            kalosm_sample::LiteralParser::from(#parse_name_and_data).ignore_output_then(#field_parser)
+        })
+    }
+}
+
+struct TupleEnumVariantParser {
+    field: Field,
+}
+
+impl TupleEnumVariantParser {
+    fn new(fields: &Field) -> Self {
+        Self {
+            field: fields.clone(),
+        }
+    }
+
+    fn quote_parser(
+        &self,
+        variant_name: &str,
+        content: &str,
+        construct_variant: TokenStream2,
+    ) -> syn::Result<TokenStream2> {
+        let parse_name_and_data = LitStr::new(
+            &format!("{variant_name}\", \"{content}\": "),
+            Span::call_site(),
+        );
+        let ty = &self.field.ty;
+        Ok(quote! {
+            kalosm_sample::LiteralParser::from(#parse_name_and_data).ignore_output_then(<#ty as kalosm_sample::Parse>::new_parser()).map_output(|data0| #construct_variant)
+        })
+    }
 }
 
 fn unit_enum_parser(attrs: Vec<syn::Attribute>, data: DataEnum, ty: Ident) -> TokenStream2 {
@@ -594,38 +762,165 @@ fn unit_enum_parser(attrs: Vec<syn::Attribute>, data: DataEnum, ty: Ident) -> To
     }
 }
 
+fn unit_enum_schema(data: DataEnum, ty: Ident) -> TokenStream2 {
+    let mut variants = Vec::new();
+    for variant in data.variants.iter() {
+        let variant_name = &variant.ident;
+        let literal_string = match unit_parse_literal_name(&variant.attrs, variant_name) {
+            Ok(literal_string) => literal_string,
+            Err(err) => return err.to_compile_error(),
+        };
+        variants.push(literal_string);
+    }
+
+    let schema = unit_enum_schema_type(variants);
+
+    quote! {
+        impl kalosm_sample::Schema for #ty {
+            fn schema() -> kalosm_sample::SchemaType {
+                #schema
+            }
+        }
+    }
+}
+
+fn unit_enum_schema_type(variants: impl IntoIterator<Item = String>) -> proc_macro2::TokenStream {
+    let variants = variants.into_iter().map(|variant| {
+        let variant = LitStr::new(&variant, variant.span());
+        quote! {
+            kalosm_sample::SchemaLiteral::String(#variant.to_string())
+        }
+    });
+
+    let schema = quote! {
+        kalosm_sample::EnumSchema::new([#(#variants),*])
+    };
+
+    quote! {
+        kalosm_sample::SchemaType::Enum(#schema)
+    }
+}
+
 fn wrap_tuple(ident: &Ident, current: TokenStream2) -> TokenStream2 {
     quote! {
         (#current, #ident)
     }
 }
 
-fn field_parser(fields: &[&Field], construct: TokenStream2) -> syn::Result<TokenStream2> {
-    let mut parsers = Vec::new();
-    let idents: Vec<_> = fields
-        .iter()
-        .map(|f| format_ident!("{}_parser", f.ident.as_ref().unwrap().unraw()))
-        .collect();
-    for (i, (field, parser_ident)) in fields.iter().zip(idents.iter()).enumerate() {
-        let ident = field.ident.as_ref().unwrap().unraw();
+fn parse_rename_attribute(meta: &ParseNestedMeta) -> syn::Result<Option<LitStr>> {
+    if meta.path.is_ident("rename") {
+        let value = meta
+            .value()
+            .and_then(|value| value.parse::<syn::LitStr>())?;
+        return Ok(Some(value));
+    }
+    Ok(None)
+}
 
+struct FieldsParser {
+    fields: Vec<FieldParser>,
+}
+
+impl FieldsParser {
+    fn new(fields: &[Field]) -> syn::Result<Self> {
+        Ok(Self {
+            fields: fields
+                .iter()
+                .map(FieldParser::new)
+                .collect::<syn::Result<_>>()?,
+        })
+    }
+
+    fn parser(&self, construct: TokenStream2) -> syn::Result<TokenStream2> {
+        let mut parsers = Vec::new();
+        let idents: Vec<_> = self
+            .fields
+            .iter()
+            .map(|f| format_ident!("{}_parser", f.field.ident.as_ref().unwrap().unraw()))
+            .collect();
+        for (i, (field, parser_ident)) in self.fields.iter().zip(idents.iter()).enumerate() {
+            let mut literal_text = String::new();
+            if i == 0 {
+                literal_text.push_str("{ ");
+            } else {
+                literal_text.push_str(", ");
+            }
+            let field_name = &field.name;
+            let field_parser = &field.parser;
+            literal_text.push_str(&format!("\"{field_name}\": "));
+            let literal_text = LitStr::new(&literal_text, field.field.ident.span());
+
+            parsers.push(quote! {
+                let #parser_ident = kalosm_sample::LiteralParser::from(#literal_text)
+                    .ignore_output_then(#field_parser);
+            });
+        }
+
+        let mut output_tuple = None;
+        for field in self.fields.iter() {
+            let name = field.field.ident.as_ref().unwrap();
+            match output_tuple {
+                Some(current) => {
+                    output_tuple = Some(wrap_tuple(name, current));
+                }
+                None => {
+                    output_tuple = Some(name.to_token_stream());
+                }
+            }
+        }
+
+        let mut join_parser: Option<TokenStream2> = None;
+        for ident in idents.iter() {
+            match &mut join_parser {
+                Some(current) => {
+                    *current = quote! {
+                        #current
+                            .then(#ident)
+                    };
+                }
+                None => {
+                    join_parser = Some(ident.to_token_stream());
+                }
+            }
+        }
+
+        Ok(quote! {
+            {
+                #(
+                    #parsers
+                )*
+
+                #join_parser
+                    .then_literal(r#" }"#)
+                    .map_output(|#output_tuple| #construct)
+            }
+        })
+    }
+}
+
+struct FieldParser {
+    field: Field,
+    parser: Parser,
+    name: String,
+}
+
+impl FieldParser {
+    fn new(field: &Field) -> syn::Result<Self> {
         let mut field_name = field.ident.as_ref().unwrap().unraw().to_string();
-        let mut field_parser: Parser = syn::parse2(field.ty.to_token_stream())?;
+        let mut parser: Parser = syn::parse2(field.ty.to_token_stream())?;
+
         // Look for #[parse(rename = "name")] or #[parse(with = expr)] attributes
         for attr in field.attrs.iter() {
             if attr.path().is_ident("parse") {
                 attr.parse_nested_meta(|meta| {
-                    if meta.path.is_ident("rename") {
-                        let value = meta
-                            .value()
-                            .and_then(|value| value.parse::<syn::LitStr>())?;
+                    if let Some(value) = parse_rename_attribute(&meta)? {
                         field_name = value.value();
                         Ok(())
                     } else {
-                        let attribute_applied = field_parser.apply_attribute(&meta)?;
+                        let attribute_applied = parser.apply_attribute(&meta)?;
                         if !attribute_applied {
                             let mut possible_attributes = vec!["rename"];
-                            possible_attributes.extend(field_parser.possible_attributes());
+                            possible_attributes.extend(parser.possible_attributes());
                             return Err(meta.error(expected_attributes_error(possible_attributes)));
                         }
                         Ok(())
@@ -634,60 +929,12 @@ fn field_parser(fields: &[&Field], construct: TokenStream2) -> syn::Result<Token
             }
         }
 
-        let mut literal_text = String::new();
-        if i == 0 {
-            literal_text.push_str("{ ");
-        } else {
-            literal_text.push_str(", ");
-        }
-        literal_text.push_str(&format!("\"{field_name}\": "));
-        let literal_text = LitStr::new(&literal_text, ident.span());
-
-        parsers.push(quote! {
-            let #parser_ident = kalosm_sample::LiteralParser::from(#literal_text)
-                .ignore_output_then(#field_parser);
-        });
+        Ok(Self {
+            field: field.clone(),
+            parser,
+            name: field_name,
+        })
     }
-
-    let mut output_tuple = None;
-    for field in fields.iter() {
-        let name = field.ident.as_ref().unwrap();
-        match output_tuple {
-            Some(current) => {
-                output_tuple = Some(wrap_tuple(name, current));
-            }
-            None => {
-                output_tuple = Some(name.to_token_stream());
-            }
-        }
-    }
-
-    let mut join_parser: Option<TokenStream2> = None;
-    for ident in idents.iter() {
-        match &mut join_parser {
-            Some(current) => {
-                *current = quote! {
-                    #current
-                        .then(#ident)
-                };
-            }
-            None => {
-                join_parser = Some(ident.to_token_stream());
-            }
-        }
-    }
-
-    Ok(quote! {
-        {
-            #(
-                #parsers
-            )*
-
-            #join_parser
-                .then_literal(r#" }"#)
-                .map_output(|#output_tuple| #construct)
-        }
-    })
 }
 
 fn expected_attributes_error(
@@ -764,6 +1011,7 @@ fn type_parses() {
 struct Parser {
     ty: ParserType,
     with: Option<proc_macro2::TokenStream>,
+    schema: Option<proc_macro2::TokenStream>,
 }
 
 impl Parse for Parser {
@@ -771,6 +1019,7 @@ impl Parse for Parser {
         Ok(Self {
             ty: input.parse()?,
             with: None,
+            schema: None,
         })
     }
 }
@@ -779,6 +1028,9 @@ impl Parser {
     fn apply_attribute(&mut self, input: &syn::meta::ParseNestedMeta) -> syn::Result<bool> {
         if input.path.is_ident("with") {
             self.with = Some(input.value()?.parse()?);
+            Ok(true)
+        } else if input.path.is_ident("schema") {
+            self.schema = Some(input.value()?.parse()?);
             Ok(true)
         } else {
             match &mut self.ty {
@@ -792,7 +1044,7 @@ impl Parser {
     }
 
     fn possible_attributes(&self) -> Vec<&'static str> {
-        let mut attributes = vec!["with"];
+        let mut attributes = vec!["with", "schema"];
         match &self.ty {
             ParserType::String(_) => attributes.extend(StringParserOptions::ATTRIBUTES),
             ParserType::Integer(_) | ParserType::Number(_) => {
@@ -802,6 +1054,25 @@ impl Parser {
             _ => {}
         }
         attributes
+    }
+
+    fn quote_schema(&self) -> proc_macro2::TokenStream {
+        if let Some(schema) = &self.schema {
+            return schema.clone();
+        }
+
+        match &self.ty {
+            ParserType::String(options) => options.quote_schema(),
+            ParserType::Number(options) => options.quote_schema(),
+            ParserType::Integer(options) => options.quote_schema(),
+            ParserType::Boolean(options) => options.quote_schema(),
+            ParserType::Custom(ty) => {
+                quote_spanned! {
+                    ty.span() =>
+                    <#ty as kalosm_sample::Schema>::schema()
+                }
+            }
+        }
     }
 }
 
@@ -839,12 +1110,21 @@ impl ToTokens for Parser {
 // - #[parse(character_filter = |c| ...)]
 // - #[parse(len = 1..=10)]
 // - #[parse(pattern = "a+")]
-#[derive(Debug)]
 struct StringParserOptions {
     path: Path,
     character_filter: Option<proc_macro2::TokenStream>,
     len: Option<proc_macro2::TokenStream>,
     pattern: Option<proc_macro2::TokenStream>,
+}
+
+impl Debug for StringParserOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StringParserOptions")
+            .field("character_filter", &self.character_filter)
+            .field("len", &self.len)
+            .field("pattern", &self.pattern)
+            .finish()
+    }
 }
 
 impl Parse for StringParserOptions {
@@ -855,6 +1135,23 @@ impl Parse for StringParserOptions {
 }
 
 impl StringParserOptions {
+    const ATTRIBUTES: &'static [&'static str] = &["character_filter", "len", "pattern"];
+
+    fn apply_attribute(&mut self, input: &syn::meta::ParseNestedMeta) -> syn::Result<bool> {
+        if input.path.is_ident("character_filter") {
+            self.character_filter = Some(input.value()?.parse()?);
+            Ok(true)
+        } else if input.path.is_ident("len") {
+            self.len = Some(input.value()?.parse()?);
+            Ok(true)
+        } else if input.path.is_ident("pattern") {
+            self.pattern = Some(input.value()?.parse()?);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     fn from_path(path: &Path) -> syn::Result<Self> {
         if !is_string(path) {
             return Err(syn::Error::new(path.span(), "Expected a string type"));
@@ -865,6 +1162,28 @@ impl StringParserOptions {
             len: None,
             pattern: None,
         })
+    }
+
+    fn quote_schema(&self) -> proc_macro2::TokenStream {
+        let len = self.len.as_ref().map(|len| {
+            quote_spanned! {
+                len.span() =>
+                .with_length(#len)
+            }
+        });
+        let pattern = self.pattern.as_ref().map(|pattern| {
+            quote_spanned! {
+                pattern.span() =>
+                .with_pattern(#pattern)
+            }
+        });
+        let quote = quote_spanned! {
+            self.path.span() =>
+            kalosm_sample::StringSchema::new()
+            #len
+            #pattern
+        };
+        quote
     }
 }
 
@@ -901,25 +1220,6 @@ impl ToTokens for StringParserOptions {
             #character_filter
         };
         tokens.extend(quote);
-    }
-}
-
-impl StringParserOptions {
-    const ATTRIBUTES: &'static [&'static str] = &["character_filter", "len", "pattern"];
-
-    fn apply_attribute(&mut self, input: &syn::meta::ParseNestedMeta) -> syn::Result<bool> {
-        if input.path.is_ident("character_filter") {
-            self.character_filter = Some(input.value()?.parse()?);
-            Ok(true)
-        } else if input.path.is_ident("len") {
-            self.len = Some(input.value()?.parse()?);
-            Ok(true)
-        } else if input.path.is_ident("pattern") {
-            self.pattern = Some(input.value()?.parse()?);
-            Ok(true)
-        } else {
-            Ok(false)
-        }
     }
 }
 
@@ -1055,11 +1355,19 @@ impl ToTokens for NumberType {
 
 // Numbers accept these attributes:
 // - #[parse(range = 0.0..=100.0)]
-#[derive(Debug)]
 struct NumberParserOptions {
     path: Path,
     ty: NumberType,
     range: Option<proc_macro2::TokenStream>,
+}
+
+impl Debug for NumberParserOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NumberParserOptions")
+            .field("ty", &self.ty)
+            .field("range", &self.range)
+            .finish()
+    }
 }
 
 impl Parse for NumberParserOptions {
@@ -1111,11 +1419,43 @@ impl NumberParserOptions {
             Ok(false)
         }
     }
+
+    fn quote_schema(&self) -> proc_macro2::TokenStream {
+        match self.ty {
+            NumberType::F64 | NumberType::F32 => {
+                let range = self.range.as_ref().map(|range| {
+                    quote_spanned! {
+                        range.span() =>
+                            .with_range({
+                                let range = #range;
+                                let start = range.start() as f64;
+                                let end = range.end() as f64;
+                                start..=end
+                            })
+                    }
+                });
+                quote_spanned! {
+                    self.path.span() =>
+                    kalosm_sample::NumberSchema::new()
+                    #range
+                }
+            }
+            _ => quote_spanned! {
+                self.path.span() =>
+                kalosm_sample::IntegerSchema::new()
+            },
+        }
+    }
 }
 
-#[derive(Debug)]
 struct BoolOptions {
     path: Path,
+}
+
+impl Debug for BoolOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BoolOptions").finish()
+    }
 }
 
 impl BoolOptions {
@@ -1130,6 +1470,13 @@ impl BoolOptions {
             return Err(syn::Error::new(path.span(), "Expected a boolean type"));
         }
         Ok(Self { path: path.clone() })
+    }
+
+    fn quote_schema(&self) -> proc_macro2::TokenStream {
+        quote_spanned! {
+            self.path.span() =>
+            kalosm_sample::BooleanSchema::new()
+        }
     }
 }
 
