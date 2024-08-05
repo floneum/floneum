@@ -546,22 +546,25 @@ fn test_array_schema() {
 /// A schema for an object
 #[derive(Debug, Clone)]
 pub struct JsonObjectSchema {
-    title: String,
+    title: Option<String>,
     description: Option<&'static str>,
     properties: Vec<JsonPropertySchema>,
 }
 
 impl JsonObjectSchema {
     /// Create a new object schema
-    pub fn new(
-        title: impl ToString,
-        properties: impl IntoIterator<Item = JsonPropertySchema>,
-    ) -> Self {
+    pub fn new(properties: impl IntoIterator<Item = JsonPropertySchema>) -> Self {
         Self {
-            title: title.to_string(),
+            title: None,
             description: None,
             properties: properties.into_iter().collect(),
         }
+    }
+
+    /// Set the title of the object
+    pub fn with_title(mut self, title: impl Into<Option<String>>) -> Self {
+        self.title = title.into();
+        self
     }
 
     /// Set the description of the object
@@ -576,13 +579,16 @@ impl Display for JsonObjectSchema {
         f.write_char('{')?;
         {
             let mut writer = IndentationWriter::new(1, f);
-            writer.write_str("\n\"title\": \"")?;
-            writer.write_str(&self.title)?;
-            writer.write_str("\"")?;
-            if let Some(description) = &self.description {
-                writer.write_fmt(format_args!(",\n\"description\": \"{}\"", description))?;
+            writer.write_char('\n')?;
+            if let Some(title) = &self.title {
+                writer.write_str("\"title\": \"")?;
+                writer.write_str(title)?;
+                writer.write_str("\",")?;
             }
-            writer.write_str(",\n\"properties\": {")?;
+            if let Some(description) = &self.description {
+                writer.write_fmt(format_args!("\"description\": \"{}\",", description))?;
+            }
+            writer.write_str("\"properties\": {")?;
             if !self.properties.is_empty() {
                 writer.with_indent(|writer| {
                     for (i, property) in self.properties.iter().enumerate() {
@@ -621,7 +627,7 @@ impl Display for JsonObjectSchema {
 #[test]
 fn test_object_schema() {
     let schema = JsonObjectSchema {
-        title: "Person".to_string(),
+        title: Some("Person".to_string()),
         description: Some("A person"),
         properties: vec![
             JsonPropertySchema {
@@ -666,9 +672,9 @@ pub struct JsonPropertySchema {
 
 impl JsonPropertySchema {
     /// Create a new property schema
-    pub fn new(name: impl Into<String>, ty: SchemaType) -> Self {
+    pub fn new(name: impl ToString, ty: SchemaType) -> Self {
         Self {
-            name: name.into(),
+            name: name.to_string(),
             description: None,
             required: false,
             ty,

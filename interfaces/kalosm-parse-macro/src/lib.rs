@@ -138,7 +138,7 @@ pub fn derive_parse(input: TokenStream) -> TokenStream {
                         quote! { Self {} },
                     ));
                 }
-                let struct_parser = match StructParser::new(fields, ty) {
+                let struct_parser = match StructParser::new(input.attrs, fields, ty) {
                     Ok(parser) => parser,
                     Err(err) => return err.to_compile_error().into(),
                 };
@@ -190,15 +190,98 @@ pub fn derive_parse(input: TokenStream) -> TokenStream {
     }
 }
 
+#[proc_macro_derive(Schema, attributes(parse))]
+pub fn derive_schema(input: TokenStream) -> TokenStream {
+    // Parse the input tokens into a syntax tree
+    let input = parse_macro_input!(input as DeriveInput);
+
+    match input.data {
+        syn::Data::Struct(data) => match data.fields {
+            syn::Fields::Named(fields) => {
+                let ty = input.ident;
+                if fields.named.is_empty() {
+                    return TokenStream::from(unit_schema(&input.attrs, &ty));
+                }
+                let struct_parser = match StructParser::new(input.attrs, fields, ty) {
+                    Ok(parser) => parser,
+                    Err(err) => return err.to_compile_error().into(),
+                };
+
+                TokenStream::from(struct_parser.quote_schema())
+            }
+            syn::Fields::Unit => {
+                let ty = input.ident;
+                TokenStream::from(unit_schema(&input.attrs, &ty))
+            }
+            _ => syn::Error::new(
+                input.ident.span(),
+                "Only structs with named fields are supported",
+            )
+            .to_compile_error()
+            .into(),
+        },
+        syn::Data::Enum(data) => {
+            let ty = input.ident;
+            if data.variants.is_empty() {
+                return syn::Error::new(ty.span(), "Enums with no variants are not supported")
+                    .to_compile_error()
+                    .into();
+            }
+
+            let has_fields = data
+                .variants
+                .iter()
+                .any(|variant| !matches!(&variant.fields, syn::Fields::Unit));
+
+            if has_fields {
+                match EnumParser::new(input.attrs, data, ty)
+                    .and_then(|parser| parser.quote_schema())
+                {
+                    Ok(parser) => parser,
+                    Err(err) => err.to_compile_error(),
+                }
+            } else {
+                unit_enum_schema(data, ty)
+            }
+            .into()
+        }
+        _ => syn::Error::new(
+            input.ident.span(),
+            "Only structs and unit value enums are supported",
+        )
+        .to_compile_error()
+        .into(),
+    }
+}
+
 struct StructParser {
+    attributes: Vec<syn::Attribute>,
     ty: Ident,
+    name: String,
     fields: FieldsParser,
 }
 
 impl StructParser {
-    fn new(fields: FieldsNamed, ty: Ident) -> syn::Result<Self> {
+    fn new(attributes: Vec<syn::Attribute>, fields: FieldsNamed, ty: Ident) -> syn::Result<Self> {
         let named = fields.named.into_iter().collect::<Vec<_>>();
+
+        let mut name = ty.unraw().to_string();
+        for attr in &attributes {
+            if attr.path().is_ident("parse") {
+                attr.parse_nested_meta(|meta| {
+                    if let Some(value) = parse_rename_attribute(&meta)? {
+                        name = value.value();
+                    } else {
+                        return Err(meta.error("expected `rename`"));
+                    }
+                    Ok(())
+                })?;
+            }
+        }
+
         Ok(Self {
+            attributes,
+            name,
             ty,
             fields: FieldsParser::new(&named)?,
         })
@@ -231,6 +314,20 @@ impl StructParser {
                     #parser
                 }
             }
+        }
+    }
+
+    fn quote_schema(&self) -> proc_macro2::TokenStream {
+        let title = &self.name;
+        let description = doc_comment(&self.attributes);
+        let properties = self.fields.fields.iter().map(|field| field.quote_schema());
+
+        quote! {
+            kalosm_sample::JsonObjectSchema::new(
+                vec![#(#properties),*]
+            )
+            .with_title(#title)
+            .with_description(#description)
         }
     }
 }
@@ -331,9 +428,7 @@ fn unit_parser(attrs: &[syn::Attribute], ty: &Ident) -> TokenStream2 {
 }
 
 struct EnumParser {
-    attrs: Vec<syn::Attribute>,
     ty: Ident,
-    enum_data: DataEnum,
     tag: String,
     data: String,
     variants: Vec<EnumVariant>,
@@ -373,9 +468,7 @@ impl EnumParser {
             .collect::<syn::Result<_>>()?;
 
         Ok(EnumParser {
-            attrs,
             ty,
-            enum_data: data,
             tag,
             data: content,
             variants,
@@ -415,6 +508,42 @@ impl EnumParser {
                         .then_literal(r#" }"#)
                 }
             }
+        })
+    }
+
+    fn quote_schema(&self) -> syn::Result<proc_macro2::TokenStream> {
+        let tag = &self.tag;
+        let content = &self.data;
+
+        let variants: Vec<_> = self.variants
+            .iter()
+            .map(|variant|{
+                let variant_name = &variant.name;
+                let variant_parser = variant.quote_parser(content)?;
+                Ok(quote! {
+                    kalosm_sample::SchemaType::IfThen(IfThenSchema::new(
+                        kalosm_sample::SchemaType::Object(
+                            JsonObjectSchema::new([
+                                JsonPropertySchema::new(
+                                    #tag,
+                                    kalosm_sample::SchemaType::Const(
+                                        kalosm_sample::ConstSchema::new(
+                                            kalosm_sample::SchemaLiteral::String(#variant_name.to_string())
+                                        )
+                                    )
+                                )
+                            ])
+                        ),
+                        #variant_parser
+                    ))
+                })
+            })
+            .collect::<syn::Result<_>>()?;
+
+        Ok(quote! {
+            kalosm_sample::AnyOfSchema::new([
+                #(#variants),*
+            ])
         })
     }
 }
@@ -935,6 +1064,33 @@ impl FieldParser {
             name: field_name,
         })
     }
+
+    fn quote_schema(&self) -> proc_macro2::TokenStream {
+        let schema = self.parser.quote_schema();
+        let name = &self.name;
+        let description = doc_comment(&self.field.attrs);
+        quote! {
+            kalosm_sample::JsonPropertySchema::new(#name.to_string(), #schema)
+                .with_description(#description)
+                .required(true)
+        }
+    }
+}
+
+fn doc_comment(attrs: &[syn::Attribute]) -> String {
+    let mut description = String::new();
+    for attr in attrs {
+        if !attr.path().is_ident("doc") {
+            continue;
+        }
+        if let Ok(lit_str) = attr.parse_args::<syn::LitStr>() {
+            if !description.is_empty() {
+                description.push('\n');
+            }
+            description.push_str(&lit_str.value());
+        }
+    }
+    description
 }
 
 fn expected_attributes_error(
