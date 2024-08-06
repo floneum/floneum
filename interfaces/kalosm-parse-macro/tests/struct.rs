@@ -58,6 +58,7 @@ fn named_struct_schema() {
         serde_json::json!({
             "title": "NamedStruct",
             "description": "A named struct",
+            "type": "object",
             "properties": {
                 "field name": {
                     "description": "The name of the person",
@@ -71,7 +72,8 @@ fn named_struct_schema() {
             "required": [
                 "field name",
                 "age"
-            ]
+            ],
+            "additionalProperties": false
         })
     );
 }

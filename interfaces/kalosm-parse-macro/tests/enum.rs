@@ -1,6 +1,7 @@
 #![allow(unused)]
 
 use kalosm::language::*;
+use pretty_assertions::assert_eq;
 
 #[derive(Parse, Schema, Clone)]
 #[parse(tag = "ty", content = "contents")]
@@ -63,45 +64,42 @@ fn mixed_enum_schema() {
     assert_eq!(
         json,
         serde_json::json!({
-            "anyOf": [
+            "oneOf": [
                 {
-                    "if": {
-                        "properties": {
-                            "type": { "const": "Person" }
+                    "type": "object",
+                    "properties": {
+                        "type": { "const": "Person" },
+                        "data": {
+                            "type": "object",
+                            "properties": {
+                                "person": {
+                                    "type": "string"
+                                },
+                                "age": { "type": "integer" }
+                            },
+                            "required": ["person", "age"],
+                            "additionalProperties": false
                         }
                     },
-                    "then": {
-                        "properties": {
-                            "data": {
-                                "properties": {
-                                    "person": {
-                                        "type": "string"
-                                    },
-                                    "age": { "type": "integer" }
-                                },
-                                "required": ["person", "age"]
-                            }
-                        }
-                    }
+                    "required": ["type", "data"],
+                    "additionalProperties": false
                 },
                 {
+                    "type": "object",
                     "properties": {
                         "type": { "const": "Animal" }
-                    }
+                    },
+                    "required": ["type"],
+                    "additionalProperties": false
                 },
                 {
-                    "if": {
-                        "properties": {
-                            "type": { "const": "Turtle" }
-                        }
+                    "type": "object",
+                    "properties": {
+                        "type": { "const": "Turtle" },
+                        "data": { "type": "string" }
                     },
-                    "then": {
-                        "properties": {
-                            "data": {
-                                "type": "string"
-                            }
-                        }
-                    }
+                    "required": ["type", "data"],
+                    "additionalProperties": false
                 }
             ]
         })

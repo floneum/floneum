@@ -537,8 +537,8 @@ impl EnumParser {
         Ok(quote! {
             impl kalosm_sample::Schema for #ty {
                 fn schema() -> kalosm_sample::SchemaType {
-                    kalosm_sample::SchemaType::AnyOf(
-                        kalosm_sample::AnyOfSchema::new([
+                    kalosm_sample::SchemaType::OneOf(
+                        kalosm_sample::OneOfSchema::new([
                             #(#variants),*
                         ])
                     )
@@ -669,6 +669,7 @@ impl UnitEnumVariantParser {
                             )
                         )
                     )
+                    .with_required(true)
                 ])
             )
         })
@@ -711,30 +712,26 @@ impl StructEnumVariantParser {
     ) -> syn::Result<proc_macro2::TokenStream> {
         let variant_parser = self.fields.quote_schema();
         Ok(quote! {
-            kalosm_sample::SchemaType::IfThen(IfThenSchema::new(
-                kalosm_sample::SchemaType::Object(
-                    kalosm_sample::JsonObjectSchema::new([
-                        kalosm_sample::JsonPropertySchema::new(
-                            #tag,
-                            kalosm_sample::SchemaType::Const(
-                                kalosm_sample::ConstSchema::new(
-                                    kalosm_sample::SchemaLiteral::String(#variant_name.to_string())
-                                )
+            kalosm_sample::SchemaType::Object(
+                kalosm_sample::JsonObjectSchema::new([
+                    kalosm_sample::JsonPropertySchema::new(
+                        #tag,
+                        kalosm_sample::SchemaType::Const(
+                            kalosm_sample::ConstSchema::new(
+                                kalosm_sample::SchemaLiteral::String(#variant_name.to_string())
                             )
                         )
-                    ])
-                ),
-                kalosm_sample::SchemaType::Object(
-                    kalosm_sample::JsonObjectSchema::new([
-                        kalosm_sample::JsonPropertySchema::new(
-                            #content,
-                            kalosm_sample::SchemaType::Object(
-                                #variant_parser
-                            )
+                    )
+                    .with_required(true),
+                    kalosm_sample::JsonPropertySchema::new(
+                        #content,
+                        kalosm_sample::SchemaType::Object(
+                            #variant_parser
                         )
-                    ])
-                )
-            ))
+                    )
+                    .with_required(true)
+                ])
+            )
         })
     }
 }
@@ -774,28 +771,24 @@ impl TupleEnumVariantParser {
     ) -> syn::Result<proc_macro2::TokenStream> {
         let ty = &self.field.ty;
         Ok(quote! {
-            kalosm_sample::SchemaType::IfThen(IfThenSchema::new(
-                kalosm_sample::SchemaType::Object(
-                    kalosm_sample::JsonObjectSchema::new([
-                        kalosm_sample::JsonPropertySchema::new(
-                            #tag,
-                            kalosm_sample::SchemaType::Const(
-                                kalosm_sample::ConstSchema::new(
-                                    kalosm_sample::SchemaLiteral::String(#variant_name.to_string())
-                                )
+            kalosm_sample::SchemaType::Object(
+                kalosm_sample::JsonObjectSchema::new([
+                    kalosm_sample::JsonPropertySchema::new(
+                        #tag,
+                        kalosm_sample::SchemaType::Const(
+                            kalosm_sample::ConstSchema::new(
+                                kalosm_sample::SchemaLiteral::String(#variant_name.to_string())
                             )
                         )
-                    ])
-                ),
-                kalosm_sample::SchemaType::Object(
-                    kalosm_sample::JsonObjectSchema::new([
-                        kalosm_sample::JsonPropertySchema::new(
-                            #content,
-                            <#ty as kalosm_sample::Schema>::schema()
-                        )
-                    ])
-                )
-            ))
+                    )
+                    .with_required(true),
+                    kalosm_sample::JsonPropertySchema::new(
+                        #content,
+                        <#ty as kalosm_sample::Schema>::schema()
+                    )
+                    .with_required(true)
+                ])
+            )
         })
     }
 }

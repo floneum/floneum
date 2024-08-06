@@ -81,6 +81,8 @@ pub enum SchemaType {
     Enum(EnumSchema),
     /// A schema that matches any of the composite schemas
     AnyOf(AnyOfSchema),
+    /// A schema that matches one of the composite schemas
+    OneOf(OneOfSchema),
     /// A constant schema
     Const(ConstSchema),
     /// An if-then schema
@@ -104,6 +106,7 @@ impl SchemaType {
             SchemaType::Object(schema) => schema.display_with_description(f, description),
             SchemaType::Enum(schema) => schema.display_with_description(f, description),
             SchemaType::AnyOf(schema) => schema.display_with_description(f, description),
+            SchemaType::OneOf(schema) => schema.display_with_description(f, description),
             SchemaType::Const(schema) => schema.display_with_description(f, description),
             SchemaType::IfThen(schema) => schema.display_with_description(f, description),
             SchemaType::Null => match description {
@@ -209,6 +212,56 @@ impl AnyOfSchema {
 }
 
 impl Display for AnyOfSchema {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.display_with_description(f, None)
+    }
+}
+
+/// A schema that matches one of the composite schemas
+#[derive(Debug, Clone)]
+pub struct OneOfSchema {
+    one_of: Vec<SchemaType>,
+}
+
+impl OneOfSchema {
+    /// Create a new one of schema
+    pub fn new(one_of: impl IntoIterator<Item = SchemaType>) -> Self {
+        Self {
+            one_of: one_of.into_iter().collect(),
+        }
+    }
+
+    fn display_with_description(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        description: Option<&str>,
+    ) -> std::fmt::Result {
+        f.write_char('{')?;
+        {
+            let mut writer = IndentationWriter::new(1, f);
+            if let Some(description) = description {
+                write!(&mut writer, "\n\"description\": \"{description}\",")?;
+            }
+            writer.write_str("\n\"oneOf\": [")?;
+            if !self.one_of.is_empty() {
+                writer.with_indent(|writer| {
+                    for (i, schema) in self.one_of.iter().enumerate() {
+                        if i > 0 {
+                            writer.write_char(',')?;
+                        }
+                        write!(writer, "\n{}", schema)?;
+                    }
+                    Ok(())
+                })?;
+                writer.write_str("\n")?;
+            }
+            writer.write_str("]")?;
+        }
+        f.write_str("\n}")
+    }
+}
+
+impl Display for OneOfSchema {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.display_with_description(f, None)
     }
@@ -722,6 +775,7 @@ impl JsonObjectSchema {
             if let Some(description) = &self.description {
                 writer.write_fmt(format_args!("\"description\": \"{}\",\n", description))?;
             }
+            writer.write_str("\"type\": \"object\",\n")?;
             writer.write_str("\"properties\": {")?;
             if !self.properties.is_empty() {
                 writer.with_indent(|writer| {
@@ -751,8 +805,9 @@ impl JsonObjectSchema {
                         write!(writer, "\"{}\"", required)?;
                     }
                 }
-                f.write_str("]")?;
+                writer.write_str("]")?;
             }
+            writer.write_str(",\n\"additionalProperties\": false")?;
         }
         f.write_str("\n}")
     }
@@ -798,7 +853,7 @@ fn test_object_schema() {
         ],
     };
 
-    assert_eq!(schema.to_string(), "{\n\t\"title\": \"Person\",\n\t\"description\": \"A person\",\n\t\"properties\": {\n\t\t\"name\": {\n\t\t\t\"type\": \"string\",\n\t\t\t\"minLength\": 1,\n\t\t\t\"maxLength\": 10\n\t\t},\n\t\t\"age\": {\n\t\t\t\"type\": \"number\",\n\t\t\t\"minimum\": 0,\n\t\t\t\"maximum\": 100\n\t\t},\n\t\t\"height\": {\n\t\t\t\"type\": \"number\",\n\t\t\t\"minimum\": 0,\n\t\t\t\"maximum\": 500\n\t\t}\n\t},\n\t\"required\": [\"name\", \"age\"]\n}");
+    assert_eq!(schema.to_string(), "{\n\t\"title\": \"Person\",\n\t\"type\": \"object\",\n\t\"description\": \"A person\",\n\t\"properties\": {\n\t\t\"name\": {\n\t\t\t\"type\": \"string\",\n\t\t\t\"minLength\": 1,\n\t\t\t\"maxLength\": 10\n\t\t},\n\t\t\"age\": {\n\t\t\t\"type\": \"number\",\n\t\t\t\"minimum\": 0,\n\t\t\t\"maximum\": 100\n\t\t},\n\t\t\"height\": {\n\t\t\t\"type\": \"number\",\n\t\t\t\"minimum\": 0,\n\t\t\t\"maximum\": 500\n\t\t}\n\t},\n\t\"required\": [\"name\", \"age\"]\n\t\"additionalProperties\": false\n}");
 }
 
 /// A schema for a property of an object
@@ -849,9 +904,7 @@ pub trait Schema {
 
 impl<T: Schema> Schema for Option<T> {
     fn schema() -> SchemaType {
-        SchemaType::AnyOf(AnyOfSchema {
-            any_of: vec![SchemaType::Null, T::schema()],
-        })
+        SchemaType::OneOf(OneOfSchema::new([SchemaType::Null, T::schema()]))
     }
 }
 
