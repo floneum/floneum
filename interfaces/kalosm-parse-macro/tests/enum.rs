@@ -56,6 +56,58 @@ enum MixedEnum {
     Turtle(String),
 }
 
+#[test]
+fn mixed_enum_schema() {
+    let schema = MixedEnum::schema();
+    let json = serde_json::from_str::<serde_json::Value>(&schema.to_string()).unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "anyOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "type": { "const": "Person" }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "data": {
+                                "properties": {
+                                    "person": {
+                                        "type": "string"
+                                    },
+                                    "age": { "type": "integer" }
+                                },
+                                "required": ["person", "age"]
+                            }
+                        }
+                    }
+                },
+                {
+                    "properties": {
+                        "type": { "const": "Animal" }
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "type": { "const": "Turtle" }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "data": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            ]
+        })
+    );
+}
+
 #[tokio::test]
 async fn mixed_enum() {
     let model = Llama::builder()
@@ -77,9 +129,23 @@ async fn mixed_enum() {
 
 #[derive(Parse, Schema, Clone)]
 enum UnitEnum {
+    /// The first variant
     First,
+    /// The other variant
     #[parse(rename = "second")]
     Second,
+}
+
+#[test]
+fn unit_enum_schema() {
+    let schema = UnitEnum::schema();
+    let json = serde_json::from_str::<serde_json::Value>(&schema.to_string()).unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "enum": ["First", "second"]
+        })
+    )
 }
 
 #[tokio::test]

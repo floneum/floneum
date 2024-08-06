@@ -1,10 +1,23 @@
 #![allow(unused)]
 
 use kalosm::language::*;
+use pretty_assertions::assert_eq;
 
 #[derive(Parse, Schema, Clone, PartialEq, Debug)]
 #[parse(rename = "empty struct")]
 struct EmptyNamedStruct {}
+
+#[test]
+fn empty_struct_schema() {
+    let schema = EmptyNamedStruct::schema();
+    let json = serde_json::from_str::<serde_json::Value>(&schema.to_string()).unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "const": "empty struct"
+        })
+    )
+}
 
 #[tokio::test]
 async fn empty_struct() {
@@ -29,6 +42,7 @@ async fn empty_struct() {
 /// A named struct
 #[derive(Parse, Schema, Clone)]
 struct NamedStruct {
+    /// The name of the person
     #[parse(rename = "field name")]
     name: String,
     /// The age of the person
@@ -36,26 +50,30 @@ struct NamedStruct {
 }
 
 #[test]
-fn named_struct_schema()  {
+fn named_struct_schema() {
     let schema = NamedStruct::schema();
     let json = serde_json::from_str::<serde_json::Value>(&schema.to_string()).unwrap();
-    assert_eq!(json, serde_json::json!({
-        "title": "NamedStruct",
-        "description": "A named struct",
-        "properties": {
-            "field name": {
-                "type": "string"
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "title": "NamedStruct",
+            "description": "A named struct",
+            "properties": {
+                "field name": {
+                    "description": "The name of the person",
+                    "type": "string"
+                },
+                "age": {
+                    "description": "The age of the person",
+                    "type": "integer"
+                }
             },
-            "age": {
-                "description": "The age of the person",
-                "type": "integer"
-            }
-        },
-        "required": [
-            "field name",
-            "age"
-        ]
-    }));
+            "required": [
+                "field name",
+                "age"
+            ]
+        })
+    );
 }
 
 #[tokio::test]

@@ -1194,7 +1194,7 @@ fn doc_comment(attrs: &[syn::Attribute]) -> Option<String> {
         let syn::Meta::NameValue(meta) = &attr.meta else {
             continue;
         };
-        if let Ok(lit_str) = syn::parse2::<syn::LitStr>(meta.value.to_token_stream()) { 
+        if let Ok(lit_str) = syn::parse2::<syn::LitStr>(meta.value.to_token_stream()) {
             if !description.is_empty() {
                 description.push('\n');
             }

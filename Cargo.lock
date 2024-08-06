@@ -6102,6 +6102,7 @@ name = "kalosm-parse-macro"
 version = "0.2.1"
 dependencies = [
  "kalosm",
+ "pretty_assertions",
  "proc-macro2",
  "quote",
  "serde_json",

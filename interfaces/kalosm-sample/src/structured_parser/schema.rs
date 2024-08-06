@@ -89,21 +89,36 @@ pub enum SchemaType {
     Null,
 }
 
+impl SchemaType {
+    fn display_with_description(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        description: Option<&str>,
+    ) -> std::fmt::Result {
+        match self {
+            SchemaType::String(schema) => schema.display_with_description(f, description),
+            SchemaType::Number(schema) => schema.display_with_description(f, description),
+            SchemaType::Integer(schema) => schema.display_with_description(f, description),
+            SchemaType::Boolean(schema) => schema.display_with_description(f, description),
+            SchemaType::Array(schema) => schema.display_with_description(f, description),
+            SchemaType::Object(schema) => schema.display_with_description(f, description),
+            SchemaType::Enum(schema) => schema.display_with_description(f, description),
+            SchemaType::AnyOf(schema) => schema.display_with_description(f, description),
+            SchemaType::Const(schema) => schema.display_with_description(f, description),
+            SchemaType::IfThen(schema) => schema.display_with_description(f, description),
+            SchemaType::Null => match description {
+                Some(description) => f.write_fmt(format_args!(
+                    "{{\n\t\"description\": \"{description}\",\n\t\"type\": \"null\"\n}}"
+                )),
+                None => f.write_str("{ \"type\": \"null\" }"),
+            },
+        }
+    }
+}
+
 impl Display for SchemaType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SchemaType::String(schema) => schema.fmt(f),
-            SchemaType::Number(schema) => schema.fmt(f),
-            SchemaType::Integer(schema) => schema.fmt(f),
-            SchemaType::Boolean(schema) => schema.fmt(f),
-            SchemaType::Array(schema) => schema.fmt(f),
-            SchemaType::Object(schema) => schema.fmt(f),
-            SchemaType::Enum(schema) => schema.fmt(f),
-            SchemaType::AnyOf(schema) => schema.fmt(f),
-            SchemaType::Const(schema) => schema.fmt(f),
-            SchemaType::IfThen(schema) => schema.fmt(f),
-            SchemaType::Null => f.write_str("{ \"type\": \"null\" }"),
-        }
+        self.display_with_description(f, None)
     }
 }
 
@@ -122,19 +137,30 @@ impl IfThenSchema {
             then_schema: Box::new(then_schema),
         }
     }
-}
 
-impl Display for IfThenSchema {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn display_with_description(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        description: Option<&str>,
+    ) -> std::fmt::Result {
         f.write_char('{')?;
         {
             let mut writer = IndentationWriter::new(1, f);
+            if let Some(description) = description {
+                write!(&mut writer, "\n\"description\": \"{description}\",")?;
+            }
             writer.write_str("\n\"if\": ")?;
             write!(&mut writer, "{}", self.if_schema)?;
             writer.write_str(",\n\"then\": ")?;
             write!(&mut writer, "{}", self.then_schema)?;
         }
         f.write_str("\n}")
+    }
+}
+
+impl Display for IfThenSchema {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.display_with_description(f, None)
     }
 }
 
@@ -151,13 +177,18 @@ impl AnyOfSchema {
             any_of: any_of.into_iter().collect(),
         }
     }
-}
 
-impl Display for AnyOfSchema {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn display_with_description(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        description: Option<&str>,
+    ) -> std::fmt::Result {
         f.write_char('{')?;
         {
             let mut writer = IndentationWriter::new(1, f);
+            if let Some(description) = description {
+                write!(&mut writer, "\n\"description\": \"{description}\",")?;
+            }
             writer.write_str("\n\"anyOf\": [")?;
             if !self.any_of.is_empty() {
                 writer.with_indent(|writer| {
@@ -173,7 +204,13 @@ impl Display for AnyOfSchema {
             }
             writer.write_str("]")?;
         }
-        f.write_str(" }")
+        f.write_str("\n}")
+    }
+}
+
+impl Display for AnyOfSchema {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.display_with_description(f, None)
     }
 }
 
@@ -190,13 +227,27 @@ impl ConstSchema {
             value: value.into(),
         }
     }
+
+    fn display_with_description(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        description: Option<&str>,
+    ) -> std::fmt::Result {
+        if let Some(description) = description {
+            write!(
+                f,
+                "{{\n\t\"descripiton\": \"{description}\"\n\t\"const\": {}\n}}",
+                self.value
+            )
+        } else {
+            write!(f, "{{ \"const\": {} }}", self.value)
+        }
+    }
 }
 
 impl Display for ConstSchema {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("{ \"const\": ")?;
-        write!(f, "{}", self.value)?;
-        f.write_str(" }")
+        self.display_with_description(f, None)
     }
 }
 
@@ -220,13 +271,18 @@ impl EnumSchema {
             variants: variants.into_iter().collect(),
         }
     }
-}
 
-impl Display for EnumSchema {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn display_with_description(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        description: Option<&str>,
+    ) -> std::fmt::Result {
         f.write_char('{')?;
         {
             let mut writer = IndentationWriter::new(1, f);
+            if let Some(description) = description {
+                write!(&mut writer, "\n\"description\": \"{description}\",")?;
+            }
             writer.write_str("\n\"enum\": [")?;
             {
                 for (i, variant) in self.variants.iter().enumerate() {
@@ -239,6 +295,12 @@ impl Display for EnumSchema {
             writer.write_str("]\n")?;
         }
         f.write_str(" }")
+    }
+}
+
+impl Display for EnumSchema {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.display_with_description(f, None)
     }
 }
 
@@ -286,13 +348,18 @@ impl StringSchema {
         self.pattern = Some(pattern.to_string());
         self
     }
-}
 
-impl Display for StringSchema {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn display_with_description(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        description: Option<&str>,
+    ) -> std::fmt::Result {
         f.write_char('{')?;
         {
             let mut writer = IndentationWriter::new(1, f);
+            if let Some(description) = description {
+                write!(&mut writer, "\n\"description\": \"{description}\",")?;
+            }
             writer.write_str("\n\"type\": \"string\"")?;
             if let Some(length) = &self.length {
                 if *length.start() > 0 {
@@ -307,6 +374,12 @@ impl Display for StringSchema {
             }
         }
         f.write_str("\n}")
+    }
+}
+
+impl Display for StringSchema {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.display_with_description(f, None)
     }
 }
 
@@ -347,15 +420,20 @@ impl NumberSchema {
         self.range = range.into();
         self
     }
-}
 
-impl Display for NumberSchema {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn display_with_description(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        description: Option<&str>,
+    ) -> std::fmt::Result {
         match &self.range {
             Some(range) => {
                 f.write_char('{')?;
                 {
                     let mut writer = IndentationWriter::new(1, f);
+                    if let Some(description) = description {
+                        write!(&mut writer, "\n\"description\": \"{description}\",")?;
+                    }
                     writer.write_str("\n\"type\": \"number\",")?;
                     writer.write_fmt(format_args!("\n\"minimum\": {},", range.start()))?;
                     writer.write_fmt(format_args!("\n\"maximum\": {}", range.end()))?;
@@ -364,6 +442,12 @@ impl Display for NumberSchema {
             }
             None => f.write_str("{ \"type\": \"number\" }"),
         }
+    }
+}
+
+impl Display for NumberSchema {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.display_with_description(f, None)
     }
 }
 
@@ -419,9 +503,26 @@ impl_schema_for_integer!(u16);
 impl_schema_for_integer!(u8);
 impl_schema_for_integer!(usize);
 
+impl IntegerSchema {
+    fn display_with_description(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        description: Option<&str>,
+    ) -> std::fmt::Result {
+        if let Some(description) = description {
+            write!(
+                f,
+                "{{\n\t\"description\": \"{description}\",\n\t\"type\": \"integer\"\n}}"
+            )
+        } else {
+            f.write_str("{ \"type\": \"integer\" }")
+        }
+    }
+}
+
 impl Display for IntegerSchema {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("{ \"type\": \"integer\" }")
+        self.display_with_description(f, None)
     }
 }
 
@@ -436,9 +537,26 @@ fn test_integer_schema() {
 #[derive(Debug, Clone, Default)]
 pub struct BooleanSchema;
 
+impl BooleanSchema {
+    fn display_with_description(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        description: Option<&str>,
+    ) -> std::fmt::Result {
+        if let Some(description) = description {
+            write!(
+                f,
+                "{{\n\t\"description\": \"{description}\",\n\t\"type\": \"boolean\"\n}}"
+            )
+        } else {
+            f.write_str("{ \"type\": \"boolean\" }")
+        }
+    }
+}
+
 impl Display for BooleanSchema {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("{ \"type\": \"boolean\" }")
+        self.display_with_description(f, None)
     }
 }
 
@@ -485,13 +603,18 @@ impl ArraySchema {
         self.length = length.into();
         self
     }
-}
 
-impl Display for ArraySchema {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn display_with_description(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        description: Option<&str>,
+    ) -> std::fmt::Result {
         f.write_char('{')?;
         {
             let mut writer = IndentationWriter::new(1, f);
+            if let Some(description) = description {
+                write!(&mut writer, "\n\"description\": \"{description}\",")?;
+            }
             writer.write_str("\n\"type\": \"array\"")?;
             writer.write_str(",\n\"items\": ")?;
             write!(&mut writer, "{}", self.items)?;
@@ -508,6 +631,12 @@ impl Display for ArraySchema {
             writer.write_str(",\n\"unevaluatedItems\": false")?;
         }
         f.write_str("\n}")
+    }
+}
+
+impl Display for ArraySchema {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.display_with_description(f, None)
     }
 }
 
@@ -572,14 +701,19 @@ impl JsonObjectSchema {
         self.description = description.into();
         self
     }
-}
 
-impl Display for JsonObjectSchema {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn display_with_description(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        description: Option<&str>,
+    ) -> std::fmt::Result {
         f.write_char('{')?;
         {
             let mut writer = IndentationWriter::new(1, f);
             writer.write_char('\n')?;
+            if let Some(description) = description {
+                writeln!(&mut writer, "\"description\": \"{description}\",")?;
+            }
             if let Some(title) = &self.title {
                 writer.write_str("\"title\": \"")?;
                 writer.write_str(title)?;
@@ -621,6 +755,12 @@ impl Display for JsonObjectSchema {
             }
         }
         f.write_str("\n}")
+    }
+}
+
+impl Display for JsonObjectSchema {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.display_with_description(f, None)
     }
 }
 
@@ -696,7 +836,8 @@ impl JsonPropertySchema {
 
 impl Display for JsonPropertySchema {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("\"{}\": {}", self.name, self.ty))
+        f.write_fmt(format_args!("\"{}\": ", self.name))?;
+        self.ty.display_with_description(f, self.description)
     }
 }
 
