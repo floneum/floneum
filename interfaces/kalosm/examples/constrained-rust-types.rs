@@ -23,8 +23,7 @@ async fn main() -> anyhow::Result<()> {
     let task = Task::builder("You generate realistic JSON placeholders")
         .with_constraints(<List as Parse>::new_parser())
         .build();
-    let prompt =
-        format!("Generate JSON in this format: {}", List::schema());
+    let prompt = format!("Generate JSON in this format: {}", List::schema());
     println!("{prompt}");
     let mut stream = task.run(prompt, &llm);
 
