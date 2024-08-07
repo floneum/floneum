@@ -1,14 +1,24 @@
 #![allow(unused)]
 
 use kalosm::language::*;
+use pretty_assertions::assert_eq;
 
-#[derive(Parse, Clone)]
+#[derive(Parse, Schema, Clone)]
 #[parse(tag = "ty", content = "contents")]
 enum NamedEnum {
     #[parse(rename = "person")]
-    Person { name: String, age: u32 },
+    Person {
+        name: String,
+        #[parse(range = 0..=100)]
+        age: u32,
+    },
     #[parse(rename = "animal")]
-    Animal { name: String, species: String },
+    Animal {
+        #[parse(len = 1..=20)]
+        name: String,
+        #[parse(pattern = "cat|dog|bird")]
+        species: String,
+    },
 }
 
 #[tokio::test]
@@ -36,7 +46,7 @@ async fn named_enum() {
     assert!(output.contains("\"age\":") || output.contains("\"species\":"));
 }
 
-#[derive(Parse, Clone)]
+#[derive(Parse, Schema, Clone)]
 enum MixedEnum {
     Person {
         #[parse(rename = "person")]
@@ -45,6 +55,55 @@ enum MixedEnum {
     },
     Animal,
     Turtle(String),
+}
+
+#[test]
+fn mixed_enum_schema() {
+    let schema = MixedEnum::schema();
+    let json = serde_json::from_str::<serde_json::Value>(&schema.to_string()).unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "oneOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "type": { "const": "Person" },
+                        "data": {
+                            "type": "object",
+                            "properties": {
+                                "person": {
+                                    "type": "string"
+                                },
+                                "age": { "type": "integer" }
+                            },
+                            "required": ["person", "age"],
+                            "additionalProperties": false
+                        }
+                    },
+                    "required": ["type", "data"],
+                    "additionalProperties": false
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "type": { "const": "Animal" }
+                    },
+                    "required": ["type"],
+                    "additionalProperties": false
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "type": { "const": "Turtle" },
+                        "data": { "type": "string" }
+                    },
+                    "required": ["type", "data"],
+                    "additionalProperties": false
+                }
+            ]
+        })
+    );
 }
 
 #[tokio::test]
@@ -66,11 +125,25 @@ async fn mixed_enum() {
     println!("{output}");
 }
 
-#[derive(Parse, Clone)]
+#[derive(Parse, Schema, Clone)]
 enum UnitEnum {
+    /// The first variant
     First,
+    /// The other variant
     #[parse(rename = "second")]
     Second,
+}
+
+#[test]
+fn unit_enum_schema() {
+    let schema = UnitEnum::schema();
+    let json = serde_json::from_str::<serde_json::Value>(&schema.to_string()).unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "enum": ["First", "second"]
+        })
+    )
 }
 
 #[tokio::test]
@@ -92,7 +165,7 @@ async fn unit_enum() {
     println!("{output}");
 }
 
-#[derive(Parse, Clone)]
+#[derive(Parse, Schema, Clone)]
 enum TupleEnum {
     First(String),
     Second(String),
@@ -121,7 +194,7 @@ async fn tuple_enum() {
 
 #[test]
 fn unit_enum_parses() {
-    #[derive(Parse, Debug, Clone, PartialEq)]
+    #[derive(Parse, Schema, Debug, Clone, PartialEq)]
     enum Color {
         Red,
         Blue,

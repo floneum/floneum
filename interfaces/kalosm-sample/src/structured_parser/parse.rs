@@ -187,3 +187,12 @@ impl<const N: usize, T: Parse + Clone + Send + Sync> Parse for [T; N] {
         })
     }
 }
+
+impl<T: Parse> Parse for Option<T> {
+    fn new_parser() -> impl SendCreateParserState<Output = Self> {
+        let parser = T::new_parser();
+        parser
+            .map_output(|output| Some(output))
+            .or(LiteralParser::new("null").map_output(|_| None))
+    }
+}

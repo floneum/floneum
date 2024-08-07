@@ -2,7 +2,7 @@
 
 use kalosm::language::*;
 
-#[derive(Parse, Clone)]
+#[derive(Parse, Schema, Clone)]
 struct UnitStruct;
 
 #[tokio::test]
@@ -26,7 +26,7 @@ async fn unit_struct() {
     assert_eq!(output, "\"UnitStruct\"");
 }
 
-#[derive(Parse, Clone)]
+#[derive(Parse, Schema, Clone)]
 #[parse(rename = "unit struct")]
 struct RenamedUnit;
 
