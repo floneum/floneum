@@ -215,24 +215,22 @@ pub struct ThenLazy<P1, F> {
     parser_fn: F,
 }
 
-impl<P1: Parser, P2: CreateParserState, F: FnOnce(&P1::Output) -> P2 + Copy> ThenLazy<P1, F> {
+impl<P1: Parser, P2: CreateParserState, F: Fn(&P1::Output) -> P2> ThenLazy<P1, F> {
     /// Create a new parser that is lazily initialized based on the output of the first parser.
     pub fn new(parser1: P1, parser_fn: F) -> Self {
         Self { parser1, parser_fn }
     }
 }
 
-impl<P1: CreateParserState, P2: CreateParserState, F: FnOnce(&P1::Output) -> P2 + Copy>
-    CreateParserState for ThenLazy<P1, F>
+impl<P1: CreateParserState, P2: CreateParserState, F: Fn(&P1::Output) -> P2> CreateParserState
+    for ThenLazy<P1, F>
 {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState {
         ThenLazyParserState::FirstParser(self.parser1.create_parser_state())
     }
 }
 
-impl<P1: Parser, P2: CreateParserState, F: FnOnce(&P1::Output) -> P2 + Copy> Parser
-    for ThenLazy<P1, F>
-{
+impl<P1: Parser, P2: CreateParserState, F: Fn(&P1::Output) -> P2> Parser for ThenLazy<P1, F> {
     type Output = (P1::Output, P2::Output);
     type PartialState = ThenLazyParserState<P1, P2>;
 

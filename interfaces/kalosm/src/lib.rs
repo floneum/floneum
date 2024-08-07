@@ -30,6 +30,7 @@ pub mod language {
 #[cfg(feature = "sound")]
 pub mod sound {
     #![doc = include_str!("../docs/sound.md")]
+    pub use futures_util::StreamExt as _;
     pub use kalosm_sound::*;
     pub use kalosm_streams::text_stream::*;
     pub use kalosm_streams::timed_stream::*;

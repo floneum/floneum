@@ -8,7 +8,7 @@ use std::{
     error::Error,
     fmt::{Debug, Display},
     ops::Deref,
-    sync::{Arc, OnceLock},
+    sync::{Arc, Mutex, OnceLock},
 };
 
 pub use integer::*;
@@ -358,7 +358,7 @@ pub trait ParserExt: Parser {
     where
         Self: Sized,
         V: CreateParserState,
-        F: FnOnce(&Self::Output) -> V + Copy,
+        F: Fn(&Self::Output) -> V,
     {
         ThenLazy::new(self, other)
     }
@@ -426,43 +426,90 @@ pub trait ParserExt: Parser {
     {
         ArcParser::new(AnyParser(self))
     }
+
+    /// Create a new parser with a different initial state
+    fn with_initial_state<F: Fn() -> Self::PartialState + Clone>(
+        self,
+        initial_state: F,
+    ) -> WithInitialState<Self, F>
+    where
+        Self: Sized,
+    {
+        WithInitialState::new(self, initial_state)
+    }
 }
 
 impl<P: Parser> ParserExt for P {}
 
-/// A parser that is lazily initialized.
-pub struct LazyParser<P, F> {
-    parser: OnceLock<P>,
-    parser_fn: F,
+/// A parser with lazy initial state
+pub struct WithInitialState<P, F> {
+    parser: P,
+    initial_state: F,
 }
 
-impl<P: Parser, F: FnOnce() -> P + Copy> LazyParser<P, F> {
+impl<P: Parser, F: Fn() -> P::PartialState + Clone> WithInitialState<P, F> {
+    /// Create a new parser with initial state
+    pub fn new(parser: P, initial_state: F) -> Self {
+        Self {
+            parser,
+            initial_state,
+        }
+    }
+}
+
+impl<P: Parser, F: Fn() -> P::PartialState + Clone> CreateParserState for WithInitialState<P, F> {
+    fn create_parser_state(&self) -> <Self as Parser>::PartialState {
+        (self.initial_state)()
+    }
+}
+
+impl<P: Parser, F: Fn() -> P::PartialState + Clone> Parser for WithInitialState<P, F> {
+    type Output = P::Output;
+    type PartialState = P::PartialState;
+
+    fn parse<'a>(
+        &self,
+        state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>> {
+        self.parser.parse(state, input)
+    }
+}
+
+/// A parser that is lazily initialized.
+pub struct LazyParser<P, F> {
+    parser: Arc<OnceLock<P>>,
+    parser_fn: Arc<Mutex<Option<F>>>,
+}
+
+impl<P: Parser, F: FnOnce() -> P> LazyParser<P, F> {
     /// Create a new parser that is lazily initialized.
     pub fn new(parser_fn: F) -> Self {
         Self {
-            parser: OnceLock::new(),
-            parser_fn,
+            parser: Arc::new(OnceLock::new()),
+            parser_fn: Arc::new(Mutex::new(Some(parser_fn))),
         }
     }
 
     fn get_parser(&self) -> &P {
-        self.parser.get_or_init(self.parser_fn)
+        self.parser
+            .get_or_init(|| (self.parser_fn.lock().unwrap().take().unwrap())())
     }
 }
 
-impl<P: CreateParserState, F: FnOnce() -> P + Copy> CreateParserState for LazyParser<P, F> {
+impl<P: CreateParserState, F: FnOnce() -> P> CreateParserState for LazyParser<P, F> {
     fn create_parser_state(&self) -> <Self as Parser>::PartialState {
         self.get_parser().create_parser_state()
     }
 }
 
-impl<P: CreateParserState, F: FnOnce() -> P + Copy> From<F> for LazyParser<P, F> {
+impl<P: CreateParserState, F: FnOnce() -> P> From<F> for LazyParser<P, F> {
     fn from(parser_fn: F) -> Self {
         Self::new(parser_fn)
     }
 }
 
-impl<P: Parser, F: FnOnce() -> P + Copy> Parser for LazyParser<P, F> {
+impl<P: Parser, F: FnOnce() -> P> Parser for LazyParser<P, F> {
     type Output = P::Output;
     type PartialState = P::PartialState;
 

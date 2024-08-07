@@ -44,9 +44,11 @@ You can define a Task with a description then run it with an input. The task wil
 # use kalosm::language::*;
 # #[tokio::main]
 # async fn main() {
-// Create a new task that 
+// Create a new model
+let model = Llama::new_chat().await?;
+// Create a new task that summarizes text
 let task = Task::new("You take a long description and summarize it into a single short sentence");
-let output = task.run("You can define a Task with a description then run it with an input. The task will cache the description to repeated calls faster. Tasks work with both chat and non-chat models, but they tend to perform significantly better with chat models.");
+let output = task.run("You can define a Task with a description then run it with an input. The task will cache the description to repeated calls faster. Tasks work with both chat and non-chat models, but they tend to perform significantly better with chat models.", &model);
 // Then stream the output to the console
 output.to_std_out().await.unwrap();
 # }
@@ -69,7 +71,7 @@ Then you can generate text that works with the parser in a [`Task`]:
 
 ```rust, no_run
 # use kalosm::language::*;
-# #[derive(Parse)]
+# #[derive(Parse, Debug, Clone)]
 # struct Pet {
 #     name: String,
 #     age: u32,
@@ -86,7 +88,7 @@ async fn main() {
         .with_constraints(parser)
         .build();
     // Finally, run the task
-    let pet: Pet = task.run("Generate a pet in the form {\"name\": \"Pet name\", \"age\": 0, \"description\": \"Pet description\"}").await.unwrap();
+    let pet: Pet = task.run("Generate a pet in the form {\"name\": \"Pet name\", \"age\": 0, \"description\": \"Pet description\"}", &model).await.unwrap();
     println!("{pet:?}");
 }
 ```
@@ -139,7 +141,7 @@ use std::path::PathBuf;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Try to extract an article from a URL
     let page = Url::parse("https://www.nytimes.com/live/2023/09/21/world/zelensky-russia-ukraine-news")?;
-    let document = page.to_document().await?;
+    let document = page.into_document().await?;
     println!("Title: {}", document.title());
     println!("Body: {}", document.body());
 
@@ -159,7 +161,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // First, create an embedding model for semantic chunking
     let model = Bert::new().await?;
     // Then create a document folder with some documents
-    let documents = DocumentFolder::new("./documents")?;
+    let documents = DocumentFolder::new("./documents")?.into_documents().await?;
     // Then chunk the documents into sentences
     let chunked = SemanticChunker::new().chunk_batch(&documents, &model).await?;
     println!("{:?}", chunked);
