@@ -53,7 +53,7 @@ async fn main() {
     let prompt = "The following is a 300 word essay about Paris:";
     print!("{}", prompt);
 
-    let stream = llm.stream_text(prompt).with_max_length(1000).await.unwrap();
+    let mut stream = llm.stream_text(prompt).with_max_length(1000).await.unwrap();
 
     stream.to_std_out().await.unwrap();
 }
@@ -81,7 +81,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
     print!("{}", prompt);
 
-    let stream = llm.stream_text(prompt).with_max_length(1000).await.unwrap();
+    let mut stream = llm.stream_text(prompt).with_max_length(1000).await.unwrap();
 
     stream.to_std_out().await.unwrap();
 
@@ -143,7 +143,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
     print!("{}", prompt);
 
-    let stream = llm.stream_text(prompt).with_max_length(300).await.unwrap();
+    let mut stream = llm.stream_text(prompt).with_max_length(300).await.unwrap();
 
     stream.to_std_out().await.unwrap();
 
@@ -310,7 +310,7 @@ async fn main() -> anyhow::Result<()> {
         println!("{}", prompt);
 
         // And finally, respond to the user
-        let output_stream = chat.add_message(prompt);
+        let mut output_stream = chat.add_message(prompt);
         print!("Bot: ");
         output_stream.to_std_out().await?;
     }
@@ -339,7 +339,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // The audio into chunks based on voice activity and then transcribe those chunks
     // The model will transcribe chunks of speech that are separated by silence
-    let text_stream = stream.transcribe(model);
+    let mut text_stream = stream.transcribe(model);
 
     // Finally, print the text to the console
     text_stream.to_std_out().await.unwrap();
