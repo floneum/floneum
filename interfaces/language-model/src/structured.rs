@@ -5,7 +5,8 @@ use std::{
 
 use crate::SyncModel;
 use crate::TokenOutputStream;
-use kalosm_sample::{ParseStatus, Parser};
+use kalosm_sample::CreateParserState;
+use kalosm_sample::{LiteralParser, ParseStatus, Parser, ParserExt};
 use llm_samplers::prelude::{Logit, Logits};
 use llm_samplers::types::{HasSamplerResources, Sampler, SamplerError};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -17,7 +18,7 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
     llm: &M,
     session: &mut M::Session,
     parser: P,
-    mut parser_state: P::PartialState,
+    parser_state: P::PartialState,
     mut sampler: Arc<Mutex<dyn Sampler>>,
     mut on_token: impl FnMut(String) -> anyhow::Result<()>,
     top_k: Option<usize>,
@@ -28,12 +29,34 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
     let prompt_tokens = tokenizer
         .encode(prompt_text, false)
         .map_err(|e| anyhow::anyhow!(e))?;
-    let prompt_tokens = prompt_tokens.get_ids();
+    let mut prompt_tokens = prompt_tokens.get_ids();
+
+    // Prompt healing
+    // Trim the last token and add what it would decode to into the constraints
+    let last_token = if let Some((last, tokens)) = prompt_tokens.split_last() {
+        prompt_tokens = tokens;
+        Some(*last)
+    } else {
+        None
+    };
+
     let mut unprocessed_token_count = prompt_tokens.len();
     let mut token_stream = TokenOutputStream::new(tokenizer.clone());
     for token in prompt_tokens {
         token_stream.next_token(*token)?;
     }
+
+    let remaining_prompt_text = last_token
+        .map(|token| token_stream.peek_token(token))
+        .transpose()?
+        .flatten()
+        .unwrap_or_default();
+
+    let parser = LiteralParser::new(remaining_prompt_text.clone())
+        .ignore_output_then(parser.with_initial_state(move || parser_state.clone()));
+    let mut parser_state = parser.create_parser_state();
+    let mut strip_required_next = true;
+
     let mut rng = rand::thread_rng();
     let mut state_map = vec![];
     let mut logits_indexed = Vec::new();
@@ -157,6 +180,13 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
         let mut token = token_stream.next_token(token_id)?.unwrap();
         token.truncate(parsed_bytes);
         tracing::trace!("Adding token {} to parser", token);
+        // If we are still loading the initial prompt, don't send that part of the text
+        if strip_required_next {
+            if let Some(stripped) = token.strip_prefix(&remaining_prompt_text) {
+                token = stripped.to_string();
+            }
+            strip_required_next = false;
+        }
         on_token(token)?;
 
         if let Some(result) = update_state(

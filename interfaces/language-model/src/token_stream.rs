@@ -188,7 +188,7 @@ impl TokenOutputStream {
         }
     }
 
-    /// Peek the next token.
+    /// Peek the next tokens
     pub fn peek_tokens(
         &self,
         tokens: impl IntoParallelIterator<Item = u32>,
@@ -211,6 +211,22 @@ impl TokenOutputStream {
             },
         ));
         Ok(())
+    }
+
+    /// Peek the next token.
+    pub fn peek_token(&self, token: u32) -> Result<Option<String>> {
+        let prev_text = &self.current_text;
+        let prev_text_len = prev_text.len();
+        let mut tokens = self.tokens[self.prev_index..].to_vec();
+        tokens.push(token);
+        let text = self.decode(&tokens)?;
+        tokens.pop();
+        if text.len() > prev_text_len && text.chars().last().unwrap().is_ascii() {
+            let text = text.split_at(prev_text_len);
+            Ok(Some(text.1.to_string()))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Get the tokens
