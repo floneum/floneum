@@ -2,7 +2,7 @@
 use kalosm::language::*;
 
 // You can derive an efficient parser for your struct with the `Parse` trait
-#[derive(Parse, Clone, Debug)]
+#[derive(Schema, Parse, Clone, Debug)]
 struct Account {
     // User names only contain alphanumeric characters and spaces
     #[parse(with = StringParser::new(1..=20).alphanumeric_with_spaces())]
@@ -12,6 +12,8 @@ struct Account {
     age: u8,
 }
 
+type List = Box<[Account; 100]>;
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Download phi-3 or get the model from the cache
@@ -19,10 +21,11 @@ async fn main() -> anyhow::Result<()> {
 
     // Create a task that generates a list of accounts
     let task = Task::builder("You generate realistic JSON placeholders")
-        .with_constraints(<Box<[Account; 100]> as Parse>::new_parser())
+        .with_constraints(<List as Parse>::new_parser())
         .build();
     let prompt =
-        "Generate a list of 100 accounts with random realistic usernames and ages in this JSON format: { \"username\": string, \"age\": number }";
+        format!("Generate JSON in this format: {}", List::schema());
+    println!("{prompt}");
     let mut stream = task.run(prompt, &llm);
 
     // Stream the output to the console

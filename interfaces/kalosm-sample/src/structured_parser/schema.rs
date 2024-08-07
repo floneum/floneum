@@ -853,7 +853,7 @@ fn test_object_schema() {
         ],
     };
 
-    assert_eq!(schema.to_string(), "{\n\t\"title\": \"Person\",\n\t\"type\": \"object\",\n\t\"description\": \"A person\",\n\t\"properties\": {\n\t\t\"name\": {\n\t\t\t\"type\": \"string\",\n\t\t\t\"minLength\": 1,\n\t\t\t\"maxLength\": 10\n\t\t},\n\t\t\"age\": {\n\t\t\t\"type\": \"number\",\n\t\t\t\"minimum\": 0,\n\t\t\t\"maximum\": 100\n\t\t},\n\t\t\"height\": {\n\t\t\t\"type\": \"number\",\n\t\t\t\"minimum\": 0,\n\t\t\t\"maximum\": 500\n\t\t}\n\t},\n\t\"required\": [\"name\", \"age\"]\n\t\"additionalProperties\": false\n}");
+    assert_eq!(schema.to_string(), "{\n\t\"title\": \"Person\",\n\t\"description\": \"A person\",\n\t\"type\": \"object\",\n\t\"properties\": {\n\t\t\"name\": {\n\t\t\t\"type\": \"string\",\n\t\t\t\"minLength\": 1,\n\t\t\t\"maxLength\": 10\n\t\t},\n\t\t\"age\": {\n\t\t\t\"type\": \"number\",\n\t\t\t\"minimum\": 0,\n\t\t\t\"maximum\": 100\n\t\t},\n\t\t\"height\": {\n\t\t\t\"type\": \"number\",\n\t\t\t\"minimum\": 0,\n\t\t\t\"maximum\": 500\n\t\t}\n\t},\n\t\"required\": [\"name\", \"age\"],\n\t\"additionalProperties\": false\n}");
 }
 
 /// A schema for a property of an object
