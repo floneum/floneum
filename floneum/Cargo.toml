@@ -1,0 +1,92 @@
+[package]
+name = "floneum-workspace"
+version = "0.1.0"
+edition = "2021"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+license = "MIT/Apache-2.0"
+repository = "https://github.com/floneum/floneum"
+
+[dependencies]
+
+[workspace]
+members = [
+    "floneum",
+    "plugin",
+    "rust_adapter",
+    "rust_macro",
+    "floneumite",
+    "floneum-cli",
+    "plugins/generate_text",
+    "plugins/generate_structured_text",
+    "plugins/format",
+    "plugins/search",
+    "plugins/embedding",
+    "plugins/embedding_db",
+    "plugins/add_embedding",
+    "plugins/search_engine",
+    "plugins/write_to_file",
+    "plugins/read_from_file",
+    "plugins/if_statement",
+    "plugins/contains",
+    "plugins/python",
+    "plugins/find_node",
+    "plugins/click_node",
+    "plugins/node_text",
+    "plugins/type_in_node",
+    "plugins/navigate_to",
+    "plugins/find_child_node",
+    "plugins/get_article",
+    "plugins/read_rss",
+    "plugins/split",
+    "plugins/join",
+    "plugins/slice",
+    "plugins/add_to_list",
+    "plugins/new_list",
+    "plugins/length",
+    "plugins/more_than",
+    "plugins/less_than",
+    "plugins/equals",
+    "plugins/and",
+    "plugins/or",
+    "plugins/not",
+    "plugins/add",
+    "plugins/subtract",
+    "plugins/multiply",
+    "plugins/divide",
+    "plugins/power",
+    "plugins/number",
+    "plugins/string",
+    "plugins/calculate"
+]
+
+[patch.crates-io]
+dioxus = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }
+dioxus-core = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }
+dioxus-core-macro = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }
+dioxus-rsx = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }
+dioxus-html = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }
+dioxus-hooks = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }
+dioxus-desktop = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }
+dioxus-signals = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }
+generational-box = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }
+
+[workspace.dependencies]
+kalosm = { path = "../interfaces/kalosm", version = "0.2.1" }
+kalosm-sample = { path = "../interfaces/kalosm-sample", version = "0.2.1" }
+kalosm-parse-macro = { path = "../interfaces/kalosm-parse-macro", version = "0.2.1" }
+kalosm-common = { path = "../interfaces/kalosm-common", version = "0.1.0" }
+kalosm-language-model = { path = "../interfaces/language-model", version = "0.2.1" }
+kalosm-streams = { path = "../interfaces/kalosm-streams", version = "0.2.1" }
+kalosm-language = { path = "../interfaces/kalosm-language", version = "0.2.1" }
+kalosm-sound = { path = "../interfaces/kalosm-sound", version = "0.2.1" }
+kalosm-vision = { path = "../interfaces/kalosm-vision", version = "0.2.1" }
+kalosm-learning = { path = "../interfaces/kalosm-learning", version = "0.2.1" }
+kalosm-learning-macro = { path = "../interfaces/kalosm-learning-macro", version = "0.2.1" }
+rphi = { path = "../models/rphi", version = "0.2.1" }
+rbert = { path = "../models/rbert", version = "0.2.1" }
+kalosm-llama = { path = "../models/kalosm-llama", version = "0.2.1" }
+rwhisper = { path = "../models/rwhisper", version = "0.2.1" }
+rwuerstchen = { path = "../models/rwuerstchen", version = "0.2.1" }
+segment-anything-rs = { path = "../models/segment-anything-rs", version = "0.2.1" }
+kalosm-ocr = { path = "../models/kalosm-ocr", version = "0.2.1" }
+parking_lot = "0.12.1"

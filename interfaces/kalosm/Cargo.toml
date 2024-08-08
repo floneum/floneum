@@ -89,7 +89,7 @@ features = []
 workspace = true
 
 [dev-dependencies.kalosm]
-features = ["sound", "language", "vision", "remote"]
+features = ["sound", "language", "vision", "remote", "surrealdb"]
 workspace = true
 
 [features]
