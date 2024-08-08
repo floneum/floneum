@@ -92,7 +92,7 @@ if let [closest] = closest.as_slice() {
 
 The vector database should find that the closest sentence to "What is Kalosm?" is "Kalosm can be used to build local AI applications":
 
-```
+```text
 distance: 0.18480265
 closest: Kalosm can be used to build local AI applications
 ```

@@ -21,7 +21,7 @@ async fn main() {
     // Stream the audio from the microphone
     let stream = mic.stream().unwrap();
     // Detect voice activity in the audio stream
-    let vad = stream.voice_activity_stream();
+    let mut vad = stream.voice_activity_stream();
     while let Some(input) = vad.next().await {
         println!("Probability: {}", input.probability);
     }
@@ -32,6 +32,7 @@ Kalosm also provides [`VoiceActivityStreamExt::rechunk_voice_activity`] to colle
 
 ```rust, no_run
 use kalosm::sound::*;
+use rodio::Source;
 #[tokio::main]
 async fn main() {
     // Get the default microphone input
@@ -43,7 +44,7 @@ async fn main() {
     let mut audio_chunks = vad.rechunk_voice_activity();
     // Print the chunks as they are streamed in
     while let Some(input) = audio_chunks.next().await {
-        println!("New voice activity chunk: {:?}", input);
+        println!("New voice activity chunk with duration {:?}", input.total_duration());
     }
 }
 ```
@@ -61,7 +62,7 @@ async fn main() {
     // Stream the audio from the microphone
     let stream = mic.stream().unwrap();
     // Transcribe the audio into text with the default Whisper model
-    let transcribe = stream.transcribe(Whisper::new().await.unwrap());
+    let mut transcribe = stream.transcribe(Whisper::new().await.unwrap());
     // Print the text as it is streamed in
     transcribe.to_std_out().await.unwrap();
 }

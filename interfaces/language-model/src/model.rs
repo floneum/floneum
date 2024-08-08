@@ -22,7 +22,7 @@ use tokenizers::tokenizer::Tokenizer;
 ///
 /// # Example
 /// ```rust, no_run
-/// use rbert::*;
+/// use kalosm::language::*;
 /// use kalosm_language_model::CreateModel;
 ///
 /// #[tokio::main]
@@ -276,12 +276,12 @@ pub trait ModelExt: Model + Send + Sync + 'static {
     /// Generate text with the given prompt. This function generates a builder with extra parameters that can be set. To execute the builder, just call `await` on it.
     ///
     /// ```rust, no_run
-    /// use rphi::prelude::*;
+    /// use kalosm::language::*;
     /// use std::io::Write;
     ///
     /// #[tokio::main]
     /// async fn main() {
-    ///     let mut model = Phi::default();
+    ///     let mut model = Llama::new().await.unwrap();
     ///     let prompt = "The capital of France is";
     ///     let mut result = model.generate_text(prompt).with_max_length(300).await.unwrap();
     ///
@@ -304,12 +304,12 @@ pub trait ModelExt: Model + Send + Sync + 'static {
     /// Generate text with the given prompt. This function generates a builder with extra parameters that can be set. To execute the builder, just call `await` on it.
     ///
     /// ```rust, no_run
-    /// use rphi::prelude::*;
+    /// use kalosm::language::*;
     /// use std::io::Write;
     ///
     /// #[tokio::main]
     /// async fn main() {
-    ///     let mut model = Phi::default();
+    ///     let mut model = Llama::new().await.unwrap();
     ///     let prompt = "The capital of France is";
     ///     let mut result = model.stream_text(prompt).with_max_length(300).await.unwrap();
     ///
@@ -333,16 +333,16 @@ pub trait ModelExt: Model + Send + Sync + 'static {
     ///
     /// # Example
     /// ```rust, no_run
-    /// use rphi::prelude::*;
+    /// use kalosm::language::*;
     /// use kalosm_language_model::Model;
     ///
     /// #[tokio::main]
     /// async fn main() {
-    ///     let mut llm = Phi::start().await;
+    ///     let mut llm = Llama::new().await.unwrap();
     ///
     ///     let tokenizer = llm.tokenizer();
     ///     // Start a sync task on the model
-    ///     llm.run_sync(move |llm: &mut <Phi as Model>::SyncModel| {
+    ///     llm.run_sync(move |llm: &mut <Llama as Model>::SyncModel| {
     ///         Box::pin(async move {
     ///             let question = "What is 10 + 10?";
     ///
@@ -350,7 +350,8 @@ pub trait ModelExt: Model + Send + Sync + 'static {
     ///             let mut session = llm.new_session().unwrap();
     ///
     ///             // Feed the question into the model
-    ///             let mut logits = llm.feed_text(&mut session, question, None).unwrap();
+    ///             let mut logits = Vec::new();
+    ///             llm.feed_text(&mut session, question, &mut logits).unwrap();
     ///
     ///             println!("logits: {:?}", logits);
     ///         })
@@ -420,7 +421,7 @@ pub trait ModelExt: Model + Send + Sync + 'static {
     ///
     /// let size = llm.stream_structured_text("A elephant is ", Size::new_parser()).await.unwrap();
     /// println!("{size:?}");
-    /// }
+    /// # }
     /// ```
     fn stream_structured_text<P>(
         &self,
@@ -557,16 +558,16 @@ impl<M: Model + Send + Sync + 'static> ModelExt for M {}
 ///
 /// # Example
 /// ```rust, no_run
-/// use rphi::prelude::*;
+/// use kalosm::language::*;
 /// use kalosm_language_model::Model;
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     let mut llm = Phi::start().await;
+///     let mut llm = Llama::new().await.unwrap();
 ///
 ///     let tokenizer = llm.tokenizer();
 ///     // Start a sync task on the model
-///     llm.run_sync(move |llm: &mut <Phi as Model>::SyncModel| {
+///     llm.run_sync(move |llm: &mut <Llama as Model>::SyncModel| {
 ///         Box::pin(async move {
 ///             let question = "What is 10 + 10?";
 ///
@@ -574,7 +575,8 @@ impl<M: Model + Send + Sync + 'static> ModelExt for M {}
 ///             let mut session = llm.new_session().unwrap();
 ///
 ///             // Feed the question into the model
-///             let mut logits = llm.feed_text(&mut session, question, None).unwrap();
+///             let mut logits = Vec::new();
+///             llm.feed_text(&mut session, question, &mut logits).unwrap();
 ///
 ///             println!("logits: {:?}", logits);
 ///         })

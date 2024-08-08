@@ -1,5 +1,5 @@
 [package]
-name = "floneum-workspace"
+name = "kalosm-workspace"
 version = "0.1.0"
 edition = "2021"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
@@ -28,53 +28,6 @@ members = [
     "interfaces/kalosm-learning-macro",
     "interfaces/kalosm-parse-macro",
     "interfaces/kalosm-common",
-    "floneum/floneum",
-    "floneum/plugin",
-    "floneum/rust_adapter",
-    "floneum/rust_macro",
-    "floneum/floneumite",
-    "floneum/floneum-cli",
-    "floneum/plugins/generate_text",
-    "floneum/plugins/generate_structured_text",
-    "floneum/plugins/format",
-    "floneum/plugins/search",
-    "floneum/plugins/embedding",
-    "floneum/plugins/embedding_db",
-    "floneum/plugins/add_embedding",
-    "floneum/plugins/search_engine",
-    "floneum/plugins/write_to_file",
-    "floneum/plugins/read_from_file",
-    "floneum/plugins/if_statement",
-    "floneum/plugins/contains",
-    "floneum/plugins/python",
-    "floneum/plugins/find_node",
-    "floneum/plugins/click_node",
-    "floneum/plugins/node_text",
-    "floneum/plugins/type_in_node",
-    "floneum/plugins/navigate_to",
-    "floneum/plugins/find_child_node",
-    "floneum/plugins/get_article",
-    "floneum/plugins/read_rss",
-    "floneum/plugins/split",
-    "floneum/plugins/join",
-    "floneum/plugins/slice",
-    "floneum/plugins/add_to_list",
-    "floneum/plugins/new_list",
-    "floneum/plugins/length",
-    "floneum/plugins/more_than",
-    "floneum/plugins/less_than",
-    "floneum/plugins/equals",
-    "floneum/plugins/and",
-    "floneum/plugins/or",
-    "floneum/plugins/not",
-    "floneum/plugins/add",
-    "floneum/plugins/subtract",
-    "floneum/plugins/multiply",
-    "floneum/plugins/divide",
-    "floneum/plugins/power",
-    "floneum/plugins/number",
-    "floneum/plugins/string",
-    "floneum/plugins/calculate", 
 ]
 
 [workspace.dependencies]
@@ -103,17 +56,6 @@ kalosm-ocr = { path = "./models/kalosm-ocr", version = "0.2.1" }
 llm-samplers = "=0.0.7"
 parking_lot = "0.12.1"
 tokenizers = "0.19.1"
-
-[patch.crates-io]
-dioxus = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }
-dioxus-core = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }
-dioxus-core-macro = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }
-dioxus-rsx = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }
-dioxus-html = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }
-dioxus-hooks = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }
-dioxus-desktop = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }
-dioxus-signals = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }
-generational-box = { git = "https://github.com/ealmloff/dioxus/", branch = "create-race-condition-desktop" }
 
 [profile.dist]
 inherits = "release"

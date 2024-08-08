@@ -335,7 +335,7 @@ impl<M: Model> ChatBuilder<M> {
     ///
     /// // Chat with the user
     /// loop {
-    ///     let output_stream = chat.add_message(prompt_input("\n> ").unwrap());
+    ///     let mut output_stream = chat.add_message(prompt_input("\n> ").unwrap());
     ///     output_stream.to_std_out().await.unwrap();
     /// }
     /// # }
@@ -365,11 +365,12 @@ impl<M: Model> ChatBuilder<M> {
     /// # Example
     /// ```rust, no_run
     /// # use kalosm::language::*;
+    /// # use kalosm_llama::LlamaSession;
     /// # #[tokio::main]
     /// # async fn main() {
     /// let model = Llama::new_chat().await.unwrap();
     /// // Load the model session from the filesystem
-    /// let session = LlamaModel::load_from(std::path::PathBuf::from("./chat.llama")).unwrap();
+    /// let session = LlamaSession::load_from(std::path::PathBuf::from("./chat.llama")).unwrap();
     /// // Start the chat session with the cached session
     /// let mut chat = Chat::builder(Llama::new_chat().await.unwrap())
     ///     .with_session(session)
@@ -551,11 +552,11 @@ enum Message {
 ///
 /// loop {
 ///     // To use the chat session, you need to add messages to it
-///     let response_stream = chat.add_message(prompt_input("\n> ").unwrap());
+///     let mut response_stream = chat.add_message(prompt_input("\n> ").unwrap());
 ///     // And then display the response stream to the user
 ///     response_stream.to_std_out().await.unwrap();
 /// }
-/// #}
+/// # }
 /// ```
 ///
 /// If you run the application, you may notice that it takes more time for the assistant to start responding to long prompts.
@@ -578,7 +579,7 @@ enum Message {
 ///     .build();
 ///
 /// // Then you can add messages to the chat session as usual
-/// let response_stream = chat.add_message(prompt_input("\n> ").unwrap());
+/// let mut response_stream = chat.add_message(prompt_input("\n> ").unwrap());
 /// // And then display the response stream to the user
 /// response_stream.to_std_out().await.unwrap();
 ///
@@ -595,7 +596,7 @@ enum Message {
 /// Let's create a chat application that uses constraints to guide the assistant's response to always start with "Yes!":
 ///
 /// ```rust, no_run
-/// /// # use kalosm::language::*;
+/// # use kalosm::language::*;
 /// # #[tokio::main]
 /// # async fn main() {
 /// let model = Llama::new_chat().await.unwrap();
@@ -609,7 +610,7 @@ enum Message {
 ///
 /// // Chat with the user
 /// loop {
-///     let output_stream = chat.add_message(prompt_input("\n> ").unwrap());
+///     let mut output_stream = chat.add_message(prompt_input("\n> ").unwrap());
 ///     output_stream.to_std_out().await.unwrap();
 /// }
 /// # }
@@ -635,7 +636,7 @@ impl Chat {
     ///     .with_system_prompt("The assistant will act like a pirate")
     ///     // Once you are done setting up the chat session, you can build it
     ///     .build();
-    /// #}
+    /// # }
     /// ```
     pub fn builder<M: Model>(model: M) -> ChatBuilder<M>
     where
@@ -655,7 +656,7 @@ impl Chat {
     /// let model = Llama::new_chat().await.unwrap();
     /// // If you don't need to customize the chat session, you can use the `new` method to create a chat session with the default settings
     /// let mut chat = Chat::new(model);
-    /// #}
+    /// # }
     /// ```
     pub fn new<M: Model>(model: M) -> Chat
     where
@@ -675,13 +676,10 @@ impl Chat {
     /// let prompt = prompt_input("\n> ").unwrap();
     ///
     /// // You can add the user message to the chat session with the `add_message` method
-    /// let response_stream = chat.add_message(prompt);
-    /// // And then read the stream as the response is generated
-    /// while let Some(token) = response_stream.next().await {
-    ///     print!("{token}");
-    ///     std::io::stdout().flush().unwrap();
-    /// }
-    /// #}
+    /// let mut response_stream = chat.add_message(prompt);
+    /// // And then stream the result to std out
+    /// response_stream.to_std_out().await.unwrap();
+    /// # }
     /// ```
     pub fn add_message(&mut self, message: impl ToString) -> ChannelTextStream {
         let (tx, rx) = unbounded_channel();

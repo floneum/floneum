@@ -23,7 +23,7 @@ async fn main() {
     let mut llm = Llama::new().await.unwrap();
     let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
     print!("{prompt}");
-    let stream = llm
+    let mut stream = llm
         // Any model that implements the Model trait can be used to stream text
         .stream_text(prompt)
         // You can pass parameters to the model to control the output
@@ -45,10 +45,10 @@ You can define a Task with a description then run it with an input. The task wil
 # #[tokio::main]
 # async fn main() {
 // Create a new model
-let model = Llama::new_chat().await?;
+let model = Llama::new_chat().await.unwrap();
 // Create a new task that summarizes text
 let task = Task::new("You take a long description and summarize it into a single short sentence");
-let output = task.run("You can define a Task with a description then run it with an input. The task will cache the description to repeated calls faster. Tasks work with both chat and non-chat models, but they tend to perform significantly better with chat models.", &model);
+let mut output = task.run("You can define a Task with a description then run it with an input. The task will cache the description to repeated calls faster. Tasks work with both chat and non-chat models, but they tend to perform significantly better with chat models.", &model);
 // Then stream the output to the console
 output.to_std_out().await.unwrap();
 # }
@@ -59,7 +59,7 @@ output.to_std_out().await.unwrap();
 Structured generation gives you more control over the output of the text generation. You can derive a parser for your data to easily get structured data out of an LLM:
 ```rust, no_run
 use kalosm::language::*;
-#[derive(Parse)]
+#[derive(Parse, Clone)]
 struct Pet {
     name: String,
     age: u32,

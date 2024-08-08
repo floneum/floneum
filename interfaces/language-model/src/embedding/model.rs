@@ -9,7 +9,7 @@ use crate::UnknownVectorSpace;
 ///
 /// ```rust, no_run
 /// use kalosm_language_model::Embedder;
-/// use rbert::*;
+/// use kalosm::language::*;
 ///
 /// #[tokio::main]
 /// async fn main() {

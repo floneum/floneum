@@ -13,7 +13,7 @@ async fn main() {
     let mut llm = Llama::new().await.unwrap();
     let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
     print!("{prompt}");
-    let stream = llm
+    let mut stream = llm
         // Any model that implements the Model trait can be used to stream text
         .stream_text(prompt)
         // You can pass parameters to the model to control the output
@@ -34,9 +34,11 @@ You can define a Task with a description then run it with an input. The task wil
 # use kalosm::language::*;
 # #[tokio::main]
 # async fn main() {
+// First create a model. Task can work with any type of model, but chat models tend to work better
+let model = Llama::new_chat().await.unwrap();
 // Create a new task that 
 let task = Task::new("You take a long description and summarize it into a single short sentence");
-let output = task.run("You can define a Task with a description then run it with an input. The task will cache the description to repeated calls faster. Tasks work with both chat and non-chat models, but they tend to perform significantly better with chat models.");
+let output = task.run("You can define a Task with a description then run it with an input. The task will cache the description to repeated calls faster. Tasks work with both chat and non-chat models, but they tend to perform significantly better with chat models.", &model);
 // Then stream the output to the console
 output.to_std_out().await.unwrap();
 # }
@@ -52,7 +54,7 @@ Structured generation gives you more control over the output of the text generat
 The simplest way to get started is to derive a parser for your data:
 ```rust, no_run
 use kalosm::language::*;
-#[derive(Parse)]
+#[derive(Parse, Clone)]
 struct Pet {
     name: String,
     age: u32,
@@ -64,7 +66,7 @@ Then you can generate text that works with the parser in a [`Task`](https://docs
 
 ```rust, no_run
 # use kalosm::language::*;
-# #[derive(Parse)]
+# #[derive(Parse, Clone, Debug)]
 # struct Pet {
 #     name: String,
 #     age: u32,
@@ -81,7 +83,7 @@ async fn main() {
         .with_constraints(parser)
         .build();
     // Finally, run the task
-    let pet: Pet = task.run("Generate a pet in the form {\"name\": \"Pet name\", \"age\": 0, \"description\": \"Pet description\"}").await.unwrap();
+    let pet: Pet = task.run("Generate a pet in the form {\"name\": \"Pet name\", \"age\": 0, \"description\": \"Pet description\"}", &model).await.unwrap();
     println!("{pet:?}");
 }
 ```
@@ -110,7 +112,7 @@ async fn main() {
         .with_constraints(parser)
         .build();
     // Finally, run the task
-    let ((name, age), description) = task.run("Generate a pet in the form [\"Pet name\", age number, \"Pet description\"]").await.unwrap();
+    let ((name, age), description) = task.run("Generate a pet in the form [\"Pet name\", age number, \"Pet description\"]", &model).await.unwrap();
     println!("{name} {age} {description}");
 }
 ```
@@ -133,6 +135,6 @@ async fn main() {
         .with_constraints(parser)
         .build();
     // Finally, run the task. Unlike derived and custom parsers, regex parsers do not provide a useful output type
-    task.run("Generate a pet in the form [\"Pet name\", age number, \"Pet description\"]").to_std_out().await.unwrap();
+    task.run("Generate a pet in the form [\"Pet name\", age number, \"Pet description\"]", &model).to_std_out().await.unwrap();
 }
 ```

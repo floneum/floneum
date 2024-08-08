@@ -10,7 +10,7 @@ use crate::{Embedder, Embedding, EmbeddingInput};
 ///
 /// # Example
 /// ```rust, no_run
-/// use rbert::*;
+/// use kalosm::language::*;
 /// use std::num::NonZeroUsize;
 ///
 /// #[tokio::main]
@@ -101,7 +101,7 @@ impl<M: Embedder, S: BuildHasher> CachedEmbeddingModel<M, S> {
     ///
     /// # Example
     /// ```rust, no_run
-    /// # use rbert::*;
+    /// # use kalosm::language::*;
     /// # use std::num::NonZeroUsize;
     /// # #[tokio::main]
     /// # async fn main() -> anyhow::Result<()> {
@@ -143,7 +143,7 @@ impl<M: Embedder, S: BuildHasher> CachedEmbeddingModel<M, S> {
     /// Load the cache from a file.
     /// # Example
     /// ```rust, no_run
-    /// # use rbert::*;
+    /// # use kalosm::language::*;
     /// # use std::num::NonZeroUsize;
     /// # #[tokio::main]
     /// # async fn main() -> anyhow::Result<()> {
@@ -259,7 +259,7 @@ pub trait EmbedderCacheExt: Embedder {
     ///
     /// # Example
     /// ```rust, no_run
-    /// # use rbert::*;
+    /// # use kalosm::language::*;
     /// # use std::num::NonZeroUsize;
     /// # #[tokio::main]
     /// # async fn main() -> anyhow::Result<()> {
