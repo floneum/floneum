@@ -52,7 +52,7 @@ Structured generation gives you more control over the output of the text generat
 The simplest way to get started is to derive a parser for your data:
 ```rust, no_run
 use kalosm::language::*;
-#[derive(Parse)]
+#[derive(Parse, Clone)]
 struct Pet {
     name: String,
     age: u32,
@@ -64,7 +64,7 @@ Then you can generate text that works with the parser in a [`Task`](https://docs
 
 ```rust, no_run
 # use kalosm::language::*;
-# #[derive(Parse)]
+# #[derive(Parse, Clone, Debug)]
 # struct Pet {
 #     name: String,
 #     age: u32,
@@ -81,7 +81,7 @@ async fn main() {
         .with_constraints(parser)
         .build();
     // Finally, run the task
-    let pet: Pet = task.run("Generate a pet in the form {\"name\": \"Pet name\", \"age\": 0, \"description\": \"Pet description\"}").await.unwrap();
+    let pet: Pet = task.run("Generate a pet in the form {\"name\": \"Pet name\", \"age\": 0, \"description\": \"Pet description\"}", &model).await.unwrap();
     println!("{pet:?}");
 }
 ```

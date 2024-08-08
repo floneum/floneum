@@ -4,7 +4,7 @@ use candle_core::{Device, Tensor};
 use kalosm_language_model::Session;
 use std::collections::HashMap;
 
-/// A Llama-1.5 session.
+/// A Llama session with cached state for the current fed prompt
 #[derive(Debug, Clone)]
 pub struct LlamaSession {
     pub(crate) cache: LlamaCache,
