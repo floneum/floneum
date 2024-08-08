@@ -22,7 +22,7 @@ use tokenizers::tokenizer::Tokenizer;
 ///
 /// # Example
 /// ```rust, no_run
-/// use rbert::*;
+/// use kalosm::language::*;
 /// use kalosm_language_model::CreateModel;
 ///
 /// #[tokio::main]
@@ -338,11 +338,11 @@ pub trait ModelExt: Model + Send + Sync + 'static {
     ///
     /// #[tokio::main]
     /// async fn main() {
-    ///     let mut llm = Phi::new().await.unwrap();
+    ///     let mut llm = Llama::new().await.unwrap();
     ///
     ///     let tokenizer = llm.tokenizer();
     ///     // Start a sync task on the model
-    ///     llm.run_sync(move |llm: &mut <Phi as Model>::SyncModel| {
+    ///     llm.run_sync(move |llm: &mut <Llama as Model>::SyncModel| {
     ///         Box::pin(async move {
     ///             let question = "What is 10 + 10?";
     ///
@@ -350,7 +350,8 @@ pub trait ModelExt: Model + Send + Sync + 'static {
     ///             let mut session = llm.new_session().unwrap();
     ///
     ///             // Feed the question into the model
-    ///             let mut logits = llm.feed_text(&mut session, question, None).unwrap();
+    ///             let mut logits = Vec::new();
+    ///             llm.feed_text(&mut session, question, &mut logits).unwrap();
     ///
     ///             println!("logits: {:?}", logits);
     ///         })
@@ -562,11 +563,11 @@ impl<M: Model + Send + Sync + 'static> ModelExt for M {}
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     let mut llm = Llama::new().await;
+///     let mut llm = Llama::new().await.unwrap();
 ///
 ///     let tokenizer = llm.tokenizer();
 ///     // Start a sync task on the model
-///     llm.run_sync(move |llm: &mut <Phi as Model>::SyncModel| {
+///     llm.run_sync(move |llm: &mut <Llama as Model>::SyncModel| {
 ///         Box::pin(async move {
 ///             let question = "What is 10 + 10?";
 ///
@@ -574,7 +575,8 @@ impl<M: Model + Send + Sync + 'static> ModelExt for M {}
 ///             let mut session = llm.new_session().unwrap();
 ///
 ///             // Feed the question into the model
-///             let mut logits = llm.feed_text(&mut session, question).unwrap();
+///             let mut logits = Vec::new();
+///             llm.feed_text(&mut session, question, &mut logits).unwrap();
 ///
 ///             println!("logits: {:?}", logits);
 ///         })
