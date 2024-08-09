@@ -84,15 +84,15 @@ pub fn export_plugin(args: TokenStream, input: TokenStream) -> TokenStream {
             input_idents.push(ident.clone());
             let mut name = ident.to_string();
             typed.attrs.retain(|attr| {
-                let is_discription = attr.path().is_ident("doc");
-                if is_discription {
+                let is_description = attr.path().is_ident("doc");
+                if is_description {
                     if let Meta::NameValue(meta) = &attr.meta {
                         let value = &meta.value;
                         let lit: LitStr = parse_quote!(#value);
                         name = lit.value();
                     }
                 }
-                !is_discription
+                !is_description
             });
             input_names.push(name);
             let ty = &typed.ty;
