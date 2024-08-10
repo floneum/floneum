@@ -19,6 +19,7 @@ fn empty_struct_schema() {
     )
 }
 
+#[cfg(any(feature = "metal", feature = "cuda"))]
 #[tokio::test]
 async fn empty_struct() {
     let model = Llama::builder()
@@ -78,6 +79,7 @@ fn named_struct_schema() {
     );
 }
 
+#[cfg(any(feature = "metal", feature = "cuda"))]
 #[tokio::test]
 async fn named_struct() {
     let model = Llama::builder()
@@ -108,6 +110,7 @@ struct WithStruct {
     age: u32,
 }
 
+#[cfg(any(feature = "metal", feature = "cuda"))]
 #[tokio::test]
 async fn with_struct() {
     let model = Llama::builder()

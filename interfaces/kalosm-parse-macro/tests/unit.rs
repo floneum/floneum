@@ -5,6 +5,7 @@ use kalosm::language::*;
 #[derive(Parse, Schema, Clone)]
 struct UnitStruct;
 
+#[cfg(any(feature = "metal", feature = "cuda"))]
 #[tokio::test]
 async fn unit_struct() {
     let model = Llama::builder()
@@ -30,6 +31,7 @@ async fn unit_struct() {
 #[parse(rename = "unit struct")]
 struct RenamedUnit;
 
+#[cfg(any(feature = "metal", feature = "cuda"))]
 #[tokio::test]
 async fn renamed_unit_struct() {
     let model = Llama::builder()
