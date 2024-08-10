@@ -2,7 +2,7 @@
 name = "kalosm-sample"
 version = "0.2.1"
 edition = "2021"
-description = "A common interface for token sampling and helpers for structered llm sampling "
+description = "A common interface for token sampling and helpers for structered llm sampling"
 license = "MIT/Apache-2.0"
 repository = "https://github.com/floneum/floneum"
 authors = ["Evan Almloff"]
@@ -22,4 +22,3 @@ pretty_assertions = "1.4.0"
 [[bench]]
 name = "parse"
 harness = false
-

@@ -7,6 +7,8 @@ use kalosm_language_model::Session;
 use kalosm_language_model::StructureParserResult;
 use kalosm_language_model::{GenerationParameters, Model, ModelExt, SyncModel, SyncModelExt};
 use kalosm_sample::CreateParserState;
+use kalosm_sample::Parse;
+use kalosm_sample::Schema;
 use kalosm_sample::SendCreateParserState;
 use kalosm_streams::text_stream::ChannelTextStream;
 use llm_samplers::types::Sampler;
@@ -149,9 +151,9 @@ pub struct TaskBuilder<P = NoParser> {
 }
 
 impl TaskBuilder {
-    fn new(description: impl Into<String>) -> TaskBuilder {
+    fn new(description: impl ToString) -> TaskBuilder {
         TaskBuilder {
-            system_prompt: description.into(),
+            system_prompt: description.to_string(),
             sampler: Arc::new(std::sync::Mutex::new(
                 GenerationParameters::default().sampler(),
             )),
@@ -387,7 +389,7 @@ where
                 let span = tracing::span!(tracing::Level::TRACE, "Task session");
                 let _span = span.enter();
 
-                let mut session = match session_entry.create_session( model) {
+                let mut session = match session_entry.create_session(model) {
                     Ok(session) => session,
                     Err(err) => {
                         tracing::error!("Failed to start session: {}", err);
@@ -463,13 +465,27 @@ pub struct Task<R = UnstructuredRunner> {
 
 impl Task {
     /// Create a new task with no constraints and the default sampler. See [`Task::builder`] for more options.
-    pub fn new(description: impl Into<String>) -> Self {
+    pub fn new(description: impl ToString) -> Self {
         Self::builder(description).build()
     }
 
     /// Creates a new builder for a task session.
-    pub fn builder(description: impl Into<String>) -> TaskBuilder {
+    pub fn builder(description: impl ToString) -> TaskBuilder {
         TaskBuilder::new(description)
+    }
+
+    /// Create a new task that generates json for the given [`Parse`] type.
+    pub fn builder_for<P: Parse + Schema + 'static>(
+        description: impl ToString,
+    ) -> TaskBuilder<
+        impl kalosm_sample::SendCreateParserState + kalosm_sample::Parser<Output = P> + 'static,
+    > {
+        let description = description.to_string();
+        Task::builder(format_args!(
+            "{description}\nYou respond with JSON that follows this schema:\n{}",
+            P::schema()
+        ))
+        .with_constraints(P::new_parser())
     }
 }
 
