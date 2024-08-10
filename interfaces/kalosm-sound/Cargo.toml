@@ -43,3 +43,6 @@ cuda = ["candle-core/cuda", "rwhisper/cuda", "rwhisper/cudnn"]
 mkl = ["candle-core/mkl", "rwhisper/mkl"]
 denoise = ["nnnoiseless"]
 voice_detection = ["voice_activity_detector"]
+
+[dev-dependencies]
+kalosm = { workspace = true, features = ["sound"] }

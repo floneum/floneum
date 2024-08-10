@@ -3979,6 +3979,7 @@ dependencies = [
  "futures-util",
  "hound",
  "itertools 0.10.5",
+ "kalosm",
  "kalosm-streams",
  "nnnoiseless",
  "rand 0.8.5",

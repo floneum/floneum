@@ -9,14 +9,20 @@ use crate::{
 /// A builder for [`TextClassifier`].
 ///
 /// # Example
-/// ```rust
+/// ```rust, no_run
 /// # use kalosm_learning::*;
 /// # use rbert::*;
 /// # use std::collections::HashMap;
+/// # #[derive(Debug, Copy, Clone, PartialEq, Eq, Class)]
+/// # enum MyClass {
+/// #     Person,
+/// #     Thing,
+/// # }
 /// # #[tokio::main]
-/// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # async fn main() -> anyhow::Result<()> {
 /// // Create a dataset for the classifier
-/// let mut dataset = ClassificationDataset::builder();
+/// let bert = Bert::new().await?;
+/// let mut dataset = TextClassifierDatasetBuilder::<MyClass, _>::new(&bert);
 /// for question in ["What is the author's name?", "What is the author's age?"] {
 ///     dataset.add(question, MyClass::Person).await?;
 /// }
@@ -50,14 +56,20 @@ impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
     /// Add many examples to the dataset at once. This may be faster than adding each example individually depending on the embedding model.
     ///
     /// # Example
-    /// ```rust
+    /// ```rust, no_run
     /// # use kalosm_learning::*;
     /// # use rbert::*;
     /// # use std::collections::HashMap;
+    /// # #[derive(Debug, Copy, Clone, PartialEq, Eq, Class)]
+    /// # enum MyClass {
+    /// #     Person,
+    /// #     Thing,
+    /// # }
     /// # #[tokio::main]
-    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # async fn main() -> anyhow::Result<()> {
     /// // Create a dataset for the classifier
-    /// let mut dataset = ClassificationDataset::builder();
+    /// let bert = Bert::new().await?;
+    /// let mut dataset = TextClassifierDatasetBuilder::<MyClass, _>::new(&bert);
     /// dataset.extend(["What is the author's name?", "What is the author's age?"].into_iter().map(|q| (q, MyClass::Person))).await?;
     /// dataset.extend(["What is the capital of France?", "What is the capital of England?"].into_iter().map(|q| (q, MyClass::Thing))).await?;
     /// # Ok::<(), anyhow::Error>(())
@@ -85,7 +97,7 @@ impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust, no_run
 /// use kalosm_learning::{Class, Classifier, ClassifierConfig};
 /// use candle_core::Device;
 /// use kalosm_language_model::Embedder;

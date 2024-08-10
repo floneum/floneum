@@ -5,7 +5,7 @@
 //! ## Usage (with the RPhi implementation crate)
 //!
 //! ```rust, no_run
-//! use rphi::prelude::*;
+//! use kalosm::language::*;
 //!
 //! #[tokio::main]
 //! async fn main() {

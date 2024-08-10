@@ -48,7 +48,7 @@ impl ClassificationDataset {
     /// Save the dataset to the given path.
     ///
     /// # Example
-    /// ```rust
+    /// ```rust, no_run
     /// # use kalosm_learning::*;
     /// let dev = candle_core::Device::Cpu;
     /// let dataset = ClassificationDataset::load("dataset.safetensors", &dev).unwrap();
@@ -69,7 +69,7 @@ impl ClassificationDataset {
     /// Load the dataset from the given path.
     ///
     /// # Example
-    /// ```rust
+    /// ```rust, no_run
     /// # use kalosm_learning::*;
     /// let dev = candle_core::Device::Cpu;
     /// let dataset = ClassificationDataset::load("dataset.safetensors", &dev).unwrap();
@@ -113,6 +113,11 @@ impl<C: Class> ClassificationDatasetBuilder<C> {
     /// # Example
     /// ```rust
     /// # use kalosm_learning::*;
+    /// # #[derive(Debug, Clone, Copy, Class)]
+    /// # enum MyClass {
+    /// #     Person,
+    /// #     Thing,
+    /// # }
     /// let mut dataset = ClassificationDatasetBuilder::new();
     /// dataset.add(vec![1.0, 2.0, 3.0, 4.0], MyClass::Person);
     /// dataset.add(vec![4.0, 3.0, 2.0, 1.0], MyClass::Thing);
@@ -132,6 +137,11 @@ impl<C: Class> ClassificationDatasetBuilder<C> {
     /// # Example
     /// ```rust
     /// # use kalosm_learning::*;
+    /// # #[derive(Debug, Clone, Copy, Class)]
+    /// # enum MyClass {
+    /// #     Person,
+    /// #     Thing,
+    /// # }
     /// let dev = candle_core::Device::Cpu;
     /// let mut dataset = ClassificationDatasetBuilder::new();
     /// dataset.add(vec![1.0, 2.0, 3.0, 4.0], MyClass::Person);
@@ -230,7 +240,7 @@ impl<C: Class> Classifier<C> {
     /// }
     ///
     /// let dev = candle_core::Device::Cpu;
-    /// let classifier = Classifier::<MyClass>::new(&dev, ClassifierConfig::new(4)).unwrap();
+    /// let classifier = Classifier::<MyClass>::new(&dev, ClassifierConfig::new()).unwrap();
     /// ```
     pub fn new(dev: &Device, config: ClassifierConfig) -> Result<Self> {
         let varmap = VarMap::new();
@@ -313,7 +323,7 @@ impl<C: Class> Classifier<C> {
     /// Train the model on the given dataset.
     ///
     /// # Example
-    /// ```rust
+    /// ```rust, no_run
     /// use kalosm_learning::{Classifier, ClassifierConfig, Class, ClassificationDatasetBuilder};
     ///
     /// #[derive(Debug, Clone, Copy, Class)]
@@ -323,12 +333,12 @@ impl<C: Class> Classifier<C> {
     /// }
     ///
     /// let dev = candle_core::Device::Cpu;
-    /// let mut classifier = Classifier::<MyClass>::new(&dev, ClassifierConfig::new(4)).unwrap();
+    /// let mut classifier = Classifier::<MyClass>::new(&dev, ClassifierConfig::new()).unwrap();
     /// let mut dataset = ClassificationDatasetBuilder::new();
     /// dataset.add(vec![1.0, 2.0, 3.0, 4.0], MyClass::Person);
     /// dataset.add(vec![4.0, 3.0, 2.0, 1.0], MyClass::Thing);
     ///
-    /// classifier.train(&dataset.build(&dev).unwrap(), &dev, 20, 0.05).unwrap();
+    /// classifier.train(&dataset.build(&dev).unwrap(), &dev, 20, 0.05, 3).unwrap();
     /// ```
     pub fn train(
         &mut self,
@@ -405,7 +415,7 @@ impl<C: Class> Classifier<C> {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust, no_run
     /// use kalosm_learning::{Classifier, ClassifierConfig, Class};
     ///
     /// #[derive(Debug, Clone, Copy, Class)]
@@ -415,7 +425,7 @@ impl<C: Class> Classifier<C> {
     /// }
     ///
     /// let dev = candle_core::Device::Cpu;
-    /// let classifier = Classifier::<MyClass>::new(&dev, ClassifierConfig::new(4)).unwrap();
+    /// let classifier = Classifier::<MyClass>::new(&dev, ClassifierConfig::new()).unwrap();
     /// classifier.save("classifier.safetensors").unwrap();
     /// ```
     pub fn save(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
@@ -436,7 +446,7 @@ impl<C: Class> Classifier<C> {
     /// }
     ///
     /// let dev = candle_core::Device::Cpu;
-    /// let classifier = Classifier::<MyClass>::load("classifier.safetensors", &dev, ClassifierConfig::new(4)).unwrap();
+    /// let classifier = Classifier::<MyClass>::load("classifier.safetensors", &dev, ClassifierConfig::new()).unwrap();
     /// ```
     pub fn load(
         path: impl AsRef<std::path::Path>,
@@ -460,6 +470,7 @@ impl<C: Class> Classifier<C> {
     ///
     /// # Example
     ///
+    /// ```rust, no_run
     /// use kalosm_learning::{Classifier, ClassifierConfig, Class};
     ///
     /// #[derive(Debug, Clone, Copy, Class)]
@@ -469,7 +480,7 @@ impl<C: Class> Classifier<C> {
     /// }
     ///
     /// let dev = candle_core::Device::Cpu;
-    /// let classifier = Classifier::<MyClass>::new(&dev, ClassifierConfig::new(4)).unwrap();
+    /// let mut classifier = Classifier::<MyClass>::new(&dev, ClassifierConfig::new()).unwrap();
     /// let result = classifier.run(&[1.0, 2.0, 3.0, 4.0]).unwrap();
     /// println!("Result: {:?}", result);
     /// ```

@@ -8,6 +8,8 @@ You can create embeddings from text using a [`Bert`](https://docs.rs/kalosm/late
 
 ```rust, no_run
 # use kalosm::language::*;
+# #[tokio::main]
+# async fn main() {
 let mut bert = Bert::new().await.unwrap();
 let sentences = vec![
     "Kalosm can be used to build local AI applications",
@@ -15,12 +17,15 @@ let sentences = vec![
     "The quick brown fox jumps over the lazy dog",
 ];
 let embeddings = bert.embed_batch(&sentences).await.unwrap();
+# }
 ```
 
 Once you have embeddings, you can compare them to each other with a distance metric. The cosine similarity is a common metric for comparing embeddings that measures the cosine of the angle between the two vectors:
 
 ```rust, no_run
 # use kalosm::language::*;
+# #[tokio::main]
+# async fn main() {
 # let mut bert = Bert::new().await.unwrap();
 # let sentences = vec![
 #     "Kalosm can be used to build local AI applications",
@@ -37,6 +42,7 @@ for (i, e_i) in embeddings.iter().enumerate() {
         println!("score: {cosine_similarity:.2} '{}' '{}'", sentences[i], sentences[j])
     }
 }
+# }
 ```
 
 You should see that the first two sentences are similar to each other, while the third sentence not similar to either of the first two:
