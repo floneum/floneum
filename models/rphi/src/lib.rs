@@ -12,7 +12,7 @@
 //! use rphi::prelude::*;
 //! #[tokio::main]
 //! async fn main() {
-//!     let mut model = Phi::default();
+//!     let mut model = Phi::v2().await.unwrap();
 //!     let prompt = "The capital of France is ";
 //!     let mut result = model.stream_text(prompt).await.unwrap();
 //!

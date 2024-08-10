@@ -23,11 +23,11 @@ use tokenizers::tokenizer::Tokenizer;
 /// # Example
 /// ```rust, no_run
 /// use kalosm::language::*;
-/// use kalosm_language_model::CreateModel;
+/// use kalosm_language_model::ModelBuilder;
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     let mut bert = Bert::start().await;
+///     let model = AdaEmbedderBuilder::default().start().await.unwrap();
 /// }
 /// ```
 #[async_trait::async_trait]

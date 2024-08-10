@@ -5,7 +5,7 @@
 //!
 //! ```rust, no_run
 //! use futures_util::StreamExt;
-//! use rwhisper::*;
+//! use kalosm::sound::*;
 //! use tokio::time::{Duration, Instant};
 //!
 //! #[tokio::main]
@@ -17,7 +17,7 @@
 //!         .await?;
 //!
 //!     // Record audio from the microphone for 5 seconds.
-//!     let audio = kalosm_sound::MicInput::default()
+//!     let audio = MicInput::default()
 //!         .record_until(Instant::now() + Duration::from_secs(5))
 //!         .await?;
 //!

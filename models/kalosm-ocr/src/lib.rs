@@ -5,9 +5,11 @@
 //! ## Usage
 //!
 //! ```rust, no_run
+//! # #[tokio::main]
+//! # async fn main() {
 //! use kalosm_ocr::*;
 //!
-//! let mut model = Ocr::builder().build().unwrap();
+//! let mut model = Ocr::builder().build().await.unwrap();
 //! let image = image::open("examples/ocr.png").unwrap();
 //! let text = model
 //!     .recognize_text(
@@ -17,6 +19,7 @@
 //!     .unwrap();
 //!
 //! println!("{}", text);
+//! # }
 //! ```
 
 #![warn(missing_docs)]
@@ -262,9 +265,11 @@ impl Ocr {
     ///
     /// # Example
     /// ```rust, no_run
+    /// # #[tokio::main]
+    /// # async fn main() {
     /// use kalosm_ocr::*;
     ///
-    /// let mut model = Ocr::builder().build().unwrap();
+    /// let mut model = Ocr::builder().build().await.unwrap();
     /// let image = image::open("examples/ocr.png").unwrap();
     /// let text = model
     ///     .recognize_text(
@@ -274,6 +279,7 @@ impl Ocr {
     ///     .unwrap();
     ///
     /// println!("{}", text);
+    /// # }
     /// ```
     pub fn recognize_text(&mut self, settings: OcrInferenceSettings) -> anyhow::Result<String> {
         let OcrInferenceSettings { image } = settings;

@@ -13,9 +13,9 @@
 //!
 //! #[tokio::main]
 //! async fn main() {
-//!     let mut model = Llama::default();
+//!     let mut model = Llama::new().await.unwrap();
 //!     let prompt = "The capital of France is ";
-//!     let mut result = model.stream_text(prompt).await?;
+//!     let mut result = model.stream_text(prompt).await.unwrap();
 //!
 //!     print!("{prompt}");
 //!     while let Some(token) = result.next().await {

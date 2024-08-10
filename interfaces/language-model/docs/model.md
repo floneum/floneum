@@ -38,7 +38,7 @@ You can define a Task with a description then run it with an input. The task wil
 let model = Llama::new_chat().await.unwrap();
 // Create a new task that 
 let task = Task::new("You take a long description and summarize it into a single short sentence");
-let output = task.run("You can define a Task with a description then run it with an input. The task will cache the description to repeated calls faster. Tasks work with both chat and non-chat models, but they tend to perform significantly better with chat models.", &model);
+let mut output = task.run("You can define a Task with a description then run it with an input. The task will cache the description to repeated calls faster. Tasks work with both chat and non-chat models, but they tend to perform significantly better with chat models.", &model);
 // Then stream the output to the console
 output.to_std_out().await.unwrap();
 # }
@@ -101,7 +101,7 @@ async fn main() {
     let model = Llama::new_chat().await.unwrap();
     // Then create a parser for your custom format
     let parser = LiteralParser::from("[")
-        .then(String::new_parser())
+        .ignore_output_then(String::new_parser())
         .then_literal(", ")
         .then(u8::new_parser())
         .then_literal(", ")

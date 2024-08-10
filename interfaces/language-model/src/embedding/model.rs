@@ -14,7 +14,7 @@ use crate::UnknownVectorSpace;
 /// #[tokio::main]
 /// async fn main() {
 ///     // Bert implements Embedder
-///     let mut bert = Bert::builder().build().unwrap();
+///     let mut bert = Bert::new().await.unwrap();
 ///     let sentences = [
 ///         "Cats are cool",
 ///         "The geopolitical situation is dire",
