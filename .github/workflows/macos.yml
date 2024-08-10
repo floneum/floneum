@@ -39,7 +39,7 @@ on:
 jobs:
   test:
     if: github.event.pull_request.draft == false
-    name: Test Suite
+    name: Mac Test Suite
     runs-on: macos-latest
     steps:
       - uses: dtolnay/rust-toolchain@stable
