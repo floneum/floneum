@@ -21,6 +21,7 @@ enum NamedEnum {
     },
 }
 
+#[cfg(any(feature = "metal", feature = "cuda"))]
 #[tokio::test]
 async fn named_enum() {
     let model = Llama::builder()
@@ -106,6 +107,7 @@ fn mixed_enum_schema() {
     );
 }
 
+#[cfg(any(feature = "metal", feature = "cuda"))]
 #[tokio::test]
 async fn mixed_enum() {
     let model = Llama::builder()
@@ -146,6 +148,7 @@ fn unit_enum_schema() {
     )
 }
 
+#[cfg(any(feature = "metal", feature = "cuda"))]
 #[tokio::test]
 async fn unit_enum() {
     let model = Llama::builder()
@@ -171,6 +174,7 @@ enum TupleEnum {
     Second(String),
 }
 
+#[cfg(any(feature = "metal", feature = "cuda"))]
 #[tokio::test]
 async fn tuple_enum() {
     let model = Llama::builder()
