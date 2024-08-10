@@ -18,7 +18,7 @@ struct Account {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Download default chat model or get the model from the cache
-    let llm = Llama::phi_3().await?;
+    let llm = Llama::new_chat().await?;
 
     // Create a task that generates a list of accounts
     let task = Task::builder_for::<Account>(
