@@ -1406,7 +1406,7 @@ struct StringParserOptions {
     path: Path,
     character_filter: Option<proc_macro2::TokenStream>,
     len: Option<proc_macro2::TokenStream>,
-    pattern: Option<proc_macro2::TokenStream>,
+    pattern: Option<LitStr>,
 }
 
 impl Debug for StringParserOptions {
@@ -1482,9 +1482,13 @@ impl StringParserOptions {
 impl ToTokens for StringParserOptions {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
         if let Some(pattern) = &self.pattern {
+            let pattern = LitStr::new(&format!(r#""{}""#, pattern.value()), pattern.span());
             let quote = quote_spanned! {
                 pattern.span() =>
-                kalosm_sample::RegexParser::new(#pattern).unwrap()
+                kalosm_sample::RegexParser::new(#pattern)
+                    .unwrap()
+                    // Trim the quotes
+                    .map_output(|string| string[1..string.len() - 1].to_string())
             };
             tokens.extend(quote);
             return;
