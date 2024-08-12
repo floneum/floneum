@@ -162,7 +162,7 @@ jobs:
       - name: Package as archive
         shell: bash
         run: |
-          cd target/${{ matrix.platform.target }}/release
+          cd floneum/target/${{ matrix.platform.target }}/release
           if [[ "${{ matrix.platform.os }}" == "windows-latest" ]]; then
             7z a ../../../${{ matrix.platform.name }} ${{ matrix.platform.bin }}
           else
