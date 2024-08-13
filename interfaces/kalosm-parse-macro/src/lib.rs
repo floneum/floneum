@@ -1414,7 +1414,7 @@ impl Debug for StringParserOptions {
         f.debug_struct("StringParserOptions")
             .field("character_filter", &self.character_filter)
             .field("len", &self.len)
-            .field("pattern", &self.pattern)
+            .field("pattern", &self.pattern.as_ref().map(|p| p.value()))
             .finish()
     }
 }
