@@ -93,6 +93,31 @@ impl BertBuilder {
     }
 
     /// Build the model with a loading handler
+    ///
+    /// ```rust
+    /// use kalosm::sound::*;
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), anyhow::Error> {
+    /// // Create a new bert model with a loading handler
+    /// let model = Bert::builder()
+    ///     .build_with_loading_handler(|progress| match progress {
+    ///         ModelLoadingProgress::Downloading {
+    ///             source,
+    ///             start_time,
+    ///             progress,
+    ///         } => {
+    ///             let progress = (progress * 100.0) as u32;
+    ///             let elapsed = start_time.elapsed().as_secs_f32();
+    ///             println!("Downloading file {source} {progress}% ({elapsed}s)");
+    ///         }
+    ///         ModelLoadingProgress::Loading { progress } => {
+    ///             let progress = (progress * 100.0) as u32;
+    ///             println!("Loading model {progress}%");
+    ///         }
+    ///     })
+    ///     .await?;
+    /// # }
+    /// ```
     pub async fn build_with_loading_handler(
         self,
         loading_handler: impl FnMut(ModelLoadingProgress) + Send + 'static,

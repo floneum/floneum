@@ -4,17 +4,16 @@ Language processing utilities for the Kalosm framework.
 
 
 The language part of Kalosm has a few core parts:
-- Models: [Text generation](ModelExt) and [embedding models](EmbedderExt)
-- Context: [Document collection](Document), [format support](FsDocument), [search](SearchQuery) and [chunking](Chunker) 
-- Integrations: [SurrealDB](DocumentTable), [Serper](SearchQuery), and other integrations
-
+- Models: [Text generation](prelude::ModelExt) and [embedding models](prelude::EmbedderExt)
+- Context: [Document collection](prelude::Document), [format support](prelude::FsDocument), [search](prelude::SearchQuery) and [chunking](prelude::Chunker)
+- Integrations: SurrealDB, [Serper](prelude::SearchQuery), and other integrations
 
 ## Text Generation Models
 
-[`Model`] and [`ModelExt`] are the core traits for text generation models. Any model that implements these traits can be used with Kalosm.
+[`Model`](prelude::Model) and [`ModelExt`](prelude::ModelExt) are the core traits for text generation models. Any model that implements these traits can be used with Kalosm.
 
 
-The simplest way to use a model is to create a [`Model`] and call [`ModelExt::stream_text`] to stream text from it:
+The simplest way to use a model is to create a [llama model](prelude::Llama) and call [stream_text](prelude::ModelExt::stream_text) on it:
 
 ```rust, no_run
 use kalosm::language::*;
@@ -38,20 +37,20 @@ async fn main() {
 
 ### Tasks
 
-You can define a Task with a description then run it with an input. The task will cache the description to repeated calls faster. Tasks work with both chat and non-chat models, but they tend to perform significantly better with chat models.
+You can define a Task with a description and then run it with an input. The task will cache the description to repeated calls faster. Tasks work with both chat and non-chat models, but they tend to perform significantly better with chat models.
 
 ```rust, no_run
-# use kalosm::language::*;
-# #[tokio::main]
-# async fn main() {
-// Create a new model
-let model = Llama::new_chat().await.unwrap();
-// Create a new task that summarizes text
-let task = Task::new("You take a long description and summarize it into a single short sentence");
-let mut output = task.run("You can define a Task with a description then run it with an input. The task will cache the description to repeated calls faster. Tasks work with both chat and non-chat models, but they tend to perform significantly better with chat models.", &model);
-// Then stream the output to the console
-output.to_std_out().await.unwrap();
-# }
+use kalosm::language::*;
+#[tokio::main]
+async fn main() {
+    // Create a new model
+    let model = Llama::new_chat().await.unwrap();
+    // Create a new task that summarizes text
+    let task = Task::new("You take a long description and summarize it into a single short sentence");
+    let mut output = task.run("You can define a Task with a description then run it with an input. The task will cache the description to repeated calls faster. Tasks work with both chat and non-chat models, but they tend to perform significantly better with chat models.", &model);
+    // Then stream the output to the console
+    output.to_std_out().await.unwrap();
+}
 ```
 
 ### Structured Generation
@@ -67,16 +66,17 @@ struct Pet {
 }
 ```
 
-Then you can generate text that works with the parser in a [`Task`]:
+Then you can generate text that works with the parser in a [`Task`](prelude::Task):
 
 ```rust, no_run
-# use kalosm::language::*;
-# #[derive(Parse, Debug, Clone)]
-# struct Pet {
-#     name: String,
-#     age: u32,
-#     description: String,
-# }
+use kalosm::language::*;
+#[derive(Parse, Debug, Clone)]
+struct Pet {
+    name: String,
+    age: u32,
+    description: String,
+}
+
 #[tokio::main]
 async fn main() {
     // First create a model. Chat models tend to work best with structured generation
@@ -95,10 +95,10 @@ async fn main() {
 
 ## Embedding Models
 
-[`Embedder`] and [`EmbedderExt`] are the core traits for text embedding models. Any model that implements these traits can be used with Kalosm.
+[`Embedder`](prelude::Embedder) and [`EmbedderExt`](prelude::EmbedderExt) are the core traits for text embedding models. Any model that implements these traits can be used with Kalosm.
 
 
-The simplest way to use an embedding model is to create an [`Embedder`] and call [`EmbedderExt::embed`] to create an [`Embedding`] of the text which represents the meaning of the text in a numerical format:
+The simplest way to use an embedding model is to create a [bert model](prelude::Bert) and call [`embed`](prelude::EmbedderExt::embed) on it. The [`Embedding`](prelude::Embedding) you get back represents the meaning of the text in a numerical format:
 
 ```rust, no_run
 use kalosm::language::*;
@@ -128,9 +128,9 @@ Kalosm provides utilities for collecting context from a variety of sources:
 - RSS feeds
 - Websites
 - Search engines
-- Microphone input and audio input through [whisper transcriptions](crate::sound::Whisper)
+- Microphone input and audio input through [whisper transcriptions](https://docs.rs/rwhisper/latest/rwhisper/struct.Whisper.html)
 
-Each of these sources implement either [`IntoDocument`] or [`IntoDocuments`] to convert the data into a [`Document`] with the contents and metadata about the document.
+Each of these sources implements either [`IntoDocument`](prelude::IntoDocument) or [`IntoDocuments`](prelude::IntoDocuments) to convert the data into a [`Document`](prelude::Document) with the contents and metadata about the document.
 
 ```rust, no_run
 use kalosm::language::*;

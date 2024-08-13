@@ -10,7 +10,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let stream = mic.stream().unwrap();
 
     // Transcribe the audio into text in chunks based on voice activity.
-    let text_stream = stream.transcribe(model);
+    let mut text_stream = stream.transcribe(model);
 
     // Finally, print the text to the console
     text_stream.to_std_out().await.unwrap();

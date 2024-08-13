@@ -169,6 +169,18 @@ enum Task {
 }
 
 /// A builder with configuration for a Whisper model.
+///
+/// ```rust
+/// use kalosm::sound::*;
+/// # #[tokio::main]
+/// # async fn main() -> Result<(), anyhow::Error> {
+/// // Create a new whisper model with a loading handler
+/// let model = Whisper::builder()
+///     // You can set the model to use in the builder
+///     .with_source(WhisperSource::DistilLargeV3)
+///     .build()
+///     .await?;
+/// # }
 #[derive(Debug)]
 pub struct WhisperBuilder {
     /// The model to be used, can be tiny, small, medium.
@@ -298,6 +310,31 @@ impl WhisperBuilder {
     }
 
     /// Build the model with a handler for progress as the download and loading progresses.
+    ///
+    /// ```rust
+    /// use kalosm::sound::*;
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), anyhow::Error> {
+    /// // Create a new whisper model with a loading handler
+    /// let model = Whisper::builder()
+    ///     .build_with_loading_handler(|progress| match progress {
+    ///         ModelLoadingProgress::Downloading {
+    ///             source,
+    ///             start_time,
+    ///             progress,
+    ///         } => {
+    ///             let progress = (progress * 100.0) as u32;
+    ///             let elapsed = start_time.elapsed().as_secs_f32();
+    ///             println!("Downloading file {source} {progress}% ({elapsed}s)");
+    ///         }
+    ///         ModelLoadingProgress::Loading { progress } => {
+    ///             let progress = (progress * 100.0) as u32;
+    ///             println!("Loading model {progress}%");
+    ///         }
+    ///     })
+    ///     .await?;
+    /// # }
+    /// ```
     pub async fn build_with_loading_handler(
         self,
         mut progress_handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
