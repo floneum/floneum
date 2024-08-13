@@ -65,3 +65,7 @@ remote = ["kalosm-language-model/remote"]
 
 [dev-dependencies]
 kalosm = { workspace = true, features = ["language"] }
+
+[package.metadata.docs.rs]
+# Features to pass to Cargo (default: [])
+features = ["remote"]

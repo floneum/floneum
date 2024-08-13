@@ -222,3 +222,7 @@ required-features = ["language"]
 [[example]]
 name = "transcribe"
 required-features = ["audio"]
+
+[package.metadata.docs.rs]
+# Features to pass to Cargo (default: [])
+features = ["full"]

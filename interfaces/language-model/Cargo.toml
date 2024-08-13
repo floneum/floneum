@@ -41,3 +41,7 @@ default = ["cache"]
 remote = ["async-openai"]
 serde = ["dep:serde", "safetensors"]
 cache = ["serde", "dep:postcard", "dep:lru"]
+
+[package.metadata.docs.rs]
+# Features to pass to Cargo (default: [])
+features = ["remote"]
