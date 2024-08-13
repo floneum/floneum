@@ -3464,7 +3464,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3499,7 +3499,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-common"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "candle-core",
@@ -3515,7 +3515,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-language"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "arroy",
@@ -3567,7 +3567,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-language-model"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-openai",
@@ -3596,7 +3596,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-learning"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "candle-core",
@@ -3613,7 +3613,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-learning-macro"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "quote",
  "syn 2.0.74",
@@ -3621,7 +3621,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-llama"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "accelerate-src",
  "anyhow",
@@ -3650,7 +3650,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-ocr"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "accelerate-src",
  "anyhow",
@@ -3672,7 +3672,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-parse-macro"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "kalosm",
  "pretty_assertions",
@@ -3685,7 +3685,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-sample"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "criterion",
@@ -3698,7 +3698,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-sound"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3728,7 +3728,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-streams"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "futures-util",
  "image 0.24.9",
@@ -3738,7 +3738,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-vision"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "image 0.24.9",
  "kalosm-ocr",
@@ -3748,7 +3748,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-workspace"
-version = "0.1.0"
+version = "0.3.0"
 
 [[package]]
 name = "lalrpop"
@@ -5646,7 +5646,7 @@ dependencies = [
 
 [[package]]
 name = "rbert"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "accelerate-src",
  "anyhow",
@@ -6013,7 +6013,7 @@ dependencies = [
 
 [[package]]
 name = "rphi"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "accelerate-src",
  "anyhow",
@@ -6246,7 +6246,7 @@ checksum = "955d28af4278de8121b7ebeb796b6a45735dc01436d898801014aced2773a3d6"
 
 [[package]]
 name = "rwhisper"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "accelerate-src",
  "anyhow",
@@ -6276,7 +6276,7 @@ dependencies = [
 
 [[package]]
 name = "rwuerstchen"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "accelerate-src",
  "anyhow",
@@ -6422,7 +6422,7 @@ dependencies = [
 
 [[package]]
 name = "segment-anything-rs"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "accelerate-src",
  "anyhow",

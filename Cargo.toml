@@ -1,10 +1,11 @@
 [package]
 name = "kalosm-workspace"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 license = "MIT/Apache-2.0"
 repository = "https://github.com/floneum/floneum"
+publish = false
 
 [dependencies]
 
@@ -35,24 +36,24 @@ candle-core = { version = "0.6.0" }
 candle-nn = { version = "0.6.0" }
 candle-transformers = { version = "0.6.0" }
 candle-datasets = { version = "0.6.0" }
-kalosm = { path = "./interfaces/kalosm", version = "0.2.1" }
-kalosm-sample = { path = "./interfaces/kalosm-sample", version = "0.2.1" }
-kalosm-parse-macro = { path = "./interfaces/kalosm-parse-macro", version = "0.2.1" }
-kalosm-common = { path = "./interfaces/kalosm-common", version = "0.1.0" }
-kalosm-language-model = { path = "./interfaces/language-model", version = "0.2.1" }
-kalosm-streams = { path = "./interfaces/kalosm-streams", version = "0.2.1" }
-kalosm-language = { path = "./interfaces/kalosm-language", version = "0.2.1" }
-kalosm-sound = { path = "./interfaces/kalosm-sound", version = "0.2.1" }
-kalosm-vision = { path = "./interfaces/kalosm-vision", version = "0.2.1" }
-kalosm-learning = { path = "./interfaces/kalosm-learning", version = "0.2.1" }
-kalosm-learning-macro = { path = "./interfaces/kalosm-learning-macro", version = "0.2.1" }
-rphi = { path = "./models/rphi", version = "0.2.1" }
-rbert = { path = "./models/rbert", version = "0.2.1" }
-kalosm-llama = { path = "./models/kalosm-llama", version = "0.2.1" }
-rwhisper = { path = "./models/rwhisper", version = "0.2.1" }
-rwuerstchen = { path = "./models/rwuerstchen", version = "0.2.1" }
-segment-anything-rs = { path = "./models/segment-anything-rs", version = "0.2.1" }
-kalosm-ocr = { path = "./models/kalosm-ocr", version = "0.2.1" }
+kalosm = { path = "./interfaces/kalosm", version = "0.3.0" }
+kalosm-sample = { path = "./interfaces/kalosm-sample", version = "0.3.0" }
+kalosm-parse-macro = { path = "./interfaces/kalosm-parse-macro", version = "0.3.0" }
+kalosm-common = { path = "./interfaces/kalosm-common", version = "0.3.0" }
+kalosm-language-model = { path = "./interfaces/language-model", version = "0.3.0" }
+kalosm-streams = { path = "./interfaces/kalosm-streams", version = "0.3.0" }
+kalosm-language = { path = "./interfaces/kalosm-language", version = "0.3.0" }
+kalosm-sound = { path = "./interfaces/kalosm-sound", version = "0.3.0" }
+kalosm-vision = { path = "./interfaces/kalosm-vision", version = "0.3.0" }
+kalosm-learning = { path = "./interfaces/kalosm-learning", version = "0.3.0" }
+kalosm-learning-macro = { path = "./interfaces/kalosm-learning-macro", version = "0.3.0" }
+rphi = { path = "./models/rphi", version = "0.3.0" }
+rbert = { path = "./models/rbert", version = "0.3.0" }
+kalosm-llama = { path = "./models/kalosm-llama", version = "0.3.0" }
+rwhisper = { path = "./models/rwhisper", version = "0.3.0" }
+rwuerstchen = { path = "./models/rwuerstchen", version = "0.3.0" }
+segment-anything-rs = { path = "./models/segment-anything-rs", version = "0.3.0" }
+kalosm-ocr = { path = "./models/kalosm-ocr", version = "0.3.0" }
 llm-samplers = "=0.0.7"
 parking_lot = "0.12.1"
 tokenizers = "0.19.1"

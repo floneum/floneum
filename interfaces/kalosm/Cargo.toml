@@ -1,7 +1,7 @@
 [package]
 name = "kalosm"
 edition = "2021"
-version = "0.2.2"
+version = "0.3.0"
 authors = ["Evan Almloff"]
 description = "A simple interface for pretrained AI models "
 keywords = ["llm", "llama", "whisper", "ocr", "nlp"]
@@ -21,7 +21,7 @@ once_cell = "1.19.0"
 rand = "0.8.5"
 
 [dependencies.kalosm-common]
-version = "0.1.0"
+version = "0.3.0"
 path = "../kalosm-common"
 features = []
 
