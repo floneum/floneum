@@ -1,18 +1,6 @@
 #![warn(missing_docs)]
 #![allow(clippy::type_complexity)]
-
-//! # Kalosm Language
-//!
-//! This crate is a collection of language processing utilities for the Kalosm project.
-//!
-//! There are two main traits in this crate: [`prelude::ModelExt`] for large language model (that implement [`prelude::Model`]) and [`prelude::Embedder`] for text embedding model.
-//!
-//! Those two traits interact with the context that this crate provides. Many different types in this crates can be converted to a [`prelude::Document`] with the [`prelude::IntoDocument`] or [`prelude::IntoDocuments`] trait:
-//! - [`prelude::Page`]: Handles scraping a webpage from a request of headless browser
-//! - [`prelude::SearchQuery`]: Handles searching with a search engine and scaping the result
-//! - [`prelude::CrawlingCallback`]: Handles crawling a set of webpages
-//! - [`prelude::FsDocument`]: Handles reading a document from the file system
-//! - [`prelude::DocumentFolder`]: Handles reading an entire folder of documents from the file system
+#![doc = include_str!("../README.md")]
 
 pub mod chat;
 pub mod context;
