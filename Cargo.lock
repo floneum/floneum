@@ -3774,7 +3774,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3879,7 +3879,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-language-model"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "async-openai",
