@@ -2,6 +2,10 @@
 name = "kalosm-common"
 version = "0.1.0"
 edition = "2021"
+description = "Helpers for kalosm downloads and candle utilities"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+license = "MIT/Apache-2.0"
+repository = "https://github.com/floneum/floneum"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
