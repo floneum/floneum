@@ -1,6 +1,6 @@
 [package]
 name = "rphi"
-version = "0.3.0"
+version = "0.3.2"
 edition = "2021"
 description = "A simple interface for Phi models "
 license = "MIT/Apache-2.0"
@@ -30,6 +30,9 @@ kalosm-sample.workspace = true
 kalosm-language-model.workspace = true
 kalosm-streams.workspace = true
 kalosm-common = { workspace = true }
+
+[dev-dependencies]
+kalosm = { workspace = true, features = ["language"] }
 
 [features]
 accelerate = ["dep:accelerate-src", "candle-core/accelerate", "candle-nn/accelerate", "candle-transformers/accelerate"]
