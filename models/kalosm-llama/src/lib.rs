@@ -232,7 +232,7 @@ impl LlamaBuilder {
     /// Build the model with a handler for progress as the download and loading progresses.
     ///
     /// ```rust
-    /// use kalosm::sound::*;
+    /// use kalosm::language::*;
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), anyhow::Error> {
     /// // Create a new llama model with a loading handler
