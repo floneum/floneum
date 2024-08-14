@@ -231,7 +231,7 @@ impl LlamaBuilder {
 
     /// Build the model with a handler for progress as the download and loading progresses.
     ///
-    /// ```rust
+    /// ```rust, no_run
     /// use kalosm::language::*;
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), anyhow::Error> {
@@ -253,6 +253,7 @@ impl LlamaBuilder {
     ///         }
     ///     })
     ///     .await?;
+    /// # Ok(())
     /// # }
     /// ```
     pub async fn build_with_loading_handler(

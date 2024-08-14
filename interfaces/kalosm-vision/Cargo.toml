@@ -14,6 +14,11 @@ kalosm-ocr.workspace = true
 rwuerstchen.workspace = true
 segment-anything-rs.workspace = true
 
+[dev-dependencies]
+kalosm = { workspace = true, features = ["vision"] }
+futures-util = "0.3.28"
+tokio = { version = "1", features = ["full"] }
+
 [features]
 metal = ["kalosm-ocr/metal", "rwuerstchen/metal", "segment-anything-rs/metal"]
 cublas = ["kalosm-ocr/cuda", "rwuerstchen/cuda", "segment-anything-rs/cuda"]

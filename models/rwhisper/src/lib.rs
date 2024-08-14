@@ -180,6 +180,7 @@ enum Task {
 ///     .with_source(WhisperSource::DistilLargeV3)
 ///     .build()
 ///     .await?;
+/// # Ok(())
 /// # }
 #[derive(Debug)]
 pub struct WhisperBuilder {
@@ -311,7 +312,7 @@ impl WhisperBuilder {
 
     /// Build the model with a handler for progress as the download and loading progresses.
     ///
-    /// ```rust
+    /// ```rust, no_run
     /// use kalosm::sound::*;
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), anyhow::Error> {
@@ -333,6 +334,7 @@ impl WhisperBuilder {
     ///         }
     ///     })
     ///     .await?;
+    /// # Ok(())
     /// # }
     /// ```
     pub async fn build_with_loading_handler(

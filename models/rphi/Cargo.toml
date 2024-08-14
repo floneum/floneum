@@ -31,6 +31,9 @@ kalosm-language-model.workspace = true
 kalosm-streams.workspace = true
 kalosm-common = { workspace = true }
 
+[dev-dependencies]
+kalosm = { workspace = true, features = ["language"] }
+
 [features]
 accelerate = ["dep:accelerate-src", "candle-core/accelerate", "candle-nn/accelerate", "candle-transformers/accelerate"]
 cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]

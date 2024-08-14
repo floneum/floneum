@@ -94,7 +94,7 @@ impl BertBuilder {
 
     /// Build the model with a loading handler
     ///
-    /// ```rust
+    /// ```rust, no_run
     /// use kalosm::language::*;
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), anyhow::Error> {
@@ -116,6 +116,7 @@ impl BertBuilder {
     ///         }
     ///     })
     ///     .await?;
+    /// # Ok(())
     /// # }
     /// ```
     pub async fn build_with_loading_handler(

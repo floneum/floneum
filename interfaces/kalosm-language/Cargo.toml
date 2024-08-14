@@ -65,6 +65,7 @@ remote = ["kalosm-language-model/remote"]
 
 [dev-dependencies]
 kalosm = { workspace = true, features = ["language"] }
+surrealdb = { version = "1.5.4", features = ["kv-rocksdb"] }
 
 [package.metadata.docs.rs]
 # Features to pass to Cargo (default: [])

@@ -3867,6 +3867,7 @@ dependencies = [
  "serde_json",
  "slab",
  "srx",
+ "surrealdb",
  "tempfile",
  "texting_robots",
  "tokenizers",
@@ -4052,10 +4053,13 @@ dependencies = [
 name = "kalosm-vision"
 version = "0.3.0"
 dependencies = [
+ "futures-util",
  "image 0.24.9",
+ "kalosm",
  "kalosm-ocr",
  "rwuerstchen",
  "segment-anything-rs",
+ "tokio",
 ]
 
 [[package]]
@@ -6266,6 +6270,7 @@ dependencies = [
  "cudarc 0.9.15",
  "half 2.4.1",
  "intel-mkl-src",
+ "kalosm",
  "kalosm-common",
  "kalosm-language-model",
  "metal 0.27.0",
@@ -6639,6 +6644,7 @@ dependencies = [
  "cudarc 0.9.15",
  "half 2.4.1",
  "intel-mkl-src",
+ "kalosm",
  "kalosm-common",
  "kalosm-language-model",
  "kalosm-sample",
