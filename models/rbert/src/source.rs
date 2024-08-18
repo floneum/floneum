@@ -94,17 +94,17 @@ impl BertSource {
         Self {
             config: FileSource::huggingface(
                 "BAAI/bge-small-en-v1.5".to_string(),
-                "refs/pr/3".to_string(),
+                "main".to_string(),
                 "config.json".to_string(),
             ),
             tokenizer: FileSource::huggingface(
                 "BAAI/bge-small-en-v1.5".to_string(),
-                "refs/pr/3".to_string(),
+                "main".to_string(),
                 "tokenizer.json".to_string(),
             ),
             model: FileSource::huggingface(
                 "BAAI/bge-small-en-v1.5".to_string(),
-                "refs/pr/3".to_string(),
+                "main".to_string(),
                 "model.safetensors".to_string(),
             ),
             search_embedding_prefix: None,
