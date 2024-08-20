@@ -1,6 +1,5 @@
-use kalosm::language::*;
+use kalosm::sound::*;
 use rodio::Decoder;
-use rwhisper::*;
 use std::fs::File;
 use std::io::BufReader;
 
