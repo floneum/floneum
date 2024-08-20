@@ -1,10 +1,10 @@
-use super::cache::AttentionCache;
-use super::mask::AttentionMask;
 use super::rope::RopeCache;
 use super::silu::fast_cpu_silu;
 use candle_core::{quantized::QMatMul, Module, Tensor};
 use candle_core::{Device, D};
 use candle_transformers::quantized_nn::RmsNorm;
+use kalosm_common::AttentionMask;
+use kalosm_common::KvCache;
 
 pub enum FeedForwardVariant {
     Llama(LlamaFeedForward),
@@ -230,7 +230,7 @@ impl LlamaAttention {
         hidden_states: &Tensor,
         attention_mask: Option<&AttentionMask>,
         start_pos: usize,
-        cache: Option<&mut AttentionCache>,
+        cache: Option<&mut KvCache>,
     ) -> candle_core::Result<Tensor> {
         let bsz = hidden_states.dims()[0];
         let q_len = hidden_states.dims()[1];

@@ -53,6 +53,7 @@ use futures_util::{Stream, StreamExt};
 mod model;
 mod source;
 pub use source::*;
+mod quantized;
 
 #[derive(Debug, Clone)]
 struct DecodingResult {

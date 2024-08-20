@@ -12,12 +12,12 @@ use tokenizers::Tokenizer;
 use candle_transformers::models::whisper::{self as m, audio, Config};
 use kalosm_common::accelerated_device_if_available;
 
-use crate::{Task, WhisperBuilder, WhisperLanguage};
+use crate::{quantized::TextDecoderCache, Task, WhisperBuilder, WhisperLanguage};
 
 use super::{DecodingResult, Segment};
 
 enum ModelType {
-    Quantized(m::quantized_model::Whisper),
+    Quantized(crate::quantized::Whisper),
     Unquantized(m::model::Whisper),
 }
 
@@ -30,7 +30,7 @@ impl ModelType {
     ) -> Result<Self> {
         if quantized {
             let vb = crate::m::quantized_model::VarBuilder::from_gguf(weights_filename, device)?;
-            Ok(Self::Quantized(m::quantized_model::Whisper::load(
+            Ok(Self::Quantized(crate::quantized::Whisper::load(
                 &vb, config,
             )?))
         } else {
@@ -191,7 +191,7 @@ impl Decoder {
     fn decode(&mut self, mel: &Tensor, t: f64, task: Task) -> Result<DecodingResult> {
         let model = &mut self.model;
         let audio_features = match model {
-            ModelType::Quantized(model) => model.encoder.forward(mel, true)?,
+            ModelType::Quantized(model) => model.encoder.forward(mel)?,
             ModelType::Unquantized(model) => model.encoder.forward(mel, true)?,
         };
         let sample_len = model.config().max_target_positions / 2;
@@ -206,17 +206,25 @@ impl Decoder {
             Task::Translate => tokens.push(self.translate_token),
         }
         tokens.push(self.no_timestamps_token);
+        // The tokens that are queued for decoding
+        let mut queued_tokens = tokens.clone();
+        let mut cache = TextDecoderCache::new();
         for i in 0..sample_len {
-            let tokens_t = Tensor::new(tokens.as_slice(), mel.device())?;
-
-            // The model expects a batch dim but this inference loop does not handle
-            // it so we add it at this point.
-            let tokens_t = tokens_t.unsqueeze(0)?;
             let ys = match model {
                 ModelType::Quantized(model) => {
-                    model.decoder.forward(&tokens_t, &audio_features, i == 0)?
+                    let result =
+                        model
+                            .decoder
+                            .forward(&queued_tokens, &audio_features, &mut cache)?;
+                    // The quantized model caches tokens so it we can remove any old tokens
+                    queued_tokens.clear();
+                    result
                 }
                 ModelType::Unquantized(model) => {
+                    let tokens_t = Tensor::new(queued_tokens.as_slice(), mel.device())?;
+                    // The model expects a batch dim but this inference loop does not handle
+                    // it so we add it at this point.
+                    let tokens_t = tokens_t.unsqueeze(0)?;
                     model.decoder.forward(&tokens_t, &audio_features, i == 0)?
                 }
             };
@@ -269,6 +277,7 @@ impl Decoder {
                     .unwrap()
             };
             tokens.push(next_token);
+            queued_tokens.push(next_token);
             let prob = softmax(&logits, candle_core::D::Minus1)?
                 .i(next_token as usize)?
                 .to_scalar::<f32>()? as f64;
