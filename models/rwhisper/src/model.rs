@@ -116,16 +116,14 @@ impl WhisperInner {
         let mel_len = mel.len();
         let mel = Tensor::from_vec(
             mel,
-            (
-                1,
-                self.config.num_mel_bins,
-                mel_len / self.config.num_mel_bins,
-            ),
+            (self.config.num_mel_bins, mel_len / self.config.num_mel_bins),
             &self.device,
         )
         .unwrap();
 
-        self.decoder.run(&mel, Task::Transcribe, result);
+        if let Err(err) = self.decoder.run(&mel, Task::Transcribe, result) {
+            tracing::error!("Error transcribing audio: {err}");
+        }
     }
 }
 
@@ -188,12 +186,23 @@ impl Decoder {
         })
     }
 
-    fn decode(&mut self, mel: &Tensor, temperature: f64, task: Task) -> Result<DecodingResult> {
-        let model = &mut self.model;
-        let audio_features = match model {
+    fn encode(&mut self, mel: &Tensor) -> Result<Tensor> {
+        let tensor = match &mut self.model {
             ModelType::Quantized(model) => model.encoder.forward(mel)?,
             ModelType::Unquantized(model) => model.encoder.forward(mel, true)?,
         };
+
+        Ok(tensor)
+    }
+
+    fn decode(
+        &mut self,
+        audio_features: &Tensor,
+        temperature: f64,
+        task: Task,
+        previous_tokens: &[u32],
+    ) -> Result<DecodingResult> {
+        let model = &mut self.model;
         let sample_len = model.config().max_target_positions / 2;
         let mut sum_logprob = 0f64;
         let mut no_speech_prob = f64::NAN;
@@ -206,6 +215,7 @@ impl Decoder {
             Task::Translate => tokens.push(self.translate_token),
         }
         tokens.push(self.no_timestamps_token);
+        tokens.extend(previous_tokens);
         // The tokens that are queued for decoding
         let mut queued_tokens = tokens.clone();
         let mut cache = TextDecoderCache::new();
@@ -215,17 +225,17 @@ impl Decoder {
                     let result =
                         model
                             .decoder
-                            .forward(&queued_tokens, &audio_features, &mut cache)?;
+                            .forward(&queued_tokens, audio_features, &mut cache)?;
                     // The quantized model caches tokens so it we can remove any old tokens
                     queued_tokens.clear();
                     result
                 }
                 ModelType::Unquantized(model) => {
-                    let tokens_t = Tensor::new(queued_tokens.as_slice(), mel.device())?;
+                    let tokens_t = Tensor::new(queued_tokens.as_slice(), audio_features.device())?;
                     // The model expects a batch dim but this inference loop does not handle
                     // it so we add it at this point.
                     let tokens_t = tokens_t.unsqueeze(0)?;
-                    model.decoder.forward(&tokens_t, &audio_features, i == 0)?
+                    model.decoder.forward(&tokens_t, audio_features, i == 0)?
                 }
             };
 
@@ -297,9 +307,14 @@ impl Decoder {
         })
     }
 
-    fn decode_with_fallback(&mut self, segment: &Tensor, task: Task) -> Result<DecodingResult> {
+    fn decode_with_fallback(
+        &mut self,
+        audio_features: &Tensor,
+        task: Task,
+        previous_tokens: &[u32],
+    ) -> Result<DecodingResult> {
         for (i, &t) in m::TEMPERATURES.iter().enumerate() {
-            let dr: Result<DecodingResult> = self.decode(segment, t, task);
+            let dr: Result<DecodingResult> = self.decode(audio_features, t, task, previous_tokens);
             if i == m::TEMPERATURES.len() - 1 {
                 return dr;
             }
@@ -325,40 +340,96 @@ impl Decoder {
         mel: &Tensor,
         task: Task,
         result: tokio::sync::mpsc::UnboundedSender<Segment>,
-    ) {
-        let (_, _, content_frames) = mel.dims3().unwrap();
+    ) -> Result<()> {
+        // TODO: This should be dynamic based on how much memory the model uses and how much memory is available
+        const MAX_CHUNKS: usize = 1;
+
+        let (_, content_frames) = mel.dims2()?;
         let mut seek = 0;
         let start_time = Instant::now();
+        let mut chunk_indices = Vec::new();
+        let mut chunked = Vec::new();
+        // Keep looping until we have all the chunks we need
         while seek < content_frames {
-            let time_offset = (seek * m::HOP_LENGTH) as f64 / m::SAMPLE_RATE as f64;
-            let segment_size = usize::min(content_frames - seek, m::N_FRAMES);
-            let mel_segment = mel.narrow(2, seek, segment_size).unwrap();
-            let segment_duration = (segment_size * m::HOP_LENGTH) as f64 / m::SAMPLE_RATE as f64;
-            let dr = self.decode_with_fallback(&mel_segment, task).unwrap();
-            seek += segment_size;
-            if dr.no_speech_prob > m::NO_SPEECH_THRESHOLD && dr.avg_logprob < m::LOGPROB_THRESHOLD {
-                tracing::trace!("no speech detected, skipping {seek} {dr:?}");
-                continue;
+            // Take a chunk up to the maximum size
+            chunk_indices.clear();
+            chunked.clear();
+            while chunk_indices.len() < MAX_CHUNKS && seek < content_frames {
+                let remaining_frames = content_frames - seek;
+                let segment_size = usize::min(remaining_frames, m::N_FRAMES);
+                chunk_indices.push(seek..seek + segment_size);
+                // If the new frame doesn't fit into a perfect chunk, just include it in the next chunk
+                if remaining_frames < m::N_FRAMES && !chunk_indices.is_empty() {
+                    break;
+                }
+                let mel_segment = mel.narrow(1, seek, segment_size)?;
+                chunked.push(mel_segment);
+                seek += segment_size;
             }
-            let elapsed = start_time.elapsed();
-            let remaining = Duration::from_millis(
-                ((elapsed.as_millis() as usize / seek) * (content_frames - seek)) as u64,
-            );
-            let progress = seek as f32 / content_frames as f32;
-            let segment = Segment {
-                start: time_offset,
-                duration: segment_duration,
-                remaining_time: remaining,
-                elapsed_time: elapsed,
-                progress,
-                result: dr,
-            };
 
-            if let Err(err) = result.send(segment) {
-                tracing::error!("Error sending segment: {err}");
-                break;
+            // Encode all of the chunks
+            let batched_mel_segment = Tensor::stack(&chunked, 0)?;
+            let batched_audio_features = self.encode(&batched_mel_segment)?;
+            let split = batched_audio_features.chunk(chunk_indices.len(), 0)?;
+
+            // Tokens that are remaining in the last chunk's sentence fragment
+            let mut tokens_in_sentence_fragment = Vec::new();
+
+            for (audio_features, range) in split.iter().zip(chunk_indices.iter()) {
+                let segment_size = range.end - range.start;
+                let end = range.end;
+                let time_offset = (end * m::HOP_LENGTH) as f64 / m::SAMPLE_RATE as f64;
+
+                let segment_duration =
+                    (segment_size * m::HOP_LENGTH) as f64 / m::SAMPLE_RATE as f64;
+                let dr =
+                    self.decode_with_fallback(audio_features, task, &tokens_in_sentence_fragment)?;
+                tokens_in_sentence_fragment.clear();
+                if dr.no_speech_prob > m::NO_SPEECH_THRESHOLD
+                    && dr.avg_logprob < m::LOGPROB_THRESHOLD
+                {
+                    tracing::trace!("no speech detected, skipping {end} {dr:?}");
+                    continue;
+                }
+
+                // Grab any text that was in the previous sentence fragment
+                if let Some(index) = dr.text.char_indices().rev().find_map(|(idx, c)| {
+                    if c == '.' || c == '?' || c == '!' {
+                        Some(idx)
+                    } else {
+                        None
+                    }
+                }) {
+                    let text_after_last_sentence = &dr.text[index + 1..];
+                    let tokens = self
+                        .tokenizer
+                        .encode(text_after_last_sentence, false)
+                        .map_err(E::msg)?;
+                    tokens_in_sentence_fragment.extend(tokens.get_ids());
+                };
+
+                let elapsed = start_time.elapsed();
+                let remaining = Duration::from_millis(
+                    ((elapsed.as_millis() as usize / seek) * (content_frames - seek)) as u64,
+                );
+                let progress = end as f32 / content_frames as f32;
+                let segment = Segment {
+                    start: time_offset,
+                    duration: segment_duration,
+                    remaining_time: remaining,
+                    elapsed_time: elapsed,
+                    progress,
+                    result: dr,
+                };
+
+                if let Err(err) = result.send(segment) {
+                    tracing::error!("Error sending segment: {err}");
+                    break;
+                }
             }
         }
+
+        Ok(())
     }
 }
 

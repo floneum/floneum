@@ -25,6 +25,8 @@ pub enum WhisperSource {
     Medium,
     /// The medium model with only English support.
     MediumEn,
+    /// The medium model with only English support quantized to run faster.
+    QuantizedDistilMediumEn,
     /// The large model.
     Large,
     /// The large model v2.
@@ -59,6 +61,7 @@ impl WhisperSource {
             | Self::BaseEn
             | Self::SmallEn
             | Self::MediumEn
+            | Self::QuantizedDistilMediumEn
             | Self::DistilMediumEn => false,
         }
     }
@@ -67,7 +70,10 @@ impl WhisperSource {
     pub fn is_quantized(&self) -> bool {
         matches!(
             self,
-            Self::QuantizedTiny | Self::QuantizedTinyEn | Self::QuantizedDistilLargeV3
+            Self::QuantizedTiny
+                | Self::QuantizedTinyEn
+                | Self::QuantizedDistilMediumEn
+                | Self::QuantizedDistilLargeV3
         )
     }
 
@@ -88,6 +94,9 @@ impl WhisperSource {
             Self::DistilMediumEn => ("distil-whisper/distil-medium.en", "main"),
             Self::DistilLargeV2 => ("distil-whisper/distil-large-v2", "main"),
             Self::DistilLargeV3 => ("distil-whisper/distil-large-v3", "main"),
+            Self::QuantizedDistilMediumEn => {
+                ("Demonthos/candle-quantized-whisper-medium-distil", "main")
+            }
             Self::QuantizedDistilLargeV3 => {
                 ("Demonthos/candle-quantized-whisper-distil-v3", "main")
             }
@@ -149,6 +158,7 @@ impl Display for WhisperSource {
             Self::DistilMediumEn => write!(f, "distil_medium_en"),
             Self::DistilLargeV2 => write!(f, "distil_large_v2"),
             Self::DistilLargeV3 => write!(f, "distil_large_v3"),
+            Self::QuantizedDistilMediumEn => write!(f, "quantized_distil_medium_en"),
             Self::QuantizedDistilLargeV3 => write!(f, "quantized_distil_large_v3"),
         }
     }

@@ -186,6 +186,7 @@ impl ResidualAttentionBlock {
         mut cache: Option<&mut ResidualAttentionBlockCache>,
     ) -> Result<Tensor> {
         let _enter = self.span.enter();
+
         let attn_ln_x = self.attn_ln.forward(x)?;
         let attn = self.attn.forward(
             &attn_ln_x,
