@@ -34,6 +34,7 @@ kalosm-streams.workspace = true
 rwhisper.workspace = true
 
 voice_activity_detector = { version = "0.1.0", features = ["async"], optional = true }
+ort = { version = "=2.0.0-rc.4", optional = true}
 nnnoiseless = { version = "0.5.1", optional = true }
 
 [features]
@@ -41,8 +42,8 @@ default = ["voice_detection", "denoise"]
 metal = ["candle-core/metal", "rwhisper/accelerate", "rwhisper/metal"]
 cuda = ["candle-core/cuda", "rwhisper/cuda", "rwhisper/cudnn"]
 mkl = ["candle-core/mkl", "rwhisper/mkl"]
-denoise = ["nnnoiseless"]
-voice_detection = ["voice_activity_detector"]
+denoise = ["dep:nnnoiseless"]
+voice_detection = ["dep:voice_activity_detector", "dep:ort"]
 
 [dev-dependencies]
 kalosm = { workspace = true, features = ["sound"] }

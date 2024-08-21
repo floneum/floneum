@@ -3,7 +3,7 @@ use once_cell::sync::OnceCell;
 use std::collections::HashMap;
 use std::sync::RwLock;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct MaskCache {
     masks: RwLock<HashMap<usize, AttentionMask>>,
 }
@@ -51,7 +51,7 @@ impl MaskCache {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AttentionMask {
     pub mask: Tensor,
     pub on_true: OnceCell<Tensor>,

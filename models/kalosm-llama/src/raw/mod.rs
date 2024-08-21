@@ -12,11 +12,10 @@ use candle_core::Module;
 use candle_core::{DType, Device, Result, Tensor};
 use candle_nn::Embedding;
 use candle_transformers::quantized_nn::RmsNorm;
-use mask::MaskCache;
+use kalosm_common::MaskCache;
 
 mod attention_layer;
 pub mod cache;
-mod mask;
 mod rope;
 mod silu;
 

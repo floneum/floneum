@@ -4,6 +4,10 @@ use candle_core::{backend::BackendStorage, utils::*, Device, Storage, Tensor, Wi
 
 mod cache;
 pub use cache::*;
+mod kv_cache;
+pub use kv_cache::*;
+mod mask;
+pub use mask::*;
 
 /// Create a candle device that uses any available accelerator.
 pub fn accelerated_device_if_available() -> candle_core::Result<Device> {

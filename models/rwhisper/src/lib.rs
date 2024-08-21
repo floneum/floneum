@@ -53,6 +53,7 @@ use futures_util::{Stream, StreamExt};
 mod model;
 mod source;
 pub use source::*;
+mod quantized;
 
 #[derive(Debug, Clone)]
 struct DecodingResult {
@@ -265,6 +266,24 @@ impl WhisperBuilder {
                     WhisperModelConfig::new(model, tokenizer, config)
                 }
                 WhisperSource::QuantizedDistilLargeV3 => {
+                    let model = FileSource::huggingface(
+                        model_id.to_owned(),
+                        revision.to_owned(),
+                        "model.gguf".to_owned(),
+                    );
+                    let tokenizer = FileSource::huggingface(
+                        model_id.to_owned(),
+                        revision.to_owned(),
+                        "tokenizer.json".to_owned(),
+                    );
+                    let config = FileSource::huggingface(
+                        model_id.to_owned(),
+                        revision.to_owned(),
+                        "config.json".to_owned(),
+                    );
+                    WhisperModelConfig::new(model, tokenizer, config)
+                }
+                WhisperSource::QuantizedDistilMediumEn => {
                     let model = FileSource::huggingface(
                         model_id.to_owned(),
                         revision.to_owned(),
