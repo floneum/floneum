@@ -188,7 +188,7 @@ impl Decoder {
         })
     }
 
-    fn decode(&mut self, mel: &Tensor, t: f64, task: Task) -> Result<DecodingResult> {
+    fn decode(&mut self, mel: &Tensor, temperature: f64, task: Task) -> Result<DecodingResult> {
         let model = &mut self.model;
         let audio_features = match model {
             ModelType::Quantized(model) => model.encoder.forward(mel)?,
@@ -262,8 +262,8 @@ impl Decoder {
             //   only consider timestamps when sampling.
             // https://github.com/openai/whisper/blob/e8622f9afc4eba139bf796c210f5c01081000472/whisper/decoding.py#L439
             let logits = logits.broadcast_add(&self.suppress_tokens)?;
-            let next_token = if t > 0f64 {
-                let prs = softmax(&(&logits / t)?, 0)?;
+            let next_token = if temperature > 0f64 {
+                let prs = softmax(&(&logits / temperature)?, 0)?;
                 let logits_v: Vec<f32> = prs.to_vec1()?;
                 let distr = rand::distributions::WeightedIndex::new(&logits_v)?;
                 distr.sample(&mut self.rng) as u32
