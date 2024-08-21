@@ -3809,7 +3809,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-common"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "candle-core",
@@ -3936,7 +3936,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-llama"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "accelerate-src",
  "anyhow",
@@ -6870,7 +6870,7 @@ checksum = "955d28af4278de8121b7ebeb796b6a45735dc01436d898801014aced2773a3d6"
 
 [[package]]
 name = "rwhisper"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "accelerate-src",
  "anyhow",

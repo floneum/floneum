@@ -1,6 +1,6 @@
 [package]
 name = "kalosm-common"
-version = "0.3.2"
+version = "0.3.3"
 edition = "2021"
 description = "Helpers for kalosm downloads and candle utilities"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
