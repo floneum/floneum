@@ -42,7 +42,7 @@ use kalosm_language_model::ModelBuilder;
 use kalosm_streams::text_stream::ChannelTextStream;
 use model::WhisperInner;
 use rodio::{source::UniformSourceIterator, Source};
-use std::{fmt::Display, str::FromStr, time::Duration};
+use std::{fmt::Display, str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::Result;
 
@@ -414,8 +414,10 @@ impl WhisperBuilder {
         });
 
         Ok(Whisper {
-            thread: Some(thread),
-            sender: rx,
+            inner: Arc::new(WhisperDrop {
+                thread: Some(thread),
+                sender: rx,
+            }),
         })
     }
 
@@ -769,10 +771,22 @@ impl Display for WhisperLanguage {
     }
 }
 
-/// A quantized whisper audio transcription model.
-pub struct Whisper {
+struct WhisperDrop {
     thread: Option<std::thread::JoinHandle<()>>,
     sender: std::sync::mpsc::Sender<WhisperMessage>,
+}
+
+impl Drop for WhisperDrop {
+    fn drop(&mut self) {
+        self.sender.send(WhisperMessage::Kill).unwrap();
+        self.thread.take().unwrap().join().unwrap();
+    }
+}
+
+#[derive(Clone)]
+/// A quantized whisper audio transcription model.
+pub struct Whisper {
+    inner: Arc<WhisperDrop>,
 }
 
 impl Whisper {
@@ -813,16 +827,10 @@ impl Whisper {
         f32: FromSample<<S as Iterator>::Item>,
     {
         let pcm_data: Vec<_> = normalize_audio(input)?;
-        self.sender
+        self.inner
+            .sender
             .send(WhisperMessage::Transcribe(pcm_data, sender))?;
         Ok(())
-    }
-}
-
-impl Drop for Whisper {
-    fn drop(&mut self) {
-        self.sender.send(WhisperMessage::Kill).unwrap();
-        self.thread.take().unwrap().join().unwrap();
     }
 }
 
