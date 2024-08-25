@@ -55,7 +55,8 @@ mod source;
 pub use source::*;
 mod quantized;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct DecodingResult {
     text: String,
     avg_logprob: f64,
@@ -64,7 +65,8 @@ struct DecodingResult {
 }
 
 /// A transcribed segment of audio.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Segment {
     sample_range: Range<usize>,
     start: f64,

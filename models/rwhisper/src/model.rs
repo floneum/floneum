@@ -418,8 +418,8 @@ impl Decoder {
                 );
                 let progress = end as f32 / content_frames as f32;
                 let segment = Segment {
-                    sample_range: (range.start * m::HOP_LENGTH as usize)
-                        ..audio_frames.min(range.end * m::HOP_LENGTH as usize),
+                    sample_range: (range.start * m::HOP_LENGTH)
+                        ..audio_frames.min(range.end * m::HOP_LENGTH),
                     start: time_offset,
                     duration: segment_duration,
                     remaining_time: remaining,

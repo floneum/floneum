@@ -1,10 +1,12 @@
 //! Handles chunking audio with a voice audio detection model
 use std::{
     pin::Pin,
+    sync::{Arc, RwLock},
     task::{Context, Poll},
 };
 
 use futures_core::{ready, Stream};
+use futures_util::FutureExt;
 use rodio::buffer::SamplesBuffer;
 use voice_activity_detector::VoiceActivityDetector;
 
@@ -31,7 +33,8 @@ pub struct VoiceActivityDetectorStream<S: AsyncSource + Unpin> {
     source: ResampledAsyncSource<S>,
     buffer: Vec<f32>,
     chunk_size: usize,
-    vad: VoiceActivityDetector,
+    vad: Arc<RwLock<VoiceActivityDetector>>,
+    task: Option<tokio::task::JoinHandle<VoiceActivityDetectorOutput>>,
 }
 
 impl<S: AsyncSource + Unpin> VoiceActivityDetectorStream<S> {
@@ -40,7 +43,8 @@ impl<S: AsyncSource + Unpin> VoiceActivityDetectorStream<S> {
             source,
             buffer: Vec::with_capacity(chunk_size),
             chunk_size,
-            vad,
+            vad: Arc::new(RwLock::new(vad)),
+            task: None,
         }
     }
 }
@@ -51,23 +55,39 @@ impl<S: AsyncSource + Unpin> Stream for VoiceActivityDetectorStream<S> {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
         let sample_rate = this.source.sample_rate();
-        let stream = this.source.as_stream();
-        let mut stream = std::pin::pin!(stream);
-        while this.buffer.len() < this.chunk_size {
-            let sample = ready!(stream.as_mut().poll_next(cx));
-            if let Some(sample) = sample {
-                this.buffer.push(sample);
-            } else {
-                return Poll::Ready(None);
+
+        loop {
+            if let Some(task) = &mut this.task {
+                let output = ready!(task.poll_unpin(cx));
+                this.task = None;
+                match output {
+                    Ok(output) => return Poll::Ready(Some(output)),
+                    Err(err) => tracing::error!("Error in voice activity detector: {err}"),
+                }
             }
+
+            let stream = this.source.as_stream();
+            let mut stream = std::pin::pin!(stream);
+            while this.buffer.len() < this.chunk_size {
+                let sample = ready!(stream.as_mut().poll_next(cx));
+                if let Some(sample) = sample {
+                    this.buffer.push(sample);
+                } else {
+                    return Poll::Ready(None);
+                }
+            }
+            let data = this.buffer.drain(..).collect::<Vec<_>>();
+            let model = this.vad.clone();
+            let vad = tokio::task::spawn_blocking(move || {
+                let mut locked = model.write().unwrap();
+                let vad = locked.predict(data.iter().copied());
+                VoiceActivityDetectorOutput {
+                    probability: vad,
+                    samples: SamplesBuffer::new(1, sample_rate, data),
+                }
+            });
+            this.task = Some(vad);
         }
-        let data = this.buffer.drain(..).collect::<Vec<_>>();
-        let vad = this.vad.predict(data.iter().copied());
-        let samples = SamplesBuffer::new(1, sample_rate, data);
-        Poll::Ready(Some(VoiceActivityDetectorOutput {
-            probability: vad,
-            samples,
-        }))
     }
 }
 
