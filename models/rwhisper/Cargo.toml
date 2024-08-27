@@ -33,6 +33,7 @@ cudarc = { version = "0.9.14", features = ["f16"], optional = true }
 half = { version = "2.3.1", features = ["num-traits", "use-intrinsics", "rand_distr"], optional = true }
 kalosm-common = { workspace = true }
 kalosm-language-model.workspace = true
+serde = { version = "1.0.209", optional = true }
 
 [dev-dependencies]
 kalosm = { workspace = true, features = ["sound"] }
@@ -44,3 +45,4 @@ cudnn = ["candle-core/cudnn"]
 mkl = ["dep:intel-mkl-src", "candle-core/mkl", "candle-nn/mkl", "candle-transformers/mkl"]
 nccl = ["cuda", "cudarc/nccl", "dep:half"]
 metal = ["candle-core/metal", "candle-nn/metal", "candle-transformers/metal", "kalosm-common/metal"]
+serde = ["dep:serde"]

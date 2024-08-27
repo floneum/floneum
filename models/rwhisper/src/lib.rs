@@ -42,7 +42,7 @@ use kalosm_language_model::ModelBuilder;
 use kalosm_streams::text_stream::ChannelTextStream;
 use model::WhisperInner;
 use rodio::{source::UniformSourceIterator, Source};
-use std::{fmt::Display, str::FromStr, sync::Arc, time::Duration};
+use std::{fmt::Display, ops::Range, str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::Result;
 
@@ -55,7 +55,8 @@ mod source;
 pub use source::*;
 mod quantized;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct DecodingResult {
     text: String,
     avg_logprob: f64,
@@ -64,8 +65,10 @@ struct DecodingResult {
 }
 
 /// A transcribed segment of audio.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Segment {
+    sample_range: Range<usize>,
     start: f64,
     duration: f64,
     elapsed_time: Duration,
@@ -75,6 +78,11 @@ pub struct Segment {
 }
 
 impl Segment {
+    /// Get the range this segment covers in the original audio.
+    pub fn sample_range(&self) -> Range<usize> {
+        self.sample_range.clone()
+    }
+
     /// Get the probability of no speech.
     pub fn probability_of_no_speech(&self) -> f64 {
         self.result.no_speech_prob

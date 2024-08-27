@@ -121,7 +121,10 @@ impl WhisperInner {
         )
         .unwrap();
 
-        if let Err(err) = self.decoder.run(&mel, Task::Transcribe, result) {
+        if let Err(err) = self
+            .decoder
+            .run(&mel, pcm_data.len(), Task::Transcribe, result)
+        {
             tracing::error!("Error transcribing audio: {err}");
         }
     }
@@ -338,6 +341,7 @@ impl Decoder {
     fn run(
         &mut self,
         mel: &Tensor,
+        audio_frames: usize,
         task: Task,
         result: tokio::sync::mpsc::UnboundedSender<Segment>,
     ) -> Result<()> {
@@ -357,11 +361,11 @@ impl Decoder {
             while chunk_indices.len() < MAX_CHUNKS && seek < content_frames {
                 let remaining_frames = content_frames - seek;
                 let segment_size = usize::min(remaining_frames, m::N_FRAMES);
-                chunk_indices.push(seek..seek + segment_size);
                 // If the new frame doesn't fit into a perfect chunk, just include it in the next chunk
                 if remaining_frames < m::N_FRAMES && !chunk_indices.is_empty() {
                     break;
                 }
+                chunk_indices.push(seek..seek + segment_size);
                 let mel_segment = mel.narrow(1, seek, segment_size)?;
                 chunked.push(mel_segment);
                 seek += segment_size;
@@ -414,6 +418,8 @@ impl Decoder {
                 );
                 let progress = end as f32 / content_frames as f32;
                 let segment = Segment {
+                    sample_range: (range.start * m::HOP_LENGTH)
+                        ..audio_frames.min(range.end * m::HOP_LENGTH),
                     start: time_offset,
                     duration: segment_duration,
                     remaining_time: remaining,
