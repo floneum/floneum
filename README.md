@@ -59,7 +59,7 @@ Kalosm uses the [candle](https://github.com/huggingface/candle) machine learning
 **Mistral 7b** 
 | Accelerator | Kalosm | llama.cpp |
 | ------ | --------- | --------- |
-| Metal (M2) | 26 t/s | 27 t/s |
+| Metal (M2) | 39 t/s | 27 t/s |
 
 ### Structured Generation
 
