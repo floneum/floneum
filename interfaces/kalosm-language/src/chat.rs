@@ -188,7 +188,7 @@ impl<Model: SyncModel> ChatSession<Model> {
                     state,
                     self.sampler.clone(),
                     on_token,
-                    Some(64),
+                    Some(16),
                 )?;
                 let end_assistant_token = model
                     .tokenizer()

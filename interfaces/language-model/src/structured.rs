@@ -123,6 +123,7 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
 
                     // If we eliminated a logit, our partitioning of the logits is no longer valid
                     logits_indexed[i..].select_nth_unstable_by(logits_to_update, cmp_logits);
+                    logits_indexed[i..=logits_to_update].sort_unstable_by(cmp_logits);
                     // Expand the cache to include the new logits
                     partitioned_logits_index = Some(new_partitioned_index);
                     token_cache.expand_with_logits(
