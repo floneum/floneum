@@ -411,7 +411,7 @@ where
                     state,
                     sampler,
                     on_token,
-                    Some(16),
+                    Some(4),
                 );
                 if parsed_tx.send(result).is_err() {
                     tracing::error!("Failed to send parsed result");

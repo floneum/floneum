@@ -116,14 +116,14 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
                 let remaining_needed = top_k - logits.len();
                 let remaining_possible = partitioned_index - i;
                 if remaining_possible <= remaining_needed {
-                    // We batch together updates to the cache by DETOKENIZATION_BATCH_SIZE
+                    // We batch together updates to the cache by detokenization_batch_size
                     let logits_to_update = (remaining_needed.max(detokenization_batch_size))
                         .min(logits_indexed.len() - 1 - i);
                     let new_partitioned_index = i + logits_to_update;
 
                     // If we eliminated a logit, our partitioning of the logits is no longer valid
                     logits_indexed[i..].select_nth_unstable_by(logits_to_update, cmp_logits);
-                    logits_indexed[i..=logits_to_update].sort_unstable_by(cmp_logits);
+                    logits_indexed[i..=new_partitioned_index].sort_unstable_by(cmp_logits);
                     // Expand the cache to include the new logits
                     partitioned_logits_index = Some(new_partitioned_index);
                     token_cache.expand_with_logits(
