@@ -63,52 +63,43 @@ Kalosm uses the [candle](https://github.com/huggingface/candle) machine learning
 
 ### Structured Generation
 
-Kalosm supports structured generation with arbitrary parsers. It uses a custom parser engine and sampler and structure-aware acceleration to make structure generation even faster than uncontrolled text generation:
+Kalosm supports structured generation with arbitrary parsers. It uses a custom parser engine and sampler and structure-aware acceleration to make structure generation even faster than uncontrolled text generation. You can take any rust type and add `#[derive(Parse, Schema)]` to make it usable with structured generation:
 
 ```rust
 use kalosm::language::*;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-  // Download phi-3 or get the model from the cache
-  let llm = Llama::phi_3().await?;
-
-  // Derive an efficient parser for your struct with the `Parse` trait
-  #[derive(Debug, Clone, Parse)]
-  struct Pet {
+/// A fictional character
+#[derive(Parse, Schema, Clone, Debug)]
+struct Character {
+    /// The name of the character
+    #[parse(pattern = "[A-Z][a-z]{2,10} [A-Z][a-z]{2,10}")]
     name: String,
+    /// The age of the character
+    #[parse(range = 1..=100)]
+    age: u8,
+    /// A description of the character
+    #[parse(pattern = "[A-Za-z ]{40,200}")]
     description: String,
-    color: String,
-    size: Size,
-    diet: Diet,
-  }
+}
 
-  #[derive(Debug, Clone, Parse)]
-  enum Diet {
-    Carnivore,
-    Herbivore,
-    Omnivore,
-  }
-      
-  #[derive(Debug, Clone, Parse)]
-  enum Size {
-    Small,
-    Medium,
-    Large,
-  }
-
-  let task = Task::builder("You generate realistic JSON placeholders")
-    .with_constraints(<[Pet; 4] as Parse>::new_parser())
-    .build();
-  let mut stream = task.run("Generate a list of 4 pets in JSON form with a name, description, color, and diet", &llm);
-
-  stream.to_std_out().await?;
-
-  Ok(())
+#[tokio::main]
+async fn main() {
+    // First create a model. Chat models tend to work best with structured generation
+    let model = Llama::phi_3().await.unwrap();
+    // Then create a task with the parser as constraints
+    let task = Task::builder_for::<[Character; 10]>("You generate realistic JSON placeholders for characters")
+        .build();
+    // Finally, run the task
+    let mut stream = task.run("Create a list of random characters", &model);
+    stream.to_std_out().await.unwrap();
+    let character = stream.await.unwrap();
+    println!("{character:?}");
 }
 ```
 
-[structured generation demo](https://github.com/floneum/floneum/assets/66571940/7bdee1fb-204f-4e24-b738-1d4da6b593d9)
+
+https://github.com/user-attachments/assets/8900f57d-55c8-4d4a-a67b-73beab1e5155
+
 
 In addition to regex, you can provide your own grammar to generate structured data. This lets you constrain the response to any structure you want including complex data structures like JSON, HTML, and XML.
 
@@ -127,7 +118,7 @@ cd ./kalosm-hello-world
 3) Add Kalosm as a dependency
 ```sh
 # You can use `--features language,metal`, `--features language,cuda`, or `--features language,mkl` if your machine supports an accelerator
-cargo add kalosm --git https://github.com/floneum/floneum --features language
+cargo add kalosm --features language
 cargo add tokio --features full
 ```
 4) Add this code to your `main.rs` file
