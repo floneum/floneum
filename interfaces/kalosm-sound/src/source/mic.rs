@@ -7,7 +7,7 @@ use futures_channel::mpsc;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use rodio::buffer::SamplesBuffer;
-use std::{pin::Pin, sync::Arc};
+use std::pin::Pin;
 
 use tokio::time::Instant;
 
@@ -17,8 +17,7 @@ use crate::AsyncSource;
 pub struct MicInput {
     #[allow(dead_code)]
     host: cpal::Host,
-    // Some older versions of cpal::Device don't implement Clone on some platforms, so we need to use Arc
-    device: Arc<cpal::Device>,
+    device: cpal::Device,
     config: cpal::SupportedStreamConfig,
 }
 
@@ -33,7 +32,7 @@ impl Default for MicInput {
             .expect("Failed to get default input config");
         Self {
             host,
-            device: Arc::new(device),
+            device,
             config,
         }
     }
