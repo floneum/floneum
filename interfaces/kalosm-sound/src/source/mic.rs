@@ -64,7 +64,7 @@ impl MicInput {
         let (tx, rx) = mpsc::unbounded::<Vec<f32>>();
 
         let config = self.config.clone();
-        let device: cpal::Device = self.device.clone();
+        let device = self.device.clone();
         let (drop_tx, drop_rx) = std::sync::mpsc::channel();
 
         std::thread::spawn(move || {
