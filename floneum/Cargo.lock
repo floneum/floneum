@@ -965,7 +965,8 @@ dependencies = [
 [[package]]
 name = "candle-core"
 version = "0.6.0"
-source = "git+https://github.com/huggingface/candle?rev=2b10aaa#2b10aaa05d3752186899bd5b5364d92164edc7ef"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d5b18de020c2729dbf7ac390325312644808b6ba9b7962f1f724e9185b1d53c7"
 dependencies = [
  "accelerate-src",
  "byteorder",
@@ -991,7 +992,8 @@ dependencies = [
 [[package]]
 name = "candle-kernels"
 version = "0.6.0"
-source = "git+https://github.com/huggingface/candle?rev=2b10aaa#2b10aaa05d3752186899bd5b5364d92164edc7ef"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8bc0a71be8b2f0950b63fd602a5e10a74a4f94a5fd63059ae455e96163389488"
 dependencies = [
  "bindgen_cuda",
 ]
@@ -999,7 +1001,8 @@ dependencies = [
 [[package]]
 name = "candle-metal-kernels"
 version = "0.6.0"
-source = "git+https://github.com/huggingface/candle?rev=2b10aaa#2b10aaa05d3752186899bd5b5364d92164edc7ef"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f889aacd02fd999620a0435133d7cf3b58c81ef9dd5e47c38939b7a72345ea86"
 dependencies = [
  "metal 0.27.0",
  "once_cell",
@@ -1010,7 +1013,8 @@ dependencies = [
 [[package]]
 name = "candle-nn"
 version = "0.6.0"
-source = "git+https://github.com/huggingface/candle?rev=2b10aaa#2b10aaa05d3752186899bd5b5364d92164edc7ef"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b006b30f66a0d94fc9cef0ac4de6ce510565f35ae2c6c35ce5d4aacfb0fc8eeb"
 dependencies = [
  "accelerate-src",
  "candle-core",
@@ -1027,7 +1031,8 @@ dependencies = [
 [[package]]
 name = "candle-transformers"
 version = "0.6.0"
-source = "git+https://github.com/huggingface/candle?rev=2b10aaa#2b10aaa05d3752186899bd5b5364d92164edc7ef"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f0d4eb6a0d9279d5829b06b2bf3caa117904eefd6dcf879d16e687c4a84034c"
 dependencies = [
  "accelerate-src",
  "byteorder",
@@ -5370,7 +5375,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm"
-version = "0.2.2"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5396,15 +5401,17 @@ dependencies = [
 
 [[package]]
 name = "kalosm-common"
-version = "0.1.0"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "candle-core",
+ "candle-nn",
  "dirs 5.0.1",
  "hf-hub",
  "httpdate",
  "indicatif",
  "metal 0.29.0",
+ "once_cell",
  "reqwest",
  "tokio",
  "tracing",
@@ -5412,7 +5419,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-language"
-version = "0.2.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "arroy",
@@ -5465,7 +5472,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-language-model"
-version = "0.2.1"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5491,7 +5498,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-llama"
-version = "0.2.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5513,7 +5520,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-ocr"
-version = "0.2.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "candle-core",
@@ -5531,7 +5538,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-parse-macro"
-version = "0.2.1"
+version = "0.3.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5540,7 +5547,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-sample"
-version = "0.2.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "kalosm-parse-macro",
@@ -5549,7 +5556,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-sound"
-version = "0.2.1"
+version = "0.3.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5566,6 +5573,7 @@ dependencies = [
  "itertools 0.10.5",
  "kalosm-streams",
  "nnnoiseless",
+ "ort",
  "rand 0.8.5",
  "rodio",
  "rwhisper",
@@ -5578,7 +5586,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-streams"
-version = "0.2.1"
+version = "0.3.2"
 dependencies = [
  "futures-util",
  "image 0.24.9",
@@ -5588,7 +5596,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-vision"
-version = "0.2.1"
+version = "0.3.2"
 dependencies = [
  "image 0.24.9",
  "kalosm-ocr",
@@ -8157,7 +8165,7 @@ dependencies = [
 
 [[package]]
 name = "rbert"
-version = "0.2.1"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8599,7 +8607,7 @@ dependencies = [
 
 [[package]]
 name = "rphi"
-version = "0.2.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -9153,7 +9161,7 @@ dependencies = [
 
 [[package]]
 name = "rwhisper"
-version = "0.2.1"
+version = "0.3.5"
 dependencies = [
  "accelerate-src",
  "anyhow",
@@ -9179,7 +9187,7 @@ dependencies = [
 
 [[package]]
 name = "rwuerstchen"
-version = "0.2.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -9330,7 +9338,7 @@ dependencies = [
 
 [[package]]
 name = "segment-anything-rs"
-version = "0.2.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "candle-core",
