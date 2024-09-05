@@ -10,7 +10,7 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let base_url = std::env::var("OPENAI_API_BASE").expect("Custom OPENAI_API_BASE not set");
-    let llm = Gpt4::builder().with_base_url(&base_url).build();
+    let llm = Gpt3_5::builder().with_base_url(&base_url).build();
     let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
     print!("{}", prompt);
 
