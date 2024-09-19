@@ -1,5 +1,6 @@
 use crate::raw::attention_layer::LlamaAttention;
 use crate::raw::rope::RopeCache;
+use attention_layer::AttentionBias;
 use attention_layer::AttentionVariant;
 use attention_layer::FeedForwardVariant;
 use attention_layer::GroupedAttention;
@@ -26,14 +27,11 @@ fn decode_norm(tensor: QTensor, eps: f64) -> candle_core::Result<RmsNorm> {
 }
 
 /// The configuration of a Llama model.
-#[allow(unused)]
 pub struct LlamaConfig {
     rope_theta: f32,
     pub(crate) context_length: usize,
     head_dimension: usize,
-    rope_dimension: usize,
     n_head: usize,
-    n_kv_head: usize,
     pub(crate) n_layer: usize,
 }
 
@@ -63,9 +61,7 @@ impl Model {
         let config = LlamaConfig {
             rope_theta: 10000.,
             head_dimension: head_dim,
-            rope_dimension: head_dim,
             n_head: ct.hparams.n_head as usize,
-            n_kv_head: ct.hparams.n_head as usize / gqa,
             n_layer,
             context_length: 4096,
         };
@@ -89,6 +85,7 @@ impl Model {
                 attention_wq: QMatMul::from_qtensor(attention_wq)?,
                 attention_wk: QMatMul::from_qtensor(attention_wk)?,
                 attention_wv: QMatMul::from_qtensor(attention_wv)?,
+                bias: None,
             });
             let feed_forward_variant = FeedForwardVariant::Llama(LlamaFeedForward {
                 feed_forward_w1: QMatMul::from_qtensor(feed_forward_w1)?,
@@ -142,7 +139,6 @@ impl Model {
         let head_count_kv = md_get(".attention.head_count_kv")?.to_u32()? as usize;
         let block_count = md_get(".block_count")?.to_u32()? as usize;
         let embedding_length = md_get(".embedding_length")?.to_u32()? as usize;
-        let rope_dim = md_get(".rope.dimension_count")?.to_u32()? as usize;
         // Strangely this value is generally 1e-6 in GGUF file but used to be 1e-5 by default.
         let rms_norm_eps = md_get(".attention.layer_norm_rms_epsilon")?.to_f32()? as f64;
 
@@ -157,9 +153,7 @@ impl Model {
             rope_theta: rope_freq_base,
             context_length,
             head_dimension: head_dim,
-            rope_dimension: rope_dim,
             n_head: head_count,
-            n_kv_head: head_count_kv,
             n_layer: block_count,
         };
 
@@ -183,11 +177,26 @@ impl Model {
                     let q = ct.tensor(reader, &format!("{prefix}.attn_q.weight"), device)?;
                     let k = ct.tensor(reader, &format!("{prefix}.attn_k.weight"), device)?;
                     let v = ct.tensor(reader, &format!("{prefix}.attn_v.weight"), device)?;
-                    AttentionVariant::Separate(SeparateAttention {
+                    let bias = if let (Ok(bias_q), Ok(bias_k), Ok(bias_v)) = (
+                        ct.tensor(reader, &format!("{prefix}.attn_q.bias"), device),
+                        ct.tensor(reader, &format!("{prefix}.attn_k.bias"), device),
+                        ct.tensor(reader, &format!("{prefix}.attn_v.bias"), device),
+                    ) {
+                        Some(AttentionBias {
+                            bias_q: bias_q.dequantize(device)?,
+                            bias_k: bias_k.dequantize(device)?,
+                            bias_v: bias_v.dequantize(device)?,
+                        })
+                    } else {
+                        None
+                    };
+                    let separate = SeparateAttention {
                         attention_wq: QMatMul::from_qtensor(q)?,
                         attention_wk: QMatMul::from_qtensor(k)?,
                         attention_wv: QMatMul::from_qtensor(v)?,
-                    })
+                        bias,
+                    };
+                    AttentionVariant::Separate(separate)
                 };
             let attention_wo =
                 ct.tensor(reader, &format!("{prefix}.attn_output.weight"), device)?;
