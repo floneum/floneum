@@ -80,10 +80,18 @@ pub enum AttentionVariant {
     Grouped(GroupedAttention),
 }
 
+pub struct AttentionBias {
+    pub bias_q: Tensor,
+    pub bias_k: Tensor,
+    pub bias_v: Tensor,
+}
+
 pub struct SeparateAttention {
     pub attention_wq: QMatMul,
     pub attention_wk: QMatMul,
     pub attention_wv: QMatMul,
+    pub bias: Option<AttentionBias>,
+    pub interleaved_rope: bool,
 }
 
 impl SeparateAttention {
@@ -103,19 +111,33 @@ impl SeparateAttention {
         if matches!(device, Device::Cpu) {
             std::thread::scope(|s| -> Result<_, candle_core::Error> {
                 let query_states = s.spawn(|| {
-                    let query_states = self.attention_wq.forward(hidden_states)?;
+                    let mut query_states = self.attention_wq.forward(hidden_states)?;
+
+                    if let Some(bias) = &self.bias {
+                        query_states = query_states.broadcast_add(&bias.bias_q)?;
+                    }
+
                     query_states
                         .reshape((b_sz, seq_len, num_heads, head_dim))?
                         .transpose(1, 2)
                 });
                 let key_states = s.spawn(|| {
-                    let key_states = self.attention_wk.forward(hidden_states)?;
+                    let mut key_states = self.attention_wk.forward(hidden_states)?;
+
+                    if let Some(bias) = &self.bias {
+                        key_states = key_states.broadcast_add(&bias.bias_k)?;
+                    }
+
                     key_states
                         .reshape((b_sz, seq_len, num_key_value_heads, head_dim))?
                         .transpose(1, 2)
                 });
                 let value_states = s.spawn(|| {
-                    let value_states = self.attention_wv.forward(hidden_states)?;
+                    let mut value_states = self.attention_wv.forward(hidden_states)?;
+
+                    if let Some(bias) = &self.bias {
+                        value_states = value_states.broadcast_add(&bias.bias_v)?;
+                    }
 
                     value_states
                         .reshape((b_sz, seq_len, num_key_value_heads, head_dim))?
@@ -129,8 +151,11 @@ impl SeparateAttention {
                     candle_core::Error::Msg("failed to join key states".to_string())
                 })??;
 
-                let (query_states, key_states) =
-                    rope_cache.forward_i(&query_states, &key_states, start_pos)?;
+                let (query_states, key_states) = if self.interleaved_rope {
+                    rope_cache.forward_i(&query_states, &key_states, start_pos)?
+                } else {
+                    rope_cache.forward(&query_states, &key_states, start_pos)?
+                };
 
                 let value_states = value_states.join().map_err(|_| {
                     candle_core::Error::Msg("failed to join value states".to_string())
@@ -140,27 +165,44 @@ impl SeparateAttention {
             })
         } else {
             let query_states = {
-                let query_states = self.attention_wq.forward(hidden_states)?;
+                let mut query_states = self.attention_wq.forward(hidden_states)?;
+
+                if let Some(bias) = &self.bias {
+                    query_states = query_states.broadcast_add(&bias.bias_q)?;
+                }
+
                 query_states
                     .reshape((b_sz, seq_len, num_heads, head_dim))?
                     .transpose(1, 2)?
             };
             let key_states = {
-                let key_states = self.attention_wk.forward(hidden_states)?;
+                let mut key_states = self.attention_wk.forward(hidden_states)?;
+
+                if let Some(bias) = &self.bias {
+                    key_states = key_states.broadcast_add(&bias.bias_k)?;
+                }
+
                 key_states
                     .reshape((b_sz, seq_len, num_key_value_heads, head_dim))?
                     .transpose(1, 2)?
             };
             let value_states = {
-                let value_states = self.attention_wv.forward(hidden_states)?;
+                let mut value_states = self.attention_wv.forward(hidden_states)?;
+
+                if let Some(bias) = &self.bias {
+                    value_states = value_states.broadcast_add(&bias.bias_v)?;
+                }
 
                 value_states
                     .reshape((b_sz, seq_len, num_key_value_heads, head_dim))?
                     .transpose(1, 2)?
             };
 
-            let (query_states, key_states) =
-                rope_cache.forward_i(&query_states, &key_states, start_pos)?;
+            let (query_states, key_states) = if self.interleaved_rope {
+                rope_cache.forward_i(&query_states, &key_states, start_pos)?
+            } else {
+                rope_cache.forward(&query_states, &key_states, start_pos)?
+            };
 
             Ok((query_states, key_states, value_states))
         }
