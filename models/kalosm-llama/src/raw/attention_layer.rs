@@ -91,6 +91,7 @@ pub struct SeparateAttention {
     pub attention_wk: QMatMul,
     pub attention_wv: QMatMul,
     pub bias: Option<AttentionBias>,
+    pub interleaved_rope: bool,
 }
 
 impl SeparateAttention {
@@ -150,8 +151,11 @@ impl SeparateAttention {
                     candle_core::Error::Msg("failed to join key states".to_string())
                 })??;
 
-                let (query_states, key_states) =
-                    rope_cache.forward_i(&query_states, &key_states, start_pos)?;
+                let (query_states, key_states) = if self.interleaved_rope {
+                    rope_cache.forward_i(&query_states, &key_states, start_pos)?
+                } else {
+                    rope_cache.forward(&query_states, &key_states, start_pos)?
+                };
 
                 let value_states = value_states.join().map_err(|_| {
                     candle_core::Error::Msg("failed to join value states".to_string())
@@ -194,8 +198,11 @@ impl SeparateAttention {
                     .transpose(1, 2)?
             };
 
-            let (query_states, key_states) =
-                rope_cache.forward_i(&query_states, &key_states, start_pos)?;
+            let (query_states, key_states) = if self.interleaved_rope {
+                rope_cache.forward_i(&query_states, &key_states, start_pos)?
+            } else {
+                rope_cache.forward(&query_states, &key_states, start_pos)?
+            };
 
             Ok((query_states, key_states, value_states))
         }

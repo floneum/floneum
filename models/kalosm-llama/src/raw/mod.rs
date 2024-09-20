@@ -85,6 +85,7 @@ impl Model {
                 attention_wq: QMatMul::from_qtensor(attention_wq)?,
                 attention_wk: QMatMul::from_qtensor(attention_wk)?,
                 attention_wv: QMatMul::from_qtensor(attention_wv)?,
+                interleaved_rope: true,
                 bias: None,
             });
             let feed_forward_variant = FeedForwardVariant::Llama(LlamaFeedForward {
@@ -190,10 +191,12 @@ impl Model {
                     } else {
                         None
                     };
+                    let architecture = ct.metadata["general.architecture"].to_string().unwrap();
                     let separate = SeparateAttention {
                         attention_wq: QMatMul::from_qtensor(q)?,
                         attention_wk: QMatMul::from_qtensor(k)?,
                         attention_wv: QMatMul::from_qtensor(v)?,
+                        interleaved_rope: architecture != "qwen2",
                         bias,
                     };
                     AttentionVariant::Separate(separate)
