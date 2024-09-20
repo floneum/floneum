@@ -92,10 +92,8 @@ fn test_rope_cache() {
     let config = LlamaConfig {
         rope_theta: 5000.,
         context_length: 6,
-        rope_dimension: 2,
         head_dimension: 2,
         n_head: 0,
-        n_kv_head: 0,
         n_layer: 0,
     };
     let device = Device::cuda_if_available(0).unwrap();

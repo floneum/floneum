@@ -26,6 +26,25 @@ fn mistral_tokenizer() -> FileSource {
     )
 }
 
+fn qwen_tokenizer() -> FileSource {
+    FileSource::huggingface(
+        "Qwen/Qwen2.5-0.5B".to_string(),
+        "main".to_string(),
+        "tokenizer.json".to_string(),
+    )
+}
+
+fn qwen_chat_markers() -> Option<ChatMarkers> {
+    Some(ChatMarkers {
+        system_prompt_marker: "<|im_start|>system\n",
+        end_system_prompt_marker: "<|im_end|>",
+        user_marker: "<|im_start|>user\n",
+        end_user_marker: "<|im_end|>",
+        assistant_marker: "<|im_start|>assistant\n",
+        end_assistant_marker: "<|im_end|>",
+    })
+}
+
 /// A source for the Llama model.
 #[derive(Clone, Debug)]
 pub struct LlamaSource {
@@ -750,6 +769,66 @@ impl LlamaSource {
                 end_assistant_marker: "</s>",
             }),
             ..Default::default()
+        }
+    }
+
+    /// A preset for the Qwen2.5-0.5B Chat model
+    pub fn qwen_2_5_0_5b_instruct() -> Self {
+        Self {
+            model: FileSource::huggingface(
+                "Qwen/Qwen2.5-0.5B-Instruct-GGUF".to_string(),
+                "main".to_string(),
+                "qwen2.5-0.5b-instruct-q4_k_m.gguf".to_string(),
+            ),
+            tokenizer: qwen_tokenizer(),
+            group_query_attention: 7,
+            markers: qwen_chat_markers(),
+            cache: Default::default(),
+        }
+    }
+
+    /// A preset for the Qwen2.5-1.5B Chat model
+    pub fn qwen_2_5_1_5b_instruct() -> Self {
+        Self {
+            model: FileSource::huggingface(
+                "Qwen/Qwen2.5-1.5B-Instruct-GGUF".to_string(),
+                "main".to_string(),
+                "qwen2.5-1.5b-instruct-q4_k_m.gguf".to_string(),
+            ),
+            tokenizer: qwen_tokenizer(),
+            group_query_attention: 7,
+            markers: qwen_chat_markers(),
+            cache: Default::default(),
+        }
+    }
+
+    /// A preset for the Qwen2.5-3B Chat model
+    pub fn qwen_2_5_3b_instruct() -> Self {
+        Self {
+            model: FileSource::huggingface(
+                "Qwen/Qwen2.5-3B-Instruct-GGUF".to_string(),
+                "main".to_string(),
+                "qwen2.5-3b-instruct-q4_k_m.gguf".to_string(),
+            ),
+            tokenizer: qwen_tokenizer(),
+            group_query_attention: 7,
+            markers: qwen_chat_markers(),
+            cache: Default::default(),
+        }
+    }
+
+    /// A preset for the Qwen2.5-7B Chat model
+    pub fn qwen_2_5_7b_instruct() -> Self {
+        Self {
+            model: FileSource::huggingface(
+                "bartowski/Qwen2.5-7B-Instruct-GGUF".to_string(),
+                "main".to_string(),
+                "Qwen2.5-7B-Instruct-Q4_K_M.gguf".to_string(),
+            ),
+            tokenizer: qwen_tokenizer(),
+            group_query_attention: 7,
+            markers: qwen_chat_markers(),
+            cache: Default::default(),
         }
     }
 }
