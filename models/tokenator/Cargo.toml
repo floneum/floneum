@@ -19,11 +19,6 @@ tracing-subscriber = "0.3.18"
 [features]
 never-inline = []
 
-[profile.release]
-lto = true
-codegen-units = 1
-# debug = true
-
 [dev-dependencies]
 criterion = "0.3"
 rand = "0.8.5"

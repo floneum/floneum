@@ -591,7 +591,7 @@ pub fn pretty_print_tokens(resolved: impl Iterator<Item = u32>, tokenizer: &Fast
     println!()
 }
 
-const SIZE: u32 = 512;
+const SIZE: u32 = 256;
 const _: () = {
     const MAX_TOKENS: u32 = 500_000;
     const MAX_DIV: u32 = MAX_TOKENS / SIZE;
