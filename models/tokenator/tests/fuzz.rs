@@ -1,7 +1,7 @@
+use pretty_assertions::assert_eq;
 use rand::Rng;
 use tokenator::*;
 use tokenizers::Tokenizer;
-use pretty_assertions::assert_eq;
 
 #[test]
 fn fuzz() {
@@ -30,7 +30,11 @@ fn fuzz() {
 
         let fast_tokens = {
             let index = merge_queue.resolve(&mut input_tokens, &text, &tokenizer);
-            input_tokens.iter().take(index).map(|t| t.token()).collect::<Vec<_>>()
+            input_tokens
+                .iter()
+                .take(index)
+                .map(|t| t.token())
+                .collect::<Vec<_>>()
         };
         let hf_tokens = hf_tokenizer.encode(text.clone(), true).unwrap();
         // Try to reduce the reproduction
@@ -42,7 +46,11 @@ fn fuzz() {
                     let text = text.chars().skip(start).collect::<String>();
                     let fast_tokens = {
                         let index = merge_queue.resolve(&mut input_tokens, &text, &tokenizer);
-                        input_tokens.iter().take(index).map(|t| t.token()).collect::<Vec<_>>()
+                        input_tokens
+                            .iter()
+                            .take(index)
+                            .map(|t| t.token())
+                            .collect::<Vec<_>>()
                     };
                     let hf_tokens = hf_tokenizer.encode(text.clone(), true).unwrap();
                     if fast_tokens == hf_tokens.get_ids() {
@@ -59,7 +67,11 @@ fn fuzz() {
                     let text = text.chars().skip(start).take(len).collect::<String>();
                     let fast_tokens = {
                         let index = merge_queue.resolve(&mut input_tokens, &text, &tokenizer);
-                        input_tokens.iter().take(index).map(|t| t.token()).collect::<Vec<_>>()
+                        input_tokens
+                            .iter()
+                            .take(index)
+                            .map(|t| t.token())
+                            .collect::<Vec<_>>()
                     };
                     let hf_tokens = hf_tokenizer.encode(text.clone(), true).unwrap();
                     if fast_tokens == hf_tokens.get_ids() {
@@ -73,7 +85,11 @@ fn fuzz() {
             let text = text.chars().skip(start).take(len).collect::<String>();
             let fast_tokens = {
                 let index = merge_queue.resolve(&mut input_tokens, &text, &tokenizer);
-                input_tokens.iter().take(index).map(|t| t.token()).collect::<Vec<_>>()
+                input_tokens
+                    .iter()
+                    .take(index)
+                    .map(|t| t.token())
+                    .collect::<Vec<_>>()
             };
             let hf_tokens = hf_tokenizer.encode(text.clone(), true).unwrap();
             assert_eq!(fast_tokens, hf_tokens.get_ids(), "failed to encode {text}");

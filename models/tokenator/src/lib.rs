@@ -316,11 +316,12 @@ impl MergeLayerQueue {
     ) {
         let tokens_len = tokens.len();
         if let Some(prev_index) = self.resolved_index.checked_sub(1) {
-            if let Some(next) = tokens.get_mut(prev_index) {
-                if let Some(merge) = merge_table.get(next.token, token) {
-                    layers_used.set(merge.level, prev_index, tokens_len);
-                    next.merge = merge;
-                }
+            let prev = unsafe { tokens.get_unchecked_mut(prev_index) };
+            if let Some(merge) = merge_table.get(prev.token, token) {
+                layers_used.set(merge.level, prev_index, tokens_len);
+                prev.merge = merge;
+            } else {
+                prev.merge = MergePriority::DEFAULT;
             }
         }
     }
@@ -730,7 +731,7 @@ fn test_random_merge_table() {
             (rank, level, [x, y], new_token)
         })
         .collect();
-    println!("{} unique merges", merges.len());
+
     merges.shuffle(&mut rand::thread_rng());
     let map = merges
         .iter()

@@ -8480,6 +8480,7 @@ dependencies = [
  "serde_json",
  "tokenizers 0.20.0",
  "tracing",
+ "tracing-subscriber 0.3.18",
  "trie-rs",
 ]
 

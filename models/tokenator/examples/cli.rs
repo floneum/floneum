@@ -1,9 +1,12 @@
 use std::io::Write;
 use tokenator::*;
 
+const FAST_FILE: &str = "tokenizer-fast.bin";
+const HF_FILE: &str = "tokenizer.json";
+
 fn main() {
-    const FAST_FILE: &str = "tokenizer-fast.bin";
-    const HF_FILE: &str = "tokenizer.json";
+    tracing_subscriber::fmt::init();
+
     let tokenizer = if let Ok(tokenizer) = std::fs::read(FAST_FILE) {
         postcard::from_bytes::<FastBPETokenizer>(&tokenizer).unwrap()
     } else {
