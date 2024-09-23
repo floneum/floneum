@@ -16,10 +16,13 @@ reqwest = { version = "0.12.7", features = ["blocking"] }
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
 
+[features]
+never-inline = []
+
 [profile.release]
 lto = true
 codegen-units = 1
-debug = true
+# debug = true
 
 [dev-dependencies]
 criterion = "0.3"

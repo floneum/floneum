@@ -306,7 +306,7 @@ impl MergeLayerQueue {
         }
     }
 
-    #[inline(never)]
+    #[cfg_attr(feature = "never-inline", inline(never))]
     fn resolve_last_merge(
         &mut self,
         tokens: &mut [TokenData],
@@ -326,7 +326,7 @@ impl MergeLayerQueue {
         }
     }
 
-    #[inline(never)]
+    #[cfg_attr(feature = "never-inline", inline(never))]
     fn add_unprocessed_raw_and_calculate_merge(
         &mut self,
         tokens: &mut [TokenData],
@@ -339,7 +339,7 @@ impl MergeLayerQueue {
         self.add_unprocessed_raw(tokens, token);
     }
 
-    #[inline(never)]
+    #[cfg_attr(feature = "never-inline", inline(never))]
     fn add_unprocessed(
         &mut self,
         tokens: &mut [TokenData],
@@ -354,7 +354,7 @@ impl MergeLayerQueue {
         }
     }
 
-    #[inline(never)]
+    #[cfg_attr(feature = "never-inline", inline(never))]
     fn add_unprocessed_raw(&mut self, tokens: &mut [TokenData], token: TokenData) {
         unsafe {
             *tokens.get_unchecked_mut(self.resolved_index) = token;
@@ -362,7 +362,7 @@ impl MergeLayerQueue {
         self.resolved_index += 1;
     }
 
-    #[inline(never)]
+    #[cfg_attr(feature = "never-inline", inline(never))]
     pub fn resolve(
         &mut self,
         tokens: &mut Vec<TokenData>,
@@ -450,7 +450,7 @@ impl MergeLayerQueue {
         println!("> {next_line}");
     }
 
-    #[inline(never)]
+    #[cfg_attr(feature = "never-inline", inline(never))]
     fn resolve_level(
         &mut self,
         tokens: &mut [TokenData],
@@ -467,63 +467,43 @@ impl MergeLayerQueue {
         self.resolved_index = start;
         self.decreasing_subsequence_run_start = start;
         self.current_index = start;
-        let mut last = unsafe { *tokens.get_unchecked(self.current_index) };
-        self.current_index += 1;
+        let mut rank = u16::MAX;
 
         while self.current_index < tokens.len() {
             let current_token = unsafe { *tokens.get_unchecked(self.current_index) };
+            self.current_index += 1;
             if tracing::enabled!(tracing::Level::TRACE) {
+                tracing::trace!("self.current_index: {:?}", self.current_index);
+                tracing::trace!("self.resolved_index: {:?}", self.resolved_index);
                 tracing::trace!(
-                    "tokens [{:?}, {:?}]",
-                    std::str::from_utf8(tokenizer.tokens[last.token as usize].as_slice()),
+                    "token {:?}",
                     std::str::from_utf8(tokenizer.tokens[current_token.token as usize].as_slice())
                 );
-            }
-            let merge_this_and_previous = last.merge;
-            // If the level of the merge is not the current level, do not merge yet
-            if merge_this_and_previous.level != level {
-                // If there is no merge that would use this token, add it directly
-                if self.decreasing_subsequence_run_is_empty() {
-                    self.add_unprocessed(
-                        tokens,
-                        last,
-                        &tokenizer.passes_might_merge_table,
-                        layers_used,
-                    );
-                    self.last_unchanged_from_level = true;
-                    self.clear_merge_buffer();
-                } else {
-                    // Flush the merge buffer and add the current token unprocessed to the buffer
-                    self.flush(tokens, &tokenizer.passes_might_merge_table, layers_used);
-                }
-                self.current_index += 1;
-            } else {
-                self.current_index += 1;
-                // If the next merge is a lower rank than the current merge, do the current merge
-                if merge_this_and_previous.level != level
-                    || merge_this_and_previous.rank >= current_token.merge.rank
-                {
-                    // Flush the merge buffer
-                    self.flush(tokens, &tokenizer.passes_might_merge_table, layers_used);
-                }
-                // Otherwise do nothing, the queued merges grow because self.current_index is increased
-            }
-            last = current_token;
-            if tracing::enabled!(tracing::Level::TRACE) {
                 self.pretty_print_info(tokens, tokenizer);
+            }
+            // At this point, we need to add last token either to the buffer or the output
+            // We add it to the buffer if it is in a decreasing sequence of rank
+            // We add it to the output otherwise
+            let merge_this_and_next = current_token.merge;
+            let continues_decreasing_sequence =
+                merge_this_and_next.level == level && merge_this_and_next.rank < rank;
+            if continues_decreasing_sequence {
+                rank = merge_this_and_next.rank;
+            } else {
+                // Otherwise it will be added when we flush the buffer
+                tracing::trace!("flushing merge buffer because the new token does not fit into the decreasing sequence");
+                self.flush(tokens, &tokenizer.passes_might_merge_table, layers_used);
+                rank = u16::MAX;
             }
         }
 
-        // Just add the last token to the buffer unprocessed
-        if self.decreasing_subsequence_run_is_empty() {
-            self.add_unprocessed(
-                tokens,
-                unsafe { *tokens.last().unwrap_unchecked() },
-                &tokenizer.passes_might_merge_table,
-                layers_used,
-            );
-            self.last_unchanged_from_level = true;
-        } else {
+        if tracing::enabled!(tracing::Level::TRACE) {
+            self.pretty_print_info(tokens, tokenizer);
+        }
+
+        // Flush the buffer if it is not empty
+        if !self.decreasing_subsequence_run_is_empty() {
+            tracing::trace!("flushing merge buffer because this is the last token");
             self.flush(tokens, &tokenizer.passes_might_merge_table, layers_used);
         }
 
@@ -546,7 +526,7 @@ impl MergeLayerQueue {
         self.decreasing_subsequence_run_start = self.current_index;
     }
 
-    #[inline(never)]
+    #[cfg_attr(feature = "never-inline", inline(never))]
     fn flush(
         &mut self,
         tokens: &mut [TokenData],
@@ -558,6 +538,10 @@ impl MergeLayerQueue {
 
         let odd_len = len % 2 != 0;
         if odd_len {
+            tracing::trace!(
+                "Length {} is odd, adding the last token to the buffer unprocessed",
+                len
+            );
             self.add_unprocessed(
                 tokens,
                 unsafe { *tokens.get_unchecked(self.decreasing_subsequence_run_start) },
@@ -570,6 +554,7 @@ impl MergeLayerQueue {
         while index < self.current_index {
             let token = unsafe { tokens.get_unchecked(index) };
             let token = token.merge.new_token;
+            tracing::trace!("Adding token {} to the buffer unprocessed", token);
             self.add_unprocessed_raw_and_calculate_merge(
                 tokens,
                 TokenData {
@@ -651,14 +636,14 @@ impl MergeTable {
         }
     }
 
-    #[inline(never)]
+    #[cfg_attr(feature = "never-inline", inline(never))]
     fn index(input: u32, output: u32) -> (u32, [u32; 2]) {
         let input_mod = input % SIZE;
         let output_mod = output % SIZE;
         (input_mod + output_mod * SIZE, [input, output])
     }
 
-    #[inline(never)]
+    #[cfg_attr(feature = "never-inline", inline(never))]
     fn get(&self, input: u32, output: u32) -> Option<MergePriority> {
         let (index, key) = Self::index(input, output);
 
