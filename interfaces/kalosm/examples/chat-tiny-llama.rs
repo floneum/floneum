@@ -3,7 +3,7 @@ use kalosm::language::*;
 #[tokio::main]
 async fn main() {
     let model = Llama::builder()
-        .with_source(LlamaSource::tiny_llama_1_1b_chat())
+        .with_source(LlamaSource::llama_3_2_3b_chat())
         .build()
         .await
         .unwrap();

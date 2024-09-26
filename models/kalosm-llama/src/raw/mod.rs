@@ -28,6 +28,7 @@ fn decode_norm(tensor: QTensor, eps: f64) -> candle_core::Result<RmsNorm> {
 
 /// The configuration of a Llama model.
 pub struct LlamaConfig {
+    rope_freq_weight: Option<Tensor>,
     rope_theta: f32,
     pub(crate) context_length: usize,
     head_dimension: usize,
@@ -59,6 +60,7 @@ impl Model {
         let head_dim = (ct.hparams.n_embd / ct.hparams.n_head) as usize;
         let n_layer = ct.hparams.n_layer as usize;
         let config = LlamaConfig {
+            rope_freq_weight: None,
             rope_theta: 10000.,
             head_dimension: head_dim,
             n_head: ct.hparams.n_head as usize,
@@ -66,9 +68,14 @@ impl Model {
             context_length: 4096,
         };
         let rope = RopeCache::new(&config, DType::F32, device)?;
-        let tok_embeddings = ct.remove("tok_embeddings.weight")?;
-        let tok_embeddings = tok_embeddings.dequantize(device)?;
-        let output = ct.remove("output.weight")?;
+        let tok_embeddings_q = ct.remove("tok_embeddings.weight")?;
+        let tok_embeddings = tok_embeddings_q.dequantize(device)?;
+        let output = if let Ok(output) = ct.remove("output.weight") {
+            QMatMul::from_qtensor(output)?
+        } else {
+            // If there is no output layer, assume the word embeddings are tied to the output
+            QMatMul::from_qtensor(tok_embeddings_q)?
+        };
         let mut layers = Vec::with_capacity(n_layer);
         for layer_idx in 0..ct.hparams.n_layer {
             let prefix = format!("layers.{layer_idx}");
@@ -111,7 +118,7 @@ impl Model {
             tok_embeddings: Embedding::new(tok_embeddings, ct.hparams.n_embd as usize),
             layers,
             norm: decode_norm(ct.remove("norm.weight")?, 1e-5)?,
-            output: QMatMul::from_qtensor(output)?,
+            output,
             masks: Default::default(),
         })
     }
@@ -151,6 +158,10 @@ impl Model {
         let head_dim = embedding_length / head_count;
 
         let config = LlamaConfig {
+            rope_freq_weight: match ct.tensor(reader, "rope_freqs.weight", device).ok() {
+                Some(rope_freq_weight) => Some(rope_freq_weight.dequantize(device)?),
+                None => None,
+            },
             rope_theta: rope_freq_base,
             context_length,
             head_dimension: head_dim,
@@ -160,12 +171,17 @@ impl Model {
 
         let rope = RopeCache::new(&config, DType::F32, device)?;
 
-        let tok_embeddings = ct.tensor(reader, "token_embd.weight", device)?;
-        let tok_embeddings = tok_embeddings.dequantize(device)?;
+        let tok_embeddings_q = ct.tensor(reader, "token_embd.weight", device)?;
+        let tok_embeddings = tok_embeddings_q.dequantize(device)?;
 
         let norm = ct.tensor(reader, "output_norm.weight", device)?;
         let norm = decode_norm(norm, rms_norm_eps)?;
-        let output = ct.tensor(reader, "output.weight", device)?;
+        let output = if let Ok(output) = ct.tensor(reader, "output.weight", device) {
+            QMatMul::from_qtensor(output)?
+        } else {
+            // If there is no output layer, assume the word embeddings are tied to the output
+            QMatMul::from_qtensor(tok_embeddings_q)?
+        };
         let mut layers = Vec::with_capacity(block_count);
         for layer_idx in 0..block_count {
             let prefix = format!("blk.{layer_idx}");
@@ -251,7 +267,7 @@ impl Model {
             tok_embeddings: Embedding::new(tok_embeddings, embedding_length),
             layers,
             norm,
-            output: QMatMul::from_qtensor(output)?,
+            output,
             masks: Default::default(),
         })
     }
