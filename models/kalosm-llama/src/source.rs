@@ -593,6 +593,52 @@ impl LlamaSource {
         }
     }
 
+    /// A preset for Llama 2.3 1b
+    pub fn llama_3_2_1b_chat() -> Self {
+        Self {
+            model: FileSource::huggingface(
+                "lmstudio-community/Llama-3.2-1B-Instruct-GGUF".to_string(),
+                "main".to_string(),
+                "Llama-3.2-1B-Instruct-Q4_K_M.gguf".to_string(),
+            ),
+            tokenizer: llama_v3_tokenizer(),
+            group_query_attention: 1,
+            markers: Some(ChatMarkers {
+                system_prompt_marker:
+                    "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n",
+                end_system_prompt_marker: "<|eot_id|>",
+                user_marker: "<|start_header_id|>user<|end_header_id|>\n",
+                end_user_marker: "<|eot_id|>",
+                assistant_marker: "<|start_header_id|>assistant<|end_header_id|>\n",
+                end_assistant_marker: "<|eot_id|>",
+            }),
+            ..Default::default()
+        }
+    }
+
+    /// A preset for Llama 2.3 3b
+    pub fn llama_3_2_3b_chat() -> Self {
+        Self {
+            model: FileSource::huggingface(
+                "lmstudio-community/Llama-3.2-3B-Instruct-GGUF".to_string(),
+                "main".to_string(),
+                "Llama-3.2-3B-Instruct-Q4_K_M.gguf".to_string(),
+            ),
+            tokenizer: llama_v3_tokenizer(),
+            group_query_attention: 1,
+            markers: Some(ChatMarkers {
+                system_prompt_marker:
+                    "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n",
+                end_system_prompt_marker: "<|eot_id|>",
+                user_marker: "<|start_header_id|>user<|end_header_id|>\n",
+                end_user_marker: "<|eot_id|>",
+                assistant_marker: "<|start_header_id|>assistant<|end_header_id|>\n",
+                end_assistant_marker: "<|eot_id|>",
+            }),
+            ..Default::default()
+        }
+    }
+
     /// A preset for Llama13b
     pub fn llama_13b() -> Self {
         Self {
