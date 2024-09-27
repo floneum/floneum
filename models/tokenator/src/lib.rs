@@ -317,11 +317,10 @@ impl MergeLayerQueue {
         let tokens_len = tokens.len();
         if let Some(prev_index) = self.resolved_index.checked_sub(1) {
             let prev = unsafe { tokens.get_unchecked_mut(prev_index) };
-            if let Some(merge) = merge_table.get(prev.token, token) {
-                layers_used.set(merge.level, prev_index, tokens_len);
-                prev.merge = merge;
+            if merge_table.get(prev.token, token, &mut prev.merge) {
+                layers_used.set(prev.merge.level, prev_index, tokens_len);
             } else {
-                prev.merge = MergePriority::DEFAULT;
+                prev.merge.level = u8::MAX;
             }
         }
     }
@@ -377,30 +376,23 @@ impl MergeLayerQueue {
             let token = regex_match.as_str();
             layers_used.reset();
             let bytes = token.as_bytes();
-            for (i, &b) in bytes.iter().enumerate() {
+            let token_buffer = unsafe {
+                tokens.get_unchecked_mut(fill_index..)
+            };
+            for (i, (&b, out)) in bytes.iter().zip(token_buffer.iter_mut()).enumerate() {
                 let token = unsafe { *tokenizer.byte_to_token.get_unchecked(b as usize) };
-                let data = TokenData {
-                    token,
-                    merge: {
-                        let next_index = i + 1;
-                        if next_index < bytes.len() {
-                            let next = bytes[next_index];
-                            let next_token = tokenizer.byte_to_token[next as usize];
-                            match tokenizer.passes_might_merge_table.get(token, next_token) {
-                                Some(merge) => {
-                                    layers_used.set(merge.level, i, bytes.len());
-                                    merge
-                                }
-                                None => MergePriority::DEFAULT,
-                            }
-                        } else {
-                            MergePriority::DEFAULT
-                        }
-                    },
-                };
-                unsafe {
-                    *tokens.get_unchecked_mut(fill_index + i) = data;
-                }
+                out.token = token;
+
+                let next_index = i + 1;
+                if next_index < bytes.len() {
+                    let next = bytes[next_index];
+                    let next_token = tokenizer.byte_to_token[next as usize];
+                    if tokenizer.passes_might_merge_table.get(token, next_token, &mut out.merge) {
+                        layers_used.set(out.merge.level, i, bytes.len());
+                    } else {
+                        out.merge.level = u8::MAX;
+                    }
+                } 
             }
 
             for i in 0..tokenizer.levels {
@@ -644,13 +636,18 @@ impl MergeTable {
     }
 
     #[cfg_attr(feature = "never-inline", inline(never))]
-    fn get(&self, input: u32, output: u32) -> Option<MergePriority> {
+    fn get(&self, input: u32, output: u32, out: &mut MergePriority) -> bool {
         let (index, key) = Self::index(input, output);
 
         let value = unsafe { self.mod_bitset.get_unchecked(index as usize) };
 
         let slice = &self.short_bump[value.ptr as usize..value.end as usize];
-        slice.iter().find(|item| item.key == key).copied()
+        if let Some(found) = slice.iter().find(|item| item.key == key) {
+            *out = *found;
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -659,7 +656,7 @@ fn test_empty_merge_table() {
     let table = MergeTable::new(std::iter::empty());
     for x in 0..SIZE {
         for y in 0..SIZE {
-            assert!(table.get(x, y).is_none());
+            assert!(!table.get(x, y, &mut MergePriority::DEFAULT));
         }
     }
 }
@@ -685,12 +682,13 @@ fn test_partial_merge_table() {
             if let Some((rank, level, _, new_token)) =
                 merges.iter().find(|(_, _, pair, _)| pair == &[x, y])
             {
-                let result = table.get(x, y).unwrap();
+                let mut result = MergePriority::DEFAULT;
+                assert!(table.get(x, y, &mut result));
                 assert_eq!(result.new_token, *new_token);
                 assert_eq!(result.level, *level);
                 assert_eq!(result.rank, *rank);
             } else {
-                assert!(table.get(x, y).is_none());
+                assert!(!table.get(x, y, &mut MergePriority::DEFAULT));
             }
         }
     }
@@ -729,10 +727,11 @@ fn test_random_merge_table() {
     for x in 0..SIZE {
         for y in 0..SIZE {
             if let Some(merge_priority) = map.get(&[x, y]) {
-                let result = table.get(x, y).unwrap();
+                let mut result = MergePriority::DEFAULT;
+                assert!(table.get(x, y, &mut result));
                 assert_eq!(result, *merge_priority);
             } else {
-                assert!(table.get(x, y).is_none());
+                assert!(!table.get(x, y, &mut MergePriority::DEFAULT));
             }
         }
     }

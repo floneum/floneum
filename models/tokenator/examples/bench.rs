@@ -29,7 +29,7 @@ pub fn main() {
     let mut input_tokens = Vec::new();
     let mut merge_queue = MergeLayerQueue::new();
 
-    loop {
+    for _ in 0..100 {
         merge_queue.resolve(&mut input_tokens, &text, &tokenizer);
     }
 }
