@@ -310,10 +310,10 @@ impl<C: Class> Classifier<C> {
     }
 
     fn forward_t(&self, xs: &Tensor, train: bool) -> Result<Tensor> {
-        let xs = xs.clone();
-        let mut xs = self.dropout.forward_t(&xs, train)?;
+        let mut xs = xs.clone();
         let input_dim = *xs.dims().last().unwrap();
         for layer in self.layers(input_dim)? {
+            xs = self.dropout.forward_t(&xs, train)?;
             xs = layer.forward(&xs)?;
             xs = xs.gelu_erf()?;
         }
@@ -352,6 +352,9 @@ impl<C: Class> Classifier<C> {
         let train_len = m.train_inputs.dims()[0];
         let train_results = m.train_classes.chunk(train_len, 0)?;
         let train_votes = m.train_inputs.chunk(train_len, 0)?;
+
+        // Force the layers to be initialized before we use the varmap
+        self.forward_t(&train_votes[0].to_device(dev)?, true)?;
 
         let mut sgd = candle_nn::AdamW::new_lr(self.varmap.all_vars(), learning_rate)?;
         let test_votes = m.test_inputs.to_device(dev)?;
