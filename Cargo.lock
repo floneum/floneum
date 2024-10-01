@@ -3866,7 +3866,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-learning"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "candle-core",
