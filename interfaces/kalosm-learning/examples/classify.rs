@@ -84,7 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     classifier.train(
         &dataset, // The dataset to train on
         &dev,     // The device to train on
-        100,      // The number of epochs to train for
+        10,       // The number of epochs to train for
         0.003,    // The learning rate
         5,        // The batch size
     )?;
