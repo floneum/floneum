@@ -452,9 +452,8 @@ impl LlamaSource {
     /// A preset for Phi-3.5-mini-4k-instruct with the updated version of the model
     pub fn phi_3_5_mini_4k_instruct() -> Self {
         Self {
-            // https://huggingface.co/lmstudio-community/Phi-3.5-mini-instruct-GGUF/blob/main/Phi-3.5-mini-instruct-Q4_K_M.gguf
             model: FileSource::huggingface(
-                "lmstudio-community/Phi-3.5-mini-instruct-GGUF".to_string(),
+                "bartowski/Phi-3.5-mini-instruct-GGUF".to_string(),
                 "main".to_string(),
                 "Phi-3.5-mini-instruct-Q4_K_M.gguf".to_string(),
             ),
