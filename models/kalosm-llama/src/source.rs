@@ -1,4 +1,4 @@
-use kalosm_common::FileSource;
+use kalosm_common::{FileLoadingProgress, FileSource};
 use kalosm_language_model::ChatMarkers;
 use tokenizers::Tokenizer;
 
@@ -90,14 +90,17 @@ impl LlamaSource {
         self
     }
 
-    pub(crate) async fn tokenizer(&self, progress: impl FnMut(f32)) -> anyhow::Result<Tokenizer> {
+    pub(crate) async fn tokenizer(
+        &self,
+        progress: impl FnMut(FileLoadingProgress),
+    ) -> anyhow::Result<Tokenizer> {
         let tokenizer_path = self.cache.get(&self.tokenizer, progress).await?;
         Tokenizer::from_file(tokenizer_path).map_err(anyhow::Error::msg)
     }
 
     pub(crate) async fn model(
         &self,
-        progress: impl FnMut(f32),
+        progress: impl FnMut(FileLoadingProgress),
     ) -> anyhow::Result<std::path::PathBuf> {
         self.cache.get(&self.model, progress).await
     }
