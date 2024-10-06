@@ -1,8 +1,10 @@
-use anyhow::bail;
 use hf_hub::{Repo, RepoType};
 use httpdate::parse_http_date;
-use reqwest::header::{HeaderValue, CONTENT_LENGTH, LAST_MODIFIED, RANGE};
-use reqwest::{Response, StatusCode, Url};
+use reqwest::{
+    header::{HeaderValue, CONTENT_LENGTH, LAST_MODIFIED, RANGE},
+    IntoUrl,
+};
+use reqwest::{Response, StatusCode};
 use std::path::PathBuf;
 use std::str::FromStr;
 use tokio::fs::{File, OpenOptions};
@@ -138,6 +140,20 @@ impl ModelLoadingProgress {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum CacheError {
+    #[error("Hugging Face API error: {0}")]
+    HuggingFaceApi(#[from] hf_hub::api::sync::ApiError),
+    #[error("Unable to get file metadata for {0}: {1}")]
+    UnableToGetFileMetadata(PathBuf, #[source] tokio::io::Error),
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("HTTP error: {0}")]
+    Http(#[from] reqwest::Error),
+    #[error("Unexpected status code: {0}")]
+    UnexpectedStatusCode(StatusCode),
+}
+
 #[derive(Debug, Clone)]
 pub struct Cache {
     location: PathBuf,
@@ -182,7 +198,7 @@ impl Cache {
         &self,
         source: &FileSource,
         progress: impl FnMut(FileLoadingProgress),
-    ) -> anyhow::Result<PathBuf> {
+    ) -> Result<PathBuf, CacheError> {
         match source {
             FileSource::HuggingFace {
                 model_id,
@@ -194,24 +210,25 @@ impl Cache {
                 let path = self.location.join(model_id).join(revision);
                 let complete_download = path.join(file);
 
-                let api = hf_hub::api::sync::Api::new()?;
                 let repo = Repo::with_revision(
                     model_id.to_string(),
                     RepoType::Model,
                     revision.to_string(),
                 );
-                let api = api.repo(repo);
+                let api = hf_hub::api::sync::Api::new()?.repo(repo);
                 let url = api.url(file);
-                let url = Url::from_str(&url)?;
                 let client = reqwest::Client::new();
+                tracing::trace!("Fetching metadata for {file} from {url}");
                 let response = client
-                    .head(url.clone())
+                    .head(&url)
                     .with_authorization_header(token.clone())
                     .send()
                     .await;
 
                 if complete_download.exists() {
-                    let metadata = tokio::fs::metadata(&complete_download).await?;
+                    let metadata = tokio::fs::metadata(&complete_download).await.map_err(|e| {
+                        CacheError::UnableToGetFileMetadata(complete_download.clone(), e)
+                    })?;
                     let file_last_modified = metadata.modified()?;
                     // If the server says the file hasn't been modified since we downloaded it, we can use the local file
                     if let Some(last_updated) = response
@@ -267,20 +284,20 @@ impl FileSource {
     pub async fn download(
         &self,
         progress: impl FnMut(FileLoadingProgress),
-    ) -> anyhow::Result<PathBuf> {
+    ) -> Result<PathBuf, CacheError> {
         let cache = Cache::default();
         cache.get(self, progress).await
     }
 }
 
-async fn download_into(
-    url: Url,
+async fn download_into<U: IntoUrl>(
+    url: U,
     file: &PathBuf,
     head: Response,
     client: reqwest::Client,
     token: Option<String>,
     mut progress: impl FnMut(FileLoadingProgress),
-) -> anyhow::Result<()> {
+) -> Result<(), CacheError> {
     let length = head
         .headers()
         .get(CONTENT_LENGTH)
@@ -329,7 +346,7 @@ async fn download_into(
 
     let status = response.status();
     if !(status == StatusCode::OK || status == StatusCode::PARTIAL_CONTENT) {
-        bail!("Unexpected status code: {:?}", status);
+        return Err(CacheError::UnexpectedStatusCode(status));
     }
 
     let mut current_progress = start;
@@ -376,16 +393,9 @@ async fn downloads_work() {
     };
     let client = reqwest::Client::new();
     let response = client.head(url).send().await.unwrap();
-    download_into(
-        Url::from_str(url).unwrap(),
-        &file,
-        response,
-        client,
-        None,
-        progress,
-    )
-    .await
-    .unwrap();
+    download_into(url, &file, response, client, None, progress)
+        .await
+        .unwrap();
     assert!(file.exists());
     tokio::fs::remove_file(file).await.unwrap();
 }
