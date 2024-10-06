@@ -43,9 +43,9 @@ pub fn tokenize_small(c: &mut Criterion) {
             .collect::<String>();
         group.bench_with_input(BenchmarkId::new("Fast", size), &text, |b, text| {
             let mut input_tokens = Vec::new();
-            let mut merge_queue = MergeLayerQueue::new();
+            let mut levels = Vec::new();
 
-            b.iter(|| merge_queue.resolve(&mut input_tokens, text, &tokenizer))
+            b.iter(|| MergeLayerQueue::resolve(&mut input_tokens, text, &tokenizer, &mut levels))
         });
         group.bench_with_input(BenchmarkId::new("HuggingFace", size), &text, |b, text| {
             b.iter(|| hf_tokenizer.encode(text.clone(), true).unwrap())
@@ -73,9 +73,9 @@ pub fn tokenize_large(c: &mut Criterion) {
             .collect::<String>();
         group.bench_with_input(BenchmarkId::new("Fast", size), &text, |b, text| {
             let mut input_tokens = Vec::new();
-            let mut merge_queue = MergeLayerQueue::new();
+            let mut levels = Vec::new();
 
-            b.iter(|| merge_queue.resolve(&mut input_tokens, text, &tokenizer))
+            b.iter(|| MergeLayerQueue::resolve(&mut input_tokens, text, &tokenizer, &mut levels))
         });
         group.bench_with_input(BenchmarkId::new("HuggingFace", size), &text, |b, text| {
             b.iter(|| hf_tokenizer.encode(text.clone(), true).unwrap())
@@ -90,9 +90,9 @@ pub fn tokenize_large(c: &mut Criterion) {
         assert_eq!(text.len(), size);
         group.bench_with_input(BenchmarkId::new("Fast-Word", size), &text, |b, text| {
             let mut input_tokens = Vec::new();
-            let mut merge_queue = MergeLayerQueue::new();
+            let mut levels = Vec::new();
 
-            b.iter(|| merge_queue.resolve(&mut input_tokens, text, &tokenizer))
+            b.iter(|| MergeLayerQueue::resolve(&mut input_tokens, text, &tokenizer, &mut levels))
         });
         group.bench_with_input(
             BenchmarkId::new("HuggingFace-Word", size),

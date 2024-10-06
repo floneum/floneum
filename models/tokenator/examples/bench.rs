@@ -27,9 +27,9 @@ pub fn main() {
         .collect::<String>();
 
     let mut input_tokens = Vec::new();
-    let mut merge_queue = MergeLayerQueue::new();
+    let mut merge_queue = Vec::new();
 
     for _ in 0..100 {
-        merge_queue.resolve(&mut input_tokens, &text, &tokenizer);
+        MergeLayerQueue::resolve(&mut input_tokens, &text, &tokenizer, &mut merge_queue);
     }
 }

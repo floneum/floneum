@@ -25,9 +25,9 @@ fn main() {
 
         let text = line.trim();
         let mut input_tokens = Vec::new();
-        let mut merge_queue = MergeLayerQueue::new();
+        let mut merge_queue = Vec::new();
 
-        let index = merge_queue.resolve(&mut input_tokens, text, &tokenizer);
+        let index = MergeLayerQueue::resolve(&mut input_tokens, text, &tokenizer, &mut merge_queue);
         pretty_print_tokens(
             input_tokens.iter().take(index).map(|t| t.token()),
             &tokenizer,

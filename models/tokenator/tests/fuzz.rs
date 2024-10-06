@@ -26,10 +26,11 @@ fn fuzz() {
             .collect::<String>();
 
         let mut input_tokens = Vec::new();
-        let mut merge_queue = MergeLayerQueue::new();
+        let mut merge_queue = Vec::new();
 
         let fast_tokens = {
-            let index = merge_queue.resolve(&mut input_tokens, &text, &tokenizer);
+            let index =
+                MergeLayerQueue::resolve(&mut input_tokens, &text, &tokenizer, &mut merge_queue);
             input_tokens
                 .iter()
                 .take(index)
@@ -45,7 +46,12 @@ fn fuzz() {
                     start += 1;
                     let text = text.chars().skip(start).collect::<String>();
                     let fast_tokens = {
-                        let index = merge_queue.resolve(&mut input_tokens, &text, &tokenizer);
+                        let index = MergeLayerQueue::resolve(
+                            &mut input_tokens,
+                            &text,
+                            &tokenizer,
+                            &mut merge_queue,
+                        );
                         input_tokens
                             .iter()
                             .take(index)
@@ -66,7 +72,12 @@ fn fuzz() {
                     len -= 1;
                     let text = text.chars().skip(start).take(len).collect::<String>();
                     let fast_tokens = {
-                        let index = merge_queue.resolve(&mut input_tokens, &text, &tokenizer);
+                        let index = MergeLayerQueue::resolve(
+                            &mut input_tokens,
+                            &text,
+                            &tokenizer,
+                            &mut merge_queue,
+                        );
                         input_tokens
                             .iter()
                             .take(index)
@@ -84,7 +95,12 @@ fn fuzz() {
 
             let text = text.chars().skip(start).take(len).collect::<String>();
             let fast_tokens = {
-                let index = merge_queue.resolve(&mut input_tokens, &text, &tokenizer);
+                let index = MergeLayerQueue::resolve(
+                    &mut input_tokens,
+                    &text,
+                    &tokenizer,
+                    &mut merge_queue,
+                );
                 input_tokens
                     .iter()
                     .take(index)
