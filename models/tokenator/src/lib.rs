@@ -337,11 +337,6 @@ impl MergeLayerQueue {
     }
 
     #[cfg_attr(feature = "never-inline", inline(never))]
-    fn progress_resolved_ptr(&mut self, resolved_index: usize) {
-        self.last_token_index = Some(resolved_index);
-    }
-
-    #[cfg_attr(feature = "never-inline", inline(never))]
     pub fn resolve(
         tokens: &mut Vec<TokenData>,
         input: &str,
@@ -376,13 +371,9 @@ impl MergeLayerQueue {
                     if next_index < bytes.len() {
                         let next = bytes[next_index];
                         let next_token = tokenizer.byte_to_token[next as usize];
-                        if !tokenizer.passes_might_merge_table.get(
-                            token,
-                            next_token,
-                            &mut out.merge,
-                        ) {
-                            out.merge.level = u8::MAX;
-                        }
+                        tokenizer
+                            .passes_might_merge_table
+                            .get(token, next_token, &mut out.merge);
                     }
                 }
 
@@ -419,14 +410,6 @@ impl MergeLayerQueue {
                     while level.current_index < prev_level_resolved {
                         unchanged &= level.process_token(token_buffer, i as u8, tokenizer);
                     }
-                    // if i == 3 {
-                    //     println!(
-                    //         "-{} vs {} vs {:?}",
-                    //         level.decreasing_subsequence_run_len,
-                    //         level.current_index,
-                    //         level.last_token_index
-                    //     );
-                    // }
                     if LAST {
                         level.finish(token_buffer, tokenizer);
                     }
@@ -434,12 +417,6 @@ impl MergeLayerQueue {
                         tracing::trace!("update stopped at level: {i}");
                         break;
                     }
-                    // debug_assert!(
-                    //     level.current_index >= level.resolved_index,
-                    //     "{} > {}",
-                    //     level.current_index,
-                    //     level.resolved_index
-                    // );
                     prev_level_resolved = level.last_token_index.unwrap_or(0);
                 }
             }
@@ -449,11 +426,6 @@ impl MergeLayerQueue {
             }
             add_byte::<true>(regex_match.len(), levels, tokenizer, token_buffer);
 
-            // #[cfg(debug_assertions)]
-            // {
-            //     let resolved = levels.last().unwrap().resolved_index;
-            //     assert_eq!(resolved, regex_match.len());
-            // }
             // Compact the resolved tokens
             let mut index = start;
             while index < end {
@@ -492,17 +464,16 @@ impl MergeLayerQueue {
                 std::str::from_utf8(tokenizer.tokens[token.token as usize].as_slice()).unwrap();
             write!(&mut next_line, "{}", " ".repeat(token.len())).unwrap();
             write!(&mut next_line, " {} ", merge_priority).unwrap();
-            // if !in_dense {
-            //     print!("{}", token.color(Color::White))
-            // } else if i < self.resolved_index {
-            //     print!("{}", token.color(Color::Blue))
-            // } else if i < self.decreasing_subsequence_run_start {
-            //     print!("{}", token.color(Color::White))
-            // } else if i < self.current_index {
-            //     print!("{}", token.color(Color::Red))
-            // } else {
-            //     print!("{}", token.color(Color::White))
-            // }
+            let resolved_index = self.last_token_index.map(|idx| idx + unsafe { tokens.get_unchecked(idx) }.size as usize).unwrap_or(0);
+            if !in_dense {
+                print!("{}", token.color(Color::White))
+            } else if i < resolved_index {
+                print!("{}", token.color(Color::Blue))
+            } else if i < self.current_index {
+                print!("{}", token.color(Color::Red))
+            } else {
+                print!("{}", token.color(Color::White))
+            }
             print!("{}", " ".repeat(uncolored.len() + 2));
         }
         println!();
@@ -583,12 +554,10 @@ impl MergeLayerQueue {
     }
 
     fn decreasing_subsequence_run_len(&self) -> usize {
-        // self.current_index - self.decreasing_subsequence_run_start
         self.decreasing_subsequence_run_len
     }
 
     fn clear_merge_buffer(&mut self) {
-        // self.decreasing_subsequence_run_start = self.current_index;
         self.decreasing_subsequence_run_len = 0;
     }
 
@@ -599,7 +568,6 @@ impl MergeLayerQueue {
         merge_table: &MergeTable,
         tokenizer: &FastBPETokenizer,
     ) {
-        // debug_assert_ne!(self.decreasing_subsequence_run_start, self.current_index);
         let len = self.decreasing_subsequence_run_len();
         tracing::trace!("flushing {} tokens", len);
 
@@ -642,9 +610,7 @@ impl MergeLayerQueue {
             // Fix the merge of the last token
             if let Some(last) = self.last_token_index {
                 let last_token = unsafe { tokens.get_unchecked_mut(last) };
-                if !merge_table.get(last_token.token, new_token, &mut last_token.merge) {
-                    last_token.merge.level = u8::MAX;
-                }
+                merge_table.get(last_token.token, new_token, &mut last_token.merge);
             }
             let resolved = index;
             self.last_token_index = Some(index);
@@ -657,9 +623,7 @@ impl MergeLayerQueue {
                 if let Some(next) = tokens.get(index) {
                     let next = next.token;
                     let last_token = unsafe { tokens.get_unchecked_mut(last) };
-                    if !merge_table.get(last_token.token, next, &mut last_token.merge) {
-                        last_token.merge.level = u8::MAX;
-                    }
+                    merge_table.get(last_token.token, next, &mut last_token.merge);
                 }
             }
         }
@@ -741,7 +705,7 @@ impl MergeTable {
     }
 
     #[cfg_attr(feature = "never-inline", inline(never))]
-    fn get(&self, input: u32, output: u32, out: &mut MergePriority) -> bool {
+    fn get(&self, input: u32, output: u32, out: &mut MergePriority) {
         let (index, key) = Self::index(input, output);
 
         let value = unsafe { self.mod_bitset.get_unchecked(index as usize) };
@@ -749,9 +713,8 @@ impl MergeTable {
         let slice = &self.short_bump[value.ptr as usize..value.end as usize];
         if let Some(found) = slice.iter().find(|item| item.key == key) {
             *out = *found;
-            true
         } else {
-            false
+            out.level = u8::MAX;
         }
     }
 }
@@ -761,7 +724,9 @@ fn test_empty_merge_table() {
     let table = MergeTable::new(std::iter::empty());
     for x in 0..SIZE {
         for y in 0..SIZE {
-            assert!(!table.get(x, y, &mut MergePriority::DEFAULT));
+            let mut out = MergePriority::DEFAULT;
+            table.get(x, y, &mut out);
+            assert_eq!(out.level, u8::MAX);
         }
     }
 }
@@ -788,12 +753,14 @@ fn test_partial_merge_table() {
                 merges.iter().find(|(_, _, pair, _)| pair == &[x, y])
             {
                 let mut result = MergePriority::DEFAULT;
-                assert!(table.get(x, y, &mut result));
+                table.get(x, y, &mut result);
                 assert_eq!(result.new_token, *new_token);
                 assert_eq!(result.level, *level);
                 assert_eq!(result.rank, *rank);
             } else {
-                assert!(!table.get(x, y, &mut MergePriority::DEFAULT));
+                let mut out = MergePriority::DEFAULT;
+                table.get(x, y, &mut out);
+                assert_eq!(out.level, u8::MAX);
             }
         }
     }
@@ -833,10 +800,12 @@ fn test_random_merge_table() {
         for y in 0..SIZE {
             if let Some(merge_priority) = map.get(&[x, y]) {
                 let mut result = MergePriority::DEFAULT;
-                assert!(table.get(x, y, &mut result));
+                table.get(x, y, &mut result);
                 assert_eq!(result, *merge_priority);
             } else {
-                assert!(!table.get(x, y, &mut MergePriority::DEFAULT));
+                let mut out = MergePriority::DEFAULT;
+                table.get(x, y, &mut out);
+                assert_eq!(out.level, u8::MAX);
             }
         }
     }
