@@ -270,12 +270,14 @@ impl FastBPETokenizer {
 #[derive(Clone, Copy, Debug)]
 pub struct TokenData {
     token: u32,
+    size: u8,
     merge: MergePriority,
 }
 
 impl TokenData {
     pub const DEFAULT: Self = Self {
         token: u32::MAX,
+        size: 1,
         merge: MergePriority::DEFAULT,
     };
 
@@ -323,15 +325,15 @@ impl MergeLayerQueue {
     }
 
     #[cfg_attr(feature = "never-inline", inline(never))]
-    fn add_unprocessed_raw(&mut self, tokens: &mut [TokenData], token: TokenData, size: usize) {
+    fn add_unprocessed_raw(&mut self, tokens: &mut [TokenData], token: TokenData) {
         unsafe {
             *tokens.get_unchecked_mut(self.resolved_index) = token;
         }
-        self.progress_resolved_ptr(size);
+        self.progress_resolved_ptr(token.size as usize);
     }
 
     #[cfg_attr(feature = "never-inline", inline(never))]
-    fn progress_resolved_ptr(&mut self, size: usize) { 
+    fn progress_resolved_ptr(&mut self, size: usize) {
         self.last_token_index = Some(self.resolved_index);
         self.resolved_index += size;
     }
@@ -349,54 +351,91 @@ impl MergeLayerQueue {
         for regex_match in tokenizer.regex.find_iter(input) {
             let start = fill_index;
             let end = fill_index + regex_match.len();
-            tokens.resize(end, TokenData::DEFAULT);
-            let token = regex_match.as_str();
-            let bytes = token.as_bytes();
-            let token_buffer = unsafe { tokens.get_unchecked_mut(fill_index..) };
-            for (i, (&b, out)) in bytes.iter().zip(token_buffer.iter_mut()).enumerate() {
-                let token = unsafe { *tokenizer.byte_to_token.get_unchecked(b as usize) };
-                out.token = token;
+            #[cfg_attr(feature = "never-inline", inline(never))]
+            fn prepare_tokens<'a>(
+                tokens: &'a mut Vec<TokenData>,
+                fill_index: usize,
+                end: usize,
+                regex_match: &str,
+                tokenizer: &FastBPETokenizer,
+                levels: &mut [MergeLayerQueue],
+            ) -> &'a mut [TokenData] {
+                tokens.resize(end, TokenData::DEFAULT);
+                let token = regex_match;
+                let bytes = token.as_bytes();
+                let token_buffer = unsafe { tokens.get_unchecked_mut(fill_index..) };
+                for (i, (&b, out)) in bytes.iter().zip(token_buffer.iter_mut()).enumerate() {
+                    let token = unsafe { *tokenizer.byte_to_token.get_unchecked(b as usize) };
+                    out.token = token;
+                    out.size = 1;
 
-                let next_index = i + 1;
-                if next_index < bytes.len() {
-                    let next = bytes[next_index];
-                    let next_token = tokenizer.byte_to_token[next as usize];
-                    if !tokenizer
-                        .passes_might_merge_table
-                        .get(token, next_token, &mut out.merge)
-                    {
-                        out.merge.level = u8::MAX;
+                    let next_index = i + 1;
+                    if next_index < bytes.len() {
+                        let next = bytes[next_index];
+                        let next_token = tokenizer.byte_to_token[next as usize];
+                        if !tokenizer.passes_might_merge_table.get(
+                            token,
+                            next_token,
+                            &mut out.merge,
+                        ) {
+                            out.merge.level = u8::MAX;
+                        }
                     }
                 }
+
+                for level in levels.iter_mut() {
+                    level.reset();
+                }
+
+                token_buffer
             }
+            let token_buffer = prepare_tokens(
+                tokens,
+                fill_index,
+                end,
+                regex_match.as_str(),
+                tokenizer,
+                levels,
+            );
 
-            for level in levels.iter_mut() {
-                level.reset();
-            }
-
-            // const BATCH_SIZE: usize = 1000;
-
-            for resolved in 1..regex_match.len() + 1 {
-            // for resolved_chunk in 1..((regex_match.len() + BATCH_SIZE) / BATCH_SIZE).max(2) { 
-                // let resolved = (resolved_chunk * BATCH_SIZE).min(regex_match.len()).max(1);
+            fn add_byte<const LAST: bool>(
+                resolved: usize,
+                levels: &mut [MergeLayerQueue],
+                tokenizer: &FastBPETokenizer,
+                token_buffer: &mut [TokenData],
+            ) {
                 let mut prev_level_resolved = resolved;
                 for (i, level) in levels.iter_mut().enumerate() {
-                    let prev_resolved = level.resolved_index;
-                    debug_assert!(prev_level_resolved <= token_buffer.len(), "{prev_level_resolved} > {}", token_buffer.len());
+                    debug_assert!(
+                        prev_level_resolved <= token_buffer.len(),
+                        "{prev_level_resolved} > {}",
+                        token_buffer.len()
+                    );
+                    let mut unchanged = true;
                     while level.current_index < prev_level_resolved {
-                        level.process_token(token_buffer, i as u8, tokenizer);
+                        unchanged &= level.process_token(token_buffer, i as u8, tokenizer);
                     }
-                    if level.current_index == regex_match.len() {
+                    if LAST {
                         level.finish(token_buffer, tokenizer);
                     }
-                    if level.resolved_index == prev_resolved {
+                    if unchanged && !LAST {
                         tracing::trace!("update stopped at level: {i}");
                         break;
                     }
-                    debug_assert!(level.current_index >= level.resolved_index, "{} > {}", level.current_index, level.resolved_index);
+                    debug_assert!(
+                        level.current_index >= level.resolved_index,
+                        "{} > {}",
+                        level.current_index,
+                        level.resolved_index
+                    );
                     prev_level_resolved = level.last_token_index.unwrap_or(0);
                 }
             }
+
+            for resolved in 1..regex_match.len() {
+                add_byte::<false>(resolved, levels, tokenizer, token_buffer);
+            }
+            add_byte::<true>(regex_match.len(), levels, tokenizer, token_buffer);
 
             #[cfg(debug_assertions)]
             {
@@ -407,7 +446,7 @@ impl MergeLayerQueue {
             let mut index = start;
             while index < end {
                 let token = unsafe { tokens.get_unchecked(index) };
-                index += unsafe { *tokenizer.token_size.get_unchecked(token.token as usize) as usize };
+                index += token.size as usize;
                 unsafe {
                     *tokens.get_unchecked_mut(fill_index) = *token;
                 }
@@ -473,10 +512,11 @@ impl MergeLayerQueue {
         tokens: &mut [TokenData],
         level: u8,
         tokenizer: &FastBPETokenizer,
-    ) -> usize {
+    ) -> bool {
         let current_token = unsafe { tokens.get_unchecked(self.current_index) };
-        self.current_index += unsafe { *tokenizer.token_size.get_unchecked(current_token.token as usize) as usize };  
+        self.current_index += current_token.size as usize;
         self.decreasing_subsequence_run_len += 1;
+        #[cfg(debug_assertions)]
         if tracing::enabled!(tracing::Level::TRACE) {
             tracing::trace!("self.current_index: {:?}", self.current_index);
             tracing::trace!("self.resolved_index: {:?}", self.resolved_index);
@@ -501,14 +541,15 @@ impl MergeLayerQueue {
             self.rank = u16::MAX;
         }
 
+        #[cfg(debug_assertions)]
         if tracing::enabled!(tracing::Level::TRACE) {
             self.pretty_print_info(tokens, tokenizer);
         }
 
-        self.resolved_index
+        continues_decreasing_sequence
     }
 
-    fn finish(&mut self, tokens: &mut [TokenData], tokenizer: &FastBPETokenizer)  {
+    fn finish(&mut self, tokens: &mut [TokenData], tokenizer: &FastBPETokenizer) {
         // Flush the buffer if it is not empty
         if !self.decreasing_subsequence_run_is_empty() {
             tracing::trace!("flushing merge buffer because this is the last token");
@@ -519,7 +560,6 @@ impl MergeLayerQueue {
             self.pretty_print_info(tokens, tokenizer);
         }
         self.last_token_index = Some(self.resolved_index);
-
     }
 
     fn decreasing_subsequence_run_is_empty(&self) -> bool {
@@ -537,7 +577,12 @@ impl MergeLayerQueue {
     }
 
     #[cfg_attr(feature = "never-inline", inline(never))]
-    fn flush(&mut self, tokens: &mut [TokenData], merge_table: &MergeTable, tokenizer: &FastBPETokenizer) {
+    fn flush(
+        &mut self,
+        tokens: &mut [TokenData],
+        merge_table: &MergeTable,
+        tokenizer: &FastBPETokenizer,
+    ) {
         debug_assert_ne!(self.decreasing_subsequence_run_start, self.current_index);
         let len = self.decreasing_subsequence_run_len();
         tracing::trace!("flushing {} tokens", len);
@@ -549,10 +594,8 @@ impl MergeLayerQueue {
                 "Length {} is odd, adding the first token to the buffer unprocessed",
                 len
             );
-            let token = unsafe {
-                *tokens.get_unchecked(self.decreasing_subsequence_run_start)
-            };
-            let size = unsafe { *tokenizer.token_size.get_unchecked(token.token as usize) as usize };
+            let size = unsafe { *tokens.get_unchecked(self.decreasing_subsequence_run_start) }.size
+                as usize;
             self.progress_resolved_ptr(size);
             start += size;
         }
@@ -561,12 +604,12 @@ impl MergeLayerQueue {
             let token = unsafe { tokens.get_unchecked(index) };
             debug_assert!(token.merge.level != u8::MAX, "{:?}", token);
             let new_token = token.merge.new_token;
-            tracing::trace!("Adding token {} to the buffer unprocessed", new_token);
-            let mut new_token_data = TokenData {
+            let size = unsafe { *tokenizer.token_size.get_unchecked(new_token as usize) };
+            let new_token_data = TokenData {
                 token: new_token,
+                size,
                 merge: MergePriority::DEFAULT,
             };
-            let size = unsafe { *tokenizer.token_size.get_unchecked(new_token as usize) as usize };
             // The size of the new token should be the sum of the other tokens
             #[cfg(debug_assertions)]
             {
@@ -574,33 +617,29 @@ impl MergeLayerQueue {
                 let left_size = tokenizer.token_size[left as usize] as usize;
                 let right = unsafe { tokens.get_unchecked(index + left_size) }.token;
                 let right_size = tokenizer.token_size[right as usize] as usize;
-                assert_eq!(left_size + right_size, size);
+                assert_eq!(left_size + right_size, size as usize);
             }
-            if index == start {
-                tracing::trace!("last token index: {:?}", self.last_token_index);
-                if let Some(last) = self.last_token_index {
+            // Fix the merge of the last token
+            if let Some(last) = self.last_token_index {
+                let last_token = unsafe { tokens.get_unchecked_mut(last) };
+                if !merge_table.get(last_token.token, new_token, &mut last_token.merge) {
+                    last_token.merge.level = u8::MAX;
+                }
+            }
+            index += size as usize;
+            self.add_unprocessed_raw(tokens, new_token_data);
+        }
+        // Fix the merge of the last token
+        if start < self.current_index {
+            if let Some(last) = self.last_token_index {
+                if let Some(next) = tokens.get(index) {
+                    let next = next.token;
                     let last_token = unsafe { tokens.get_unchecked_mut(last) };
-                    if !merge_table.get(last_token.token, new_token, &mut last_token.merge) {
+                    if !merge_table.get(last_token.token, next, &mut last_token.merge) {
                         last_token.merge.level = u8::MAX;
                     }
                 }
             }
-            index += size;
-            if let Some(next) = tokens.get_mut(index) {
-                let next_token = if index < self.current_index {
-                    next.merge.new_token
-                } else {
-                    next.token
-                };
-                if !merge_table.get(new_token, next_token, &mut new_token_data.merge) {
-                    new_token_data.merge.level = u8::MAX;
-                }
-            }
-            self.add_unprocessed_raw(
-                tokens,
-                new_token_data,
-                size
-            );
         }
 
         self.clear_merge_buffer();
