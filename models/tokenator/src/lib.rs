@@ -293,10 +293,10 @@ impl TokenData {
 // 3) The index of the bpe buffer that is currently being added
 #[derive(Debug)]
 pub struct MergeLayerQueue {
-    // The index before which all merges in this layer are resolved
-    resolved_index: usize,
-    // The index that starts the decreasing subsequence run
-    decreasing_subsequence_run_start: usize,
+    // // The index before which all merges in this layer are resolved
+    // resolved_index: usize,
+    // // The index that starts the decreasing subsequence run
+    // decreasing_subsequence_run_start: usize,
     // The length of the sparse decreasing subsequence run
     decreasing_subsequence_run_len: usize,
     // The index after which nothing has been processed
@@ -315,8 +315,8 @@ impl Default for MergeLayerQueue {
 impl MergeLayerQueue {
     pub fn new() -> Self {
         Self {
-            resolved_index: 0,
-            decreasing_subsequence_run_start: 0,
+            // resolved_index: 0,
+            // decreasing_subsequence_run_start: 0,
             decreasing_subsequence_run_len: 0,
             current_index: 0,
             last_token_index: None,
@@ -325,17 +325,20 @@ impl MergeLayerQueue {
     }
 
     #[cfg_attr(feature = "never-inline", inline(never))]
-    fn add_unprocessed_raw(&mut self, tokens: &mut [TokenData], token: TokenData) {
+    fn add_unprocessed_raw(
+        &mut self,
+        tokens: &mut [TokenData],
+        token: TokenData,
+        resolved_index: usize,
+    ) {
         unsafe {
-            *tokens.get_unchecked_mut(self.resolved_index) = token;
+            *tokens.get_unchecked_mut(resolved_index) = token;
         }
-        self.progress_resolved_ptr(token.size as usize);
     }
 
     #[cfg_attr(feature = "never-inline", inline(never))]
-    fn progress_resolved_ptr(&mut self, size: usize) {
-        self.last_token_index = Some(self.resolved_index);
-        self.resolved_index += size;
+    fn progress_resolved_ptr(&mut self, resolved_index: usize) {
+        self.last_token_index = Some(resolved_index);
     }
 
     #[cfg_attr(feature = "never-inline", inline(never))]
@@ -398,6 +401,7 @@ impl MergeLayerQueue {
                 levels,
             );
 
+            #[cfg_attr(feature = "never-inline", inline(never))]
             fn add_byte<const LAST: bool>(
                 resolved: usize,
                 levels: &mut [MergeLayerQueue],
@@ -415,6 +419,14 @@ impl MergeLayerQueue {
                     while level.current_index < prev_level_resolved {
                         unchanged &= level.process_token(token_buffer, i as u8, tokenizer);
                     }
+                    // if i == 3 {
+                    //     println!(
+                    //         "-{} vs {} vs {:?}",
+                    //         level.decreasing_subsequence_run_len,
+                    //         level.current_index,
+                    //         level.last_token_index
+                    //     );
+                    // }
                     if LAST {
                         level.finish(token_buffer, tokenizer);
                     }
@@ -422,12 +434,12 @@ impl MergeLayerQueue {
                         tracing::trace!("update stopped at level: {i}");
                         break;
                     }
-                    debug_assert!(
-                        level.current_index >= level.resolved_index,
-                        "{} > {}",
-                        level.current_index,
-                        level.resolved_index
-                    );
+                    // debug_assert!(
+                    //     level.current_index >= level.resolved_index,
+                    //     "{} > {}",
+                    //     level.current_index,
+                    //     level.resolved_index
+                    // );
                     prev_level_resolved = level.last_token_index.unwrap_or(0);
                 }
             }
@@ -437,11 +449,11 @@ impl MergeLayerQueue {
             }
             add_byte::<true>(regex_match.len(), levels, tokenizer, token_buffer);
 
-            #[cfg(debug_assertions)]
-            {
-                let resolved = levels.last().unwrap().resolved_index;
-                assert_eq!(resolved, regex_match.len());
-            }
+            // #[cfg(debug_assertions)]
+            // {
+            //     let resolved = levels.last().unwrap().resolved_index;
+            //     assert_eq!(resolved, regex_match.len());
+            // }
             // Compact the resolved tokens
             let mut index = start;
             while index < end {
@@ -480,17 +492,17 @@ impl MergeLayerQueue {
                 std::str::from_utf8(tokenizer.tokens[token.token as usize].as_slice()).unwrap();
             write!(&mut next_line, "{}", " ".repeat(token.len())).unwrap();
             write!(&mut next_line, " {} ", merge_priority).unwrap();
-            if !in_dense {
-                print!("{}", token.color(Color::White))
-            } else if i < self.resolved_index {
-                print!("{}", token.color(Color::Blue))
-            } else if i < self.decreasing_subsequence_run_start {
-                print!("{}", token.color(Color::White))
-            } else if i < self.current_index {
-                print!("{}", token.color(Color::Red))
-            } else {
-                print!("{}", token.color(Color::White))
-            }
+            // if !in_dense {
+            //     print!("{}", token.color(Color::White))
+            // } else if i < self.resolved_index {
+            //     print!("{}", token.color(Color::Blue))
+            // } else if i < self.decreasing_subsequence_run_start {
+            //     print!("{}", token.color(Color::White))
+            // } else if i < self.current_index {
+            //     print!("{}", token.color(Color::Red))
+            // } else {
+            //     print!("{}", token.color(Color::White))
+            // }
             print!("{}", " ".repeat(uncolored.len() + 2));
         }
         println!();
@@ -498,8 +510,8 @@ impl MergeLayerQueue {
     }
 
     fn reset(&mut self) {
-        self.resolved_index = 0;
-        self.decreasing_subsequence_run_start = 0;
+        // self.resolved_index = 0;
+        // self.decreasing_subsequence_run_start = 0;
         self.decreasing_subsequence_run_len = 0;
         self.current_index = 0;
         self.last_token_index = None;
@@ -519,7 +531,7 @@ impl MergeLayerQueue {
         #[cfg(debug_assertions)]
         if tracing::enabled!(tracing::Level::TRACE) {
             tracing::trace!("self.current_index: {:?}", self.current_index);
-            tracing::trace!("self.resolved_index: {:?}", self.resolved_index);
+            tracing::trace!("self.last_token_index: {:?}", self.last_token_index);
             tracing::trace!(
                 "token {:?}",
                 std::str::from_utf8(tokenizer.tokens[current_token.token as usize].as_slice())
@@ -559,7 +571,11 @@ impl MergeLayerQueue {
         if tracing::enabled!(tracing::Level::TRACE) {
             self.pretty_print_info(tokens, tokenizer);
         }
-        self.last_token_index = Some(self.resolved_index);
+        let resolved_index = self
+            .last_token_index
+            .map(|idx| idx + unsafe { tokens.get_unchecked(idx) }.size as usize)
+            .unwrap_or(0);
+        self.last_token_index = Some(resolved_index);
     }
 
     fn decreasing_subsequence_run_is_empty(&self) -> bool {
@@ -572,7 +588,7 @@ impl MergeLayerQueue {
     }
 
     fn clear_merge_buffer(&mut self) {
-        self.decreasing_subsequence_run_start = self.current_index;
+        // self.decreasing_subsequence_run_start = self.current_index;
         self.decreasing_subsequence_run_len = 0;
     }
 
@@ -583,20 +599,24 @@ impl MergeLayerQueue {
         merge_table: &MergeTable,
         tokenizer: &FastBPETokenizer,
     ) {
-        debug_assert_ne!(self.decreasing_subsequence_run_start, self.current_index);
+        // debug_assert_ne!(self.decreasing_subsequence_run_start, self.current_index);
         let len = self.decreasing_subsequence_run_len();
         tracing::trace!("flushing {} tokens", len);
 
         let odd_len = len % 2 != 0;
-        let mut start = self.decreasing_subsequence_run_start;
+        let decreasing_subsequence_run_start = self
+            .last_token_index
+            .map(|idx| idx + unsafe { tokens.get_unchecked(idx) }.size as usize)
+            .unwrap_or(0);
+        let mut start = decreasing_subsequence_run_start;
         if odd_len {
             tracing::trace!(
                 "Length {} is odd, adding the first token to the buffer unprocessed",
                 len
             );
-            let size = unsafe { *tokens.get_unchecked(self.decreasing_subsequence_run_start) }.size
-                as usize;
-            self.progress_resolved_ptr(size);
+            let size =
+                unsafe { *tokens.get_unchecked(decreasing_subsequence_run_start) }.size as usize;
+            self.last_token_index = Some(start);
             start += size;
         }
         let mut index = start;
@@ -626,11 +646,13 @@ impl MergeLayerQueue {
                     last_token.merge.level = u8::MAX;
                 }
             }
+            let resolved = index;
+            self.last_token_index = Some(index);
             index += size as usize;
-            self.add_unprocessed_raw(tokens, new_token_data);
+            self.add_unprocessed_raw(tokens, new_token_data, resolved);
         }
         // Fix the merge of the last token
-        if start < self.current_index {
+        if len != 1 {
             if let Some(last) = self.last_token_index {
                 if let Some(next) = tokens.get(index) {
                     let next = next.token;
