@@ -293,10 +293,6 @@ impl TokenData {
 // 3) The index of the bpe buffer that is currently being added
 #[derive(Debug)]
 pub struct MergeLayerQueue {
-    // // The index before which all merges in this layer are resolved
-    // resolved_index: usize,
-    // // The index that starts the decreasing subsequence run
-    // decreasing_subsequence_run_start: usize,
     // The length of the sparse decreasing subsequence run
     decreasing_subsequence_run_len: usize,
     // The index after which nothing has been processed
@@ -653,12 +649,6 @@ pub fn pretty_print_tokens(resolved: impl Iterator<Item = u32>, tokenizer: &Fast
 }
 
 const SIZE: u32 = 256;
-const _: () = {
-    const MAX_TOKENS: u32 = 500_000;
-    const MAX_DIV: u32 = MAX_TOKENS / SIZE;
-    assert!(MAX_DIV < u16::MAX as u32);
-    assert!((MAX_DIV + MAX_DIV * u16::MAX as u32) < u32::MAX);
-};
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
 struct TableValue {
