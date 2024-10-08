@@ -62,6 +62,7 @@ default-features = false
 axum = "0.7.2"
 scraper = "0.19.0"
 tokenizers = "0.19.1"
+image.workspace = true
 tracing-subscriber = "0.2"
 surrealdb = { version = "1.5.5", features = ["kv-rocksdb"] }
 

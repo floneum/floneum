@@ -3867,6 +3867,7 @@ dependencies = [
  "comfy-table",
  "futures-util",
  "hdrhistogram",
+ "image 0.24.9",
  "kalosm",
  "kalosm-common",
  "kalosm-language",
