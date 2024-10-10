@@ -18,7 +18,7 @@ fn fuzz() {
 
     let hf_tokenizer = Tokenizer::from_file(HF_FILE).unwrap();
 
-    for [size, count] in [[10, 1000], [100000, 5]] {
+    for [size, count] in [[10, 1000], [10_000, 50]] {
         for _ in 0..count {
             let text = rand::thread_rng()
                 .sample_iter(&rand::distributions::Alphanumeric)
