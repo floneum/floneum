@@ -404,20 +404,15 @@ impl MergeLayerQueue {
                 let next_token = unsafe { token_buffer.get_unchecked(start).token };
                 // after adding a new byte, we need to update the merge for the previous token
                 // first find the previous token
-                let mut prev_token_pos = start;
-                let mut prev_token;
-                while prev_token_pos > 0 {
-                    prev_token_pos -= 1;
-                    prev_token = unsafe { token_buffer.get_unchecked_mut(prev_token_pos) };
-                    if prev_token.token != u32::MAX {
-                        tokenizer.passes_might_merge_table.get(
-                            prev_token.token,
-                            next_token,
-                            &mut prev_token.merge,
-                            skip_list,
-                        );
-                        break;
-                    }
+                if start > 0 {
+                    let prev_token_pos = start - 1;
+                    let prev_token = unsafe { token_buffer.get_unchecked_mut(prev_token_pos) };
+                    tokenizer.passes_might_merge_table.get(
+                        prev_token.token,
+                        next_token,
+                        &mut prev_token.merge,
+                        skip_list,
+                    );
                 }
                 for (i, level) in levels.iter_mut().enumerate() {
                     tracing::trace!("working on level: {i}");
@@ -429,7 +424,7 @@ impl MergeLayerQueue {
                     );
 
                     let mut unchanged = true;
-                    if get_bitset(skip_list, i as u8) && prev_level_resolved > 0 {
+                    if get_bitset(skip_list, i as u8) && prev_level_resolved > 0 && false {
                         let skip_to = prev_level_resolved;
                         tracing::trace!("skipping to {skip_to} for level {i}");
                         level.skip_to(
@@ -469,7 +464,7 @@ impl MergeLayerQueue {
                 }
             }
 
-            const JUMP_BY: usize = 4;
+            const JUMP_BY: usize = 32;
             let mut last = 0;
             let mut skip_list = [0u64; 256 / 64];
             for resolved in (JUMP_BY..regex_match.len()).step_by(JUMP_BY) {
@@ -587,13 +582,7 @@ impl MergeLayerQueue {
         self.decreasing_subsequence_run_len = 0;
         self.current_index = index;
         self.rank = u16::MAX;
-        self.last_token_index = Some({
-            let mut start = index - 1;
-            while start > 0 && unsafe { tokens.get_unchecked(start).token == u32::MAX } {
-                start -= 1;
-            }
-            start
-        });
+        self.last_token_index = Some(index - 1);
     }
 
     #[cfg_attr(feature = "never-inline", inline(never))]
@@ -697,10 +686,10 @@ impl MergeLayerQueue {
         tracing::trace!("flushing {} tokens", len);
 
         let odd_len = len % 2 != 0;
-        let decreasing_subsequence_run_start = self
-            .last_token_index
-            .map(|idx| idx + unsafe { tokens.get_unchecked(idx) }.size.get() as usize)
-            .unwrap_or(0);
+        let decreasing_subsequence_run_start = match self.last_token_index {
+            Some(idx) => idx + unsafe { tokens.get_unchecked(idx) }.size.get() as usize,
+            None => 0,
+        };
         let mut start = decreasing_subsequence_run_start;
         if odd_len {
             tracing::trace!(
@@ -742,9 +731,6 @@ impl MergeLayerQueue {
             {
                 assert_eq!(token.merge.level, level);
             }
-            let right_token =
-                unsafe { tokens.get_unchecked_mut(index + token.size.get() as usize) };
-            right_token.token = u32::MAX;
             // Fix the merge of the last token
             if let Some(last) = self.last_token_index {
                 let last_token = unsafe { tokens.get_unchecked_mut(last) };
