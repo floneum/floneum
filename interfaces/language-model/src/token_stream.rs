@@ -188,7 +188,24 @@ impl TokenOutputStream {
         }
     }
 
-    /// Peek the next tokens
+    /// Peek encoding many next tokens (in sequence)
+    pub fn peek_next_tokens(
+        &self,
+        tokens: impl IntoIterator<Item = u32>,
+    ) -> Result<Option<String>> {
+        let mut current_tokens = self.tokens[self.prev_index..].to_vec();
+        let prev_text = &self.current_text;
+        current_tokens.extend(tokens);
+        let text = self.decode(&current_tokens)?;
+        if text.len() > prev_text.len() && text.chars().last().unwrap().is_ascii() {
+            let text = text.split_at(prev_text.len());
+            Ok(Some(text.1.to_string()))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Peek many possible next tokens in parallel
     pub fn peek_tokens(
         &self,
         tokens: impl IntoParallelIterator<Item = u32>,

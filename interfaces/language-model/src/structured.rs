@@ -242,22 +242,21 @@ fn update_state<P: Parser>(
                 }
 
                 let mut all_required_next = String::new();
-                for token in extra_tokens.iter().copied() {
-                    if let Some(token) = token_stream.next_token(token)? {
-                        all_required_next += &token;
-                    }
+                if let Some(next) = token_stream.peek_next_tokens(extra_tokens.iter().copied())? {
+                    all_required_next = next;
                 }
                 // The token may decode to a string that is a valid prefix of the required next token, but in a way that doesn't encode the same way.
                 // Make sure the final text we are adding is actually valid
-                if !all_required_next.starts_with(required_next.as_ref()) {
+                if !required_next.starts_with(&all_required_next) {
                     return Ok(None);
                 }
+                token_stream.next_tokens(&extra_tokens)?;
                 *unprocessed_token_count += extra_tokens.len();
                 on_token(all_required_next.clone())?;
                 let mut result = parser
                     .parse(parser_state, all_required_next.as_bytes())
                     .unwrap_or_else(|_| {
-                        unreachable!("Required next should always be valid attempted to add {:?} but got error", required_next)
+                        unreachable!("Required next should always be valid attempted to add {:?} but got error", all_required_next)
                 });
                 update_state(
                     parser,
