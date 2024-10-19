@@ -243,9 +243,21 @@ impl<C: Connection, E, K: Chunker> DocumentTableBuilder<C, E, K> {
     }
 
     /// Set the embedding model for the table.
-    pub fn with_embedding_model(mut self, embedding_model: E) -> Self {
-        self.embedding_model = Some(embedding_model);
-        self
+    pub fn with_embedding_model<E2>(self, embedding_model: E2) -> DocumentTableBuilder<C, E2, K> {
+        let Self {
+            table,
+            db,
+            embedding_model: _,
+            chunker,
+            location,
+        } = self;
+        DocumentTableBuilder {
+            table,
+            db,
+            embedding_model: Some(embedding_model),
+            chunker,
+            location,
+        }
     }
 
     /// Set the chunking strategy for the table.

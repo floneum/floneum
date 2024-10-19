@@ -5,6 +5,30 @@ use std::future::Future;
 use std::rc::Rc;
 use std::str::FromStr;
 
+/// The default sentence chunker. Unlike [`SentenceChunker`], this is Send + Sync
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DefaultSentenceChunker;
+
+impl Chunker for DefaultSentenceChunker {
+    /// Chunk a document into embedded snippets.
+    fn chunk<E: Embedder + Send>(
+        &self,
+        document: &Document,
+        embedder: &E,
+    ) -> impl Future<Output = anyhow::Result<Vec<Chunk<E::VectorSpace>>>> + Send {
+        let default = SentenceChunker::default();
+        // Split the document into sentences. We first just collect the sentences as strings and byte ranges
+        let mut initial_chunks = Vec::new();
+        let body = document.body();
+        let ranges = default.split_sentences(document.body());
+        for chunk in &ranges {
+            initial_chunks.push(body[chunk.clone()].to_string());
+        }
+
+        embed_chunk(embedder, initial_chunks, ranges)
+    }
+}
+
 /// A [`Chunker`] that splits a string into sentences with a given [SRX](https://www.unicode.org/uli/pas/srx/srx20.html) rules.
 ///
 /// This uses the [srx](https://crates.io/crates/srx) crate to parse and apply the rules.
@@ -82,21 +106,29 @@ impl Chunker for SentenceChunker {
             initial_chunks.push(body[chunk.clone()].to_string());
         }
 
-        async move {
-            // Next embed them all in one big batch
-            let embeddings = embedder.embed_vec(initial_chunks).await?;
+        embed_chunk(embedder, initial_chunks, ranges)
+    }
+}
 
-            // Now merge the embeddings and ranges into chunks
-            let mut chunks = Vec::new();
-            for (embedding, chunk) in embeddings.into_iter().zip(ranges) {
-                let chunk = Chunk {
-                    byte_range: chunk,
-                    embeddings: vec![embedding],
-                };
-                chunks.push(chunk);
-            }
+fn embed_chunk<'a, E: Embedder + Send>(
+    embedder: &'a E,
+    initial_chunks: Vec<String>,
+    ranges: Vec<std::ops::Range<usize>>,
+) -> impl Future<Output = anyhow::Result<Vec<Chunk<E::VectorSpace>>>> + Send + 'a {
+    async move {
+        // Next embed them all in one big batch
+        let embeddings = embedder.embed_vec(initial_chunks).await?;
 
-            Ok(chunks)
+        // Now merge the embeddings and ranges into chunks
+        let mut chunks = Vec::new();
+        for (embedding, chunk) in embeddings.into_iter().zip(ranges) {
+            let chunk = Chunk {
+                byte_range: chunk,
+                embeddings: vec![embedding],
+            };
+            chunks.push(chunk);
         }
+
+        Ok(chunks)
     }
 }
