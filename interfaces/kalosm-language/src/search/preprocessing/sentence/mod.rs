@@ -110,25 +110,23 @@ impl Chunker for SentenceChunker {
     }
 }
 
-fn embed_chunk<'a, E: Embedder + Send>(
-    embedder: &'a E,
+async fn embed_chunk<E: Embedder + Send>(
+    embedder: &E,
     initial_chunks: Vec<String>,
     ranges: Vec<std::ops::Range<usize>>,
-) -> impl Future<Output = anyhow::Result<Vec<Chunk<E::VectorSpace>>>> + Send + 'a {
-    async move {
-        // Next embed them all in one big batch
-        let embeddings = embedder.embed_vec(initial_chunks).await?;
+) -> anyhow::Result<Vec<Chunk<E::VectorSpace>>> {
+    // Next embed them all in one big batch
+    let embeddings = embedder.embed_vec(initial_chunks).await?;
 
-        // Now merge the embeddings and ranges into chunks
-        let mut chunks = Vec::new();
-        for (embedding, chunk) in embeddings.into_iter().zip(ranges) {
-            let chunk = Chunk {
-                byte_range: chunk,
-                embeddings: vec![embedding],
-            };
-            chunks.push(chunk);
-        }
-
-        Ok(chunks)
+    // Now merge the embeddings and ranges into chunks
+    let mut chunks = Vec::new();
+    for (embedding, chunk) in embeddings.into_iter().zip(ranges) {
+        let chunk = Chunk {
+            byte_range: chunk,
+            embeddings: vec![embedding],
+        };
+        chunks.push(chunk);
     }
+
+    Ok(chunks)
 }

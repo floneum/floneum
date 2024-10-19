@@ -83,31 +83,31 @@ impl<E: Embedder> Embedder for Arc<E> {
     type VectorSpace = E::VectorSpace;
 
     fn embed_for(
-            &self,
-            input: EmbeddingInput,
-        ) -> BoxedFuture<'_, anyhow::Result<Embedding<Self::VectorSpace>>> {
+        &self,
+        input: EmbeddingInput,
+    ) -> BoxedFuture<'_, anyhow::Result<Embedding<Self::VectorSpace>>> {
         E::embed_for(self, input)
     }
 
     fn embed_string(
-            &self,
-            input: String,
-        ) -> BoxedFuture<'_, anyhow::Result<Embedding<Self::VectorSpace>>> {
-        E::embed_string(&self, input)
+        &self,
+        input: String,
+    ) -> BoxedFuture<'_, anyhow::Result<Embedding<Self::VectorSpace>>> {
+        E::embed_string(self, input)
     }
 
     fn embed_vec(
-            &self,
-            inputs: Vec<String>,
-        ) -> BoxedFuture<'_, anyhow::Result<Vec<Embedding<Self::VectorSpace>>>> {
-        E::embed_vec(&self, inputs)
+        &self,
+        inputs: Vec<String>,
+    ) -> BoxedFuture<'_, anyhow::Result<Vec<Embedding<Self::VectorSpace>>>> {
+        E::embed_vec(self, inputs)
     }
 
     fn embed_vec_for(
-            &self,
-            inputs: Vec<EmbeddingInput>,
-        ) -> BoxedFuture<'_, anyhow::Result<Vec<Embedding<Self::VectorSpace>>>> {
-        E::embed_vec_for(&self, inputs)
+        &self,
+        inputs: Vec<EmbeddingInput>,
+    ) -> BoxedFuture<'_, anyhow::Result<Vec<Embedding<Self::VectorSpace>>>> {
+        E::embed_vec_for(self, inputs)
     }
 }
 
