@@ -57,6 +57,7 @@ kalosm-ocr = { path = "./models/kalosm-ocr", version = "0.3.0" }
 llm-samplers = "=0.0.7"
 parking_lot = "0.12.1"
 tokenizers = "0.19.1"
+thiserror = "1.0.64"
 
 [profile.dist]
 inherits = "release"
