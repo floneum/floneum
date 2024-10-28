@@ -145,6 +145,10 @@ impl BertModel {
         Ok(sequence_output)
     }
 
+    pub(crate) fn max_seq_len(&self) -> usize {
+        self.embeddings.max_seq_len()
+    }
+
     pub(crate) fn embedding_dim(&self) -> usize {
         self.embeddings.embedding_dim()
     }
