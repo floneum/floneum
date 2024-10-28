@@ -1,13 +1,14 @@
 //! A vector database that can be used to store embeddings and search for similar embeddings.
 
+use heed::types::*;
 use std::fmt::Debug;
 use std::sync::atomic::AtomicUsize;
-use std::sync::Mutex;
 
 use arroy::distances::Angular;
 use arroy::{Database as ArroyDatabase, Reader, Writer};
 use candle_core::Tensor;
-use heed::EnvOpenOptions;
+use heed::types::SerdeJson;
+use heed::{Database, EnvOpenOptions};
 use kalosm_language_model::*;
 use kalosm_llama::accelerated_device_if_available;
 use rand::rngs::StdRng;
@@ -61,9 +62,8 @@ use serde::{Deserialize, Serialize};
 #[doc(alias = "Vector Database")]
 pub struct VectorDB<S = UnknownVectorSpace> {
     database: ArroyDatabase<Angular>,
+    metadata: Database<Str, SerdeJson<Vec<u32>>>,
     env: heed::Env,
-    max_id: Mutex<EmbeddingId>,
-    recycled_ids: Mutex<Vec<EmbeddingId>>,
     dim: AtomicUsize,
     _phantom: std::marker::PhantomData<S>,
 }
@@ -115,29 +115,54 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
 
         let mut wtxn = env.write_txn()?;
         let db: ArroyDatabase<Angular> = env.create_database(&mut wtxn, None)?;
+        let metadata: Database<Str, SerdeJson<Vec<u32>>> = env.create_database(&mut wtxn, None)?;
         wtxn.commit()?;
 
         Ok(Self {
             database: db,
+            metadata,
             env,
-            max_id: Mutex::new(EmbeddingId(0)),
-            recycled_ids: Mutex::new(Vec::new()),
             dim: AtomicUsize::new(0),
             _phantom: std::marker::PhantomData,
         })
     }
 
-    fn take_id(&self) -> EmbeddingId {
-        self.recycled_ids.lock().unwrap().pop().unwrap_or_else(|| {
-            let mut locked = self.max_id.lock().unwrap();
-            let id = *locked;
-            locked.0 += 1;
-            id
-        })
+    fn take_id(&self) -> anyhow::Result<EmbeddingId> {
+        let mut wtxn = self.env.write_txn().unwrap();
+        if let Some(mut free) = self.metadata.get(&mut wtxn, "free")? {
+            if let Some(id) = free.pop() {
+                self.metadata.put(&mut wtxn, "free", &free)?;
+                wtxn.commit()?;
+                return Ok(EmbeddingId(id));
+            }
+        }
+        match self.metadata.get(&mut wtxn, "max")? {
+            Some(max) => {
+                let id = max[0];
+                self.metadata.put(&mut wtxn, "max", &vec![id + 1])?;
+                wtxn.commit()?;
+                Ok(EmbeddingId(id))
+            }
+            None => {
+                self.metadata.put(&mut wtxn, "max", &vec![1])?;
+                wtxn.commit()?;
+                Ok(EmbeddingId(0))
+            }
+        }
     }
 
-    fn recycle_id(&self, id: EmbeddingId) {
-        self.recycled_ids.lock().unwrap().push(id);
+    fn recycle_id(&self, id: EmbeddingId) -> anyhow::Result<()> {
+        let mut wtxn = self.env.write_txn()?;
+        let mut free = self
+            .metadata
+            .get(&mut wtxn, "free")
+            .unwrap()
+            .unwrap_or_default();
+        free.push(id.0);
+        self.metadata.put(&mut wtxn, "free", &free)?;
+        wtxn.commit().unwrap();
+
+        Ok(())
     }
 
     /// Get the underlying database.
@@ -151,11 +176,11 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
         let dims = self.get_dim()?;
         let writer = Writer::<Angular>::new(self.database, 0, dims);
         writer.clear(&mut wtxn)?;
-        wtxn.commit()?;
 
         // Reset the ids
-        self.max_id.lock().unwrap().0 = 0;
-        self.recycled_ids.lock().unwrap().clear();
+        self.metadata.put(&mut wtxn, "max", &vec![0])?;
+        self.metadata.put(&mut wtxn, "free", &vec![])?;
+        wtxn.commit()?;
 
         Ok(())
     }
@@ -169,7 +194,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
         let writer = Writer::<Angular>::new(self.database, 0, dims);
 
         writer.del_item(&mut wtxn, embedding_id.0)?;
-        self.recycle_id(embedding_id);
+        self.recycle_id(embedding_id)?;
 
         let mut rng = StdRng::from_entropy();
 
@@ -192,7 +217,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
 
         let writer = Writer::<Angular>::new(self.database, 0, embedding.len());
 
-        let id = self.take_id();
+        let id = self.take_id()?;
 
         writer.add_item(&mut wtxn, id.0, &embedding)?;
 
@@ -223,13 +248,13 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
         let mut ids: Vec<_> = Vec::with_capacity(embeddings.size_hint().0 + 1);
 
         {
-            let first_id = self.take_id();
+            let first_id = self.take_id()?;
             writer.add_item(&mut wtxn, first_id.0, &first_embedding)?;
             ids.push(first_id);
         }
 
         for embedding in embeddings {
-            let id = self.take_id();
+            let id = self.take_id()?;
             writer.add_item(&mut wtxn, id.0, &embedding?)?;
             ids.push(id);
         }
