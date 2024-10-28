@@ -316,6 +316,9 @@ impl Bert {
         mut tokens: Vec<Encoding>,
         pooling: Pooling,
     ) -> anyhow::Result<Vec<Tensor>> {
+        if tokens.is_empty() {
+            return Ok(Vec::new());
+        }
         let device = &self.model.device;
         let pp = PaddingParams {
             strategy: tokenizers::PaddingStrategy::BatchLongest,
