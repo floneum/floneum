@@ -12,7 +12,7 @@ pub enum AnyNode<'a> {
     Dynamic(Node<'a>),
 }
 
-impl<'a> AnyNode<'a> {
+impl AnyNode<'_> {
     /// Get the node reference.
     pub fn node_ref(&self) -> NodeRef {
         match self {

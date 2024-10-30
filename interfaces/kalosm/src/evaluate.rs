@@ -117,7 +117,7 @@ pub struct EvaluationResult<'a, I> {
     range: RangeInclusive<f64>,
 }
 
-impl<'a, I> EvaluationResult<'a, I> {
+impl<I> EvaluationResult<'_, I> {
     const SCALE_FACTOR: f64 = 10000.0;
 
     fn histogram_scale_factor(&self) -> f64 {
@@ -207,7 +207,7 @@ impl<'a, I> EvaluationResult<'a, I> {
     }
 }
 
-impl<'a, I: Display> std::fmt::Display for EvaluationResult<'a, I> {
+impl<I: Display> std::fmt::Display for EvaluationResult<'_, I> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let histogram = self.histogram();
 

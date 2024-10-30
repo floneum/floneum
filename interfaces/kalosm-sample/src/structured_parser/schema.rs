@@ -24,7 +24,7 @@ impl<'a> IndentationWriter<'a> {
     }
 }
 
-impl<'a> std::fmt::Write for IndentationWriter<'a> {
+impl std::fmt::Write for IndentationWriter<'_> {
     fn write_str(&mut self, s: &str) -> std::fmt::Result {
         for char in s.chars() {
             self.writer.write_char(char)?;

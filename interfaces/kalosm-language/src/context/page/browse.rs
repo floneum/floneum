@@ -175,7 +175,7 @@ impl<'a> From<Element<'a>> for Node<'a> {
     }
 }
 
-impl<'a> Node<'a> {
+impl Node<'_> {
     /// Get the id of the node.
     pub fn id(&self) -> NodeRef {
         NodeRef::Dynamic(self.inner.node_id)
