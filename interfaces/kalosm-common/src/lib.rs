@@ -22,11 +22,11 @@ pub fn accelerated_device_if_available() -> candle_core::Result<Device> {
     } else {
         #[cfg(all(debug_assertions, target_os = "macos", target_arch = "aarch64"))]
         {
-            println!("Running on CPU, to run on GPU(metal), build with `--features metal`");
+            println!("Running on CPU, to run on GPU(metal), build with the metal feature enabled");
         }
         #[cfg(not(all(debug_assertions, target_os = "macos", target_arch = "aarch64")))]
         {
-            println!("Running on CPU, to run on GPU, build with `--features cuda`");
+            println!("Running on CPU, to run on GPU, build with the cuda feature enabled");
         }
         Device::Cpu
     };
