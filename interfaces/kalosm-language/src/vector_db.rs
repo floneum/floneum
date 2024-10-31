@@ -128,13 +128,13 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
     }
 
     fn take_id(&self, wtxn: &mut RwTxn) -> anyhow::Result<EmbeddingId> {
-        if let Some(mut free) = self.metadata.get(&wtxn, "free")? {
+        if let Some(mut free) = self.metadata.get(wtxn, "free")? {
             if let Some(id) = free.pop() {
                 self.metadata.put(wtxn, "free", &free)?;
                 return Ok(EmbeddingId(id));
             }
         }
-        match self.metadata.get(&wtxn, "max")? {
+        match self.metadata.get(wtxn, "max")? {
             Some(max) => {
                 let id = max[0];
                 self.metadata.put(wtxn, "max", &vec![id + 1])?;
