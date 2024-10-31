@@ -1,6 +1,6 @@
 //! A vector database that can be used to store embeddings and search for similar embeddings.
 
-use heed::types::*;
+use heed::{types::*, RwTxn};
 use std::fmt::Debug;
 use std::sync::atomic::AtomicUsize;
 
@@ -127,25 +127,21 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
         })
     }
 
-    fn take_id(&self) -> anyhow::Result<EmbeddingId> {
-        let mut wtxn = self.env.write_txn().unwrap();
+    fn take_id(&self, wtxn: &mut RwTxn) -> anyhow::Result<EmbeddingId> {
         if let Some(mut free) = self.metadata.get(&wtxn, "free")? {
             if let Some(id) = free.pop() {
-                self.metadata.put(&mut wtxn, "free", &free)?;
-                wtxn.commit()?;
+                self.metadata.put(wtxn, "free", &free)?;
                 return Ok(EmbeddingId(id));
             }
         }
         match self.metadata.get(&wtxn, "max")? {
             Some(max) => {
                 let id = max[0];
-                self.metadata.put(&mut wtxn, "max", &vec![id + 1])?;
-                wtxn.commit()?;
+                self.metadata.put(wtxn, "max", &vec![id + 1])?;
                 Ok(EmbeddingId(id))
             }
             None => {
-                self.metadata.put(&mut wtxn, "max", &vec![1])?;
-                wtxn.commit()?;
+                self.metadata.put(wtxn, "max", &vec![1])?;
                 Ok(EmbeddingId(0))
             }
         }
@@ -217,7 +213,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
 
         let writer = Writer::<Angular>::new(self.database, 0, embedding.len());
 
-        let id = self.take_id()?;
+        let id = self.take_id(&mut wtxn)?;
 
         writer.add_item(&mut wtxn, id.0, &embedding)?;
 
@@ -248,13 +244,13 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
         let mut ids: Vec<_> = Vec::with_capacity(embeddings.size_hint().0 + 1);
 
         {
-            let first_id = self.take_id()?;
+            let first_id = self.take_id(&mut wtxn)?;
             writer.add_item(&mut wtxn, first_id.0, &first_embedding)?;
             ids.push(first_id);
         }
 
         for embedding in embeddings {
-            let id = self.take_id()?;
+            let id = self.take_id(&mut wtxn)?;
             writer.add_item(&mut wtxn, id.0, &embedding?)?;
             ids.push(id);
         }
