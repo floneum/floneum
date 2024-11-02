@@ -19,7 +19,7 @@ pub fn main() {
     let text = std::fs::read_to_string("bigfile.txt").unwrap();
 
     // read the first argument as a file path to read from
-    let size = 10_usize.pow(6) * 3;
+    let size = 10_usize.pow(5);
     let text = (0..)
         .flat_map(|_| text.chars())
         .filter(|c| c.is_alphabetic())

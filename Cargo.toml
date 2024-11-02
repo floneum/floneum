@@ -65,7 +65,7 @@ inherits = "release"
 lto = "thin"
 
 [profile.release]
-debug = false
+debug = true
 lto = true
 opt-level = 3
 codegen-units = 1

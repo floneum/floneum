@@ -397,31 +397,6 @@ impl MergeLayerQueue {
                 level.reset();
             }
 
-            // Feed each byte into the system
-            // let mut first_level_resolved = regex_match.len();
-            // for _ in 0..regex_match.len() {
-            //     let mut level_resolved = first_level_resolved;
-            //     for (i, level) in levels.iter_mut().enumerate() {
-            //         if first_level_resolved == 0 {
-            //             first_level_resolved = i;
-            //         }
-            //         let token_buffer = unsafe {
-            //             tokens.get_unchecked_mut(fill_index..fill_index + level_resolved)
-            //         };
-            //         level_resolved =
-            //             level.process_token(token_buffer, &mut layers_used, i as u8, tokenizer);
-            //         println!("level: {i} {:?} {level_resolved}", level);
-            //     }
-            //     println!("prev_level_resolved: {level_resolved}");
-            // }
-            // // Force resolve each level
-            // let mut level_resolved = first_level_resolved;
-            // for (i, level) in levels.iter_mut().enumerate() {
-            //     let token_buffer =
-            //         unsafe { tokens.get_unchecked_mut(fill_index..fill_index + level_resolved) };
-            //     level_resolved = level.finish(token_buffer, &mut layers_used, tokenizer);
-            //     println!("level: {i} {:?} {level_resolved}", level);
-            // }
             let token_buffer = unsafe { tokens.get_unchecked_mut(fill_index..) };
             for resolved in 1..regex_match.len() + 1 {
                 let mut prev_level_resolved = resolved;
@@ -449,18 +424,6 @@ impl MergeLayerQueue {
             }
 
             let resolved = levels.last().unwrap().resolved_index;
-
-            // for i in 0..tokenizer.levels {
-            //     let token_buffer = unsafe {
-            //         tokens.get_unchecked_mut(fill_index..fill_index + buffer_processed_end)
-            //     };
-            //     if tracing::enabled!(tracing::Level::TRACE) {
-            //         println!("\n{}\n", format!("level: {i}").color(Color::Yellow).bold());
-            //         pretty_print_tokens(token_buffer.iter().map(|t| t.token), tokenizer);
-            //     }
-            //     buffer_processed_end =
-            //         self.resolve_level(token_buffer, &mut layers_used, i, tokenizer);
-            // }
 
             fill_index += resolved;
         }
@@ -516,11 +479,6 @@ impl MergeLayerQueue {
         level: u8,
         tokenizer: &FastBPETokenizer,
     ) -> usize {
-        // let start = layers_used.first_used_index(level, tokens.len());
-        // if start >= tokens.len() {
-        //     return tokens.len();
-        // }
-
         let current_token = unsafe { tokens.get_unchecked(self.current_index) };
         self.current_index += 1;
         if tracing::enabled!(tracing::Level::TRACE) {

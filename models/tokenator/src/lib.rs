@@ -1,7 +1,8 @@
 use std::{
     collections::{HashMap, HashSet},
-    fmt::Write,
+    fmt::{Debug, Write},
     num::NonZeroU8,
+    u128,
 };
 
 use colored::{Color, Colorize};
@@ -261,7 +262,7 @@ impl FastBPETokenizer {
     pub fn detokenize<'a>(
         &'a self,
         tokens: impl IntoIterator<Item = u32> + 'a,
-    ) -> impl Iterator<Item = &[u8]> + 'a {
+    ) -> impl Iterator<Item = &'a [u8]> + 'a {
         tokens
             .into_iter()
             .map(move |token| self.tokens[token as usize].as_slice())
@@ -287,6 +288,84 @@ impl TokenData {
     }
 }
 
+#[derive(Clone, Copy)]
+struct BabyQueue {
+    buf: u128,
+}
+
+impl Debug for BabyQueue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries((0..4).map(|i| self.get(i))).finish()
+    }
+}
+
+impl BabyQueue {
+    const fn new() -> Self {
+        Self { buf: u128::MAX }
+    }
+
+    const fn from_array(vec: [u16; 8]) -> Self {
+        Self::new()
+            .push_const(vec[7])
+            .push_const(vec[6])
+            .push_const(vec[5])
+            .push_const(vec[4])
+            .push_const(vec[3])
+            .push_const(vec[2])
+            .push_const(vec[1])
+            .push_const(vec[0])
+    }
+
+    const fn push_const(self, val: u16) -> Self {
+        Self {
+            buf: (self.buf << 16) | val as u128,
+        }
+    }
+
+    fn push(&mut self, val: u16) {
+        self.buf = (self.buf << 16) | val as u128;
+    }
+
+    fn get(&self, idx: u8) -> u16 {
+        let idx = idx * 16;
+        let val = self.buf >> idx;
+        (val & u16::MAX as u128) as u16
+    }
+}
+
+#[test]
+fn baby_ring_buf() {
+    let mut buf = BabyQueue::new();
+    buf.push(0);
+    buf.push(1);
+    buf.push(2);
+    buf.push(3);
+    assert_eq!(buf.get(0), 3);
+    assert_eq!(buf.get(1), 2);
+    assert_eq!(buf.get(2), 1);
+    assert_eq!(buf.get(3), 0);
+    buf.push(3);
+    assert_eq!(buf.get(0), 3);
+    assert_eq!(buf.get(1), 3);
+    assert_eq!(buf.get(2), 2);
+    assert_eq!(buf.get(3), 1);
+    buf.push(2);
+    assert_eq!(buf.get(0), 2);
+    assert_eq!(buf.get(1), 3);
+    assert_eq!(buf.get(2), 3);
+    assert_eq!(buf.get(3), 2);
+    buf.push(1);
+    assert_eq!(buf.get(0), 1);
+    assert_eq!(buf.get(1), 2);
+    assert_eq!(buf.get(2), 3);
+    assert_eq!(buf.get(3), 3);
+    buf.push(0);
+    assert_eq!(buf.get(0), 0);
+    assert_eq!(buf.get(1), 1);
+    assert_eq!(buf.get(2), 2);
+    assert_eq!(buf.get(3), 3);
+}
+
 // The merge layer queue modifies the bpe buffer in place
 // It keeps track of three indexes:
 // 1) The index of the bpe buffer that is resolved
@@ -295,12 +374,21 @@ impl TokenData {
 #[derive(Debug)]
 pub struct MergeLayerQueue {
     /// The length of the sparse decreasing subsequence run
-    decreasing_subsequence_run_len: usize,
-    /// The index after which nothing has been processed
-    current_index: usize,
-    /// The last resolved token index. We need to keep track of this because the last token may be merged with the next token
-    last_token_index: Option<usize>,
+    decreasing_subsequence_run_len: u8,
+    // /// The index after which nothing has been processed
+    // current_index: usize,
+    // /// The last resolved token index. We need to keep track of this because the last token may be merged with the next token
+    // last_token_index: Option<usize>,
+    last_few_token_locations: BabyQueue,
     rank: u16,
+    // Four indexes:
+    // 1) The token the child process needs to start at if it skips
+    // ---- The part of the buffer this layer has unique access to ----
+    // 2) The token that needs to be updated once this layers
+    // 3) The token that starts the decreasing subsequence run
+    // ---- A bunch of other tokens ----
+    // 4) The token that we haven't seen yet
+    current_index: u16,
 }
 
 impl Default for MergeLayerQueue {
@@ -313,9 +401,20 @@ impl MergeLayerQueue {
     pub fn new() -> Self {
         Self {
             decreasing_subsequence_run_len: 0,
-            current_index: 0,
-            last_token_index: None,
+            last_few_token_locations: const {
+                BabyQueue::from_array([
+                    0,
+                    u16::MAX,
+                    u16::MAX,
+                    u16::MAX,
+                    u16::MAX,
+                    u16::MAX,
+                    u16::MAX,
+                    u16::MAX,
+                ])
+            },
             rank: u16::MAX,
+            current_index: 0,
         }
     }
 
@@ -404,8 +503,8 @@ impl MergeLayerQueue {
                 let next_token = unsafe { token_buffer.get_unchecked(start).token };
                 // after adding a new byte, we need to update the merge for the previous token
                 // first find the previous token
-                if start > 0 {
-                    let prev_token_pos = start - 1;
+                if let Some(prev_token_pos) = unsafe { levels.get_unchecked(0) }.last_token_index()
+                {
                     let prev_token = unsafe { token_buffer.get_unchecked_mut(prev_token_pos) };
                     tokenizer.passes_might_merge_table.get(
                         prev_token.token,
@@ -414,7 +513,8 @@ impl MergeLayerQueue {
                         skip_list,
                     );
                 }
-                for (i, level) in levels.iter_mut().enumerate() {
+                for i in 0..levels.len() {
+                    let level;
                     tracing::trace!("working on level: {i}");
                     tracing::trace!("working up to index: {prev_level_resolved}");
                     debug_assert!(
@@ -422,30 +522,72 @@ impl MergeLayerQueue {
                         "{prev_level_resolved} > {}",
                         token_buffer.len()
                     );
+                    if LAST {
+                        debug_assert_eq!(prev_level_resolved, bytes.len());
+                    }
 
                     let mut unchanged = true;
-                    if get_bitset(skip_list, i as u8) && prev_level_resolved > 0 && false {
+                    if get_bitset(skip_list, i as u8) && prev_level_resolved > 0 {
                         let skip_to = prev_level_resolved;
                         tracing::trace!("skipping to {skip_to} for level {i}");
-                        level.skip_to(
-                            token_buffer,
-                            tokenizer,
-                            skip_list,
-                            skip_to,
-                            #[cfg(debug_assertions)]
-                            {
-                                i as u8
-                            },
-                        );
-                        unchanged = false;
+                        let last_baby = if i == 0 {
+                            BabyQueue {
+                                buf: (skip_to as u128)
+                                    | ((skip_to as u128) << 16)
+                                    | (((skip_to - 1) as u128) << (16 * 2))
+                                    | (((skip_to as u16).checked_sub(2).unwrap_or(u16::MAX)
+                                        as u128)
+                                        << (16 * 3))
+                                    | (((skip_to as u16).checked_sub(3).unwrap_or(u16::MAX)
+                                        as u128)
+                                        << (16 * 4))
+                                    | (((skip_to as u16).checked_sub(4).unwrap_or(u16::MAX)
+                                        as u128)
+                                        << (16 * 5))
+                                    | (((skip_to as u16).checked_sub(5).unwrap_or(u16::MAX)
+                                        as u128)
+                                        << (16 * 6))
+                                    | (((skip_to as u16).checked_sub(6).unwrap_or(u16::MAX)
+                                        as u128)
+                                        << (16 * 7)),
+                            }
+                        } else {
+                            unsafe { levels.get_unchecked(i - 1).last_few_token_locations }
+                        };
+                        if last_baby.get(2) != u16::MAX {
+                            level = &mut levels[i];
+                            level.skip_to(
+                                token_buffer,
+                                tokenizer,
+                                skip_list,
+                                last_baby,
+                                #[cfg(debug_assertions)]
+                                {
+                                    i as u8
+                                },
+                            );
+                            unchanged = false;
+                        } else {
+                            level = &mut levels[i];
+                            while level.current_index < prev_level_resolved as u16 {
+                                unchanged &= level.process_token(
+                                    token_buffer,
+                                    i as u8,
+                                    tokenizer,
+                                    skip_list,
+                                );
+                            }
+                        }
                     } else {
-                        while level.current_index < prev_level_resolved {
+                        level = &mut levels[i];
+                        while level.current_index < prev_level_resolved as u16 {
                             unchanged &=
                                 level.process_token(token_buffer, i as u8, tokenizer, skip_list);
                         }
                     }
 
                     if LAST {
+                        debug_assert_eq!(level.current_index, bytes.len() as u16);
                         level.finish(
                             token_buffer,
                             tokenizer,
@@ -460,11 +602,13 @@ impl MergeLayerQueue {
                         tracing::trace!("update stopped at level: {i}");
                         break;
                     }
-                    prev_level_resolved = level.last_token_index.unwrap_or(0);
+                    prev_level_resolved = level.last_token_index().unwrap_or(0);
                 }
             }
 
-            const JUMP_BY: usize = 32;
+            // const JUMP_BY: usize = 32;
+            const JUMP_BY: usize = 128;
+            // const JUMP_BY: usize = 1;
             let mut last = 0;
             let mut skip_list = [0u64; 256 / 64];
             for resolved in (JUMP_BY..regex_match.len()).step_by(JUMP_BY) {
@@ -535,15 +679,12 @@ impl MergeLayerQueue {
                 std::str::from_utf8(tokenizer.tokens[token.token as usize].as_slice()).unwrap();
             write!(&mut next_line, "{}", " ".repeat(token.len())).unwrap();
             write!(&mut next_line, " {} ", merge_priority).unwrap();
-            let resolved_index = self
-                .last_token_index
-                .map(|idx| idx + unsafe { tokens.get_unchecked(idx) }.size.get() as usize)
-                .unwrap_or(0);
+            let resolved_index = self.last_few_token_locations.get(0);
             if !in_dense {
                 print!("{}", token.color(Color::White))
-            } else if i < resolved_index {
+            } else if i < resolved_index as usize {
                 print!("{}", token.color(Color::Blue))
-            } else if i < self.current_index {
+            } else if i < self.current_index as usize {
                 print!("{}", token.color(Color::Red))
             } else {
                 print!("{}", token.color(Color::White))
@@ -554,11 +695,21 @@ impl MergeLayerQueue {
         println!("> {next_line}");
     }
 
+    fn last_token_index(&self) -> Option<usize> {
+        let data = self.last_few_token_locations.get(1);
+        if data == u16::MAX {
+            None
+        } else {
+            Some(data as usize)
+        }
+    }
+
+    fn decreasing_subsequence_run_start(&self) -> u16 {
+        self.last_few_token_locations.get(0)
+    }
+
     fn reset(&mut self) {
-        self.decreasing_subsequence_run_len = 0;
-        self.current_index = 0;
-        self.last_token_index = None;
-        self.rank = u16::MAX;
+        *self = Self::new();
     }
 
     fn skip_to(
@@ -566,9 +717,10 @@ impl MergeLayerQueue {
         tokens: &mut [TokenData],
         tokenizer: &FastBPETokenizer,
         skip_list: &mut [u64; 256 / 64],
-        index: usize,
+        other_last_few_token_locations: BabyQueue,
         #[cfg(debug_assertions)] level: u8,
     ) {
+        tracing::trace!("before skip_to self was {:?}", self);
         if !self.decreasing_subsequence_run_is_empty() {
             self.flush(
                 tokens,
@@ -580,9 +732,11 @@ impl MergeLayerQueue {
             );
         }
         self.decreasing_subsequence_run_len = 0;
-        self.current_index = index;
+        self.current_index = other_last_few_token_locations.get(1);
         self.rank = u16::MAX;
-        self.last_token_index = Some(index - 1);
+        self.last_few_token_locations.buf =
+            other_last_few_token_locations.buf >> 16 | const { (u16::MAX as u128) << (3 * 16) };
+        tracing::trace!("after skip_to self was {:?}", self);
     }
 
     #[cfg_attr(feature = "never-inline", inline(never))]
@@ -593,13 +747,13 @@ impl MergeLayerQueue {
         tokenizer: &FastBPETokenizer,
         skip_list: &mut [u64; 256 / 64],
     ) -> bool {
-        let current_token = unsafe { tokens.get_unchecked(self.current_index) };
-        self.current_index += current_token.size.get() as usize;
+        let current_token = unsafe { tokens.get_unchecked(self.current_index as usize) };
+        self.current_index += current_token.size.get() as u16;
         self.decreasing_subsequence_run_len += 1;
         #[cfg(debug_assertions)]
         if tracing::enabled!(tracing::Level::TRACE) {
             tracing::trace!("self.current_index: {:?}", self.current_index);
-            tracing::trace!("self.last_token_index: {:?}", self.last_token_index);
+            tracing::trace!("self.last_token_index: {:?}", self.last_token_index());
             self.pretty_print_info(tokens, tokenizer);
         }
         // At this point, we need to add last token either to the buffer or the output
@@ -654,18 +808,14 @@ impl MergeLayerQueue {
         if tracing::enabled!(tracing::Level::TRACE) {
             self.pretty_print_info(tokens, tokenizer);
         }
-        let resolved_index = self
-            .last_token_index
-            .map(|idx| idx + unsafe { tokens.get_unchecked(idx) }.size.get() as usize)
-            .unwrap_or(0);
-        self.last_token_index = Some(resolved_index);
+        self.last_few_token_locations.push(self.current_index);
     }
 
     fn decreasing_subsequence_run_is_empty(&self) -> bool {
         self.decreasing_subsequence_run_len() == 0
     }
 
-    fn decreasing_subsequence_run_len(&self) -> usize {
+    fn decreasing_subsequence_run_len(&self) -> u8 {
         self.decreasing_subsequence_run_len
     }
 
@@ -686,25 +836,22 @@ impl MergeLayerQueue {
         tracing::trace!("flushing {} tokens", len);
 
         let odd_len = len % 2 != 0;
-        let decreasing_subsequence_run_start = match self.last_token_index {
-            Some(idx) => idx + unsafe { tokens.get_unchecked(idx) }.size.get() as usize,
-            None => 0,
-        };
-        let mut start = decreasing_subsequence_run_start;
+        // | bef more | bef | prev | start |
         if odd_len {
             tracing::trace!(
                 "Length {} is odd, adding the first token to the buffer unprocessed",
                 len
             );
-            let size = unsafe { *tokens.get_unchecked(decreasing_subsequence_run_start) }
-                .size
-                .get() as usize;
-            self.last_token_index = Some(start);
-            start += size;
+            let start = self.decreasing_subsequence_run_start();
+            let size = unsafe { *tokens.get_unchecked(start as usize) }.size.get() as usize;
+            self.last_few_token_locations.push(start + size as u16);
         }
-        let mut index = start;
-        while index < self.current_index {
-            let token = unsafe { tokens.get_unchecked(index) };
+        loop {
+            let index = self.decreasing_subsequence_run_start();
+            if index >= self.current_index {
+                break;
+            }
+            let token = unsafe { tokens.get_unchecked(index as usize) };
             debug_assert!(token.merge.level != u8::MAX, "{:?}", token);
             let new_token = token.merge.new_token;
             let size = unsafe { *tokenizer.token_size.get_unchecked(new_token as usize) };
@@ -718,13 +865,12 @@ impl MergeLayerQueue {
             {
                 let left = token.token;
                 let left_size = tokenizer.token_size[left as usize] as usize;
-                let right = unsafe { tokens.get_unchecked(index + left_size) };
+                let right = unsafe { tokens.get_unchecked(index as usize + left_size) };
                 let right_size = tokenizer.token_size[right.token as usize] as usize;
-                assert_eq!(
-                    left_size + right_size,
-                    size as usize,
-                    "{token:?} and {right:?} don't merge into {new_token_data:?}"
-                );
+                if left_size + right_size != size as usize {
+                    self.pretty_print_info(tokens, tokenizer);
+                    panic!("{token:?} and {right:?} don't merge into {new_token_data:?}");
+                }
             }
             // The merge should be from this level
             #[cfg(debug_assertions)]
@@ -732,7 +878,7 @@ impl MergeLayerQueue {
                 assert_eq!(token.merge.level, level);
             }
             // Fix the merge of the last token
-            if let Some(last) = self.last_token_index {
+            if let Some(last) = self.last_token_index() {
                 let last_token = unsafe { tokens.get_unchecked_mut(last) };
                 merge_table.get(
                     last_token.token,
@@ -741,15 +887,13 @@ impl MergeLayerQueue {
                     skip_list,
                 );
             }
-            let resolved = index;
-            self.last_token_index = Some(index);
-            index += size as usize;
-            self.add_unprocessed_raw(tokens, new_token_data, resolved);
+            self.add_unprocessed_raw(tokens, new_token_data, index as usize);
+            self.last_few_token_locations.push(index + size as u16);
         }
         // Fix the merge of the last token
         if len != 1 {
-            if let Some(last) = self.last_token_index {
-                if let Some(next) = tokens.get(index) {
+            if let Some(last) = self.last_token_index() {
+                if let Some(next) = tokens.get(self.decreasing_subsequence_run_start() as usize) {
                     let next = next.token;
                     let last_token = unsafe { tokens.get_unchecked_mut(last) };
                     merge_table.get(last_token.token, next, &mut last_token.merge, skip_list);

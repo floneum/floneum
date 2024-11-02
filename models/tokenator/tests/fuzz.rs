@@ -18,7 +18,7 @@ fn fuzz() {
 
     let hf_tokenizer = Tokenizer::from_file(HF_FILE).unwrap();
 
-    for [size, count] in [[10, 1000], [10_000, 50]] {
+    for [size, count] in [[10, 10000], [1000, 1000], [10_000, 100]] {
         for _ in 0..count {
             let text = rand::thread_rng()
                 .sample_iter(&rand::distributions::Alphanumeric)
@@ -45,6 +45,10 @@ fn fuzz() {
             let hf_tokens = hf_tokenizer.encode(text.clone(), true).unwrap();
             // Try to reduce the reproduction
             if fast_tokens != hf_tokens.get_ids() {
+                if text.len() > 1000 {
+                    println!("{text}");
+                    panic!("text too long to minify");
+                }
                 let start = {
                     let mut start = 0;
                     while start < text.chars().count() {
