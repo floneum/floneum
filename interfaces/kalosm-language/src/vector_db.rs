@@ -148,11 +148,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
     }
 
     fn recycle_id(&self, id: EmbeddingId, wtxn: &mut RwTxn) -> anyhow::Result<()> {
-        let mut free = self
-            .metadata
-            .get(&wtxn, "free")
-            .unwrap()
-            .unwrap_or_default();
+        let mut free = self.metadata.get(wtxn, "free").unwrap().unwrap_or_default();
         free.push(id.0);
         self.metadata.put(wtxn, "free", &free)?;
 
