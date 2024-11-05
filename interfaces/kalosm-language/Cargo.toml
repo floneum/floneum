@@ -50,7 +50,7 @@ tokenizers = { version = "0.19.1" }
 rustc-hash = "1.1.0"
 kalosm-sample = { workspace = true }
 ego-tree = "0.6.2"
-image = "0.24.7"
+image.workspace = true
 meval = "0.2.0"
 whatlang = "0.16.3"
 texting_robots = "0.2.2"
