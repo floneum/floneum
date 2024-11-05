@@ -147,16 +147,14 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
         }
     }
 
-    fn recycle_id(&self, id: EmbeddingId) -> anyhow::Result<()> {
-        let mut wtxn = self.env.write_txn()?;
+    fn recycle_id(&self, id: EmbeddingId, wtxn: &mut RwTxn) -> anyhow::Result<()> {
         let mut free = self
             .metadata
             .get(&wtxn, "free")
             .unwrap()
             .unwrap_or_default();
         free.push(id.0);
-        self.metadata.put(&mut wtxn, "free", &free)?;
-        wtxn.commit().unwrap();
+        self.metadata.put(wtxn, "free", &free)?;
 
         Ok(())
     }
@@ -190,7 +188,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
         let writer = Writer::<Angular>::new(self.database, 0, dims);
 
         writer.del_item(&mut wtxn, embedding_id.0)?;
-        self.recycle_id(embedding_id)?;
+        self.recycle_id(embedding_id, &mut wtxn)?;
 
         let mut rng = StdRng::from_entropy();
 
