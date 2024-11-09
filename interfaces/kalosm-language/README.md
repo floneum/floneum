@@ -200,7 +200,8 @@ async fn main() {
         let user_question = prompt_input("Query: ").unwrap();
 
         let nearest_5 = document_table
-            .select_nearest(user_question, 5)
+            .search(user_question)
+            .with_results(5)
             .await
             .unwrap();
 

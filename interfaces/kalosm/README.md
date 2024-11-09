@@ -139,7 +139,7 @@ use kalosm::language::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut llm = Gpt4::default();
+    let mut llm = Gpt3_5::default();
     let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
     print!("{}", prompt);
 
@@ -228,7 +228,8 @@ async fn main() {
         let user_question = prompt_input("Query: ").unwrap();
 
         let nearest_5 = document_table
-            .select_nearest(user_question, 5)
+            .search(&user_question)
+            .with_results(5)
             .await
             .unwrap();
 
@@ -288,7 +289,8 @@ async fn main() -> anyhow::Result<()> {
 
         // Search for relevant context in the document engine
         let context = document_table
-            .select_nearest(&user_question, 1)
+            .search(&user_question)
+            .with_results(1)
             .await?
             .into_iter()
             .map(|document| {
