@@ -361,7 +361,7 @@ impl<
         if let Some(filter) = self.filter {
             query = query.with_filter(
                 filter
-                    .into_embedding_indexed_table_search_filter(&self.table)
+                    .into_embedding_indexed_table_search_filter(self.table)
                     .await?,
             );
         }
