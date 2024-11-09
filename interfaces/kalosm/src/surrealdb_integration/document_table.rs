@@ -242,7 +242,7 @@ pub struct DocumentTableSearchBuilder<
 impl<
         'a,
         Conn: Connection,
-        Doc: DeserializeOwned,
+        Doc: DeserializeOwned + Send + Sync,
         Model: Embedder,
         E: IntoEmbedding<Model::VectorSpace>,
         F: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, Model::VectorSpace, M>,
@@ -278,15 +278,15 @@ impl<
 impl<
         'a,
         Conn: Connection + 'a,
-        Doc: DeserializeOwned + 'a,
+        Doc: DeserializeOwned + Send + Sync + 'a,
         Model: Embedder + 'a,
-        E: IntoEmbedding<Model::VectorSpace> + 'a,
+        E: IntoEmbedding<Model::VectorSpace> + Send + 'a,
         F: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, Model::VectorSpace, M> + Send + Sync + 'a,
-        Chkr: Chunker + 'a,
-        M: 'a,
+        Chkr: Chunker + Send + Sync + 'a,
+        M: Send + 'a,
     > IntoFuture for DocumentTableSearchBuilder<'a, Conn, Doc, Model, Chkr, E, F, M>
 {
-    type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + 'a>>;
+    type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send + 'a>>;
     type Output = anyhow::Result<Vec<EmbeddingIndexedTableSearchResult<Doc>>>;
 
     fn into_future(self) -> Self::IntoFuture {

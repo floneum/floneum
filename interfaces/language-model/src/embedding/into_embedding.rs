@@ -8,17 +8,17 @@ pub trait IntoEmbedding<S: VectorSpace> {
     fn into_embedding<E: Embedder<VectorSpace = S>>(
         self,
         embedder: &E,
-    ) -> impl Future<Output = anyhow::Result<Embedding<S>>>;
+    ) -> impl Future<Output = anyhow::Result<Embedding<S>>> + Send;
 
     /// Convert the type into a query embedding with the given embedding model.
     fn into_query_embedding<E: Embedder<VectorSpace = S>>(
         self,
         embedder: &E,
-    ) -> impl Future<Output = anyhow::Result<Embedding<S>>>;
+    ) -> impl Future<Output = anyhow::Result<Embedding<S>>> + Send;
 }
 
 /// Convert any type that implements [`ToString`] into an embedding with an embedding model.
-impl<S: ToString, V: VectorSpace> IntoEmbedding<V> for S {
+impl<S: ToString + Send, V: VectorSpace> IntoEmbedding<V> for S {
     async fn into_embedding<E: Embedder<VectorSpace = V>>(
         self,
         embedder: &E,

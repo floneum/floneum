@@ -273,10 +273,10 @@ pub trait IntoEmbeddingIndexedTableSearchFilter<C: Connection, R, S: VectorSpace
     fn into_embedding_indexed_table_search_filter(
         self,
         db: &EmbeddingIndexedTable<C, R, S>,
-    ) -> impl std::future::Future<Output = Result<Candidates, EmbeddedIndexedTableError>>;
+    ) -> impl std::future::Future<Output = Result<Candidates, EmbeddedIndexedTableError>> + Send;
 }
 
-impl<C: Connection, R, S: VectorSpace> IntoEmbeddingIndexedTableSearchFilter<C, R, S, ()>
+impl<C: Connection, R: Send + Sync, S: VectorSpace> IntoEmbeddingIndexedTableSearchFilter<C, R, S, ()>
     for Candidates
 {
     async fn into_embedding_indexed_table_search_filter(
@@ -290,7 +290,7 @@ impl<C: Connection, R, S: VectorSpace> IntoEmbeddingIndexedTableSearchFilter<C, 
 /// A marker type that allows kalosm to specialize the [`IntoEmbeddingIndexedTableSearchFilter`] trait for iterators.
 pub struct IteratorMarker;
 
-impl<C: Connection, R: DeserializeOwned, S: VectorSpace, I>
+impl<C: Connection, R: DeserializeOwned + Send + Sync, S: VectorSpace, I>
     IntoEmbeddingIndexedTableSearchFilter<C, R, S, IteratorMarker> for I
 where
     I: Iterator<Item = Id> + Send + Sync + 'static,
@@ -392,13 +392,13 @@ impl<
 impl<
         'a,
         C: Connection + 'a,
-        R: DeserializeOwned + 'a,
+        R: DeserializeOwned + Send + Sync+ 'a,
         S: VectorSpace + 'a,
-        F: IntoEmbeddingIndexedTableSearchFilter<C, R, S, M> + 'a,
-        M: 'a,
+        F: IntoEmbeddingIndexedTableSearchFilter<C, R, S, M> + Send + 'a,
+        M: Send + 'a,
     > IntoFuture for EmbeddingIndexedTableSearchBuilder<'a, C, R, S, F, M>
 {
-    type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + 'a>>;
+    type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send + 'a>>;
     type Output = Result<Vec<EmbeddingIndexedTableSearchResult<R>>, EmbeddedIndexedTableError>;
 
     fn into_future(self) -> Self::IntoFuture {
