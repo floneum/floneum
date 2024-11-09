@@ -22,12 +22,24 @@ use rand::Rng;
 ///```
 pub trait Class {
     /// The number of classes.
-    const CLASSES: u32;
+    const CLASSES: Option<u32>;
 
     /// Convert the class to a class index.
     fn to_class(&self) -> u32;
     /// Convert a class index to a class.
     fn from_class(class: u32) -> Self;
+}
+
+impl Class for u32 {
+    const CLASSES: Option<u32> = None;
+
+    fn to_class(&self) -> u32 {
+        *self
+    }
+
+    fn from_class(class: u32) -> Self {
+        class
+    }
 }
 
 /// A dataset to train a [`Classifier`].
@@ -223,6 +235,7 @@ pub struct Classifier<C: Class> {
     layers: OnceLock<Vec<Linear>>,
     dropout: Dropout,
     dropout_rate: f32,
+    classes: u32,
     phantom: std::marker::PhantomData<C>,
 }
 
@@ -252,6 +265,7 @@ impl<C: Class> Classifier<C> {
         ClassifierConfig {
             layers_dims: self.layers_dims.clone(),
             dropout_rate: self.dropout_rate,
+            classes: Some(self.classes),
         }
     }
 
@@ -259,6 +273,7 @@ impl<C: Class> Classifier<C> {
         let ClassifierConfig {
             layers_dims,
             dropout_rate,
+            classes,
         } = config;
         Ok(Self {
             device: dev,
@@ -267,6 +282,9 @@ impl<C: Class> Classifier<C> {
             varmap,
             dropout: Dropout::new(dropout_rate),
             dropout_rate,
+            classes: classes.or(C::CLASSES).ok_or_else(|| {
+                candle_core::Error::Msg("No number of classes specified for classifier".to_string())
+            })?,
             phantom: std::marker::PhantomData,
         })
     }
@@ -276,7 +294,7 @@ impl<C: Class> Classifier<C> {
             return Ok(layers);
         }
         let vs = VarBuilder::from_varmap(&self.varmap, DType::F32, &self.device);
-        let output_dim = C::CLASSES;
+        let output_dim = self.classes;
         let mut layers = Vec::with_capacity(self.layers_dims.len() + 1);
         if self.layers_dims.is_empty() {
             let layer = candle_nn::linear(input_dim, output_dim as usize, vs.pp("ln0"))?;
@@ -536,6 +554,8 @@ pub struct ClassifierConfig {
     layers_dims: Vec<usize>,
     /// The dropout rate.
     dropout_rate: f32,
+    /// The number of classes.
+    classes: Option<u32>,
 }
 
 impl Default for ClassifierConfig {
@@ -550,6 +570,7 @@ impl ClassifierConfig {
         Self {
             layers_dims: vec![4, 8, 4],
             dropout_rate: 0.1,
+            classes: None,
         }
     }
 
@@ -562,6 +583,12 @@ impl ClassifierConfig {
     /// Set the dropout rate.
     pub fn dropout_rate(mut self, dropout_rate: f32) -> Self {
         self.dropout_rate = dropout_rate;
+        self
+    }
+
+    /// Set the number of classes. This is required if [`Class::CLASSES`] is not defined for the type you are classifying.
+    pub fn classes(mut self, classes: u32) -> Self {
+        self.classes = Some(classes);
         self
     }
 }
