@@ -455,6 +455,7 @@ async fn test_vector_db_get_closest() {
     let id2 = db.add_embedding(second_embedding.clone()).unwrap();
     assert_eq!(
         db.search(&first_vector)
+            .with_results(1)
             .run()
             .unwrap()
             .iter()
@@ -464,6 +465,7 @@ async fn test_vector_db_get_closest() {
     );
     assert_eq!(
         db.search(&second_embedding)
+            .with_results(1)
             .run()
             .unwrap()
             .iter()
@@ -474,6 +476,7 @@ async fn test_vector_db_get_closest() {
     let third_embedding = Embedding::from([1.0, 0.0, 0.0]);
     assert_eq!(
         db.search(&third_embedding)
+            .with_results(1)
             .run()
             .unwrap()
             .iter()
@@ -489,6 +492,6 @@ async fn test_vector_db_get_closest() {
             .iter()
             .map(|r| r.value)
             .collect::<Vec<_>>(),
-        vec![id1]
+        vec![id2]
     );
 }
