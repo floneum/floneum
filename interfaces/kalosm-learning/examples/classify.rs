@@ -1,7 +1,8 @@
 use kalosm_common::accelerated_device_if_available;
 use kalosm_language_model::EmbedderExt;
 use kalosm_learning::{
-    Class, Classifier, ClassifierConfig, TextClassifier, TextClassifierDatasetBuilder,
+    Class, Classifier, ClassifierConfig, ClassifierProgress, TextClassifier,
+    TextClassifierDatasetBuilder,
 };
 use rbert::{Bert, BertSpace};
 
@@ -87,6 +88,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         10,       // The number of epochs to train for
         0.003,    // The learning rate
         5,        // The batch size
+        |progress| match progress {
+            ClassifierProgress::EpochFinished { epoch, accuracy } => {
+                println!("Epoch {epoch} accuracy: {accuracy}");
+            }
+            ClassifierProgress::BatchFinished { batch, loss } => {
+                println!("Batch {batch} loss: {loss}");
+            }
+        },
     )?;
 
     let config = classifier.config();

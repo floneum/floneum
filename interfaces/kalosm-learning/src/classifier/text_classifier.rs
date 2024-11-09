@@ -6,6 +6,8 @@ use crate::{
     ClassifierOutput,
 };
 
+use super::ClassifierProgress;
+
 /// A builder for [`TextClassifier`].
 ///
 /// # Example
@@ -247,9 +249,10 @@ impl<T: Class, S: VectorSpace + Send + Sync + 'static> TextClassifier<T, S> {
         epochs: usize,
         learning_rate: f64,
         batch_size: usize,
+        progress: impl FnMut(ClassifierProgress),
     ) -> anyhow::Result<f32> {
         self.model
-            .train(dataset, device, epochs, learning_rate, batch_size)
+            .train(dataset, device, epochs, learning_rate, batch_size, progress)
     }
 
     /// Get the configuration of the classifier.
@@ -362,7 +365,7 @@ async fn simplified() -> anyhow::Result<()> {
             ClassifierConfig::new().layers_dims(layers.clone()),
         )?);
         println!("Training...");
-        if let Err(error) = classifier.train(&dataset, &dev, 100, 0.05, 100) {
+        if let Err(error) = classifier.train(&dataset, &dev, 100, 0.05, 100, |_| {}) {
             println!("Error: {:?}", error);
         } else {
             break;

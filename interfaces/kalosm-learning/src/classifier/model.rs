@@ -365,6 +365,7 @@ impl<C: Class> Classifier<C> {
         epochs: usize,
         learning_rate: f64,
         batch_size: usize,
+        mut progress: impl FnMut(ClassifierProgress),
     ) -> anyhow::Result<f32> {
         // unstack both tensors into a list of tensors
         let train_len = m.train_inputs.dims()[0];
@@ -409,7 +410,10 @@ impl<C: Class> Classifier<C> {
                     let log_sm = ops::log_softmax(&logits, D::Minus1)?;
                     let loss = loss::nll(&log_sm, &train_results)?;
                     sgd.backward_step(&loss)?;
-                    println!("Batch: {batch:5} Loss: {:5.5}", loss.to_scalar::<f32>()?);
+                    progress(ClassifierProgress::BatchFinished {
+                        batch,
+                        loss: loss.to_scalar::<f32>()?,
+                    });
                     batch += 1;
                 }
                 let test_logits = self.forward_t(&test_votes, false)?;
@@ -422,6 +426,10 @@ impl<C: Class> Classifier<C> {
                 let test_cases = test_results.dims1()?;
                 let test_accuracy: f32 = test_cases_passed as f32 / test_cases as f32;
                 final_accuracy = f32::from(100u8) * test_accuracy;
+                progress(ClassifierProgress::EpochFinished {
+                    epoch,
+                    accuracy: test_accuracy,
+                });
                 println!(
                     "Epoch: {epoch:5} Test accuracy: {:5.5}% ({}/{})",
                     final_accuracy, test_cases_passed, test_cases,
@@ -545,6 +553,25 @@ impl<C: Class> ClassifierOutput<C> {
             .map(|(c, _)| c.clone())
             .unwrap()
     }
+}
+
+/// Progress of training a classifier.
+#[derive(Debug, Clone, Copy)]
+pub enum ClassifierProgress {
+    /// Progress after an epoch has finished.
+    EpochFinished {
+        /// The current epoch.
+        epoch: usize,
+        /// The test accuracy of the current epoch.
+        accuracy: f32,
+    },
+    /// Progress after a batch has finished.
+    BatchFinished {
+        /// The current batch.
+        batch: usize,
+        /// The current loss.
+        loss: f32,
+    },
 }
 
 #[derive(Debug, Clone)]
