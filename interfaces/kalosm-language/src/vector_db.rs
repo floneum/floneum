@@ -1,10 +1,10 @@
 //! A vector database that can be used to store embeddings and search for similar embeddings.
 
+use arroy::distances::DotProduct;
 use heed::{types::*, RwTxn};
 use std::fmt::Debug;
 use std::sync::atomic::AtomicUsize;
 
-use arroy::distances::Angular;
 use arroy::{Database as ArroyDatabase, Reader, Writer};
 use candle_core::Tensor;
 use heed::types::SerdeJson;
@@ -14,6 +14,29 @@ use kalosm_llama::accelerated_device_if_available;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
+
+/// A set of candidates for a vector search.
+pub type Candidates = roaring::RoaringBitmap;
+
+/// An error that can occur when adding or searching for an embedding to the vector database.
+#[derive(Debug, thiserror::Error)]
+pub enum VectorDbError {
+    /// An error from the arroy crate.
+    #[error("Arroy error: {0}")]
+    Arroy(#[from] arroy::Error),
+    /// An error from the Candle crate.
+    #[error("Candle error: {0}")]
+    Candle(#[from] candle_core::Error),
+    /// An error from querying an embedding id that does not exist.
+    #[error("Embedding {0:?} not found")]
+    EmbeddingNotFound(EmbeddingId),
+}
+
+impl From<heed::Error> for VectorDbError {
+    fn from(value: heed::Error) -> Self {
+        Self::Arroy(value.into())
+    }
+}
 
 /// A vector database that can be used to store embeddings and search for similar embeddings.
 ///
@@ -49,7 +72,7 @@ use serde::{Deserialize, Serialize};
 /// let query = "What is Kalosm?";
 /// // Embed the query into the vector space. We use `embed_query` instead of `embed` because some models embed queries differently than normal text.
 /// let embedding = bert.embed_query(query).await.unwrap();
-/// let closest = db.get_closest(embedding, 1).unwrap();
+/// let closest = db.search(embedding).run().unwrap();
 /// if let [closest] = closest.as_slice() {
 ///     let distance = closest.distance;
 ///     let text = embedding_id_to_sentence.get(&closest.value).unwrap();
@@ -61,7 +84,7 @@ use serde::{Deserialize, Serialize};
 #[doc(alias = "VectorDatabase")]
 #[doc(alias = "Vector Database")]
 pub struct VectorDB<S = UnknownVectorSpace> {
-    database: ArroyDatabase<Angular>,
+    database: ArroyDatabase<DotProduct>,
     metadata: Database<Str, SerdeJson<Vec<u32>>>,
     env: heed::Env,
     dim: AtomicUsize,
@@ -82,11 +105,11 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
         self.dim.store(dim, std::sync::atomic::Ordering::Relaxed);
     }
 
-    fn get_dim(&self) -> anyhow::Result<usize> {
+    fn get_dim(&self) -> Result<usize, arroy::Error> {
         let mut dims = self.dim.load(std::sync::atomic::Ordering::Relaxed);
         if dims == 0 {
             let rtxn = self.env.read_txn()?;
-            let reader = Reader::<Angular>::open(&rtxn, 0, self.database)?;
+            let reader = Reader::<DotProduct>::open(&rtxn, 0, self.database)?;
             dims = reader.dimensions();
             self.set_dim(dims);
         }
@@ -114,7 +137,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
         }?;
 
         let mut wtxn = env.write_txn()?;
-        let db: ArroyDatabase<Angular> = env.create_database(&mut wtxn, None)?;
+        let db: ArroyDatabase<DotProduct> = env.create_database(&mut wtxn, None)?;
         let metadata: Database<Str, SerdeJson<Vec<u32>>> = env.create_database(&mut wtxn, None)?;
         wtxn.commit()?;
 
@@ -127,7 +150,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
         })
     }
 
-    fn take_id(&self, wtxn: &mut RwTxn) -> anyhow::Result<EmbeddingId> {
+    fn take_id(&self, wtxn: &mut RwTxn) -> Result<EmbeddingId, heed::Error> {
         if let Some(mut free) = self.metadata.get(wtxn, "free")? {
             if let Some(id) = free.pop() {
                 self.metadata.put(wtxn, "free", &free)?;
@@ -147,8 +170,8 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
         }
     }
 
-    fn recycle_id(&self, id: EmbeddingId, wtxn: &mut RwTxn) -> anyhow::Result<()> {
-        let mut free = self.metadata.get(wtxn, "free").unwrap().unwrap_or_default();
+    fn recycle_id(&self, id: EmbeddingId, wtxn: &mut RwTxn) -> Result<(), heed::Error> {
+        let mut free = self.metadata.get(wtxn, "free")?.unwrap_or_default();
         free.push(id.0);
         self.metadata.put(wtxn, "free", &free)?;
 
@@ -156,15 +179,15 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
     }
 
     /// Get the underlying database.
-    pub fn raw(&self) -> (&ArroyDatabase<Angular>, &heed::Env) {
+    pub fn raw(&self) -> (&ArroyDatabase<DotProduct>, &heed::Env) {
         (&self.database, &self.env)
     }
 
     /// Clear the vector database.
-    pub async fn clear(&self) -> anyhow::Result<()> {
+    pub async fn clear(&self) -> Result<(), arroy::Error> {
         let mut wtxn = self.env.write_txn()?;
         let dims = self.get_dim()?;
-        let writer = Writer::<Angular>::new(self.database, 0, dims);
+        let writer = Writer::<DotProduct>::new(self.database, 0, dims);
         writer.clear(&mut wtxn)?;
 
         // Reset the ids
@@ -175,20 +198,30 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
         Ok(())
     }
 
+    /// Rebuild the database.
+    pub fn rebuild(
+        &self,
+        writer: &mut Writer<DotProduct>,
+        wtxn: &mut RwTxn,
+    ) -> Result<(), arroy::Error> {
+        let mut rng = StdRng::from_entropy();
+        writer.builder(&mut rng).build(wtxn)?;
+
+        Ok(())
+    }
+
     /// Remove an embedding from the vector database.
-    pub fn remove_embedding(&self, embedding_id: EmbeddingId) -> anyhow::Result<()> {
+    pub fn remove_embedding(&self, embedding_id: EmbeddingId) -> Result<(), arroy::Error> {
         let dims = self.get_dim()?;
 
         let mut wtxn = self.env.write_txn()?;
 
-        let writer = Writer::<Angular>::new(self.database, 0, dims);
+        let mut writer = Writer::<DotProduct>::new(self.database, 0, dims);
 
         writer.del_item(&mut wtxn, embedding_id.0)?;
         self.recycle_id(embedding_id, &mut wtxn)?;
 
-        let mut rng = StdRng::from_entropy();
-
-        writer.build(&mut wtxn, &mut rng, None)?;
+        self.rebuild(&mut writer, &mut wtxn)?;
 
         wtxn.commit()?;
 
@@ -198,22 +231,20 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
     /// Add a new embedding to the vector database.
     ///
     /// Note: Adding embeddings in a batch with [`VectorDB::add_embeddings`] will be faster.
-    pub fn add_embedding(&self, embedding: Embedding<S>) -> anyhow::Result<EmbeddingId> {
+    pub fn add_embedding(&self, embedding: Embedding<S>) -> Result<EmbeddingId, VectorDbError> {
         let embedding = embedding.vector().to_vec1()?;
 
         self.set_dim(embedding.len());
 
         let mut wtxn = self.env.write_txn()?;
 
-        let writer = Writer::<Angular>::new(self.database, 0, embedding.len());
+        let mut writer = Writer::<DotProduct>::new(self.database, 0, embedding.len());
 
         let id = self.take_id(&mut wtxn)?;
 
         writer.add_item(&mut wtxn, id.0, &embedding)?;
 
-        let mut rng = StdRng::from_entropy();
-
-        writer.build(&mut wtxn, &mut rng, None)?;
+        self.rebuild(&mut writer, &mut wtxn)?;
 
         wtxn.commit()?;
 
@@ -224,7 +255,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
     pub fn add_embeddings(
         &self,
         embedding: impl IntoIterator<Item = Embedding<S>>,
-    ) -> anyhow::Result<Vec<EmbeddingId>> {
+    ) -> Result<Vec<EmbeddingId>, VectorDbError> {
         let mut embeddings = embedding.into_iter().map(|e| e.vector().to_vec1());
         let first_embedding = match embeddings.next() {
             Some(e) => e?,
@@ -233,7 +264,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
         self.set_dim(first_embedding.len());
 
         let mut wtxn = self.env.write_txn()?;
-        let writer = Writer::<Angular>::new(self.database, 0, first_embedding.len());
+        let mut writer = Writer::<DotProduct>::new(self.database, 0, first_embedding.len());
 
         let mut ids: Vec<_> = Vec::with_capacity(embeddings.size_hint().0 + 1);
 
@@ -249,9 +280,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
             ids.push(id);
         }
 
-        let mut rng = StdRng::from_entropy();
-
-        writer.build(&mut wtxn, &mut rng, None)?;
+        self.rebuild(&mut writer, &mut wtxn)?;
 
         wtxn.commit()?;
 
@@ -259,13 +288,13 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
     }
 
     /// Get the embedding for an embedding id.
-    pub fn get_embedding(&self, embedding_id: EmbeddingId) -> anyhow::Result<Embedding<S>> {
+    pub fn get_embedding(&self, embedding_id: EmbeddingId) -> Result<Embedding<S>, VectorDbError> {
         let rtxn = self.env.read_txn()?;
-        let reader = Reader::<Angular>::open(&rtxn, 0, self.database)?;
+        let reader = Reader::<DotProduct>::open(&rtxn, 0, self.database)?;
 
         let embedding = reader
             .item_vector(&rtxn, embedding_id.0)?
-            .ok_or_else(|| anyhow::anyhow!("Embedding not found"))?;
+            .ok_or_else(|| VectorDbError::EmbeddingNotFound(embedding_id))?;
 
         let shape = (embedding.len(),);
         Ok(Embedding::new(Tensor::from_vec(
@@ -276,16 +305,114 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
     }
 
     /// Get the closest N embeddings to the given embedding.
-    pub fn get_closest(
-        &self,
-        embedding: Embedding<S>,
-        n: usize,
-    ) -> anyhow::Result<Vec<VectorDBSearchResult>> {
-        let rtxn = self.env.read_txn()?;
-        let reader = Reader::<Angular>::open(&rtxn, 0, self.database)?;
+    pub fn search<'a>(&'a self, embedding: &'a Embedding<S>) -> VectorDBSearchBuilder<'a, S> {
+        VectorDBSearchBuilder {
+            db: self,
+            embedding,
+            results: None,
+            filter: None,
+        }
+    }
+}
 
-        let vector = embedding.vector().to_vec1()?;
-        let arroy_results = reader.nns_by_vector(&rtxn, &vector, n, None, None)?;
+/// A trait for anything that can be used to filter the results of a vector search.
+pub trait IntoVectorDbSearchFilter<S, M> {
+    /// Convert the filter into a set of candidates.
+    fn into_vector_db_search_filter(self, db: &VectorDB<S>) -> Candidates;
+}
+
+impl<S: VectorSpace> IntoVectorDbSearchFilter<S, ()> for Candidates {
+    fn into_vector_db_search_filter(self, _: &VectorDB<S>) -> Candidates {
+        self
+    }
+}
+
+/// A marker type that allows kalosm to specialize the [`IntoVectorDbSearchFilter`] trait for iterators.
+pub struct IteratorMarker;
+
+impl<S, I> IntoVectorDbSearchFilter<S, IteratorMarker> for I
+where
+    S: VectorSpace,
+    I: IntoIterator<Item = EmbeddingId>,
+{
+    fn into_vector_db_search_filter(self, _: &VectorDB<S>) -> Candidates {
+        let mut candidates = Candidates::new();
+        for id in self {
+            candidates.insert(id.0);
+        }
+        candidates
+    }
+}
+
+/// A marker type that allows kalosm to specialize the [`IntoVectorDbSearchFilter`] trait for closures.
+pub struct ClosureMarker;
+
+impl<S, I> IntoVectorDbSearchFilter<S, ClosureMarker> for I
+where
+    S: VectorSpace,
+    I: FnMut(Embedding<S>) -> bool,
+{
+    fn into_vector_db_search_filter(mut self, db: &VectorDB<S>) -> Candidates {
+        let mut candidates = Candidates::new();
+        let rtxn = match db.env.read_txn() {
+            Ok(rtxn) => rtxn,
+            Err(err) => {
+                tracing::error!("Error opening read transaction: {:?}", err);
+                return candidates;
+            }
+        };
+        let reader = match Reader::<DotProduct>::open(&rtxn, 0, db.database) {
+            Ok(reader) => reader,
+            Err(err) => {
+                tracing::error!("Error opening reader: {:?}", err);
+                return candidates;
+            }
+        };
+        for (key, tensor) in reader.iter(&rtxn).ok().into_iter().flatten().flatten() {
+            let embedding = Embedding::from(tensor);
+            if self(embedding) {
+                candidates.insert(key);
+            }
+        }
+        candidates
+    }
+}
+
+/// A builder for searching for embeddings in a vector database.
+pub struct VectorDBSearchBuilder<'a, S: VectorSpace> {
+    db: &'a VectorDB<S>,
+    embedding: &'a Embedding<S>,
+    results: Option<usize>,
+    filter: Option<Candidates>,
+}
+
+impl<'a, S: VectorSpace> VectorDBSearchBuilder<'a, S> {
+    /// Set the number of results to return. Defaults to 10.
+    pub fn with_results(mut self, results: usize) -> Self {
+        self.results = Some(results);
+        self
+    }
+
+    /// Set a filter to apply to the results. Only vectors that pass the filter will be returned.
+    pub fn with_filter<Marker>(
+        mut self,
+        filter: impl IntoVectorDbSearchFilter<S, Marker> + Send + Sync + 'static,
+    ) -> Self {
+        self.filter = Some(filter.into_vector_db_search_filter(self.db));
+        self
+    }
+
+    /// Run the search and return the results.
+    pub fn run(self) -> Result<Vec<VectorDBSearchResult>, VectorDbError> {
+        let rtxn = self.db.env.read_txn()?;
+        let reader = Reader::<DotProduct>::open(&rtxn, 0, self.db.database)?;
+
+        let vector = self.embedding.vector().to_vec1()?;
+        let mut query = reader.nns(self.results.unwrap_or(10));
+        if let Some(filter) = self.filter.as_ref() {
+            query.candidates(filter);
+        }
+        let arroy_results = query.by_vector(&rtxn, &vector)?;
 
         Ok(arroy_results
             .into_iter()
@@ -298,7 +425,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
 }
 
 /// A resulting point from a search.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct VectorDBSearchResult {
     /// The distance from the searched point.
     pub distance: f32,
@@ -309,3 +436,59 @@ pub struct VectorDBSearchResult {
 /// A unique identifier for an embedding. If you delete an embedding, the id will be recycled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct EmbeddingId(pub u32);
+
+#[tokio::test]
+async fn test_vector_db_add_embedding() {
+    let db: VectorDB = VectorDB::new().unwrap();
+    let id = db.add_embedding(Embedding::from([1.0, 2.0, 3.0])).unwrap();
+    assert_eq!(db.get_embedding(id).unwrap().to_vec(), vec![1.0, 2.0, 3.0]);
+    db.remove_embedding(id).unwrap();
+    assert!(db.get_embedding(id).is_err());
+}
+
+#[tokio::test]
+async fn test_vector_db_get_closest() {
+    let db: VectorDB = VectorDB::new().unwrap();
+    let first_vector = Embedding::from([1.0, 2.0, 3.0]);
+    let second_embedding = Embedding::from([-1.0, 2.0, 3.0]);
+    let id1 = db.add_embedding(first_vector.clone()).unwrap();
+    let id2 = db.add_embedding(second_embedding.clone()).unwrap();
+    assert_eq!(
+        db.search(&first_vector)
+            .run()
+            .unwrap()
+            .iter()
+            .map(|r| r.value)
+            .collect::<Vec<_>>(),
+        vec![id1]
+    );
+    assert_eq!(
+        db.search(&second_embedding)
+            .run()
+            .unwrap()
+            .iter()
+            .map(|r| r.value)
+            .collect::<Vec<_>>(),
+        vec![id2]
+    );
+    let third_embedding = Embedding::from([1.0, 0.0, 0.0]);
+    assert_eq!(
+        db.search(&third_embedding)
+            .run()
+            .unwrap()
+            .iter()
+            .map(|r| r.value)
+            .collect::<Vec<_>>(),
+        vec![id1]
+    );
+    assert_eq!(
+        db.search(&third_embedding)
+            .with_filter(|vector: Embedding<UnknownVectorSpace>| vector.to_vec()[0] < 0.0)
+            .run()
+            .unwrap()
+            .iter()
+            .map(|r| r.value)
+            .collect::<Vec<_>>(),
+        vec![id1]
+    );
+}

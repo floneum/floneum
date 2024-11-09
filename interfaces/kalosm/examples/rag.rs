@@ -45,7 +45,8 @@ async fn main() -> anyhow::Result<()> {
 
         // Search for relevant context in the document engine
         let context = document_table
-            .select_nearest(&user_question, 1)
+            .search(&user_question)
+            .with_results(1)
             .await?
             .into_iter()
             .map(|document| {

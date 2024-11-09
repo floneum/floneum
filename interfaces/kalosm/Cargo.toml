@@ -10,15 +10,19 @@ repository = "https://github.com/floneum/floneum"
 
 [dependencies]
 anyhow = "1.0.75"
+arroy = "0.5.0"
 async-trait = "0.1.74"
+candle-core.workspace = true
 comfy-table = "7.1.0"
 ego-tree = "0.6.2"
 futures-util = "0.3.28"
 hdrhistogram = "7.5.4"
+heed = "0.20.5"
 image = "0.24.7"
 num-traits = "0.2.17"
 once_cell = "1.19.0"
 rand = "0.8.5"
+thiserror = "2.0.1"
 
 [dependencies.kalosm-common]
 version = "0.3.0"
