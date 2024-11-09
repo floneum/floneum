@@ -361,7 +361,6 @@ impl<C: Class> Classifier<C> {
     pub fn train(
         &mut self,
         m: &ClassificationDataset,
-        dev: &Device,
         epochs: usize,
         learning_rate: f64,
         batch_size: usize,
@@ -373,11 +372,11 @@ impl<C: Class> Classifier<C> {
         let train_votes = m.train_inputs.chunk(train_len, 0)?;
 
         // Force the layers to be initialized before we use the varmap
-        self.forward_t(&train_votes[0].to_device(dev)?, true)?;
+        self.forward_t(&train_votes[0].to_device(&self.device)?, true)?;
 
         let mut sgd = candle_nn::AdamW::new_lr(self.varmap.all_vars(), learning_rate)?;
-        let test_votes = m.test_inputs.to_device(dev)?;
-        let test_results = m.test_classes.to_device(dev)?;
+        let test_votes = m.test_inputs.to_device(&self.device)?;
+        let test_results = m.test_classes.to_device(&self.device)?;
         let mut final_accuracy: f32 = 0.0;
         let mut rng = rand::thread_rng();
         let mut batch = 0;
@@ -395,7 +394,7 @@ impl<C: Class> Classifier<C> {
                             .collect::<Vec<_>>(),
                         0,
                     )?
-                    .to_device(dev)?;
+                    .to_device(&self.device)?;
                     let train_votes = Tensor::cat(
                         &indices
                             .iter()
@@ -404,7 +403,7 @@ impl<C: Class> Classifier<C> {
                             .collect::<Vec<_>>(),
                         0,
                     )?
-                    .to_device(dev)?;
+                    .to_device(&self.device)?;
 
                     let logits = self.forward_t(&train_votes, true)?;
                     let log_sm = ops::log_softmax(&logits, D::Minus1)?;
