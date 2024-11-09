@@ -300,18 +300,18 @@ impl<
         Doc: DeserializeOwned,
         Model: Embedder,
         E: IntoEmbedding<Model::VectorSpace>,
-        F: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, Model::VectorSpace, Candidates>,
+        F: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, Model::VectorSpace, M>,
         Chkr: Chunker,
         M,
     > DocumentTableSearchBuilder<'a, Conn, Doc, Model, Chkr, E, F, M>
 {
     /// Set a filter to apply to the results. Only vectors that pass the filter will be returned.
-    pub async fn with_filter<Marker, F2>(
+    pub fn with_filter<Marker, F2>(
         self,
         filter: F2,
-    ) -> DocumentTableSearchBuilder<'a, Conn, Doc, Model, Chkr, E, F2, M>
+    ) -> DocumentTableSearchBuilder<'a, Conn, Doc, Model, Chkr, E, F2, Marker>
     where
-        F: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, Model::VectorSpace, Marker>
+        F2: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, Model::VectorSpace, Marker>
             + Send
             + Sync
             + 'static,

@@ -293,28 +293,32 @@ pub struct IteratorMarker;
 impl<C: Connection, R: DeserializeOwned + Send + Sync, S: VectorSpace, I>
     IntoEmbeddingIndexedTableSearchFilter<C, R, S, IteratorMarker> for I
 where
-    I: Iterator<Item = Id> + Send + Sync + 'static,
+    I: IntoIterator<Item = Id>,
+    I::IntoIter: Send + Sync + 'static,
 {
-    async fn into_embedding_indexed_table_search_filter(
+    fn into_embedding_indexed_table_search_filter(
         self,
         table: &EmbeddingIndexedTable<C, R, S>,
-    ) -> Result<Candidates, EmbeddedIndexedTableError> {
-        let mut candidates = Candidates::new();
-        for id in self {
-            let thing = Thing {
-                tb: table.table.clone(),
-                id,
-            };
-            let item: Option<ObjectWithEmbeddingIds<R>> = table.db.select(thing).await?;
-            if let Some(item) = item {
-                for (_, embeddings) in item.chunks.iter() {
-                    for embedding_id in embeddings.iter() {
-                        candidates.insert(embedding_id.0);
+    ) -> impl Future<Output = Result<Candidates, EmbeddedIndexedTableError>> + Send {
+        let ids = self.into_iter();
+        async move {
+            let mut candidates = Candidates::new();
+            for id in ids {
+                let thing = Thing {
+                    tb: table.table.clone(),
+                    id,
+                };
+                let item: Option<ObjectWithEmbeddingIds<R>> = table.db.select(thing).await?;
+                if let Some(item) = item {
+                    for (_, embeddings) in item.chunks.iter() {
+                        for embedding_id in embeddings.iter() {
+                            candidates.insert(embedding_id.0);
+                        }
                     }
                 }
             }
+            Ok(candidates)
         }
-        Ok(candidates)
     }
 }
 
