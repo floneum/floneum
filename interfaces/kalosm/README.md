@@ -139,7 +139,7 @@ use kalosm::language::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut llm = Gpt4::default();
+    let mut llm = Gpt3_5::default();
     let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
     print!("{}", prompt);
 
