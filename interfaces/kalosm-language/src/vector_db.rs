@@ -72,7 +72,7 @@ impl From<heed::Error> for VectorDbError {
 /// let query = "What is Kalosm?";
 /// // Embed the query into the vector space. We use `embed_query` instead of `embed` because some models embed queries differently than normal text.
 /// let embedding = bert.embed_query(query).await.unwrap();
-/// let closest = db.search(embedding).run().unwrap();
+/// let closest = db.search(&embedding).run().unwrap();
 /// if let [closest] = closest.as_slice() {
 ///     let distance = closest.distance;
 ///     let text = embedding_id_to_sentence.get(&closest.value).unwrap();
