@@ -276,8 +276,8 @@ pub trait IntoEmbeddingIndexedTableSearchFilter<C: Connection, R, S: VectorSpace
     ) -> impl std::future::Future<Output = Result<Candidates, EmbeddedIndexedTableError>> + Send;
 }
 
-impl<C: Connection, R: Send + Sync, S: VectorSpace> IntoEmbeddingIndexedTableSearchFilter<C, R, S, ()>
-    for Candidates
+impl<C: Connection, R: Send + Sync, S: VectorSpace>
+    IntoEmbeddingIndexedTableSearchFilter<C, R, S, ()> for Candidates
 {
     async fn into_embedding_indexed_table_search_filter(
         self,
@@ -392,7 +392,7 @@ impl<
 impl<
         'a,
         C: Connection + 'a,
-        R: DeserializeOwned + Send + Sync+ 'a,
+        R: DeserializeOwned + Send + Sync + 'a,
         S: VectorSpace + 'a,
         F: IntoEmbeddingIndexedTableSearchFilter<C, R, S, M> + Send + 'a,
         M: Send + 'a,
