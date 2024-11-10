@@ -351,7 +351,7 @@ impl<C: Class> Classifier<C> {
     /// }
     ///
     /// let dev = candle_core::Device::Cpu;
-    /// let mut classifier = Classifier::<MyClass>::new(&dev, ClassifierConfig::new()).unwrap();
+    /// let classifier = Classifier::<MyClass>::new(&dev, ClassifierConfig::new()).unwrap();
     /// let mut dataset = ClassificationDatasetBuilder::new();
     /// dataset.add(vec![1.0, 2.0, 3.0, 4.0], MyClass::Person);
     /// dataset.add(vec![4.0, 3.0, 2.0, 1.0], MyClass::Thing);
@@ -508,7 +508,7 @@ impl<C: Class> Classifier<C> {
     /// }
     ///
     /// let dev = candle_core::Device::Cpu;
-    /// let mut classifier = Classifier::<MyClass>::new(&dev, ClassifierConfig::new()).unwrap();
+    /// let classifier = Classifier::<MyClass>::new(&dev, ClassifierConfig::new()).unwrap();
     /// let result = classifier.run(&[1.0, 2.0, 3.0, 4.0]).unwrap();
     /// println!("Result: {:?}", result);
     /// ```

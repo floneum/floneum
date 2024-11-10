@@ -160,7 +160,7 @@ for statement in STATEMENTS {
 let dev = accelerated_device_if_available()?;
 let dataset = dataset.build(&dev)?;
     // Create a classifier
-    let mut classifier = TextClassifier::<SentenceType, BertSpace>::new(Classifier::new(
+    let classifier = TextClassifier::<SentenceType, BertSpace>::new(Classifier::new(
         &dev,
         ClassifierConfig::new().layers_dims([10]),
     )?);
@@ -235,7 +235,7 @@ Next, train a classifier on the dataset:
 # let dev = accelerated_device_if_available()?;
 # let dataset = dataset.build(&dev)?;
 // Create a classifier
-let mut classifier = TextClassifier::<SentenceType, BertSpace>::new(Classifier::new(
+let classifier = TextClassifier::<SentenceType, BertSpace>::new(Classifier::new(
     &dev,
     ClassifierConfig::new().layers_dims([10]),
 )?);

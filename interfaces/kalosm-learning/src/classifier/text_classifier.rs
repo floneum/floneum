@@ -202,7 +202,7 @@ impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
 ///
 ///     let config = classifier.config();
 ///     classifier.save("classifier.safetensors")?;
-///     let mut classifier = Classifier::<MyClass>::load("classifier.safetensors", &dev, config)?;
+///     let classifier = Classifier::<MyClass>::load("classifier.safetensors", &dev, config)?;
 ///
 ///     let tests = [
 ///         "Who is the president of Russia?",
