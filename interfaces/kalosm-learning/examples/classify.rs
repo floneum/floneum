@@ -79,7 +79,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let dataset = dataset.build(&dev)?;
 
-    let mut classifier =
+    let classifier =
         TextClassifier::<MyClass, BertSpace>::new(Classifier::new(&dev, ClassifierConfig::new())?);
 
     classifier.train(

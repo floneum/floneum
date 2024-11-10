@@ -359,7 +359,7 @@ impl<C: Class> Classifier<C> {
     /// classifier.train(&dataset.build(&dev).unwrap(), &dev, 20, 0.05, 3).unwrap();
     /// ```
     pub fn train(
-        &mut self,
+        &self,
         m: &ClassificationDataset,
         epochs: usize,
         learning_rate: f64,
@@ -512,7 +512,7 @@ impl<C: Class> Classifier<C> {
     /// let result = classifier.run(&[1.0, 2.0, 3.0, 4.0]).unwrap();
     /// println!("Result: {:?}", result);
     /// ```
-    pub fn run(&mut self, input: &[f32]) -> Result<ClassifierOutput<C>> {
+    pub fn run(&self, input: &[f32]) -> Result<ClassifierOutput<C>> {
         let input = Tensor::from_vec(input.to_vec(), (1, input.len()), &self.device)?;
         let logits = self.forward_t(&input, false)?;
         let classes = logits.flatten_all()?;

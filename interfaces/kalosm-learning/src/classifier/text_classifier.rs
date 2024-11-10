@@ -237,13 +237,13 @@ impl<T: Class, S: VectorSpace + Send + Sync + 'static> TextClassifier<T, S> {
     }
 
     /// Runs the classifier on the given input.
-    pub fn run(&mut self, input: Embedding<S>) -> candle_core::Result<ClassifierOutput<T>> {
+    pub fn run(&self, input: Embedding<S>) -> candle_core::Result<ClassifierOutput<T>> {
         self.model.run(&input.to_vec())
     }
 
     /// Trains the classifier on the given dataset.
     pub fn train(
-        &mut self,
+        &self,
         dataset: &ClassificationDataset,
         epochs: usize,
         learning_rate: f64,
@@ -374,7 +374,7 @@ async fn simplified() -> anyhow::Result<()> {
 
     let config = classifier.model.config();
     classifier.save("classifier.safetensors")?;
-    let mut classifier = Classifier::<MyClass>::load("classifier.safetensors", &dev, config)?;
+    let classifier = Classifier::<MyClass>::load("classifier.safetensors", &dev, config)?;
 
     let tests = [
         "Who is the president of Russia?",
