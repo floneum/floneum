@@ -173,7 +173,7 @@ impl<C: Class> ClassificationDatasetBuilder<C> {
         // The test classes are 1/4 of the train classes
         let test_class_counts_goal = class_counts
             .iter()
-            .map(|(class, count)| (*class, *count / 4))
+            .map(|(class, count)| (*class, 1.max(*count / 4)))
             .collect::<HashMap<_, _>>();
         let mut test_class_counts = HashMap::new();
 
