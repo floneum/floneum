@@ -32,7 +32,7 @@ pub fn derive_class(input: TokenStream) -> TokenStream {
 
     let expanded = quote! {
         impl Class for #ident {
-            const CLASSES: u32 = #classes;
+            const CLASSES: Option<u32> = Some(#classes);
 
             fn to_class(&self) -> u32 {
                 match self {

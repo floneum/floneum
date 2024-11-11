@@ -115,7 +115,9 @@ impl VectorDBWithDocuments {
             .deref()
             .as_ref()
             .map_err(Clone::clone)?
-            .get_closest(embedding.vector.into(), count)?;
+            .search(&embedding.vector.into())
+            .with_results(count)
+            .run()?;
         Ok(results
             .into_iter()
             .filter_map(|result| {
