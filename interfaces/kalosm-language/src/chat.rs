@@ -218,6 +218,11 @@ impl<Model: SyncModel> ChatSession<Model> {
             }
         }
 
+        self.history.write().unwrap().push(ChatHistoryItem {
+            ty: MessageType::ModelAnswer,
+            contents: bot_response,
+        });
+
         Ok(())
     }
 
