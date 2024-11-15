@@ -37,9 +37,11 @@ pub enum WhisperSource {
     DistilLargeV2,
     /// The distil-large-v3 model.
     DistilLargeV3,
-    #[default]
     /// The quantized distil-large-v3 model.
     QuantizedDistilLargeV3,
+    #[default]
+    /// The quantized large-v3-turbo model.
+    QuantizedLargeV3Turbo,
 }
 
 impl WhisperSource {
@@ -55,7 +57,8 @@ impl WhisperSource {
             | Self::LargeV2
             | Self::DistilLargeV2
             | Self::DistilLargeV3
-            | Self::QuantizedDistilLargeV3 => true,
+            | Self::QuantizedDistilLargeV3
+            | Self::QuantizedLargeV3Turbo => true,
             Self::QuantizedTinyEn
             | Self::TinyEn
             | Self::BaseEn
@@ -74,6 +77,7 @@ impl WhisperSource {
                 | Self::QuantizedTinyEn
                 | Self::QuantizedDistilMediumEn
                 | Self::QuantizedDistilLargeV3
+                | Self::QuantizedLargeV3Turbo
         )
     }
 
@@ -99,6 +103,9 @@ impl WhisperSource {
             }
             Self::QuantizedDistilLargeV3 => {
                 ("Demonthos/candle-quantized-whisper-distil-v3", "main")
+            }
+            Self::QuantizedLargeV3Turbo => {
+                ("Demonthos/candle-quantized-whisper-large-v3-turbo", "main")
             }
         }
     }
@@ -160,6 +167,7 @@ impl Display for WhisperSource {
             Self::DistilLargeV3 => write!(f, "distil_large_v3"),
             Self::QuantizedDistilMediumEn => write!(f, "quantized_distil_medium_en"),
             Self::QuantizedDistilLargeV3 => write!(f, "quantized_distil_large_v3"),
+            Self::QuantizedLargeV3Turbo => write!(f, "quantized_large_v3_turbo"),
         }
     }
 }
