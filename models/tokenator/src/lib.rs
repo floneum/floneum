@@ -460,7 +460,7 @@ impl MergeLayerQueue {
                 tokenizer: &FastBPETokenizer,
                 bytes: &[u8],
                 token_buffer: &mut [TokenData],
-                skip_list: &mut [u64; 256 / 64],
+                #[cfg(feature = "skip-list")] skip_list: &mut [u64; 256 / 64],
             ) {
                 let mut prev_level_resolved = resolved;
                 fn add_single_byte<const LAST: bool>(
@@ -468,7 +468,7 @@ impl MergeLayerQueue {
                     tokenizer: &FastBPETokenizer,
                     bytes: &[u8],
                     token_buffer: &mut [TokenData],
-                    skip_list: &mut [u64; 256 / 64],
+                    #[cfg(feature = "skip-list")] skip_list: &mut [u64; 256 / 64],
                 ) {
                     let b = unsafe { *bytes.get_unchecked(index) };
                     let out = unsafe { token_buffer.get_unchecked_mut(index) };
@@ -490,16 +490,16 @@ impl MergeLayerQueue {
                             token,
                             next_token,
                             &mut out.merge,
-                            skip_list,
+                            #[cfg(feature = "skip-list")] skip_list,
                         );
                     } else {
                         out.merge.level = u8::MAX;
                     }
                 }
                 for i in start..resolved - 1 {
-                    add_single_byte::<false>(i, tokenizer, bytes, token_buffer, skip_list);
+                    add_single_byte::<false>(i, tokenizer, bytes, token_buffer, #[cfg(feature = "skip-list")] skip_list);
                 }
-                add_single_byte::<true>(resolved - 1, tokenizer, bytes, token_buffer, skip_list);
+                add_single_byte::<true>(resolved - 1, tokenizer, bytes, token_buffer,#[cfg(feature = "skip-list")] skip_list);
                 let next_token = unsafe { token_buffer.get_unchecked(start).token };
                 // after adding a new byte, we need to update the merge for the previous token
                 // first find the previous token
@@ -510,7 +510,7 @@ impl MergeLayerQueue {
                         prev_token.token,
                         next_token,
                         &mut prev_token.merge,
-                        skip_list,
+                        #[cfg(feature = "skip-list")] skip_list,
                     );
                 }
                 for i in 0..levels.len() {
@@ -527,6 +527,7 @@ impl MergeLayerQueue {
                     }
 
                     let mut unchanged = true;
+                    #[cfg(feature = "skip-list")] 
                     if get_bitset(skip_list, i as u8) && prev_level_resolved > 0 {
                         let skip_to = prev_level_resolved;
                         tracing::trace!("skipping to {skip_to} for level {i}");
@@ -559,7 +560,7 @@ impl MergeLayerQueue {
                             level.skip_to(
                                 token_buffer,
                                 tokenizer,
-                                skip_list,
+                                #[cfg(feature = "skip-list")] skip_list,
                                 last_baby,
                                 #[cfg(debug_assertions)]
                                 {
@@ -574,7 +575,7 @@ impl MergeLayerQueue {
                                     token_buffer,
                                     i as u8,
                                     tokenizer,
-                                    skip_list,
+                                    #[cfg(feature = "skip-list")] skip_list,
                                 );
                             }
                         }
@@ -582,7 +583,15 @@ impl MergeLayerQueue {
                         level = &mut levels[i];
                         while level.current_index < prev_level_resolved as u16 {
                             unchanged &=
-                                level.process_token(token_buffer, i as u8, tokenizer, skip_list);
+                                level.process_token(token_buffer, i as u8, tokenizer, #[cfg(feature = "skip-list")] skip_list);
+                        }
+                    }
+                    #[cfg(not(feature = "skip-list"))]
+                    {
+                        level = &mut levels[i];
+                        while level.current_index < prev_level_resolved as u16 {
+                            unchanged &=
+                                level.process_token(token_buffer, i as u8, tokenizer, #[cfg(feature = "skip-list")] skip_list);
                         }
                     }
 
@@ -591,7 +600,7 @@ impl MergeLayerQueue {
                         level.finish(
                             token_buffer,
                             tokenizer,
-                            skip_list,
+                            #[cfg(feature = "skip-list")] skip_list,
                             #[cfg(debug_assertions)]
                             {
                                 i as u8
@@ -609,7 +618,7 @@ impl MergeLayerQueue {
             // const JUMP_BY: usize = 32;
             const JUMP_BY: usize = 128;
             // const JUMP_BY: usize = 1;
-            let mut last = 0;
+            let mut last = 0;#[cfg(feature = "skip-list")] 
             let mut skip_list = [0u64; 256 / 64];
             for resolved in (JUMP_BY..regex_match.len()).step_by(JUMP_BY) {
                 add_chunk_of_bytes::<false>(
@@ -619,7 +628,7 @@ impl MergeLayerQueue {
                     tokenizer,
                     bytes,
                     token_buffer,
-                    &mut skip_list,
+                    #[cfg(feature = "skip-list")] &mut skip_list,
                 );
                 last = resolved;
             }
@@ -632,7 +641,7 @@ impl MergeLayerQueue {
                     tokenizer,
                     bytes,
                     token_buffer,
-                    &mut skip_list,
+                    #[cfg(feature = "skip-list")] &mut skip_list,
                 );
             }
 
@@ -712,6 +721,7 @@ impl MergeLayerQueue {
         *self = Self::new();
     }
 
+    #[cfg(feature = "skip-list")] 
     fn skip_to(
         &mut self,
         tokens: &mut [TokenData],
@@ -745,6 +755,7 @@ impl MergeLayerQueue {
         tokens: &mut [TokenData],
         level: u8,
         tokenizer: &FastBPETokenizer,
+        #[cfg(feature = "skip-list")] 
         skip_list: &mut [u64; 256 / 64],
     ) -> bool {
         let current_token = unsafe { tokens.get_unchecked(self.current_index as usize) };
@@ -771,7 +782,7 @@ impl MergeLayerQueue {
                 tokens,
                 &tokenizer.passes_might_merge_table,
                 tokenizer,
-                skip_list,
+                #[cfg(feature = "skip-list")] skip_list,
                 #[cfg(debug_assertions)]
                 level,
             );
@@ -789,7 +800,7 @@ impl MergeLayerQueue {
         &mut self,
         tokens: &mut [TokenData],
         tokenizer: &FastBPETokenizer,
-        skip_list: &mut [u64; 256 / 64],
+        #[cfg(feature = "skip-list")] skip_list: &mut [u64; 256 / 64],
         #[cfg(debug_assertions)] level: u8,
     ) {
         // Flush the buffer if it is not empty
@@ -799,7 +810,7 @@ impl MergeLayerQueue {
                 tokens,
                 &tokenizer.passes_might_merge_table,
                 tokenizer,
-                skip_list,
+                #[cfg(feature = "skip-list")] skip_list,
                 #[cfg(debug_assertions)]
                 level,
             );
@@ -829,7 +840,7 @@ impl MergeLayerQueue {
         tokens: &mut [TokenData],
         merge_table: &MergeTable,
         tokenizer: &FastBPETokenizer,
-        skip_list: &mut [u64; 256 / 64],
+        #[cfg(feature = "skip-list")] skip_list: &mut [u64; 256 / 64],
         #[cfg(debug_assertions)] level: u8,
     ) {
         let len = self.decreasing_subsequence_run_len();
@@ -884,7 +895,7 @@ impl MergeLayerQueue {
                     last_token.token,
                     new_token,
                     &mut last_token.merge,
-                    skip_list,
+                    #[cfg(feature = "skip-list")] skip_list,
                 );
             }
             self.add_unprocessed_raw(tokens, new_token_data, index as usize);
@@ -896,7 +907,7 @@ impl MergeLayerQueue {
                 if let Some(next) = tokens.get(self.decreasing_subsequence_run_start() as usize) {
                     let next = next.token;
                     let last_token = unsafe { tokens.get_unchecked_mut(last) };
-                    merge_table.get(last_token.token, next, &mut last_token.merge, skip_list);
+                    merge_table.get(last_token.token, next, &mut last_token.merge, #[cfg(feature = "skip-list")] skip_list);
                 }
             }
         }
@@ -978,7 +989,7 @@ impl MergeTable {
         input: u32,
         output: u32,
         out: &mut MergePriority,
-        skip_list: &mut [u64; 256 / 64],
+        #[cfg(feature = "skip-list")] skip_list: &mut [u64; 256 / 64],
     ) {
         let (index, key) = Self::index(input, output);
 
@@ -986,7 +997,7 @@ impl MergeTable {
 
         let slice = &self.short_bump[value.ptr as usize..value.end as usize];
         if let Some(found) = slice.iter().find(|item| item.key == key) {
-            set_bitset(skip_list, found.level);
+            #[cfg(feature = "skip-list")] set_bitset(skip_list, found.level);
             *out = *found;
         } else {
             out.level = u8::MAX;
@@ -994,11 +1005,13 @@ impl MergeTable {
     }
 }
 
+#[cfg(feature = "skip-list")] 
 fn set_bitset(skip_list: &mut [u64; 256 / 64], level: u8) {
     let skip_value = &mut skip_list[level as usize / 64];
     *skip_value |= 1u64 << (level as usize % 64);
 }
 
+#[cfg(feature = "skip-list")] 
 fn get_bitset(skip_list: &[u64; 256 / 64], level: u8) -> bool {
     let skip_value = &skip_list[level as usize / 64];
     (*skip_value & (1u64 << (level as usize % 64))) == 0
@@ -1010,7 +1023,7 @@ fn test_empty_merge_table() {
     for x in 0..SIZE {
         for y in 0..SIZE {
             let mut out = MergePriority::DEFAULT;
-            table.get(x, y, &mut out, &mut [0; 4]);
+            table.get(x, y, &mut out, #[cfg(feature = "skip-list")] &mut [0; 4]);
             assert_eq!(out.level, u8::MAX);
         }
     }
@@ -1038,13 +1051,13 @@ fn test_partial_merge_table() {
                 merges.iter().find(|(_, _, pair, _)| pair == &[x, y])
             {
                 let mut result = MergePriority::DEFAULT;
-                table.get(x, y, &mut result, &mut [0; 4]);
+                table.get(x, y, &mut result,#[cfg(feature = "skip-list")]  &mut [0; 4]);
                 assert_eq!(result.new_token, *new_token);
                 assert_eq!(result.level, *level);
                 assert_eq!(result.rank, *rank);
             } else {
                 let mut out = MergePriority::DEFAULT;
-                table.get(x, y, &mut out, &mut [0; 4]);
+                table.get(x, y, &mut out, #[cfg(feature = "skip-list")] &mut [0; 4]);
                 assert_eq!(out.level, u8::MAX);
             }
         }
@@ -1081,16 +1094,17 @@ fn test_random_merge_table() {
         .collect::<HashMap<_, _>>();
 
     let table = MergeTable::new(merges.iter().copied());
+    #[cfg(feature = "skip-list")] 
     let mut skip_list = [0; 4];
     for x in 0..SIZE {
         for y in 0..SIZE {
             if let Some(merge_priority) = map.get(&[x, y]) {
                 let mut result = MergePriority::DEFAULT;
-                table.get(x, y, &mut result, &mut skip_list);
+                table.get(x, y, &mut result,#[cfg(feature = "skip-list")]  &mut skip_list);
                 assert_eq!(result, *merge_priority);
             } else {
                 let mut out = MergePriority::DEFAULT;
-                table.get(x, y, &mut out, &mut skip_list);
+                table.get(x, y, &mut out,#[cfg(feature = "skip-list")]  &mut skip_list);
                 assert_eq!(out.level, u8::MAX);
             }
         }
