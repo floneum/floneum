@@ -31,12 +31,15 @@ const EXAMPLES: &[(&str, &str)]= &[
 
 #[tokio::main]
 async fn main() {
-    let mut llm = Phi::v2().await.unwrap();
-    const PREFIX: &str = "Questions that are answered by the previous text: ";
+    let mut llm = Llama::builder()
+        .with_source(LlamaSource::qwen_2_5_0_5b_instruct())
+        .build()
+        .await
+        .unwrap();
     const QUESTION_STARTERS: [&str; 9] = [
         "Who", "What", "When", "Where", "Why", "How", "Which", "Whom", "Whose",
     ];
-    let constraints = LiteralParser::new(PREFIX).then(
+    let constraints =
         IndexParser::new(
             QUESTION_STARTERS
                 .iter()
@@ -47,8 +50,7 @@ async fn main() {
         .then(StopOn::new("?").filter_characters(
             |c| matches!(c, ' ' | '?' | 'a'..='z' | 'A'..='Z' | '0'..='9' | ','),
         ))
-        .repeat(1..=5),
-    );
+        .repeat(1..=5);
     let task = Task::builder("You generate hypothetical questions that may be answered by the given text. The questions restate any information necessary to understand the question")
         .with_constraints(constraints);
     let mut annealing = kalosm::PromptAnnealer::builder(&mut llm, EXAMPLES, task)
