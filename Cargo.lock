@@ -3675,6 +3675,7 @@ dependencies = [
  "kalosm-streams",
  "nnnoiseless",
  "ort",
+ "ort-sys",
  "rand 0.8.5",
  "rodio",
  "rwhisper",
@@ -4816,9 +4817,9 @@ dependencies = [
 
 [[package]]
 name = "ort-sys"
-version = "2.0.0-rc.5"
+version = "2.0.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec6fe264a9467cd0c19cbee07afe689fae9480c4706c4a1a00b5e64ff99ea83a"
+checksum = "0f2f6427193c808010b126bef45ebd33f8dee43770223a1200f84d3734d6c656"
 dependencies = [
  "flate2",
  "pkg-config",
