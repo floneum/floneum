@@ -17,8 +17,8 @@ never-inline = []
 skip-list = []
 
 [dev-dependencies]
+rand = "0.8.5"
 # criterion = "0.3"
-# rand = "0.8.5"
 # tokenizers = "0.20.0"
 # pretty_assertions = "1.4.1"
 # postcard = { version = "1.0.10", features = ["use-std"] }
