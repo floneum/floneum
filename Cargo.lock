@@ -8269,6 +8269,7 @@ version = "0.1.0"
 dependencies = [
  "rand 0.8.5",
  "tracing",
+ "tracing-subscriber 0.3.18",
 ]
 
 [[package]]

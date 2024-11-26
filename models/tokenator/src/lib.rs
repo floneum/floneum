@@ -95,8 +95,7 @@ macro_rules! simd_mask_swizzle {
 
 type CurrentSIMDElement = u16;
 type CurrentMaskElement = i16;
-const SIZE: usize = 16;
-const SIZE_SPACE: usize = 2usize.pow(SIZE as u32);
+const SIZE: usize = std::mem::size_of::<CurrentSIMDElement>() * 8;
 
 /// Move all of the values where the mask is true to the front of the vector and replace the remaining values with the or value
 #[inline]
@@ -112,32 +111,41 @@ where
 }
 
 trait KeepValuesImpl<const N: usize> {
-    fn keep_values<S: SimdElement+Default>(mask: Mask<S::Mask, N>, values: Simd<S, N>) -> (Simd<S, N>, u8) where LaneCount<N>: SupportedLaneCount;
+    fn keep_values<S: SimdElement + Default>(
+        mask: Mask<S::Mask, N>,
+        values: Simd<S, N>,
+    ) -> (Simd<S, N>, u8)
+    where
+        LaneCount<N>: SupportedLaneCount;
 }
 
 impl KeepValuesImpl<8> for () {
-    fn keep_values<S: SimdElement+Default>(mask: Mask<S::Mask, 8>, values: Simd<S, 8>) -> (Simd<S, 8>, u8) {
+    fn keep_values<S: SimdElement + Default>(
+        mask: Mask<S::Mask, 8>,
+        values: Simd<S, 8>,
+    ) -> (Simd<S, 8>, u8) {
         keep_values_u8_inner(mask, values)
     }
 }
 
 macro_rules! copy_8_values {
-    ($i:expr, $fill:expr, $values:expr, $mask:expr, $output:expr) => {
-        {
-            let (filled, elements) = {
-                const IDX: [usize; 8] = [$i, $i + 1, $i + 2, $i + 3, $i + 4, $i + 5, $i + 6, $i + 7];
-                let chunk = simd_swizzle!($values, IDX);
-                let mask = simd_mask_swizzle!($mask, IDX);
-                keep_values_u8_inner(mask, chunk)
-            };
-            filled.copy_to_slice(&mut $output.as_mut_array()[$fill as usize..]);
-            $fill + elements
-        }
-    };
+    ($i:expr, $fill:expr, $values:expr, $mask:expr, $output:expr) => {{
+        let (filled, elements) = {
+            const IDX: [usize; 8] = [$i, $i + 1, $i + 2, $i + 3, $i + 4, $i + 5, $i + 6, $i + 7];
+            let chunk = simd_swizzle!($values, IDX);
+            let mask = simd_mask_swizzle!($mask, IDX);
+            keep_values_u8_inner(mask, chunk)
+        };
+        filled.copy_to_slice(&mut $output.as_mut_array()[$fill as usize..]);
+        $fill + elements
+    }};
 }
 
 impl KeepValuesImpl<16> for () {
-    fn keep_values<S: SimdElement+Default>(mask: Mask<S::Mask, 16>, values: Simd<S, 16>) -> (Simd<S, 16>, u8) {
+    fn keep_values<S: SimdElement + Default>(
+        mask: Mask<S::Mask, 16>,
+        values: Simd<S, 16>,
+    ) -> (Simd<S, 16>, u8) {
         let mut output = Simd::splat(Default::default());
         let fill = 0;
         let fill = copy_8_values!(0, fill, values, mask, output);
@@ -147,7 +155,10 @@ impl KeepValuesImpl<16> for () {
 }
 
 impl KeepValuesImpl<32> for () {
-    fn keep_values<S: SimdElement+Default>(mask: Mask<S::Mask, 32>, values: Simd<S, 32>) -> (Simd<S, 32>, u8) {
+    fn keep_values<S: SimdElement + Default>(
+        mask: Mask<S::Mask, 32>,
+        values: Simd<S, 32>,
+    ) -> (Simd<S, 32>, u8) {
         let mut output = Simd::splat(Default::default());
         let fill = 0;
         let fill = copy_8_values!(0, fill, values, mask, output);
@@ -159,7 +170,10 @@ impl KeepValuesImpl<32> for () {
 }
 
 impl KeepValuesImpl<64> for () {
-    fn keep_values<S: SimdElement +Default>(mask: Mask<S::Mask, 64>, values: Simd<S, 64>) -> (Simd<S, 64>, u8) {
+    fn keep_values<S: SimdElement + Default>(
+        mask: Mask<S::Mask, 64>,
+        values: Simd<S, 64>,
+    ) -> (Simd<S, 64>, u8) {
         let mut output = Simd::splat(Default::default());
         let fill = 0;
         let fill = copy_8_values!(0, fill, values, mask, output);
@@ -177,7 +191,10 @@ impl KeepValuesImpl<64> for () {
 #[test]
 fn test_keep_values() {
     let values = Simd::from_array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
-    let mask = Mask::from_array([true, false, true, true, false, true, true, false, false, false, true, false, false, false, true, false]);
+    let mask = Mask::from_array([
+        true, false, true, true, false, true, true, false, false, false, true, false, false, false,
+        true, false,
+    ]);
     let (output, fill) = keep_values(mask, values);
     let as_slice = &output.as_array()[..fill as usize];
     assert_eq!(as_slice, [1, 3, 4, 6, 7, 11, 15]);
@@ -185,15 +202,30 @@ fn test_keep_values() {
     for _ in 0..100 {
         let rand = rand::random::<u64>();
         let bitset = Mask::from_bitmask(rand);
-        let values = Simd::from_array(std::array::from_fn(|_| rand::random::<CurrentSIMDElement>()));
+        let values = Simd::from_array(std::array::from_fn(|_| {
+            rand::random::<CurrentSIMDElement>()
+        }));
         let (output, fill) = keep_values::<64, CurrentSIMDElement>(bitset, values);
         let as_slice = &output.as_array()[..fill as usize];
-        assert_eq!(as_slice, bitset.to_array().iter().enumerate().filter(|(_, b)| **b).map(|(i, _)| values.as_array()[i]).collect::<Vec<_>>().as_slice());
+        assert_eq!(
+            as_slice,
+            bitset
+                .to_array()
+                .iter()
+                .enumerate()
+                .filter(|(_, b)| **b)
+                .map(|(i, _)| values.as_array()[i])
+                .collect::<Vec<_>>()
+                .as_slice()
+        );
     }
 }
 
 #[inline]
-fn keep_values_u8_inner<S: SimdElement>(mask: Mask<S::Mask, 8>, values: Simd<S, 8>) -> (Simd<S, 8>, u8) {
+fn keep_values_u8_inner<S: SimdElement>(
+    mask: Mask<S::Mask, 8>,
+    values: Simd<S, 8>,
+) -> (Simd<S, 8>, u8) {
     const fn keep(i: u8) -> [usize; 8] {
         let mut swizzle = [0; 8];
         let mut b = 0;
@@ -232,13 +264,29 @@ fn keep_values_u8_inner<S: SimdElement>(mask: Mask<S::Mask, 8>, values: Simd<S, 
 
 /// Move all of the values where the mask is true to the front of the vector and replace the remaining values with the or value
 #[inline]
-fn idx_before_number<const N: usize>(number: u8) -> Mask<CurrentMaskElement, N> where LaneCount<N>: SupportedLaneCount {
+fn idx_before_number<const N: usize>(number: u8) -> Mask<CurrentMaskElement, N>
+where
+    LaneCount<N>: SupportedLaneCount,
+{
     Mask::from_bitmask(u64::MAX >> (64 - number))
 }
 
-fn tokenize<const N: usize>(tokens: Simd<CurrentSIMDElement, N>, tokens_after_merge_with_next: Simd<CurrentSIMDElement, N>, levels: Simd<u8, N>, merge_with_next_priority: Simd<u16, N>, level: u8) -> (Simd<CurrentSIMDElement, N>, u8)
- where LaneCount<N>: SupportedLaneCount, (): KeepValuesImpl<N>{
-    let indexes: Simd<CurrentSIMDElement, N> = const { 
+fn tokenize<const N: usize>(
+    tokens: Simd<u32, N>,
+    tokens_after_merge_with_next: Simd<u32, N>,
+    levels: Simd<u8, N>,
+    merge_with_next_priority: Simd<u16, N>,
+    level: u8,
+) -> (Simd<u32, N>, u8)
+where
+    LaneCount<N>: SupportedLaneCount,
+    (): KeepValuesImpl<N>,
+{
+    const {
+        assert!(N == std::mem::size_of::<CurrentSIMDElement>() * 8);
+    }
+
+    let indexes: Simd<CurrentSIMDElement, N> = const {
         let mut index = [0; N];
         let mut i = 0;
         while i < SIZE {
@@ -251,12 +299,12 @@ fn tokenize<const N: usize>(tokens: Simd<CurrentSIMDElement, N>, tokens_after_me
 
     let prev_priority = merge_with_next_priority.rotate_elements_left::<1>();
     let last_less_than_this = prev_priority.simd_le(merge_with_next_priority).cast();
-    let last_less_than_this_and = last_less_than_this & in_this_level;
+    let mut last_less_than_this_and = last_less_than_this & in_this_level;
     let this_less_then_next = last_less_than_this_and.shift_right::<1>();
+    last_less_than_this_and.set(SIZE - 1, false);
     tracing::trace!("increasing {last_less_than_this:?}");
 
-    let mut prev_element_in_level =
-        in_this_level.shift_right::<1>();
+    let mut prev_element_in_level = in_this_level.shift_right::<1>();
     prev_element_in_level.set(0, false);
     let start_of_run_mask = in_this_level & (!prev_element_in_level | this_less_then_next);
     tracing::trace!("starts:    {start_of_run_mask:?}");
@@ -264,7 +312,7 @@ fn tokenize<const N: usize>(tokens: Simd<CurrentSIMDElement, N>, tokens_after_me
     let starts_mask = idx_before_number(starts_idx);
 
     let mut next_element_in_level = in_this_level.shift_left::<1>();
-    next_element_in_level.set(SIZE - 1, false);
+    next_element_in_level.set(SIZE - 1, true);
     let end_of_run_mask = in_this_level & (!next_element_in_level | last_less_than_this_and);
     tracing::trace!("ends:      {end_of_run_mask:?}");
     let (ends_indexes_raw, ends_idx) = keep_values(end_of_run_mask, indexes.cast());
@@ -361,26 +409,29 @@ fn tokenize<const N: usize>(tokens: Simd<CurrentSIMDElement, N>, tokens_after_me
     }
 
     tracing::trace!("copied from: {:?}", copy_from);
-    let copied_from_original = copy_from.select(tokens, Simd::splat(CurrentSIMDElement::MAX));
+    let copied_from_original = copy_from.cast().select(tokens, Simd::splat(u32::MAX));
     tracing::trace!("copied from original: {:?}", copied_from_original);
-    let copied_from_merge = merge_with_next.select(tokens_after_merge_with_next, copied_from_original);
+    let copied_from_merge = merge_with_next
+        .cast()
+        .select(tokens_after_merge_with_next, copied_from_original);
     tracing::trace!("copied from merge: {:?}", copied_from_merge);
-    let (sequential, len) = keep_values(keep, copied_from_merge); 
+    let (sequential, len) = keep_values(keep.cast(), copied_from_merge);
     let tokens = &sequential.as_array()[..len as usize];
     tracing::trace!("sequential: {:?}", tokens);
-    
 
     (sequential, len)
 }
 
 #[test]
 fn testing() {
+    _ = tracing_subscriber::fmt::try_init();
+
     let level = 1;
-    let tokens: Simd<CurrentSIMDElement, SIZE> = Simd::from_array([5, 3, 2, 1, 1, 2, 1, 2, 5, 3, 2, 1, 1, 2, 1, 2]);
-    let tokens_after_merge_with_next: Simd<CurrentSIMDElement, SIZE> =
+    let tokens = Simd::from_array([5, 3, 2, 1, 1, 2, 1, 2, 5, 3, 2, 1, 1, 2, 1, 2]);
+    let tokens_after_merge_with_next =
         Simd::from_array([1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7, 0]);
-    let levels: Simd<u8, SIZE> = Simd::from_array([1, 1, 2, 2, 1, 1, 1, 2, 1, 1, 2, 2, 1, 1, 1, 2]);
-    let merge_with_next_priority: Simd<u16, SIZE> =
+    let levels = Simd::from_array([1, 1, 2, 2, 1, 1, 1, 2, 1, 1, 2, 2, 1, 1, 1, 2]);
+    let merge_with_next_priority =
         Simd::from_array([1, 2, 3, 4, 2, 2, 3, 0, 1, 2, 3, 4, 2, 2, 3, 0]);
     // tokens:                      5, 3, 2, 1, 1, 2, 1, 2
     // token_after_merge_with_next: 1, 2, 3, 4, 5, 6, 7, 0
@@ -391,7 +442,13 @@ fn testing() {
     // 1, 2, x, x, 2, 2, 3, x
     // copy, merge-2, x, merge-2, merge-3
 
-    let (tokens, len) = tokenize(tokens, tokens_after_merge_with_next, levels, merge_with_next_priority, level);
+    let (tokens, len) = tokenize(
+        tokens,
+        tokens_after_merge_with_next,
+        levels,
+        merge_with_next_priority,
+        level,
+    );
     let tokens = &tokens.as_array()[..len as usize];
     assert_eq!(tokens, [5, 2, 1, 5, 7, 5, 2, 1, 5, 7]);
 }
