@@ -4,12 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+tracing = "0.1.40"
 # serde = { version = "1.0.205", features = ["derive"] }
 # serde_json = "1.0.122"
 # colored = "2.1.0"
 # serde-big-array = "0.5.1"
 # regex = { version = "1.10.6", features = ["perf-dfa-full"] }
-# tracing = "0.1.40"
 
 
 [features]
