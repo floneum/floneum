@@ -1,6 +1,7 @@
 #![feature(portable_simd)]
 use std::{
     marker::PhantomData,
+    os::unix::process,
     simd::{
         cmp::{SimdPartialEq, SimdPartialOrd},
         num::SimdUint,
@@ -226,7 +227,6 @@ fn keep_values_u8_inner<S: SimdElement>(
     mask: Mask<S::Mask, 8>,
     values: Simd<S, 8>,
 ) -> (Simd<S, 8>, u8) {
-    // Maybe this could be compressed with prefix encoding?
     const fn keep(i: u8) -> [usize; 8] {
         let mut swizzle = [0; 8];
         let mut b = 0;
@@ -273,13 +273,31 @@ where
     Mask::from_bitmask(u64::MAX >> (64 - number))
 }
 
+struct TokenizationResult<const N: usize>
+where
+    LaneCount<N>: SupportedLaneCount,
+{
+    new_tokens: Simd<u32, N>,
+    new_tokens_len: u8,
+    tokens_processed: u8,
+}
+
+impl<const N: usize> AsRef<[u32]> for TokenizationResult<N>
+where
+    LaneCount<N>: SupportedLaneCount,
+{
+    fn as_ref(&self) -> &[u32] {
+        &self.new_tokens.as_array()[..self.new_tokens_len as usize]
+    }
+}
+
 fn tokenize<const N: usize>(
     tokens: Simd<u32, N>,
     tokens_after_merge_with_next: Simd<u32, N>,
     levels: Simd<u8, N>,
     merge_with_next_priority: Simd<u16, N>,
     level: u8,
-) -> (Simd<u32, N>, u8)
+) -> TokenizationResult<N>
 where
     LaneCount<N>: SupportedLaneCount,
     (): KeepValuesImpl<N>,
@@ -311,19 +329,40 @@ where
     let start_of_run_mask = in_this_level & (!prev_element_in_level | this_less_then_next);
     tracing::trace!("starts:    {start_of_run_mask:?}");
     let (starts_indexes_raw, starts_idx) = keep_values(start_of_run_mask, indexes.cast());
-    let starts_mask = idx_before_number(starts_idx);
 
     let mut next_element_in_level = in_this_level.shift_left::<1>();
     next_element_in_level.set(SIZE - 1, true);
     let end_of_run_mask = in_this_level & (!next_element_in_level | last_less_than_this_and);
     tracing::trace!("ends:      {end_of_run_mask:?}");
     let (ends_indexes_raw, ends_idx) = keep_values(end_of_run_mask, indexes.cast());
-    let ends_mask = idx_before_number(ends_idx);
+    // If there is a final sequence that starts but is not ended, don't include that sequence in this batch. We
+    // need to know the length before we merge anything.
+    let tokens_processed;
+    let starts_idx = if ends_idx == starts_idx {
+        tokens_processed = N as u8;
+        starts_idx
+    } else {
+        tokens_processed = starts_indexes_raw[(starts_idx - 1) as usize] as u8;
+        tracing::trace!("Chunk ends with increasing priority merges. Only processing up to index {tokens_processed}");
+        ends_idx
+    };
 
-    tracing::trace!("starts: {starts_indexes_raw:?}");
-    tracing::trace!("ends:   {ends_indexes_raw:?}");
-    let run_lengths = ends_indexes_raw - starts_indexes_raw;
-    tracing::trace!("runs:   {run_lengths:?}");
+    // Create masks that cover all of the indexes in the start and end runs
+    let starts_mask = idx_before_number(starts_idx);
+
+    tracing::trace!(
+        "starts: {:?}",
+        &starts_indexes_raw.as_array()[..starts_idx as usize]
+    );
+    tracing::trace!(
+        "ends:   {:?}",
+        &ends_indexes_raw.as_array()[..ends_idx as usize]
+    );
+    let run_lengths: Simd<_, N> = ends_indexes_raw - starts_indexes_raw;
+    tracing::trace!(
+        "runs:   {:?}",
+        &run_lengths.as_array()[..starts_idx as usize]
+    );
     let every_other_splat = const {
         let mut num = 0;
         let mut i = 0;
@@ -336,7 +375,7 @@ where
         }
         Simd::from_array([num; N])
     };
-    let run_masks = ends_mask.select(
+    let run_masks = starts_mask.select(
         every_other_splat >> (Simd::splat(N as CurrentSIMDElement - 1) - run_lengths),
         Simd::splat(CurrentSIMDElement::MIN),
     );
@@ -392,7 +431,8 @@ where
     let mut prev_is_merge = merge_with_next.shift_right::<1>();
     prev_is_merge.set(0, false);
     tracing::trace!("prev_is_merge:        {:016b}", prev_is_merge.to_bitmask());
-    let copy_from = all_copy & !prev_is_merge;
+    let processed_in_this_merge = idx_before_number(tokens_processed);
+    let copy_from = all_copy & processed_in_this_merge & !prev_is_merge;
     tracing::trace!("copy from all:        {:016b}", copy_from.to_bitmask());
 
     let merge_with_next_shift_right = prev_is_merge;
@@ -405,9 +445,11 @@ where
     let keep = copy_from | merge_with_next;
     #[cfg(debug_assertions)]
     {
-        let new_array_fill = keep | merge_with_next_shift_right;
-        tracing::trace!("remaining {:?}", new_array_fill);
-        assert!(new_array_fill.all());
+        // Make sure all of the tokens we processed are included in the new tokenization
+        let tokens_used = keep | merge_with_next_shift_right;
+        let processed = idx_before_number(tokens_processed);
+        let tokens_used_or_unprocessed = tokens_used | !processed;
+        assert!(tokens_used_or_unprocessed.all());
     }
 
     tracing::trace!("copied from: {:?}", copy_from);
@@ -417,11 +459,19 @@ where
         .cast()
         .select(tokens_after_merge_with_next, copied_from_original);
     tracing::trace!("copied from merge: {:?}", copied_from_merge);
-    let (sequential, len) = keep_values(keep.cast(), copied_from_merge);
-    let tokens = &sequential.as_array()[..len as usize];
-    tracing::trace!("sequential: {:?}", tokens);
+    let (new_tokens, new_tokens_len) = keep_values(keep.cast(), copied_from_merge);
+    #[cfg(debug_assertions)]
+    {
+        // Make sure there are no u32::MAX tokens in the new tokenization
+        let processed = &new_tokens.as_array()[..new_tokens_len as usize];
+        assert!(processed.iter().all(|&x| x != u32::MAX), "The final processed tokens should not contain uninitialized u32::MAX tokens. Found {processed:?}");
+    }
 
-    (sequential, len)
+    TokenizationResult {
+        new_tokens,
+        new_tokens_len,
+        tokens_processed,
+    }
 }
 
 #[test]
@@ -444,15 +494,14 @@ fn test_single_level_merge() {
     // 1, 2, x, x, 2, 2, 3, x
     // copy, merge-2, x, merge-2, merge-3
 
-    let (tokens, len) = tokenize(
+    let tokens = tokenize(
         tokens,
         tokens_after_merge_with_next,
         levels,
         merge_with_next_priority,
         level,
     );
-    let tokens = &tokens.as_array()[..len as usize];
-    assert_eq!(tokens, [5, 2, 1, 5, 7, 5, 2, 1, 5, 7]);
+    assert_eq!(tokens.as_ref(), [5, 2, 1, 5, 7, 5, 2, 1, 5, 7]);
 }
 
 #[test]
@@ -466,22 +515,18 @@ fn test_single_level_merge_with_trailing_increasing_priority() {
     let levels = Simd::from_array([1, 1, 2, 2, 1, 1, 1, 2, 1, 1, 2, 2, 1, 1, 1, 1]);
     let merge_with_next_priority =
         Simd::from_array([1, 2, 3, 4, 2, 2, 3, 0, 1, 2, 3, 4, 2, 2, 3, 4]);
-    // tokens:                      5, 3, 2, 1, 1, 2, 1, 2
-    // token_after_merge_with_next: 1, 2, 3, 4, 5, 6, 7, 0
-    // levels:                      1, 1, 2, 2, 1, 1, 1, 2
-    // merge_with_next_priority:    1, 2, 3, 4, 2, 2, 3, 0
-    // after this level:            5, 2,    1, 5,    7
-    //                              0  1  0  0  1  0  1  0
-    // 1, 2, x, x, 2, 2, 3, x
-    // copy, merge-2, x, merge-2, merge-3
+    // tokens:                      5, 3, 2, 1, 1, 2, 1, 2, 5, 3, 2, 1, 1, 2, 1, 2
+    // token_after_merge_with_next: 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7, 0
+    // levels:                      1, 1, 2, 2, 1, 1, 1, 2, 1, 1, 2, 2, 1, 1, 1, 1
+    // merge_with_next_priority:    1, 2, 3, 4, 2, 2, 3, 0, 1, 2, 3, 4, 2, 2, 3, 4
 
-    let (tokens, len) = tokenize(
+    let tokens = tokenize(
         tokens,
         tokens_after_merge_with_next,
         levels,
         merge_with_next_priority,
         level,
     );
-    let tokens = &tokens.as_array()[..len as usize];
-    assert_eq!(tokens, [5, 2, 1, 5, 7, 5, 2, 1, 5, 7]);
+    assert_eq!(tokens.as_ref(), [5, 2, 1, 5, 7, 5, 2, 1, 5]);
+    assert_eq!(tokens.tokens_processed, 13);
 }
