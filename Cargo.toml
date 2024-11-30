@@ -66,6 +66,7 @@ lto = "thin"
 
 [profile.release]
 debug = true
+debug-assertions = false
 lto = true
 opt-level = 3
 codegen-units = 1
