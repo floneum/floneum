@@ -170,16 +170,19 @@ impl KeepValuesImpl<8> for () {
     ) -> (Simd<S, 8>, u8) {
         let mask = mask.to_bitmask() as u8;
         unsafe {
-            let (indexes, elements) = KEEP_VALUES_TABLE.get_unchecked((mask & 0b01111111) as usize);
-            let simd = Simd::gather_ptr(Simd::splat(values.as_array().as_ptr()).wrapping_add(indexes.cast()));
-    
+            let (indexes, elements) =
+                KEEP_VALUES_TABLE[0].get_unchecked((mask & 0b01111111) as usize);
+            let simd = Simd::gather_ptr(
+                Simd::splat(values.as_array().as_ptr()).wrapping_add(indexes.cast()),
+            );
+
             (simd, elements + (mask >> 7))
         }
     }
 
     fn keep_values_idx<M: MaskElement>(mask: Mask<M, 8>) -> (Simd<u8, 8>, u8) {
         let mask = mask.to_bitmask();
-        let (swizzle, elements) = KEEP_VALUES_TABLE[(mask & 0b01111111) as usize];
+        let (swizzle, elements) = KEEP_VALUES_TABLE[0][(mask & 0b01111111) as usize];
         (swizzle, elements + mask as u8 >> 7)
     }
 }
@@ -192,10 +195,11 @@ macro_rules! copy_8_values {
                     [
                         $(
                             {
+                                let bits = select_nth_byte_for_table::<$i>($mask);
+                                let table = const { KEEP_VALUES_TABLE[0] };
+                                let (indexes, elements) = table.get_unchecked((bits & 0b01111111) as usize);
                                 const SIMD_IDX: [usize; 8] = [$i, $i + 1, $i + 2, $i + 3, $i + 4, $i + 5, $i + 6, $i + 7];
                                 let chunk = simd_swizzle!($values, SIMD_IDX);
-                                let bits = select_nth_byte_for_table::<$i>($mask);
-                                let (indexes, elements) = KEEP_VALUES_TABLE.get_unchecked((bits & 0b01111111) as usize);
                                 let simd = Simd::gather_ptr(Simd::splat(chunk.as_array().as_ptr()).wrapping_add(indexes.cast()));
 
                                 (simd, elements + (bits >> 7))
@@ -216,7 +220,8 @@ macro_rules! copy_8_values_mask {
                     $(
                         {
                             let bits = select_nth_byte_for_table::<$i>($mask);
-                            let (simd, elements) = KEEP_VALUES_TABLE.get_unchecked((bits & 0b01111111) as usize);
+                            let table = const { KEEP_VALUES_TABLE[$i as usize / 8] };
+                            let (simd, elements) = table.get_unchecked((bits & 0b01111111) as usize);
                             (*simd, elements + (bits >> 7))
                         }
                     ),+
@@ -226,14 +231,23 @@ macro_rules! copy_8_values_mask {
     };
 }
 
-static KEEP_VALUES_TABLE: [(Simd<u8, 8>, u8); 128] = keep_values_idx_table();
+static KEEP_VALUES_TABLE: [[(Simd<u8, 8>, u8); 128]; 8] = [
+    keep_values_idx_table::<0>(),
+    keep_values_idx_table::<8>(),
+    keep_values_idx_table::<16>(),
+    keep_values_idx_table::<24>(),
+    keep_values_idx_table::<32>(),
+    keep_values_idx_table::<40>(),
+    keep_values_idx_table::<48>(),
+    keep_values_idx_table::<56>(),
+];
 
-const fn keep_values_idx_table() -> [(Simd<u8, 8>, u8); 128] {
+const fn keep_values_idx_table<const OFFSET: u8>() -> [(Simd<u8, 8>, u8); 128] {
     let mut table = [(Simd::from_array([0; 8]), 0); 128];
     let mut i = 0;
     while i < 128 {
         table[i] = (
-            Simd::from_array(keep(i as u8 + 0b10000000)),
+            Simd::from_array(keep(i as u8 + 0b10000000, OFFSET)),
             i.count_ones() as u8,
         );
         i += 1;
@@ -324,13 +338,13 @@ fn test_keep_values() {
     }
 }
 
-const fn keep_usize(i: u8) -> [usize; 8] {
+const fn keep_usize(i: u8, offset: u8) -> [usize; 8] {
     let mut swizzle = [0; 8];
     let mut b = 0;
     let mut fill_index = 0;
     while b < 8 {
         if (i >> b) & 1 == 1 {
-            swizzle[fill_index] = b;
+            swizzle[fill_index] = b + offset as usize;
             fill_index += 1;
         };
         b += 1;
@@ -338,9 +352,9 @@ const fn keep_usize(i: u8) -> [usize; 8] {
     swizzle
 }
 
-const fn keep(i: u8) -> [u8; 8] {
+const fn keep(i: u8, offset: u8) -> [u8; 8] {
     let mut swizzle = [0; 8];
-    let keep_usize = keep_usize(i);
+    let keep_usize = keep_usize(i, offset);
     let mut i = 0;
     while i < 8 {
         swizzle[i] = keep_usize[i] as u8;
@@ -407,13 +421,17 @@ where
     let mut prev_element_in_level = in_this_level.shift_right::<1>();
     prev_element_in_level.set(0, false);
     let start_of_run_mask = in_this_level & (!prev_element_in_level | this_less_then_next);
+    println!("starts:    {start_of_run_mask:?}");
     let (starts_indexes_raw, starts_idx) = keep_values_idx(start_of_run_mask);
+    println!("starts:    {starts_indexes_raw:?}");
     let starts_indexes_raw = starts_indexes_raw.cast();
 
     let mut next_element_in_level = in_this_level.shift_left::<1>();
     next_element_in_level.set(SIZE - 1, true);
     let end_of_run_mask = in_this_level & (!next_element_in_level | last_less_than_this_and);
+    println!("ends:      {end_of_run_mask:?}");
     let (ends_indexes_raw, ends_idx) = keep_values_idx(end_of_run_mask);
+    println!("ends:      {ends_indexes_raw:?}");
     let ends_indexes_raw = ends_indexes_raw.cast();
     // If there is a final sequence that starts but is not ended, don't include that sequence in this batch. We
     // need to know the length before we merge anything.
