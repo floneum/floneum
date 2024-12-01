@@ -101,44 +101,72 @@ type CurrentSIMDElement = u16;
 type CurrentMaskElement = i16;
 const SIZE: usize = std::mem::size_of::<CurrentSIMDElement>() * 8;
 
-pub struct PreparedKeep<const N: usize> where LaneCount<N>: SupportedLaneCount {
+pub struct PreparedKeep<const N: usize>
+where
+    LaneCount<N>: SupportedLaneCount,
+{
     indexes: Simd<u8, N>,
-    elements: u8
+    elements: u8,
 }
 
-impl<const N: usize> PreparedKeep<N> where LaneCount<N>: SupportedLaneCount {
-    pub fn new<const M: usize>(bytes: [u8; M]) -> Self {
+impl<const N: usize> PreparedKeep<N>
+where
+    LaneCount<N>: SupportedLaneCount,
+{
+    pub fn new<const M: usize>(bytes: [u8; M]) -> Self
+    where
+        LaneCount<M>: SupportedLaneCount,
+    {
         const { assert!(M * 8 >= N) };
-        let mut chunks = [0; N];
-        let mut chunk_fill = 0;
-
+        let mut indexes = [0; N];
         let mut elements = 0;
-        for (i, &byte) in bytes.iter().take(N / 8).enumerate() {    
-            let count = COUNT_ONES[byte as usize];
-            elements += count;
-            let idx = (byte & 0b01111111) as usize;
-            let array = unsafe { **KEEP_VALUES_COMPRESSED_PTRS.get_unchecked(idx) };
-            for j in 0..count {
-                chunks[chunk_fill] = array[j as usize] + i as u8 * 8;
-                chunk_fill += 1;
-            }
+
+        let bytes = Simd::from_array(bytes);
+        let count_ones_ptr = Simd::splat(COUNT_ONES.as_ptr());
+        let byte_counts = unsafe { Simd::gather_ptr(count_ones_ptr.wrapping_add(bytes.cast())) };
+        let idx = bytes & Simd::splat(0b01111111);
+        let keep_values_ptr = Simd::splat(KEEP_VALUES_COMPRESSED_PTRS.as_ptr());
+        let arrays = keep_values_ptr.wrapping_add(idx.cast());
+
+        for (i, (one_bytes, array_start)) in byte_counts
+            .as_array()
+            .iter()
+            .zip(arrays.as_array().iter())
+            .enumerate()
+            .take(N / 8)
+        {
+            let array = unsafe { ***array_start };
+            let mut simd = Simd::from_array(array);
+            simd += Simd::splat(i as u8 * 8);
+            simd.copy_to_slice(unsafe { indexes.get_unchecked_mut(elements as usize..) });
+            elements += *one_bytes;
         }
 
         Self {
-            indexes: Simd::from_array(chunks),
-            elements
+            indexes: Simd::from_array(indexes),
+            elements,
         }
     }
 
-    pub fn swizzle_values<const N2: usize, S: SimdElement + Default>(&self, values: Simd<S, N2>) -> Simd<S, N2> where LaneCount<N2>: SupportedLaneCount {
+    pub fn swizzle_values<const N2: usize, S: SimdElement + Default>(
+        &self,
+        values: Simd<S, N2>,
+    ) -> Simd<S, N2>
+    where
+        LaneCount<N2>: SupportedLaneCount,
+    {
         const { assert!(N2 <= N) };
         let indexes = self.indexes.as_array();
-        let indexes = indexes as *const [u8; N] as *const [u8; N2]; 
+        let indexes = indexes as *const [u8; N] as *const [u8; N2];
         let indexes = unsafe { Simd::from_array(*indexes) };
         let chunk_ptr = values.as_array().as_ptr();
         let simd = unsafe { Simd::gather_ptr(Simd::splat(chunk_ptr).wrapping_add(indexes.cast())) };
 
         simd
+    }
+
+    pub fn elements(&self) -> u8 {
+        self.elements
     }
 }
 
