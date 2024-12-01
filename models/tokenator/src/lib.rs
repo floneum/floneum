@@ -5,7 +5,7 @@ use std::{
         cmp::{SimdPartialEq, SimdPartialOrd},
         num::SimdUint,
         ptr::SimdConstPtr,
-        simd_swizzle, LaneCount, Mask, MaskElement, Simd, SimdElement, SupportedLaneCount, Swizzle,
+        LaneCount, Mask, MaskElement, Simd, SimdElement, SupportedLaneCount, Swizzle,
     },
     u8,
 };
@@ -168,44 +168,52 @@ impl KeepValuesImpl<8> for () {
         mask: Mask<S::Mask, 8>,
         values: Simd<S, 8>,
     ) -> (Simd<S, 8>, u8) {
-        let mask = mask.to_bitmask() as u8;
+        let byte = mask.to_bitmask() as u8;
         unsafe {
-            let (indexes, elements) =
-                KEEP_VALUES_TABLE[0].get_unchecked((mask & 0b01111111) as usize);
-            let simd = Simd::gather_ptr(
-                Simd::splat(values.as_array().as_ptr()).wrapping_add(indexes.cast()),
-            );
+            let elements = COUNT_ONES[byte as usize];
+            let idx = (byte & 0b01111111) as usize;
+            let array = **KEEP_VALUES_COMPRESSED_PTRS.get_unchecked(idx);
+            let indexes = Simd::from_array(array);
+            let chunk_ptr = values.as_array().as_ptr();
+            let simd = Simd::gather_ptr(Simd::splat(chunk_ptr).wrapping_add(indexes.cast()));
 
-            (simd, elements + (mask >> 7))
+            (simd, elements)
         }
     }
 
     fn keep_values_idx<M: MaskElement>(mask: Mask<M, 8>) -> (Simd<u8, 8>, u8) {
-        let mask = mask.to_bitmask();
-        let (swizzle, elements) = KEEP_VALUES_TABLE[0][(mask & 0b01111111) as usize];
-        (swizzle, elements + mask as u8 >> 7)
+        let byte = mask.to_bitmask() as u8;
+        unsafe {
+            let elements = COUNT_ONES[byte as usize];
+            let idx = (byte & 0b01111111) as usize;
+            let array = **KEEP_VALUES_COMPRESSED_PTRS.get_unchecked(idx);
+            let simd = Simd::from_array(array);
+
+            (simd, elements)
+        }
     }
 }
 
 macro_rules! copy_8_values {
     ([$($i:expr),+], $values:expr, $mask:expr) => {{
         unsafe {
+            let bytes = $mask.to_le_bytes();
             merge(
-                {
-                    [
-                        $(
-                            {
-                                let bits = select_nth_byte_for_table::<$i>($mask);
-                                let table = const { KEEP_VALUES_TABLE[0] };
-                                let (indexes, elements) = table.get_unchecked((bits & 0b01111111) as usize);
-                                let chunk_ptr = $values.as_array().as_ptr().add($i);
-                                let simd = Simd::gather_ptr(Simd::splat(chunk_ptr).wrapping_add(indexes.cast()));
+                [
+                    $(
+                        {
+                            let byte = bytes[$i];
+                            let elements = COUNT_ONES[byte as usize];
+                            let idx = (byte & 0b01111111) as usize;
+                            let array = **KEEP_VALUES_COMPRESSED_PTRS.get_unchecked(idx);
+                            let indexes = Simd::from_array(array);
+                            let chunk_ptr = $values.as_array().as_ptr().add($i*8);
+                            let simd = Simd::gather_ptr(Simd::splat(chunk_ptr).wrapping_add(indexes.cast()));
 
-                                (simd, elements + (bits >> 7))
-                            }
-                        ),+
-                    ]
-                }
+                            (simd, elements)
+                        }
+                    ),+
+                ]
             )
         }
     }};
@@ -214,14 +222,20 @@ macro_rules! copy_8_values {
 macro_rules! copy_8_values_mask {
     ([$($i:expr),+], $mask:expr) => {
         unsafe {
+            let bytes = $mask.to_le_bytes();
             merge(
                 [
                     $(
                         {
-                            let bits = select_nth_byte_for_table::<$i>($mask);
-                            let table = const { KEEP_VALUES_TABLE[$i as usize / 8] };
-                            let (simd, elements) = table.get_unchecked((bits & 0b01111111) as usize);
-                            (*simd, elements + (bits >> 7))
+                            let byte = bytes[$i];
+                            let elements = COUNT_ONES[byte as usize];
+                            let idx = (byte & 0b01111111) as usize;
+                            let array = **KEEP_VALUES_COMPRESSED_PTRS.get_unchecked(idx);
+                            let mut simd = Simd::from_array(array);
+                            let offset = Simd::from_array([$i; 8]);
+                            simd += offset;
+
+                            (simd, elements)
                         }
                     ),+
                 ]
@@ -230,33 +244,114 @@ macro_rules! copy_8_values_mask {
     };
 }
 
-static KEEP_VALUES_TABLE: [[(Simd<u8, 8>, u8); 128]; 8] = [
-    keep_values_idx_table::<0>(),
-    keep_values_idx_table::<8>(),
-    keep_values_idx_table::<16>(),
-    keep_values_idx_table::<24>(),
-    keep_values_idx_table::<32>(),
-    keep_values_idx_table::<40>(),
-    keep_values_idx_table::<48>(),
-    keep_values_idx_table::<56>(),
-];
+#[test]
+fn compressed_table() {
+    let mut idx_table = Vec::new();
+    let mut table = Vec::new();
+    'o: for i in (128..=255u8).rev() {
+        let key = keep(i as u8, 0);
+        let important_elements = i.count_ones() as usize;
+        let import_part_of_key = &key[..important_elements];
+        for (i, window) in table.windows(important_elements).enumerate() {
+            if window == import_part_of_key {
+                idx_table.insert(0, i as u16);
+                continue 'o;
+            }
+        }
 
-const fn keep_values_idx_table<const OFFSET: u8>() -> [(Simd<u8, 8>, u8); 128] {
-    let mut table = [(Simd::from_array([0; 8]), 0); 128];
-    let mut i = 0;
-    while i < 128 {
-        table[i] = (
-            Simd::from_array(keep(i as u8 + 0b10000000, OFFSET)),
-            i.count_ones() as u8,
-        );
-        i += 1;
+        idx_table.insert(0, table.len() as u16);
+        table.extend_from_slice(&import_part_of_key);
     }
-    table
+
+    assert_eq!(table.len(), 320);
+    assert_eq!(idx_table.len(), 128);
+
+    assert_eq!(&KEEP_VALUES_COMPRESSED[..table.len()], table.as_slice());
+    assert_eq!(KEEP_VALUES_IDX_COMPRESSED, idx_table.as_slice());
+
+    for i in 0..=255u8 {
+        let key = keep(i as u8, 0);
+        let important_elements = i.count_ones() as usize;
+        let import_part_of_key = &key[..important_elements];
+        let ignore_last_bit = i & 0b01111111;
+        let idx = idx_table[ignore_last_bit as usize];
+        assert_eq!(
+            import_part_of_key,
+            &table[idx as usize..idx as usize + important_elements]
+        );
+    }
 }
 
-#[inline]
-const fn select_nth_byte_for_table<const BYTE: u8>(byte: u64) -> u8 {
-    (byte >> BYTE & 0b11111111) as u8
+static TABLES: ([u8; 326], [u16; 128]) = generate_keep_values_compressed_table();
+static KEEP_VALUES_COMPRESSED: &[u8; 326] = &TABLES.0;
+static KEEP_VALUES_IDX_COMPRESSED: &[u16; 128] = &TABLES.1;
+static KEEP_VALUES_COMPRESSED_PTRS: [&'static [u8; 8]; 128] = {
+    let mut ptrs = [&[0u8; 8]; 128];
+
+    let mut j = 0;
+    while j < 128 {
+        let slice = KEEP_VALUES_COMPRESSED
+            .split_at(KEEP_VALUES_IDX_COMPRESSED[j] as usize)
+            .1;
+        let slice = slice.split_at(8).0;
+        ptrs[j] = unsafe { &*(slice.as_ptr() as *const [u8; 8]) };
+        j += 1;
+    }
+
+    ptrs
+};
+static COUNT_ONES: [u8; 256] = {
+    let mut count_ones = [0u8; 256];
+    let mut i = 0;
+    while i < 256 {
+        count_ones[i] = i.count_ones() as u8;
+        i += 1;
+    }
+    count_ones
+};
+
+const fn generate_keep_values_compressed_table() -> ([u8; 326], [u16; 128]) {
+    let mut idx_table = [0u16; 128];
+    let mut idx_table_fill = 0;
+    let mut table = [0u8; 326];
+    let mut table_fill = 0usize;
+    let mut i = 255u8;
+    'o: while i > 127 {
+        let key = keep(i as u8, 0);
+        let important_elements = i.count_ones() as usize;
+        let mut window_index = 0;
+        while window_index <= table_fill.saturating_sub(important_elements) {
+            let mut equal_index = 0;
+            let mut equal = true;
+            while equal_index < important_elements {
+                if table[window_index + equal_index] != key[equal_index] {
+                    equal = false;
+                    break;
+                }
+                equal_index += 1;
+            }
+            if equal {
+                idx_table[127 - idx_table_fill] = window_index as u16;
+                idx_table_fill += 1;
+                i -= 1;
+                continue 'o;
+            }
+            window_index += 1;
+        }
+
+        idx_table[127 - idx_table_fill] = table_fill as u16;
+        idx_table_fill += 1;
+
+        let mut index = 0;
+        while index < important_elements {
+            table[table_fill] = key[index];
+            table_fill += 1;
+            index += 1;
+        }
+
+        i -= 1;
+    }
+    (table, idx_table)
 }
 
 impl KeepValuesImpl<16> for () {
@@ -265,12 +360,12 @@ impl KeepValuesImpl<16> for () {
         values: Simd<S, 16>,
     ) -> (Simd<S, 16>, u8) {
         let mask = mask.to_bitmask();
-        copy_8_values!([0, 8], values, mask)
+        copy_8_values!([0, 1], values, mask)
     }
 
     fn keep_values_idx<M: MaskElement>(mask: Mask<M, 16>) -> (Simd<u8, 16>, u8) {
         let bitmask = mask.to_bitmask();
-        copy_8_values_mask!([0, 8], bitmask)
+        copy_8_values_mask!([0, 1], bitmask)
     }
 }
 
@@ -280,12 +375,12 @@ impl KeepValuesImpl<32> for () {
         values: Simd<S, 32>,
     ) -> (Simd<S, 32>, u8) {
         let mask = mask.to_bitmask();
-        copy_8_values!([0, 8, 16, 24], values, mask)
+        copy_8_values!([0, 1, 2, 3], values, mask)
     }
 
     fn keep_values_idx<M: MaskElement>(mask: Mask<M, 32>) -> (Simd<u8, 32>, u8) {
         let bitmask = mask.to_bitmask();
-        copy_8_values_mask!([0, 8, 16, 24], bitmask)
+        copy_8_values_mask!([0, 1, 2, 3], bitmask)
     }
 }
 
@@ -295,12 +390,12 @@ impl KeepValuesImpl<64> for () {
         values: Simd<S, 64>,
     ) -> (Simd<S, 64>, u8) {
         let mask = mask.to_bitmask();
-        copy_8_values!([0, 8, 16, 24, 32, 40, 48, 56], values, mask)
+        copy_8_values!([0, 1, 2, 3, 4, 5, 6, 7], values, mask)
     }
 
     fn keep_values_idx<M: MaskElement>(mask: Mask<M, 64>) -> (Simd<u8, 64>, u8) {
         let bitmask = mask.to_bitmask();
-        copy_8_values_mask!([0, 8, 16, 24, 32, 40, 48, 56], bitmask)
+        copy_8_values_mask!([0, 1, 2, 3, 4, 5, 6, 7], bitmask)
     }
 }
 
@@ -506,12 +601,11 @@ where
     let processed_in_this_merge = idx_before_number(tokens_processed);
     let copy_from = all_copy & processed_in_this_merge & !prev_is_merge;
 
-    let merge_with_next_shift_right = prev_is_merge;
     let keep = copy_from | merge_with_next;
     #[cfg(debug_assertions)]
     {
         // Make sure all of the tokens we processed are included in the new tokenization
-        let tokens_used = keep | merge_with_next_shift_right;
+        let tokens_used = keep | prev_is_merge;
         let processed = idx_before_number(tokens_processed);
         let tokens_used_or_unprocessed = tokens_used | !processed;
         assert!(tokens_used_or_unprocessed.all());

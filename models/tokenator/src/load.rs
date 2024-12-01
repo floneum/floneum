@@ -1,8 +1,8 @@
 use std::{
     collections::{HashMap, HashSet},
-    fmt::{Debug, Write},
+    fmt::Debug,
     num::NonZeroU8,
-    simd::{num::SimdUint, LaneCount, Simd, SimdElement, SupportedLaneCount},
+    simd::{num::SimdUint, Simd},
     vec,
 };
 
