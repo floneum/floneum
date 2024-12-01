@@ -6,7 +6,7 @@ use tokenator::*;
 
 pub fn keep_values_idx_bench(c: &mut Criterion) {
     let mut group = c.benchmark_group("keep");
-    group.throughput(criterion::Throughput::Elements(8));
+    group.throughput(criterion::Throughput::Elements(8*100));
     group.bench_function(BenchmarkId::new("keep_values_idx", 8), |b| {
         b.iter_batched(
             || {
@@ -22,12 +22,12 @@ pub fn keep_values_idx_bench(c: &mut Criterion) {
             criterion::BatchSize::SmallInput,
         );
     });
-    group.throughput(criterion::Throughput::Elements(16));
+    group.throughput(criterion::Throughput::Elements(16*100));
     group.bench_function(BenchmarkId::new("keep_values_idx", 16), |b| {
         b.iter_batched(
             || {
                 (0..100)
-                    .map(|_| Mask::<i16, 16>::from_bitmask(rand::random::<u64>()))
+                    .map(|_| Mask::<i8, 16>::from_bitmask(rand::random::<u64>()))
                     .collect::<Vec<_>>()
             },
             |random| {
@@ -38,12 +38,12 @@ pub fn keep_values_idx_bench(c: &mut Criterion) {
             criterion::BatchSize::SmallInput,
         );
     });
-    group.throughput(criterion::Throughput::Elements(32));
+    group.throughput(criterion::Throughput::Elements(32*100));
     group.bench_function(BenchmarkId::new("keep_values_idx", 32), |b| {
         b.iter_batched(
             || {
                 (0..100)
-                    .map(|_| Mask::<i32, 32>::from_bitmask(rand::random::<u64>()))
+                    .map(|_| Mask::<i8, 32>::from_bitmask(rand::random::<u64>()))
                     .collect::<Vec<_>>()
             },
             |random| {
@@ -54,12 +54,12 @@ pub fn keep_values_idx_bench(c: &mut Criterion) {
             criterion::BatchSize::SmallInput,
         );
     });
-    group.throughput(criterion::Throughput::Elements(64));
+    group.throughput(criterion::Throughput::Elements(64*100));
     group.bench_function(BenchmarkId::new("keep_values_idx", 64), |b| {
         b.iter_batched(
             || {
                 (0..100)
-                    .map(|_| Mask::<i64, 64>::from_bitmask(rand::random::<u64>()))
+                    .map(|_| Mask::<i8, 64>::from_bitmask(rand::random::<u64>()))
                     .collect::<Vec<_>>()
             },
             |random| {
@@ -74,7 +74,7 @@ pub fn keep_values_idx_bench(c: &mut Criterion) {
 
 pub fn swizzle_values_idx_bench(c: &mut Criterion) {
     let mut group = c.benchmark_group("swizzle");
-    group.throughput(criterion::Throughput::Elements(8));
+    group.throughput(criterion::Throughput::Elements(8*100));
     group.bench_function(BenchmarkId::new("swizzle_values_idx", 8), |b| {
         b.iter_batched(
             || {
@@ -95,15 +95,15 @@ pub fn swizzle_values_idx_bench(c: &mut Criterion) {
             criterion::BatchSize::SmallInput,
         );
     });
-    group.throughput(criterion::Throughput::Elements(16));
+    group.throughput(criterion::Throughput::Elements(16*100));
     group.bench_function(BenchmarkId::new("swizzle_values_idx", 16), |b| {
         b.iter_batched(
             || {
                 (0..100)
                     .map(|_| {
                         (
-                            Mask::<i16, 16>::from_bitmask(rand::random::<u64>()),
-                            Simd::from_array(std::array::from_fn(|_| rand::random::<u16>())),
+                            Mask::<i8, 16>::from_bitmask(rand::random::<u64>()),
+                            Simd::from_array(std::array::from_fn(|_| rand::random::<u8>())),
                         )
                     })
                     .collect::<Vec<_>>()
@@ -116,15 +116,15 @@ pub fn swizzle_values_idx_bench(c: &mut Criterion) {
             criterion::BatchSize::SmallInput,
         );
     });
-    group.throughput(criterion::Throughput::Elements(32));
+    group.throughput(criterion::Throughput::Elements(32*100));
     group.bench_function(BenchmarkId::new("swizzle_values_idx", 32), |b| {
         b.iter_batched(
             || {
                 (0..100)
                     .map(|_| {
                         (
-                            Mask::<i32, 32>::from_bitmask(rand::random::<u64>()),
-                            Simd::from_array(std::array::from_fn(|_| rand::random::<u32>())),
+                            Mask::<i8, 32>::from_bitmask(rand::random::<u64>()),
+                            Simd::from_array(std::array::from_fn(|_| rand::random::<u8>())),
                         )
                     })
                     .collect::<Vec<_>>()
@@ -137,15 +137,15 @@ pub fn swizzle_values_idx_bench(c: &mut Criterion) {
             criterion::BatchSize::SmallInput,
         );
     });
-    group.throughput(criterion::Throughput::Elements(64));
+    group.throughput(criterion::Throughput::Elements(64*100));
     group.bench_function(BenchmarkId::new("swizzle_values_idx", 64), |b| {
         b.iter_batched(
             || {
                 (0..100)
                     .map(|_| {
                         (
-                            Mask::<i64, 64>::from_bitmask(rand::random::<u64>()),
-                            Simd::from_array(std::array::from_fn(|_| rand::random::<u64>())),
+                            Mask::<i8, 64>::from_bitmask(rand::random::<u64>()),
+                            Simd::from_array(std::array::from_fn(|_| rand::random::<u8>())),
                         )
                     })
                     .collect::<Vec<_>>()
@@ -160,5 +160,93 @@ pub fn swizzle_values_idx_bench(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, keep_values_idx_bench, swizzle_values_idx_bench);
+pub fn swizzle_values_idx_bench_precomputed(c: &mut Criterion) {
+    let mut group = c.benchmark_group("swizzle_precomputed");
+    group.throughput(criterion::Throughput::Elements(8*100));
+    group.bench_function(BenchmarkId::new("swizzle_values_idx_precomputed", 8), |b| {
+        b.iter_batched(
+            || {
+                (0..100)
+                    .map(|_| {
+                        (
+                            PreparedKeep::<8>::new(rand::random::<u64>().to_le_bytes()),
+                            Simd::<_, 8>::from_array(std::array::from_fn(|_| rand::random::<u8>())),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            },
+            |random| {
+                for (mask, values) in random {
+                    black_box(mask.swizzle_values(values));
+                }
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
+    group.throughput(criterion::Throughput::Elements(16*100));
+    group.bench_function(BenchmarkId::new("swizzle_values_idx_precomputed", 16), |b| {
+        b.iter_batched(
+            || {
+                (0..100)
+                    .map(|_| {
+                        (
+                            PreparedKeep::<16>::new(rand::random::<u64>().to_le_bytes()),
+                            Simd::<_, 16>::from_array(std::array::from_fn(|_| rand::random::<u8>())),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            },
+            |random| {
+                for (mask, values) in random {
+                    black_box(mask.swizzle_values(values));
+                }
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
+    group.throughput(criterion::Throughput::Elements(32*100));
+    group.bench_function(BenchmarkId::new("swizzle_values_idx_precomputed", 32), |b| {
+        b.iter_batched(
+            || {
+                (0..100)
+                    .map(|_| {
+                        (
+                            PreparedKeep::<32>::new(rand::random::<u64>().to_le_bytes()),
+                            Simd::<_, 32>::from_array(std::array::from_fn(|_| rand::random::<u8>())),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            },
+            |random| {
+                for (mask, values) in random {
+                    black_box(mask.swizzle_values(values));
+                }
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
+    group.throughput(criterion::Throughput::Elements(64*100));
+    group.bench_function(BenchmarkId::new("swizzle_values_idx_precomputed", 64), |b| {
+        b.iter_batched(
+            || {
+                (0..100)
+                    .map(|_| {
+                        (
+                            PreparedKeep::<64>::new(rand::random::<u64>().to_le_bytes()),
+                            Simd::<_, 64>::from_array(std::array::from_fn(|_| rand::random::<u8>())),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            },
+            |random| {
+                for (mask, values) in random {
+                    black_box(mask.swizzle_values(values));
+                }
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
+}
+
+criterion_group!(benches, keep_values_idx_bench, swizzle_values_idx_bench, swizzle_values_idx_bench_precomputed);
 criterion_main!(benches);

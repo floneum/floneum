@@ -101,6 +101,84 @@ type CurrentSIMDElement = u16;
 type CurrentMaskElement = i16;
 const SIZE: usize = std::mem::size_of::<CurrentSIMDElement>() * 8;
 
+pub struct PreparedKeep<const N: usize> where LaneCount<N>: SupportedLaneCount {
+    indexes: Simd<u8, N>,
+    elements: u8
+}
+
+impl<const N: usize> PreparedKeep<N> where LaneCount<N>: SupportedLaneCount {
+    pub fn new<const M: usize>(bytes: [u8; M]) -> Self {
+        const { assert!(M * 8 >= N) };
+        let mut chunks = [0; N];
+        let mut chunk_fill = 0;
+
+        let mut elements = 0;
+        for (i, &byte) in bytes.iter().take(N / 8).enumerate() {    
+            let count = COUNT_ONES[byte as usize];
+            elements += count;
+            let idx = (byte & 0b01111111) as usize;
+            let array = unsafe { **KEEP_VALUES_COMPRESSED_PTRS.get_unchecked(idx) };
+            for j in 0..count {
+                chunks[chunk_fill] = array[j as usize] + i as u8 * 8;
+                chunk_fill += 1;
+            }
+        }
+
+        Self {
+            indexes: Simd::from_array(chunks),
+            elements
+        }
+    }
+
+    pub fn swizzle_values<const N2: usize, S: SimdElement + Default>(&self, values: Simd<S, N2>) -> Simd<S, N2> where LaneCount<N2>: SupportedLaneCount {
+        const { assert!(N2 <= N) };
+        let indexes = self.indexes.as_array();
+        let indexes = indexes as *const [u8; N] as *const [u8; N2]; 
+        let indexes = unsafe { Simd::from_array(*indexes) };
+        let chunk_ptr = values.as_array().as_ptr();
+        let simd = unsafe { Simd::gather_ptr(Simd::splat(chunk_ptr).wrapping_add(indexes.cast())) };
+
+        simd
+    }
+}
+
+#[test]
+fn test_keep_values_precomputed() {
+    let values = Simd::from_array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+    let mask: Mask<i16, 16> = Mask::from_array([
+        true, false, true, true, false, true, true, false, false, false, true, false, false, false,
+        true, false,
+    ]);
+    let precomputed = PreparedKeep::<16>::new(mask.to_bitmask().to_le_bytes());
+    let output = precomputed.swizzle_values(values);
+    let fill = precomputed.elements;
+    let as_slice = &output.as_array()[..fill as usize];
+    assert_eq!(as_slice, [1, 3, 4, 6, 7, 11, 15]);
+
+    for _ in 0..100 {
+        let rand = rand::random::<u64>();
+        let bitset: Mask<CurrentMaskElement, 16> = Mask::from_bitmask(rand);
+        let precomputed = PreparedKeep::<16>::new(bitset.to_bitmask().to_le_bytes());
+        let values: Simd<u16, 16> = Simd::from_array(std::array::from_fn(|_| {
+            rand::random::<CurrentSIMDElement>()
+        }));
+        let output = precomputed.swizzle_values(values);
+        let fill = precomputed.elements;
+        let as_slice = &output.as_array()[..fill as usize];
+        assert_eq!(
+            as_slice,
+            bitset
+                .to_array()
+                .iter()
+                .enumerate()
+                .filter(|(_, b)| **b)
+                .map(|(i, _)| values.as_array()[i])
+                .collect::<Vec<_>>()
+                .as_slice()
+        );
+    }
+}
+
 /// Move all of the values where the mask is true to the front of the vector and replace the remaining values with the or value
 #[inline]
 pub fn keep_values<const N: usize, S: SimdElement + Default>(
@@ -515,17 +593,13 @@ where
     let mut prev_element_in_level = in_this_level.shift_right::<1>();
     prev_element_in_level.set(0, false);
     let start_of_run_mask = in_this_level & (!prev_element_in_level | this_less_then_next);
-    println!("starts:    {start_of_run_mask:?}");
     let (starts_indexes_raw, starts_idx) = keep_values_idx(start_of_run_mask);
-    println!("starts:    {starts_indexes_raw:?}");
     let starts_indexes_raw = starts_indexes_raw.cast();
 
     let mut next_element_in_level = in_this_level.shift_left::<1>();
     next_element_in_level.set(SIZE - 1, true);
     let end_of_run_mask = in_this_level & (!next_element_in_level | last_less_than_this_and);
-    println!("ends:      {end_of_run_mask:?}");
     let (ends_indexes_raw, ends_idx) = keep_values_idx(end_of_run_mask);
-    println!("ends:      {ends_indexes_raw:?}");
     let ends_indexes_raw = ends_indexes_raw.cast();
     // If there is a final sequence that starts but is not ended, don't include that sequence in this batch. We
     // need to know the length before we merge anything.
