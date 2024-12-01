@@ -168,6 +168,14 @@ where
     pub fn elements(&self) -> u8 {
         self.elements
     }
+
+    pub fn indexes_simd(&self) -> Simd<u8, N> {
+        self.indexes
+    }
+
+    pub fn indexes(&self) -> &[u8] {
+        &self.indexes.as_array()[..N]
+    }
 }
 
 #[test]
@@ -248,27 +256,6 @@ mod sealed {
     impl Sealed for () {}
 }
 
-#[inline]
-unsafe fn merge<const N: usize, const M: usize, E: SimdElement + Default>(
-    all: [(Simd<E, 8>, u8); N],
-) -> (Simd<E, M>, u8)
-where
-    LaneCount<M>: SupportedLaneCount,
-    LaneCount<N>: SupportedLaneCount,
-{
-    const {
-        assert!(N * 8 == M);
-    }
-
-    let mut output = Simd::from_array([E::default(); M]);
-    let mut offset = 0;
-    for (all, this_offset) in all {
-        all.copy_to_slice(unsafe { output.as_mut_array().get_unchecked_mut(offset as usize..) });
-        offset += this_offset;
-    }
-    (output, offset)
-}
-
 impl KeepValuesImpl<8> for () {
     fn keep_values<S: SimdElement + Default>(
         mask: Mask<S::Mask, 8>,
@@ -301,53 +288,18 @@ impl KeepValuesImpl<8> for () {
 }
 
 macro_rules! copy_8_values {
-    ([$($i:expr),+], $values:expr, $mask:expr) => {{
-        unsafe {
-            let bytes = $mask.to_le_bytes();
-            merge(
-                [
-                    $(
-                        {
-                            let byte = bytes[$i];
-                            let elements = COUNT_ONES[byte as usize];
-                            let idx = (byte & 0b01111111) as usize;
-                            let array = **KEEP_VALUES_COMPRESSED_PTRS.get_unchecked(idx);
-                            let indexes = Simd::from_array(array);
-                            let chunk_ptr = $values.as_array().as_ptr().add($i*8);
-                            let simd = Simd::gather_ptr(Simd::splat(chunk_ptr).wrapping_add(indexes.cast()));
-
-                            (simd, elements)
-                        }
-                    ),+
-                ]
-            )
-        }
+    ($i:expr, $values:expr, $mask:expr) => {{
+        let keep = PreparedKeep::<$i>::new($mask.to_le_bytes());
+        let values = keep.swizzle_values($values);
+        (values, keep.elements())
     }};
 }
 
 macro_rules! copy_8_values_mask {
-    ([$($i:expr),+], $mask:expr) => {
-        unsafe {
-            let bytes = $mask.to_le_bytes();
-            merge(
-                [
-                    $(
-                        {
-                            let byte = bytes[$i];
-                            let elements = COUNT_ONES[byte as usize];
-                            let idx = (byte & 0b01111111) as usize;
-                            let array = **KEEP_VALUES_COMPRESSED_PTRS.get_unchecked(idx);
-                            let mut simd = Simd::from_array(array);
-                            let offset = Simd::from_array([$i; 8]);
-                            simd += offset;
-
-                            (simd, elements)
-                        }
-                    ),+
-                ]
-            )
-        }
-    };
+    ($i:expr, $mask:expr) => {{
+        let keep = PreparedKeep::<$i>::new($mask.to_le_bytes());
+        (keep.indexes_simd(), keep.elements())
+    }};
 }
 
 #[test]
@@ -465,13 +417,13 @@ impl KeepValuesImpl<16> for () {
         mask: Mask<S::Mask, 16>,
         values: Simd<S, 16>,
     ) -> (Simd<S, 16>, u8) {
-        let mask = mask.to_bitmask();
-        copy_8_values!([0, 1], values, mask)
+        let mask = mask.to_bitmask() as u16;
+        copy_8_values!(16, values, mask)
     }
 
     fn keep_values_idx<M: MaskElement>(mask: Mask<M, 16>) -> (Simd<u8, 16>, u8) {
-        let bitmask = mask.to_bitmask();
-        copy_8_values_mask!([0, 1], bitmask)
+        let bitmask = mask.to_bitmask() as u16;
+        copy_8_values_mask!(16, bitmask)
     }
 }
 
@@ -480,13 +432,13 @@ impl KeepValuesImpl<32> for () {
         mask: Mask<S::Mask, 32>,
         values: Simd<S, 32>,
     ) -> (Simd<S, 32>, u8) {
-        let mask = mask.to_bitmask();
-        copy_8_values!([0, 1, 2, 3], values, mask)
+        let mask = mask.to_bitmask() as u32;
+        copy_8_values!(32, values, mask)
     }
 
     fn keep_values_idx<M: MaskElement>(mask: Mask<M, 32>) -> (Simd<u8, 32>, u8) {
-        let bitmask = mask.to_bitmask();
-        copy_8_values_mask!([0, 1, 2, 3], bitmask)
+        let bitmask = mask.to_bitmask() as u32;
+        copy_8_values_mask!(32, bitmask)
     }
 }
 
@@ -496,12 +448,12 @@ impl KeepValuesImpl<64> for () {
         values: Simd<S, 64>,
     ) -> (Simd<S, 64>, u8) {
         let mask = mask.to_bitmask();
-        copy_8_values!([0, 1, 2, 3, 4, 5, 6, 7], values, mask)
+        copy_8_values!(64, values, mask)
     }
 
     fn keep_values_idx<M: MaskElement>(mask: Mask<M, 64>) -> (Simd<u8, 64>, u8) {
         let bitmask = mask.to_bitmask();
-        copy_8_values_mask!([0, 1, 2, 3, 4, 5, 6, 7], bitmask)
+        copy_8_values_mask!(64, bitmask)
     }
 }
 
@@ -715,10 +667,12 @@ where
 
     let copied_from_original = tokens;
     let copied_from_merge = merge_with_next.cast().select(merges, copied_from_original);
-    let (new_merges, _) = keep_values(keep.cast(), merges);
-    let (new_merge_priority, _) = keep_values(keep.cast(), merge_priority);
-    let (new_levels, _) = keep_values(keep.cast(), levels);
-    let (new_tokens, new_tokens_len) = keep_values(keep.cast(), copied_from_merge);
+    let keeper = PreparedKeep::<N>::new::<2>((keep.to_bitmask() as u16).to_le_bytes());
+    let new_merges = keeper.swizzle_values(merges);
+    let new_merge_priority = keeper.swizzle_values(merge_priority);
+    let new_levels = keeper.swizzle_values(levels);
+    let new_tokens = keeper.swizzle_values(copied_from_merge);
+    let new_tokens_len = keeper.elements();
     #[cfg(debug_assertions)]
     {
         // Make sure there are no u32::MAX tokens in the new tokenization
