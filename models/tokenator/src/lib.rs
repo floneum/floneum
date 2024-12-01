@@ -198,9 +198,8 @@ macro_rules! copy_8_values {
                                 let bits = select_nth_byte_for_table::<$i>($mask);
                                 let table = const { KEEP_VALUES_TABLE[0] };
                                 let (indexes, elements) = table.get_unchecked((bits & 0b01111111) as usize);
-                                const SIMD_IDX: [usize; 8] = [$i, $i + 1, $i + 2, $i + 3, $i + 4, $i + 5, $i + 6, $i + 7];
-                                let chunk = simd_swizzle!($values, SIMD_IDX);
-                                let simd = Simd::gather_ptr(Simd::splat(chunk.as_array().as_ptr()).wrapping_add(indexes.cast()));
+                                let chunk_ptr = $values.as_array().as_ptr().add($i);
+                                let simd = Simd::gather_ptr(Simd::splat(chunk_ptr).wrapping_add(indexes.cast()));
 
                                 (simd, elements + (bits >> 7))
                             }
