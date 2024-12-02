@@ -668,6 +668,7 @@ where
     let copied_from_original = tokens;
     let copied_from_merge = merge_with_next.cast().select(merges, copied_from_original);
     let keeper = PreparedKeep::<N>::new::<2>((keep.to_bitmask() as u16).to_le_bytes());
+    let recalculate_mask = keeper.swizzle_values(merge_with_next.to_int());
     let new_merges = keeper.swizzle_values(merges);
     let new_merge_priority = keeper.swizzle_values(merge_priority);
     let new_levels = keeper.swizzle_values(levels);
@@ -680,7 +681,8 @@ where
         assert!(processed.iter().all(|&x| x != u32::MAX), "The final processed tokens should not contain uninitialized u32::MAX tokens. Found {processed:?}");
     }
 
-    let recalculate_mask = 0;
+    let recalculate_mask =
+        unsafe { Mask::from_int_unchecked(recalculate_mask) }.to_bitmask() as u16;
 
     TokenizationResult {
         new_tokens,
