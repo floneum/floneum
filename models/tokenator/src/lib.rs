@@ -517,7 +517,7 @@ const fn keep(i: u8, offset: u8) -> [u8; 8] {
 
 /// Move all of the values where the mask is true to the front of the vector and replace the remaining values with the or value
 #[inline]
-fn idx_before_number<const N: usize>(number: u8) -> Mask<CurrentMaskElement, N>
+fn idx_before_number<const N: usize, M: MaskElement>(number: u8) -> Mask<M, N>
 where
     LaneCount<N>: SupportedLaneCount,
 {

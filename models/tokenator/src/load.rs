@@ -5,11 +5,12 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
     num::NonZeroU8,
-    simd::{num::SimdUint, Simd},
+    simd::{num::SimdUint, ptr::SimdConstPtr, Simd},
+    usize::MAX,
     vec,
 };
 
-use crate::tokenize;
+use crate::{idx_before_number, tokenize};
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Merge {
@@ -246,14 +247,29 @@ impl FastBPETokenizer {
     ) {
         const MASK_SIZE: usize = 16;
         let max: Simd<u32, 32> = Simd::splat(u32::MAX);
-        for bytes in text.as_bytes().chunks(32) {
-            let len = bytes.len();
-            let bytes = Simd::load_or(bytes, Simd::splat(u8::MAX));
+        let mut chunks_exact = text.as_bytes().chunks_exact(32);
+        for bytes in &mut chunks_exact {
+            let bytes = unsafe { *(bytes.as_ptr() as *const [u8; 32]) };
+            let bytes = Simd::from_array(bytes);
             let bytes_idx = bytes.cast();
-            let encoded = Simd::gather_or(&self.byte_to_token, bytes_idx, max);
-            token_buffer.extend_from_slice(&encoded.as_array()[..len]);
+            let encoded = unsafe {
+                Simd::gather_ptr(Simd::splat(self.byte_to_token.as_ptr()).wrapping_add(bytes_idx))
+            };
+            token_buffer.extend_from_slice(encoded.as_array());
+        }
+        {
+            let chunks_remainder = chunks_exact.remainder();
+            if !chunks_remainder.is_empty() {
+                let mut chunk = [0u8; 32];
+                chunk[..chunks_remainder.len()].copy_from_slice(chunks_remainder);
+                let bytes = Simd::from_array(chunk);
+                let bytes_idx = bytes.cast();
+                let encoded = Simd::gather_or(&self.byte_to_token, bytes_idx, max);
+                token_buffer.extend_from_slice(&encoded.as_array()[..chunks_remainder.len()]);
+            }
         }
 
+        #[cfg(debug_assertions)]
         let starting_text: String = token_buffer
             .iter()
             .filter_map(|&v| std::str::from_utf8(self.tokens.get(v as usize)?).ok())
@@ -285,61 +301,74 @@ impl FastBPETokenizer {
             // println!("level_buffer: {level_buffer:?}");
             // println!("merge_buffer: {merge_buffer:?}");
             // println!("merge_priority_buffer: {merge_priority_buffer:?}");
-            let text: String = token_buffer
-                .iter()
-                .filter_map(|&v| std::str::from_utf8(self.tokens.get(v as usize)?).ok())
-                .collect();
-            // println!("text: {}", text);
-            debug_assert_eq!(text, starting_text);
+            #[cfg(debug_assertions)]
+            {
+                let text: String = token_buffer
+                    .iter()
+                    .filter_map(|&v| std::str::from_utf8(self.tokens.get(v as usize)?).ok())
+                    .collect();
+                // println!("text: {}", text);
+                assert_eq!(text, starting_text);
+            }
             let mut index = 0;
             let mut fill_index = 0;
             // let mut recalculate_last_merge = false;
             let original_token_buffer_len = token_buffer.len();
-            while index < original_token_buffer_len {
-                let token_buffer_end = unsafe { token_buffer.get_unchecked_mut(index..) };
-                let token_buffer_end_len = token_buffer_end.len().min(16);
-                let tokens = Simd::load_or(token_buffer_end, Simd::splat(u32::MAX));
-                // println!(
-                //     "processing: {:?}",
-                //     &tokens.as_array()[..token_buffer_end_len]
-                // );
-                let levels = Simd::load_or(
-                    unsafe { level_buffer.get_unchecked_mut(index..) },
-                    Simd::splat(u8::MAX),
-                );
-                let merges = Simd::load_or(
-                    unsafe { merge_buffer.get_unchecked_mut(index..) },
-                    Simd::splat(u32::MAX),
-                );
-                let merge_priority = Simd::load_or(
-                    unsafe { merge_priority_buffer.get_unchecked_mut(index..) },
-                    Simd::splat(u16::MAX),
-                );
+            let mut skip_copy = true;
+
+            #[inline]
+            fn loop_body<const CHUNK_LEN_SIMD_SIZE: bool>(
+                level: u8,
+                index: &mut usize,
+                fill_index: &mut usize,
+                token_buffer: &mut Vec<u32>,
+                level_buffer: &mut Vec<u8>,
+                merge_buffer: &mut Vec<u32>,
+                merge_priority_buffer: &mut Vec<u16>,
+                levels: Simd<u8, MASK_SIZE>,
+                tokens: Simd<u32, MASK_SIZE>,
+                merges: Simd<u32, MASK_SIZE>,
+                merge_priority: Simd<u16, MASK_SIZE>,
+                chunk_len: usize,
+                skip_copy: &mut bool,
+            ) {
                 let min_level = levels.reduce_min();
                 if min_level > level {
-                    // Just copy the tokens over
-                    token_buffer[fill_index..fill_index + token_buffer_end_len]
-                        .copy_from_slice(&tokens.as_array()[..token_buffer_end_len]);
+                    if !*skip_copy {
+                        // Just copy the tokens over
+                        if CHUNK_LEN_SIMD_SIZE {
+                            unsafe {
+                                tokens.copy_to_slice(token_buffer.get_unchecked_mut(*fill_index..));
+                            }
+                        } else {
+                            token_buffer[*fill_index..*fill_index + chunk_len]
+                                .copy_from_slice(&tokens.as_array()[..chunk_len]);
+                        }
+                    }
                     // tokens.copy_to_slice(&mut token_buffer[fill_index..]);
                     // levels.copy_to_slice(&mut level_buffer[fill_index..]);
                     // merges.copy_to_slice(&mut merge_buffer[fill_index..]);
                     // merge_priority.copy_to_slice(&mut merge_priority_buffer[fill_index..]);
-                    index += token_buffer_end_len;
-                    fill_index += token_buffer_end_len;
-                    continue;
+                    *index += chunk_len;
+                    *fill_index += chunk_len;
+                    return;
                 }
 
                 let result = tokenize::<MASK_SIZE>(tokens, merges, levels, merge_priority, level);
                 // println!("result: {result:?}");
 
-                let padding_len = 16 - token_buffer_end_len;
+                let padding_len = 16 - chunk_len;
                 let new_token_len = result.new_tokens_len as usize - padding_len;
 
                 // Update any merges as needed
-                token_buffer[fill_index..fill_index + new_token_len as usize]
-                    .copy_from_slice(&result.new_tokens.as_array()[..new_token_len]);
-                fill_index += new_token_len;
-                // let middle_arr = tokens.as_array();\
+                let enabled = idx_before_number(new_token_len as u8);
+                unsafe {
+                    result
+                        .new_tokens
+                        .store_select_ptr(token_buffer.as_mut_ptr().add(*fill_index), enabled);
+                }
+                *fill_index += new_token_len;
+                // let middle_arr = tokens.as_array();
                 // let mut update_mask = result.recalculate_mask;
                 // for i in 0..result.new_tokens_len as usize {
                 //     Add the token to the buffer
@@ -374,7 +403,77 @@ impl FastBPETokenizer {
                 //     update_mask >>= 1;
                 //     fill_index += 1;
                 // }
-                index += result.tokens_processed as usize;
+                *index += result.tokens_processed as usize;
+                *skip_copy = false;
+            }
+
+            while index + MASK_SIZE < original_token_buffer_len {
+                let token_chunk =
+                    unsafe { *(token_buffer.as_ptr().add(index) as *const [u32; MASK_SIZE]) };
+                let tokens = Simd::from_array(token_chunk);
+                let levels_chunk =
+                    unsafe { *(level_buffer.as_ptr().add(index) as *const [u8; MASK_SIZE]) };
+                let levels = Simd::from_array(levels_chunk);
+                let merges_chunk =
+                    unsafe { *(merge_buffer.as_ptr().add(index) as *const [u32; MASK_SIZE]) };
+                let merges = Simd::from_array(merges_chunk);
+                let merge_priority_chunk = unsafe {
+                    *(merge_priority_buffer.as_ptr().add(index) as *const [u16; MASK_SIZE])
+                };
+                let merge_priority = Simd::from_array(merge_priority_chunk);
+                let chunk_len = MASK_SIZE;
+                loop_body::<true>(
+                    level,
+                    &mut index,
+                    &mut fill_index,
+                    token_buffer,
+                    level_buffer,
+                    merge_buffer,
+                    merge_priority_buffer,
+                    levels,
+                    tokens,
+                    merges,
+                    merge_priority,
+                    chunk_len,
+                    &mut skip_copy,
+                );
+            }
+            // Process the last (partial) chunk
+            if index < original_token_buffer_len {
+                let token_buffer_end = unsafe { token_buffer.get_unchecked(index..) };
+                let mut buffer = [u32::MAX; 16];
+                buffer[..token_buffer_end.len()].copy_from_slice(token_buffer_end);
+                let tokens = Simd::from_array(buffer);
+                let levels_buffer_end = unsafe { level_buffer.get_unchecked(index..) };
+                let mut buffer = [u8::MAX; 16];
+                buffer[..levels_buffer_end.len()].copy_from_slice(levels_buffer_end);
+                let levels = Simd::from_array(buffer);
+                let merges_buffer_end = unsafe { merge_buffer.get_unchecked(index..) };
+                let mut buffer = [u32::MAX; 16];
+                buffer[..merges_buffer_end.len()].copy_from_slice(merges_buffer_end);
+                let merges = Simd::from_array(buffer);
+                let merge_priority_buffer_end =
+                    unsafe { merge_priority_buffer.get_unchecked(index..) };
+                let mut buffer = [u16::MAX; 16];
+                buffer[..merge_priority_buffer_end.len()]
+                    .copy_from_slice(merge_priority_buffer_end);
+                let merge_priority = Simd::from_array(buffer);
+                let chunk_len = token_buffer_end.len().min(16);
+                loop_body::<false>(
+                    level,
+                    &mut index,
+                    &mut fill_index,
+                    token_buffer,
+                    level_buffer,
+                    merge_buffer,
+                    merge_priority_buffer,
+                    levels,
+                    tokens,
+                    merges,
+                    merge_priority,
+                    chunk_len,
+                    &mut skip_copy,
+                );
             }
             token_buffer.resize(fill_index, u32::MAX);
             // level_buffer.resize(fill_index, u8::MAX);
