@@ -674,12 +674,6 @@ where
     let new_levels = keeper.swizzle_values(levels);
     let new_tokens = keeper.swizzle_values(copied_from_merge);
     let new_tokens_len = keeper.elements();
-    #[cfg(debug_assertions)]
-    {
-        // Make sure there are no u32::MAX tokens in the new tokenization
-        let processed = &new_tokens.as_array()[..new_tokens_len as usize];
-        assert!(processed.iter().all(|&x| x != u32::MAX), "The final processed tokens should not contain uninitialized u32::MAX tokens. Found {processed:?}");
-    }
 
     let recalculate_mask =
         unsafe { Mask::from_int_unchecked(recalculate_mask) }.to_bitmask() as u16;

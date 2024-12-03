@@ -26,12 +26,12 @@ pub fn main() {
     let mut input_merges = Vec::new();
     let mut input_merge_priorities = Vec::new();
 
-    for scale in 0..6 {
+    for scale in 1..6 {
         let mut total_fast = 0.0;
         let mut total_hf = 0.0;
         let mut iterations = 0;
-        for _ in 0..10000000 / (10_usize.pow(scale)) {
-            let size = 10_usize.pow(scale).next_power_of_two();
+        for _ in 0..10000000 / (2_usize.pow(scale)) {
+            let size = 2_usize.pow(scale);
             let text = (0..)
                 .flat_map(|_| text.chars())
                 .filter(|c| c.is_alphabetic())
