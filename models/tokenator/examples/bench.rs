@@ -30,7 +30,7 @@ pub fn main() {
         let mut total_fast = 0.0;
         let mut total_hf = 0.0;
         let mut iterations = 0;
-        for _ in 0..10000000 / (2_usize.pow(scale)) {
+        for _ in 0..1000000 / (2_usize.pow(scale)) {
             let size = 2_usize.pow(scale);
             let text = (0..)
                 .flat_map(|_| text.chars())
