@@ -3,7 +3,7 @@ use std::{
     marker::PhantomData,
     simd::{
         cmp::{SimdPartialEq, SimdPartialOrd},
-        num::SimdUint,
+        num::{SimdInt, SimdUint},
         ptr::SimdConstPtr,
         LaneCount, Mask, MaskElement, Simd, SimdElement, SupportedLaneCount, Swizzle,
     },
@@ -535,7 +535,7 @@ where
     new_levels: Simd<u8, N>,
     new_tokens_len: u8,
     tokens_processed: u8,
-    recalculate_mask: u16,
+    recalculate_mask: Mask<i8, N>,
 }
 
 impl<const N: usize> AsRef<[u32]> for TokenizationResult<N>
@@ -598,7 +598,7 @@ where
                 new_merge_priority: merge_priority,
                 new_tokens_len: N as u8,
                 tokens_processed,
-                recalculate_mask: 0,
+                recalculate_mask: Mask::splat(false),
             };
         }
         ends_idx
@@ -668,15 +668,13 @@ where
     let copied_from_original = tokens;
     let copied_from_merge = merge_with_next.cast().select(merges, copied_from_original);
     let keeper = PreparedKeep::<N>::new::<2>((keep.to_bitmask() as u16).to_le_bytes());
-    let recalculate_mask = keeper.swizzle_values(merge_with_next.to_int());
+    let recalculate_mask: Simd<i8, N> = keeper.swizzle_values(merge_with_next.to_int()).cast();
+    let recalculate_mask = recalculate_mask.simd_eq(Simd::splat(-1));
     let new_merges = keeper.swizzle_values(merges);
     let new_merge_priority = keeper.swizzle_values(merge_priority);
     let new_levels = keeper.swizzle_values(levels);
     let new_tokens = keeper.swizzle_values(copied_from_merge);
     let new_tokens_len = keeper.elements();
-
-    let recalculate_mask =
-        unsafe { Mask::from_int_unchecked(recalculate_mask) }.to_bitmask() as u16;
 
     TokenizationResult {
         new_tokens,

@@ -6,7 +6,6 @@ use std::{
     fmt::Debug,
     num::NonZeroU8,
     simd::{num::SimdUint, ptr::SimdConstPtr, Simd},
-    usize::MAX,
     vec,
 };
 
@@ -275,27 +274,28 @@ impl FastBPETokenizer {
             .filter_map(|&v| std::str::from_utf8(self.tokens.get(v as usize)?).ok())
             .collect();
 
-        for level in 0..self.levels {
-            level_buffer.clear();
-            merge_buffer.clear();
-            merge_priority_buffer.clear();
-            for arr in token_buffer.windows(2) {
-                let &[first, second] = arr else {
-                    unreachable!()
-                };
-                if let Some(merge) = self.passes_might_merge_table.get(first, second) {
-                    level_buffer.push(merge.level);
-                    merge_buffer.push(merge.new_token);
-                    merge_priority_buffer.push(merge.rank);
-                } else {
-                    level_buffer.push(u8::MAX);
-                    merge_buffer.push(u32::MAX);
-                    merge_priority_buffer.push(u16::MAX);
-                }
+        level_buffer.clear();
+        merge_buffer.clear();
+        merge_priority_buffer.clear();
+        for arr in token_buffer.windows(2) {
+            let &[first, second] = arr else {
+                unreachable!()
+            };
+            if let Some(merge) = self.passes_might_merge_table.get(first, second) {
+                level_buffer.push(merge.level);
+                merge_buffer.push(merge.new_token);
+                merge_priority_buffer.push(merge.rank);
+            } else {
+                level_buffer.push(u8::MAX);
+                merge_buffer.push(u32::MAX);
+                merge_priority_buffer.push(u16::MAX);
             }
-            level_buffer.push(u8::MAX);
-            merge_buffer.push(u32::MAX);
-            merge_priority_buffer.push(u16::MAX);
+        }
+        level_buffer.push(u8::MAX);
+        merge_buffer.push(u32::MAX);
+        merge_priority_buffer.push(u16::MAX);
+
+        for level in 0..self.levels {
             // println!("level {level}");
             // println!("token_buffer: {token_buffer:?}");
             // println!("level_buffer: {level_buffer:?}");
@@ -312,7 +312,7 @@ impl FastBPETokenizer {
             }
             let mut index = 0;
             let mut fill_index = 0;
-            // let mut recalculate_last_merge = false;
+            let mut recalculate_last_merge = false;
             let original_token_buffer_len = token_buffer.len();
             let mut skip_copy = true;
 
@@ -331,6 +331,8 @@ impl FastBPETokenizer {
                 merge_priority: Simd<u16, MASK_SIZE>,
                 chunk_len: usize,
                 skip_copy: &mut bool,
+                recalculate_last_merge: &mut bool,
+                passes_might_merge_table: &MergeTable,
             ) {
                 let min_level = levels.reduce_min();
                 if min_level > level {
@@ -339,23 +341,49 @@ impl FastBPETokenizer {
                         if CHUNK_LEN_SIMD_SIZE {
                             unsafe {
                                 tokens.copy_to_slice(token_buffer.get_unchecked_mut(*fill_index..));
+                                levels.copy_to_slice(level_buffer.get_unchecked_mut(*fill_index..));
+                                merges.copy_to_slice(merge_buffer.get_unchecked_mut(*fill_index..));
+                                merge_priority.copy_to_slice(
+                                    merge_priority_buffer
+                                        .get_unchecked_mut(*fill_index..),
+                                );
                             }
                         } else {
                             token_buffer[*fill_index..*fill_index + chunk_len]
                                 .copy_from_slice(&tokens.as_array()[..chunk_len]);
+                            level_buffer[*fill_index..*fill_index + chunk_len]
+                                .copy_from_slice(&levels.as_array()[..chunk_len]);
+                            merge_buffer[*fill_index..*fill_index + chunk_len]
+                                .copy_from_slice(&merges.as_array()[..chunk_len]);
+                            merge_priority_buffer[*fill_index..*fill_index + chunk_len]
+                                .copy_from_slice(&merge_priority.as_array()[..chunk_len]);
+                        }
+                        if *recalculate_last_merge {
+                            let first = unsafe { *token_buffer.get_unchecked(*fill_index - 1) };
+                            let second = unsafe { *token_buffer.get_unchecked(*fill_index) };
+                            if let Some(merge) = passes_might_merge_table.get(first, second) {
+                                unsafe {
+                                    *level_buffer.get_unchecked_mut(*fill_index - 1) = merge.level;
+                                    *merge_buffer.get_unchecked_mut(*fill_index - 1) = merge.new_token;
+                                    *merge_priority_buffer.get_unchecked_mut(*fill_index - 1) =
+                                        merge.rank;
+                                }
+                            } else {
+                                unsafe {
+                                    *level_buffer.get_unchecked_mut(*fill_index - 1) = u8::MAX;
+                                }
+                            }
                         }
                     }
-                    // tokens.copy_to_slice(&mut token_buffer[fill_index..]);
-                    // levels.copy_to_slice(&mut level_buffer[fill_index..]);
-                    // merges.copy_to_slice(&mut merge_buffer[fill_index..]);
-                    // merge_priority.copy_to_slice(&mut merge_priority_buffer[fill_index..]);
+
+                    *recalculate_last_merge = false;
+
                     *index += chunk_len;
                     *fill_index += chunk_len;
                     return;
                 }
 
                 let result = tokenize::<MASK_SIZE>(tokens, merges, levels, merge_priority, level);
-                // println!("result: {result:?}");
 
                 let padding_len = 16 - chunk_len;
                 let new_token_len = result.new_tokens_len as usize - padding_len;
@@ -366,43 +394,41 @@ impl FastBPETokenizer {
                     result
                         .new_tokens
                         .store_select_ptr(token_buffer.as_mut_ptr().add(*fill_index), enabled);
+                    result
+                        .new_levels
+                        .store_select_ptr(level_buffer.as_mut_ptr().add(*fill_index), enabled.cast());
+                    result
+                        .new_merges
+                        .store_select_ptr(merge_buffer.as_mut_ptr().add(*fill_index), enabled);
+                    result
+                        .new_merge_priority
+                        .store_select_ptr(
+                            merge_priority_buffer.as_mut_ptr().add(*fill_index),
+                            enabled.cast(),
+                        );
                 }
-                *fill_index += new_token_len;
-                // let middle_arr = tokens.as_array();
-                // let mut update_mask = result.recalculate_mask;
-                // for i in 0..result.new_tokens_len as usize {
-                //     Add the token to the buffer
-                //     let token = result.new_tokens[i];
-                //     token_buffer[fill_index] = token;
-                //     if recalculate_last_merge {
-                //         let last = unsafe { *middle_arr.get_unchecked(fill_index - 1) };
-                //         if let Some(merge) = self.passes_might_merge_table.get(last, token) {
-                //             level_buffer[fill_index - 1] = merge.level;
-                //             merge_buffer[fill_index - 1] = merge.new_token;
-                //             merge_priority_buffer[fill_index - 1] = merge.rank;
-                //         } else {
-                //             level_buffer[fill_index - 1] = u8::MAX;
-                //         }
-                //     }
-                //     let recalculate_merge = update_mask & 1 == 1;
-                //     if recalculate_merge {
-                //         let next = unsafe { *middle_arr.get_unchecked(fill_index + 1) };
-                //         if let Some(merge) = self.passes_might_merge_table.get(token, next) {
-                //             level_buffer[fill_index] = merge.level;
-                //             merge_buffer[fill_index] = merge.new_token;
-                //             merge_priority_buffer[fill_index] = merge.rank;
-                //         } else {
-                //             level_buffer[fill_index] = u8::MAX;
-                //         }
-                //     } else {
-                //         level_buffer[fill_index] = result.new_levels[i];
-                //         merge_buffer[fill_index] = result.new_merges[i];
-                //         merge_priority_buffer[fill_index] = result.new_merge_priority[i];
-                //     }
-                //     recalculate_last_merge = recalculate_merge;
-                //     update_mask >>= 1;
-                //     fill_index += 1;
-                // }
+
+                for recalculate in &result.recalculate_mask.to_array()[..new_token_len] {
+                    if *fill_index > 0 && (*recalculate || *recalculate_last_merge) {
+                        let first = unsafe { *token_buffer.get_unchecked(*fill_index - 1) };
+                        let second = unsafe { *token_buffer.get_unchecked(*fill_index) };
+                        if let Some(merge) = passes_might_merge_table.get(first, second) {
+                            unsafe {
+                                *level_buffer.get_unchecked_mut(*fill_index - 1) = merge.level;
+                                *merge_buffer.get_unchecked_mut(*fill_index - 1) = merge.new_token;
+                                *merge_priority_buffer.get_unchecked_mut(*fill_index - 1) =
+                                    merge.rank;
+                            }
+                        } else {
+                            unsafe {
+                                *level_buffer.get_unchecked_mut(*fill_index - 1) = u8::MAX;
+                            }
+                        }
+                    }
+                    *recalculate_last_merge = *recalculate;
+                    *fill_index += 1;
+                }
+
                 *index += result.tokens_processed as usize;
                 *skip_copy = false;
             }
@@ -436,6 +462,8 @@ impl FastBPETokenizer {
                     merge_priority,
                     chunk_len,
                     &mut skip_copy,
+                    &mut recalculate_last_merge,
+                    &self.passes_might_merge_table,
                 );
             }
             // Process the last (partial) chunk
@@ -473,12 +501,23 @@ impl FastBPETokenizer {
                     merge_priority,
                     chunk_len,
                     &mut skip_copy,
+                    &mut recalculate_last_merge,
+                    &self.passes_might_merge_table,
                 );
             }
+
+            if recalculate_last_merge  {
+                unsafe {
+                    let last = level_buffer.get_unchecked_mut(fill_index - 1);
+                    *last = u8::MAX;
+
+                }
+            }
+
             token_buffer.resize(fill_index, u32::MAX);
-            // level_buffer.resize(fill_index, u8::MAX);
-            // merge_buffer.resize(fill_index, u32::MAX);
-            // merge_priority_buffer.resize(fill_index, u16::MAX);
+            level_buffer.resize(fill_index, u8::MAX);
+            merge_buffer.resize(fill_index, u32::MAX);
+            merge_priority_buffer.resize(fill_index, u16::MAX);
         }
     }
 }
