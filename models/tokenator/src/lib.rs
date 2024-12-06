@@ -596,7 +596,7 @@ where
                 new_levels: levels,
                 new_merges: merges,
                 new_merge_priority: merge_priority,
-                new_tokens_len: N as u8,
+                new_tokens_len: tokens_processed,
                 tokens_processed,
                 recalculate_mask: Mask::splat(false),
             };
@@ -742,4 +742,54 @@ fn test_single_level_merge_with_trailing_increasing_priority() {
     );
     assert_eq!(tokens.as_ref(), [5, 2, 1, 5, 7, 5, 2, 1, 5]);
     assert_eq!(tokens.tokens_processed, 13);
+}
+
+#[test]
+fn test_trailing_merge() {
+    _ = tracing_subscriber::fmt::try_init();
+
+    // level:          0
+    // tokens:         [66, 71, 64, 82, 71, 72, 82, 32, 77, 67, 88, 68, 83, 83, 71, 68]
+    // levels:         [3, 24, 3, 8, 29, 1, 255, 14, 3, 41, 38, 3, 28, 3, 4, 0]
+    // merges:         [331, 4317, 300, 939, 6151, 285, 4294967295, 2127, 303, 10470, 9188, 295, 5683, 339, 383, 261]
+    // merge_priority: [45, 614, 8, 80, 582, 26, 65535, 334, 11, 412, 423, 4, 296, 61, 31, 2]
+    let level = 0;
+    let tokens: Simd<u32, SIZE> = Simd::from_array([
+        66, 71, 64, 82, 71, 72, 82, 32, 77, 67, 88, 68, 83, 83, 71, 68,
+    ]);
+    let merges: Simd<u32, SIZE> = Simd::from_array([
+        331, 4317, 300, 939, 6151, 285, 4294967295, 2127, 303, 10470, 9188, 295, 5683, 339, 383,
+        261,
+    ]);
+    let levels: Simd<u8, SIZE> =
+        Simd::from_array([3, 24, 3, 8, 29, 1, 255, 14, 3, 41, 38, 3, 28, 3, 4, 0]);
+    let merge_priority: Simd<u16, SIZE> = Simd::from_array([
+        45, 614, 8, 80, 582, 26, 65535, 334, 11, 412, 423, 4, 296, 61, 31, 2,
+    ]);
+    let tokens = tokenize(tokens, merges, levels, merge_priority, level);
+
+    let tokens_processed = tokens.tokens_processed as usize;
+    let result_len = tokens.new_tokens_len as usize;
+
+    assert_eq!(tokens_processed, SIZE - 1);
+    assert_eq!(result_len, SIZE - 1);
+    assert_eq!(
+        tokens.as_ref(),
+        [66, 71, 64, 82, 71, 72, 82, 32, 77, 67, 88, 68, 83, 83, 71]
+    );
+    assert_eq!(
+        tokens.new_levels.as_array()[..result_len],
+        [3, 24, 3, 8, 29, 1, 255, 14, 3, 41, 38, 3, 28, 3, 4]
+    );
+    assert_eq!(
+        tokens.new_merges.as_array()[..result_len],
+        [331, 4317, 300, 939, 6151, 285, 4294967295, 2127, 303, 10470, 9188, 295, 5683, 339, 383]
+    );
+    assert_eq!(
+        tokens.new_merge_priority.as_array()[..result_len],
+        [45, 614, 8, 80, 582, 26, 65535, 334, 11, 412, 423, 4, 296, 61, 31]
+    );
+    assert_eq!(tokens.tokens_processed as usize, SIZE - 1);
+    assert!(!tokens.recalculate_mask.any());
+    assert_eq!(tokens.new_tokens_len as usize, SIZE - 1);
 }

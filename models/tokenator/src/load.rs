@@ -191,8 +191,6 @@ impl FastBPETokenizer {
             }
         }
 
-        // panic!("max current_pass_merges: {:?}", current_pass_merges.iter().map(|v| v.len()).collect::<Vec<_>>());
-
         let levels = current_pass_merges.len() as u8;
         let merges = current_pass_merges
             .drain(..)
@@ -296,18 +294,12 @@ impl FastBPETokenizer {
         merge_priority_buffer.push(u16::MAX);
 
         for level in 0..self.levels {
-            // println!("level {level}");
-            // println!("token_buffer: {token_buffer:?}");
-            // println!("level_buffer: {level_buffer:?}");
-            // println!("merge_buffer: {merge_buffer:?}");
-            // println!("merge_priority_buffer: {merge_priority_buffer:?}");
             #[cfg(debug_assertions)]
             {
                 let text: String = token_buffer
                     .iter()
                     .filter_map(|&v| std::str::from_utf8(self.tokens.get(v as usize)?).ok())
                     .collect();
-                // println!("text: {}", text);
                 assert_eq!(text, starting_text);
             }
             let mut index = 0;
@@ -334,7 +326,19 @@ impl FastBPETokenizer {
                 recalculate_last_merge: &mut bool,
                 passes_might_merge_table: &MergeTable,
             ) {
-                let min_level = levels.reduce_min();
+                tracing::trace!("level:          {level}");
+                tracing::trace!("tokens:         {}", tokens.as_array().iter().map(|v| format!("{v:010}")).collect::<Vec<_>>().join(", "));
+                tracing::trace!("levels:         {}", levels.as_array().iter().map(|v| format!("{v:010}")).collect::<Vec<_>>().join(", "));
+                tracing::trace!("merges:         {}", merges.as_array().iter().map(|v| format!("{v:010}")).collect::<Vec<_>>().join(", "));
+                tracing::trace!("merge_priority: {}", merge_priority.as_array().iter().map(|v| format!("{v:010}")).collect::<Vec<_>>().join(", "));
+                tracing::trace!("chunk_len:      {chunk_len}");
+                let levels_or_max = if CHUNK_LEN_SIMD_SIZE {
+                    levels
+                } else {
+                    let filter = idx_before_number(chunk_len as u8);
+                    filter.select(levels, Simd::splat(u8::MAX))
+                };
+                let min_level = levels_or_max.reduce_min();
                 if min_level > level {
                     if !*skip_copy {
                         // Just copy the tokens over
@@ -344,8 +348,7 @@ impl FastBPETokenizer {
                                 levels.copy_to_slice(level_buffer.get_unchecked_mut(*fill_index..));
                                 merges.copy_to_slice(merge_buffer.get_unchecked_mut(*fill_index..));
                                 merge_priority.copy_to_slice(
-                                    merge_priority_buffer
-                                        .get_unchecked_mut(*fill_index..),
+                                    merge_priority_buffer.get_unchecked_mut(*fill_index..),
                                 );
                             }
                         } else {
@@ -364,7 +367,8 @@ impl FastBPETokenizer {
                             if let Some(merge) = passes_might_merge_table.get(first, second) {
                                 unsafe {
                                     *level_buffer.get_unchecked_mut(*fill_index - 1) = merge.level;
-                                    *merge_buffer.get_unchecked_mut(*fill_index - 1) = merge.new_token;
+                                    *merge_buffer.get_unchecked_mut(*fill_index - 1) =
+                                        merge.new_token;
                                     *merge_priority_buffer.get_unchecked_mut(*fill_index - 1) =
                                         merge.rank;
                                 }
@@ -383,6 +387,19 @@ impl FastBPETokenizer {
                     return;
                 }
 
+                #[cfg(debug_assertions)]
+                for l in &levels.as_array()[..chunk_len] {
+                    if *l < level {
+                        eprintln!("Merges from a previous level");
+                        eprintln!("level: {level}");
+                        eprintln!("tokens: {tokens:?}");
+                        eprintln!("levels: {levels:?}");
+                        eprintln!("merges: {merges:?}");
+                        eprintln!("merge_priority: {merge_priority:?}");
+                        unreachable!("This should not be reachable");
+                    }
+                }
+
                 let result = tokenize::<MASK_SIZE>(tokens, merges, levels, merge_priority, level);
 
                 let padding_len = 16 - chunk_len;
@@ -394,18 +411,17 @@ impl FastBPETokenizer {
                     result
                         .new_tokens
                         .store_select_ptr(token_buffer.as_mut_ptr().add(*fill_index), enabled);
-                    result
-                        .new_levels
-                        .store_select_ptr(level_buffer.as_mut_ptr().add(*fill_index), enabled.cast());
+                    result.new_levels.store_select_ptr(
+                        level_buffer.as_mut_ptr().add(*fill_index),
+                        enabled.cast(),
+                    );
                     result
                         .new_merges
                         .store_select_ptr(merge_buffer.as_mut_ptr().add(*fill_index), enabled);
-                    result
-                        .new_merge_priority
-                        .store_select_ptr(
-                            merge_priority_buffer.as_mut_ptr().add(*fill_index),
-                            enabled.cast(),
-                        );
+                    result.new_merge_priority.store_select_ptr(
+                        merge_priority_buffer.as_mut_ptr().add(*fill_index),
+                        enabled.cast(),
+                    );
                 }
 
                 for recalculate in &result.recalculate_mask.to_array()[..new_token_len] {
@@ -506,11 +522,10 @@ impl FastBPETokenizer {
                 );
             }
 
-            if recalculate_last_merge  {
+            if recalculate_last_merge {
                 unsafe {
                     let last = level_buffer.get_unchecked_mut(fill_index - 1);
                     *last = u8::MAX;
-
                 }
             }
 
@@ -541,6 +556,61 @@ fn tokenize_test() {
     );
     println!("{token_buffer:?}");
     assert_eq!(token_buffer, [791, 6864, 315, 9822, 374, 12366, 25]);
+}
+
+#[test]
+fn other_tokenize_test() {
+    _ = tracing_subscriber::fmt::try_init();
+    let tokenizer =
+        postcard::from_bytes::<FastBPETokenizer>(&std::fs::read("./tokenizer-fast.bin").unwrap())
+            .unwrap();
+    let text = "catelyandsuccess The";
+    let mut token_buffer = Vec::new();
+    let mut level_buffer = Vec::new();
+    let mut merge_buffer = Vec::new();
+    let mut merge_priority_buffer = Vec::new();
+
+    tokenizer.tokenize(
+        text,
+        &mut token_buffer,
+        &mut level_buffer,
+        &mut merge_buffer,
+        &mut merge_priority_buffer,
+    );
+    println!("{token_buffer:?}");
+    assert_eq!(token_buffer, [66, 2718, 2914, 2621]);
+}
+
+#[test]
+fn many_merges_tokenize_test() {
+    _ = tracing_subscriber::fmt::try_init();
+    let tokenizer =
+        postcard::from_bytes::<FastBPETokenizer>(&std::fs::read("./tokenizer-fast.bin").unwrap())
+            .unwrap();
+    let text = "11111111111111111";
+    let mut token_buffer = Vec::new();
+    let mut level_buffer = Vec::new();
+    let mut merge_buffer = Vec::new();
+    let mut merge_priority_buffer = Vec::new();
+
+    tokenizer.tokenize(
+        text,
+        &mut token_buffer,
+        &mut level_buffer,
+        &mut merge_buffer,
+        &mut merge_priority_buffer,
+    );
+    println!("{token_buffer:?}");
+    assert_eq!(token_buffer, [5037, 
+        5037, 
+        5037, 
+        5037, 
+        5037, 
+        5037, 
+        5037, 
+        5037, 
+        5037
+    ]);
 }
 
 #[derive(Clone, Copy, Debug)]
