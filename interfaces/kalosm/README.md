@@ -241,9 +241,9 @@ async fn main() {
 </details>
 
 <details>
-<summary>Resource augmented generation</summary>
+<summary>Retrieval Augmented Generation</summary>
 
-A large part of making modern LLMs performant is curating the context the models have access to. Resource augmented generation (or RAG) helps you do this by inserting context into the prompt based on a search query. For example, you can Kalosm to create a chatbot that uses context from local documents to answer questions:
+A large part of making modern LLMs performant is curating the context the models have access to. Retrieval Augmented Generation (or RAG) helps you do this by inserting context into the prompt based on a search query. For example, you can Kalosm to create a chatbot that uses context from local documents to answer questions:
 
 ```rust, no_run
 use kalosm::language::*;
