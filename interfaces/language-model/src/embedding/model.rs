@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use kalosm_common::BoxedFuture;
 
 use crate::embedding::{Embedding, VectorSpace};
@@ -74,6 +76,38 @@ pub trait Embedder: Send + Sync + 'static {
             }
             Ok(embeddings)
         })
+    }
+}
+
+impl<E: Embedder> Embedder for Arc<E> {
+    type VectorSpace = E::VectorSpace;
+
+    fn embed_for(
+        &self,
+        input: EmbeddingInput,
+    ) -> BoxedFuture<'_, anyhow::Result<Embedding<Self::VectorSpace>>> {
+        E::embed_for(self, input)
+    }
+
+    fn embed_string(
+        &self,
+        input: String,
+    ) -> BoxedFuture<'_, anyhow::Result<Embedding<Self::VectorSpace>>> {
+        E::embed_string(self, input)
+    }
+
+    fn embed_vec(
+        &self,
+        inputs: Vec<String>,
+    ) -> BoxedFuture<'_, anyhow::Result<Vec<Embedding<Self::VectorSpace>>>> {
+        E::embed_vec(self, inputs)
+    }
+
+    fn embed_vec_for(
+        &self,
+        inputs: Vec<EmbeddingInput>,
+    ) -> BoxedFuture<'_, anyhow::Result<Vec<Embedding<Self::VectorSpace>>>> {
+        E::embed_vec_for(self, inputs)
     }
 }
 

@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use kalosm::language::*;
+use kalosm::language::{kalosm_sample, Parse, Schema};
 
 #[derive(Parse, Schema, Clone)]
 struct UnitStruct;
@@ -8,6 +8,8 @@ struct UnitStruct;
 #[cfg(any(feature = "metal", feature = "cuda"))]
 #[tokio::test]
 async fn unit_struct() {
+    use kalosm::language::*;
+
     let model = Llama::builder()
         .with_source(LlamaSource::tiny_llama_1_1b_chat())
         .build()
@@ -34,6 +36,8 @@ struct RenamedUnit;
 #[cfg(any(feature = "metal", feature = "cuda"))]
 #[tokio::test]
 async fn renamed_unit_struct() {
+    use kalosm::language::*;
+
     let model = Llama::builder()
         .with_source(LlamaSource::tiny_llama_1_1b_chat())
         .build()

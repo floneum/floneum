@@ -22,12 +22,24 @@ use rand::Rng;
 ///```
 pub trait Class {
     /// The number of classes.
-    const CLASSES: u32;
+    const CLASSES: Option<u32>;
 
     /// Convert the class to a class index.
     fn to_class(&self) -> u32;
     /// Convert a class index to a class.
     fn from_class(class: u32) -> Self;
+}
+
+impl Class for u32 {
+    const CLASSES: Option<u32> = None;
+
+    fn to_class(&self) -> u32 {
+        *self
+    }
+
+    fn from_class(class: u32) -> Self {
+        class
+    }
 }
 
 /// A dataset to train a [`Classifier`].
@@ -161,7 +173,7 @@ impl<C: Class> ClassificationDatasetBuilder<C> {
         // The test classes are 1/4 of the train classes
         let test_class_counts_goal = class_counts
             .iter()
-            .map(|(class, count)| (*class, *count / 4))
+            .map(|(class, count)| (*class, 1.max(*count / 4)))
             .collect::<HashMap<_, _>>();
         let mut test_class_counts = HashMap::new();
 
@@ -223,6 +235,7 @@ pub struct Classifier<C: Class> {
     layers: OnceLock<Vec<Linear>>,
     dropout: Dropout,
     dropout_rate: f32,
+    classes: u32,
     phantom: std::marker::PhantomData<C>,
 }
 
@@ -252,6 +265,7 @@ impl<C: Class> Classifier<C> {
         ClassifierConfig {
             layers_dims: self.layers_dims.clone(),
             dropout_rate: self.dropout_rate,
+            classes: Some(self.classes),
         }
     }
 
@@ -259,6 +273,7 @@ impl<C: Class> Classifier<C> {
         let ClassifierConfig {
             layers_dims,
             dropout_rate,
+            classes,
         } = config;
         Ok(Self {
             device: dev,
@@ -267,6 +282,9 @@ impl<C: Class> Classifier<C> {
             varmap,
             dropout: Dropout::new(dropout_rate),
             dropout_rate,
+            classes: classes.or(C::CLASSES).ok_or_else(|| {
+                candle_core::Error::Msg("No number of classes specified for classifier".to_string())
+            })?,
             phantom: std::marker::PhantomData,
         })
     }
@@ -276,7 +294,7 @@ impl<C: Class> Classifier<C> {
             return Ok(layers);
         }
         let vs = VarBuilder::from_varmap(&self.varmap, DType::F32, &self.device);
-        let output_dim = C::CLASSES;
+        let output_dim = self.classes;
         let mut layers = Vec::with_capacity(self.layers_dims.len() + 1);
         if self.layers_dims.is_empty() {
             let layer = candle_nn::linear(input_dim, output_dim as usize, vs.pp("ln0"))?;
@@ -333,7 +351,7 @@ impl<C: Class> Classifier<C> {
     /// }
     ///
     /// let dev = candle_core::Device::Cpu;
-    /// let mut classifier = Classifier::<MyClass>::new(&dev, ClassifierConfig::new()).unwrap();
+    /// let classifier = Classifier::<MyClass>::new(&dev, ClassifierConfig::new()).unwrap();
     /// let mut dataset = ClassificationDatasetBuilder::new();
     /// dataset.add(vec![1.0, 2.0, 3.0, 4.0], MyClass::Person);
     /// dataset.add(vec![4.0, 3.0, 2.0, 1.0], MyClass::Thing);
@@ -341,12 +359,12 @@ impl<C: Class> Classifier<C> {
     /// classifier.train(&dataset.build(&dev).unwrap(), &dev, 20, 0.05, 3).unwrap();
     /// ```
     pub fn train(
-        &mut self,
+        &self,
         m: &ClassificationDataset,
-        dev: &Device,
         epochs: usize,
         learning_rate: f64,
         batch_size: usize,
+        mut progress: impl FnMut(ClassifierProgress),
     ) -> anyhow::Result<f32> {
         // unstack both tensors into a list of tensors
         let train_len = m.train_inputs.dims()[0];
@@ -354,11 +372,11 @@ impl<C: Class> Classifier<C> {
         let train_votes = m.train_inputs.chunk(train_len, 0)?;
 
         // Force the layers to be initialized before we use the varmap
-        self.forward_t(&train_votes[0].to_device(dev)?, true)?;
+        self.forward_t(&train_votes[0].to_device(&self.device)?, true)?;
 
         let mut sgd = candle_nn::AdamW::new_lr(self.varmap.all_vars(), learning_rate)?;
-        let test_votes = m.test_inputs.to_device(dev)?;
-        let test_results = m.test_classes.to_device(dev)?;
+        let test_votes = m.test_inputs.to_device(&self.device)?;
+        let test_results = m.test_classes.to_device(&self.device)?;
         let mut final_accuracy: f32 = 0.0;
         let mut rng = rand::thread_rng();
         let mut batch = 0;
@@ -376,7 +394,7 @@ impl<C: Class> Classifier<C> {
                             .collect::<Vec<_>>(),
                         0,
                     )?
-                    .to_device(dev)?;
+                    .to_device(&self.device)?;
                     let train_votes = Tensor::cat(
                         &indices
                             .iter()
@@ -385,13 +403,16 @@ impl<C: Class> Classifier<C> {
                             .collect::<Vec<_>>(),
                         0,
                     )?
-                    .to_device(dev)?;
+                    .to_device(&self.device)?;
 
                     let logits = self.forward_t(&train_votes, true)?;
                     let log_sm = ops::log_softmax(&logits, D::Minus1)?;
                     let loss = loss::nll(&log_sm, &train_results)?;
                     sgd.backward_step(&loss)?;
-                    println!("Batch: {batch:5} Loss: {:5.5}", loss.to_scalar::<f32>()?);
+                    progress(ClassifierProgress::BatchFinished {
+                        batch,
+                        loss: loss.to_scalar::<f32>()?,
+                    });
                     batch += 1;
                 }
                 let test_logits = self.forward_t(&test_votes, false)?;
@@ -404,6 +425,10 @@ impl<C: Class> Classifier<C> {
                 let test_cases = test_results.dims1()?;
                 let test_accuracy: f32 = test_cases_passed as f32 / test_cases as f32;
                 final_accuracy = f32::from(100u8) * test_accuracy;
+                progress(ClassifierProgress::EpochFinished {
+                    epoch,
+                    accuracy: test_accuracy,
+                });
                 println!(
                     "Epoch: {epoch:5} Test accuracy: {:5.5}% ({}/{})",
                     final_accuracy, test_cases_passed, test_cases,
@@ -483,11 +508,11 @@ impl<C: Class> Classifier<C> {
     /// }
     ///
     /// let dev = candle_core::Device::Cpu;
-    /// let mut classifier = Classifier::<MyClass>::new(&dev, ClassifierConfig::new()).unwrap();
+    /// let classifier = Classifier::<MyClass>::new(&dev, ClassifierConfig::new()).unwrap();
     /// let result = classifier.run(&[1.0, 2.0, 3.0, 4.0]).unwrap();
     /// println!("Result: {:?}", result);
     /// ```
-    pub fn run(&mut self, input: &[f32]) -> Result<ClassifierOutput<C>> {
+    pub fn run(&self, input: &[f32]) -> Result<ClassifierOutput<C>> {
         let input = Tensor::from_vec(input.to_vec(), (1, input.len()), &self.device)?;
         let logits = self.forward_t(&input, false)?;
         let classes = logits.flatten_all()?;
@@ -529,6 +554,25 @@ impl<C: Class> ClassifierOutput<C> {
     }
 }
 
+/// Progress of training a classifier.
+#[derive(Debug, Clone, Copy)]
+pub enum ClassifierProgress {
+    /// Progress after an epoch has finished.
+    EpochFinished {
+        /// The current epoch.
+        epoch: usize,
+        /// The test accuracy of the current epoch.
+        accuracy: f32,
+    },
+    /// Progress after a batch has finished.
+    BatchFinished {
+        /// The current batch.
+        batch: usize,
+        /// The current loss.
+        loss: f32,
+    },
+}
+
 #[derive(Debug, Clone)]
 /// A config for a [`Classifier`].
 pub struct ClassifierConfig {
@@ -536,6 +580,8 @@ pub struct ClassifierConfig {
     layers_dims: Vec<usize>,
     /// The dropout rate.
     dropout_rate: f32,
+    /// The number of classes.
+    classes: Option<u32>,
 }
 
 impl Default for ClassifierConfig {
@@ -550,6 +596,7 @@ impl ClassifierConfig {
         Self {
             layers_dims: vec![4, 8, 4],
             dropout_rate: 0.1,
+            classes: None,
         }
     }
 
@@ -562,6 +609,12 @@ impl ClassifierConfig {
     /// Set the dropout rate.
     pub fn dropout_rate(mut self, dropout_rate: f32) -> Self {
         self.dropout_rate = dropout_rate;
+        self
+    }
+
+    /// Set the number of classes. This is required if [`Class::CLASSES`] is not defined for the type you are classifying.
+    pub fn classes(mut self, classes: u32) -> Self {
+        self.classes = Some(classes);
         self
     }
 }

@@ -371,8 +371,10 @@ fn impl_unit_parser(attrs: &[syn::Attribute], ty: &Ident, construct: TokenStream
     quote! {
         impl kalosm_sample::Parse for #ty {
             fn new_parser() -> impl kalosm_sample::SendCreateParserState<Output = Self> {
-                #unit_parser
-                    .map_output(|_| #construct)
+                kalosm_sample::ParserExt::map_output(
+                    #unit_parser,
+                    |_| #construct
+                )
             }
         }
     }
@@ -492,10 +494,10 @@ impl EnumParser {
             match &mut parser {
                 Some(current) => {
                     *current = quote! {
-                        #current
-                            .or(
-                                #parse_variant
-                            )
+                        kalosm_sample::ParserExt::or(
+                            #current,
+                            #parse_variant
+                        )
                     };
                 }
                 None => {
@@ -509,9 +511,13 @@ impl EnumParser {
         Ok(quote! {
             impl kalosm_sample::Parse for #ty {
                 fn new_parser() -> impl kalosm_sample::SendCreateParserState<Output = Self> {
-                    kalosm_sample::LiteralParser::from(#struct_start)
-                        .ignore_output_then(#parser)
-                        .then_literal(r#" }"#)
+                    kalosm_sample::ParserExt::then_literal(
+                        kalosm_sample::ParserExt::ignore_output_then(
+                            kalosm_sample::LiteralParser::from(#struct_start),
+                            #parser
+                        ),
+                        r#" }"#
+                    )
                 }
             }
         })
@@ -653,7 +659,10 @@ impl UnitEnumVariantParser {
     ) -> syn::Result<TokenStream2> {
         let lit_str_name = LitStr::new(&format!("{variant_name}\""), Span::call_site());
         Ok(quote! {
-            kalosm_sample::LiteralParser::from(#lit_str_name).map_output(|_| #construct_variant)
+            kalosm_sample::ParserExt::map_output(
+                kalosm_sample::LiteralParser::from(#lit_str_name),
+                |_| #construct_variant
+            )
         })
     }
 
@@ -700,7 +709,10 @@ impl StructEnumVariantParser {
         );
         let field_parser = self.fields.parser(construct_variant)?;
         Ok(quote! {
-            kalosm_sample::LiteralParser::from(#parse_name_and_data).ignore_output_then(#field_parser)
+            kalosm_sample::ParserExt::ignore_output_then(
+                kalosm_sample::LiteralParser::from(#parse_name_and_data),
+                #field_parser
+            )
         })
     }
 
@@ -759,7 +771,13 @@ impl TupleEnumVariantParser {
         );
         let ty = &self.field.ty;
         Ok(quote! {
-            kalosm_sample::LiteralParser::from(#parse_name_and_data).ignore_output_then(<#ty as kalosm_sample::Parse>::new_parser()).map_output(|data0| #construct_variant)
+            kalosm_sample::ParserExt::map_output(
+                kalosm_sample::ParserExt::ignore_output_then(
+                    kalosm_sample::LiteralParser::from(#parse_name_and_data),
+                    <#ty as kalosm_sample::Parse>::new_parser()
+                ),
+                |data0| #construct_variant
+            )
         })
     }
 
@@ -1071,8 +1089,10 @@ impl FieldsParser {
             let literal_text = LitStr::new(&literal_text, field.field.ident.span());
 
             parsers.push(quote! {
-                let #parser_ident = kalosm_sample::LiteralParser::from(#literal_text)
-                    .ignore_output_then(#field_parser);
+                let #parser_ident = kalosm_sample::ParserExt::ignore_output_then(
+                    kalosm_sample::LiteralParser::from(#literal_text),
+                    #field_parser
+                );
             });
         }
 
@@ -1094,8 +1114,7 @@ impl FieldsParser {
             match &mut join_parser {
                 Some(current) => {
                     *current = quote! {
-                        #current
-                            .then(#ident)
+                        kalosm_sample::ParserExt::then(#current, #ident)
                     };
                 }
                 None => {
@@ -1110,9 +1129,13 @@ impl FieldsParser {
                     #parsers
                 )*
 
-                #join_parser
-                    .then_literal(r#" }"#)
-                    .map_output(|#output_tuple| #construct)
+                kalosm_sample::ParserExt::map_output(
+                    kalosm_sample::ParserExt::then_literal(
+                        #join_parser,
+                        r#" }"#
+                    ),
+                    |#output_tuple| #construct
+                )
             }
         })
     }
@@ -1485,10 +1508,12 @@ impl ToTokens for StringParserOptions {
             let pattern = LitStr::new(&format!(r#""{}""#, pattern.value()), pattern.span());
             let quote = quote_spanned! {
                 pattern.span() =>
-                kalosm_sample::RegexParser::new(#pattern)
-                    .unwrap()
+                kalosm_sample::ParserExt::map_output(
+                    kalosm_sample::RegexParser::new(#pattern)
+                        .unwrap(),
                     // Trim the quotes
-                    .map_output(|string| string[1..string.len() - 1].to_string())
+                    |string| string[1..string.len() - 1].to_string()
+                )
             };
             tokens.extend(quote);
             return;
@@ -1629,20 +1654,20 @@ impl NumberType {
 impl ToTokens for NumberType {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
         let quote = match self {
-            Self::F64 => quote! {F64Parser::new()},
-            Self::F32 => quote! {F32Parser::new()},
-            Self::I128 => quote! {I128Parser::new()},
-            Self::I64 => quote! {I64Parser::new()},
-            Self::I32 => quote! {I32Parser::new()},
-            Self::I16 => quote! {I16Parser::new()},
-            Self::I8 => quote! {I8Parser::new()},
-            Self::Isize => quote! {IsizeParser::new()},
-            Self::U128 => quote! {U128Parser::new()},
-            Self::U64 => quote! {U64Parser::new()},
-            Self::U32 => quote! {U32Parser::new()},
-            Self::U16 => quote! {U16Parser::new()},
-            Self::U8 => quote! {U8Parser::new()},
-            Self::Usize => quote! {UsizeParser::new()},
+            Self::F64 => quote! {kalosm_sample::F64Parser::new()},
+            Self::F32 => quote! {kalosm_sample::F32Parser::new()},
+            Self::I128 => quote! {kalosm_sample::I128Parser::new()},
+            Self::I64 => quote! {kalosm_sample::I64Parser::new()},
+            Self::I32 => quote! {kalosm_sample::I32Parser::new()},
+            Self::I16 => quote! {kalosm_sample::I16Parser::new()},
+            Self::I8 => quote! {kalosm_sample::I8Parser::new()},
+            Self::Isize => quote! {kalosm_sample::IsizeParser::new()},
+            Self::U128 => quote! {kalosm_sample::U128Parser::new()},
+            Self::U64 => quote! {kalosm_sample::U64Parser::new()},
+            Self::U32 => quote! {kalosm_sample::U32Parser::new()},
+            Self::U16 => quote! {kalosm_sample::U16Parser::new()},
+            Self::U8 => quote! {kalosm_sample::U8Parser::new()},
+            Self::Usize => quote! {kalosm_sample::UsizeParser::new()},
         };
 
         tokens.extend(quote);

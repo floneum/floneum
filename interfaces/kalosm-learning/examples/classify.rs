@@ -1,7 +1,8 @@
 use kalosm_common::accelerated_device_if_available;
 use kalosm_language_model::EmbedderExt;
 use kalosm_learning::{
-    Class, Classifier, ClassifierConfig, TextClassifier, TextClassifierDatasetBuilder,
+    Class, Classifier, ClassifierConfig, ClassifierProgress, TextClassifier,
+    TextClassifierDatasetBuilder,
 };
 use rbert::{Bert, BertSpace};
 
@@ -78,20 +79,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let dataset = dataset.build(&dev)?;
 
-    let mut classifier =
+    let classifier =
         TextClassifier::<MyClass, BertSpace>::new(Classifier::new(&dev, ClassifierConfig::new())?);
 
     classifier.train(
         &dataset, // The dataset to train on
-        &dev,     // The device to train on
         10,       // The number of epochs to train for
         0.003,    // The learning rate
         5,        // The batch size
+        |progress| match progress {
+            ClassifierProgress::EpochFinished { epoch, accuracy } => {
+                println!("Epoch {epoch} accuracy: {accuracy}");
+            }
+            ClassifierProgress::BatchFinished { batch, loss } => {
+                println!("Batch {batch} loss: {loss}");
+            }
+        },
     )?;
 
     let config = classifier.config();
     classifier.save("classifier.safetensors")?;
-    let mut classifier = Classifier::<MyClass>::load("classifier.safetensors", &dev, config)?;
+    let classifier = Classifier::<MyClass>::load("classifier.safetensors", &dev, config)?;
 
     let tests = [
         "Who is the president of Russia?",

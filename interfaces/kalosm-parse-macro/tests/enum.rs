@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use kalosm::language::*;
+use kalosm::language::{kalosm_sample, Parse, Schema};
 use pretty_assertions::assert_eq;
 
 #[derive(Parse, Schema, Clone)]
@@ -24,6 +24,8 @@ enum NamedEnum {
 #[cfg(any(feature = "metal", feature = "cuda"))]
 #[tokio::test]
 async fn named_enum() {
+    use kalosm::language::*;
+
     let model = Llama::builder()
         .with_source(LlamaSource::tiny_llama_1_1b_chat())
         .build()
@@ -110,6 +112,8 @@ fn mixed_enum_schema() {
 #[cfg(any(feature = "metal", feature = "cuda"))]
 #[tokio::test]
 async fn mixed_enum() {
+    use kalosm::language::*;
+
     let model = Llama::builder()
         .with_source(LlamaSource::tiny_llama_1_1b_chat())
         .build()
@@ -151,6 +155,8 @@ fn unit_enum_schema() {
 #[cfg(any(feature = "metal", feature = "cuda"))]
 #[tokio::test]
 async fn unit_enum() {
+    use kalosm::language::*;
+
     let model = Llama::builder()
         .with_source(LlamaSource::tiny_llama_1_1b_chat())
         .build()
@@ -177,6 +183,7 @@ enum TupleEnum {
 #[cfg(any(feature = "metal", feature = "cuda"))]
 #[tokio::test]
 async fn tuple_enum() {
+    use kalosm::language::*;
     let model = Llama::builder()
         .with_source(LlamaSource::tiny_llama_1_1b_chat())
         .build()
@@ -205,8 +212,11 @@ fn unit_enum_parses() {
         Green,
     }
 
-    let parser = Color::new_parser();
-    let state = parser.create_parser_state();
-    let color = parser.parse(&state, b"\"Red\" ").unwrap().unwrap_finished();
-    assert_eq!(color, Color::Red);
+    {
+        let parser = Color::new_parser();
+        use kalosm::language::{CreateParserState, Parser};
+        let state = parser.create_parser_state();
+        let color = parser.parse(&state, b"\"Red\" ").unwrap().unwrap_finished();
+        assert_eq!(color, Color::Red);
+    }
 }

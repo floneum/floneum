@@ -6,6 +6,8 @@ use crate::{
     ClassifierOutput,
 };
 
+use super::ClassifierProgress;
+
 /// A builder for [`TextClassifier`].
 ///
 /// # Example
@@ -200,7 +202,7 @@ impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
 ///
 ///     let config = classifier.config();
 ///     classifier.save("classifier.safetensors")?;
-///     let mut classifier = Classifier::<MyClass>::load("classifier.safetensors", &dev, config)?;
+///     let classifier = Classifier::<MyClass>::load("classifier.safetensors", &dev, config)?;
 ///
 ///     let tests = [
 ///         "Who is the president of Russia?",
@@ -235,21 +237,21 @@ impl<T: Class, S: VectorSpace + Send + Sync + 'static> TextClassifier<T, S> {
     }
 
     /// Runs the classifier on the given input.
-    pub fn run(&mut self, input: Embedding<S>) -> candle_core::Result<ClassifierOutput<T>> {
+    pub fn run(&self, input: Embedding<S>) -> candle_core::Result<ClassifierOutput<T>> {
         self.model.run(&input.to_vec())
     }
 
     /// Trains the classifier on the given dataset.
     pub fn train(
-        &mut self,
+        &self,
         dataset: &ClassificationDataset,
-        device: &Device,
         epochs: usize,
         learning_rate: f64,
         batch_size: usize,
+        progress: impl FnMut(ClassifierProgress),
     ) -> anyhow::Result<f32> {
         self.model
-            .train(dataset, device, epochs, learning_rate, batch_size)
+            .train(dataset, epochs, learning_rate, batch_size, progress)
     }
 
     /// Get the configuration of the classifier.
@@ -362,7 +364,7 @@ async fn simplified() -> anyhow::Result<()> {
             ClassifierConfig::new().layers_dims(layers.clone()),
         )?);
         println!("Training...");
-        if let Err(error) = classifier.train(&dataset, &dev, 100, 0.05, 100) {
+        if let Err(error) = classifier.train(&dataset, 100, 0.05, 100, |_| {}) {
             println!("Error: {:?}", error);
         } else {
             break;
@@ -372,7 +374,7 @@ async fn simplified() -> anyhow::Result<()> {
 
     let config = classifier.model.config();
     classifier.save("classifier.safetensors")?;
-    let mut classifier = Classifier::<MyClass>::load("classifier.safetensors", &dev, config)?;
+    let classifier = Classifier::<MyClass>::load("classifier.safetensors", &dev, config)?;
 
     let tests = [
         "Who is the president of Russia?",

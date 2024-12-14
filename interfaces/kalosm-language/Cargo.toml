@@ -16,7 +16,7 @@ rand = "0.8.5"
 reqwest = { version = "0.11.18", features = ["stream", "json"] }
 tokio = { version = "1.28.1", features = ["full"] }
 slab = { version = "0.4.8", features = ["serde"] }
-arroy = "0.3.0"
+arroy = "0.5.0"
 heed = "0.20.0-alpha.9"
 serde = { version = "1.0.163", features = ["derive"] }
 once_cell = "1.18.0"
@@ -56,6 +56,8 @@ whatlang = "0.16.3"
 texting_robots = "0.2.2"
 half = "2.3.1"
 srx = { version = "0.1.4", features = ["from_xml"] }
+thiserror = "2.0.0"
+roaring = "0.10.6"
 
 [features]
 metal = ["rphi/metal", "rbert/metal", "kalosm-llama/metal"]
@@ -64,7 +66,7 @@ mkl = ["rphi/mkl", "rbert/mkl", "kalosm-llama/mkl"]
 remote = ["kalosm-language-model/remote"]
 
 [dev-dependencies]
-kalosm = { workspace = true, features = ["language"] }
+kalosm = { workspace = true, features = ["language", "surrealdb"] }
 surrealdb = { version = "1.5.5", features = ["kv-rocksdb"] }
 
 [package.metadata.docs.rs]

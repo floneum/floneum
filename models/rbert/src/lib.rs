@@ -316,6 +316,9 @@ impl Bert {
         mut tokens: Vec<Encoding>,
         pooling: Pooling,
     ) -> anyhow::Result<Vec<Tensor>> {
+        if tokens.is_empty() {
+            return Ok(Vec::new());
+        }
         let device = &self.model.device;
         let pp = PaddingParams {
             strategy: tokenizers::PaddingStrategy::BatchLongest,
@@ -324,11 +327,15 @@ impl Bert {
         tokenizers::pad_encodings(&mut tokens, &pp).map_err(anyhow::Error::msg)?;
 
         let n_sentences = tokens.len();
+        let max_seq_len = self.model.max_seq_len();
         let token_ids = tokens
             .iter()
             .map(|tokens| {
                 let tokens = tokens.get_ids().to_vec();
-                Ok(Tensor::new(tokens.as_slice(), device)?)
+                Ok(Tensor::new(
+                    &tokens.as_slice()[..max_seq_len.min(tokens.as_slice().len())],
+                    device,
+                )?)
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
         let token_ids = Tensor::stack(&token_ids, 0)?;
@@ -337,7 +344,10 @@ impl Bert {
             .iter()
             .map(|tokens| {
                 let attention_mask = tokens.get_attention_mask();
-                let attention_mask = Tensor::new(attention_mask, device)?;
+                let attention_mask = Tensor::new(
+                    &attention_mask[..max_seq_len.min(attention_mask.len())],
+                    device,
+                )?;
                 Ok(attention_mask)
             })
             .collect::<anyhow::Result<Vec<_>>>()?;

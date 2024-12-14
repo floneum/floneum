@@ -1,6 +1,12 @@
 use std::any::Any;
 use std::any::TypeId;
+use std::future::Future;
+use std::future::IntoFuture;
+use std::pin::Pin;
 
+use super::EmbeddedIndexedTableError;
+
+use super::IntoEmbeddingIndexedTableSearchFilter;
 use super::{EmbeddingIndexedTable, EmbeddingIndexedTableSearchResult};
 use kalosm_language::prelude::*;
 use serde::de::DeserializeOwned;
@@ -55,7 +61,8 @@ use surrealdb::Surreal;
 ///     let user_question = prompt_input("Query: ").unwrap();
 ///
 ///     let nearest_5 = document_table
-///         .select_nearest(user_question, 5)
+///         .search(&user_question)
+///         .with_results(5)
 ///         .await
 ///         .unwrap();
 ///
@@ -98,7 +105,9 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     }
 
     /// Delete the table from the database and clear the vector database. Returns the contents of the table.
-    pub async fn delete_table(self) -> anyhow::Result<Vec<(R, Vec<Chunk<M::VectorSpace>>)>>
+    pub async fn delete_table(
+        self,
+    ) -> Result<Vec<(R, Vec<Chunk<M::VectorSpace>>)>, EmbeddedIndexedTableError>
     where
         R: DeserializeOwned,
     {
@@ -110,7 +119,7 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
         &self,
         value: R,
         chunks: impl IntoIterator<Item = Chunk<M::VectorSpace>>,
-    ) -> anyhow::Result<Id>
+    ) -> Result<Id, EmbeddedIndexedTableError>
     where
         R: Serialize + DeserializeOwned,
     {
@@ -126,7 +135,7 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
             .chunker
             .chunk(value.as_ref(), &self.embedding_model)
             .await?;
-        self.insert_with_chunks(value, chunks).await
+        Ok(self.insert_with_chunks(value, chunks).await?)
     }
 
     /// Extend the table with a iterator of new records.
@@ -150,7 +159,7 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     }
 
     /// Update a record in the table with the given embedding id.
-    pub async fn update(&self, id: Id, value: R) -> anyhow::Result<Option<R>>
+    pub async fn update(&self, id: Id, value: R) -> Result<Option<R>, EmbeddedIndexedTableError>
     where
         R: Serialize + DeserializeOwned,
     {
@@ -158,7 +167,7 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     }
 
     /// Select a record from the table with the given embedding id.
-    pub async fn select(&self, id: Id) -> anyhow::Result<R>
+    pub async fn select(&self, id: Id) -> Result<R, EmbeddedIndexedTableError>
     where
         R: Serialize + DeserializeOwned,
     {
@@ -166,7 +175,7 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     }
 
     /// Delete a record from the table with the given embedding id.
-    pub async fn delete(&self, id: Id) -> anyhow::Result<Option<R>>
+    pub async fn delete(&self, id: Id) -> Result<Option<R>, EmbeddedIndexedTableError>
     where
         R: Serialize + DeserializeOwned,
     {
@@ -174,7 +183,7 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     }
 
     /// Select all records from the table.
-    pub async fn select_all(&self) -> anyhow::Result<Vec<R>>
+    pub async fn select_all(&self) -> Result<Vec<R>, EmbeddedIndexedTableError>
     where
         R: Serialize + DeserializeOwned,
     {
@@ -184,16 +193,18 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     /// Select the top k records nearest records to the given item.
     ///
     /// NOTE: If your embedding model has a different query embedding and you pass in a raw embedding, that embedding will perform best if it was created with [`EmbedderExt::embed_query`].
-    pub async fn select_nearest(
-        &self,
-        embedding: impl IntoEmbedding<M::VectorSpace>,
-        k: usize,
-    ) -> anyhow::Result<Vec<EmbeddingIndexedTableSearchResult<R>>>
+    pub fn search<E>(&self, embedding: E) -> DocumentTableSearchBuilder<C, R, M, K, E>
     where
+        E: IntoEmbedding<M::VectorSpace>,
         R: DeserializeOwned,
     {
-        let embedding = embedding.into_embedding(&self.embedding_model).await?;
-        self.table.select_nearest(embedding, k).await
+        DocumentTableSearchBuilder {
+            table: self,
+            embedding,
+            results: None,
+            filter: None,
+            phantom: std::marker::PhantomData,
+        }
     }
 }
 
@@ -207,6 +218,111 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
         let documents = context.into_documents().await?;
         let iter = documents.into_iter().map(|v| v.into());
         self.extend(iter).await
+    }
+}
+
+/// A builder for searching for embeddings in a vector database.
+pub struct DocumentTableSearchBuilder<
+    'a,
+    Conn: Connection,
+    Doc = Document,
+    Model: Embedder = Bert,
+    Chkr: Chunker = SemanticChunker,
+    E = Embedding<<Model as Embedder>::VectorSpace>,
+    F = Candidates,
+    M = (),
+> {
+    table: &'a DocumentTable<Conn, Doc, Model, Chkr>,
+    embedding: E,
+    results: Option<usize>,
+    filter: Option<F>,
+    phantom: std::marker::PhantomData<M>,
+}
+
+impl<
+        'a,
+        Conn: Connection,
+        Doc: DeserializeOwned + Send + Sync,
+        Model: Embedder,
+        E: IntoEmbedding<Model::VectorSpace>,
+        F: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, Model::VectorSpace, M>,
+        Chkr: Chunker,
+        M,
+    > DocumentTableSearchBuilder<'a, Conn, Doc, Model, Chkr, E, F, M>
+{
+    /// Set the number of results to return. Defaults to 10.
+    pub fn with_results(mut self, results: usize) -> Self {
+        self.results = Some(results);
+        self
+    }
+
+    /// Run the search and return the results.
+    pub async fn run(self) -> anyhow::Result<Vec<EmbeddingIndexedTableSearchResult<Doc>>> {
+        let embedding = self
+            .embedding
+            .into_embedding(&self.table.embedding_model)
+            .await?;
+        let mut query = self.table.table.search(&embedding);
+        if let Some(results) = self.results {
+            query = query.with_results(results);
+        }
+        if let Some(filter) = self.filter {
+            let query = query.with_filter(filter);
+            Ok(query.run().await?)
+        } else {
+            Ok(query.run().await?)
+        }
+    }
+}
+
+impl<
+        'a,
+        Conn: Connection + 'a,
+        Doc: DeserializeOwned + Send + Sync + 'a,
+        Model: Embedder + 'a,
+        E: IntoEmbedding<Model::VectorSpace> + Send + 'a,
+        F: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, Model::VectorSpace, M> + Send + Sync + 'a,
+        Chkr: Chunker + Send + Sync + 'a,
+        M: Send + 'a,
+    > IntoFuture for DocumentTableSearchBuilder<'a, Conn, Doc, Model, Chkr, E, F, M>
+{
+    type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send + 'a>>;
+    type Output = anyhow::Result<Vec<EmbeddingIndexedTableSearchResult<Doc>>>;
+
+    fn into_future(self) -> Self::IntoFuture {
+        Box::pin(self.run())
+    }
+}
+
+impl<
+        'a,
+        Conn: Connection,
+        Doc: DeserializeOwned,
+        Model: Embedder,
+        E: IntoEmbedding<Model::VectorSpace>,
+        F: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, Model::VectorSpace, M>,
+        Chkr: Chunker,
+        M,
+    > DocumentTableSearchBuilder<'a, Conn, Doc, Model, Chkr, E, F, M>
+{
+    /// Set a filter to apply to the results. Only vectors that pass the filter will be returned.
+    pub fn with_filter<Marker, F2>(
+        self,
+        filter: F2,
+    ) -> DocumentTableSearchBuilder<'a, Conn, Doc, Model, Chkr, E, F2, Marker>
+    where
+        F2: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, Model::VectorSpace, Marker>
+            + Send
+            + Sync
+            + 'static,
+    {
+        DocumentTableSearchBuilder {
+            table: self.table,
+            embedding: self.embedding,
+            results: self.results,
+            filter: Some(filter),
+            phantom: std::marker::PhantomData,
+        }
     }
 }
 
@@ -243,9 +359,21 @@ impl<C: Connection, E, K: Chunker> DocumentTableBuilder<C, E, K> {
     }
 
     /// Set the embedding model for the table.
-    pub fn with_embedding_model(mut self, embedding_model: E) -> Self {
-        self.embedding_model = Some(embedding_model);
-        self
+    pub fn with_embedding_model<E2>(self, embedding_model: E2) -> DocumentTableBuilder<C, E2, K> {
+        let Self {
+            table,
+            db,
+            embedding_model: _,
+            chunker,
+            location,
+        } = self;
+        DocumentTableBuilder {
+            table,
+            db,
+            embedding_model: Some(embedding_model),
+            chunker,
+            location,
+        }
     }
 
     /// Set the chunking strategy for the table.

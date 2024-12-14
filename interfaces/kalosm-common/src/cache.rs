@@ -32,13 +32,13 @@ pub enum ModelLoadingProgress {
 #[derive(Clone, Debug)]
 pub struct FileLoadingProgress {
     /// The time stamp the download started
-    start_time: std::time::Instant,
+    pub start_time: std::time::Instant,
     /// The size of the cached part of the download in bytes
-    cached_size: u64,
+    pub cached_size: u64,
     /// The size of the download in bytes
-    size: u64,
+    pub size: u64,
     /// The progress of the download in bytes, from 0 to size
-    progress: u64,
+    pub progress: u64,
 }
 
 impl ModelLoadingProgress {

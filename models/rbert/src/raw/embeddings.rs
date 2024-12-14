@@ -72,4 +72,11 @@ impl BertEmbeddings {
     pub(crate) fn embedding_dim(&self) -> usize {
         self.word_embeddings.hidden_size()
     }
+
+    pub(crate) fn max_seq_len(&self) -> usize {
+        self.position_embeddings
+            .as_ref()
+            .map(|p| p.embeddings().dims()[0])
+            .unwrap_or(0)
+    }
 }

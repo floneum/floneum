@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use kalosm::language::*;
+use kalosm::language::{kalosm_sample, Parse, Schema};
 use pretty_assertions::assert_eq;
 
 #[derive(Parse, Schema, Clone, PartialEq, Debug)]
@@ -22,6 +22,8 @@ fn empty_struct_schema() {
 #[cfg(any(feature = "metal", feature = "cuda"))]
 #[tokio::test]
 async fn empty_struct() {
+    use kalosm::language::*;
+
     let model = Llama::builder()
         .with_source(LlamaSource::tiny_llama_1_1b_chat())
         .build()
@@ -82,6 +84,8 @@ fn named_struct_schema() {
 #[cfg(any(feature = "metal", feature = "cuda"))]
 #[tokio::test]
 async fn named_struct() {
+    use kalosm::language::*;
+
     let model = Llama::builder()
         .with_source(LlamaSource::tiny_llama_1_1b_chat())
         .build()
@@ -104,7 +108,7 @@ async fn named_struct() {
 
 #[derive(Parse, Schema, Clone)]
 struct WithStruct {
-    #[parse(with = StringParser::new(1..=10))]
+    #[parse(with = kalosm_sample::StringParser::new(1..=10))]
     name: String,
     #[parse(rename = "field name")]
     age: u32,
@@ -113,6 +117,8 @@ struct WithStruct {
 #[cfg(any(feature = "metal", feature = "cuda"))]
 #[tokio::test]
 async fn with_struct() {
+    use kalosm::language::*;
+
     let model = Llama::builder()
         .with_source(LlamaSource::tiny_llama_1_1b_chat())
         .build()
