@@ -225,7 +225,6 @@ pub enum PromptAnnealerBuilderError {
     /// The default embedding model failed to load.
     #[error("Failed to load default embedding model: {0}")]
     DefaultEmbeddingModel(#[from] BertLoadingError),
-
 }
 
 /// A prompt annealer that takes a set of examples and tries to find the best combination and order of examples to use as a prompt for a given task.

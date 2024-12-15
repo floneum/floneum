@@ -56,8 +56,7 @@ async fn main() {
 
     let hypothetical = Hypothetical::builder()
         .with_examples(alternate_examples)
-        .build()
-        ;
+        .build();
 
     let mut test_cases = TestCases::new();
 

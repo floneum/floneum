@@ -146,12 +146,16 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
         let chunks = self
             .chunker
             .chunk(value.as_ref(), &self.embedding_model)
-            .await.map_err(DocumentTableModifyError::EmbedItem)?;
+            .await
+            .map_err(DocumentTableModifyError::EmbedItem)?;
         Ok(self.insert_with_chunks(value, chunks).await?)
     }
 
     /// Extend the table with a iterator of new records.
-    pub async fn extend<T: IntoIterator<Item = R> + Send>(&self, iter: T) -> Result<Vec<Id>, DocumentTableModifyError<K::Error<M::Error>>>
+    pub async fn extend<T: IntoIterator<Item = R> + Send>(
+        &self,
+        iter: T,
+    ) -> Result<Vec<Id>, DocumentTableModifyError<K::Error<M::Error>>>
     where
         R: AsRef<Document> + Serialize + DeserializeOwned,
         K: Sync,
@@ -161,7 +165,8 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
         let embeddings = self
             .chunker
             .chunk_batch(documents, &self.embedding_model)
-            .await.map_err(DocumentTableModifyError::EmbedItem)?;
+            .await
+            .map_err(DocumentTableModifyError::EmbedItem)?;
         let mut ids = Vec::new();
         for (value, embeddings) in entries.into_iter().zip(embeddings) {
             let id = self.table.insert(embeddings, value).await?;
@@ -220,7 +225,6 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     }
 }
 
-
 /// An error that can occur while adding context to a [`DocumentTable`].
 #[derive(Debug, thiserror::Error)]
 pub enum DocumentTableAddContextError<D, M> {
@@ -234,14 +238,22 @@ pub enum DocumentTableAddContextError<D, M> {
 
 impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     /// Extend the table from [`IntoDocuments`]
-    pub async fn add_context<D: IntoDocuments>(&self, context: D) -> Result<Vec<Id>, DocumentTableAddContextError<D::Error, K::Error<M::Error>>>
+    pub async fn add_context<D: IntoDocuments>(
+        &self,
+        context: D,
+    ) -> Result<Vec<Id>, DocumentTableAddContextError<D::Error, K::Error<M::Error>>>
     where
         R: From<Document> + AsRef<Document> + Serialize + DeserializeOwned,
         K: Sync,
     {
-        let documents = context.into_documents().await.map_err(DocumentTableAddContextError::ConvertItem)?;
+        let documents = context
+            .into_documents()
+            .await
+            .map_err(DocumentTableAddContextError::ConvertItem)?;
         let iter = documents.into_iter().map(|v| v.into());
-        self.extend(iter).await.map_err(DocumentTableAddContextError::ModifyTable)
+        self.extend(iter)
+            .await
+            .map_err(DocumentTableAddContextError::ModifyTable)
     }
 }
 
@@ -292,11 +304,15 @@ impl<
     }
 
     /// Run the search and return the results.
-    pub async fn run(self) -> Result<Vec<EmbeddingIndexedTableSearchResult<Doc>>, DocumentTableSearchError<Model::Error>> {
+    pub async fn run(
+        self,
+    ) -> Result<Vec<EmbeddingIndexedTableSearchResult<Doc>>, DocumentTableSearchError<Model::Error>>
+    {
         let embedding = self
             .embedding
             .into_embedding(&self.table.embedding_model)
-            .await.map_err(DocumentTableSearchError::EmbedQuery)?;
+            .await
+            .map_err(DocumentTableSearchError::EmbedQuery)?;
         let mut query = self.table.table.search(&embedding);
         if let Some(results) = self.results {
             query = query.with_results(results);
@@ -322,7 +338,8 @@ impl<
     > IntoFuture for DocumentTableSearchBuilder<'a, Conn, Doc, Model, Chkr, E, F, M>
 {
     type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send + 'a>>;
-    type Output = Result<Vec<EmbeddingIndexedTableSearchResult<Doc>>, DocumentTableSearchError<Model::Error>>;
+    type Output =
+        Result<Vec<EmbeddingIndexedTableSearchResult<Doc>>, DocumentTableSearchError<Model::Error>>;
 
     fn into_future(self) -> Self::IntoFuture {
         Box::pin(self.run())
@@ -423,7 +440,9 @@ impl<C: Connection, E, K: Chunker> DocumentTableBuilder<C, E, K> {
     }
 
     /// Build the document table.
-    pub async fn build<R: Serialize + DeserializeOwned>(self) -> Result<DocumentTable<C, R, E, K>, DocumentTableCreationError>
+    pub async fn build<R: Serialize + DeserializeOwned>(
+        self,
+    ) -> Result<DocumentTable<C, R, E, K>, DocumentTableCreationError>
     where
         E: Embedder,
     {
