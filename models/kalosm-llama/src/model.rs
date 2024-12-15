@@ -1,8 +1,7 @@
 use crate::raw::cache::LlamaCache;
 use crate::{raw::Model, session::LlamaSession};
-use anyhow::{Error as E, Result};
 use kalosm_common::*;
-use kalosm_language_model::SyncModelExt;
+use kalosm_language_model::{SyncModelExt, UnstructuredTextGenerationError};
 use std::sync::Arc;
 
 use candle_core::{
@@ -12,7 +11,21 @@ use candle_core::{
 use kalosm_language_model::SyncModel;
 use tokenizers::Tokenizer;
 
-use crate::InferenceSettings;
+use crate::{InferenceSettings, LlamaSourceError};
+
+/// An error that can occur when running a [`LlamaModel`].
+#[derive(Debug, thiserror::Error)]
+pub enum LlamaModelError {
+    /// An error from candle while running the model.
+    #[error("Candle error: {0}")]
+    Candle(#[from] candle_core::Error),
+    /// An error from tokenizers while running the model.
+    #[error("Tokenizer error: {0}")]
+    Tokenizer(tokenizers::Error),
+    /// No stop token was found.
+    #[error("No stop token was found")]
+    NoStopToken,
+}
 
 /// The inner, synchronous Llama model.
 pub struct LlamaModel {
@@ -24,8 +37,9 @@ pub struct LlamaModel {
 
 impl SyncModel for LlamaModel {
     type Session = LlamaSession;
+    type Error = LlamaModelError;
 
-    fn new_session(&self) -> anyhow::Result<Self::Session> {
+    fn new_session(&self) -> Result<Self::Session, Self::Error> {
         let cache = self.cache.clone();
         Ok(Self::Session { cache })
     }
@@ -35,8 +49,11 @@ impl SyncModel for LlamaModel {
         session: &mut Self::Session,
         prompt: &str,
         logits: &mut Vec<f32>,
-    ) -> anyhow::Result<()> {
-        let encoded = self.tokenizer.encode(prompt, false).map_err(E::msg)?;
+    ) -> Result<(), Self::Error> {
+        let encoded = self
+            .tokenizer
+            .encode(prompt, false)
+            .map_err(LlamaModelError::Tokenizer)?;
         let tokens = encoded.get_ids();
         self.feed_tokens(session, tokens, logits)
     }
@@ -46,21 +63,22 @@ impl SyncModel for LlamaModel {
         session: &mut Self::Session,
         tokens: &[u32],
         logits: &mut Vec<f32>,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), Self::Error> {
         Self::forward(
             &self.model,
             &self.device,
             tokens,
             Some(&mut session.cache),
             logits,
-        )
+        )?;
+        Ok(())
     }
 
-    fn stop_token(&self) -> anyhow::Result<u32> {
+    fn stop_token(&self) -> Result<u32, Self::Error> {
         let vocab = self.tokenizer.get_vocab(true);
         let eos_token = match vocab.get("</s>").or(vocab.get("<|end_of_text|>")) {
             Some(token) => *token,
-            None => anyhow::bail!("cannot find the </s> token"),
+            None => return Err(LlamaModelError::NoStopToken),
         };
         Ok(eos_token)
     }
@@ -77,9 +95,9 @@ impl LlamaModel {
         tokens: &[u32],
         cache: Option<&mut LlamaCache>,
         logits_vec: &mut Vec<f32>,
-    ) -> anyhow::Result<()> {
+    ) -> candle_core::Result<()> {
         if tokens.is_empty() {
-            return Err(anyhow::anyhow!("Cannot run model on empty input"));
+            candle_core::bail!("Cannot run model on empty input");
         }
 
         let logits = model.forward(tokens, device, cache)?;
@@ -94,7 +112,7 @@ impl LlamaModel {
     pub async fn from_builder(
         builder: crate::LlamaBuilder,
         mut handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self, LlamaSourceError> {
         let device = builder.get_device()?;
 
         let tokenizer_source = format!("Tokenizer ({})", builder.source.tokenizer);
@@ -110,7 +128,8 @@ impl LlamaModel {
             .source
             .model(|progress| handler(create_progress(progress)))
             .await?;
-        let mut file = std::fs::File::open(&filename)?;
+        let mut file = std::fs::File::open(&filename)
+            .expect("The path returned by LlamaSource::model should be valid");
         let model = match filename.extension().and_then(|v| v.to_str()) {
             Some("gguf") => {
                 let model = gguf_file::Content::read(&mut file)?;
@@ -152,7 +171,7 @@ impl LlamaModel {
         settings: InferenceSettings,
         sampler: std::sync::Arc<std::sync::Mutex<dyn llm_samplers::prelude::Sampler>>,
         out: tokio::sync::mpsc::UnboundedSender<String>,
-    ) -> Result<()> {
+    ) -> Result<(), UnstructuredTextGenerationError<LlamaModelError>> {
         let InferenceSettings {
             prompt,
             sample_len,
@@ -167,10 +186,9 @@ impl LlamaModel {
             Some(sample_len as u32),
             stop_on.as_deref(),
             sampler,
-            |token| {
-                out.send(token)
-                    .map_err(|_| anyhow::anyhow!("Failed to send token to output channel"))
-                    .map(|_| kalosm_language_model::ModelFeedback::Continue)
+            |token| match out.send(token) {
+                Ok(_) => Ok(kalosm_language_model::ModelFeedback::Continue),
+                Err(_) => Ok(kalosm_language_model::ModelFeedback::Stop),
             },
         )?;
 

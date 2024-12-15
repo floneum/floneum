@@ -85,7 +85,7 @@ impl MutatorBuilder {
     }
 
     /// Build the Mutator chunker.
-    pub fn build(self) -> anyhow::Result<Mutator> {
+    pub fn build(self) -> Result<Mutator> {
         let task_description = self
             .task_description
             .unwrap_or_else(|| TASK_DESCRIPTION.to_string());
@@ -120,7 +120,7 @@ impl Mutator {
     }
 
     /// Generate a list of Mutator questions about the given text.
-    pub async fn mutate<M>(&self, text: &str, model: &mut M) -> anyhow::Result<String>
+    pub async fn mutate<M>(&self, text: &str, model: &mut M) -> Result<String>
     where
         M: Model,
         <M::SyncModel as SyncModel>::Session: Sync + Send,
@@ -161,7 +161,7 @@ const TEST_PAIRS :&[(&str, &str)]= &[
     ("Blockchain technology, beyond cryptocurrencies, is being explored for applications like smart contracts. Smart contracts are self-executing contracts with the terms of the agreement directly written into code.", "How is blockchain technology utilized in the concept of smart contracts?")
 ];
 
-async fn eval_with_prompt(llm: &mut Llama, prompt: &str) -> anyhow::Result<f64> {
+async fn eval_with_prompt(llm: &mut Llama, prompt: &str) -> Result<f64> {
     println!("evaluating prompt: {prompt}");
 
     let hypothetical = Hypothetical::builder()

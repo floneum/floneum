@@ -5,8 +5,5 @@
 
 #![warn(missing_docs)]
 
-#[doc(hidden)]
-pub use anyhow;
-
 mod structured_parser;
 pub use structured_parser::*;

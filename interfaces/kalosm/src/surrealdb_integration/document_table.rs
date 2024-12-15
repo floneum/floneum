@@ -127,7 +127,7 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     }
 
     /// Insert a new record into the table and return the id of the record.
-    pub async fn insert(&self, value: R) -> anyhow::Result<Id>
+    pub async fn insert(&self, value: R) -> Result<Id>
     where
         R: AsRef<Document> + Serialize + DeserializeOwned,
     {
@@ -139,7 +139,7 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     }
 
     /// Extend the table with a iterator of new records.
-    pub async fn extend<T: IntoIterator<Item = R> + Send>(&self, iter: T) -> anyhow::Result<Vec<Id>>
+    pub async fn extend<T: IntoIterator<Item = R> + Send>(&self, iter: T) -> Result<Vec<Id>>
     where
         R: AsRef<Document> + Serialize + DeserializeOwned,
         K: Sync,
@@ -210,7 +210,7 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
 
 impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     /// Extend the table from [`IntoDocuments`]
-    pub async fn add_context(&self, context: impl IntoDocuments) -> anyhow::Result<Vec<Id>>
+    pub async fn add_context(&self, context: impl IntoDocuments) -> Result<Vec<Id>>
     where
         R: From<Document> + AsRef<Document> + Serialize + DeserializeOwned,
         K: Sync,
@@ -257,7 +257,7 @@ impl<
     }
 
     /// Run the search and return the results.
-    pub async fn run(self) -> anyhow::Result<Vec<EmbeddingIndexedTableSearchResult<Doc>>> {
+    pub async fn run(self) -> Result<Vec<EmbeddingIndexedTableSearchResult<Doc>>> {
         let embedding = self
             .embedding
             .into_embedding(&self.table.embedding_model)
@@ -287,7 +287,7 @@ impl<
     > IntoFuture for DocumentTableSearchBuilder<'a, Conn, Doc, Model, Chkr, E, F, M>
 {
     type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send + 'a>>;
-    type Output = anyhow::Result<Vec<EmbeddingIndexedTableSearchResult<Doc>>>;
+    type Output = Result<Vec<EmbeddingIndexedTableSearchResult<Doc>>>;
 
     fn into_future(self) -> Self::IntoFuture {
         Box::pin(self.run())
@@ -388,9 +388,7 @@ impl<C: Connection, E, K: Chunker> DocumentTableBuilder<C, E, K> {
     }
 
     /// Build the document table.
-    pub async fn build<R: Serialize + DeserializeOwned>(
-        self,
-    ) -> anyhow::Result<DocumentTable<C, R, E, K>>
+    pub async fn build<R: Serialize + DeserializeOwned>(self) -> Result<DocumentTable<C, R, E, K>>
     where
         E: Embedder,
     {

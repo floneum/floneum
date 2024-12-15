@@ -199,11 +199,13 @@ fn test_chunking() {
 }
 
 impl Chunker for ChunkStrategy {
+    type Error<E: Send + Sync + 'static> = E;
+
     async fn chunk<E: Embedder + Send>(
         &self,
         document: &Document,
         embedder: &E,
-    ) -> anyhow::Result<Vec<Chunk<E::VectorSpace>>> {
+    ) -> Result<Vec<Chunk<E::VectorSpace>>, E::Error> {
         let mut chunks = Vec::new();
         let body = document.body();
         let mut documents = Vec::new();
@@ -225,7 +227,7 @@ impl Chunker for ChunkStrategy {
         &self,
         documents: I,
         embedder: &E,
-    ) -> anyhow::Result<Vec<Vec<Chunk<E::VectorSpace>>>>
+    ) -> Result<Vec<Vec<Chunk<E::VectorSpace>>>, E::Error>
     where
         I: IntoIterator<Item = &'a Document> + Send,
         I::IntoIter: Send,

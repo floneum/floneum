@@ -10,12 +10,15 @@ use std::str::FromStr;
 pub struct DefaultSentenceChunker;
 
 impl Chunker for DefaultSentenceChunker {
+    type Error<E: Send + Sync + 'static> = E;
+
     /// Chunk a document into embedded snippets.
     fn chunk<E: Embedder + Send>(
         &self,
         document: &Document,
         embedder: &E,
-    ) -> impl Future<Output = anyhow::Result<Vec<Chunk<E::VectorSpace>>>> + Send {
+    ) -> impl Future<Output = Result<Vec<Chunk<E::VectorSpace>>, Self::Error<E::Error>>> + Send
+    {
         let default = SentenceChunker::default();
         // Split the document into sentences. We first just collect the sentences as strings and byte ranges
         let mut initial_chunks = Vec::new();
@@ -92,12 +95,15 @@ impl Default for SentenceChunker {
 
 /// A strategy for chunking a document into smaller pieces.
 impl Chunker for SentenceChunker {
+    type Error<E: Send + Sync + 'static> = E;
+
     /// Chunk a document into embedded snippets.
     fn chunk<E: Embedder + Send>(
         &self,
         document: &Document,
         embedder: &E,
-    ) -> impl Future<Output = anyhow::Result<Vec<Chunk<E::VectorSpace>>>> + Send {
+    ) -> impl Future<Output = Result<Vec<Chunk<E::VectorSpace>>, Self::Error<E::Error>>> + Send
+    {
         // Split the document into sentences. We first just collect the sentences as strings and byte ranges
         let mut initial_chunks = Vec::new();
         let body = document.body();
@@ -114,7 +120,7 @@ async fn embed_chunk<E: Embedder + Send>(
     embedder: &E,
     initial_chunks: Vec<String>,
     ranges: Vec<std::ops::Range<usize>>,
-) -> anyhow::Result<Vec<Chunk<E::VectorSpace>>> {
+) -> Result<Vec<Chunk<E::VectorSpace>>, E::Error> {
     // Next embed them all in one big batch
     let embeddings = embedder.embed_vec(initial_chunks).await?;
 

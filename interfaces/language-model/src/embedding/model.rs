@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::sync::Arc;
 
 use kalosm_common::BoxedFuture;
@@ -33,11 +34,14 @@ pub trait Embedder: Send + Sync + 'static {
     /// The vector space that this embedder uses.
     type VectorSpace: VectorSpace + Send + Sync + 'static;
 
+    /// The error type that can occur when embedding a string.
+    type Error: Send + Sync + 'static;
+
     /// Embed some text into a vector space.
     fn embed_string(
         &self,
         input: String,
-    ) -> BoxedFuture<'_, anyhow::Result<Embedding<Self::VectorSpace>>> {
+    ) -> impl Future<Output = Result<Embedding<Self::VectorSpace>, Self::Error>> + Send {
         self.embed_for(EmbeddingInput {
             text: input,
             variant: EmbeddingVariant::Document,
@@ -48,65 +52,66 @@ pub trait Embedder: Send + Sync + 'static {
     fn embed_vec(
         &self,
         inputs: Vec<String>,
-    ) -> BoxedFuture<'_, anyhow::Result<Vec<Embedding<Self::VectorSpace>>>> {
-        Box::pin(async move {
+    ) -> impl Future<Output = Result<Vec<Embedding<Self::VectorSpace>>, Self::Error>> + Send {
+        async move {
             let mut embeddings = Vec::with_capacity(inputs.len());
             for input in inputs {
                 embeddings.push(self.embed_string(input).await?);
             }
             Ok(embeddings)
-        })
+        }
     }
 
     /// Embed a [`EmbeddingInput`] into a vector space
     fn embed_for(
         &self,
         input: EmbeddingInput,
-    ) -> BoxedFuture<'_, anyhow::Result<Embedding<Self::VectorSpace>>>;
+    ) -> impl Future<Output = Result<Embedding<Self::VectorSpace>, Self::Error>> + Send;
 
     /// Embed a [`Vec<String>`] into a vector space. Returns a list of embeddings in the same order as the inputs.
     fn embed_vec_for(
         &self,
         inputs: Vec<EmbeddingInput>,
-    ) -> BoxedFuture<'_, anyhow::Result<Vec<Embedding<Self::VectorSpace>>>> {
-        Box::pin(async move {
+    ) -> impl Future<Output = Result<Vec<Embedding<Self::VectorSpace>>, Self::Error>> + Send {
+        async move {
             let mut embeddings = Vec::with_capacity(inputs.len());
             for input in inputs {
                 embeddings.push(self.embed_for(input).await?);
             }
             Ok(embeddings)
-        })
+        }
     }
 }
 
 impl<E: Embedder> Embedder for Arc<E> {
     type VectorSpace = E::VectorSpace;
+    type Error = E::Error;
 
     fn embed_for(
         &self,
         input: EmbeddingInput,
-    ) -> BoxedFuture<'_, anyhow::Result<Embedding<Self::VectorSpace>>> {
+    ) -> impl Future<Output = Result<Embedding<Self::VectorSpace>, Self::Error>> + Send {
         E::embed_for(self, input)
     }
 
     fn embed_string(
         &self,
         input: String,
-    ) -> BoxedFuture<'_, anyhow::Result<Embedding<Self::VectorSpace>>> {
+    ) -> impl Future<Output = Result<Embedding<Self::VectorSpace>, Self::Error>> + Send {
         E::embed_string(self, input)
     }
 
     fn embed_vec(
         &self,
         inputs: Vec<String>,
-    ) -> BoxedFuture<'_, anyhow::Result<Vec<Embedding<Self::VectorSpace>>>> {
+    ) -> impl Future<Output = Result<Vec<Embedding<Self::VectorSpace>>, Self::Error>> + Send {
         E::embed_vec(self, inputs)
     }
 
     fn embed_vec_for(
         &self,
         inputs: Vec<EmbeddingInput>,
-    ) -> BoxedFuture<'_, anyhow::Result<Vec<Embedding<Self::VectorSpace>>>> {
+    ) -> impl Future<Output = Result<Vec<Embedding<Self::VectorSpace>>, Self::Error>> + Send {
         E::embed_vec_for(self, inputs)
     }
 }
@@ -152,15 +157,18 @@ pub trait EmbedderExt: Embedder {
     fn into_any_embedder(self) -> DynEmbedder
     where
         Self: Sized,
+        Self::Error: std::error::Error,
     {
-        Box::new(AnyEmbedder::<Self>(self))
+        DynEmbedder {
+            embedder: Box::new(AnyEmbedder::<Self>(self)),
+        }
     }
 
     /// Embed some text into a vector space
     fn embed(
         &self,
         input: impl ToString,
-    ) -> BoxedFuture<'_, anyhow::Result<Embedding<Self::VectorSpace>>> {
+    ) -> impl Future<Output = Result<Embedding<Self::VectorSpace>, Self::Error>> + Send {
         self.embed_string(input.to_string())
     }
 
@@ -168,7 +176,7 @@ pub trait EmbedderExt: Embedder {
     fn embed_query(
         &self,
         input: impl ToString,
-    ) -> BoxedFuture<'_, anyhow::Result<Embedding<Self::VectorSpace>>> {
+    ) -> impl Future<Output = Result<Embedding<Self::VectorSpace>, Self::Error>> + Send {
         self.embed_for(EmbeddingInput {
             text: input.to_string(),
             variant: EmbeddingVariant::Query,
@@ -179,7 +187,7 @@ pub trait EmbedderExt: Embedder {
     fn embed_batch(
         &self,
         inputs: impl IntoIterator<Item = impl ToString>,
-    ) -> BoxedFuture<'_, anyhow::Result<Vec<Embedding<Self::VectorSpace>>>> {
+    ) -> impl Future<Output = Result<Vec<Embedding<Self::VectorSpace>>, Self::Error>> + Send {
         let inputs = inputs
             .into_iter()
             .map(|s| s.to_string())
@@ -191,7 +199,7 @@ pub trait EmbedderExt: Embedder {
     fn embed_batch_for(
         &self,
         inputs: impl IntoIterator<Item = EmbeddingInput>,
-    ) -> BoxedFuture<'_, anyhow::Result<Vec<Embedding<Self::VectorSpace>>>> {
+    ) -> impl Future<Output = Result<Vec<Embedding<Self::VectorSpace>>, Self::Error>> + Send {
         self.embed_vec_for(inputs.into_iter().collect())
     }
 }
@@ -199,50 +207,134 @@ pub trait EmbedderExt: Embedder {
 impl<E: Embedder> EmbedderExt for E {}
 
 /// A trait object for an embedder.
-pub type DynEmbedder = Box<dyn Embedder<VectorSpace = UnknownVectorSpace>>;
+pub struct DynEmbedder {
+    embedder: Box<dyn BoxedEmbedder + Send + Sync>,
+}
 
-struct AnyEmbedder<E: Embedder + Send + Sync + 'static>(E);
-
-impl<E: Embedder + Send + Sync + 'static> Embedder for AnyEmbedder<E> {
+impl Embedder for DynEmbedder {
     type VectorSpace = UnknownVectorSpace;
+    type Error = Box<dyn std::error::Error + Send + Sync>;
 
     fn embed_string(
         &self,
         input: String,
-    ) -> BoxedFuture<'_, anyhow::Result<Embedding<UnknownVectorSpace>>> {
-        let future = self.0.embed_string(input);
-        Box::pin(async move { future.await.map(|e| e.cast()) })
+    ) -> impl Future<Output = Result<Embedding<UnknownVectorSpace>, Self::Error>> + Send {
+        self.embedder.embed_string_boxed(input)
     }
 
     fn embed_vec(
         &self,
         inputs: Vec<String>,
-    ) -> BoxedFuture<'_, anyhow::Result<Vec<Embedding<UnknownVectorSpace>>>> {
-        let future = self.0.embed_vec(inputs);
-        Box::pin(async move {
-            future
-                .await
-                .map(|e| e.into_iter().map(|e| e.cast()).collect())
-        })
+    ) -> impl Future<Output = Result<Vec<Embedding<UnknownVectorSpace>>, Self::Error>> + Send {
+        self.embedder.embed_vec_boxed(inputs)
     }
 
     fn embed_for(
         &self,
         input: EmbeddingInput,
-    ) -> BoxedFuture<'_, anyhow::Result<Embedding<UnknownVectorSpace>>> {
-        let future = self.0.embed_for(input);
-        Box::pin(async move { future.await.map(|e| e.cast()) })
+    ) -> impl Future<Output = Result<Embedding<UnknownVectorSpace>, Self::Error>> + Send {
+        self.embedder.embed_for_boxed(input)
     }
 
     fn embed_vec_for(
         &self,
         inputs: Vec<EmbeddingInput>,
-    ) -> BoxedFuture<'_, anyhow::Result<Vec<Embedding<Self::VectorSpace>>>> {
+    ) -> impl Future<Output = Result<Vec<Embedding<UnknownVectorSpace>>, Self::Error>> + Send {
+        self.embedder.embed_vec_for_boxed(inputs)
+    }
+}
+
+struct AnyEmbedder<E: Embedder + Send + Sync + 'static>(E);
+
+trait BoxedEmbedder {
+    fn embed_string_boxed(
+        &self,
+        input: String,
+    ) -> BoxedFuture<
+        '_,
+        Result<Embedding<UnknownVectorSpace>, Box<dyn std::error::Error + Send + Sync>>,
+    >;
+
+    fn embed_vec_boxed(
+        &self,
+        inputs: Vec<String>,
+    ) -> BoxedFuture<
+        '_,
+        Result<Vec<Embedding<UnknownVectorSpace>>, Box<dyn std::error::Error + Send + Sync>>,
+    >;
+
+    fn embed_for_boxed(
+        &self,
+        input: EmbeddingInput,
+    ) -> BoxedFuture<
+        '_,
+        Result<Embedding<UnknownVectorSpace>, Box<dyn std::error::Error + Send + Sync>>,
+    >;
+
+    fn embed_vec_for_boxed(
+        &self,
+        inputs: Vec<EmbeddingInput>,
+    ) -> BoxedFuture<
+        '_,
+        Result<Vec<Embedding<UnknownVectorSpace>>, Box<dyn std::error::Error + Send + Sync>>,
+    >;
+}
+
+impl<E: Embedder + Send + Sync + 'static> BoxedEmbedder for AnyEmbedder<E>
+where
+    E::Error: std::error::Error,
+{
+    fn embed_string_boxed(
+        &self,
+        input: String,
+    ) -> BoxedFuture<
+        '_,
+        Result<Embedding<UnknownVectorSpace>, Box<dyn std::error::Error + Send + Sync>>,
+    > {
+        let future = self.0.embed_string(input);
+        Box::pin(async move { future.await.map(|e| e.cast()).map_err(|e| e.into()) })
+    }
+
+    fn embed_vec_boxed(
+        &self,
+        inputs: Vec<String>,
+    ) -> BoxedFuture<
+        '_,
+        Result<Vec<Embedding<UnknownVectorSpace>>, Box<dyn std::error::Error + Send + Sync>>,
+    > {
+        let future = self.0.embed_vec(inputs);
+        Box::pin(async move {
+            future
+                .await
+                .map(|e| e.into_iter().map(|e| e.cast()).collect())
+                .map_err(|e| e.into())
+        })
+    }
+
+    fn embed_for_boxed(
+        &self,
+        input: EmbeddingInput,
+    ) -> BoxedFuture<
+        '_,
+        Result<Embedding<UnknownVectorSpace>, Box<dyn std::error::Error + Send + Sync>>,
+    > {
+        let future = self.0.embed_for(input);
+        Box::pin(async move { future.await.map(|e| e.cast()).map_err(|e| e.into()) })
+    }
+
+    fn embed_vec_for_boxed(
+        &self,
+        inputs: Vec<EmbeddingInput>,
+    ) -> BoxedFuture<
+        '_,
+        Result<Vec<Embedding<UnknownVectorSpace>>, Box<dyn std::error::Error + Send + Sync>>,
+    > {
         let future = self.0.embed_vec_for(inputs);
         Box::pin(async move {
             future
                 .await
                 .map(|e| e.into_iter().map(|e| e.cast()).collect())
+                .map_err(|e| e.into())
         })
     }
 }

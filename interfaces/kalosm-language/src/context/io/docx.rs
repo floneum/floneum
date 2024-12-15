@@ -5,6 +5,8 @@ use std::fs::File;
 
 use crate::context::document::{Document, IntoDocument};
 
+use super::FsDocumentError;
+
 /// A docx document that can be read from the file system.
 #[derive(Debug, Clone)]
 pub struct DocxDocument {
@@ -12,14 +14,14 @@ pub struct DocxDocument {
 }
 
 impl TryFrom<PathBuf> for DocxDocument {
-    type Error = anyhow::Error;
+    type Error = FsDocumentError;
 
     fn try_from(path: PathBuf) -> Result<Self, Self::Error> {
         if !path.is_file() {
-            return Err(anyhow::anyhow!("Path is not a file"));
+            return Err(std::io::Error::from(std::io::ErrorKind::NotFound).into());
         }
         if path.extension().unwrap() != "docx" {
-            return Err(anyhow::anyhow!("Path is not a docx file"));
+            return Err(FsDocumentError::WrongFileType);
         }
         Ok(Self { path })
     }
@@ -27,10 +29,12 @@ impl TryFrom<PathBuf> for DocxDocument {
 
 #[async_trait::async_trait]
 impl IntoDocument for DocxDocument {
-    async fn into_document(self) -> anyhow::Result<Document> {
+    type Error = FsDocumentError<docx_rs::ReaderError>;
+
+    async fn into_document(self) -> Result<Document, Self::Error> {
         let file = File::open(self.path)?;
         let reader = std::io::BufReader::new(file);
-        let docx = DocxFile::from_xml(reader)?;
+        let docx = DocxFile::from_xml(reader).map_err(|err| FsDocumentError::Decode(err))?;
         let mut text = String::new();
         for section in docx.children {
             match section {

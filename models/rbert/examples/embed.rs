@@ -1,7 +1,7 @@
 use rbert::*;
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<()> {
     let bert = Bert::builder().build().await?;
     let sentences = [
         "Kalosm can be used to build local AI applications",

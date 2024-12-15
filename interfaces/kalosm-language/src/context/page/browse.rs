@@ -127,7 +127,7 @@ impl Tab {
     /// Extract the article from the current page.
     pub fn article(&self) -> anyhow::Result<Document> {
         let html = self.inner.get_content()?;
-        extract_article(&html)
+        Ok(extract_article(&html)?)
     }
 
     /// Get the title of the current page.

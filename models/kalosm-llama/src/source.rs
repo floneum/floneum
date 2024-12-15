@@ -66,6 +66,9 @@ pub enum LlamaSourceError {
     /// An error occurred while loading the model (from the cache or downloading it).
     #[error("Failed to load the model: {0}")]
     Model(#[from] CacheError),
+    /// An error occurred while loading the model onto the device.
+    #[error("Failed to load the model onto the device: {0}")]
+    Device(#[from] candle_core::Error),
 }
 
 impl LlamaSource {

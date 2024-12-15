@@ -52,11 +52,7 @@ pub struct Model {
 }
 
 impl Model {
-    pub fn from_ggml(
-        mut ct: ggml_file::Content,
-        gqa: usize,
-        device: &Device,
-    ) -> anyhow::Result<Self> {
+    pub fn from_ggml(mut ct: ggml_file::Content, gqa: usize, device: &Device) -> Result<Self> {
         let head_dim = (ct.hparams.n_embd / ct.hparams.n_head) as usize;
         let n_layer = ct.hparams.n_layer as usize;
         let config = LlamaConfig {

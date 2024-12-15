@@ -5,6 +5,8 @@ use tokio::{fs::File, io::AsyncReadExt};
 
 use crate::context::document::{Document, IntoDocument};
 
+use super::FsDocumentError;
+
 /// A text document that can be read from the file system.
 #[derive(Debug, Clone)]
 pub struct TextDocument {
@@ -12,14 +14,14 @@ pub struct TextDocument {
 }
 
 impl TryFrom<PathBuf> for TextDocument {
-    type Error = anyhow::Error;
+    type Error = FsDocumentError;
 
     fn try_from(path: PathBuf) -> Result<Self, Self::Error> {
         if !path.is_file() {
-            return Err(anyhow::anyhow!("Path is not a file"));
+            return Err(std::io::Error::from(std::io::ErrorKind::NotFound).into());
         }
         if path.extension().unwrap() != "txt" {
-            return Err(anyhow::anyhow!("Path is not a txt file"));
+            return Err(FsDocumentError::WrongFileType);
         }
         Ok(Self { path })
     }
@@ -27,7 +29,9 @@ impl TryFrom<PathBuf> for TextDocument {
 
 #[async_trait::async_trait]
 impl IntoDocument for TextDocument {
-    async fn into_document(self) -> anyhow::Result<Document> {
+    type Error = FsDocumentError;
+
+    async fn into_document(self) -> Result<Document, Self::Error> {
         let stem = self.path.file_stem();
         let title = stem
             .unwrap()

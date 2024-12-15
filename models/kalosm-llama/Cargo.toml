@@ -19,7 +19,6 @@ intel-mkl-src = { version = "0.8.1", features = ["mkl-static-lp64-iomp"], option
 cudarc = { version = "0.9.14", features = ["f16"], optional = true }
 half = { version = "2.3.1" }
 
-anyhow = "1.0.75"
 tracing = "0.1.37"
 rand = "0.8.5"
 tokio = { version = "1.32.0", features = ["full"] }

@@ -1,4 +1,4 @@
-use url::Url;
+use std::convert::Infallible;
 pub use whatlang::Lang;
 
 /// A document is a piece of text with a title.
@@ -13,7 +13,7 @@ pub struct Document {
 
 impl Document {
     /// Create a new document from a source.
-    pub async fn new<T: IntoDocument>(source: T) -> anyhow::Result<Self> {
+    pub async fn new<T: IntoDocument>(source: T) -> Result<Self, T::Error> {
         source.into_document().await
     }
 
@@ -86,50 +86,57 @@ impl std::fmt::Display for Document {
 /// A trait for types that can be converted into a document.
 #[async_trait::async_trait]
 pub trait IntoDocument {
+    /// The error type that can occur when converting the type into a [`Document`].
+    type Error: Send + Sync + 'static;
+
     /// Convert the type into a document.
-    async fn into_document(self) -> anyhow::Result<Document>;
+    async fn into_document(self) -> Result<Document, Self::Error>;
 }
 
 #[async_trait::async_trait]
 impl IntoDocument for String {
-    async fn into_document(self) -> anyhow::Result<Document> {
+    type Error = Infallible;
+
+    async fn into_document(self) -> Result<Document, Self::Error> {
         Ok(Document::from_parts("", self))
     }
 }
 
 #[async_trait::async_trait]
 impl IntoDocument for &String {
-    async fn into_document(self) -> anyhow::Result<Document> {
+    type Error = Infallible;
+
+    async fn into_document(self) -> Result<Document, Self::Error> {
         Ok(Document::from_parts("", self.to_string()))
     }
 }
 
 #[async_trait::async_trait]
 impl IntoDocument for &str {
-    async fn into_document(self) -> anyhow::Result<Document> {
+    type Error = Infallible;
+
+    async fn into_document(self) -> Result<Document, Self::Error> {
         Ok(Document::from_parts("", self.to_string()))
     }
 }
 
 #[async_trait::async_trait]
 impl IntoDocument for Document {
-    async fn into_document(self) -> anyhow::Result<Document> {
-        Ok(self)
-    }
-}
+    type Error = Infallible;
 
-#[async_trait::async_trait]
-impl IntoDocument for Url {
-    async fn into_document(self) -> anyhow::Result<Document> {
-        super::page::get_article(self).await
+    async fn into_document(self) -> Result<Document, Self::Error> {
+        Ok(self)
     }
 }
 
 /// A document that can be added to a search index.
 #[async_trait::async_trait]
 pub trait IntoDocuments {
+    /// The error type that can occur when converting the document into [`Document`]s.
+    type Error: Send + Sync + 'static;
+
     /// Convert the document into a [`Document`]
-    async fn into_documents(self) -> anyhow::Result<Vec<Document>>;
+    async fn into_documents(self) -> Result<Vec<Document>, Self::Error>;
 }
 
 #[async_trait::async_trait]
@@ -138,7 +145,9 @@ where
     I: IntoIterator<Item = T> + Send + Sync,
     <I as IntoIterator>::IntoIter: Send + Sync,
 {
-    async fn into_documents(self) -> anyhow::Result<Vec<Document>> {
+    type Error = T::Error;
+
+    async fn into_documents(self) -> Result<Vec<Document>, Self::Error> {
         let mut documents = Vec::new();
         for document in self {
             documents.push(document.into_document().await?);

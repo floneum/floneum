@@ -3,14 +3,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::{anyhow, Error as E, Result};
 use candle_core::{Device, IndexOp, Tensor};
 use candle_nn::ops::softmax;
 use rand::{distributions::Distribution, SeedableRng};
 use tokenizers::Tokenizer;
 
 use candle_transformers::models::whisper::{self as m, audio, Config};
-use kalosm_common::accelerated_device_if_available;
+use kalosm_common::{accelerated_device_if_available, CacheError};
 
 use crate::{quantized::TextDecoderCache, Task, WhisperBuilder, WhisperLanguage};
 
@@ -27,7 +26,7 @@ impl ModelType {
         device: &Device,
         config: Config,
         quantized: bool,
-    ) -> Result<Self> {
+    ) -> candle_core::Result<Self> {
         if quantized {
             let vb = crate::m::quantized_model::VarBuilder::from_gguf(weights_filename, device)?;
             Ok(Self::Quantized(crate::quantized::Whisper::load(
@@ -53,6 +52,40 @@ impl ModelType {
     }
 }
 
+/// An error that can occur when loading a [`Whisper`](crate::Whisper) model.
+#[derive(Debug, thiserror::Error)]
+pub enum WhisperLoadingError {
+    /// An error that can occur when trying to load a [`Whisper`](crate::Whisper) model from huggingface or a local file.
+    #[error("Failed to load model from huggingface or local file: {0}")]
+    DownloadingError(#[from] CacheError),
+    /// An error that can occur when trying to load a [`Whisper`](crate::Whisper) model.
+    #[error("Failed to load model into device: {0}")]
+    LoadModel(#[from] candle_core::Error),
+    /// An error that can occur when trying to load the whisper tokenizer.
+    #[error("Failed to load tokenizer: {0}")]
+    LoadTokenizer(tokenizers::Error),
+    /// An error that can occur when trying to load the whisper config.
+    #[error("Failed to load config: {0}")]
+    LoadConfig(serde_json::Error),
+    /// Unsupported mel filter length
+    #[error("Unsupported mel filter length: {0}; only 80 and 128 are supported")]
+    UnsupportedMelFilterLength(usize),
+    /// Language not supported
+    #[error("Language not supported: {0}")]
+    UnsupportedLanguage(WhisperLanguage),
+}
+
+/// An error that can occur when running a [`Whisper`] model.
+#[derive(Debug, thiserror::Error)]
+pub enum WhisperError {
+    /// An error that can occur when trying to run a [`Whisper`] model.
+    #[error("Candle error: {0}")]
+    Candle(#[from] candle_core::Error),
+    /// An error that can occur when encoding or decoding for a [`Whisper`] model.
+    #[error("Tokenizer error: {0}")]
+    Tokenizer(tokenizers::Error),
+}
+
 pub(crate) struct WhisperInner {
     mel_filters: Vec<f32>,
     device: Device,
@@ -66,15 +99,18 @@ impl WhisperInner {
         weights_filename: PathBuf,
         tokenizer_filename: PathBuf,
         config_filename: PathBuf,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self, WhisperLoadingError> {
         let device = accelerated_device_if_available()?;
-        let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(E::msg)?;
-        let config: Config = serde_json::from_str(&std::fs::read_to_string(config_filename)?)?;
+        let tokenizer =
+            Tokenizer::from_file(tokenizer_filename).map_err(WhisperLoadingError::LoadTokenizer)?;
+        let config: Config =
+            serde_json::from_str(&std::fs::read_to_string(config_filename).unwrap())
+                .map_err(WhisperLoadingError::LoadConfig)?;
 
         let mel_bytes = match config.num_mel_bins {
             80 => include_bytes!("melfilters.bytes").as_slice(),
             128 => include_bytes!("melfilters128.bytes").as_slice(),
-            nmel => anyhow::bail!("unexpected num_mel_bins {nmel}"),
+            nmel => return Err(WhisperLoadingError::UnsupportedMelFilterLength(nmel)),
         };
         let mut mel_filters = vec![0f32; mel_bytes.len() / 4];
         <byteorder::LittleEndian as byteorder::ByteOrder>::read_f32_into(
@@ -92,7 +128,7 @@ impl WhisperInner {
             let language = settings.language.unwrap_or(WhisperLanguage::English);
             match token_id(&tokenizer, &format!("<|{language}|>")) {
                 Ok(token_id) => Some(token_id),
-                Err(_) => anyhow::bail!("language {language} is not supported"),
+                Err(_) => return Err(WhisperLoadingError::UnsupportedLanguage(language)),
             }
         } else {
             None
@@ -152,7 +188,7 @@ impl Decoder {
         seed: u64,
         device: &Device,
         language_token: Option<u32>,
-    ) -> Result<Self> {
+    ) -> candle_core::Result<Self> {
         let no_timestamps_token = token_id(&tokenizer, m::NO_TIMESTAMPS_TOKEN)?;
         // Suppress the notimestamps token when in timestamps mode.
         // https://github.com/openai/whisper/blob/e8622f9afc4eba139bf796c210f5c01081000472/whisper/decoding.py#L452
@@ -173,7 +209,7 @@ impl Decoder {
         let no_speech_token = m::NO_SPEECH_TOKENS
             .iter()
             .find_map(|token| token_id(&tokenizer, token).ok())
-            .ok_or(anyhow!("no_speech_token not found"))?;
+            .ok_or_else(|| candle_core::Error::Msg("no_speech_token not found".to_string()))?;
         Ok(Self {
             model,
             rng: rand::rngs::StdRng::seed_from_u64(seed),
@@ -189,7 +225,7 @@ impl Decoder {
         })
     }
 
-    fn encode(&mut self, mel: &Tensor) -> Result<Tensor> {
+    fn encode(&mut self, mel: &Tensor) -> candle_core::Result<Tensor> {
         let tensor = match &mut self.model {
             ModelType::Quantized(model) => model.encoder.forward(mel)?,
             ModelType::Unquantized(model) => model.encoder.forward(mel, true)?,
@@ -204,7 +240,7 @@ impl Decoder {
         temperature: f64,
         task: Task,
         previous_tokens: &[u32],
-    ) -> Result<DecodingResult> {
+    ) -> Result<DecodingResult, WhisperError> {
         let model = &mut self.model;
         let sample_len = model.config().max_target_positions / 2;
         let mut sum_logprob = 0f64;
@@ -278,7 +314,8 @@ impl Decoder {
             let next_token = if temperature > 0f64 {
                 let prs = softmax(&(&logits / temperature)?, 0)?;
                 let logits_v: Vec<f32> = prs.to_vec1()?;
-                let distr = rand::distributions::WeightedIndex::new(&logits_v)?;
+                let distr = rand::distributions::WeightedIndex::new(&logits_v)
+                    .expect("logits_v should not be empty or negative");
                 distr.sample(&mut self.rng) as u32
             } else {
                 let logits_v: Vec<f32> = logits.to_vec1()?;
@@ -299,7 +336,10 @@ impl Decoder {
             }
             sum_logprob += prob.ln();
         }
-        let text = self.tokenizer.decode(&tokens, true).map_err(E::msg)?;
+        let text = self
+            .tokenizer
+            .decode(&tokens, true)
+            .map_err(WhisperError::Tokenizer)?;
         let avg_logprob = sum_logprob / tokens.len() as f64;
 
         Ok(DecodingResult {
@@ -315,9 +355,10 @@ impl Decoder {
         audio_features: &Tensor,
         task: Task,
         previous_tokens: &[u32],
-    ) -> Result<DecodingResult> {
+    ) -> Result<DecodingResult, WhisperError> {
         for (i, &t) in m::TEMPERATURES.iter().enumerate() {
-            let dr: Result<DecodingResult> = self.decode(audio_features, t, task, previous_tokens);
+            let dr: Result<DecodingResult, WhisperError> =
+                self.decode(audio_features, t, task, previous_tokens);
             if i == m::TEMPERATURES.len() - 1 {
                 return dr;
             }
@@ -344,7 +385,7 @@ impl Decoder {
         audio_frames: usize,
         task: Task,
         result: tokio::sync::mpsc::UnboundedSender<Segment>,
-    ) -> Result<()> {
+    ) -> Result<(), WhisperError> {
         // TODO: This should be dynamic based on how much memory the model uses and how much memory is available
         const MAX_CHUNKS: usize = 1;
 
@@ -408,7 +449,7 @@ impl Decoder {
                     let tokens = self
                         .tokenizer
                         .encode(text_after_last_sentence, false)
-                        .map_err(E::msg)?;
+                        .map_err(WhisperError::Tokenizer)?;
                     tokens_in_sentence_fragment.extend(tokens.get_ids());
                 };
 

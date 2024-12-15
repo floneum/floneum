@@ -31,7 +31,6 @@ extern crate accelerate_src;
 
 mod image_processor;
 
-use anyhow::anyhow;
 use candle_core::DType;
 use candle_core::{Device, Tensor};
 use candle_nn::VarBuilder;
@@ -56,7 +55,7 @@ impl OcrBuilder {
     }
 
     /// Builds the [`Ocr`] model.
-    pub async fn build(self) -> anyhow::Result<Ocr> {
+    pub async fn build(self) -> Result<Ocr, LoadOcrError> {
         Ocr::new(self, |_| {}).await
     }
 
@@ -64,7 +63,7 @@ impl OcrBuilder {
     pub async fn build_with_loading_handler(
         self,
         handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
-    ) -> anyhow::Result<Ocr> {
+    ) -> Result<Ocr, LoadOcrError> {
         Ocr::new(self, handler).await
     }
 }
@@ -149,7 +148,7 @@ impl OcrSource {
         &self,
         device: &Device,
         mut handler: impl FnMut(ModelLoadingProgress) + Send + Sync,
-    ) -> anyhow::Result<VarBuilder> {
+    ) -> Result<VarBuilder, LoadOcrError> {
         let source = format!("Model ({})", self.model);
         let mut create_progress = ModelLoadingProgress::downloading_progress(source);
         let filename = self
@@ -162,7 +161,7 @@ impl OcrSource {
     async fn config(
         &self,
         mut handler: impl FnMut(ModelLoadingProgress) + Send + Sync,
-    ) -> anyhow::Result<(vit::Config, trocr::TrOCRConfig)> {
+    ) -> Result<(vit::Config, trocr::TrOCRConfig), LoadOcrError> {
         #[derive(Debug, Clone, serde::Deserialize)]
         struct Config {
             encoder: vit::Config,
@@ -176,7 +175,11 @@ impl OcrSource {
                 .config
                 .download(|progress| handler(create_progress(progress)))
                 .await?;
-            let config: Config = serde_json::from_reader(std::fs::File::open(config_filename)?)?;
+            let config: Config = serde_json::from_reader(
+                std::fs::File::open(config_filename)
+                    .expect("FileSource::download should return a valid path"),
+            )
+            .map_err(LoadOcrError::LoadConfig)?;
             (config.encoder, config.decoder)
         };
 
@@ -197,21 +200,39 @@ pub struct OcrInferenceSettings {
 
 impl OcrInferenceSettings {
     /// Creates a new [`OcrInferenceSettings`] from an image.
-    pub fn new<I: GenericImageView<Pixel = Rgba<u8>>>(input: I) -> anyhow::Result<Self> {
+    pub fn new<I: GenericImageView<Pixel = Rgba<u8>>>(input: I) -> Self {
         let mut image = ImageBuffer::new(input.width(), input.height());
-        image.copy_from(&input, 0, 0)?;
-        Ok(Self { image })
+        image.copy_from(&input, 0, 0).unwrap();
+        Self { image }
     }
+}
 
-    /// Set the image to segment.
-    pub fn set_image<I: GenericImageView<Pixel = Rgba<u8>>>(
-        mut self,
-        image: I,
-    ) -> anyhow::Result<Self> {
-        self.image = ImageBuffer::new(image.width(), image.height());
-        self.image.copy_from(&image, 0, 0)?;
-        Ok(self)
-    }
+/// An error that can occur when loading an [`Ocr`] model.
+#[derive(Debug, thiserror::Error)]
+pub enum LoadOcrError {
+    /// An error that can occur when trying to load an [`Ocr`] model into a device.
+    #[error("Failed to load model into device: {0}")]
+    LoadModel(#[from] candle_core::Error),
+    /// An error that can occur when downloading an [`Ocr`] model from the cache.
+    #[error("Failed to download model: {0}")]
+    DownloadModel(#[from] CacheError),
+    /// An error that can occur when loading the tokenizer.
+    #[error("Failed to load tokenizer: {0}")]
+    LoadTokenizer(tokenizers::Error),
+    /// An error that can occur when loading the config.
+    #[error("Failed to load config: {0}")]
+    LoadConfig(serde_json::Error),
+}
+
+/// An error that can occur when running an [`Ocr`] model.
+#[derive(Debug, thiserror::Error)]
+pub enum OcrInferenceError {
+    /// An error that can occur when trying to run an [`Ocr`] model.
+    #[error("Failed to run model: {0}")]
+    RunModel(#[from] candle_core::Error),
+    /// An error that can occur when decoding the result of an [`Ocr`] model.
+    #[error("Failed to decode: {0}")]
+    Decode(tokenizers::Error),
 }
 
 /// The [trocs](https://www.microsoft.com/en-us/research/publication/trocr-transformer-based-optical-character-recognition-with-pre-trained-models/) optical character recognition model.
@@ -232,14 +253,16 @@ impl Ocr {
     async fn new(
         settings: OcrBuilder,
         mut handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self, LoadOcrError> {
         let OcrBuilder { source } = settings;
         let tokenizer_dec = {
-            let tokenizer = Api::new()?
+            let tokenizer = Api::new()
+                .map_err(CacheError::HuggingFaceApi)?
                 .model(String::from("ToluClassics/candle-trocr-tokenizer"))
-                .get("tokenizer.json")?;
+                .get("tokenizer.json")
+                .map_err(CacheError::HuggingFaceApi)?;
 
-            Tokenizer::from_file(&tokenizer).map_err(|e| anyhow!(e))?
+            Tokenizer::from_file(&tokenizer).map_err(LoadOcrError::LoadTokenizer)?
         };
         let device = accelerated_device_if_available()?;
 
@@ -281,7 +304,10 @@ impl Ocr {
     /// println!("{}", text);
     /// # }
     /// ```
-    pub fn recognize_text(&mut self, settings: OcrInferenceSettings) -> anyhow::Result<String> {
+    pub fn recognize_text(
+        &mut self,
+        settings: OcrInferenceSettings,
+    ) -> Result<String, OcrInferenceError> {
         let OcrInferenceSettings { image } = settings;
 
         let image = image::DynamicImage::ImageRgba8(image);
@@ -315,7 +341,7 @@ impl Ocr {
         let decoded = self
             .tokenizer_dec
             .decode(&token_ids, true)
-            .map_err(|e| anyhow!(e))?;
+            .map_err(OcrInferenceError::Decode)?;
 
         Ok(decoded)
     }

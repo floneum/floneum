@@ -8,13 +8,13 @@ pub trait IntoEmbedding<S: VectorSpace> {
     fn into_embedding<E: Embedder<VectorSpace = S>>(
         self,
         embedder: &E,
-    ) -> impl Future<Output = anyhow::Result<Embedding<S>>> + Send;
+    ) -> impl Future<Output = Result<Embedding<S>, E::Error>> + Send;
 
     /// Convert the type into a query embedding with the given embedding model.
     fn into_query_embedding<E: Embedder<VectorSpace = S>>(
         self,
         embedder: &E,
-    ) -> impl Future<Output = anyhow::Result<Embedding<S>>> + Send;
+    ) -> impl Future<Output = Result<Embedding<S>, E::Error>> + Send;
 }
 
 /// Convert any type that implements [`ToString`] into an embedding with an embedding model.
@@ -22,14 +22,14 @@ impl<S: ToString + Send, V: VectorSpace> IntoEmbedding<V> for S {
     async fn into_embedding<E: Embedder<VectorSpace = V>>(
         self,
         embedder: &E,
-    ) -> anyhow::Result<Embedding<V>> {
+    ) -> Result<Embedding<V>, E::Error> {
         embedder.embed(self).await
     }
 
     async fn into_query_embedding<E: Embedder<VectorSpace = V>>(
         self,
         embedder: &E,
-    ) -> anyhow::Result<Embedding<V>> {
+    ) -> Result<Embedding<V>, E::Error> {
         embedder.embed_query(self).await
     }
 }
@@ -39,14 +39,14 @@ impl<S: VectorSpace> IntoEmbedding<S> for Embedding<S> {
     async fn into_embedding<E: Embedder<VectorSpace = S>>(
         self,
         _: &E,
-    ) -> anyhow::Result<Embedding<S>> {
+    ) -> Result<Embedding<S>, E::Error> {
         Ok(self)
     }
 
     async fn into_query_embedding<E: Embedder<VectorSpace = S>>(
         self,
         _: &E,
-    ) -> anyhow::Result<Embedding<S>> {
+    ) -> Result<Embedding<S>, E::Error> {
         Ok(self)
     }
 }

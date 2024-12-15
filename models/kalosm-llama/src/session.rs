@@ -4,6 +4,14 @@ use candle_core::{Device, Tensor};
 use kalosm_language_model::Session;
 use std::collections::HashMap;
 
+/// An error that can occur when saving or loading a [`LlamaSession`].
+#[derive(Debug, thiserror::Error)]
+pub enum LlamaLoadingError {
+    /// An error from candle while loading or saving a [`LlamaSession`].
+    #[error("Candle error: {0}")]
+    Candle(#[from] candle_core::Error),
+}
+
 /// A Llama session with cached state for the current fed prompt
 #[derive(Debug, Clone)]
 pub struct LlamaSession {
@@ -11,7 +19,9 @@ pub struct LlamaSession {
 }
 
 impl Session for LlamaSession {
-    fn save_to(&self, path: impl AsRef<std::path::Path>) -> anyhow::Result<()> {
+    type Error = LlamaLoadingError;
+
+    fn save_to(&self, path: impl AsRef<std::path::Path>) -> Result<(), Self::Error> {
         let device = accelerated_device_if_available()?;
         let tensors = self.get_tensor_map(&device);
         Ok(candle_core::safetensors::save(&tensors, path)?)
@@ -21,7 +31,7 @@ impl Session for LlamaSession {
         &self.cache.tokens
     }
 
-    fn load_from(path: impl AsRef<std::path::Path>) -> anyhow::Result<Self>
+    fn load_from(path: impl AsRef<std::path::Path>) -> Result<Self, Self::Error>
     where
         Self: std::marker::Sized,
     {
@@ -31,7 +41,7 @@ impl Session for LlamaSession {
         Ok(Self::from_tensor_map(tensors)?)
     }
 
-    fn try_clone(&self) -> anyhow::Result<Self>
+    fn try_clone(&self) -> Result<Self, Self::Error>
     where
         Self: std::marker::Sized,
     {

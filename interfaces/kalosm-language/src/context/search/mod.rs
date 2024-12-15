@@ -6,6 +6,7 @@ use url::Url;
 use super::{
     document::{Document, IntoDocuments},
     page::get_article,
+    ExtractDocumentError,
 };
 
 /// A search query that can be used to search for documents on the web.
@@ -51,7 +52,9 @@ impl<'a> SearchQuery<'a> {
 
 #[async_trait::async_trait]
 impl IntoDocuments for SearchQuery<'_> {
-    async fn into_documents(self) -> anyhow::Result<Vec<Document>> {
+    type Error = ExtractDocumentError;
+
+    async fn into_documents(self) -> Result<Vec<Document>, Self::Error> {
         let mut search_results = search(self.api_key, self.query).await?;
 
         let mut documents = vec![];

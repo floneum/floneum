@@ -119,11 +119,13 @@ impl SemanticChunker {
 }
 
 impl Chunker for SemanticChunker {
+    type Error<E: Send + Sync + 'static> = E;
+
     async fn chunk<E: Embedder + Send>(
         &self,
         document: &Document,
         embedder: &E,
-    ) -> anyhow::Result<Vec<Chunk<E::VectorSpace>>> {
+    ) -> Result<Vec<Chunk<E::VectorSpace>>, E::Error> {
         let text = document.body();
 
         let mut current_chunks = Vec::new();

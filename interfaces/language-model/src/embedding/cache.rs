@@ -1,5 +1,6 @@
-use futures_util::future::BoxFuture;
-use std::{hash::BuildHasher, io::BufWriter, num::NonZeroUsize, path::Path, sync::Mutex};
+use std::{
+    future::Future, hash::BuildHasher, io::BufWriter, num::NonZeroUsize, path::Path, sync::Mutex,
+};
 
 use postcard::{from_bytes, to_io};
 use serde::{de::DeserializeOwned, Serialize};
@@ -14,7 +15,7 @@ use crate::{Embedder, Embedding, EmbeddingInput};
 /// use std::num::NonZeroUsize;
 ///
 /// #[tokio::main]
-/// async fn main() -> anyhow::Result<()> {
+/// async fn main() -> Result<()> {
 ///     let bert = Bert::builder()
 ///         .build()
 ///         .await?
@@ -104,7 +105,7 @@ impl<M: Embedder, S: BuildHasher> CachedEmbeddingModel<M, S> {
     /// # use kalosm::language::*;
     /// # use std::num::NonZeroUsize;
     /// # #[tokio::main]
-    /// # async fn main() -> anyhow::Result<()> {
+    /// # async fn main() -> Result<()> {
     /// let bert = Bert::builder()
     ///     .build()
     ///     .await?
@@ -146,7 +147,7 @@ impl<M: Embedder, S: BuildHasher> CachedEmbeddingModel<M, S> {
     /// # use kalosm::language::*;
     /// # use std::num::NonZeroUsize;
     /// # #[tokio::main]
-    /// # async fn main() -> anyhow::Result<()> {
+    /// # async fn main() -> Result<()> {
     /// let bert = Bert::builder()
     ///     .build()
     ///     .await?
@@ -183,15 +184,20 @@ impl<M: Embedder, S: BuildHasher> CachedEmbeddingModel<M, S> {
     }
 }
 
-impl<M: Embedder> Embedder for CachedEmbeddingModel<M> {
+impl<M: Embedder> Embedder for CachedEmbeddingModel<M>
+where
+    M::Error: std::error::Error,
+{
     /// The vector space that this embedder uses.
     type VectorSpace = M::VectorSpace;
+    /// The error type that can occur when embedding a string.
+    type Error = Box<dyn std::error::Error + Send + Sync>;
 
     /// Embed a single string.
     fn embed_for(
         &self,
         input: EmbeddingInput,
-    ) -> BoxFuture<'_, anyhow::Result<Embedding<Self::VectorSpace>>> {
+    ) -> impl Future<Output = Result<Embedding<Self::VectorSpace>, Self::Error>> + Send {
         Box::pin(async move {
             {
                 // first check if the embedding is in the cache
@@ -212,7 +218,7 @@ impl<M: Embedder> Embedder for CachedEmbeddingModel<M> {
     fn embed_vec_for(
         &self,
         inputs: Vec<EmbeddingInput>,
-    ) -> BoxFuture<'_, anyhow::Result<Vec<Embedding<Self::VectorSpace>>>> {
+    ) -> impl Future<Output = Result<Vec<Embedding<Self::VectorSpace>>, Self::Error>> + Send {
         Box::pin(async move {
             let mut embeddings = vec![Embedding::from([]); inputs.len()];
             // Find any text with embeddings that are already in the cache and fill in first
@@ -262,7 +268,7 @@ pub trait EmbedderCacheExt: Embedder {
     /// # use kalosm::language::*;
     /// # use std::num::NonZeroUsize;
     /// # #[tokio::main]
-    /// # async fn main() -> anyhow::Result<()> {
+    /// # async fn main() -> Result<()> {
     /// let bert = Bert::builder()
     ///     .build()
     ///     .await?

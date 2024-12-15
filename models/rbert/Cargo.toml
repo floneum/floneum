@@ -13,13 +13,13 @@ candle-core.workspace = true
 candle-nn.workspace = true
 candle-transformers.workspace = true
 tokenizers = { version = "0.19.1" }
+thiserror.workspace = true
 
 accelerate-src = { version = "0.3.2", optional = true }
 intel-mkl-src = { version = "0.8.1", features = ["mkl-static-lp64-iomp"], optional = true }
 cudarc = { version = "0.9.14", features = ["f16"], optional = true }
 half = { version = "2.3.1", features = ["num-traits", "use-intrinsics", "rand_distr"], optional = true }
 
-anyhow = "1.0.75"
 tracing = "0.1.37"
 serde_json = "1.0.106"
 serde = { version = "1", features = ["derive"] }

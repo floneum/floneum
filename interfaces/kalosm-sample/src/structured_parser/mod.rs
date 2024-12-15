@@ -45,7 +45,7 @@ pub use schema::*;
 
 /// An error that occurred while parsing.
 #[derive(Debug, Clone)]
-pub struct ParserError(Arc<anyhow::Error>);
+pub struct ParserError(Arc<dyn std::error::Error + Send + Sync + 'static>);
 
 /// Bail out with the given error.
 #[macro_export]
@@ -64,7 +64,15 @@ macro_rules! bail {
 impl ParserError {
     /// Create a new error with the given message.
     pub fn msg(msg: impl Display + Debug + Send + Sync + 'static) -> Self {
-        Self(Arc::new(anyhow::Error::msg(msg)))
+        #[derive(Debug)]
+        struct CustomError(String);
+        impl std::error::Error for CustomError {}
+        impl Display for CustomError {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}", self.0)
+            }
+        }
+        Self(Arc::new(CustomError(msg.to_string())))
     }
 }
 
@@ -78,15 +86,13 @@ impl Eq for ParserError {}
 
 impl AsRef<dyn Error> for ParserError {
     fn as_ref(&self) -> &(dyn Error + 'static) {
-        let err: &anyhow::Error = self.0.as_ref();
-        err.as_ref()
+        self.0.as_ref()
     }
 }
 
 impl AsRef<dyn std::error::Error + Send + Sync + 'static> for ParserError {
     fn as_ref(&self) -> &(dyn std::error::Error + Send + Sync + 'static) {
-        let err: &anyhow::Error = self.0.as_ref();
-        err.as_ref()
+        self.0.as_ref()
     }
 }
 
@@ -94,8 +100,7 @@ impl Deref for ParserError {
     type Target = (dyn Error + Send + Sync + 'static);
 
     fn deref(&self) -> &(dyn Error + Send + Sync + 'static) {
-        let err: &anyhow::Error = self.0.as_ref();
-        err.deref()
+        self.0.as_ref()
     }
 }
 
@@ -104,7 +109,7 @@ where
     E: std::error::Error + Send + Sync + 'static,
 {
     fn from(value: E) -> Self {
-        Self(Arc::new(anyhow::Error::from(value)))
+        Self(Arc::new(value))
     }
 }
 

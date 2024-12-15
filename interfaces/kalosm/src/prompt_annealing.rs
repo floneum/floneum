@@ -94,7 +94,7 @@ where
     }
 
     /// Build the [`PromptAnnealer`].
-    pub async fn build(self) -> anyhow::Result<PromptAnnealer<'a, M, P, Met>> {
+    pub async fn build(self) -> Result<PromptAnnealer<'a, M, P, Met>> {
         let mut metric = match self.metric {
             Some(metric) => metric,
             None => {

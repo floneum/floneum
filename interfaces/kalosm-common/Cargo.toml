@@ -10,7 +10,6 @@ repository = "https://github.com/floneum/floneum"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.80"
 candle-core.workspace = true
 candle-nn.workspace = true
 hf-hub = { version = "0.3.0" }
