@@ -531,4 +531,45 @@ impl<R: TaskRunner> Task<R> {
         let message = message.trim().to_string();
         self.runner.run(message, model)
     }
+
+    /// Bind the task with a language model and return a function that takes the input and returns the output.
+    ///
+    /// This is the same as moving the model into a closure that runs the task:
+    /// ```rust, no_run
+    /// use kalosm_language::prelude::*;
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let mut llm = Llama::new_chat().await.unwrap();
+    ///     let task = Task::new("You are a math assistant who helps students with their homework. You solve equations and answer questions. When solving problems, you will always solve problems step by step.");
+    ///
+    ///     let help = |input| task.run(input, &llm);
+    ///     let result = help("What is 2 + 2?").all_text().await;
+    ///     println!("{result}");
+    /// }
+    /// ```
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// use kalosm_language::prelude::*;
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let mut llm = Llama::new_chat().await.unwrap();
+    ///     let task = Task::new("You are a math assistant who helps students with their homework. You solve equations and answer questions. When solving problems, you will always solve problems step by step.");
+    ///
+    ///     let help = task.bind(&llm);
+    ///     let result = help("What is 2 + 2?".to_string()).all_text().await;
+    ///     println!("{result}");
+    /// }
+    /// ```
+    pub fn bind<'a, M>(self, model: &'a M) -> impl FnOnce(String) -> R::Output<M::Error> + 'a
+    where
+        M: Model + 'a,
+        <<M as kalosm_language_model::Model>::SyncModel as kalosm_language_model::SyncModel>::Session: Send + Sync,
+        M::Error: std::fmt::Debug,
+        R: 'a,
+    {
+        move |input| self.run(input, model)
+    }
 }

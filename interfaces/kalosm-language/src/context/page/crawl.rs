@@ -126,8 +126,7 @@ impl<F: FnMut(&Url) -> bool> LinkFilter for F {
 ///             }) as Pin<Box<dyn Future<Output = CrawlFeedback>>>
 ///         },
 ///     )
-///     .await
-///     .unwrap();
+///     .await;
 /// }
 /// ```
 pub trait CrawlingCallback: Send + Sync + 'static {
