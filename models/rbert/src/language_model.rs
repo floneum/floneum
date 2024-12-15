@@ -97,29 +97,22 @@ impl Embedder for Bert {
         self.embed_vec(inputs)
     }
 
-    fn embed_string(
-        &self,
-        input: String,
-    ) -> impl Future<Output = Result<Embedding<BertSpace>, Self::Error>> + Send {
-        async move {
-            let self_clone = self.clone();
-            tokio::task::spawn_blocking(move || self_clone.embed_with_pooling(&input, Pooling::CLS))
-                .await?
-        }
+    async fn embed_string(&self, input: String) -> Result<Embedding<BertSpace>, Self::Error> {
+        let self_clone = self.clone();
+        tokio::task::spawn_blocking(move || self_clone.embed_with_pooling(&input, Pooling::CLS))
+            .await?
     }
 
-    fn embed_vec(
+    async fn embed_vec(
         &self,
         inputs: Vec<String>,
-    ) -> impl Future<Output = Result<Vec<Embedding<BertSpace>>, Self::Error>> + Send {
-        async move {
-            let self_clone = self.clone();
-            tokio::task::spawn_blocking(move || {
-                let inputs_borrowed = inputs.iter().map(|s| s.as_str()).collect::<Vec<_>>();
-                self_clone.embed_batch_with_pooling(inputs_borrowed, Pooling::CLS)
-            })
-            .await?
-        }
+    ) -> Result<Vec<Embedding<BertSpace>>, Self::Error> {
+        let self_clone = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let inputs_borrowed = inputs.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+            self_clone.embed_batch_with_pooling(inputs_borrowed, Pooling::CLS)
+        })
+        .await?
     }
 }
 

@@ -386,7 +386,7 @@ pub struct VectorDBSearchBuilder<'a, S: VectorSpace> {
     filter: Option<Candidates>,
 }
 
-impl<'a, S: VectorSpace> VectorDBSearchBuilder<'a, S> {
+impl<S: VectorSpace> VectorDBSearchBuilder<'_, S> {
     /// Set the number of results to return. Defaults to 10.
     pub fn with_results(mut self, results: usize) -> Self {
         self.results = Some(results);

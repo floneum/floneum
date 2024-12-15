@@ -44,6 +44,6 @@ impl IntoDocument for MdDocument {
 
         let mut html_output = String::new();
         pulldown_cmark::html::push_html(&mut html_output, parser);
-        extract_article(&html_output).map_err(|err| FsDocumentError::Decode(err))
+        extract_article(&html_output).map_err(FsDocumentError::Decode)
     }
 }

@@ -367,10 +367,10 @@ impl Bert {
             .iter()
             .map(|tokens| {
                 let tokens = tokens.get_ids().to_vec();
-                Ok(Tensor::new(
+                Tensor::new(
                     &tokens.as_slice()[..max_seq_len.min(tokens.as_slice().len())],
                     device,
-                )?)
+                )
             })
             .collect::<candle_core::Result<Vec<_>>>()?;
         let token_ids = Tensor::stack(&token_ids, 0)?;
@@ -419,5 +419,5 @@ impl Bert {
 }
 
 fn normalize_l2(v: &Tensor) -> candle_core::Result<Tensor> {
-    Ok(v.broadcast_div(&v.sqr()?.sum_keepdim(1)?.sqrt()?)?)
+    v.broadcast_div(&v.sqr()?.sum_keepdim(1)?.sqrt()?)
 }

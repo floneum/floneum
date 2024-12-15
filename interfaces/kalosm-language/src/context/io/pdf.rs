@@ -36,7 +36,7 @@ impl IntoDocument for PdfDocument {
     async fn into_document(self) -> Result<Document, Self::Error> {
         let file = FileOptions::cached()
             .open(self.path)
-            .map_err(|err| FsDocumentError::Decode(err))?;
+            .map_err(FsDocumentError::Decode)?;
         let resolver = file.resolver();
         let mut title = String::new();
         let mut text = String::new();

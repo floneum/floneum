@@ -40,6 +40,6 @@ impl IntoDocument for HtmlDocument {
         tokio::io::BufReader::new(file)
             .read_to_string(&mut html)
             .await?;
-        extract_article(&html).map_err(|err| FsDocumentError::Decode(err))
+        extract_article(&html).map_err(FsDocumentError::Decode)
     }
 }

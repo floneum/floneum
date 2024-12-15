@@ -38,7 +38,6 @@ use kalosm_language_model::ModelBuilder;
 
 use kalosm_streams::text_stream::ChannelImageStream;
 use model::{WuerstcheModelSettings, WuerstchenInner};
-use Result;
 
 mod model;
 

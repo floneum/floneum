@@ -34,7 +34,7 @@ impl IntoDocument for DocxDocument {
     async fn into_document(self) -> Result<Document, Self::Error> {
         let file = File::open(self.path)?;
         let reader = std::io::BufReader::new(file);
-        let docx = DocxFile::from_xml(reader).map_err(|err| FsDocumentError::Decode(err))?;
+        let docx = DocxFile::from_xml(reader).map_err(FsDocumentError::Decode)?;
         let mut text = String::new();
         for section in docx.children {
             match section {

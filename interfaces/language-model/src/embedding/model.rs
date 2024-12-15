@@ -246,6 +246,7 @@ impl Embedder for DynEmbedder {
 
 struct AnyEmbedder<E: Embedder + Send + Sync + 'static>(E);
 
+#[allow(clippy::type_complexity)]
 trait BoxedEmbedder {
     fn embed_string_boxed(
         &self,

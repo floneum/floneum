@@ -44,8 +44,6 @@ use model::{WhisperError, WhisperInner, WhisperLoadingError};
 use rodio::{source::UniformSourceIterator, Source};
 use std::{fmt::Display, ops::Range, str::FromStr, sync::Arc, time::Duration};
 
-use Result;
-
 use candle_transformers::models::whisper::{self as m};
 
 use futures_util::{Stream, StreamExt};
@@ -876,7 +874,5 @@ where
     let resample = UniformSourceIterator::new(input, 1, m::SAMPLE_RATE as u32);
     let pass_filter = resample.low_pass(3000).high_pass(200).convert_samples();
 
-    let samples = pass_filter.collect::<Vec<f32>>();
-
-    samples
+    pass_filter.collect::<Vec<f32>>()
 }
