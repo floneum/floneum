@@ -191,7 +191,7 @@ where
     /// The vector space that this embedder uses.
     type VectorSpace = M::VectorSpace;
     /// The error type that can occur when embedding a string.
-    type Error = Box<dyn std::error::Error + Send + Sync>;
+    type Error = M::Error;
 
     /// Embed a single string.
     fn embed_for(

@@ -2,7 +2,7 @@ use kalosm::language::*;
 use surrealdb::{engine::local::RocksDb, Surreal};
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> anyhow::Result<()> {
     let exists = std::path::Path::new("./db").exists();
 
     // Create database connection

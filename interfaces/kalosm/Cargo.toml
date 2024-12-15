@@ -74,6 +74,7 @@ scraper = "0.19.0"
 tokenizers = "0.19.1"
 tracing-subscriber = "0.2"
 surrealdb = { version = "1.5.5", features = ["kv-rocksdb"] }
+anyhow.workspace = true
 
 [dev-dependencies.candle-core]
 features = []

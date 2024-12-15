@@ -6,7 +6,7 @@ async fn main() -> Result<(), anyhow::Error> {
     // Record audio from the microphone for 60 seconds.
     let audio = MicInput::default()
         .record_until(Instant::now() + Duration::from_secs(60))
-        .await?;
+        .await;
 
     // Create a new small whisper model.
     let model = WhisperBuilder::default()

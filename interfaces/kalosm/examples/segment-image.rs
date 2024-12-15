@@ -8,7 +8,6 @@ fn main() {
     let images = model
         .segment_from_points(
             SegmentAnythingInferenceSettings::new(image)
-                .unwrap()
                 .add_goal_point(x, y),
         )
         .unwrap();

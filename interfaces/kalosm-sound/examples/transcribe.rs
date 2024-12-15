@@ -11,7 +11,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // Stream audio from the microphone
     let mic = MicInput::default();
-    let stream = mic.stream().unwrap();
+    let stream = mic.stream();
 
     // Chunk that audio into chunks based on voice activity
     let vad = stream.voice_activity_stream().rechunk_voice_activity();

@@ -37,6 +37,7 @@ serde = { version = "1.0.209", optional = true }
 
 [dev-dependencies]
 kalosm = { workspace = true, features = ["sound"] }
+anyhow.workspace = true
 
 [features]
 accelerate = ["dep:accelerate-src", "candle-core/accelerate", "candle-nn/accelerate", "candle-transformers/accelerate"]

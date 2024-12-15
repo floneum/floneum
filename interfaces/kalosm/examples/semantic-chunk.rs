@@ -4,7 +4,7 @@ use anyhow::Ok;
 use kalosm::language::*;
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> anyhow::Result<()> {
     let url = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "https://floneum.com/blog/kalosm_0_2".to_string());

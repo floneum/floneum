@@ -4,7 +4,7 @@ use rbert::*;
 use std::num::NonZeroUsize;
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> anyhow::Result<()> {
     let bert = Bert::builder()
         .build()
         .await?

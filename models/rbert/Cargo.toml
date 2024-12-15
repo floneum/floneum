@@ -32,6 +32,7 @@ metal = { version = "0.27.0", features = ["mps"], optional = true }
 
 [dev-dependencies]
 kalosm = { workspace = true, features = ["language"] }
+anyhow.workspace = true
 
 [features]
 accelerate = ["dep:accelerate-src", "candle-core/accelerate", "candle-nn/accelerate", "candle-transformers/accelerate"]

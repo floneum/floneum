@@ -85,7 +85,7 @@ impl MutatorBuilder {
     }
 
     /// Build the Mutator chunker.
-    pub fn build(self) -> Result<Mutator> {
+    pub fn build(self) -> anyhow::Result<Mutator> {
         let task_description = self
             .task_description
             .unwrap_or_else(|| TASK_DESCRIPTION.to_string());
@@ -120,9 +120,10 @@ impl Mutator {
     }
 
     /// Generate a list of Mutator questions about the given text.
-    pub async fn mutate<M>(&self, text: &str, model: &mut M) -> Result<String>
+    pub async fn mutate<M>(&self, text: &str, model: &mut M) -> anyhow::Result<String>
     where
         M: Model,
+        M::Error: std::error::Error,
         <M::SyncModel as SyncModel>::Session: Sync + Send,
     {
         let questions = self.task.run(text, model).result().await?;
@@ -161,13 +162,12 @@ const TEST_PAIRS :&[(&str, &str)]= &[
     ("Blockchain technology, beyond cryptocurrencies, is being explored for applications like smart contracts. Smart contracts are self-executing contracts with the terms of the agreement directly written into code.", "How is blockchain technology utilized in the concept of smart contracts?")
 ];
 
-async fn eval_with_prompt(llm: &mut Llama, prompt: &str) -> Result<f64> {
+async fn eval_with_prompt(llm: &mut Llama, prompt: &str) -> anyhow::Result<f64> {
     println!("evaluating prompt: {prompt}");
 
     let hypothetical = Hypothetical::builder()
         .with_task_description(prompt.into())
-        .build()
-        .unwrap();
+        .build();
 
     let mut llama_test_cases = TestCases::new();
 

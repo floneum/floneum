@@ -16,7 +16,7 @@ struct Account {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> anyhow::Result<()> {
     // Download default chat model or get the model from the cache
     let llm = Llama::new_chat().await?;
 
