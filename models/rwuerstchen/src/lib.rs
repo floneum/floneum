@@ -32,11 +32,10 @@ use std::{sync::OnceLock, time::Duration};
 
 use futures_util::{Stream, StreamExt};
 use image::ImageBuffer;
-use kalosm_common::FileSource;
 pub use kalosm_common::ModelLoadingProgress;
+use kalosm_common::{CacheError, FileSource};
 use kalosm_language_model::ModelBuilder;
 
-use anyhow::Result;
 use kalosm_streams::text_stream::ChannelImageStream;
 use model::{WuerstcheModelSettings, WuerstchenInner};
 
@@ -58,7 +57,7 @@ pub struct Image {
     elapsed_time: Duration,
     remaining_time: Duration,
     progress: f32,
-    result: Result<DiffusionResult>,
+    result: candle_core::Result<DiffusionResult>,
 }
 
 impl Image {
@@ -98,7 +97,7 @@ impl Image {
     }
 
     /// Get the error message if no image has been generated
-    pub fn error(&self) -> Option<&anyhow::Error> {
+    pub fn error(&self) -> Option<&candle_core::Error> {
         self.result.as_ref().err()
     }
 }
@@ -127,17 +126,12 @@ where
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         tokio::spawn(async move {
             while let Some(source) = stream.next().await {
-                let result = { model.run(source) };
-                match result {
-                    Ok(mut stream) => {
-                        while let Some(segment) = stream.next().await {
-                            if let Err(err) = sender.send(segment) {
-                                tracing::error!("error sending segment: {}", err);
-                                return;
-                            }
-                        }
+                let mut stream = { model.run(source) };
+                while let Some(segment) = stream.next().await {
+                    if let Err(err) = sender.send(segment) {
+                        tracing::error!("error sending segment: {}", err);
+                        return;
                     }
-                    Err(err) => tracing::error!("error transcribing audio: {}", err),
                 }
             }
         });
@@ -236,7 +230,7 @@ impl WuerstchenBuilder {
     }
 
     /// Build the model.
-    pub async fn build(self) -> Result<Wuerstchen> {
+    pub async fn build(self) -> Result<Wuerstchen, CacheError> {
         self.build_with_loading_handler(ModelLoadingProgress::multi_bar_loading_indicator())
             .await
     }
@@ -245,7 +239,7 @@ impl WuerstchenBuilder {
     pub async fn build_with_loading_handler(
         self,
         mut progress_handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
-    ) -> Result<Wuerstchen> {
+    ) -> Result<Wuerstchen, CacheError> {
         let WuerstchenBuilder {
             use_flash_attn,
             decoder_weights,
@@ -356,11 +350,12 @@ impl WuerstchenBuilder {
 #[async_trait::async_trait]
 impl ModelBuilder for WuerstchenBuilder {
     type Model = Wuerstchen;
+    type Error = CacheError;
 
     async fn start_with_loading_handler(
         self,
         handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
-    ) -> anyhow::Result<Self::Model> {
+    ) -> Result<Self::Model, Self::Error> {
         self.build_with_loading_handler(handler).await
     }
 
@@ -398,7 +393,7 @@ pub struct Wuerstchen {
 
 impl Wuerstchen {
     /// Create a default Wuerstchen model.
-    pub async fn new() -> anyhow::Result<Self> {
+    pub async fn new() -> Result<Self, CacheError> {
         Self::builder().build().await
     }
 
@@ -410,10 +405,10 @@ impl Wuerstchen {
     /// Run inference with the given settings.
     ///
     /// Dropping the returned channel will stop the inference early.
-    pub fn run(&self, settings: WuerstchenInferenceSettings) -> Result<ChannelImageStream<Image>> {
+    pub fn run(&self, settings: WuerstchenInferenceSettings) -> ChannelImageStream<Image> {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
-        self.run_into(settings, sender)?;
-        Ok(ChannelImageStream::from(receiver))
+        self.run_into(settings, sender);
+        ChannelImageStream::from(receiver)
     }
 
     /// Run inference with the given settings into a stream of images
@@ -423,10 +418,10 @@ impl Wuerstchen {
         &self,
         settings: WuerstchenInferenceSettings,
         sender: tokio::sync::mpsc::UnboundedSender<Image>,
-    ) -> Result<()> {
-        self.sender
-            .send(WuerstchenMessage::Generate(settings, sender))?;
-        Ok(())
+    ) {
+        _ = self
+            .sender
+            .send(WuerstchenMessage::Generate(settings, sender));
     }
 }
 

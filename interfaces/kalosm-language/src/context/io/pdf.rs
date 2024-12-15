@@ -1,10 +1,13 @@
 use crate::context::document::Document;
 use crate::context::document::IntoDocument;
 use itertools::Itertools;
+use pdf::PdfError;
 use std::fmt::Write;
 use std::path::PathBuf;
 
 use pdf::file::FileOptions;
+
+use super::FsDocumentError;
 
 /// A pdf document that can be read from the file system.
 #[derive(Debug, Clone)]
@@ -13,14 +16,14 @@ pub struct PdfDocument {
 }
 
 impl TryFrom<PathBuf> for PdfDocument {
-    type Error = anyhow::Error;
+    type Error = FsDocumentError;
 
     fn try_from(path: PathBuf) -> Result<Self, Self::Error> {
         if !path.is_file() {
-            return Err(anyhow::anyhow!("Path is not a file"));
+            return Err(std::io::Error::from(std::io::ErrorKind::NotFound).into());
         }
         if path.extension().unwrap() != "pdf" {
-            return Err(anyhow::anyhow!("Path is not a pdf file"));
+            return Err(FsDocumentError::WrongFileType);
         }
         Ok(Self { path })
     }
@@ -28,8 +31,12 @@ impl TryFrom<PathBuf> for PdfDocument {
 
 #[async_trait::async_trait]
 impl IntoDocument for PdfDocument {
-    async fn into_document(self) -> anyhow::Result<Document> {
-        let file = FileOptions::cached().open(self.path).unwrap();
+    type Error = FsDocumentError<PdfError>;
+
+    async fn into_document(self) -> Result<Document, Self::Error> {
+        let file = FileOptions::cached()
+            .open(self.path)
+            .map_err(FsDocumentError::Decode)?;
         let resolver = file.resolver();
         let mut title = String::new();
         let mut text = String::new();

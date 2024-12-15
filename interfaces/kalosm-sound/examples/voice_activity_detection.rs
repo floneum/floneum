@@ -5,7 +5,7 @@ use rodio::OutputStream;
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     let mic_input = MicInput::default();
-    let stream = mic_input.stream()?;
+    let stream = mic_input.stream();
     let mut vad = stream.voice_activity_stream();
     let (_device, stream_handle) = OutputStream::try_default().unwrap();
     let sink = rodio::Sink::try_new(&stream_handle)?;

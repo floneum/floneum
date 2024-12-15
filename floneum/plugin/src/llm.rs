@@ -17,7 +17,6 @@ pub(crate) enum LazyTextGenerationModel {
 #[derive(Clone)]
 pub(crate) enum ConcreteTextGenerationModel {
     Llama(Arc<Llama>),
-    Phi(Arc<Phi>),
 }
 
 impl LazyTextGenerationModel {
@@ -52,10 +51,6 @@ impl LazyTextGenerationModel {
                     let model = builder.build_with_loading_handler(progress).await?;
                     Ok(ConcreteTextGenerationModel::Llama(Arc::new(model)))
                 }
-                LlmBuilder::Phi(builder) => {
-                    let model = builder.build_with_loading_handler(progress).await?;
-                    Ok(ConcreteTextGenerationModel::Phi(Arc::new(model)))
-                }
             }
         }
     }
@@ -89,13 +84,6 @@ pub fn listen_to_model_download_progresses<
 
 enum LlmBuilder {
     Llama(LlamaBuilder),
-    Phi(PhiBuilder),
-}
-
-impl From<PhiBuilder> for LlmBuilder {
-    fn from(builder: PhiBuilder) -> Self {
-        LlmBuilder::Phi(builder)
-    }
 }
 
 impl From<LlamaBuilder> for LlmBuilder {
@@ -108,7 +96,6 @@ impl LlmBuilder {
     fn requires_download(&self) -> bool {
         match self {
             LlmBuilder::Llama(builder) => builder.requires_download(),
-            LlmBuilder::Phi(builder) => builder.requires_download(),
         }
     }
 }
@@ -176,16 +163,8 @@ impl main::types::ModelType {
             main::types::ModelType::SolarTenInstruct => Llama::builder()
                 .with_source(LlamaSource::solar_10_7b_instruct())
                 .into(),
-            main::types::ModelType::PhiOne => Phi::builder().with_source(PhiSource::v1()).into(),
-            main::types::ModelType::PhiOnePointFive => {
-                Phi::builder().with_source(PhiSource::v1_5()).into()
-            }
-            main::types::ModelType::PhiTwo => Phi::builder().with_source(PhiSource::v2()).into(),
-            main::types::ModelType::PuffinPhiTwo => Phi::builder()
-                .with_source(PhiSource::puffin_phi_v2())
-                .into(),
-            main::types::ModelType::DolphinPhiTwo => Phi::builder()
-                .with_source(PhiSource::dolphin_phi_v2())
+            main::types::ModelType::PhiThree => Llama::builder()
+                .with_source(LlamaSource::phi_3_5_mini_4k_instruct())
                 .into(),
         }
     }
@@ -263,11 +242,6 @@ impl ResourceStorage {
                 .with_max_length(max_tokens.unwrap_or(u32::MAX))
                 .with_stop_on(stop_on)
                 .await?),
-            ConcreteTextGenerationModel::Phi(model) => Ok(model
-                .generate_text(&input)
-                .with_max_length(max_tokens.unwrap_or(u32::MAX))
-                .with_stop_on(stop_on)
-                .await?),
         }
     }
 
@@ -284,9 +258,6 @@ impl ResourceStorage {
         let model = self.initialize_model(index).await?;
         match model {
             ConcreteTextGenerationModel::Llama(model) => {
-                Ok(model.stream_structured_text(&input, structure).await?)
-            }
-            ConcreteTextGenerationModel::Phi(model) => {
                 Ok(model.stream_structured_text(&input, structure).await?)
             }
         }

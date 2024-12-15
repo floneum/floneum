@@ -9,11 +9,23 @@ use super::EmbeddedIndexedTableError;
 use super::IntoEmbeddingIndexedTableSearchFilter;
 use super::{EmbeddingIndexedTable, EmbeddingIndexedTableSearchResult};
 use kalosm_language::prelude::*;
+use kalosm_language::rbert::BertLoadingError;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use surrealdb::sql::Id;
 use surrealdb::Connection;
 use surrealdb::Surreal;
+
+/// An error that can occur when adding items to a [`DocumentTable`].
+#[derive(Debug, thiserror::Error)]
+pub enum DocumentTableModifyError<E> {
+    /// An error occurred while embedding the item to add.
+    #[error("Failed to embed item: {0}")]
+    EmbedItem(E),
+    /// An error occurred in the database while adding the item.
+    #[error("Failed to add item: {0}")]
+    AddItem(#[from] EmbeddedIndexedTableError),
+}
 
 /// A table in a surreal database that is indexed by embeddings from a vector database.
 ///
@@ -127,19 +139,23 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     }
 
     /// Insert a new record into the table and return the id of the record.
-    pub async fn insert(&self, value: R) -> anyhow::Result<Id>
+    pub async fn insert(&self, value: R) -> Result<Id, DocumentTableModifyError<K::Error<M::Error>>>
     where
         R: AsRef<Document> + Serialize + DeserializeOwned,
     {
         let chunks = self
             .chunker
             .chunk(value.as_ref(), &self.embedding_model)
-            .await?;
+            .await
+            .map_err(DocumentTableModifyError::EmbedItem)?;
         Ok(self.insert_with_chunks(value, chunks).await?)
     }
 
     /// Extend the table with a iterator of new records.
-    pub async fn extend<T: IntoIterator<Item = R> + Send>(&self, iter: T) -> anyhow::Result<Vec<Id>>
+    pub async fn extend<T: IntoIterator<Item = R> + Send>(
+        &self,
+        iter: T,
+    ) -> Result<Vec<Id>, DocumentTableModifyError<K::Error<M::Error>>>
     where
         R: AsRef<Document> + Serialize + DeserializeOwned,
         K: Sync,
@@ -149,7 +165,8 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
         let embeddings = self
             .chunker
             .chunk_batch(documents, &self.embedding_model)
-            .await?;
+            .await
+            .map_err(DocumentTableModifyError::EmbedItem)?;
         let mut ids = Vec::new();
         for (value, embeddings) in entries.into_iter().zip(embeddings) {
             let id = self.table.insert(embeddings, value).await?;
@@ -208,16 +225,35 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     }
 }
 
+/// An error that can occur while adding context to a [`DocumentTable`].
+#[derive(Debug, thiserror::Error)]
+pub enum DocumentTableAddContextError<D, M> {
+    /// An error occurred while converting the item to a document.
+    #[error("Failed to convert item to document: {0}")]
+    ConvertItem(D),
+    /// An error occurred while modifying the table.
+    #[error("Failed to modify table: {0}")]
+    ModifyTable(DocumentTableModifyError<M>),
+}
+
 impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     /// Extend the table from [`IntoDocuments`]
-    pub async fn add_context(&self, context: impl IntoDocuments) -> anyhow::Result<Vec<Id>>
+    pub async fn add_context<D: IntoDocuments>(
+        &self,
+        context: D,
+    ) -> Result<Vec<Id>, DocumentTableAddContextError<D::Error, K::Error<M::Error>>>
     where
         R: From<Document> + AsRef<Document> + Serialize + DeserializeOwned,
         K: Sync,
     {
-        let documents = context.into_documents().await?;
+        let documents = context
+            .into_documents()
+            .await
+            .map_err(DocumentTableAddContextError::ConvertItem)?;
         let iter = documents.into_iter().map(|v| v.into());
-        self.extend(iter).await
+        self.extend(iter)
+            .await
+            .map_err(DocumentTableAddContextError::ModifyTable)
     }
 }
 
@@ -239,6 +275,17 @@ pub struct DocumentTableSearchBuilder<
     phantom: std::marker::PhantomData<M>,
 }
 
+/// An error that can occur while searching a [`DocumentTable`].
+#[derive(Debug, thiserror::Error)]
+pub enum DocumentTableSearchError<E> {
+    /// An error occurred while embedding the search query.
+    #[error("Failed to embed search query: {0}")]
+    EmbedQuery(E),
+    /// An error occurred while running the search on the underlying table.
+    #[error("Failed to run search on table: {0}")]
+    SearchTable(#[from] EmbeddedIndexedTableError),
+}
+
 impl<
         'a,
         Conn: Connection,
@@ -257,11 +304,15 @@ impl<
     }
 
     /// Run the search and return the results.
-    pub async fn run(self) -> anyhow::Result<Vec<EmbeddingIndexedTableSearchResult<Doc>>> {
+    pub async fn run(
+        self,
+    ) -> Result<Vec<EmbeddingIndexedTableSearchResult<Doc>>, DocumentTableSearchError<Model::Error>>
+    {
         let embedding = self
             .embedding
             .into_embedding(&self.table.embedding_model)
-            .await?;
+            .await
+            .map_err(DocumentTableSearchError::EmbedQuery)?;
         let mut query = self.table.table.search(&embedding);
         if let Some(results) = self.results {
             query = query.with_results(results);
@@ -287,7 +338,8 @@ impl<
     > IntoFuture for DocumentTableSearchBuilder<'a, Conn, Doc, Model, Chkr, E, F, M>
 {
     type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send + 'a>>;
-    type Output = anyhow::Result<Vec<EmbeddingIndexedTableSearchResult<Doc>>>;
+    type Output =
+        Result<Vec<EmbeddingIndexedTableSearchResult<Doc>>, DocumentTableSearchError<Model::Error>>;
 
     fn into_future(self) -> Self::IntoFuture {
         Box::pin(self.run())
@@ -390,7 +442,7 @@ impl<C: Connection, E, K: Chunker> DocumentTableBuilder<C, E, K> {
     /// Build the document table.
     pub async fn build<R: Serialize + DeserializeOwned>(
         self,
-    ) -> anyhow::Result<DocumentTable<C, R, E, K>>
+    ) -> Result<DocumentTable<C, R, E, K>, DocumentTableCreationError>
     where
         E: Embedder,
     {
@@ -414,12 +466,26 @@ impl<C: Connection, E, K: Chunker> DocumentTableBuilder<C, E, K> {
                         .downcast::<E>()
                         .unwrap()
                 } else {
-                    return Err(anyhow::anyhow!("No embedding model provided"));
+                    return Err(DocumentTableCreationError::NoEmbeddingModel);
                 }
             }
         };
         Ok(DocumentTable::new(embedding_model, table, self.chunker))
     }
+}
+
+/// An error that can occur while creating a [`DocumentTable`].
+#[derive(Debug, thiserror::Error)]
+pub enum DocumentTableCreationError {
+    /// Creating the vector database failed.
+    #[error("Failed to create vector database: {0}")]
+    VectorDb(#[from] heed::Error),
+    /// No embedding model was provided.
+    #[error("No embedding model provided")]
+    NoEmbeddingModel,
+    /// The default embedding model failed to load.
+    #[error("Failed to load default embedding model: {0}")]
+    DefaultEmbeddingModel(#[from] BertLoadingError),
 }
 
 /// An extension trait for the surreal database to interact with document tables.

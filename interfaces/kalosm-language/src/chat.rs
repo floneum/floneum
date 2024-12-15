@@ -6,15 +6,15 @@ use std::{
     sync::{Arc, Mutex, RwLock},
 };
 
-use anyhow::Result;
 use futures_util::Future;
-use kalosm_language_model::ChatMarkers;
 use kalosm_language_model::Session;
+use kalosm_language_model::{ChatMarkers, StructuredTextGenerationError};
 use kalosm_language_model::{GenerationParameters, Model, ModelExt, SyncModel, SyncModelExt};
 use kalosm_sample::{ArcParser, CreateParserState, ParserExt, SendCreateParserState};
 use kalosm_streams::text_stream::ChannelTextStream;
 use llm_samplers::types::Sampler;
 use tokio::sync::{mpsc::unbounded_channel, oneshot};
+use Result;
 
 type ResponseConstraintGenerator =
     Arc<Mutex<Box<dyn FnMut(&[ChatHistoryItem]) -> ArcParser<()> + Send + Sync>>>;
@@ -22,7 +22,7 @@ type ResponseConstraintGenerator =
 const DEFAULT_SYSTEM_PROMPT: &str = "Always assist with care, respect, and truth. Respond with utmost utility yet securely. Avoid harmful, unethical, prejudiced, or negative content. Ensure replies promote fairness and positivity.";
 
 /// A simple helper function for prompting the user for input.
-pub fn prompt_input(prompt: impl Display) -> Result<String> {
+pub fn prompt_input(prompt: impl Display) -> Result<String, std::io::Error> {
     use std::io::Write;
     print!("{}", prompt);
     std::io::stdout().flush()?;
@@ -105,7 +105,11 @@ impl<Model: SyncModel> ChatSession<Model> {
         shared_history: Arc<RwLock<Vec<ChatHistoryItem>>>,
     ) -> Self {
         let feed_initial_messages = session.is_none();
-        let session = session.unwrap_or_else(|| model.new_session().unwrap());
+        let session = session.unwrap_or_else(|| {
+            model
+                .new_session()
+                .unwrap_or_else(|_| panic!("Failed to create a new session"))
+        });
         let unfed_text = String::new();
         shared_history.write().unwrap().clear();
 
@@ -158,7 +162,7 @@ impl<Model: SyncModel> ChatSession<Model> {
         message: String,
         model: &mut Model,
         stream: tokio::sync::mpsc::UnboundedSender<String>,
-    ) -> Result<()> {
+    ) -> Result<(), StructuredTextGenerationError<Model::Error>> {
         self.add_user_message(message);
         let mut bot_response = String::new();
         self.unfed_text += &self.assistant_marker;
@@ -172,7 +176,7 @@ impl<Model: SyncModel> ChatSession<Model> {
                 .to_string();
             bot_response += &tok;
             // Send the new token to the stream
-            stream.send(tok)?;
+            _ = stream.send(tok);
             Ok(())
         };
 
@@ -438,6 +442,7 @@ impl<M: Model> ChatBuilder<M> {
     pub fn build(self) -> Chat
     where
         <M::SyncModel as SyncModel>::Session: Send,
+        M::Error: std::fmt::Debug,
     {
         let Self {
             model,
@@ -462,27 +467,25 @@ impl<M: Model> ChatBuilder<M> {
             tokio::spawn(async move {
                 let (tx, rx) = oneshot::channel();
                 {
-                    model
-                        .run_sync(move |model| {
-                            Box::pin(async move {
-                                let _ = tx.send(ChatSession::new(
-                                    model,
-                                    system_prompt_marker,
-                                    end_system_prompt_marker,
-                                    user_marker,
-                                    end_user_marker,
-                                    assistant_marker,
-                                    end_assistant_marker,
-                                    system_prompt,
-                                    bot_constraints,
-                                    sampler,
-                                    session,
-                                    initial_history,
-                                    shared_history,
-                                ));
-                            })
+                    _ = model.run_sync(move |model| {
+                        Box::pin(async move {
+                            let _ = tx.send(ChatSession::new(
+                                model,
+                                system_prompt_marker,
+                                end_system_prompt_marker,
+                                user_marker,
+                                end_user_marker,
+                                assistant_marker,
+                                end_assistant_marker,
+                                system_prompt,
+                                bot_constraints,
+                                sampler,
+                                session,
+                                initial_history,
+                                shared_history,
+                            ));
                         })
-                        .unwrap();
+                    });
                 }
 
                 let Ok(session) = rx.await else {
@@ -498,22 +501,22 @@ impl<M: Model> ChatBuilder<M> {
                             response_tx,
                         } => {
                             let chat_session = chat_session.clone();
-                            model
-                                .run_sync(move |model| {
-                                    Box::pin(async move {
-                                        let mut chat_session = chat_session.lock().unwrap();
-                                        if let Err(err) =
-                                            chat_session.add_message(message, model, response_tx)
-                                        {
-                                            tracing::error!("Error adding message: {}", err);
-                                        }
-                                    })
+                            _ = model.run_sync(move |model| {
+                                Box::pin(async move {
+                                    let mut chat_session = chat_session.lock().unwrap();
+                                    if let Err(err) =
+                                        chat_session.add_message(message, model, response_tx)
+                                    {
+                                        tracing::error!("Error adding message: {:?}", err);
+                                    }
                                 })
-                                .unwrap();
+                            });
                         }
                         Message::SaveSession { path, resolve } => {
                             let chat_session = chat_session.lock().unwrap();
-                            resolve.send(chat_session.session.save_to(path)).unwrap();
+                            resolve
+                                .send(chat_session.session.save_to(path).map_err(|err| err.into()))
+                                .unwrap();
                         }
                     }
                 }
@@ -534,8 +537,20 @@ enum Message {
     },
     SaveSession {
         path: PathBuf,
-        resolve: tokio::sync::oneshot::Sender<Result<()>>,
+        resolve: tokio::sync::oneshot::Sender<Result<(), Box<dyn std::error::Error + Send + Sync>>>,
     },
+}
+
+/// An error that can occur when trying to save a chat session.
+#[derive(Debug, thiserror::Error)]
+pub enum ChatSessionSaveError {
+    /// The model has already stopped.
+    #[error("Model stopped")]
+    ModelStopped,
+
+    /// Saving the chat session failed.
+    #[error("Failed to save chat session: {0}")]
+    SaveSessionFailed(Box<dyn std::error::Error + Send + Sync>),
 }
 
 /// [`Chat`] is a chat interface that builds on top of [`kalosm_language_model::Model`]. It makes it easy to create a chat session with streaming responses, and constraints.
@@ -666,6 +681,7 @@ impl Chat {
     pub fn new<M: Model>(model: M) -> Chat
     where
         <M::SyncModel as SyncModel>::Session: Send,
+        M::Error: std::fmt::Debug,
     {
         Self::builder(model).build()
     }
@@ -713,15 +729,18 @@ impl Chat {
     pub fn save_session(
         &mut self,
         path: impl AsRef<std::path::Path>,
-    ) -> impl Future<Output = Result<()>> {
+    ) -> impl Future<Output = Result<(), ChatSessionSaveError>> {
         let (tx, rx) = oneshot::channel();
         let result = self.sender.send(Message::SaveSession {
             path: path.as_ref().to_path_buf(),
             resolve: tx,
         });
+
         async move {
-            result.map_err(|_| anyhow::anyhow!("Model stopped"))?;
-            rx.await.map_err(|_| anyhow::anyhow!("Model stopped"))?
+            result.map_err(|_| ChatSessionSaveError::ModelStopped)?;
+            rx.await
+                .map_err(|_| ChatSessionSaveError::ModelStopped)?
+                .map_err(ChatSessionSaveError::SaveSessionFailed)
         }
     }
 

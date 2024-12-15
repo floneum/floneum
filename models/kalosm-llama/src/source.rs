@@ -1,4 +1,6 @@
-use kalosm_common::{FileLoadingProgress, FileSource};
+use std::path::PathBuf;
+
+use kalosm_common::{CacheError, FileLoadingProgress, FileSource};
 use kalosm_language_model::ChatMarkers;
 use tokenizers::Tokenizer;
 
@@ -55,6 +57,20 @@ pub struct LlamaSource {
     pub(crate) cache: kalosm_common::Cache,
 }
 
+/// Errors that can occur when loading the Llama model.
+#[derive(Debug, thiserror::Error)]
+pub enum LlamaSourceError {
+    /// An error occurred while loading the tokenizer.
+    #[error("Failed to load the tokenizer: {0}")]
+    Tokenizer(#[from] Box<dyn std::error::Error + Send + Sync>),
+    /// An error occurred while loading the model (from the cache or downloading it).
+    #[error("Failed to load the model: {0}")]
+    Model(#[from] CacheError),
+    /// An error occurred while loading the model onto the device.
+    #[error("Failed to load the model onto the device: {0}")]
+    Device(#[from] candle_core::Error),
+}
+
 impl LlamaSource {
     /// Create a new source for the Llama model.
     pub fn new(model: FileSource, tokenizer: FileSource) -> Self {
@@ -93,16 +109,18 @@ impl LlamaSource {
     pub(crate) async fn tokenizer(
         &self,
         progress: impl FnMut(FileLoadingProgress),
-    ) -> anyhow::Result<Tokenizer> {
+    ) -> Result<Tokenizer, LlamaSourceError> {
         let tokenizer_path = self.cache.get(&self.tokenizer, progress).await?;
-        Tokenizer::from_file(tokenizer_path).map_err(anyhow::Error::msg)
+        let tokenizer = Tokenizer::from_file(tokenizer_path)?;
+        Ok(tokenizer)
     }
 
     pub(crate) async fn model(
         &self,
         progress: impl FnMut(FileLoadingProgress),
-    ) -> anyhow::Result<std::path::PathBuf> {
-        self.cache.get(&self.model, progress).await
+    ) -> Result<PathBuf, LlamaSourceError> {
+        let path = self.cache.get(&self.model, progress).await?;
+        Ok(path)
     }
 
     /// A preset for Mistral7b

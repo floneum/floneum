@@ -5,7 +5,10 @@ use tokio::{fs::File, io::AsyncReadExt};
 use crate::context::{
     document::{Document, IntoDocument},
     page::extract_article,
+    ExtractDocumentError,
 };
+
+use super::FsDocumentError;
 
 /// A markdown document that can be read from the file system.
 #[derive(Debug, Clone)]
@@ -14,14 +17,14 @@ pub struct MdDocument {
 }
 
 impl TryFrom<PathBuf> for MdDocument {
-    type Error = anyhow::Error;
+    type Error = FsDocumentError;
 
     fn try_from(path: PathBuf) -> Result<Self, Self::Error> {
         if !path.is_file() {
-            return Err(anyhow::anyhow!("Path is not a file"));
+            return Err(std::io::Error::from(std::io::ErrorKind::NotFound).into());
         }
         if path.extension().unwrap() != "md" {
-            return Err(anyhow::anyhow!("Path is not a md file"));
+            return Err(FsDocumentError::WrongFileType);
         }
         Ok(Self { path })
     }
@@ -29,7 +32,9 @@ impl TryFrom<PathBuf> for MdDocument {
 
 #[async_trait::async_trait]
 impl IntoDocument for MdDocument {
-    async fn into_document(self) -> anyhow::Result<Document> {
+    type Error = FsDocumentError<ExtractDocumentError>;
+
+    async fn into_document(self) -> Result<Document, Self::Error> {
         let file = File::open(self.path).await?;
         let mut md = String::new();
         tokio::io::BufReader::new(file)
@@ -39,6 +44,6 @@ impl IntoDocument for MdDocument {
 
         let mut html_output = String::new();
         pulldown_cmark::html::push_html(&mut html_output, parser);
-        extract_article(&html_output)
+        extract_article(&html_output).map_err(FsDocumentError::Decode)
     }
 }

@@ -16,9 +16,6 @@ cd ../../
 cd models/rbert
 cargo publish
 cd ../../
-cd models/rphi
-cargo publish
-cd ../../
 cd models/rwhisper
 cargo publish
 cd ../../

@@ -1,5 +1,5 @@
 use crate::structured::generate_structured;
-use crate::TokenOutputStream;
+use crate::{TokenOutputStream, TokenOutputStreamError};
 use futures_util::{Future, FutureExt};
 use futures_util::{Stream, StreamExt};
 use kalosm_common::*;
@@ -10,12 +10,15 @@ use kalosm_streams::text_stream::ChannelTextStream;
 use llm_samplers::configure::SamplerChainBuilder;
 use llm_samplers::prelude::*;
 use std::any::Any;
+use std::convert::Infallible;
 use std::fmt::Display;
 use std::future::IntoFuture;
 use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::task::Poll;
+use thiserror::Error;
 use tokenizers::tokenizer::Tokenizer;
 
 /// A builder that can create a model asynchronously.
@@ -35,8 +38,11 @@ pub trait ModelBuilder {
     /// The model that this trait creates.
     type Model;
 
+    /// An error that can occur when creating the model.
+    type Error: Send + Sync + 'static;
+
     /// Start the model.
-    async fn start(self) -> anyhow::Result<Self::Model>
+    async fn start(self) -> Result<Self::Model, Self::Error>
     where
         Self: Sized,
     {
@@ -47,7 +53,7 @@ pub trait ModelBuilder {
     async fn start_with_loading_handler(
         self,
         handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
-    ) -> anyhow::Result<Self::Model>
+    ) -> Result<Self::Model, Self::Error>
     where
         Self: Sized;
 
@@ -68,7 +74,7 @@ pub struct StreamTextBuilder<'a, M: Model> {
         &'a str,
         GenerationParameters,
     ) -> Pin<
-        Box<dyn std::future::Future<Output = anyhow::Result<M::TextStream>> + Send + 'a>,
+        Box<dyn std::future::Future<Output = Result<M::TextStream, M::Error>> + Send + 'a>,
     >,
 }
 
@@ -83,7 +89,7 @@ impl<'a, M: Model> StreamTextBuilder<'a, M> {
             &'a str,
             GenerationParameters,
         ) -> Pin<
-            Box<dyn std::future::Future<Output = anyhow::Result<M::TextStream>> + Send + 'a>,
+            Box<dyn std::future::Future<Output = Result<M::TextStream, M::Error>> + Send + 'a>,
         >,
     ) -> Self {
         Self {
@@ -150,7 +156,7 @@ impl<'a, M: Model> StreamTextBuilder<'a, M> {
 }
 
 impl<'a, M: Model> IntoFuture for StreamTextBuilder<'a, M> {
-    type Output = anyhow::Result<M::TextStream>;
+    type Output = Result<M::TextStream, M::Error>;
     type IntoFuture = Pin<Box<dyn std::future::Future<Output = Self::Output> + Send + 'a>>;
 
     fn into_future(self) -> Self::IntoFuture {
@@ -175,7 +181,7 @@ pub struct GenerateTextBuilder<'a, M: Model> {
         &'a str,
         GenerationParameters,
     )
-        -> Pin<Box<dyn std::future::Future<Output = anyhow::Result<String>> + Send + 'a>>,
+        -> Pin<Box<dyn std::future::Future<Output = Result<String, M::Error>> + Send + 'a>>,
 }
 
 impl<'a, M: Model> GenerateTextBuilder<'a, M> {
@@ -189,7 +195,7 @@ impl<'a, M: Model> GenerateTextBuilder<'a, M> {
             &'a str,
             GenerationParameters,
         ) -> Pin<
-            Box<dyn std::future::Future<Output = anyhow::Result<String>> + Send + 'a>,
+            Box<dyn std::future::Future<Output = Result<String, M::Error>> + Send + 'a>,
         >,
     ) -> Self {
         Self {
@@ -256,7 +262,7 @@ impl<'a, M: Model> GenerateTextBuilder<'a, M> {
 }
 
 impl<'a, M: Model> IntoFuture for GenerateTextBuilder<'a, M> {
-    type Output = anyhow::Result<String>;
+    type Output = Result<String, M::Error>;
     type IntoFuture = Pin<Box<dyn std::future::Future<Output = Self::Output> + Send + 'a>>;
 
     fn into_future(self) -> Self::IntoFuture {
@@ -366,7 +372,7 @@ pub trait ModelExt: Model + Send + Sync + 'static {
             ) -> Pin<Box<dyn std::future::Future<Output = ()> + 'a>>
             + Send
             + 'static,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), Self::Error> {
         self.run_sync_raw(Box::new(f))
     }
 
@@ -384,7 +390,7 @@ pub trait ModelExt: Model + Send + Sync + 'static {
     /// }
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> anyhow::Result<()> {
+    /// # async fn main() -> Result<()> {
     /// let llm = Llama::new().await?;
     /// let prompt = "A list of accounts with random realistic usernames and ages in JSON format: ";
     ///
@@ -396,7 +402,7 @@ pub trait ModelExt: Model + Send + Sync + 'static {
     fn generate_parsed<P: Parse + 'static>(
         &self,
         prompt: &str,
-    ) -> StructureParserResult<Self::TextStream, P>
+    ) -> StructureParserResult<Self::TextStream, P, StructuredTextGenerationError<Self::Error>>
     where
         Self::TextStream: From<tokio::sync::mpsc::UnboundedReceiver<String>>,
     {
@@ -427,7 +433,11 @@ pub trait ModelExt: Model + Send + Sync + 'static {
         &self,
         prompt: &str,
         parser: P,
-    ) -> StructureParserResult<Self::TextStream, P::Output>
+    ) -> StructureParserResult<
+        Self::TextStream,
+        P::Output,
+        StructuredTextGenerationError<Self::Error>,
+    >
     where
         Self::TextStream: From<tokio::sync::mpsc::UnboundedReceiver<String>>,
         P: CreateParserState<PartialState: Send, Output: Send> + Send + 'static,
@@ -444,7 +454,11 @@ pub trait ModelExt: Model + Send + Sync + 'static {
         parser: P,
         parser_state: P::PartialState,
         sampler: Arc<Mutex<dyn Sampler>>,
-    ) -> StructureParserResult<Self::TextStream, P::Output>
+    ) -> StructureParserResult<
+        Self::TextStream,
+        P::Output,
+        StructuredTextGenerationError<Self::Error>,
+    >
     where
         Self::TextStream: From<tokio::sync::mpsc::UnboundedReceiver<String>>,
         P: CreateParserState<PartialState: Send, Output: Send> + Send + 'static,
@@ -456,7 +470,9 @@ pub trait ModelExt: Model + Send + Sync + 'static {
         let result_sender = Arc::new(Mutex::new(Some(result_sender)));
         let result_sender_clone = result_sender.clone();
         if let Err(err) = self.run_sync(move |llm: &mut Self::SyncModel| {
-            let mut session = llm.new_session().unwrap();
+            let mut session = llm
+                .new_session()
+                .unwrap_or_else(|_| panic!("model must support sessions"));
             Box::pin(async move {
                 let result = llm.generate_structured(
                     &mut session,
@@ -464,7 +480,10 @@ pub trait ModelExt: Model + Send + Sync + 'static {
                     parser,
                     parser_state,
                     sampler,
-                    |token| Ok(sender.send(token)?),
+                    |token| {
+                        _ = sender.send(token);
+                        Ok(())
+                    },
                     Some(64),
                 );
                 if let Some(sender) = result_sender.lock().unwrap().take() {
@@ -473,7 +492,11 @@ pub trait ModelExt: Model + Send + Sync + 'static {
             })
         }) {
             if let Some(sender) = result_sender_clone.lock().unwrap().take() {
-                _ = sender.send(Err(err));
+                _ = sender.send(Err(
+                    StructuredTextGenerationError::UnstructuredTextGenerationError(
+                        UnstructuredTextGenerationError::ModelError(err),
+                    ),
+                ));
             }
         }
 
@@ -496,20 +519,20 @@ pub trait ModelExt: Model + Send + Sync + 'static {
 }
 
 /// The result of a structured parser stream.
-pub struct StructureParserResult<S: Stream<Item = String> + Send + Unpin + 'static, O> {
+pub struct StructureParserResult<S: Stream<Item = String> + Send + Unpin + 'static, O, E> {
     stream: S,
-    result: tokio::sync::oneshot::Receiver<anyhow::Result<O>>,
+    result: tokio::sync::oneshot::Receiver<Result<O, E>>,
 }
 
-impl<S: Stream<Item = String> + Send + Unpin + 'static, O> StructureParserResult<S, O> {
+impl<S: Stream<Item = String> + Send + Unpin + 'static, O, E> StructureParserResult<S, O, E> {
     /// Create a new structured parser result from a stream and a result.
-    pub fn new(stream: S, result: tokio::sync::oneshot::Receiver<anyhow::Result<O>>) -> Self {
+    pub fn new(stream: S, result: tokio::sync::oneshot::Receiver<Result<O, E>>) -> Self {
         Self { stream, result }
     }
 
     /// Get the final result of the structured parser.
-    pub async fn result(self) -> anyhow::Result<O> {
-        self.result.await?
+    pub async fn result(self) -> Result<O, E> {
+        self.await
     }
 
     /// Get all the text from the stream.
@@ -523,24 +546,31 @@ impl<S: Stream<Item = String> + Send + Unpin + 'static, O> StructureParserResult
     }
 
     /// Split the stream into a token stream and a result.
-    pub fn split(self) -> (S, tokio::sync::oneshot::Receiver<anyhow::Result<O>>) {
+    pub fn split(self) -> (S, tokio::sync::oneshot::Receiver<Result<O, E>>) {
         (self.stream, self.result)
     }
 }
 
-impl<S: Stream<Item = String> + Send + Unpin + 'static, O> Future for StructureParserResult<S, O> {
-    type Output = anyhow::Result<O>;
+impl<S: Stream<Item = String> + Send + Unpin + 'static, O, E> Future
+    for StructureParserResult<S, O, E>
+{
+    type Output = Result<O, E>;
 
     fn poll(
         self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Self::Output> {
         let myself = self.get_mut();
-        myself.result.poll_unpin(cx).map(|result| result?)
+        match myself.result.poll_unpin(cx) {
+            Poll::Ready(Ok(result)) => Poll::Ready(result),
+            _ => Poll::Pending,
+        }
     }
 }
 
-impl<S: Stream<Item = String> + Send + Unpin + 'static, O> Stream for StructureParserResult<S, O> {
+impl<S: Stream<Item = String> + Send + Unpin + 'static, O, E> Stream
+    for StructureParserResult<S, O, E>
+{
     type Item = String;
 
     fn poll_next(
@@ -588,8 +618,11 @@ pub trait SyncModel {
     /// The session type for this model.
     type Session: Session;
 
+    /// The type of error this model may return during operations.
+    type Error: Send + Sync + 'static;
+
     /// Create a new session for this model.
-    fn new_session(&self) -> anyhow::Result<Self::Session>;
+    fn new_session(&self) -> Result<Self::Session, Self::Error>;
 
     /// Run the model synchronously. The model implementation may choose to return only the top k logits.
     fn feed_text(
@@ -597,7 +630,7 @@ pub trait SyncModel {
         session: &mut Self::Session,
         prompt: &str,
         into: &mut Vec<f32>,
-    ) -> anyhow::Result<()>;
+    ) -> Result<(), Self::Error>;
 
     /// Run the model synchronously with a pre-tokenized input. The model implementation may choose to return only the top k logits.
     fn feed_tokens(
@@ -605,10 +638,10 @@ pub trait SyncModel {
         session: &mut Self::Session,
         tokens: &[u32],
         into: &mut Vec<f32>,
-    ) -> anyhow::Result<()>;
+    ) -> Result<(), Self::Error>;
 
     /// Get the token ID that represents the end of a sequence.
-    fn stop_token(&self) -> anyhow::Result<u32>;
+    fn stop_token(&self) -> Result<u32, Self::Error>;
 
     /// Return the tokenizer associated with this model.
     fn tokenizer(&self) -> Arc<Tokenizer>;
@@ -616,18 +649,16 @@ pub trait SyncModel {
 
 /// A session for a model.
 pub trait Session {
+    /// The type of error this model may return during operations.
+    type Error: std::error::Error + Send + Sync + 'static;
+
     /// Save the session to the given path.
-    fn save_to(&self, _path: impl AsRef<Path>) -> anyhow::Result<()> {
-        Err(anyhow::Error::msg("Not implemented"))
-    }
+    fn save_to(&self, _path: impl AsRef<Path>) -> Result<(), Self::Error>;
 
     /// Load the session from the given path.
-    fn load_from(_path: impl AsRef<Path>) -> anyhow::Result<Self>
+    fn load_from(_path: impl AsRef<Path>) -> Result<Self, Self::Error>
     where
-        Self: std::marker::Sized,
-    {
-        Err(anyhow::Error::msg("Not implemented"))
-    }
+        Self: std::marker::Sized;
 
     /// Get a reference to the tokens in the session.
     fn tokens(&self) -> &[u32] {
@@ -635,20 +666,23 @@ pub trait Session {
     }
 
     /// Try to clone the session.
-    fn try_clone(&self) -> anyhow::Result<Self>
+    fn try_clone(&self) -> Result<Self, Self::Error>
     where
-        Self: std::marker::Sized,
-    {
-        Err(anyhow::Error::msg("Not implemented"))
-    }
+        Self: std::marker::Sized;
 }
 
 impl Session for () {
-    fn save_to(&self, _path: impl AsRef<Path>) -> anyhow::Result<()> {
+    type Error = Infallible;
+
+    fn save_to(&self, _path: impl AsRef<Path>) -> Result<(), Self::Error> {
         Ok(())
     }
 
-    fn load_from(_path: impl AsRef<Path>) -> anyhow::Result<()> {
+    fn load_from(_path: impl AsRef<Path>) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn try_clone(&self) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -664,9 +698,9 @@ pub trait SyncModelExt: SyncModel {
         parser: P,
         parser_state: P::PartialState,
         sampler: Arc<Mutex<dyn Sampler>>,
-        on_token: impl FnMut(String) -> anyhow::Result<()>,
+        on_token: impl FnMut(String) -> Result<(), Self::Error>,
         top_k: Option<usize>,
-    ) -> anyhow::Result<P::Output> {
+    ) -> Result<P::Output, StructuredTextGenerationError<Self::Error>> {
         generate_structured(
             prompt,
             self,
@@ -688,21 +722,24 @@ pub trait SyncModelExt: SyncModel {
         max_tokens: Option<u32>,
         stop_on: Option<&str>,
         mut sampler: Arc<Mutex<dyn Sampler>>,
-        mut on_token: impl FnMut(String) -> anyhow::Result<ModelFeedback>,
-    ) -> anyhow::Result<()> {
+        mut on_token: impl FnMut(String) -> Result<ModelFeedback, Self::Error>,
+    ) -> Result<(), UnstructuredTextGenerationError<Self::Error>> {
         let tokens = self
             .tokenizer()
             .encode(prompt, false)
-            .map_err(|e| anyhow::anyhow!(e))?;
+            .map_err(UnstructuredTextGenerationError::TokenizationError)?;
         let tokens = tokens.get_ids();
         let mut text_stream = TokenOutputStream::new(self.tokenizer());
         for &token in tokens {
-            text_stream.next_token(token)?;
+            text_stream
+                .next_token(token)
+                .map_err(UnstructuredTextGenerationError::TokenOutputStreamError)?;
         }
 
         let mut logit_probs = Vec::new();
         self.feed_tokens(session, tokens, &mut logit_probs)?;
-        let mut logits = Logits::try_from_iter_top_k(logit_probs, 512)?;
+        let mut logits = Logits::try_from_iter_top_k(logit_probs, 512)
+            .expect("model output should be valid logits");
         let mut tokens_generated = 0;
         // This stores a buffer of text that has been generated to check against the stop_on string. It should never be longer than the stop_on string.
         let mut queued_text_matching_stop_on = String::new();
@@ -712,12 +749,17 @@ pub trait SyncModelExt: SyncModel {
         let mut logit_probs = Vec::new();
 
         'generate: loop {
-            let new_token = text_stream.sample_token(&mut sampler, logits, stop_on)?;
+            let new_token = text_stream
+                .sample_token(&mut sampler, logits, stop_on)
+                .map_err(UnstructuredTextGenerationError::TokenOutputStreamError)?;
             if new_token == stop_token {
                 tracing::trace!("Stopping on stop token");
                 break;
             }
-            if let Some(mut new_text) = text_stream.next_token(new_token)? {
+            if let Some(mut new_text) = text_stream
+                .next_token(new_token)
+                .map_err(UnstructuredTextGenerationError::TokenOutputStreamError)?
+            {
                 if let Some(stop_on) = stop_on_lowercase {
                     let lowercase = new_text.to_lowercase();
 
@@ -777,7 +819,8 @@ pub trait SyncModelExt: SyncModel {
                 }
             }
             self.feed_tokens(session, &[new_token], &mut logit_probs)?;
-            logits = Logits::try_from_iter_top_k(logit_probs.iter().copied(), 512)?;
+            logits = Logits::try_from_iter_top_k(logit_probs.iter().copied(), 512)
+                .expect("model output should be valid logits");
         }
 
         // Flush the queued text
@@ -806,13 +849,19 @@ pub struct SyncModelNotSupported;
 
 impl SyncModel for SyncModelNotSupported {
     type Session = ();
+    type Error = NotSupported;
 
-    fn new_session(&self) -> anyhow::Result<Self::Session> {
-        Err(anyhow::Error::msg("Not implemented"))
+    fn new_session(&self) -> Result<Self::Session, Self::Error> {
+        Err(NotSupported)
     }
 
-    fn feed_text(&self, _session: &mut (), _prompt: &str, _: &mut Vec<f32>) -> anyhow::Result<()> {
-        Err(anyhow::Error::msg("Not implemented"))
+    fn feed_text(
+        &self,
+        _session: &mut (),
+        _prompt: &str,
+        _: &mut Vec<f32>,
+    ) -> Result<(), Self::Error> {
+        Err(NotSupported)
     }
 
     fn feed_tokens(
@@ -820,12 +869,12 @@ impl SyncModel for SyncModelNotSupported {
         _session: &mut (),
         _tokens: &[u32],
         _: &mut Vec<f32>,
-    ) -> anyhow::Result<()> {
-        Err(anyhow::Error::msg("Not implemented"))
+    ) -> Result<(), Self::Error> {
+        Err(NotSupported)
     }
 
-    fn stop_token(&self) -> anyhow::Result<u32> {
-        Err(anyhow::Error::msg("Not implemented"))
+    fn stop_token(&self) -> Result<u32, Self::Error> {
+        Err(NotSupported)
     }
 
     fn tokenizer(&self) -> Arc<Tokenizer> {
@@ -839,11 +888,14 @@ pub trait Model: Send + Sync + 'static {
     /// The type of stream that this model generates.
     type TextStream: Stream<Item = String> + Send + Sync + Unpin + 'static;
 
+    /// The type of error this model may return during operations.
+    type Error: Send + Sync + 'static;
+
     /// Get the tokenizer associated with this model to use for constrained generation.
     fn tokenizer(&self) -> Arc<Tokenizer>;
 
     /// The raw sync model that backs this model.
-    type SyncModel: SyncModel;
+    type SyncModel: SyncModel<Error = Self::Error>;
 
     #[allow(clippy::type_complexity)]
     /// Run some code synchronously with the model.
@@ -858,9 +910,7 @@ pub trait Model: Send + Sync + 'static {
                     -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>>
                 + Send,
         >,
-    ) -> anyhow::Result<()> {
-        Err(anyhow::Error::msg("Not implemented"))
-    }
+    ) -> Result<(), Self::Error>;
 
     /// Generate text with the given prompt.
     async fn generate_text_with_sampler(
@@ -869,7 +919,7 @@ pub trait Model: Send + Sync + 'static {
         max_tokens: Option<u32>,
         stop_on: Option<&str>,
         sampler: Arc<Mutex<dyn Sampler>>,
-    ) -> anyhow::Result<String> {
+    ) -> Result<String, Self::Error> {
         let mut text = String::new();
 
         let mut stream = self
@@ -888,7 +938,7 @@ pub trait Model: Send + Sync + 'static {
         &self,
         prompt: &str,
         parameters: GenerationParameters,
-    ) -> anyhow::Result<String> {
+    ) -> Result<String, Self::Error> {
         let mut text = String::new();
 
         let mut stream = self.stream_text_inner(prompt, parameters).await?;
@@ -905,9 +955,7 @@ pub trait Model: Send + Sync + 'static {
         _max_tokens: Option<u32>,
         _stop_on: Option<&str>,
         _sampler: Arc<Mutex<dyn Sampler>>,
-    ) -> anyhow::Result<Self::TextStream> {
-        Err(anyhow::Error::msg("Not implemented"))
-    }
+    ) -> Result<Self::TextStream, Self::Error>;
 
     /// Generate text with the given prompt.
     ///
@@ -916,7 +964,7 @@ pub trait Model: Send + Sync + 'static {
         &self,
         prompt: &str,
         parameters: GenerationParameters,
-    ) -> anyhow::Result<Self::TextStream>;
+    ) -> Result<Self::TextStream, Self::Error>;
 
     /// Returns the chat markers to use for the model if this is a chat model.
     fn chat_markers(&self) -> Option<ChatMarkers> {
@@ -930,6 +978,7 @@ pub trait AnyModelExt: Model<TextStream = ChannelTextStream> + Send + Sync + 'st
     fn into_any_model(self) -> DynModel
     where
         Self: Send + Sync + Sized,
+        Self::Error: std::error::Error,
     {
         Box::new(AnyModel(self))
     }
@@ -955,17 +1004,26 @@ pub struct ChatMarkers {
 }
 
 /// A trait object for a model.
-pub type DynModel =
-    Box<dyn Model<TextStream = ChannelTextStream, SyncModel = BoxedSyncModel> + Send>;
+pub type DynModel = Box<
+    dyn Model<
+            TextStream = ChannelTextStream,
+            SyncModel = BoxedSyncModel,
+            Error = Box<dyn std::error::Error + Send + Sync>,
+        > + Send,
+>;
 
 #[async_trait::async_trait]
 impl Model for DynModel {
     type TextStream = ChannelTextStream;
     type SyncModel = BoxedSyncModel;
+    type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
 
     fn tokenizer(&self) -> Arc<Tokenizer> {
-        let self_ref: &(dyn Model<TextStream = ChannelTextStream, SyncModel = BoxedSyncModel>
-              + Send) = self.as_ref();
+        let self_ref: &(dyn Model<
+            TextStream = ChannelTextStream,
+            SyncModel = BoxedSyncModel,
+            Error = Box<dyn std::error::Error + Send + Sync>,
+        > + Send) = self.as_ref();
         self_ref.tokenizer()
     }
 
@@ -973,44 +1031,118 @@ impl Model for DynModel {
         &self,
         prompt: &str,
         parameters: GenerationParameters,
-    ) -> anyhow::Result<Self::TextStream> {
-        let self_ref: &(dyn Model<TextStream = ChannelTextStream, SyncModel = BoxedSyncModel>
-              + Send) = self.as_ref();
+    ) -> Result<Self::TextStream, Self::Error> {
+        let self_ref: &(dyn Model<
+            TextStream = ChannelTextStream,
+            SyncModel = BoxedSyncModel,
+            Error = Box<dyn std::error::Error + Send + Sync>,
+        > + Send) = self.as_ref();
         self_ref.stream_text_inner(prompt, parameters).await
+    }
+
+    fn run_sync_raw(
+        &self,
+        f: Box<
+            dyn for<'a> FnOnce(
+                    &'a mut Self::SyncModel,
+                )
+                    -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>>
+                + Send,
+        >,
+    ) -> Result<(), Self::Error> {
+        let self_ref: &(dyn Model<
+            TextStream = ChannelTextStream,
+            SyncModel = BoxedSyncModel,
+            Error = Box<dyn std::error::Error + Send + Sync>,
+        > + Send) = self.as_ref();
+        self_ref.run_sync_raw(f)
+    }
+
+    async fn stream_text_with_sampler(
+        &self,
+        prompt: &str,
+        max_tokens: Option<u32>,
+        stop_on: Option<&str>,
+        sampler: Arc<Mutex<dyn Sampler>>,
+    ) -> Result<Self::TextStream, Self::Error> {
+        let self_ref: &(dyn Model<
+            TextStream = ChannelTextStream,
+            SyncModel = BoxedSyncModel,
+            Error = Box<dyn std::error::Error + Send + Sync>,
+        > + Send) = self.as_ref();
+        self_ref
+            .stream_text_with_sampler(prompt, max_tokens, stop_on, sampler)
+            .await
     }
 }
 
 /// A trait object for a sync model.
-pub type BoxedSyncModel = Box<dyn SyncModel<Session = AnySession>>;
+pub type BoxedSyncModel =
+    Arc<dyn SyncModel<Session = AnySession, Error = Box<dyn std::error::Error + Send + Sync>>>;
 
 trait AnySessionTrait {
-    fn save_to(&self, path: &Path) -> anyhow::Result<()>;
+    fn save_to(&self, path: &Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
 }
 
 impl<S: Any + Session> AnySessionTrait for S {
-    fn save_to(&self, path: &Path) -> anyhow::Result<()> {
-        Session::save_to(self, path)
+    fn save_to(&self, path: &Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        Session::save_to(self, path).map_err(|e| e.into())
     }
+}
+
+/// An error that can occur when using a boxed session.
+#[derive(Debug, Error)]
+pub enum AnySessionError {
+    /// An error from the underlying session.
+    #[error("Underlying session error: {0}")]
+    Session(#[from] Box<dyn std::error::Error + Send + Sync>),
+    /// An error that occurred when trying to load a boxed session. Boxed sessions do not support loading from a
+    /// path because the type erased session does not have a known format.
+    #[error("Loading boxed session from path is not supported")]
+    Load,
 }
 
 /// A type-erased session.
 ///
 /// > Note: boxed sessions do not support loading from a path.
+#[derive(Clone)]
 pub struct AnySession {
-    session: Box<dyn AnySessionTrait>,
+    session: Arc<dyn AnySessionTrait>,
 }
 
 impl Session for AnySession {
-    fn save_to(&self, path: impl AsRef<Path>) -> anyhow::Result<()> {
-        self.session.save_to(path.as_ref())
+    type Error = AnySessionError;
+
+    fn save_to(&self, path: impl AsRef<Path>) -> Result<(), Self::Error> {
+        self.session
+            .save_to(path.as_ref())
+            .map_err(AnySessionError::Session)
+    }
+
+    fn load_from(_path: impl AsRef<Path>) -> Result<Self, Self::Error>
+    where
+        Self: std::marker::Sized,
+    {
+        Err(AnySessionError::Load)
+    }
+
+    fn try_clone(&self) -> Result<Self, Self::Error>
+    where
+        Self: std::marker::Sized,
+    {
+        Ok(self.clone())
     }
 }
 
 impl SyncModel for BoxedSyncModel {
+    type Error = Box<dyn std::error::Error + Send + Sync>;
     type Session = AnySession;
 
-    fn new_session(&self) -> anyhow::Result<Self::Session> {
-        let self_ref: &(dyn SyncModel<Session = AnySession>) = self.as_ref();
+    fn new_session(&self) -> Result<Self::Session, Self::Error> {
+        let self_ref: &(dyn SyncModel<
+            Session = AnySession,
+            Error = Box<dyn std::error::Error + Send + Sync>,
+        >) = self.as_ref();
         self_ref.new_session()
     }
 
@@ -1019,8 +1151,11 @@ impl SyncModel for BoxedSyncModel {
         session: &mut Self::Session,
         prompt: &str,
         into: &mut Vec<f32>,
-    ) -> anyhow::Result<()> {
-        let self_ref: &(dyn SyncModel<Session = AnySession>) = self.as_ref();
+    ) -> Result<(), Self::Error> {
+        let self_ref: &(dyn SyncModel<
+            Session = AnySession,
+            Error = Box<dyn std::error::Error + Send + Sync>,
+        >) = self.as_ref();
         self_ref.feed_text(session, prompt, into)
     }
 
@@ -1029,18 +1164,27 @@ impl SyncModel for BoxedSyncModel {
         session: &mut Self::Session,
         tokens: &[u32],
         into: &mut Vec<f32>,
-    ) -> anyhow::Result<()> {
-        let self_ref: &(dyn SyncModel<Session = AnySession>) = self.as_ref();
+    ) -> Result<(), Self::Error> {
+        let self_ref: &(dyn SyncModel<
+            Session = AnySession,
+            Error = Box<dyn std::error::Error + Send + Sync>,
+        >) = self.as_ref();
         self_ref.feed_tokens(session, tokens, into)
     }
 
-    fn stop_token(&self) -> anyhow::Result<u32> {
-        let self_ref: &(dyn SyncModel<Session = AnySession>) = self.as_ref();
+    fn stop_token(&self) -> Result<u32, Self::Error> {
+        let self_ref: &(dyn SyncModel<
+            Session = AnySession,
+            Error = Box<dyn std::error::Error + Send + Sync>,
+        >) = self.as_ref();
         self_ref.stop_token()
     }
 
     fn tokenizer(&self) -> Arc<Tokenizer> {
-        let self_ref: &(dyn SyncModel<Session = AnySession>) = self.as_ref();
+        let self_ref: &(dyn SyncModel<
+            Session = AnySession,
+            Error = Box<dyn std::error::Error + Send + Sync>,
+        >) = self.as_ref();
         self_ref.tokenizer()
     }
 }
@@ -1051,7 +1195,9 @@ struct AnyModel<M>(M);
 impl<M> Model for AnyModel<M>
 where
     M: Model<TextStream = ChannelTextStream> + Send + Sync,
+    M::Error: std::error::Error,
 {
+    type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
     type TextStream = ChannelTextStream;
     type SyncModel = BoxedSyncModel;
 
@@ -1063,8 +1209,11 @@ where
         &self,
         prompt: &str,
         params: GenerationParameters,
-    ) -> anyhow::Result<Self::TextStream> {
-        self.0.stream_text_inner(prompt, params).await
+    ) -> Result<Self::TextStream, Self::Error> {
+        self.0
+            .stream_text_inner(prompt, params)
+            .await
+            .map_err(|e| e.into())
     }
 
     async fn stream_text_with_sampler(
@@ -1073,10 +1222,24 @@ where
         max_tokens: Option<u32>,
         stop_on: Option<&str>,
         sampler: Arc<Mutex<dyn Sampler>>,
-    ) -> anyhow::Result<Self::TextStream> {
+    ) -> Result<Self::TextStream, Self::Error> {
         self.0
             .stream_text_with_sampler(prompt, max_tokens, stop_on, sampler)
             .await
+            .map_err(|e| e.into())
+    }
+
+    fn run_sync_raw(
+        &self,
+        _: Box<
+            dyn for<'a> FnOnce(
+                    &'a mut Self::SyncModel,
+                )
+                    -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>>
+                + Send,
+        >,
+    ) -> Result<(), Self::Error> {
+        Err(Box::new(NotSupported))
     }
 }
 
@@ -1289,5 +1452,50 @@ impl crate::model::GenerationParameters {
     /// Get the string to stop on when generating text.
     pub fn stop_on(&self) -> Option<&str> {
         self.stop_on.as_deref()
+    }
+}
+
+/// An error that indicates that the model does not support the operation. Some model implementation do not support specific operations like
+/// structured generation or saving sessions. For example, the remote Gpt models do not support the full version of structured generation
+/// because of the limitations of the OpenAI API.
+#[derive(Debug, Error)]
+#[error("Operation not supported")]
+pub struct NotSupported;
+
+/// An error that can happen when generating unstructured text from a model.
+#[derive(Debug, Error)]
+pub enum UnstructuredTextGenerationError<E> {
+    /// An error while running the model.
+    #[error("Model error: {0}")]
+    ModelError(#[from] E),
+
+    /// An error while tokenizing the input or decoding the output.
+    #[error("Tokenization error: {0}")]
+    TokenizationError(tokenizers::Error),
+
+    /// An error while sampling tokens.
+    #[error("Sampler error: {0}")]
+    SamplerError(Box<dyn std::error::Error + Send + Sync>),
+
+    /// A streaming detokenization error.
+    #[error("Token output stream error: {0}")]
+    TokenOutputStreamError(TokenOutputStreamError),
+}
+
+/// An error that can happen when generating structured text from a model.
+#[derive(Debug, Error)]
+pub enum StructuredTextGenerationError<E> {
+    /// No valid tokens were sampled
+    #[error("No valid tokens were sampled")]
+    NoValidTokens,
+
+    /// An error while generating unstructured text.
+    #[error("Unstructured text generation error: {0}")]
+    UnstructuredTextGenerationError(#[from] UnstructuredTextGenerationError<E>),
+}
+
+impl<E> From<E> for StructuredTextGenerationError<E> {
+    fn from(value: E) -> Self {
+        Self::UnstructuredTextGenerationError(UnstructuredTextGenerationError::ModelError(value))
     }
 }

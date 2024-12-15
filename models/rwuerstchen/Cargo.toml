@@ -23,7 +23,6 @@ kalosm-common = { workspace = true }
 kalosm-language-model.workspace = true
 kalosm-streams.workspace = true
 
-anyhow = "1.0.75"
 async-trait = "0.1.73"
 futures-util = "0.3.28"
 image = "0.24.7"

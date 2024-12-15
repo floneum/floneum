@@ -21,7 +21,7 @@ use super::ClassifierProgress;
 /// #     Thing,
 /// # }
 /// # #[tokio::main]
-/// # async fn main() -> anyhow::Result<()> {
+/// # async fn main() -> Result<()> {
 /// // Create a dataset for the classifier
 /// let bert = Bert::new().await?;
 /// let mut dataset = TextClassifierDatasetBuilder::<MyClass, _>::new(&bert);
@@ -49,7 +49,7 @@ impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
     }
 
     /// Adds a new example to the dataset.
-    pub async fn add(&mut self, text: impl ToString, class: T) -> anyhow::Result<()> {
+    pub async fn add(&mut self, text: impl ToString, class: T) -> Result<(), E::Error> {
         let embedding = self.embedder.embed(text).await?;
         self.dataset.add(embedding.to_vec(), class);
         Ok(())
@@ -68,7 +68,7 @@ impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
     /// #     Thing,
     /// # }
     /// # #[tokio::main]
-    /// # async fn main() -> anyhow::Result<()> {
+    /// # async fn main() -> Result<()> {
     /// // Create a dataset for the classifier
     /// let bert = Bert::new().await?;
     /// let mut dataset = TextClassifierDatasetBuilder::<MyClass, _>::new(&bert);
@@ -80,7 +80,7 @@ impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
     pub async fn extend(
         &mut self,
         examples: impl IntoIterator<Item = (impl ToString, T)>,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), E::Error> {
         let (texts, classes): (Vec<_>, Vec<_>) = examples.into_iter().unzip();
         let embeddings = self.embedder.embed_batch(texts).await?;
         for (embedding, class) in embeddings.into_iter().zip(classes) {
@@ -106,7 +106,7 @@ impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
 /// use rbert::{Bert, BertSpace};
 ///
 /// #[tokio::test]
-/// async fn simplified() -> anyhow::Result<()> {
+/// async fn simplified() -> Result<()> {
 ///     use crate::{Class, Classifier, ClassifierConfig};
 ///     use candle_core::Device;
 ///     use kalosm_language_model::Embedder;
@@ -249,7 +249,7 @@ impl<T: Class, S: VectorSpace + Send + Sync + 'static> TextClassifier<T, S> {
         learning_rate: f64,
         batch_size: usize,
         progress: impl FnMut(ClassifierProgress),
-    ) -> anyhow::Result<f32> {
+    ) -> candle_core::Result<f32> {
         self.model
             .train(dataset, epochs, learning_rate, batch_size, progress)
     }
@@ -276,7 +276,7 @@ impl<T: Class, S: VectorSpace + Send + Sync + 'static> TextClassifier<T, S> {
 }
 
 #[tokio::test]
-async fn simplified() -> anyhow::Result<()> {
+async fn simplified() -> Result<(), Box<dyn std::error::Error>> {
     use crate::{Class, Classifier, ClassifierConfig};
     use rbert::{Bert, BertSource, BertSpace};
 

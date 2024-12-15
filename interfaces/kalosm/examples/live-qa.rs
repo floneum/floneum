@@ -33,7 +33,6 @@ async fn main() -> Result<(), anyhow::Error> {
             // Chunk the audio into chunks based on voice activity
             let mut audio_chunks = mic_input
                 .stream()
-                .unwrap()
                 .voice_activity_stream()
                 .rechunk_voice_activity();
             while let Some(input) = audio_chunks.next().await {

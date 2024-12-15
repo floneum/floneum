@@ -1,11 +1,27 @@
 use std::sync::Arc;
 
-use anyhow::Result;
 use llm_samplers::types::{HasSamplerResources, Logits, Sampler, SamplerError};
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelExtend;
 use rayon::iter::ParallelIterator;
+use thiserror::Error;
 use tokenizers::tokenizer::Tokenizer;
+
+/// An error that can occur when performing streaming detokenization.
+#[derive(Debug, Error)]
+pub enum TokenOutputStreamError {
+    /// An error that can occur when tokenizing.
+    #[error("Tokenization error: {0}")]
+    TokenizationError(tokenizers::Error),
+
+    /// An error that can occur when sampling.
+    #[error("Sampler error: {0}")]
+    SamplerError(Box<dyn std::error::Error + Send + Sync>),
+
+    /// The sampler did not sample any tokens.
+    #[error("No token sampled")]
+    NoTokenSampled,
+}
 
 /// This is a wrapper around a tokenizer to ensure that tokens can be returned to the user in a
 /// streaming way rather than having to wait for the full decoding.
@@ -29,11 +45,10 @@ impl TokenOutputStream {
         }
     }
 
-    fn decode(&self, tokens: &[u32]) -> Result<String> {
-        match self.tokenizer.decode(tokens, false) {
-            Ok(str) => Ok(str.to_string()),
-            Err(err) => anyhow::bail!("cannot decode: {err}"),
-        }
+    fn decode(&self, tokens: &[u32]) -> Result<String, TokenOutputStreamError> {
+        self.tokenizer
+            .decode(tokens, false)
+            .map_err(TokenOutputStreamError::TokenizationError)
     }
 
     /// Samples a token from the logits.
@@ -42,7 +57,7 @@ impl TokenOutputStream {
         sampler: &mut impl Sampler,
         mut logits: Logits,
         stop_on: Option<&str>,
-    ) -> anyhow::Result<u32> {
+    ) -> Result<u32, TokenOutputStreamError> {
         struct SamplerResources<'a, 'b, R: rand::Rng> {
             rng: &'a mut R,
             previous_tokens: &'b [u32],
@@ -90,7 +105,7 @@ impl TokenOutputStream {
                     Some(token) => {
                         end_tokens = tokenizer
                             .decode(&[*token], true)
-                            .map_err(anyhow::Error::msg)?
+                            .map_err(TokenOutputStreamError::TokenizationError)?
                             .to_string()
                             + &end_tokens;
                     }
@@ -118,17 +133,21 @@ impl TokenOutputStream {
                     rng: &mut rng,
                 },
                 sampler,
-            )?
-            .ok_or_else(|| anyhow::anyhow!("No token sampled"))
+            )
+            .map_err(|err| TokenOutputStreamError::SamplerError(err.into()))?
+            .ok_or(TokenOutputStreamError::NoTokenSampled)
     }
 
     /// Encode a string into a list of tokens after the current tokens.
-    pub(crate) fn encode_after(&self, text: &str) -> Result<Option<Vec<u32>>> {
+    pub(crate) fn encode_after(
+        &self,
+        text: &str,
+    ) -> Result<Option<Vec<u32>>, TokenOutputStreamError> {
         let all_text = self.current_text.clone() + text;
         let tokens_with_current_tokens = self
             .tokenizer
             .encode(all_text, false)
-            .map_err(|e| anyhow::anyhow!(e))?;
+            .map_err(TokenOutputStreamError::TokenizationError)?;
         let tokens_with_current_tokens = tokens_with_current_tokens.get_ids();
 
         let index_length = self.current_index - self.prev_index;
@@ -143,7 +162,7 @@ impl TokenOutputStream {
     }
 
     /// Recalculate the current text
-    pub(crate) fn recalculate_current_text(&mut self) -> Result<()> {
+    pub(crate) fn recalculate_current_text(&mut self) -> Result<(), TokenOutputStreamError> {
         let current_text = if self.tokens.is_empty() {
             Default::default()
         } else {
@@ -157,7 +176,7 @@ impl TokenOutputStream {
     }
 
     /// Returns the next token.
-    pub fn next_token(&mut self, token: u32) -> Result<Option<String>> {
+    pub fn next_token(&mut self, token: u32) -> Result<Option<String>, TokenOutputStreamError> {
         let prev_text = &self.current_text;
         self.tokens.push(token);
         let text = self.decode(&self.tokens[self.prev_index..])?;
@@ -173,7 +192,10 @@ impl TokenOutputStream {
     }
 
     /// Returns the next tokens
-    pub fn next_tokens(&mut self, tokens: &[u32]) -> Result<Option<String>> {
+    pub fn next_tokens(
+        &mut self,
+        tokens: &[u32],
+    ) -> Result<Option<String>, TokenOutputStreamError> {
         let prev_text = &self.current_text;
         self.tokens.extend(tokens.iter().copied());
         let text = self.decode(&self.tokens[self.prev_index..])?;
@@ -192,7 +214,7 @@ impl TokenOutputStream {
     pub fn peek_next_tokens(
         &self,
         tokens: impl IntoIterator<Item = u32>,
-    ) -> Result<Option<String>> {
+    ) -> Result<Option<String>, TokenOutputStreamError> {
         let mut current_tokens = self.tokens[self.prev_index..].to_vec();
         let prev_text = &self.current_text;
         current_tokens.extend(tokens);
@@ -210,7 +232,7 @@ impl TokenOutputStream {
         &self,
         tokens: impl IntoParallelIterator<Item = u32>,
         into: &mut impl ParallelExtend<Option<String>>,
-    ) -> Result<()> {
+    ) {
         let prev_text = &self.current_text;
         let prev_text_len = prev_text.len();
         into.par_extend(tokens.into_par_iter().map_init(
@@ -227,11 +249,10 @@ impl TokenOutputStream {
                 }
             },
         ));
-        Ok(())
     }
 
     /// Peek the next token.
-    pub fn peek_token(&self, token: u32) -> Result<Option<String>> {
+    pub fn peek_token(&self, token: u32) -> Result<Option<String>, TokenOutputStreamError> {
         let prev_text = &self.current_text;
         let prev_text_len = prev_text.len();
         let mut tokens = self.tokens[self.prev_index..].to_vec();
@@ -252,7 +273,7 @@ impl TokenOutputStream {
     }
 
     /// Decode the remaining tokens.
-    pub fn decode_rest(&self) -> Result<Option<String>> {
+    pub fn decode_rest(&self) -> Result<Option<String>, TokenOutputStreamError> {
         let prev_text = &self.current_text;
         let text = self.decode(&self.tokens[self.prev_index..])?;
         if text.len() > prev_text.len() {
@@ -264,7 +285,7 @@ impl TokenOutputStream {
     }
 
     /// Decode all tokens.
-    pub fn decode_all(&self) -> Result<String> {
+    pub fn decode_all(&self) -> Result<String, TokenOutputStreamError> {
         self.decode(&self.tokens)
     }
 

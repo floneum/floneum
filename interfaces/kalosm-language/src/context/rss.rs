@@ -3,6 +3,17 @@ use url::Url;
 
 use super::document::{Document, IntoDocuments};
 
+/// An error that can occur when interacting with an RSS feed.
+#[derive(Debug, thiserror::Error)]
+pub enum RssFeedError {
+    /// An error occurred when fetching the RSS feed.
+    #[error("Failed to fetch RSS feed: {0}")]
+    FetchFeed(#[from] reqwest::Error),
+    /// An error parsing the RSS feed.
+    #[error("Failed to parse RSS feed: {0}")]
+    ParseFeed(#[from] rss::Error),
+}
+
 /// A RSS feed that can be used to add documents to a search index.
 ///
 /// # Example
@@ -29,7 +40,9 @@ impl From<Url> for RssFeed {
 
 #[async_trait::async_trait]
 impl IntoDocuments for RssFeed {
-    async fn into_documents(self) -> anyhow::Result<Vec<Document>> {
+    type Error = RssFeedError;
+
+    async fn into_documents(self) -> Result<Vec<Document>, Self::Error> {
         self.read_top_n(usize::MAX).await
     }
 }
@@ -46,7 +59,7 @@ impl RssFeed {
     }
 
     /// Read the top N documents from the RSS feed.
-    pub async fn read_top_n(&self, top_n: usize) -> anyhow::Result<Vec<Document>> {
+    pub async fn read_top_n(&self, top_n: usize) -> Result<Vec<Document>, RssFeedError> {
         let xml = reqwest::get(self.0.clone()).await?.text().await?;
         let channel = Channel::read_from(xml.as_bytes())?;
         let mut documents = Vec::new();
@@ -71,10 +84,11 @@ impl RssFeed {
                 None => self.0.clone(),
             };
 
-            let article =
-                readability::extractor::extract(&mut std::io::Cursor::new(&content), &url)?;
-
-            documents.push(Document::from_parts(article.title, article.text));
+            if let Ok(article) =
+                readability::extractor::extract(&mut std::io::Cursor::new(&content), &url)
+            {
+                documents.push(Document::from_parts(article.title, article.text));
+            }
         }
         Ok(documents)
     }

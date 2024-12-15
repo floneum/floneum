@@ -6,7 +6,7 @@ async fn main() {
         let mut model = Ocr::builder().build().await.unwrap();
         let image = image::open("examples/written.png").unwrap();
         let text = model
-            .recognize_text(OcrInferenceSettings::new(image).unwrap())
+            .recognize_text(OcrInferenceSettings::new(image))
             .unwrap();
 
         println!("{}", text);
@@ -19,7 +19,7 @@ async fn main() {
             .unwrap();
         let image = image::open("examples/printed.png").unwrap();
         let text = model
-            .recognize_text(OcrInferenceSettings::new(image).unwrap())
+            .recognize_text(OcrInferenceSettings::new(image))
             .unwrap();
 
         println!("{}", text);

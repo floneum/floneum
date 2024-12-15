@@ -10,7 +10,9 @@ use std::{
 };
 
 use futures_util::Future;
-use kalosm_language_model::{GenerationParameters, SyncModel, SyncModelExt};
+use kalosm_language_model::{
+    GenerationParameters, StructuredTextGenerationError, SyncModel, SyncModelExt,
+};
 use kalosm_sample::{
     ArcParser, CreateParserState, Either, LiteralParser, ParseResult, ParseStatus, Parser,
     ParserExt,
@@ -284,8 +286,8 @@ Question: {question}
         prompt: &str,
         llm: &mut M,
         llm_session: &mut M::Session,
-        mut add_token: impl FnMut(String) -> anyhow::Result<()>,
-    ) -> anyhow::Result<ToolManagerStepResult> {
+        mut add_token: impl FnMut(String) -> Result<(), M::Error>,
+    ) -> Result<ToolManagerStepResult, StructuredTextGenerationError<M::Error>> {
         let mut new_text = String::new();
 
         let constraints = self.any_action_constraint();

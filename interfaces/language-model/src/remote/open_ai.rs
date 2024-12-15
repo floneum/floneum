@@ -1,13 +1,14 @@
+use async_openai::error::OpenAIError;
 use async_openai::types::CreateEmbeddingRequestArgs;
 use async_openai::{types::CreateCompletionRequestArgs, Client};
 use futures_util::{Future, StreamExt};
 use kalosm_common::*;
 use kalosm_streams::text_stream::ChannelTextStream;
-use std::pin::Pin;
-use std::sync::Arc;
+use llm_samplers::types::Sampler;
+use std::sync::{Arc, Mutex};
 use tokenizers::tokenizer::Tokenizer;
 
-use crate::{Embedder, Embedding, GenerationParameters, ModelBuilder, VectorSpace};
+use crate::{Embedder, Embedding, GenerationParameters, ModelBuilder, SyncModel, VectorSpace};
 
 /// A model that uses OpenAI's API.
 pub struct RemoteOpenAICompatibleModel {
@@ -77,10 +78,49 @@ impl RemoteOpenAICompatibleModel {
     }
 }
 
+/// A mock sync model for OpenAI which **does not** support sync models.
+pub struct RemoteOpenAINotSyncModel;
+
+impl SyncModel for RemoteOpenAINotSyncModel {
+    type Session = ();
+    type Error = RemoteOpenAICompatibleModelError;
+
+    fn new_session(&self) -> Result<Self::Session, Self::Error> {
+        Err(RemoteOpenAICompatibleModelError::OpenAIDoesNotSupportSyncModel)
+    }
+
+    fn feed_text(
+        &self,
+        _session: &mut Self::Session,
+        _prompt: &str,
+        _out: &mut Vec<f32>,
+    ) -> Result<(), Self::Error> {
+        Err(RemoteOpenAICompatibleModelError::OpenAIDoesNotSupportSyncModel)
+    }
+
+    fn feed_tokens(
+        &self,
+        _session: &mut Self::Session,
+        _tokens: &[u32],
+        _out: &mut Vec<f32>,
+    ) -> Result<(), Self::Error> {
+        Err(RemoteOpenAICompatibleModelError::OpenAIDoesNotSupportSyncModel)
+    }
+
+    fn stop_token(&self) -> Result<u32, Self::Error> {
+        Err(RemoteOpenAICompatibleModelError::OpenAIDoesNotSupportSyncModel)
+    }
+
+    fn tokenizer(&self) -> Arc<Tokenizer> {
+        panic!("OpenAI does not expose tokenization")
+    }
+}
+
 #[async_trait::async_trait]
 impl crate::model::Model for RemoteOpenAICompatibleModel {
     type TextStream = ChannelTextStream;
-    type SyncModel = crate::SyncModelNotSupported;
+    type SyncModel = RemoteOpenAINotSyncModel;
+    type Error = RemoteOpenAICompatibleModelError;
 
     fn tokenizer(&self) -> Arc<Tokenizer> {
         panic!("OpenAI does not expose tokenization")
@@ -90,7 +130,7 @@ impl crate::model::Model for RemoteOpenAICompatibleModel {
         &self,
         prompt: &str,
         generation_parameters: GenerationParameters,
-    ) -> anyhow::Result<Self::TextStream> {
+    ) -> Result<Self::TextStream, Self::Error> {
         let mut builder = CreateCompletionRequestArgs::default();
         builder
             .model(&self.model)
@@ -125,10 +165,33 @@ impl crate::model::Model for RemoteOpenAICompatibleModel {
                 }
             }
 
-            Ok::<(), anyhow::Error>(())
+            Ok::<(), Self::Error>(())
         });
 
         Ok(rx.into())
+    }
+
+    fn run_sync_raw(
+        &self,
+        _f: Box<
+            dyn for<'a> FnOnce(
+                    &'a mut Self::SyncModel,
+                )
+                    -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>>
+                + Send,
+        >,
+    ) -> Result<(), Self::Error> {
+        Err(RemoteOpenAICompatibleModelError::OpenAIDoesNotSupportSyncModel)
+    }
+
+    async fn stream_text_with_sampler(
+        &self,
+        _prompt: &str,
+        _max_tokens: Option<u32>,
+        _stop_on: Option<&str>,
+        _sampler: Arc<Mutex<dyn Sampler>>,
+    ) -> Result<Self::TextStream, Self::Error> {
+        Err(RemoteOpenAICompatibleModelError::OpenAIDoesNotSupportCustomSamplers)
     }
 }
 
@@ -196,11 +259,12 @@ macro_rules! openai_completion_model {
         #[async_trait::async_trait]
         impl ModelBuilder for $tybuilder {
             type Model = $ty;
+            type Error = OpenAIError;
 
             async fn start_with_loading_handler(
                 self,
                 _: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
-            ) -> anyhow::Result<$ty> {
+            ) -> Result<$ty, Self::Error> {
                 Ok($ty {
                     inner: self.inner.build(),
                 })
@@ -214,7 +278,8 @@ macro_rules! openai_completion_model {
         #[async_trait::async_trait]
         impl crate::model::Model for $ty {
             type TextStream = ChannelTextStream;
-            type SyncModel = crate::SyncModelNotSupported;
+            type SyncModel = RemoteOpenAINotSyncModel;
+            type Error = RemoteOpenAICompatibleModelError;
 
             fn tokenizer(&self) -> Arc<Tokenizer> {
                 panic!("OpenAI does not expose tokenization")
@@ -224,13 +289,53 @@ macro_rules! openai_completion_model {
                 &self,
                 prompt: &str,
                 generation_parameters: GenerationParameters,
-            ) -> anyhow::Result<Self::TextStream> {
+            ) -> Result<Self::TextStream, Self::Error> {
                 self.inner
                     .stream_text_inner(prompt, generation_parameters)
                     .await
             }
+
+            fn run_sync_raw(
+                &self,
+                _f: Box<
+                    dyn for<'a> FnOnce(
+                            &'a mut Self::SyncModel,
+                        ) -> std::pin::Pin<
+                            Box<dyn std::future::Future<Output = ()> + 'a>,
+                        > + Send,
+                >,
+            ) -> Result<(), Self::Error> {
+                Err(RemoteOpenAICompatibleModelError::OpenAIDoesNotSupportSyncModel)
+            }
+
+            async fn stream_text_with_sampler(
+                &self,
+                _prompt: &str,
+                _max_tokens: Option<u32>,
+                _stop_on: Option<&str>,
+                _sampler: Arc<Mutex<dyn Sampler>>,
+            ) -> Result<Self::TextStream, Self::Error> {
+                Err(RemoteOpenAICompatibleModelError::OpenAIDoesNotSupportCustomSamplers)
+            }
         }
     };
+}
+
+/// An error that can occur when running a [`RemoteOpenAICompatibleModel`].
+#[derive(Debug, thiserror::Error)]
+pub enum RemoteOpenAICompatibleModelError {
+    /// OpenAI does not expose tokenization
+    #[error("OpenAI does not expose tokenization")]
+    OpenAIDoesNotExposeTokenization,
+    /// OpenAI does not support sync models
+    #[error("OpenAI does not support sync models")]
+    OpenAIDoesNotSupportSyncModel,
+    /// OpenAI does not support custom samplers
+    #[error("OpenAI does not support custom samplers")]
+    OpenAIDoesNotSupportCustomSamplers,
+    /// An error from the OpenAI API
+    #[error("OpenAI API error: {0}")]
+    OpenAIAPIError(#[from] OpenAIError),
 }
 
 openai_completion_model!(Gpt3_5, Gpt3_5Builder, "gpt-3.5-turbo-instruct");
@@ -304,11 +409,12 @@ impl Default for AdaEmbedder {
 #[async_trait::async_trait]
 impl ModelBuilder for AdaEmbedderBuilder {
     type Model = AdaEmbedder;
+    type Error = OpenAIError;
 
     async fn start_with_loading_handler(
         self,
         _: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
-    ) -> anyhow::Result<AdaEmbedder> {
+    ) -> Result<AdaEmbedder, Self::Error> {
         Ok(self.build())
     }
 
@@ -329,18 +435,19 @@ impl AdaEmbedder {
 
 impl Embedder for AdaEmbedder {
     type VectorSpace = AdaEmbedding;
+    type Error = OpenAIError;
 
     fn embed_for(
         &self,
         input: crate::EmbeddingInput,
-    ) -> BoxedFuture<'_, anyhow::Result<Embedding<Self::VectorSpace>>> {
+    ) -> impl Future<Output = Result<Embedding<Self::VectorSpace>, Self::Error>> + Send {
         self.embed_string(input.text)
     }
 
     fn embed_vec_for(
         &self,
         inputs: Vec<crate::EmbeddingInput>,
-    ) -> BoxedFuture<'_, anyhow::Result<Vec<Embedding<Self::VectorSpace>>>> {
+    ) -> impl Future<Output = Result<Vec<Embedding<Self::VectorSpace>>, Self::Error>> + Send {
         let inputs = inputs
             .into_iter()
             .map(|input| input.text)
@@ -352,7 +459,7 @@ impl Embedder for AdaEmbedder {
     fn embed_string(
         &self,
         input: String,
-    ) -> Pin<Box<dyn Future<Output = anyhow::Result<Embedding<AdaEmbedding>>> + Send + '_>> {
+    ) -> impl Future<Output = Result<Embedding<AdaEmbedding>, Self::Error>> + Send {
         Box::pin(async move {
             let request = CreateEmbeddingRequestArgs::default()
                 .model(Self::MODEL_ID)
@@ -370,8 +477,7 @@ impl Embedder for AdaEmbedder {
     fn embed_vec(
         &self,
         input: Vec<String>,
-    ) -> Pin<Box<dyn Future<Output = anyhow::Result<Vec<Embedding<AdaEmbedding>>>> + Send + '_>>
-    {
+    ) -> impl Future<Output = Result<Vec<Embedding<AdaEmbedding>>, Self::Error>> + Send {
         Box::pin(async move {
             let request = CreateEmbeddingRequestArgs::default()
                 .model(Self::MODEL_ID)

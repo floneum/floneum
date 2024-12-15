@@ -40,11 +40,9 @@ use kalosm_common::FileSource;
 pub use kalosm_common::ModelLoadingProgress;
 use kalosm_language_model::ModelBuilder;
 use kalosm_streams::text_stream::ChannelTextStream;
-use model::WhisperInner;
+use model::{WhisperError, WhisperInner, WhisperLoadingError};
 use rodio::{source::UniformSourceIterator, Source};
 use std::{fmt::Display, ops::Range, str::FromStr, sync::Arc, time::Duration};
-
-use anyhow::Result;
 
 use candle_transformers::models::whisper::{self as m};
 
@@ -216,11 +214,12 @@ impl Default for WhisperBuilder {
 #[async_trait::async_trait]
 impl ModelBuilder for WhisperBuilder {
     type Model = Whisper;
+    type Error = WhisperLoadingError;
 
     async fn start_with_loading_handler(
         self,
         handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
-    ) -> anyhow::Result<Self::Model> {
+    ) -> Result<Self::Model, Self::Error> {
         self.build_with_loading_handler(handler).await
     }
 
@@ -350,7 +349,7 @@ impl WhisperBuilder {
     }
 
     /// Build the model.
-    pub async fn build(self) -> anyhow::Result<Whisper> {
+    pub async fn build(self) -> Result<Whisper, WhisperLoadingError> {
         self.build_with_loading_handler(ModelLoadingProgress::multi_bar_loading_indicator())
             .await
     }
@@ -385,7 +384,7 @@ impl WhisperBuilder {
     pub async fn build_with_loading_handler(
         self,
         mut progress_handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
-    ) -> anyhow::Result<Whisper> {
+    ) -> Result<Whisper, WhisperLoadingError> {
         // Download section
         let whisper = self.get_whisper_model_config();
         let tokenizer_source = whisper.tokenizer;
@@ -822,7 +821,7 @@ impl Whisper {
     }
 
     /// Create a new default whisper model.
-    pub async fn new() -> Result<Self, anyhow::Error> {
+    pub async fn new() -> Result<Self, WhisperLoadingError> {
         let model = Self::builder().build().await?;
         Ok(model)
     }
@@ -830,13 +829,16 @@ impl Whisper {
     /// Transcribe some audio into text.
     ///
     /// Dropping the returned channel will stop the transcription early.
-    pub fn transcribe<S: Source>(&self, input: S) -> Result<ChannelTextStream<Segment>>
+    pub fn transcribe<S: Source>(
+        &self,
+        input: S,
+    ) -> Result<ChannelTextStream<Segment>, WhisperError>
     where
         <S as Iterator>::Item: rodio::Sample,
         f32: FromSample<<S as Iterator>::Item>,
     {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
-        self.transcribe_into(input, sender)?;
+        self.transcribe_into(input, sender);
         Ok(ChannelTextStream::from(receiver))
     }
 
@@ -847,16 +849,15 @@ impl Whisper {
         &self,
         input: S,
         sender: tokio::sync::mpsc::UnboundedSender<Segment>,
-    ) -> Result<()>
-    where
+    ) where
         <S as Iterator>::Item: rodio::Sample,
         f32: FromSample<<S as Iterator>::Item>,
     {
-        let pcm_data: Vec<_> = normalize_audio(input)?;
-        self.inner
+        let pcm_data: Vec<_> = normalize_audio(input);
+        _ = self
+            .inner
             .sender
-            .send(WhisperMessage::Transcribe(pcm_data, sender))?;
-        Ok(())
+            .send(WhisperMessage::Transcribe(pcm_data, sender));
     }
 }
 
@@ -865,7 +866,7 @@ enum WhisperMessage {
     Transcribe(Vec<f32>, tokio::sync::mpsc::UnboundedSender<Segment>),
 }
 
-pub(crate) fn normalize_audio<S: Source>(input: S) -> Result<Vec<f32>>
+pub(crate) fn normalize_audio<S: Source>(input: S) -> Vec<f32>
 where
     <S as Iterator>::Item: rodio::Sample,
     f32: FromSample<<S as Iterator>::Item>,
@@ -873,7 +874,5 @@ where
     let resample = UniformSourceIterator::new(input, 1, m::SAMPLE_RATE as u32);
     let pass_filter = resample.low_pass(3000).high_pass(200).convert_samples();
 
-    let samples = pass_filter.collect::<Vec<f32>>();
-
-    Ok(samples)
+    pass_filter.collect::<Vec<f32>>()
 }

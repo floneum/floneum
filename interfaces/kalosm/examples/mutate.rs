@@ -123,6 +123,7 @@ impl Mutator {
     pub async fn mutate<M>(&self, text: &str, model: &mut M) -> anyhow::Result<String>
     where
         M: Model,
+        M::Error: std::error::Error,
         <M::SyncModel as SyncModel>::Session: Sync + Send,
     {
         let questions = self.task.run(text, model).result().await?;
@@ -166,8 +167,7 @@ async fn eval_with_prompt(llm: &mut Llama, prompt: &str) -> anyhow::Result<f64> 
 
     let hypothetical = Hypothetical::builder()
         .with_task_description(prompt.into())
-        .build()
-        .unwrap();
+        .build();
 
     let mut llama_test_cases = TestCases::new();
 

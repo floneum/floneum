@@ -1,10 +1,11 @@
 //! A task interface that builds on top of [`kalosm_language_model::Model`]
 
-use anyhow::Result;
 use futures_util::Stream;
 use kalosm_language_model::ChatMarkers;
 use kalosm_language_model::Session;
 use kalosm_language_model::StructureParserResult;
+use kalosm_language_model::StructuredTextGenerationError;
+use kalosm_language_model::UnstructuredTextGenerationError;
 use kalosm_language_model::{GenerationParameters, Model, ModelExt, SyncModel, SyncModelExt};
 use kalosm_sample::CreateParserState;
 use kalosm_sample::Parse;
@@ -16,8 +17,10 @@ use rustc_hash::FxHashMap;
 use std::any::Any;
 use std::any::TypeId;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::RwLock;
 use tokio::sync::{mpsc::unbounded_channel, oneshot};
+use Result;
 
 struct TaskSessionEntry<S> {
     cached_prompt: String,
@@ -83,7 +86,10 @@ impl<S: Session> TaskSessionEntry<S> {
         }
     }
 
-    fn create_new_session(&mut self, model: &mut impl SyncModel<Session = S>) -> Result<S> {
+    fn create_new_session<M: SyncModel<Session = S>>(
+        &mut self,
+        model: &mut M,
+    ) -> Result<S, M::Error> {
         let mut session = model.new_session()?;
         model.feed_text(&mut session, &self.cached_prompt, &mut Vec::new())?;
 
@@ -93,7 +99,7 @@ impl<S: Session> TaskSessionEntry<S> {
     }
 
     /// Create a session with the task's system prompt.
-    fn create_session(&mut self, model: &mut impl SyncModel<Session = S>) -> Result<S> {
+    fn create_session<M: SyncModel<Session = S>>(&mut self, model: &mut M) -> Result<S, M::Error> {
         let read = &self.session;
         match read {
             Some(cache) => match cache.try_clone() {
@@ -249,9 +255,12 @@ pub struct UnstructuredRunner {
 }
 
 impl TaskRunner for UnstructuredRunner {
-    type Output = ChannelTextStream;
+    type Output<E: Send + Sync + 'static> = ChannelTextStream;
 
-    fn run<M: Model>(&self, input: String, model: & M) -> Self::Output  where <<M as kalosm_language_model::Model>::SyncModel as kalosm_language_model::SyncModel>::Session: Send + Sync{
+    fn run<M: Model>(&self, input: String, model: & M) -> Self::Output<M::Error>
+        where <<M as kalosm_language_model::Model>::SyncModel as kalosm_language_model::SyncModel>::Session: Send + Sync,
+        M::Error: std::fmt::Debug
+    {
         let chat_markers = model.chat_markers();
 
         let stop_on = chat_markers
@@ -286,12 +295,15 @@ impl TaskRunner for UnstructuredRunner {
                 let mut session = match session_entry.create_session(model) {
                     Ok(session) => session,
                     Err(err) => {
-                        tracing::error!("Failed to start session: {}", err);
+                        tracing::error!("Failed to start session: {:?}", err);
                         return;
                     }
                 };
                 let on_token = |tok: String| {
-                    tx.send(tok)?;
+                    if tx.send(tok).is_err() {
+                        tracing::error!("Failed to send token to output channel");
+                        return Ok(kalosm_language_model::ModelFeedback::Stop);
+                    }
                     Ok(kalosm_language_model::ModelFeedback::Continue)
                 };
                 let prompt = session_entry.task_prompt(&input);
@@ -303,7 +315,7 @@ impl TaskRunner for UnstructuredRunner {
                     sampler,
                     on_token,
                 ) {
-                    tracing::error!("Failed to stream text: {}", err);
+                    tracing::error!("Failed to stream text: {:?}", err);
                 }
             })
         }).unwrap();
@@ -358,17 +370,23 @@ impl<P> TaskRunner for StructuredRunner<P>
 where
     P: SendCreateParserState + Sync + 'static,
 {
-    type Output = StructureParserResult<ChannelTextStream, P::Output>;
+    type Output<E: Send + Sync + 'static> =
+        StructureParserResult<ChannelTextStream, P::Output, StructuredTextGenerationError<E>>;
 
-    fn run<M: Model>(&self, input: String, model: &M) -> Self::Output where <<M as kalosm_language_model::Model>::SyncModel as kalosm_language_model::SyncModel>::Session: Send + Sync{
+    fn run<M: Model>(&self, input: String, model: &M) -> Self::Output<M::Error>
+    where <<M as kalosm_language_model::Model>::SyncModel as kalosm_language_model::SyncModel>::Session: Send + Sync,
+    M::Error: std::fmt::Debug
+    {
         let (tx, rx) = unbounded_channel();
         let (parsed_tx, parsed_rx) = oneshot::channel();
+        let parsed_tx = Arc::new(Mutex::new(Some(parsed_tx)));
+        let parsed_tx_err = parsed_tx.clone();
         let arc_parser = self.parser.clone();
         let sampler = self.sampler.clone();
         let sessions = self.sessions.clone();
         let chat_markers = model.chat_markers();
 
-        model.run_sync(move |model| {
+        let result = model.run_sync(move |model| {
             Box::pin(async move {
                 let mut sessions_write = sessions.sessions.write().unwrap();
                 let session_entry: &mut TaskSessionEntry<<M::SyncModel as SyncModel>::Session> = {
@@ -392,7 +410,7 @@ where
                 let mut session = match session_entry.create_session(model) {
                     Ok(session) => session,
                     Err(err) => {
-                        tracing::error!("Failed to start session: {}", err);
+                        tracing::error!("Failed to start session: {:?}", err);
                         return;
                     }
                 };
@@ -400,7 +418,7 @@ where
                 let state = arc_parser.create_parser_state();
                 let on_token = |tok: String| {
                     tracing::trace!("Task generated token: {}", tok);
-                    tx.send(tok)?;
+                    _ = tx.send(tok);
                     Ok(())
                 };
                 let prompt = session_entry.task_prompt(&input);
@@ -413,11 +431,23 @@ where
                     on_token,
                     Some(4),
                 );
+                let Some(parsed_tx) = parsed_tx.lock().unwrap().take() else {
+                    return;
+                };
                 if parsed_tx.send(result).is_err() {
                     tracing::error!("Failed to send parsed result");
                 }
             })
-        }).unwrap();
+        });
+        if let Err(err) = result {
+            if let Some(parsed_tx) = parsed_tx_err.lock().unwrap().take() {
+                _ = parsed_tx.send(Err(
+                    StructuredTextGenerationError::UnstructuredTextGenerationError(
+                        UnstructuredTextGenerationError::ModelError(err),
+                    ),
+                ));
+            }
+        }
 
         StructureParserResult::new(rx.into(), parsed_rx)
     }
@@ -427,10 +457,10 @@ where
 /// Something that can run a task.
 pub trait TaskRunner {
     /// The output of the task.
-    type Output: Stream<Item = String> + Send + Sync + Unpin + 'static;
+    type Output<E: Send + Sync + 'static>: Stream<Item = String> + Send + Sync + Unpin + 'static;
 
     /// Run the task with a input and a model.
-    fn run<M: Model>(&self, input: String, model: & M) -> Self::Output where <<M as kalosm_language_model::Model>::SyncModel as kalosm_language_model::SyncModel>::Session: Send + Sync;
+    fn run<M: Model>(&self, input: String, model: & M) -> Self::Output<M::Error> where <<M as kalosm_language_model::Model>::SyncModel as kalosm_language_model::SyncModel>::Session: Send + Sync, M::Error: std::fmt::Debug;
 }
 
 /// A task session lets you efficiently run a task with a model. The task session will reuse the model's cache to avoid re-feeding the task prompt repeatedly.
@@ -491,10 +521,11 @@ impl Task {
 
 impl<R: TaskRunner> Task<R> {
     /// Run the task with a message.
-    pub fn run<M>(&self, message: impl Into<String>, model: &M) -> R::Output
+    pub fn run<M>(&self, message: impl Into<String>, model: &M) -> R::Output<M::Error>
     where
         M: Model,
-         <<M as kalosm_language_model::Model>::SyncModel as kalosm_language_model::SyncModel>::Session: Send + Sync
+         <<M as kalosm_language_model::Model>::SyncModel as kalosm_language_model::SyncModel>::Session: Send + Sync,
+         M::Error: std::fmt::Debug
     {
         let message = message.into();
         let message = message.trim().to_string();

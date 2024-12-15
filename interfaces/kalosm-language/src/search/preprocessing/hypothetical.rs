@@ -1,4 +1,4 @@
-use kalosm_language_model::{Embedder, Model, SyncModel};
+use kalosm_language_model::{Embedder, Model, StructuredTextGenerationError, SyncModel};
 use kalosm_sample::{LiteralParser, ParserExt, StopOn};
 
 use crate::{
@@ -77,7 +77,7 @@ impl HypotheticalBuilder {
     }
 
     /// Build the hypothetical chunker.
-    pub fn build(self) -> anyhow::Result<Hypothetical> {
+    pub fn build(self) -> Hypothetical {
         let task_description = self
             .task_description
             .unwrap_or_else(|| TASK_DESCRIPTION.to_string());
@@ -94,7 +94,7 @@ impl HypotheticalBuilder {
             .with_examples(examples)
             .build();
 
-        Ok(Hypothetical { chunking, task })
+        Hypothetical { chunking, task }
     }
 }
 
@@ -115,10 +115,15 @@ impl Hypothetical {
     }
 
     /// Generate a list of hypothetical questions about the given text.
-    pub async fn generate_question<M>(&self, text: &str, model: &M) -> anyhow::Result<Vec<String>>
+    pub async fn generate_question<M>(
+        &self,
+        text: &str,
+        model: &M,
+    ) -> Result<Vec<String>, StructuredTextGenerationError<M::Error>>
     where
         M: Model,
         <M::SyncModel as SyncModel>::Session: Sync + Send,
+        M::Error: std::fmt::Debug,
     {
         let questions = self.task.run(text, model).result().await?;
         let documents = questions
@@ -143,6 +148,17 @@ impl Hypothetical {
     }
 }
 
+/// An error that can occur when chunking a document with [`HypotheticalChunker`].
+#[derive(Debug, thiserror::Error)]
+pub enum HypotheticalChunkerError<E1: Send + Sync + 'static, E2: Send + Sync + 'static> {
+    /// An error from the text generation model.
+    #[error("Text generation model error: {0}")]
+    TextModelError(#[from] StructuredTextGenerationError<E1>),
+    /// An error from the embedding model.
+    #[error("Embedding model error: {0}")]
+    EmbeddingModelError(E2),
+}
+
 /// A hypothetical chunker.
 pub struct HypotheticalChunker<'a, M: Model>
 where
@@ -156,12 +172,15 @@ impl<'a, M> Chunker for HypotheticalChunker<'a, M>
 where
     M: Model,
     <M::SyncModel as SyncModel>::Session: Sync + Send,
+    M::Error: std::fmt::Debug,
 {
+    type Error<E: Send + Sync + 'static> = HypotheticalChunkerError<M::Error, E>;
+
     async fn chunk<E: Embedder + Send>(
         &self,
         document: &Document,
         embedder: &E,
-    ) -> anyhow::Result<Vec<Chunk<E::VectorSpace>>> {
+    ) -> Result<Vec<Chunk<E::VectorSpace>>, Self::Error<E::Error>> {
         let body = document.body();
 
         #[allow(clippy::single_range_in_vec_init)]
@@ -186,7 +205,10 @@ where
             questions.append(&mut chunk_questions);
             questions_count.push(chunk_questions.len());
         }
-        let embeddings = embedder.embed_vec(questions).await?;
+        let embeddings = embedder
+            .embed_vec(questions)
+            .await
+            .map_err(HypotheticalChunkerError::EmbeddingModelError)?;
 
         let mut chunks = Vec::with_capacity(embeddings.len());
         let mut questions_count = questions_count.iter();

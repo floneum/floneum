@@ -40,27 +40,21 @@ impl Default for MicInput {
 
 impl MicInput {
     /// Records audio for a given duration.
-    pub async fn record_until(
-        &self,
-        deadline: Instant,
-    ) -> Result<SamplesBuffer<f32>, anyhow::Error> {
-        let mut stream = self.stream()?;
+    pub async fn record_until(&self, deadline: Instant) -> SamplesBuffer<f32> {
+        let mut stream = self.stream();
         tokio::time::sleep_until(deadline).await;
-        Ok(stream.read_all())
+        stream.read_all()
     }
 
     /// Records audio for a given duration.
-    pub fn record_until_blocking(
-        &self,
-        deadline: std::time::Instant,
-    ) -> Result<SamplesBuffer<f32>, anyhow::Error> {
-        let mut stream = self.stream()?;
+    pub fn record_until_blocking(&self, deadline: std::time::Instant) -> SamplesBuffer<f32> {
+        let mut stream = self.stream();
         std::thread::sleep(deadline - std::time::Instant::now());
-        Ok(stream.read_all())
+        stream.read_all()
     }
 
     /// Creates a new stream of audio data from the microphone.
-    pub fn stream(&self) -> Result<MicStream, anyhow::Error> {
+    pub fn stream(&self) -> MicStream {
         let (tx, rx) = mpsc::unbounded::<Vec<f32>>();
 
         let config = self.config.clone();
@@ -93,26 +87,34 @@ impl MicInput {
 
             let start_stream = || {
                 let stream = match config.sample_format() {
-                    cpal::SampleFormat::I8 => build_stream::<i8>(&device, &config, tx)?,
-                    cpal::SampleFormat::I16 => build_stream::<i16>(&device, &config, tx)?,
-                    cpal::SampleFormat::I32 => build_stream::<i32>(&device, &config, tx)?,
-                    cpal::SampleFormat::F32 => build_stream::<f32>(&device, &config, tx)?,
+                    cpal::SampleFormat::I8 => build_stream::<i8>(&device, &config, tx),
+                    cpal::SampleFormat::I16 => build_stream::<i16>(&device, &config, tx),
+                    cpal::SampleFormat::I32 => build_stream::<i32>(&device, &config, tx),
+                    cpal::SampleFormat::F32 => build_stream::<f32>(&device, &config, tx),
                     sample_format => {
-                        return Err(anyhow::Error::msg(format!(
-                            "Unsupported sample format '{sample_format}'"
-                        )))
+                        tracing::error!("Unsupported sample format '{sample_format}'");
+                        return None;
                     }
                 };
 
-                stream.play()?;
+                let stream = match stream {
+                    Ok(stream) => stream,
+                    Err(err) => {
+                        tracing::error!("Error starting stream: {}", err);
+                        return None;
+                    }
+                };
 
-                Ok(stream)
+                if let Err(err) = stream.play() {
+                    tracing::error!("Error playing stream: {}", err);
+                }
+
+                Some(stream)
             };
 
             let stream = match start_stream() {
-                Ok(stream) => stream,
-                Err(err) => {
-                    tracing::error!("Error starting stream: {}", err);
+                Some(stream) => stream,
+                None => {
                     return;
                 }
             };
@@ -125,12 +127,12 @@ impl MicInput {
         });
 
         let receiver = rx.map(futures_util::stream::iter).flatten();
-        Ok(MicStream {
+        MicStream {
             drop_tx,
             config: self.config.clone(),
             receiver: Box::pin(receiver),
             read_data: Vec::new(),
-        })
+        }
     }
 }
 

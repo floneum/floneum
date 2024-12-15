@@ -365,7 +365,7 @@ impl<C: Class> Classifier<C> {
         learning_rate: f64,
         batch_size: usize,
         mut progress: impl FnMut(ClassifierProgress),
-    ) -> anyhow::Result<f32> {
+    ) -> Result<f32> {
         // unstack both tensors into a list of tensors
         let train_len = m.train_inputs.dims()[0];
         let train_results = m.train_classes.chunk(train_len, 0)?;
@@ -433,7 +433,7 @@ impl<C: Class> Classifier<C> {
                     "Epoch: {epoch:5} Test accuracy: {:5.5}% ({}/{})",
                     final_accuracy, test_cases_passed, test_cases,
                 );
-                Ok::<_, anyhow::Error>(())
+                Ok::<_, candle_core::Error>(())
             })?;
         }
         Ok(final_accuracy)

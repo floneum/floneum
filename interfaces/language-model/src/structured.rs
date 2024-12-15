@@ -3,8 +3,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::SyncModel;
-use crate::TokenOutputStream;
+use crate::{StructuredTextGenerationError, SyncModel};
+use crate::{TokenOutputStream, UnstructuredTextGenerationError};
 use kalosm_sample::CreateParserState;
 use kalosm_sample::{LiteralParser, ParseStatus, Parser, ParserExt};
 use llm_samplers::prelude::{Logit, Logits};
@@ -20,15 +20,17 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
     parser: P,
     parser_state: P::PartialState,
     mut sampler: Arc<Mutex<dyn Sampler>>,
-    mut on_token: impl FnMut(String) -> anyhow::Result<()>,
+    mut on_token: impl FnMut(String) -> Result<(), M::Error>,
     top_k: Option<usize>,
-) -> anyhow::Result<P::Output> {
+) -> Result<P::Output, StructuredTextGenerationError<M::Error>> {
     let tokenizer = llm.tokenizer();
 
     let prompt_text = prompt.to_string();
-    let prompt_tokens = tokenizer
-        .encode(prompt_text, false)
-        .map_err(|e| anyhow::anyhow!(e))?;
+    let prompt_tokens = tokenizer.encode(prompt_text, false).map_err(|e| {
+        StructuredTextGenerationError::UnstructuredTextGenerationError(
+            UnstructuredTextGenerationError::TokenizationError(e),
+        )
+    })?;
     let mut prompt_tokens = prompt_tokens.get_ids();
 
     // Prompt healing
@@ -43,11 +45,21 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
     let mut unprocessed_token_count = prompt_tokens.len();
     let mut token_stream = TokenOutputStream::new(tokenizer.clone());
     for token in prompt_tokens {
-        token_stream.next_token(*token)?;
+        token_stream.next_token(*token).map_err(|err| {
+            StructuredTextGenerationError::UnstructuredTextGenerationError(
+                UnstructuredTextGenerationError::TokenOutputStreamError(err),
+            )
+        })?;
     }
 
     let remaining_prompt_text = last_token
-        .map(|token| token_stream.peek_token(token))
+        .map(|token| {
+            token_stream.peek_token(token).map_err(|err| {
+                StructuredTextGenerationError::UnstructuredTextGenerationError(
+                    UnstructuredTextGenerationError::TokenOutputStreamError(err),
+                )
+            })
+        })
         .transpose()?
         .flatten()
         .unwrap_or_default();
@@ -70,7 +82,12 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
             session,
             &tokens[tokens.len() - unprocessed_token_count..],
             &mut logit_probs,
-        )?;
+        )
+        .map_err(|err| {
+            StructuredTextGenerationError::UnstructuredTextGenerationError(
+                UnstructuredTextGenerationError::ModelError(err),
+            )
+        })?;
         let resources = &mut SamplerResources {
             previous_tokens: tokens,
             rng: &mut rng,
@@ -97,7 +114,7 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
             token_cache.expand(
                 &(0..logit_probs.len() as u32).collect::<Vec<_>>(),
                 &token_stream,
-            )?;
+            );
         }
 
         const DETOKENIZATION_INITIAL_BATCH_SIZE: usize = 64;
@@ -129,7 +146,7 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
                     token_cache.expand_with_logits(
                         &logits_indexed[i..=new_partitioned_index],
                         &token_stream,
-                    )?;
+                    );
 
                     // Double the batch size for next time
                     detokenization_batch_size = detokenization_batch_size.saturating_mul(4);
@@ -166,19 +183,31 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
 
         // If there are no valid tokens, return an error
         if !valid_tokens {
-            return Err(anyhow::anyhow!("No valid tokens found"));
+            return Err(StructuredTextGenerationError::NoValidTokens);
         }
         let token_id = sampler
-            .sample_token(resources, &mut logits)?
-            .ok_or(anyhow::anyhow!("Failed to sample constrained tokens"))?;
+            .sample_token(resources, &mut logits)
+            .map_err(|err| {
+                StructuredTextGenerationError::UnstructuredTextGenerationError(
+                    UnstructuredTextGenerationError::SamplerError(err.into()),
+                )
+            })?
+            .ok_or(StructuredTextGenerationError::NoValidTokens)?;
 
         unprocessed_token_count = 1;
         let (result, parsed_bytes) = state_map
             .get_mut(token_id as usize)
             .unwrap()
             .take()
-            .ok_or(anyhow::anyhow!("Token {} not found in state map", token_id))?;
-        let mut token = token_stream.next_token(token_id)?.unwrap();
+            .unwrap_or_else(|| panic!("Token {} not found in state map", token_id));
+        let mut token = token_stream
+            .next_token(token_id)
+            .map_err(|err| {
+                StructuredTextGenerationError::UnstructuredTextGenerationError(
+                    UnstructuredTextGenerationError::TokenOutputStreamError(err),
+                )
+            })?
+            .unwrap();
         token.truncate(parsed_bytes);
         tracing::trace!("Adding token {} to parser", token);
         // If we are still loading the initial prompt, don't send that part of the text
@@ -188,7 +217,11 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
             }
             strip_required_next = false;
         }
-        on_token(token)?;
+        on_token(token).map_err(|err| {
+            StructuredTextGenerationError::UnstructuredTextGenerationError(
+                UnstructuredTextGenerationError::ModelError(err),
+            )
+        })?;
 
         if let Some(result) = update_state(
             &parser,
@@ -212,15 +245,15 @@ fn cmp_logits(a: &Logit, b: &Logit) -> std::cmp::Ordering {
 }
 
 #[allow(unused, clippy::all)]
-fn update_state<P: Parser>(
+fn update_state<P: Parser, E>(
     parser: &P,
     parser_state: &mut P::PartialState,
     result: ParseStatus<P::PartialState, P::Output>,
     tokenizer: &Tokenizer,
     token_stream: &mut TokenOutputStream,
-    on_token: &mut impl FnMut(String) -> anyhow::Result<()>,
+    on_token: &mut impl FnMut(String) -> Result<(), E>,
     unprocessed_token_count: &mut usize,
-) -> anyhow::Result<Option<P::Output>> {
+) -> Result<Option<P::Output>, StructuredTextGenerationError<E>> {
     match result {
         kalosm_sample::ParseStatus::Incomplete {
             new_state,
@@ -231,7 +264,13 @@ fn update_state<P: Parser>(
                 Ok(None)
             } else {
                 // The token may decode to a string that is a valid prefix of the required next token, but in a way that doesn't let us decode the required next tokens
-                let Some(mut extra_tokens) = token_stream.encode_after(&required_next)? else {
+                let Some(mut extra_tokens) =
+                    token_stream.encode_after(&required_next).map_err(|err| {
+                        StructuredTextGenerationError::UnstructuredTextGenerationError(
+                            UnstructuredTextGenerationError::TokenOutputStreamError(err),
+                        )
+                    })?
+                else {
                     return Ok(None);
                 };
                 // Remove the last token to avoid influencing the next token
@@ -242,7 +281,14 @@ fn update_state<P: Parser>(
                 }
 
                 let mut all_required_next = String::new();
-                if let Some(next) = token_stream.peek_next_tokens(extra_tokens.iter().copied())? {
+                if let Some(next) = token_stream
+                    .peek_next_tokens(extra_tokens.iter().copied())
+                    .map_err(|err| {
+                        StructuredTextGenerationError::UnstructuredTextGenerationError(
+                            UnstructuredTextGenerationError::TokenOutputStreamError(err),
+                        )
+                    })?
+                {
                     all_required_next = next;
                 }
                 // The token may decode to a string that is a valid prefix of the required next token, but in a way that doesn't encode the same way.
@@ -250,9 +296,17 @@ fn update_state<P: Parser>(
                 if !required_next.starts_with(&all_required_next) {
                     return Ok(None);
                 }
-                token_stream.next_tokens(&extra_tokens)?;
+                token_stream.next_tokens(&extra_tokens).map_err(|err| {
+                    StructuredTextGenerationError::UnstructuredTextGenerationError(
+                        UnstructuredTextGenerationError::TokenOutputStreamError(err),
+                    )
+                })?;
                 *unprocessed_token_count += extra_tokens.len();
-                on_token(all_required_next.clone())?;
+                on_token(all_required_next.clone()).map_err(|err| {
+                    StructuredTextGenerationError::UnstructuredTextGenerationError(
+                        UnstructuredTextGenerationError::ModelError(err),
+                    )
+                })?;
                 let mut result = parser
                     .parse(parser_state, all_required_next.as_bytes())
                     .unwrap_or_else(|_| {
@@ -335,15 +389,11 @@ impl DetokenizationCache {
         }
     }
 
-    fn expand_with_logits(
-        &mut self,
-        tokens: &[Logit],
-        stream: &TokenOutputStream,
-    ) -> anyhow::Result<()> {
+    fn expand_with_logits(&mut self, tokens: &[Logit], stream: &TokenOutputStream) {
         stream.peek_tokens(
             tokens.into_par_iter().map(|logit| logit.token_id),
             &mut self.vec,
-        )?;
+        );
 
         for (logit, token) in tokens.iter().zip(self.vec.drain(..)) {
             self.cache[logit.token_id as usize] = match token {
@@ -351,12 +401,10 @@ impl DetokenizationCache {
                 None => TokenCacheStatus::Invalid,
             };
         }
-
-        Ok(())
     }
 
-    fn expand(&mut self, tokens: &[u32], stream: &TokenOutputStream) -> anyhow::Result<()> {
-        stream.peek_tokens(tokens.into_par_iter().copied(), &mut self.vec)?;
+    fn expand(&mut self, tokens: &[u32], stream: &TokenOutputStream) {
+        stream.peek_tokens(tokens.into_par_iter().copied(), &mut self.vec);
 
         for (&i, token) in tokens.iter().zip(self.vec.drain(..)) {
             self.cache[i as usize] = match token {
@@ -364,8 +412,6 @@ impl DetokenizationCache {
                 None => TokenCacheStatus::Invalid,
             };
         }
-
-        Ok(())
     }
 
     fn clear(&mut self, size: usize) {

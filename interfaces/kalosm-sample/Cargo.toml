@@ -9,7 +9,6 @@ authors = ["Evan Almloff"]
 keywords = ["ai", "llm", "llama", "mistral", "nlp"]
 
 [dependencies]
-anyhow = "1.0.71"
 regex-automata = "0.4.5"
 kalosm-parse-macro = { workspace = true }
 

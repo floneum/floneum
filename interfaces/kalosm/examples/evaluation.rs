@@ -34,7 +34,7 @@ async fn main() {
 
     let llm = Llama::new_chat().await.unwrap();
 
-    let hypothetical = Hypothetical::builder().build().unwrap();
+    let hypothetical = Hypothetical::builder().build();
 
     let mut test_cases = TestCases::new();
 
@@ -56,8 +56,7 @@ async fn main() {
 
     let hypothetical = Hypothetical::builder()
         .with_examples(alternate_examples)
-        .build()
-        .unwrap();
+        .build();
 
     let mut test_cases = TestCases::new();
 

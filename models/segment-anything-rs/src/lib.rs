@@ -41,7 +41,7 @@ impl SegmentAnythingBuilder {
     }
 
     /// Builds the [`SegmentAnything`] model.
-    pub fn build(self) -> anyhow::Result<SegmentAnything> {
+    pub fn build(self) -> Result<SegmentAnything, LoadSegmentAnythingError> {
         SegmentAnything::new(self)
     }
 }
@@ -97,15 +97,15 @@ pub struct SegmentAnythingInferenceSettings {
 
 impl SegmentAnythingInferenceSettings {
     /// Creates a new [`SegmentAnythingInferenceSettings`] from an image.
-    pub fn new<I: GenericImageView<Pixel = Rgba<u8>>>(input: I) -> anyhow::Result<Self> {
+    pub fn new<I: GenericImageView<Pixel = Rgba<u8>>>(input: I) -> Self {
         let mut image = ImageBuffer::new(input.width(), input.height());
-        image.copy_from(&input, 0, 0)?;
-        Ok(Self {
+        image.copy_from(&input, 0, 0).unwrap();
+        Self {
             threshold: 0.,
             goal_points: Vec::new(),
             avoid_points: Vec::new(),
             image,
-        })
+        }
     }
 
     /// Sets the detection threshold for the mask, 0 is the default value.
@@ -144,11 +144,33 @@ impl SegmentAnythingInferenceSettings {
     pub fn set_image<I: GenericImageView<Pixel = Rgba<u8>>>(
         mut self,
         image: I,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self, image::ImageError> {
         self.image = ImageBuffer::new(image.width(), image.height());
         self.image.copy_from(&image, 0, 0)?;
         Ok(self)
     }
+}
+
+/// An error that can occur when loading a [`SegmentAnything`] model.
+#[derive(Debug, thiserror::Error)]
+pub enum LoadSegmentAnythingError {
+    /// An error that can occur when trying to load a [`SegmentAnything`] model into a device.
+    #[error("Failed to load model into device: {0}")]
+    LoadModel(#[from] candle_core::Error),
+    /// An error that can occur when downloading a [`SegmentAnything`] model from Hugging Face.
+    #[error("Failed to download model from Hugging Face: {0}")]
+    DownloadModel(#[from] hf_hub::api::sync::ApiError),
+}
+
+/// An error that can occur when running a [`SegmentAnything`] model.
+#[derive(Debug, thiserror::Error)]
+pub enum SegmentAnythingInferenceError {
+    /// An error that can occur when trying to run a [`SegmentAnything`] model.
+    #[error("Failed to run model: {0}")]
+    RunModel(#[from] candle_core::Error),
+    /// An error that can occur when converting the result of a [`SegmentAnything`] model to an image.
+    #[error("Failed to merge masks")]
+    MergeMasks,
 }
 
 /// The [segment anything](https://segment-anything.com/) model.
@@ -163,7 +185,7 @@ impl SegmentAnything {
         SegmentAnythingBuilder::default()
     }
 
-    fn new(settings: SegmentAnythingBuilder) -> anyhow::Result<Self> {
+    fn new(settings: SegmentAnythingBuilder) -> Result<Self, LoadSegmentAnythingError> {
         let SegmentAnythingBuilder { source } = settings;
         let model = {
             let api = hf_hub::api::sync::Api::new()?;
@@ -205,7 +227,7 @@ impl SegmentAnything {
     pub fn segment_from_points(
         &self,
         settings: SegmentAnythingInferenceSettings,
-    ) -> anyhow::Result<DynamicImage> {
+    ) -> Result<DynamicImage, SegmentAnythingInferenceError> {
         let SegmentAnythingInferenceSettings {
             threshold,
             goal_points,
@@ -238,10 +260,8 @@ impl SegmentAnything {
 
         let mask_pixels = mask.permute((1, 2, 0))?.flatten_all()?.to_vec1::<u8>()?;
         let mask_img: image::ImageBuffer<image::Rgb<u8>, Vec<u8>> =
-            match image::ImageBuffer::from_raw(w as u32, h as u32, mask_pixels) {
-                Some(image) => image,
-                None => anyhow::bail!("error saving merged image"),
-            };
+            image::ImageBuffer::from_raw(w as u32, h as u32, mask_pixels)
+                .ok_or(SegmentAnythingInferenceError::MergeMasks)?;
 
         Ok(image::DynamicImage::from(mask_img).resize_to_fill(
             image_width,
@@ -250,7 +270,7 @@ impl SegmentAnything {
         ))
     }
 
-    fn image_to_tensor(&self, image: DynamicImage) -> anyhow::Result<Tensor> {
+    fn image_to_tensor(&self, image: DynamicImage) -> candle_core::Result<Tensor> {
         let image = {
             let resize_longest = sam::IMAGE_SIZE;
             let (height, width) = (image.height(), image.width());
@@ -288,7 +308,10 @@ impl SegmentAnything {
     ///     img.save(&format!("{}.png", i)).unwrap();
     /// }
     /// ```
-    pub fn segment_everything(&self, image: DynamicImage) -> anyhow::Result<Vec<DynamicImage>> {
+    pub fn segment_everything(
+        &self,
+        image: DynamicImage,
+    ) -> Result<Vec<DynamicImage>, SegmentAnythingInferenceError> {
         let image = self.image_to_tensor(image)?;
 
         let bboxes = self.sam.generate_masks(&image, 32, 0, 512. / 1500., 1)?;
@@ -299,15 +322,16 @@ impl SegmentAnything {
             let mask = mask.broadcast_as((3, h, w))?;
             let (channel, height, width) = mask.dims3()?;
             if channel != 3 {
-                anyhow::bail!("save_image expects an input of shape (3, height, width)")
+                return Err(candle_core::Error::Msg(
+                    "save_image expects an input of shape (3, height, width)".to_string(),
+                )
+                .into());
             }
             let mask = mask.permute((1, 2, 0))?.flatten_all()?;
             let pixels = mask.to_vec1::<u8>()?;
             let image: image::ImageBuffer<image::Rgb<u8>, Vec<u8>> =
-                match image::ImageBuffer::from_raw(width as u32, height as u32, pixels) {
-                    Some(image) => image,
-                    None => anyhow::bail!("error creating image from tensor"),
-                };
+                image::ImageBuffer::from_raw(width as u32, height as u32, pixels)
+                    .ok_or(SegmentAnythingInferenceError::MergeMasks)?;
             let image = image::DynamicImage::from(image);
             let image =
                 image.resize_to_fill(w as u32, h as u32, image::imageops::FilterType::CatmullRom);

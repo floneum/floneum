@@ -1,6 +1,6 @@
 use std::any::{Any, TypeId};
 
-use kalosm_language::prelude::*;
+use kalosm_language::{prelude::*, rbert::BertLoadingError};
 use rand::{random, seq::index::sample, Rng};
 
 use crate::{BertDistance, Metric, TestCases};
@@ -55,6 +55,7 @@ where
 impl<'a, M: Model, P, Met: Metric<String> + 'static> PromptAnnealerBuilder<'a, M, P, Met>
 where
     <<M as Model>::SyncModel as SyncModel>::Session: Sync + Send,
+    M::Error: std::fmt::Debug,
     P: Clone + TaskBuilderReturn + Send + Sync + 'static,
 {
     /// Set the test set to use for evaluation. If no test set is provided, a subset of the train set will be used.
@@ -94,7 +95,7 @@ where
     }
 
     /// Build the [`PromptAnnealer`].
-    pub async fn build(self) -> anyhow::Result<PromptAnnealer<'a, M, P, Met>> {
+    pub async fn build(self) -> Result<PromptAnnealer<'a, M, P, Met>, PromptAnnealerBuilderError> {
         let mut metric = match self.metric {
             Some(metric) => metric,
             None => {
@@ -103,7 +104,7 @@ where
                         .downcast::<Met>()
                         .unwrap()
                 } else {
-                    return Err(anyhow::anyhow!("No metric provided"));
+                    return Err(PromptAnnealerBuilderError::NoMetric);
                 }
             }
         };
@@ -215,6 +216,17 @@ where
     }
 }
 
+/// An error that can occur when building a [`PromptAnnealer`].
+#[derive(Debug, thiserror::Error)]
+pub enum PromptAnnealerBuilderError {
+    /// No metric was provided.
+    #[error("No metric provided")]
+    NoMetric,
+    /// The default embedding model failed to load.
+    #[error("Failed to load default embedding model: {0}")]
+    DefaultEmbeddingModel(#[from] BertLoadingError),
+}
+
 /// A prompt annealer that takes a set of examples and tries to find the best combination and order of examples to use as a prompt for a given task.
 pub struct PromptAnnealer<'a, M: Model, P = ChannelTextStream, Met: Metric<String> = BertDistance>
 where
@@ -232,6 +244,7 @@ where
 impl<'a, M: Model, P, Met> PromptAnnealer<'a, M, P, Met>
 where
     <<M as Model>::SyncModel as SyncModel>::Session: Sync + Send,
+    M::Error: std::fmt::Debug,
     P: Clone + TaskBuilderReturn + Send + Sync + 'static,
     Met: Metric<String>,
 {
@@ -294,6 +307,7 @@ impl ExamplesInstance {
     metric: &mut impl Metric<String>,
     task: TaskBuilder<P>,
     ) -> Self where M: Model,
+    M::Error: std::fmt::Debug,
     <<M as kalosm_language::prelude::Model>::SyncModel as kalosm_language::prelude::SyncModel>::Session: Sync+ Send,
     P: TaskBuilderReturn + Send + Sync + 'static,{
         let current_evaluation = evaluate(&current_examples, test, llm, metric, task).await;
@@ -314,6 +328,7 @@ impl ExamplesInstance {
         task: TaskBuilder<P>,
     ) where
         M: Model,
+        M::Error: std::fmt::Debug,
         <M::SyncModel as SyncModel>::Session: Send + Sync,
         P: TaskBuilderReturn + Send + Sync + 'static,
     {
@@ -399,6 +414,7 @@ async fn evaluate<'a, M: Model, P>(
 where
     <M::SyncModel as SyncModel>::Session: Send + Sync,
     P: TaskBuilderReturn + Send + Sync + 'static,
+    M::Error: std::fmt::Debug,
 {
     let examples_tokens: usize = examples
         .iter()

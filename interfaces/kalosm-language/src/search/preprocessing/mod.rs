@@ -33,19 +33,25 @@ pub use html::*;
 
 /// A strategy for chunking a document into smaller pieces.
 pub trait Chunker {
+    /// The error type that can occur when chunking a document.
+    type Error<E: Send + Sync + 'static>;
+
     /// Chunk a document into embedded snippets.
     fn chunk<E: Embedder + Send>(
         &self,
         document: &Document,
         embedder: &E,
-    ) -> impl std::future::Future<Output = anyhow::Result<Vec<Chunk<E::VectorSpace>>>> + Send;
+    ) -> impl std::future::Future<Output = Result<Vec<Chunk<E::VectorSpace>>, Self::Error<E::Error>>>
+           + Send;
 
     /// Chunk a batch of documents into embedded snippets.
     fn chunk_batch<'a, I, E: Embedder + Send>(
         &self,
         documents: I,
         embedder: &E,
-    ) -> impl std::future::Future<Output = anyhow::Result<Vec<Vec<Chunk<E::VectorSpace>>>>> + Send
+    ) -> impl std::future::Future<
+        Output = Result<Vec<Vec<Chunk<E::VectorSpace>>>, Self::Error<E::Error>>,
+    > + Send
     where
         I: IntoIterator<Item = &'a Document> + Send,
         I::IntoIter: Send,

@@ -9,7 +9,6 @@ authors = ["Evan Almloff"]
 keywords = ["ai", "whisper"]
 
 [dependencies]
-anyhow = "1.0.70"
 cpal = "0.15.3"
 itertools = "0.10.5"
 rand = "0.8.5"
@@ -48,3 +47,4 @@ voice_detection = ["dep:voice_activity_detector", "dep:ort", "dep:ort-sys"]
 
 [dev-dependencies]
 kalosm = { workspace = true, features = ["sound"] }
+anyhow.workspace = true

@@ -1,4 +1,4 @@
-use kalosm_language_model::{Embedder, Model, SyncModel};
+use kalosm_language_model::{Embedder, Model, StructuredTextGenerationError, SyncModel};
 use kalosm_sample::{LiteralParser, ParserExt};
 
 use crate::{
@@ -28,10 +28,15 @@ impl Summarizer {
     }
 
     /// Generate a summary for a document.
-    pub async fn generate_summary<M>(&self, text: &str, model: &M) -> anyhow::Result<Vec<String>>
+    pub async fn generate_summary<M>(
+        &self,
+        text: &str,
+        model: &M,
+    ) -> Result<Vec<String>, StructuredTextGenerationError<M::Error>>
     where
         M: Model,
         <M::SyncModel as SyncModel>::Session: Sync + Send,
+        M::Error: std::fmt::Debug,
     {
         let prompt = format!("Generate a summary of the following text:\n{}", text);
 
@@ -54,6 +59,17 @@ impl Summarizer {
     }
 }
 
+/// An error that can occur when chunking a document with [`SummaryChunker`].
+#[derive(Debug, thiserror::Error)]
+pub enum SummaryChunkerError<E1: Send + Sync + 'static, E2: Send + Sync + 'static> {
+    /// An error from the text generation model.
+    #[error("Text generation model error: {0}")]
+    TextModelError(#[from] StructuredTextGenerationError<E1>),
+    /// An error from the embedding model.
+    #[error("Embedding model error: {0}")]
+    EmbeddingModelError(E2),
+}
+
 /// A summary chunker.
 pub struct SummaryChunker<'a, M> {
     summary: &'a Summarizer,
@@ -64,12 +80,15 @@ impl<'a, M> Chunker for SummaryChunker<'a, M>
 where
     M: Model,
     <M::SyncModel as SyncModel>::Session: Sync + Send,
+    M::Error: std::fmt::Debug,
 {
+    type Error<E: Send + Sync + 'static> = SummaryChunkerError<M::Error, E>;
+
     async fn chunk<E: Embedder + Send>(
         &self,
         document: &Document,
         embedder: &E,
-    ) -> anyhow::Result<Vec<Chunk<E::VectorSpace>>> {
+    ) -> Result<Vec<Chunk<E::VectorSpace>>, Self::Error<E::Error>> {
         let body = document.body();
 
         #[allow(clippy::single_range_in_vec_init)]
@@ -87,7 +106,10 @@ where
             questions.append(&mut chunk_questions);
             questions_count.push(chunk_questions.len());
         }
-        let embeddings = embedder.embed_vec(questions).await?;
+        let embeddings = embedder
+            .embed_vec(questions)
+            .await
+            .map_err(SummaryChunkerError::EmbeddingModelError)?;
 
         let mut chunks = Vec::with_capacity(embeddings.len());
         let mut questions_count = questions_count.iter();

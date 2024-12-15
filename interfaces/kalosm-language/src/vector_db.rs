@@ -386,7 +386,7 @@ pub struct VectorDBSearchBuilder<'a, S: VectorSpace> {
     filter: Option<Candidates>,
 }
 
-impl<'a, S: VectorSpace> VectorDBSearchBuilder<'a, S> {
+impl<S: VectorSpace> VectorDBSearchBuilder<'_, S> {
     /// Set the number of results to return. Defaults to 10.
     pub fn with_results(mut self, results: usize) -> Self {
         self.results = Some(results);
@@ -436,15 +436,6 @@ pub struct VectorDBSearchResult {
 /// A unique identifier for an embedding. If you delete an embedding, the id will be recycled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct EmbeddingId(pub u32);
-
-#[tokio::test]
-async fn test_vector_db_add_embedding() {
-    let db: VectorDB = VectorDB::new().unwrap();
-    let id = db.add_embedding(Embedding::from([1.0, 2.0, 3.0])).unwrap();
-    assert_eq!(db.get_embedding(id).unwrap().to_vec(), vec![1.0, 2.0, 3.0]);
-    db.remove_embedding(id).unwrap();
-    assert!(db.get_embedding(id).is_err());
-}
 
 #[tokio::test]
 async fn test_vector_db_get_closest() {

@@ -197,7 +197,7 @@ fn function_equation() {
     assert!(result.is_ok());
 }
 
-/// A tool that can search the web
+/// A tool that can calculate mathematical expressions.
 pub struct CalculatorTool;
 
 impl Tool for CalculatorTool {

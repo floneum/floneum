@@ -7,7 +7,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // Stream audio from the microphone
     let mic = MicInput::default();
-    let stream = mic.stream().unwrap();
+    let stream = mic.stream();
 
     // Transcribe the audio into text in chunks based on voice activity.
     let mut text_stream = stream.transcribe(model);

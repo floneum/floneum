@@ -1,8 +1,9 @@
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 
+use crate::model::LlamaModelError;
 pub use crate::Llama;
-use crate::{InferenceSettings, Task};
+use crate::{InferenceSettings, LlamaSourceError, Task};
 use crate::{LlamaBuilder, LlamaModel};
 use kalosm_common::ModelLoadingProgress;
 use kalosm_language_model::ChatMarkers;
@@ -13,11 +14,12 @@ use tokenizers::Tokenizer;
 #[async_trait::async_trait]
 impl ModelBuilder for LlamaBuilder {
     type Model = Llama;
+    type Error = LlamaSourceError;
 
     async fn start_with_loading_handler(
         self,
         handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
-    ) -> anyhow::Result<Self::Model> {
+    ) -> Result<Self::Model, Self::Error> {
         self.build_with_loading_handler(handler).await
     }
 
@@ -30,6 +32,7 @@ impl ModelBuilder for LlamaBuilder {
 impl Model for Llama {
     type TextStream = ChannelTextStream;
     type SyncModel = LlamaModel;
+    type Error = LlamaModelError;
 
     fn tokenizer(&self) -> Arc<Tokenizer> {
         self.get_tokenizer()
@@ -44,18 +47,16 @@ impl Model for Llama {
                     -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>>
                 + Send,
         >,
-    ) -> anyhow::Result<()> {
-        match self.task_sender.send(Task::RunSync { callback: f }) {
-            Ok(_) => Ok(()),
-            Err(_) => Err(anyhow::anyhow!("Failed to send task to Llama thread")),
-        }
+    ) -> Result<(), Self::Error> {
+        _ = self.task_sender.send(Task::RunSync { callback: f });
+        Ok(())
     }
 
     async fn stream_text_inner(
         &self,
         prompt: &str,
         generation_parameters: GenerationParameters,
-    ) -> anyhow::Result<Self::TextStream> {
+    ) -> Result<Self::TextStream, Self::Error> {
         let max_length = generation_parameters.max_length();
         self.run(
             InferenceSettings::new(prompt)
@@ -72,7 +73,7 @@ impl Model for Llama {
         max_tokens: Option<u32>,
         stop_on: Option<&str>,
         sampler: Arc<Mutex<dyn llm_samplers::prelude::Sampler>>,
-    ) -> anyhow::Result<Self::TextStream> {
+    ) -> Result<Self::TextStream, Self::Error> {
         let max_length = max_tokens.unwrap_or(64);
         self.run(
             InferenceSettings::new(prompt)

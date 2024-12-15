@@ -9,7 +9,7 @@
 //! use rbert::*;
 //!
 //! #[tokio::main]
-//! async fn main() -> anyhow::Result<()> {
+//! async fn main() -> Result<()> {
 //!     let mut bert = Bert::new().await?;
 //!     let sentences = [
 //!         "Cats are cool",
@@ -80,7 +80,7 @@ impl BertBuilder {
     }
 
     /// Build the model
-    pub async fn build(self) -> anyhow::Result<Bert> {
+    pub async fn build(self) -> Result<Bert, BertLoadingError> {
         self.build_with_loading_handler(ModelLoadingProgress::multi_bar_loading_indicator())
             .await
     }
@@ -122,9 +122,43 @@ impl BertBuilder {
     pub async fn build_with_loading_handler(
         self,
         loading_handler: impl FnMut(ModelLoadingProgress) + Send + 'static,
-    ) -> anyhow::Result<Bert> {
+    ) -> Result<Bert, BertLoadingError> {
         Bert::from_builder(self, loading_handler).await
     }
+}
+
+/// An error that can occur when loading a Bert model.
+#[derive(Debug, thiserror::Error)]
+pub enum BertLoadingError {
+    /// An error that can occur when trying to load a Bert model from huggingface or a local file.
+    #[error("Failed to load model from huggingface or local file: {0}")]
+    DownloadingError(#[from] CacheError),
+    /// An error that can occur when trying to load a Bert model.
+    #[error("Failed to load model into device: {0}")]
+    LoadModel(#[from] candle_core::Error),
+    /// An error that can occur when trying to load the bert tokenizer.
+    #[error("Failed to load tokenizer: {0}")]
+    LoadTokenizer(tokenizers::Error),
+    /// An error that can occur when trying to load the bert config.
+    #[error("Failed to load config: {0}")]
+    LoadConfig(serde_json::Error),
+    /// A config was not found
+    #[error("Config not found")]
+    ConfigNotFound,
+}
+
+/// An error that can occur when running a Bert model.
+#[derive(Debug, thiserror::Error)]
+pub enum BertError {
+    /// An error that can occur when trying to run a Bert model.
+    #[error("Failed to run model: {0}")]
+    Candle(#[from] candle_core::Error),
+    /// An error that can occur when tokenizing or detokenizing text.
+    #[error("Failed to tokenize: {0}")]
+    TokenizerError(tokenizers::Error),
+    /// Failed to join the thread that is running the model
+    #[error("Failed to join thread: {0}")]
+    Join(#[from] tokio::task::JoinError),
 }
 
 /// The pooling strategy to use when embedding text.
@@ -144,7 +178,7 @@ pub enum Pooling {
 /// use rbert::*;
 ///
 /// #[tokio::main]
-/// async fn main() -> anyhow::Result<()> {
+/// async fn main() -> Result<()> {
 ///     let mut bert = Bert::new().await?;
 ///     let sentences = [
 ///         "Cats are cool",
@@ -188,12 +222,12 @@ impl Bert {
     }
 
     /// Create a new default bert model
-    pub async fn new() -> anyhow::Result<Self> {
+    pub async fn new() -> Result<Self, BertLoadingError> {
         Self::builder().build().await
     }
 
     /// Create a new default bert model for search
-    pub async fn new_for_search() -> anyhow::Result<Self> {
+    pub async fn new_for_search() -> Result<Self, BertLoadingError> {
         Self::builder()
             .with_source(BertSource::new_for_search())
             .build()
@@ -203,7 +237,7 @@ impl Bert {
     async fn from_builder(
         builder: BertBuilder,
         mut progress_handler: impl FnMut(ModelLoadingProgress) + Send + 'static,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self, BertLoadingError> {
         let BertBuilder { source, cache } = builder;
         let BertSource {
             config,
@@ -234,15 +268,16 @@ impl Bert {
             })
             .await?;
 
-        let config = std::fs::read_to_string(config_filename)?;
-        let config: Config = serde_json::from_str(&config)?;
+        let config = std::fs::read_to_string(config_filename)
+            .map_err(|_| BertLoadingError::ConfigNotFound)?;
+        let config: Config = serde_json::from_str(&config).map_err(BertLoadingError::LoadConfig)?;
 
         let device = accelerated_device_if_available()?;
         let vb =
             unsafe { VarBuilder::from_mmaped_safetensors(&[&weights_filename], DTYPE, &device)? };
         let model = BertModel::load(vb, &config)?;
         let mut tokenizer =
-            Tokenizer::from_file(&tokenizer_filename).map_err(anyhow::Error::msg)?;
+            Tokenizer::from_file(&tokenizer_filename).map_err(BertLoadingError::LoadTokenizer)?;
         tokenizer.with_padding(None);
 
         Ok(Bert {
@@ -257,7 +292,7 @@ impl Bert {
         &self,
         sentences: Vec<&str>,
         pooling: Pooling,
-    ) -> anyhow::Result<Vec<Tensor>> {
+    ) -> Result<Vec<Tensor>, BertError> {
         let embedding_dim = self.model.embedding_dim();
         // The batch size limit (input length * memory per token)
         let limit = embedding_dim * 512usize.pow(2) * 2;
@@ -267,7 +302,7 @@ impl Bert {
             let tokenizer_read = self.tokenizer.read().unwrap();
             tokenizer_read.encode_batch(sentences, true)
         }
-        .map_err(anyhow::Error::msg)?;
+        .map_err(BertError::TokenizerError)?;
         let mut encodings_with_indices = encodings.into_iter().enumerate().collect::<Vec<_>>();
 
         encodings_with_indices.sort_unstable_by_key(|(_, encoding)| encoding.len());
@@ -315,7 +350,7 @@ impl Bert {
         &self,
         mut tokens: Vec<Encoding>,
         pooling: Pooling,
-    ) -> anyhow::Result<Vec<Tensor>> {
+    ) -> Result<Vec<Tensor>, BertError> {
         if tokens.is_empty() {
             return Ok(Vec::new());
         }
@@ -324,7 +359,7 @@ impl Bert {
             strategy: tokenizers::PaddingStrategy::BatchLongest,
             ..Default::default()
         };
-        tokenizers::pad_encodings(&mut tokens, &pp).map_err(anyhow::Error::msg)?;
+        tokenizers::pad_encodings(&mut tokens, &pp).map_err(BertError::TokenizerError)?;
 
         let n_sentences = tokens.len();
         let max_seq_len = self.model.max_seq_len();
@@ -332,12 +367,12 @@ impl Bert {
             .iter()
             .map(|tokens| {
                 let tokens = tokens.get_ids().to_vec();
-                Ok(Tensor::new(
+                Tensor::new(
                     &tokens.as_slice()[..max_seq_len.min(tokens.as_slice().len())],
                     device,
-                )?)
+                )
             })
-            .collect::<anyhow::Result<Vec<_>>>()?;
+            .collect::<candle_core::Result<Vec<_>>>()?;
         let token_ids = Tensor::stack(&token_ids, 0)?;
 
         let attention_masks = tokens
@@ -350,7 +385,7 @@ impl Bert {
                 )?;
                 Ok(attention_mask)
             })
-            .collect::<anyhow::Result<Vec<_>>>()?;
+            .collect::<candle_core::Result<Vec<_>>>()?;
         let attention_mask = Tensor::stack(&attention_masks, 0)?;
 
         // The token type ids are only used for next sentence prediction. We can just set them to zero for embedding tasks.
@@ -383,6 +418,6 @@ impl Bert {
     }
 }
 
-fn normalize_l2(v: &Tensor) -> anyhow::Result<Tensor> {
-    Ok(v.broadcast_div(&v.sqr()?.sum_keepdim(1)?.sqrt()?)?)
+fn normalize_l2(v: &Tensor) -> candle_core::Result<Tensor> {
+    v.broadcast_div(&v.sqr()?.sum_keepdim(1)?.sqrt()?)
 }

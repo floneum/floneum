@@ -55,6 +55,5 @@ async fn main() {
             }) as Pin<Box<dyn Future<Output = CrawlFeedback>>>
         },
     )
-    .await
-    .unwrap();
+    .await;
 }

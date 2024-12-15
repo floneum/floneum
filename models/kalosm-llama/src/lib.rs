@@ -49,6 +49,7 @@ use candle_core::{
 pub use kalosm_common::*;
 use kalosm_language_model::ChatMarkers;
 use llm_samplers::types::Sampler;
+use model::LlamaModelError;
 pub use source::*;
 use std::sync::{Arc, Mutex};
 use tokenizers::Tokenizer;
@@ -97,7 +98,7 @@ impl Drop for Llama {
 
 impl Llama {
     /// Create a default chat model.
-    pub async fn new_chat() -> anyhow::Result<Self> {
+    pub async fn new_chat() -> Result<Self, LlamaSourceError> {
         Llama::builder()
             .with_source(LlamaSource::llama_3_1_8b_chat())
             .build()
@@ -105,7 +106,7 @@ impl Llama {
     }
 
     /// Create a default phi-3 chat model.
-    pub async fn phi_3() -> anyhow::Result<Self> {
+    pub async fn phi_3() -> Result<Self, LlamaSourceError> {
         Llama::builder()
             .with_source(LlamaSource::phi_3_5_mini_4k_instruct())
             .build()
@@ -113,7 +114,7 @@ impl Llama {
     }
 
     /// Create a default text generation model.
-    pub async fn new() -> anyhow::Result<Self> {
+    pub async fn new() -> Result<Self, LlamaSourceError> {
         Llama::builder()
             .with_source(LlamaSource::llama_8b())
             .build()
@@ -181,15 +182,13 @@ impl Llama {
         &self,
         settings: InferenceSettings,
         sampler: Arc<Mutex<dyn Sampler>>,
-    ) -> anyhow::Result<tokio::sync::mpsc::UnboundedReceiver<String>> {
+    ) -> Result<tokio::sync::mpsc::UnboundedReceiver<String>, LlamaModelError> {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
-        self.task_sender
-            .send(Task::Infer {
-                settings,
-                sender,
-                sampler,
-            })
-            .unwrap();
+        _ = self.task_sender.send(Task::Infer {
+            settings,
+            sender,
+            sampler,
+        });
         Ok(receiver)
     }
 }
@@ -222,7 +221,7 @@ impl LlamaBuilder {
     }
 
     /// Get the device or the default device if not set.
-    pub(crate) fn get_device(&self) -> anyhow::Result<Device> {
+    pub(crate) fn get_device(&self) -> Result<Device, LlamaSourceError> {
         match self.device.clone() {
             Some(device) => Ok(device),
             None => Ok(accelerated_device_if_available()?),
@@ -259,7 +258,7 @@ impl LlamaBuilder {
     pub async fn build_with_loading_handler(
         self,
         handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
-    ) -> anyhow::Result<Llama> {
+    ) -> Result<Llama, LlamaSourceError> {
         let device = self.get_device()?;
 
         let handler = Arc::new(Mutex::new(handler));
@@ -282,9 +281,10 @@ impl LlamaBuilder {
                 .tokenizer(|progress| (handler.lock().unwrap())(create_progress(progress)))
                 .await?
         };
-        let filename = filename.await??;
+        let filename = filename.await.unwrap()?;
 
-        let mut file = std::fs::File::open(&filename)?;
+        let mut file = std::fs::File::open(&filename)
+            .expect("The path returned by LlamaSource::model should be valid");
         let model = match filename.extension().and_then(|v| v.to_str()) {
             Some("gguf") => {
                 let model = gguf_file::Content::read(&mut file)?;
@@ -309,7 +309,7 @@ impl LlamaBuilder {
     }
 
     /// Build the model (this will download the model if it is not already downloaded)
-    pub async fn build(self) -> anyhow::Result<Llama> {
+    pub async fn build(self) -> Result<Llama, LlamaSourceError> {
         self.build_with_loading_handler(ModelLoadingProgress::multi_bar_loading_indicator())
             .await
     }

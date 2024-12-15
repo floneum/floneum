@@ -14,7 +14,6 @@ use candle_transformers::models::wuerstchen::paella_vq::PaellaVQ;
 use candle_transformers::models::wuerstchen::prior::WPrior;
 use candle_transformers::models::{stable_diffusion, wuerstchen::diffnext::WDiffNeXt};
 
-use anyhow::{Error as E, Result};
 use candle_core::{DType, Device, Tensor};
 use image::ImageBuffer;
 use tokenizers::Tokenizer;
@@ -65,7 +64,7 @@ pub(crate) struct WuerstchenInner {
 }
 
 impl WuerstchenInner {
-    pub(crate) fn new(settings: WuerstcheModelSettings) -> Result<Self> {
+    pub(crate) fn new(settings: WuerstcheModelSettings) -> candle_core::Result<Self> {
         let WuerstcheModelSettings {
             use_flash_attn,
             decoder_weights,
@@ -77,9 +76,11 @@ impl WuerstchenInner {
             prior_tokenizer,
         } = settings;
 
-        let prior_tokenizer = Tokenizer::from_file(prior_tokenizer).map_err(E::msg)?;
+        let prior_tokenizer = Tokenizer::from_file(prior_tokenizer)
+            .map_err(|err| candle_core::Error::Msg(format!("Failed to load tokenizer: {err}")))?;
 
-        let tokenizer = Tokenizer::from_file(tokenizer).map_err(E::msg)?;
+        let tokenizer = Tokenizer::from_file(tokenizer)
+            .map_err(|err| candle_core::Error::Msg(format!("Failed to load tokenizer: {err}")))?;
 
         let device = kalosm_common::accelerated_device_if_available()?;
 
@@ -171,10 +172,10 @@ impl WuerstchenInner {
         tokenizer: &Tokenizer,
         clip: &ClipTextTransformer,
         clip_config: &stable_diffusion::clip::Config,
-    ) -> Result<Tensor> {
+    ) -> candle_core::Result<Tensor> {
         let mut tokens = tokenizer
             .encode(prompt, true)
-            .map_err(E::msg)?
+            .map_err(|err| candle_core::Error::Msg(format!("Failed to tokenize: {err}")))?
             .get_ids()
             .to_vec();
         let pad_id = match &clip_config.pad_with {
@@ -193,7 +194,7 @@ impl WuerstchenInner {
             Some(uncond_prompt) => {
                 let mut uncond_tokens = tokenizer
                     .encode(uncond_prompt, true)
-                    .map_err(E::msg)?
+                    .map_err(|err| candle_core::Error::Msg(format!("Failed to tokenize: {err}")))?
                     .get_ids()
                     .to_vec();
                 let uncond_tokens_len = uncond_tokens.len();
@@ -215,7 +216,7 @@ impl WuerstchenInner {
         &self,
         settings: &WuerstchenInferenceSettings,
         b_size: usize,
-    ) -> Result<Tensor> {
+    ) -> candle_core::Result<Tensor> {
         let height = settings.height;
         let width = settings.width;
 
@@ -271,7 +272,7 @@ impl WuerstchenInner {
         image_embeddings: &Tensor,
         settings: &WuerstchenInferenceSettings,
         b_size: usize,
-    ) -> Result<ImageBuffer<image::Rgb<u8>, Vec<u8>>> {
+    ) -> candle_core::Result<ImageBuffer<image::Rgb<u8>, Vec<u8>>> {
         // https://huggingface.co/warp-ai/wuerstchen/blob/main/model_index.json
         let latent_height = (image_embeddings.dim(2)? as f64 * LATENT_DIM_SCALE) as usize;
         let latent_width = (image_embeddings.dim(3)? as f64 * LATENT_DIM_SCALE) as usize;
@@ -300,12 +301,13 @@ impl WuerstchenInner {
         let img_tensor = (img_tensor * 255.)?.to_dtype(DType::U8)?.i(0)?;
         let (channel, height, width) = img_tensor.dims3()?;
         if channel != 3 {
-            anyhow::bail!("image must have 3 channels");
+            candle_core::bail!("image must have 3 channels");
         }
         let img = img_tensor.permute((1, 2, 0))?.flatten_all()?;
         let pixels = img.to_vec1::<u8>()?;
-        ImageBuffer::from_raw(width as u32, height as u32, pixels)
-            .ok_or(E::msg(format!("error creating image {img_tensor:?}")))
+        ImageBuffer::from_raw(width as u32, height as u32, pixels).ok_or(candle_core::Error::Msg(
+            format!("error creating image {img_tensor:?}"),
+        ))
     }
 
     /// Run inference with the given settings.
@@ -334,7 +336,9 @@ impl WuerstchenInner {
             println!("Warning: Würstchen was trained on image resolutions between 1024x1024 & 1536x1536. {}x{} is above the maximum resolution. Image quality may be poor.", height, width);
         }
         let chech_dims = if height % 128 != 0 || width % 128 != 0 {
-            Err(E::msg("Image resolution must be a multiple of 128"))
+            Err(candle_core::Error::Msg(
+                "Image resolution must be a multiple of 128".to_string(),
+            ))
         } else {
             Ok(())
         };

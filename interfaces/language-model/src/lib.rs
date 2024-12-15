@@ -2,7 +2,7 @@
 //!
 //! This crate provides a unified interface for language models. It supports streaming text, sampling, and embedding.
 //!
-//! ## Usage (with the RPhi implementation crate)
+//! ## Usage (with the kalosm-llama implementation crate)
 //!
 //! ```rust, no_run
 //! use kalosm::language::*;
