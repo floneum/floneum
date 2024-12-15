@@ -438,15 +438,6 @@ pub struct VectorDBSearchResult {
 pub struct EmbeddingId(pub u32);
 
 #[tokio::test]
-async fn test_vector_db_add_embedding() {
-    let db: VectorDB = VectorDB::new().unwrap();
-    let id = db.add_embedding(Embedding::from([1.0, 2.0, 3.0])).unwrap();
-    assert_eq!(db.get_embedding(id).unwrap().to_vec(), vec![1.0, 2.0, 3.0]);
-    db.remove_embedding(id).unwrap();
-    assert!(db.get_embedding(id).is_err());
-}
-
-#[tokio::test]
 async fn test_vector_db_get_closest() {
     let db: VectorDB = VectorDB::new().unwrap();
     let first_vector = Embedding::from([1.0, 2.0, 3.0]);

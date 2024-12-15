@@ -190,11 +190,7 @@ enum MyModelType {
     LlamaThirtyFourCode,
     SolarTen,
     SolarTenInstruct,
-    PhiOne,
-    PhiOnePointFive,
-    PhiTwo,
-    PuffinPhiTwo,
-    DolphinPhiTwo,
+    PhiThree,
 }
 
 impl From<&ModelType> for MyModelType {
@@ -220,11 +216,7 @@ impl From<&ModelType> for MyModelType {
             main::types::ModelType::LlamaThirtyFourCode => MyModelType::LlamaThirtyFourCode,
             main::types::ModelType::SolarTen => MyModelType::SolarTen,
             main::types::ModelType::SolarTenInstruct => MyModelType::SolarTenInstruct,
-            main::types::ModelType::PhiOne => MyModelType::PhiOne,
-            main::types::ModelType::PhiOnePointFive => MyModelType::PhiOnePointFive,
-            main::types::ModelType::PhiTwo => MyModelType::PhiTwo,
-            main::types::ModelType::PuffinPhiTwo => MyModelType::PuffinPhiTwo,
-            main::types::ModelType::DolphinPhiTwo => MyModelType::DolphinPhiTwo,
+            main::types::ModelType::PhiThree => MyModelType::PhiThree,
         }
     }
 }
@@ -252,11 +244,7 @@ impl From<MyModelType> for ModelType {
             MyModelType::LlamaThirtyFourCode => main::types::ModelType::LlamaThirtyFourCode,
             MyModelType::SolarTen => main::types::ModelType::SolarTen,
             MyModelType::SolarTenInstruct => main::types::ModelType::SolarTenInstruct,
-            MyModelType::PhiOne => main::types::ModelType::PhiOne,
-            MyModelType::PhiOnePointFive => main::types::ModelType::PhiOnePointFive,
-            MyModelType::PhiTwo => main::types::ModelType::PhiTwo,
-            MyModelType::PuffinPhiTwo => main::types::ModelType::PuffinPhiTwo,
-            MyModelType::DolphinPhiTwo => main::types::ModelType::DolphinPhiTwo,
+            MyModelType::PhiThree => main::types::ModelType::PhiThree,
         }
     }
 }
@@ -326,20 +314,8 @@ impl PartialEq for ModelType {
                 main::types::ModelType::SolarTenInstruct,
                 main::types::ModelType::SolarTenInstruct
             ) | (
-                main::types::ModelType::PhiOne,
-                main::types::ModelType::PhiOne
-            ) | (
-                main::types::ModelType::PhiOnePointFive,
-                main::types::ModelType::PhiOnePointFive
-            ) | (
-                main::types::ModelType::PhiTwo,
-                main::types::ModelType::PhiTwo
-            ) | (
-                main::types::ModelType::PuffinPhiTwo,
-                main::types::ModelType::PuffinPhiTwo
-            ) | (
-                main::types::ModelType::DolphinPhiTwo,
-                main::types::ModelType::DolphinPhiTwo
+                main::types::ModelType::PhiThree,
+                main::types::ModelType::PhiThree
             )
         )
     }

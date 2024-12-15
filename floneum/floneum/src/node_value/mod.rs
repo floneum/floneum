@@ -34,11 +34,7 @@ impl Variants for ModelType {
         ModelType::LlamaThirtyFourCode,
         ModelType::SolarTen,
         ModelType::SolarTenInstruct,
-        ModelType::PhiOne,
-        ModelType::PhiOnePointFive,
-        ModelType::PhiTwo,
-        ModelType::PuffinPhiTwo,
-        ModelType::DolphinPhiTwo,
+        ModelType::PhiThree,
     ];
 }
 
@@ -120,11 +116,7 @@ impl Named for ModelType {
             ModelType::LlamaThirtyFourCode => "Llama Thirty Four Code",
             ModelType::SolarTen => "Solar Ten",
             ModelType::SolarTenInstruct => "Solar Ten Instruct",
-            ModelType::PhiOne => "Phi One",
-            ModelType::PhiOnePointFive => "Phi One Point Five",
-            ModelType::PhiTwo => "Phi Two",
-            ModelType::PuffinPhiTwo => "Puffin Phi Two",
-            ModelType::DolphinPhiTwo => "Dolphin Phi Two",
+            ModelType::PhiThree => "Phi Three",
         }
     }
 }
@@ -159,11 +151,7 @@ fn model_type_from_str(s: &str) -> Option<ModelType> {
         "llama thirty four code" => Some(ModelType::LlamaThirtyFourCode),
         "solar ten" => Some(ModelType::SolarTen),
         "solar ten instruct" => Some(ModelType::SolarTenInstruct),
-        "phi one" => Some(ModelType::PhiOne),
-        "phi one point five" => Some(ModelType::PhiOnePointFive),
-        "phi two" => Some(ModelType::PhiTwo),
-        "puffin phi two" => Some(ModelType::PuffinPhiTwo),
-        "dolphin phi two" => Some(ModelType::DolphinPhiTwo),
+        "phi three" => Some(ModelType::PhiThree),
         _ => None,
     }
 }

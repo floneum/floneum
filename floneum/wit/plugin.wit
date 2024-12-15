@@ -158,11 +158,7 @@ interface types {
     llama-thirty-four-code,
     solar-ten,
     solar-ten-instruct,
-    phi-one,
-    phi-one-point-five,
-    phi-two,
-    puffin-phi-two,
-    dolphin-phi-two
+    phi-three
   }
   variant embedding-model-type { bert }
 }
