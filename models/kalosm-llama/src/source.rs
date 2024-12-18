@@ -83,6 +83,18 @@ impl LlamaSource {
         }
     }
 
+    /// Set the model to use for the model
+    pub fn with_model(mut self, model: FileSource) -> Self {
+        self.model = model;
+        self
+    }
+
+    /// Set the tokenizer to use for the model
+    pub fn with_tokenizer(mut self, tokenizer: FileSource) -> Self {
+        self.tokenizer = tokenizer;
+        self
+    }
+
     /// Set the cache location to use for the model (defaults DATA_DIR/kalosm/cache)
     pub fn with_cache(mut self, cache: kalosm_common::Cache) -> Self {
         self.cache = cache;
