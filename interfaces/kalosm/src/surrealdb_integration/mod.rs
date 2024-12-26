@@ -4,8 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::future::{Future, IntoFuture};
 use std::ops::Range;
 use std::pin::Pin;
-use surrealdb::sql::{Id, Thing};
-use surrealdb::{Connection, Surreal};
+use surrealdb::{Connection, RecordId, RecordIdKey, Surreal};
 
 #[cfg(feature = "language")]
 pub(crate) mod document_table;
@@ -51,7 +50,7 @@ impl From<VectorDbError> for EmbeddedIndexedTableError {
 /// This type is stored in the [`EmbeddingIndexedTable::table_links`] table.
 #[derive(Serialize, Deserialize)]
 pub struct DocumentLink {
-    document_id: Id,
+    document_id: RecordIdKey,
     byte_range: std::ops::Range<usize>,
 }
 
@@ -129,27 +128,22 @@ impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
         &self,
         chunks: impl IntoIterator<Item = Chunk<S>>,
         value: R,
-    ) -> Result<Id, EmbeddedIndexedTableError>
+    ) -> Result<RecordIdKey, EmbeddedIndexedTableError>
     where
-        R: Serialize + DeserializeOwned,
+        R: Serialize + DeserializeOwned + 'static,
     {
-        let id = Id::uuid();
+        let id_uuid = surrealdb::sql::Uuid::new_v7().0;
+        let id = RecordIdKey::from(id_uuid);
 
         let mut embedding_ids = Vec::new();
-        let thing = Thing {
-            tb: self.table.clone(),
-            id: id.clone(),
-        };
+        let thing = RecordId::from_table_key(self.table.clone(), id.clone());
 
         for chunk in chunks {
             let chunk_embedding_ids = self.vector_db.add_embeddings(chunk.embeddings)?;
             for embedding_id in &chunk_embedding_ids {
                 let byte_range = chunk.byte_range.clone();
 
-                let link = Thing {
-                    tb: self.table_links(),
-                    id: Id::Number(embedding_id.0 as i64),
-                };
+                let link = RecordId::from_table_key(self.table_links(), embedding_id.0 as i64);
                 self.db
                     .create::<Option<DocumentLink>>(link)
                     .content(DocumentLink {
@@ -173,28 +167,26 @@ impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
     }
 
     /// Update a record in the table with the given embedding id.
-    pub async fn update(&self, id: Id, value: R) -> Result<Option<R>, EmbeddedIndexedTableError>
+    pub async fn update(
+        &self,
+        id: impl Into<RecordIdKey>,
+        value: R,
+    ) -> Result<Option<R>, EmbeddedIndexedTableError>
     where
-        R: Serialize + DeserializeOwned,
+        R: Serialize + DeserializeOwned + 'static,
     {
-        let thing = Thing {
-            tb: self.table.clone(),
-            id,
-        };
+        let thing = RecordId::from_table_key(self.table.clone(), id);
         let old = self.db.update::<Option<R>>(thing).merge(value).await?;
 
         Ok(old)
     }
 
     /// Select a record from the table with the given embedding id.
-    pub async fn select(&self, id: Id) -> Result<R, EmbeddedIndexedTableError>
+    pub async fn select(&self, id: impl Into<RecordIdKey>) -> Result<R, EmbeddedIndexedTableError>
     where
         R: DeserializeOwned,
     {
-        let thing = Thing {
-            tb: self.table.clone(),
-            id,
-        };
+        let thing = RecordId::from_table_key(self.table.clone(), id);
         let record = self.db.select::<Option<R>>(thing).await?;
         match record {
             Some(record) => Ok(record),
@@ -203,15 +195,15 @@ impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
     }
 
     /// Delete a record from the table with the given embedding id.
-    pub async fn delete(&self, id: Id) -> Result<Option<R>, EmbeddedIndexedTableError>
+    pub async fn delete(
+        &self,
+        id: impl Into<RecordIdKey>,
+    ) -> Result<Option<R>, EmbeddedIndexedTableError>
     where
         R: Serialize + DeserializeOwned,
     {
         // First delete the record from the main table
-        let thing = Thing {
-            tb: self.table.clone(),
-            id,
-        };
+        let thing = RecordId::from_table_key(self.table.clone(), id);
         let old = self
             .db
             .delete::<Option<ObjectWithEmbeddingIds<R>>>(thing)
@@ -228,10 +220,7 @@ impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
                 .flat_map(|(_, ids)| ids.iter())
                 .copied()
             {
-                let link = Thing {
-                    tb: self.table_links(),
-                    id: Id::Number(id.0 as i64),
-                };
+                let link = RecordId::from_table_key(self.table_links(), id.0 as i64);
                 self.db.delete::<Option<DocumentLink>>(link).await?;
                 // Then delete the embedding from the vector db
                 self.vector_db.remove_embedding(id)?;
@@ -293,7 +282,7 @@ pub struct IteratorMarker;
 impl<C: Connection, R: DeserializeOwned + Send + Sync, S: VectorSpace, I>
     IntoEmbeddingIndexedTableSearchFilter<C, R, S, IteratorMarker> for I
 where
-    I: IntoIterator<Item = Id>,
+    I: IntoIterator<Item = RecordIdKey>,
     I::IntoIter: Send + Sync + 'static,
 {
     fn into_embedding_indexed_table_search_filter(
@@ -304,10 +293,7 @@ where
         async move {
             let mut candidates = Candidates::new();
             for id in ids {
-                let thing = Thing {
-                    tb: table.table.clone(),
-                    id,
-                };
+                let thing = RecordId::from_table_key(table.table.clone(), id);
                 let item: Option<ObjectWithEmbeddingIds<R>> = table.db.select(thing).await?;
                 if let Some(item) = item {
                     for (_, embeddings) in item.chunks.iter() {
@@ -374,10 +360,10 @@ impl<
             let main_table_id = self
                 .table
                 .db
-                .select::<Option<DocumentLink>>(Thing {
-                    tb: self.table.table_links(),
-                    id: Id::Number(id.value.0 as i64),
-                })
+                .select::<Option<DocumentLink>>(RecordId::from_table_key(
+                    self.table.table_links(),
+                    id.value.0 as i64,
+                ))
                 .await?
                 .ok_or(EmbeddedIndexedTableError::RecordNotFound)?;
             let record = self.table.select(main_table_id.document_id.clone()).await?;
@@ -439,7 +425,7 @@ pub struct EmbeddingIndexedTableSearchResult<R> {
     /// The embedding id of the record.
     pub id: EmbeddingId,
     /// The record id.
-    pub record_id: Id,
+    pub record_id: RecordIdKey,
     /// The byte range of the record.
     pub byte_range: std::ops::Range<usize>,
     /// The record.

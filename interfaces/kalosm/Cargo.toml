@@ -56,7 +56,7 @@ version = "1.0.163"
 features = ["derive"]
 
 [dependencies.surrealdb]
-version = "1.5.5"
+version = "2.1.4"
 optional = true
 
 [dependencies.tokio]
