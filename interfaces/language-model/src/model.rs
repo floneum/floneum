@@ -2,7 +2,6 @@ use crate::structured::generate_structured;
 use crate::{TokenOutputStream, TokenOutputStreamError};
 use futures_util::{Future, FutureExt};
 use futures_util::{Stream, StreamExt};
-use kalosm_common::*;
 use kalosm_sample::StopOn;
 use kalosm_sample::{CreateParserState, Parse};
 use kalosm_sample::{LiteralParser, Parser};
@@ -13,55 +12,12 @@ use std::any::Any;
 use std::convert::Infallible;
 use std::fmt::Display;
 use std::future::IntoFuture;
-use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::task::Poll;
 use thiserror::Error;
 use tokenizers::tokenizer::Tokenizer;
-
-/// A builder that can create a model asynchronously.
-///
-/// # Example
-/// ```rust, no_run
-/// use kalosm::language::*;
-/// use kalosm_language_model::ModelBuilder;
-///
-/// #[tokio::main]
-/// async fn main() {
-///     let model = AdaEmbedderBuilder::default().start().await.unwrap();
-/// }
-/// ```
-#[async_trait::async_trait]
-pub trait ModelBuilder {
-    /// The model that this trait creates.
-    type Model;
-
-    /// An error that can occur when creating the model.
-    type Error: Send + Sync + 'static;
-
-    /// Start the model.
-    async fn start(self) -> Result<Self::Model, Self::Error>
-    where
-        Self: Sized,
-    {
-        self.start_with_loading_handler(|_| {}).await
-    }
-
-    /// Start the model with a loading handler.
-    async fn start_with_loading_handler(
-        self,
-        handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
-    ) -> Result<Self::Model, Self::Error>
-    where
-        Self: Sized;
-
-    /// Check if the model will need to be downloaded before use (default: false)
-    fn requires_download(&self) -> bool {
-        false
-    }
-}
 
 /// A builder for the [`ModelExt::stream_text`] method.
 pub struct StreamTextBuilder<'a, M: Model> {
@@ -652,11 +608,18 @@ pub trait Session {
     /// The type of error this model may return during operations.
     type Error: std::error::Error + Send + Sync + 'static;
 
-    /// Save the session to the given path.
-    fn save_to(&self, _path: impl AsRef<Path>) -> Result<(), Self::Error>;
+    /// Serialize the session into bytes.
+    fn write_to(&self, into: &mut Vec<u8>) -> Result<(), Self::Error>;
 
-    /// Load the session from the given path.
-    fn load_from(_path: impl AsRef<Path>) -> Result<Self, Self::Error>
+    /// Write the session to bytes.
+    fn to_bytes(&self) -> Result<Vec<u8>, Self::Error> {
+        let mut bytes = Vec::new();
+        self.write_to(&mut bytes)?;
+        Ok(bytes)
+    }
+
+    /// Load the session from bytes.
+    fn from_bytes(bytes: &[u8]) -> Result<Self, Self::Error>
     where
         Self: std::marker::Sized;
 
@@ -674,11 +637,11 @@ pub trait Session {
 impl Session for () {
     type Error = Infallible;
 
-    fn save_to(&self, _path: impl AsRef<Path>) -> Result<(), Self::Error> {
+    fn write_to(&self, _into: &mut Vec<u8>) -> Result<(), Self::Error> {
         Ok(())
     }
 
-    fn load_from(_path: impl AsRef<Path>) -> Result<(), Self::Error> {
+    fn from_bytes(_bytes: &[u8]) -> Result<(), Self::Error> {
         Ok(())
     }
 
@@ -1081,12 +1044,12 @@ pub type BoxedSyncModel =
     Arc<dyn SyncModel<Session = AnySession, Error = Box<dyn std::error::Error + Send + Sync>>>;
 
 trait AnySessionTrait {
-    fn save_to(&self, path: &Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+    fn to_bytes(&self, into: &mut Vec<u8>) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
 }
 
 impl<S: Any + Session> AnySessionTrait for S {
-    fn save_to(&self, path: &Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        Session::save_to(self, path).map_err(|e| e.into())
+    fn to_bytes(&self, into: &mut Vec<u8>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        Session::write_to(self, into).map_err(|e| e.into())
     }
 }
 
@@ -1113,13 +1076,13 @@ pub struct AnySession {
 impl Session for AnySession {
     type Error = AnySessionError;
 
-    fn save_to(&self, path: impl AsRef<Path>) -> Result<(), Self::Error> {
+    fn write_to(&self, into: &mut Vec<u8>) -> Result<(), Self::Error> {
         self.session
-            .save_to(path.as_ref())
+            .to_bytes(into)
             .map_err(AnySessionError::Session)
     }
 
-    fn load_from(_path: impl AsRef<Path>) -> Result<Self, Self::Error>
+    fn from_bytes(_bytes: &[u8]) -> Result<Self, Self::Error>
     where
         Self: std::marker::Sized,
     {
