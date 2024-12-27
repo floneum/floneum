@@ -31,6 +31,7 @@ kalosm-language-model.workspace = true
 kalosm-streams.workspace = true
 kalosm-common = { workspace = true }
 thiserror.workspace = true
+safetensors = "0.4.5"
 
 [dev-dependencies]
 tracing-subscriber = "0.3.18"

@@ -38,3 +38,5 @@ mod embedding;
 pub use embedding::*;
 mod model;
 pub use model::*;
+mod builder;
+pub use builder::*;

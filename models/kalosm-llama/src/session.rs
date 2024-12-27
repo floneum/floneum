@@ -7,8 +7,11 @@ use std::collections::HashMap;
 /// An error that can occur when saving or loading a [`LlamaSession`].
 #[derive(Debug, thiserror::Error)]
 pub enum LlamaLoadingError {
+    /// An error from safetensors while loading or saving a [`LlamaSession`].
+    #[error("Safetensors error: {0}")]
+    Safetensors(#[from] safetensors::SafeTensorError),
     /// An error from candle while loading or saving a [`LlamaSession`].
-    #[error("Candle error: {0}")]
+    #[error("Candle error: {0:?}")]
     Candle(#[from] candle_core::Error),
 }
 
@@ -21,22 +24,24 @@ pub struct LlamaSession {
 impl Session for LlamaSession {
     type Error = LlamaLoadingError;
 
-    fn save_to(&self, path: impl AsRef<std::path::Path>) -> Result<(), Self::Error> {
+    fn write_to(&self, into: &mut Vec<u8>) -> Result<(), Self::Error> {
         let device = accelerated_device_if_available()?;
         let tensors = self.get_tensor_map(&device);
-        Ok(candle_core::safetensors::save(&tensors, path)?)
+        let bytes = safetensors::serialize(&tensors, &None)?;
+        into.extend_from_slice(&bytes);
+        Ok(())
     }
 
     fn tokens(&self) -> &[u32] {
         &self.cache.tokens
     }
 
-    fn load_from(path: impl AsRef<std::path::Path>) -> Result<Self, Self::Error>
+    fn from_bytes(bytes: &[u8]) -> Result<Self, Self::Error>
     where
         Self: std::marker::Sized,
     {
         let device = accelerated_device_if_available()?;
-        let tensors = candle_core::safetensors::load(path, &device)?;
+        let tensors = candle_core::safetensors::load_buffer(bytes, &device)?;
 
         Ok(Self::from_tensor_map(tensors)?)
     }

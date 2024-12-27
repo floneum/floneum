@@ -2,7 +2,6 @@
 
 use std::{
     fmt::Display,
-    path::PathBuf,
     sync::{Arc, Mutex, RwLock},
 };
 
@@ -407,12 +406,16 @@ impl<M: Model> ChatBuilder<M> {
     /// # }
     /// ```
     pub fn with_try_session_path(self, path: impl AsRef<std::path::Path>) -> Self {
-        let session = <M::SyncModel as kalosm_language_model::SyncModel>::Session::load_from(path);
-        if let Ok(session) = session {
-            self.with_session(session)
-        } else {
-            self
-        }
+        let path = path.as_ref();
+        let Ok(bytes) = std::fs::read(path) else {
+            return self;
+        };
+        let session =
+            <M::SyncModel as kalosm_language_model::SyncModel>::Session::from_bytes(&bytes);
+        let Ok(session) = session else {
+            return self;
+        };
+        self.with_session(session)
     }
 
     /// Set the initial history of the chat. Each message in the original history will be added to the chat history, and the model will be fed the user messages.
@@ -512,10 +515,10 @@ impl<M: Model> ChatBuilder<M> {
                                 })
                             });
                         }
-                        Message::SaveSession { path, resolve } => {
+                        Message::SaveSession { resolve } => {
                             let chat_session = chat_session.lock().unwrap();
                             resolve
-                                .send(chat_session.session.save_to(path).map_err(|err| err.into()))
+                                .send(chat_session.session.to_bytes().map_err(|err| err.into()))
                                 .unwrap();
                         }
                     }
@@ -536,8 +539,8 @@ enum Message {
         response_tx: tokio::sync::mpsc::UnboundedSender<String>,
     },
     SaveSession {
-        path: PathBuf,
-        resolve: tokio::sync::oneshot::Sender<Result<(), Box<dyn std::error::Error + Send + Sync>>>,
+        resolve:
+            tokio::sync::oneshot::Sender<Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>>>,
     },
 }
 
@@ -726,15 +729,9 @@ impl Chat {
     /// chat.save_session(&save_path).await.unwrap();
     /// # }
     /// ```
-    pub fn save_session(
-        &mut self,
-        path: impl AsRef<std::path::Path>,
-    ) -> impl Future<Output = Result<(), ChatSessionSaveError>> {
+    pub fn save_session(&mut self) -> impl Future<Output = Result<Vec<u8>, ChatSessionSaveError>> {
         let (tx, rx) = oneshot::channel();
-        let result = self.sender.send(Message::SaveSession {
-            path: path.as_ref().to_path_buf(),
-            resolve: tx,
-        });
+        let result = self.sender.send(Message::SaveSession { resolve: tx });
 
         async move {
             result.map_err(|_| ChatSessionSaveError::ModelStopped)?;
