@@ -175,12 +175,12 @@ After you have chunked your context, you can use the embeddings for search or re
 
 ```rust, no_run
 use kalosm::language::*;
-use surrealdb::{engine::local::RocksDb, Surreal};
+use surrealdb::{engine::local::SurrealKv, Surreal};
 
 #[tokio::main]
 async fn main() {
     // Create database connection
-    let db = Surreal::new::<RocksDb>(std::env::temp_dir().join("temp.db")).await.unwrap();
+    let db = Surreal::new::<SurrealKv>(std::env::temp_dir().join("temp.db")).await.unwrap();
 
     // Select a specific namespace / database
     db.use_ns("search").use_db("documents").await.unwrap();

@@ -12,8 +12,8 @@ use kalosm_language::prelude::*;
 use kalosm_language::rbert::BertLoadingError;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use surrealdb::sql::Id;
 use surrealdb::Connection;
+use surrealdb::RecordIdKey;
 use surrealdb::Surreal;
 
 /// An error that can occur when adding items to a [`DocumentTable`].
@@ -32,14 +32,14 @@ pub enum DocumentTableModifyError<E> {
 /// # Example
 /// ```rust, no_run
 /// use kalosm::language::*;
-/// use surrealdb::{engine::local::RocksDb, Surreal};
+/// use surrealdb::{engine::local::SurrealKv, Surreal};
 ///
 /// #[tokio::main]
 /// async fn main() {
 ///     let exists = std::path::Path::new("./db").exists();
 ///
 ///     // Create or open a database
-///     let db = Surreal::new::<RocksDb>("./db/temp.db").await.unwrap();
+///     let db = Surreal::new::<SurrealKv>("./db/temp.db").await.unwrap();
 ///
 ///     // Select a specific namespace / database
 ///     db.use_ns("rag").use_db("rag").await.unwrap();
@@ -131,17 +131,20 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
         &self,
         value: R,
         chunks: impl IntoIterator<Item = Chunk<M::VectorSpace>>,
-    ) -> Result<Id, EmbeddedIndexedTableError>
+    ) -> Result<RecordIdKey, EmbeddedIndexedTableError>
     where
-        R: Serialize + DeserializeOwned,
+        R: Serialize + DeserializeOwned + 'static,
     {
         self.table.insert(chunks, value).await
     }
 
     /// Insert a new record into the table and return the id of the record.
-    pub async fn insert(&self, value: R) -> Result<Id, DocumentTableModifyError<K::Error<M::Error>>>
+    pub async fn insert(
+        &self,
+        value: R,
+    ) -> Result<RecordIdKey, DocumentTableModifyError<K::Error<M::Error>>>
     where
-        R: AsRef<Document> + Serialize + DeserializeOwned,
+        R: AsRef<Document> + Serialize + DeserializeOwned + 'static,
     {
         let chunks = self
             .chunker
@@ -155,9 +158,9 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     pub async fn extend<T: IntoIterator<Item = R> + Send>(
         &self,
         iter: T,
-    ) -> Result<Vec<Id>, DocumentTableModifyError<K::Error<M::Error>>>
+    ) -> Result<Vec<RecordIdKey>, DocumentTableModifyError<K::Error<M::Error>>>
     where
-        R: AsRef<Document> + Serialize + DeserializeOwned,
+        R: AsRef<Document> + Serialize + DeserializeOwned + 'static,
         K: Sync,
     {
         let entries = iter.into_iter().collect::<Vec<_>>();
@@ -176,25 +179,32 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     }
 
     /// Update a record in the table with the given embedding id.
-    pub async fn update(&self, id: Id, value: R) -> Result<Option<R>, EmbeddedIndexedTableError>
+    pub async fn update(
+        &self,
+        id: impl Into<RecordIdKey>,
+        value: R,
+    ) -> Result<Option<R>, EmbeddedIndexedTableError>
     where
-        R: Serialize + DeserializeOwned,
+        R: Serialize + DeserializeOwned + 'static,
     {
         self.table.update(id, value).await
     }
 
     /// Select a record from the table with the given embedding id.
-    pub async fn select(&self, id: Id) -> Result<R, EmbeddedIndexedTableError>
+    pub async fn select(&self, id: impl Into<RecordIdKey>) -> Result<R, EmbeddedIndexedTableError>
     where
-        R: Serialize + DeserializeOwned,
+        R: Serialize + DeserializeOwned + 'static,
     {
         self.table.select(id).await
     }
 
     /// Delete a record from the table with the given embedding id.
-    pub async fn delete(&self, id: Id) -> Result<Option<R>, EmbeddedIndexedTableError>
+    pub async fn delete(
+        &self,
+        id: impl Into<RecordIdKey>,
+    ) -> Result<Option<R>, EmbeddedIndexedTableError>
     where
-        R: Serialize + DeserializeOwned,
+        R: Serialize + DeserializeOwned + 'static,
     {
         self.table.delete(id).await
     }
@@ -202,7 +212,7 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     /// Select all records from the table.
     pub async fn select_all(&self) -> Result<Vec<R>, EmbeddedIndexedTableError>
     where
-        R: Serialize + DeserializeOwned,
+        R: Serialize + DeserializeOwned + 'static,
     {
         self.table.select_all().await
     }
@@ -241,9 +251,9 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     pub async fn add_context<D: IntoDocuments>(
         &self,
         context: D,
-    ) -> Result<Vec<Id>, DocumentTableAddContextError<D::Error, K::Error<M::Error>>>
+    ) -> Result<Vec<RecordIdKey>, DocumentTableAddContextError<D::Error, K::Error<M::Error>>>
     where
-        R: From<Document> + AsRef<Document> + Serialize + DeserializeOwned,
+        R: From<Document> + AsRef<Document> + Serialize + DeserializeOwned + 'static,
         K: Sync,
     {
         let documents = context

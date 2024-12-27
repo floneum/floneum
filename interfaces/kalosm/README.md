@@ -203,12 +203,12 @@ Once you have your data, Kalosm includes tools to create embedding-powered searc
 
 ```rust, no_run
 use kalosm::language::*;
-use surrealdb::{engine::local::RocksDb, Surreal};
+use surrealdb::{engine::local::SurrealKv, Surreal};
 
 #[tokio::main]
 async fn main() {
     // Create database connection
-    let db = Surreal::new::<RocksDb>(std::env::temp_dir().join("temp.db")).await.unwrap();
+    let db = Surreal::new::<SurrealKv>(std::env::temp_dir().join("temp.db")).await.unwrap();
 
     // Select a specific namespace / database
     db.use_ns("search").use_db("documents").await.unwrap();
@@ -247,14 +247,14 @@ A large part of making modern LLMs performant is curating the context the models
 
 ```rust, no_run
 use kalosm::language::*;
-use surrealdb::{engine::local::RocksDb, Surreal};
+use surrealdb::{engine::local::SurrealKv, Surreal};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let exists = std::path::Path::new("./db").exists();
 
     // Create database connection
-    let db = Surreal::new::<RocksDb>("./db/temp.db").await?;
+    let db = Surreal::new::<SurrealKv>("./db/temp.db").await?;
 
     // Select a specific namespace / database
     db.use_ns("test").use_db("test").await?;

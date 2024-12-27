@@ -2,7 +2,7 @@ use futures_util::StreamExt;
 use kalosm::language::*;
 use kalosm::sound::*;
 use std::sync::Arc;
-use surrealdb::{engine::local::RocksDb, Surreal};
+use surrealdb::{engine::local::SurrealKv, Surreal};
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
@@ -10,7 +10,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let model = Whisper::new().await?;
 
     // Create database connection
-    let db = Surreal::new::<RocksDb>("./db/temp.db").await.unwrap();
+    let db = Surreal::new::<SurrealKv>("./db/temp.db").await.unwrap();
 
     // Select a specific namespace / database
     db.use_ns("live_qa").use_db("documents").await.unwrap();
