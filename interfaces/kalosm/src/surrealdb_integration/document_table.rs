@@ -32,14 +32,14 @@ pub enum DocumentTableModifyError<E> {
 /// # Example
 /// ```rust, no_run
 /// use kalosm::language::*;
-/// use surrealdb::{engine::local::RocksDb, Surreal};
+/// use surrealdb::{engine::local::SurrealKv, Surreal};
 ///
 /// #[tokio::main]
 /// async fn main() {
 ///     let exists = std::path::Path::new("./db").exists();
 ///
 ///     // Create or open a database
-///     let db = Surreal::new::<RocksDb>("./db/temp.db").await.unwrap();
+///     let db = Surreal::new::<SurrealKv>("./db/temp.db").await.unwrap();
 ///
 ///     // Select a specific namespace / database
 ///     db.use_ns("rag").use_db("rag").await.unwrap();

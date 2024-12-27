@@ -1,6 +1,6 @@
 use comfy_table::{Cell, Color, Row, Table};
 use kalosm::language::*;
-use surrealdb::{engine::local::RocksDb, Surreal};
+use surrealdb::{engine::local::SurrealKv, Surreal};
 
 #[tokio::main]
 async fn main() {
@@ -9,7 +9,7 @@ async fn main() {
     let exists = std::path::Path::new("./db").exists();
 
     // Create database connection
-    let db = Surreal::new::<RocksDb>("./db/temp.db").await.unwrap();
+    let db = Surreal::new::<SurrealKv>("./db/temp.db").await.unwrap();
 
     // Select a specific namespace / database
     db.use_ns("test").use_db("test").await.unwrap();

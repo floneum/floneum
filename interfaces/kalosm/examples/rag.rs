@@ -1,12 +1,12 @@
 use kalosm::language::*;
-use surrealdb::{engine::local::RocksDb, Surreal};
+use surrealdb::{engine::local::SurrealKv, Surreal};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let exists = std::path::Path::new("./db").exists();
 
     // Create database connection
-    let db = Surreal::new::<RocksDb>("./db/temp.db").await?;
+    let db = Surreal::new::<SurrealKv>("./db/temp.db").await?;
 
     // Select a specific namespace / database
     db.use_ns("test").use_db("test").await?;
