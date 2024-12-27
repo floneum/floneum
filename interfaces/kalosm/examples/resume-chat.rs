@@ -16,5 +16,6 @@ async fn main() {
         output_stream.to_std_out().await.unwrap();
     }
 
-    chat.save_session(save_path).await.unwrap();
+    let bytes = chat.save_session().await.unwrap();
+    std::fs::write(save_path, bytes).unwrap();
 }
