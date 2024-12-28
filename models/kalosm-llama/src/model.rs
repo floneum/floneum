@@ -76,7 +76,11 @@ impl SyncModel for LlamaModel {
 
     fn stop_token(&self) -> Result<u32, Self::Error> {
         let vocab = self.tokenizer.get_vocab(true);
-        let eos_token = match vocab.get("</s>").or(vocab.get("<|end_of_text|>")) {
+        let eos_token = match vocab
+            .get("</s>")
+            .or_else(|| vocab.get("<|end_of_text|>"))
+            .or_else(|| vocab.get("<|endoftext|>"))
+        {
             Some(token) => *token,
             None => return Err(LlamaModelError::NoStopToken),
         };
