@@ -274,10 +274,10 @@ impl Model {
         device: &Device,
         mut cache: Option<&mut LlamaCache>,
     ) -> Result<Tensor> {
-        let seq_len = tokens.len();
+        let mut seq_len = tokens.len();
         let cached_tokens = cache.as_ref().map(|c| c.tokens.len()).unwrap_or_default();
         // We use a lower cutoff than the context length to avoid recomputing the attention every single token
-        let cutoff_len: usize = self.config.context_length - 32;
+        let cutoff_len: usize = self.config.context_length.saturating_sub(32).max(8);
         let (x, index_pos) = if seq_len + cached_tokens > self.config.context_length {
             let all_tokens = if let Some(cache) = cache.as_mut() {
                 cache.clear();
@@ -287,7 +287,10 @@ impl Model {
             } else {
                 tokens.to_vec()
             };
-            let all_tokens = &all_tokens[all_tokens.len() - cutoff_len..];
+            let start = all_tokens.len() - cutoff_len;
+            seq_len = cutoff_len;
+            tracing::trace!("The context is full, trimming start of the context to fit new tokens. The first {} tokens were truncated.", start);
+            let all_tokens = &all_tokens[start..];
             if let Some(cache) = cache.as_mut() {
                 cache.tokens = all_tokens.to_vec();
             }
