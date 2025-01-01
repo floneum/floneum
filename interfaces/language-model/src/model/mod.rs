@@ -67,10 +67,7 @@ where
     type Output = <P as Parser>::Output;
 }
 
-#[doc = include_str!("../../docs/model.md")]
-pub trait Model<Sampler, Constraints: ModelConstraints = NoConstraintsSupported>:
-    Send + Sync + 'static
-{
+pub trait ModelSession: Send + Sync + 'static {
     /// The type of error this model may return during operations.
     type Error: Send + Sync + 'static;
 
@@ -79,7 +76,9 @@ pub trait Model<Sampler, Constraints: ModelConstraints = NoConstraintsSupported>
 
     /// Create a new session for this model.
     fn new_session(&self) -> Result<Self::Session, Self::Error>;
+}
 
+pub trait TextCompletionModel<Sampler>: ModelSession {
     /// Generate text with the given prompt.
     ///
     /// See [`ModelExt::stream_text`] for nicer API with an example.
@@ -88,9 +87,16 @@ pub trait Model<Sampler, Constraints: ModelConstraints = NoConstraintsSupported>
         session: &mut Self::Session,
         text: &str,
         sampler: Sampler,
-        on_token: impl FnMut(String) -> Result<(), Self::Error>,
+        on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+}
 
+#[doc = include_str!("../../docs/model.md")]
+pub trait StructuredTextCompletionModel<
+    Sampler,
+    Constraints: ModelConstraints = NoConstraintsSupported,
+>: TextCompletionModel<Sampler>
+{
     /// Generate text with the given prompt.
     ///
     /// See [`ModelExt::stream_text`] for nicer API with an example.
@@ -100,6 +106,6 @@ pub trait Model<Sampler, Constraints: ModelConstraints = NoConstraintsSupported>
         text: &str,
         sampler: Sampler,
         parser: Constraints,
-        on_token: impl FnMut(String) -> Result<(), Self::Error>,
+        on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
     ) -> impl Future<Output = Result<Constraints::Output, Self::Error>> + Send;
 }

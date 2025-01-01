@@ -94,7 +94,7 @@ impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
     }
 
     /// Delete the table from the database and clear the vector database. Returns the contents of the table.
-    pub async fn delete_table(self) -> Result<Vec<(R, Vec<Chunk<S>>)>, EmbeddedIndexedTableError>
+    pub async fn delete_table(self) -> Result<Vec<(R, Vec<Chunk>)>, EmbeddedIndexedTableError>
     where
         R: DeserializeOwned,
     {
@@ -126,7 +126,7 @@ impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
     /// Insert a new record into the table with the given embedding.
     pub async fn insert(
         &self,
-        chunks: impl IntoIterator<Item = Chunk<S>>,
+        chunks: impl IntoIterator<Item = Chunk>,
         value: R,
     ) -> Result<RecordIdKey, EmbeddedIndexedTableError>
     where

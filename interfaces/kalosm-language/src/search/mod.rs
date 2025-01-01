@@ -9,14 +9,14 @@ use std::{fmt::Debug, ops::Range};
 
 /// A document snippet that can be used to display a snippet of a document.
 #[derive(Clone)]
-pub struct Chunk<S: VectorSpace> {
+pub struct Chunk {
     /// The byte range of the chunk in the original document.
     pub byte_range: Range<usize>,
     /// The embeddings of the chunk.
     pub embeddings: Vec<Embedding>,
 }
 
-impl<S: VectorSpace> Debug for Chunk<S> {
+impl Debug for Chunk {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Chunk")
             .field("byte_range", &self.byte_range)

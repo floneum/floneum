@@ -89,16 +89,12 @@ pub struct DocumentTable<
 > {
     embedding_model: M,
     chunker: K,
-    table: EmbeddingIndexedTable<C, R, M::VectorSpace>,
+    table: EmbeddingIndexedTable<C, R>,
 }
 
 impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     /// Create a new document table.
-    pub fn new(
-        embedding_model: M,
-        table: EmbeddingIndexedTable<C, R, M::VectorSpace>,
-        chunker: K,
-    ) -> Self {
+    pub fn new(embedding_model: M, table: EmbeddingIndexedTable<C, R>, chunker: K) -> Self {
         Self {
             embedding_model,
             table,
@@ -107,7 +103,7 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     }
 
     /// Get the raw table.
-    pub fn table(&self) -> &EmbeddingIndexedTable<C, R, M::VectorSpace> {
+    pub fn table(&self) -> &EmbeddingIndexedTable<C, R> {
         &self.table
     }
 
@@ -117,9 +113,7 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     }
 
     /// Delete the table from the database and clear the vector database. Returns the contents of the table.
-    pub async fn delete_table(
-        self,
-    ) -> Result<Vec<(R, Vec<Chunk<M::VectorSpace>>)>, EmbeddedIndexedTableError>
+    pub async fn delete_table(self) -> Result<Vec<(R, Vec<Chunk>)>, EmbeddedIndexedTableError>
     where
         R: DeserializeOwned,
     {
@@ -130,7 +124,7 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     pub async fn insert_with_chunks(
         &self,
         value: R,
-        chunks: impl IntoIterator<Item = Chunk<M::VectorSpace>>,
+        chunks: impl IntoIterator<Item = Chunk>,
     ) -> Result<RecordIdKey, EmbeddedIndexedTableError>
     where
         R: Serialize + DeserializeOwned + 'static,

@@ -4074,7 +4074,6 @@ dependencies = [
  "cudarc 0.9.15",
  "half 2.4.1",
  "intel-mkl-src",
- "kalosm",
  "kalosm-common",
  "kalosm-language-model",
  "kalosm-sample",

@@ -1,4 +1,6 @@
-use kalosm::language::*;
+use std::io::Write;
+
+use kalosm_llama::prelude::*;
 
 #[tokio::main]
 async fn main() {
@@ -8,12 +10,23 @@ async fn main() {
         .await
         .unwrap();
 
+    let mut session = model.new_session().unwrap();
+    let on_token = |token: String| {
+        print!("{token}");
+        std::io::stdout().flush().unwrap();
+        Ok(())
+    };
+
+    let sampler = GenerationParameters::default().sampler();
+
+    let prompt = "<|im_start|>system
+You are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>
+<|im_start|>user
+Hello, how are you?<|im_end|>
+<|im_start|>assistant
+";
     model
-        .stream_text("The capital of France is ")
-        .with_max_length(100)
-        .await
-        .unwrap()
-        .to_std_out()
+        .stream_text_with_callback(&mut session, prompt, sampler, on_token)
         .await
         .unwrap();
 }

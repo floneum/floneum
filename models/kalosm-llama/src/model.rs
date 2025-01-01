@@ -39,6 +39,10 @@ pub enum LlamaModelError {
     /// An error while writing to the session cache.
     #[error("Session cache error: {0}")]
     Session(String),
+
+    /// The model has already stopped.
+    #[error("Model stopped")]
+    ModelStopped,
 }
 
 /// The inner, synchronous Llama model.
@@ -131,12 +135,12 @@ impl LlamaModel {
         &mut self,
         settings: InferenceSettings,
         mut on_token: Box<dyn FnMut(String) -> Result<(), LlamaModelError> + Send + Sync>,
-        finished: tokio::sync::oneshot::Sender<Result<Box<dyn Any + Send>, LlamaModelError>>,
+        finished: &tokio::sync::oneshot::Sender<Result<Box<dyn Any + Send>, LlamaModelError>>,
     ) -> Result<(), LlamaModelError> {
         let InferenceSettings {
             prompt,
             stop_on,
-            sampler,
+            mut sampler,
             session,
         } = settings;
 
@@ -144,12 +148,6 @@ impl LlamaModel {
             .cache
             .write()
             .map_err(|err| LlamaModelError::Session(err.to_string()))?;
-
-        let mut sampler = sampler.unwrap_or_else(|| {
-            Arc::new(std::sync::Mutex::new(
-                GenerationParameters::default().sampler(),
-            ))
-        });
 
         let tokens = self
             .tokenizer
@@ -173,7 +171,6 @@ impl LlamaModel {
         )?;
         let mut logits = Logits::try_from_iter_top_k(logit_probs, 512)
             .expect("model output should be valid logits");
-        let mut tokens_generated = 0;
         // This stores a buffer of text that has been generated to check against the stop_on string. It should never be longer than the stop_on string.
         let mut queued_text_matching_stop_on = String::new();
         let stop_on_lowercase = stop_on.as_ref().map(|s| s.to_lowercase());
@@ -241,7 +238,6 @@ impl LlamaModel {
                     on_token(new_text)?;
                 }
             }
-            tokens_generated += 1;
             Self::forward(
                 &self.model,
                 &self.device,

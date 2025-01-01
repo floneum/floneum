@@ -135,9 +135,9 @@ impl Llama {
                             finished,
                         }) = task_receiver.recv().await
                         {
-                            if let Err(err) = model._infer(settings, on_token, finished) {
-                                tracing::error!("Error running Llama model: {}", err);
-                            }
+                            let result = model._infer(settings, on_token, &finished);
+                            _ = finished
+                                .send(result.map(|value| Box::new(value) as Box<dyn Any + Send>));
                         }
                     })
             }
@@ -250,29 +250,28 @@ pub(crate) struct InferenceSettings {
     stop_on: Option<String>,
 
     /// The sampler to use.
-    sampler: Option<std::sync::Arc<std::sync::Mutex<dyn llm_samplers::prelude::Sampler>>>,
+    sampler: std::sync::Arc<std::sync::Mutex<dyn llm_samplers::prelude::Sampler>>,
 
     /// The session to use.
     session: LlamaSession,
 }
 
 impl InferenceSettings {
-    pub fn new(prompt: impl Into<String>, session: LlamaSession) -> Self {
+    pub fn new(
+        prompt: impl Into<String>,
+        session: LlamaSession,
+        sampler: std::sync::Arc<std::sync::Mutex<dyn llm_samplers::prelude::Sampler>>,
+    ) -> Self {
         Self {
             prompt: prompt.into(),
             stop_on: None,
-            sampler: None,
+            sampler,
             session,
         }
     }
 
     pub fn with_stop_on(mut self, stop_on: impl Into<Option<String>>) -> Self {
         self.stop_on = stop_on.into();
-        self
-    }
-
-    pub fn with_sampler(mut self, sampler: impl Sampler + 'static) -> Self {
-        self.sampler = Some(std::sync::Arc::new(std::sync::Mutex::new(sampler)));
         self
     }
 }

@@ -10,8 +10,6 @@ pub use kalosm_language_model::{
     Embedder, EmbedderCacheExt, EmbedderExt, Embedding, EmbeddingInput, EmbeddingVariant,
     ModelBuilder,
 };
-use serde::Deserialize;
-use serde::Serialize;
 
 impl ModelBuilder for BertBuilder {
     type Model = Bert;
