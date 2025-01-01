@@ -38,7 +38,7 @@ mod model;
 mod raw;
 mod session;
 mod source;
-// mod structured;
+mod structured;
 mod token_stream;
 
 pub use crate::model::LlamaModel;

@@ -40,6 +40,10 @@ pub enum LlamaModelError {
     #[error("Session cache error: {0}")]
     Session(String),
 
+    /// No valid tokens were sampled during structured generation
+    #[error("No valid tokens were sampled")]
+    NoValidTokens,
+
     /// The model has already stopped.
     #[error("Model stopped")]
     ModelStopped,
@@ -48,12 +52,12 @@ pub enum LlamaModelError {
 /// The inner, synchronous Llama model.
 pub struct LlamaModel {
     pub(crate) model: Model,
-    device: Device,
-    tokenizer: Arc<Tokenizer>,
+    pub(crate) device: Device,
+    pub(crate) tokenizer: Arc<Tokenizer>,
 }
 
 impl LlamaModel {
-    fn forward(
+    pub(crate) fn forward(
         model: &Model,
         device: &Device,
         tokens: &[u32],
