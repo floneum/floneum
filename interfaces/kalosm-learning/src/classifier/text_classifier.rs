@@ -237,7 +237,7 @@ impl<T: Class, S: VectorSpace + Send + Sync + 'static> TextClassifier<T, S> {
     }
 
     /// Runs the classifier on the given input.
-    pub fn run(&self, input: Embedding<S>) -> candle_core::Result<ClassifierOutput<T>> {
+    pub fn run(&self, input: Embedding) -> candle_core::Result<ClassifierOutput<T>> {
         self.model.run(&input.to_vec())
     }
 

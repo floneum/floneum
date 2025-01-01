@@ -23,7 +23,7 @@ use kalosm_language_model::*;
 struct SemanticChunk<S: VectorSpace> {
     range: std::ops::Range<usize>,
     sentences: usize,
-    embedding: Embedding<S>,
+    embedding: Embedding,
     distance_to_next: Option<f32>,
 }
 

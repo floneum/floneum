@@ -36,7 +36,7 @@ impl Bert {
         &self,
         input: &str,
         pooling: Pooling,
-    ) -> Result<Embedding<BertSpace>, BertError> {
+    ) -> Result<Embedding, BertError> {
         let mut tensors = self.embed_batch_raw(vec![input], pooling)?;
 
         Ok(Embedding::new(tensors.pop().unwrap()))
@@ -47,7 +47,7 @@ impl Bert {
         &self,
         inputs: Vec<&str>,
         pooling: Pooling,
-    ) -> Result<Vec<Embedding<BertSpace>>, BertError> {
+    ) -> Result<Vec<Embedding>, BertError> {
         let tensors = self.embed_batch_raw(inputs, pooling)?;
 
         let mut embeddings = Vec::with_capacity(tensors.len());
@@ -66,7 +66,7 @@ impl Embedder for Bert {
     fn embed_for(
         &self,
         input: EmbeddingInput,
-    ) -> impl Future<Output = Result<Embedding<Self::VectorSpace>, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Embedding, Self::Error>> + Send {
         match (&*self.embedding_search_prefix, input.variant) {
             (Some(prefix), EmbeddingVariant::Query) => {
                 let mut new_input = prefix.clone();
@@ -80,7 +80,7 @@ impl Embedder for Bert {
     fn embed_vec_for(
         &self,
         inputs: Vec<EmbeddingInput>,
-    ) -> impl Future<Output = Result<Vec<Embedding<Self::VectorSpace>>, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Vec<Embedding>, Self::Error>> + Send {
         let inputs = inputs
             .into_iter()
             .map(
@@ -97,7 +97,7 @@ impl Embedder for Bert {
         self.embed_vec(inputs)
     }
 
-    async fn embed_string(&self, input: String) -> Result<Embedding<BertSpace>, Self::Error> {
+    async fn embed_string(&self, input: String) -> Result<Embedding, Self::Error> {
         let self_clone = self.clone();
         tokio::task::spawn_blocking(move || self_clone.embed_with_pooling(&input, Pooling::CLS))
             .await?
@@ -106,7 +106,7 @@ impl Embedder for Bert {
     async fn embed_vec(
         &self,
         inputs: Vec<String>,
-    ) -> Result<Vec<Embedding<BertSpace>>, Self::Error> {
+    ) -> Result<Vec<Embedding>, Self::Error> {
         let self_clone = self.clone();
         tokio::task::spawn_blocking(move || {
             let inputs_borrowed = inputs.iter().map(|s| s.as_str()).collect::<Vec<_>>();

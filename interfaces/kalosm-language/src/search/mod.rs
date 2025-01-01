@@ -13,7 +13,7 @@ pub struct Chunk<S: VectorSpace> {
     /// The byte range of the chunk in the original document.
     pub byte_range: Range<usize>,
     /// The embeddings of the chunk.
-    pub embeddings: Vec<Embedding<S>>,
+    pub embeddings: Vec<Embedding>,
 }
 
 impl<S: VectorSpace> Debug for Chunk<S> {

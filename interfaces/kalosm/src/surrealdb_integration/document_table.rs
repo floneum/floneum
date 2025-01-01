@@ -222,7 +222,7 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     /// NOTE: If your embedding model has a different query embedding and you pass in a raw embedding, that embedding will perform best if it was created with [`EmbedderExt::embed_query`].
     pub fn search<E>(&self, embedding: E) -> DocumentTableSearchBuilder<C, R, M, K, E>
     where
-        E: IntoEmbedding<M::VectorSpace>,
+        E: IntoEmbedding,
         R: DeserializeOwned,
     {
         DocumentTableSearchBuilder {
@@ -274,7 +274,7 @@ pub struct DocumentTableSearchBuilder<
     Doc = Document,
     Model: Embedder = Bert,
     Chkr: Chunker = SemanticChunker,
-    E = Embedding<<Model as Embedder>::VectorSpace>,
+    E = Embedding,
     F = Candidates,
     M = (),
 > {
@@ -301,7 +301,7 @@ impl<
         Conn: Connection,
         Doc: DeserializeOwned + Send + Sync,
         Model: Embedder,
-        E: IntoEmbedding<Model::VectorSpace>,
+        E: IntoEmbedding,
         F: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, Model::VectorSpace, M>,
         Chkr: Chunker,
         M,
@@ -341,7 +341,7 @@ impl<
         Conn: Connection + 'a,
         Doc: DeserializeOwned + Send + Sync + 'a,
         Model: Embedder + 'a,
-        E: IntoEmbedding<Model::VectorSpace> + Send + 'a,
+        E: IntoEmbedding + Send + 'a,
         F: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, Model::VectorSpace, M> + Send + Sync + 'a,
         Chkr: Chunker + Send + Sync + 'a,
         M: Send + 'a,
@@ -361,7 +361,7 @@ impl<
         Conn: Connection,
         Doc: DeserializeOwned,
         Model: Embedder,
-        E: IntoEmbedding<Model::VectorSpace>,
+        E: IntoEmbedding,
         F: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, Model::VectorSpace, M>,
         Chkr: Chunker,
         M,
