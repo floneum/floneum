@@ -401,7 +401,7 @@ impl ExamplesInstance {
 struct Example<'a> {
     input: &'a str,
     output: &'a str,
-    embedding: Embedding<BertSpace>,
+    embedding: Embedding,
 }
 
 async fn evaluate<'a, M: Model, P>(

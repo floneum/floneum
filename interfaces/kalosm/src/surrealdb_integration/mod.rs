@@ -244,7 +244,7 @@ impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
     /// Search for records that are close to the given embedding.
     pub fn search<'a>(
         &'a self,
-        embedding: &'a Embedding<S>,
+        embedding: &'a Embedding,
     ) -> EmbeddingIndexedTableSearchBuilder<'a, C, R, S> {
         EmbeddingIndexedTableSearchBuilder {
             table: self,
@@ -318,7 +318,7 @@ pub struct EmbeddingIndexedTableSearchBuilder<
     M = (),
 > {
     table: &'a EmbeddingIndexedTable<C, R, S>,
-    embedding: &'a Embedding<S>,
+    embedding: &'a Embedding,
     results: Option<usize>,
     filter: Option<F>,
     phantom: std::marker::PhantomData<M>,

@@ -231,7 +231,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
     /// Add a new embedding to the vector database.
     ///
     /// Note: Adding embeddings in a batch with [`VectorDB::add_embeddings`] will be faster.
-    pub fn add_embedding(&self, embedding: Embedding<S>) -> Result<EmbeddingId, VectorDbError> {
+    pub fn add_embedding(&self, embedding: Embedding) -> Result<EmbeddingId, VectorDbError> {
         let embedding = embedding.vector().to_vec1()?;
 
         self.set_dim(embedding.len());
@@ -254,7 +254,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
     /// Add a new batch of embeddings to the vector database.
     pub fn add_embeddings(
         &self,
-        embedding: impl IntoIterator<Item = Embedding<S>>,
+        embedding: impl IntoIterator<Item = Embedding>,
     ) -> Result<Vec<EmbeddingId>, VectorDbError> {
         let mut embeddings = embedding.into_iter().map(|e| e.vector().to_vec1());
         let first_embedding = match embeddings.next() {
@@ -288,7 +288,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
     }
 
     /// Get the embedding for an embedding id.
-    pub fn get_embedding(&self, embedding_id: EmbeddingId) -> Result<Embedding<S>, VectorDbError> {
+    pub fn get_embedding(&self, embedding_id: EmbeddingId) -> Result<Embedding, VectorDbError> {
         let rtxn = self.env.read_txn()?;
         let reader = Reader::<DotProduct>::open(&rtxn, 0, self.database)?;
 
@@ -305,7 +305,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
     }
 
     /// Get the closest N embeddings to the given embedding.
-    pub fn search<'a>(&'a self, embedding: &'a Embedding<S>) -> VectorDBSearchBuilder<'a, S> {
+    pub fn search<'a>(&'a self, embedding: &'a Embedding) -> VectorDBSearchBuilder<'a, S> {
         VectorDBSearchBuilder {
             db: self,
             embedding,
@@ -350,7 +350,7 @@ pub struct ClosureMarker;
 impl<S, I> IntoVectorDbSearchFilter<S, ClosureMarker> for I
 where
     S: VectorSpace,
-    I: FnMut(Embedding<S>) -> bool,
+    I: FnMut(Embedding) -> bool,
 {
     fn into_vector_db_search_filter(mut self, db: &VectorDB<S>) -> Candidates {
         let mut candidates = Candidates::new();
@@ -381,7 +381,7 @@ where
 /// A builder for searching for embeddings in a vector database.
 pub struct VectorDBSearchBuilder<'a, S: VectorSpace> {
     db: &'a VectorDB<S>,
-    embedding: &'a Embedding<S>,
+    embedding: &'a Embedding,
     results: Option<usize>,
     filter: Option<Candidates>,
 }
@@ -477,7 +477,7 @@ async fn test_vector_db_get_closest() {
     );
     assert_eq!(
         db.search(&third_embedding)
-            .with_filter(|vector: Embedding<UnknownVectorSpace>| vector.to_vec()[0] < 0.0)
+            .with_filter(|vector: Embedding| vector.to_vec()[0] < 0.0)
             .run()
             .unwrap()
             .iter()

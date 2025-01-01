@@ -30,13 +30,11 @@ mod remote;
 #[cfg(feature = "remote")]
 pub use remote::*;
 
-mod structured;
-mod token_stream;
-pub use token_stream::*;
-
 mod embedding;
 pub use embedding::*;
 mod model;
 pub use model::*;
 mod builder;
 pub use builder::*;
+pub mod chat;
+pub use chat::*;

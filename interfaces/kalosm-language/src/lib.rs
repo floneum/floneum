@@ -2,7 +2,6 @@
 #![allow(clippy::type_complexity)]
 #![doc = include_str!("../README.md")]
 
-pub mod chat;
 pub mod context;
 pub mod search;
 pub mod task;
@@ -16,7 +15,6 @@ pub use rbert;
 
 /// A prelude of commonly used items in kalosm-language
 pub mod prelude {
-    pub use crate::chat::*;
     pub use crate::context::*;
     pub use crate::search::*;
     pub use crate::task::*;

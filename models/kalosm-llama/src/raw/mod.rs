@@ -138,6 +138,17 @@ impl Model {
             }
         };
 
+        // Get the eos and bos tokens from the metadata
+        let bos_token = md_get("tokenizer.ggml.bos_token_id")?.to_u32()? as usize;
+        let eos_token = md_get("tokenizer.ggml.eos_token_id")?.to_u32()? as usize;
+        let tokens = md_get("tokenizer.ggml.tokens")?.to_vec()?;
+        let chat_template = md_get("tokenizer.chat_template")?.to_string().unwrap();
+        println!("chat_template: {chat_template}");
+        panic!(
+            "bos: {bos_token} ({:?}), eos: {eos_token} ({:?})",
+            tokens[bos_token], tokens[eos_token]
+        );
+
         // Parameter extraction from metadata.
         let head_count = md_get(".attention.head_count")?.to_u32()? as usize;
         let head_count_kv = md_get(".attention.head_count_kv")?.to_u32()? as usize;

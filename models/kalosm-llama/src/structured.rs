@@ -425,3 +425,42 @@ impl DetokenizationCache {
         self.vec.clear();
     }
 }
+
+
+/// An error that can happen when generating unstructured text from a model.
+#[derive(Debug, Error)]
+pub enum UnstructuredTextGenerationError<E> {
+    /// An error while running the model.
+    #[error("Model error: {0}")]
+    ModelError(#[from] E),
+
+    /// An error while tokenizing the input or decoding the output.
+    #[error("Tokenization error: {0}")]
+    TokenizationError(tokenizers::Error),
+
+    /// An error while sampling tokens.
+    #[error("Sampler error: {0}")]
+    SamplerError(Box<dyn std::error::Error + Send + Sync>),
+
+    /// A streaming detokenization error.
+    #[error("Token output stream error: {0}")]
+    TokenOutputStreamError(TokenOutputStreamError),
+}
+
+/// An error that can happen when generating structured text from a model.
+#[derive(Debug, Error)]
+pub enum StructuredTextGenerationError<E> {
+    /// No valid tokens were sampled
+    #[error("No valid tokens were sampled")]
+    NoValidTokens,
+
+    /// An error while generating unstructured text.
+    #[error("Unstructured text generation error: {0}")]
+    UnstructuredTextGenerationError(#[from] UnstructuredTextGenerationError<E>),
+}
+
+impl<E> From<E> for StructuredTextGenerationError<E> {
+    fn from(value: E) -> Self {
+        Self::UnstructuredTextGenerationError(UnstructuredTextGenerationError::ModelError(value))
+    }
+}

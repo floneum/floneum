@@ -2,7 +2,11 @@ use kalosm::language::*;
 
 #[tokio::main]
 async fn main() {
-    let model = Llama::new().await.unwrap();
+    let model = Llama::builder()
+        .with_source(LlamaSource::qwen_2_5_0_5b_instruct())
+        .build()
+        .await
+        .unwrap();
 
     model
         .stream_text("The capital of France is ")

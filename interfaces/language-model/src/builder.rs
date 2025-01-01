@@ -1,3 +1,5 @@
+use std::future::Future;
+
 use kalosm_common::ModelLoadingProgress;
 
 /// A builder that can create a model asynchronously.
@@ -12,7 +14,6 @@ use kalosm_common::ModelLoadingProgress;
 ///     let model = AdaEmbedderBuilder::default().start().await.unwrap();
 /// }
 /// ```
-#[async_trait::async_trait]
 pub trait ModelBuilder {
     /// The model that this trait creates.
     type Model;
@@ -21,18 +22,18 @@ pub trait ModelBuilder {
     type Error: Send + Sync + 'static;
 
     /// Start the model.
-    async fn start(self) -> Result<Self::Model, Self::Error>
+    fn start(self) -> impl Future<Output = Result<Self::Model, Self::Error>>
     where
         Self: Sized,
     {
-        self.start_with_loading_handler(|_| {}).await
+async {self.start_with_loading_handler(|_| {}).await}
     }
 
     /// Start the model with a loading handler.
-    async fn start_with_loading_handler(
+    fn start_with_loading_handler(
         self,
         handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
-    ) -> Result<Self::Model, Self::Error>
+    ) -> impl Future<Output = Result<Self::Model, Self::Error>>
     where
         Self: Sized;
 
