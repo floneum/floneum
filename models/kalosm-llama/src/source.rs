@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use kalosm_common::{CacheError, FileLoadingProgress, FileSource};
-use kalosm_language_model::ChatMarkers;
 use tokenizers::Tokenizer;
 
 fn llama_tokenizer() -> FileSource {
@@ -36,24 +35,12 @@ fn qwen_tokenizer() -> FileSource {
     )
 }
 
-fn qwen_chat_markers() -> Option<ChatMarkers> {
-    Some(ChatMarkers {
-        system_prompt_marker: "<|im_start|>system\n",
-        end_system_prompt_marker: "<|im_end|>",
-        user_marker: "<|im_start|>user\n",
-        end_user_marker: "<|im_end|>",
-        assistant_marker: "<|im_start|>assistant\n",
-        end_assistant_marker: "<|im_end|>",
-    })
-}
-
 /// A source for the Llama model.
 #[derive(Clone, Debug)]
 pub struct LlamaSource {
     pub(crate) model: FileSource,
     pub(crate) tokenizer: FileSource,
     pub(crate) group_query_attention: u8,
-    pub(crate) markers: Option<ChatMarkers>,
     pub(crate) cache: kalosm_common::Cache,
 }
 
@@ -69,6 +56,9 @@ pub enum LlamaSourceError {
     /// An error occurred while loading the model onto the device.
     #[error("Failed to load the model onto the device: {0}")]
     Device(#[from] candle_core::Error),
+    /// No stop token was found.
+    #[error("No stop token was found")]
+    NoStopToken,
 }
 
 impl LlamaSource {
@@ -78,7 +68,6 @@ impl LlamaSource {
             model,
             tokenizer,
             group_query_attention: 1,
-            markers: Default::default(),
             cache: Default::default(),
         }
     }
@@ -102,16 +91,11 @@ impl LlamaSource {
         self
     }
 
-    /// Set the marker text for a user message
-    pub fn with_chat_markers(mut self, markers: ChatMarkers) -> Self {
-        self.markers = Some(markers);
-
-        self
-    }
-
     /// Set the group query attention for the model
     /// For the llama family of models, this is typically 1
     /// For the mistral family of models, this is typically 8
+    ///
+    /// This is determined automatically for any gguf models
     pub fn with_group_query_attention(mut self, group_query_attention: u8) -> Self {
         self.group_query_attention = group_query_attention;
 
@@ -159,14 +143,6 @@ impl LlamaSource {
             ),
             tokenizer: mistral_tokenizer(),
             group_query_attention: 8,
-            markers: Some(ChatMarkers {
-                system_prompt_marker: "<s>[INST] ",
-                end_system_prompt_marker: " [/INST]",
-                user_marker: "[INST] ",
-                end_user_marker: " [/INST]",
-                assistant_marker: "",
-                end_assistant_marker: "</s>",
-            }),
             cache: Default::default(),
         }
     }
@@ -181,14 +157,6 @@ impl LlamaSource {
             ),
             tokenizer: mistral_tokenizer(),
             group_query_attention: 8,
-            markers: Some(ChatMarkers {
-                system_prompt_marker: "<s>[INST] ",
-                end_system_prompt_marker: " [/INST]",
-                user_marker: "[INST] ",
-                end_user_marker: " [/INST]",
-                assistant_marker: "",
-                end_assistant_marker: "</s>",
-            }),
             cache: Default::default(),
         }
     }
@@ -203,14 +171,6 @@ impl LlamaSource {
             ),
             tokenizer: mistral_tokenizer(),
             group_query_attention: 8,
-            markers: Some(ChatMarkers {
-                system_prompt_marker: "<|im_start|>system\n",
-                end_system_prompt_marker: "<|im_end|>",
-                user_marker: "<|im_start|>user\n",
-                end_user_marker: "<|im_end|>",
-                assistant_marker: "<|im_start|>assistant\n",
-                end_assistant_marker: "<|im_end|>",
-            }),
             cache: Default::default(),
         }
     }
@@ -229,14 +189,6 @@ impl LlamaSource {
                 "tokenizer.json".to_string(),
             ),
             group_query_attention: 8,
-            markers: Some(ChatMarkers {
-                system_prompt_marker: "### System:\n",
-                end_system_prompt_marker: "\n",
-                user_marker: "### User\n",
-                end_user_marker: "\n",
-                assistant_marker: "### Assistant:\n",
-                end_assistant_marker: "\n",
-            }),
             cache: Default::default(),
         }
     }
@@ -251,14 +203,6 @@ impl LlamaSource {
             ),
             tokenizer: mistral_tokenizer(),
             group_query_attention: 8,
-            markers: Some(ChatMarkers {
-                system_prompt_marker: "<|system|>",
-                user_marker: "<|user|>",
-                assistant_marker: "<|assistant|>",
-                end_system_prompt_marker: "</s>",
-                end_user_marker: "</s>",
-                end_assistant_marker: "</s>",
-            }),
             cache: Default::default(),
         }
     }
@@ -273,14 +217,6 @@ impl LlamaSource {
             ),
             tokenizer: mistral_tokenizer(),
             group_query_attention: 8,
-            markers: Some(ChatMarkers {
-                system_prompt_marker: "<|system|>",
-                user_marker: "<|user|>",
-                assistant_marker: "<|assistant|>",
-                end_system_prompt_marker: "</s>",
-                end_user_marker: "</s>",
-                end_assistant_marker: "</s>",
-            }),
             cache: Default::default(),
         }
     }
@@ -299,14 +235,6 @@ impl LlamaSource {
                 "tokenizer.json".to_string(),
             ),
             group_query_attention: 8,
-            markers: Some(ChatMarkers {
-                system_prompt_marker: "",
-                end_system_prompt_marker: "<|end_of_turn|>",
-                user_marker: "GPT4 Correct User: ",
-                end_user_marker: "<|end_of_turn|>",
-                assistant_marker: "GPT4 Correct Assistant: ",
-                end_assistant_marker: "<|end_of_turn|>",
-            }),
             cache: Default::default(),
         }
     }
@@ -325,14 +253,6 @@ impl LlamaSource {
                 "tokenizer.json".to_string(),
             ),
             group_query_attention: 8,
-            markers: Some(ChatMarkers {
-                system_prompt_marker: "",
-                end_system_prompt_marker: "<|end_of_turn|>",
-                user_marker: "GPT4 Correct User: ",
-                end_user_marker: "<|end_of_turn|>",
-                assistant_marker: "GPT4 Correct Assistant: ",
-                end_assistant_marker: "<|end_of_turn|>",
-            }),
             cache: Default::default(),
         }
     }
@@ -351,14 +271,6 @@ impl LlamaSource {
                 "tokenizer.json".to_string(),
             ),
             group_query_attention: 8,
-            markers: Some(ChatMarkers {
-                system_prompt_marker: "",
-                end_system_prompt_marker: "<|end_of_turn|>",
-                user_marker: "GPT4 Correct User: ",
-                end_user_marker: "<|end_of_turn|>",
-                assistant_marker: "GPT4 Correct Assistant: ",
-                end_assistant_marker: "<|end_of_turn|>",
-            }),
             cache: Default::default(),
         }
     }
@@ -373,14 +285,6 @@ impl LlamaSource {
             ),
             tokenizer: mistral_tokenizer(),
             group_query_attention: 8,
-            markers: Some(ChatMarkers {
-                system_prompt_marker: "",
-                end_system_prompt_marker: "",
-                user_marker: "USER: ",
-                end_user_marker: "</s>",
-                assistant_marker: "ASSISTANT: ",
-                end_assistant_marker: "</s>",
-            }),
             cache: Default::default(),
         }
     }
@@ -399,14 +303,6 @@ impl LlamaSource {
                 "tokenizer.json".to_string(),
             ),
             group_query_attention: 4,
-            markers: Some(ChatMarkers {
-                system_prompt_marker: "<|system|>\n",
-                assistant_marker: "<|user|>\n",
-                user_marker: "<|assistant|>\n",
-                end_system_prompt_marker: "</s>",
-                end_user_marker: "</s>",
-                end_assistant_marker: "</s>",
-            }),
             cache: Default::default(),
         }
     }
@@ -443,14 +339,6 @@ impl LlamaSource {
                 "tokenizer.json".to_string(),
             ),
             group_query_attention: 1,
-            markers: Some(ChatMarkers {
-                system_prompt_marker: "<|system|>\n",
-                end_system_prompt_marker: "<|end|>",
-                user_marker: "<|user|>\n",
-                end_user_marker: "<|end|>",
-                assistant_marker: "<|assistant|>\n",
-                end_assistant_marker: "<|end|>",
-            }),
             cache: Default::default(),
         }
     }
@@ -470,14 +358,6 @@ impl LlamaSource {
                 "tokenizer.json".to_string(),
             ),
             group_query_attention: 1,
-            markers: Some(ChatMarkers {
-                system_prompt_marker: "<|system|>\n",
-                end_system_prompt_marker: "<|end|>",
-                user_marker: "<|user|>\n",
-                end_user_marker: "<|end|>",
-                assistant_marker: "<|assistant|>\n",
-                end_assistant_marker: "<|end|>",
-            }),
             cache: Default::default(),
         }
     }
@@ -496,14 +376,6 @@ impl LlamaSource {
                 "tokenizer.json".to_string(),
             ),
             group_query_attention: 1,
-            markers: Some(ChatMarkers {
-                system_prompt_marker: "<|system|>\n",
-                end_system_prompt_marker: "<|end|>",
-                user_marker: "<|user|>\n",
-                end_user_marker: "<|end|>",
-                assistant_marker: "<|assistant|>\n",
-                end_assistant_marker: "<|end|>",
-            }),
             cache: Default::default(),
         }
     }
@@ -546,14 +418,6 @@ impl LlamaSource {
             ),
             tokenizer: llama_v3_tokenizer(),
             group_query_attention: 1,
-            markers: Some(ChatMarkers {
-                system_prompt_marker: "<|begin_of_text|><|start_header_id|>system<|end_header_id|>",
-                end_system_prompt_marker: "<|eot_id|>",
-                user_marker: "<|start_header_id|>user<|end_header_id|>",
-                end_user_marker: "<|eot_id|>",
-                assistant_marker: "<|start_header_id|>assistant<|end_header_id|>",
-                end_assistant_marker: "<|eot_id|>",
-            }),
             cache: Default::default(),
         }
     }
@@ -568,15 +432,6 @@ impl LlamaSource {
             ),
             tokenizer: llama_v3_tokenizer(),
             group_query_attention: 1,
-            markers: Some(ChatMarkers {
-                system_prompt_marker:
-                    "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n",
-                end_system_prompt_marker: "<|eot_id|>",
-                user_marker: "<|start_header_id|>user<|end_header_id|>\n",
-                end_user_marker: "<|eot_id|>",
-                assistant_marker: "<|start_header_id|>assistant<|end_header_id|>\n",
-                end_assistant_marker: "<|eot_id|>",
-            }),
             cache: Default::default(),
         }
     }
@@ -591,14 +446,6 @@ impl LlamaSource {
             ),
             tokenizer: llama_v3_tokenizer(),
             group_query_attention: 1,
-            markers: Some(ChatMarkers {
-                system_prompt_marker: "<|begin_of_text|><|start_header_id|>system<|end_header_id|>",
-                end_system_prompt_marker: "<|eot_id|>",
-                user_marker: "<|start_header_id|>user<|end_header_id|>",
-                end_user_marker: "<|eot_id|>",
-                assistant_marker: "<|start_header_id|>assistant<|end_header_id|>",
-                end_assistant_marker: "<|eot_id|>",
-            }),
             cache: Default::default(),
         }
     }
@@ -613,14 +460,6 @@ impl LlamaSource {
             ),
             tokenizer: llama_v3_tokenizer(),
             group_query_attention: 1,
-            markers: Some(ChatMarkers {
-                system_prompt_marker: "<|begin_of_text|><|start_header_id|>system<|end_header_id|>",
-                end_system_prompt_marker: "<|eot_id|>",
-                user_marker: "<|start_header_id|>user<|end_header_id|>",
-                end_user_marker: "<|eot_id|>",
-                assistant_marker: "<|start_header_id|>assistant<|end_header_id|>",
-                end_assistant_marker: "<|eot_id|>",
-            }),
             cache: Default::default(),
         }
     }
@@ -635,15 +474,6 @@ impl LlamaSource {
             ),
             tokenizer: llama_v3_tokenizer(),
             group_query_attention: 1,
-            markers: Some(ChatMarkers {
-                system_prompt_marker:
-                    "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n",
-                end_system_prompt_marker: "<|eot_id|>",
-                user_marker: "<|start_header_id|>user<|end_header_id|>\n",
-                end_user_marker: "<|eot_id|>",
-                assistant_marker: "<|start_header_id|>assistant<|end_header_id|>\n",
-                end_assistant_marker: "<|eot_id|>",
-            }),
             ..Default::default()
         }
     }
@@ -658,15 +488,6 @@ impl LlamaSource {
             ),
             tokenizer: llama_v3_tokenizer(),
             group_query_attention: 1,
-            markers: Some(ChatMarkers {
-                system_prompt_marker:
-                    "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n",
-                end_system_prompt_marker: "<|eot_id|>",
-                user_marker: "<|start_header_id|>user<|end_header_id|>\n",
-                end_user_marker: "<|eot_id|>",
-                assistant_marker: "<|start_header_id|>assistant<|end_header_id|>\n",
-                end_assistant_marker: "<|eot_id|>",
-            }),
             ..Default::default()
         }
     }
@@ -681,7 +502,6 @@ impl LlamaSource {
             ),
             tokenizer: llama_tokenizer(),
             group_query_attention: 1,
-            markers: Default::default(),
             cache: Default::default(),
         }
     }
@@ -710,14 +530,6 @@ impl LlamaSource {
             ),
             tokenizer: llama_tokenizer(),
             group_query_attention: 1,
-            markers: Some(ChatMarkers {
-                system_prompt_marker: "<<SYS>>\n",
-                assistant_marker: " [/INST] ",
-                user_marker: "[INST]",
-                end_system_prompt_marker: "</s>",
-                end_user_marker: "</s>",
-                end_assistant_marker: "</s>",
-            }),
             cache: Default::default(),
         }
     }
@@ -732,14 +544,6 @@ impl LlamaSource {
             ),
             tokenizer: llama_tokenizer(),
             group_query_attention: 1,
-            markers: Some(ChatMarkers {
-                system_prompt_marker: "<<SYS>>\n",
-                assistant_marker: " [/INST] ",
-                user_marker: "[INST]",
-                end_system_prompt_marker: "</s>",
-                end_user_marker: "</s>",
-                end_assistant_marker: "</s>",
-            }),
             cache: Default::default(),
         }
     }
@@ -754,14 +558,6 @@ impl LlamaSource {
             ),
             tokenizer: llama_tokenizer(),
             group_query_attention: 8,
-            markers: Some(ChatMarkers {
-                system_prompt_marker: "<<SYS>>\n",
-                assistant_marker: " [/INST] ",
-                user_marker: "[INST]",
-                end_system_prompt_marker: "</s>",
-                end_user_marker: "</s>",
-                end_assistant_marker: "</s>",
-            }),
             cache: Default::default(),
         }
     }
@@ -838,14 +634,6 @@ impl LlamaSource {
                 "main".to_string(),
                 "tokenizer.json".to_string(),
             ),
-            markers: Some(ChatMarkers {
-                system_prompt_marker: "<s>### System:\n",
-                end_system_prompt_marker: "",
-                user_marker: "### User:\n",
-                end_user_marker: "",
-                assistant_marker: "### Assistant:\n",
-                end_assistant_marker: "</s>",
-            }),
             ..Default::default()
         }
     }
@@ -860,7 +648,6 @@ impl LlamaSource {
             ),
             tokenizer: qwen_tokenizer(),
             group_query_attention: 7,
-            markers: qwen_chat_markers(),
             cache: Default::default(),
         }
     }
@@ -875,7 +662,6 @@ impl LlamaSource {
             ),
             tokenizer: qwen_tokenizer(),
             group_query_attention: 7,
-            markers: qwen_chat_markers(),
             cache: Default::default(),
         }
     }
@@ -890,7 +676,6 @@ impl LlamaSource {
             ),
             tokenizer: qwen_tokenizer(),
             group_query_attention: 7,
-            markers: qwen_chat_markers(),
             cache: Default::default(),
         }
     }
@@ -905,7 +690,6 @@ impl LlamaSource {
             ),
             tokenizer: qwen_tokenizer(),
             group_query_attention: 7,
-            markers: qwen_chat_markers(),
             cache: Default::default(),
         }
     }
@@ -913,6 +697,6 @@ impl LlamaSource {
 
 impl Default for LlamaSource {
     fn default() -> Self {
-        Self::llama_13b()
+        Self::llama_3_1_8b_chat()
     }
 }

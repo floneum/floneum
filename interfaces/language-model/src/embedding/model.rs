@@ -272,7 +272,7 @@ where
         input: String,
     ) -> BoxedFuture<'_, Result<Embedding, Box<dyn std::error::Error + Send + Sync>>> {
         let future = self.0.embed_string(input);
-        Box::pin(async move { future.await.map(|e| e.cast()).map_err(|e| e.into()) })
+        Box::pin(async move { future.await.map_err(|e| e.into()) })
     }
 
     fn embed_vec_boxed(
@@ -283,7 +283,7 @@ where
         Box::pin(async move {
             future
                 .await
-                .map(|e| e.into_iter().map(|e| e.cast()).collect())
+                .map(|e| e.into_iter().collect())
                 .map_err(|e| e.into())
         })
     }
@@ -293,7 +293,7 @@ where
         input: EmbeddingInput,
     ) -> BoxedFuture<'_, Result<Embedding, Box<dyn std::error::Error + Send + Sync>>> {
         let future = self.0.embed_for(input);
-        Box::pin(async move { future.await.map(|e| e.cast()).map_err(|e| e.into()) })
+        Box::pin(async move { future.await.map_err(|e| e.into()) })
     }
 
     fn embed_vec_for_boxed(
@@ -304,7 +304,7 @@ where
         Box::pin(async move {
             future
                 .await
-                .map(|e| e.into_iter().map(|e| e.cast()).collect())
+                .map(|e| e.into_iter().collect())
                 .map_err(|e| e.into())
         })
     }

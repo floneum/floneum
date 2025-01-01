@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::raw::attention_layer::LlamaAttention;
 use crate::raw::rope::RopeCache;
 use attention_layer::AttentionBias;
@@ -34,6 +36,7 @@ pub struct LlamaConfig {
     head_dimension: usize,
     n_head: usize,
     pub(crate) n_layer: usize,
+    pub(crate) stop_token: u32,
 }
 
 impl LlamaConfig {
@@ -43,7 +46,7 @@ impl LlamaConfig {
 }
 
 pub struct Model {
-    pub(crate) config: LlamaConfig,
+    pub(crate) config: Arc<LlamaConfig>,
     tok_embeddings: Embedding,
     layers: Vec<LlamaAttention>,
     norm: RmsNorm,
@@ -52,7 +55,12 @@ pub struct Model {
 }
 
 impl Model {
-    pub fn from_ggml(mut ct: ggml_file::Content, gqa: usize, device: &Device) -> Result<Self> {
+    pub fn from_ggml(
+        mut ct: ggml_file::Content,
+        gqa: usize,
+        device: &Device,
+        stop_token: u32,
+    ) -> Result<Self> {
         let head_dim = (ct.hparams.n_embd / ct.hparams.n_head) as usize;
         let n_layer = ct.hparams.n_layer as usize;
         let config = LlamaConfig {
@@ -62,7 +70,9 @@ impl Model {
             n_head: ct.hparams.n_head as usize,
             n_layer,
             context_length: 4096,
+            stop_token,
         };
+        let config = Arc::new(config);
         let rope = RopeCache::new(&config, DType::F32, device)?;
         let tok_embeddings_q = ct.remove("tok_embeddings.weight")?;
         let tok_embeddings = tok_embeddings_q.dequantize(device)?;
@@ -109,6 +119,7 @@ impl Model {
                 rope_cache: rope.clone(),
             })
         }
+
         Ok(Self {
             config,
             tok_embeddings: Embedding::new(tok_embeddings, ct.hparams.n_embd as usize),
@@ -139,15 +150,10 @@ impl Model {
         };
 
         // Get the eos and bos tokens from the metadata
-        let bos_token = md_get("tokenizer.ggml.bos_token_id")?.to_u32()? as usize;
-        let eos_token = md_get("tokenizer.ggml.eos_token_id")?.to_u32()? as usize;
-        let tokens = md_get("tokenizer.ggml.tokens")?.to_vec()?;
-        let chat_template = md_get("tokenizer.chat_template")?.to_string().unwrap();
-        println!("chat_template: {chat_template}");
-        panic!(
-            "bos: {bos_token} ({:?}), eos: {eos_token} ({:?})",
-            tokens[bos_token], tokens[eos_token]
-        );
+        let bos_token = md_get("tokenizer.ggml.bos_token_id")?.to_u32()?;
+        let stop_token = md_get("tokenizer.ggml.eos_token_id")?.to_u32()?;
+        // let tokens = md_get("tokenizer.ggml.tokens")?.to_vec()?;
+        // let chat_template = md_get("tokenizer.chat_template")?.to_string();
 
         // Parameter extraction from metadata.
         let head_count = md_get(".attention.head_count")?.to_u32()? as usize;
@@ -174,7 +180,9 @@ impl Model {
             head_dimension: head_dim,
             n_head: head_count,
             n_layer: block_count,
+            stop_token,
         };
+        let config = Arc::new(config);
 
         let rope = RopeCache::new(&config, DType::F32, device)?;
 

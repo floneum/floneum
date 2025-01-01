@@ -1,12 +1,8 @@
 //! A chat interface that builds on top of [`crate::Model`]
 
-mod local;
-
-use crate::{Model, ModelConstraints};
-use crate::{NoConstraintsSupported, Session};
+use crate::ModelConstraints;
+use crate::NoConstraintsSupported;
 use futures_util::Future;
-use kalosm_sample::{ParserExt, SendCreateParserState};
-use llm_samplers::types::Sampler;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 

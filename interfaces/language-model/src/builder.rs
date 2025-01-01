@@ -26,7 +26,7 @@ pub trait ModelBuilder {
     where
         Self: Sized,
     {
-async {self.start_with_loading_handler(|_| {}).await}
+        async { self.start_with_loading_handler(|_| {}).await }
     }
 
     /// Start the model with a loading handler.

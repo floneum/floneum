@@ -1,5 +1,5 @@
 use candle_core::Device;
-use kalosm_language_model::{Embedder, EmbedderExt, Embedding, VectorSpace};
+use kalosm_language_model::{Embedder, EmbedderExt, Embedding};
 
 use crate::{
     Class, ClassificationDataset, ClassificationDatasetBuilder, Classifier, ClassifierConfig,
@@ -222,18 +222,14 @@ impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
 ///     Ok(())
 /// }
 /// ```
-pub struct TextClassifier<T: Class, S: VectorSpace + Send + Sync + 'static> {
+pub struct TextClassifier<T: Class> {
     model: Classifier<T>,
-    phantom: std::marker::PhantomData<S>,
 }
 
-impl<T: Class, S: VectorSpace + Send + Sync + 'static> TextClassifier<T, S> {
+impl<T: Class> TextClassifier<T> {
     /// Creates a new [`TextClassifier`].
     pub fn new(model: Classifier<T>) -> Self {
-        Self {
-            model,
-            phantom: std::marker::PhantomData,
-        }
+        Self { model }
     }
 
     /// Runs the classifier on the given input.

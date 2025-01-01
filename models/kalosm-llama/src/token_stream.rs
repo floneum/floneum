@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
 use llm_samplers::types::{HasSamplerResources, Logits, Sampler, SamplerError};
-use rayon::iter::IntoParallelIterator;
-use rayon::iter::ParallelExtend;
-use rayon::iter::ParallelIterator;
+use rayon::iter::{IntoParallelIterator, ParallelExtend, ParallelIterator};
 use thiserror::Error;
 use tokenizers::tokenizer::Tokenizer;
 

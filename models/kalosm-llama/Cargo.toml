@@ -24,7 +24,7 @@ rand = "0.8.5"
 tokio = { version = "1.32.0", features = ["full"] }
 async-trait = "0.1.73"
 once_cell = "1.19.0"
-rayon = { version = "1.8.0", optional = true }
+rayon = { version = "1.8.0" }
 llm-samplers.workspace = true
 kalosm-sample.workspace = true
 kalosm-language-model.workspace = true
@@ -32,6 +32,8 @@ kalosm-streams.workspace = true
 kalosm-common = { workspace = true }
 thiserror.workspace = true
 safetensors = "0.4.5"
+minijinja = { version = "2.5.0", features = ["json", "loader"] }
+minijinja-contrib = { version = "2.5.0", features = ["pycompat"] }
 
 [dev-dependencies]
 tracing-subscriber = "0.3.18"
@@ -46,7 +48,6 @@ cudnn = ["candle-core/cudnn"]
 mkl = ["dep:intel-mkl-src", "candle-core/mkl", "candle-nn/mkl", "candle-transformers/mkl"]
 nccl = ["cuda", "cudarc/nccl", "half/num-traits", "half/use-intrinsics", "half/rand_distr"]
 metal = ["candle-core/metal", "candle-nn/metal", "candle-transformers/metal", "kalosm-common/metal"]
-rayon = ["dep:rayon"]
 
 [[bench]]
 name = "inferance"

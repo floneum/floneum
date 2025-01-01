@@ -2,6 +2,7 @@ use kalosm_sample::Parser;
 use std::{convert::Infallible, future::Future};
 
 mod generation_parameters;
+pub use generation_parameters::*;
 // mod ext;
 
 /// A session for a model.
@@ -23,11 +24,6 @@ pub trait Session {
     fn from_bytes(bytes: &[u8]) -> Result<Self, Self::Error>
     where
         Self: std::marker::Sized;
-
-    /// Get a reference to the tokens in the session.
-    fn tokens(&self) -> &[u32] {
-        &[]
-    }
 
     /// Try to clone the session.
     fn try_clone(&self) -> Result<Self, Self::Error>
@@ -64,12 +60,17 @@ pub trait ModelConstraints {
     type Output;
 }
 
-impl<P> ModelConstraints for P where P: Parser {
+impl<P> ModelConstraints for P
+where
+    P: Parser,
+{
     type Output = <P as Parser>::Output;
 }
 
 #[doc = include_str!("../../docs/model.md")]
-pub trait Model<Sampler, Constraints: ModelConstraints = NoConstraintsSupported>: Send + Sync + 'static {
+pub trait Model<Sampler, Constraints: ModelConstraints = NoConstraintsSupported>:
+    Send + Sync + 'static
+{
     /// The type of error this model may return during operations.
     type Error: Send + Sync + 'static;
 
@@ -78,9 +79,6 @@ pub trait Model<Sampler, Constraints: ModelConstraints = NoConstraintsSupported>
 
     /// Create a new session for this model.
     fn new_session(&self) -> Result<Self::Session, Self::Error>;
-
-    /// Run the model synchronously. The model implementation may choose to return only the top k logits.
-    fn feed_text(&self, session: &mut Self::Session, text: &str) -> Result<(), Self::Error>;
 
     /// Generate text with the given prompt.
     ///
@@ -91,7 +89,7 @@ pub trait Model<Sampler, Constraints: ModelConstraints = NoConstraintsSupported>
         text: &str,
         sampler: Sampler,
         on_token: impl FnMut(String) -> Result<(), Self::Error>,
-    ) -> impl Future<Output = Result<(), Self::Error>>;
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
     /// Generate text with the given prompt.
     ///
@@ -103,5 +101,5 @@ pub trait Model<Sampler, Constraints: ModelConstraints = NoConstraintsSupported>
         sampler: Sampler,
         parser: Constraints,
         on_token: impl FnMut(String) -> Result<(), Self::Error>,
-    ) -> impl Future<Output = Result<Constraints::Output, Self::Error>>;
+    ) -> impl Future<Output = Result<Constraints::Output, Self::Error>> + Send;
 }

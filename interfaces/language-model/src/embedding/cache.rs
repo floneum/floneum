@@ -1,6 +1,4 @@
-use std::{
-    future::Future, hash::BuildHasher, num::NonZeroUsize, sync::Mutex,
-};
+use std::{future::Future, hash::BuildHasher, num::NonZeroUsize, sync::Mutex};
 
 use crate::{Embedder, Embedding, EmbeddingInput};
 

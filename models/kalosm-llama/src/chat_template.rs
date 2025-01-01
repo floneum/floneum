@@ -8,7 +8,7 @@ use crate::ChatHistoryItem;
 #[cfg(test)]
 use pretty_assertions::assert_eq;
 
-struct HuggingFaceChatTemplate {
+pub(crate) struct HuggingFaceChatTemplate {
     environment: Environment<'static>,
 }
 

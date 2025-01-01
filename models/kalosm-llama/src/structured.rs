@@ -1,28 +1,29 @@
-use std::{
-    fmt::{Debug, Display, Formatter},
-    sync::{Arc, Mutex},
-};
-
-use crate::{StructuredTextGenerationError, SyncModel};
-use crate::{TokenOutputStream, UnstructuredTextGenerationError};
 use kalosm_sample::CreateParserState;
 use kalosm_sample::{LiteralParser, ParseStatus, Parser, ParserExt};
 use llm_samplers::prelude::{Logit, Logits};
 use llm_samplers::types::{HasSamplerResources, Sampler, SamplerError};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use std::{
+    fmt::{Debug, Display, Formatter},
+    sync::{Arc, Mutex},
+};
+use thiserror::Error;
 use tokenizers::tokenizer::Tokenizer;
 
+use crate::model::LlamaModelError;
+use crate::{LlamaModel, LlamaSession};
+
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
+pub(crate) fn generate_structured<P: Parser>(
     prompt: impl Display,
-    llm: &M,
-    session: &mut M::Session,
+    llm: &LlamaModel,
+    session: &mut LlamaSession,
     parser: P,
     parser_state: P::PartialState,
     mut sampler: Arc<Mutex<dyn Sampler>>,
-    mut on_token: impl FnMut(String) -> Result<(), M::Error>,
+    mut on_token: impl FnMut(String) -> Result<(), LlamaModelError>,
     top_k: Option<usize>,
-) -> Result<P::Output, StructuredTextGenerationError<M::Error>> {
+) -> Result<P::Output, StructuredTextGenerationError<LlamaModelError>> {
     let tokenizer = llm.tokenizer();
 
     let prompt_text = prompt.to_string();
@@ -424,27 +425,6 @@ impl DetokenizationCache {
         }
         self.vec.clear();
     }
-}
-
-
-/// An error that can happen when generating unstructured text from a model.
-#[derive(Debug, Error)]
-pub enum UnstructuredTextGenerationError<E> {
-    /// An error while running the model.
-    #[error("Model error: {0}")]
-    ModelError(#[from] E),
-
-    /// An error while tokenizing the input or decoding the output.
-    #[error("Tokenization error: {0}")]
-    TokenizationError(tokenizers::Error),
-
-    /// An error while sampling tokens.
-    #[error("Sampler error: {0}")]
-    SamplerError(Box<dyn std::error::Error + Send + Sync>),
-
-    /// A streaming detokenization error.
-    #[error("Token output stream error: {0}")]
-    TokenOutputStreamError(TokenOutputStreamError),
 }
 
 /// An error that can happen when generating structured text from a model.

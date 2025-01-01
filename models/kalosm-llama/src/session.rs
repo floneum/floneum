@@ -1,8 +1,9 @@
-use crate::accelerated_device_if_available;
 use crate::raw::cache::LlamaCache;
+use crate::{accelerated_device_if_available, raw::LlamaConfig};
 use candle_core::{Device, Tensor};
 use kalosm_language_model::Session;
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
 /// An error that can occur when saving or loading a [`LlamaSession`].
 #[derive(Debug, thiserror::Error)]
@@ -18,7 +19,7 @@ pub enum LlamaLoadingError {
 /// A Llama session with cached state for the current fed prompt
 #[derive(Debug, Clone)]
 pub struct LlamaSession {
-    pub(crate) cache: LlamaCache,
+    pub(crate) cache: Arc<RwLock<LlamaCache>>,
 }
 
 impl Session for LlamaSession {
@@ -30,10 +31,6 @@ impl Session for LlamaSession {
         let bytes = safetensors::serialize(&tensors, &None)?;
         into.extend_from_slice(&bytes);
         Ok(())
-    }
-
-    fn tokens(&self) -> &[u32] {
-        &self.cache.tokens
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, Self::Error>
@@ -55,21 +52,30 @@ impl Session for LlamaSession {
 }
 
 impl LlamaSession {
+    /// Create a new session
+    pub(crate) fn new(cache: &LlamaConfig) -> Self {
+        Self {
+            cache: Arc::new(RwLock::new(LlamaCache::new(cache))),
+        }
+    }
+
     /// Export the current cache tensor map.
     pub fn get_tensor_map(&self, device: &Device) -> HashMap<String, Tensor> {
-        self.cache.get_tensor_map(device)
+        let cache = self.cache.read().unwrap();
+        cache.get_tensor_map(device)
     }
 
     /// Import a cache tensor map.
     pub fn set_tensor_map(&mut self, map: HashMap<String, Tensor>) -> candle_core::Result<()> {
-        self.cache = LlamaCache::from_tensor_map(map)?;
+        let mut cache = self.cache.write().unwrap();
+        *cache = LlamaCache::from_tensor_map(map)?;
         Ok(())
     }
 
     /// Create a cache from a tensor map. This can be used to load a cache from disk.
     pub fn from_tensor_map(map: HashMap<String, Tensor>) -> candle_core::Result<Self> {
         Ok(Self {
-            cache: LlamaCache::from_tensor_map(map)?,
+            cache: Arc::new(RwLock::new(LlamaCache::from_tensor_map(map)?)),
         })
     }
 }

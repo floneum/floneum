@@ -68,7 +68,7 @@ pub struct ObjectWithEmbeddingIds<T> {
 pub struct EmbeddingIndexedTable<C: Connection, R, S = UnknownVectorSpace> {
     table: String,
     db: Surreal<C>,
-    vector_db: VectorDB<S>,
+    vector_db: VectorDB,
     phantom: std::marker::PhantomData<R>,
 }
 
@@ -84,7 +84,7 @@ impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
     }
 
     /// Get the raw vector database.
-    pub fn vector_db(&self) -> &VectorDB<S> {
+    pub fn vector_db(&self) -> &VectorDB {
         &self.vector_db
     }
 

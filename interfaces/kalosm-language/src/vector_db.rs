@@ -83,21 +83,20 @@ impl From<heed::Error> for VectorDbError {
 /// ```
 #[doc(alias = "VectorDatabase")]
 #[doc(alias = "Vector Database")]
-pub struct VectorDB<S = UnknownVectorSpace> {
+pub struct VectorDB {
     database: ArroyDatabase<DotProduct>,
     metadata: Database<Str, SerdeJson<Vec<u32>>>,
     env: heed::Env,
     dim: AtomicUsize,
-    _phantom: std::marker::PhantomData<S>,
 }
 
-impl<S: VectorSpace + Sync> Default for VectorDB<S> {
+impl Default for VectorDB {
     fn default() -> Self {
         Self::new().unwrap()
     }
 }
 
-impl<S: VectorSpace + Sync> VectorDB<S> {
+impl VectorDB {
     fn set_dim(&self, dim: usize) {
         if dim == 0 {
             panic!("Dimension cannot be 0");
@@ -146,7 +145,6 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
             metadata,
             env,
             dim: AtomicUsize::new(0),
-            _phantom: std::marker::PhantomData,
         })
     }
 
@@ -316,13 +314,13 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
 }
 
 /// A trait for anything that can be used to filter the results of a vector search.
-pub trait IntoVectorDbSearchFilter<S, M> {
+pub trait IntoVectorDbSearchFilter<M> {
     /// Convert the filter into a set of candidates.
-    fn into_vector_db_search_filter(self, db: &VectorDB<S>) -> Candidates;
+    fn into_vector_db_search_filter(self, db: &VectorDB) -> Candidates;
 }
 
-impl<S: VectorSpace> IntoVectorDbSearchFilter<S, ()> for Candidates {
-    fn into_vector_db_search_filter(self, _: &VectorDB<S>) -> Candidates {
+impl IntoVectorDbSearchFilter<()> for Candidates {
+    fn into_vector_db_search_filter(self, _: &VectorDB) -> Candidates {
         self
     }
 }
@@ -330,12 +328,11 @@ impl<S: VectorSpace> IntoVectorDbSearchFilter<S, ()> for Candidates {
 /// A marker type that allows kalosm to specialize the [`IntoVectorDbSearchFilter`] trait for iterators.
 pub struct IteratorMarker;
 
-impl<S, I> IntoVectorDbSearchFilter<S, IteratorMarker> for I
+impl<I> IntoVectorDbSearchFilter<IteratorMarker> for I
 where
-    S: VectorSpace,
     I: IntoIterator<Item = EmbeddingId>,
 {
-    fn into_vector_db_search_filter(self, _: &VectorDB<S>) -> Candidates {
+    fn into_vector_db_search_filter(self, _: &VectorDB) -> Candidates {
         let mut candidates = Candidates::new();
         for id in self {
             candidates.insert(id.0);
@@ -352,7 +349,7 @@ where
     S: VectorSpace,
     I: FnMut(Embedding) -> bool,
 {
-    fn into_vector_db_search_filter(mut self, db: &VectorDB<S>) -> Candidates {
+    fn into_vector_db_search_filter(mut self, db: &VectorDB) -> Candidates {
         let mut candidates = Candidates::new();
         let rtxn = match db.env.read_txn() {
             Ok(rtxn) => rtxn,
@@ -380,7 +377,7 @@ where
 
 /// A builder for searching for embeddings in a vector database.
 pub struct VectorDBSearchBuilder<'a, S: VectorSpace> {
-    db: &'a VectorDB<S>,
+    db: &'a VectorDB,
     embedding: &'a Embedding,
     results: Option<usize>,
     filter: Option<Candidates>,

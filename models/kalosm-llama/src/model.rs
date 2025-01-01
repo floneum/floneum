@@ -1,14 +1,18 @@
 use crate::raw::cache::LlamaCache;
+use crate::token_stream::TokenOutputStream;
+use crate::token_stream::TokenOutputStreamError;
 use crate::{raw::Model, session::LlamaSession};
 use kalosm_common::*;
-use kalosm_language_model::{SyncModelExt, UnstructuredTextGenerationError};
+use kalosm_language_model::GenerationParameters;
+use llm_samplers::types::Logits;
+use std::any::Any;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use candle_core::{
     quantized::{ggml_file, gguf_file},
     DType, Device,
 };
-use kalosm_language_model::SyncModel;
 use tokenizers::Tokenizer;
 
 use crate::{InferenceSettings, LlamaSourceError};
@@ -19,73 +23,29 @@ pub enum LlamaModelError {
     /// An error from candle while running the model.
     #[error("Candle error: {0}")]
     Candle(#[from] candle_core::Error),
+
     /// An error from tokenizers while running the model.
     #[error("Tokenizer error: {0}")]
     Tokenizer(tokenizers::Error),
-    /// No stop token was found.
-    #[error("No stop token was found")]
-    NoStopToken,
+
+    /// An error while sampling tokens.
+    #[error("Sampler error: {0}")]
+    SamplerError(Box<dyn std::error::Error + Send + Sync>),
+
+    /// A streaming detokenization error.
+    #[error("Token output stream error: {0}")]
+    TokenOutputStreamError(TokenOutputStreamError),
+
+    /// An error while writing to the session cache.
+    #[error("Session cache error: {0}")]
+    Session(String),
 }
 
 /// The inner, synchronous Llama model.
 pub struct LlamaModel {
-    model: Model,
+    pub(crate) model: Model,
     device: Device,
     tokenizer: Arc<Tokenizer>,
-    cache: LlamaCache,
-}
-
-impl SyncModel for LlamaModel {
-    type Session = LlamaSession;
-    type Error = LlamaModelError;
-
-    fn new_session(&self) -> Result<Self::Session, Self::Error> {
-        let cache = self.cache.clone();
-        Ok(Self::Session { cache })
-    }
-
-    fn feed_text(
-        &self,
-        session: &mut Self::Session,
-        prompt: &str,
-        logits: &mut Vec<f32>,
-    ) -> Result<(), Self::Error> {
-        let encoded = self
-            .tokenizer
-            .encode(prompt, false)
-            .map_err(LlamaModelError::Tokenizer)?;
-        let tokens = encoded.get_ids();
-        self.feed_tokens(session, tokens, logits)
-    }
-
-    fn feed_tokens(
-        &self,
-        session: &mut Self::Session,
-        tokens: &[u32],
-        logits: &mut Vec<f32>,
-    ) -> Result<(), Self::Error> {
-        Self::forward(
-            &self.model,
-            &self.device,
-            tokens,
-            Some(&mut session.cache),
-            logits,
-        )?;
-        Ok(())
-    }
-
-    fn stop_token(&self) -> Result<u32, Self::Error> {
-        let vocab = self.tokenizer.get_vocab(true);
-        let eos_token = match vocab.get("</s>").or(vocab.get("<|end_of_text|>")) {
-            Some(token) => *token,
-            None => return Err(LlamaModelError::NoStopToken),
-        };
-        Ok(eos_token)
-    }
-
-    fn tokenizer(&self) -> Arc<Tokenizer> {
-        self.tokenizer.clone()
-    }
 }
 
 impl LlamaModel {
@@ -138,28 +98,29 @@ impl LlamaModel {
             Some("ggml" | "bin") | Some(_) | None => {
                 let model = ggml_file::Content::read(&mut file, &device)?;
                 let gqa = builder.source.group_query_attention;
-                Model::from_ggml(model, gqa as usize, &device)?
+                let vocab = tokenizer.get_vocab(true);
+                let stop_token = match vocab
+                    .get("</s>")
+                    .or_else(|| vocab.get("<|end_of_text|>"))
+                    .or_else(|| vocab.get("<|endoftext|>"))
+                {
+                    Some(token) => *token,
+                    None => return Err(LlamaSourceError::NoStopToken),
+                };
+                Model::from_ggml(model, gqa as usize, &device, stop_token)?
             }
         };
 
-        let cache = LlamaCache::new(&model.config);
         Ok(Self {
             model,
             tokenizer: Arc::new(tokenizer),
             device,
-            cache,
         })
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new(
-        model: Model,
-        tokenizer: Arc<Tokenizer>,
-        device: Device,
-        cache: LlamaCache,
-    ) -> Self {
+    pub(crate) fn new(model: Model, tokenizer: Arc<Tokenizer>, device: Device) -> Self {
         Self {
-            cache,
             model,
             device,
             tokenizer,
@@ -169,105 +130,68 @@ impl LlamaModel {
     pub(crate) fn _infer(
         &mut self,
         settings: InferenceSettings,
-        sampler: std::sync::Arc<std::sync::Mutex<dyn llm_samplers::prelude::Sampler>>,
-        out: tokio::sync::mpsc::UnboundedSender<String>,
-    ) -> Result<(), UnstructuredTextGenerationError<LlamaModelError>> {
+        mut on_token: Box<dyn FnMut(String) -> Result<(), LlamaModelError> + Send + Sync>,
+        finished: tokio::sync::oneshot::Sender<Result<Box<dyn Any + Send>, LlamaModelError>>,
+    ) -> Result<(), LlamaModelError> {
         let InferenceSettings {
             prompt,
-            sample_len,
             stop_on,
+            sampler,
+            session,
         } = settings;
 
-        let mut session = self.new_session()?;
+        let mut session = session
+            .cache
+            .write()
+            .map_err(|err| LlamaModelError::Session(err.to_string()))?;
 
-        self.stream_text_with_sampler(
-            &mut session,
-            prompt.as_str(),
-            Some(sample_len as u32),
-            stop_on.as_deref(),
-            sampler,
-            |token| match out.send(token) {
-                Ok(_) => Ok(kalosm_language_model::ModelFeedback::Continue),
-                Err(_) => Ok(kalosm_language_model::ModelFeedback::Stop),
-            },
-        )?;
+        let mut sampler = sampler.unwrap_or_else(|| {
+            Arc::new(std::sync::Mutex::new(
+                GenerationParameters::default().sampler(),
+            ))
+        });
 
-        Ok(())
-    }
-}
-
-/// An extension trait for sync models.
-pub trait SyncModelExt: SyncModel {
-    /// Generate new text with the given prompt that conforms to the given parser.
-    #[allow(clippy::too_many_arguments)]
-    fn generate_structured<P: Parser>(
-        &self,
-        session: &mut Self::Session,
-        prompt: impl Display,
-        parser: P,
-        parser_state: P::PartialState,
-        sampler: Arc<Mutex<dyn Sampler>>,
-        on_token: impl FnMut(String) -> Result<(), Self::Error>,
-        top_k: Option<usize>,
-    ) -> Result<P::Output, StructuredTextGenerationError<Self::Error>> {
-        generate_structured(
-            prompt,
-            self,
-            session,
-            parser,
-            parser_state,
-            sampler,
-            on_token,
-            top_k,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    /// Stream text, calling the on_token callback every time a new token is generated. For some models, this could be used to implement [`Model::stream_text_with_sampler`].
-    fn stream_text_with_sampler(
-        &self,
-        session: &mut Self::Session,
-        prompt: &str,
-        max_tokens: Option<u32>,
-        stop_on: Option<&str>,
-        mut sampler: Arc<Mutex<dyn Sampler>>,
-        mut on_token: impl FnMut(String) -> Result<ModelFeedback, Self::Error>,
-    ) -> Result<(), UnstructuredTextGenerationError<Self::Error>> {
         let tokens = self
-            .tokenizer()
+            .tokenizer
             .encode(prompt, false)
-            .map_err(UnstructuredTextGenerationError::TokenizationError)?;
+            .map_err(LlamaModelError::Tokenizer)?;
         let tokens = tokens.get_ids();
-        let mut text_stream = TokenOutputStream::new(self.tokenizer());
+        let mut text_stream = TokenOutputStream::new(self.tokenizer.clone());
         for &token in tokens {
             text_stream
                 .next_token(token)
-                .map_err(UnstructuredTextGenerationError::TokenOutputStreamError)?;
+                .map_err(LlamaModelError::TokenOutputStreamError)?;
         }
 
         let mut logit_probs = Vec::new();
-        self.feed_tokens(session, tokens, &mut logit_probs)?;
+        Self::forward(
+            &self.model,
+            &self.device,
+            tokens,
+            Some(&mut session),
+            &mut logit_probs,
+        )?;
         let mut logits = Logits::try_from_iter_top_k(logit_probs, 512)
             .expect("model output should be valid logits");
         let mut tokens_generated = 0;
         // This stores a buffer of text that has been generated to check against the stop_on string. It should never be longer than the stop_on string.
         let mut queued_text_matching_stop_on = String::new();
-        let stop_on_lowercase = stop_on.map(|s| s.to_lowercase());
+        let stop_on_lowercase = stop_on.as_ref().map(|s| s.to_lowercase());
         let stop_on_lowercase = stop_on_lowercase.as_deref();
-        let stop_token = self.stop_token()?;
+        let stop_token = self.model.config.stop_token;
         let mut logit_probs = Vec::new();
 
-        'generate: loop {
+        'generate: while !finished.is_closed() {
             let new_token = text_stream
-                .sample_token(&mut sampler, logits, stop_on)
-                .map_err(UnstructuredTextGenerationError::TokenOutputStreamError)?;
+                .sample_token(&mut sampler, logits, stop_on.as_deref())
+                .map_err(LlamaModelError::TokenOutputStreamError)?;
             if new_token == stop_token {
                 tracing::trace!("Stopping on stop token");
                 break;
             }
             if let Some(mut new_text) = text_stream
                 .next_token(new_token)
-                .map_err(UnstructuredTextGenerationError::TokenOutputStreamError)?
+                .map_err(LlamaModelError::TokenOutputStreamError)?
             {
                 if let Some(stop_on) = stop_on_lowercase {
                     let lowercase = new_text.to_lowercase();
@@ -305,29 +229,26 @@ pub trait SyncModelExt: SyncModel {
 
                     match before_stop_on {
                         Some(before_stop_on) => {
-                            if let ModelFeedback::Stop = on_token(before_stop_on)? {
-                                break;
-                            }
+                            on_token(before_stop_on)?;
                         }
                         None => {
                             new_text =
                                 std::mem::take(&mut queued_text_matching_stop_on) + &new_text;
-                            if let ModelFeedback::Stop = on_token(new_text)? {
-                                break;
-                            }
+                            on_token(new_text)?;
                         }
                     }
-                } else if let ModelFeedback::Stop = on_token(new_text)? {
-                    break;
+                } else {
+                    on_token(new_text)?;
                 }
             }
             tokens_generated += 1;
-            if let Some(max_tokens) = max_tokens {
-                if tokens_generated >= max_tokens {
-                    break;
-                }
-            }
-            self.feed_tokens(session, &[new_token], &mut logit_probs)?;
+            Self::forward(
+                &self.model,
+                &self.device,
+                &[new_token],
+                Some(&mut session),
+                &mut logit_probs,
+            )?;
             logits = Logits::try_from_iter_top_k(logit_probs.iter().copied(), 512)
                 .expect("model output should be valid logits");
         }

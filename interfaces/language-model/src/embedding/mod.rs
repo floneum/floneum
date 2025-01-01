@@ -98,28 +98,16 @@ impl Clone for Embedding {
 #[cfg(feature = "serde")]
 impl Serialize for Embedding {
     fn serialize<Ser: Serializer>(&self, serializer: Ser) -> Result<Ser::Ok, Ser::Error> {
-        let bytes = safetensors::tensor::serialize([("data", &self.embedding)], &None)
-            .map_err(|e| serde::ser::Error::custom(e.to_string()))?;
-
-        bytes.serialize(serializer)
+        let values = self.to_vec();
+        values.serialize(serializer)
     }
 }
 
 #[cfg(feature = "serde")]
 impl<'de> Deserialize<'de> for Embedding {
     fn deserialize<Des: Deserializer<'de>>(deserializer: Des) -> Result<Self, Des::Error> {
-        let bytes: Vec<u8> = Deserialize::deserialize(deserializer)?;
-        let tensor = safetensors::SafeTensors::deserialize(&bytes)
-            .map_err(|e| serde::de::Error::custom(e.to_string()))?;
-        let tensor = tensor
-            .tensor("data")
-            .map_err(|e| serde::de::Error::custom(e.to_string()))?;
-        let shape = tensor.shape();
-        let data = tensor.data();
-        let dtype = candle_core::DType::try_from(tensor.dtype())
-            .map_err(|e| serde::de::Error::custom(e.to_string()))?;
-        let embedding = Tensor::from_raw_buffer(data, dtype, shape, &Device::Cpu).unwrap();
-        Ok(Embedding { embedding })
+        let values: Vec<f32> = Deserialize::deserialize(deserializer)?;
+        Ok(Embedding::from(values))
     }
 }
 

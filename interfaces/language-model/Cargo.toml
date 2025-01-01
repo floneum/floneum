@@ -22,11 +22,9 @@ kalosm-common.workspace = true
 kalosm-streams.workspace = true
 thiserror.workspace = true
 lru = { version = "0.12.3", optional = true }
-safetensors = { version = "0.4.3", optional = true }
 tokenizers = { workspace = true }
-minijinja = { version = "2.5.0", features = ["json", "loader"] }
-minijinja-contrib = { version = "2.5.0", features = ["pycompat"] }
-reqwest = "0.12.12"
+reqwest = { version = "0.12.12", features = ["json"], optional = true }
+serde_json = { version = "1.0.134", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.28.1", features = ["full"] }
@@ -37,8 +35,8 @@ postcard = { version = "1.0.8", features = ["use-std"] }
 
 [features]
 default = ["cache"]
-remote = []
-serde = ["dep:serde", "safetensors"]
+remote = ["dep:reqwest", "dep:serde_json"]
+serde = ["dep:serde"]
 cache = ["serde", "dep:lru"]
 
 [package.metadata.docs.rs]

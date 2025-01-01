@@ -8,21 +8,21 @@ use crate::Pooling;
 use kalosm_common::*;
 pub use kalosm_language_model::{
     Embedder, EmbedderCacheExt, EmbedderExt, Embedding, EmbeddingInput, EmbeddingVariant,
-    ModelBuilder, VectorSpace,
+    ModelBuilder,
 };
 use serde::Deserialize;
 use serde::Serialize;
 
-#[async_trait::async_trait]
 impl ModelBuilder for BertBuilder {
     type Model = Bert;
     type Error = BertLoadingError;
 
-    async fn start_with_loading_handler(
+    /// Start the model with a loading handler.
+    fn start_with_loading_handler(
         self,
-        loading_handler: impl FnMut(ModelLoadingProgress) + Send + 'static,
-    ) -> Result<Self::Model, Self::Error> {
-        self.build_with_loading_handler(loading_handler).await
+        handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
+    ) -> impl Future<Output = Result<Self::Model, Self::Error>> {
+        async { self.build_with_loading_handler(handler).await }
     }
 
     fn requires_download(&self) -> bool {
@@ -60,7 +60,6 @@ impl Bert {
 }
 
 impl Embedder for Bert {
-    type VectorSpace = BertSpace;
     type Error = BertError;
 
     fn embed_for(
@@ -103,10 +102,7 @@ impl Embedder for Bert {
             .await?
     }
 
-    async fn embed_vec(
-        &self,
-        inputs: Vec<String>,
-    ) -> Result<Vec<Embedding>, Self::Error> {
+    async fn embed_vec(&self, inputs: Vec<String>) -> Result<Vec<Embedding>, Self::Error> {
         let self_clone = self.clone();
         tokio::task::spawn_blocking(move || {
             let inputs_borrowed = inputs.iter().map(|s| s.as_str()).collect::<Vec<_>>();
@@ -115,9 +111,3 @@ impl Embedder for Bert {
         .await?
     }
 }
-
-/// A vector space for BERT sentence embeddings.
-#[derive(Serialize, Deserialize)]
-pub struct BertSpace;
-
-impl VectorSpace for BertSpace {}

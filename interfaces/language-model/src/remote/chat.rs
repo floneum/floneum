@@ -5,7 +5,7 @@ use llm_samplers::types::Sampler;
 use std::sync::{Arc, Mutex};
 use tokenizers::tokenizer::Tokenizer;
 
-use crate::{Embedder, Embedding, ModelBuilder, VectorSpace};
+use crate::{Embedder, Embedding, ModelBuilder};
 
 use super::OpenAICompatibleClient;
 
