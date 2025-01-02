@@ -59,6 +59,9 @@ pub enum LlamaSourceError {
     /// No stop token was found.
     #[error("No stop token was found")]
     NoStopToken,
+    /// An error loading the chat template.
+    #[error("Failed to load chat template: {0}")]
+    ChatTemplate(#[from] minijinja::Error),
 }
 
 impl LlamaSource {

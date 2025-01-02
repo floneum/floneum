@@ -1,15 +1,14 @@
-
 use crate::model::LlamaModelError;
 use crate::structured::generate_structured;
 pub use crate::Llama;
+use crate::LlamaBuilder;
 use crate::{
     InferenceSettings, LlamaSession, LlamaSourceError, StructuredGenerationTask, Task,
     UnstructuredGenerationTask,
 };
-use crate::LlamaBuilder;
 use kalosm_common::ModelLoadingProgress;
 use kalosm_language_model::{
-    ModelBuilder, ModelSession, StructuredTextCompletionModel, TextCompletionModel,
+    CreateTextCompletionSession, ModelBuilder, StructuredTextCompletionModel, TextCompletionModel,
 };
 use kalosm_sample::{CreateParserState, Parser};
 use llm_samplers::types::Sampler;
@@ -30,7 +29,7 @@ impl ModelBuilder for LlamaBuilder {
     }
 }
 
-impl ModelSession for Llama {
+impl CreateTextCompletionSession for Llama {
     type Session = LlamaSession;
     type Error = LlamaModelError;
 

@@ -4082,6 +4082,7 @@ dependencies = [
  "minijinja",
  "minijinja-contrib",
  "once_cell",
+ "pretty_assertions",
  "rand 0.8.5",
  "rayon",
  "safetensors",

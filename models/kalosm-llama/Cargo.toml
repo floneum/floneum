@@ -38,6 +38,7 @@ minijinja-contrib = { version = "2.5.0", features = ["pycompat"] }
 [dev-dependencies]
 tracing-subscriber = "0.3.18"
 criterion = "0.5.1"
+pretty_assertions = "1.4.1"
 # kalosm = { workspace = true, features = ["language"] }
 
 [features]

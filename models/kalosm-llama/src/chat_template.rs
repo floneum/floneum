@@ -1,10 +1,11 @@
 use std::fmt::Display;
 
+use kalosm_language_model::ChatHistoryItem;
 use minijinja::{context, Environment, ErrorKind};
 use minijinja_contrib::pycompat;
 
-use crate::ChatHistoryItem;
-
+#[cfg(test)]
+use kalosm_language_model::MessageType;
 #[cfg(test)]
 use pretty_assertions::assert_eq;
 
@@ -35,7 +36,7 @@ impl HuggingFaceChatTemplate {
         Ok(Self { environment })
     }
 
-    fn run(
+    pub(crate) fn format(
         &self,
         bos_token: &str,
         eos_token: &str,
@@ -51,8 +52,6 @@ impl HuggingFaceChatTemplate {
 
 #[test]
 fn test_qwen_chat_template() {
-    use crate::MessageType;
-
     let template = r#"{%- if tools %}
     {{- '<|im_start|>system\n' }}
     {%- if messages[0]['role'] == 'system' %}
@@ -111,22 +110,19 @@ fn test_qwen_chat_template() {
     let template = HuggingFaceChatTemplate::create(template).unwrap();
 
     let inputs = [
-        ChatHistoryItem {
-            role: MessageType::UserMessage,
-            content: "Hello, how are you?".to_string(),
-        },
-        ChatHistoryItem {
-            role: MessageType::ModelAnswer,
-            content: "I'm doing great. How can I help you today?".to_string(),
-        },
-        ChatHistoryItem {
-            role: MessageType::UserMessage,
-            content: "I'd like to show off how chat templating works!".to_string(),
-        },
+        ChatHistoryItem::new(MessageType::UserMessage, "Hello, how are you?".to_string()),
+        ChatHistoryItem::new(
+            MessageType::ModelAnswer,
+            "I'm doing great. How can I help you today?".to_string(),
+        ),
+        ChatHistoryItem::new(
+            MessageType::UserMessage,
+            "I'd like to show off how chat templating works!".to_string(),
+        ),
     ];
 
     let result = template
-        .run("<|endoftext|>", "<|im_end|>", &inputs, false)
+        .format("<|endoftext|>", "<|im_end|>", &inputs, false)
         .unwrap();
     assert_eq!(
         result,
@@ -144,29 +140,24 @@ I'd like to show off how chat templating works!<|im_end|>
 
 #[test]
 fn test_llama_chat_template() {
-    use crate::MessageType;
-
     let template = "{% set loop_messages = messages %}{% for message in loop_messages %}{% set content = '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'+ message['content'] | trim + '<|eot_id|>' %}{% if loop.index0 == 0 %}{% set content = bos_token + content %}{% endif %}{{ content }}{% endfor %}{% if add_generation_prompt %}{{ '<|start_header_id|>assistant<|end_header_id|>\n\n' }}{% endif %}";
 
     let template = HuggingFaceChatTemplate::create(template).unwrap();
 
     let inputs = [
-        ChatHistoryItem {
-            role: MessageType::UserMessage,
-            content: "Hello, how are you?".to_string(),
-        },
-        ChatHistoryItem {
-            role: MessageType::ModelAnswer,
-            content: "I'm doing great. How can I help you today?".to_string(),
-        },
-        ChatHistoryItem {
-            role: MessageType::UserMessage,
-            content: "I'd like to show off how chat templating works!".to_string(),
-        },
+        ChatHistoryItem::new(MessageType::UserMessage, "Hello, how are you?".to_string()),
+        ChatHistoryItem::new(
+            MessageType::ModelAnswer,
+            "I'm doing great. How can I help you today?".to_string(),
+        ),
+        ChatHistoryItem::new(
+            MessageType::UserMessage,
+            "I'd like to show off how chat templating works!".to_string(),
+        ),
     ];
 
     let result = template
-        .run("<|begin_of_text|>", "<|end_of_text|>", &inputs, false)
+        .format("<|begin_of_text|>", "<|end_of_text|>", &inputs, false)
         .unwrap();
 
     assert_eq!(
@@ -183,27 +174,23 @@ I'd like to show off how chat templating works!<|eot_id|>"#
 
 #[test]
 fn test_mistral_chat_template() {
-    use crate::MessageType;
     let template = "{%- if messages[0]['role'] == 'system' %}\n    {%- set system_message = messages[0]['content'] %}\n    {%- set loop_messages = messages[1:] %}\n{%- else %}\n    {%- set loop_messages = messages %}\n{%- endif %}\n\n{{- bos_token }}\n{%- for message in loop_messages %}\n    {%- if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}\n        {{- raise_exception('After the optional system message, conversation roles must alternate user/assistant/user/assistant/...') }}\n    {%- endif %}\n    {%- if message['role'] == 'user' %}\n        {%- if loop.first and system_message is defined %}\n            {{- ' [INST] ' + system_message + '\\n\\n' + message['content'] + ' [/INST]' }}\n        {%- else %}\n            {{- ' [INST] ' + message['content'] + ' [/INST]' }}\n        {%- endif %}\n    {%- elif message['role'] == 'assistant' %}\n        {{- ' ' + message['content'] + eos_token}}\n    {%- else %}\n        {{- raise_exception('Only user and assistant roles are supported, with the exception of an initial optional system message!') }}\n    {%- endif %}\n{%- endfor %}\n";
 
     let template = HuggingFaceChatTemplate::create(template).unwrap();
 
     let inputs = [
-        ChatHistoryItem {
-            role: MessageType::UserMessage,
-            content: "Hello, how are you?".to_string(),
-        },
-        ChatHistoryItem {
-            role: MessageType::ModelAnswer,
-            content: "I'm doing great. How can I help you today?".to_string(),
-        },
-        ChatHistoryItem {
-            role: MessageType::UserMessage,
-            content: "I'd like to show off how chat templating works!".to_string(),
-        },
+        ChatHistoryItem::new(MessageType::UserMessage, "Hello, how are you?".to_string()),
+        ChatHistoryItem::new(
+            MessageType::ModelAnswer,
+            "I'm doing great. How can I help you today?".to_string(),
+        ),
+        ChatHistoryItem::new(
+            MessageType::UserMessage,
+            "I'd like to show off how chat templating works!".to_string(),
+        ),
     ];
 
-    let result = template.run("<s>", "</s>", &inputs, false).unwrap();
+    let result = template.format("<s>", "</s>", &inputs, false).unwrap();
     assert_eq!(
         result,
         r#"<s> [INST] Hello, how are you? [/INST] I'm doing great. How can I help you today?</s> [INST] I'd like to show off how chat templating works! [/INST]"#

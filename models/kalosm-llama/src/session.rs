@@ -7,13 +7,16 @@ use std::sync::{Arc, RwLock};
 
 /// An error that can occur when saving or loading a [`LlamaSession`].
 #[derive(Debug, thiserror::Error)]
-pub enum LlamaLoadingError {
+pub enum LlamaSessionLoadingError {
     /// An error from safetensors while loading or saving a [`LlamaSession`].
     #[error("Safetensors error: {0}")]
     Safetensors(#[from] safetensors::SafeTensorError),
     /// An error from candle while loading or saving a [`LlamaSession`].
     #[error("Candle error: {0:?}")]
     Candle(#[from] candle_core::Error),
+    /// The chat messages deserialized from the session are invalid.
+    #[error("Chat messages deserialized from the session are invalid")]
+    InvalidChatMessages,
 }
 
 /// A Llama session with cached state for the current fed prompt
@@ -23,7 +26,7 @@ pub struct LlamaSession {
 }
 
 impl Session for LlamaSession {
-    type Error = LlamaLoadingError;
+    type Error = LlamaSessionLoadingError;
 
     fn write_to(&self, into: &mut Vec<u8>) -> Result<(), Self::Error> {
         let device = accelerated_device_if_available()?;

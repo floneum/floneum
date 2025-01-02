@@ -7,7 +7,7 @@ pub use generation_parameters::*;
 
 /// A session for a model.
 pub trait Session {
-    /// The type of error this model may return during operations.
+    /// The type of error the session may return during operations.
     type Error: std::error::Error + Send + Sync + 'static;
 
     /// Serialize the session into bytes.
@@ -67,7 +67,7 @@ where
     type Output = <P as Parser>::Output;
 }
 
-pub trait ModelSession: Send + Sync + 'static {
+pub trait CreateTextCompletionSession: Send + Sync + 'static {
     /// The type of error this model may return during operations.
     type Error: Send + Sync + 'static;
 
@@ -78,7 +78,7 @@ pub trait ModelSession: Send + Sync + 'static {
     fn new_session(&self) -> Result<Self::Session, Self::Error>;
 }
 
-pub trait TextCompletionModel<Sampler>: ModelSession {
+pub trait TextCompletionModel<Sampler>: CreateTextCompletionSession {
     /// Generate text with the given prompt.
     ///
     /// See [`ModelExt::stream_text`] for nicer API with an example.

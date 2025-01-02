@@ -32,7 +32,8 @@ extern crate intel_mkl_src;
 #[cfg(feature = "accelerate")]
 extern crate accelerate_src;
 
-// mod chat_template;
+mod chat;
+mod chat_template;
 mod language_model;
 mod model;
 mod raw;
@@ -41,6 +42,7 @@ mod source;
 mod structured;
 mod token_stream;
 
+pub use crate::chat::LlamaChatSession;
 pub use crate::model::LlamaModel;
 pub use crate::raw::cache::*;
 pub use crate::session::LlamaSession;

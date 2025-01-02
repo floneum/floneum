@@ -1,7 +1,7 @@
 use crate::raw::cache::LlamaCache;
+use crate::raw::Model;
 use crate::token_stream::TokenOutputStream;
 use crate::token_stream::TokenOutputStreamError;
-use crate::raw::Model;
 use kalosm_common::*;
 use llm_samplers::types::Logits;
 use std::sync::Arc;
@@ -44,6 +44,14 @@ pub enum LlamaModelError {
     /// The model has already stopped.
     #[error("Model stopped")]
     ModelStopped,
+
+    /// No chat template was provided
+    #[error("No chat template was provided")]
+    NoChatTemplate,
+
+    /// Error running the chat template
+    #[error("Error running the chat template: {0}")]
+    ChatTemplateError(#[from] minijinja::Error),
 }
 
 /// The inner, synchronous Llama model.
@@ -104,15 +112,46 @@ impl LlamaModel {
                 let model = ggml_file::Content::read(&mut file, &device)?;
                 let gqa = builder.source.group_query_attention;
                 let vocab = tokenizer.get_vocab(true);
-                let stop_token = match vocab
+                let start_token_string = match vocab
+                    .get("<s>")
+                    .map(|v| (*v, "<s>".to_string()))
+                    .or_else(|| {
+                        vocab
+                            .get("<|start_of_text|>")
+                            .map(|v| (*v, "<|start_of_text|>".to_string()))
+                    })
+                    .or_else(|| {
+                        vocab
+                            .get("<|startoftext|>")
+                            .map(|v| (*v, "<|startoftext|>".to_string()))
+                    }) {
+                    Some((_, string)) => string,
+                    None => String::new(),
+                };
+                let (stop_token, stop_token_string) = match vocab
                     .get("</s>")
-                    .or_else(|| vocab.get("<|end_of_text|>"))
-                    .or_else(|| vocab.get("<|endoftext|>"))
-                {
-                    Some(token) => *token,
+                    .map(|v| (*v, "</s>".to_string()))
+                    .or_else(|| {
+                        vocab
+                            .get("<|end_of_text|>")
+                            .map(|v| (*v, "<|end_of_text|>".to_string()))
+                    })
+                    .or_else(|| {
+                        vocab
+                            .get("<|endoftext|>")
+                            .map(|v| (*v, "<|endoftext|>".to_string()))
+                    }) {
+                    Some((token, string)) => (token, string),
                     None => return Err(LlamaSourceError::NoStopToken),
                 };
-                Model::from_ggml(model, gqa as usize, &device, stop_token)?
+                Model::from_ggml(
+                    model,
+                    gqa as usize,
+                    &device,
+                    start_token_string,
+                    stop_token,
+                    stop_token_string,
+                )?
             }
         };
 
