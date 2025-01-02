@@ -32,7 +32,7 @@ async fn main() {
     let sampler = GenerationParameters::default().sampler();
     let message = ChatHistoryItem::new(
         MessageType::UserMessage,
-        "What is the password?".to_string(),
+        "What is the password I just gave you?".to_string(),
     );
 
     model
