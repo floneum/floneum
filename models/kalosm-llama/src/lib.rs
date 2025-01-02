@@ -45,19 +45,12 @@ pub use crate::model::LlamaModel;
 pub use crate::raw::cache::*;
 use crate::raw::Model;
 pub use crate::session::LlamaSession;
-use candle_core::{
-    quantized::{ggml_file, gguf_file},
-    Device,
-};
+use candle_core::Device;
 pub use kalosm_common::*;
-use llm_samplers::types::Sampler;
 use model::LlamaModelError;
 use raw::LlamaConfig;
 pub use source::*;
-use std::{
-    any::Any,
-    sync::{Arc, Mutex},
-};
+use std::sync::Arc;
 use tokenizers::Tokenizer;
 
 /// A prelude of commonly used items in kalosm-llama.
@@ -67,18 +60,20 @@ pub mod prelude {
     pub use kalosm_language_model::*;
 }
 
-struct Task {
-    settings: InferenceSettings,
-    on_token: Box<dyn FnMut(String) -> Result<(), LlamaModelError> + Send + Sync>,
-    finished: tokio::sync::oneshot::Sender<Result<Box<dyn Any + Send>, LlamaModelError>>,
+enum Task {
+    UnstructuredGeneration(UnstructuredGenerationTask),
+    StructuredGeneration(StructuredGenerationTask),
 }
 
-type SyncCallback = Box<
-    dyn for<'a> FnOnce(
-            &'a mut LlamaModel,
-        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>>
-        + Send,
->;
+struct StructuredGenerationTask {
+    runner: Box<dyn FnOnce(&mut LlamaModel) + Send>,
+}
+
+struct UnstructuredGenerationTask {
+    settings: InferenceSettings,
+    on_token: Box<dyn FnMut(String) -> Result<(), LlamaModelError> + Send + Sync>,
+    finished: tokio::sync::oneshot::Sender<Result<(), LlamaModelError>>,
+}
 
 /// A quantized Llama language model with support for streaming generation.
 #[derive(Clone)]
@@ -124,43 +119,27 @@ impl Llama {
 
         std::thread::spawn({
             move || {
-                tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .unwrap()
-                    .block_on(async move {
-                        while let Some(Task {
+                while let Some(task) = task_receiver.blocking_recv() {
+                    match task {
+                        Task::UnstructuredGeneration(UnstructuredGenerationTask {
                             settings,
                             on_token,
                             finished,
-                        }) = task_receiver.recv().await
-                        {
+                        }) => {
                             let result = model._infer(settings, on_token, &finished);
-                            _ = finished
-                                .send(result.map(|value| Box::new(value) as Box<dyn Any + Send>));
+                            _ = finished.send(result);
                         }
-                    })
+                        Task::StructuredGeneration(StructuredGenerationTask { runner }) => {
+                            runner(&mut model);
+                        }
+                    }
+                }
             }
         });
         Self {
             task_sender,
             config,
         }
-    }
-
-    fn run(
-        &self,
-        settings: InferenceSettings,
-        on_token: Box<dyn FnMut(String) -> Result<(), LlamaModelError> + Send + Sync>,
-        finished: tokio::sync::oneshot::Sender<Result<Box<dyn Any + Send>, LlamaModelError>>,
-    ) -> Result<tokio::sync::mpsc::UnboundedReceiver<String>, LlamaModelError> {
-        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
-        _ = self.task_sender.send(Task {
-            settings,
-            on_token,
-            finished,
-        });
-        Ok(receiver)
     }
 }
 
@@ -268,10 +247,5 @@ impl InferenceSettings {
             sampler,
             session,
         }
-    }
-
-    pub fn with_stop_on(mut self, stop_on: impl Into<Option<String>>) -> Self {
-        self.stop_on = stop_on.into();
-        self
     }
 }

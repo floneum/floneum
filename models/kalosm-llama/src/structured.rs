@@ -7,7 +7,6 @@ use std::{
     fmt::{Debug, Display, Formatter},
     sync::{Arc, Mutex},
 };
-use thiserror::Error;
 use tokenizers::tokenizer::Tokenizer;
 
 use crate::model::LlamaModelError;
@@ -81,7 +80,7 @@ pub(crate) fn generate_structured<P: Parser>(
         LlamaModel::forward(
             &llm.model,
             &llm.device,
-            tokens,
+            &tokens[tokens.len() - unprocessed_token_count..],
             Some(&mut *session),
             &mut logit_probs,
         )?;

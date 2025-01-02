@@ -269,33 +269,4 @@ impl TokenOutputStream {
     pub fn tokens(&self) -> &[u32] {
         &self.tokens
     }
-
-    /// Decode the remaining tokens.
-    pub fn decode_rest(&self) -> Result<Option<String>, TokenOutputStreamError> {
-        let prev_text = &self.current_text;
-        let text = self.decode(&self.tokens[self.prev_index..])?;
-        if text.len() > prev_text.len() {
-            let text = text.split_at(prev_text.len());
-            Ok(Some(text.1.to_string()))
-        } else {
-            Ok(None)
-        }
-    }
-
-    /// Decode all tokens.
-    pub fn decode_all(&self) -> Result<String, TokenOutputStreamError> {
-        self.decode(&self.tokens)
-    }
-
-    /// Returns the tokenizer.
-    pub fn tokenizer(&self) -> &Tokenizer {
-        &self.tokenizer
-    }
-
-    /// Clears the token stream.
-    pub fn clear(&mut self) {
-        self.tokens.clear();
-        self.prev_index = 0;
-        self.current_index = 0;
-    }
 }

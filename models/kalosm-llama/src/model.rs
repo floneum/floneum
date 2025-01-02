@@ -126,20 +126,11 @@ impl LlamaModel {
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new(model: Model, tokenizer: Arc<Tokenizer>, device: Device) -> Self {
-        Self {
-            model,
-            device,
-            tokenizer,
-        }
-    }
-
     pub(crate) fn _infer(
         &mut self,
         settings: InferenceSettings,
         mut on_token: Box<dyn FnMut(String) -> Result<(), LlamaModelError> + Send + Sync>,
-        finished: &tokio::sync::oneshot::Sender<Result<Box<dyn Any + Send>, LlamaModelError>>,
+        finished: &tokio::sync::oneshot::Sender<Result<(), LlamaModelError>>,
     ) -> Result<(), LlamaModelError> {
         let InferenceSettings {
             prompt,
