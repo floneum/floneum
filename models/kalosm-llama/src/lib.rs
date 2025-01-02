@@ -43,7 +43,6 @@ mod token_stream;
 
 pub use crate::model::LlamaModel;
 pub use crate::raw::cache::*;
-use crate::raw::Model;
 pub use crate::session::LlamaSession;
 use candle_core::Device;
 pub use kalosm_common::*;
@@ -51,7 +50,6 @@ use model::LlamaModelError;
 use raw::LlamaConfig;
 pub use source::*;
 use std::sync::Arc;
-use tokenizers::Tokenizer;
 
 /// A prelude of commonly used items in kalosm-llama.
 pub mod prelude {

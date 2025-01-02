@@ -1,12 +1,9 @@
 use crate::raw::cache::LlamaCache;
 use crate::token_stream::TokenOutputStream;
 use crate::token_stream::TokenOutputStreamError;
-use crate::{raw::Model, session::LlamaSession};
+use crate::raw::Model;
 use kalosm_common::*;
-use kalosm_language_model::GenerationParameters;
 use llm_samplers::types::Logits;
-use std::any::Any;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use candle_core::{

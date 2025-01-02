@@ -99,6 +99,7 @@ fn test_rope_cache() {
         head_dimension: 2,
         n_head: 0,
         n_layer: 0,
+        stop_token: 0,
     };
     let device = Device::cuda_if_available(0).unwrap();
     let cache = RopeCache::new(&config, DType::F32, &device).unwrap();

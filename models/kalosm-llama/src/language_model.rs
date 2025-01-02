@@ -1,6 +1,3 @@
-use std::future::Future;
-use std::ops::Deref;
-use std::sync::{Arc, Mutex};
 
 use crate::model::LlamaModelError;
 use crate::structured::generate_structured;
@@ -9,15 +6,13 @@ use crate::{
     InferenceSettings, LlamaSession, LlamaSourceError, StructuredGenerationTask, Task,
     UnstructuredGenerationTask,
 };
-use crate::{LlamaBuilder, LlamaModel};
+use crate::LlamaBuilder;
 use kalosm_common::ModelLoadingProgress;
 use kalosm_language_model::{
     ModelBuilder, ModelSession, StructuredTextCompletionModel, TextCompletionModel,
 };
 use kalosm_sample::{CreateParserState, Parser};
-use kalosm_streams::text_stream::ChannelTextStream;
 use llm_samplers::types::Sampler;
-use tokenizers::Tokenizer;
 
 impl ModelBuilder for LlamaBuilder {
     type Model = Llama;
@@ -45,29 +40,27 @@ impl ModelSession for Llama {
 }
 
 impl<S: Sampler + 'static> TextCompletionModel<S> for Llama {
-    fn stream_text_with_callback(
+    async fn stream_text_with_callback(
         &self,
         session: &mut Self::Session,
         text: &str,
         sampler: S,
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
-        async {
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            let sampler = std::sync::Arc::new(std::sync::Mutex::new(sampler));
-            let on_token = Box::new(on_token);
-            self.task_sender
-                .send(Task::UnstructuredGeneration(UnstructuredGenerationTask {
-                    settings: InferenceSettings::new(text.to_string(), session.clone(), sampler),
-                    on_token,
-                    finished: tx,
-                }))
-                .map_err(|_| LlamaModelError::ModelStopped)?;
+    ) -> Result<(), Self::Error> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let sampler = std::sync::Arc::new(std::sync::Mutex::new(sampler));
+        let on_token = Box::new(on_token);
+        self.task_sender
+            .send(Task::UnstructuredGeneration(UnstructuredGenerationTask {
+                settings: InferenceSettings::new(text.to_string(), session.clone(), sampler),
+                on_token,
+                finished: tx,
+            }))
+            .map_err(|_| LlamaModelError::ModelStopped)?;
 
-            rx.await.map_err(|_| LlamaModelError::ModelStopped)??;
+        rx.await.map_err(|_| LlamaModelError::ModelStopped)??;
 
-            Ok(())
-        }
+        Ok(())
     }
 }
 

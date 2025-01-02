@@ -33,7 +33,7 @@ pub(crate) fn generate_structured<P: Parser>(
     let prompt_text = prompt.to_string();
     let prompt_tokens = tokenizer
         .encode(prompt_text, false)
-        .map_err(|e| LlamaModelError::Tokenizer(e))?;
+        .map_err(LlamaModelError::Tokenizer)?;
     let mut prompt_tokens = prompt_tokens.get_ids();
 
     // Prompt healing
@@ -50,14 +50,14 @@ pub(crate) fn generate_structured<P: Parser>(
     for token in prompt_tokens {
         token_stream
             .next_token(*token)
-            .map_err(|err| LlamaModelError::TokenOutputStreamError(err))?;
+            .map_err(LlamaModelError::TokenOutputStreamError)?;
     }
 
     let remaining_prompt_text = last_token
         .map(|token| {
             token_stream
                 .peek_token(token)
-                .map_err(|err| LlamaModelError::TokenOutputStreamError(err))
+                .map_err(LlamaModelError::TokenOutputStreamError)
         })
         .transpose()?
         .flatten()
@@ -194,7 +194,7 @@ pub(crate) fn generate_structured<P: Parser>(
             .unwrap_or_else(|| panic!("Token {} not found in state map", token_id));
         let mut token = token_stream
             .next_token(token_id)
-            .map_err(|err| LlamaModelError::TokenOutputStreamError(err))?
+            .map_err(LlamaModelError::TokenOutputStreamError)?
             .unwrap();
         token.truncate(parsed_bytes);
         tracing::trace!("Adding token {} to parser", token);
@@ -211,7 +211,7 @@ pub(crate) fn generate_structured<P: Parser>(
             &parser,
             &mut parser_state,
             result,
-            &tokenizer,
+            tokenizer,
             &mut token_stream,
             &mut on_token,
             &mut unprocessed_token_count,
