@@ -296,7 +296,7 @@ impl<
         Doc: DeserializeOwned + Send + Sync,
         Model: Embedder,
         E: IntoEmbedding,
-        F: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, Model::VectorSpace, M>,
+        F: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, M>,
         Chkr: Chunker,
         M,
     > DocumentTableSearchBuilder<'a, Conn, Doc, Model, Chkr, E, F, M>
@@ -336,7 +336,7 @@ impl<
         Doc: DeserializeOwned + Send + Sync + 'a,
         Model: Embedder + 'a,
         E: IntoEmbedding + Send + 'a,
-        F: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, Model::VectorSpace, M> + Send + Sync + 'a,
+        F: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, M> + Send + Sync + 'a,
         Chkr: Chunker + Send + Sync + 'a,
         M: Send + 'a,
     > IntoFuture for DocumentTableSearchBuilder<'a, Conn, Doc, Model, Chkr, E, F, M>
@@ -356,7 +356,7 @@ impl<
         Doc: DeserializeOwned,
         Model: Embedder,
         E: IntoEmbedding,
-        F: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, Model::VectorSpace, M>,
+        F: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, M>,
         Chkr: Chunker,
         M,
     > DocumentTableSearchBuilder<'a, Conn, Doc, Model, Chkr, E, F, M>
@@ -367,10 +367,7 @@ impl<
         filter: F2,
     ) -> DocumentTableSearchBuilder<'a, Conn, Doc, Model, Chkr, E, F2, Marker>
     where
-        F2: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, Model::VectorSpace, Marker>
-            + Send
-            + Sync
-            + 'static,
+        F2: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, Marker> + Send + Sync + 'static,
     {
         DocumentTableSearchBuilder {
             table: self.table,

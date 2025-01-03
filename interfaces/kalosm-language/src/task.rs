@@ -566,7 +566,6 @@ impl<R: TaskRunner> Task<R> {
     pub fn bind<'a, M>(self, model: &'a M) -> impl FnOnce(String) -> R::Output<M::Error> + 'a
     where
         M: Model + 'a,
-        <<M as kalosm_language_model::Model>::SyncModel as kalosm_language_model::SyncModel>::Session: Send + Sync,
         M::Error: std::fmt::Debug,
         R: 'a,
     {

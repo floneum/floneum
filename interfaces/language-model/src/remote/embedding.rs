@@ -92,12 +92,16 @@ struct EmbeddingData {
     embedding: Vec<f32>,
 }
 
+/// An error that can occur when running an [`OpenAICompatibleEmbeddingModel`].
 #[derive(Error, Debug)]
 pub enum OpenAICompatibleEmbeddingModelError {
+    /// The API key was not set or was not valid.
     #[error("Error resolving API key: {0}")]
     APIKeyError(#[from] NoAPIKeyError),
+    /// An error occurred while making a request to the OpenAI API.
     #[error("Error making request: {0}")]
     ReqwestError(#[from] reqwest::Error),
+    /// The response from the OpenAI API was not in the format kalosm expected.
     #[error("Invalid response from OpenAI API. The response returned did not contain embeddings for all input strings.")]
     InvalidResponse,
 }
@@ -133,7 +137,7 @@ impl Embedder for OpenAICompatibleEmbeddingModel {
             let request = self
                 .client
                 .reqwest_client
-                .post("https://api.openai.com/v1/embeddings")
+                .post(format!("{}/embeddings", self.client.base_url))
                 .header("Content-Type", "application/json")
                 .header("Authorization", format!("Bearer {}", api_key))
                 .json(&serde_json::json!({
@@ -160,7 +164,7 @@ impl Embedder for OpenAICompatibleEmbeddingModel {
             let request = self
                 .client
                 .reqwest_client
-                .post("https://api.openai.com/v1/embeddings")
+                .post(format!("{}/embeddings", self.client.base_url))
                 .header("Content-Type", "application/json")
                 .header("Authorization", format!("Bearer {}", api_key))
                 .json(&serde_json::json!({
@@ -195,35 +199,39 @@ impl Embedder for OpenAICompatibleEmbeddingModel {
 
 #[cfg(test)]
 mod tests {
+    use crate::{Embedder, EmbedderExt, OpenAICompatibleEmbeddingModelBuilder};
+
     #[tokio::test]
     async fn test_small_embedding_model() {
-        let model = kalosm::language::OpenAICompatibleEmbeddingModelBuilder::new()
+        let model = OpenAICompatibleEmbeddingModelBuilder::new()
             .with_text_embedding_3_small()
-            .build()
+            .build();
+
+        let embeddings = model
+            .embed_vec(vec!["Hello, world!".to_string()])
             .await
             .unwrap();
-
-        let embeddings = model.embed_vec(vec!["Hello, world!"]).await.unwrap();
         assert_eq!(embeddings.len(), 1);
         assert!(embeddings[0].to_vec().len() > 0);
 
-        let embeddings = model.embed(vec!["Hello, world!"]).await.unwrap();
+        let embeddings = model.embed("Hello, world!").await.unwrap();
         assert!(embeddings.to_vec().len() > 0);
     }
 
     #[tokio::test]
     async fn test_large_embedding_model() {
-        let model = kalosm::language::OpenAICompatibleEmbeddingModelBuilder::new()
+        let model = OpenAICompatibleEmbeddingModelBuilder::new()
             .with_text_embedding_3_large()
-            .build()
+            .build();
+
+        let embeddings = model
+            .embed_vec(vec!["Hello, world!".to_string()])
             .await
             .unwrap();
-
-        let embeddings = model.embed_vec(vec!["Hello, world!"]).await.unwrap();
         assert_eq!(embeddings.len(), 1);
         assert!(embeddings[0].to_vec().len() > 0);
 
-        let embeddings = model.embed(vec!["Hello, world!"]).await.unwrap();
+        let embeddings = model.embed("Hello, world!").await.unwrap();
         assert!(embeddings.to_vec().len() > 0);
     }
 }

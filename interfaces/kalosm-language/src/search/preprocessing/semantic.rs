@@ -20,7 +20,7 @@ use crate::prelude::*;
 use kalosm_language_model::*;
 
 #[derive(Debug, Clone)]
-struct SemanticChunk<S: VectorSpace> {
+struct SemanticChunk {
     range: std::ops::Range<usize>,
     sentences: usize,
     embedding: Embedding,
@@ -99,11 +99,7 @@ impl SemanticChunker {
         self
     }
 
-    fn score_merge<S: VectorSpace>(
-        &self,
-        first_chunk: &SemanticChunk<S>,
-        second_chunk: &SemanticChunk<S>,
-    ) -> f32 {
+    fn score_merge(&self, first_chunk: &SemanticChunk, second_chunk: &SemanticChunk) -> f32 {
         // Score higher if one of the chunks is very short
         let short_chunk_merge_bonus = (self.small_chunk_merge_bonus
             / first_chunk.range.len().min(second_chunk.range.len()) as f32)
@@ -125,7 +121,7 @@ impl Chunker for SemanticChunker {
         &self,
         document: &Document,
         embedder: &E,
-    ) -> Result<Vec<Chunk<E::VectorSpace>>, E::Error> {
+    ) -> Result<Vec<Chunk>, E::Error> {
         let text = document.body();
 
         let mut current_chunks = Vec::new();

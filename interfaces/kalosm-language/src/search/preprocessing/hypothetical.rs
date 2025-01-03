@@ -180,7 +180,7 @@ where
         &self,
         document: &Document,
         embedder: &E,
-    ) -> Result<Vec<Chunk<E::VectorSpace>>, Self::Error<E::Error>> {
+    ) -> Result<Vec<Chunk>, Self::Error<E::Error>> {
         let body = document.body();
 
         #[allow(clippy::single_range_in_vec_init)]

@@ -8,6 +8,7 @@ pub struct GenerationParameters {
     pub(crate) tau: f32,
     pub(crate) eta: f32,
     pub(crate) mu: f32,
+    pub(crate) top_p: f64,
     pub(crate) repetition_penalty: f32,
     pub(crate) repetition_penalty_range: u32,
     pub(crate) max_length: u32,
@@ -21,6 +22,7 @@ impl Default for GenerationParameters {
             eta: 0.1,
             tau: 5.,
             mu: 10.,
+            top_p: 1.0,
             repetition_penalty: 1.3,
             repetition_penalty_range: 64,
             max_length: 128,
@@ -40,6 +42,7 @@ impl GenerationParameters {
             mu,
             repetition_penalty,
             repetition_penalty_range,
+            top_p: _,
             max_length: _,
             stop_on: _,
         } = self;
@@ -76,6 +79,12 @@ impl GenerationParameters {
             ),
         ])
         .into_chain()
+    }
+
+    /// Set the top_p parameter to the generation parameters (only used by the OpenAI API).
+    pub fn with_top_p(mut self, top_p: f64) -> Self {
+        self.top_p = top_p;
+        self
     }
 
     /// Get the mirostat2 sampler from the generation parameters.

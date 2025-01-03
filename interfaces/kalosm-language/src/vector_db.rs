@@ -303,7 +303,7 @@ impl VectorDB {
     }
 
     /// Get the closest N embeddings to the given embedding.
-    pub fn search<'a>(&'a self, embedding: &'a Embedding) -> VectorDBSearchBuilder<'a, S> {
+    pub fn search<'a>(&'a self, embedding: &'a Embedding) -> VectorDBSearchBuilder<'a> {
         VectorDBSearchBuilder {
             db: self,
             embedding,
@@ -344,9 +344,8 @@ where
 /// A marker type that allows kalosm to specialize the [`IntoVectorDbSearchFilter`] trait for closures.
 pub struct ClosureMarker;
 
-impl<S, I> IntoVectorDbSearchFilter<S, ClosureMarker> for I
+impl<I> IntoVectorDbSearchFilter<ClosureMarker> for I
 where
-    S: VectorSpace,
     I: FnMut(Embedding) -> bool,
 {
     fn into_vector_db_search_filter(mut self, db: &VectorDB) -> Candidates {
@@ -376,14 +375,14 @@ where
 }
 
 /// A builder for searching for embeddings in a vector database.
-pub struct VectorDBSearchBuilder<'a, S: VectorSpace> {
+pub struct VectorDBSearchBuilder<'a> {
     db: &'a VectorDB,
     embedding: &'a Embedding,
     results: Option<usize>,
     filter: Option<Candidates>,
 }
 
-impl<S: VectorSpace> VectorDBSearchBuilder<'_, S> {
+impl VectorDBSearchBuilder<'_> {
     /// Set the number of results to return. Defaults to 10.
     pub fn with_results(mut self, results: usize) -> Self {
         self.results = Some(results);
@@ -393,7 +392,7 @@ impl<S: VectorSpace> VectorDBSearchBuilder<'_, S> {
     /// Set a filter to apply to the results. Only vectors that pass the filter will be returned.
     pub fn with_filter<Marker>(
         mut self,
-        filter: impl IntoVectorDbSearchFilter<S, Marker> + Send + Sync + 'static,
+        filter: impl IntoVectorDbSearchFilter<Marker> + Send + Sync + 'static,
     ) -> Self {
         self.filter = Some(filter.into_vector_db_search_filter(self.db));
         self

@@ -2,19 +2,16 @@ use std::sync::OnceLock;
 
 use thiserror::Error;
 
-mod completion;
-pub use completion::*;
-
 mod embedding;
 pub use embedding::*;
 
 mod chat;
 pub use chat::*;
 
-#[derive(Debug, Default)]
-struct OpenAICompatibleClient {
+/// A client for making requests to an OpenAI compatible API.
+#[derive(Debug)]
+pub struct OpenAICompatibleClient {
     reqwest_client: reqwest::Client,
-    model: Option<String>,
     base_url: String,
     api_key: Option<String>,
     resolved_api_key: OnceLock<String>,
@@ -22,7 +19,25 @@ struct OpenAICompatibleClient {
     project_id: Option<String>,
 }
 
+impl Default for OpenAICompatibleClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OpenAICompatibleClient {
+    /// Create a new client.
+    pub fn new() -> Self {
+        Self {
+            reqwest_client: reqwest::Client::new(),
+            base_url: "https://api.openai.com/v1/".to_string(),
+            resolved_api_key: OnceLock::new(),
+            api_key: None,
+            organization_id: None,
+            project_id: None,
+        }
+    }
+
     /// Sets the API key for the builder. (defaults to the environment variable `OPENAI_API_KEY`)
     ///
     /// The API key can be accessed from the OpenAI dashboard [here](https://platform.openai.com/settings/organization/api-keys).
@@ -76,6 +91,7 @@ impl OpenAICompatibleClient {
     }
 }
 
+/// An error that can occur when building a remote OpenAI model without an API key.
 #[derive(Debug, Error)]
 #[error("No API key was provided in the [OpenAICompatibleClient] builder or the environment variable `OPENAI_API_KEY` was not set")]
 pub struct NoAPIKeyError;

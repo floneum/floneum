@@ -25,17 +25,18 @@ lru = { version = "0.12.3", optional = true }
 tokenizers = { workspace = true }
 reqwest = { version = "0.12.12", features = ["json"], optional = true }
 serde_json = { version = "1.0.134", optional = true }
+reqwest-eventsource = { version = "0.6.0", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.28.1", features = ["full"] }
-kalosm = { workspace = true, features = ["language"] }
+# kalosm = { workspace = true, features = ["language"] }
 kalosm-learning = { workspace = true }
 pretty_assertions = "1.4.1"
 postcard = { version = "1.0.8", features = ["use-std"] }
 
 [features]
 default = ["cache"]
-remote = ["dep:reqwest", "dep:serde_json"]
+remote = ["dep:reqwest", "dep:serde_json", "dep:reqwest-eventsource"]
 serde = ["dep:serde"]
 cache = ["serde", "dep:lru"]
 

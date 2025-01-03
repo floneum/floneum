@@ -41,17 +41,14 @@ pub trait Chunker {
         &self,
         document: &Document,
         embedder: &E,
-    ) -> impl std::future::Future<Output = Result<Vec<Chunk<E::VectorSpace>>, Self::Error<E::Error>>>
-           + Send;
+    ) -> impl std::future::Future<Output = Result<Vec<Chunk>, Self::Error<E::Error>>> + Send;
 
     /// Chunk a batch of documents into embedded snippets.
     fn chunk_batch<'a, I, E: Embedder + Send>(
         &self,
         documents: I,
         embedder: &E,
-    ) -> impl std::future::Future<
-        Output = Result<Vec<Vec<Chunk<E::VectorSpace>>>, Self::Error<E::Error>>,
-    > + Send
+    ) -> impl std::future::Future<Output = Result<Vec<Vec<Chunk>>, Self::Error<E::Error>>> + Send
     where
         I: IntoIterator<Item = &'a Document> + Send,
         I::IntoIter: Send,

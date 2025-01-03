@@ -205,7 +205,7 @@ impl Chunker for ChunkStrategy {
         &self,
         document: &Document,
         embedder: &E,
-    ) -> Result<Vec<Chunk<E::VectorSpace>>, E::Error> {
+    ) -> Result<Vec<Chunk>, E::Error> {
         let mut chunks = Vec::new();
         let body = document.body();
         let mut documents = Vec::new();
@@ -227,7 +227,7 @@ impl Chunker for ChunkStrategy {
         &self,
         documents: I,
         embedder: &E,
-    ) -> Result<Vec<Vec<Chunk<E::VectorSpace>>>, E::Error>
+    ) -> Result<Vec<Vec<Chunk>>, E::Error>
     where
         I: IntoIterator<Item = &'a Document> + Send,
         I::IntoIter: Send,

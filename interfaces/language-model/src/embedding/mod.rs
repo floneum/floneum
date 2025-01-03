@@ -114,7 +114,7 @@ impl<'de> Deserialize<'de> for Embedding {
 #[cfg(feature = "cache")]
 #[test]
 fn embedding_serialization() {
-    let embedding = Embedding::<UnknownVectorSpace>::from(vec![0.0, 1.0, 2.0, 3.0]);
+    let embedding = Embedding::from(vec![0.0, 1.0, 2.0, 3.0]);
     let first_float: Vec<f32> = embedding.vector().to_vec1().unwrap();
     let bytes = postcard::to_stdvec(&embedding).unwrap();
     let embedding: Embedding = postcard::from_bytes(&bytes).unwrap();
