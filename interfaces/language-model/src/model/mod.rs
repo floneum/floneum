@@ -60,13 +60,11 @@ pub trait ModelConstraints {
     type Output;
 }
 
-impl<P> ModelConstraints for P
-where
-    P: Parser,
-{
+impl<P: Parser> ModelConstraints for P {
     type Output = <P as Parser>::Output;
 }
 
+/// A trait for creating a text completion session for a model.
 pub trait CreateTextCompletionSession: Send + Sync + 'static {
     /// The type of error this model may return during operations.
     type Error: Send + Sync + 'static;
@@ -78,6 +76,7 @@ pub trait CreateTextCompletionSession: Send + Sync + 'static {
     fn new_session(&self) -> Result<Self::Session, Self::Error>;
 }
 
+/// A trait for unstructured text completion models.
 pub trait TextCompletionModel<Sampler>: CreateTextCompletionSession {
     /// Generate text with the given prompt.
     ///

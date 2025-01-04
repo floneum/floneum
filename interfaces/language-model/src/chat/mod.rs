@@ -6,6 +6,7 @@ use futures_util::Future;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
+/// A trait for creating a chat session.
 pub trait CreateChatSession {
     /// The type of error the chat session may return during operations.
     type Error: Send + Sync + 'static;
@@ -17,7 +18,9 @@ pub trait CreateChatSession {
     fn new_chat_session(&self) -> Result<Self::ChatSession, Self::Error>;
 }
 
+/// A trait for unstructured chat models.
 pub trait ChatModel<Sampler>: CreateChatSession {
+    /// Add messages to the chat session with a callback that is called for each token.
     fn add_messages_with_callback(
         &self,
         session: &mut Self::ChatSession,
@@ -27,9 +30,11 @@ pub trait ChatModel<Sampler>: CreateChatSession {
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }
 
+/// A trait for chat models that work with constraints.
 pub trait StructuredChatModel<Sampler, Constraints: ModelConstraints = NoConstraintsSupported>:
     ChatModel<Sampler>
 {
+    /// Add messages to the chat session with a callback that is called for each token and a constraints the response must follow.
     fn add_message_with_callback_and_constraints(
         &self,
         session: &mut Self::ChatSession,
@@ -40,6 +45,7 @@ pub trait StructuredChatModel<Sampler, Constraints: ModelConstraints = NoConstra
     ) -> impl Future<Output = Result<Constraints::Output, Self::Error>> + Send;
 }
 
+/// A trait for chat sessions.
 pub trait ChatSessionImpl {
     /// The type of error the chat session may return during operations.
     type Error: std::error::Error + Send + Sync + 'static;
@@ -59,6 +65,7 @@ pub trait ChatSessionImpl {
     where
         Self: std::marker::Sized;
 
+    /// Get the history of the session.
     fn history(&self) -> Vec<ChatHistoryItem>;
 }
 
