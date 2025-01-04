@@ -149,6 +149,26 @@ impl LlamaModel {
                             .map(|v| v.to_string().map(|s| s.to_string()))
                             .collect();
                         let tokens = tokens.map_err(|_| LlamaSourceError::NoTokenizer)?;
+                        let types: Result<Vec<_>, _> = model
+                            .metadata
+                            .get("tokenizer.ggml.token_type")
+                            .ok_or(LlamaSourceError::NoTokenizer)?
+                            .to_vec()
+                            .map_err(|_| LlamaSourceError::NoTokenizer)?
+                            .into_iter()
+                            .map(|v| {
+                                v.to_i32()
+                                    .map(|v| v as u8)
+                                    .or_else(|_| v.to_i64().map(|v| v as u8))
+                                    .or_else(|_| v.to_i16().map(|v| v as u8))
+                                    .or_else(|_| v.to_i8().map(|v| v as u8))
+                                    .or_else(|_| v.to_u64().map(|v| v as u8))
+                                    .or_else(|_| v.to_u32().map(|v| v as u8))
+                                    .or_else(|_| v.to_u16().map(|v| v as u8))
+                                    .or_else(|_| v.to_u8())
+                            })
+                            .collect();
+                        let types = types.map_err(|_| LlamaSourceError::NoTokenizer)?;
                         let vocab: HashMap<_, _> = tokens
                             .iter()
                             .enumerate()
@@ -188,7 +208,7 @@ impl LlamaModel {
                         let bos = &tokens[bos as usize];
 
                         config
-                            .build(vocab, merges, bos, eos)
+                            .build(vocab, types, merges, bos, eos)
                             .map_err(LlamaSourceError::Tokenizer)?
                     }
                 };

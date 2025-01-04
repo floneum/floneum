@@ -138,26 +138,38 @@ impl GGUFPreTokenizerConfig {
     pub(crate) fn build(
         &self,
         vocab: HashMap<String, u32>,
+        types: Vec<u8>,
         merges: Vec<(String, String)>,
         bos: &str,
         eos: &str,
     ) -> Result<Tokenizer, tokenizers::Error> {
+        let mut special_tokens: Vec<_> = vocab
+            .iter()
+            .filter_map(|(k, v)| {
+                // 1=normal, 2=unknown, 3=control, 4=user defined, 5=unused, 6=byte
+                let special_token = types[*v as usize];
+                if special_token == 1 {
+                    return None;
+                }
+                Some(AddedToken::from(k.to_string(), true))
+            })
+            .collect();
         let bos_token = vocab[bos];
         let bpe_tokenizer = BpeBuilder::new()
             .vocab_and_merges(vocab, merges)
             .ignore_merges(self.ignore_merges)
             .build()?;
 
-        let byte_level_pre = ByteLevel::new(false, false, false);
-        let byte_level_post = ByteLevel::new(false, false, false);
-        let byte_level_decoder = ByteLevel::new(false, false, false);
+        let byte_level_pre = ByteLevel::new(false, true, false);
+        let byte_level_post = ByteLevel::new(true, false, true);
+        let byte_level_decoder = ByteLevel::new(true, true, true);
 
         let mut tokenizer = Tokenizer::new(bpe_tokenizer);
         let mut pre_tokenizers = Vec::new();
         for regex in self.ty.regexes() {
             let split = tokenizers::pre_tokenizers::split::Split::new(
                 SplitPattern::Regex(regex.to_string()),
-                tokenizers::SplitDelimiterBehavior::Contiguous,
+                tokenizers::SplitDelimiterBehavior::Isolated,
                 false,
             )?;
             pre_tokenizers.push(split.into());
@@ -197,10 +209,9 @@ impl GGUFPreTokenizerConfig {
         tokenizer.with_post_processor(tokenizers::processors::sequence::Sequence::new(
             post_processors,
         ));
-        tokenizer.add_special_tokens(&[
-            AddedToken::from(bos.to_string(), true),
-            AddedToken::from(eos.to_string(), true),
-        ]);
+        special_tokens.push(AddedToken::from(bos.to_string(), true));
+        special_tokens.push(AddedToken::from(eos.to_string(), true));
+        tokenizer.add_special_tokens(&special_tokens);
 
         Ok(tokenizer)
     }
