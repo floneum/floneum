@@ -1,14 +1,10 @@
 use std::sync::{Arc, RwLock};
 
-use crate::{
-    chat_template::HuggingFaceChatTemplate, model::LlamaModelError, raw::LlamaConfig,
-    session::LlamaSessionLoadingError, Llama, LlamaSession,
-};
+use crate::{model::LlamaModelError, session::LlamaSessionLoadingError, Llama, LlamaSession};
 use kalosm_common::accelerated_device_if_available;
 use kalosm_language_model::{
     ChatHistoryItem, ChatModel, ChatSessionImpl, CreateChatSession, CreateTextCompletionSession,
-    MessageType, ModelConstraints, StructuredChatModel, StructuredTextCompletionModel,
-    TextCompletionModel,
+    MessageType, StructuredChatModel, StructuredTextCompletionModel, TextCompletionModel,
 };
 use kalosm_sample::{CreateParserState, Parser};
 use llm_samplers::types::Sampler;
@@ -16,6 +12,41 @@ use minijinja::ErrorKind;
 
 #[cfg(test)]
 use pretty_assertions::assert_eq;
+
+fn get_new_tokens(
+    messages: &[ChatHistoryItem],
+    session: &mut LlamaChatSession,
+    model: &Llama,
+) -> Result<String, LlamaModelError> {
+    let chat_template = model
+        .config
+        .chat_template
+        .as_ref()
+        .ok_or(LlamaModelError::NoChatTemplate)?;
+    let bos_token = &model.config.start_token_string;
+    let eos_token = &model.config.stop_token_string;
+    let current_text = if session.history.is_empty() {
+        String::new()
+    } else {
+        let old_formatted_text =
+            chat_template.format(bos_token, eos_token, &session.history, false)?;
+        // Some chat templates (like llama v3) always include the generation prompt even when we tell them not to. If they do, try to strip it off
+        let (before_last_eos, _) = old_formatted_text
+            .rsplit_once(eos_token)
+            .unwrap_or((&old_formatted_text, ""));
+        before_last_eos.to_string() + eos_token
+    };
+    session.history.extend_from_slice(messages);
+    let updated_text = chat_template.format(bos_token, eos_token, &session.history, true)?;
+    let new_text = updated_text.strip_prefix(&current_text).ok_or_else(|| {
+    LlamaModelError::ChatTemplateError(minijinja::Error::new(
+        ErrorKind::InvalidOperation,
+        format!("Chat template should only add text to the end of the current text. Old text: {current_text}, new text: {updated_text}"),
+    ))
+})?;
+
+    Ok(new_text.to_string())
+}
 
 impl CreateChatSession for Llama {
     type Error = LlamaModelError;
@@ -35,27 +66,7 @@ impl<S: Sampler + 'static> ChatModel<S> for Llama {
         mut on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
     ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
         async move {
-            let chat_template = self
-                .config
-                .chat_template
-                .as_ref()
-                .ok_or(LlamaModelError::NoChatTemplate)?;
-            let bos_token = &self.config.start_token_string;
-            let eos_token = &self.config.stop_token_string;
-            let current_text = if session.history.is_empty() {
-                String::new()
-            } else {
-                chat_template.format(bos_token, eos_token, &session.history, false)?
-            };
-            session.history.extend_from_slice(messages);
-            let updated_text =
-                chat_template.format(bos_token, eos_token, &session.history, true)?;
-            let new_text = updated_text.strip_prefix(&current_text).ok_or_else(|| {
-                LlamaModelError::ChatTemplateError(minijinja::Error::new(
-                    ErrorKind::InvalidOperation,
-                    "Chat template should only add text to the end of the current text".to_string(),
-                ))
-            })?;
+            let new_text = get_new_tokens(messages, session, self)?;
             let model_response = Arc::new(RwLock::new(String::new()));
             let on_token = {
                 let model_response = model_response.clone();
@@ -65,7 +76,7 @@ impl<S: Sampler + 'static> ChatModel<S> for Llama {
                     on_token(token)
                 }
             };
-            self.stream_text_with_callback(&mut session.session, new_text, sampler, on_token)
+            self.stream_text_with_callback(&mut session.session, &new_text, sampler, on_token)
                 .await?;
             session.history.push(ChatHistoryItem::new(
                 MessageType::ModelAnswer,
@@ -96,27 +107,7 @@ where
         >,
     > + Send {
         async move {
-            let chat_template = self
-                .config
-                .chat_template
-                .as_ref()
-                .ok_or(LlamaModelError::NoChatTemplate)?;
-            let bos_token = &self.config.start_token_string;
-            let eos_token = &self.config.stop_token_string;
-            let current_text = if session.history.is_empty() {
-                String::new()
-            } else {
-                chat_template.format(bos_token, eos_token, &session.history, false)?
-            };
-            session.history.extend_from_slice(messages);
-            let updated_text =
-                chat_template.format(bos_token, eos_token, &session.history, true)?;
-            let new_text = updated_text.strip_prefix(&current_text).ok_or_else(|| {
-                LlamaModelError::ChatTemplateError(minijinja::Error::new(
-                    ErrorKind::InvalidOperation,
-                    "Chat template should only add text to the end of the current text".to_string(),
-                ))
-            })?;
+            let new_text = get_new_tokens(messages, session, self)?;
             let model_response = Arc::new(RwLock::new(String::new()));
             let on_token = {
                 let model_response = model_response.clone();
@@ -129,7 +120,7 @@ where
             let result = self
                 .stream_text_with_callback_and_parser(
                     &mut session.session,
-                    new_text,
+                    &new_text,
                     sampler,
                     constraints,
                     on_token,
@@ -237,6 +228,8 @@ impl ChatSessionImpl for LlamaChatSession {
 
 #[test]
 fn test_serialize_deserialize_chat_session() {
+    use crate::raw::LlamaConfig;
+
     let config = LlamaConfig::mock_test();
     let session = LlamaChatSession {
         history: vec![

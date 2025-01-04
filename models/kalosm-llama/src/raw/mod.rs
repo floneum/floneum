@@ -3,7 +3,6 @@ use std::sync::Arc;
 use crate::chat_template::HuggingFaceChatTemplate;
 use crate::raw::attention_layer::LlamaAttention;
 use crate::raw::rope::RopeCache;
-use crate::session::LlamaSessionLoadingError;
 use crate::LlamaSourceError;
 use attention_layer::AttentionBias;
 use attention_layer::AttentionVariant;

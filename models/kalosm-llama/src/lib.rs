@@ -34,6 +34,7 @@ extern crate accelerate_src;
 
 mod chat;
 mod chat_template;
+mod gguf_tokenizer;
 mod language_model;
 mod model;
 mod raw;

@@ -25,7 +25,13 @@ impl ModelBuilder for LlamaBuilder {
     }
 
     fn requires_download(&self) -> bool {
-        !self.source.model.downloaded() || !self.source.tokenizer.downloaded()
+        !self.source.model.downloaded()
+            || !self
+                .source
+                .tokenizer
+                .as_ref()
+                .filter(|t| t.downloaded())
+                .is_some()
     }
 }
 
