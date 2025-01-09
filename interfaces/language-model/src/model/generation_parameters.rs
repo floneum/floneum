@@ -1,8 +1,11 @@
+use std::hash::Hash;
+use std::hash::Hasher;
+
 use llm_samplers::configure::SamplerChainBuilder;
 use llm_samplers::prelude::*;
 
 /// Parameters to use when generating text.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub struct GenerationParameters {
     pub(crate) temperature: f32,
     pub(crate) tau: f32,
@@ -13,6 +16,38 @@ pub struct GenerationParameters {
     pub(crate) repetition_penalty_range: u32,
     pub(crate) max_length: u32,
     pub(crate) stop_on: Option<String>,
+    sampler: Option<(u64, SamplerChain)>,
+}
+
+impl PartialEq for GenerationParameters {
+    fn eq(&self, other: &Self) -> bool {
+        self.temperature == other.temperature
+            && self.eta == other.eta
+            && self.tau == other.tau
+            && self.mu == other.mu
+            && self.top_p == other.top_p
+            && self.repetition_penalty == other.repetition_penalty
+            && self.repetition_penalty_range == other.repetition_penalty_range
+            && self.max_length == other.max_length
+            && self.stop_on == other.stop_on
+    }
+}
+
+impl Clone for GenerationParameters {
+    fn clone(&self) -> Self {
+        Self {
+            temperature: self.temperature,
+            eta: self.eta,
+            tau: self.tau,
+            mu: self.mu,
+            top_p: self.top_p,
+            repetition_penalty: self.repetition_penalty,
+            repetition_penalty_range: self.repetition_penalty_range,
+            max_length: self.max_length,
+            stop_on: self.stop_on.clone(),
+            sampler: None,
+        }
+    }
 }
 
 impl Default for GenerationParameters {
@@ -27,13 +62,60 @@ impl Default for GenerationParameters {
             repetition_penalty_range: 64,
             max_length: 128,
             stop_on: None,
+            sampler: None,
         }
     }
 }
 
 impl GenerationParameters {
+    fn with_sampler<O>(&mut self, with_sampler: impl FnOnce(&mut SamplerChain) -> O) -> O {
+        let mut hash = std::collections::hash_map::DefaultHasher::new();
+        self.eta.to_le_bytes().hash(&mut hash);
+        self.mu.to_le_bytes().hash(&mut hash);
+        self.repetition_penalty.to_le_bytes().hash(&mut hash);
+        self.repetition_penalty_range.hash(&mut hash);
+        self.tau.to_le_bytes().hash(&mut hash);
+        self.top_p.to_le_bytes().hash(&mut hash);
+        self.temperature.to_le_bytes().hash(&mut hash);
+        self.max_length.hash(&mut hash);
+        let hash = hash.finish();
+        if let Some((old_hash, sampler)) = &mut self.sampler {
+            if *old_hash == hash {
+                return with_sampler(sampler);
+            }
+        }
+        let mut sampler = self.sampler();
+        let output = with_sampler(&mut sampler);
+        self.sampler = Some((hash, sampler));
+        output
+    }
+}
+
+impl Sampler for GenerationParameters {
+    fn sample<'a>(
+        &mut self,
+        res: &mut dyn HasSamplerResources,
+        logits: &'a mut Logits,
+    ) -> anyhow::Result<&'a mut Logits> {
+        self.with_sampler(|sampler| sampler.sample(res, logits))
+    }
+
+    fn sample_token(
+        &mut self,
+        res: &mut dyn HasSamplerResources,
+        logits: &mut Logits,
+    ) -> anyhow::Result<Option<TID>> {
+        self.with_sampler(|sampler| sampler.sample_token(res, logits))
+    }
+
+    fn sampled_token_id(&self) -> Option<TID> {
+        self.sampler().sampled_token_id()
+    }
+}
+
+impl GenerationParameters {
     /// Create a sampler chain from the generation parameters.
-    pub fn sampler(self) -> SamplerChain {
+    pub fn sampler(&self) -> SamplerChain {
         use llm_samplers::configure::SamplerSlot;
         let GenerationParameters {
             temperature,
@@ -45,7 +127,14 @@ impl GenerationParameters {
             top_p: _,
             max_length: _,
             stop_on: _,
+            ..
         } = self;
+        let temperature = *temperature;
+        let tau = *tau;
+        let eta = *eta;
+        let mu = *mu;
+        let repetition_penalty = *repetition_penalty;
+        let repetition_penalty_range = *repetition_penalty_range;
         SamplerChainBuilder::from([
             (
                 "repetition",

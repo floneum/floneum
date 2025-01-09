@@ -73,7 +73,7 @@ pub trait CreateTextCompletionSession: Send + Sync + 'static {
 }
 
 /// A trait for unstructured text completion models.
-pub trait TextCompletionModel<Sampler=GenerationParameters>: CreateTextCompletionSession {
+pub trait TextCompletionModel<Sampler = GenerationParameters>: CreateTextCompletionSession {
     /// Generate text with the given prompt.
     ///
     /// See [`ModelExt::stream_text`] for nicer API with an example.
@@ -89,7 +89,7 @@ pub trait TextCompletionModel<Sampler=GenerationParameters>: CreateTextCompletio
 #[doc = include_str!("../../docs/model.md")]
 pub trait StructuredTextCompletionModel<
     Constraints: ModelConstraints,
-    Sampler=GenerationParameters,
+    Sampler = GenerationParameters,
 >: TextCompletionModel<Sampler>
 {
     /// Generate text with the given prompt.

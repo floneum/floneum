@@ -19,13 +19,14 @@ tracing = "0.1.37"
 candle-core.workspace = true
 kalosm-sample = { workspace = true }
 kalosm-common.workspace = true
-kalosm-streams.workspace = true
 thiserror.workspace = true
 lru = { version = "0.12.3", optional = true }
 tokenizers = { workspace = true }
 reqwest = { version = "0.12.12", features = ["json"], optional = true }
 serde_json = { version = "1.0.134", optional = true }
 reqwest-eventsource = { version = "0.6.0", optional = true }
+anyhow = { workspace = true }
+tokio = { version = "1.28.1", features = ["sync"] }
 
 [dev-dependencies]
 tokio = { version = "1.28.1", features = ["full"] }

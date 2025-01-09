@@ -1,6 +1,7 @@
 use super::{NoAPIKeyError, OpenAICompatibleClient};
 use crate::{
-    ChatModel, ChatSessionImpl, CreateChatSession, GenerationParameters, ModelBuilder, ModelConstraints, StructuredChatModel
+    ChatModel, ChatSessionImpl, CreateChatSession, GenerationParameters, ModelBuilder,
+    ModelConstraints, StructuredChatModel,
 };
 use futures_util::StreamExt;
 use kalosm_common::ModelLoadingProgress;
@@ -118,7 +119,7 @@ pub enum OpenAICompatibleChatModelError {
 }
 
 /// A chat session for the OpenAI compatible chat model.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct OpenAICompatibleChatSession {
     messages: Vec<crate::ChatHistoryItem>,
 }

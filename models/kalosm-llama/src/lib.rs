@@ -128,6 +128,9 @@ impl Llama {
                             finished,
                         }) => {
                             let result = model._infer(settings, on_token, &finished);
+                            if let Err(err) = &result {
+                                tracing::error!("Error running model: {err}");
+                            }
                             _ = finished.send(result);
                         }
                         Task::StructuredGeneration(StructuredGenerationTask { runner }) => {

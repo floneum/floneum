@@ -136,6 +136,7 @@ where
 }
 
 /// A Llama chat session.
+#[derive(Clone)]
 pub struct LlamaChatSession {
     history: Vec<ChatHistoryItem>,
     session: LlamaSession,

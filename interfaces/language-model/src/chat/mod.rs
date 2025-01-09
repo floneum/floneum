@@ -11,12 +11,16 @@ use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::fmt::Display;
 use std::future::IntoFuture;
+use std::ops::Deref;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::OnceLock;
 use std::sync::RwLock;
 use std::task::Poll;
+use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::oneshot::Receiver;
+use tokio::sync::RwLock as AsyncRwLock;
 
 /// A trait for creating a chat session.
 pub trait CreateChatSession {
@@ -251,7 +255,7 @@ impl IntoChatMessage for ChatHistoryItem {
 /// ```
 pub struct Chat<M: CreateChatSession> {
     model: M,
-    session: OnceCell<Result<M::ChatSession, M::Error>>,
+    session: OnceCell<Result<Arc<AsyncRwLock<M::ChatSession>>, M::Error>>,
     queued_messages: Vec<ChatHistoryItem>,
 }
 
@@ -296,6 +300,7 @@ impl<M: CreateChatSession> Chat<M> {
     pub fn with_system_prompt(mut self, system_prompt: impl ToString) -> Self {
         #[cfg(debug_assertions)]
         if let Some(Ok(session)) = self.session.get() {
+            let session = session.blocking_read();
             let mut existing_history = session.history();
             existing_history.extend_from_slice(&self.queued_messages);
             if !existing_history.is_empty() {
@@ -337,7 +342,7 @@ impl<M: CreateChatSession> Chat<M> {
 
         // Set the new chat session
         self.session
-            .set(Ok(session))
+            .set(Ok(Arc::new(AsyncRwLock::new(session))))
             .unwrap_or_else(|_| panic!("Chat session already set"));
 
         self
@@ -369,15 +374,17 @@ impl<M: CreateChatSession> Chat<M> {
             constraints: None,
             sampler: Some(GenerationParameters::default()),
             task: OnceLock::new(),
-            queued_tokens: Arc::new(Mutex::new(Vec::new())),
+            queued_tokens: None,
+            result: None,
         }
     }
 
-    fn session_clone(&mut self) -> Result<M::ChatSession, M::Error>
-    where
-        M::ChatSession: Clone,
-    {
-        let session = self.session.get_or_init(|| self.model.new_chat_session());
+    fn session_clone(&mut self) -> Result<Arc<AsyncRwLock<M::ChatSession>>, M::Error> {
+        let session = self.session.get_or_init(|| {
+            self.model
+                .new_chat_session()
+                .map(|session| Arc::new(AsyncRwLock::new(session)))
+        });
 
         match session {
             Ok(session) => Ok(session.clone()),
@@ -418,8 +425,15 @@ impl<M: CreateChatSession> Chat<M> {
     /// println!("{:?}", history);
     /// # }
     /// ````
-    pub fn session(&self) -> &Result<M::ChatSession, M::Error> {
-        self.session.get_or_init(|| self.model.new_chat_session())
+    pub fn session(&self) -> Result<impl Deref<Target = M::ChatSession> + use<'_, M>, &M::Error> {
+        self.session
+            .get_or_init(|| {
+                self.model
+                    .new_chat_session()
+                    .map(|session| Arc::new(AsyncRwLock::new(session)))
+            })
+            .as_ref()
+            .map(|session| session.blocking_read())
     }
 }
 
@@ -432,13 +446,12 @@ pub struct ChatResponseBuilder<
     chat_session: &'a mut Chat<M>,
     constraints: Option<Constraints>,
     sampler: Option<Sampler>,
-    task: OnceLock<
-        RwLock<Pin<Box<dyn Future<Output = Result<Box<dyn Any + Send>, M::Error>> + Send>>>,
-    >,
-    queued_tokens: Arc<Mutex<Vec<String>>>,
+    task: OnceLock<RwLock<Pin<Box<dyn Future<Output = ()> + Send>>>>,
+    result: Option<Receiver<Result<Box<dyn Any + Send>, M::Error>>>,
+    queued_tokens: Option<UnboundedReceiver<String>>,
 }
 
-impl<'a, M: CreateChatSession, Constraints: ModelConstraints, Sampler>
+impl<'a, M: CreateChatSession, Constraints, Sampler>
     ChatResponseBuilder<'a, M, Constraints, Sampler>
 {
     /// Constrains the model's response to the given parser. This can be used to make the model start with a certain phrase, or to make the model respond in a certain way.
@@ -470,7 +483,8 @@ impl<'a, M: CreateChatSession, Constraints: ModelConstraints, Sampler>
             chat_session: self.chat_session,
             constraints: Some(constraints),
             sampler: self.sampler,
-            queued_tokens: self.queued_tokens,
+            queued_tokens: None,
+            result: None,
             task: OnceLock::new(),
         }
     }
@@ -505,17 +519,68 @@ impl<'a, M: CreateChatSession, Constraints: ModelConstraints, Sampler>
             chat_session: self.chat_session,
             constraints: self.constraints,
             sampler: Some(sampler),
-            queued_tokens: self.queued_tokens,
+            queued_tokens: None,
+            result: None,
             task: OnceLock::new(),
+        }
+    }
+}
+
+impl<'a, M, Sampler> ChatResponseBuilder<'a, M, NoConstraints, Sampler>
+where
+    Sampler: Send + Unpin + 'static,
+    M: ChatModel<Sampler> + Send + Sync + Clone + Unpin + 'static,
+    M::ChatSession: Send + Sync + Unpin + 'static,
+{
+    fn ensure_unstructured_task_started(&mut self) {
+        if self.task.get().is_none() {
+            let messages = std::mem::take(&mut self.chat_session.queued_messages);
+            let sampler = self
+                .sampler
+                .take()
+                .expect("ChatResponseBuilder cannot be turned into a future twice");
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            let (result_tx, result_rx) = tokio::sync::oneshot::channel();
+            self.queued_tokens = Some(rx);
+            self.result = Some(result_rx);
+            let all_text = Arc::new(Mutex::new(String::new()));
+            let on_token = {
+                let all_text = all_text.clone();
+                move |tok: String| {
+                    all_text.lock().unwrap().push_str(&tok);
+                    _ = tx.send(tok);
+                    Ok(())
+                }
+            };
+            let session = self.chat_session.session_clone();
+            let model = self.chat_session.model.clone();
+            let future = async move {
+                let session = session?;
+                let mut session = session.write().await;
+                model
+                    .add_messages_with_callback(&mut session, &messages, sampler, on_token)
+                    .await?;
+                let mut all_text = all_text.lock().unwrap();
+                let all_text = std::mem::take(&mut *all_text);
+                Ok(Box::new(all_text) as Box<dyn Any + Send>)
+            };
+            let wrapped = async move {
+                let result: Result<Box<dyn Any + Send>, M::Error> = future.await;
+                _ = result_tx.send(result);
+            };
+            let task = Box::pin(wrapped);
+            self.task
+                .set(RwLock::new(task))
+                .unwrap_or_else(|_| panic!("Task already set"));
         }
     }
 }
 
 impl<'a, M, Sampler> Stream for ChatResponseBuilder<'a, M, NoConstraints, Sampler>
 where
-    Sampler: Send + Send + Unpin + 'static,
+    Sampler: Send + Unpin + 'static,
     M: ChatModel<Sampler> + Send + Sync + Clone + Unpin + 'static,
-    M::ChatSession: Clone + Send + Sync + Unpin + 'static,
+    M::ChatSession: Send + Sync + Unpin + 'static,
 {
     type Item = String;
 
@@ -524,37 +589,13 @@ where
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
         let myself = Pin::get_mut(self);
+        myself.ensure_unstructured_task_started();
         {
-            let mut queued_tokens = myself.queued_tokens.lock().unwrap();
-            if let Some(token) = queued_tokens.pop() {
-                return Poll::Ready(Some(token));
+            if let Some(token) = &mut myself.queued_tokens {
+                if let Poll::Ready(Some(token)) = token.poll_recv(cx) {
+                    return Poll::Ready(Some(token));
+                }
             }
-        }
-        if myself.task.get().is_none() {
-            let messages = std::mem::take(&mut myself.chat_session.queued_messages);
-            let sampler = myself
-                .sampler
-                .take()
-                .expect("ChatResponseBuilder cannot be turned into a future twice");
-            let queued_tokens = myself.queued_tokens.clone();
-            let on_token = move |tok: String| {
-                let mut queued_tokens = queued_tokens.lock().unwrap();
-                queued_tokens.push(tok);
-                Ok(())
-            };
-            let session = myself.chat_session.session_clone();
-            let model = myself.chat_session.model.clone();
-            let future = async move {
-                let mut session = session?;
-                model
-                    .add_messages_with_callback(&mut session, &messages, sampler, on_token)
-                    .await
-                    .map(|_| Box::new(()) as Box<dyn Any + Send>)
-            };
-            let task = Box::pin(future);
-            myself.task
-                .set(RwLock::new(task))
-                .unwrap_or_else(|_| panic!("Task already set"));
         }
         let mut task = myself.task.get().unwrap().write().unwrap();
         task.poll_unpin(cx).map(|_| None)
@@ -563,47 +604,89 @@ where
 
 impl<'a, M, Sampler> IntoFuture for ChatResponseBuilder<'a, M, NoConstraints, Sampler>
 where
-    Sampler: Send + Send  + 'static,
-    M: ChatModel<Sampler> + Send + Sync + Clone  + 'static,
-    M::ChatSession: Clone + Send + Sync + 'static,
+    Sampler: Send + Unpin + 'static,
+    M: ChatModel<Sampler> + Send + Sync + Unpin + Clone + 'static,
+    M::ChatSession: Clone + Send + Sync + Unpin + 'static,
 {
     type Output = Result<String, M::Error>;
     type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send + 'a>>;
 
     fn into_future(mut self) -> Self::IntoFuture {
-        let messages = std::mem::take(&mut self.chat_session.queued_messages);
-        let sampler = self
-            .sampler
-            .take()
-            .expect("ChatResponseBuilder cannot be turned into a future twice");
-        let all_text = Arc::new(Mutex::new(String::new()));
-        let on_token = {
-            let all_text = all_text.clone();
-            move |tok: String| {
-                all_text.lock().unwrap().push_str(&tok);
-                Ok(())
-            }
-        };
-        let session = self.chat_session.session_clone();
-        let model = self.chat_session.model.clone();
-        let future = async move {
-            let mut session = session?;
-            model
-                .add_messages_with_callback(&mut session, &messages, sampler, on_token)
-                .await?;
-            Ok(std::mem::take(&mut *all_text.lock().unwrap()))
-        };
+        self.ensure_unstructured_task_started();
 
-        Box::pin(future)
+        Box::pin(async move {
+            if !self.result.is_some() {
+                self.task.into_inner().unwrap().into_inner().unwrap().await;
+            }
+            let result = self.result.take().unwrap().await.unwrap();
+            let result = result.map(|boxed| *boxed.downcast::<String>().unwrap());
+            result
+        })
+    }
+}
+
+impl<'a, M, Constraints, Sampler> ChatResponseBuilder<'a, M, Constraints, Sampler>
+where
+    Constraints: ModelConstraints + Send + Sync + Unpin + 'static,
+    Sampler: Send + Unpin + 'static,
+    M: StructuredChatModel<Constraints, Sampler> + Send + Sync + Clone + Unpin + 'static,
+    M::ChatSession: Clone + Send + Sync + Unpin + 'static,
+    Constraints::Output: Send + 'static,
+{
+    fn ensure_structured_task_started(&mut self) {
+        if self.task.get().is_none() {
+            let messages = std::mem::take(&mut self.chat_session.queued_messages);
+            let sampler = self
+                .sampler
+                .take()
+                .expect("ChatResponseBuilder cannot be turned into a future twice");
+            let constraints = self
+                .constraints
+                .take()
+                .expect("ChatResponseBuilder cannot be turned into a future twice");
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            let (result_tx, result_rx) = tokio::sync::oneshot::channel();
+            self.queued_tokens = Some(rx);
+            self.result = Some(result_rx);
+            let on_token = move |tok: String| {
+                _ = tx.send(tok);
+                Ok(())
+            };
+            let session = self.chat_session.session_clone();
+            let model = self.chat_session.model.clone();
+            let future = async move {
+                let session = session?;
+                let mut session = session.write().await;
+                model
+                    .add_message_with_callback_and_constraints(
+                        &mut session,
+                        &messages,
+                        sampler,
+                        constraints,
+                        on_token,
+                    )
+                    .await
+                    .map(|value| Box::new(value) as Box<dyn Any + Send>)
+            };
+            let wrapped = async move {
+                let result: Result<Box<dyn Any + Send>, M::Error> = future.await;
+                _ = result_tx.send(result);
+            };
+            let task = Box::pin(wrapped);
+            self.task
+                .set(RwLock::new(task))
+                .unwrap_or_else(|_| panic!("Task already set"));
+        }
     }
 }
 
 impl<'a, M, Constraints, Sampler> Stream for ChatResponseBuilder<'a, M, Constraints, Sampler>
 where
-    Constraints: ModelConstraints + Send + Sync +Unpin+ 'static,
-    Sampler: Send + Send + Unpin + 'static,
+    Constraints: ModelConstraints + Send + Sync + Unpin + 'static,
+    Sampler: Send + Unpin + 'static,
     M: StructuredChatModel<Constraints, Sampler> + Send + Sync + Clone + Unpin + 'static,
     M::ChatSession: Clone + Send + Sync + Unpin + 'static,
+    Constraints::Output: Send + 'static,
 {
     type Item = String;
 
@@ -612,38 +695,13 @@ where
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
         let myself = Pin::get_mut(self);
+        myself.ensure_structured_task_started();
         {
-            let mut queued_tokens = myself.queued_tokens.lock().unwrap();
-            if let Some(token) = queued_tokens.pop() {
-                return Poll::Ready(Some(token));
+            if let Some(token) = &mut myself.queued_tokens {
+                if let Poll::Ready(Some(token)) = token.poll_recv(cx) {
+                    return Poll::Ready(Some(token));
+                }
             }
-        }
-        if myself.task.get().is_none() {
-            let messages = std::mem::take(&mut myself.chat_session.queued_messages);
-            let sampler = myself
-                .sampler
-                .take()
-                .expect("ChatResponseBuilder cannot be turned into a future twice");
-            let constraints = myself.constraints.take().expect("ChatResponseBuilder cannot be turned into a future twice");
-            let queued_tokens = myself.queued_tokens.clone();
-            let on_token = move |tok: String| {
-                let mut queued_tokens = queued_tokens.lock().unwrap();
-                queued_tokens.push(tok);
-                Ok(())
-            };
-            let session = myself.chat_session.session_clone();
-            let model = myself.chat_session.model.clone();
-            let future = async move {
-                let mut session = session?;
-                model
-                    .add_message_with_callback_and_constraints(&mut session, &messages, sampler, constraints, on_token) 
-                    .await
-                    .map(|_| Box::new(()) as Box<dyn Any + Send>)
-            };
-            let task = Box::pin(future);
-            myself.task
-                .set(RwLock::new(task))
-                .unwrap_or_else(|_| panic!("Task already set"));
         }
         let mut task = myself.task.get().unwrap().write().unwrap();
         task.poll_unpin(cx).map(|_| None)
@@ -652,45 +710,25 @@ where
 
 impl<'a, M, Constraints, Sampler> IntoFuture for ChatResponseBuilder<'a, M, Constraints, Sampler>
 where
-    Constraints: ModelConstraints + Send + Sync + 'static,
-    Sampler: Send + Send + Unpin + 'static,
+    Constraints: ModelConstraints + Send + Sync + Unpin + 'static,
+    Sampler: Send + Unpin + 'static,
     M: StructuredChatModel<Constraints, Sampler> + Send + Sync + Clone + Unpin + 'static,
     M::ChatSession: Clone + Send + Sync + Unpin + 'static,
+    Constraints::Output: Send + 'static,
 {
-    type Output = Result<String, M::Error>;
+    type Output = Result<Constraints::Output, M::Error>;
     type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send + 'a>>;
 
     fn into_future(mut self) -> Self::IntoFuture {
-        let messages = std::mem::take(&mut self.chat_session.queued_messages);
-        let sampler = self
-            .sampler
-            .take()
-            .expect("ChatResponseBuilder cannot be turned into a future twice");
-        let all_text = Arc::new(Mutex::new(String::new()));
-        let on_token = {
-            let all_text = all_text.clone();
-            move |tok: String| {
-                all_text.lock().unwrap().push_str(&tok);
-                Ok(())
-            }
-        };
-        let session = self.chat_session.session_clone();
-        let model = self.chat_session.model.clone();
-        let constraints = self.constraints.take().expect("ChatResponseBuilder cannot be turned into a future twice");
-        let future = async move {
-            let mut session = session?;
-            model
-                .add_message_with_callback_and_constraints(
-                    &mut session,
-                    &messages,
-                    sampler,
-                    constraints,
-                    on_token,
-                )
-                .await?;
-            Ok(std::mem::take(&mut *all_text.lock().unwrap()))
-        };
+        self.ensure_structured_task_started();
 
-        Box::pin(future)
+        Box::pin(async move {
+            if !self.result.is_some() {
+                self.task.into_inner().unwrap().into_inner().unwrap().await;
+            }
+            let result = self.result.take().unwrap().await.unwrap();
+            let result = result.map(|boxed| *boxed.downcast::<Constraints::Output>().unwrap());
+            result
+        })
     }
 }
