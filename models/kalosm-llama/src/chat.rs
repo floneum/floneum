@@ -87,7 +87,7 @@ impl<S: Sampler + 'static> ChatModel<S> for Llama {
     }
 }
 
-impl<S, Constraints> StructuredChatModel<S, Constraints> for Llama
+impl<S, Constraints> StructuredChatModel<Constraints, S> for Llama
 where
     <Constraints as Parser>::Output: Send,
     Constraints: CreateParserState + Send + 'static,
@@ -261,78 +261,4 @@ impl LlamaChatSession {
             session,
         }
     }
-
-    // /// Adds a message to the history.
-    // fn add_message(
-    //     &mut self,
-    //     message: String,
-    //     model: &mut Llama,
-    //     stream: tokio::sync::mpsc::UnboundedSender<String>,
-    // ) -> Result<(), StructuredTextGenerationError<Model::Error>> {
-    //     self.add_user_message(message);
-    //     let mut bot_response = String::new();
-    //     self.unfed_text += &self.assistant_marker;
-    //     let prompt = std::mem::take(&mut self.unfed_text);
-    //     let bot_constraints = &self.bot_constraints;
-
-    //     let mut on_token = |tok: String| {
-    //         let tok = tok
-    //             .strip_suffix(&self.end_assistant_marker)
-    //             .unwrap_or(&tok)
-    //             .to_string();
-    //         bot_response += &tok;
-    //         // Send the new token to the stream
-    //         _ = stream.send(tok);
-    //         Ok(())
-    //     };
-
-    //     match bot_constraints {
-    //         Some(constraints) => {
-    //             let mut constraints = constraints.lock().unwrap();
-    //             let constraints = constraints(&self.history.read().unwrap());
-    //             let state = constraints.create_parser_state();
-    //             model.generate_structured(
-    //                 &mut self.session,
-    //                 &prompt,
-    //                 constraints,
-    //                 state,
-    //                 self.sampler.clone(),
-    //                 on_token,
-    //                 Some(4),
-    //             )?;
-    //             let end_assistant_token = model
-    //                 .tokenizer()
-    //                 .token_to_id(&self.end_assistant_marker)
-    //                 .unwrap();
-    //             // If it doesn't end with the end assistant marker, but the constraints are finished, add the end assistant marker
-    //             if self.session.tokens().last() != Some(&end_assistant_token) {
-    //                 model.feed_tokens(
-    //                     &mut self.session,
-    //                     &[end_assistant_token],
-    //                     &mut self.logits_scratch,
-    //                 )?;
-    //             }
-    //         }
-    //         None => {
-    //             model.stream_text_with_sampler(
-    //                 &mut self.session,
-    //                 &prompt,
-    //                 None,
-    //                 Some(&self.end_assistant_marker),
-    //                 self.sampler.clone(),
-    //                 |tok| {
-    //                     on_token(tok)?;
-    //                     Ok(crate::ModelFeedback::Continue)
-    //                 },
-    //             )?;
-    //         }
-    //     }
-
-    //     // self.history.write().unwrap().push(ChatHistoryItem {
-    //     //     ty: MessageType::ModelAnswer,
-    //     //     contents: bot_response,
-    //     // });
-
-    //     Ok(())
-    // }
 }

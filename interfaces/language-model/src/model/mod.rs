@@ -48,11 +48,7 @@ impl Session for () {
 }
 
 /// No parser is supported for this chat model
-pub struct NoConstraintsSupported;
-
-impl ModelConstraints for NoConstraintsSupported {
-    type Output = ();
-}
+pub struct NoConstraints;
 
 /// A type that can constrain the output of a model into a specific output type.
 pub trait ModelConstraints {
@@ -77,7 +73,7 @@ pub trait CreateTextCompletionSession: Send + Sync + 'static {
 }
 
 /// A trait for unstructured text completion models.
-pub trait TextCompletionModel<Sampler>: CreateTextCompletionSession {
+pub trait TextCompletionModel<Sampler=GenerationParameters>: CreateTextCompletionSession {
     /// Generate text with the given prompt.
     ///
     /// See [`ModelExt::stream_text`] for nicer API with an example.
@@ -92,8 +88,8 @@ pub trait TextCompletionModel<Sampler>: CreateTextCompletionSession {
 
 #[doc = include_str!("../../docs/model.md")]
 pub trait StructuredTextCompletionModel<
-    Sampler,
-    Constraints: ModelConstraints = NoConstraintsSupported,
+    Constraints: ModelConstraints,
+    Sampler=GenerationParameters,
 >: TextCompletionModel<Sampler>
 {
     /// Generate text with the given prompt.

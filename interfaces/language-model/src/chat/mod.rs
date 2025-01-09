@@ -1,10 +1,22 @@
 //! A chat interface that builds on top of [`crate::Model`]
 
+use crate::GenerationParameters;
 use crate::ModelConstraints;
-use crate::NoConstraintsSupported;
+use crate::NoConstraints;
 use futures_util::Future;
+use futures_util::FutureExt;
+use futures_util::Stream;
+use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
+use std::any::Any;
 use std::fmt::Display;
+use std::future::IntoFuture;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::OnceLock;
+use std::sync::RwLock;
+use std::task::Poll;
 
 /// A trait for creating a chat session.
 pub trait CreateChatSession {
@@ -19,7 +31,7 @@ pub trait CreateChatSession {
 }
 
 /// A trait for unstructured chat models.
-pub trait ChatModel<Sampler>: CreateChatSession {
+pub trait ChatModel<Sampler = GenerationParameters>: CreateChatSession {
     /// Add messages to the chat session with a callback that is called for each token.
     fn add_messages_with_callback(
         &self,
@@ -31,7 +43,7 @@ pub trait ChatModel<Sampler>: CreateChatSession {
 }
 
 /// A trait for chat models that work with constraints.
-pub trait StructuredChatModel<Sampler, Constraints: ModelConstraints = NoConstraintsSupported>:
+pub trait StructuredChatModel<Constraints: ModelConstraints, Sampler = GenerationParameters>:
     ChatModel<Sampler>
 {
     /// Add messages to the chat session with a callback that is called for each token and a constraints the response must follow.
@@ -121,694 +133,564 @@ impl ChatHistoryItem {
     }
 }
 
-// /// The history of a chat session.
-// struct ChatSession<Model: SyncModel> {
-//     logits_scratch: Vec<f32>,
-//     system_prompt_marker: String,
-//     end_system_prompt_marker: String,
-//     user_marker: String,
-//     end_user_marker: String,
-//     assistant_marker: String,
-//     end_assistant_marker: String,
-//     history: Arc<RwLock<Vec<ChatHistoryItem>>>,
-//     session: Model::Session,
-//     unfed_text: String,
-//     bot_constraints: Option<ResponseConstraintGenerator>,
-//     sampler: Arc<Mutex<dyn Sampler + Send + Sync>>,
-// }
+/// A trait for types that can be converted into a chat message.
+///
+/// # Example
+/// ```rust, no_run
+/// # use kalosm::language::*;
+/// # #[tokio::main]
+/// # async fn main() {
+/// // Displayable types are converted into a user chat message
+/// let user_message = "Hello, world!";
+/// let chat_message = user_message.into_chat_message();
+/// assert_eq!(chat_message.role(), MessageType::UserMessage);
+///
+/// // Or you can create a chat message manually
+/// let chat_message = ChatHistoryItem::new(MessageType::ModelAnswer, "Hello, world!".to_string());
+/// assert_eq!(chat_message.role(), MessageType::ModelAnswer);
+/// # }
+/// ```
+pub trait IntoChatMessage {
+    /// Convert the type into a chat message.
+    fn into_chat_message(self) -> ChatHistoryItem;
+}
 
-// impl<Model: SyncModel> ChatSession<Model> {
-//     #[allow(clippy::too_many_arguments)]
-//     /// Creates a new chat history.
-//     fn new(
-//         model: &mut Model,
-//         system_prompt_marker: String,
-//         end_system_prompt_marker: String,
-//         user_marker: String,
-//         end_user_marker: String,
-//         assistant_marker: String,
-//         end_assistant_marker: String,
-//         system_prompt: Option<String>,
-//         bot_constraints: Option<ResponseConstraintGenerator>,
-//         sampler: Arc<Mutex<dyn Sampler + Send + Sync>>,
-//         session: Option<Model::Session>,
-//         initial_history: Vec<ChatHistoryItem>,
-//         shared_history: Arc<RwLock<Vec<ChatHistoryItem>>>,
-//     ) -> Self {
-//         let feed_initial_messages = session.is_none();
-//         let session = session.unwrap_or_else(|| {
-//             model
-//                 .new_session()
-//                 .unwrap_or_else(|_| panic!("Failed to create a new session"))
-//         });
-//         let unfed_text = String::new();
-//         shared_history.write().unwrap().clear();
+impl<S: ToString> IntoChatMessage for S {
+    fn into_chat_message(self) -> ChatHistoryItem {
+        ChatHistoryItem::new(MessageType::UserMessage, self.to_string())
+    }
+}
 
-//         let mut myself = Self {
-//             logits_scratch: Vec::new(),
-//             system_prompt_marker,
-//             end_system_prompt_marker,
-//             user_marker,
-//             end_user_marker,
-//             assistant_marker,
-//             end_assistant_marker,
-//             session,
-//             unfed_text,
-//             history: shared_history,
-//             bot_constraints,
-//             sampler,
-//         };
+impl IntoChatMessage for ChatHistoryItem {
+    fn into_chat_message(self) -> ChatHistoryItem {
+        self
+    }
+}
 
-//         if feed_initial_messages {
-//             // If the first item is not a system prompt, add one
-//             if initial_history
-//                 .first()
-//                 .filter(|item| item.ty() != MessageType::SystemPrompt)
-//                 .is_none()
-//             {
-//                 let system_prompt = system_prompt.unwrap_or(DEFAULT_SYSTEM_PROMPT.into());
-//                 myself.add_system_message(system_prompt);
-//             }
-//             for item in initial_history {
-//                 match item.ty() {
-//                     MessageType::SystemPrompt => {
-//                         myself.add_system_message(item.contents);
-//                     }
-//                     MessageType::UserMessage => {
-//                         myself.add_user_message(item.contents);
-//                     }
-//                     MessageType::ModelAnswer => {
-//                         myself.add_bot_message(item.contents);
-//                     }
-//                 }
-//             }
-//         }
+/// [`Chat`] is a chat interface that builds on top of [`crate::Model`]. It makes it easy to create a chat session with streaming responses, and constraints.
+///
+/// Let's start with a simple chat application:
+///
+/// ```rust, no_run
+/// # use kalosm::language::*;
+/// # #[tokio::main]
+/// # async fn main() {
+/// // Before you create a chat session, you need a model. Llama::new_chat will create a good default chat model.
+/// let model = Llama::new_chat().await.unwrap();
+/// // Then you can build a chat session that uses that model
+/// let mut chat = Chat::builder(model)
+///     // The builder exposes methods for settings like the system prompt and constraints the bot response must follow
+///     .with_system_prompt("The assistant will act like a pirate")
+///     // Once you are done setting up the chat session, you can build it
+///     .build();
+///
+/// loop {
+///     // To use the chat session, you need to add messages to it
+///     let mut response_stream = chat.add_message(prompt_input("\n> ").unwrap());
+///     // And then display the response stream to the user
+///     response_stream.to_std_out().await.unwrap();
+/// }
+/// # }
+/// ```
+///
+/// If you run the application, you may notice that it takes more time for the assistant to start responding to long prompts.
+/// The LLM needs to read and transform the prompt into a format it understands before it can start generating a response.
+/// Kalosm stores that state in a chat session, which can be saved and loaded from the filesystem to make loading existing chat sessions faster.
+///
+/// You can save and load chat sessions from the filesystem using the [`Self::save_session`] and [`ChatBuilder::with_try_session_path`] methods:
+///
+/// ```rust, no_run
+/// # use kalosm::language::*;
+/// # #[tokio::main]
+/// # async fn main() {
+/// // First, create a model to chat with
+/// let model = Llama::new_chat().await.unwrap();
+/// // Then try to load the chat session from the filesystem
+/// let save_path = std::path::PathBuf::from("./chat.llama");
+/// let mut chat = Chat::builder(model)
+///     // You can try to load the chat session from the filesystem with the `with_try_session_path` method
+///     .with_try_session_path(&save_path)
+///     .build();
+///
+/// // Then you can add messages to the chat session as usual
+/// let mut response_stream = chat.add_message(prompt_input("\n> ").unwrap());
+/// // And then display the response stream to the user
+/// response_stream.to_std_out().await.unwrap();
+///
+/// // After you are done, you can save the chat session to the filesystem
+/// chat.save_session(&save_path).await.unwrap();
+/// # }
+/// ```
+///
+/// LLMs are powerful because of their generality, but sometimes you need more control over the output. For example, you might want the assistant to start with a certain phrase, or to follow a certain format.
+///
+/// In kalosm, you can use constraints to guide the model's response. Constraints are a way to specify the format of the output. When generating with constraints, the model will always respond with the specified format.
+///
+///
+/// Let's create a chat application that uses constraints to guide the assistant's response to always start with "Yes!":
+///
+/// ```rust, no_run
+/// # use kalosm::language::*;
+/// # #[tokio::main]
+/// # async fn main() {
+/// let model = Llama::new_chat().await.unwrap();
+/// // Create constraints that parses Yes! and then stops on the end of the assistant's response
+/// let constraints = LiteralParser::new("Yes!")
+///     .then(model.default_assistant_constraints().unwrap());
+/// // Create a chat session with the model and the constraints
+/// let mut chat = Chat::builder(model)
+///     .constrain_response(move |_history| constraints.clone())
+///     .build();
+///
+/// // Chat with the user
+/// loop {
+///     let mut output_stream = chat.add_message(prompt_input("\n> ").unwrap());
+///     output_stream.to_std_out().await.unwrap();
+/// }
+/// # }
+/// ```
+pub struct Chat<M: CreateChatSession> {
+    model: M,
+    session: OnceCell<Result<M::ChatSession, M::Error>>,
+    queued_messages: Vec<ChatHistoryItem>,
+}
 
-//         myself
-//     }
+impl<M: CreateChatSession> Chat<M> {
+    /// Create a new chat session with the default settings.
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// # use kalosm::language::*;
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// // Before you create a chat session, you need to create a model. Llama::new_chat will create a good default chat model.
+    /// let model = Llama::new_chat().await.unwrap();
+    /// // If you don't need to customize the chat session, you can use the `new` method to create a chat session with the default settings
+    /// let mut chat = Chat::new(model);
+    /// # }
+    /// ```
+    pub fn new(model: M) -> Chat<M>
+    where
+        M: ChatModel,
+    {
+        Self {
+            model,
+            session: OnceCell::new(),
+            queued_messages: Vec::new(),
+        }
+    }
 
-//     /// Adds a message to the history.
-//     fn add_message(
-//         &mut self,
-//         message: String,
-//         model: &mut Model,
-//         stream: tokio::sync::mpsc::UnboundedSender<String>,
-//     ) -> Result<(), StructuredTextGenerationError<Model::Error>> {
-//         self.add_user_message(message);
-//         let mut bot_response = String::new();
-//         self.unfed_text += &self.assistant_marker;
-//         let prompt = std::mem::take(&mut self.unfed_text);
-//         let bot_constraints = &self.bot_constraints;
+    /// Adds a system prompt to the chat. The system prompt guides the model to respond in a certain way.
+    /// If no system prompt is added, the model will use a default system prompt that instructs the model to respond in a way that is safe and respectful.
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// # use kalosm::language::*;
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let mut chat = Chat::builder(Llama::new_chat().await.unwrap())
+    ///     .with_system_prompt("The assistant will act like a pirate.")
+    ///     .build();
+    /// # }
+    /// ```
+    pub fn with_system_prompt(mut self, system_prompt: impl ToString) -> Self {
+        #[cfg(debug_assertions)]
+        if let Some(Ok(session)) = self.session.get() {
+            let mut existing_history = session.history();
+            existing_history.extend_from_slice(&self.queued_messages);
+            if !existing_history.is_empty() {
+                tracing::error!("System prompt should be the first message in the history. System prompt was added to the end of the history: {:?}", existing_history);
+            }
+        }
 
-//         let mut on_token = |tok: String| {
-//             let tok = tok
-//                 .strip_suffix(&self.end_assistant_marker)
-//                 .unwrap_or(&tok)
-//                 .to_string();
-//             bot_response += &tok;
-//             // Send the new token to the stream
-//             _ = stream.send(tok);
-//             Ok(())
-//         };
+        // Add the system prompt to the queue
+        self.queued_messages.push(ChatHistoryItem::new(
+            MessageType::SystemPrompt,
+            system_prompt.to_string(),
+        ));
 
-//         match bot_constraints {
-//             Some(constraints) => {
-//                 let mut constraints = constraints.lock().unwrap();
-//                 let constraints = constraints(&self.history.read().unwrap());
-//                 let state = constraints.create_parser_state();
-//                 model.generate_structured(
-//                     &mut self.session,
-//                     &prompt,
-//                     constraints,
-//                     state,
-//                     self.sampler.clone(),
-//                     on_token,
-//                     Some(4),
-//                 )?;
-//                 let end_assistant_token = model
-//                     .tokenizer()
-//                     .token_to_id(&self.end_assistant_marker)
-//                     .unwrap();
-//                 // If it doesn't end with the end assistant marker, but the constraints are finished, add the end assistant marker
-//                 if self.session.tokens().last() != Some(&end_assistant_token) {
-//                     model.feed_tokens(
-//                         &mut self.session,
-//                         &[end_assistant_token],
-//                         &mut self.logits_scratch,
-//                     )?;
-//                 }
-//             }
-//             None => {
-//                 model.stream_text_with_sampler(
-//                     &mut self.session,
-//                     &prompt,
-//                     None,
-//                     Some(&self.end_assistant_marker),
-//                     self.sampler.clone(),
-//                     |tok| {
-//                         on_token(tok)?;
-//                         Ok(crate::ModelFeedback::Continue)
-//                     },
-//                 )?;
-//             }
-//         }
+        self
+    }
 
-//         self.history.write().unwrap().push(ChatHistoryItem {
-//             ty: MessageType::ModelAnswer,
-//             contents: bot_response,
-//         });
+    /// Starts the chat instance with the given model session. This can be useful for resuming a chat session with a long context that has already been processed.
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// # use kalosm::language::*;
+    /// # use kalosm_llama::LlamaSession;
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let model = Llama::new_chat().await.unwrap();
+    /// // Load the model session from the filesystem
+    /// let session = LlamaSession::load_from(std::path::PathBuf::from("./chat.llama")).unwrap();
+    /// // Start the chat session with the cached session
+    /// let mut chat = Chat::builder(Llama::new_chat().await.unwrap())
+    ///     .with_session(session)
+    ///     .build();
+    /// # }
+    /// ```
+    pub fn with_session(mut self, session: M::ChatSession) -> Self {
+        // Copy the history from the current chat session into the queue for the new chat session
+        let mut existing_history = session.history();
+        existing_history.extend_from_slice(&self.queued_messages);
+        self.queued_messages = existing_history;
 
-//         Ok(())
-//     }
+        // Set the new chat session
+        self.session
+            .set(Ok(session))
+            .unwrap_or_else(|_| panic!("Chat session already set"));
 
-//     fn add_system_message(&mut self, message: String) {
-//         self.unfed_text += &self.system_prompt_marker;
-//         self.unfed_text += &message;
-//         self.unfed_text += &self.end_system_prompt_marker;
-//         let mut history = self.history.write().unwrap();
-//         if !history.is_empty() {
-//             tracing::error!("System prompt should be the first message in the history. System prompt was added to the end of the history: {history:?}");
-//         }
-//         history.push(ChatHistoryItem {
-//             ty: MessageType::SystemPrompt,
-//             contents: message,
-//         });
-//     }
+        self
+    }
 
-//     fn add_user_message(&mut self, message: String) {
-//         self.unfed_text += &self.user_marker;
-//         self.unfed_text += &message;
-//         self.unfed_text += &self.end_user_marker;
-//         self.history.write().unwrap().push(ChatHistoryItem {
-//             ty: MessageType::UserMessage,
-//             contents: message,
-//         });
-//     }
+    /// Adds a user message to the chat session and streams the bot response.
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// # use kalosm::language::*;
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let mut chat = Chat::new(Llama::new_chat().await.unwrap());
+    /// let prompt = prompt_input("\n> ").unwrap();
+    ///
+    /// // You can add the user message to the chat session with the `add_message` method
+    /// let mut response_stream = chat.add_message(prompt);
+    /// // And then stream the result to std out
+    /// response_stream.to_std_out().await.unwrap();
+    /// # }
+    /// ```
+    pub fn add_message(&mut self, message: impl IntoChatMessage) -> ChatResponseBuilder<'_, M> {
+        // First push the message to the queue
+        self.queued_messages.push(message.into_chat_message());
 
-//     fn add_bot_message(&mut self, message: String) {
-//         self.unfed_text += &self.assistant_marker;
-//         self.unfed_text += &message;
-//         self.unfed_text += &self.end_assistant_marker;
-//         self.history.write().unwrap().push(ChatHistoryItem {
-//             ty: MessageType::ModelAnswer,
-//             contents: message,
-//         });
-//     }
-// }
+        // Then create the builder that will respond to the message if it is awaited
+        ChatResponseBuilder {
+            chat_session: self,
+            constraints: None,
+            sampler: Some(GenerationParameters::default()),
+            task: OnceLock::new(),
+            queued_tokens: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
 
-// /// A builder for [`Chat`].
-// pub struct ChatBuilder<M: Model> {
-//     model: M,
-//     chat_markers: ChatMarkers,
-//     session: Option<<M::SyncModel as crate::SyncModel>::Session>,
-//     system_prompt: Option<String>,
-//     sampler: Arc<Mutex<dyn Sampler + Send + Sync>>,
-//     bot_constraints: Option<ResponseConstraintGenerator>,
-//     initial_history: Vec<ChatHistoryItem>,
-// }
+    fn session_clone(&mut self) -> Result<M::ChatSession, M::Error>
+    where
+        M::ChatSession: Clone,
+    {
+        let session = self.session.get_or_init(|| self.model.new_chat_session());
 
-// impl<M: Model> ChatBuilder<M> {
-//     fn new(model: M) -> ChatBuilder<M> {
-//         let chat_markers = model.chat_markers().expect("Model does not support chat");
+        match session {
+            Ok(session) => Ok(session.clone()),
+            Err(_) => {
+                let session_owned = self.session.take().unwrap();
+                match session_owned {
+                    Ok(_) => unreachable!(),
+                    Err(session_err) => Err(session_err),
+                }
+            }
+        }
+    }
 
-//         ChatBuilder {
-//             model,
-//             chat_markers,
-//             session: None,
-//             system_prompt: None,
-//             sampler: Arc::new(Mutex::new(GenerationParameters::default().sampler())),
-//             bot_constraints: None,
-//             initial_history: Vec::new(),
-//         }
-//     }
-// }
+    /// Get a reference to the chat session or an error if the session failed to load.
+    ///
+    /// You can use the session to save the chat for later:
+    /// ```rust, no_run
+    /// # use kalosm::language::*;
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let mut chat = Chat::new(Llama::new_chat().await.unwrap());
+    /// let save_path = std::path::PathBuf::from("./chat.llama");
+    /// let session = chat.session();
+    /// session.save_session(&save_path).await.unwrap();
+    /// # }
+    /// ```
+    ///
+    /// Or get the chat history:
+    /// ```rust, no_run
+    /// # use kalosm::language::*;
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let mut chat = Chat::new(Llama::new_chat().await.unwrap());
+    /// // Add a message to the chat history
+    /// chat.add_message("Hello, world!").to_std_out().await.unwrap();
+    /// // Get the chat history
+    /// let history = chat.history();
+    /// println!("{:?}", history);
+    /// # }
+    /// ````
+    pub fn session(&self) -> &Result<M::ChatSession, M::Error> {
+        self.session.get_or_init(|| self.model.new_chat_session())
+    }
+}
 
-// impl<M: Model> ChatBuilder<M> {
-//     /// Adds a system prompt to the chat. The system prompt guides the model to respond in a certain way.
-//     /// If no system prompt is added, the model will use a default system prompt that instructs the model to respond in a way that is safe and respectful.
-//     ///
-//     /// # Example
-//     /// ```rust, no_run
-//     /// # use kalosm::language::*;
-//     /// # #[tokio::main]
-//     /// # async fn main() {
-//     /// let mut chat = Chat::builder(Llama::new_chat().await.unwrap())
-//     ///     .with_system_prompt("The assistant will act like a pirate.")
-//     ///     .build();
-//     /// # }
-//     /// ```
-//     pub fn with_system_prompt(mut self, system_prompt: impl ToString) -> Self {
-//         self.system_prompt = Some(system_prompt.to_string());
-//         self
-//     }
+pub struct ChatResponseBuilder<
+    'a,
+    M: CreateChatSession,
+    Constraints = NoConstraints,
+    Sampler = GenerationParameters,
+> {
+    chat_session: &'a mut Chat<M>,
+    constraints: Option<Constraints>,
+    sampler: Option<Sampler>,
+    task: OnceLock<
+        RwLock<Pin<Box<dyn Future<Output = Result<Box<dyn Any + Send>, M::Error>> + Send>>>,
+    >,
+    queued_tokens: Arc<Mutex<Vec<String>>>,
+}
 
-//     /// Sets the [`Sampler`] to use for generating responses.
-//     pub fn with_sampler(mut self, sampler: impl Sampler + 'static) -> Self {
-//         self.sampler = Arc::new(Mutex::new(sampler));
-//         self
-//     }
+impl<'a, M: CreateChatSession, Constraints: ModelConstraints, Sampler>
+    ChatResponseBuilder<'a, M, Constraints, Sampler>
+{
+    /// Constrains the model's response to the given parser. This can be used to make the model start with a certain phrase, or to make the model respond in a certain way.
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// # use kalosm::language::*;
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let model = Llama::new_chat().await.unwrap();
+    /// // Create constraints that parses Yes! and then stops on the end of the assistant's response
+    /// let constraints = LiteralParser::new("Yes!")
+    ///     .then(model.default_assistant_constraints().unwrap());
+    /// // Create a chat session with the model and the constraints
+    /// let mut chat = Chat::new(model);
+    ///
+    /// // Chat with the user
+    /// loop {
+    ///     let mut output_stream = chat.add_message(prompt_input("\n> ").unwrap()).with_constraints(constraints.clone());
+    ///     output_stream.to_std_out().await.unwrap();
+    /// }
+    /// # }
+    /// ```
+    pub fn with_constraints<NewConstraints: ModelConstraints>(
+        self,
+        constraints: NewConstraints,
+    ) -> ChatResponseBuilder<'a, M, NewConstraints, Sampler> {
+        ChatResponseBuilder {
+            chat_session: self.chat_session,
+            constraints: Some(constraints),
+            sampler: self.sampler,
+            queued_tokens: self.queued_tokens,
+            task: OnceLock::new(),
+        }
+    }
 
-//     /// See [`ChatBuilder::with_constraints`]
-//     #[deprecated(note = "renamed to `with_constraints`")]
-//     pub fn constrain_response<Parser: SendCreateParserState + 'static>(
-//         self,
-//         bot_constraints: impl FnMut(&[ChatHistoryItem]) -> Parser + Send + Sync + 'static,
-//     ) -> ChatBuilder<M> {
-//         Self::with_constraints(self, bot_constraints)
-//     }
+    /// Sets the sampler to use for generating responses. The sampler determines how tokens are choosen from the probability distribution
+    /// the model generates. They can be used to make the model more or less predictable and prevent repetition.
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// # use kalosm::language::*;
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let model = Llama::new_chat().await.unwrap();
+    /// // Create the sampler to use for the chat session
+    /// let sampler = GenerationParameters::default().sampler();
+    ///
+    /// // Create a chat session with the model and the constraints
+    /// let mut chat = Chat::new(model);
+    ///
+    /// // Chat with the user
+    /// loop {
+    ///     let mut output_stream = chat.add_message(prompt_input("\n> ").unwrap()).with_sampler(sampler);
+    ///     output_stream.to_std_out().await.unwrap();
+    /// }
+    /// # }
+    /// ```
+    pub fn with_sampler<NewSampler>(
+        self,
+        sampler: NewSampler,
+    ) -> ChatResponseBuilder<'a, M, Constraints, NewSampler> {
+        ChatResponseBuilder {
+            chat_session: self.chat_session,
+            constraints: self.constraints,
+            sampler: Some(sampler),
+            queued_tokens: self.queued_tokens,
+            task: OnceLock::new(),
+        }
+    }
+}
 
-//     /// Constrains the model's response to the given parser. This can be used to make the model start with a certain phrase, or to make the model respond in a certain way.
-//     ///
-//     /// # Example
-//     /// ```rust, no_run
-//     /// # use kalosm::language::*;
-//     /// # #[tokio::main]
-//     /// # async fn main() {
-//     /// let model = Llama::new_chat().await.unwrap();
-//     /// // Create constraints that parses Yes! and then stops on the end of the assistant's response
-//     /// let constraints = LiteralParser::new("Yes!")
-//     ///     .then(model.default_assistant_constraints().unwrap());
-//     /// // Create a chat session with the model and the constraints
-//     /// let mut chat = Chat::builder(model)
-//     ///     .constrain_response(move |_history| constraints.clone())
-//     ///     .build();
-//     ///
-//     /// // Chat with the user
-//     /// loop {
-//     ///     let mut output_stream = chat.add_message(prompt_input("\n> ").unwrap());
-//     ///     output_stream.to_std_out().await.unwrap();
-//     /// }
-//     /// # }
-//     /// ```
-//     pub fn with_constraints<Parser: SendCreateParserState + 'static>(
-//         self,
-//         mut bot_constraints: impl FnMut(&[ChatHistoryItem]) -> Parser + Send + Sync + 'static,
-//     ) -> ChatBuilder<M> {
-//         ChatBuilder {
-//             model: self.model,
-//             chat_markers: self.chat_markers,
-//             session: self.session,
-//             system_prompt: self.system_prompt,
-//             sampler: self.sampler,
-//             bot_constraints: Some(Arc::new(Mutex::new(Box::new(
-//                 move |history: &[ChatHistoryItem]| {
-//                     bot_constraints(history).map_output(|_| ()).boxed()
-//                 },
-//             )
-//                 as Box<dyn FnMut(&[ChatHistoryItem]) -> ArcParser + Send + Sync>))),
-//             initial_history: self.initial_history,
-//         }
-//     }
+impl<'a, M, Sampler> Stream for ChatResponseBuilder<'a, M, NoConstraints, Sampler>
+where
+    Sampler: Send + Send + Unpin + 'static,
+    M: ChatModel<Sampler> + Send + Sync + Clone + Unpin + 'static,
+    M::ChatSession: Clone + Send + Sync + Unpin + 'static,
+{
+    type Item = String;
 
-//     /// Starts the chat instance with the given model session. This can be useful for resuming a chat session with a long context that has already been processed.
-//     ///
-//     /// # Example
-//     /// ```rust, no_run
-//     /// # use kalosm::language::*;
-//     /// # use kalosm_llama::LlamaSession;
-//     /// # #[tokio::main]
-//     /// # async fn main() {
-//     /// let model = Llama::new_chat().await.unwrap();
-//     /// // Load the model session from the filesystem
-//     /// let session = LlamaSession::load_from(std::path::PathBuf::from("./chat.llama")).unwrap();
-//     /// // Start the chat session with the cached session
-//     /// let mut chat = Chat::builder(Llama::new_chat().await.unwrap())
-//     ///     .with_session(session)
-//     ///     .build();
-//     /// # }
-//     /// ```
-//     pub fn with_session(
-//         mut self,
-//         session: <M::SyncModel as crate::SyncModel>::Session,
-//     ) -> Self {
-//         self.session = Some(session);
-//         self
-//     }
+    fn poll_next(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        let myself = Pin::get_mut(self);
+        {
+            let mut queued_tokens = myself.queued_tokens.lock().unwrap();
+            if let Some(token) = queued_tokens.pop() {
+                return Poll::Ready(Some(token));
+            }
+        }
+        if myself.task.get().is_none() {
+            let messages = std::mem::take(&mut myself.chat_session.queued_messages);
+            let sampler = myself
+                .sampler
+                .take()
+                .expect("ChatResponseBuilder cannot be turned into a future twice");
+            let queued_tokens = myself.queued_tokens.clone();
+            let on_token = move |tok: String| {
+                let mut queued_tokens = queued_tokens.lock().unwrap();
+                queued_tokens.push(tok);
+                Ok(())
+            };
+            let session = myself.chat_session.session_clone();
+            let model = myself.chat_session.model.clone();
+            let future = async move {
+                let mut session = session?;
+                model
+                    .add_messages_with_callback(&mut session, &messages, sampler, on_token)
+                    .await
+                    .map(|_| Box::new(()) as Box<dyn Any + Send>)
+            };
+            let task = Box::pin(future);
+            myself.task
+                .set(RwLock::new(task))
+                .unwrap_or_else(|_| panic!("Task already set"));
+        }
+        let mut task = myself.task.get().unwrap().write().unwrap();
+        task.poll_unpin(cx).map(|_| None)
+    }
+}
 
-//     /// Try to load the chat session from the given path. If the session is not found, the default session will be used.
-//     ///
-//     /// # Example
-//     /// ```rust, no_run
-//     /// # use kalosm::language::*;
-//     /// # #[tokio::main]
-//     /// # async fn main() {
-//     /// let mut chat = Chat::builder(Llama::new_chat().await.unwrap())
-//     ///     .with_try_session_path("./chat.llama")
-//     ///     .build();
-//     /// # }
-//     /// ```
-//     pub fn with_try_session_path(self, path: impl AsRef<std::path::Path>) -> Self {
-//         let path = path.as_ref();
-//         let Ok(bytes) = std::fs::read(path) else {
-//             return self;
-//         };
-//         let session: Result<_, _> =
-//             <M::SyncModel as crate::SyncModel>::Session::from_bytes(&bytes);
-//         let Ok(session) = session else {
-//             return self;
-//         };
-//         self.with_session(session)
-//     }
+impl<'a, M, Sampler> IntoFuture for ChatResponseBuilder<'a, M, NoConstraints, Sampler>
+where
+    Sampler: Send + Send  + 'static,
+    M: ChatModel<Sampler> + Send + Sync + Clone  + 'static,
+    M::ChatSession: Clone + Send + Sync + 'static,
+{
+    type Output = Result<String, M::Error>;
+    type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send + 'a>>;
 
-//     /// Set the initial history of the chat. Each message in the original history will be added to the chat history, and the model will be fed the user messages.
-//     ///
-//     /// > **Note**: The system prompt automatically added to the chat history and should not be included in the initial history.
-//     ///
-//     /// # Example
-//     /// ```rust, no_run
-//     /// # use kalosm::language::*;
-//     /// # #[tokio::main]
-//     /// # async fn main() {
-//     /// let mut chat = Chat::builder(Llama::new_chat().await.unwrap())
-//     ///     .with_initial_history(vec![
-//     ///         ChatHistoryItem::new(MessageType::SystemPrompt, "The assistant will act like a pirate."),
-//     ///         ChatHistoryItem::new(MessageType::UserMessage, "Hello!"),
-//     ///         ChatHistoryItem::new(MessageType::ModelAnswer, "Arrr matey, how ar ya?"),
-//     ///     ])
-//     ///     .build();
-//     /// # }
-//     /// ```
-//     pub fn with_initial_history(mut self, initial_history: Vec<ChatHistoryItem>) -> Self {
-//         self.initial_history = initial_history;
-//         self
-//     }
+    fn into_future(mut self) -> Self::IntoFuture {
+        let messages = std::mem::take(&mut self.chat_session.queued_messages);
+        let sampler = self
+            .sampler
+            .take()
+            .expect("ChatResponseBuilder cannot be turned into a future twice");
+        let all_text = Arc::new(Mutex::new(String::new()));
+        let on_token = {
+            let all_text = all_text.clone();
+            move |tok: String| {
+                all_text.lock().unwrap().push_str(&tok);
+                Ok(())
+            }
+        };
+        let session = self.chat_session.session_clone();
+        let model = self.chat_session.model.clone();
+        let future = async move {
+            let mut session = session?;
+            model
+                .add_messages_with_callback(&mut session, &messages, sampler, on_token)
+                .await?;
+            Ok(std::mem::take(&mut *all_text.lock().unwrap()))
+        };
 
-//     /// Builds a [`Chat`] instance.
-//     pub fn build(self) -> Chat
-//     where
-//         <M::SyncModel as SyncModel>::Session: Send,
-//         M::Error: std::fmt::Debug,
-//     {
-//         let Self {
-//             model,
-//             chat_markers,
-//             system_prompt,
-//             sampler,
-//             bot_constraints,
-//             session,
-//             initial_history,
-//         } = self;
-//         let system_prompt_marker = chat_markers.system_prompt_marker.to_string();
-//         let end_system_prompt_marker = chat_markers.end_system_prompt_marker.to_string();
-//         let user_marker = chat_markers.user_marker.to_string();
-//         let end_user_marker = chat_markers.end_user_marker.to_string();
-//         let assistant_marker = chat_markers.assistant_marker.to_string();
-//         let end_assistant_marker = chat_markers.end_assistant_marker.to_string();
-//         let (sender_tx, mut sender_rx) = unbounded_channel();
-//         let shared_history = Arc::new(RwLock::new(Vec::new()));
-//         {
-//             let shared_history = shared_history.clone();
+        Box::pin(future)
+    }
+}
 
-//             tokio::spawn(async move {
-//                 let (tx, rx) = oneshot::channel();
-//                 {
-//                     _ = model.run_sync(move |model| {
-//                         Box::pin(async move {
-//                             let _ = tx.send(ChatSession::new(
-//                                 model,
-//                                 system_prompt_marker,
-//                                 end_system_prompt_marker,
-//                                 user_marker,
-//                                 end_user_marker,
-//                                 assistant_marker,
-//                                 end_assistant_marker,
-//                                 system_prompt,
-//                                 bot_constraints,
-//                                 sampler,
-//                                 session,
-//                                 initial_history,
-//                                 shared_history,
-//                             ));
-//                         })
-//                     });
-//                 }
+impl<'a, M, Constraints, Sampler> Stream for ChatResponseBuilder<'a, M, Constraints, Sampler>
+where
+    Constraints: ModelConstraints + Send + Sync +Unpin+ 'static,
+    Sampler: Send + Send + Unpin + 'static,
+    M: StructuredChatModel<Constraints, Sampler> + Send + Sync + Clone + Unpin + 'static,
+    M::ChatSession: Clone + Send + Sync + Unpin + 'static,
+{
+    type Item = String;
 
-//                 let Ok(session) = rx.await else {
-//                     tracing::error!("Error loading session");
-//                     return;
-//                 };
-//                 let chat_session = Arc::new(Mutex::new(session));
+    fn poll_next(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        let myself = Pin::get_mut(self);
+        {
+            let mut queued_tokens = myself.queued_tokens.lock().unwrap();
+            if let Some(token) = queued_tokens.pop() {
+                return Poll::Ready(Some(token));
+            }
+        }
+        if myself.task.get().is_none() {
+            let messages = std::mem::take(&mut myself.chat_session.queued_messages);
+            let sampler = myself
+                .sampler
+                .take()
+                .expect("ChatResponseBuilder cannot be turned into a future twice");
+            let constraints = myself.constraints.take().expect("ChatResponseBuilder cannot be turned into a future twice");
+            let queued_tokens = myself.queued_tokens.clone();
+            let on_token = move |tok: String| {
+                let mut queued_tokens = queued_tokens.lock().unwrap();
+                queued_tokens.push(tok);
+                Ok(())
+            };
+            let session = myself.chat_session.session_clone();
+            let model = myself.chat_session.model.clone();
+            let future = async move {
+                let mut session = session?;
+                model
+                    .add_message_with_callback_and_constraints(&mut session, &messages, sampler, constraints, on_token) 
+                    .await
+                    .map(|_| Box::new(()) as Box<dyn Any + Send>)
+            };
+            let task = Box::pin(future);
+            myself.task
+                .set(RwLock::new(task))
+                .unwrap_or_else(|_| panic!("Task already set"));
+        }
+        let mut task = myself.task.get().unwrap().write().unwrap();
+        task.poll_unpin(cx).map(|_| None)
+    }
+}
 
-//                 while let Some(message) = sender_rx.recv().await {
-//                     match message {
-//                         Message::AddMessage {
-//                             message,
-//                             response_tx,
-//                         } => {
-//                             let chat_session = chat_session.clone();
-//                             _ = model.run_sync(move |model| {
-//                                 Box::pin(async move {
-//                                     let mut chat_session = chat_session.lock().unwrap();
-//                                     if let Err(err) =
-//                                         chat_session.add_message(message, model, response_tx)
-//                                     {
-//                                         tracing::error!("Error adding message: {:?}", err);
-//                                     }
-//                                 })
-//                             });
-//                         }
-//                         Message::SaveSession { resolve } => {
-//                             let chat_session = chat_session.lock().unwrap();
-//                             resolve
-//                                 .send(chat_session.session.to_bytes().map_err(|err| err.into()))
-//                                 .unwrap();
-//                         }
-//                     }
-//                 }
-//             });
-//         }
+impl<'a, M, Constraints, Sampler> IntoFuture for ChatResponseBuilder<'a, M, Constraints, Sampler>
+where
+    Constraints: ModelConstraints + Send + Sync + 'static,
+    Sampler: Send + Send + Unpin + 'static,
+    M: StructuredChatModel<Constraints, Sampler> + Send + Sync + Clone + Unpin + 'static,
+    M::ChatSession: Clone + Send + Sync + Unpin + 'static,
+{
+    type Output = Result<String, M::Error>;
+    type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send + 'a>>;
 
-//         Chat {
-//             sender: sender_tx,
-//             shared_history,
-//         }
-//     }
-// }
+    fn into_future(mut self) -> Self::IntoFuture {
+        let messages = std::mem::take(&mut self.chat_session.queued_messages);
+        let sampler = self
+            .sampler
+            .take()
+            .expect("ChatResponseBuilder cannot be turned into a future twice");
+        let all_text = Arc::new(Mutex::new(String::new()));
+        let on_token = {
+            let all_text = all_text.clone();
+            move |tok: String| {
+                all_text.lock().unwrap().push_str(&tok);
+                Ok(())
+            }
+        };
+        let session = self.chat_session.session_clone();
+        let model = self.chat_session.model.clone();
+        let constraints = self.constraints.take().expect("ChatResponseBuilder cannot be turned into a future twice");
+        let future = async move {
+            let mut session = session?;
+            model
+                .add_message_with_callback_and_constraints(
+                    &mut session,
+                    &messages,
+                    sampler,
+                    constraints,
+                    on_token,
+                )
+                .await?;
+            Ok(std::mem::take(&mut *all_text.lock().unwrap()))
+        };
 
-// enum Message {
-//     AddMessage {
-//         message: String,
-//         response_tx: tokio::sync::mpsc::UnboundedSender<String>,
-//     },
-//     SaveSession {
-//         resolve:
-//             tokio::sync::oneshot::Sender<Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>>>,
-//     },
-// }
-
-// /// An error that can occur when trying to save a chat session.
-// #[derive(Debug, thiserror::Error)]
-// pub enum ChatSessionSaveError {
-//     /// The model has already stopped.
-//     #[error("Model stopped")]
-//     ModelStopped,
-
-//     /// Saving the chat session failed.
-//     #[error("Failed to save chat session: {0}")]
-//     SaveSessionFailed(Box<dyn std::error::Error + Send + Sync>),
-// }
-
-// /// [`Chat`] is a chat interface that builds on top of [`crate::Model`]. It makes it easy to create a chat session with streaming responses, and constraints.
-// ///
-// /// Let's start with a simple chat application:
-// ///
-// /// ```rust, no_run
-// /// # use kalosm::language::*;
-// /// # #[tokio::main]
-// /// # async fn main() {
-// /// // Before you create a chat session, you need a model. Llama::new_chat will create a good default chat model.
-// /// let model = Llama::new_chat().await.unwrap();
-// /// // Then you can build a chat session that uses that model
-// /// let mut chat = Chat::builder(model)
-// ///     // The builder exposes methods for settings like the system prompt and constraints the bot response must follow
-// ///     .with_system_prompt("The assistant will act like a pirate")
-// ///     // Once you are done setting up the chat session, you can build it
-// ///     .build();
-// ///
-// /// loop {
-// ///     // To use the chat session, you need to add messages to it
-// ///     let mut response_stream = chat.add_message(prompt_input("\n> ").unwrap());
-// ///     // And then display the response stream to the user
-// ///     response_stream.to_std_out().await.unwrap();
-// /// }
-// /// # }
-// /// ```
-// ///
-// /// If you run the application, you may notice that it takes more time for the assistant to start responding to long prompts.
-// /// The LLM needs to read and transform the prompt into a format it understands before it can start generating a response.
-// /// Kalosm stores that state in a chat session, which can be saved and loaded from the filesystem to make loading existing chat sessions faster.
-// ///
-// /// You can save and load chat sessions from the filesystem using the [`Self::save_session`] and [`ChatBuilder::with_try_session_path`] methods:
-// ///
-// /// ```rust, no_run
-// /// # use kalosm::language::*;
-// /// # #[tokio::main]
-// /// # async fn main() {
-// /// // First, create a model to chat with
-// /// let model = Llama::new_chat().await.unwrap();
-// /// // Then try to load the chat session from the filesystem
-// /// let save_path = std::path::PathBuf::from("./chat.llama");
-// /// let mut chat = Chat::builder(model)
-// ///     // You can try to load the chat session from the filesystem with the `with_try_session_path` method
-// ///     .with_try_session_path(&save_path)
-// ///     .build();
-// ///
-// /// // Then you can add messages to the chat session as usual
-// /// let mut response_stream = chat.add_message(prompt_input("\n> ").unwrap());
-// /// // And then display the response stream to the user
-// /// response_stream.to_std_out().await.unwrap();
-// ///
-// /// // After you are done, you can save the chat session to the filesystem
-// /// chat.save_session(&save_path).await.unwrap();
-// /// # }
-// /// ```
-// ///
-// /// LLMs are powerful because of their generality, but sometimes you need more control over the output. For example, you might want the assistant to start with a certain phrase, or to follow a certain format.
-// ///
-// /// In kalosm, you can use constraints to guide the model's response. Constraints are a way to specify the format of the output. When generating with constraints, the model will always respond with the specified format.
-// ///
-// ///
-// /// Let's create a chat application that uses constraints to guide the assistant's response to always start with "Yes!":
-// ///
-// /// ```rust, no_run
-// /// # use kalosm::language::*;
-// /// # #[tokio::main]
-// /// # async fn main() {
-// /// let model = Llama::new_chat().await.unwrap();
-// /// // Create constraints that parses Yes! and then stops on the end of the assistant's response
-// /// let constraints = LiteralParser::new("Yes!")
-// ///     .then(model.default_assistant_constraints().unwrap());
-// /// // Create a chat session with the model and the constraints
-// /// let mut chat = Chat::builder(model)
-// ///     .constrain_response(move |_history| constraints.clone())
-// ///     .build();
-// ///
-// /// // Chat with the user
-// /// loop {
-// ///     let mut output_stream = chat.add_message(prompt_input("\n> ").unwrap());
-// ///     output_stream.to_std_out().await.unwrap();
-// /// }
-// /// # }
-// /// ```
-// pub struct Chat {
-//     sender: tokio::sync::mpsc::UnboundedSender<Message>,
-//     shared_history: Arc<RwLock<Vec<ChatHistoryItem>>>,
-// }
-
-// impl Chat {
-//     /// Creates a new builder for a chat session.
-//     ///
-//     /// # Example
-//     /// ```rust, no_run
-//     /// # use kalosm::language::*;
-//     /// # #[tokio::main]
-//     /// # async fn main() {
-//     /// // Before you create a chat session, you need to create a model. Llama::new_chat will create a good default chat model.
-//     /// let model = Llama::new_chat().await.unwrap();
-//     /// // If you don't need to customize the chat session, you can use the `new` method to create a chat session with the default settings
-//     /// let mut chat = Chat::builder(model)
-//     ///     // The builder exposes methods for settings like the system prompt and constraints the bot response must follow
-//     ///     .with_system_prompt("The assistant will act like a pirate")
-//     ///     // Once you are done setting up the chat session, you can build it
-//     ///     .build();
-//     /// # }
-//     /// ```
-//     pub fn builder<M: Model>(model: M) -> ChatBuilder<M>
-//     where
-//         <M::SyncModel as SyncModel>::Session: Send,
-//     {
-//         ChatBuilder::new(model)
-//     }
-
-//     /// Create a new chat session with the default settings.
-//     ///
-//     /// # Example
-//     /// ```rust, no_run
-//     /// # use kalosm::language::*;
-//     /// # #[tokio::main]
-//     /// # async fn main() {
-//     /// // Before you create a chat session, you need to create a model. Llama::new_chat will create a good default chat model.
-//     /// let model = Llama::new_chat().await.unwrap();
-//     /// // If you don't need to customize the chat session, you can use the `new` method to create a chat session with the default settings
-//     /// let mut chat = Chat::new(model);
-//     /// # }
-//     /// ```
-//     pub fn new<M: Model>(model: M) -> Chat
-//     where
-//         <M::SyncModel as SyncModel>::Session: Send,
-//         M::Error: std::fmt::Debug,
-//     {
-//         Self::builder(model).build()
-//     }
-
-//     /// Adds a user message to the chat session and streams the bot response.
-//     ///
-//     /// # Example
-//     /// ```rust, no_run
-//     /// # use kalosm::language::*;
-//     /// # #[tokio::main]
-//     /// # async fn main() {
-//     /// let mut chat = Chat::new(Llama::new_chat().await.unwrap());
-//     /// let prompt = prompt_input("\n> ").unwrap();
-//     ///
-//     /// // You can add the user message to the chat session with the `add_message` method
-//     /// let mut response_stream = chat.add_message(prompt);
-//     /// // And then stream the result to std out
-//     /// response_stream.to_std_out().await.unwrap();
-//     /// # }
-//     /// ```
-//     pub fn add_message(&mut self, message: impl ToString) -> ChannelTextStream {
-//         let (tx, rx) = unbounded_channel();
-
-//         let message = message.to_string();
-//         let message = message.trim().to_string();
-//         let _ = self.sender.send(Message::AddMessage {
-//             message,
-//             response_tx: tx,
-//         });
-//         ChannelTextStream::from(rx)
-//     }
-
-//     /// Saves the session to the given path.
-//     ///
-//     /// # Example
-//     /// ```rust, no_run
-//     /// # use kalosm::language::*;
-//     /// # #[tokio::main]
-//     /// # async fn main() {
-//     /// let mut chat = Chat::new(Llama::new_chat().await.unwrap());
-//     /// let save_path = std::path::PathBuf::from("./chat.llama");
-//     /// chat.save_session(&save_path).await.unwrap();
-//     /// # }
-//     /// ```
-//     pub fn save_session(&mut self) -> impl Future<Output = Result<Vec<u8>, ChatSessionSaveError>> {
-//         let (tx, rx) = oneshot::channel();
-//         let result = self.sender.send(Message::SaveSession { resolve: tx });
-
-//         async move {
-//             result.map_err(|_| ChatSessionSaveError::ModelStopped)?;
-//             rx.await
-//                 .map_err(|_| ChatSessionSaveError::ModelStopped)?
-//                 .map_err(ChatSessionSaveError::SaveSessionFailed)
-//         }
-//     }
-
-//     /// Get the current chat history.
-//     ///
-//     /// # Example
-//     /// ```rust, no_run
-//     /// # use kalosm::language::*;
-//     /// # #[tokio::main]
-//     /// # async fn main() {
-//     /// let mut chat = Chat::new(Llama::new_chat().await.unwrap());
-//     /// // Add a message to the chat history
-//     /// chat.add_message("Hello, world!").to_std_out().await.unwrap();
-//     /// // Get the chat history
-//     /// let history = chat.history();
-//     /// println!("{:?}", history);
-//     /// # }
-//     /// ```
-//     pub fn history(&self) -> Vec<ChatHistoryItem> {
-//         self.shared_history.read().unwrap().clone()
-//     }
-// }
+        Box::pin(future)
+    }
+}

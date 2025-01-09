@@ -25,13 +25,8 @@ impl ModelBuilder for LlamaBuilder {
     }
 
     fn requires_download(&self) -> bool {
-        !self.source.model.downloaded()
-            || !self
-                .source
-                .tokenizer
-                .as_ref()
-                .filter(|t| t.downloaded())
-                .is_some()
+        !self.source.model.downloaded() || !self.source.tokenizer.as_ref().filter(|t| t.downloaded()).is_some()
+        
     }
 }
 
@@ -69,7 +64,7 @@ impl<S: Sampler + 'static> TextCompletionModel<S> for Llama {
     }
 }
 
-impl<S, Constraints> StructuredTextCompletionModel<S, Constraints> for Llama
+impl<S, Constraints> StructuredTextCompletionModel<Constraints, S> for Llama
 where
     <Constraints as Parser>::Output: Send,
     Constraints: CreateParserState + Send + 'static,
