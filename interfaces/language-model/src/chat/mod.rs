@@ -6,6 +6,7 @@ use crate::NoConstraints;
 use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
+use futures_util::StreamExt;
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
@@ -18,9 +19,10 @@ use std::sync::Mutex;
 use std::sync::OnceLock;
 use std::sync::RwLock;
 use std::task::Poll;
-use tokio::sync::mpsc::UnboundedReceiver;
-use tokio::sync::oneshot::Receiver;
-use tokio::sync::RwLock as AsyncRwLock;
+use futures_channel::mpsc::UnboundedReceiver;
+use futures_channel::oneshot::Receiver;
+use futures_util::lock::Mutex as AsyncMutex;
+
 
 /// A trait for creating a chat session.
 pub trait CreateChatSession {
@@ -255,7 +257,7 @@ impl IntoChatMessage for ChatHistoryItem {
 /// ```
 pub struct Chat<M: CreateChatSession> {
     model: M,
-    session: OnceCell<Result<Arc<AsyncRwLock<M::ChatSession>>, M::Error>>,
+    session: OnceCell<Result<Arc<AsyncMutex<M::ChatSession>>, M::Error>>,
     queued_messages: Vec<ChatHistoryItem>,
 }
 
@@ -300,11 +302,12 @@ impl<M: CreateChatSession> Chat<M> {
     pub fn with_system_prompt(mut self, system_prompt: impl ToString) -> Self {
         #[cfg(debug_assertions)]
         if let Some(Ok(session)) = self.session.get() {
-            let session = session.blocking_read();
-            let mut existing_history = session.history();
-            existing_history.extend_from_slice(&self.queued_messages);
-            if !existing_history.is_empty() {
-                tracing::error!("System prompt should be the first message in the history. System prompt was added to the end of the history: {:?}", existing_history);
+            if let Some(session) = session.try_lock() {
+                let mut existing_history = session.history();
+                existing_history.extend_from_slice(&self.queued_messages);
+                if !existing_history.is_empty() {
+                    tracing::error!("System prompt should be the first message in the history. System prompt was added to the end of the history: {:?}", existing_history);
+                }
             }
         }
 
@@ -342,7 +345,7 @@ impl<M: CreateChatSession> Chat<M> {
 
         // Set the new chat session
         self.session
-            .set(Ok(Arc::new(AsyncRwLock::new(session))))
+            .set(Ok(Arc::new(AsyncMutex::new(session))))
             .unwrap_or_else(|_| panic!("Chat session already set"));
 
         self
@@ -379,11 +382,11 @@ impl<M: CreateChatSession> Chat<M> {
         }
     }
 
-    fn session_clone(&mut self) -> Result<Arc<AsyncRwLock<M::ChatSession>>, M::Error> {
+    fn session_clone(&mut self) -> Result<Arc<AsyncMutex<M::ChatSession>>, M::Error> {
         let session = self.session.get_or_init(|| {
             self.model
                 .new_chat_session()
-                .map(|session| Arc::new(AsyncRwLock::new(session)))
+                .map(|session| Arc::new(AsyncMutex::new(session)))
         });
 
         match session {
@@ -407,7 +410,7 @@ impl<M: CreateChatSession> Chat<M> {
     /// # async fn main() {
     /// let mut chat = Chat::new(Llama::new_chat().await.unwrap());
     /// let save_path = std::path::PathBuf::from("./chat.llama");
-    /// let session = chat.session();
+    /// let session = chat.session().await.unwrap();
     /// session.save_session(&save_path).await.unwrap();
     /// # }
     /// ```
@@ -420,23 +423,50 @@ impl<M: CreateChatSession> Chat<M> {
     /// let mut chat = Chat::new(Llama::new_chat().await.unwrap());
     /// // Add a message to the chat history
     /// chat.add_message("Hello, world!").to_std_out().await.unwrap();
+    /// // Get the chat session
+    /// let session = chat.session().await.unwrap();
     /// // Get the chat history
-    /// let history = chat.history();
+    /// let history = session.history();
     /// println!("{:?}", history);
     /// # }
     /// ````
-    pub fn session(&self) -> Result<impl Deref<Target = M::ChatSession> + use<'_, M>, &M::Error> {
-        self.session
+    pub async fn session(&self) -> Result<impl Deref<Target = M::ChatSession> + use<'_, M>, &M::Error> {
+        match self.session
             .get_or_init(|| {
                 self.model
                     .new_chat_session()
-                    .map(|session| Arc::new(AsyncRwLock::new(session)))
+                    .map(|session| Arc::new(AsyncMutex::new(session)))
             })
             .as_ref()
-            .map(|session| session.blocking_read())
+            {
+                Ok(session) => Ok(session.lock().await),
+                Err(err) => Err(err),
+            }
     }
 }
 
+/// A builder for a chat response. This is returned by [`Chat::add_message`] and can be modified until you start awaiting the response.
+/// 
+/// # Example
+/// ```rust, no_run
+/// # use kalosm::language::*;
+/// # #[tokio::main]
+/// # async fn main() {
+/// let mut chat = Chat::builder(Llama::new_chat().await.unwrap())
+///     .with_system_prompt("The assistant will act like a pirate.")
+///     .build();
+/// 
+/// // Add a message to the chat session with the given message
+/// let mut response = chat.add_message(prompt_input("\n> ").unwrap());
+/// // Before you start streaming the response, you can add constraints to the response
+/// let response = response.with_constraints(String::new_parser());
+/// // Once you start streaming the response, the generation starts
+/// response.to_std_out().await.unwrap();
+/// // The response can be awaited to get the final (typed) result
+/// let all_text: String = response.await.unwrap();
+/// println!("{all_text}");
+/// # }
+/// ```
 pub struct ChatResponseBuilder<
     'a,
     M: CreateChatSession,
@@ -448,7 +478,7 @@ pub struct ChatResponseBuilder<
     sampler: Option<Sampler>,
     task: OnceLock<RwLock<Pin<Box<dyn Future<Output = ()> + Send>>>>,
     result: Option<Receiver<Result<Box<dyn Any + Send>, M::Error>>>,
-    queued_tokens: Option<UnboundedReceiver<String>>,
+    queued_tokens: Option<UnboundedReceiver<String>>
 }
 
 impl<'a, M: CreateChatSession, Constraints, Sampler>
@@ -539,8 +569,8 @@ where
                 .sampler
                 .take()
                 .expect("ChatResponseBuilder cannot be turned into a future twice");
-            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-            let (result_tx, result_rx) = tokio::sync::oneshot::channel();
+            let (mut tx, rx) = futures_channel::mpsc::unbounded();
+            let (result_tx, result_rx) = futures_channel::oneshot::channel();
             self.queued_tokens = Some(rx);
             self.result = Some(result_rx);
             let all_text = Arc::new(Mutex::new(String::new()));
@@ -548,7 +578,7 @@ where
                 let all_text = all_text.clone();
                 move |tok: String| {
                     all_text.lock().unwrap().push_str(&tok);
-                    _ = tx.send(tok);
+                    _ = tx.start_send(tok);
                     Ok(())
                 }
             };
@@ -556,7 +586,7 @@ where
             let model = self.chat_session.model.clone();
             let future = async move {
                 let session = session?;
-                let mut session = session.write().await;
+                let mut session = session.lock().await;
                 model
                     .add_messages_with_callback(&mut session, &messages, sampler, on_token)
                     .await?;
@@ -592,7 +622,7 @@ where
         myself.ensure_unstructured_task_started();
         {
             if let Some(token) = &mut myself.queued_tokens {
-                if let Poll::Ready(Some(token)) = token.poll_recv(cx) {
+                if let Poll::Ready(Some(token)) = token.poll_next_unpin(cx) {
                     return Poll::Ready(Some(token));
                 }
             }
@@ -644,19 +674,19 @@ where
                 .constraints
                 .take()
                 .expect("ChatResponseBuilder cannot be turned into a future twice");
-            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-            let (result_tx, result_rx) = tokio::sync::oneshot::channel();
+            let (mut tx, rx) = futures_channel::mpsc::unbounded();
+            let (result_tx, result_rx) = futures_channel::oneshot::channel();
             self.queued_tokens = Some(rx);
             self.result = Some(result_rx);
             let on_token = move |tok: String| {
-                _ = tx.send(tok);
+                _ = tx.start_send(tok);
                 Ok(())
             };
             let session = self.chat_session.session_clone();
             let model = self.chat_session.model.clone();
             let future = async move {
                 let session = session?;
-                let mut session = session.write().await;
+                let mut session = session.lock().await;
                 model
                     .add_message_with_callback_and_constraints(
                         &mut session,
@@ -698,7 +728,7 @@ where
         myself.ensure_structured_task_started();
         {
             if let Some(token) = &mut myself.queued_tokens {
-                if let Poll::Ready(Some(token)) = token.poll_recv(cx) {
+                if let Poll::Ready(Some(token)) = token.poll_next_unpin(cx) {
                     return Poll::Ready(Some(token));
                 }
             }

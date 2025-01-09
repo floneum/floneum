@@ -4027,6 +4027,7 @@ version = "0.3.3"
 dependencies = [
  "anyhow",
  "candle-core",
+ "futures-channel",
  "futures-util",
  "kalosm-common",
  "kalosm-learning",

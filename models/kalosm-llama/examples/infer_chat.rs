@@ -16,12 +16,11 @@ async fn main() {
     let mut chat = Chat::new(model);
     loop {
         let mut response = chat.add_message(prompt_input("> ").unwrap());
+        println!("\n");
         while let Some(text) = response.next().await {
             print!("{text}");
             _ = std::io::stdout().flush();
         }
-        let all_text = response.await.unwrap();
-        println!("{all_text}");
         println!("\n");
     }
 }
