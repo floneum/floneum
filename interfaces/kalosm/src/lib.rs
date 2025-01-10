@@ -11,7 +11,8 @@ pub mod language {
     pub use kalosm_common::{accelerated_device_if_available, FileSource};
     pub use kalosm_language::context::*;
     pub use kalosm_language::kalosm_language_model::{
-        Embedder as _, EmbedderExt as _, ChatModel as _, ChatModelExt as _, TextCompletionModel as _, TextCompletionModelExt as _, *,
+        ChatModel as _, ChatModelExt as _, Embedder as _, EmbedderExt as _,
+        TextCompletionModel as _, TextCompletionModelExt as _, *,
     };
     pub use kalosm_language::kalosm_llama::{Llama, LlamaBuilder, LlamaSession, LlamaSource};
     pub use kalosm_language::kalosm_sample::{self, *};

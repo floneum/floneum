@@ -314,7 +314,7 @@ impl<M: CreateChatSession + Clone + 'static> Deref for Chat<M> {
         // Move a closure that captures just self into the uninitialized memory. Closures create an anonymous type that implement
         // FnOnce. In this case, the layout of the type should just be Self because self is the only field in the closure type.
         let uninit_closure = move |_: &str| {
-            let _unreachable: ChatResponseBuilder<'static, M> = panic!(
+            let _unreachable: ChatResponseBuilder<'static, M> = unreachable!(
                 "FnMut cannot be called from a reference. Called from pointer {:p}",
                 uninit_callable.as_ptr()
             );

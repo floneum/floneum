@@ -1,7 +1,9 @@
 use std::borrow::Cow;
 
 use kalosm_language_model::{CreateChatSession, Embedder, StructuredChatModel};
-use kalosm_sample::{CreateParserState, LiteralParser, ParseResult, ParseStatus, Parser, ParserExt, StopOn};
+use kalosm_sample::{
+    CreateParserState, LiteralParser, ParseResult, ParseStatus, Parser, ParserExt, StopOn,
+};
 
 use crate::{
     prelude::{Document, Task},
@@ -211,10 +213,9 @@ where
     }
 }
 
-
 /// The state of the [`IndexParser`] parser
 #[derive(Debug, Clone)]
-pub (crate)struct IndexParserState<PA> {
+pub(crate) struct IndexParserState<PA> {
     states: Vec<ParseResult<PA>>,
 }
 
