@@ -11,15 +11,13 @@ pub mod language {
     pub use kalosm_common::{accelerated_device_if_available, FileSource};
     pub use kalosm_language::context::*;
     pub use kalosm_language::kalosm_language_model::{
-        Embedder as _, EmbedderExt as _, Model as _, ModelExt as _, *,
+        Embedder as _, EmbedderExt as _, ChatModel as _, ChatModelExt as _, TextCompletionModel as _, TextCompletionModelExt as _, *,
     };
     pub use kalosm_language::kalosm_llama::{Llama, LlamaBuilder, LlamaSession, LlamaSource};
     pub use kalosm_language::kalosm_sample::{self, *};
     pub use kalosm_language::prelude::Html;
-    pub use kalosm_language::rbert::{Bert, BertBuilder, BertSource, BertSpace};
+    pub use kalosm_language::rbert::{Bert, BertBuilder, BertSource};
     pub use kalosm_language::search::*;
-    pub use kalosm_language::task::*;
-    pub use kalosm_language::tool::*;
     pub use kalosm_language::vector_db::*;
     pub use kalosm_streams::text_stream::*;
 

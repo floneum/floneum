@@ -245,7 +245,7 @@ impl<C: Connection, R> EmbeddingIndexedTable<C, R> {
     pub fn search<'a>(
         &'a self,
         embedding: &'a Embedding,
-    ) -> EmbeddingIndexedTableSearchBuilder<'a, C, R, S> {
+    ) -> EmbeddingIndexedTableSearchBuilder<'a, C, R> {
         EmbeddingIndexedTableSearchBuilder {
             table: self,
             embedding,
@@ -268,7 +268,7 @@ pub trait IntoEmbeddingIndexedTableSearchFilter<C: Connection, R, Marker> {
 impl<C: Connection, R: Send + Sync> IntoEmbeddingIndexedTableSearchFilter<C, R, ()> for Candidates {
     async fn into_embedding_indexed_table_search_filter(
         self,
-        _: &EmbeddingIndexedTable<C, R, S>,
+        _: &EmbeddingIndexedTable<C, R>,
     ) -> Result<Candidates, EmbeddedIndexedTableError> {
         Ok(self)
     }

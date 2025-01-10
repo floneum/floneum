@@ -4,7 +4,6 @@
 
 pub mod context;
 pub mod search;
-pub mod tool;
 pub mod vector_db;
 
 pub use kalosm_language_model;
@@ -16,7 +15,6 @@ pub use rbert;
 pub mod prelude {
     pub use crate::context::*;
     pub use crate::search::*;
-    pub use crate::tool::*;
     pub use crate::vector_db::*;
     pub use futures_util::StreamExt as _;
     pub use kalosm_language_model::*;
