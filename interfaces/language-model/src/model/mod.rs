@@ -3,7 +3,8 @@ use std::{convert::Infallible, future::Future};
 
 mod generation_parameters;
 pub use generation_parameters::*;
-// mod ext;
+mod ext;
+pub use ext::*;
 
 /// A session for a model.
 pub trait Session {

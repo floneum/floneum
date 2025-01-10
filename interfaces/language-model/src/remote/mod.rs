@@ -9,7 +9,7 @@ mod chat;
 pub use chat::*;
 
 /// A client for making requests to an OpenAI compatible API.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OpenAICompatibleClient {
     reqwest_client: reqwest::Client,
     base_url: String,

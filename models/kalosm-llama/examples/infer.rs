@@ -1,32 +1,15 @@
-use std::io::Write;
-
 use kalosm_llama::prelude::*;
+use kalosm_streams::text_stream::TextStream;
 
 #[tokio::main]
 async fn main() {
     let model = Llama::builder()
-        .with_source(LlamaSource::qwen_2_5_0_5b_instruct())
+        .with_source(LlamaSource::llama_8b())
         .build()
         .await
         .unwrap();
 
-    let mut session = model.new_session().unwrap();
-    let on_token = |token: String| {
-        print!("{token}");
-        std::io::stdout().flush().unwrap();
-        Ok(())
-    };
+    let mut story = model.complete("Once upon a time there was a penguin named Peng.");
 
-    let sampler = GenerationParameters::default().sampler();
-
-    let prompt = "<|im_start|>system
-You are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>
-<|im_start|>user
-Hello, how are you?<|im_end|>
-<|im_start|>assistant
-";
-    model
-        .stream_text_with_callback(&mut session, prompt, sampler, on_token)
-        .await
-        .unwrap();
+    story.to_std_out().await.unwrap();
 }

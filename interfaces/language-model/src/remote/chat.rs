@@ -8,14 +8,19 @@ use kalosm_common::ModelLoadingProgress;
 use kalosm_sample::Schema;
 use reqwest_eventsource::{Event, RequestBuilderExt};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::future::Future;
+use std::{future::Future, sync::Arc};
 use thiserror::Error;
 
-/// An embedder that uses OpenAI's API for the a remote embedding model.
 #[derive(Debug)]
-pub struct OpenAICompatibleChatModel {
+struct OpenAICompatibleChatModelInner {
     model: String,
     client: OpenAICompatibleClient,
+}
+
+/// An embedder that uses OpenAI's API for the a remote embedding model.
+#[derive(Debug, Clone)]
+pub struct OpenAICompatibleChatModel {
+    inner: Arc<OpenAICompatibleChatModelInner>,
 }
 
 /// A builder for an openai compatible embedding model.
@@ -70,8 +75,10 @@ impl OpenAICompatibleChatModelBuilder<true> {
     /// Build the model.
     pub fn build(self) -> OpenAICompatibleChatModel {
         OpenAICompatibleChatModel {
-            model: self.model.unwrap(),
-            client: self.client,
+            inner: Arc::new(OpenAICompatibleChatModelInner {
+                model: self.model.unwrap(),
+                client: self.client,
+            }),
         }
     }
 }
@@ -201,16 +208,17 @@ impl ChatModel<GenerationParameters> for OpenAICompatibleChatModel {
         mut on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send {
         async move {
-            let api_key = self.client.resolve_api_key()?;
-            let mut event_source = self
+            let myself = &*self.inner;
+            let api_key = myself.client.resolve_api_key()?;
+            let mut event_source = myself
                 .client
                 .reqwest_client
-                .post(format!("{}/chat/completions", self.client.base_url))
+                .post(format!("{}/chat/completions", myself.client.base_url))
                 .header("Content-Type", "application/json")
                 .header("Authorization", format!("Bearer {}", api_key))
                 .json(&serde_json::json!({
                     "messages": messages,
-                    "model": self.model,
+                    "model": myself.model,
                     "stream": true,
                     "top_p": sampler.top_p,
                     "temperature": sampler.temperature,
@@ -346,16 +354,17 @@ where
             }
             remove_unsupported_properties(&mut schema);
 
-            let api_key = self.client.resolve_api_key()?;
-            let mut event_source = self
+            let myself = &*self.inner;
+            let api_key = myself.client.resolve_api_key()?;
+            let mut event_source = myself
                 .client
                 .reqwest_client
-                .post(format!("{}/chat/completions", self.client.base_url))
+                .post(format!("{}/chat/completions", myself.client.base_url))
                 .header("Content-Type", "application/json")
                 .header("Authorization", format!("Bearer {}", api_key))
                 .json(&serde_json::json!({
                     "messages": messages,
-                    "model": self.model,
+                    "model": myself.model,
                     "stream": true,
                     "top_p": sampler.top_p,
                     "temperature": sampler.temperature,

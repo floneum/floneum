@@ -1,6 +1,5 @@
-use std::io::Write;
-
 use kalosm_llama::prelude::*;
+use kalosm_streams::text_stream::TextStream;
 
 #[tokio::main]
 async fn main() {
@@ -13,14 +12,10 @@ async fn main() {
 
     println!("First message\n");
 
-    let mut chat = Chat::new(model);
+    let mut chat = model.chat();
     loop {
         let mut response = chat.add_message(prompt_input("> ").unwrap());
-        println!("\n");
-        while let Some(text) = response.next().await {
-            print!("{text}");
-            _ = std::io::stdout().flush();
-        }
+        response.to_std_out().await.unwrap();
         println!("\n");
     }
 }
