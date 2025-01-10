@@ -3,7 +3,7 @@ use std::sync::{Arc, RwLock};
 use crate::{model::LlamaModelError, session::LlamaSessionLoadingError, Llama, LlamaSession};
 use kalosm_common::accelerated_device_if_available;
 use kalosm_language_model::{
-    ChatHistoryItem, ChatModel, ChatSessionImpl, CreateChatSession, CreateTextCompletionSession,
+    ChatMessage, ChatModel, ChatSessionImpl, CreateChatSession, CreateTextCompletionSession,
     MessageType, StructuredChatModel, StructuredTextCompletionModel, TextCompletionModel,
 };
 use kalosm_sample::{CreateParserState, Parser};
@@ -14,7 +14,7 @@ use minijinja::ErrorKind;
 use pretty_assertions::assert_eq;
 
 fn get_new_tokens(
-    messages: &[ChatHistoryItem],
+    messages: &[ChatMessage],
     session: &mut LlamaChatSession,
     model: &Llama,
 ) -> Result<String, LlamaModelError> {
@@ -61,7 +61,7 @@ impl<S: Sampler + 'static> ChatModel<S> for Llama {
     fn add_messages_with_callback(
         &self,
         session: &mut Self::ChatSession,
-        messages: &[ChatHistoryItem],
+        messages: &[ChatMessage],
         sampler: S,
         mut on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
     ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
@@ -78,7 +78,7 @@ impl<S: Sampler + 'static> ChatModel<S> for Llama {
             };
             self.stream_text_with_callback(&mut session.session, &new_text, sampler, on_token)
                 .await?;
-            session.history.push(ChatHistoryItem::new(
+            session.history.push(ChatMessage::new(
                 MessageType::ModelAnswer,
                 model_response.read().unwrap().clone(),
             ));
@@ -96,7 +96,7 @@ where
     fn add_message_with_callback_and_constraints(
         &self,
         session: &mut Self::ChatSession,
-        messages: &[ChatHistoryItem],
+        messages: &[ChatMessage],
         sampler: S,
         constraints: Constraints,
         mut on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
@@ -126,7 +126,7 @@ where
                     on_token,
                 )
                 .await?;
-            session.history.push(ChatHistoryItem::new(
+            session.history.push(ChatMessage::new(
                 MessageType::ModelAnswer,
                 model_response.read().unwrap().clone(),
             ));
@@ -138,7 +138,7 @@ where
 /// A Llama chat session.
 #[derive(Clone)]
 pub struct LlamaChatSession {
-    history: Vec<ChatHistoryItem>,
+    history: Vec<ChatMessage>,
     session: LlamaSession,
 }
 
@@ -203,7 +203,7 @@ impl ChatSessionImpl for LlamaChatSession {
             cursor_pos += 4;
             let content_bytes = &bytes[cursor_pos..cursor_pos + content_bytes_len as usize];
             cursor_pos += content_bytes_len as usize;
-            let item = ChatHistoryItem::new(
+            let item = ChatMessage::new(
                 ty,
                 String::from_utf8(content_bytes.to_vec())
                     .map_err(|_| LlamaSessionLoadingError::InvalidChatMessages)?,
@@ -222,8 +222,15 @@ impl ChatSessionImpl for LlamaChatSession {
         })
     }
 
-    fn history(&self) -> Vec<ChatHistoryItem> {
+    fn history(&self) -> Vec<ChatMessage> {
         self.history.clone()
+    }
+
+    fn try_clone(&self) -> Result<Self, Self::Error>
+    where
+        Self: std::marker::Sized,
+    {
+        Ok(self.clone())
     }
 }
 
@@ -234,12 +241,12 @@ fn test_serialize_deserialize_chat_session() {
     let config = LlamaConfig::mock_test();
     let session = LlamaChatSession {
         history: vec![
-            ChatHistoryItem::new(MessageType::UserMessage, "Hello, world!".to_string()),
-            ChatHistoryItem::new(
+            ChatMessage::new(MessageType::UserMessage, "Hello, world!".to_string()),
+            ChatMessage::new(
                 MessageType::ModelAnswer,
                 "I'm doing great. How can I help you today?".to_string(),
             ),
-            ChatHistoryItem::new(
+            ChatMessage::new(
                 MessageType::SystemPrompt,
                 "The assistant will act like a pirate.".to_string(),
             ),

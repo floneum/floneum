@@ -44,7 +44,7 @@ mod structured;
 mod token_stream;
 
 pub use crate::chat::LlamaChatSession;
-pub use crate::model::LlamaModel;
+use crate::model::LlamaModel;
 pub use crate::raw::cache::*;
 pub use crate::session::LlamaSession;
 use candle_core::Device;
@@ -53,6 +53,7 @@ use model::LlamaModelError;
 use raw::LlamaConfig;
 pub use source::*;
 use std::sync::Arc;
+use tokenizers::Tokenizer;
 
 /// A prelude of commonly used items in kalosm-llama.
 pub mod prelude {
@@ -80,6 +81,7 @@ struct UnstructuredGenerationTask {
 #[derive(Clone)]
 pub struct Llama {
     config: Arc<LlamaConfig>,
+    tokenizer: Arc<Tokenizer>,
     task_sender: tokio::sync::mpsc::UnboundedSender<Task>,
 }
 
@@ -108,6 +110,11 @@ impl Llama {
             .await
     }
 
+    /// Get the tokenizer for the model.
+    pub fn tokenizer(&self) -> &Arc<Tokenizer> {
+        &self.tokenizer
+    }
+
     /// Create a new builder for a Llama model.
     pub fn builder() -> LlamaBuilder {
         LlamaBuilder::default()
@@ -117,6 +124,7 @@ impl Llama {
     fn from_build(mut model: LlamaModel) -> Self {
         let (task_sender, mut task_receiver) = tokio::sync::mpsc::unbounded_channel();
         let config = model.model.config.clone();
+        let tokenizer = model.tokenizer.clone();
 
         std::thread::spawn({
             move || {
@@ -143,6 +151,7 @@ impl Llama {
         Self {
             task_sender,
             config,
+            tokenizer,
         }
     }
 }

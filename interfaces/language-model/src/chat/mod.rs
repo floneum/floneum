@@ -6,6 +6,8 @@ use std::fmt::Display;
 
 mod ext;
 pub use ext::*;
+mod task;
+pub use task::*;
 
 pub trait CreateChatSession {
     /// The type of error the chat session may return during operations.
@@ -23,7 +25,7 @@ pub trait ChatModel<Sampler = GenerationParameters>: CreateChatSession {
     fn add_messages_with_callback(
         &self,
         session: &mut Self::ChatSession,
-        messages: &[ChatHistoryItem],
+        messages: &[ChatMessage],
         sampler: Sampler,
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
@@ -36,7 +38,7 @@ pub trait StructuredChatModel<Constraints: ModelConstraints, Sampler = Generatio
     fn add_message_with_callback_and_constraints(
         &self,
         session: &mut Self::ChatSession,
-        messages: &[ChatHistoryItem],
+        messages: &[ChatMessage],
         sampler: Sampler,
         constraints: Constraints,
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
@@ -63,7 +65,12 @@ pub trait ChatSessionImpl {
         Self: std::marker::Sized;
 
     /// Get the history of the session.
-    fn history(&self) -> Vec<ChatHistoryItem>;
+    fn history(&self) -> Vec<ChatMessage>;
+
+    /// Try to clone the session.
+    fn try_clone(&self) -> Result<Self, Self::Error>
+    where
+        Self: std::marker::Sized;
 }
 
 /// A simple helper function for prompting the user for input.
@@ -93,12 +100,12 @@ pub enum MessageType {
 
 /// A single item in the chat history.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ChatHistoryItem {
+pub struct ChatMessage {
     role: MessageType,
     content: String,
 }
 
-impl ChatHistoryItem {
+impl ChatMessage {
     /// Creates a new chat history item.
     pub fn new(role: MessageType, contents: impl ToString) -> Self {
         Self {
@@ -137,17 +144,17 @@ impl ChatHistoryItem {
 /// ```
 pub trait IntoChatMessage {
     /// Convert the type into a chat message.
-    fn into_chat_message(self) -> ChatHistoryItem;
+    fn into_chat_message(self) -> ChatMessage;
 }
 
 impl<S: ToString> IntoChatMessage for S {
-    fn into_chat_message(self) -> ChatHistoryItem {
-        ChatHistoryItem::new(MessageType::UserMessage, self.to_string())
+    fn into_chat_message(self) -> ChatMessage {
+        ChatMessage::new(MessageType::UserMessage, self.to_string())
     }
 }
 
-impl IntoChatMessage for ChatHistoryItem {
-    fn into_chat_message(self) -> ChatHistoryItem {
+impl IntoChatMessage for ChatMessage {
+    fn into_chat_message(self) -> ChatMessage {
         self
     }
 }

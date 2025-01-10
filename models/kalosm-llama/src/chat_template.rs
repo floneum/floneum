@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use kalosm_language_model::ChatHistoryItem;
+use kalosm_language_model::ChatMessage;
 use minijinja::{context, Environment, ErrorKind};
 use minijinja_contrib::pycompat;
 
@@ -40,7 +40,7 @@ impl HuggingFaceChatTemplate {
         &self,
         bos_token: &str,
         eos_token: &str,
-        messages: &[ChatHistoryItem],
+        messages: &[ChatMessage],
         add_generation_prompt: bool,
     ) -> Result<String, minijinja::Error> {
         let ctx = context! { bos_token, eos_token, messages, add_generation_prompt };
@@ -110,12 +110,12 @@ fn test_qwen_chat_template() {
     let template = HuggingFaceChatTemplate::create(template).unwrap();
 
     let inputs = [
-        ChatHistoryItem::new(MessageType::UserMessage, "Hello, how are you?".to_string()),
-        ChatHistoryItem::new(
+        ChatMessage::new(MessageType::UserMessage, "Hello, how are you?".to_string()),
+        ChatMessage::new(
             MessageType::ModelAnswer,
             "I'm doing great. How can I help you today?".to_string(),
         ),
-        ChatHistoryItem::new(
+        ChatMessage::new(
             MessageType::UserMessage,
             "I'd like to show off how chat templating works!".to_string(),
         ),
@@ -145,12 +145,12 @@ fn test_llama_chat_template() {
     let template = HuggingFaceChatTemplate::create(template).unwrap();
 
     let inputs = [
-        ChatHistoryItem::new(MessageType::UserMessage, "Hello, how are you?".to_string()),
-        ChatHistoryItem::new(
+        ChatMessage::new(MessageType::UserMessage, "Hello, how are you?".to_string()),
+        ChatMessage::new(
             MessageType::ModelAnswer,
             "I'm doing great. How can I help you today?".to_string(),
         ),
-        ChatHistoryItem::new(
+        ChatMessage::new(
             MessageType::UserMessage,
             "I'd like to show off how chat templating works!".to_string(),
         ),
@@ -179,12 +179,12 @@ fn test_mistral_chat_template() {
     let template = HuggingFaceChatTemplate::create(template).unwrap();
 
     let inputs = [
-        ChatHistoryItem::new(MessageType::UserMessage, "Hello, how are you?".to_string()),
-        ChatHistoryItem::new(
+        ChatMessage::new(MessageType::UserMessage, "Hello, how are you?".to_string()),
+        ChatMessage::new(
             MessageType::ModelAnswer,
             "I'm doing great. How can I help you today?".to_string(),
         ),
-        ChatHistoryItem::new(
+        ChatMessage::new(
             MessageType::UserMessage,
             "I'd like to show off how chat templating works!".to_string(),
         ),

@@ -347,7 +347,6 @@ impl WuerstchenBuilder {
     }
 }
 
-#[async_trait::async_trait]
 impl ModelBuilder for WuerstchenBuilder {
     type Model = Wuerstchen;
     type Error = CacheError;

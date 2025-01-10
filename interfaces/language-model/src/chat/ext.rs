@@ -1,9 +1,9 @@
 use crate::GenerationParameters;
 use crate::ModelConstraints;
 use crate::NoConstraints;
+use async_lock::Mutex as AsyncMutex;
 use futures_channel::mpsc::UnboundedReceiver;
 use futures_channel::oneshot::Receiver;
-use futures_util::lock::Mutex as AsyncMutex;
 use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
@@ -11,7 +11,9 @@ use futures_util::StreamExt;
 use once_cell::sync::OnceCell;
 use std::any::Any;
 use std::future::IntoFuture;
+use std::mem::MaybeUninit;
 use std::ops::Deref;
+use std::ops::DerefMut;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -19,13 +21,14 @@ use std::sync::OnceLock;
 use std::sync::RwLock;
 use std::task::Poll;
 
-use super::ChatHistoryItem;
+use super::ChatMessage;
 use super::ChatModel;
 use super::ChatSessionImpl;
 use super::CreateChatSession;
 use super::IntoChatMessage;
 use super::MessageType;
 use super::StructuredChatModel;
+use super::Task;
 
 /// An extension trait for chat models with helpers for handling chat sessions. This trait is implemented automatically for all [`crate::ChatModel`]s.
 pub trait ChatModelExt: CreateChatSession {
@@ -38,6 +41,16 @@ pub trait ChatModelExt: CreateChatSession {
     {
         Chat::new(self.clone())
     }
+
+    /// Create a new task with the model.
+    ///
+    #[doc = include_str!("../../docs/task.md")]
+    fn task(&self, description: impl ToString) -> Task<Self>
+    where
+        Self: Clone,
+    {
+        Task::new(self.clone(), description)
+    }
 }
 
 impl<M: CreateChatSession> ChatModelExt for M {}
@@ -45,9 +58,33 @@ impl<M: CreateChatSession> ChatModelExt for M {}
 /// [`Chat`] is a chat interface that builds on top of [`crate::ChatModel`] and [`crate::StructuredChatModel`]. It makes it easy to create a chat session with streaming responses, and constraints.
 #[doc = include_str!("../../docs/chat.md")]
 pub struct Chat<M: CreateChatSession> {
-    model: M,
+    model: Arc<M>,
     session: OnceCell<Result<Arc<AsyncMutex<M::ChatSession>>, M::Error>>,
-    queued_messages: Vec<ChatHistoryItem>,
+    queued_messages: Vec<ChatMessage>,
+}
+
+impl<M: CreateChatSession> Clone for Chat<M> {
+    fn clone(&self) -> Self {
+        let model = self.model.clone();
+        let mut queued_messages = self.queued_messages.clone();
+        let session = OnceCell::new();
+        if let Some(Ok(old_session)) = self.session.get() {
+            let old_session = old_session.lock_blocking();
+            if let Ok(old_session) = old_session.try_clone() {
+                session
+                    .set(Ok(Arc::new(AsyncMutex::new(old_session))))
+                    .unwrap_or_else(|_| panic!("Chat session should be empty initially"));
+            } else {
+                queued_messages.extend_from_slice(&old_session.history());
+            }
+        }
+
+        Self {
+            session,
+            model,
+            queued_messages,
+        }
+    }
 }
 
 impl<M: CreateChatSession> Chat<M> {
@@ -66,7 +103,7 @@ impl<M: CreateChatSession> Chat<M> {
     /// ```
     pub fn new(model: M) -> Chat<M> {
         Self {
-            model,
+            model: Arc::new(model),
             session: OnceCell::new(),
             queued_messages: Vec::new(),
         }
@@ -98,7 +135,7 @@ impl<M: CreateChatSession> Chat<M> {
         }
 
         // Add the system prompt to the queue
-        self.queued_messages.push(ChatHistoryItem::new(
+        self.queued_messages.push(ChatMessage::new(
             MessageType::SystemPrompt,
             system_prompt.to_string(),
         ));
@@ -159,7 +196,41 @@ impl<M: CreateChatSession> Chat<M> {
 
         // Then create the builder that will respond to the message if it is awaited
         ChatResponseBuilder {
-            chat_session: self,
+            chat_session: MaybeOwnedSession::Borrowed(self),
+            constraints: None,
+            sampler: Some(GenerationParameters::default()),
+            task: OnceLock::new(),
+            queued_tokens: None,
+            result: None,
+        }
+    }
+
+    /// Adds a user message to the chat session and streams the bot response while consuming the chat session.
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// # use kalosm::language::*;
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let mut chat = Chat::new(Llama::new_chat().await.unwrap());
+    /// let prompt = prompt_input("\n> ").unwrap();
+    ///
+    /// // You can add the user message to the chat session with the `add_message` method
+    /// let mut response_stream = chat.into_add_message(prompt);
+    /// // And then stream the result to std out
+    /// response_stream.to_std_out().await.unwrap();
+    /// # }
+    /// ```
+    pub fn into_add_message(
+        mut self,
+        message: impl IntoChatMessage,
+    ) -> ChatResponseBuilder<'static, M> {
+        // First push the message to the queue
+        self.queued_messages.push(message.into_chat_message());
+
+        // Then create the builder that will respond to the message if it is awaited
+        ChatResponseBuilder {
+            chat_session: MaybeOwnedSession::Owned(self),
             constraints: None,
             sampler: Some(GenerationParameters::default()),
             task: OnceLock::new(),
@@ -216,9 +287,7 @@ impl<M: CreateChatSession> Chat<M> {
     /// println!("{:?}", history);
     /// # }
     /// ````
-    pub async fn session(
-        &self,
-    ) -> Result<impl Deref<Target = M::ChatSession> + use<'_, M>, &M::Error> {
+    pub fn session(&self) -> Result<impl Deref<Target = M::ChatSession> + use<'_, M>, &M::Error> {
         match self
             .session
             .get_or_init(|| {
@@ -228,8 +297,114 @@ impl<M: CreateChatSession> Chat<M> {
             })
             .as_ref()
         {
-            Ok(session) => Ok(session.lock().await),
+            Ok(session) => Ok(session.lock_blocking()),
             Err(err) => Err(err),
+        }
+    }
+}
+
+impl<M: CreateChatSession + Clone + 'static> Deref for Chat<M> {
+    type Target = dyn FnMut(&str) -> ChatResponseBuilder<'static, M>;
+
+    fn deref(&self) -> &Self::Target {
+        // https://github.com/dtolnay/case-studies/tree/master/callable-types
+
+        // Create an empty allocation for Self.
+        let uninit_callable = MaybeUninit::<Self>::uninit();
+        // Move a closure that captures just self into the uninitialized memory. Closures create an anonymous type that implement
+        // FnOnce. In this case, the layout of the type should just be Self because self is the only field in the closure type.
+        let uninit_closure = move |_: &str| {
+            let _unreachable: ChatResponseBuilder<'static, M> = panic!(
+                "FnMut cannot be called from a reference. Called from pointer {:p}",
+                uninit_callable.as_ptr()
+            );
+            #[allow(unreachable_code)]
+            _unreachable
+        };
+
+        // Make sure the layout of the closure and Self is the same.
+        let size_of_closure = std::alloc::Layout::for_value(&uninit_closure);
+        assert_eq!(size_of_closure, std::alloc::Layout::new::<Self>());
+
+        // Then cast the lifetime of the closure to the lifetime of &self.
+        fn cast_lifetime<'a, T>(_a: &T, b: &'a T) -> &'a T {
+            b
+        }
+        let reference_to_closure = cast_lifetime(
+            {
+                // The real closure that we will never use.
+                &uninit_closure
+            },
+            #[allow(clippy::missing_transmute_annotations)]
+            // We transmute self into a reference to the closure. This is safe because we know that the closure has the same memory layout as Self so &Closure == &Self.
+            unsafe {
+                std::mem::transmute(self)
+            },
+        );
+
+        // Cast the closure to a trait object.
+        reference_to_closure as &_
+    }
+}
+
+impl<M: CreateChatSession + Clone + 'static> DerefMut for Chat<M> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        // https://github.com/dtolnay/case-studies/tree/master/callable-types
+
+        // Create an empty allocation for Self.
+        let mut uninit_callable = MaybeUninit::<Self>::uninit();
+        // Move a closure that captures just self into the uninitialized memory. Closures create an anonymous type that implement
+        // FnOnce. In this case, the layout of the type should just be Self because self is the only field in the closure type.
+        let mut uninit_closure = move |message: &str| {
+            Self::add_message(unsafe { &mut *uninit_callable.as_mut_ptr() }, message)
+        };
+
+        // Make sure the layout of the closure and Self is the same.
+        let size_of_closure = std::alloc::Layout::for_value(&uninit_closure);
+        assert_eq!(size_of_closure, std::alloc::Layout::new::<Self>());
+
+        // Then cast the lifetime of the closure to the lifetime of &self.
+        fn cast_lifetime<'a, T>(_a: &mut T, b: &'a mut T) -> &'a mut T {
+            b
+        }
+        let reference_to_closure = cast_lifetime(
+            {
+                // The real closure that we will never use.
+                &mut uninit_closure
+            },
+            #[allow(clippy::missing_transmute_annotations)]
+            // We transmute self into a reference to the closure. This is safe because we know that the closure has the same memory layout as Self so &Closure == &Self.
+            unsafe {
+                std::mem::transmute(self)
+            },
+        );
+
+        // Cast the closure to a trait object.
+        reference_to_closure as &mut _
+    }
+}
+
+enum MaybeOwnedSession<'a, M: CreateChatSession> {
+    Owned(Chat<M>),
+    Borrowed(&'a mut Chat<M>),
+}
+
+impl<'a, M: CreateChatSession> Deref for MaybeOwnedSession<'a, M> {
+    type Target = Chat<M>;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Owned(session) => session,
+            Self::Borrowed(session) => session,
+        }
+    }
+}
+
+impl<'a, M: CreateChatSession> DerefMut for MaybeOwnedSession<'a, M> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            Self::Owned(session) => session,
+            Self::Borrowed(session) => session,
         }
     }
 }
@@ -262,7 +437,7 @@ pub struct ChatResponseBuilder<
     Constraints = NoConstraints,
     Sampler = GenerationParameters,
 > {
-    chat_session: &'a mut Chat<M>,
+    chat_session: MaybeOwnedSession<'a, M>,
     constraints: Option<Constraints>,
     sampler: Option<Sampler>,
     task: OnceLock<RwLock<Pin<Box<dyn Future<Output = ()> + Send>>>>,
@@ -400,6 +575,7 @@ where
     Sampler: Send + Unpin + 'static,
     M: ChatModel<Sampler> + Send + Sync + Clone + Unpin + 'static,
     M::ChatSession: Send + Sync + Unpin + 'static,
+    M::Error: Send + Sync + Unpin,
 {
     type Item = String;
 
@@ -505,6 +681,7 @@ where
     Sampler: Send + Unpin + 'static,
     M: StructuredChatModel<Constraints, Sampler> + Send + Sync + Clone + Unpin + 'static,
     M::ChatSession: Clone + Send + Sync + Unpin + 'static,
+    M::Error: Send + Sync + Unpin,
     Constraints::Output: Send + 'static,
 {
     type Item = String;

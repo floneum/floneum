@@ -10,9 +10,7 @@ use std::{
 };
 
 use futures_util::Future;
-use kalosm_language_model::{
-    GenerationParameters, StructuredTextGenerationError, SyncModel, SyncModelExt,
-};
+use kalosm_language_model::GenerationParameters;
 use kalosm_sample::{
     ArcParser, CreateParserState, Either, LiteralParser, ParseResult, ParseStatus, Parser,
     ParserExt,

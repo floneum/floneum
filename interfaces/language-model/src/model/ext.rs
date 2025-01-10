@@ -24,7 +24,7 @@ use super::TextCompletionModel;
 /// structured or unstructured text.
 pub trait TextCompletionModelExt: CreateTextCompletionSession {
     #[doc = include_str!("../../docs/complete.md")]
-    fn complete(&self, text: &str) -> TextCompletionBuilder<Self>
+    fn complete(&self, text: impl ToString) -> TextCompletionBuilder<Self>
     where
         Self: Clone,
     {

@@ -1,8 +1,7 @@
-use std::sync::{Arc, Mutex};
-
 use kalosm_common::ModelLoadingProgress;
-use kalosm_language_model::{GenerationParameters, SyncModel, SyncModelExt};
 use kalosm_llama::*;
+use prelude::StreamExt;
+use prelude::TextCompletionModelExt;
 
 #[tokio::main]
 async fn main() {
@@ -10,20 +9,17 @@ async fn main() {
 
     #[inline(never)]
     async fn load_small() {
-        let model = LlamaModel::from_builder(
-            Llama::builder().with_source(LlamaSource::llama_8b()),
-            progress,
-        )
-        .await
-        .unwrap();
+        let model = Llama::builder()
+            .with_source(LlamaSource::llama_8b())
+            .build_with_loading_handler(progress)
+            .await
+            .unwrap();
         let prompt = "Hello world";
 
         let tokens = model.tokenizer().encode(prompt, false).unwrap().len();
-        let mut logits = Vec::new();
         for _ in 0..100 {
             let start_time = std::time::Instant::now();
-            let mut session = model.new_session().unwrap();
-            model.feed_text(&mut session, prompt, &mut logits).unwrap();
+            let _ = model.complete(prompt).next().await.unwrap();
             let elapsed = start_time.elapsed();
             println!("\n\nLoaded {} tokens in {:?}", tokens, elapsed);
             println!(
@@ -35,12 +31,11 @@ async fn main() {
 
     #[inline(never)]
     async fn load_large() {
-        let model = LlamaModel::from_builder(
-            Llama::builder().with_source(LlamaSource::llama_8b()),
-            progress,
-        )
-        .await
-        .unwrap();
+        let model = Llama::builder()
+            .with_source(LlamaSource::llama_8b())
+            .build_with_loading_handler(progress)
+            .await
+            .unwrap();
         let prompt = "Hello world".repeat(600);
 
         let tokens = model
@@ -48,11 +43,9 @@ async fn main() {
             .encode(prompt.clone(), false)
             .unwrap()
             .len();
-        let mut logits = Vec::new();
         for _ in 0..100 {
             let start_time = std::time::Instant::now();
-            let mut session = model.new_session().unwrap();
-            model.feed_text(&mut session, &prompt, &mut logits).unwrap();
+            let _ = model.complete(&prompt).next().await.unwrap();
             let elapsed = start_time.elapsed();
             println!("\n\nLoaded {} tokens in {:?}", tokens, elapsed);
             println!(
@@ -64,28 +57,20 @@ async fn main() {
 
     #[inline(never)]
     async fn generate() {
-        let model = LlamaModel::from_builder(
-            Llama::builder().with_source(LlamaSource::llama_8b()),
-            progress,
-        )
-        .await
-        .unwrap();
+        let model = Llama::builder()
+            .with_source(LlamaSource::llama_8b())
+            .build_with_loading_handler(progress)
+            .await
+            .unwrap();
         let prompt = "Hello world";
 
         for _ in 0..100 {
-            let mut session = model.new_session().unwrap();
             let start_time = std::time::Instant::now();
-            let tokens = 200;
-            model
-                .stream_text_with_sampler(
-                    &mut session,
-                    prompt,
-                    Some(100),
-                    None,
-                    Arc::new(Mutex::new(GenerationParameters::default().sampler())),
-                    |_| Ok(kalosm_language_model::ModelFeedback::Continue),
-                )
-                .unwrap();
+            let mut tokens = 0;
+            let mut stream = model.complete(&prompt).take(100);
+            while let Some(_) = stream.next().await {
+                tokens += 1;
+            }
             let elapsed = start_time.elapsed();
             println!("\n\nGenerated {} tokens in {:?}", tokens, elapsed);
             println!(

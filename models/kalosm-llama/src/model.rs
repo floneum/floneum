@@ -57,7 +57,7 @@ pub enum LlamaModelError {
 }
 
 /// The inner, synchronous Llama model.
-pub struct LlamaModel {
+pub(crate) struct LlamaModel {
     pub(crate) model: Model,
     pub(crate) device: Device,
     pub(crate) tokenizer: Arc<Tokenizer>,

@@ -14,7 +14,7 @@ async fn main() {
 
     let mut chat = model.chat();
     loop {
-        let mut response = chat.add_message(prompt_input("> ").unwrap());
+        let mut response = chat(&prompt_input("> ").unwrap());
         response.to_std_out().await.unwrap();
         println!("\n");
     }

@@ -4,7 +4,6 @@
 
 pub mod context;
 pub mod search;
-pub mod task;
 pub mod tool;
 pub mod vector_db;
 
@@ -17,7 +16,6 @@ pub use rbert;
 pub mod prelude {
     pub use crate::context::*;
     pub use crate::search::*;
-    pub use crate::task::*;
     pub use crate::tool::*;
     pub use crate::vector_db::*;
     pub use futures_util::StreamExt as _;
@@ -25,6 +23,6 @@ pub mod prelude {
     pub use kalosm_llama::{Llama, LlamaBuilder, LlamaSession, LlamaSource};
     pub use kalosm_sample::*;
     pub use kalosm_streams::text_stream::*;
-    pub use rbert::{Bert, BertBuilder, BertSource, BertSpace};
+    pub use rbert::{Bert, BertBuilder, BertSource};
     pub use scraper::Html;
 }

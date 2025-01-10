@@ -1,4 +1,4 @@
-use kalosm_language_model::{Embedder, Model, StructuredTextGenerationError, SyncModel};
+use kalosm_language_model::Embedder;
 use kalosm_sample::{LiteralParser, ParserExt, StopOn};
 
 use crate::{
@@ -115,11 +115,7 @@ impl Hypothetical {
     }
 
     /// Generate a list of hypothetical questions about the given text.
-    pub async fn generate_question<M>(
-        &self,
-        text: &str,
-        model: &M,
-    ) -> Result<Vec<String>, StructuredTextGenerationError<M::Error>>
+    pub async fn generate_question<M>(&self, text: &str, model: &M) -> Result<Vec<String>, M::Error>
     where
         M: Model,
         <M::SyncModel as SyncModel>::Session: Sync + Send,

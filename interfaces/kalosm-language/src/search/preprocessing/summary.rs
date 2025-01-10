@@ -1,4 +1,4 @@
-use kalosm_language_model::{Embedder, Model, StructuredTextGenerationError, SyncModel};
+use kalosm_language_model::Embedder;
 use kalosm_sample::{LiteralParser, ParserExt};
 
 use crate::{

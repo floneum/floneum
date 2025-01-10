@@ -211,7 +211,6 @@ impl Default for WhisperBuilder {
     }
 }
 
-#[async_trait::async_trait]
 impl ModelBuilder for WhisperBuilder {
     type Model = Whisper;
     type Error = WhisperLoadingError;

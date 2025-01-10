@@ -128,7 +128,7 @@ pub enum OpenAICompatibleChatModelError {
 /// A chat session for the OpenAI compatible chat model.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct OpenAICompatibleChatSession {
-    messages: Vec<crate::ChatHistoryItem>,
+    messages: Vec<crate::ChatMessage>,
 }
 
 impl OpenAICompatibleChatSession {
@@ -156,8 +156,15 @@ impl ChatSessionImpl for OpenAICompatibleChatSession {
         Ok(json)
     }
 
-    fn history(&self) -> Vec<crate::ChatHistoryItem> {
+    fn history(&self) -> Vec<crate::ChatMessage> {
         self.messages.clone()
+    }
+
+    fn try_clone(&self) -> Result<Self, Self::Error>
+    where
+        Self: std::marker::Sized,
+    {
+        Ok(self.clone())
     }
 }
 
@@ -203,7 +210,7 @@ impl ChatModel<GenerationParameters> for OpenAICompatibleChatModel {
     fn add_messages_with_callback(
         &self,
         session: &mut Self::ChatSession,
-        messages: &[crate::ChatHistoryItem],
+        messages: &[crate::ChatMessage],
         sampler: GenerationParameters,
         mut on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send {
@@ -223,6 +230,7 @@ impl ChatModel<GenerationParameters> for OpenAICompatibleChatModel {
                     "top_p": sampler.top_p,
                     "temperature": sampler.temperature,
                     "frequency_penalty": sampler.repetition_penalty,
+                    "max_completion_tokens": sampler.max_length,
                 }))
                 .eventsource()
                 .unwrap();
@@ -266,7 +274,7 @@ impl ChatModel<GenerationParameters> for OpenAICompatibleChatModel {
             }
 
             let new_message =
-                crate::ChatHistoryItem::new(crate::MessageType::UserMessage, new_message_text);
+                crate::ChatMessage::new(crate::MessageType::UserMessage, new_message_text);
 
             session.messages.push(new_message);
 
@@ -300,7 +308,7 @@ where
     fn add_message_with_callback_and_constraints(
         &self,
         session: &mut Self::ChatSession,
-        messages: &[crate::ChatHistoryItem],
+        messages: &[crate::ChatMessage],
         sampler: GenerationParameters,
         _: SchemaParser<P>,
         mut on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
@@ -369,6 +377,7 @@ where
                     "top_p": sampler.top_p,
                     "temperature": sampler.temperature,
                     "frequency_penalty": sampler.repetition_penalty,
+                    "max_completion_tokens": sampler.max_length,
                     "response_format": {
                         "type": "json_schema",
                         "json_schema": {
@@ -422,7 +431,7 @@ where
             let result = serde_json::from_str::<P>(&new_message_text)?;
 
             let new_message =
-                crate::ChatHistoryItem::new(crate::MessageType::UserMessage, new_message_text);
+                crate::ChatMessage::new(crate::MessageType::UserMessage, new_message_text);
 
             session.messages.push(new_message);
 
@@ -451,7 +460,7 @@ mod tests {
         let mut session = model.new_chat_session().unwrap();
 
         let mut messages = Vec::new();
-        messages.push(crate::ChatHistoryItem::new(
+        messages.push(crate::ChatMessage::new(
             crate::MessageType::UserMessage,
             "Hello, world!".to_string(),
         ));
@@ -482,7 +491,7 @@ mod tests {
         let mut session = model.new_chat_session().unwrap();
 
         let mut messages = Vec::new();
-        messages.push(crate::ChatHistoryItem::new(
+        messages.push(crate::ChatMessage::new(
             crate::MessageType::UserMessage,
             "Give me a list of 5 primes.".to_string(),
         ));

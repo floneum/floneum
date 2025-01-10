@@ -274,7 +274,7 @@ impl<T: Class> TextClassifier<T> {
 #[tokio::test]
 async fn simplified() -> Result<(), Box<dyn std::error::Error>> {
     use crate::{Class, Classifier, ClassifierConfig};
-    use rbert::{Bert, BertSource, BertSpace};
+    use rbert::{Bert, BertSource};
 
     #[derive(Debug, Copy, Clone, PartialEq, Eq, Class)]
     enum MyClass {
@@ -355,7 +355,7 @@ async fn simplified() -> Result<(), Box<dyn std::error::Error>> {
     let layers = vec![5, 8, 5];
 
     loop {
-        classifier = TextClassifier::<MyClass, BertSpace>::new(Classifier::new(
+        classifier = TextClassifier::<MyClass>::new(Classifier::new(
             &dev,
             ClassifierConfig::new().layers_dims(layers.clone()),
         )?);
