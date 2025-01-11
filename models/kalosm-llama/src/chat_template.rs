@@ -43,7 +43,8 @@ impl HuggingFaceChatTemplate {
         messages: &[ChatMessage],
         add_generation_prompt: bool,
     ) -> Result<String, minijinja::Error> {
-        let ctx = context! { bos_token, eos_token, messages, add_generation_prompt };
+        let tools: Option<()> = None;
+        let ctx = context! { bos_token, eos_token, messages, add_generation_prompt, tools };
         let template = self.environment.get_template("main")?;
         let result = template.render(&ctx)?;
         Ok(result)

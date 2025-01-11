@@ -221,10 +221,6 @@ name = "task"
 required-features = ["language"]
 
 [[example]]
-name = "tools"
-required-features = ["language"]
-
-[[example]]
 name = "transcribe"
 required-features = ["sound"]
 
