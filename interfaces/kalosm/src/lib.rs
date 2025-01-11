@@ -45,9 +45,9 @@ mod evaluate;
 #[cfg(feature = "language")]
 pub use evaluate::*;
 
-#[cfg(feature = "language")]
+#[cfg(feature = "prompt_annealing")]
 mod prompt_annealing;
-#[cfg(feature = "language")]
+#[cfg(feature = "prompt_annealing")]
 pub use prompt_annealing::*;
 
 #[cfg(feature = "surrealdb")]
