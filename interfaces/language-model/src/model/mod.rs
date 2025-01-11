@@ -49,6 +49,7 @@ impl Session for () {
 }
 
 /// No parser is supported for this chat model
+#[derive(Debug, Clone, Copy)]
 pub struct NoConstraints;
 
 /// A type that can constrain the output of a model into a specific output type.

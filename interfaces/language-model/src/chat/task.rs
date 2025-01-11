@@ -39,9 +39,19 @@ use super::MessageType;
 ///         .unwrap();
 /// }
 /// ```
+#[derive(Debug)]
 pub struct Task<M: CreateChatSession, Constraints = NoConstraints> {
     chat: Chat<M>,
     constraints: Constraints,
+}
+
+impl<M: CreateChatSession, Constraints: Clone> Clone for Task<M, Constraints> {
+    fn clone(&self) -> Self {
+        Self {
+            chat: self.chat.clone(),
+            constraints: self.constraints.clone(),
+        }
+    }
 }
 
 impl<M: CreateChatSession> Task<M> {
@@ -52,25 +62,6 @@ impl<M: CreateChatSession> Task<M> {
             chat,
             constraints: NoConstraints,
         }
-    }
-
-    /// Run the task with a message.
-    ///
-    /// # Example
-    /// ```rust, no_run
-    /// use kalosm_language::prelude::*;
-    ///
-    /// #[tokio::main]
-    /// async fn main() {
-    ///     let mut llm = Llama::new_chat().await.unwrap();
-    ///     let task = llm.task("You are a math assistant who helps students with their homework. You solve equations and answer questions. When solving problems, you will always solve problems step by step.");
-    ///
-    ///     let result = task.run("What is 2 + 2?").all_text().await;
-    ///     println!("{result}");
-    /// }
-    /// ```
-    pub fn run(&self, message: impl ToString) -> ChatResponseBuilder<'static, M> {
-        self.chat.clone().into_add_message(message)
     }
 }
 
@@ -111,7 +102,7 @@ impl<M: CreateChatSession, Constraints> Task<M, Constraints> {
     }
 }
 
-impl<M: CreateChatSession, Constraints: ModelConstraints + Clone> Task<M, Constraints> {
+impl<M: CreateChatSession, Constraints: Clone> Task<M, Constraints> {
     /// Run the task with a message.
     ///
     /// # Example

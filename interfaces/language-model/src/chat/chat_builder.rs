@@ -10,6 +10,7 @@ use futures_util::Stream;
 use futures_util::StreamExt;
 use once_cell::sync::OnceCell;
 use std::any::Any;
+use std::fmt::Debug;
 use std::future::IntoFuture;
 use std::mem::MaybeUninit;
 use std::ops::Deref;
@@ -36,6 +37,15 @@ pub struct Chat<M: CreateChatSession> {
     model: Arc<M>,
     session: OnceCell<Result<Arc<AsyncMutex<M::ChatSession>>, M::Error>>,
     queued_messages: Vec<ChatMessage>,
+}
+
+impl<M: CreateChatSession + Debug> Debug for Chat<M> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Chat")
+            .field("model", &self.model)
+            .field("queued_messages", &self.queued_messages)
+            .finish()
+    }
 }
 
 impl<M: CreateChatSession> Clone for Chat<M> {
@@ -444,7 +454,7 @@ impl<'a, M: CreateChatSession, Constraints, Sampler>
     /// }
     /// # }
     /// ```
-    pub fn with_constraints<NewConstraints: ModelConstraints>(
+    pub fn with_constraints<NewConstraints>(
         self,
         constraints: NewConstraints,
     ) -> ChatResponseBuilder<'a, M, NewConstraints, Sampler> {
