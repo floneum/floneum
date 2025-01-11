@@ -67,7 +67,7 @@ async fn main() {
     let index_parser = IndexParser::new(states_parser);
 
     let validator = index_parser.then(LiteralParser::from(", ")).repeat(1..=5);
-    let mut stream = llm.stream_structured_text(prompt, validator);
+    let mut stream = llm(prompt).with_constraints(validator);
 
     stream.to_std_out().await.unwrap();
 
@@ -84,6 +84,6 @@ async fn main() {
     println!("\n\n# without constraints");
     print!("{}", prompt);
 
-    let mut stream = llm.stream_text(prompt).with_max_length(100).await.unwrap();
+    let mut stream = llm(prompt);
     stream.to_std_out().await.unwrap();
 }

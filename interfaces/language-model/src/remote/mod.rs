@@ -41,13 +41,13 @@ impl OpenAICompatibleClient {
     /// Sets the API key for the builder. (defaults to the environment variable `OPENAI_API_KEY`)
     ///
     /// The API key can be accessed from the OpenAI dashboard [here](https://platform.openai.com/settings/organization/api-keys).
-    pub fn with_api_key(mut self, api_key: &str) -> Self {
+    pub fn with_api_key(mut self, api_key: impl ToString) -> Self {
         self.api_key = Some(api_key.to_string());
         self
     }
 
     /// Set the base URL of the API. (defaults to `https://api.openai.com/v1/`)
-    pub fn with_base_url(mut self, base_url: &str) -> Self {
+    pub fn with_base_url(mut self, base_url: impl ToString) -> Self {
         self.base_url = base_url.to_string();
         self
     }
@@ -55,7 +55,7 @@ impl OpenAICompatibleClient {
     /// Set the organization ID for the builder.
     ///
     /// The organization ID can be accessed from the OpenAI dashboard [here](https://platform.openai.com/settings/organization/general).
-    pub fn with_organization_id(mut self, organization_id: &str) -> Self {
+    pub fn with_organization_id(mut self, organization_id: impl ToString) -> Self {
         self.organization_id = Some(organization_id.to_string());
         self
     }
@@ -63,7 +63,7 @@ impl OpenAICompatibleClient {
     /// Set the project ID for the builder.
     ///
     /// The project ID can be accessed from the OpenAI dashboard [here](https://platform.openai.com/settings/organization/projects).
-    pub fn with_project_id(mut self, project_id: &str) -> Self {
+    pub fn with_project_id(mut self, project_id: impl ToString) -> Self {
         self.project_id = Some(project_id.to_string());
         self
     }

@@ -23,6 +23,13 @@ pub struct OpenAICompatibleChatModel {
     inner: Arc<OpenAICompatibleChatModelInner>,
 }
 
+impl OpenAICompatibleChatModel {
+    /// Create a new builder for the OpenAI compatible chat model.
+    pub fn builder() -> OpenAICompatibleChatModelBuilder<false> {
+        OpenAICompatibleChatModelBuilder::new()
+    }
+}
+
 /// A builder for an openai compatible embedding model.
 #[derive(Debug, Default)]
 pub struct OpenAICompatibleChatModelBuilder<const WITH_NAME: bool> {

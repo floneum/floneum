@@ -93,7 +93,7 @@ features = []
 workspace = true
 
 [dev-dependencies.kalosm]
-features = ["sound", "language", "vision", "remote", "surrealdb"]
+features = ["sound", "language", "vision", "remote", "surrealdb", "prompt_annealing"]
 workspace = true
 
 [features]
@@ -186,7 +186,7 @@ required-features = ["vision"]
 
 [[example]]
 name = "prompt-annealing"
-required-features = ["language"]
+required-features = ["language", "prompt_annealing"]
 
 [[example]]
 name = "remote-open-ai-compatable"

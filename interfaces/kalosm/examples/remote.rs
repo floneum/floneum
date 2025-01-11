@@ -6,10 +6,10 @@ use kalosm::language::*;
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let llm = Gpt3_5::default();
-    let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
+    let llm = OpenAICompatibleChatModel::builder().with_gpt_4o_mini().build();
+    let prompt = "Write a 300 word essay about why the capital of France is Paris";
     print!("{}", prompt);
 
-    let mut stream = llm.stream_text(prompt).with_max_length(300).await.unwrap();
-    stream.to_std_out().await.unwrap();
+    let mut chat = llm.chat();
+    chat(&prompt).to_std_out().await.unwrap();
 }

@@ -51,7 +51,7 @@ async fn main() {
             |c| matches!(c, ' ' | '?' | 'a'..='z' | 'A'..='Z' | '0'..='9' | ','),
         ))
         .repeat(1..=5);
-    let task = Task::builder("You generate hypothetical questions that may be answered by the given text. The questions restate any information necessary to understand the question")
+    let task = llm.task("You generate hypothetical questions that may be answered by the given text. The questions restate any information necessary to understand the question")
         .with_constraints(constraints);
     let mut annealing = kalosm::PromptAnnealer::builder(&mut llm, EXAMPLES, task)
         .with_initial_temperature(0.6)

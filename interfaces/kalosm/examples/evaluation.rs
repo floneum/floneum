@@ -34,12 +34,12 @@ async fn main() {
 
     let llm = Llama::new_chat().await.unwrap();
 
-    let hypothetical = Hypothetical::builder().build();
+    let hypothetical = Hypothetical::builder(llm.clone()).build();
 
     let mut test_cases = TestCases::new();
 
     for (text, expected) in TEST_PAIRS {
-        let actual = &hypothetical.generate_question(text, &llm).await.unwrap()[0];
+        let actual = &hypothetical.generate_question(text).await.unwrap()[0];
 
         test_cases.push_case(expected.to_string(), actual.clone());
     }
@@ -54,14 +54,14 @@ async fn main() {
         ("Blockchain technology, beyond cryptocurrencies, is being explored for applications like smart contracts. Smart contracts are self-executing contracts with the terms of the agreement directly written into code.", "How is blockchain technology utilized in the concept of smart contracts?")
     ];
 
-    let hypothetical = Hypothetical::builder()
+    let hypothetical = Hypothetical::builder(llm)
         .with_examples(alternate_examples)
         .build();
 
     let mut test_cases = TestCases::new();
 
     for (text, expected) in TEST_PAIRS {
-        let actual = &hypothetical.generate_question(text, &llm).await.unwrap()[0];
+        let actual = &hypothetical.generate_question(text).await.unwrap()[0];
 
         test_cases.push_case(expected.to_string(), actual.clone());
     }

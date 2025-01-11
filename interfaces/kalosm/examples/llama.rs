@@ -1,5 +1,4 @@
 use kalosm::language::*;
-use std::io::Write;
 
 #[tokio::main]
 async fn main() {
@@ -14,15 +13,7 @@ async fn main() {
 <|user|>
 What is your favorite story from your adventures?</s>
 <|assistant|>";
-    let mut result = model
-        .stream_text(prompt)
-        .with_max_length(1000)
-        .await
-        .unwrap();
 
     print!("{prompt}");
-    while let Some(token) = result.next().await {
-        print!("{token}");
-        std::io::stdout().flush().unwrap();
-    }
+    model(prompt).to_std_out().await.unwrap();
 }

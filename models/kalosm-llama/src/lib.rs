@@ -50,6 +50,7 @@ pub use crate::session::LlamaSession;
 use candle_core::Device;
 pub use kalosm_common::*;
 use kalosm_language_model::{TextCompletionBuilder, TextCompletionModelExt};
+use kalosm_sample::{LiteralParser, StopOn};
 use model::LlamaModelError;
 use raw::LlamaConfig;
 pub use source::*;
@@ -156,6 +157,20 @@ impl Llama {
             config,
             tokenizer,
         }
+    }
+
+    /// Get the default constraints for an assistant response. It parses any text until the end of the assistant's response.
+    pub fn default_assistant_constraints(&self) -> StopOn<String> {
+        let end_token = self.config.stop_token_string.clone();
+
+        StopOn::from(end_token)
+    }
+
+    /// Get the constraints that end the assistant's response.
+    pub fn end_assistant_marker_constraints(&self) -> LiteralParser {
+        let end_token = self.config.stop_token_string.clone();
+
+        LiteralParser::from(end_token)
     }
 }
 
