@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use kalosm::language::*;
 
 #[tokio::main]
@@ -13,7 +14,7 @@ async fn main() {
         .with_example("What is 1 + 2?", "Step 1: 1 + 2 = 3\nOutput: 3")
         .with_example("What is 3 + 4?", "Step 1: 3 + 4 = 7\nOutput: 7")
         .with_example("What is (4 + 8) / 3?", "Step 1: 4 + 8 = 12\nStep 2: 12 / 3 = 4\nOutput: 4")
-        .with_constraints(constraints);
+        .with_constraints(Arc::new(constraints));
 
     let start_timestamp = std::time::Instant::now();
     println!("question 1");
