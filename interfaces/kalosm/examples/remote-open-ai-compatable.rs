@@ -12,7 +12,10 @@ async fn main() {
     let base_url = std::env::var("OPENAI_API_BASE").expect("Custom OPENAI_API_BASE not set");
     let model = std::env::var("OPENAI_API_MODEL").expect("Custom OPENAI_API_MODEL not set");
     let client = OpenAICompatibleClient::new().with_base_url(base_url);
-    let llm = OpenAICompatibleChatModel::builder().with_client(client).with_model(model).build();
+    let llm = OpenAICompatibleChatModel::builder()
+        .with_client(client)
+        .with_model(model)
+        .build();
     let prompt = "Write a 300 word essay about why the capital of France is Paris";
     print!("{}", prompt);
 

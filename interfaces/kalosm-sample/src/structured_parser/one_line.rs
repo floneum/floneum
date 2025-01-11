@@ -1,8 +1,4 @@
-
-
-use crate::{
-    CreateParserState, ParseResult, ParseStatus, Parser
-};
+use crate::{CreateParserState, ParseResult, ParseStatus, Parser};
 
 /// One line of text with some non-whitespace characters
 #[derive(Debug, Clone, Copy)]

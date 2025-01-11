@@ -1,9 +1,5 @@
-use std::borrow::Cow;
-
 use kalosm_language_model::{CreateChatSession, Embedder, StructuredChatModel};
-use kalosm_sample::{
-    CreateParserState, IndexParser, LiteralParser, ParseResult, ParseStatus, Parser, ParserExt, StopOn
-};
+use kalosm_sample::{IndexParser, LiteralParser, ParserExt, StopOn};
 
 use crate::{
     prelude::{Document, Task},

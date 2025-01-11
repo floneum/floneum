@@ -1,7 +1,7 @@
 use super::{NoAPIKeyError, OpenAICompatibleClient};
 use crate::{
-    ChatModel, ChatSessionImpl, CreateChatSession, GenerationParameters, ModelBuilder,
-    ModelConstraints, StructuredChatModel,
+    ChatModel, ChatSessionImpl, CreateChatSession, CreateDefaultConstraintsForType,
+    GenerationParameters, ModelBuilder, ModelConstraints, StructuredChatModel,
 };
 use futures_util::StreamExt;
 use kalosm_common::ModelLoadingProgress;
@@ -306,6 +306,16 @@ impl<P> SchemaParser<P> {
 
 impl<P> ModelConstraints for SchemaParser<P> {
     type Output = P;
+}
+
+impl<T: Schema + DeserializeOwned> CreateDefaultConstraintsForType<T>
+    for OpenAICompatibleChatModel
+{
+    type DefaultConstraints = SchemaParser<T>;
+
+    fn create_default_constraints() -> Self::DefaultConstraints {
+        SchemaParser::new()
+    }
 }
 
 impl<P> StructuredChatModel<SchemaParser<P>> for OpenAICompatibleChatModel

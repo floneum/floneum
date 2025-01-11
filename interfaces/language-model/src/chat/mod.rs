@@ -45,6 +45,14 @@ pub trait StructuredChatModel<Constraints: ModelConstraints, Sampler = Generatio
     ) -> impl Future<Output = Result<Constraints::Output, Self::Error>> + Send;
 }
 
+pub trait CreateDefaultConstraintsForType<T>:
+    StructuredChatModel<Self::DefaultConstraints>
+{
+    type DefaultConstraints: ModelConstraints;
+
+    fn create_default_constraints() -> Self::DefaultConstraints;
+}
+
 pub trait ChatSessionImpl {
     /// The type of error the chat session may return during operations.
     type Error: std::error::Error + Send + Sync + 'static;

@@ -1,8 +1,6 @@
 use std::borrow::Cow;
 
-use crate::{
-    CreateParserState, ParseResult, ParseStatus, Parser, 
-};
+use crate::{CreateParserState, ParseResult, ParseStatus, Parser};
 
 /// The state of the [`IndexParser`] parser
 #[derive(Debug, Clone)]

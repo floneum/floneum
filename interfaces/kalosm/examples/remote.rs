@@ -6,7 +6,9 @@ use kalosm::language::*;
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let llm = OpenAICompatibleChatModel::builder().with_gpt_4o_mini().build();
+    let llm = OpenAICompatibleChatModel::builder()
+        .with_gpt_4o_mini()
+        .build();
     let prompt = "Write a 300 word essay about why the capital of France is Paris";
     print!("{}", prompt);
 

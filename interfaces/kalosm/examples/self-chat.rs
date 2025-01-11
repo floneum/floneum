@@ -4,7 +4,11 @@ use kalosm::language::*;
 
 #[tokio::main]
 async fn main() {
-    let model = Llama::new_chat().await.unwrap();
+    let model = Llama::builder()
+        .with_source(LlamaSource::qwen_2_5_1_5b_instruct())
+        .build()
+        .await
+        .unwrap();
     let mut agent1 = model
         .chat()
         .with_system_prompt("The assistant will act like a pirate.");

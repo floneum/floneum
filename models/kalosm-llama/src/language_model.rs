@@ -8,9 +8,10 @@ use crate::{
 };
 use kalosm_common::ModelLoadingProgress;
 use kalosm_language_model::{
-    CreateTextCompletionSession, ModelBuilder, StructuredTextCompletionModel, TextCompletionModel,
+    CreateDefaultConstraintsForType, CreateTextCompletionSession, ModelBuilder,
+    StructuredTextCompletionModel, TextCompletionModel,
 };
-use kalosm_sample::{CreateParserState, Parser};
+use kalosm_sample::{ArcParser, CreateParserState, Parse, Parser, ParserExt};
 use llm_samplers::types::Sampler;
 
 impl ModelBuilder for LlamaBuilder {
@@ -66,6 +67,14 @@ impl<S: Sampler + 'static> TextCompletionModel<S> for Llama {
         rx.await.map_err(|_| LlamaModelError::ModelStopped)??;
 
         Ok(())
+    }
+}
+
+impl<T: Parse + 'static> CreateDefaultConstraintsForType<T> for Llama {
+    type DefaultConstraints = ArcParser<T>;
+
+    fn create_default_constraints() -> Self::DefaultConstraints {
+        T::new_parser().boxed()
     }
 }
 

@@ -21,7 +21,7 @@ async fn main() -> anyhow::Result<()> {
     let llm = Llama::new_chat().await?;
 
     // Create a task that generates a list of accounts
-    let task = Task::builder_for::<Account>(
+    let task = llm.task(
         "You generate accounts based on a description of the account holder",
     )
     .with_example(
@@ -35,18 +35,17 @@ async fn main() -> anyhow::Result<()> {
     .with_example(
         "Anderson is a programmer who works at Google, but he goes by Mr Robot. He is 71 years old.",
         r#"{ "summary": "Mr Robot is 71", "username": "Mr Robot", "age": 71 }"#,
-    )
-    .build();
+    );
 
     loop {
         let prompt = prompt_input("Describe an account holder: ").unwrap();
-        let mut stream = task.run(prompt, &llm);
+        let mut stream = task(&prompt).typed();
 
         // Stream the output to the console
         stream.to_std_out().await?;
 
         // And get the typed result once the stream is finished
-        let accounts = stream.await?;
+        let accounts: Account = stream.await?;
         println!("\n{:#?}", accounts);
     }
 

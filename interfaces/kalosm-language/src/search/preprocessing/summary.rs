@@ -1,7 +1,5 @@
 use kalosm_language_model::{ChatModel, CreateChatSession, Embedder, StructuredChatModel};
-use kalosm_sample::{
-    CreateParserState, LiteralParser, OneLine, ParseResult, ParseStatus, Parser, ParserExt
-};
+use kalosm_sample::{LiteralParser, OneLine, ParserExt};
 
 use crate::{
     prelude::{Document, Task},

@@ -25,6 +25,7 @@ use super::ChatMessage;
 use super::ChatModel;
 use super::ChatSessionImpl;
 use super::CreateChatSession;
+use super::CreateDefaultConstraintsForType;
 use super::IntoChatMessage;
 use super::MessageType;
 use super::StructuredChatModel;
@@ -481,6 +482,20 @@ impl<'a, M: CreateChatSession, Constraints, Sampler>
             result: None,
             task: OnceLock::new(),
         }
+    }
+
+    pub fn typed<T>(
+        self,
+    ) -> ChatResponseBuilder<
+        'a,
+        M,
+        <M as CreateDefaultConstraintsForType<T>>::DefaultConstraints,
+        Sampler,
+    >
+    where
+        M: CreateDefaultConstraintsForType<T>,
+    {
+        self.with_constraints(M::create_default_constraints())
     }
 
     /// Sets the sampler to use for generating responses. The sampler determines how tokens are choosen from the probability distribution
