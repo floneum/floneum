@@ -291,6 +291,7 @@ impl ChatModel<GenerationParameters> for OpenAICompatibleChatModel {
 }
 
 /// A parser for any type that implements the [`Schema`] trait and [`Deserialize`].
+#[derive(Debug, Clone, Copy)]
 pub struct SchemaParser<P> {
     phantom: std::marker::PhantomData<P>,
 }

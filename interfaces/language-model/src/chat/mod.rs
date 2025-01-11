@@ -8,6 +8,8 @@ mod ext;
 pub use ext::*;
 mod task;
 pub use task::*;
+mod chat_builder;
+pub use chat_builder::*;
 
 pub trait CreateChatSession {
     /// The type of error the chat session may return during operations.
