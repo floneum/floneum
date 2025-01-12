@@ -13,7 +13,7 @@ let mut chat = model.chat()
 
 loop {
     // To use the chat session, you need to add messages to it
-    let mut response_stream = chat.add_message(prompt_input("\n> ").unwrap());
+    let mut response_stream = chat(&prompt_input("\n> ").unwrap());
     // And then display the response stream to the user
     response_stream.to_std_out().await.unwrap();
 }
@@ -43,7 +43,7 @@ if let Some(old_session) = std::fs::read(&save_path)
 }
 
 // Then you can add messages to the chat session as usual
-let mut response_stream = chat.add_message(prompt_input("\n> ").unwrap());
+let mut response_stream = chat(&prompt_input("\n> ").unwrap());
 // And then display the response stream to the user
 response_stream.to_std_out().await.unwrap();
 
@@ -73,7 +73,7 @@ let mut chat = model.chat();
 
 // Chat with the user
 loop {
-    let mut output_stream = chat.add_message(prompt_input("\n> ").unwrap()).with_constraints(constraints.clone());
+    let mut output_stream = chat(&prompt_input("\n> ").unwrap()).with_constraints(constraints.clone());
     output_stream.to_std_out().await.unwrap();
 }
 # }

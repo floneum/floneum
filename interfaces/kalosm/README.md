@@ -22,26 +22,32 @@
 Kalosm is a simple interface for pre-trained models in rust. It makes it easy to interact with pre-trained, language, audio, and image models.
 
 There are three different packages in Kalosm:
+
 - `kalosm::language` - A simple interface for text generation and embedding models and surrounding tools. It includes support for search databases, and text collection from websites, RSS feeds, and search engines.
-- `kalosm::audio` - A simple interface for audio transcription and surrounding tools. It includes support for microphone input, transcription with the `whisper` model, and voice activity detection. 
+- `kalosm::audio` - A simple interface for audio transcription and surrounding tools. It includes support for microphone input, transcription with the `whisper` model, and voice activity detection.
 - `kalosm::vision` - A simple interface for image generation and segmentation models and surrounding tools. It includes support for the `wuerstchen` and `segment-anything` models and integration with the [image](https://docs.rs/image/latest/image/) crate.
 
 A complete guide for Kalosm is available on the [Kalosm website](https://floneum.com/kalosm/), and examples are available in the [examples folder](https://github.com/floneum/floneum/tree/main/interfaces/kalosm/examples).
 
 ## Quickstart!
 
-1) Install [rust](https://rustup.rs/)
-2) Create a new project:
+1. Install [rust](https://rustup.rs/)
+2. Create a new project:
+
 ```sh
 cargo new next-gen-ai
 cd ./next-gen-ai
 ```
-3) Add Kalosm as a dependency
+
+3. Add Kalosm as a dependency
+
 ```sh
 cargo add kalosm --git https://github.com/floneum/floneum --features full
 cargo add tokio --features full
 ```
-4) Add this code to your `main.rs` file
+
+4. Add this code to your `main.rs` file
+
 ```rust, no_run
 use std::io::Write;
 
@@ -53,12 +59,14 @@ async fn main() {
     let prompt = "The following is a 300 word essay about Paris:";
     print!("{}", prompt);
 
-    let mut stream = llm.stream_text(prompt).with_max_length(1000).await.unwrap();
+    let mut stream = llm(prompt);
 
     stream.to_std_out().await.unwrap();
 }
 ```
-5) Run your application with:
+
+5. Run your application with:
+
 ```sh
 cargo run --release
 ```
@@ -81,7 +89,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
     print!("{}", prompt);
 
-    let mut stream = llm.stream_text(prompt).with_max_length(1000).await.unwrap();
+    let mut stream = llm(prompt);
 
     stream.to_std_out().await.unwrap();
 
@@ -116,12 +124,11 @@ struct Response {
 async fn main() {
     // Then set up a task with a prompt and constraints
     let llm = Llama::new_chat().await.unwrap();
-    let task = Task::builder("You classify the user's message as about a person, animal or thing in a JSON format")
-        .with_constraints(Response::new_parser())
-        .build();
+    let task = llm.task("You classify the user's message as about a person, animal or thing in a JSON format")
+        .with_constraints(Arc::new(Response::new_parser()));
 
     // Finally, run the task
-    let response = task.run("The Kalosm library lets you create structured data from natural language inputs", &llm).await.unwrap();
+    let response = task("The Kalosm library lets you create structured data from natural language inputs").await.unwrap();
     println!("{:?}", response);
 }
 ```
@@ -135,17 +142,17 @@ Kalosm also supports cloud models like GPT4 with the same streaming API:
 
 ```rust, no_run
 // You must set the environment variable OPENAI_API_KEY (https://platform.openai.com/account/api-keys) to run this example.
-use kalosm::language::*; 
+use kalosm::language::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut llm = Gpt3_5::default();
-    let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
-    print!("{}", prompt);
+    let mut llm = OpenAICompatibleChatModel::builder()
+        .with_gpt_4o_mini()
+        .build();
 
-    let mut stream = llm.stream_text(prompt).with_max_length(300).await.unwrap();
+    let mut chat = llm.chat();
 
-    stream.to_std_out().await.unwrap();
+    chat("What is the capital of France?").to_std_out().await?;
 
     Ok(())
 }
@@ -194,7 +201,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 </details>
-
 
 <details>
 <summary>Embedding powered search</summary>
@@ -312,7 +318,7 @@ async fn main() -> Result<()> {
         println!("{}", prompt);
 
         // And finally, respond to the user
-        let mut output_stream = chat.add_message(prompt);
+        let mut output_stream = chat(&prompt);
         print!("Bot: ");
         output_stream.to_std_out().await?;
     }
@@ -321,11 +327,10 @@ async fn main() -> Result<()> {
 
 </details>
 
-
 <details>
 <summary>Live audio transcription</summary>
 
-Kalosm makes it easy to build up context about the world around your application. 
+Kalosm makes it easy to build up context about the world around your application.
 
 ```rust, no_run
 use kalosm::sound::*;
@@ -337,7 +342,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // Stream audio from the microphone
     let mic = MicInput::default();
-    let stream = mic.stream().unwrap();
+    let stream = mic.stream();
 
     // The audio into chunks based on voice activity and then transcribe those chunks
     // The model will transcribe chunks of speech that are separated by silence
@@ -351,7 +356,6 @@ async fn main() -> Result<(), anyhow::Error> {
 ```
 
 </details>
-
 
 <details>
 <summary>Image generation</summary>

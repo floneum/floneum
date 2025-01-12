@@ -16,7 +16,7 @@ async fn main() {
     let mut chat = llm.chat();
 
     // Feed some text into the session
-    chat.add_message("What is the capital of France?").to_std_out().await.unwrap();
+    chat("What is the capital of France?").to_std_out().await.unwrap();
 
     // Save the session to bytes
     let session = chat.session().unwrap();
@@ -27,7 +27,7 @@ async fn main() {
     let mut chat = llm.chat().with_session(session);
 
     // Feed some more text into the session
-    chat.add_message("What was my first question?").to_std_out().await.unwrap();
+    chat("What was my first question?").to_std_out().await.unwrap();
 }
 ```
 
@@ -42,7 +42,7 @@ You can use the [`ChatSession::history`] method to get messages that have alread
 let mut llm = Llama::new_chat().await.unwrap();
 let mut chat = llm.chat();
 // Add a message to the session
-chat.add_message("Hello, world!");
+chat("Hello, world!").to_std_out().await.unwrap();
 // Get the history of the session
 let history = chat.session().unwrap().history();
 assert_eq!(history.len(), 1);
@@ -65,12 +65,12 @@ async fn main() {
     let mut llm = Llama::new_chat().await.unwrap();
     let mut chat = llm.chat();
     // Feed some text into the session
-    chat.add_message("What is the capital of France?").await.unwrap();
+    chat("What is the capital of France?").to_std_out().await.unwrap();
     let mut session = chat.session().unwrap();
     // Clone the session
     let cloned_session = session.try_clone().unwrap();
     // Feed some more text into the cloned session
     let mut chat = llm.chat().with_session(cloned_session);
-    chat.add_message("What was my first question?").await.unwrap();
+    chat("What was my first question?").to_std_out().await.unwrap();
 }
 ```

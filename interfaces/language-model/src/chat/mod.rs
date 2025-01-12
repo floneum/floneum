@@ -26,10 +26,7 @@ pub use chat_builder::*;
 ///     // Create a new chat for the model
 ///     let mut chat = llm.chat();
 ///     // Add a message to the chat session
-///     chat.add_message("Hello, world!")
-///         .to_std_out()
-///         .await
-///         .unwrap();
+///     chat("Hello, world!").to_std_out().await.unwrap();
 /// }
 /// ```
 pub trait CreateChatSession {
@@ -171,9 +168,7 @@ pub trait ChatSession {
     ///     let mut chat = llm.chat();
     ///
     ///     // Feed some text into the session
-    ///     chat.add_message("What is the capital of France?")
-    ///         .await
-    ///         .unwrap();
+    ///     chat("What is the capital of France?").await.unwrap();
     ///
     ///     // Save the session to bytes
     ///     let session = chat.session().unwrap();
@@ -206,7 +201,7 @@ pub trait ChatSession {
     ///     let mut chat = llm.chat().with_session(session);
     ///
     ///     // Feed some more text into the session
-    ///     chat.add_message("What was my first question?")
+    ///     chat("What was my first question?")
     ///         .to_std_out()
     ///         .await
     ///         .unwrap();
@@ -228,7 +223,7 @@ pub trait ChatSession {
     /// let mut llm = Llama::new_chat().await.unwrap();
     /// let mut chat = llm.chat();
     /// // Add a message to the session
-    /// chat.add_message("Hello, world!");
+    /// chat("Hello, world!");
     /// // Get the history of the session
     /// let history = chat.session().unwrap().history();
     /// assert_eq!(history.len(), 1);
@@ -254,9 +249,7 @@ pub trait ChatSession {
     ///     let mut chat = llm.chat();
     ///
     ///     // Feed some text into the session
-    ///     chat.add_message("What is the capital of France?")
-    ///         .await
-    ///         .unwrap();
+    ///     chat("What is the capital of France?").await.unwrap();
     ///     let mut session = chat.session().unwrap();
     ///
     ///     // Clone the session
@@ -264,9 +257,7 @@ pub trait ChatSession {
     ///
     ///     // Feed some more text into the cloned session
     ///     let mut chat = llm.chat().with_session(cloned_session);
-    ///     chat.add_message("What was my first question?")
-    ///         .await
-    ///         .unwrap();
+    ///     chat("What was my first question?").await.unwrap();
     /// }
     /// ```
     fn try_clone(&self) -> Result<Self, Self::Error>

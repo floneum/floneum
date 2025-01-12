@@ -90,7 +90,7 @@ async fn main() {
     let task = Task::builder_for::<[Character; 10]>("You generate realistic JSON placeholders for characters")
         .build();
     // Finally, run the task
-    let mut stream = task.run("Create a list of random characters", &model);
+    let mut stream = task("Create a list of random characters", &model);
     stream.to_std_out().await.unwrap();
     let character = stream.await.unwrap();
     println!("{character:?}");
@@ -128,12 +128,11 @@ use kalosm::language::*;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
   let model = Llama::phi_3().await?;
-  let mut chat = Chat::builder(model)
-    .with_system_prompt("You are a pirate called Blackbeard")
-    .build();
+  let mut chat = model.chat()
+    .with_system_prompt("You are a pirate called Blackbeard");
 
   loop {
-    chat.add_message(prompt_input("\n> ")?)
+    chat(&prompt_input("\n> ")?)
       .to_std_out()
       .await?;
   }

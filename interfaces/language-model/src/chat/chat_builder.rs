@@ -268,10 +268,7 @@ impl<M: CreateChatSession> Chat<M> {
     /// let model = Llama::new_chat().await.unwrap();
     /// let mut chat = model.chat();
     /// // Add a message to the chat history
-    /// chat.add_message("Hello, world!")
-    ///     .to_std_out()
-    ///     .await
-    ///     .unwrap();
+    /// chat("Hello, world!").to_std_out().await.unwrap();
     /// // Get the chat session
     /// let session = chat.session().unwrap();
     /// // Get the chat history
@@ -415,7 +412,7 @@ impl<M: CreateChatSession> DerefMut for MaybeOwnedSession<'_, M> {
 ///     .with_system_prompt("The first prime number larger than 4");
 ///
 /// // Add a message to the chat session with the given message
-/// let mut response = chat.add_message(prompt_input("\n> ").unwrap());
+/// let mut response = chat(&prompt_input("\n> ").unwrap());
 /// // Before you start streaming the response, you can add constraints to the response
 /// let mut response = response.with_constraints(i32::new_parser());
 /// // Once you start streaming the response, the generation starts
@@ -459,9 +456,8 @@ impl<'a, M: CreateChatSession, Constraints, Sampler>
     /// // Chat with the user
     /// loop {
     ///     // Set the constraints for the response
-    ///     let mut output_stream = chat
-    ///         .add_message(prompt_input("\n> ").unwrap())
-    ///         .with_constraints(constraints.clone());
+    ///     let mut output_stream =
+    ///         chat(&prompt_input("\n> ").unwrap()).with_constraints(constraints.clone());
     ///     output_stream.to_std_out().await.unwrap();
     /// }
     /// # }
@@ -502,8 +498,7 @@ impl<'a, M: CreateChatSession, Constraints, Sampler>
     ///     Pet::schema()
     /// ));
     /// // Finally, add a message and make it typed to get the parsed response
-    /// let pet: Pet = chat
-    ///     .add_message("JSON for an adorable dog named ruffles")
+    /// let pet: Pet = chat("JSON for an adorable dog named ruffles")
     ///     .typed()
     ///     .await
     ///     .unwrap();
@@ -542,9 +537,7 @@ impl<'a, M: CreateChatSession, Constraints, Sampler>
     /// // Chat with the user
     /// loop {
     ///     // Stream a response with the sampler
-    ///     let mut output_stream = chat
-    ///         .add_message(prompt_input("\n> ").unwrap())
-    ///         .with_sampler(sampler.clone());
+    ///     let mut output_stream = chat(&prompt_input("\n> ").unwrap()).with_sampler(sampler.clone());
     ///     output_stream.to_std_out().await.unwrap();
     /// }
     /// # }
