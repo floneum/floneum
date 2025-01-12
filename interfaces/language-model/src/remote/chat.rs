@@ -491,6 +491,8 @@ mod tests {
                 move |token| {
                     let mut all_text = all_text.write().unwrap();
                     all_text.push_str(&token);
+                    print!("{token}");
+                    std::io::Write::flush(&mut std::io::stdout()).unwrap();
                     Ok(())
                 }
             })
@@ -498,6 +500,7 @@ mod tests {
             .unwrap();
 
         let all_text = all_text.read().unwrap();
+        println!("{all_text}");
 
         assert!(!all_text.is_empty());
     }
@@ -533,14 +536,18 @@ mod tests {
                     move |token| {
                         let mut all_text = all_text.write().unwrap();
                         all_text.push_str(&token);
+                        print!("{token}");
+                        std::io::Write::flush(&mut std::io::stdout()).unwrap();
                         Ok(())
                     }
                 },
             )
             .await
             .unwrap();
+        println!("{response:?}");
 
         let all_text = all_text.read().unwrap();
+        println!("{all_text}");
 
         assert!(!all_text.is_empty());
 
