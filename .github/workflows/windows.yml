@@ -36,6 +36,9 @@ on:
       - .github/**
       - Cargo.toml
 
+env:
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
 jobs:
   test:
     if: github.event.pull_request.draft == false
