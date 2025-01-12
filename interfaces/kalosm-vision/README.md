@@ -17,11 +17,10 @@ async fn main() {
         "a cute cat with a hat in a room covered with fur with incredible detail",
     );
 
-    if let Ok(mut images) = model.run(settings) {
-        while let Some(image) = images.next().await {
-            if let Some(buf) = image.generated_image() {
-                buf.save(&format!("{}.png", image.sample_num())).unwrap();
-            }
+    let mut images = model.run(settings);
+    while let Some(image) = images.next().await {
+        if let Some(buf) = image.generated_image() {
+            buf.save(&format!("{}.png", image.sample_num())).unwrap();
         }
     }
 }
@@ -41,7 +40,6 @@ let y = image.height() / 4;
 let images = model
     .segment_from_points(
         SegmentAnythingInferenceSettings::new(image)
-            .unwrap()
             .add_goal_point(x, y),
     )
     .unwrap();

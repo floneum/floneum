@@ -21,7 +21,7 @@ use super::ClassifierProgress;
 /// #     Thing,
 /// # }
 /// # #[tokio::main]
-/// # async fn main() -> Result<()> {
+/// # async fn main() -> anyhow::Result<()> {
 /// // Create a dataset for the classifier
 /// let bert = Bert::new().await?;
 /// let mut dataset = TextClassifierDatasetBuilder::<MyClass, _>::new(&bert);
@@ -71,7 +71,7 @@ impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
     /// #     Thing,
     /// # }
     /// # #[tokio::main]
-    /// # async fn main() -> Result<()> {
+    /// # async fn main() -> anyhow::Result<()> {
     /// // Create a dataset for the classifier
     /// let bert = Bert::new().await?;
     /// let mut dataset = TextClassifierDatasetBuilder::<MyClass, _>::new(&bert);
@@ -119,19 +119,19 @@ impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
 ///
 /// ```rust, no_run
 /// use candle_core::Device;
-/// use kalosm_language_model::Embedder;
-/// use kalosm_learning::{Class, Classifier, ClassifierConfig};
+/// use kalosm_language_model::{Embedder, EmbedderExt};
+/// use kalosm_learning::{Class, Classifier, ClassifierConfig, TextClassifier, TextClassifierDatasetBuilder};
 /// use rbert::Bert;
 ///
 /// #[tokio::main]
-/// async fn main() -> Result<()> {
+/// async fn main() -> anyhow::Result<()> {
 ///     #[derive(Debug, Copy, Clone, PartialEq, Eq, Class)]
 ///     enum MyClass {
 ///         Person,
 ///         Thing,
 ///     }
 ///
-///     let mut bert = Bert::builder().build()?;
+///     let mut bert = Bert::builder().build().await?;
 ///
 ///     let dev = Device::cuda_if_available(0)?;
 ///     let person_questions = vec![
@@ -185,7 +185,7 @@ impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
 ///         "What is the most spoken language in the United States?",
 ///     ];
 ///
-///     let mut dataset = TextClassifierDatasetBuilder::<MyClass, _, _>::new(&mut bert);
+///     let mut dataset = TextClassifierDatasetBuilder::<MyClass, _>::new(&mut bert);
 ///
 ///     for question in &person_questions {
 ///         dataset.add(question, MyClass::Person).await?;
@@ -203,9 +203,9 @@ impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
 ///     loop {
 ///         classifier = TextClassifier::<MyClass>::new(Classifier::new(
 ///             &dev,
-///             ClassifierConfig::new(384).layers_dims(layers.clone()),
+///             ClassifierConfig::new().layers_dims(layers.clone()),
 ///         )?);
-///         if let Err(error) = classifier.train(&dataset, &dev, 100, |_| {}) {
+///         if let Err(error) = classifier.train(&dataset, 100, 0.05, 3, |_| {}) {
 ///             println!("Error: {:?}", error);
 ///         } else {
 ///             break;

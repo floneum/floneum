@@ -4066,6 +4066,7 @@ dependencies = [
 name = "kalosm-learning"
 version = "0.3.3"
 dependencies = [
+ "anyhow",
  "candle-core",
  "candle-nn",
  "half 2.4.1",
@@ -4091,6 +4092,7 @@ name = "kalosm-llama"
 version = "0.3.3"
 dependencies = [
  "accelerate-src",
+ "anyhow",
  "async-trait",
  "candle-core",
  "candle-nn",
@@ -7013,6 +7015,7 @@ name = "rwuerstchen"
 version = "0.3.2"
 dependencies = [
  "accelerate-src",
+ "anyhow",
  "async-trait",
  "candle-core",
  "candle-nn",

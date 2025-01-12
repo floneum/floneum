@@ -53,7 +53,7 @@ impl<M: CreateChatSession, Constraints: Clone> Clone for Task<M, Constraints> {
 }
 
 impl<M: CreateChatSession> Task<M> {
-    /// Create a new task with no constraints and the default sampler. See [`Task::builder`] for more options.
+    /// Create a new task with no constraints and the default sampler.
     pub fn new(model: M, description: impl ToString) -> Self {
         let chat = Chat::new(model).with_system_prompt(description);
         Self {

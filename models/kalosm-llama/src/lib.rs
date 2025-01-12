@@ -15,10 +15,10 @@
 //! async fn main() {
 //!     let mut model = Llama::new().await.unwrap();
 //!     let prompt = "The capital of France is ";
-//!     let mut result = model.stream_text(prompt).await.unwrap();
+//!     let mut stream = model(prompt);
 //!
 //!     print!("{prompt}");
-//!     while let Some(token) = result.next().await {
+//!     while let Some(token) = stream.next().await {
 //!         print!("{token}");
 //!     }
 //! }
@@ -259,12 +259,11 @@ impl LlamaBuilder {
     ///     .build_with_loading_handler(|progress| match progress {
     ///         ModelLoadingProgress::Downloading {
     ///             source,
-    ///             start_time,
     ///             progress,
     ///         } => {
-    ///             let progress = (progress * 100.0) as u32;
-    ///             let elapsed = start_time.elapsed().as_secs_f32();
-    ///             println!("Downloading file {source} {progress}% ({elapsed}s)");
+    ///             let progress_percent = (progress.progress * 100) as u32;
+    ///             let elapsed = progress.start_time.elapsed().as_secs_f32();
+    ///             println!("Downloading file {source} {progress_percent}% ({elapsed}s)");
     ///         }
     ///         ModelLoadingProgress::Loading { progress } => {
     ///             let progress = (progress * 100.0) as u32;

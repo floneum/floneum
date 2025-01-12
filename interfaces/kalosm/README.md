@@ -106,6 +106,7 @@ Natural language generation is interesting, but the more interesting aspect of t
 
 ```rust, no_run
 use kalosm::language::*;
+use std::sync::Arc;
 
 // First, derive an efficient parser for your structured data
 #[derive(Parse, Clone, Debug)]
@@ -256,7 +257,7 @@ use kalosm::language::*;
 use surrealdb::{engine::local::SurrealKv, Surreal};
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<(), anyhow::Error> {
     let exists = std::path::Path::new("./db").exists();
 
     // Create database connection
@@ -287,7 +288,7 @@ async fn main() -> Result<()> {
 
     // Create a llama chat model
     let model = Llama::new_chat().await?;
-    let mut chat = Chat::builder(model).with_system_prompt("The assistant help answer questions based on the context given by the user. The model knows that the information the user gives it is always true.").build();
+    let mut chat = model.chat().with_system_prompt("The assistant help answer questions based on the context given by the user. The model knows that the information the user gives it is always true.");
 
     loop {
         // Ask the user for a question
@@ -371,11 +372,10 @@ async fn main() {
     let settings = WuerstchenInferenceSettings::new(
         "a cute cat with a hat in a room covered with fur with incredible detail",
     );
-    if let Ok(mut images) = model.run(settings) {
-        while let Some(image) = images.next().await {
-            if let Some(buf) = image.generated_image() {
-                buf.save(&format!("{}.png",image.sample_num())).unwrap();
-            }
+    let mut images = model.run(settings);
+    while let Some(image) = images.next().await {
+        if let Some(buf) = image.generated_image() {
+            buf.save(&format!("{}.png",image.sample_num())).unwrap();
         }
     }
 }

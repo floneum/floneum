@@ -22,14 +22,8 @@ async fn main() {
     let mut llm = Llama::new().await.unwrap();
     let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
     print!("{prompt}");
-    let mut stream = llm
-        // Any model that implements the Model trait can be used to stream text
-        .stream_text(prompt)
-        // You can pass parameters to the model to control the output
-        .with_max_length(300)
-        // And run .await to start streaming
-        .await
-        .unwrap();
+    // Any model that implements the [`TextCompletionModel`] trait can be used to stream text
+    let mut stream = llm.complete(prompt);
     // You can then use the stream however you need. to_std_out will print the text to the console as it is generated
     stream.to_std_out().await.unwrap();
 }
@@ -69,7 +63,8 @@ struct Pet {
 Then you can generate text that works with the parser in a [`Task`](prelude::Task):
 
 ```rust, no_run
-use kalosm::language::*;
+# use kalosm::language::*;
+# use std::sync::Arc;
 #[derive(Parse, Debug, Clone)]
 struct Pet {
     name: String,
@@ -82,13 +77,12 @@ async fn main() {
     // First create a model. Chat models tend to work best with structured generation
     let model = Llama::new_chat().await.unwrap();
     // Then create a parser for your data. Any type that implements the `Parse` trait has the `new_parser` method
-    let parser = Pet::new_parser();
+    let parser = Arc::new(Pet::new_parser());
     // Then create a task with the parser as constraints
-    let task = Task::builder("You generate realistic JSON placeholders")
-        .with_constraints(parser)
-        .build();
+    let task = model.task("You generate realistic JSON placeholders")
+        .with_constraints(parser);
     // Finally, run the task
-    let pet: Pet = task("Generate a pet in the form {\"name\": \"Pet name\", \"age\": 0, \"description\": \"Pet description\"}", &model).await.unwrap();
+    let pet: Pet = task("Generate a pet in the form {\"name\": \"Pet name\", \"age\": 0, \"description\": \"Pet description\"}").await.unwrap();
     println!("{pet:?}");
 }
 ```

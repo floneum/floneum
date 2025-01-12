@@ -357,7 +357,7 @@ impl<C: Class> Classifier<C> {
     /// dataset.add(vec![4.0, 3.0, 2.0, 1.0], MyClass::Thing);
     ///
     /// classifier
-    ///     .train(&dataset.build(&dev).unwrap(), &dev, 20, 0.05, 3)
+    ///     .train(&dataset.build(&dev).unwrap(), 20, 0.05, 3, |_| {})
     ///     .unwrap();
     /// ```
     pub fn train(

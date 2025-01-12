@@ -21,6 +21,7 @@ kalosm-common.workspace = true
 
 [dev-dependencies]
 rbert.workspace = true
+anyhow.workspace = true
 
 [features]
 metal = ["candle-core/metal", "candle-nn/metal", "kalosm-common/metal"]

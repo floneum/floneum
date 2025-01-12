@@ -29,6 +29,8 @@ image = "0.24.7"
 tokio = { version = "1.32.0", features = ["full"] }
 tracing = "0.1.37"
 
+[dev-dependencies]
+anyhow.workspace = true
 
 [features]
 flash = ["candle-transformers/flash-attn"]

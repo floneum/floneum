@@ -23,14 +23,9 @@ async fn main() {
     let mut llm = Llama::new().await.unwrap();
     let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
     print!("{prompt}");
+    // Any model that implements the [`TextCompletionModel`] trait can be used to stream text
     let mut stream = llm
-        // Any model that implements the Model trait can be used to stream text
-        .stream_text(prompt)
-        // You can pass parameters to the model to control the output
-        .with_max_length(300)
-        // And run .await to start streaming
-        .await
-        .unwrap();
+        .complete(prompt);
     // You can then use the stream however you need. to_std_out will print the text to the console as it is generated
     stream.to_std_out().await.unwrap();
 }
@@ -71,6 +66,7 @@ Then you can generate text that works with the parser in a [`Task`]:
 
 ```rust, no_run
 # use kalosm::language::*;
+# use std::sync::Arc;
 # #[derive(Parse, Debug, Clone)]
 # struct Pet {
 #     name: String,
@@ -85,9 +81,9 @@ async fn main() {
     let parser = Pet::new_parser();
     // Then create a task with the parser as constraints
     let task = model.task("You generate realistic JSON placeholders")
-        .with_constraints(parser);
+        .with_constraints(Arc::new(parser));
     // Finally, run the task
-    let pet: Pet = task("Generate a pet in the form {\"name\": \"Pet name\", \"age\": 0, \"description\": \"Pet description\"}", &model).await.unwrap();
+    let pet: Pet = task("Generate a pet in the form {\"name\": \"Pet name\", \"age\": 0, \"description\": \"Pet description\"}").await.unwrap();
     println!("{pet:?}");
 }
 ```

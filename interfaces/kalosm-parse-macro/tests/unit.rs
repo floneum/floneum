@@ -16,14 +16,11 @@ async fn unit_struct() {
         .await
         .unwrap();
 
-    let task = Task::builder("You generate json")
-        .with_constraints(UnitStruct::new_parser())
-        .build();
+    let task = model
+        .task("You generate json")
+        .with_constraints(std::sync::Arc::new(UnitStruct::new_parser()));
 
-    let output = task
-        .run("What is the capital of France?", &model)
-        .all_text()
-        .await;
+    let output = task.run("What is the capital of France?", &model).await;
     println!("{output}");
 
     assert_eq!(output, "\"UnitStruct\"");
@@ -44,14 +41,11 @@ async fn renamed_unit_struct() {
         .await
         .unwrap();
 
-    let task = Task::builder("You generate json")
-        .with_constraints(RenamedUnit::new_parser())
-        .build();
+    let task = model
+        .task("You generate json")
+        .with_constraints(std::sync::Arc::new(RenamedUnit::new_parser()));
 
-    let output = task
-        .run("What is the capital of France?", &model)
-        .all_text()
-        .await;
+    let output = task.run("What is the capital of France?", &model).await;
     println!("{output}");
 
     assert_eq!(output, "\"unit struct\"");
