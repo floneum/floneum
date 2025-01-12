@@ -382,7 +382,7 @@ enum MaybeOwnedSession<'a, M: CreateChatSession> {
     Borrowed(&'a mut Chat<M>),
 }
 
-impl<'a, M: CreateChatSession> Deref for MaybeOwnedSession<'a, M> {
+impl<M: CreateChatSession> Deref for MaybeOwnedSession<'_, M> {
     type Target = Chat<M>;
 
     fn deref(&self) -> &Self::Target {
@@ -393,7 +393,7 @@ impl<'a, M: CreateChatSession> Deref for MaybeOwnedSession<'a, M> {
     }
 }
 
-impl<'a, M: CreateChatSession> DerefMut for MaybeOwnedSession<'a, M> {
+impl<M: CreateChatSession> DerefMut for MaybeOwnedSession<'_, M> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
             Self::Owned(session) => session,
@@ -564,7 +564,7 @@ impl<'a, M: CreateChatSession, Constraints, Sampler>
     }
 }
 
-impl<'a, M, Sampler> ChatResponseBuilder<'a, M, NoConstraints, Sampler>
+impl<M, Sampler> ChatResponseBuilder<'_, M, NoConstraints, Sampler>
 where
     Sampler: Send + Unpin + 'static,
     M: ChatModel<Sampler> + Send + Sync + Clone + Unpin + 'static,
@@ -614,7 +614,7 @@ where
     }
 }
 
-impl<'a, M, Sampler> Stream for ChatResponseBuilder<'a, M, NoConstraints, Sampler>
+impl<M, Sampler> Stream for ChatResponseBuilder<'_, M, NoConstraints, Sampler>
 where
     Sampler: Send + Unpin + 'static,
     M: ChatModel<Sampler> + Send + Sync + Clone + Unpin + 'static,
@@ -663,7 +663,7 @@ where
     }
 }
 
-impl<'a, M, Constraints, Sampler> ChatResponseBuilder<'a, M, Constraints, Sampler>
+impl<M, Constraints, Sampler> ChatResponseBuilder<'_, M, Constraints, Sampler>
 where
     Constraints: ModelConstraints + Send + Sync + Unpin + 'static,
     Sampler: Send + Unpin + 'static,
@@ -718,7 +718,7 @@ where
     }
 }
 
-impl<'a, M, Constraints, Sampler> Stream for ChatResponseBuilder<'a, M, Constraints, Sampler>
+impl<M, Constraints, Sampler> Stream for ChatResponseBuilder<'_, M, Constraints, Sampler>
 where
     Constraints: ModelConstraints + Send + Sync + Unpin + 'static,
     Sampler: Send + Unpin + 'static,

@@ -482,7 +482,7 @@ mod tests {
 
         let mut session = model.new_chat_session().unwrap();
 
-        let mut messages = vec![crate::ChatMessage::new(
+        let messages = vec![crate::ChatMessage::new(
             crate::MessageType::UserMessage,
             "Hello, world!".to_string(),
         )];
@@ -515,7 +515,7 @@ mod tests {
 
         let mut session = model.new_chat_session().unwrap();
 
-        let mut messages = vec![crate::ChatMessage::new(
+        let messages = vec![crate::ChatMessage::new(
             crate::MessageType::UserMessage,
             "Give me a list of 5 primes.".to_string(),
         )];

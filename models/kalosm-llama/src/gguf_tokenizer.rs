@@ -236,7 +236,6 @@ pub(crate) fn get_pre_tokenizer(
             ignore_merges: true,
             add_bos: true,
             ty: PreTokenizerType::Llama3,
-            ..Default::default()
         },
         "deepseek-llm" => GGUFPreTokenizerConfig {
             ty: PreTokenizerType::DeepseekLlm,
@@ -311,7 +310,6 @@ pub(crate) fn get_pre_tokenizer(
             ignore_merges: true,
             add_bos: true,
             ty: PreTokenizerType::Tekken,
-            ..Default::default()
         },
         "smollm" => GGUFPreTokenizerConfig {
             ty: PreTokenizerType::Smollm,
