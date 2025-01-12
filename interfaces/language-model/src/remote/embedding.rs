@@ -140,7 +140,7 @@ impl Embedder for OpenAICompatibleEmbeddingModel {
         let request = self
             .client
             .reqwest_client
-            .post(format!("{}/embeddings", self.client.base_url))
+            .post(format!("{}/embeddings", self.client.base_url()))
             .header("Content-Type", "application/json")
             .header("Authorization", format!("Bearer {}", api_key))
             .json(&serde_json::json!({
@@ -162,7 +162,7 @@ impl Embedder for OpenAICompatibleEmbeddingModel {
         let request = self
             .client
             .reqwest_client
-            .post(format!("{}/embeddings", self.client.base_url))
+            .post(format!("{}/embeddings", self.client.base_url()))
             .header("Content-Type", "application/json")
             .header("Authorization", format!("Bearer {}", api_key))
             .json(&serde_json::json!({

@@ -89,6 +89,11 @@ impl OpenAICompatibleClient {
 
         Ok(open_api_key)
     }
+
+    /// Get the base URL for the OpenAI API.
+    pub(crate) fn base_url(&self) -> &str {
+        self.base_url.trim_end_matches('/')
+    }
 }
 
 /// An error that can occur when building a remote OpenAI model without an API key.
