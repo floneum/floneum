@@ -53,4 +53,4 @@ jobs:
       - name: Run tests
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: cargo test --all --tests --features kalosm/language,kalosm/sound,kalosm/vision,kalosm/remote,kalosm/metal
+        run: cargo test --all --tests --features kalosm/language,kalosm/sound,kalosm/vision,kalosm/metal
