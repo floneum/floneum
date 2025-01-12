@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use crate::model::LlamaModelError;
 use crate::structured::generate_structured;
 pub use crate::Llama;
@@ -8,8 +10,9 @@ use crate::{
 };
 use kalosm_common::ModelLoadingProgress;
 use kalosm_language_model::{
-    CreateDefaultConstraintsForType, CreateTextCompletionSession, ModelBuilder,
-    StructuredTextCompletionModel, TextCompletionModel,
+    CreateDefaultChatConstraintsForType, CreateDefaultCompletionConstraintsForType,
+    CreateTextCompletionSession, GenerationParameters, ModelBuilder, StructuredTextCompletionModel,
+    TextCompletionModel,
 };
 use kalosm_sample::{ArcParser, CreateParserState, Parse, Parser, ParserExt};
 use llm_samplers::types::Sampler;
@@ -54,11 +57,20 @@ impl<S: Sampler + 'static> TextCompletionModel<S> for Llama {
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
     ) -> Result<(), Self::Error> {
         let (tx, rx) = tokio::sync::oneshot::channel();
+        let max_tokens = match (&sampler as &dyn Any).downcast_ref::<GenerationParameters>() {
+            Some(sampler) => sampler.max_length(),
+            None => u32::MAX,
+        };
         let sampler = std::sync::Arc::new(std::sync::Mutex::new(sampler));
         let on_token = Box::new(on_token);
         self.task_sender
             .send(Task::UnstructuredGeneration(UnstructuredGenerationTask {
-                settings: InferenceSettings::new(text.to_string(), session.clone(), sampler),
+                settings: InferenceSettings::new(
+                    text.to_string(),
+                    session.clone(),
+                    sampler,
+                    max_tokens,
+                ),
                 on_token,
                 finished: tx,
             }))
@@ -70,7 +82,15 @@ impl<S: Sampler + 'static> TextCompletionModel<S> for Llama {
     }
 }
 
-impl<T: Parse + 'static> CreateDefaultConstraintsForType<T> for Llama {
+impl<T: Parse + 'static> CreateDefaultChatConstraintsForType<T> for Llama {
+    type DefaultConstraints = ArcParser<T>;
+
+    fn create_default_constraints() -> Self::DefaultConstraints {
+        T::new_parser().boxed()
+    }
+}
+
+impl<T: Parse + 'static> CreateDefaultCompletionConstraintsForType<T> for Llama {
     type DefaultConstraints = ArcParser<T>;
 
     fn create_default_constraints() -> Self::DefaultConstraints {

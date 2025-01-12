@@ -1,7 +1,7 @@
 use crate::raw::cache::LlamaCache;
 use crate::{accelerated_device_if_available, raw::LlamaConfig};
 use candle_core::{Device, Tensor};
-use kalosm_language_model::Session;
+use kalosm_language_model::TextCompletionSession;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
@@ -25,7 +25,7 @@ pub struct LlamaSession {
     pub(crate) cache: Arc<RwLock<LlamaCache>>,
 }
 
-impl Session for LlamaSession {
+impl TextCompletionSession for LlamaSession {
     type Error = LlamaSessionLoadingError;
 
     fn write_to(&self, into: &mut Vec<u8>) -> Result<(), Self::Error> {

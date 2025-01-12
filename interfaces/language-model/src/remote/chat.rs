@@ -1,6 +1,6 @@
 use super::{NoAPIKeyError, OpenAICompatibleClient};
 use crate::{
-    ChatModel, ChatSessionImpl, CreateChatSession, CreateDefaultConstraintsForType,
+    ChatModel, ChatSession, CreateChatSession, CreateDefaultChatConstraintsForType,
     GenerationParameters, ModelBuilder, ModelConstraints, StructuredChatModel,
 };
 use futures_util::StreamExt;
@@ -146,7 +146,7 @@ impl OpenAICompatibleChatSession {
     }
 }
 
-impl ChatSessionImpl for OpenAICompatibleChatSession {
+impl ChatSession for OpenAICompatibleChatSession {
     type Error = serde_json::Error;
 
     fn write_to(&self, into: &mut Vec<u8>) -> Result<(), Self::Error> {
@@ -309,7 +309,7 @@ impl<P> ModelConstraints for SchemaParser<P> {
     type Output = P;
 }
 
-impl<T: Schema + DeserializeOwned> CreateDefaultConstraintsForType<T>
+impl<T: Schema + DeserializeOwned> CreateDefaultChatConstraintsForType<T>
     for OpenAICompatibleChatModel
 {
     type DefaultConstraints = SchemaParser<T>;

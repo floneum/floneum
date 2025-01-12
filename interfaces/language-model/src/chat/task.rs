@@ -10,7 +10,7 @@ use super::Chat;
 use super::ChatMessage;
 use super::ChatResponseBuilder;
 use super::CreateChatSession;
-use super::CreateDefaultConstraintsForType;
+use super::CreateDefaultChatConstraintsForType;
 use super::MessageType;
 
 /// A task session lets you efficiently run a task with a model. The task session will reuse the model's cache to avoid re-feeding the task prompt repeatedly.
@@ -94,9 +94,11 @@ impl<M: CreateChatSession, Constraints> Task<M, Constraints> {
         }
     }
 
-    pub fn typed<T>(self) -> Task<M, <M as CreateDefaultConstraintsForType<T>>::DefaultConstraints>
+    pub fn typed<T>(
+        self,
+    ) -> Task<M, <M as CreateDefaultChatConstraintsForType<T>>::DefaultConstraints>
     where
-        M: CreateDefaultConstraintsForType<T>,
+        M: CreateDefaultChatConstraintsForType<T>,
     {
         self.with_constraints(M::create_default_constraints())
     }

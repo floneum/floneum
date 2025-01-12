@@ -24,9 +24,9 @@ use std::task::Poll;
 
 use super::ChatMessage;
 use super::ChatModel;
-use super::ChatSessionImpl;
+use super::ChatSession;
 use super::CreateChatSession;
-use super::CreateDefaultConstraintsForType;
+use super::CreateDefaultChatConstraintsForType;
 use super::IntoChatMessage;
 use super::MessageType;
 use super::StructuredChatModel;
@@ -473,11 +473,11 @@ impl<'a, M: CreateChatSession, Constraints, Sampler>
     ) -> ChatResponseBuilder<
         'a,
         M,
-        <M as CreateDefaultConstraintsForType<T>>::DefaultConstraints,
+        <M as CreateDefaultChatConstraintsForType<T>>::DefaultConstraints,
         Sampler,
     >
     where
-        M: CreateDefaultConstraintsForType<T>,
+        M: CreateDefaultChatConstraintsForType<T>,
     {
         self.with_constraints(M::create_default_constraints())
     }

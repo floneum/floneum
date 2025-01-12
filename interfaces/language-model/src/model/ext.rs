@@ -20,10 +20,9 @@ use super::CreateTextCompletionSession;
 use super::StructuredTextCompletionModel;
 use super::TextCompletionModel;
 
-/// An extension trait for text generation models with a builder api for streaming
-/// structured or unstructured text.
+#[doc = include_str!("../../docs/complete.md")]
 pub trait TextCompletionModelExt: CreateTextCompletionSession {
-    #[doc = include_str!("../../docs/complete.md")]
+    ///
     fn complete(&self, text: impl ToString) -> TextCompletionBuilder<Self>
     where
         Self: Clone,
@@ -43,27 +42,46 @@ pub trait TextCompletionModelExt: CreateTextCompletionSession {
 
 impl<M: CreateTextCompletionSession> TextCompletionModelExt for M {}
 
-/// A builder for a chat response. This is returned by [`Chat::add_message`] and can be modified until you start awaiting the response.
+/// A builder for a text completion response. This is returned by [`TextCompletionModelExt::complete`]
+/// and can be modified with [`TextCompletionBuilder::with_sampler`] and [`TextCompletionBuilder::with_constraints`]
+/// until you start awaiting the response.
 ///
-/// # Example
+///
+/// Once you are done setting up the response, you can call `.await` for the full text completion, or [`ModelConstraints::Output`]:
 /// ```rust, no_run
-/// # use kalosm::language::*;
-/// # #[tokio::main]
-/// # async fn main() {
-/// let mut chat = Chat::builder(Llama::new_chat().await.unwrap())
-///     .with_system_prompt("The assistant will act like a pirate.")
-///     .build();
+/// use kalosm::language::*;
 ///
-/// // Add a message to the chat session with the given message
-/// let mut response = chat.add_message(prompt_input("\n> ").unwrap());
-/// // Before you start streaming the response, you can add constraints to the response
-/// let response = response.with_constraints(String::new_parser());
-/// // Once you start streaming the response, the generation starts
-/// response.to_std_out().await.unwrap();
-/// // The response can be awaited to get the final (typed) result
-/// let all_text: String = response.await.unwrap();
-/// println!("{all_text}");
-/// # }
+/// #[tokio::main]
+/// async fn main() {
+///     let mut llm = Llama::new().await.unwrap();
+///     let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
+///     print!("{prompt}");
+///     let mut completion = llm
+///         .complete(prompt)
+///         .await
+///         .unwrap();
+///     println!("{completion}");
+/// }
+/// ```
+///
+/// Or use the response as a [`Stream`]:
+///
+/// ```rust, no_run
+/// use kalosm::language::*;
+/// use std::io::Write;
+///
+/// #[tokio::main]
+/// async fn main() {
+///     let mut llm = Llama::new().await.unwrap();
+///     let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
+///     print!("{prompt}");
+///     let mut completion = llm
+///         .complete(prompt);
+///     while let Some(token) = completion.next().await {
+///         print!("{token}");
+///         std::io::stdout().flush().unwrap();
+///     }
+/// }
 /// ```
 pub struct TextCompletionBuilder<
     M: CreateTextCompletionSession,
@@ -89,18 +107,23 @@ impl<M: CreateTextCompletionSession, Constraints, Sampler>
     /// # use kalosm::language::*;
     /// # #[tokio::main]
     /// # async fn main() {
-    /// let model = Llama::new_chat().await.unwrap();
-    /// // Create constraints that parses Yes! and then stops on the end of the assistant's response
-    /// let constraints = LiteralParser::new("Yes!")
-    ///     .then(model.default_assistant_constraints().unwrap());
-    /// // Create a chat session with the model and the constraints
-    /// let mut chat = Chat::new(model);
-    ///
-    /// // Chat with the user
-    /// loop {
-    ///     let mut output_stream = chat.add_message(prompt_input("\n> ").unwrap()).with_constraints(constraints.clone());
-    ///     output_stream.to_std_out().await.unwrap();
+    /// #[derive(Parse, Clone, Debug)]
+    /// struct Pet {
+    ///     name: String,
+    ///     age: u32,
+    ///     description: String,
     /// }
+    ///
+    /// // First create a model
+    /// let model = Llama::new().await.unwrap();
+    /// // Then create a parser for your data. Any type that implements the `Parse` trait has the `new_parser` method
+    /// let parser = Pet::new_parser();
+    /// // Create a text completion stream with the constraints
+    /// let description = model.complete("JSON for an adorable dog named ruffles: ")
+    ///     .with_constraints(parser);
+    /// // Finally, await the stream to get the parsed response
+    /// let pet: Pet = description.await.unwrap();
+    /// println!("{pet:?}");
     /// # }
     /// ```
     pub fn with_constraints<NewConstraints: ModelConstraints>(
@@ -126,18 +149,12 @@ impl<M: CreateTextCompletionSession, Constraints, Sampler>
     /// # use kalosm::language::*;
     /// # #[tokio::main]
     /// # async fn main() {
-    /// let model = Llama::new_chat().await.unwrap();
-    /// // Create the sampler to use for the chat session
+    /// let model = Llama::new().await.unwrap();
+    /// // Create the sampler to use for the text completion
     /// let sampler = GenerationParameters::default().sampler();
-    ///
-    /// // Create a chat session with the model and the constraints
-    /// let mut chat = Chat::new(model);
-    ///
-    /// // Chat with the user
-    /// loop {
-    ///     let mut output_stream = chat.add_message(prompt_input("\n> ").unwrap()).with_sampler(sampler);
-    ///     output_stream.to_std_out().await.unwrap();
-    /// }
+    /// // Create a completion request with the sampler
+    /// let mut stream = model.complete("Here is a list of 5 primes: ").with_sampler(sampler);
+    /// stream.to_std_out().await.unwrap();
     /// # }
     /// ```
     pub fn with_sampler<NewSampler>(
@@ -172,7 +189,7 @@ where
             let sampler = self
                 .sampler
                 .take()
-                .expect("ChatResponseBuilder cannot be turned into a future twice");
+                .expect("TextCompletionBuilder cannot be turned into a future twice");
             let (mut tx, rx) = futures_channel::mpsc::unbounded();
             let (result_tx, result_rx) = futures_channel::oneshot::channel();
             self.queued_tokens = Some(rx);
@@ -274,11 +291,11 @@ where
             let sampler = self
                 .sampler
                 .take()
-                .expect("ChatResponseBuilder cannot be turned into a future twice");
+                .expect("TextCompletionBuilder cannot be turned into a future twice");
             let constraints = self
                 .constraints
                 .take()
-                .expect("ChatResponseBuilder cannot be turned into a future twice");
+                .expect("TextCompletionBuilder cannot be turned into a future twice");
             let (mut tx, rx) = futures_channel::mpsc::unbounded();
             let (result_tx, result_rx) = futures_channel::oneshot::channel();
             self.queued_tokens = Some(rx);

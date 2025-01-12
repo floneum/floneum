@@ -3,7 +3,7 @@ use std::sync::{Arc, RwLock};
 use crate::{model::LlamaModelError, session::LlamaSessionLoadingError, Llama, LlamaSession};
 use kalosm_common::accelerated_device_if_available;
 use kalosm_language_model::{
-    ChatMessage, ChatModel, ChatSessionImpl, CreateChatSession, CreateTextCompletionSession,
+    ChatMessage, ChatModel, ChatSession, CreateChatSession, CreateTextCompletionSession,
     MessageType, StructuredChatModel, StructuredTextCompletionModel, TextCompletionModel,
 };
 use kalosm_sample::{CreateParserState, Parser};
@@ -142,7 +142,7 @@ pub struct LlamaChatSession {
     session: LlamaSession,
 }
 
-impl ChatSessionImpl for LlamaChatSession {
+impl ChatSession for LlamaChatSession {
     type Error = LlamaSessionLoadingError;
 
     fn write_to(&self, into: &mut Vec<u8>) -> Result<(), Self::Error> {

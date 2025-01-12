@@ -283,6 +283,7 @@ impl LlamaModel {
             stop_on,
             mut sampler,
             session,
+            max_tokens,
         } = settings;
 
         let mut session = session
@@ -317,9 +318,10 @@ impl LlamaModel {
         let stop_on_lowercase = stop_on.as_ref().map(|s| s.to_lowercase());
         let stop_on_lowercase = stop_on_lowercase.as_deref();
         let stop_token = self.model.config.stop_token;
+        let mut tokens_generated = 0;
         let mut logit_probs = Vec::new();
 
-        'generate: while !finished.is_closed() {
+        'generate: while !finished.is_closed() && tokens_generated < max_tokens {
             let new_token = text_stream
                 .sample_token(&mut sampler, logits, stop_on.as_deref())
                 .map_err(LlamaModelError::TokenOutputStreamError)?;
@@ -331,6 +333,7 @@ impl LlamaModel {
                 .next_token(new_token)
                 .map_err(LlamaModelError::TokenOutputStreamError)?
             {
+                tokens_generated += 1;
                 if let Some(stop_on) = stop_on_lowercase {
                     let lowercase = new_text.to_lowercase();
 

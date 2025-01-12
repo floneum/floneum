@@ -16,7 +16,7 @@ pub trait CreateChatSession {
     type Error: Send + Sync + 'static;
 
     /// The type of chat session.
-    type ChatSession: ChatSessionImpl;
+    type ChatSession: ChatSession;
 
     /// Create a new chat session for this model.
     fn new_chat_session(&self) -> Result<Self::ChatSession, Self::Error>;
@@ -47,7 +47,7 @@ pub trait StructuredChatModel<Constraints: ModelConstraints, Sampler = Generatio
     ) -> impl Future<Output = Result<Constraints::Output, Self::Error>> + Send;
 }
 
-pub trait CreateDefaultConstraintsForType<T>:
+pub trait CreateDefaultChatConstraintsForType<T>:
     StructuredChatModel<Self::DefaultConstraints>
 {
     type DefaultConstraints: ModelConstraints;
@@ -55,7 +55,7 @@ pub trait CreateDefaultConstraintsForType<T>:
     fn create_default_constraints() -> Self::DefaultConstraints;
 }
 
-pub trait ChatSessionImpl {
+pub trait ChatSession {
     /// The type of error the chat session may return during operations.
     type Error: std::error::Error + Send + Sync + 'static;
 
@@ -97,7 +97,7 @@ pub fn prompt_input(prompt: impl Display) -> Result<String, std::io::Error> {
 /// The type of a chat message
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MessageType {
-    /// A system prompt.
+    /// A system prompt message. System prompts should always be the first message in a chat session.
     #[serde(rename = "system")]
     SystemPrompt,
     /// A user message.
@@ -117,6 +117,17 @@ pub struct ChatMessage {
 
 impl ChatMessage {
     /// Creates a new chat history item.
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// # use kalosm::language::*;
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let llm = Llama::new_chat().await.unwrap();
+    /// let chat = llm.chat();
+    /// chat.add_message(ChatMessage::new(MessageType::UserMessage, "Hello, world!"));
+    /// # }
+    /// ```
     pub fn new(role: MessageType, contents: impl ToString) -> Self {
         Self {
             role,
@@ -124,12 +135,32 @@ impl ChatMessage {
         }
     }
 
-    /// Returns the type of the item.
+    /// Returns the type of the chat message.
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// # use kalosm::language::*;
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let message = ChatMessage::new(MessageType::UserMessage, "Hello, world!"));
+    /// assert_eq!(message.role(), MessageType::UserMessage);
+    /// # }
+    /// ```
     pub fn role(&self) -> MessageType {
         self.role
     }
 
     /// Returns the content of the item.
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// # use kalosm::language::*;
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let message = ChatMessage::new(MessageType::UserMessage, "Hello, world!");
+    /// assert_eq!(message.content(), "Hello, world!");
+    /// # }
+    /// ```
     pub fn content(&self) -> &str {
         &self.content
     }

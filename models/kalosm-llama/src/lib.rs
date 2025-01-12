@@ -303,6 +303,9 @@ pub(crate) struct InferenceSettings {
 
     /// The session to use.
     session: LlamaSession,
+
+    /// The maximum number of tokens to generate.
+    max_tokens: u32,
 }
 
 impl InferenceSettings {
@@ -310,12 +313,14 @@ impl InferenceSettings {
         prompt: impl Into<String>,
         session: LlamaSession,
         sampler: std::sync::Arc<std::sync::Mutex<dyn llm_samplers::prelude::Sampler>>,
+        max_tokens: u32,
     ) -> Self {
         Self {
             prompt: prompt.into(),
             stop_on: None,
             sampler,
             session,
+            max_tokens,
         }
     }
 }
