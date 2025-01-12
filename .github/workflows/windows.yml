@@ -41,9 +41,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-env:
-  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-
 jobs:
   test:
     if: github.event.pull_request.draft == false
@@ -86,6 +83,8 @@ jobs:
 
       - name: test
         working-directory: C:/floneum.git
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           rustc -Vv
           cargo -V
