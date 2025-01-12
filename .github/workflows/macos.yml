@@ -46,6 +46,8 @@ jobs:
     if: github.event.pull_request.draft == false
     name: Mac Test Suite
     runs-on: macos-latest
+    environment:
+      name: OPENAI_API_KEY
     steps:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2

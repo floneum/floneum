@@ -48,6 +48,8 @@ jobs:
     name: (${{ matrix.target }}, ${{ matrix.cfg_release_channel }})
     env:
       CFG_RELEASE_CHANNEL: ${{ matrix.cfg_release_channel }}
+    environment: 
+      name: OPENAI_API_KEY
     strategy:
       # https://help.github.com/en/actions/getting-started-with-github-actions/about-github-actions#usage-limits
       # There's a limit of 60 concurrent jobs across all repos in the rust-lang organization.
