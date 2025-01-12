@@ -52,42 +52,7 @@ impl Clone for GenerationParameters {
 
 impl Default for GenerationParameters {
     fn default() -> Self {
-        Self {
-            temperature: 0.8,
-            eta: 0.1,
-            tau: 5.,
-            mu: 10.,
-            top_p: 1.0,
-            repetition_penalty: 1.3,
-            repetition_penalty_range: 64,
-            max_length: 128,
-            stop_on: None,
-            sampler: None,
-        }
-    }
-}
-
-impl GenerationParameters {
-    fn with_sampler<O>(&mut self, with_sampler: impl FnOnce(&mut SamplerChain) -> O) -> O {
-        let mut hash = std::collections::hash_map::DefaultHasher::new();
-        self.eta.to_le_bytes().hash(&mut hash);
-        self.mu.to_le_bytes().hash(&mut hash);
-        self.repetition_penalty.to_le_bytes().hash(&mut hash);
-        self.repetition_penalty_range.hash(&mut hash);
-        self.tau.to_le_bytes().hash(&mut hash);
-        self.top_p.to_le_bytes().hash(&mut hash);
-        self.temperature.to_le_bytes().hash(&mut hash);
-        self.max_length.hash(&mut hash);
-        let hash = hash.finish();
-        if let Some((old_hash, sampler)) = &mut self.sampler {
-            if *old_hash == hash {
-                return with_sampler(sampler);
-            }
-        }
-        let mut sampler = self.sampler();
-        let output = with_sampler(&mut sampler);
-        self.sampler = Some((hash, sampler));
-        output
+        Self::new()
     }
 }
 
@@ -114,6 +79,44 @@ impl Sampler for GenerationParameters {
 }
 
 impl GenerationParameters {
+    /// Create a new [`GenerationParameters`]
+    pub const fn new() -> Self {
+        Self {
+            temperature: 0.8,
+            eta: 0.1,
+            tau: 5.,
+            mu: 10.,
+            top_p: 1.0,
+            repetition_penalty: 1.3,
+            repetition_penalty_range: 64,
+            max_length: 128,
+            stop_on: None,
+            sampler: None,
+        }
+    }
+
+    fn with_sampler<O>(&mut self, with_sampler: impl FnOnce(&mut SamplerChain) -> O) -> O {
+        let mut hash = std::collections::hash_map::DefaultHasher::new();
+        self.eta.to_le_bytes().hash(&mut hash);
+        self.mu.to_le_bytes().hash(&mut hash);
+        self.repetition_penalty.to_le_bytes().hash(&mut hash);
+        self.repetition_penalty_range.hash(&mut hash);
+        self.tau.to_le_bytes().hash(&mut hash);
+        self.top_p.to_le_bytes().hash(&mut hash);
+        self.temperature.to_le_bytes().hash(&mut hash);
+        self.max_length.hash(&mut hash);
+        let hash = hash.finish();
+        if let Some((old_hash, sampler)) = &mut self.sampler {
+            if *old_hash == hash {
+                return with_sampler(sampler);
+            }
+        }
+        let mut sampler = self.sampler();
+        let output = with_sampler(&mut sampler);
+        self.sampler = Some((hash, sampler));
+        output
+    }
+
     /// Create a sampler chain from the generation parameters.
     pub fn sampler(&self) -> SamplerChain {
         use llm_samplers::configure::SamplerSlot;

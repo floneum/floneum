@@ -7,11 +7,10 @@ use kalosm_common::ModelLoadingProgress;
 /// # Example
 /// ```rust, no_run
 /// use kalosm::language::*;
-/// use kalosm_language_model::ModelBuilder;
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     let model = AdaEmbedderBuilder::default().start().await.unwrap();
+///     let model = Llama::builder().start().await.unwrap();
 /// }
 /// ```
 pub trait ModelBuilder {

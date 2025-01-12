@@ -28,7 +28,10 @@ use super::ClassifierProgress;
 /// for question in ["What is the author's name?", "What is the author's age?"] {
 ///     dataset.add(question, MyClass::Person).await?;
 /// }
-/// for question in ["What is the capital of France?", "What is the capital of England?"] {
+/// for question in [
+///     "What is the capital of France?",
+///     "What is the capital of England?",
+/// ] {
 ///     dataset.add(question, MyClass::Thing).await?;
 /// }
 /// # Ok::<(), anyhow::Error>(())
@@ -72,8 +75,23 @@ impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
     /// // Create a dataset for the classifier
     /// let bert = Bert::new().await?;
     /// let mut dataset = TextClassifierDatasetBuilder::<MyClass, _>::new(&bert);
-    /// dataset.extend(["What is the author's name?", "What is the author's age?"].into_iter().map(|q| (q, MyClass::Person))).await?;
-    /// dataset.extend(["What is the capital of France?", "What is the capital of England?"].into_iter().map(|q| (q, MyClass::Thing))).await?;
+    /// dataset
+    ///     .extend(
+    ///         ["What is the author's name?", "What is the author's age?"]
+    ///             .into_iter()
+    ///             .map(|q| (q, MyClass::Person)),
+    ///     )
+    ///     .await?;
+    /// dataset
+    ///     .extend(
+    ///         [
+    ///             "What is the capital of France?",
+    ///             "What is the capital of England?",
+    ///         ]
+    ///         .into_iter()
+    ///         .map(|q| (q, MyClass::Thing)),
+    ///     )
+    ///     .await?;
     /// # Ok::<(), anyhow::Error>(())
     /// # }
     /// ```
@@ -100,18 +118,13 @@ impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
 /// # Example
 ///
 /// ```rust, no_run
-/// use kalosm_learning::{Class, Classifier, ClassifierConfig};
 /// use candle_core::Device;
 /// use kalosm_language_model::Embedder;
-/// use rbert::{Bert, BertSpace};
+/// use kalosm_learning::{Class, Classifier, ClassifierConfig};
+/// use rbert::Bert;
 ///
-/// #[tokio::test]
-/// async fn simplified() -> Result<()> {
-///     use crate::{Class, Classifier, ClassifierConfig};
-///     use candle_core::Device;
-///     use kalosm_language_model::Embedder;
-///     use rbert::{Bert, BertSpace};
-///
+/// #[tokio::main]
+/// async fn main() -> Result<()> {
 ///     #[derive(Debug, Copy, Clone, PartialEq, Eq, Class)]
 ///     enum MyClass {
 ///         Person,
@@ -188,11 +201,11 @@ impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
 ///     let layers = vec![5, 8, 5];
 ///
 ///     loop {
-///         classifier = TextClassifier::<MyClass, BertSpace>::new(Classifier::new(
+///         classifier = TextClassifier::<MyClass>::new(Classifier::new(
 ///             &dev,
 ///             ClassifierConfig::new(384).layers_dims(layers.clone()),
 ///         )?);
-///         if let Err(error) = classifier.train(&dataset, &dev, 100) {
+///         if let Err(error) = classifier.train(&dataset, &dev, 100, |_| {}) {
 ///             println!("Error: {:?}", error);
 ///         } else {
 ///             break;

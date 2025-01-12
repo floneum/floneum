@@ -57,10 +57,14 @@ impl<S: Sampler + 'static> TextCompletionModel<S> for Llama {
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
     ) -> Result<(), Self::Error> {
         let (tx, rx) = tokio::sync::oneshot::channel();
-        let max_tokens = match (&sampler as &dyn Any).downcast_ref::<GenerationParameters>() {
-            Some(sampler) => sampler.max_length(),
-            None => u32::MAX,
-        };
+        let (max_tokens, stop_on) =
+            match (&sampler as &dyn Any).downcast_ref::<GenerationParameters>() {
+                Some(sampler) => (
+                    sampler.max_length(),
+                    sampler.stop_on().map(|s| s.to_string()),
+                ),
+                None => (u32::MAX, None),
+            };
         let sampler = std::sync::Arc::new(std::sync::Mutex::new(sampler));
         let on_token = Box::new(on_token);
         self.task_sender
@@ -70,6 +74,7 @@ impl<S: Sampler + 'static> TextCompletionModel<S> for Llama {
                     session.clone(),
                     sampler,
                     max_tokens,
+                    stop_on,
                 ),
                 on_token,
                 finished: tx,

@@ -10,7 +10,7 @@ use crate::{Embedder, Embedding, EmbeddingInput};
 /// use std::num::NonZeroUsize;
 ///
 /// #[tokio::main]
-/// async fn main() -> Result<()> {
+/// async fn main() -> anyhow::Result<()> {
 ///     let bert = Bert::builder()
 ///         .build()
 ///         .await?
@@ -18,7 +18,10 @@ use crate::{Embedder, Embedding, EmbeddingInput};
 ///         .cached(NonZeroUsize::new(1000).unwrap());
 ///
 ///     // Try to load the cache from the filesystem
-///     let _ = bert.load_cache("cache.bin");
+///     if let Ok(cache) = std::fs::read("cache.bin") {
+///         let cache: Vec<(EmbeddingInput, Vec<f32>)> = postcard::from_bytes(&cache)?;
+///         bert.load_cache(cache);
+///     }
 ///
 ///     let start_time = std::time::Instant::now();
 ///     let sentences = [
@@ -52,7 +55,10 @@ use crate::{Embedder, Embedding, EmbeddingInput};
 ///     println!("embedding partially cached took {:?}", start_time.elapsed());
 ///
 ///     // Save the cache to the filesystem for future use
-///     bert.save_cache("cache.bin").unwrap();
+///     let cache = bert.export_cache();
+///     let file = std::fs::File::create("cache.bin")?;
+///     let mut writer = std::io::BufWriter::new(file);
+///     postcard::to_io(&cache, &mut writer)?;
 ///
 ///     Ok(())
 /// }
@@ -100,7 +106,7 @@ impl<M: Embedder, S: BuildHasher> CachedEmbeddingModel<M, S> {
     /// # use kalosm::language::*;
     /// # use std::num::NonZeroUsize;
     /// # #[tokio::main]
-    /// # async fn main() -> Result<()> {
+    /// # async fn main() -> anyhow::Result<()> {
     /// let bert = Bert::builder()
     ///     .build()
     ///     .await?
@@ -117,10 +123,10 @@ impl<M: Embedder, S: BuildHasher> CachedEmbeddingModel<M, S> {
     /// let embeddings = bert.embed_batch(sentences).await?;
     /// println!("{:?}", embeddings);
     /// // Save the cache to the filesystem for future use
-    /// let cache = bert.export_cache().unwrap();
-    /// let file = std::fs::File::create("cache.bin").unwrap();
+    /// let cache = bert.export_cache();
+    /// let file = std::fs::File::create("cache.bin")?;
     /// let mut writer = std::io::BufWriter::new(file);
-    /// postcard::to_io(&cache, &mut writer).unwrap();
+    /// postcard::to_io(&cache, &mut writer)?;
     /// # Ok(())
     /// # }
     pub fn export_cache(&self) -> Vec<(EmbeddingInput, Vec<f32>)> {
@@ -139,7 +145,7 @@ impl<M: Embedder, S: BuildHasher> CachedEmbeddingModel<M, S> {
     /// # use kalosm::language::*;
     /// # use std::num::NonZeroUsize;
     /// # #[tokio::main]
-    /// # async fn main() -> Result<()> {
+    /// # async fn main() -> anyhow::Result<()> {
     /// let bert = Bert::builder()
     ///     .build()
     ///     .await?
@@ -147,8 +153,8 @@ impl<M: Embedder, S: BuildHasher> CachedEmbeddingModel<M, S> {
     ///     .cached(NonZeroUsize::new(1000).unwrap());
     ///
     /// // Try to load the cache from the filesystem
-    /// let cache = std::fs::read("cache.bin").unwrap();
-    /// let cache: Vec<(EmbeddingInput, Vec<f32>)> = postcard::from_bytes(&cache).unwrap();
+    /// let cache = std::fs::read("cache.bin")?;
+    /// let cache: Vec<(EmbeddingInput, Vec<f32>)> = postcard::from_bytes(&cache)?;
     /// let _ = bert.load_cache(cache);
     ///
     /// let sentences = [
@@ -253,13 +259,12 @@ pub trait EmbedderCacheExt: Embedder {
     /// # use kalosm::language::*;
     /// # use std::num::NonZeroUsize;
     /// # #[tokio::main]
-    /// # async fn main() -> Result<()> {
+    /// # async fn main(){
     /// let bert = Bert::builder()
     ///     .build()
-    ///     .await?
+    ///     .await.unwrap()
     ///     // You can call the `.cached` method on any embedder to cache the results of the embedding in a LRU cache with the given capacity.
     ///     .cached(NonZeroUsize::new(1000).unwrap());
-    /// # Ok(())
     /// # }
     fn cached(self, cache_size: NonZeroUsize) -> CachedEmbeddingModel<Self>
     where

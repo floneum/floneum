@@ -29,7 +29,14 @@ pub trait TextCompletionSession {
     ///     let mut session = llm.new_session().unwrap();
     ///
     ///     // Feed some text into the session
-    ///     llm.stream_text_with_callback(&mut prompt, "The capital of France is ", GenerationParameters::new().with_max_length(0), |_| {}).await.unwrap();
+    ///     llm.stream_text_with_callback(
+    ///         &mut session,
+    ///         "The capital of France is ",
+    ///         GenerationParameters::new().with_max_length(0),
+    ///         |_| Ok(()),
+    ///     )
+    ///     .await
+    ///     .unwrap();
     ///
     ///     // Save the session to bytes
     ///     let session_as_bytes = session.to_bytes().unwrap();
@@ -57,10 +64,21 @@ pub trait TextCompletionSession {
     /// async fn main() {
     ///     let mut llm = Llama::new().await.unwrap();
     ///     // Load a text completion session from a file
-    ///     let mut session = LlamaSession::from_bytes(std::fs::read("session.bin").unwrap().as_slice()).unwrap();
+    ///     let mut session =
+    ///         LlamaSession::from_bytes(std::fs::read("session.bin").unwrap().as_slice()).unwrap();
     ///
     ///     // Feed some more text into the session
-    ///     llm.stream_text_with_callback(&mut prompt, "The capital of France is ", GenerationParameters::new(), |token| println!("{token}")).await.unwrap();
+    ///     llm.stream_text_with_callback(
+    ///         &mut session,
+    ///         "The capital of France is ",
+    ///         GenerationParameters::new(),
+    ///         |token| {
+    ///             println!("{token}");
+    ///             Ok(())
+    ///         },
+    ///     )
+    ///     .await
+    ///     .unwrap();
     /// }
     /// ```
     fn from_bytes(bytes: &[u8]) -> Result<Self, Self::Error>
@@ -81,13 +99,30 @@ pub trait TextCompletionSession {
     ///     let mut session = llm.new_session().unwrap();
     ///
     ///     // Feed some text into the session
-    ///     llm.stream_text_with_callback(&mut prompt, "The capital of France is ", GenerationParameters::new().with_max_length(0), |_| {}).await.unwrap();
+    ///     llm.stream_text_with_callback(
+    ///         &mut session,
+    ///         "The capital of France is ",
+    ///         GenerationParameters::new().with_max_length(0),
+    ///         |_| Ok(()),
+    ///     )
+    ///     .await
+    ///     .unwrap();
     ///
     ///     // Clone the session
     ///     let cloned_session = session.try_clone().unwrap();
     ///
     ///     // Feed some more text into the cloned session
-    ///     llm.stream_text_with_callback(&mut prompt, "The capital of France is ", GenerationParameters::new(), |token| println!("{token}")).await.unwrap();
+    ///     llm.stream_text_with_callback(
+    ///         &mut session,
+    ///         "The capital of France is ",
+    ///         GenerationParameters::new(),
+    ///         |token| {
+    ///             println!("{token}");
+    ///             Ok(())
+    ///         },
+    ///     )
+    ///     .await
+    ///     .unwrap();
     /// }
     /// ```
     fn try_clone(&self) -> Result<Self, Self::Error>
@@ -133,7 +168,6 @@ impl<P: Parser> ModelConstraints for P {
 ///
 /// ```rust, no_run
 /// use kalosm::language::*;
-/// use std::io::Write;
 ///
 /// #[tokio::main]
 /// async fn main() {
@@ -193,7 +227,7 @@ pub trait CreateDefaultCompletionConstraintsForType<T>:
 ///     // Create a new session for the model
 ///     let mut session = llm.new_session().unwrap();
 ///     // Feed some text into the session using the raw text completion api that accepts a session, prompt, sampler, and on token callback
-///     llm.stream_text_with_callback(&mut session, "The capital of France is ", GenerationParameters::new(), |token| println!("{token}")).await.unwrap();
+///     llm.stream_text_with_callback(&mut session, "The capital of France is ", GenerationParameters::new(), |token| {println!("{token}"); Ok(())}).await.unwrap();
 /// }
 /// ```
 pub trait TextCompletionModel<Sampler = GenerationParameters>: CreateTextCompletionSession {
@@ -228,7 +262,7 @@ pub trait TextCompletionModel<Sampler = GenerationParameters>: CreateTextComplet
 ///     // any parsers that implements the `Parse` trait.
 ///     let parser = i32::new_parser();
 ///     // Feed some text into the session using the raw structured text completion api that accepts a session, prompt, sampler, and on token callback
-///     llm.stream_text_with_callback_and_parser(&mut session, "5 * 5 = ", GenerationParameters::new(), parser, |token| println!("{token}")).await.unwrap();
+///     llm.stream_text_with_callback_and_parser(&mut session, "5 * 5 = ", GenerationParameters::new(), parser, |token| {println!("{token}"); Ok(())}).await.unwrap();
 /// }
 /// ```
 pub trait StructuredTextCompletionModel<

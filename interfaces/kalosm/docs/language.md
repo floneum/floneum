@@ -38,7 +38,7 @@ async fn main() {
 
 ### Tasks
 
-You can define a Task with a description then run it with an input. The task will cache the description to repeated calls faster. Tasks work with both chat and non-chat models, but they tend to perform significantly better with chat models.
+You can define a Task with a description then run it with an input. The task will cache the description to repeated calls faster. Tasks work with chat models.
 
 ```rust, no_run
 # use kalosm::language::*;
@@ -47,8 +47,8 @@ You can define a Task with a description then run it with an input. The task wil
 // Create a new model
 let model = Llama::new_chat().await.unwrap();
 // Create a new task that summarizes text
-let task = Task::new("You take a long description and summarize it into a single short sentence");
-let mut output = task.run("You can define a Task with a description then run it with an input. The task will cache the description to repeated calls faster. Tasks work with both chat and non-chat models, but they tend to perform significantly better with chat models.", &model);
+let task = model.task("You take a long description and summarize it into a single short sentence");
+let mut output = task.run("You can define a Task with a description then run it with an input. The task will cache the description to repeated calls faster. Tasks work with chat models.");
 // Then stream the output to the console
 output.to_std_out().await.unwrap();
 # }
@@ -84,9 +84,8 @@ async fn main() {
     // Then create a parser for your data. Any type that implements the `Parse` trait has the `new_parser` method
     let parser = Pet::new_parser();
     // Then create a task with the parser as constraints
-    let task = Task::builder("You generate realistic JSON placeholders")
-        .with_constraints(parser)
-        .build();
+    let task = model.task("You generate realistic JSON placeholders")
+        .with_constraints(parser);
     // Finally, run the task
     let pet: Pet = task.run("Generate a pet in the form {\"name\": \"Pet name\", \"age\": 0, \"description\": \"Pet description\"}", &model).await.unwrap();
     println!("{pet:?}");

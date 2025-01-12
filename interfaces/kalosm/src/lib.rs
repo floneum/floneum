@@ -11,10 +11,16 @@ pub mod language {
     pub use kalosm_common::{accelerated_device_if_available, FileSource};
     pub use kalosm_language::context::*;
     pub use kalosm_language::kalosm_language_model::{
-        ChatModel as _, ChatModelExt as _, Embedder as _, EmbedderExt as _,
-        TextCompletionModel as _, TextCompletionModelExt as _, *,
+        ChatModel as _, ChatModelExt as _, ChatSession as _, CreateChatSession as _,
+        CreateDefaultChatConstraintsForType as _, CreateDefaultCompletionConstraintsForType as _,
+        CreateTextCompletionSession as _, Embedder as _, EmbedderCacheExt as _, EmbedderExt as _,
+        IntoChatMessage as _, IntoEmbedding as _, ModelBuilder as _, ModelConstraints as _,
+        StreamExt as _, StructuredChatModel as _, StructuredTextCompletionModel as _,
+        TextCompletionModel as _, TextCompletionModelExt as _, TextCompletionSession as _, *,
     };
-    pub use kalosm_language::kalosm_llama::{Llama, LlamaBuilder, LlamaSession, LlamaSource};
+    pub use kalosm_language::kalosm_llama::{
+        Llama, LlamaBuilder, LlamaChatSession, LlamaSession, LlamaSource,
+    };
     pub use kalosm_language::kalosm_sample::{self, *};
     pub use kalosm_language::prelude::Html;
     pub use kalosm_language::rbert::{Bert, BertBuilder, BertSource};

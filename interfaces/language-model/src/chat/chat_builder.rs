@@ -102,9 +102,10 @@ impl<M: CreateChatSession> Chat<M> {
     /// # use kalosm::language::*;
     /// # #[tokio::main]
     /// # async fn main() {
-    /// let mut chat = Chat::builder(Llama::new_chat().await.unwrap())
-    ///     .with_system_prompt("The assistant will act like a pirate.")
-    ///     .build();
+    /// let model = Llama::new_chat().await.unwrap();
+    /// let mut chat = model
+    ///     .chat()
+    ///     .with_system_prompt("The assistant will act like a pirate.");
     /// # }
     /// ```
     pub fn with_system_prompt(mut self, system_prompt: impl ToString) -> Self {
@@ -133,16 +134,14 @@ impl<M: CreateChatSession> Chat<M> {
     /// # Example
     /// ```rust, no_run
     /// # use kalosm::language::*;
-    /// # use kalosm_llama::LlamaSession;
     /// # #[tokio::main]
     /// # async fn main() {
     /// let model = Llama::new_chat().await.unwrap();
     /// // Load the model session from the filesystem
-    /// let session = LlamaSession::load_from(std::path::PathBuf::from("./chat.llama")).unwrap();
+    /// let session =
+    ///     LlamaChatSession::from_bytes(std::fs::read("chat.llama").unwrap().as_slice()).unwrap();
     /// // Start the chat session with the cached session
-    /// let mut chat = Chat::builder(Llama::new_chat().await.unwrap())
-    ///     .with_session(session)
-    ///     .build();
+    /// let mut chat = model.chat().with_session(session);
     /// # }
     /// ```
     pub fn with_session(mut self, session: M::ChatSession) -> Self {
@@ -166,7 +165,8 @@ impl<M: CreateChatSession> Chat<M> {
     /// # use kalosm::language::*;
     /// # #[tokio::main]
     /// # async fn main() {
-    /// let mut chat = Chat::new(Llama::new_chat().await.unwrap());
+    /// let model = Llama::new_chat().await.unwrap();
+    /// let mut chat = model.chat();
     /// let prompt = prompt_input("\n> ").unwrap();
     ///
     /// // You can add the user message to the chat session with the `add_message` method
@@ -197,7 +197,8 @@ impl<M: CreateChatSession> Chat<M> {
     /// # use kalosm::language::*;
     /// # #[tokio::main]
     /// # async fn main() {
-    /// let mut chat = Chat::new(Llama::new_chat().await.unwrap());
+    /// let model = Llama::new_chat().await.unwrap();
+    /// let mut chat = model.chat();
     /// let prompt = prompt_input("\n> ").unwrap();
     ///
     /// // You can add the user message to the chat session with the `add_message` method
@@ -250,10 +251,11 @@ impl<M: CreateChatSession> Chat<M> {
     /// # use kalosm::language::*;
     /// # #[tokio::main]
     /// # async fn main() {
-    /// let mut chat = Chat::new(Llama::new_chat().await.unwrap());
-    /// let save_path = std::path::PathBuf::from("./chat.llama");
-    /// let session = chat.session().await.unwrap();
-    /// session.save_session(&save_path).await.unwrap();
+    /// let model = Llama::new_chat().await.unwrap();
+    /// let mut chat = model.chat();
+    /// let session = chat.session().unwrap();
+    /// let bytes = session.to_bytes().unwrap();
+    /// std::fs::write("./chat.llama", bytes).unwrap();
     /// # }
     /// ```
     ///
@@ -262,11 +264,15 @@ impl<M: CreateChatSession> Chat<M> {
     /// # use kalosm::language::*;
     /// # #[tokio::main]
     /// # async fn main() {
-    /// let mut chat = Chat::new(Llama::new_chat().await.unwrap());
+    /// let model = Llama::new_chat().await.unwrap();
+    /// let mut chat = model.chat();
     /// // Add a message to the chat history
-    /// chat.add_message("Hello, world!").to_std_out().await.unwrap();
+    /// chat.add_message("Hello, world!")
+    ///     .to_std_out()
+    ///     .await
+    ///     .unwrap();
     /// // Get the chat session
-    /// let session = chat.session().await.unwrap();
+    /// let session = chat.session().unwrap();
     /// // Get the chat history
     /// let history = session.history();
     /// println!("{:?}", history);
@@ -401,18 +407,19 @@ impl<'a, M: CreateChatSession> DerefMut for MaybeOwnedSession<'a, M> {
 /// # use kalosm::language::*;
 /// # #[tokio::main]
 /// # async fn main() {
-/// let mut chat = Chat::builder(Llama::new_chat().await.unwrap())
-///     .with_system_prompt("The assistant will act like a pirate.")
-///     .build();
+/// let model = Llama::new_chat().await.unwrap();
+/// let mut chat = model
+///     .chat()
+///     .with_system_prompt("The first prime number larger than 4");
 ///
 /// // Add a message to the chat session with the given message
 /// let mut response = chat.add_message(prompt_input("\n> ").unwrap());
 /// // Before you start streaming the response, you can add constraints to the response
-/// let response = response.with_constraints(String::new_parser());
+/// let mut response = response.with_constraints(i32::new_parser());
 /// // Once you start streaming the response, the generation starts
 /// response.to_std_out().await.unwrap();
 /// // The response can be awaited to get the final (typed) result
-/// let all_text: String = response.await.unwrap();
+/// let all_text: i32 = response.await.unwrap();
 /// println!("{all_text}");
 /// # }
 /// ```
@@ -442,14 +449,16 @@ impl<'a, M: CreateChatSession, Constraints, Sampler>
     /// # async fn main() {
     /// let model = Llama::new_chat().await.unwrap();
     /// // Create constraints that parses Yes! and then stops on the end of the assistant's response
-    /// let constraints = LiteralParser::new("Yes!")
-    ///     .then(model.default_assistant_constraints().unwrap());
-    /// // Create a chat session with the model and the constraints
-    /// let mut chat = Chat::new(model);
+    /// let constraints = LiteralParser::new("Yes!").then(model.default_assistant_constraints());
+    /// // Create a chat session with the model
+    /// let mut chat = model.chat();
     ///
     /// // Chat with the user
     /// loop {
-    ///     let mut output_stream = chat.add_message(prompt_input("\n> ").unwrap()).with_constraints(constraints.clone());
+    ///     // Set the constraints for the response
+    ///     let mut output_stream = chat
+    ///         .add_message(prompt_input("\n> ").unwrap())
+    ///         .with_constraints(constraints.clone());
     ///     output_stream.to_std_out().await.unwrap();
     /// }
     /// # }
@@ -468,6 +477,36 @@ impl<'a, M: CreateChatSession, Constraints, Sampler>
         }
     }
 
+    /// Constrains the model's response to the the default parser for the given type. This can be used to make the model return a specific type.
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// # use kalosm::language::*;
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// #[derive(Schema, Parse, Clone, Debug)]
+    /// struct Pet {
+    ///     name: String,
+    ///     age: u32,
+    ///     description: String,
+    /// }
+    ///
+    /// // First create a model
+    /// let model = Llama::new_chat().await.unwrap();
+    /// // Create a chat session
+    /// let mut chat = model.chat().with_system_prompt(format!(
+    ///     "The assistant turns descriptions of pets into JSON in this format {}",
+    ///     Pet::schema()
+    /// ));
+    /// // Finally, add a message and make it typed to get the parsed response
+    /// let pet: Pet = chat
+    ///     .add_message("JSON for an adorable dog named ruffles")
+    ///     .typed()
+    ///     .await
+    ///     .unwrap();
+    /// println!("{pet:?}");
+    /// # }
+    /// ```
     pub fn typed<T>(
         self,
     ) -> ChatResponseBuilder<
@@ -492,14 +531,17 @@ impl<'a, M: CreateChatSession, Constraints, Sampler>
     /// # async fn main() {
     /// let model = Llama::new_chat().await.unwrap();
     /// // Create the sampler to use for the chat session
-    /// let sampler = GenerationParameters::default().sampler();
+    /// let sampler = GenerationParameters::default();
     ///
-    /// // Create a chat session with the model and the constraints
-    /// let mut chat = Chat::new(model);
+    /// // Create a chat session with the model
+    /// let mut chat = model.chat();
     ///
     /// // Chat with the user
     /// loop {
-    ///     let mut output_stream = chat.add_message(prompt_input("\n> ").unwrap()).with_sampler(sampler);
+    ///     // Stream a response with the sampler
+    ///     let mut output_stream = chat
+    ///         .add_message(prompt_input("\n> ").unwrap())
+    ///         .with_sampler(sampler.clone());
     ///     output_stream.to_std_out().await.unwrap();
     /// }
     /// # }

@@ -27,7 +27,10 @@ use syn::{DataEnum, Fields, FieldsNamed, LitInt, Path, TypePath, Variant};
 ///
 /// let parser = Person::new_parser();
 /// let state = parser.create_parser_state();
-/// let person = parser.parse(&state, b"{ \"name\": \"John\", \"age\": 30 } ").unwrap().unwrap_finished();
+/// let person = parser
+///     .parse(&state, b"{ \"name\": \"John\", \"age\": 30 } ")
+///     .unwrap()
+///     .unwrap_finished();
 /// assert_eq!(person.name, "John");
 /// assert_eq!(person.age, 30);
 /// ```
@@ -59,8 +62,19 @@ use syn::{DataEnum, Fields, FieldsNamed, LitInt, Path, TypePath, Variant};
 ///
 /// let parser = Action::new_parser();
 /// let state = parser.create_parser_state();
-/// let action = parser.parse(&state, b"{ \"type\": \"Search\", \"data\": { \"query\": \"my query\" } } ").unwrap().unwrap_finished();
-/// assert_eq!(action, Action::Search { query: "my query".to_string() });
+/// let action = parser
+///     .parse(
+///         &state,
+///         b"{ \"type\": \"Search\", \"data\": { \"query\": \"my query\" } } ",
+///     )
+///     .unwrap()
+///     .unwrap_finished();
+/// assert_eq!(
+///     action,
+///     Action::Search {
+///         query: "my query".to_string()
+///     }
+/// );
 /// ```
 ///
 /// ## Attributes

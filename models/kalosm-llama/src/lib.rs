@@ -314,10 +314,11 @@ impl InferenceSettings {
         session: LlamaSession,
         sampler: std::sync::Arc<std::sync::Mutex<dyn llm_samplers::prelude::Sampler>>,
         max_tokens: u32,
+        stop_on: Option<String>,
     ) -> Self {
         Self {
             prompt: prompt.into(),
-            stop_on: None,
+            stop_on,
             sampler,
             session,
             max_tokens,

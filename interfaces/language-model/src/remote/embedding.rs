@@ -12,6 +12,13 @@ pub struct OpenAICompatibleEmbeddingModel {
     client: OpenAICompatibleClient,
 }
 
+impl OpenAICompatibleEmbeddingModel {
+    /// Create a new builder for [`OpenAICompatibleEmbeddingModel`]
+    pub fn builder() -> OpenAICompatibleEmbeddingModelBuilder<false> {
+        OpenAICompatibleEmbeddingModelBuilder::new()
+    }
+}
+
 /// A builder for an openai compatible embedding model.
 #[derive(Debug, Default)]
 pub struct OpenAICompatibleEmbeddingModelBuilder<const WITH_NAME: bool> {

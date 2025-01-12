@@ -17,7 +17,7 @@ use super::MessageType;
 ///
 /// # Example
 /// ```rust, no_run
-/// use kalosm_language::prelude::*;
+/// use kalosm::language::*;
 ///
 /// #[tokio::main]
 /// async fn main() {
@@ -109,7 +109,7 @@ impl<M: CreateChatSession, Constraints: Clone> Task<M, Constraints> {
     ///
     /// # Example
     /// ```rust, no_run
-    /// use kalosm_language::prelude::*;
+    /// use kalosm::language::*;
     ///
     /// #[tokio::main]
     /// async fn main() {

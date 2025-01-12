@@ -11,7 +11,7 @@
 //! async fn main() {
 //!     let mut model = Llama::phi_3().await.unwrap();
 //!     let prompt = "The capital of France is ";
-//!     let mut result = model.stream_text(prompt).await.unwrap();
+//!     let mut result = model.complete(prompt);
 //!
 //!     print!("{prompt}");
 //!     while let Some(token) = result.next().await {
@@ -36,5 +36,5 @@ mod model;
 pub use model::*;
 mod builder;
 pub use builder::*;
-pub mod chat;
+mod chat;
 pub use chat::*;

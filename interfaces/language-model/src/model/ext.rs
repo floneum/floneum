@@ -16,13 +16,14 @@ use std::sync::OnceLock;
 use std::sync::RwLock;
 use std::task::Poll;
 
+use super::CreateDefaultCompletionConstraintsForType;
 use super::CreateTextCompletionSession;
 use super::StructuredTextCompletionModel;
 use super::TextCompletionModel;
 
 #[doc = include_str!("../../docs/complete.md")]
 pub trait TextCompletionModelExt: CreateTextCompletionSession {
-    ///
+    /// Create a new text completion builder for this model. See [`TextCompletionBuilder`] for more details.
     fn complete(&self, text: impl ToString) -> TextCompletionBuilder<Self>
     where
         Self: Clone,
@@ -56,10 +57,7 @@ impl<M: CreateTextCompletionSession> TextCompletionModelExt for M {}
 ///     let mut llm = Llama::new().await.unwrap();
 ///     let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
 ///     print!("{prompt}");
-///     let mut completion = llm
-///         .complete(prompt)
-///         .await
-///         .unwrap();
+///     let mut completion = llm.complete(prompt).await.unwrap();
 ///     println!("{completion}");
 /// }
 /// ```
@@ -75,8 +73,7 @@ impl<M: CreateTextCompletionSession> TextCompletionModelExt for M {}
 ///     let mut llm = Llama::new().await.unwrap();
 ///     let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
 ///     print!("{prompt}");
-///     let mut completion = llm
-///         .complete(prompt);
+///     let mut completion = llm.complete(prompt);
 ///     while let Some(token) = completion.next().await {
 ///         print!("{token}");
 ///         std::io::stdout().flush().unwrap();
@@ -141,7 +138,45 @@ impl<M: CreateTextCompletionSession, Constraints, Sampler>
         }
     }
 
-    /// Sets the sampler to use for generating responses. The sampler determines how tokens are choosen from the probability distribution
+    /// Constrains the model's response to the the default parser for the given type. This can be used to make the model return a specific type.
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// # use kalosm::language::*;
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// #[derive(Parse, Clone, Debug)]
+    /// struct Pet {
+    ///     name: String,
+    ///     age: u32,
+    ///     description: String,
+    /// }
+    ///
+    /// // First create a model
+    /// let model = Llama::new().await.unwrap();
+    /// // Create a text completion stream with the typed response
+    /// let description = model
+    ///     .complete("JSON for an adorable dog named ruffles: ")
+    ///     .typed();
+    /// // Finally, await the stream to get the parsed response
+    /// let pet: Pet = description.await.unwrap();
+    /// println!("{pet:?}");
+    /// # }
+    /// ```
+    pub fn typed<T>(
+        self,
+    ) -> TextCompletionBuilder<
+        M,
+        <M as CreateDefaultCompletionConstraintsForType<T>>::DefaultConstraints,
+        Sampler,
+    >
+    where
+        M: CreateDefaultCompletionConstraintsForType<T>,
+    {
+        self.with_constraints(M::create_default_constraints())
+    }
+
+    /// Sets the sampler to use for generating responses. The sampler determines how tokens are chosen from the probability distribution
     /// the model generates. They can be used to make the model more or less predictable and prevent repetition.
     ///
     /// # Example
@@ -153,7 +188,9 @@ impl<M: CreateTextCompletionSession, Constraints, Sampler>
     /// // Create the sampler to use for the text completion
     /// let sampler = GenerationParameters::default().sampler();
     /// // Create a completion request with the sampler
-    /// let mut stream = model.complete("Here is a list of 5 primes: ").with_sampler(sampler);
+    /// let mut stream = model
+    ///     .complete("Here is a list of 5 primes: ")
+    ///     .with_sampler(sampler);
     /// stream.to_std_out().await.unwrap();
     /// # }
     /// ```

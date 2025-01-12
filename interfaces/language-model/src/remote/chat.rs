@@ -238,6 +238,7 @@ impl ChatModel<GenerationParameters> for OpenAICompatibleChatModel {
                     "temperature": sampler.temperature,
                     "frequency_penalty": sampler.repetition_penalty,
                     "max_completion_tokens": sampler.max_length,
+                    "stop": sampler.stop_on.clone(),
                 }))
                 .eventsource()
                 .unwrap();
@@ -396,6 +397,7 @@ where
                     "temperature": sampler.temperature,
                     "frequency_penalty": sampler.repetition_penalty,
                     "max_completion_tokens": sampler.max_length,
+                    "stop": sampler.stop_on.clone(),
                     "response_format": {
                         "type": "json_schema",
                         "json_schema": {

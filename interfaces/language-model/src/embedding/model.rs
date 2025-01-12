@@ -10,8 +10,8 @@ use crate::embedding::Embedding;
 /// # Example
 ///
 /// ```rust, no_run
-/// use kalosm_language_model::Embedder;
 /// use kalosm::language::*;
+/// use kalosm_language_model::Embedder;
 ///
 /// #[tokio::main]
 /// async fn main() {
