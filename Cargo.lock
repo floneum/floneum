@@ -1047,7 +1047,7 @@ dependencies = [
  "parquet",
  "rand 0.8.5",
  "thiserror 1.0.69",
- "tokenizers",
+ "tokenizers 0.19.1",
 ]
 
 [[package]]
@@ -3952,7 +3952,7 @@ dependencies = [
  "serde",
  "surrealdb",
  "thiserror 2.0.9",
- "tokenizers",
+ "tokenizers 0.21.0",
  "tokio",
  "tracing",
  "tracing-subscriber 0.2.25",
@@ -4024,7 +4024,7 @@ dependencies = [
  "tempfile",
  "texting_robots",
  "thiserror 2.0.9",
- "tokenizers",
+ "tokenizers 0.21.0",
  "tokio",
  "tokio-util",
  "tracing",
@@ -4057,7 +4057,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.9",
- "tokenizers",
+ "tokenizers 0.21.0",
  "tokio",
  "tracing",
 ]
@@ -4113,7 +4113,7 @@ dependencies = [
  "rayon",
  "safetensors",
  "thiserror 2.0.9",
- "tokenizers",
+ "tokenizers 0.21.0",
  "tokio",
  "tracing",
  "tracing-subscriber 0.3.19",
@@ -4136,7 +4136,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.9",
- "tokenizers",
+ "tokenizers 0.21.0",
  "tokio",
  "tracing",
 ]
@@ -4192,7 +4192,7 @@ dependencies = [
  "rodio",
  "rwhisper",
  "serde_json",
- "tokenizers",
+ "tokenizers 0.21.0",
  "tokio",
  "tracing",
  "voice_activity_detector",
@@ -6432,7 +6432,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.9",
- "tokenizers",
+ "tokenizers 0.21.0",
  "tokio",
  "tracing",
 ]
@@ -7002,7 +7002,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.9",
- "tokenizers",
+ "tokenizers 0.21.0",
  "tokio",
  "tracing",
 ]
@@ -7025,7 +7025,7 @@ dependencies = [
  "kalosm-common",
  "kalosm-language-model",
  "kalosm-streams",
- "tokenizers",
+ "tokenizers 0.21.0",
  "tokio",
  "tracing",
 ]
@@ -8272,6 +8272,37 @@ name = "tokenizers"
 version = "0.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e500fad1dd3af3d626327e6a3fe5050e664a6eaa4708b8ca92f1794aaf73e6fd"
+dependencies = [
+ "aho-corasick",
+ "derive_builder",
+ "esaxx-rs",
+ "getrandom 0.2.15",
+ "itertools 0.12.1",
+ "lazy_static",
+ "log",
+ "macro_rules_attribute",
+ "monostate",
+ "onig",
+ "paste",
+ "rand 0.8.5",
+ "rayon",
+ "rayon-cond",
+ "regex",
+ "regex-syntax 0.8.5",
+ "serde",
+ "serde_json",
+ "spm_precompiled",
+ "thiserror 1.0.69",
+ "unicode-normalization-alignments",
+ "unicode-segmentation",
+ "unicode_categories",
+]
+
+[[package]]
+name = "tokenizers"
+version = "0.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ecededfed68a69bc657e486510089e255e53c3d38cc7d4d59c8742668ca2cae"
 dependencies = [
  "aho-corasick",
  "derive_builder",
