@@ -137,7 +137,7 @@ impl LlamaModel {
                             .metadata
                             .get("tokenizer.ggml.add_bos_token")
                             .and_then(|v| v.to_bool().ok());
-                        let config = get_pre_tokenizer(&pre, add_bos_token);
+                        let config = get_pre_tokenizer(pre, add_bos_token);
 
                         let tokens: Result<Vec<_>, _> = model
                             .metadata
@@ -145,7 +145,7 @@ impl LlamaModel {
                             .ok_or(LlamaSourceError::NoTokenizer)?
                             .to_vec()
                             .map_err(|_| LlamaSourceError::NoTokenizer)?
-                            .into_iter()
+                            .iter()
                             .map(|v| v.to_string().map(|s| s.to_string()))
                             .collect();
                         let tokens = tokens.map_err(|_| LlamaSourceError::NoTokenizer)?;
@@ -155,7 +155,7 @@ impl LlamaModel {
                             .ok_or(LlamaSourceError::NoTokenizer)?
                             .to_vec()
                             .map_err(|_| LlamaSourceError::NoTokenizer)?
-                            .into_iter()
+                            .iter()
                             .map(|v| {
                                 v.to_i32()
                                     .map(|v| v as u8)
@@ -181,7 +181,7 @@ impl LlamaModel {
                         let merges: Result<Vec<_>, _> = merges
                             .to_vec()
                             .map_err(|_| LlamaSourceError::NoTokenizer)?
-                            .into_iter()
+                            .iter()
                             .map(|v| {
                                 v.to_string()
                                     .map_err(|_| LlamaSourceError::NoTokenizer)

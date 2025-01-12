@@ -58,32 +58,30 @@ impl CreateChatSession for Llama {
 }
 
 impl<S: Sampler + 'static> ChatModel<S> for Llama {
-    fn add_messages_with_callback(
+    async fn add_messages_with_callback(
         &self,
         session: &mut Self::ChatSession,
         messages: &[ChatMessage],
         sampler: S,
         mut on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
-        async move {
-            let new_text = get_new_tokens(messages, session, self)?;
-            let model_response = Arc::new(RwLock::new(String::new()));
-            let on_token = {
-                let model_response = model_response.clone();
-                move |token: String| {
-                    let mut model_response = model_response.write().unwrap();
-                    *model_response += &token;
-                    on_token(token)
-                }
-            };
-            self.stream_text_with_callback(&mut session.session, &new_text, sampler, on_token)
-                .await?;
-            session.history.push(ChatMessage::new(
-                MessageType::ModelAnswer,
-                model_response.read().unwrap().clone(),
-            ));
-            Ok(())
-        }
+    ) -> Result<(), Self::Error> {
+        let new_text = get_new_tokens(messages, session, self)?;
+        let model_response = Arc::new(RwLock::new(String::new()));
+        let on_token = {
+            let model_response = model_response.clone();
+            move |token: String| {
+                let mut model_response = model_response.write().unwrap();
+                *model_response += &token;
+                on_token(token)
+            }
+        };
+        self.stream_text_with_callback(&mut session.session, &new_text, sampler, on_token)
+            .await?;
+        session.history.push(ChatMessage::new(
+            MessageType::ModelAnswer,
+            model_response.read().unwrap().clone(),
+        ));
+        Ok(())
     }
 }
 
@@ -93,45 +91,38 @@ where
     Constraints: CreateParserState + Send + 'static,
     S: Sampler + 'static,
 {
-    fn add_message_with_callback_and_constraints(
+    async fn add_message_with_callback_and_constraints(
         &self,
         session: &mut Self::ChatSession,
         messages: &[ChatMessage],
         sampler: S,
         constraints: Constraints,
         mut on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> impl std::future::Future<
-        Output = Result<
-            <Constraints as kalosm_language_model::ModelConstraints>::Output,
-            Self::Error,
-        >,
-    > + Send {
-        async move {
-            let new_text = get_new_tokens(messages, session, self)?;
-            let model_response = Arc::new(RwLock::new(String::new()));
-            let on_token = {
-                let model_response = model_response.clone();
-                move |token: String| {
-                    let mut model_response = model_response.write().unwrap();
-                    *model_response += &token;
-                    on_token(token)
-                }
-            };
-            let result = self
-                .stream_text_with_callback_and_parser(
-                    &mut session.session,
-                    &new_text,
-                    sampler,
-                    constraints,
-                    on_token,
-                )
-                .await?;
-            session.history.push(ChatMessage::new(
-                MessageType::ModelAnswer,
-                model_response.read().unwrap().clone(),
-            ));
-            Ok(result)
-        }
+    ) -> Result<<Constraints as kalosm_language_model::ModelConstraints>::Output, Self::Error> {
+        let new_text = get_new_tokens(messages, session, self)?;
+        let model_response = Arc::new(RwLock::new(String::new()));
+        let on_token = {
+            let model_response = model_response.clone();
+            move |token: String| {
+                let mut model_response = model_response.write().unwrap();
+                *model_response += &token;
+                on_token(token)
+            }
+        };
+        let result = self
+            .stream_text_with_callback_and_parser(
+                &mut session.session,
+                &new_text,
+                sampler,
+                constraints,
+                on_token,
+            )
+            .await?;
+        session.history.push(ChatMessage::new(
+            MessageType::ModelAnswer,
+            model_response.read().unwrap().clone(),
+        ));
+        Ok(result)
     }
 }
 

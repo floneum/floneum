@@ -214,80 +214,77 @@ struct OpenAICompatibleChatResponseChoiceMessage {
 }
 
 impl ChatModel<GenerationParameters> for OpenAICompatibleChatModel {
-    fn add_messages_with_callback(
+    async fn add_messages_with_callback(
         &self,
         session: &mut Self::ChatSession,
         messages: &[crate::ChatMessage],
         sampler: GenerationParameters,
         mut on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
-        async move {
-            let myself = &*self.inner;
-            let api_key = myself.client.resolve_api_key()?;
-            let mut event_source = myself
-                .client
-                .reqwest_client
-                .post(format!("{}/chat/completions", myself.client.base_url))
-                .header("Content-Type", "application/json")
-                .header("Authorization", format!("Bearer {}", api_key))
-                .json(&serde_json::json!({
-                    "messages": messages,
-                    "model": myself.model,
-                    "stream": true,
-                    "top_p": sampler.top_p,
-                    "temperature": sampler.temperature,
-                    "frequency_penalty": sampler.repetition_penalty,
-                    "max_completion_tokens": sampler.max_length,
-                    "stop": sampler.stop_on.clone(),
-                }))
-                .eventsource()
-                .unwrap();
+    ) -> Result<(), Self::Error> {
+        let myself = &*self.inner;
+        let api_key = myself.client.resolve_api_key()?;
+        let mut event_source = myself
+            .client
+            .reqwest_client
+            .post(format!("{}/chat/completions", myself.client.base_url))
+            .header("Content-Type", "application/json")
+            .header("Authorization", format!("Bearer {}", api_key))
+            .json(&serde_json::json!({
+                "messages": messages,
+                "model": myself.model,
+                "stream": true,
+                "top_p": sampler.top_p,
+                "temperature": sampler.temperature,
+                "frequency_penalty": sampler.repetition_penalty,
+                "max_completion_tokens": sampler.max_length,
+                "stop": sampler.stop_on.clone(),
+            }))
+            .eventsource()
+            .unwrap();
 
-            let mut new_message_text = String::new();
+        let mut new_message_text = String::new();
 
-            while let Some(event) = event_source.next().await {
-                match event? {
-                    Event::Open => {}
-                    Event::Message(message) => {
-                        let data =
-                            serde_json::from_str::<OpenAICompatibleChatResponse>(&message.data)?;
-                        let first_choice = data
-                            .choices
-                            .first()
-                            .ok_or(OpenAICompatibleChatModelError::NoMessageChoices)?;
-                        if let Some(content) = &first_choice.delta.refusal {
-                            return Err(OpenAICompatibleChatModelError::Refusal(content.clone()));
-                        }
-                        if let Some(refusal) = &first_choice.finish_reason {
-                            match refusal {
-                                FinishReason::ContentFilter => {
-                                    return Err(OpenAICompatibleChatModelError::Refusal(
-                                        "ContentFilter".to_string(),
-                                    ))
-                                }
-                                FinishReason::FunctionCall => {
-                                    return Err(
-                                        OpenAICompatibleChatModelError::FunctionCallsNotSupported,
-                                    )
-                                }
-                                _ => return Ok(()),
+        while let Some(event) = event_source.next().await {
+            match event? {
+                Event::Open => {}
+                Event::Message(message) => {
+                    let data = serde_json::from_str::<OpenAICompatibleChatResponse>(&message.data)?;
+                    let first_choice = data
+                        .choices
+                        .first()
+                        .ok_or(OpenAICompatibleChatModelError::NoMessageChoices)?;
+                    if let Some(content) = &first_choice.delta.refusal {
+                        return Err(OpenAICompatibleChatModelError::Refusal(content.clone()));
+                    }
+                    if let Some(refusal) = &first_choice.finish_reason {
+                        match refusal {
+                            FinishReason::ContentFilter => {
+                                return Err(OpenAICompatibleChatModelError::Refusal(
+                                    "ContentFilter".to_string(),
+                                ))
                             }
+                            FinishReason::FunctionCall => {
+                                return Err(
+                                    OpenAICompatibleChatModelError::FunctionCallsNotSupported,
+                                )
+                            }
+                            _ => return Ok(()),
                         }
-                        if let Some(content) = &first_choice.delta.content {
-                            on_token(content.clone())?;
-                            new_message_text += content;
-                        }
+                    }
+                    if let Some(content) = &first_choice.delta.content {
+                        on_token(content.clone())?;
+                        new_message_text += content;
                     }
                 }
             }
-
-            let new_message =
-                crate::ChatMessage::new(crate::MessageType::UserMessage, new_message_text);
-
-            session.messages.push(new_message);
-
-            Ok(())
         }
+
+        let new_message =
+            crate::ChatMessage::new(crate::MessageType::UserMessage, new_message_text);
+
+        session.messages.push(new_message);
+
+        Ok(())
     }
 }
 
@@ -295,6 +292,12 @@ impl ChatModel<GenerationParameters> for OpenAICompatibleChatModel {
 #[derive(Debug, Clone, Copy)]
 pub struct SchemaParser<P> {
     phantom: std::marker::PhantomData<P>,
+}
+
+impl<P> Default for SchemaParser<P> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<P> SchemaParser<P> {
@@ -332,8 +335,8 @@ where
         _: SchemaParser<P>,
         mut on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
     ) -> impl Future<Output = Result<P, Self::Error>> + Send {
+        let schema = P::schema();
         async move {
-            let schema = P::schema();
             let mut schema: serde_json::Value = serde_json::from_str(&schema.to_string())?;
             fn remove_unsupported_properties(schema: &mut serde_json::Value) {
                 match schema {
@@ -479,11 +482,10 @@ mod tests {
 
         let mut session = model.new_chat_session().unwrap();
 
-        let mut messages = Vec::new();
-        messages.push(crate::ChatMessage::new(
+        let mut messages = vec![crate::ChatMessage::new(
             crate::MessageType::UserMessage,
             "Hello, world!".to_string(),
-        ));
+        )];
         let all_text = Arc::new(RwLock::new(String::new()));
         model
             .add_messages_with_callback(&mut session, &messages, GenerationParameters::default(), {
@@ -513,11 +515,10 @@ mod tests {
 
         let mut session = model.new_chat_session().unwrap();
 
-        let mut messages = Vec::new();
-        messages.push(crate::ChatMessage::new(
+        let mut messages = vec![crate::ChatMessage::new(
             crate::MessageType::UserMessage,
             "Give me a list of 5 primes.".to_string(),
-        ));
+        )];
         let all_text = Arc::new(RwLock::new(String::new()));
 
         #[derive(Debug, Clone, kalosm_sample::Parse, kalosm_sample::Schema, Deserialize)]

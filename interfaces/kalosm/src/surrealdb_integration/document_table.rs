@@ -291,7 +291,6 @@ pub enum DocumentTableSearchError<E> {
 }
 
 impl<
-        'a,
         Conn: Connection,
         Doc: DeserializeOwned + Send + Sync,
         Model: Embedder,
@@ -299,7 +298,7 @@ impl<
         F: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, M>,
         Chkr: Chunker,
         M,
-    > DocumentTableSearchBuilder<'a, Conn, Doc, Model, Chkr, E, F, M>
+    > DocumentTableSearchBuilder<'_, Conn, Doc, Model, Chkr, E, F, M>
 {
     /// Set the number of results to return. Defaults to 10.
     pub fn with_results(mut self, results: usize) -> Self {

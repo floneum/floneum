@@ -315,13 +315,8 @@ pub struct EmbeddingIndexedTableSearchBuilder<'a, C: Connection, R, F = Candidat
     phantom: std::marker::PhantomData<M>,
 }
 
-impl<
-        'a,
-        C: Connection,
-        R: DeserializeOwned,
-        F: IntoEmbeddingIndexedTableSearchFilter<C, R, M>,
-        M,
-    > EmbeddingIndexedTableSearchBuilder<'a, C, R, F, M>
+impl<C: Connection, R: DeserializeOwned, F: IntoEmbeddingIndexedTableSearchFilter<C, R, M>, M>
+    EmbeddingIndexedTableSearchBuilder<'_, C, R, F, M>
 {
     /// Set the number of results to return. Defaults to 10.
     pub fn with_results(mut self, results: usize) -> Self {

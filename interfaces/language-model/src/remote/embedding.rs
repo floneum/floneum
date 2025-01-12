@@ -135,72 +135,62 @@ impl Embedder for OpenAICompatibleEmbeddingModel {
     }
 
     /// Embed a single string.
-    fn embed_string(
-        &self,
-        input: String,
-    ) -> impl Future<Output = Result<Embedding, Self::Error>> + Send {
-        async move {
-            let api_key = self.client.resolve_api_key()?;
-            let request = self
-                .client
-                .reqwest_client
-                .post(format!("{}/embeddings", self.client.base_url))
-                .header("Content-Type", "application/json")
-                .header("Authorization", format!("Bearer {}", api_key))
-                .json(&serde_json::json!({
-                    "input": input,
-                    "model": self.model
-                }))
-                .send()
-                .await?;
-            let response = request.json::<CreateEmbeddingResponse>().await?;
+    async fn embed_string(&self, input: String) -> Result<Embedding, Self::Error> {
+        let api_key = self.client.resolve_api_key()?;
+        let request = self
+            .client
+            .reqwest_client
+            .post(format!("{}/embeddings", self.client.base_url))
+            .header("Content-Type", "application/json")
+            .header("Authorization", format!("Bearer {}", api_key))
+            .json(&serde_json::json!({
+                "input": input,
+                "model": self.model
+            }))
+            .send()
+            .await?;
+        let response = request.json::<CreateEmbeddingResponse>().await?;
 
-            let embedding = Embedding::from(response.data[0].embedding.iter().copied());
+        let embedding = Embedding::from(response.data[0].embedding.iter().copied());
 
-            Ok(embedding)
-        }
+        Ok(embedding)
     }
 
     /// Embed a single string.
-    fn embed_vec(
-        &self,
-        input: Vec<String>,
-    ) -> impl Future<Output = Result<Vec<Embedding>, Self::Error>> + Send {
-        async move {
-            let api_key = self.client.resolve_api_key()?;
-            let request = self
-                .client
-                .reqwest_client
-                .post(format!("{}/embeddings", self.client.base_url))
-                .header("Content-Type", "application/json")
-                .header("Authorization", format!("Bearer {}", api_key))
-                .json(&serde_json::json!({
-                    "input": input,
-                    "model": self.model
-                }))
-                .send()
-                .await?;
-            let mut response = request.json::<CreateEmbeddingResponse>().await?;
+    async fn embed_vec(&self, input: Vec<String>) -> Result<Vec<Embedding>, Self::Error> {
+        let api_key = self.client.resolve_api_key()?;
+        let request = self
+            .client
+            .reqwest_client
+            .post(format!("{}/embeddings", self.client.base_url))
+            .header("Content-Type", "application/json")
+            .header("Authorization", format!("Bearer {}", api_key))
+            .json(&serde_json::json!({
+                "input": input,
+                "model": self.model
+            }))
+            .send()
+            .await?;
+        let mut response = request.json::<CreateEmbeddingResponse>().await?;
 
-            // Verify that the response is valid
-            response.data.sort_by_key(|data| data.index);
-            #[cfg(debug_assertions)]
-            {
-                for (i, data) in response.data.iter().enumerate() {
-                    if data.index != i as usize {
-                        return Err(OpenAICompatibleEmbeddingModelError::InvalidResponse);
-                    }
+        // Verify that the response is valid
+        response.data.sort_by_key(|data| data.index);
+        #[cfg(debug_assertions)]
+        {
+            for (i, data) in response.data.iter().enumerate() {
+                if data.index != i {
+                    return Err(OpenAICompatibleEmbeddingModelError::InvalidResponse);
                 }
             }
-
-            let embeddings = response
-                .data
-                .into_iter()
-                .map(|data| Embedding::from(data.embedding))
-                .collect();
-
-            Ok(embeddings)
         }
+
+        let embeddings = response
+            .data
+            .into_iter()
+            .map(|data| Embedding::from(data.embedding))
+            .collect();
+
+        Ok(embeddings)
     }
 }
 
@@ -219,10 +209,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(embeddings.len(), 1);
-        assert!(embeddings[0].to_vec().len() > 0);
+        assert!(!embeddings[0].to_vec().is_empty());
 
         let embeddings = model.embed("Hello, world!").await.unwrap();
-        assert!(embeddings.to_vec().len() > 0);
+        assert!(!embeddings.to_vec().is_empty());
     }
 
     #[tokio::test]
@@ -236,9 +226,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(embeddings.len(), 1);
-        assert!(embeddings[0].to_vec().len() > 0);
+        assert!(!embeddings[0].to_vec().is_empty());
 
         let embeddings = model.embed("Hello, world!").await.unwrap();
-        assert!(embeddings.to_vec().len() > 0);
+        assert!(!embeddings.to_vec().is_empty());
     }
 }

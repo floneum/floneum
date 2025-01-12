@@ -182,7 +182,7 @@ impl Model {
         let stop_token = md_get("tokenizer.ggml.eos_token_id")?.to_u32()?;
         let tokens: std::result::Result<Vec<_>, _> = md_get("tokenizer.ggml.tokens")?
             .to_vec()?
-            .into_iter()
+            .iter()
             .map(|v| v.to_string())
             .collect();
         let tokens = tokens?;

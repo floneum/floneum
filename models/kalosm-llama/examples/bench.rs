@@ -67,8 +67,8 @@ async fn main() {
         for _ in 0..100 {
             let start_time = std::time::Instant::now();
             let mut tokens = 0;
-            let mut stream = model.complete(&prompt).take(100);
-            while let Some(_) = stream.next().await {
+            let mut stream = model.complete(prompt).take(100);
+            while (stream.next().await).is_some() {
                 tokens += 1;
             }
             let elapsed = start_time.elapsed();

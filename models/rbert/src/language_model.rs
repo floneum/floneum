@@ -16,11 +16,11 @@ impl ModelBuilder for BertBuilder {
     type Error = BertLoadingError;
 
     /// Start the model with a loading handler.
-    fn start_with_loading_handler(
+    async fn start_with_loading_handler(
         self,
         handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
-    ) -> impl Future<Output = Result<Self::Model, Self::Error>> {
-        async { self.build_with_loading_handler(handler).await }
+    ) -> Result<Self::Model, Self::Error> {
+        self.build_with_loading_handler(handler).await
     }
 
     fn requires_download(&self) -> bool {

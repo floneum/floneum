@@ -35,6 +35,7 @@ use super::StructuredChatModel;
 #[doc = include_str!("../../docs/chat.md")]
 pub struct Chat<M: CreateChatSession> {
     model: Arc<M>,
+    #[allow(clippy::type_complexity)]
     session: OnceCell<Result<Arc<AsyncMutex<M::ChatSession>>, M::Error>>,
     queued_messages: Vec<ChatMessage>,
 }
@@ -305,6 +306,7 @@ impl<M: CreateChatSession + Clone + 'static> Deref for Chat<M> {
         // Move a closure that captures just self into the uninitialized memory. Closures create an anonymous type that implement
         // FnOnce. In this case, the layout of the type should just be Self because self is the only field in the closure type.
         let uninit_closure = move |_: &str| {
+            #[allow(clippy::diverging_sub_expression)]
             let _unreachable: ChatResponseBuilder<'static, M> = unreachable!(
                 "FnMut cannot be called from a reference. Called from pointer {:p}",
                 uninit_callable.as_ptr()
@@ -433,6 +435,7 @@ pub struct ChatResponseBuilder<
     constraints: Option<Constraints>,
     sampler: Option<Sampler>,
     task: OnceLock<RwLock<Pin<Box<dyn Future<Output = ()> + Send>>>>,
+    #[allow(clippy::type_complexity)]
     result: Option<Receiver<Result<Box<dyn Any + Send>, M::Error>>>,
     queued_tokens: Option<UnboundedReceiver<String>>,
 }
@@ -651,12 +654,11 @@ where
         self.ensure_unstructured_task_started();
 
         Box::pin(async move {
-            if !self.result.is_some() {
+            if self.result.is_none() {
                 self.task.into_inner().unwrap().into_inner().unwrap().await;
             }
             let result = self.result.take().unwrap().await.unwrap();
-            let result = result.map(|boxed| *boxed.downcast::<String>().unwrap());
-            result
+            result.map(|boxed| *boxed.downcast::<String>().unwrap())
         })
     }
 }
@@ -760,12 +762,11 @@ where
         self.ensure_structured_task_started();
 
         Box::pin(async move {
-            if !self.result.is_some() {
+            if self.result.is_none() {
                 self.task.into_inner().unwrap().into_inner().unwrap().await;
             }
             let result = self.result.take().unwrap().await.unwrap();
-            let result = result.map(|boxed| *boxed.downcast::<Constraints::Output>().unwrap());
-            result
+            result.map(|boxed| *boxed.downcast::<Constraints::Output>().unwrap())
         })
     }
 }

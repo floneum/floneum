@@ -90,6 +90,7 @@ pub struct TextCompletionBuilder<
     constraints: Option<Constraints>,
     sampler: Option<Sampler>,
     task: OnceLock<RwLock<Pin<Box<dyn Future<Output = ()> + Send>>>>,
+    #[allow(clippy::type_complexity)]
     result: Option<Receiver<Result<Box<dyn Any + Send>, M::Error>>>,
     queued_tokens: Option<UnboundedReceiver<String>>,
 }
@@ -300,12 +301,11 @@ where
         self.ensure_unstructured_task_started();
 
         Box::pin(async move {
-            if !self.result.is_some() {
+            if self.result.is_none() {
                 self.task.into_inner().unwrap().into_inner().unwrap().await;
             }
             let result = self.result.take().unwrap().await.unwrap();
-            let result = result.map(|boxed| *boxed.downcast::<String>().unwrap());
-            result
+            result.map(|boxed| *boxed.downcast::<String>().unwrap())
         })
     }
 }
@@ -409,12 +409,11 @@ where
         self.ensure_structured_task_started();
 
         Box::pin(async move {
-            if !self.result.is_some() {
+            if self.result.is_none() {
                 self.task.into_inner().unwrap().into_inner().unwrap().await;
             }
             let result = self.result.take().unwrap().await.unwrap();
-            let result = result.map(|boxed| *boxed.downcast::<Constraints::Output>().unwrap());
-            result
+            result.map(|boxed| *boxed.downcast::<Constraints::Output>().unwrap())
         })
     }
 }
