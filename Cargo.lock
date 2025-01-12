@@ -1006,9 +1006,9 @@ dependencies = [
 
 [[package]]
 name = "candle-core"
-version = "0.7.2"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e1a39b963e261c58017edf2007e5b63425ad21538aaaf51fe23d1da41703701"
+checksum = "855dfedff437d2681d68e1f34ae559d88b0dd84aa5a6b63f2c8e75ebdd875bbf"
 dependencies = [
  "accelerate-src",
  "byteorder",
@@ -1028,20 +1028,23 @@ dependencies = [
  "rayon",
  "safetensors",
  "thiserror 1.0.69",
+ "ug",
+ "ug-cuda",
+ "ug-metal",
  "yoke",
  "zip 1.1.4",
 ]
 
 [[package]]
 name = "candle-datasets"
-version = "0.7.2"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69d21ab8667d0bd0f325725edc6a32f4b124e9c62f2cbed38ca2ed881f4d41ed"
+checksum = "3658304c70a97e3d847037fcc34e0eb97e4c4dbe0acaec85b964418ed64ba599"
 dependencies = [
  "byteorder",
  "candle-core",
  "candle-nn",
- "hf-hub",
+ "hf-hub 0.4.1",
  "image 0.25.5",
  "memmap2",
  "parquet",
@@ -1052,9 +1055,9 @@ dependencies = [
 
 [[package]]
 name = "candle-flash-attn"
-version = "0.7.2"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad01ec40011de94c0dee88563c6c16eb12eb6d212d176adeff53315c141e0bd1"
+checksum = "c4f3b96bd8c923ecd1fdc15e8394304c14806b72ace2237d2d93f7f6adc1fad8"
 dependencies = [
  "anyhow",
  "bindgen_cuda",
@@ -1064,18 +1067,18 @@ dependencies = [
 
 [[package]]
 name = "candle-kernels"
-version = "0.7.2"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "539cbfbf2d1d68a6ed97115e579c77c98f8ed0cfe7edbc6d7d30d2ac0c9e3d50"
+checksum = "53343628fa470b7075c28c589b98735b4220b464e37ddbb8e117040e199f4787"
 dependencies = [
  "bindgen_cuda",
 ]
 
 [[package]]
 name = "candle-metal-kernels"
-version = "0.7.2"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "166a92826d615d98b205e346e52128fa0439f2ab3302587403fdc558b4219e19"
+checksum = "50fa64274a009a5d95c542b10bf3a4ea809bd394654c6ae99233bcc35b3a33ef"
 dependencies = [
  "metal 0.27.0",
  "once_cell",
@@ -1085,9 +1088,9 @@ dependencies = [
 
 [[package]]
 name = "candle-nn"
-version = "0.7.2"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "898f8d21b8bdf559a1c8635e2db8386b2134015cd3003c18c1a30a22a67daec6"
+checksum = "ddd3c6b2ee0dfd64af12ae5b07e4b7c517898981cdaeffcb10b71d7dd5c8f359"
 dependencies = [
  "accelerate-src",
  "candle-core",
@@ -1104,9 +1107,9 @@ dependencies = [
 
 [[package]]
 name = "candle-transformers"
-version = "0.7.2"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06b8a130a8ac1d1e20696d89f7a52948902e037ad0eec085fceb77021007cfee"
+checksum = "4270cc692c4a3df2051c2e8c3c4da3a189746af7ca3a547b99ecd335582b92e1"
 dependencies = [
  "accelerate-src",
  "byteorder",
@@ -3243,6 +3246,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "hf-hub"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "112fa2f6ad4ab815b9e1b938b4b1e437032d055e2f92ed10fd6ab2e62d02c6b6"
+dependencies = [
+ "dirs",
+ "futures",
+ "http 1.2.0",
+ "indicatif",
+ "log",
+ "native-tls",
+ "num_cpus",
+ "rand 0.8.5",
+ "reqwest 0.12.12",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.9",
+ "tokio",
+ "ureq",
+]
+
+[[package]]
 name = "hmac"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3964,7 +3989,7 @@ dependencies = [
  "candle-core",
  "candle-nn",
  "dirs",
- "hf-hub",
+ "hf-hub 0.3.2",
  "httpdate",
  "indicatif",
  "metal 0.29.0",
@@ -4125,7 +4150,7 @@ dependencies = [
  "candle-transformers",
  "cudarc 0.9.15",
  "half 2.4.1",
- "hf-hub",
+ "hf-hub 0.3.2",
  "image 0.24.9",
  "intel-mkl-src",
  "kalosm-common",
@@ -6967,7 +6992,7 @@ dependencies = [
  "cudarc 0.9.15",
  "futures-util",
  "half 2.4.1",
- "hf-hub",
+ "hf-hub 0.3.2",
  "hound",
  "intel-mkl-src",
  "kalosm",
@@ -6996,7 +7021,7 @@ dependencies = [
  "cudarc 0.9.15",
  "futures-util",
  "half 2.4.1",
- "hf-hub",
+ "hf-hub 0.3.2",
  "image 0.24.9",
  "intel-mkl-src",
  "kalosm-common",
@@ -7123,7 +7148,7 @@ dependencies = [
  "candle-transformers",
  "cudarc 0.9.15",
  "half 2.4.1",
- "hf-hub",
+ "hf-hub 0.3.2",
  "image 0.24.9",
  "intel-mkl-src",
  "thiserror 2.0.9",
@@ -8677,6 +8702,48 @@ name = "ucd-trie"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2896d95c02a80c6d6a5d6e953d479f5ddf2dfdb6a244441010e373ac0fb88971"
+
+[[package]]
+name = "ug"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4eef2ebfc18c67a6dbcacd9d8a4d85e0568cc58c82515552382312c2730ea13"
+dependencies = [
+ "half 2.4.1",
+ "num",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "ug-cuda"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c4dcab280ad0ef3957e153a82dcad608c954d02cf253b695322f502d1f8902e"
+dependencies = [
+ "cudarc 0.12.2",
+ "half 2.4.1",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "ug",
+]
+
+[[package]]
+name = "ug-metal"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e4ed1df2c20a1a138f993041f650cc84ff27aaefb4342b7f986e77d00e80799"
+dependencies = [
+ "half 2.4.1",
+ "metal 0.29.0",
+ "objc",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "ug",
+]
 
 [[package]]
 name = "ulid"
