@@ -176,8 +176,8 @@ impl GGUFPreTokenizerConfig {
         }
         pre_tokenizers.push(byte_level_pre.into());
         let pre_tokenizer = tokenizers::pre_tokenizers::sequence::Sequence::new(pre_tokenizers);
-        tokenizer.with_pre_tokenizer(pre_tokenizer);
-        tokenizer.with_decoder(byte_level_decoder);
+        tokenizer.with_pre_tokenizer(Some(pre_tokenizer));
+        tokenizer.with_decoder(Some(byte_level_decoder));
         let mut post_processors = Vec::new();
         post_processors.push(byte_level_post.into());
         if self.add_bos {
@@ -206,9 +206,9 @@ impl GGUFPreTokenizerConfig {
                     .into(),
             );
         }
-        tokenizer.with_post_processor(tokenizers::processors::sequence::Sequence::new(
+        tokenizer.with_post_processor(Some(tokenizers::processors::sequence::Sequence::new(
             post_processors,
-        ));
+        )));
         special_tokens.push(AddedToken::from(bos.to_string(), true));
         special_tokens.push(AddedToken::from(eos.to_string(), true));
         tokenizer.add_special_tokens(&special_tokens);
