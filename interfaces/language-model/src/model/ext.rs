@@ -21,7 +21,7 @@ use super::CreateTextCompletionSession;
 use super::StructuredTextCompletionModel;
 use super::TextCompletionModel;
 
-#[doc = include_str!("../../docs/complete.md")]
+#[doc = include_str!("../../docs/completion.md")]
 pub trait TextCompletionModelExt: CreateTextCompletionSession {
     /// Create a new text completion builder for this model. See [`TextCompletionBuilder`] for more details.
     fn complete(&self, text: impl ToString) -> TextCompletionBuilder<Self>

@@ -1,5 +1,3 @@
-//! A task interface that builds on top of [`crate::Chat`]
-
 use std::mem::MaybeUninit;
 use std::ops::Deref;
 
@@ -66,6 +64,21 @@ impl<M: CreateChatSession> Task<M> {
 }
 
 impl<M: CreateChatSession, Constraints> Task<M, Constraints> {
+    /// Add an example to the task. Examples help the model perform better by allowing it to mimic the format of the examples.
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// use kalosm::language::*;
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let model = Llama::new_chat().await.unwrap();
+    ///     let task = model.task("You are a math assistant who helps students with their homework. You solve equations and answer questions. When solving problems, you will always solve problems step by step.")
+    ///         .with_example("What is 1 + 2?", "Step 1: 1 + 2 = 3\nOutput: 3");
+    ///     let mut stream = task("What is 2 + 2?");
+    ///     stream.to_std_out().await.unwrap();
+    /// }
+    /// ```
     pub fn with_example(mut self, input: impl ToString, output: impl ToString) -> Self {
         self.chat
             .add_message(ChatMessage::new(MessageType::UserMessage, input));
@@ -74,6 +87,25 @@ impl<M: CreateChatSession, Constraints> Task<M, Constraints> {
         self
     }
 
+    /// Add multiple examples to the task. Examples help the model perform better by allowing it to mimic the format of the examples.
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// use kalosm::language::*;
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let model = Llama::new_chat().await.unwrap();
+    ///     let task = model.task("You are a math assistant who helps students with their homework. You solve equations and answer questions. When solving problems, you will always solve problems step by step.")
+    ///         .with_examples([
+    ///             ("What is 1 + 2?", "Step 1: 1 + 2 = 3\nOutput: 3"),
+    ///             ("What is 3 + 4?", "Step 1: 3 + 4 = 7\nOutput: 7"),
+    ///             ("What is (4 + 8) / 3?", "Step 1: 4 + 8 = 12\nStep 2: 12 / 3 = 4\nOutput: 4"),
+    ///         ]);
+    ///     let mut stream = task("What is 3 + 4?");
+    ///     stream.to_std_out().await.unwrap();
+    /// }
+    /// ```
     pub fn with_examples(
         mut self,
         examples: impl IntoIterator<Item = (impl ToString, impl ToString)>,
@@ -84,6 +116,28 @@ impl<M: CreateChatSession, Constraints> Task<M, Constraints> {
         self
     }
 
+    /// Set the constraints for the task. The constraints force the format of all outputs of the task to fit
+    /// the constraints. This can be used to make the model return a specific type. This method does the same thing
+    /// as [`ChatResponseBuilder::with_constraints`] except it is called once on the task instead of any time you
+    /// run the task.
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// use kalosm::language::*;
+    /// use std::sync::Arc;
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let model = Llama::new_chat().await.unwrap();
+    ///     let task = model
+    ///         .task("You are a math assistant. Respond with just the number answer and nothing else.")
+    ///         .with_constraints(Arc::new(i32::new_parser()));
+    ///     let mut stream = task("What is 2 + 2?");
+    ///     stream.to_std_out().await.unwrap();
+    ///     let result: i32 = stream.await.unwrap();
+    ///     println!("{result}");
+    /// }
+    /// ```
     pub fn with_constraints<NewConstraints>(
         self,
         constraints: NewConstraints,
@@ -94,6 +148,24 @@ impl<M: CreateChatSession, Constraints> Task<M, Constraints> {
         }
     }
 
+    /// Create a task with the default constraints for the given type. This is the same as calling [`Task::with_constraints`] with the default constraints for the given type.
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// use kalosm::language::*;
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let model = Llama::new_chat().await.unwrap();
+    ///     let task = model
+    ///         .task("You are a math assistant. Respond with just the number answer and nothing else.")
+    ///         .typed();
+    ///     let mut stream = task("What is 2 + 2?");
+    ///     stream.to_std_out().await.unwrap();
+    ///     let result: i32 = stream.await.unwrap();
+    ///     println!("{result}");
+    /// }
+    /// ```
     pub fn typed<T>(
         self,
     ) -> Task<M, <M as CreateDefaultChatConstraintsForType<T>>::DefaultConstraints>
@@ -116,7 +188,7 @@ impl<M: CreateChatSession, Constraints: Clone> Task<M, Constraints> {
     ///     let mut llm = Llama::new_chat().await.unwrap();
     ///     let task = llm.task("You are a math assistant who helps students with their homework. You solve equations and answer questions. When solving problems, you will always solve problems step by step.");
     ///
-    ///     let result = task.run("What is 2 + 2?").all_text().await;
+    ///     let result = task("What is 2 + 2?").await.unwrap();
     ///     println!("{result}");
     /// }
     /// ```

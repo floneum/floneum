@@ -150,7 +150,7 @@ async fn main() {
     // Then create a parser for your data. Any
     let parser = RegexParser::new(r"\[(\w+), (\d+), (\w+)\]").unwrap();
     // Create a text completion stream with the constraints
-    let description = model.complete("JSON for an adorable dog named ruffles in the form [\"Pet name\", age number, \"Pet description\"]: ")
+    let mut description = model.complete("JSON for an adorable dog named ruffles in the form [\"Pet name\", age number, \"Pet description\"]: ")
         .with_constraints(parser);
     // Finally, run the task. Unlike derived and custom parsers, regex parsers do not provide a useful output type
     description.to_std_out().await.unwrap();
