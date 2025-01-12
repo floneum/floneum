@@ -12,7 +12,10 @@ async fn main() -> anyhow::Result<()> {
         .cached(NonZeroUsize::new(1000).unwrap());
 
     // Try to load the cache from the filesystem
-    let _ = bert.load_cache("cache.bin");
+    if let Ok(cache) = std::fs::read("cache.bin") {
+        let cache: Vec<(EmbeddingInput, Vec<f32>)> = postcard::from_bytes(&cache)?;
+        bert.load_cache(cache);
+    }
 
     let start_time = std::time::Instant::now();
     let sentences = [
@@ -46,7 +49,9 @@ async fn main() -> anyhow::Result<()> {
     println!("embedding partially cached took {:?}", start_time.elapsed());
 
     // Save the cache to the filesystem for future use
-    bert.save_cache("cache.bin").unwrap();
+    let cache = bert.export_cache();
+    let file = std::fs::File::create("cache.bin")?;
+    postcard::to_io(&cache, &file)?;
 
     Ok(())
 }
