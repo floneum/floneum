@@ -23,7 +23,6 @@ kalosm-common = { workspace = true }
 kalosm-language-model.workspace = true
 kalosm-streams.workspace = true
 
-async-trait = "0.1.73"
 futures-util = "0.3.28"
 image = "0.24.7"
 tokio = { version = "1.32.0", features = ["full"] }

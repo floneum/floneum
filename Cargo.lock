@@ -3952,7 +3952,6 @@ dependencies = [
  "serde",
  "surrealdb",
  "thiserror 2.0.9",
- "tokenizers 0.21.0",
  "tokio",
  "tracing",
  "tracing-subscriber 0.2.25",
@@ -4003,7 +4002,6 @@ dependencies = [
  "kalosm-streams",
  "llm-samplers",
  "log",
- "meval",
  "once_cell",
  "pdf",
  "pdf_text",
@@ -4014,7 +4012,6 @@ dependencies = [
  "reqwest 0.11.27",
  "roaring",
  "rss",
- "rustc-hash 1.1.0",
  "scraper",
  "serde",
  "serde_json",
@@ -4024,7 +4021,6 @@ dependencies = [
  "tempfile",
  "texting_robots",
  "thiserror 2.0.9",
- "tokenizers 0.21.0",
  "tokio",
  "tokio-util",
  "tracing",
@@ -4057,7 +4053,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.9",
- "tokenizers 0.21.0",
  "tokio",
  "tracing",
 ]
@@ -4093,7 +4088,6 @@ version = "0.3.3"
 dependencies = [
  "accelerate-src",
  "anyhow",
- "async-trait",
  "candle-core",
  "candle-nn",
  "candle-transformers",
@@ -4173,7 +4167,6 @@ name = "kalosm-sound"
 version = "0.3.4"
 dependencies = [
  "anyhow",
- "async-trait",
  "byteorder",
  "candle-core",
  "candle-nn",
@@ -4194,7 +4187,6 @@ dependencies = [
  "rodio",
  "rwhisper",
  "serde_json",
- "tokenizers 0.21.0",
  "tokio",
  "tracing",
  "voice_activity_detector",
@@ -4691,16 +4683,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "meval"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f79496a5651c8d57cd033c5add8ca7ee4e3d5f7587a4777484640d9cb60392d9"
-dependencies = [
- "fnv",
- "nom 1.2.4",
-]
-
-[[package]]
 name = "miette"
 version = "5.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4970,12 +4952,6 @@ checksum = "978fe6e6ebc0bf53de533cd456ca2d9de13de13856eda1518a285d7705a213af"
 dependencies = [
  "num-traits",
 ]
-
-[[package]]
-name = "nom"
-version = "1.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5b8c256fd9471521bcb84c3cdba98921497f1a331cbc15b8030fc63b82050ce"
 
 [[package]]
 name = "nom"
@@ -6420,7 +6396,6 @@ version = "0.3.3"
 dependencies = [
  "accelerate-src",
  "anyhow",
- "async-trait",
  "candle-core",
  "candle-nn",
  "candle-transformers",
@@ -6984,7 +6959,6 @@ version = "0.3.5"
 dependencies = [
  "accelerate-src",
  "anyhow",
- "async-trait",
  "byteorder",
  "candle-core",
  "candle-nn",
@@ -7016,7 +6990,6 @@ version = "0.3.2"
 dependencies = [
  "accelerate-src",
  "anyhow",
- "async-trait",
  "candle-core",
  "candle-nn",
  "candle-transformers",

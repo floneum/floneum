@@ -22,7 +22,6 @@ kalosm-sample = { workspace = true }
 kalosm-common.workspace = true
 thiserror.workspace = true
 lru = { version = "0.12.3", optional = true }
-tokenizers = { workspace = true }
 reqwest = { version = "0.12.12", features = ["json"], optional = true }
 serde_json = { version = "1.0.134", optional = true }
 reqwest-eventsource = { version = "0.6.0", optional = true }

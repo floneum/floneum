@@ -71,14 +71,9 @@ default-features = false
 [dev-dependencies]
 axum = "0.7.2"
 scraper = "0.19.0"
-tokenizers.workspace = true
 tracing-subscriber = "0.2"
 surrealdb = { version = "2.1.4", features = ["kv-surrealkv"] }
 anyhow.workspace = true
-
-[dev-dependencies.candle-core]
-features = []
-workspace = true
 
 [dev-dependencies.candle-datasets]
 features = []
