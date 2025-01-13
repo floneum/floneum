@@ -1,5 +1,6 @@
 use std::any::{Any, TypeId};
 
+use futures_util::Stream;
 use kalosm_language::{prelude::*, rbert::BertLoadingError};
 use rand::{random, seq::index::sample, Rng};
 
@@ -8,17 +9,14 @@ use crate::{BertDistance, Metric, TestCases};
 /// A builder for [`PromptAnnealer`].
 pub struct PromptAnnealerBuilder<
     'a,
-    M: Model,
-    P = ChannelTextStream,
+    M: CreateChatSession,
+    P = NoConstraints,
     Met: Metric<String> = BertDistance,
-> where
-    <<M as Model>::SyncModel as SyncModel>::Session: Sync + Send,
-{
-    llm: &'a mut M,
+> {
     metric: Option<Met>,
     train: &'a [(&'static str, &'static str)],
     test: &'a [(&'static str, &'static str)],
-    task: TaskBuilder<P>,
+    task: Task<M, P>,
     initial_temperature: f64,
     decay_rate: f64,
     cutoff_temperature: f64,
@@ -26,19 +24,13 @@ pub struct PromptAnnealerBuilder<
     initial_choice_range: std::ops::Range<usize>,
 }
 
-impl<'a, M: Model, P> PromptAnnealer<'a, M, P>
-where
-    <<M as Model>::SyncModel as SyncModel>::Session: Sync + Send,
-    P: Clone + TaskBuilderReturn + Send + Sync + 'static,
-{
+impl<M: CreateChatSession, P> PromptAnnealer<M, P> {
     /// Create a new builder for [`PromptAnnealer`].
-    pub fn builder(
-        model: &'a mut M,
+    pub fn builder<'a>(
         train_set: &'a [(&'static str, &'static str)],
-        task: TaskBuilder<P>,
+        task: Task<M, P>,
     ) -> PromptAnnealerBuilder<'a, M, P, BertDistance> {
         PromptAnnealerBuilder {
-            llm: model,
             train: train_set,
             task,
             test: &[],
@@ -52,11 +44,8 @@ where
     }
 }
 
-impl<'a, M: Model, P, Met: Metric<String> + 'static> PromptAnnealerBuilder<'a, M, P, Met>
-where
-    <<M as Model>::SyncModel as SyncModel>::Session: Sync + Send,
-    M::Error: std::fmt::Debug,
-    P: Clone + TaskBuilderReturn + Send + Sync + 'static,
+impl<'a, M: CreateChatSession, P, Met: Metric<String> + 'static>
+    PromptAnnealerBuilder<'a, M, P, Met>
 {
     /// Set the test set to use for evaluation. If no test set is provided, a subset of the train set will be used.
     pub fn with_test_set(mut self, test_set: &'a [(&'static str, &'static str)]) -> Self {
@@ -95,7 +84,16 @@ where
     }
 
     /// Build the [`PromptAnnealer`].
-    pub async fn build(self) -> Result<PromptAnnealer<'a, M, P, Met>, PromptAnnealerBuilderError> {
+    pub async fn build(self) -> Result<PromptAnnealer<M, P, Met>, PromptAnnealerBuilderError>
+    where
+        P: Clone + Unpin + Send + Sync + 'static,
+        M: CreateChatSession + Send + Sync + Unpin + 'static,
+        M::ChatSession: Send + Sync + Unpin + 'static,
+        M::Error: Unpin + std::fmt::Debug,
+        ChatResponseBuilder<'static, M, P>: Stream<Item = String> + 'static,
+        Met: Metric<String>,
+        Task<M, P>: Clone + Unpin + Send + Sync + 'static,
+    {
         let mut metric = match self.metric {
             Some(metric) => metric,
             None => {
@@ -192,7 +190,6 @@ where
 
             population.push(
                 ExamplesInstance::new(
-                    self.llm,
                     chosen_cases,
                     remaining_cases,
                     self.initial_temperature,
@@ -206,7 +203,6 @@ where
 
         Ok(PromptAnnealer {
             task: self.task,
-            llm: self.llm,
             test: test_set,
             population,
             metric,
@@ -228,12 +224,12 @@ pub enum PromptAnnealerBuilderError {
 }
 
 /// A prompt annealer that takes a set of examples and tries to find the best combination and order of examples to use as a prompt for a given task.
-pub struct PromptAnnealer<'a, M: Model, P = ChannelTextStream, Met: Metric<String> = BertDistance>
-where
-    <<M as Model>::SyncModel as SyncModel>::Session: Sync + Send,
-{
-    task: TaskBuilder<P>,
-    llm: &'a M,
+pub struct PromptAnnealer<
+    M: CreateChatSession,
+    P = ChannelTextStream,
+    Met: Metric<String> = BertDistance,
+> {
+    task: Task<M, P>,
     metric: Met,
     test: Vec<Example<'static>>,
     population: Vec<ExamplesInstance>,
@@ -241,19 +237,22 @@ where
     cutoff_temperature: f64,
 }
 
-impl<'a, M: Model, P, Met> PromptAnnealer<'a, M, P, Met>
+impl<M, P, Met> PromptAnnealer<M, P, Met>
 where
-    <<M as Model>::SyncModel as SyncModel>::Session: Sync + Send,
-    M::Error: std::fmt::Debug,
-    P: Clone + TaskBuilderReturn + Send + Sync + 'static,
+    P: Clone + Unpin + Send + Sync + 'static,
+    M: CreateChatSession + Send + Sync + Unpin + 'static,
+    M::ChatSession: Send + Sync + Unpin + 'static,
+    M::Error: Unpin + std::fmt::Debug,
+    ChatResponseBuilder<'static, M, P>: Stream<Item = String> + 'static,
     Met: Metric<String>,
+    Task<M, P>: Clone + Unpin + Send + Sync + 'static,
 {
     /// Run the annealing process.
     pub async fn run(&mut self) -> Vec<AnnealingResult> {
         loop {
             for instance in &mut self.population {
                 instance
-                    .mutate(&self.test, self.llm, &mut self.metric, self.task.clone())
+                    .mutate(&self.test, &mut self.metric, self.task.clone())
                     .await;
                 instance.temperature *= self.decay_rate;
             }
@@ -301,16 +300,22 @@ struct ExamplesInstance {
 }
 
 impl ExamplesInstance {
-    async fn new<M, P>(llm: &mut M, current_examples:Vec<Example<'static>>,
-    unused_examples:Vec<Example<'static>>,  temperature:f64,
-    test:&[Example<'static>],
-    metric: &mut impl Metric<String>,
-    task: TaskBuilder<P>,
-    ) -> Self where M: Model,
-    M::Error: std::fmt::Debug,
-    <<M as kalosm_language::prelude::Model>::SyncModel as kalosm_language::prelude::SyncModel>::Session: Sync+ Send,
-    P: TaskBuilderReturn + Send + Sync + 'static,{
-        let current_evaluation = evaluate(&current_examples, test, llm, metric, task).await;
+    async fn new<M, P>(
+        current_examples: Vec<Example<'static>>,
+        unused_examples: Vec<Example<'static>>,
+        temperature: f64,
+        test: &[Example<'static>],
+        metric: &mut impl Metric<String>,
+        task: Task<M, P>,
+    ) -> Self
+    where
+        P: Clone + Unpin + Send + Sync + 'static,
+        M: CreateChatSession + Send + Sync + Unpin + 'static,
+        M::ChatSession: Send + Sync + Unpin + 'static,
+        M::Error: Unpin + std::fmt::Debug,
+        ChatResponseBuilder<'static, M, P>: Stream<Item = String> + 'static,
+    {
+        let current_evaluation = evaluate(&current_examples, test, metric, task).await;
 
         Self {
             current_examples,
@@ -323,14 +328,14 @@ impl ExamplesInstance {
     async fn mutate<M, P>(
         &mut self,
         test: &[Example<'static>],
-        llm: &M,
         metric: &mut impl Metric<String>,
-        task: TaskBuilder<P>,
+        task: Task<M, P>,
     ) where
-        M: Model,
-        M::Error: std::fmt::Debug,
-        <M::SyncModel as SyncModel>::Session: Send + Sync,
-        P: TaskBuilderReturn + Send + Sync + 'static,
+        P: Clone + Unpin + Send + Sync + 'static,
+        M: CreateChatSession + Send + Sync + Unpin + 'static,
+        M::ChatSession: Send + Sync + Unpin + 'static,
+        M::Error: Unpin + std::fmt::Debug,
+        ChatResponseBuilder<'static, M, P>: Stream<Item = String> + 'static,
     {
         let action = if self.current_examples.is_empty() {
             2
@@ -348,7 +353,7 @@ impl ExamplesInstance {
                 let index = random::<usize>() % mutated_examples.len();
                 let removed = mutated_examples.remove(index);
 
-                let new_evaluation = evaluate(&mutated_examples, test, llm, metric, task).await;
+                let new_evaluation = evaluate(&mutated_examples, test, metric, task).await;
                 let accept_regardless = std::f64::consts::E
                     .powf((self.current_evaluation - new_evaluation) / self.temperature)
                     > random::<f64>();
@@ -366,7 +371,7 @@ impl ExamplesInstance {
 
                 mutated_examples.swap(index1, index2);
 
-                let new_evaluation = evaluate(&mutated_examples, test, llm, metric, task).await;
+                let new_evaluation = evaluate(&mutated_examples, test, metric, task).await;
                 let accept_regardless = std::f64::consts::E
                     .powf((self.current_evaluation - new_evaluation) / self.temperature)
                     > random::<f64>();
@@ -382,7 +387,7 @@ impl ExamplesInstance {
                 let added = self.unused_examples[index].clone();
                 mutated_examples.push(added);
 
-                let new_evaluation = evaluate(&mutated_examples, test, llm, metric, task).await;
+                let new_evaluation = evaluate(&mutated_examples, test, metric, task).await;
                 let accept_regardless = std::f64::consts::E
                     .powf((self.current_evaluation - new_evaluation) / self.temperature)
                     > random::<f64>();
@@ -401,44 +406,37 @@ impl ExamplesInstance {
 struct Example<'a> {
     input: &'a str,
     output: &'a str,
-    embedding: Embedding<BertSpace>,
+    embedding: Embedding,
 }
 
-async fn evaluate<'a, M: Model, P>(
+async fn evaluate<'a, M, P>(
     examples: &[Example<'static>],
     test: &[Example<'static>],
-    llm: &M,
     metric: &mut impl Metric<String>,
-    task: TaskBuilder<P>,
+    task: Task<M, P>,
 ) -> f64
 where
-    <M::SyncModel as SyncModel>::Session: Send + Sync,
-    P: TaskBuilderReturn + Send + Sync + 'static,
-    M::Error: std::fmt::Debug,
+    P: Clone + Unpin + Send + Sync + 'static,
+    M: CreateChatSession + Send + Sync + Unpin + 'static,
+    M::ChatSession: Send + Sync + Unpin + 'static,
+    M::Error: Unpin + std::fmt::Debug,
+    ChatResponseBuilder<'static, M, P>: Stream<Item = String> + 'static,
 {
-    let examples_tokens: usize = examples
+    let examples_bytes: usize = examples
         .iter()
-        .filter_map(|example| {
-            llm.tokenizer()
-                .encode(example.input, false)
-                .ok()
-                .map(|x| x.len())
-                .and_then(|x| Some(x + llm.tokenizer().encode(example.output, false).ok()?.len()))
-        })
+        .map(|example| example.input.len() + example.output.len())
         .sum();
 
-    let task = task
-        .with_examples(
-            examples
-                .iter()
-                .map(|example| (example.input, example.output)),
-        )
-        .build();
+    let task = task.with_examples(
+        examples
+            .iter()
+            .map(|example| (example.input, example.output)),
+    );
 
     let mut llama_test_cases = TestCases::new();
 
     for example in test {
-        let mut actual = task.run(example.input, llm);
+        let mut actual = task.run(example.input);
 
         let all_text = actual.all_text().await;
 
@@ -451,7 +449,7 @@ where
     println!("{}", llama_distance);
 
     let similarity_scope = llama_distance.mean_score();
-    let token_penalty = examples_tokens as f64 * 0.0001;
+    let token_penalty = examples_bytes as f64 * 0.0001;
     let mut diversity_bonus = {
         // We want to incentivize diversity in the examples, so we calculate the average distance between all examples and add it as a bonus.
         examples

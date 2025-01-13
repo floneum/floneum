@@ -68,7 +68,11 @@ pub enum TextFileDecodeError {
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     let document = FsDocument::try_from(PathBuf::from("./documents")).unwrap().into_document().await.unwrap();
+///     let document = FsDocument::try_from(PathBuf::from("./documents"))
+///         .unwrap()
+///         .into_document()
+///         .await
+///         .unwrap();
 ///     println!("document: {:?}", document);
 /// }
 /// ```
@@ -150,7 +154,10 @@ impl IntoDocument for FsDocument {
 ///
 ///     // Then chunk the documents into sentences and use those chunks however you need
 ///     let model = Bert::new().await.unwrap();
-///     let chunked = SemanticChunker::new().chunk_batch(&documents, &model).await.unwrap();
+///     let chunked = SemanticChunker::new()
+///         .chunk_batch(&documents, &model)
+///         .await
+///         .unwrap();
 ///     println!("{:?}", chunked);
 /// }
 /// ```

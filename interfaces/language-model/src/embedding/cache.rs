@@ -1,9 +1,4 @@
-use std::{
-    future::Future, hash::BuildHasher, io::BufWriter, num::NonZeroUsize, path::Path, sync::Mutex,
-};
-
-use postcard::{from_bytes, to_io};
-use serde::{de::DeserializeOwned, Serialize};
+use std::{future::Future, hash::BuildHasher, num::NonZeroUsize, sync::Mutex};
 
 use crate::{Embedder, Embedding, EmbeddingInput};
 
@@ -15,7 +10,7 @@ use crate::{Embedder, Embedding, EmbeddingInput};
 /// use std::num::NonZeroUsize;
 ///
 /// #[tokio::main]
-/// async fn main() -> Result<()> {
+/// async fn main() -> anyhow::Result<()> {
 ///     let bert = Bert::builder()
 ///         .build()
 ///         .await?
@@ -23,7 +18,10 @@ use crate::{Embedder, Embedding, EmbeddingInput};
 ///         .cached(NonZeroUsize::new(1000).unwrap());
 ///
 ///     // Try to load the cache from the filesystem
-///     let _ = bert.load_cache("cache.bin");
+///     if let Ok(cache) = std::fs::read("cache.bin") {
+///         let cache: Vec<(EmbeddingInput, Vec<f32>)> = postcard::from_bytes(&cache)?;
+///         bert.load_cache(cache);
+///     }
 ///
 ///     let start_time = std::time::Instant::now();
 ///     let sentences = [
@@ -57,14 +55,17 @@ use crate::{Embedder, Embedding, EmbeddingInput};
 ///     println!("embedding partially cached took {:?}", start_time.elapsed());
 ///
 ///     // Save the cache to the filesystem for future use
-///     bert.save_cache("cache.bin").unwrap();
+///     let cache = bert.export_cache();
+///     let file = std::fs::File::create("cache.bin")?;
+///     let mut writer = std::io::BufWriter::new(file);
+///     postcard::to_io(&cache, &mut writer)?;
 ///
 ///     Ok(())
 /// }
 /// ```
 pub struct CachedEmbeddingModel<M: Embedder, S = lru::DefaultHasher> {
     model: M,
-    cache: Mutex<lru::LruCache<EmbeddingInput, Embedding<M::VectorSpace>, S>>,
+    cache: Mutex<lru::LruCache<EmbeddingInput, Embedding, S>>,
 }
 
 impl<M: Embedder> CachedEmbeddingModel<M> {
@@ -98,14 +99,14 @@ impl<M: Embedder, S: BuildHasher> CachedEmbeddingModel<M, S> {
         }
     }
 
-    /// Save the cache to a file for future use. You can load the cache from the file with [`Self::load_cache`].
+    /// Return a serializable cache of the embeddings for future use. You can load the cache from the file with [`Self::load_cache`].
     ///
     /// # Example
     /// ```rust, no_run
     /// # use kalosm::language::*;
     /// # use std::num::NonZeroUsize;
     /// # #[tokio::main]
-    /// # async fn main() -> Result<()> {
+    /// # async fn main() -> anyhow::Result<()> {
     /// let bert = Bert::builder()
     ///     .build()
     ///     .await?
@@ -122,23 +123,20 @@ impl<M: Embedder, S: BuildHasher> CachedEmbeddingModel<M, S> {
     /// let embeddings = bert.embed_batch(sentences).await?;
     /// println!("{:?}", embeddings);
     /// // Save the cache to the filesystem for future use
-    /// bert.save_cache("cache.bin").unwrap();
+    /// let cache = bert.export_cache();
+    /// let file = std::fs::File::create("cache.bin")?;
+    /// let mut writer = std::io::BufWriter::new(file);
+    /// postcard::to_io(&cache, &mut writer)?;
     /// # Ok(())
     /// # }
-    pub fn save_cache(&self, path: impl AsRef<Path>) -> Result<(), CacheIOError>
-    where
-        M::VectorSpace: Serialize,
-    {
-        let file = std::fs::File::create(path)?;
-        let mut writer = BufWriter::new(file);
+    pub fn export_cache(&self) -> Vec<(EmbeddingInput, Vec<f32>)> {
         let cache = self.cache.lock().unwrap();
         let items = cache
             .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
+            .map(|(k, v)| (k.clone(), v.to_vec()))
             .collect::<Vec<_>>();
-        to_io(&items, &mut writer)?;
 
-        Ok(())
+        items
     }
 
     /// Load the cache from a file.
@@ -147,7 +145,7 @@ impl<M: Embedder, S: BuildHasher> CachedEmbeddingModel<M, S> {
     /// # use kalosm::language::*;
     /// # use std::num::NonZeroUsize;
     /// # #[tokio::main]
-    /// # async fn main() -> Result<()> {
+    /// # async fn main() -> anyhow::Result<()> {
     /// let bert = Bert::builder()
     ///     .build()
     ///     .await?
@@ -155,7 +153,9 @@ impl<M: Embedder, S: BuildHasher> CachedEmbeddingModel<M, S> {
     ///     .cached(NonZeroUsize::new(1000).unwrap());
     ///
     /// // Try to load the cache from the filesystem
-    /// let _ = bert.load_cache("cache.bin");
+    /// let cache = std::fs::read("cache.bin")?;
+    /// let cache: Vec<(EmbeddingInput, Vec<f32>)> = postcard::from_bytes(&cache)?;
+    /// let _ = bert.load_cache(cache);
     ///
     /// let sentences = [
     ///     "Cats are cool",
@@ -169,18 +169,11 @@ impl<M: Embedder, S: BuildHasher> CachedEmbeddingModel<M, S> {
     /// println!("{:?}", embeddings);
     /// # Ok(())
     /// # }
-    pub fn load_cache(&self, path: impl AsRef<Path>) -> Result<(), CacheIOError>
-    where
-        M::VectorSpace: DeserializeOwned,
-    {
-        let contents = std::fs::read(path)?;
-        let items: Vec<_> = from_bytes(&contents)?;
+    pub fn load_cache(&self, cached_items: Vec<(EmbeddingInput, Vec<f32>)>) {
         let mut cache = self.cache.lock().unwrap();
-        for (k, v) in items {
-            cache.put(k, v);
+        for (k, v) in cached_items {
+            cache.put(k, Embedding::from(v));
         }
-
-        Ok(())
     }
 }
 
@@ -188,8 +181,6 @@ impl<M: Embedder> Embedder for CachedEmbeddingModel<M>
 where
     M::Error: std::error::Error,
 {
-    /// The vector space that this embedder uses.
-    type VectorSpace = M::VectorSpace;
     /// The error type that can occur when embedding a string.
     type Error = M::Error;
 
@@ -197,7 +188,7 @@ where
     fn embed_for(
         &self,
         input: EmbeddingInput,
-    ) -> impl Future<Output = Result<Embedding<Self::VectorSpace>, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Embedding, Self::Error>> + Send {
         Box::pin(async move {
             {
                 // first check if the embedding is in the cache
@@ -218,7 +209,7 @@ where
     fn embed_vec_for(
         &self,
         inputs: Vec<EmbeddingInput>,
-    ) -> impl Future<Output = Result<Vec<Embedding<Self::VectorSpace>>, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Vec<Embedding>, Self::Error>> + Send {
         Box::pin(async move {
             let mut embeddings = vec![Embedding::from([]); inputs.len()];
             // Find any text with embeddings that are already in the cache and fill in first
@@ -268,13 +259,12 @@ pub trait EmbedderCacheExt: Embedder {
     /// # use kalosm::language::*;
     /// # use std::num::NonZeroUsize;
     /// # #[tokio::main]
-    /// # async fn main() -> Result<()> {
+    /// # async fn main(){
     /// let bert = Bert::builder()
     ///     .build()
-    ///     .await?
+    ///     .await.unwrap()
     ///     // You can call the `.cached` method on any embedder to cache the results of the embedding in a LRU cache with the given capacity.
     ///     .cached(NonZeroUsize::new(1000).unwrap());
-    /// # Ok(())
     /// # }
     fn cached(self, cache_size: NonZeroUsize) -> CachedEmbeddingModel<Self>
     where
@@ -285,14 +275,3 @@ pub trait EmbedderCacheExt: Embedder {
 }
 
 impl<M: Embedder> EmbedderCacheExt for M {}
-
-/// An error that can occur when loading or saving a cache.
-#[derive(thiserror::Error, Debug)]
-pub enum CacheIOError {
-    /// Failed to serialize or deserialize cache.
-    #[error("Failed to serialize or deserialize cache: {0}")]
-    Postcard(#[from] postcard::Error),
-    /// Failed to read or write cache file.
-    #[error("Failed to read or write cache file: {0}")]
-    Io(#[from] std::io::Error),
-}

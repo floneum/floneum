@@ -94,8 +94,10 @@ impl<F: FnMut(&Url) -> bool> LinkFilter for F {
 ///     let count = Arc::new(AtomicUsize::new(0));
 ///     let real_visited = Arc::new(AtomicUsize::new(0));
 ///     Page::crawl(
-///         Url::parse("https://www.nytimes.com/live/2023/09/21/world/zelensky-russia-ukraine-news")
-///             .unwrap(),
+///         Url::parse(
+///             "https://www.nytimes.com/live/2023/09/21/world/zelensky-russia-ukraine-news",
+///         )
+///         .unwrap(),
 ///         BrowserMode::Static,
 ///         move |page: Page| {
 ///             let count = count.clone();

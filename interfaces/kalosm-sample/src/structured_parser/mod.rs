@@ -42,6 +42,10 @@ mod arc_linked_list;
 pub(crate) use arc_linked_list::*;
 mod schema;
 pub use schema::*;
+mod index;
+pub use index::*;
+mod one_line;
+pub use one_line::*;
 
 /// An error that occurred while parsing.
 #[derive(Debug, Clone)]

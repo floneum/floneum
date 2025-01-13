@@ -1,5 +1,9 @@
+use std::sync::Arc;
+
+use crate::chat_template::HuggingFaceChatTemplate;
 use crate::raw::attention_layer::LlamaAttention;
 use crate::raw::rope::RopeCache;
+use crate::LlamaSourceError;
 use attention_layer::AttentionBias;
 use attention_layer::AttentionVariant;
 use attention_layer::FeedForwardVariant;
@@ -34,16 +38,36 @@ pub struct LlamaConfig {
     head_dimension: usize,
     n_head: usize,
     pub(crate) n_layer: usize,
+    pub(crate) start_token_string: String,
+    pub(crate) stop_token: u32,
+    pub(crate) stop_token_string: String,
+    pub(crate) chat_template: Option<HuggingFaceChatTemplate>,
 }
 
 impl LlamaConfig {
     fn hidden_size(&self) -> usize {
         self.head_dimension * self.n_head
     }
+
+    #[cfg(test)]
+    pub(crate) fn mock_test() -> Self {
+        Self {
+            rope_freq_weight: None,
+            rope_theta: 5000.,
+            context_length: 6,
+            head_dimension: 2,
+            n_head: 0,
+            n_layer: 0,
+            start_token_string: "<|startoftext|>".to_string(),
+            stop_token: 0,
+            stop_token_string: "<|endoftext|>".to_string(),
+            chat_template: None,
+        }
+    }
 }
 
 pub struct Model {
-    pub(crate) config: LlamaConfig,
+    pub(crate) config: Arc<LlamaConfig>,
     tok_embeddings: Embedding,
     layers: Vec<LlamaAttention>,
     norm: RmsNorm,
@@ -52,7 +76,14 @@ pub struct Model {
 }
 
 impl Model {
-    pub fn from_ggml(mut ct: ggml_file::Content, gqa: usize, device: &Device) -> Result<Self> {
+    pub fn from_ggml(
+        mut ct: ggml_file::Content,
+        gqa: usize,
+        device: &Device,
+        start_token_string: String,
+        stop_token: u32,
+        stop_token_string: String,
+    ) -> Result<Self> {
         let head_dim = (ct.hparams.n_embd / ct.hparams.n_head) as usize;
         let n_layer = ct.hparams.n_layer as usize;
         let config = LlamaConfig {
@@ -62,7 +93,12 @@ impl Model {
             n_head: ct.hparams.n_head as usize,
             n_layer,
             context_length: 4096,
+            start_token_string,
+            stop_token,
+            stop_token_string,
+            chat_template: None,
         };
+        let config = Arc::new(config);
         let rope = RopeCache::new(&config, DType::F32, device)?;
         let tok_embeddings_q = ct.remove("tok_embeddings.weight")?;
         let tok_embeddings = tok_embeddings_q.dequantize(device)?;
@@ -109,6 +145,7 @@ impl Model {
                 rope_cache: rope.clone(),
             })
         }
+
         Ok(Self {
             config,
             tok_embeddings: Embedding::new(tok_embeddings, ct.hparams.n_embd as usize),
@@ -123,7 +160,7 @@ impl Model {
         ct: gguf_file::Content,
         reader: &mut R,
         device: &Device,
-    ) -> Result<Self> {
+    ) -> std::result::Result<Self, LlamaSourceError> {
         let md_get = |s: &str| {
             let value = if s.starts_with('.') {
                 ct.metadata
@@ -136,6 +173,33 @@ impl Model {
                 None => candle_core::bail!("cannot find {s} in metadata"),
                 Some(v) => Ok(v),
             }
+        };
+
+        // Get the eos and bos tokens from the metadata
+        let start_token = md_get("tokenizer.ggml.bos_token_id")
+            .ok()
+            .and_then(|v| v.to_u32().ok());
+        let stop_token = md_get("tokenizer.ggml.eos_token_id")?.to_u32()?;
+        let tokens: std::result::Result<Vec<_>, _> = md_get("tokenizer.ggml.tokens")?
+            .to_vec()?
+            .iter()
+            .map(|v| v.to_string())
+            .collect();
+        let tokens = tokens?;
+        let start_token_string = start_token
+            .map(|v| tokens[v as usize].clone())
+            .unwrap_or_else(|| "".to_string());
+        let stop_token_string = tokens[stop_token as usize].clone();
+        let chat_template = md_get("tokenizer.chat_template")
+            .ok()
+            .and_then(|v| v.to_string().ok());
+        let chat_template = match chat_template {
+            Some(chat_template) => {
+                let chat_template = HuggingFaceChatTemplate::create(chat_template)
+                    .map_err(LlamaSourceError::ChatTemplate)?;
+                Some(chat_template)
+            }
+            None => None,
         };
 
         // Parameter extraction from metadata.
@@ -163,7 +227,12 @@ impl Model {
             head_dimension: head_dim,
             n_head: head_count,
             n_layer: block_count,
+            start_token_string,
+            stop_token,
+            stop_token_string,
+            chat_template,
         };
+        let config = Arc::new(config);
 
         let rope = RopeCache::new(&config, DType::F32, device)?;
 

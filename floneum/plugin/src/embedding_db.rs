@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::plugins::main::types::{Embedding, EmbeddingDbResource};
 use crate::resource::ResourceStorage;
 
-use kalosm::language::{Document, UnknownVectorSpace, VectorDB};
+use kalosm::language::{Document, VectorDB};
 use once_cell::sync::Lazy;
 
 impl ResourceStorage {
@@ -69,7 +69,7 @@ impl ResourceStorage {
 }
 
 pub(crate) struct VectorDBWithDocuments {
-    db: Lazy<Result<VectorDB<UnknownVectorSpace>, Arc<heed::Error>>>,
+    db: Lazy<Result<VectorDB, Arc<heed::Error>>>,
     documents: Vec<Option<Document>>,
 }
 

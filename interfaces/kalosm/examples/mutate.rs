@@ -5,15 +5,15 @@ use kalosm_language::search::Hypothetical;
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let mut llm = Llama::new_chat().await.unwrap();
+    let llm = Llama::new_chat().await.unwrap();
 
-    let mutator = Mutator::builder().build().unwrap();
+    let mutator = Mutator::builder(llm.clone()).build().unwrap();
 
     let mut text = "You generate isolated hypothetical questions with any necessary information that may be answered by the given text".to_string();
-    let mut max_score = eval_with_prompt(&mut llm, &text).await.unwrap();
+    let mut max_score = eval_with_prompt(llm.clone(), &text).await.unwrap();
     loop {
-        let new_text = mutator.mutate(&text, &mut llm).await.unwrap();
-        let new_score = eval_with_prompt(&mut llm, &new_text).await.unwrap();
+        let new_text = mutator.mutate(&text).await.unwrap();
+        let new_score = eval_with_prompt(llm.clone(), &new_text).await.unwrap();
         if new_score > max_score {
             println!("new prompt was better: {new_text}");
             println!("new max score: {new_score}");
@@ -59,6 +59,7 @@ fn create_constraints() -> Constraints {
 
 /// A builder for a Mutator chunker.
 pub struct MutatorBuilder {
+    model: Llama,
     task_description: Option<String>,
     examples: Option<Vec<(String, String)>>,
 }
@@ -96,10 +97,7 @@ impl MutatorBuilder {
                 .collect::<Vec<_>>()
         });
 
-        let task = Task::builder(task_description)
-            .with_constraints(create_constraints())
-            .with_examples(examples)
-            .build();
+        let task = self.model.task(task_description).with_examples(examples);
 
         Ok(Mutator { task })
     }
@@ -107,26 +105,26 @@ impl MutatorBuilder {
 
 /// Generates embeddings of questions
 pub struct Mutator {
-    task: Task<StructuredRunner<Constraints>>,
+    task: Task<Llama>,
 }
 
 impl Mutator {
     /// Create a new Mutator chunker.
-    pub fn builder() -> MutatorBuilder {
+    pub fn builder(model: Llama) -> MutatorBuilder {
         MutatorBuilder {
+            model,
             task_description: None,
             examples: None,
         }
     }
 
     /// Generate a list of Mutator questions about the given text.
-    pub async fn mutate<M>(&self, text: &str, model: &mut M) -> anyhow::Result<String>
-    where
-        M: Model,
-        M::Error: std::error::Error,
-        <M::SyncModel as SyncModel>::Session: Sync + Send,
-    {
-        let questions = self.task.run(text, model).result().await?;
+    pub async fn mutate(&self, text: &str) -> anyhow::Result<String> {
+        let questions = self
+            .task
+            .run(text)
+            .with_constraints(create_constraints())
+            .await?;
         let documents = questions.1;
 
         Ok(documents)
@@ -162,17 +160,17 @@ const TEST_PAIRS :&[(&str, &str)]= &[
     ("Blockchain technology, beyond cryptocurrencies, is being explored for applications like smart contracts. Smart contracts are self-executing contracts with the terms of the agreement directly written into code.", "How is blockchain technology utilized in the concept of smart contracts?")
 ];
 
-async fn eval_with_prompt(llm: &mut Llama, prompt: &str) -> anyhow::Result<f64> {
+async fn eval_with_prompt(llm: Llama, prompt: &str) -> anyhow::Result<f64> {
     println!("evaluating prompt: {prompt}");
 
-    let hypothetical = Hypothetical::builder()
+    let hypothetical = Hypothetical::builder(llm)
         .with_task_description(prompt.into())
         .build();
 
     let mut llama_test_cases = TestCases::new();
 
     for (text, expected) in TEST_PAIRS {
-        let actual = &hypothetical.generate_question(text, llm).await.unwrap()[0];
+        let actual = &hypothetical.generate_question(text).await.unwrap()[0];
 
         llama_test_cases.push_case(expected.to_string(), actual.clone());
     }

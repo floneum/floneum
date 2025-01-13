@@ -19,9 +19,13 @@ use url::Url;
 /// #[tokio::main]
 /// async fn main() {
 ///     let page = Page::new(
-///         Url::parse("https://www.nytimes.com/live/2023/09/21/world/zelensky-russia-ukraine-news").unwrap(),
+///         Url::parse(
+///             "https://www.nytimes.com/live/2023/09/21/world/zelensky-russia-ukraine-news",
+///         )
+///         .unwrap(),
 ///         BrowserMode::Static,
-///     ).unwrap();
+///     )
+///     .unwrap();
 ///     let document = page.article().await.unwrap();
 ///     println!("Title: {}", document.title());
 ///     println!("Body: {}", document.body());

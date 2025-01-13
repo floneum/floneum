@@ -23,7 +23,7 @@ pub enum RssFeedError {
 /// #[tokio::main]
 /// async fn main() {
 ///     let feed = RssFeed::new(
-///        url::Url::parse("https://www.nytimes.com/services/xml/rss/nyt/HomePage.xml").unwrap(),
+///         url::Url::parse("https://www.nytimes.com/services/xml/rss/nyt/HomePage.xml").unwrap(),
 ///     );
 ///     let documents = feed.read_top_n(5).await.unwrap();
 ///     println!("Documents: {:?}", documents);

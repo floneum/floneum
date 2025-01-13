@@ -1,8 +1,8 @@
-use kalosm_language_model::{Embedder, Model, StructuredTextGenerationError, SyncModel};
-use kalosm_sample::{LiteralParser, ParserExt, StopOn};
+use kalosm_language_model::{CreateChatSession, Embedder, StructuredChatModel};
+use kalosm_sample::{IndexParser, LiteralParser, ParserExt, StopOn};
 
 use crate::{
-    prelude::{Document, IndexParser, StructuredRunner, Task},
+    prelude::{Document, Task},
     search::Chunk,
 };
 
@@ -43,13 +43,14 @@ fn create_constraints() -> Constraints {
 }
 
 /// A builder for a hypothetical chunker.
-pub struct HypotheticalBuilder {
+pub struct HypotheticalBuilder<M: CreateChatSession> {
+    model: M,
     task_description: Option<String>,
     examples: Option<Vec<(String, String)>>,
     chunking: Option<ChunkStrategy>,
 }
 
-impl HypotheticalBuilder {
+impl<M: CreateChatSession> HypotheticalBuilder<M> {
     /// Set the chunking strategy.
     pub fn with_chunking(mut self, chunking: ChunkStrategy) -> Self {
         self.chunking = Some(chunking);
@@ -77,7 +78,7 @@ impl HypotheticalBuilder {
     }
 
     /// Build the hypothetical chunker.
-    pub fn build(self) -> Hypothetical {
+    pub fn build(self) -> Hypothetical<M> {
         let task_description = self
             .task_description
             .unwrap_or_else(|| TASK_DESCRIPTION.to_string());
@@ -89,25 +90,23 @@ impl HypotheticalBuilder {
         });
         let chunking = self.chunking;
 
-        let task = Task::builder(task_description)
-            .with_constraints(create_constraints())
-            .with_examples(examples)
-            .build();
+        let task = Task::new(self.model, task_description).with_examples(examples);
 
         Hypothetical { chunking, task }
     }
 }
 
 /// Generates questions for a document.
-pub struct Hypothetical {
+pub struct Hypothetical<M: CreateChatSession> {
     chunking: Option<ChunkStrategy>,
-    task: Task<StructuredRunner<Constraints>>,
+    task: Task<M>,
 }
 
-impl Hypothetical {
+impl<M: CreateChatSession> Hypothetical<M> {
     /// Create a new hypothetical generator.
-    pub fn builder() -> HypotheticalBuilder {
+    pub fn builder(model: M) -> HypotheticalBuilder<M> {
         HypotheticalBuilder {
+            model,
             task_description: None,
             examples: None,
             chunking: None,
@@ -115,17 +114,17 @@ impl Hypothetical {
     }
 
     /// Generate a list of hypothetical questions about the given text.
-    pub async fn generate_question<M>(
-        &self,
-        text: &str,
-        model: &M,
-    ) -> Result<Vec<String>, StructuredTextGenerationError<M::Error>>
+    pub async fn generate_question(&self, text: &str) -> Result<Vec<String>, M::Error>
     where
-        M: Model,
-        <M::SyncModel as SyncModel>::Session: Sync + Send,
-        M::Error: std::fmt::Debug,
+        M: StructuredChatModel<Constraints> + Send + Sync + Clone + Unpin + 'static,
+        M::ChatSession: Clone + Send + Sync + Unpin + 'static,
+        M::Error: Send + Sync + Unpin,
     {
-        let questions = self.task.run(text, model).result().await?;
+        let questions = self
+            .task
+            .run(text)
+            .with_constraints(create_constraints())
+            .await?;
         let documents = questions
             .1
             .into_iter()
@@ -134,18 +133,6 @@ impl Hypothetical {
 
         Ok(documents)
     }
-
-    /// Turn this hypothetical generator into a chunker.
-    pub fn chunker<'a, M>(&'a self, model: &'a M) -> HypotheticalChunker<'a, M>
-    where
-        M: Model,
-        <M::SyncModel as SyncModel>::Session: Sync + Send,
-    {
-        HypotheticalChunker {
-            hypothetical: self,
-            model,
-        }
-    }
 }
 
 /// An error that can occur when chunking a document with [`HypotheticalChunker`].
@@ -153,26 +140,17 @@ impl Hypothetical {
 pub enum HypotheticalChunkerError<E1: Send + Sync + 'static, E2: Send + Sync + 'static> {
     /// An error from the text generation model.
     #[error("Text generation model error: {0}")]
-    TextModelError(#[from] StructuredTextGenerationError<E1>),
+    TextModelError(#[from] E1),
     /// An error from the embedding model.
     #[error("Embedding model error: {0}")]
     EmbeddingModelError(E2),
 }
 
-/// A hypothetical chunker.
-pub struct HypotheticalChunker<'a, M: Model>
+impl<M> Chunker for Hypothetical<M>
 where
-    <M::SyncModel as SyncModel>::Session: Sync + Send,
-{
-    hypothetical: &'a Hypothetical,
-    model: &'a M,
-}
-
-impl<'a, M> Chunker for HypotheticalChunker<'a, M>
-where
-    M: Model,
-    <M::SyncModel as SyncModel>::Session: Sync + Send,
-    M::Error: std::fmt::Debug,
+    M: StructuredChatModel<Constraints> + Send + Sync + Clone + Unpin + 'static,
+    M::ChatSession: Clone + Send + Sync + Unpin + 'static,
+    M::Error: Send + Sync + Unpin,
 {
     type Error<E: Send + Sync + 'static> = HypotheticalChunkerError<M::Error, E>;
 
@@ -180,12 +158,11 @@ where
         &self,
         document: &Document,
         embedder: &E,
-    ) -> Result<Vec<Chunk<E::VectorSpace>>, Self::Error<E::Error>> {
+    ) -> Result<Vec<Chunk>, Self::Error<E::Error>> {
         let body = document.body();
 
         #[allow(clippy::single_range_in_vec_init)]
         let byte_chunks = self
-            .hypothetical
             .chunking
             .map(|chunking| chunking.chunk_str(body))
             .unwrap_or_else(|| vec![0..body.len()]);
@@ -198,10 +175,7 @@ where
         let mut questions_count = Vec::new();
         for byte_chunk in &byte_chunks {
             let text = &body[byte_chunk.clone()];
-            let mut chunk_questions = self
-                .hypothetical
-                .generate_question(text, self.model)
-                .await?;
+            let mut chunk_questions = self.generate_question(text).await?;
             questions.append(&mut chunk_questions);
             questions_count.push(chunk_questions.len());
         }

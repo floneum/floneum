@@ -15,10 +15,10 @@
 //! async fn main() {
 //!     let mut model = Llama::new().await.unwrap();
 //!     let prompt = "The capital of France is ";
-//!     let mut result = model.stream_text(prompt).await.unwrap();
+//!     let mut stream = model(prompt);
 //!
 //!     print!("{prompt}");
-//!     while let Some(token) = result.next().await {
+//!     while let Some(token) = stream.next().await {
 //!         print!("{token}");
 //!     }
 //! }
@@ -32,26 +32,31 @@ extern crate intel_mkl_src;
 #[cfg(feature = "accelerate")]
 extern crate accelerate_src;
 
+mod chat;
+mod chat_template;
+mod gguf_tokenizer;
 mod language_model;
 mod model;
 mod raw;
 mod session;
 mod source;
+mod structured;
+mod token_stream;
 
-pub use crate::model::LlamaModel;
+pub use crate::chat::LlamaChatSession;
+use crate::model::LlamaModel;
 pub use crate::raw::cache::*;
-use crate::raw::Model;
 pub use crate::session::LlamaSession;
-use candle_core::{
-    quantized::{ggml_file, gguf_file},
-    Device,
-};
+use candle_core::Device;
 pub use kalosm_common::*;
-use kalosm_language_model::ChatMarkers;
-use llm_samplers::types::Sampler;
+use kalosm_language_model::{TextCompletionBuilder, TextCompletionModelExt};
+use kalosm_sample::{LiteralParser, StopOn};
 use model::LlamaModelError;
+use raw::LlamaConfig;
 pub use source::*;
-use std::sync::{Arc, Mutex};
+use std::mem::MaybeUninit;
+use std::ops::Deref;
+use std::sync::Arc;
 use tokenizers::Tokenizer;
 
 /// A prelude of commonly used items in kalosm-llama.
@@ -62,38 +67,26 @@ pub mod prelude {
 }
 
 enum Task {
-    Kill,
-    Infer {
-        settings: InferenceSettings,
-        sender: tokio::sync::mpsc::UnboundedSender<String>,
-        sampler: Arc<Mutex<dyn Sampler>>,
-    },
-    RunSync {
-        callback: SyncCallback,
-    },
+    UnstructuredGeneration(UnstructuredGenerationTask),
+    StructuredGeneration(StructuredGenerationTask),
 }
 
-type SyncCallback = Box<
-    dyn for<'a> FnOnce(
-            &'a mut LlamaModel,
-        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>>
-        + Send,
->;
+struct StructuredGenerationTask {
+    runner: Box<dyn FnOnce(&mut LlamaModel) + Send>,
+}
+
+struct UnstructuredGenerationTask {
+    settings: InferenceSettings,
+    on_token: Box<dyn FnMut(String) -> Result<(), LlamaModelError> + Send + Sync>,
+    finished: tokio::sync::oneshot::Sender<Result<(), LlamaModelError>>,
+}
 
 /// A quantized Llama language model with support for streaming generation.
 #[derive(Clone)]
 pub struct Llama {
-    task_sender: tokio::sync::mpsc::UnboundedSender<Task>,
+    config: Arc<LlamaConfig>,
     tokenizer: Arc<Tokenizer>,
-    chat_markers: Arc<Option<ChatMarkers>>,
-}
-
-impl Drop for Llama {
-    fn drop(&mut self) {
-        if std::sync::Arc::strong_count(&self.chat_markers) == 1 {
-            self.task_sender.send(Task::Kill).unwrap();
-        }
-    }
+    task_sender: tokio::sync::mpsc::UnboundedSender<Task>,
 }
 
 impl Llama {
@@ -121,75 +114,102 @@ impl Llama {
             .await
     }
 
+    /// Get the tokenizer for the model.
+    pub fn tokenizer(&self) -> &Arc<Tokenizer> {
+        &self.tokenizer
+    }
+
     /// Create a new builder for a Llama model.
     pub fn builder() -> LlamaBuilder {
         LlamaBuilder::default()
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn from_build(
-        model: Model,
-        tokenizer: Tokenizer,
-        device: Device,
-        cache: LlamaCache,
-        chat_markers: Option<ChatMarkers>,
-    ) -> Self {
+    fn from_build(mut model: LlamaModel) -> Self {
         let (task_sender, mut task_receiver) = tokio::sync::mpsc::unbounded_channel();
-        let arc_tokenizer = Arc::new(tokenizer);
+        let config = model.model.config.clone();
+        let tokenizer = model.tokenizer.clone();
 
         std::thread::spawn({
-            let arc_tokenizer = arc_tokenizer.clone();
             move || {
-                let mut inner = LlamaModel::new(model, arc_tokenizer, device, cache);
-                tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .unwrap()
-                    .block_on(async move {
-                        while let Some(task) = task_receiver.recv().await {
-                            match task {
-                                Task::Kill => break,
-                                Task::Infer {
-                                    settings,
-                                    sender,
-                                    sampler,
-                                } => {
-                                    if let Err(err) = inner._infer(settings, sampler, sender) {
-                                        eprintln!("Error: {}", err);
-                                    }
-                                }
-                                Task::RunSync { callback } => {
-                                    callback(&mut inner).await;
-                                }
+                while let Some(task) = task_receiver.blocking_recv() {
+                    match task {
+                        Task::UnstructuredGeneration(UnstructuredGenerationTask {
+                            settings,
+                            on_token,
+                            finished,
+                        }) => {
+                            let result = model._infer(settings, on_token, &finished);
+                            if let Err(err) = &result {
+                                tracing::error!("Error running model: {err}");
                             }
+                            _ = finished.send(result);
                         }
-                    })
+                        Task::StructuredGeneration(StructuredGenerationTask { runner }) => {
+                            runner(&mut model);
+                        }
+                    }
+                }
             }
         });
         Self {
             task_sender,
-            tokenizer: arc_tokenizer,
-            chat_markers: chat_markers.into(),
+            config,
+            tokenizer,
         }
     }
 
-    /// Get a reference to the tokenizer.
-    pub(crate) fn get_tokenizer(&self) -> Arc<Tokenizer> {
-        self.tokenizer.clone()
+    /// Get the default constraints for an assistant response. It parses any text until the end of the assistant's response.
+    pub fn default_assistant_constraints(&self) -> StopOn<String> {
+        let end_token = self.config.stop_token_string.clone();
+
+        StopOn::from(end_token)
     }
 
-    fn run(
-        &self,
-        settings: InferenceSettings,
-        sampler: Arc<Mutex<dyn Sampler>>,
-    ) -> Result<tokio::sync::mpsc::UnboundedReceiver<String>, LlamaModelError> {
-        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
-        _ = self.task_sender.send(Task::Infer {
-            settings,
-            sender,
-            sampler,
-        });
-        Ok(receiver)
+    /// Get the constraints that end the assistant's response.
+    pub fn end_assistant_marker_constraints(&self) -> LiteralParser {
+        let end_token = self.config.stop_token_string.clone();
+
+        LiteralParser::from(end_token)
+    }
+}
+
+impl Deref for Llama {
+    type Target = dyn Fn(&str) -> TextCompletionBuilder<Self>;
+
+    fn deref(&self) -> &Self::Target {
+        // https://github.com/dtolnay/case-studies/tree/master/callable-types
+
+        // Create an empty allocation for Self.
+        let uninit_callable = MaybeUninit::<Self>::uninit();
+        // Move a closure that captures just self into the uninitialized memory. Closures create an anonymous type that implement
+        // FnOnce. In this case, the layout of the type should just be Self because self is the only field in the closure type.
+        let uninit_closure = move |text: &str| {
+            TextCompletionModelExt::complete(unsafe { &*uninit_callable.as_ptr() }, text)
+        };
+
+        // Make sure the layout of the closure and Self is the same.
+        let size_of_closure = std::alloc::Layout::for_value(&uninit_closure);
+        assert_eq!(size_of_closure, std::alloc::Layout::new::<Self>());
+
+        // Then cast the lifetime of the closure to the lifetime of &self.
+        fn cast_lifetime<'a, T>(_a: &T, b: &'a T) -> &'a T {
+            b
+        }
+        let reference_to_closure = cast_lifetime(
+            {
+                // The real closure that we will never use.
+                &uninit_closure
+            },
+            #[allow(clippy::missing_transmute_annotations)]
+            // We transmute self into a reference to the closure. This is safe because we know that the closure has the same memory layout as Self so &Closure == &Self.
+            unsafe {
+                std::mem::transmute(self)
+            },
+        );
+
+        // Cast the closure to a trait object.
+        reference_to_closure as &_
     }
 }
 
@@ -237,14 +257,10 @@ impl LlamaBuilder {
     /// // Create a new llama model with a loading handler
     /// let model = Llama::builder()
     ///     .build_with_loading_handler(|progress| match progress {
-    ///         ModelLoadingProgress::Downloading {
-    ///             source,
-    ///             start_time,
-    ///             progress,
-    ///         } => {
-    ///             let progress = (progress * 100.0) as u32;
-    ///             let elapsed = start_time.elapsed().as_secs_f32();
-    ///             println!("Downloading file {source} {progress}% ({elapsed}s)");
+    ///         ModelLoadingProgress::Downloading { source, progress } => {
+    ///             let progress_percent = (progress.progress * 100) as u32;
+    ///             let elapsed = progress.start_time.elapsed().as_secs_f32();
+    ///             println!("Downloading file {source} {progress_percent}% ({elapsed}s)");
     ///         }
     ///         ModelLoadingProgress::Loading { progress } => {
     ///             let progress = (progress * 100.0) as u32;
@@ -259,53 +275,9 @@ impl LlamaBuilder {
         self,
         handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
     ) -> Result<Llama, LlamaSourceError> {
-        let device = self.get_device()?;
+        let model = LlamaModel::from_builder(self, handler).await?;
 
-        let handler = Arc::new(Mutex::new(handler));
-        let filename = tokio::spawn({
-            let source = self.source.clone();
-            let handler = handler.clone();
-            async move {
-                let source_display = format!("Model ({})", source.model);
-                let mut create_progress =
-                    ModelLoadingProgress::downloading_progress(source_display);
-                source
-                    .model(move |progress| (handler.lock().unwrap())(create_progress(progress)))
-                    .await
-            }
-        });
-        let tokenizer = {
-            let source = format!("Tokenizer ({})", self.source.tokenizer);
-            let mut create_progress = ModelLoadingProgress::downloading_progress(source);
-            self.source
-                .tokenizer(|progress| (handler.lock().unwrap())(create_progress(progress)))
-                .await?
-        };
-        let filename = filename.await.unwrap()?;
-
-        let mut file = std::fs::File::open(&filename)
-            .expect("The path returned by LlamaSource::model should be valid");
-        let model = match filename.extension().and_then(|v| v.to_str()) {
-            Some("gguf") => {
-                let model = gguf_file::Content::read(&mut file)?;
-                Model::from_gguf(model, &mut file, &device)?
-            }
-            Some("ggml" | "bin") | Some(_) | None => {
-                let model = ggml_file::Content::read(&mut file, &device)?;
-                let gqa = self.source.group_query_attention;
-                Model::from_ggml(model, gqa as usize, &device)?
-            }
-        };
-
-        let cache = LlamaCache::new(&model.config);
-
-        Ok(Llama::from_build(
-            model,
-            tokenizer,
-            device,
-            cache,
-            self.source.markers,
-        ))
+        Ok(Llama::from_build(model))
     }
 
     /// Build the model (this will download the model if it is not already downloaded)
@@ -319,29 +291,33 @@ impl LlamaBuilder {
 pub(crate) struct InferenceSettings {
     prompt: String,
 
-    /// The length of the sample to generate (in tokens).
-    sample_len: usize,
-
     /// The token to stop on.
     stop_on: Option<String>,
+
+    /// The sampler to use.
+    sampler: std::sync::Arc<std::sync::Mutex<dyn llm_samplers::prelude::Sampler>>,
+
+    /// The session to use.
+    session: LlamaSession,
+
+    /// The maximum number of tokens to generate.
+    max_tokens: u32,
 }
 
 impl InferenceSettings {
-    pub fn new(prompt: impl Into<String>) -> Self {
+    pub fn new(
+        prompt: impl Into<String>,
+        session: LlamaSession,
+        sampler: std::sync::Arc<std::sync::Mutex<dyn llm_samplers::prelude::Sampler>>,
+        max_tokens: u32,
+        stop_on: Option<String>,
+    ) -> Self {
         Self {
             prompt: prompt.into(),
-            sample_len: 100,
-            stop_on: None,
+            stop_on,
+            sampler,
+            session,
+            max_tokens,
         }
-    }
-
-    pub fn with_sample_len(mut self, sample_len: usize) -> Self {
-        self.sample_len = sample_len;
-        self
-    }
-
-    pub fn with_stop_on(mut self, stop_on: impl Into<Option<String>>) -> Self {
-        self.stop_on = stop_on.into();
-        self
     }
 }

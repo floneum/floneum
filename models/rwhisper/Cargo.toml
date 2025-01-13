@@ -23,7 +23,6 @@ rodio = "0.20.1"
 tokio = { version = "1.32.0", features = ["full"] }
 tracing = "0.1.37"
 futures-util = "0.3.28"
-async-trait = "0.1.73"
 kalosm-streams.workspace = true
 thiserror.workspace = true
 

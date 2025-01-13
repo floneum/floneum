@@ -66,33 +66,34 @@ You can use a vector database to store embedding, value pairs in an easily searc
 # use std::collections::HashMap;
 # use kalosm::language::*;
 # #[tokio::main]
-# async fn main() {
+# async fn main() -> anyhow::Result<()> {
 // Create a good default Bert model for search
-let bert = Bert::new_for_search().await.unwrap();
+let bert = Bert::new_for_search().await?;
 let sentences = [
     "Kalosm can be used to build local AI applications",
     "With private LLMs data never leaves your computer",
     "The quick brown fox jumps over the lazy dog",
 ];
 // Embed sentences into the vector space
-let embeddings = bert.embed_batch(sentences).await.unwrap();
+let embeddings = bert.embed_batch(sentences).await?;
 println!("embeddings {:?}", embeddings);
 
 // Create a vector database from the embeddings along with a map between the embedding ids and the sentences
-let db = VectorDB::new().unwrap();
-let embeddings = db.add_embeddings(embeddings).unwrap();
+let db = VectorDB::new()?;
+let embeddings = db.add_embeddings(embeddings)?;
 let embedding_id_to_sentence: HashMap<EmbeddingId, &str> =
     HashMap::from_iter(embeddings.into_iter().zip(sentences));
 
 // Embed a query into the vector space. We use `embed_query` instead of `embed` because some models embed queries differently than normal text.
-let embedding = bert.embed_query("What is Kalosm?").await.unwrap();
-let closest = db.get_closest(embedding, 1).unwrap();
+let embedding = bert.embed_query("What is Kalosm?").await?;
+let closest = db.search(&embedding).run()?;
 if let [closest] = closest.as_slice() {
     let distance = closest.distance;
     let text = embedding_id_to_sentence.get(&closest.value).unwrap();
     println!("distance: {distance}");
     println!("closest:  {text}");
 }
+# Ok(())
 # }
 ```
 
@@ -160,7 +161,7 @@ for statement in STATEMENTS {
 let dev = accelerated_device_if_available()?;
 let dataset = dataset.build(&dev)?;
     // Create a classifier
-    let classifier = TextClassifier::<SentenceType, BertSpace>::new(Classifier::new(
+    let classifier = TextClassifier::<SentenceType>::new(Classifier::new(
         &dev,
         ClassifierConfig::new().layers_dims([10]),
     )?);
@@ -168,10 +169,10 @@ let dataset = dataset.build(&dev)?;
     // Train the classifier
     classifier.train(
         &dataset, // The dataset to train on
-        &dev,     // The device to train on
         100,      // The number of epochs to train for
         0.0003,   // The learning rate
         50,       // The batch size
+        |_| {},   // The callback to run as the model trains
     )?;
 
     loop {
@@ -235,7 +236,7 @@ Next, train a classifier on the dataset:
 # let dev = accelerated_device_if_available()?;
 # let dataset = dataset.build(&dev)?;
 // Create a classifier
-let classifier = TextClassifier::<SentenceType, BertSpace>::new(Classifier::new(
+let classifier = TextClassifier::<SentenceType>::new(Classifier::new(
     &dev,
     ClassifierConfig::new().layers_dims([10]),
 )?);
@@ -243,10 +244,10 @@ let classifier = TextClassifier::<SentenceType, BertSpace>::new(Classifier::new(
 // Train the classifier
 classifier.train(
     &dataset, // The dataset to train on
-    &dev,     // The device to train on
     100,      // The number of epochs to train for
     0.0003,   // The learning rate
     50,       // The batch size
+    |_| {},   // The callback to run as the model trains
 )?;
 
 // Run the classifier on some input

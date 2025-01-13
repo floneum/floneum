@@ -32,7 +32,7 @@ async fn stream_response(
     State(model): State<Arc<Llama>>,
 ) -> impl IntoResponse {
     println!("Responding to {prompt}");
-    let model_stream = model.stream_text(&prompt).await.unwrap();
+    let model_stream = model(&prompt);
     println!("stream ready");
     fn infallible(t: String) -> Result<String, std::convert::Infallible> {
         Ok(t)

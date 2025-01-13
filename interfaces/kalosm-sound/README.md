@@ -27,7 +27,7 @@ async fn main() {
     // Get the default microphone input
     let mic = MicInput::default();
     // Stream the audio from the microphone
-    let stream = mic.stream().unwrap();
+    let stream = mic.stream();
     // Detect voice activity in the audio stream
     let mut vad = stream.voice_activity_stream();
     while let Some(input) = vad.next().await {
@@ -46,7 +46,7 @@ async fn main() {
     // Get the default microphone input
     let mic = MicInput::default();
     // Stream the audio from the microphone
-    let stream = mic.stream().unwrap();
+    let stream = mic.stream();
     // Chunk the audio into chunks of speech
     let vad = stream.voice_activity_stream();
     let mut audio_chunks = vad.rechunk_voice_activity();
@@ -68,7 +68,7 @@ async fn main() {
     // Get the default microphone input
     let mic = MicInput::default();
     // Stream the audio from the microphone
-    let stream = mic.stream().unwrap();
+    let stream = mic.stream();
     // Transcribe the audio into text with the default Whisper model
     let mut transcribe = stream.transcribe(Whisper::new().await.unwrap());
     // Print the text as it is streamed in

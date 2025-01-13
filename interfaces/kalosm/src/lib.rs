@@ -9,18 +9,22 @@ pub mod language {
     #![doc = include_str!("../docs/language.md")]
     pub use kalosm_common::ModelLoadingProgress;
     pub use kalosm_common::{accelerated_device_if_available, FileSource};
-    pub use kalosm_language::chat::*;
     pub use kalosm_language::context::*;
     pub use kalosm_language::kalosm_language_model::{
-        Embedder as _, EmbedderExt as _, Model as _, ModelExt as _, *,
+        ChatModel as _, ChatModelExt as _, ChatSession as _, CreateChatSession as _,
+        CreateDefaultChatConstraintsForType as _, CreateDefaultCompletionConstraintsForType as _,
+        CreateTextCompletionSession as _, Embedder as _, EmbedderCacheExt as _, EmbedderExt as _,
+        IntoChatMessage as _, IntoEmbedding as _, ModelBuilder as _, ModelConstraints as _,
+        StreamExt as _, StructuredChatModel as _, StructuredTextCompletionModel as _,
+        TextCompletionModel as _, TextCompletionModelExt as _, TextCompletionSession as _, *,
     };
-    pub use kalosm_language::kalosm_llama::{Llama, LlamaBuilder, LlamaSession, LlamaSource};
+    pub use kalosm_language::kalosm_llama::{
+        Llama, LlamaBuilder, LlamaChatSession, LlamaSession, LlamaSource,
+    };
     pub use kalosm_language::kalosm_sample::{self, *};
     pub use kalosm_language::prelude::Html;
-    pub use kalosm_language::rbert::{Bert, BertBuilder, BertSource, BertSpace};
+    pub use kalosm_language::rbert::{Bert, BertBuilder, BertSource};
     pub use kalosm_language::search::*;
-    pub use kalosm_language::task::*;
-    pub use kalosm_language::tool::*;
     pub use kalosm_language::vector_db::*;
     pub use kalosm_streams::text_stream::*;
 
@@ -47,9 +51,9 @@ mod evaluate;
 #[cfg(feature = "language")]
 pub use evaluate::*;
 
-#[cfg(feature = "language")]
+#[cfg(feature = "prompt_annealing")]
 mod prompt_annealing;
-#[cfg(feature = "language")]
+#[cfg(feature = "prompt_annealing")]
 pub use prompt_annealing::*;
 
 #[cfg(feature = "surrealdb")]

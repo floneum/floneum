@@ -30,14 +30,11 @@ async fn empty_struct() {
         .await
         .unwrap();
 
-    let task = Task::builder("You generate json")
-        .with_constraints(EmptyNamedStruct::new_parser())
-        .build();
+    let task = model
+        .task("You generate json")
+        .with_constraints(std::sync::Arc::new(EmptyNamedStruct::new_parser()));
 
-    let output = task
-        .run("What is the capital of France?", &model)
-        .await
-        .unwrap();
+    let output = task.run("What is the capital of France?").await.unwrap();
 
     assert_eq!(output, EmptyNamedStruct {});
 }
@@ -92,14 +89,11 @@ async fn named_struct() {
         .await
         .unwrap();
 
-    let task = Task::builder("You generate json")
-        .with_constraints(NamedStruct::new_parser())
-        .build();
+    let task = model
+        .task("You generate json")
+        .with_constraints(std::sync::Arc::new(NamedStruct::new_parser()));
 
-    let output = task
-        .run("What is the capital of France?", &model)
-        .all_text()
-        .await;
+    let output = task.run("What is the capital of France?", &model).await;
     println!("{output}");
 
     assert!(output.contains("\"field name\":"));
@@ -125,14 +119,11 @@ async fn with_struct() {
         .await
         .unwrap();
 
-    let task = Task::builder("You generate json")
-        .with_constraints(WithStruct::new_parser())
-        .build();
+    let task = model
+        .task("You generate json")
+        .with_constraints(std::sync::Arc::new(WithStruct::new_parser()));
 
-    let output = task
-        .run("What is the capital of France?", &model)
-        .all_text()
-        .await;
+    let output = task.run("What is the capital of France?", &model).await;
     println!("{output}");
 
     assert!(output.contains("\"name\":"));

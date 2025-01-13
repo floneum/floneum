@@ -1,36 +1,39 @@
-use std::{
-    fmt::{Debug, Display, Formatter},
-    sync::{Arc, Mutex},
-};
-
-use crate::{StructuredTextGenerationError, SyncModel};
-use crate::{TokenOutputStream, UnstructuredTextGenerationError};
 use kalosm_sample::CreateParserState;
 use kalosm_sample::{LiteralParser, ParseStatus, Parser, ParserExt};
 use llm_samplers::prelude::{Logit, Logits};
 use llm_samplers::types::{HasSamplerResources, Sampler, SamplerError};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use std::{
+    fmt::{Debug, Display, Formatter},
+    sync::{Arc, Mutex},
+};
 use tokenizers::tokenizer::Tokenizer;
 
+use crate::model::LlamaModelError;
+use crate::token_stream::TokenOutputStream;
+use crate::{LlamaModel, LlamaSession};
+
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
+pub(crate) fn generate_structured<P: Parser>(
     prompt: impl Display,
-    llm: &M,
-    session: &mut M::Session,
+    llm: &LlamaModel,
+    session: &mut LlamaSession,
     parser: P,
     parser_state: P::PartialState,
     mut sampler: Arc<Mutex<dyn Sampler>>,
-    mut on_token: impl FnMut(String) -> Result<(), M::Error>,
+    mut on_token: impl FnMut(String) -> Result<(), LlamaModelError>,
     top_k: Option<usize>,
-) -> Result<P::Output, StructuredTextGenerationError<M::Error>> {
-    let tokenizer = llm.tokenizer();
+) -> Result<P::Output, LlamaModelError> {
+    let mut session = session
+        .cache
+        .write()
+        .map_err(|err| LlamaModelError::Session(err.to_string()))?;
+    let tokenizer = &llm.tokenizer;
 
     let prompt_text = prompt.to_string();
-    let prompt_tokens = tokenizer.encode(prompt_text, false).map_err(|e| {
-        StructuredTextGenerationError::UnstructuredTextGenerationError(
-            UnstructuredTextGenerationError::TokenizationError(e),
-        )
-    })?;
+    let prompt_tokens = tokenizer
+        .encode(prompt_text, false)
+        .map_err(LlamaModelError::Tokenizer)?;
     let mut prompt_tokens = prompt_tokens.get_ids();
 
     // Prompt healing
@@ -45,20 +48,16 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
     let mut unprocessed_token_count = prompt_tokens.len();
     let mut token_stream = TokenOutputStream::new(tokenizer.clone());
     for token in prompt_tokens {
-        token_stream.next_token(*token).map_err(|err| {
-            StructuredTextGenerationError::UnstructuredTextGenerationError(
-                UnstructuredTextGenerationError::TokenOutputStreamError(err),
-            )
-        })?;
+        token_stream
+            .next_token(*token)
+            .map_err(LlamaModelError::TokenOutputStreamError)?;
     }
 
     let remaining_prompt_text = last_token
         .map(|token| {
-            token_stream.peek_token(token).map_err(|err| {
-                StructuredTextGenerationError::UnstructuredTextGenerationError(
-                    UnstructuredTextGenerationError::TokenOutputStreamError(err),
-                )
-            })
+            token_stream
+                .peek_token(token)
+                .map_err(LlamaModelError::TokenOutputStreamError)
         })
         .transpose()?
         .flatten()
@@ -78,16 +77,13 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
 
     loop {
         let tokens = token_stream.tokens();
-        llm.feed_tokens(
-            session,
+        LlamaModel::forward(
+            &llm.model,
+            &llm.device,
             &tokens[tokens.len() - unprocessed_token_count..],
+            Some(&mut *session),
             &mut logit_probs,
-        )
-        .map_err(|err| {
-            StructuredTextGenerationError::UnstructuredTextGenerationError(
-                UnstructuredTextGenerationError::ModelError(err),
-            )
-        })?;
+        )?;
         let resources = &mut SamplerResources {
             previous_tokens: tokens,
             rng: &mut rng,
@@ -183,16 +179,12 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
 
         // If there are no valid tokens, return an error
         if !valid_tokens {
-            return Err(StructuredTextGenerationError::NoValidTokens);
+            return Err(LlamaModelError::NoValidTokens);
         }
         let token_id = sampler
             .sample_token(resources, &mut logits)
-            .map_err(|err| {
-                StructuredTextGenerationError::UnstructuredTextGenerationError(
-                    UnstructuredTextGenerationError::SamplerError(err.into()),
-                )
-            })?
-            .ok_or(StructuredTextGenerationError::NoValidTokens)?;
+            .map_err(|err| LlamaModelError::SamplerError(err.into()))?
+            .ok_or(LlamaModelError::NoValidTokens)?;
 
         unprocessed_token_count = 1;
         let (result, parsed_bytes) = state_map
@@ -202,11 +194,7 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
             .unwrap_or_else(|| panic!("Token {} not found in state map", token_id));
         let mut token = token_stream
             .next_token(token_id)
-            .map_err(|err| {
-                StructuredTextGenerationError::UnstructuredTextGenerationError(
-                    UnstructuredTextGenerationError::TokenOutputStreamError(err),
-                )
-            })?
+            .map_err(LlamaModelError::TokenOutputStreamError)?
             .unwrap();
         token.truncate(parsed_bytes);
         tracing::trace!("Adding token {} to parser", token);
@@ -217,17 +205,13 @@ pub(crate) fn generate_structured<M: ?Sized + SyncModel, P: Parser>(
             }
             strip_required_next = false;
         }
-        on_token(token).map_err(|err| {
-            StructuredTextGenerationError::UnstructuredTextGenerationError(
-                UnstructuredTextGenerationError::ModelError(err),
-            )
-        })?;
+        on_token(token)?;
 
         if let Some(result) = update_state(
             &parser,
             &mut parser_state,
             result,
-            &tokenizer,
+            tokenizer,
             &mut token_stream,
             &mut on_token,
             &mut unprocessed_token_count,
@@ -245,15 +229,15 @@ fn cmp_logits(a: &Logit, b: &Logit) -> std::cmp::Ordering {
 }
 
 #[allow(unused, clippy::all)]
-fn update_state<P: Parser, E>(
+fn update_state<P: Parser>(
     parser: &P,
     parser_state: &mut P::PartialState,
     result: ParseStatus<P::PartialState, P::Output>,
     tokenizer: &Tokenizer,
     token_stream: &mut TokenOutputStream,
-    on_token: &mut impl FnMut(String) -> Result<(), E>,
+    on_token: &mut impl FnMut(String) -> Result<(), LlamaModelError>,
     unprocessed_token_count: &mut usize,
-) -> Result<Option<P::Output>, StructuredTextGenerationError<E>> {
+) -> Result<Option<P::Output>, LlamaModelError> {
     match result {
         kalosm_sample::ParseStatus::Incomplete {
             new_state,
@@ -264,12 +248,9 @@ fn update_state<P: Parser, E>(
                 Ok(None)
             } else {
                 // The token may decode to a string that is a valid prefix of the required next token, but in a way that doesn't let us decode the required next tokens
-                let Some(mut extra_tokens) =
-                    token_stream.encode_after(&required_next).map_err(|err| {
-                        StructuredTextGenerationError::UnstructuredTextGenerationError(
-                            UnstructuredTextGenerationError::TokenOutputStreamError(err),
-                        )
-                    })?
+                let Some(mut extra_tokens) = token_stream
+                    .encode_after(&required_next)
+                    .map_err(|err| LlamaModelError::TokenOutputStreamError(err))?
                 else {
                     return Ok(None);
                 };
@@ -283,11 +264,7 @@ fn update_state<P: Parser, E>(
                 let mut all_required_next = String::new();
                 if let Some(next) = token_stream
                     .peek_next_tokens(extra_tokens.iter().copied())
-                    .map_err(|err| {
-                        StructuredTextGenerationError::UnstructuredTextGenerationError(
-                            UnstructuredTextGenerationError::TokenOutputStreamError(err),
-                        )
-                    })?
+                    .map_err(|err| LlamaModelError::TokenOutputStreamError(err))?
                 {
                     all_required_next = next;
                 }
@@ -296,17 +273,11 @@ fn update_state<P: Parser, E>(
                 if !required_next.starts_with(&all_required_next) {
                     return Ok(None);
                 }
-                token_stream.next_tokens(&extra_tokens).map_err(|err| {
-                    StructuredTextGenerationError::UnstructuredTextGenerationError(
-                        UnstructuredTextGenerationError::TokenOutputStreamError(err),
-                    )
-                })?;
+                token_stream
+                    .next_tokens(&extra_tokens)
+                    .map_err(|err| LlamaModelError::TokenOutputStreamError(err))?;
                 *unprocessed_token_count += extra_tokens.len();
-                on_token(all_required_next.clone()).map_err(|err| {
-                    StructuredTextGenerationError::UnstructuredTextGenerationError(
-                        UnstructuredTextGenerationError::ModelError(err),
-                    )
-                })?;
+                on_token(all_required_next.clone())?;
                 let mut result = parser
                     .parse(parser_state, all_required_next.as_bytes())
                     .unwrap_or_else(|_| {

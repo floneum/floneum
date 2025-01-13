@@ -19,7 +19,7 @@ use rand::Rng;
 ///     Person,
 ///     Thing,
 /// }
-///```
+/// ```
 pub trait Class {
     /// The number of classes.
     const CLASSES: Option<u32>;
@@ -244,7 +244,7 @@ impl<C: Class> Classifier<C> {
     ///
     /// # Example
     /// ```rust
-    /// use kalosm_learning::{Classifier, ClassifierConfig, Class};
+    /// use kalosm_learning::{Class, Classifier, ClassifierConfig};
     ///
     /// #[derive(Debug, Clone, Copy, Class)]
     /// enum MyClass {
@@ -342,7 +342,7 @@ impl<C: Class> Classifier<C> {
     ///
     /// # Example
     /// ```rust, no_run
-    /// use kalosm_learning::{Classifier, ClassifierConfig, Class, ClassificationDatasetBuilder};
+    /// use kalosm_learning::{Class, ClassificationDatasetBuilder, Classifier, ClassifierConfig};
     ///
     /// #[derive(Debug, Clone, Copy, Class)]
     /// enum MyClass {
@@ -356,7 +356,9 @@ impl<C: Class> Classifier<C> {
     /// dataset.add(vec![1.0, 2.0, 3.0, 4.0], MyClass::Person);
     /// dataset.add(vec![4.0, 3.0, 2.0, 1.0], MyClass::Thing);
     ///
-    /// classifier.train(&dataset.build(&dev).unwrap(), &dev, 20, 0.05, 3).unwrap();
+    /// classifier
+    ///     .train(&dataset.build(&dev).unwrap(), 20, 0.05, 3, |_| {})
+    ///     .unwrap();
     /// ```
     pub fn train(
         &self,
@@ -444,7 +446,7 @@ impl<C: Class> Classifier<C> {
     /// # Example
     ///
     /// ```rust, no_run
-    /// use kalosm_learning::{Classifier, ClassifierConfig, Class};
+    /// use kalosm_learning::{Class, Classifier, ClassifierConfig};
     ///
     /// #[derive(Debug, Clone, Copy, Class)]
     /// enum MyClass {
@@ -465,7 +467,7 @@ impl<C: Class> Classifier<C> {
     /// # Example
     ///
     /// ```rust, no_run
-    /// use kalosm_learning::{Classifier, ClassifierConfig, Class};
+    /// use kalosm_learning::{Class, Classifier, ClassifierConfig};
     ///
     /// #[derive(Debug, Clone, Copy, Class)]
     /// enum MyClass {
@@ -474,7 +476,9 @@ impl<C: Class> Classifier<C> {
     /// }
     ///
     /// let dev = candle_core::Device::Cpu;
-    /// let classifier = Classifier::<MyClass>::load("classifier.safetensors", &dev, ClassifierConfig::new()).unwrap();
+    /// let classifier =
+    ///     Classifier::<MyClass>::load("classifier.safetensors", &dev, ClassifierConfig::new())
+    ///         .unwrap();
     /// ```
     pub fn load(
         path: impl AsRef<std::path::Path>,
@@ -499,7 +503,7 @@ impl<C: Class> Classifier<C> {
     /// # Example
     ///
     /// ```rust, no_run
-    /// use kalosm_learning::{Classifier, ClassifierConfig, Class};
+    /// use kalosm_learning::{Class, Classifier, ClassifierConfig};
     ///
     /// #[derive(Debug, Clone, Copy, Class)]
     /// enum MyClass {

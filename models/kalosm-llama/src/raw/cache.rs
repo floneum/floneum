@@ -43,14 +43,23 @@ impl LlamaCache {
         let mut map = HashMap::with_capacity(self.blocks.len());
         for (i, kv_cache) in self.blocks.iter().enumerate() {
             if let (Ok(Some(k)), Ok(Some(v))) = (kv_cache.cache().k(), kv_cache.cache().v()) {
-                map.insert(format!("llama.cache.blocks.{}.key", i), k);
-                map.insert(format!("llama.cache.blocks.{}.value", i), v);
+                map.insert(
+                    format!("llama.cache.blocks.{}.key", i),
+                    k.to_device(device).unwrap(),
+                );
+                map.insert(
+                    format!("llama.cache.blocks.{}.value", i),
+                    v.to_device(device).unwrap(),
+                );
             }
         }
-        map.insert(
-            "llama.cache.tokens".to_string(),
-            Tensor::from_iter(self.tokens.iter().copied(), device).unwrap(),
-        );
+        if !self.tokens.is_empty() {
+            // Tensor from iter panics or segfaults if the iterator is empty
+            map.insert(
+                "llama.cache.tokens".to_string(),
+                Tensor::from_iter(self.tokens.iter().copied(), device).unwrap(),
+            );
+        }
         map.insert(
             "llama.cache.max_seq_len".to_string(),
             Tensor::new(self.max_seq_len as u32, device).unwrap(),
@@ -60,7 +69,7 @@ impl LlamaCache {
 
     /// Create a cache from a tensor map. This can be used to load a cache from disk.
     pub fn from_tensor_map(map: HashMap<String, Tensor>) -> candle_core::Result<Self> {
-        let tokens = map
+        let tokens: Vec<u32> = map
             .get("llama.cache.tokens")
             .and_then(|tokens| tokens.to_vec1().ok())
             .unwrap_or_default();

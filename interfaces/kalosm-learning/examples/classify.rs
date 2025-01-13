@@ -4,7 +4,7 @@ use kalosm_learning::{
     Class, Classifier, ClassifierConfig, ClassifierProgress, TextClassifier,
     TextClassifierDatasetBuilder,
 };
-use rbert::{Bert, BertSpace};
+use rbert::Bert;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Class)]
 enum MyClass {
@@ -80,7 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dataset = dataset.build(&dev)?;
 
     let classifier =
-        TextClassifier::<MyClass, BertSpace>::new(Classifier::new(&dev, ClassifierConfig::new())?);
+        TextClassifier::<MyClass>::new(Classifier::new(&dev, ClassifierConfig::new())?);
 
     classifier.train(
         &dataset, // The dataset to train on

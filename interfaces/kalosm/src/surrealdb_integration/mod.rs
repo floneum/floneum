@@ -65,14 +65,14 @@ pub struct ObjectWithEmbeddingIds<T> {
 }
 
 /// A table in a surreal database with a primary key tied to an embedding in a vector database.
-pub struct EmbeddingIndexedTable<C: Connection, R, S = UnknownVectorSpace> {
+pub struct EmbeddingIndexedTable<C: Connection, R> {
     table: String,
     db: Surreal<C>,
-    vector_db: VectorDB<S>,
+    vector_db: VectorDB,
     phantom: std::marker::PhantomData<R>,
 }
 
-impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
+impl<C: Connection, R> EmbeddingIndexedTable<C, R> {
     /// Get the name of the table.
     pub fn table(&self) -> &str {
         &self.table
@@ -84,7 +84,7 @@ impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
     }
 
     /// Get the raw vector database.
-    pub fn vector_db(&self) -> &VectorDB<S> {
+    pub fn vector_db(&self) -> &VectorDB {
         &self.vector_db
     }
 
@@ -94,7 +94,7 @@ impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
     }
 
     /// Delete the table from the database and clear the vector database. Returns the contents of the table.
-    pub async fn delete_table(self) -> Result<Vec<(R, Vec<Chunk<S>>)>, EmbeddedIndexedTableError>
+    pub async fn delete_table(self) -> Result<Vec<(R, Vec<Chunk>)>, EmbeddedIndexedTableError>
     where
         R: DeserializeOwned,
     {
@@ -126,7 +126,7 @@ impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
     /// Insert a new record into the table with the given embedding.
     pub async fn insert(
         &self,
-        chunks: impl IntoIterator<Item = Chunk<S>>,
+        chunks: impl IntoIterator<Item = Chunk>,
         value: R,
     ) -> Result<RecordIdKey, EmbeddedIndexedTableError>
     where
@@ -244,8 +244,8 @@ impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
     /// Search for records that are close to the given embedding.
     pub fn search<'a>(
         &'a self,
-        embedding: &'a Embedding<S>,
-    ) -> EmbeddingIndexedTableSearchBuilder<'a, C, R, S> {
+        embedding: &'a Embedding,
+    ) -> EmbeddingIndexedTableSearchBuilder<'a, C, R> {
         EmbeddingIndexedTableSearchBuilder {
             table: self,
             embedding,
@@ -257,20 +257,18 @@ impl<C: Connection, R, S: VectorSpace> EmbeddingIndexedTable<C, R, S> {
 }
 
 /// A trait for anything that can be used to filter the results of an embedded table search.
-pub trait IntoEmbeddingIndexedTableSearchFilter<C: Connection, R, S: VectorSpace, Marker> {
+pub trait IntoEmbeddingIndexedTableSearchFilter<C: Connection, R, Marker> {
     /// Convert the filter into a set of candidates.
     fn into_embedding_indexed_table_search_filter(
         self,
-        db: &EmbeddingIndexedTable<C, R, S>,
+        db: &EmbeddingIndexedTable<C, R>,
     ) -> impl std::future::Future<Output = Result<Candidates, EmbeddedIndexedTableError>> + Send;
 }
 
-impl<C: Connection, R: Send + Sync, S: VectorSpace>
-    IntoEmbeddingIndexedTableSearchFilter<C, R, S, ()> for Candidates
-{
+impl<C: Connection, R: Send + Sync> IntoEmbeddingIndexedTableSearchFilter<C, R, ()> for Candidates {
     async fn into_embedding_indexed_table_search_filter(
         self,
-        _: &EmbeddingIndexedTable<C, R, S>,
+        _: &EmbeddingIndexedTable<C, R>,
     ) -> Result<Candidates, EmbeddedIndexedTableError> {
         Ok(self)
     }
@@ -279,15 +277,15 @@ impl<C: Connection, R: Send + Sync, S: VectorSpace>
 /// A marker type that allows kalosm to specialize the [`IntoEmbeddingIndexedTableSearchFilter`] trait for iterators.
 pub struct IteratorMarker;
 
-impl<C: Connection, R: DeserializeOwned + Send + Sync, S: VectorSpace, I>
-    IntoEmbeddingIndexedTableSearchFilter<C, R, S, IteratorMarker> for I
+impl<C: Connection, R: DeserializeOwned + Send + Sync, I>
+    IntoEmbeddingIndexedTableSearchFilter<C, R, IteratorMarker> for I
 where
     I: IntoIterator<Item = RecordIdKey>,
     I::IntoIter: Send + Sync + 'static,
 {
     fn into_embedding_indexed_table_search_filter(
         self,
-        table: &EmbeddingIndexedTable<C, R, S>,
+        table: &EmbeddingIndexedTable<C, R>,
     ) -> impl Future<Output = Result<Candidates, EmbeddedIndexedTableError>> + Send {
         let ids = self.into_iter();
         async move {
@@ -309,29 +307,16 @@ where
 }
 
 /// A builder for searching for embeddings in a vector database.
-pub struct EmbeddingIndexedTableSearchBuilder<
-    'a,
-    C: Connection,
-    R,
-    S: VectorSpace,
-    F = Candidates,
-    M = (),
-> {
-    table: &'a EmbeddingIndexedTable<C, R, S>,
-    embedding: &'a Embedding<S>,
+pub struct EmbeddingIndexedTableSearchBuilder<'a, C: Connection, R, F = Candidates, M = ()> {
+    table: &'a EmbeddingIndexedTable<C, R>,
+    embedding: &'a Embedding,
     results: Option<usize>,
     filter: Option<F>,
     phantom: std::marker::PhantomData<M>,
 }
 
-impl<
-        'a,
-        C: Connection,
-        R: DeserializeOwned,
-        S: VectorSpace,
-        F: IntoEmbeddingIndexedTableSearchFilter<C, R, S, M>,
-        M,
-    > EmbeddingIndexedTableSearchBuilder<'a, C, R, S, F, M>
+impl<C: Connection, R: DeserializeOwned, F: IntoEmbeddingIndexedTableSearchFilter<C, R, M>, M>
+    EmbeddingIndexedTableSearchBuilder<'_, C, R, F, M>
 {
     /// Set the number of results to return. Defaults to 10.
     pub fn with_results(mut self, results: usize) -> Self {
@@ -383,10 +368,9 @@ impl<
         'a,
         C: Connection + 'a,
         R: DeserializeOwned + Send + Sync + 'a,
-        S: VectorSpace + 'a,
-        F: IntoEmbeddingIndexedTableSearchFilter<C, R, S, M> + Send + 'a,
+        F: IntoEmbeddingIndexedTableSearchFilter<C, R, M> + Send + 'a,
         M: Send + 'a,
-    > IntoFuture for EmbeddingIndexedTableSearchBuilder<'a, C, R, S, F, M>
+    > IntoFuture for EmbeddingIndexedTableSearchBuilder<'a, C, R, F, M>
 {
     type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send + 'a>>;
     type Output = Result<Vec<EmbeddingIndexedTableSearchResult<R>>, EmbeddedIndexedTableError>;
@@ -396,16 +380,14 @@ impl<
     }
 }
 
-impl<'a, C: Connection, R: DeserializeOwned, S: VectorSpace>
-    EmbeddingIndexedTableSearchBuilder<'a, C, R, S>
-{
+impl<'a, C: Connection, R: DeserializeOwned> EmbeddingIndexedTableSearchBuilder<'a, C, R> {
     /// Set a filter to apply to the results. Only vectors that pass the filter will be returned.
     pub fn with_filter<Marker, F>(
         self,
         filter: F,
-    ) -> EmbeddingIndexedTableSearchBuilder<'a, C, R, S, F, Marker>
+    ) -> EmbeddingIndexedTableSearchBuilder<'a, C, R, F, Marker>
     where
-        F: IntoEmbeddingIndexedTableSearchFilter<C, R, S, Marker>,
+        F: IntoEmbeddingIndexedTableSearchFilter<C, R, Marker>,
     {
         EmbeddingIndexedTableSearchBuilder {
             table: self.table,
@@ -469,9 +451,9 @@ impl<C: Connection> EmbeddingIndexedTableBuilder<C> {
     }
 
     /// Build the document table.
-    pub fn build<S: VectorSpace, R: Serialize + DeserializeOwned>(
+    pub fn build<R: Serialize + DeserializeOwned>(
         self,
-    ) -> Result<EmbeddingIndexedTable<C, R, S>, EmbeddedIndexedTableError> {
+    ) -> Result<EmbeddingIndexedTable<C, R>, EmbeddedIndexedTableError> {
         let vector_db = if let Some(location) = self.location {
             VectorDB::new_at(location)?
         } else {

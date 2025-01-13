@@ -8,21 +8,19 @@ use crate::Pooling;
 use kalosm_common::*;
 pub use kalosm_language_model::{
     Embedder, EmbedderCacheExt, EmbedderExt, Embedding, EmbeddingInput, EmbeddingVariant,
-    ModelBuilder, VectorSpace,
+    ModelBuilder,
 };
-use serde::Deserialize;
-use serde::Serialize;
 
-#[async_trait::async_trait]
 impl ModelBuilder for BertBuilder {
     type Model = Bert;
     type Error = BertLoadingError;
 
+    /// Start the model with a loading handler.
     async fn start_with_loading_handler(
         self,
-        loading_handler: impl FnMut(ModelLoadingProgress) + Send + 'static,
+        handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
     ) -> Result<Self::Model, Self::Error> {
-        self.build_with_loading_handler(loading_handler).await
+        self.build_with_loading_handler(handler).await
     }
 
     fn requires_download(&self) -> bool {
@@ -36,7 +34,7 @@ impl Bert {
         &self,
         input: &str,
         pooling: Pooling,
-    ) -> Result<Embedding<BertSpace>, BertError> {
+    ) -> Result<Embedding, BertError> {
         let mut tensors = self.embed_batch_raw(vec![input], pooling)?;
 
         Ok(Embedding::new(tensors.pop().unwrap()))
@@ -47,7 +45,7 @@ impl Bert {
         &self,
         inputs: Vec<&str>,
         pooling: Pooling,
-    ) -> Result<Vec<Embedding<BertSpace>>, BertError> {
+    ) -> Result<Vec<Embedding>, BertError> {
         let tensors = self.embed_batch_raw(inputs, pooling)?;
 
         let mut embeddings = Vec::with_capacity(tensors.len());
@@ -60,13 +58,12 @@ impl Bert {
 }
 
 impl Embedder for Bert {
-    type VectorSpace = BertSpace;
     type Error = BertError;
 
     fn embed_for(
         &self,
         input: EmbeddingInput,
-    ) -> impl Future<Output = Result<Embedding<Self::VectorSpace>, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Embedding, Self::Error>> + Send {
         match (&*self.embedding_search_prefix, input.variant) {
             (Some(prefix), EmbeddingVariant::Query) => {
                 let mut new_input = prefix.clone();
@@ -80,7 +77,7 @@ impl Embedder for Bert {
     fn embed_vec_for(
         &self,
         inputs: Vec<EmbeddingInput>,
-    ) -> impl Future<Output = Result<Vec<Embedding<Self::VectorSpace>>, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Vec<Embedding>, Self::Error>> + Send {
         let inputs = inputs
             .into_iter()
             .map(
@@ -97,16 +94,13 @@ impl Embedder for Bert {
         self.embed_vec(inputs)
     }
 
-    async fn embed_string(&self, input: String) -> Result<Embedding<BertSpace>, Self::Error> {
+    async fn embed_string(&self, input: String) -> Result<Embedding, Self::Error> {
         let self_clone = self.clone();
         tokio::task::spawn_blocking(move || self_clone.embed_with_pooling(&input, Pooling::CLS))
             .await?
     }
 
-    async fn embed_vec(
-        &self,
-        inputs: Vec<String>,
-    ) -> Result<Vec<Embedding<BertSpace>>, Self::Error> {
+    async fn embed_vec(&self, inputs: Vec<String>) -> Result<Vec<Embedding>, Self::Error> {
         let self_clone = self.clone();
         tokio::task::spawn_blocking(move || {
             let inputs_borrowed = inputs.iter().map(|s| s.as_str()).collect::<Vec<_>>();
@@ -115,9 +109,3 @@ impl Embedder for Bert {
         .await?
     }
 }
-
-/// A vector space for BERT sentence embeddings.
-#[derive(Serialize, Deserialize)]
-pub struct BertSpace;
-
-impl VectorSpace for BertSpace {}

@@ -19,7 +19,7 @@
 //!     // Record audio from the microphone for 5 seconds.
 //!     let audio = MicInput::default()
 //!         .record_until(Instant::now() + Duration::from_secs(5))
-//!         .await?;
+//!         .await;
 //!
 //!     // Transcribe the audio.
 //!     let mut text = model.transcribe(audio)?;
@@ -177,7 +177,7 @@ enum Task {
 
 /// A builder with configuration for a Whisper model.
 ///
-/// ```rust
+/// ```rust, no_run
 /// use kalosm::sound::*;
 /// # #[tokio::main]
 /// # async fn main() -> Result<(), anyhow::Error> {
@@ -211,7 +211,6 @@ impl Default for WhisperBuilder {
     }
 }
 
-#[async_trait::async_trait]
 impl ModelBuilder for WhisperBuilder {
     type Model = Whisper;
     type Error = WhisperLoadingError;
@@ -363,14 +362,10 @@ impl WhisperBuilder {
     /// // Create a new whisper model with a loading handler
     /// let model = Whisper::builder()
     ///     .build_with_loading_handler(|progress| match progress {
-    ///         ModelLoadingProgress::Downloading {
-    ///             source,
-    ///             start_time,
-    ///             progress,
-    ///         } => {
-    ///             let progress = (progress * 100.0) as u32;
-    ///             let elapsed = start_time.elapsed().as_secs_f32();
-    ///             println!("Downloading file {source} {progress}% ({elapsed}s)");
+    ///         ModelLoadingProgress::Downloading { source, progress } => {
+    ///             let progress_percent = (progress.progress * 100) as u32;
+    ///             let elapsed = progress.start_time.elapsed().as_secs_f32();
+    ///             println!("Downloading file {source} {progress_percent}% ({elapsed}s)");
     ///         }
     ///         ModelLoadingProgress::Loading { progress } => {
     ///             let progress = (progress * 100.0) as u32;

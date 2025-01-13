@@ -89,16 +89,12 @@ pub struct DocumentTable<
 > {
     embedding_model: M,
     chunker: K,
-    table: EmbeddingIndexedTable<C, R, M::VectorSpace>,
+    table: EmbeddingIndexedTable<C, R>,
 }
 
 impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     /// Create a new document table.
-    pub fn new(
-        embedding_model: M,
-        table: EmbeddingIndexedTable<C, R, M::VectorSpace>,
-        chunker: K,
-    ) -> Self {
+    pub fn new(embedding_model: M, table: EmbeddingIndexedTable<C, R>, chunker: K) -> Self {
         Self {
             embedding_model,
             table,
@@ -107,7 +103,7 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     }
 
     /// Get the raw table.
-    pub fn table(&self) -> &EmbeddingIndexedTable<C, R, M::VectorSpace> {
+    pub fn table(&self) -> &EmbeddingIndexedTable<C, R> {
         &self.table
     }
 
@@ -117,9 +113,7 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     }
 
     /// Delete the table from the database and clear the vector database. Returns the contents of the table.
-    pub async fn delete_table(
-        self,
-    ) -> Result<Vec<(R, Vec<Chunk<M::VectorSpace>>)>, EmbeddedIndexedTableError>
+    pub async fn delete_table(self) -> Result<Vec<(R, Vec<Chunk>)>, EmbeddedIndexedTableError>
     where
         R: DeserializeOwned,
     {
@@ -130,7 +124,7 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     pub async fn insert_with_chunks(
         &self,
         value: R,
-        chunks: impl IntoIterator<Item = Chunk<M::VectorSpace>>,
+        chunks: impl IntoIterator<Item = Chunk>,
     ) -> Result<RecordIdKey, EmbeddedIndexedTableError>
     where
         R: Serialize + DeserializeOwned + 'static,
@@ -222,7 +216,7 @@ impl<C: Connection, R, M: Embedder, K: Chunker> DocumentTable<C, R, M, K> {
     /// NOTE: If your embedding model has a different query embedding and you pass in a raw embedding, that embedding will perform best if it was created with [`EmbedderExt::embed_query`].
     pub fn search<E>(&self, embedding: E) -> DocumentTableSearchBuilder<C, R, M, K, E>
     where
-        E: IntoEmbedding<M::VectorSpace>,
+        E: IntoEmbedding,
         R: DeserializeOwned,
     {
         DocumentTableSearchBuilder {
@@ -274,7 +268,7 @@ pub struct DocumentTableSearchBuilder<
     Doc = Document,
     Model: Embedder = Bert,
     Chkr: Chunker = SemanticChunker,
-    E = Embedding<<Model as Embedder>::VectorSpace>,
+    E = Embedding,
     F = Candidates,
     M = (),
 > {
@@ -297,15 +291,14 @@ pub enum DocumentTableSearchError<E> {
 }
 
 impl<
-        'a,
         Conn: Connection,
         Doc: DeserializeOwned + Send + Sync,
         Model: Embedder,
-        E: IntoEmbedding<Model::VectorSpace>,
-        F: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, Model::VectorSpace, M>,
+        E: IntoEmbedding,
+        F: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, M>,
         Chkr: Chunker,
         M,
-    > DocumentTableSearchBuilder<'a, Conn, Doc, Model, Chkr, E, F, M>
+    > DocumentTableSearchBuilder<'_, Conn, Doc, Model, Chkr, E, F, M>
 {
     /// Set the number of results to return. Defaults to 10.
     pub fn with_results(mut self, results: usize) -> Self {
@@ -341,8 +334,8 @@ impl<
         Conn: Connection + 'a,
         Doc: DeserializeOwned + Send + Sync + 'a,
         Model: Embedder + 'a,
-        E: IntoEmbedding<Model::VectorSpace> + Send + 'a,
-        F: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, Model::VectorSpace, M> + Send + Sync + 'a,
+        E: IntoEmbedding + Send + 'a,
+        F: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, M> + Send + Sync + 'a,
         Chkr: Chunker + Send + Sync + 'a,
         M: Send + 'a,
     > IntoFuture for DocumentTableSearchBuilder<'a, Conn, Doc, Model, Chkr, E, F, M>
@@ -361,8 +354,8 @@ impl<
         Conn: Connection,
         Doc: DeserializeOwned,
         Model: Embedder,
-        E: IntoEmbedding<Model::VectorSpace>,
-        F: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, Model::VectorSpace, M>,
+        E: IntoEmbedding,
+        F: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, M>,
         Chkr: Chunker,
         M,
     > DocumentTableSearchBuilder<'a, Conn, Doc, Model, Chkr, E, F, M>
@@ -373,10 +366,7 @@ impl<
         filter: F2,
     ) -> DocumentTableSearchBuilder<'a, Conn, Doc, Model, Chkr, E, F2, Marker>
     where
-        F2: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, Model::VectorSpace, Marker>
-            + Send
-            + Sync
-            + 'static,
+        F2: IntoEmbeddingIndexedTableSearchFilter<Conn, Doc, Marker> + Send + Sync + 'static,
     {
         DocumentTableSearchBuilder {
             table: self.table,

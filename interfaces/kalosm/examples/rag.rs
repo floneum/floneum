@@ -37,7 +37,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Create a llama chat model
     let model = Llama::new_chat().await?;
-    let mut chat = Chat::builder(model).with_system_prompt("The assistant help answer questions based on the context given by the user. The model knows that the information the user gives it is always true.").build();
+    let mut chat = model.chat().with_system_prompt("The assistant help answer questions based on the context given by the user. The model knows that the information the user gives it is always true.");
 
     loop {
         // Ask the user for a question
@@ -66,7 +66,7 @@ async fn main() -> anyhow::Result<()> {
         println!("{}", prompt);
 
         // And finally, respond to the user
-        let mut output_stream = chat.add_message(prompt);
+        let mut output_stream = chat(&prompt);
         print!("Bot: ");
         output_stream.to_std_out().await?;
     }

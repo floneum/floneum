@@ -83,21 +83,20 @@ impl From<heed::Error> for VectorDbError {
 /// ```
 #[doc(alias = "VectorDatabase")]
 #[doc(alias = "Vector Database")]
-pub struct VectorDB<S = UnknownVectorSpace> {
+pub struct VectorDB {
     database: ArroyDatabase<DotProduct>,
     metadata: Database<Str, SerdeJson<Vec<u32>>>,
     env: heed::Env,
     dim: AtomicUsize,
-    _phantom: std::marker::PhantomData<S>,
 }
 
-impl<S: VectorSpace + Sync> Default for VectorDB<S> {
+impl Default for VectorDB {
     fn default() -> Self {
         Self::new().unwrap()
     }
 }
 
-impl<S: VectorSpace + Sync> VectorDB<S> {
+impl VectorDB {
     fn set_dim(&self, dim: usize) {
         if dim == 0 {
             panic!("Dimension cannot be 0");
@@ -146,7 +145,6 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
             metadata,
             env,
             dim: AtomicUsize::new(0),
-            _phantom: std::marker::PhantomData,
         })
     }
 
@@ -231,7 +229,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
     /// Add a new embedding to the vector database.
     ///
     /// Note: Adding embeddings in a batch with [`VectorDB::add_embeddings`] will be faster.
-    pub fn add_embedding(&self, embedding: Embedding<S>) -> Result<EmbeddingId, VectorDbError> {
+    pub fn add_embedding(&self, embedding: Embedding) -> Result<EmbeddingId, VectorDbError> {
         let embedding = embedding.vector().to_vec1()?;
 
         self.set_dim(embedding.len());
@@ -254,7 +252,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
     /// Add a new batch of embeddings to the vector database.
     pub fn add_embeddings(
         &self,
-        embedding: impl IntoIterator<Item = Embedding<S>>,
+        embedding: impl IntoIterator<Item = Embedding>,
     ) -> Result<Vec<EmbeddingId>, VectorDbError> {
         let mut embeddings = embedding.into_iter().map(|e| e.vector().to_vec1());
         let first_embedding = match embeddings.next() {
@@ -288,7 +286,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
     }
 
     /// Get the embedding for an embedding id.
-    pub fn get_embedding(&self, embedding_id: EmbeddingId) -> Result<Embedding<S>, VectorDbError> {
+    pub fn get_embedding(&self, embedding_id: EmbeddingId) -> Result<Embedding, VectorDbError> {
         let rtxn = self.env.read_txn()?;
         let reader = Reader::<DotProduct>::open(&rtxn, 0, self.database)?;
 
@@ -305,7 +303,7 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
     }
 
     /// Get the closest N embeddings to the given embedding.
-    pub fn search<'a>(&'a self, embedding: &'a Embedding<S>) -> VectorDBSearchBuilder<'a, S> {
+    pub fn search<'a>(&'a self, embedding: &'a Embedding) -> VectorDBSearchBuilder<'a> {
         VectorDBSearchBuilder {
             db: self,
             embedding,
@@ -316,13 +314,13 @@ impl<S: VectorSpace + Sync> VectorDB<S> {
 }
 
 /// A trait for anything that can be used to filter the results of a vector search.
-pub trait IntoVectorDbSearchFilter<S, M> {
+pub trait IntoVectorDbSearchFilter<M> {
     /// Convert the filter into a set of candidates.
-    fn into_vector_db_search_filter(self, db: &VectorDB<S>) -> Candidates;
+    fn into_vector_db_search_filter(self, db: &VectorDB) -> Candidates;
 }
 
-impl<S: VectorSpace> IntoVectorDbSearchFilter<S, ()> for Candidates {
-    fn into_vector_db_search_filter(self, _: &VectorDB<S>) -> Candidates {
+impl IntoVectorDbSearchFilter<()> for Candidates {
+    fn into_vector_db_search_filter(self, _: &VectorDB) -> Candidates {
         self
     }
 }
@@ -330,12 +328,11 @@ impl<S: VectorSpace> IntoVectorDbSearchFilter<S, ()> for Candidates {
 /// A marker type that allows kalosm to specialize the [`IntoVectorDbSearchFilter`] trait for iterators.
 pub struct IteratorMarker;
 
-impl<S, I> IntoVectorDbSearchFilter<S, IteratorMarker> for I
+impl<I> IntoVectorDbSearchFilter<IteratorMarker> for I
 where
-    S: VectorSpace,
     I: IntoIterator<Item = EmbeddingId>,
 {
-    fn into_vector_db_search_filter(self, _: &VectorDB<S>) -> Candidates {
+    fn into_vector_db_search_filter(self, _: &VectorDB) -> Candidates {
         let mut candidates = Candidates::new();
         for id in self {
             candidates.insert(id.0);
@@ -347,12 +344,11 @@ where
 /// A marker type that allows kalosm to specialize the [`IntoVectorDbSearchFilter`] trait for closures.
 pub struct ClosureMarker;
 
-impl<S, I> IntoVectorDbSearchFilter<S, ClosureMarker> for I
+impl<I> IntoVectorDbSearchFilter<ClosureMarker> for I
 where
-    S: VectorSpace,
-    I: FnMut(Embedding<S>) -> bool,
+    I: FnMut(Embedding) -> bool,
 {
-    fn into_vector_db_search_filter(mut self, db: &VectorDB<S>) -> Candidates {
+    fn into_vector_db_search_filter(mut self, db: &VectorDB) -> Candidates {
         let mut candidates = Candidates::new();
         let rtxn = match db.env.read_txn() {
             Ok(rtxn) => rtxn,
@@ -379,14 +375,14 @@ where
 }
 
 /// A builder for searching for embeddings in a vector database.
-pub struct VectorDBSearchBuilder<'a, S: VectorSpace> {
-    db: &'a VectorDB<S>,
-    embedding: &'a Embedding<S>,
+pub struct VectorDBSearchBuilder<'a> {
+    db: &'a VectorDB,
+    embedding: &'a Embedding,
     results: Option<usize>,
     filter: Option<Candidates>,
 }
 
-impl<S: VectorSpace> VectorDBSearchBuilder<'_, S> {
+impl VectorDBSearchBuilder<'_> {
     /// Set the number of results to return. Defaults to 10.
     pub fn with_results(mut self, results: usize) -> Self {
         self.results = Some(results);
@@ -396,7 +392,7 @@ impl<S: VectorSpace> VectorDBSearchBuilder<'_, S> {
     /// Set a filter to apply to the results. Only vectors that pass the filter will be returned.
     pub fn with_filter<Marker>(
         mut self,
-        filter: impl IntoVectorDbSearchFilter<S, Marker> + Send + Sync + 'static,
+        filter: impl IntoVectorDbSearchFilter<Marker> + Send + Sync + 'static,
     ) -> Self {
         self.filter = Some(filter.into_vector_db_search_filter(self.db));
         self
@@ -477,7 +473,7 @@ async fn test_vector_db_get_closest() {
     );
     assert_eq!(
         db.search(&third_embedding)
-            .with_filter(|vector: Embedding<UnknownVectorSpace>| vector.to_vec()[0] < 0.0)
+            .with_filter(|vector: Embedding| vector.to_vec()[0] < 0.0)
             .run()
             .unwrap()
             .iter()

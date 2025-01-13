@@ -9,13 +9,13 @@ async fn main() {
     print!("{}", prompt);
 
     let validator = RegexParser::new(r"(\d, ){4}\d").unwrap();
-    let mut stream = llm.stream_structured_text(prompt, validator);
+    let mut stream = llm(prompt).with_constraints(validator);
 
     stream.to_std_out().await.unwrap();
 
     println!("\n\n# without constraints");
     print!("{}", prompt);
 
-    let mut stream = llm.stream_text(prompt).with_max_length(100).await.unwrap();
+    let mut stream = llm(prompt);
     stream.to_std_out().await.unwrap();
 }

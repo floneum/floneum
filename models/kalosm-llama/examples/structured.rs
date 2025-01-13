@@ -1,6 +1,6 @@
 #![allow(unused)]
 use kalosm::language::*;
-use std::io::Write;
+use std::{io::Write, sync::Arc};
 
 #[tokio::main]
 async fn main() {
@@ -38,17 +38,17 @@ async fn main() {
 
     println!("# with constraints");
 
-    let task = Task::builder("You generate realistic JSON placeholders")
-        .with_constraints(<[Pet; 4] as Parse>::new_parser())
-        .build();
-    let stream = task.run(prompt, &llm);
+    let task = llm
+        .task("You generate realistic JSON placeholders")
+        .with_constraints(Arc::new(<[Pet; 4] as Parse>::new_parser()));
+    let stream = task.run(prompt);
 
     time_stream(stream).await;
 
     println!("\n\n# without constraints");
 
-    let task = Task::builder("You generate realistic JSON placeholders").build();
-    let stream = task.run(prompt, &llm);
+    let task = llm.task("You generate realistic JSON placeholders");
+    let stream = task(prompt);
 
     time_stream(stream).await;
 }

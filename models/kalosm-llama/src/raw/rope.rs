@@ -92,14 +92,7 @@ impl RopeCache {
 
 #[test]
 fn test_rope_cache() {
-    let config = LlamaConfig {
-        rope_freq_weight: None,
-        rope_theta: 5000.,
-        context_length: 6,
-        head_dimension: 2,
-        n_head: 0,
-        n_layer: 0,
-    };
+    let config = LlamaConfig::mock_test();
     let device = Device::cuda_if_available(0).unwrap();
     let cache = RopeCache::new(&config, DType::F32, &device).unwrap();
 

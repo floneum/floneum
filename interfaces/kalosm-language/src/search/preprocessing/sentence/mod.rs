@@ -17,8 +17,7 @@ impl Chunker for DefaultSentenceChunker {
         &self,
         document: &Document,
         embedder: &E,
-    ) -> impl Future<Output = Result<Vec<Chunk<E::VectorSpace>>, Self::Error<E::Error>>> + Send
-    {
+    ) -> impl Future<Output = Result<Vec<Chunk>, Self::Error<E::Error>>> + Send {
         let default = SentenceChunker::default();
         // Split the document into sentences. We first just collect the sentences as strings and byte ranges
         let mut initial_chunks = Vec::new();
@@ -102,8 +101,7 @@ impl Chunker for SentenceChunker {
         &self,
         document: &Document,
         embedder: &E,
-    ) -> impl Future<Output = Result<Vec<Chunk<E::VectorSpace>>, Self::Error<E::Error>>> + Send
-    {
+    ) -> impl Future<Output = Result<Vec<Chunk>, Self::Error<E::Error>>> + Send {
         // Split the document into sentences. We first just collect the sentences as strings and byte ranges
         let mut initial_chunks = Vec::new();
         let body = document.body();
@@ -120,7 +118,7 @@ async fn embed_chunk<E: Embedder + Send>(
     embedder: &E,
     initial_chunks: Vec<String>,
     ranges: Vec<std::ops::Range<usize>>,
-) -> Result<Vec<Chunk<E::VectorSpace>>, E::Error> {
+) -> Result<Vec<Chunk>, E::Error> {
     // Next embed them all in one big batch
     let embeddings = embedder.embed_vec(initial_chunks).await?;
 
