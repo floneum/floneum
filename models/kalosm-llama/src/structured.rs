@@ -24,6 +24,13 @@ pub(crate) fn generate_structured<P: Parser>(
     mut on_token: impl FnMut(String) -> Result<(), LlamaModelError>,
     top_k: Option<usize>,
 ) -> Result<P::Output, LlamaModelError> {
+    let eos_token = llm.model.config.stop_token_string.clone();
+    let mut on_token = move |tok: String| {
+        if tok == eos_token {
+            return Ok(());
+        }
+        on_token(tok)
+    };
     let mut session = session
         .cache
         .write()
