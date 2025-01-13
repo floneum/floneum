@@ -238,9 +238,12 @@ impl ResourceStorage {
         let model = self.initialize_model(index).await?;
         match model {
             ConcreteTextGenerationModel::Llama(model) => Ok(model
-                .generate_text(&input)
-                .with_max_length(max_tokens.unwrap_or(u32::MAX))
-                .with_stop_on(stop_on)
+                .complete(&input)
+                .with_sampler(
+                    GenerationParameters::new()
+                        .with_max_length(max_tokens.unwrap_or(u32::MAX))
+                        .with_stop_on(stop_on),
+                )
                 .await?),
         }
     }
@@ -258,7 +261,7 @@ impl ResourceStorage {
         let model = self.initialize_model(index).await?;
         match model {
             ConcreteTextGenerationModel::Llama(model) => {
-                Ok(model.stream_structured_text(&input, structure).await?)
+                Ok(model.complete(&input).with_constraints(structure).await?)
             }
         }
     }
