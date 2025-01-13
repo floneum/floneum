@@ -45,11 +45,11 @@ impl LlamaCache {
             if let (Ok(Some(k)), Ok(Some(v))) = (kv_cache.cache().k(), kv_cache.cache().v()) {
                 map.insert(
                     format!("llama.cache.blocks.{}.key", i),
-                    k.to_device(&device).unwrap(),
+                    k.to_device(device).unwrap(),
                 );
                 map.insert(
                     format!("llama.cache.blocks.{}.value", i),
-                    v.to_device(&device).unwrap(),
+                    v.to_device(device).unwrap(),
                 );
             }
         }
