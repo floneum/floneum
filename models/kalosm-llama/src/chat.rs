@@ -1,4 +1,7 @@
-use std::sync::{Arc, RwLock};
+use std::{
+    ops::Index,
+    sync::{Arc, RwLock},
+};
 
 use crate::{model::LlamaModelError, session::LlamaSessionLoadingError, Llama, LlamaSession};
 use kalosm_common::accelerated_device_if_available;
@@ -171,7 +174,9 @@ impl ChatSession for LlamaChatSession {
         let mut history_items = Vec::new();
         let mut cursor_pos = 0;
         let history_item_count = u32::from_le_bytes(
-            bytes[..4]
+            bytes
+                .get(..4)
+                .ok_or(LlamaSessionLoadingError::InvalidChatMessages)?
                 .try_into()
                 .map_err(|_| LlamaSessionLoadingError::InvalidChatMessages)?,
         );
