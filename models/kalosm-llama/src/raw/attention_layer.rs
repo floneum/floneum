@@ -309,29 +309,37 @@ impl LlamaAttention {
             Some(cache) => cache.append(&key_states, &value_states)?,
         };
 
-        let mut attn_weights = (query_states.matmul(&key_states.t()?)? / (head_dim as f64).sqrt())?;
+        let scale = 1. / (head_dim as f64).sqrt();
 
-        if let Some(attention_mask) = attention_mask {
-            attention_mask.forward(&mut attn_weights)?;
-        }
+        let mut attn_output = if query_states.device().is_metal() && q_len == 1 {
+            // SDPA use fuzed softmax(qk^T*scale)v kernel on metal
+            candle_nn::ops::sdpa(&query_states, &key_states, &value_states, scale as f32, 1.)
+                .unwrap()
+        } else {
+            let mut attn_weights = (query_states.matmul(&key_states.t()?)? * scale)?;
 
-        attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights)?;
+            if let Some(attention_mask) = attention_mask {
+                attention_mask.forward(&mut attn_weights)?;
+            }
 
-        let mut attn_output = attn_weights.matmul(&value_states)?;
+            attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights)?;
+
+            attn_weights.matmul(&value_states)?
+        };
 
         if attn_output.dims() != [bsz, num_heads, q_len, head_dim] {
             return Err(candle_core::Error::Msg(format!(
                 "`attn_output` should be of size {:?}, but is {:?}",
                 [bsz, self.n_head, q_len, head_dim],
-                attn_weights.dims()
+                attn_output.dims()
             )));
         }
 
-        attn_output = attn_output.transpose(1, 2)?;
+        attn_output = attn_output.transpose(1, 2).unwrap();
 
-        attn_output = attn_output.reshape(&[bsz, q_len, hidden_size])?;
+        attn_output = attn_output.reshape(&[bsz, q_len, hidden_size]).unwrap();
 
-        attn_output = self.attention_wo.forward(&attn_output)?;
+        attn_output = self.attention_wo.forward(&attn_output).unwrap();
 
         Ok(attn_output)
     }

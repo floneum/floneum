@@ -120,7 +120,9 @@ impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
 /// ```rust, no_run
 /// use candle_core::Device;
 /// use kalosm_language_model::{Embedder, EmbedderExt};
-/// use kalosm_learning::{Class, Classifier, ClassifierConfig, TextClassifier, TextClassifierDatasetBuilder};
+/// use kalosm_learning::{
+///     Class, Classifier, ClassifierConfig, TextClassifier, TextClassifierDatasetBuilder,
+/// };
 /// use rbert::Bert;
 ///
 /// #[tokio::main]
