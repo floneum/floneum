@@ -112,6 +112,7 @@ impl LlamaModel {
             .await?;
         let mut file = std::fs::File::open(&filename)
             .expect("The path returned by LlamaSource::model should be valid");
+        let override_stop_token_string = builder.source.override_stop_token_string;
         let (model, tokenizer) = match filename.extension().and_then(|v| v.to_str()) {
             Some("gguf") => {
                 let model = gguf_file::Content::read(&mut file)?;
@@ -212,7 +213,8 @@ impl LlamaModel {
                             .map_err(LlamaSourceError::Tokenizer)?
                     }
                 };
-                let model = Model::from_gguf(model, &mut file, &device)?;
+                let model =
+                    Model::from_gguf(model, &mut file, &device, override_stop_token_string)?;
                 (model, tokenizer)
             }
             Some("ggml" | "bin") | Some(_) | None => {

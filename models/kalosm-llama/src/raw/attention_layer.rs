@@ -240,7 +240,7 @@ impl GroupedAttention {
             .reshape((b_sz, seq_len, num_heads, head_dim))?
             .transpose(1, 2)?;
         let key_states = key_states
-            .reshape((b_sz, seq_len, num_heads, head_dim))?
+            .reshape((b_sz, seq_len, num_key_value_heads, head_dim))?
             .transpose(1, 2)?;
         let value_states = value_states
             .reshape((b_sz, seq_len, num_key_value_heads, head_dim))?

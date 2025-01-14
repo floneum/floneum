@@ -160,6 +160,7 @@ impl Model {
         ct: gguf_file::Content,
         reader: &mut R,
         device: &Device,
+        override_stop_token_string: Option<String>,
     ) -> std::result::Result<Self, LlamaSourceError> {
         let md_get = |s: &str| {
             let value = if s.starts_with('.') {
@@ -176,16 +177,23 @@ impl Model {
         };
 
         // Get the eos and bos tokens from the metadata
-        let start_token = md_get("tokenizer.ggml.bos_token_id")
-            .ok()
-            .and_then(|v| v.to_u32().ok());
-        let stop_token = md_get("tokenizer.ggml.eos_token_id")?.to_u32()?;
         let tokens: std::result::Result<Vec<_>, _> = md_get("tokenizer.ggml.tokens")?
             .to_vec()?
             .iter()
             .map(|v| v.to_string())
             .collect();
         let tokens = tokens?;
+        let start_token = md_get("tokenizer.ggml.bos_token_id")
+            .ok()
+            .and_then(|v| v.to_u32().ok());
+        let stop_token = if let Some(override_stop_token_string) = override_stop_token_string {
+            tokens
+                .iter()
+                .position(|v| **v == override_stop_token_string)
+                .unwrap_or(0) as u32
+        } else {
+            md_get("tokenizer.ggml.eos_token_id")?.to_u32()?
+        };
         let start_token_string = start_token
             .map(|v| tokens[v as usize].clone())
             .unwrap_or_else(|| "".to_string());
