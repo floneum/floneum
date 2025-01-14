@@ -42,6 +42,7 @@ pub struct LlamaSource {
     pub(crate) tokenizer: Option<FileSource>,
     pub(crate) group_query_attention: u8,
     pub(crate) cache: kalosm_common::Cache,
+    pub(crate) override_stop_token_string: Option<String>,
 }
 
 /// Errors that can occur when loading the Llama model.
@@ -75,6 +76,7 @@ impl LlamaSource {
             tokenizer: None,
             group_query_attention: 1,
             cache: Default::default(),
+            override_stop_token_string: None,
         }
     }
 
@@ -104,6 +106,13 @@ impl LlamaSource {
     /// This is determined automatically for any gguf models
     pub fn with_group_query_attention(mut self, group_query_attention: u8) -> Self {
         self.group_query_attention = group_query_attention;
+
+        self
+    }
+
+    /// Override the stop token string. This is useful for models that have the wrong default stop token string.
+    pub fn with_override_stop_token_string(mut self, stop_token_string: String) -> Self {
+        self.override_stop_token_string = Some(stop_token_string);
 
         self
     }
@@ -307,6 +316,7 @@ impl LlamaSource {
             "tokenizer.json".to_string(),
         ))
         .with_group_query_attention(1)
+        .with_override_stop_token_string("<|end|>".to_string())
     }
 
     /// A preset for Phi-3-mini-4k-instruct with the updated version of the model
@@ -322,6 +332,7 @@ impl LlamaSource {
             "tokenizer.json".to_string(),
         ))
         .with_group_query_attention(1)
+        .with_override_stop_token_string("<|end|>".to_string())
     }
 
     /// A preset for Phi-3.5-mini-4k-instruct with the updated version of the model
@@ -337,6 +348,22 @@ impl LlamaSource {
             "tokenizer.json".to_string(),
         ))
         .with_group_query_attention(1)
+        .with_override_stop_token_string("<|end|>".to_string())
+    }
+
+    /// A preset for phi 4 (14b)
+    pub fn phi_4() -> Self {
+        Self::new(FileSource::huggingface(
+            "microsoft/phi-4-gguf".to_string(),
+            "main".to_string(),
+            "phi-4-q4.gguf".to_string(),
+        ))
+        .with_tokenizer(FileSource::huggingface(
+            "microsoft/phi-4".to_string(),
+            "main".to_string(),
+            "tokenizer.json".to_string(),
+        ))
+        .with_override_stop_token_string("<|im_end|>".to_string())
     }
 
     /// A preset for Llama7b v2
