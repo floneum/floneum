@@ -316,7 +316,7 @@ impl LlamaSource {
             "tokenizer.json".to_string(),
         ))
         .with_group_query_attention(1)
-        .with_override_stop_token_string("<|im_end|>".to_string())
+        .with_override_stop_token_string("<|end|>".to_string())
     }
 
     /// A preset for Phi-3-mini-4k-instruct with the updated version of the model
@@ -332,7 +332,7 @@ impl LlamaSource {
             "tokenizer.json".to_string(),
         ))
         .with_group_query_attention(1)
-        .with_override_stop_token_string("<|im_end|>".to_string())
+        .with_override_stop_token_string("<|end|>".to_string())
     }
 
     /// A preset for Phi-3.5-mini-4k-instruct with the updated version of the model
@@ -348,7 +348,7 @@ impl LlamaSource {
             "tokenizer.json".to_string(),
         ))
         .with_group_query_attention(1)
-        .with_override_stop_token_string("<|im_end|>".to_string())
+        .with_override_stop_token_string("<|end|>".to_string())
     }
 
     /// A preset for phi 4 (14b)
