@@ -630,7 +630,13 @@ where
             }
         }
         let mut task = myself.task.get().unwrap().write().unwrap();
-        task.poll_unpin(cx).map(|_| None)
+        match task.poll_unpin(cx) {
+            Poll::Ready(_) => {
+                *task = Box::pin(async move {});
+                Poll::Ready(None)
+            }
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 
@@ -647,9 +653,7 @@ where
         self.ensure_unstructured_task_started();
 
         Box::pin(async move {
-            if self.result.is_none() {
-                self.task.into_inner().unwrap().into_inner().unwrap().await;
-            }
+            self.task.into_inner().unwrap().into_inner().unwrap().await;
             let result = self.result.take().unwrap().await.unwrap();
             result.map(|boxed| *boxed.downcast::<String>().unwrap())
         })
@@ -736,7 +740,13 @@ where
             }
         }
         let mut task = myself.task.get().unwrap().write().unwrap();
-        task.poll_unpin(cx).map(|_| None)
+        match task.poll_unpin(cx) {
+            Poll::Ready(_) => {
+                *task = Box::pin(async move {});
+                Poll::Ready(None)
+            }
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 

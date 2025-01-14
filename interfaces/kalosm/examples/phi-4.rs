@@ -2,7 +2,6 @@ use kalosm::language::*;
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
     let model = Llama::builder()
         .with_source(LlamaSource::phi_4())
         .build()

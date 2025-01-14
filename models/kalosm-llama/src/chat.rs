@@ -29,7 +29,7 @@ fn get_new_tokens(
         String::new()
     } else {
         let old_formatted_text =
-            chat_template.format(bos_token, eos_token, &session.history, false)?;
+            chat_template.format(bos_token, eos_token, &session.history, true)?;
         // Some chat templates (like llama v3) always include the generation prompt even when we tell them not to. If they do, try to strip it off
         let (before_last_eos, _) = old_formatted_text
             .rsplit_once(eos_token)
@@ -39,11 +39,11 @@ fn get_new_tokens(
     session.history.extend_from_slice(messages);
     let updated_text = chat_template.format(bos_token, eos_token, &session.history, true)?;
     let new_text = updated_text.strip_prefix(&current_text).ok_or_else(|| {
-    LlamaModelError::ChatTemplateError(minijinja::Error::new(
-        ErrorKind::InvalidOperation,
-        format!("Chat template should only add text to the end of the current text. Old text: {current_text}, new text: {updated_text}"),
-    ))
-})?;
+        LlamaModelError::ChatTemplateError(minijinja::Error::new(
+            ErrorKind::InvalidOperation,
+            format!("Chat template should only add text to the end of the current text. Old text: {current_text}, new text: {updated_text}"),
+        ))
+    })?;
 
     Ok(new_text.to_string())
 }
