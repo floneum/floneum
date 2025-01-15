@@ -22,11 +22,11 @@ pub fn accelerated_device_if_available() -> candle_core::Result<Device> {
     } else {
         #[cfg(all(debug_assertions, target_os = "macos", target_arch = "aarch64"))]
         {
-            println!("Running on CPU, to run on GPU(metal), build with the metal feature enabled");
+            println!("Running on CPU, to run on GPU(metal), build with the metal feature enabled. If you don't have access to an accelerator make sure you are running in release mode with `--release`. Models will run extremely slowly in debug mode on the CPU");
         }
         #[cfg(not(all(debug_assertions, target_os = "macos", target_arch = "aarch64")))]
         {
-            println!("Running on CPU, to run on GPU, build with the cuda feature enabled");
+            println!("Running on CPU, to run on GPU, build with the cuda feature enabled. If you don't have access to an accelerator make sure you are running in release mode with `--release`. Models will run extremely slowly in debug mode on the CPU");
         }
         Device::Cpu
     };
