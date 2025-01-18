@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use kalosm_common::{CacheError, FileLoadingProgress, FileSource};
-use tokenizers::Tokenizer;
 
 fn llama_tokenizer() -> FileSource {
     FileSource::huggingface(
@@ -47,6 +46,7 @@ pub struct LlamaSource {
 
 /// Errors that can occur when loading the Llama model.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum LlamaSourceError {
     /// An error occurred while loading the tokenizer.
     #[error("Failed to load the tokenizer: {0}")]
@@ -66,6 +66,9 @@ pub enum LlamaSourceError {
     /// No tokenizer was provided and the ggml file format does not contain a tokenizer.
     #[error("No tokenizer was provided and the ggml file format does not contain a tokenizer")]
     NoTokenizer,
+    /// The task loading the model panicked.
+    #[error("The task loading the model panicked")]
+    ModelLoadingPanic,
 }
 
 impl LlamaSource {
@@ -115,17 +118,6 @@ impl LlamaSource {
         self.override_stop_token_string = Some(stop_token_string);
 
         self
-    }
-
-    pub(crate) async fn tokenizer(
-        &self,
-        tokenizer: &FileSource,
-        progress: impl FnMut(FileLoadingProgress),
-    ) -> Result<Tokenizer, LlamaSourceError> {
-        let tokenizer_path = self.cache.get(tokenizer, progress).await?;
-        let tokenizer =
-            Tokenizer::from_file(tokenizer_path).map_err(LlamaSourceError::Tokenizer)?;
-        Ok(tokenizer)
     }
 
     pub(crate) async fn model(
