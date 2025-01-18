@@ -26,6 +26,7 @@ members = [
     "interfaces/kalosm-learning-macro",
     "interfaces/kalosm-parse-macro",
     "interfaces/kalosm-common",
+    "tooling/tracing-interface",
 ]
 
 [workspace.dependencies]

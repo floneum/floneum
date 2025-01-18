@@ -46,6 +46,8 @@ mod index;
 pub use index::*;
 mod one_line;
 pub use one_line::*;
+mod with_schema;
+pub use with_schema::*;
 
 /// An error that occurred while parsing.
 #[derive(Debug, Clone)]
@@ -174,6 +176,11 @@ pub trait Parser {
         state: &Self::PartialState,
         input: &'a [u8],
     ) -> ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>>;
+
+    /// The schema this parser validates if any.
+    fn maybe_schema(&self) -> Option<SchemaType> {
+        None
+    }
 }
 
 impl Parser for () {
@@ -445,6 +452,14 @@ pub trait ParserExt: Parser {
         Self: Sized,
     {
         WithInitialState::new(self, initial_state)
+    }
+
+    /// Override the schema the parser validates
+    fn with_schema(self, schema: Option<SchemaType>) -> WithSchema<Self>
+    where
+        Self: Sized,
+    {
+        WithSchema::new(self, schema)
     }
 }
 

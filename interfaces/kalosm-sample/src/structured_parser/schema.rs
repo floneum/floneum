@@ -39,7 +39,8 @@ impl std::fmt::Write for IndentationWriter<'_> {
 }
 
 /// A literal value in a schema
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SchemaLiteral {
     /// A string
     String(String),
@@ -63,7 +64,8 @@ impl Display for SchemaLiteral {
 }
 
 /// The type of a schema
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SchemaType {
     /// A string schema
     String(StringSchema),
@@ -126,7 +128,8 @@ impl Display for SchemaType {
 }
 
 /// A schema for an conditional schema
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IfThenSchema {
     if_schema: Box<SchemaType>,
     then_schema: Box<SchemaType>,
@@ -168,7 +171,8 @@ impl Display for IfThenSchema {
 }
 
 /// A schema that matches any of the composite schemas
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AnyOfSchema {
     any_of: Vec<SchemaType>,
 }
@@ -218,7 +222,8 @@ impl Display for AnyOfSchema {
 }
 
 /// A schema that matches one of the composite schemas
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct OneOfSchema {
     one_of: Vec<SchemaType>,
 }
@@ -268,7 +273,8 @@ impl Display for OneOfSchema {
 }
 
 /// A schema for a constant
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ConstSchema {
     value: SchemaLiteral,
 }
@@ -312,7 +318,8 @@ fn test_const_schema() {
 }
 
 /// A schema for an enum
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct EnumSchema {
     variants: Vec<SchemaLiteral>,
 }
@@ -358,7 +365,8 @@ impl Display for EnumSchema {
 }
 
 /// A schema for a string
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StringSchema {
     /// The length that is valid for the string
     length: Option<std::ops::RangeInclusive<usize>>,
@@ -437,7 +445,8 @@ impl Display for StringSchema {
 }
 
 /// A schema for a number (floating point or integer)
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct NumberSchema {
     /// The range that the number must be in
     range: Option<std::ops::RangeInclusive<f64>>,
@@ -521,8 +530,8 @@ fn test_number_schema() {
 }
 
 /// A schema for an integer
-#[derive(Debug, Clone, Default)]
-
+#[derive(Debug, PartialEq, Eq, Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IntegerSchema;
 
 impl IntegerSchema {
@@ -587,7 +596,8 @@ fn test_integer_schema() {
 }
 
 /// A schema for a boolean
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, PartialEq, Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BooleanSchema;
 
 impl BooleanSchema {
@@ -621,7 +631,8 @@ fn test_boolean_schema() {
 }
 
 /// A schema for an array
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ArraySchema {
     items: Box<SchemaType>,
     length: Option<std::ops::RangeInclusive<usize>>,
@@ -726,10 +737,11 @@ fn test_array_schema() {
 }
 
 /// A schema for an object
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct JsonObjectSchema {
     title: Option<String>,
-    description: Option<&'static str>,
+    description: Option<String>,
     properties: Vec<JsonPropertySchema>,
 }
 
@@ -750,8 +762,8 @@ impl JsonObjectSchema {
     }
 
     /// Set the description of the object
-    pub fn with_description(mut self, description: impl Into<Option<&'static str>>) -> Self {
-        self.description = description.into();
+    pub fn with_description<S: ToString>(mut self, description: impl Into<Option<S>>) -> Self {
+        self.description = description.into().map(|s| s.to_string());
         self
     }
 
@@ -823,7 +835,7 @@ impl Display for JsonObjectSchema {
 fn test_object_schema() {
     let schema = JsonObjectSchema {
         title: Some("Person".to_string()),
-        description: Some("A person"),
+        description: Some("A person".to_string()),
         properties: vec![
             JsonPropertySchema {
                 name: "name".to_string(),
@@ -857,10 +869,11 @@ fn test_object_schema() {
 }
 
 /// A schema for a property of an object
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct JsonPropertySchema {
     name: String,
-    description: Option<&'static str>,
+    description: Option<String>,
     required: bool,
     ty: SchemaType,
 }
@@ -877,8 +890,8 @@ impl JsonPropertySchema {
     }
 
     /// Set the description of the property
-    pub fn with_description(mut self, description: impl Into<Option<&'static str>>) -> Self {
-        self.description = description.into();
+    pub fn with_description<S: ToString>(mut self, description: impl Into<Option<S>>) -> Self {
+        self.description = description.into().map(|s| s.to_string());
         self
     }
 
@@ -892,7 +905,7 @@ impl JsonPropertySchema {
 impl Display for JsonPropertySchema {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("\"{}\": ", self.name))?;
-        self.ty.display_with_description(f, self.description)
+        self.ty.display_with_description(f, self.description.as_deref())
     }
 }
 

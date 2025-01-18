@@ -11,6 +11,7 @@ keywords = ["ai", "llm", "llama", "mistral", "nlp"]
 [dependencies]
 regex-automata = "0.4.5"
 kalosm-parse-macro = { workspace = true }
+serde = { version = "1.0.217", features = ["derive"], optional = true }
 
 [dev-dependencies]
 tracing-subscriber = "0.3.18"
@@ -21,3 +22,6 @@ pretty_assertions = "1.4.0"
 [[bench]]
 name = "parse"
 harness = false
+
+[features]
+serde = ["dep:serde"]

@@ -1,0 +1,8 @@
+[package]
+name = "kalosm-tracing-interface"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+kalosm-sample = { workspace = true, features = ["serde"] }
+serde = { version = "1.0.217", features = ["derive"] }

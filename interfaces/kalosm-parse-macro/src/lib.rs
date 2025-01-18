@@ -9,7 +9,7 @@ use syn::meta::ParseNestedMeta;
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
 use syn::{ext::IdentExt, parse_macro_input, DeriveInput, Field, Ident, LitStr};
-use syn::{DataEnum, Fields, FieldsNamed, LitInt, Path, TypePath, Variant};
+use syn::{ DataEnum, Fields, FieldsNamed, LitInt, Path, TypePath, Variant};
 
 /// Derive a default JSON parser for a unit value, struct or enum.
 ///
@@ -204,6 +204,42 @@ pub fn derive_parse(input: TokenStream) -> TokenStream {
     }
 }
 
+fn deref_specialize_schema_value(ty: impl ToTokens) -> TokenStream2 {
+    quote! {
+        {
+            trait MaybeSchema {
+                fn __maybe_schema(&self) -> Option<kalosm_sample::SchemaType>;
+            }
+
+            struct Wrap<T>(std::marker::PhantomData<T>);
+
+            impl<S: kalosm_sample::Schema> MaybeSchema for &&Wrap<S> {
+                fn __maybe_schema(&self) -> Option<kalosm_sample::SchemaType> {
+                    Some(<S as kalosm_sample::Schema>::schema())
+                }
+            }
+
+            impl<T> MaybeSchema for &Wrap<T> {
+                fn __maybe_schema(&self) -> Option<kalosm_sample::SchemaType> {
+                    None
+                }
+            }
+
+            (&&&Wrap(std::marker::PhantomData::<#ty>)).__maybe_schema()
+        }
+    }
+}
+
+fn wrap_parser(parser: impl ToTokens) -> TokenStream2 {
+    let value = deref_specialize_schema_value(quote! {Self});
+    quote! {
+        kalosm_sample::ParserExt::with_schema(
+            #parser,
+            #value
+        )
+    }
+}
+
 #[proc_macro_derive(Schema, attributes(parse))]
 pub fn derive_schema(input: TokenStream) -> TokenStream {
     // Parse the input tokens into a syntax tree
@@ -320,6 +356,8 @@ impl StructParser {
             Err(err) => return err.to_compile_error(),
         };
 
+        let parser = wrap_parser(parser);
+
         let ty = &self.ty;
 
         quote! {
@@ -382,13 +420,17 @@ fn quote_fields(fields: Fields) -> TokenStream2 {
 
 fn impl_unit_parser(attrs: &[syn::Attribute], ty: &Ident, construct: TokenStream2) -> TokenStream2 {
     let unit_parser = unit_parser(attrs, ty);
+    let parser = quote! {
+        kalosm_sample::ParserExt::map_output(
+            #unit_parser,
+            |_| #construct
+        )
+    };
+    let parser = wrap_parser(parser);
     quote! {
         impl kalosm_sample::Parse for #ty {
             fn new_parser() -> impl kalosm_sample::SendCreateParserState<Output = Self> {
-                kalosm_sample::ParserExt::map_output(
-                    #unit_parser,
-                    |_| #construct
-                )
+                #parser
             }
         }
     }
@@ -522,16 +564,21 @@ impl EnumParser {
 
         let struct_start = format!("{{ \"{tag}\": \"");
 
+        let parser = quote! {
+            kalosm_sample::ParserExt::then_literal(
+                kalosm_sample::ParserExt::ignore_output_then(
+                    kalosm_sample::LiteralParser::from(#struct_start),
+                    #parser
+                ),
+                r#" }"#
+            )
+        };
+        let parser = wrap_parser(parser);
+
         Ok(quote! {
             impl kalosm_sample::Parse for #ty {
                 fn new_parser() -> impl kalosm_sample::SendCreateParserState<Output = Self> {
-                    kalosm_sample::ParserExt::then_literal(
-                        kalosm_sample::ParserExt::ignore_output_then(
-                            kalosm_sample::LiteralParser::from(#struct_start),
-                            #parser
-                        ),
-                        r#" }"#
-                    )
+                    #parser
                 }
             }
         })
@@ -1001,6 +1048,8 @@ fn unit_enum_parser(attrs: Vec<syn::Attribute>, data: DataEnum, ty: Ident) -> To
             }
         }
     };
+
+    let parser = wrap_parser(parser);
 
     quote! {
         impl kalosm_sample::Parse for #ty {
