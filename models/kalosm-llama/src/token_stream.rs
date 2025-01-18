@@ -149,9 +149,13 @@ impl TokenOutputStream {
         let tokens_with_current_tokens = tokens_with_current_tokens.get_ids();
 
         let index_length = self.current_index - self.prev_index;
-        let (current_tokens, new_tokens) = tokens_with_current_tokens.split_at(index_length);
 
         // Some tokenizers may tokenize new text differently than the two tokens concatenated together. If they do, this function returns None
+        if tokens_with_current_tokens.len() >= index_length {
+            return Ok(None);
+        }
+        let (current_tokens, new_tokens) = tokens_with_current_tokens.split_at(index_length);
+
         if current_tokens != &self.tokens[self.prev_index..self.current_index] {
             return Ok(None);
         }
