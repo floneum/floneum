@@ -385,31 +385,32 @@ where
             remove_unsupported_properties(&mut schema);
 
             let myself = &*self.inner;
-            let api_key = myself.client.resolve_api_key()?;
+            let api_key = myself.client.resolve_api_key()?; 
+            let json = serde_json::json!({
+                "messages": messages,
+                "model": myself.model,
+                "stream": true,
+                "top_p": sampler.top_p,
+                "temperature": sampler.temperature,
+                "frequency_penalty": sampler.repetition_penalty,
+                "max_completion_tokens": if sampler.max_length == u32::MAX { None } else { Some(sampler.max_length) },
+                "stop": sampler.stop_on.clone(),
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "response",
+                        "schema": schema,
+                        "strict": true
+                    }
+                }
+            });
             let mut event_source = myself
                 .client
                 .reqwest_client
                 .post(format!("{}/chat/completions", myself.client.base_url()))
                 .header("Content-Type", "application/json")
                 .header("Authorization", format!("Bearer {}", api_key))
-                .json(&serde_json::json!({
-                    "messages": messages,
-                    "model": myself.model,
-                    "stream": true,
-                    "top_p": sampler.top_p,
-                    "temperature": sampler.temperature,
-                    "frequency_penalty": sampler.repetition_penalty,
-                    "max_completion_tokens": sampler.max_length,
-                    "stop": sampler.stop_on.clone(),
-                    "response_format": {
-                        "type": "json_schema",
-                        "json_schema": {
-                            "name": "response",
-                            "schema": schema,
-                            "strict": true
-                        }
-                    }
-                }))
+                .json(&json)
                 .eventsource()
                 .unwrap();
 

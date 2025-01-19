@@ -89,7 +89,7 @@ impl GenerationParameters {
             top_p: 1.0,
             repetition_penalty: 1.3,
             repetition_penalty_range: 64,
-            max_length: 128,
+            max_length: u32::MAX,
             stop_on: None,
             sampler: None,
         }

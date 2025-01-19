@@ -280,7 +280,7 @@ pub fn prompt_input(prompt: impl Display) -> Result<String, std::io::Error> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MessageType {
     /// A system prompt message. System prompts should always be the first message in a chat session.
-    #[serde(rename = "system")]
+    #[serde(rename = "developer")]
     SystemPrompt,
     /// A user message.
     #[serde(rename = "user")]
