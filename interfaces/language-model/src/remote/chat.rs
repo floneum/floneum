@@ -385,7 +385,7 @@ where
             remove_unsupported_properties(&mut schema);
 
             let myself = &*self.inner;
-            let api_key = myself.client.resolve_api_key()?; 
+            let api_key = myself.client.resolve_api_key()?;
             let json = serde_json::json!({
                 "messages": messages,
                 "model": myself.model,
