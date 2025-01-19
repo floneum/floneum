@@ -236,7 +236,7 @@ impl ChatModel<GenerationParameters> for OpenAICompatibleChatModel {
                 "top_p": sampler.top_p,
                 "temperature": sampler.temperature,
                 "frequency_penalty": sampler.repetition_penalty,
-                "max_completion_tokens": sampler.max_length,
+                "max_completion_tokens": if sampler.max_length == u32::MAX { None } else { Some(sampler.max_length) },
                 "stop": sampler.stop_on.clone(),
             }))
             .eventsource()
