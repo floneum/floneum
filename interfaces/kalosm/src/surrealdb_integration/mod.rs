@@ -59,7 +59,6 @@ pub struct DocumentLink {
 /// This type is stored in the [`EmbeddingIndexedTable::table`] table.
 #[derive(Serialize, Deserialize)]
 pub struct ObjectWithEmbeddingIds<T> {
-    #[serde(flatten)]
     object: T,
     chunks: Vec<(Range<usize>, Vec<EmbeddingId>)>,
 }
@@ -176,9 +175,13 @@ impl<C: Connection, R> EmbeddingIndexedTable<C, R> {
         R: Serialize + DeserializeOwned + 'static,
     {
         let thing = RecordId::from_table_key(self.table.clone(), id);
-        let old = self.db.update::<Option<R>>(thing).merge(value).await?;
+        let old = self
+            .db
+            .update::<Option<ObjectWithEmbeddingIds<R>>>(thing)
+            .merge(value)
+            .await?;
 
-        Ok(old)
+        Ok(old.map(|v| v.object))
     }
 
     /// Select a record from the table with the given embedding id.
@@ -187,9 +190,12 @@ impl<C: Connection, R> EmbeddingIndexedTable<C, R> {
         R: DeserializeOwned,
     {
         let thing = RecordId::from_table_key(self.table.clone(), id);
-        let record = self.db.select::<Option<R>>(thing).await?;
+        let record = self
+            .db
+            .select::<Option<ObjectWithEmbeddingIds<R>>>(thing)
+            .await?;
         match record {
-            Some(record) => Ok(record),
+            Some(record) => Ok(record.object),
             None => Err(EmbeddedIndexedTableError::RecordNotFound),
         }
     }
@@ -237,8 +243,11 @@ impl<C: Connection, R> EmbeddingIndexedTable<C, R> {
     where
         R: DeserializeOwned,
     {
-        let records = self.db.select::<Vec<R>>(self.table.clone()).await?;
-        Ok(records)
+        let records = self
+            .db
+            .select::<Vec<ObjectWithEmbeddingIds<R>>>(self.table.clone())
+            .await?;
+        Ok(records.into_iter().map(|v| v.object).collect())
     }
 
     /// Search for records that are close to the given embedding.
