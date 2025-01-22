@@ -251,7 +251,8 @@ impl ChatModel<GenerationParameters> for OpenAICompatibleChatModel {
                     let data = serde_json::from_str::<OpenAICompatibleChatResponse>(&message.data)?;
                     let first_choice = data
                         .choices
-                        .into_iter().next()
+                        .into_iter()
+                        .next()
                         .ok_or(OpenAICompatibleChatModelError::NoMessageChoices)?;
                     if let Some(content) = first_choice.delta.refusal {
                         return Err(OpenAICompatibleChatModelError::Refusal(content));

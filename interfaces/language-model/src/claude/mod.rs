@@ -48,7 +48,7 @@ impl AnthropicCompatibleClient {
     }
 
     /// Set the anthropic [version](https://docs.anthropic.com/en/api/versioning) you are using.
-    /// 
+    ///
     /// Defaults to `2023-06-01``
     pub fn with_anthropic_version(mut self, version: impl ToString) -> Self {
         self.version = version.to_string();
@@ -72,7 +72,9 @@ impl AnthropicCompatibleClient {
             None => std::env::var("ANTHROPIC_API_KEY").map_err(|_| NoAnthropicAPIKeyError)?,
         };
 
-        self.resolved_api_key.set(anthropic_api_key.clone()).unwrap();
+        self.resolved_api_key
+            .set(anthropic_api_key.clone())
+            .unwrap();
 
         Ok(anthropic_api_key)
     }
