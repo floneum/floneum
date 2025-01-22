@@ -12,6 +12,7 @@ pub struct GenerationParameters {
     pub(crate) eta: f32,
     pub(crate) mu: f32,
     pub(crate) top_p: f64,
+    pub(crate) top_k: u32,
     pub(crate) repetition_penalty: f32,
     pub(crate) repetition_penalty_range: u32,
     pub(crate) max_length: u32,
@@ -41,6 +42,7 @@ impl Clone for GenerationParameters {
             tau: self.tau,
             mu: self.mu,
             top_p: self.top_p,
+            top_k: self.top_k,
             repetition_penalty: self.repetition_penalty,
             repetition_penalty_range: self.repetition_penalty_range,
             max_length: self.max_length,
@@ -87,6 +89,7 @@ impl GenerationParameters {
             tau: 5.,
             mu: 10.,
             top_p: 1.0,
+            top_k: 1,
             repetition_penalty: 1.3,
             repetition_penalty_range: 64,
             max_length: u32::MAX,
@@ -176,6 +179,12 @@ impl GenerationParameters {
     /// Set the top_p parameter to the generation parameters (only used by the OpenAI API).
     pub fn with_top_p(mut self, top_p: f64) -> Self {
         self.top_p = top_p;
+        self
+    }
+
+    /// Set the top_k parameter to the generation parameters (only used by the Anthropic API).
+    pub fn with_top_k(mut self, top_k: u32) -> Self {
+        self.top_k = top_k;
         self
     }
 

@@ -37,7 +37,9 @@ postcard = { version = "1.0.8", features = ["use-std"] }
 
 [features]
 default = ["cache"]
-remote = ["dep:reqwest", "dep:serde_json", "dep:reqwest-eventsource"]
+anthropic = ["dep:reqwest", "dep:serde_json", "dep:reqwest-eventsource"]
+openai = ["dep:reqwest", "dep:serde_json", "dep:reqwest-eventsource"]
+remote = ["anthropic", "openai"]
 serde = ["dep:serde"]
 cache = ["serde", "dep:lru"]
 

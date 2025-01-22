@@ -1,4 +1,4 @@
-use super::{NoAPIKeyError, OpenAICompatibleClient};
+use super::{NoOpenAIAPIKeyError, OpenAICompatibleClient};
 use crate::{Embedder, Embedding, ModelBuilder};
 use kalosm_common::ModelLoadingProgress;
 use serde::Deserialize;
@@ -104,7 +104,7 @@ struct EmbeddingData {
 pub enum OpenAICompatibleEmbeddingModelError {
     /// The API key was not set or was not valid.
     #[error("Error resolving API key: {0}")]
-    APIKeyError(#[from] NoAPIKeyError),
+    APIKeyError(#[from] NoOpenAIAPIKeyError),
     /// An error occurred while making a request to the OpenAI API.
     #[error("Error making request: {0}")]
     ReqwestError(#[from] reqwest::Error),

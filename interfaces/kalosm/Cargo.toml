@@ -88,19 +88,37 @@ features = []
 workspace = true
 
 [dev-dependencies.kalosm]
-features = ["sound", "language", "vision", "remote", "surrealdb", "prompt_annealing"]
+features = [
+    "sound",
+    "language",
+    "vision",
+    "remote",
+    "surrealdb",
+    "prompt_annealing",
+]
 workspace = true
 
 [features]
 full = ["language", "vision", "sound", "surrealdb"]
-cuda = ["kalosm-language?/cublas", "kalosm-vision?/cublas", "kalosm-sound?/cuda"]
+cuda = [
+    "kalosm-language?/cublas",
+    "kalosm-vision?/cublas",
+    "kalosm-sound?/cuda",
+]
 mkl = ["kalosm-language?/mkl", "kalosm-vision?/mkl", "kalosm-sound?/mkl"]
 language = ["dep:kalosm-language"]
 prompt_annealing = ["language"]
-metal = ["kalosm-language?/metal", "kalosm-vision?/metal", "kalosm-sound?/metal", "kalosm-common/metal"]
+metal = [
+    "kalosm-language?/metal",
+    "kalosm-vision?/metal",
+    "kalosm-sound?/metal",
+    "kalosm-common/metal",
+]
 sound = ["dep:kalosm-sound"]
 surrealdb = ["dep:surrealdb"]
 vision = ["dep:kalosm-vision"]
+openai = ["kalosm-language?/openai"]
+anthropic = ["kalosm-language?/anthropic"]
 remote = ["kalosm-language?/remote"]
 
 [[example]]
@@ -188,8 +206,12 @@ name = "remote-open-ai-compatable"
 required-features = ["language"]
 
 [[example]]
-name = "remote"
-required-features = ["language"]
+name = "claude-3-5-haiku"
+required-features = ["language", "anthropic"]
+
+[[example]]
+name = "gpt-4o-mini"
+required-features = ["language", "openai"]
 
 [[example]]
 name = "resume-chat"
