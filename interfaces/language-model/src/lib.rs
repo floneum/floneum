@@ -25,10 +25,14 @@
 pub use futures_util::StreamExt;
 pub use kalosm_sample;
 
-#[cfg(feature = "remote")]
-mod remote;
-#[cfg(feature = "remote")]
-pub use remote::*;
+#[cfg(feature = "openai")]
+mod openai;
+#[cfg(feature = "openai")]
+pub use openai::*;
+#[cfg(feature = "claude")]
+mod claude;
+#[cfg(feature = "claude")]
+pub use claude::*;
 
 mod embedding;
 pub use embedding::*;

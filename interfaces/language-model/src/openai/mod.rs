@@ -75,14 +75,14 @@ impl OpenAICompatibleClient {
     }
 
     /// Resolve the openai API key from the environment variable `OPENAI_API_KEY` or the provided api key.
-    pub fn resolve_api_key(&self) -> Result<String, NoAPIKeyError> {
+    pub fn resolve_api_key(&self) -> Result<String, NoOpenAIAPIKeyError> {
         if let Some(api_key) = self.resolved_api_key.get() {
             return Ok(api_key.clone());
         }
 
         let open_api_key = match self.api_key.clone() {
             Some(api_key) => api_key,
-            None => std::env::var("OPENAI_API_KEY").map_err(|_| NoAPIKeyError)?,
+            None => std::env::var("OPENAI_API_KEY").map_err(|_| NoOpenAIAPIKeyError)?,
         };
 
         self.resolved_api_key.set(open_api_key.clone()).unwrap();
@@ -99,4 +99,4 @@ impl OpenAICompatibleClient {
 /// An error that can occur when building a remote OpenAI model without an API key.
 #[derive(Debug, Error)]
 #[error("No API key was provided in the [OpenAICompatibleClient] builder or the environment variable `OPENAI_API_KEY` was not set")]
-pub struct NoAPIKeyError;
+pub struct NoOpenAIAPIKeyError;

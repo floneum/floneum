@@ -1,4 +1,4 @@
-use super::{NoAPIKeyError, OpenAICompatibleClient};
+use super::{NoOpenAIAPIKeyError, OpenAICompatibleClient};
 use crate::{
     ChatModel, ChatSession, CreateChatSession, CreateDefaultChatConstraintsForType,
     GenerationParameters, ModelBuilder, ModelConstraints, StructuredChatModel,
@@ -17,7 +17,7 @@ struct OpenAICompatibleChatModelInner {
     client: OpenAICompatibleClient,
 }
 
-/// An embedder that uses OpenAI's API for the a remote embedding model.
+/// An chat model that uses OpenAI's API for the a remote chat model.
 #[derive(Debug, Clone)]
 pub struct OpenAICompatibleChatModel {
     inner: Arc<OpenAICompatibleChatModelInner>,
@@ -30,7 +30,7 @@ impl OpenAICompatibleChatModel {
     }
 }
 
-/// A builder for an openai compatible embedding model.
+/// A builder for an openai compatible chat model.
 #[derive(Debug, Default)]
 pub struct OpenAICompatibleChatModelBuilder<const WITH_NAME: bool> {
     model: Option<String>,
@@ -111,7 +111,7 @@ impl ModelBuilder for OpenAICompatibleChatModelBuilder<true> {
 pub enum OpenAICompatibleChatModelError {
     /// An error occurred while resolving the API key.
     #[error("Error resolving API key: {0}")]
-    APIKeyError(#[from] NoAPIKeyError),
+    APIKeyError(#[from] NoOpenAIAPIKeyError),
     /// An error occurred while making a request to the OpenAI API.
     #[error("Error making request: {0}")]
     ReqwestError(#[from] reqwest::Error),
@@ -251,10 +251,10 @@ impl ChatModel<GenerationParameters> for OpenAICompatibleChatModel {
                     let data = serde_json::from_str::<OpenAICompatibleChatResponse>(&message.data)?;
                     let first_choice = data
                         .choices
-                        .first()
+                        .into_iter().next()
                         .ok_or(OpenAICompatibleChatModelError::NoMessageChoices)?;
-                    if let Some(content) = &first_choice.delta.refusal {
-                        return Err(OpenAICompatibleChatModelError::Refusal(content.clone()));
+                    if let Some(content) = first_choice.delta.refusal {
+                        return Err(OpenAICompatibleChatModelError::Refusal(content));
                     }
                     if let Some(refusal) = &first_choice.finish_reason {
                         match refusal {
@@ -271,9 +271,9 @@ impl ChatModel<GenerationParameters> for OpenAICompatibleChatModel {
                             _ => return Ok(()),
                         }
                     }
-                    if let Some(content) = &first_choice.delta.content {
-                        on_token(content.clone())?;
-                        new_message_text += content;
+                    if let Some(content) = first_choice.delta.content {
+                        new_message_text += &content;
+                        on_token(content)?;
                     }
                 }
             }
