@@ -10,6 +10,7 @@ use thiserror::Error;
 #[derive(Debug)]
 struct AnthropicCompatibleChatModelInner {
     model: String,
+    max_tokens: u32,
     client: AnthropicCompatibleClient,
 }
 
@@ -30,6 +31,7 @@ impl AnthropicCompatibleChatModel {
 #[derive(Debug, Default)]
 pub struct AnthropicCompatibleChatModelBuilder<const WITH_NAME: bool> {
     model: Option<String>,
+    max_tokens: u32,
     client: AnthropicCompatibleClient,
 }
 
@@ -38,6 +40,7 @@ impl AnthropicCompatibleChatModelBuilder<false> {
     pub fn new() -> Self {
         Self {
             model: None,
+            max_tokens: 8192,
             client: Default::default(),
         }
     }
@@ -48,8 +51,15 @@ impl<const WITH_NAME: bool> AnthropicCompatibleChatModelBuilder<WITH_NAME> {
     pub fn with_model(self, model: impl ToString) -> AnthropicCompatibleChatModelBuilder<true> {
         AnthropicCompatibleChatModelBuilder {
             model: Some(model.to_string()),
+            max_tokens: self.max_tokens,
             client: self.client,
         }
+    }
+
+    /// Set the default max tokens to use when generating text.
+    pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
+        self.max_tokens = max_tokens;
+        self
     }
 
     /// Set the model to `claude-3-5-sonnet-20241022`
@@ -65,16 +75,19 @@ impl<const WITH_NAME: bool> AnthropicCompatibleChatModelBuilder<WITH_NAME> {
     /// Set the model to `claude-3-opus-20240229`
     pub fn with_claude_3_opus(self) -> AnthropicCompatibleChatModelBuilder<true> {
         self.with_model("claude-3-opus-20240229")
+            .with_max_tokens(4096)
     }
 
     /// Set the model to `claude-3-sonnet-20240229`
     pub fn with_claude_3_sonnet(self) -> AnthropicCompatibleChatModelBuilder<true> {
         self.with_model("claude-3-sonnet-20240229")
+            .with_max_tokens(4096)
     }
 
     /// Set the model to `claude-3-haiku-20240307`
     pub fn with_claude_3_haiku(self) -> AnthropicCompatibleChatModelBuilder<true> {
         self.with_model("claude-3-haiku-20240307")
+            .with_max_tokens(4096)
     }
 
     /// Set the client used to make requests to the Anthropic API.
@@ -90,6 +103,7 @@ impl AnthropicCompatibleChatModelBuilder<true> {
         AnthropicCompatibleChatModel {
             inner: Arc::new(AnthropicCompatibleChatModelInner {
                 model: self.model.unwrap(),
+                max_tokens: self.max_tokens,
                 client: self.client,
             }),
         }
@@ -326,9 +340,9 @@ impl ChatModel<GenerationParameters> for AnthropicCompatibleChatModel {
             "top_p": sampler.top_p,
             "top_k": sampler.top_k,
             "temperature": sampler.temperature,
-            "frequency_penalty": sampler.repetition_penalty,
-            "max_tokens": sampler.max_length,
+            "max_tokens": sampler.max_length.min(myself.max_tokens),
         });
+        println!("{}", json);
         if let Some(stop_on) = sampler.stop_on.as_ref() {
             json["stop"] = vec![stop_on.clone()].into();
         }
@@ -338,7 +352,7 @@ impl ChatModel<GenerationParameters> for AnthropicCompatibleChatModel {
         let mut event_source = myself
             .client
             .reqwest_client
-            .post(format!("{}/chat/completions", myself.client.base_url()))
+            .post(format!("{}/messages", myself.client.base_url()))
             .header("Content-Type", "application/json")
             .header("x-api-key", api_key)
             .header("anthropic-version", myself.client.version())

@@ -59,6 +59,8 @@ roaring = "0.10.6"
 metal = ["rbert/metal", "kalosm-llama/metal"]
 cublas = ["rbert/cuda", "rbert/cudnn", "kalosm-llama/cuda", "kalosm-llama/cudnn"]
 mkl = ["rbert/mkl", "kalosm-llama/mkl"]
+openai = ["kalosm-language-model/openai"]
+anthropic = ["kalosm-language-model/anthropic"]
 remote = ["kalosm-language-model/remote"]
 
 [dev-dependencies]
