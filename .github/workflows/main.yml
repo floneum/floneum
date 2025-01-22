@@ -70,6 +70,7 @@ jobs:
       - name: Run tests
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: cargo test --lib --bins --tests --examples --workspace --features kalosm/language,kalosm/sound,kalosm/vision
 
   doc:
