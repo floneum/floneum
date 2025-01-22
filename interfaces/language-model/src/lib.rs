@@ -29,9 +29,9 @@ pub use kalosm_sample;
 mod openai;
 #[cfg(feature = "openai")]
 pub use openai::*;
-#[cfg(feature = "claude")]
+#[cfg(feature = "anthropic")]
 mod claude;
-#[cfg(feature = "claude")]
+#[cfg(feature = "anthropic")]
 pub use claude::*;
 
 mod embedding;
