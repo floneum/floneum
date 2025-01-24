@@ -1519,7 +1519,18 @@ impl StringParserOptions {
 impl ToTokens for StringParserOptions {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
         if let Some(pattern) = &self.pattern {
-            let pattern = LitStr::new(&format!(r#""{}""#, pattern.value()), pattern.span());
+            let pattern_str = pattern.value();
+            let mut pattern_str = pattern_str.as_str();
+            // Strip the ^ and $ from the pattern if they are present. The parser will automatically parse the whole contents
+            if let Some(new_pattern_str) = pattern_str.strip_prefix("^") {
+                pattern_str = new_pattern_str;
+            }
+            if !pattern_str.ends_with("\\$") {
+                if let Some(new_pattern_str) = pattern_str.strip_suffix('$') {
+                    pattern_str = new_pattern_str;
+                }
+            }
+            let pattern = LitStr::new(&format!(r#""{}""#, pattern_str), pattern.span());
             let quote = quote_spanned! {
                 pattern.span() =>
                 kalosm_sample::ParserExt::map_output(
