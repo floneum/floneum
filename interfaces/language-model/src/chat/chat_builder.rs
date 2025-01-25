@@ -765,9 +765,7 @@ where
         self.ensure_structured_task_started();
 
         Box::pin(async move {
-            if self.result.is_none() {
-                self.task.into_inner().unwrap().into_inner().unwrap().await;
-            }
+            self.task.into_inner().unwrap().into_inner().unwrap().await;
             let result = self.result.take().unwrap().await.unwrap();
             result.map(|boxed| *boxed.downcast::<Constraints::Output>().unwrap())
         })
