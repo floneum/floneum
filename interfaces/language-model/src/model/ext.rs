@@ -45,6 +45,8 @@ pub trait TextCompletionModelExt: CreateTextCompletionSession {
         }
     }
 
+    /// Erase the type of the text completion model. This can be used to make multiple implementations of
+    /// [`TextCompletionModel`] compatible with the same type.
     fn boxed_completion_model(self) -> BoxedTextCompletionModel
     where
         Self: TextCompletionModel<
@@ -62,6 +64,8 @@ pub trait TextCompletionModelExt: CreateTextCompletionSession {
         BoxedTextCompletionModel::new(self)
     }
 
+    /// Erase the type of the structured text completion model. This can be used to make multiple implementations of
+    /// [`StructuredTextCompletionModel`] compatible with the same type.
     fn boxed_typed_completion_model<T>(self) -> BoxedStructuredTextCompletionModel<T>
     where
         Self: StructuredTextCompletionModel<
