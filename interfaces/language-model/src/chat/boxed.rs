@@ -1,4 +1,4 @@
-use crate::ModelConstraints;
+use crate::{BoxedMaybeFuture, BoxedTokenClosure, ModelConstraints};
 
 use super::{
     ChatMessage, ChatModel, ChatSession, CreateChatSession, CreateDefaultChatConstraintsForType,
@@ -292,19 +292,8 @@ trait DynChatModel: DynCreateChatSession {
         session: &'a mut BoxedChatSession,
         messages: &[super::ChatMessage],
         sampler: crate::GenerationParameters,
-        on_token: Box<
-            dyn FnMut(String) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>
-                + Send
-                + Sync
-                + 'static,
-        >,
-    ) -> ::core::pin::Pin<
-        Box<
-            dyn Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>>
-                + Send
-                + 'a,
-        >,
-    >;
+        on_token: BoxedTokenClosure,
+    ) -> BoxedMaybeFuture<'a>;
 }
 
 impl<S> DynChatModel for S
@@ -323,19 +312,8 @@ where
         session: &'a mut BoxedChatSession,
         messages: &[super::ChatMessage],
         sampler: crate::GenerationParameters,
-        mut on_token: Box<
-            dyn FnMut(String) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>
-                + Send
-                + Sync
-                + 'static,
-        >,
-    ) -> ::core::pin::Pin<
-        Box<
-            dyn Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>>
-                + Send
-                + 'a,
-        >,
-    > {
+        mut on_token: BoxedTokenClosure,
+    ) -> BoxedMaybeFuture<'a> {
         let session = session.session.as_any_mut();
 
         let Some(session) = session.downcast_mut::<S::ChatSession>() else {
@@ -376,19 +354,8 @@ trait DynStructuredChatModel<T>: DynChatModel {
         messages: &[ChatMessage],
         sampler: crate::GenerationParameters,
         constraints: BoxedChatConstraintsForType<T>,
-        on_token: Box<
-            dyn FnMut(String) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>
-                + Send
-                + Sync
-                + 'static,
-        >,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<T, Box<dyn std::error::Error + Send + Sync + 'static>>>
-                + Send
-                + 'a,
-        >,
-    >;
+        on_token: BoxedTokenClosure,
+    ) -> BoxedMaybeFuture<'a, T>;
 }
 
 impl<S, T> DynStructuredChatModel<T> for S
@@ -410,19 +377,8 @@ where
         messages: &[ChatMessage],
         sampler: crate::GenerationParameters,
         _: BoxedChatConstraintsForType<T>,
-        mut on_token: Box<
-            dyn FnMut(String) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>
-                + Send
-                + Sync
-                + 'static,
-        >,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<T, Box<dyn std::error::Error + Send + Sync + 'static>>>
-                + Send
-                + 'a,
-        >,
-    > {
+        mut on_token: BoxedTokenClosure,
+    ) -> BoxedMaybeFuture<'a, T> {
         let constraints =
             <S as CreateDefaultChatConstraintsForType<T>>::create_default_constraints();
         let session = session.session.as_any_mut();

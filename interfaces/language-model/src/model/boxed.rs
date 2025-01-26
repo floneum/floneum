@@ -264,25 +264,28 @@ impl<S: TextCompletionSession<Error: Error> + Clone + Send + Sync + 'static>
     }
 }
 
+pub(crate) type BoxedMaybeFuture<'a, T = ()> = Pin<
+    Box<
+        dyn Future<Output = Result<T, Box<dyn std::error::Error + Send + Sync + 'static>>>
+            + Send
+            + 'a,
+    >,
+>;
+pub(crate) type BoxedTokenClosure = Box<
+    dyn FnMut(String) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>
+        + Send
+        + Sync
+        + 'static,
+>;
+
 trait DynTextCompletionModel: DynCreateTextCompletionSession {
     fn add_messages_with_callback_boxed<'a>(
         &'a self,
         session: &'a mut BoxedTextCompletionSession,
         text: &str,
         sampler: crate::GenerationParameters,
-        on_token: Box<
-            dyn FnMut(String) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>
-                + Send
-                + Sync
-                + 'static,
-        >,
-    ) -> ::core::pin::Pin<
-        Box<
-            dyn Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>>
-                + Send
-                + 'a,
-        >,
-    >;
+        on_token: BoxedTokenClosure,
+    ) -> BoxedMaybeFuture<'a>;
 }
 
 impl<S> DynTextCompletionModel for S
@@ -301,19 +304,8 @@ where
         session: &'a mut BoxedTextCompletionSession,
         text: &str,
         sampler: crate::GenerationParameters,
-        mut on_token: Box<
-            dyn FnMut(String) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>
-                + Send
-                + Sync
-                + 'static,
-        >,
-    ) -> ::core::pin::Pin<
-        Box<
-            dyn Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>>
-                + Send
-                + 'a,
-        >,
-    > {
+        mut on_token: BoxedTokenClosure,
+    ) -> BoxedMaybeFuture<'a> {
         let session = session.session.as_any_mut();
 
         let Some(session) = session.downcast_mut::<S::Session>() else {
@@ -354,19 +346,8 @@ trait DynStructuredTextCompletionModel<T>: DynTextCompletionModel {
         text: &str,
         sampler: crate::GenerationParameters,
         constraints: BoxedCompletionConstraintsForType<T>,
-        on_token: Box<
-            dyn FnMut(String) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>
-                + Send
-                + Sync
-                + 'static,
-        >,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<T, Box<dyn std::error::Error + Send + Sync + 'static>>>
-                + Send
-                + 'a,
-        >,
-    >;
+        on_token: BoxedTokenClosure,
+    ) -> BoxedMaybeFuture<'a, T>;
 }
 
 impl<S, T> DynStructuredTextCompletionModel<T> for S
@@ -388,19 +369,8 @@ where
         text: &str,
         sampler: crate::GenerationParameters,
         _: BoxedCompletionConstraintsForType<T>,
-        mut on_token: Box<
-            dyn FnMut(String) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>
-                + Send
-                + Sync
-                + 'static,
-        >,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<T, Box<dyn std::error::Error + Send + Sync + 'static>>>
-                + Send
-                + 'a,
-        >,
-    > {
+        mut on_token: BoxedTokenClosure,
+    ) -> BoxedMaybeFuture<'a, T> {
         let constraints =
             <S as CreateDefaultCompletionConstraintsForType<T>>::create_default_constraints();
         let session = session.session.as_any_mut();
