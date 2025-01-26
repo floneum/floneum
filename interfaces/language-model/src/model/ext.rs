@@ -1,6 +1,3 @@
-use crate::GenerationParameters;
-use crate::ModelConstraints;
-use crate::NoConstraints;
 use futures_channel::mpsc::UnboundedReceiver;
 use futures_channel::oneshot::Receiver;
 use futures_util::Future;
@@ -8,6 +5,7 @@ use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use std::any::Any;
+use std::error::Error;
 use std::future::IntoFuture;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -16,10 +14,17 @@ use std::sync::OnceLock;
 use std::sync::RwLock;
 use std::task::Poll;
 
+use crate::GenerationParameters;
+use crate::ModelConstraints;
+use crate::NoConstraints;
+
+use super::BoxedStructuredTextCompletionModel;
+use super::BoxedTextCompletionModel;
 use super::CreateDefaultCompletionConstraintsForType;
 use super::CreateTextCompletionSession;
 use super::StructuredTextCompletionModel;
 use super::TextCompletionModel;
+use super::TextCompletionSession;
 
 #[doc = include_str!("../../docs/completion.md")]
 pub trait TextCompletionModelExt: CreateTextCompletionSession {
@@ -38,6 +43,43 @@ pub trait TextCompletionModelExt: CreateTextCompletionSession {
             queued_tokens: None,
             result: None,
         }
+    }
+
+    fn boxed_completion_model(self) -> BoxedTextCompletionModel
+    where
+        Self: TextCompletionModel<
+                Error: Send + Sync + std::error::Error + 'static,
+                Session: TextCompletionSession<Error: std::error::Error + Send + Sync + 'static>
+                             + Clone
+                             + Send
+                             + Sync
+                             + 'static,
+            > + Sized
+            + Send
+            + Sync
+            + 'static,
+    {
+        BoxedTextCompletionModel::new(self)
+    }
+
+    fn boxed_typed_completion_model<T>(self) -> BoxedStructuredTextCompletionModel<T>
+    where
+        Self: StructuredTextCompletionModel<
+                Self::DefaultConstraints,
+                Error: Send + Sync + Error + 'static,
+                Session: TextCompletionSession<Error: Error + Send + Sync + 'static>
+                             + Clone
+                             + Send
+                             + Sync
+                             + 'static,
+            > + CreateDefaultCompletionConstraintsForType<T>
+            + Sized
+            + Send
+            + Sync
+            + 'static,
+        T: 'static,
+    {
+        BoxedStructuredTextCompletionModel::new(self)
     }
 }
 

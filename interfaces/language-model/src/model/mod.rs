@@ -5,11 +5,13 @@ mod generation_parameters;
 pub use generation_parameters::*;
 mod ext;
 pub use ext::*;
+mod boxed;
+pub use boxed::*;
 
 #[doc = include_str!("../../docs/completion_session.md")]
 pub trait TextCompletionSession {
     /// The type of error the session may return during operations.
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: Send + Sync + 'static;
 
     /// Serialize the session into bytes. This method is identical to [`TextCompletionSession::to_bytes`] except it can re-use an existing [`Vec`] buffer.
     fn write_to(&self, into: &mut Vec<u8>) -> Result<(), Self::Error>;
@@ -177,7 +179,7 @@ impl<P: Parser> ModelConstraints for P {
 ///     let mut session = llm.new_session().unwrap();
 /// }
 /// ```
-pub trait CreateTextCompletionSession: Send + Sync + 'static {
+pub trait CreateTextCompletionSession {
     /// The type of error this model may return during operations.
     type Error: Send + Sync + 'static;
 
@@ -205,7 +207,7 @@ pub trait CreateDefaultCompletionConstraintsForType<T>:
     StructuredTextCompletionModel<Self::DefaultConstraints>
 {
     /// The default constraints for this type that work with this model.
-    type DefaultConstraints: ModelConstraints;
+    type DefaultConstraints: ModelConstraints<Output = T>;
 
     /// Create [`Self::DefaultConstraints`] which parse the type `T` for this model.
     fn create_default_constraints() -> Self::DefaultConstraints;
@@ -234,13 +236,13 @@ pub trait TextCompletionModel<Sampler = GenerationParameters>: CreateTextComplet
     /// Generate text with the given prompt.
     ///
     /// See [`TextCompletionModelExt::complete`] for nicer API with an example.
-    fn stream_text_with_callback(
-        &self,
-        session: &mut Self::Session,
+    fn stream_text_with_callback<'a>(
+        &'a self,
+        session: &'a mut Self::Session,
         text: &str,
         sampler: Sampler,
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a;
 }
 
 /// A trait for text completion models that support structured generation. While this trait is implemented for
@@ -273,12 +275,12 @@ pub trait StructuredTextCompletionModel<
     /// Generate text with the given prompt and the given constraints.
     ///
     /// See [`TextCompletionModelExt::complete`] for nicer API with an example.
-    fn stream_text_with_callback_and_parser(
-        &self,
-        session: &mut Self::Session,
+    fn stream_text_with_callback_and_parser<'a>(
+        &'a self,
+        session: &'a mut Self::Session,
         text: &str,
         sampler: Sampler,
         parser: Constraints,
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> impl Future<Output = Result<Constraints::Output, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<Constraints::Output, Self::Error>> + Send + 'a;
 }

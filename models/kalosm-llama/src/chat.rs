@@ -1,4 +1,7 @@
-use std::sync::{Arc, RwLock};
+use std::{
+    future::Future,
+    sync::{Arc, RwLock},
+};
 
 use crate::{model::LlamaModelError, session::LlamaSessionLoadingError, Llama, LlamaSession};
 use kalosm_common::accelerated_device_if_available;
@@ -58,30 +61,33 @@ impl CreateChatSession for Llama {
 }
 
 impl<S: Sampler + 'static> ChatModel<S> for Llama {
-    async fn add_messages_with_callback(
-        &self,
-        session: &mut Self::ChatSession,
+    fn add_messages_with_callback<'a>(
+        &'a self,
+        session: &'a mut Self::ChatSession,
         messages: &[ChatMessage],
         sampler: S,
         mut on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> Result<(), Self::Error> {
-        let new_text = get_new_tokens(messages, session, self)?;
-        let model_response = Arc::new(RwLock::new(String::new()));
-        let on_token = {
-            let model_response = model_response.clone();
-            move |token: String| {
-                let mut model_response = model_response.write().unwrap();
-                *model_response += &token;
-                on_token(token)
-            }
-        };
-        self.stream_text_with_callback(&mut session.session, &new_text, sampler, on_token)
-            .await?;
-        session.history.push(ChatMessage::new(
-            MessageType::ModelAnswer,
-            model_response.read().unwrap().clone(),
-        ));
-        Ok(())
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a {
+        let new_text = get_new_tokens(messages, session, self);
+        async move {
+            let new_text = new_text?;
+            let model_response = Arc::new(RwLock::new(String::new()));
+            let on_token = {
+                let model_response = model_response.clone();
+                move |token: String| {
+                    let mut model_response = model_response.write().unwrap();
+                    *model_response += &token;
+                    on_token(token)
+                }
+            };
+            self.stream_text_with_callback(&mut session.session, &new_text, sampler, on_token)
+                .await?;
+            session.history.push(ChatMessage::new(
+                MessageType::ModelAnswer,
+                model_response.read().unwrap().clone(),
+            ));
+            Ok(())
+        }
     }
 }
 
@@ -91,38 +97,47 @@ where
     Constraints: CreateParserState + Send + 'static,
     S: Sampler + 'static,
 {
-    async fn add_message_with_callback_and_constraints(
-        &self,
-        session: &mut Self::ChatSession,
+    fn add_message_with_callback_and_constraints<'a>(
+        &'a self,
+        session: &'a mut Self::ChatSession,
         messages: &[ChatMessage],
         sampler: S,
         constraints: Constraints,
         mut on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> Result<<Constraints as kalosm_language_model::ModelConstraints>::Output, Self::Error> {
-        let new_text = get_new_tokens(messages, session, self)?;
-        let model_response = Arc::new(RwLock::new(String::new()));
-        let on_token = {
-            let model_response = model_response.clone();
-            move |token: String| {
-                let mut model_response = model_response.write().unwrap();
-                *model_response += &token;
-                on_token(token)
-            }
-        };
-        let result = self
-            .stream_text_with_callback_and_parser(
-                &mut session.session,
-                &new_text,
-                sampler,
-                constraints,
-                on_token,
-            )
-            .await?;
-        session.history.push(ChatMessage::new(
-            MessageType::ModelAnswer,
-            model_response.read().unwrap().clone(),
-        ));
-        Ok(result)
+    ) -> impl Future<
+        Output = Result<
+            <Constraints as kalosm_language_model::ModelConstraints>::Output,
+            Self::Error,
+        >,
+    > + Send
+           + 'a {
+        let new_text = get_new_tokens(messages, session, self);
+        async move {
+            let new_text = new_text?;
+            let model_response = Arc::new(RwLock::new(String::new()));
+            let on_token = {
+                let model_response = model_response.clone();
+                move |token: String| {
+                    let mut model_response = model_response.write().unwrap();
+                    *model_response += &token;
+                    on_token(token)
+                }
+            };
+            let result = self
+                .stream_text_with_callback_and_parser(
+                    &mut session.session,
+                    &new_text,
+                    sampler,
+                    constraints,
+                    on_token,
+                )
+                .await?;
+            session.history.push(ChatMessage::new(
+                MessageType::ModelAnswer,
+                model_response.read().unwrap().clone(),
+            ));
+            Ok(result)
+        }
     }
 }
 

@@ -10,6 +10,8 @@ mod task;
 pub use task::*;
 mod chat_builder;
 pub use chat_builder::*;
+mod boxed;
+pub use boxed::*;
 
 /// A trait for creating a chat session. While it the core trait
 /// every chat session implementation implements, most methods to use models that implement
@@ -86,13 +88,13 @@ pub trait ChatModel<Sampler = GenerationParameters>: CreateChatSession {
     /// Add messages to the chat session with a callback that is called for each token.
     ///
     /// See [`Chat::add_message`] for nicer API with examples
-    fn add_messages_with_callback(
-        &self,
-        session: &mut Self::ChatSession,
+    fn add_messages_with_callback<'a>(
+        &'a self,
+        session: &'a mut Self::ChatSession,
         messages: &[ChatMessage],
         sampler: Sampler,
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a;
 }
 
 /// A trait for unstructured chat models that support structured generation. While this trait is implemented for
@@ -125,14 +127,14 @@ pub trait StructuredChatModel<Constraints: ModelConstraints, Sampler = Generatio
     /// Add messages to the chat session with a callback that is called for each token and a constraints the response must follow.
     ///
     /// See [`ChatResponseBuilder::with_constraints`] for nicer API with examples
-    fn add_message_with_callback_and_constraints(
-        &self,
-        session: &mut Self::ChatSession,
+    fn add_message_with_callback_and_constraints<'a>(
+        &'a self,
+        session: &'a mut Self::ChatSession,
         messages: &[ChatMessage],
         sampler: Sampler,
         constraints: Constraints,
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> impl Future<Output = Result<Constraints::Output, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<Constraints::Output, Self::Error>> + Send + 'a;
 }
 
 /// A trait that defines the default constraints for a type with this chat model.
@@ -140,7 +142,7 @@ pub trait CreateDefaultChatConstraintsForType<T>:
     StructuredChatModel<Self::DefaultConstraints>
 {
     /// The default constraints for this type that work with this chat model.
-    type DefaultConstraints: ModelConstraints;
+    type DefaultConstraints: ModelConstraints<Output = T>;
 
     /// Create [`Self::DefaultConstraints`] which parse the type `T` for this chat model.
     fn create_default_constraints() -> Self::DefaultConstraints;
@@ -149,7 +151,7 @@ pub trait CreateDefaultChatConstraintsForType<T>:
 #[doc = include_str!("../../docs/chat_session.md")]
 pub trait ChatSession {
     /// The type of error the chat session may return during operations.
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: Send + Sync + 'static;
 
     /// Serialize the session into bytes.
     fn write_to(&self, into: &mut Vec<u8>) -> Result<(), Self::Error>;
