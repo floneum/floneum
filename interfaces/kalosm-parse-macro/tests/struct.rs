@@ -14,7 +14,7 @@ fn empty_struct_schema() {
     assert_eq!(
         json,
         serde_json::json!({
-            "const": "empty struct"
+            "enum": ["empty struct"]
         })
     )
 }
