@@ -323,7 +323,7 @@ impl LlamaModel {
 
         let tokens = self
             .tokenizer
-            .encode(prompt, false)
+            .encode_fast(prompt, false)
             .map_err(LlamaModelError::Tokenizer)?;
         let tokens = tokens.get_ids();
         let mut text_stream = TokenOutputStream::new(self.tokenizer.clone());

@@ -41,15 +41,19 @@ pub(crate) fn generate_structured<P: Parser>(
 
     let prompt_text = prompt.to_string();
     let prompt_tokens = tokenizer
-        .encode(prompt_text, false)
+        .encode_fast(prompt_text, false)
         .map_err(LlamaModelError::Tokenizer)?;
     let mut prompt_tokens = prompt_tokens.get_ids();
 
     // Prompt healing
     // Trim the last token and add what it would decode to into the constraints
     let last_token = if let Some((last, tokens)) = prompt_tokens.split_last() {
-        prompt_tokens = tokens;
-        Some(*last)
+        if tokenizer.get_added_tokens_decoder().contains_key(last) {
+            None
+        } else {
+            prompt_tokens = tokens;
+            Some(*last)
+        }
     } else {
         None
     };
@@ -74,6 +78,18 @@ pub(crate) fn generate_structured<P: Parser>(
 
     let parser = LiteralParser::new(remaining_prompt_text.clone())
         .ignore_output_then(parser.with_initial_state(move || parser_state.clone()));
+    {
+        let mut parser_state = parser.create_parser_state();
+        for c in remaining_prompt_text.chars() {
+            let str = c.to_string();
+            let bytes = str.as_bytes();
+            let (parser_state_new, _) = parser
+                .parse(&parser_state, bytes)
+                .unwrap()
+                .unwrap_incomplete();
+            parser_state = parser_state_new;
+        }
+    }
     let mut parser_state = parser.create_parser_state();
     let mut strip_required_next = true;
 

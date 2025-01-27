@@ -150,7 +150,7 @@ impl TokenOutputStream {
         let all_text = self.current_text.clone() + text;
         let tokens_with_current_tokens = self
             .tokenizer
-            .encode(all_text, false)
+            .encode_fast(all_text, false)
             .map_err(TokenOutputStreamError::TokenizationError)?;
         let tokens_with_current_tokens = tokens_with_current_tokens.get_ids();
 
