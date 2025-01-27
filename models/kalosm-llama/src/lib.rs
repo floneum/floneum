@@ -302,6 +302,9 @@ pub(crate) struct InferenceSettings {
 
     /// The maximum number of tokens to generate.
     max_tokens: u32,
+
+    /// The seed to use.
+    seed: Option<u64>,
 }
 
 impl InferenceSettings {
@@ -311,6 +314,7 @@ impl InferenceSettings {
         sampler: std::sync::Arc<std::sync::Mutex<dyn llm_samplers::prelude::Sampler>>,
         max_tokens: u32,
         stop_on: Option<String>,
+        seed: Option<u64>,
     ) -> Self {
         Self {
             prompt: prompt.into(),
@@ -318,6 +322,7 @@ impl InferenceSettings {
             sampler,
             session,
             max_tokens,
+            seed,
         }
     }
 }

@@ -401,6 +401,7 @@ where
             "frequency_penalty": sampler.repetition_penalty,
             "max_completion_tokens": if sampler.max_length == u32::MAX { None } else { Some(sampler.max_length) },
             "stop": sampler.stop_on.clone(),
+            "seed": sampler.seed(),
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
@@ -498,16 +499,21 @@ mod tests {
         )];
         let all_text = Arc::new(RwLock::new(String::new()));
         model
-            .add_messages_with_callback(&mut session, &messages, GenerationParameters::default(), {
-                let all_text = all_text.clone();
-                move |token| {
-                    let mut all_text = all_text.write().unwrap();
-                    all_text.push_str(&token);
-                    print!("{token}");
-                    std::io::Write::flush(&mut std::io::stdout()).unwrap();
-                    Ok(())
-                }
-            })
+            .add_messages_with_callback(
+                &mut session,
+                &messages,
+                GenerationParameters::default().with_seed(1234),
+                {
+                    let all_text = all_text.clone();
+                    move |token| {
+                        let mut all_text = all_text.write().unwrap();
+                        all_text.push_str(&token);
+                        print!("{token}");
+                        std::io::Write::flush(&mut std::io::stdout()).unwrap();
+                        Ok(())
+                    }
+                },
+            )
             .await
             .unwrap();
 

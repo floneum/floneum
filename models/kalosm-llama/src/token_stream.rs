@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use llm_samplers::types::{HasSamplerResources, Logits, Sampler, SamplerError};
+use rand::SeedableRng;
 use rayon::iter::{IntoParallelIterator, ParallelExtend, ParallelIterator};
 use thiserror::Error;
 use tokenizers::tokenizer::Tokenizer;
@@ -55,6 +56,7 @@ impl TokenOutputStream {
         sampler: &mut impl Sampler,
         mut logits: Logits,
         stop_on: Option<&str>,
+        seed: Option<u64>,
     ) -> Result<u32, TokenOutputStreamError> {
         struct SamplerResources<'a, 'b, R: rand::Rng> {
             rng: &'a mut R,
@@ -89,7 +91,11 @@ impl TokenOutputStream {
                 Ok(())
             }
         }
-        let mut rng = rand::thread_rng();
+        let mut rng = if let Some(seed) = seed {
+            rand::rngs::StdRng::seed_from_u64(seed)
+        } else {
+            rand::rngs::StdRng::from_entropy()
+        };
         let tokenizer = &self.tokenizer;
         let previous_tokens = &self.tokens;
 

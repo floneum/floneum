@@ -60,13 +60,14 @@ impl<S: Sampler + 'static> TextCompletionModel<S> for Llama {
         let text = text.to_string();
         async move {
             let (tx, rx) = tokio::sync::oneshot::channel();
-            let (max_tokens, stop_on) =
+            let (max_tokens, stop_on, seed) =
                 match (&sampler as &dyn Any).downcast_ref::<GenerationParameters>() {
                     Some(sampler) => (
                         sampler.max_length(),
                         sampler.stop_on().map(|s| s.to_string()),
+                        sampler.seed(),
                     ),
-                    None => (u32::MAX, None),
+                    None => (u32::MAX, None, None),
                 };
             let sampler = std::sync::Arc::new(std::sync::Mutex::new(sampler));
             let on_token = Box::new(on_token);
@@ -78,6 +79,7 @@ impl<S: Sampler + 'static> TextCompletionModel<S> for Llama {
                         sampler,
                         max_tokens,
                         stop_on,
+                        seed,
                     ),
                     on_token,
                     finished: tx,
@@ -125,6 +127,10 @@ where
         let mut session = session.clone();
         async {
             let (tx, rx) = tokio::sync::oneshot::channel();
+            let seed = match (&sampler as &dyn Any).downcast_ref::<GenerationParameters>() {
+                Some(sampler) => sampler.seed(),
+                None => None,
+            };
             let sampler = std::sync::Arc::new(std::sync::Mutex::new(sampler));
             let on_token = Box::new(on_token);
             self.task_sender
@@ -140,6 +146,7 @@ where
                             sampler,
                             on_token,
                             Some(64),
+                            seed,
                         );
                         _ = tx.send(result);
                     }),

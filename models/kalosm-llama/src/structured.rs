@@ -2,6 +2,7 @@ use kalosm_sample::CreateParserState;
 use kalosm_sample::{LiteralParser, ParseStatus, Parser, ParserExt};
 use llm_samplers::prelude::{Logit, Logits};
 use llm_samplers::types::{HasSamplerResources, Sampler, SamplerError};
+use rand::SeedableRng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::{
     fmt::{Debug, Display, Formatter},
@@ -23,6 +24,7 @@ pub(crate) fn generate_structured<P: Parser>(
     mut sampler: Arc<Mutex<dyn Sampler>>,
     mut on_token: impl FnMut(String) -> Result<(), LlamaModelError>,
     top_k: Option<usize>,
+    seed: Option<u64>,
 ) -> Result<P::Output, LlamaModelError> {
     let eos_token = llm.model.config.stop_token_string.clone();
     let mut on_token = move |tok: String| {
@@ -75,7 +77,11 @@ pub(crate) fn generate_structured<P: Parser>(
     let mut parser_state = parser.create_parser_state();
     let mut strip_required_next = true;
 
-    let mut rng = rand::thread_rng();
+    let mut rng = if let Some(seed) = seed {
+        rand::rngs::StdRng::seed_from_u64(seed)
+    } else {
+        rand::rngs::StdRng::from_entropy()
+    };
     let mut state_map = vec![];
     let mut logits_indexed = Vec::new();
     let mut token_cache = DetokenizationCache::new();
