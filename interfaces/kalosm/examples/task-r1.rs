@@ -42,6 +42,8 @@ async fn main() {
 
     response.to_std_out().await.unwrap();
 
+    println!("\n\n");
+
     let account = response.await.unwrap();
     println!("{account:#?}");
 }
