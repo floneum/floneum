@@ -1,4 +1,13 @@
+use kalosm_common::ModelLoadingProgress;
+use kalosm_language_model::{
+    CreateDefaultChatConstraintsForType, CreateDefaultCompletionConstraintsForType,
+    CreateTextCompletionSession, GenerationParameters, ModelBuilder, StructuredTextCompletionModel,
+    TextCompletionModel,
+};
+use kalosm_sample::{ArcParser, CreateParserState, Parse, Parser, ParserExt};
+use llm_samplers::types::Sampler;
 use std::any::Any;
+use std::future::Future;
 
 use crate::model::LlamaModelError;
 use crate::structured::generate_structured;
@@ -8,14 +17,6 @@ use crate::{
     InferenceSettings, LlamaSession, LlamaSourceError, StructuredGenerationTask, Task,
     UnstructuredGenerationTask,
 };
-use kalosm_common::ModelLoadingProgress;
-use kalosm_language_model::{
-    CreateDefaultChatConstraintsForType, CreateDefaultCompletionConstraintsForType,
-    CreateTextCompletionSession, GenerationParameters, ModelBuilder, StructuredTextCompletionModel,
-    TextCompletionModel,
-};
-use kalosm_sample::{ArcParser, CreateParserState, Parse, Parser, ParserExt};
-use llm_samplers::types::Sampler;
 
 impl ModelBuilder for LlamaBuilder {
     type Model = Llama;
@@ -49,41 +50,44 @@ impl CreateTextCompletionSession for Llama {
 }
 
 impl<S: Sampler + 'static> TextCompletionModel<S> for Llama {
-    async fn stream_text_with_callback(
-        &self,
-        session: &mut Self::Session,
+    fn stream_text_with_callback<'a>(
+        &'a self,
+        session: &'a mut Self::Session,
         text: &str,
         sampler: S,
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> Result<(), Self::Error> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let (max_tokens, stop_on) =
-            match (&sampler as &dyn Any).downcast_ref::<GenerationParameters>() {
-                Some(sampler) => (
-                    sampler.max_length(),
-                    sampler.stop_on().map(|s| s.to_string()),
-                ),
-                None => (u32::MAX, None),
-            };
-        let sampler = std::sync::Arc::new(std::sync::Mutex::new(sampler));
-        let on_token = Box::new(on_token);
-        self.task_sender
-            .send(Task::UnstructuredGeneration(UnstructuredGenerationTask {
-                settings: InferenceSettings::new(
-                    text.to_string(),
-                    session.clone(),
-                    sampler,
-                    max_tokens,
-                    stop_on,
-                ),
-                on_token,
-                finished: tx,
-            }))
-            .map_err(|_| LlamaModelError::ModelStopped)?;
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a {
+        let text = text.to_string();
+        async move {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            let (max_tokens, stop_on) =
+                match (&sampler as &dyn Any).downcast_ref::<GenerationParameters>() {
+                    Some(sampler) => (
+                        sampler.max_length(),
+                        sampler.stop_on().map(|s| s.to_string()),
+                    ),
+                    None => (u32::MAX, None),
+                };
+            let sampler = std::sync::Arc::new(std::sync::Mutex::new(sampler));
+            let on_token = Box::new(on_token);
+            self.task_sender
+                .send(Task::UnstructuredGeneration(UnstructuredGenerationTask {
+                    settings: InferenceSettings::new(
+                        text,
+                        session.clone(),
+                        sampler,
+                        max_tokens,
+                        stop_on,
+                    ),
+                    on_token,
+                    finished: tx,
+                }))
+                .map_err(|_| LlamaModelError::ModelStopped)?;
 
-        rx.await.map_err(|_| LlamaModelError::ModelStopped)??;
+            rx.await.map_err(|_| LlamaModelError::ModelStopped)??;
 
-        Ok(())
+            Ok(())
+        }
     }
 }
 
@@ -109,14 +113,14 @@ where
     Constraints: CreateParserState + Send + 'static,
     S: Sampler + 'static,
 {
-    fn stream_text_with_callback_and_parser(
-        &self,
-        session: &mut Self::Session,
+    fn stream_text_with_callback_and_parser<'a>(
+        &'a self,
+        session: &'a mut Self::Session,
         text: &str,
         sampler: S,
         parser: Constraints,
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> impl std::future::Future<Output = Result<Constraints::Output, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Constraints::Output, Self::Error>> + Send + 'a {
         let text = text.to_string();
         let mut session = session.clone();
         async {

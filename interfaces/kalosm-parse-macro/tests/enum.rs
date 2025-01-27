@@ -64,11 +64,11 @@ fn mixed_enum_schema() {
     assert_eq!(
         json,
         serde_json::json!({
-            "oneOf": [
+            "anyOf": [
                 {
                     "type": "object",
                     "properties": {
-                        "type": { "const": "Person" },
+                        "type": { "enum": ["Person"] },
                         "data": {
                             "type": "object",
                             "properties": {
@@ -87,7 +87,7 @@ fn mixed_enum_schema() {
                 {
                     "type": "object",
                     "properties": {
-                        "type": { "const": "Animal" }
+                        "type": { "enum": ["Animal"] }
                     },
                     "required": ["type"],
                     "additionalProperties": false
@@ -95,7 +95,7 @@ fn mixed_enum_schema() {
                 {
                     "type": "object",
                     "properties": {
-                        "type": { "const": "Turtle" },
+                        "type": { "enum": ["Turtle"] },
                         "data": { "type": "string" }
                     },
                     "required": ["type", "data"],

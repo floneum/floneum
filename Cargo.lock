@@ -2216,6 +2216,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "dynosaur"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92fac44672fabad44990176319b9e94393f3a38b960b5ca2af6cd90f5ecd1497"
+dependencies = [
+ "dynosaur_derive",
+ "trait-variant",
+]
+
+[[package]]
+name = "dynosaur_derive"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "16c187d1e575ef546d24f0fcd7701cc04abfe6b5e7e2758aabc450b99e835ac3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.91",
+]
+
+[[package]]
 name = "earcutr"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4060,6 +4081,7 @@ dependencies = [
  "anyhow",
  "async-lock",
  "candle-core",
+ "dynosaur",
  "futures-channel",
  "futures-util",
  "kalosm",
@@ -8574,6 +8596,17 @@ dependencies = [
  "thread_local",
  "tracing-core",
  "tracing-log 0.2.0",
+]
+
+[[package]]
+name = "trait-variant"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70977707304198400eb4835a78f6a9f928bf41bba420deb8fdb175cd965d77a7"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.91",
 ]
 
 [[package]]

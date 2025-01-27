@@ -403,7 +403,9 @@ fn unit_schema(attrs: &[syn::Attribute], ty: &Ident) -> TokenStream2 {
     quote! {
         impl kalosm_sample::Schema for #ty {
             fn schema() -> kalosm_sample::SchemaType {
-                kalosm_sample::SchemaType::Const(kalosm_sample::ConstSchema::new(kalosm_sample::SchemaLiteral::String(#name.to_string())))
+                kalosm_sample::SchemaType::Enum(kalosm_sample::EnumSchema::new([
+                    kalosm_sample::SchemaLiteral::String(#name.to_string())
+                ]))
             }
         }
     }
@@ -557,8 +559,8 @@ impl EnumParser {
         Ok(quote! {
             impl kalosm_sample::Schema for #ty {
                 fn schema() -> kalosm_sample::SchemaType {
-                    kalosm_sample::SchemaType::OneOf(
-                        kalosm_sample::OneOfSchema::new([
+                    kalosm_sample::SchemaType::AnyOf(
+                        kalosm_sample::AnyOfSchema::new([
                             #(#variants),*
                         ])
                     )
@@ -686,10 +688,10 @@ impl UnitEnumVariantParser {
                 kalosm_sample::JsonObjectSchema::new([
                     kalosm_sample::JsonPropertySchema::new(
                         #tag,
-                        kalosm_sample::SchemaType::Const(
-                            kalosm_sample::ConstSchema::new(
+                        kalosm_sample::SchemaType::Enum(
+                            kalosm_sample::EnumSchema::new([
                                 kalosm_sample::SchemaLiteral::String(#variant_name.to_string())
-                            )
+                            ])
                         )
                     )
                     .with_required(true)
@@ -742,10 +744,10 @@ impl StructEnumVariantParser {
                 kalosm_sample::JsonObjectSchema::new([
                     kalosm_sample::JsonPropertySchema::new(
                         #tag,
-                        kalosm_sample::SchemaType::Const(
-                            kalosm_sample::ConstSchema::new(
+                        kalosm_sample::SchemaType::Enum(
+                            kalosm_sample::EnumSchema::new([
                                 kalosm_sample::SchemaLiteral::String(#variant_name.to_string())
-                            )
+                            ])
                         )
                     )
                     .with_required(true),
@@ -807,10 +809,10 @@ impl TupleEnumVariantParser {
                 kalosm_sample::JsonObjectSchema::new([
                     kalosm_sample::JsonPropertySchema::new(
                         #tag,
-                        kalosm_sample::SchemaType::Const(
-                            kalosm_sample::ConstSchema::new(
+                        kalosm_sample::SchemaType::Enum(
+                            kalosm_sample::EnumSchema::new([
                                 kalosm_sample::SchemaLiteral::String(#variant_name.to_string())
-                            )
+                            ])
                         )
                     )
                     .with_required(true),

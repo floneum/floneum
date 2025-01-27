@@ -1,10 +1,12 @@
 use super::{AnthropicCompatibleClient, NoAnthropicAPIKeyError};
-use crate::{ChatModel, ChatSession, CreateChatSession, GenerationParameters, ModelBuilder};
+use crate::{
+    ChatMessage, ChatModel, ChatSession, CreateChatSession, GenerationParameters, ModelBuilder,
+};
 use futures_util::StreamExt;
 use kalosm_common::ModelLoadingProgress;
 use reqwest_eventsource::{Event, RequestBuilderExt};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::{future::Future, sync::Arc};
 use thiserror::Error;
 
 #[derive(Debug)]
@@ -312,27 +314,26 @@ struct AnthropicCompatibleChatResponseChoiceMessage {
 }
 
 impl ChatModel<GenerationParameters> for AnthropicCompatibleChatModel {
-    async fn add_messages_with_callback(
-        &self,
-        session: &mut Self::ChatSession,
-        messages: &[crate::ChatMessage],
+    fn add_messages_with_callback<'a>(
+        &'a self,
+        session: &'a mut Self::ChatSession,
+        messages: &[ChatMessage],
         sampler: GenerationParameters,
         mut on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> Result<(), Self::Error> {
-        let myself = &*self.inner;
-        let api_key = myself.client.resolve_api_key()?;
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a {
         let mut system_prompt = None;
         let messages: Vec<_> = messages
             .iter()
             .filter(|message| {
                 if let crate::MessageType::SystemPrompt = message.role() {
-                    system_prompt = Some(message.content());
+                    system_prompt = Some(message.content().to_string());
                     false
                 } else {
                     true
                 }
             })
             .collect();
+        let myself = &*self.inner;
         let mut json = serde_json::json!({
             "model": myself.model,
             "messages": messages,
@@ -342,69 +343,72 @@ impl ChatModel<GenerationParameters> for AnthropicCompatibleChatModel {
             "temperature": sampler.temperature,
             "max_tokens": sampler.max_length.min(myself.max_tokens),
         });
-        println!("{}", json);
-        if let Some(stop_on) = sampler.stop_on.as_ref() {
-            json["stop"] = vec![stop_on.clone()].into();
-        }
-        if let Some(system) = system_prompt {
-            json["system"] = system.into();
-        }
-        let mut event_source = myself
-            .client
-            .reqwest_client
-            .post(format!("{}/messages", myself.client.base_url()))
-            .header("Content-Type", "application/json")
-            .header("x-api-key", api_key)
-            .header("anthropic-version", myself.client.version())
-            .json(&json)
-            .eventsource()
-            .unwrap();
 
-        let mut new_message_text = String::new();
+        async move {
+            let api_key = myself.client.resolve_api_key()?;
+            if let Some(stop_on) = sampler.stop_on.as_ref() {
+                json["stop"] = vec![stop_on.clone()].into();
+            }
+            if let Some(system) = system_prompt {
+                json["system"] = system.into();
+            }
+            let mut event_source = myself
+                .client
+                .reqwest_client
+                .post(format!("{}/messages", myself.client.base_url()))
+                .header("Content-Type", "application/json")
+                .header("x-api-key", api_key)
+                .header("anthropic-version", myself.client.version())
+                .json(&json)
+                .eventsource()
+                .unwrap();
 
-        while let Some(event) = event_source.next().await {
-            match event? {
-                Event::Open => {}
-                Event::Message(message) => {
-                    let data =
-                        serde_json::from_str::<AnthropicCompatibleChatResponse>(&message.data)?;
-                    match data {
-                        AnthropicCompatibleChatResponse::ContentBlockDelta(
-                            anthropic_compatible_chat_response_content_block_delta,
-                        ) => {
-                            match anthropic_compatible_chat_response_content_block_delta.delta {
+            let mut new_message_text = String::new();
+
+            while let Some(event) = event_source.next().await {
+                match event? {
+                    Event::Open => {}
+                    Event::Message(message) => {
+                        let data =
+                            serde_json::from_str::<AnthropicCompatibleChatResponse>(&message.data)?;
+                        match data {
+                            AnthropicCompatibleChatResponse::ContentBlockDelta(
+                                anthropic_compatible_chat_response_content_block_delta,
+                            ) => {
+                                match anthropic_compatible_chat_response_content_block_delta.delta {
                                 AnthropicCompatibleChatResponseContentBlockDeltaMessage::TextDelta { text } => {
                                         new_message_text += &text;
                                         on_token(text)?;
                                 },
                                 AnthropicCompatibleChatResponseContentBlockDeltaMessage::Unknown => tracing::trace!("Unknown delta from Anthropic API: {:?}", message.data),
                             }
-                        },
-                        AnthropicCompatibleChatResponse::ContentBlockStop => {
-                            break;
-                        },
-                        AnthropicCompatibleChatResponse::Error(
-                            anthropic_compatible_chat_response_error,
-                        ) => {
-                            return Err(AnthropicCompatibleChatModelError::StreamError(
+                            }
+                            AnthropicCompatibleChatResponse::ContentBlockStop => {
+                                break;
+                            }
+                            AnthropicCompatibleChatResponse::Error(
                                 anthropic_compatible_chat_response_error,
-                            ))
+                            ) => {
+                                return Err(AnthropicCompatibleChatModelError::StreamError(
+                                    anthropic_compatible_chat_response_error,
+                                ))
+                            }
+                            AnthropicCompatibleChatResponse::Unknown => tracing::trace!(
+                                "Unknown response from Anthropic API: {:?}",
+                                message.data
+                            ),
                         }
-                        AnthropicCompatibleChatResponse::Unknown => tracing::trace!(
-                            "Unknown response from Anthropic API: {:?}",
-                            message.data
-                        ),
                     }
                 }
             }
+
+            let new_message =
+                crate::ChatMessage::new(crate::MessageType::UserMessage, new_message_text);
+
+            session.messages.push(new_message);
+
+            Ok(())
         }
-
-        let new_message =
-            crate::ChatMessage::new(crate::MessageType::UserMessage, new_message_text);
-
-        session.messages.push(new_message);
-
-        Ok(())
     }
 }
 

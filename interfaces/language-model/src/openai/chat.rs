@@ -214,78 +214,82 @@ struct OpenAICompatibleChatResponseChoiceMessage {
 }
 
 impl ChatModel<GenerationParameters> for OpenAICompatibleChatModel {
-    async fn add_messages_with_callback(
-        &self,
-        session: &mut Self::ChatSession,
+    fn add_messages_with_callback<'a>(
+        &'a self,
+        session: &'a mut Self::ChatSession,
         messages: &[crate::ChatMessage],
         sampler: GenerationParameters,
         mut on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> Result<(), Self::Error> {
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a {
         let myself = &*self.inner;
-        let api_key = myself.client.resolve_api_key()?;
-        let mut event_source = myself
-            .client
-            .reqwest_client
-            .post(format!("{}/chat/completions", myself.client.base_url()))
-            .header("Content-Type", "application/json")
-            .header("Authorization", format!("Bearer {}", api_key))
-            .json(&serde_json::json!({
-                "messages": messages,
-                "model": myself.model,
-                "stream": true,
-                "top_p": sampler.top_p,
-                "temperature": sampler.temperature,
-                "frequency_penalty": sampler.repetition_penalty,
-                "max_completion_tokens": if sampler.max_length == u32::MAX { None } else { Some(sampler.max_length) },
-                "stop": sampler.stop_on.clone(),
-            }))
-            .eventsource()
-            .unwrap();
+        let json = serde_json::json!({
+            "messages": messages,
+            "model": myself.model,
+            "stream": true,
+            "top_p": sampler.top_p,
+            "temperature": sampler.temperature,
+            "frequency_penalty": sampler.repetition_penalty,
+            "max_completion_tokens": if sampler.max_length == u32::MAX { None } else { Some(sampler.max_length) },
+            "stop": sampler.stop_on.clone(),
+        });
+        async move {
+            let api_key = myself.client.resolve_api_key()?;
+            let mut event_source = myself
+                .client
+                .reqwest_client
+                .post(format!("{}/chat/completions", myself.client.base_url()))
+                .header("Content-Type", "application/json")
+                .header("Authorization", format!("Bearer {}", api_key))
+                .json(&json)
+                .eventsource()
+                .unwrap();
 
-        let mut new_message_text = String::new();
+            let mut new_message_text = String::new();
 
-        while let Some(event) = event_source.next().await {
-            match event? {
-                Event::Open => {}
-                Event::Message(message) => {
-                    let data = serde_json::from_str::<OpenAICompatibleChatResponse>(&message.data)?;
-                    let first_choice = data
-                        .choices
-                        .into_iter()
-                        .next()
-                        .ok_or(OpenAICompatibleChatModelError::NoMessageChoices)?;
-                    if let Some(content) = first_choice.delta.refusal {
-                        return Err(OpenAICompatibleChatModelError::Refusal(content));
-                    }
-                    if let Some(refusal) = &first_choice.finish_reason {
-                        match refusal {
-                            FinishReason::ContentFilter => {
-                                return Err(OpenAICompatibleChatModelError::Refusal(
-                                    "ContentFilter".to_string(),
-                                ))
-                            }
-                            FinishReason::FunctionCall => {
-                                return Err(
-                                    OpenAICompatibleChatModelError::FunctionCallsNotSupported,
-                                )
-                            }
-                            _ => return Ok(()),
+            while let Some(event) = event_source.next().await {
+                match event? {
+                    Event::Open => {}
+                    Event::Message(message) => {
+                        let data =
+                            serde_json::from_str::<OpenAICompatibleChatResponse>(&message.data)?;
+                        let first_choice = data
+                            .choices
+                            .into_iter()
+                            .next()
+                            .ok_or(OpenAICompatibleChatModelError::NoMessageChoices)?;
+                        if let Some(content) = first_choice.delta.refusal {
+                            return Err(OpenAICompatibleChatModelError::Refusal(content));
                         }
-                    }
-                    if let Some(content) = first_choice.delta.content {
-                        new_message_text += &content;
-                        on_token(content)?;
+                        if let Some(refusal) = &first_choice.finish_reason {
+                            match refusal {
+                                FinishReason::ContentFilter => {
+                                    return Err(OpenAICompatibleChatModelError::Refusal(
+                                        "ContentFilter".to_string(),
+                                    ))
+                                }
+                                FinishReason::FunctionCall => {
+                                    return Err(
+                                        OpenAICompatibleChatModelError::FunctionCallsNotSupported,
+                                    )
+                                }
+                                _ => return Ok(()),
+                            }
+                        }
+                        if let Some(content) = first_choice.delta.content {
+                            new_message_text += &content;
+                            on_token(content)?;
+                        }
                     }
                 }
             }
+
+            let new_message =
+                crate::ChatMessage::new(crate::MessageType::UserMessage, new_message_text);
+
+            session.messages.push(new_message);
+
+            Ok(())
         }
-
-        let new_message =
-            crate::ChatMessage::new(crate::MessageType::UserMessage, new_message_text);
-
-        session.messages.push(new_message);
-
-        Ok(())
     }
 }
 
@@ -328,83 +332,87 @@ impl<P> StructuredChatModel<SchemaParser<P>> for OpenAICompatibleChatModel
 where
     P: Schema + DeserializeOwned,
 {
-    fn add_message_with_callback_and_constraints(
-        &self,
-        session: &mut Self::ChatSession,
+    fn add_message_with_callback_and_constraints<'a>(
+        &'a self,
+        session: &'a mut Self::ChatSession,
         messages: &[crate::ChatMessage],
         sampler: GenerationParameters,
         _: SchemaParser<P>,
         mut on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> impl Future<Output = Result<P, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<P, Self::Error>> + Send + 'a {
         let schema = P::schema();
-        async move {
-            let mut schema: serde_json::Value = serde_json::from_str(&schema.to_string())?;
-            fn remove_unsupported_properties(schema: &mut serde_json::Value) {
-                match schema {
-                    serde_json::Value::Null => {}
-                    serde_json::Value::Bool(_) => {}
-                    serde_json::Value::Number(_) => {}
-                    serde_json::Value::String(_) => {}
-                    serde_json::Value::Array(array) => {
-                        for item in array {
-                            remove_unsupported_properties(item);
+        let mut schema: serde_json::Result<serde_json::Value> =
+            serde_json::from_str(&schema.to_string());
+        fn remove_unsupported_properties(schema: &mut serde_json::Value) {
+            match schema {
+                serde_json::Value::Null => {}
+                serde_json::Value::Bool(_) => {}
+                serde_json::Value::Number(_) => {}
+                serde_json::Value::String(_) => {}
+                serde_json::Value::Array(array) => {
+                    for item in array {
+                        remove_unsupported_properties(item);
+                    }
+                }
+                serde_json::Value::Object(map) => {
+                    map.retain(|key, value| {
+                        const OPEN_AI_UNSUPPORTED_PROPERTIES: [&str; 19] = [
+                            "minLength",
+                            "maxLength",
+                            "pattern",
+                            "format",
+                            "minimum",
+                            "maximum",
+                            "multipleOf",
+                            "patternProperties",
+                            "unevaluatedProperties",
+                            "propertyNames",
+                            "minProperties",
+                            "maxProperties",
+                            "unevaluatedItems",
+                            "contains",
+                            "minContains",
+                            "maxContains",
+                            "minItems",
+                            "maxItems",
+                            "uniqueItems",
+                        ];
+                        if OPEN_AI_UNSUPPORTED_PROPERTIES.contains(&key.as_str()) {
+                            return false;
                         }
-                    }
-                    serde_json::Value::Object(map) => {
-                        map.retain(|key, value| {
-                            const OPEN_AI_UNSUPPORTED_PROPERTIES: [&str; 19] = [
-                                "minLength",
-                                "maxLength",
-                                "pattern",
-                                "format",
-                                "minimum",
-                                "maximum",
-                                "multipleOf",
-                                "patternProperties",
-                                "unevaluatedProperties",
-                                "propertyNames",
-                                "minProperties",
-                                "maxProperties",
-                                "unevaluatedItems",
-                                "contains",
-                                "minContains",
-                                "maxContains",
-                                "minItems",
-                                "maxItems",
-                                "uniqueItems",
-                            ];
-                            if OPEN_AI_UNSUPPORTED_PROPERTIES.contains(&key.as_str()) {
-                                return false;
-                            }
 
-                            remove_unsupported_properties(value);
-                            true
-                        });
-                    }
+                        remove_unsupported_properties(value);
+                        true
+                    });
                 }
             }
-            remove_unsupported_properties(&mut schema);
+        }
+        if let Ok(schema) = &mut schema {
+            remove_unsupported_properties(schema);
+        }
 
-            let myself = &*self.inner;
-            let api_key = myself.client.resolve_api_key()?;
-            let json = serde_json::json!({
-                "messages": messages,
-                "model": myself.model,
-                "stream": true,
-                "top_p": sampler.top_p,
-                "temperature": sampler.temperature,
-                "frequency_penalty": sampler.repetition_penalty,
-                "max_completion_tokens": if sampler.max_length == u32::MAX { None } else { Some(sampler.max_length) },
-                "stop": sampler.stop_on.clone(),
-                "response_format": {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "response",
-                        "schema": schema,
-                        "strict": true
-                    }
+        let myself = &*self.inner;
+        let json = schema.map(|schema| serde_json::json!({
+            "messages": messages,
+            "model": myself.model,
+            "stream": true,
+            "top_p": sampler.top_p,
+            "temperature": sampler.temperature,
+            "frequency_penalty": sampler.repetition_penalty,
+            "max_completion_tokens": if sampler.max_length == u32::MAX { None } else { Some(sampler.max_length) },
+            "stop": sampler.stop_on.clone(),
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "response",
+                    "schema": schema,
+                    "strict": true
                 }
-            });
+            }
+        }));
+        async move {
+            let json = json?;
+            let api_key = myself.client.resolve_api_key()?;
             let mut event_source = myself
                 .client
                 .reqwest_client
