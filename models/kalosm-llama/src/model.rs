@@ -313,6 +313,7 @@ impl LlamaModel {
             mut sampler,
             session,
             max_tokens,
+            seed,
         } = settings;
 
         let mut session = session
@@ -352,7 +353,7 @@ impl LlamaModel {
 
         'generate: while !finished.is_closed() && tokens_generated < max_tokens {
             let new_token = text_stream
-                .sample_token(&mut sampler, logits, stop_on.as_deref())
+                .sample_token(&mut sampler, logits, stop_on.as_deref(), seed)
                 .map_err(LlamaModelError::TokenOutputStreamError)?;
             if new_token == stop_token {
                 tracing::trace!("Stopping on stop token");

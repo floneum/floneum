@@ -17,6 +17,7 @@ pub struct GenerationParameters {
     pub(crate) repetition_penalty_range: u32,
     pub(crate) max_length: u32,
     pub(crate) stop_on: Option<String>,
+    pub(crate) seed: Option<u64>,
     sampler: Option<(u64, SamplerChain)>,
 }
 
@@ -48,6 +49,7 @@ impl Clone for GenerationParameters {
             max_length: self.max_length,
             stop_on: self.stop_on.clone(),
             sampler: None,
+            seed: None,
         }
     }
 }
@@ -95,6 +97,7 @@ impl GenerationParameters {
             max_length: u32::MAX,
             stop_on: None,
             sampler: None,
+            seed: None,
         }
     }
 
@@ -282,6 +285,12 @@ impl GenerationParameters {
         self
     }
 
+    /// Set the seed to use when generating text.
+    pub fn with_seed(mut self, seed: impl Into<Option<u64>>) -> Self {
+        self.seed = seed.into();
+        self
+    }
+
     /// Get the temperature to use when generating text.
     pub fn temperature(&self) -> f32 {
         self.temperature
@@ -320,5 +329,10 @@ impl GenerationParameters {
     /// Get the string to stop on when generating text.
     pub fn stop_on(&self) -> Option<&str> {
         self.stop_on.as_deref()
+    }
+
+    /// Get the seed to use when generating text.
+    pub fn seed(&self) -> Option<u64> {
+        self.seed
     }
 }
