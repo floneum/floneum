@@ -604,6 +604,42 @@ impl LlamaSource {
         .with_tokenizer(qwen_tokenizer())
         .with_group_query_attention(7)
     }
+
+    /// A preset for the DeepSeek-R1 distill qwen 1.5b model
+    pub fn deepseek_r1_distill_qwen_1_5b() -> Self {
+        Self::new(FileSource::huggingface(
+            "bartowski/DeepSeek-R1-Distill-Qwen-1.5B-GGUF".to_string(),
+            "main".to_string(),
+            "DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf".to_string(),
+        ))
+    }
+
+    /// A preset for the DeepSeek-R1 distill qwen 7b model
+    pub fn deepseek_r1_distill_qwen_7b() -> Self {
+        Self::new(FileSource::huggingface(
+            "bartowski/DeepSeek-R1-Distill-Qwen-7B-GGUF".to_string(),
+            "main".to_string(),
+            "DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf".to_string(),
+        ))
+    }
+
+    /// A preset for the DeepSeek-R1 distill qwen 14b model
+    pub fn deepseek_r1_distill_qwen_14b() -> Self {
+        Self::new(FileSource::huggingface(
+            "bartowski/DeepSeek-R1-Distill-Qwen-14B-GGUF",
+            "main",
+            "DeepSeek-R1-Distill-Qwen-14B-Q4_K_M.gguf",
+        ))
+    }
+
+    /// A preset for the DeepSeek-R1 distill llama 8b model
+    pub fn deepseek_r1_distill_llama_8b() -> Self {
+        Self::new(FileSource::huggingface(
+            "bartowski/DeepSeek-R1-Distill-Llama-8B-GGUF".to_string(),
+            "main".to_string(),
+            "DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf".to_string(),
+        ))
+    }
 }
 
 impl Default for LlamaSource {
