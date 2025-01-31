@@ -20,6 +20,7 @@ tracing-subscriber = "0.3.18"
 postcard = { version = "1.0.10", features = ["use-std"] }
 tokenizers = "0.20.0"
 criterion = "0.3"
+pretty_assertions = "1.4.1"
 # pretty_assertions = "1.4.1"
 # reqwest = { version = "0.12.7", features = ["blocking"] }
 

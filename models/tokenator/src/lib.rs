@@ -10,6 +10,8 @@ use std::{
     u8,
 };
 
+mod new;
+
 mod load;
 pub use load::*;
 
@@ -547,6 +549,235 @@ where
     }
 }
 
+// let mut merges = vec![TokenAction::Copy; tokens.len()];
+
+// let mut run_start = 0;
+// let mut i = 0;
+// while i < increasing_run_starts.len() {
+//     let increasing_run_end = increasing_run_starts[i];
+//     if increasing_run_end {
+//         let mut j = i;
+//         while j >= run_start {
+//             merges[j] = TokenAction::MergeWithNext;
+//             if let Some(next) = merges.get_mut(j + 1) {
+//                 *next = TokenAction::Delete;
+//             }
+//             j = j.saturating_sub(2);
+//             if j == 0 {
+//                 break;
+//             }
+//         }
+//         run_start = i + 2;
+//         i += 2;
+//     }
+//     else {
+//         i += 1;
+//     }
+// }
+
+const fn keep_increasing_runs<const N: usize>(value: [bool; N], first_already_used: bool, last_value_already_used: bool) -> [bool; N] {
+    let mut equivalent_sequence = [0; N];
+    let mut i = 0;
+    let mut last_value = 128;
+    while i < N {
+        equivalent_sequence[i] = last_value;
+        let greater_than_last = value[i];
+        if greater_than_last {
+            last_value += 1;
+        } else {
+            last_value -= 1;
+        }
+        i += 1;
+    }
+
+    let mut merge_with_next = [false; N];
+    let mut indexes_used = [false; N]; 
+    indexes_used[0] = first_already_used;
+    indexes_used[N - 1] = last_value_already_used;
+    loop {
+        let mut max_index = None;
+        {
+            let mut i = 0;
+            while i < N {
+                if indexes_used[i] {
+                    i += 1;
+                    continue;
+                }
+                match max_index {
+                    None => {
+                        max_index = Some(i);
+                    }
+                    Some(current_max_index) => {
+                        if equivalent_sequence[i] > equivalent_sequence[current_max_index] {
+                            max_index = Some(i);
+                        }
+                    }
+                }
+                i += 1;
+            }
+        }
+        
+        let Some(max_index) = max_index else {
+            break;
+        };
+        
+        indexes_used[max_index] = true;
+        let next_index = max_index + 1;
+        if next_index < N {
+            indexes_used[next_index] = true;
+        }
+        if let Some(prev_index) = max_index.checked_sub(1) {
+            indexes_used[prev_index] = true;
+        }
+
+        merge_with_next[max_index] = true;
+    }
+
+    merge_with_next
+}
+
+#[test]
+fn test_keep_increasing_runs() {
+    let mask = keep_increasing_runs([true, true, true, false, false, true, false, true], false, false); 
+    assert_eq!(mask, [false, true, false, true, false, false, true, false]);
+
+    let mask = keep_increasing_runs([true; 8], false, false);
+    assert_eq!(mask, [false, true, false, true, false, true, false, true]);
+
+    let mask = keep_increasing_runs([false; 8], false, false);
+    assert_eq!(mask, [true, false, true, false, true, false, true, false]);
+
+    for _ in 0..100 {
+        let random: [bool; 16] = std::array::from_fn(|_| rand::random::<bool>());
+
+        println!("{random:?}");
+        let mut streaming_mask = [false; 16];
+        let mut i = 15;
+        loop {
+            let mut run_end = i;
+            while run_end > 0 && !random[run_end - 1] {
+                run_end -= 1;
+            }
+            if run_end != i {
+                let mut pos = run_end;
+                while pos < i {
+                    streaming_mask[pos] = true;
+                    pos += 2;
+                }
+                i = run_end;
+            } else {
+                streaming_mask[i] = true;
+                i = i.saturating_sub(2);
+            }
+            if i == 0 {
+                break;
+            }
+        }
+
+        let mut first_half: [bool; 8] = [false; 8];
+        first_half.copy_from_slice(&random[..8]);
+        let mut first_numbers = [0u8; 8];
+        first_half.iter().enumerate().fold(0, |acc, (idx, b)| {
+            first_numbers[idx] = acc;
+            acc + (*b as u8)
+        });
+        let mut second_half: [bool; 8] = [false; 8];
+        second_half.copy_from_slice(&random[8..]);
+        let mut second_numbers = [0u8; 8];
+        second_half.iter().enumerate().fold(0, |acc, (idx, b)| {
+            second_numbers[idx] = acc;
+            acc + (*b as u8)
+        });
+        let mut numbers = [0u8; 16];
+        random.iter().enumerate().fold(0, |acc, (idx, b)| {
+            numbers[idx] = acc;
+            acc + (*b as u8)
+        });
+
+        let trailing_falses = first_half.iter().rev().take_while(|&&b| !b).count(); 
+        let trailing_trues = first_half.iter().rev().take_while(|&&b| b).count();
+        let leading_falses = second_half.iter().take_while(|&&b| !b).count();
+        let leading_trues = second_half.iter().take_while(|&&b| b).count();
+
+        let mask = keep_increasing_runs(random, false, false);
+        let mut first_half_mask = keep_increasing_runs(first_half, false, false);
+        let last = *first_half_mask.last().unwrap();
+        println!("{:?}", first_half.first().unwrap());
+        let second_half_mask = keep_increasing_runs(second_half, false, false);
+        if last && (first_half[7] && !second_half[0]) {
+            first_half_mask = keep_increasing_runs(first_half, false, true);
+            assert!(!first_half_mask.last().unwrap());
+        }
+        let first_eq = first_half_mask == mask[..8];
+        let second_eq = second_half_mask == mask[8..];
+        let first = second_half_mask.first().unwrap();
+        let gt = last.cmp(&first);
+        assert_eq!(streaming_mask, mask);
+        if !(first_eq && second_eq) {
+            println!("{first_eq} {second_eq} {gt:?} {last:?} {first:?}");
+            println!("{first_half:?} {second_half:?}");
+            println!("{first_numbers:?} {second_numbers:?}");
+            println!("{numbers:?}");
+            println!("{first_half_mask:?} {second_half_mask:?}");
+            println!("{mask:?}");
+            println!("{trailing_falses} {trailing_trues} {leading_falses} {leading_trues}");
+            // assert!(first_eq || second_eq);
+        }
+    }
+}
+
+#[test]
+fn test_merge_increasing_runs() {
+    // // 1) The merge sequence isn't influenced by the exact values of any of the tokens, just the relative values
+    // // Merges(S) == Merges(S+K) where S is a sequence and K is a constant
+    // // 2) Merges(S1 cat S2) == Merges(S1) cat Merges(S2[last(S1) > first(S2)..])?
+    // for _ in 0..100 {
+    //     let first_half: [bool; 8] = std::array::from_fn(|_| rand::random::<bool>());
+    //     let second_half: [bool; 8] = std::array::from_fn(|_| rand::random::<bool>());
+    //     let mut merged = [false; 16];
+    //     for i in 0..8 {
+    //         merged[i] = first_half[i];
+    //         merged[i + 8] = second_half[i];
+    //     }
+    //     let first_mask = keep_increasing_runs(first_half, false);  
+    //     let second_mask = keep_increasing_runs(second_half, *first_mask.last().unwrap());
+    //     let mut merged_mask = [false; 16];
+    //     for i in 0..8 {
+    //         merged_mask[i] = first_mask[i];
+    //         merged_mask[i + 8] = second_mask[i];
+    //     }
+    //     let expected_merged_mask = keep_increasing_runs(merged, false);
+    //     assert_eq!(merged_mask, expected_merged_mask);
+    // }
+
+    // masking - see runs and move them around like existing system?
+}
+
+static INCREASING_MAP_TO_MERGE: [u8; 256] = {
+    let mut idx_table = [0; 256];
+    let mut i = 0;
+    while i <= u8::MAX as usize {
+        let mut bits = [false; 8];
+        let mut j = 0;
+        while j < 8 {
+            bits[j] = i & (1 << j) != 0;
+            j += 1;
+        }
+        let bits = keep_increasing_runs(bits, false, false);
+        let mut bitset = 0;
+        let mut j = 0;
+        while j < 8 {
+            if bits[j] {
+                bitset |= 1 << j;
+            }
+            j += 1;
+        }
+        idx_table[i] = bitset;
+        i += 1;
+    }
+    idx_table
+};
+
 fn tokenize<const N: usize>(
     tokens: Simd<u32, N>,
     merges: Simd<u32, N>,
@@ -570,17 +801,29 @@ where
     let this_less_then_next = last_less_than_this_and.shift_right::<1>();
     last_less_than_this_and.set(SIZE - 1, false);
 
-    let mut prev_element_in_level = in_this_level.shift_right::<1>();
-    prev_element_in_level.set(0, false);
-    let start_of_run_mask = in_this_level & (!prev_element_in_level | this_less_then_next);
-    let (starts_indexes_raw, starts_idx) = keep_values_idx(start_of_run_mask);
-    let starts_indexes_raw = starts_indexes_raw.cast();
-
     let mut next_element_in_level = in_this_level.shift_left::<1>();
     next_element_in_level.set(SIZE - 1, true);
-    let end_of_run_mask = in_this_level & (!next_element_in_level | last_less_than_this_and);
+    let mut end_of_run_mask = in_this_level & (!next_element_in_level | last_less_than_this_and);
+    let prev_element_ends_run = end_of_run_mask.shift_right::<1>();
+    end_of_run_mask &= !prev_element_ends_run;
     let (ends_indexes_raw, ends_idx) = keep_values_idx(end_of_run_mask);
     let ends_indexes_raw = ends_indexes_raw.cast();
+    tracing::trace!("Runs of merges in this level end at:   {:?}", &ends_indexes_raw.as_array()[..ends_idx as usize]);
+
+    let mut prev_element_in_level = in_this_level.shift_right::<1>();
+    prev_element_in_level.set(0, false);
+    let mut start_of_run_mask = in_this_level & (!prev_element_in_level | this_less_then_next);
+    // If we have runs with an end that is right before the start, the previous merge may eat the first token of the next run
+    let both = start_of_run_mask & prev_element_ends_run;
+    tracing::trace!("before start_of_run_mask: {start_of_run_mask:?}");
+    start_of_run_mask |= both.shift_right::<1>();
+    start_of_run_mask &= !prev_element_ends_run;
+    tracing::trace!("after start_of_run_mask:  {start_of_run_mask:?}");
+
+    let (starts_indexes_raw, starts_idx) = keep_values_idx(start_of_run_mask);
+    let starts_indexes_raw = starts_indexes_raw.cast();
+    tracing::trace!("Runs of merges in this level start at: {:?}", &starts_indexes_raw.as_array()[..starts_idx as usize]);
+
     // If there is a final sequence that starts but is not ended, don't include that sequence in this batch. We
     // need to know the length before we merge anything.
     let tokens_processed;
@@ -731,7 +974,7 @@ fn test_single_level_merge_with_trailing_increasing_priority() {
     // tokens:                      5, 3, 2, 1, 1, 2, 1, 2, 5, 3, 2, 1, 1, 2, 1, 2
     // token_after_merge_with_next: 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7, 0
     // levels:                      1, 1, 2, 2, 1, 1, 1, 2, 1, 1, 2, 2, 1, 1, 1, 1
-    // merge_with_next_priority:    1, 2, 3, 4, 2, 2, 3, 0, 1, 2, 3, 4, 2, 2, 3, 4
+    // merge_with_next_priority:    1, 2,  ,  , 2, 2, 3,  , 1, 2,  ,  , 2, 2, 3, 4
 
     let tokens = tokenize(
         tokens,
@@ -741,7 +984,7 @@ fn test_single_level_merge_with_trailing_increasing_priority() {
         level,
     );
     assert_eq!(tokens.as_ref(), [5, 2, 1, 5, 7, 5, 2, 1, 5]);
-    assert_eq!(tokens.tokens_processed, 13);
+    assert_eq!(tokens.tokens_processed, 14);
 }
 
 #[test]

@@ -26,7 +26,7 @@ pub fn main() {
     let mut input_merges = Vec::new();
     let mut input_merge_priorities = Vec::new();
 
-    for scale in 1..6 {
+    for scale in 12..32 {
         let mut total_fast = 0.0;
         let mut total_hf = 0.0;
         let mut iterations = 0;
@@ -35,7 +35,16 @@ pub fn main() {
             let text = (0..)
                 .flat_map(|_| text.chars())
                 .filter(|c| c.is_alphabetic())
+                .skip(size / 2)
+                .skip_while({
+                    let mut i = 0;
+                    move |c| {
+                        i += c.len_utf8();
+                        i < 75 * 16
+                    }
+                })
                 .take(size)
+                .take(16)
                 .collect::<String>();
             input_tokens.clear();
             input_levels.clear();

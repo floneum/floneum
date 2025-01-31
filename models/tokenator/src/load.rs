@@ -191,6 +191,57 @@ impl FastBPETokenizer {
             }
         }
 
+        let mut overall_max = 0;
+        for (i, merge_indexes) in current_pass_merges.iter().cloned().enumerate() {
+            let mut merges = merge_indexes
+                .iter()
+                .map(|i| &merges[*i])
+                .collect::<Vec<_>>();
+            merges.sort_by_key(|merge| merge.rank);
+            let mut possible_runs: Vec<Vec<&Merge>> = vec![Vec::new()];
+            for merge in merges {
+                let old_possible_runs = std::mem::take(&mut possible_runs);
+                for possible_run in old_possible_runs {
+                    match possible_run.last() {
+                        Some(last_merge) => {
+                            if last_merge.pair[1] == merge.pair[0] {
+                                let mut new = possible_run.clone();
+                                new.push(merge);
+                                possible_runs.push(new);
+                            }
+                        }
+                        None => {
+                            let mut new = possible_run.clone();
+                            new.push(merge);
+                            possible_runs.push(new);
+                        }
+                    }
+                    possible_runs.push(possible_run);
+                }
+                let mut longest_length_to_token: HashMap<*const (), usize> = HashMap::new();
+                for run in &possible_runs {
+                    let Some(last) = run.last() else {
+                        continue;
+                    };
+                    let last = (*last) as *const _ as *const ();
+                    let len = run.len();
+                    let longest = longest_length_to_token.entry(last).or_default();
+                    *longest = len.max(*longest);
+                }
+                possible_runs.retain(|run| {
+                    let Some(last) = run.last() else {
+                        return true;
+                    };
+                    let last = (*last) as *const _ as *const ();
+                    run.len() >= *longest_length_to_token.get(&last).unwrap()
+                });
+            }
+            let max = possible_runs.iter().map(|run| run.len()).max().unwrap();
+            overall_max = overall_max.max(max);
+            println!("max size possible run for layer {}: {:?}", i, max);
+        }
+        println!("overall max size possible run: {:?}", overall_max);
+
         let levels = current_pass_merges.len() as u8;
         let merges = current_pass_merges
             .drain(..)
@@ -327,10 +378,42 @@ impl FastBPETokenizer {
                 passes_might_merge_table: &MergeTable,
             ) {
                 tracing::trace!("level:          {level}");
-                tracing::trace!("tokens:         {}", tokens.as_array().iter().map(|v| format!("{v:010}")).collect::<Vec<_>>().join(", "));
-                tracing::trace!("levels:         {}", levels.as_array().iter().map(|v| format!("{v:010}")).collect::<Vec<_>>().join(", "));
-                tracing::trace!("merges:         {}", merges.as_array().iter().map(|v| format!("{v:010}")).collect::<Vec<_>>().join(", "));
-                tracing::trace!("merge_priority: {}", merge_priority.as_array().iter().map(|v| format!("{v:010}")).collect::<Vec<_>>().join(", "));
+                tracing::trace!(
+                    "tokens:         {}",
+                    tokens
+                        .as_array()
+                        .iter()
+                        .map(|v| format!("{v:010}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+                tracing::trace!(
+                    "levels:         {}",
+                    levels
+                        .as_array()
+                        .iter()
+                        .map(|v| format!("{v:010}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+                tracing::trace!(
+                    "merges:         {}",
+                    merges
+                        .as_array()
+                        .iter()
+                        .map(|v| format!("{v:010}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+                tracing::trace!(
+                    "merge_priority: {}",
+                    merge_priority
+                        .as_array()
+                        .iter()
+                        .map(|v| format!("{v:010}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
                 tracing::trace!("chunk_len:      {chunk_len}");
                 let levels_or_max = if CHUNK_LEN_SIMD_SIZE {
                     levels
@@ -578,7 +661,7 @@ fn other_tokenize_test() {
         &mut merge_priority_buffer,
     );
     println!("{token_buffer:?}");
-    assert_eq!(token_buffer, [66, 2718, 2914, 2621]);
+    assert_eq!(token_buffer, [66, 2718, 2914, 2621, 578]);
 }
 
 #[test]
@@ -587,7 +670,8 @@ fn many_merges_tokenize_test() {
     let tokenizer =
         postcard::from_bytes::<FastBPETokenizer>(&std::fs::read("./tokenizer-fast.bin").unwrap())
             .unwrap();
-    let text = "11111111111111111";
+    let text = "1111111111111111";
+    assert_eq!(text.len(), 16);
     let mut token_buffer = Vec::new();
     let mut level_buffer = Vec::new();
     let mut merge_buffer = Vec::new();
@@ -601,16 +685,10 @@ fn many_merges_tokenize_test() {
         &mut merge_priority_buffer,
     );
     println!("{token_buffer:?}");
-    assert_eq!(token_buffer, [5037, 
-        5037, 
-        5037, 
-        5037, 
-        5037, 
-        5037, 
-        5037, 
-        5037, 
-        5037
-    ]);
+    assert_eq!(
+        token_buffer,
+        [5037, 5037, 5037, 5037, 5037, 5037, 5037, 5037, 5037]
+    );
 }
 
 #[derive(Clone, Copy, Debug)]
