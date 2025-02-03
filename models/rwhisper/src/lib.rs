@@ -60,6 +60,50 @@ struct DecodingResult {
     avg_logprob: f64,
     no_speech_prob: f64,
     compression_ratio: f64,
+    chunks: Vec<TokenChunk>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+struct TokenChunk {
+    text_range: Range<usize>,
+    timestamp: Option<Range<f32>>,
+}
+
+/// A reference to a utf8 token chunk in a segment.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TokenChunkRef<'a> {
+    chunk: &'a TokenChunk,
+    text: &'a str,
+}
+
+impl<'a> TokenChunkRef<'a> {
+    /// Get the byte range of the token chunk in the full segment text.
+    pub fn text_range(&self) -> Range<usize> {
+        self.chunk.text_range.clone()
+    }
+
+    /// Get the timestamp range of the token chunk in the full segment text if the transcription was created with word level timestamps.
+    pub fn timestamp(&self) -> Option<Range<f32>> {
+        self.chunk.timestamp.clone()
+    }
+
+    /// Get the text of the token chunk.
+    pub fn text(&self) -> &'a str {
+        &self.text[self.chunk.text_range.clone()]
+    }
+}
+
+impl<'a> AsRef<str> for TokenChunkRef<'a> {
+    fn as_ref(&self) -> &str {
+        self.text()
+    }
+}
+
+impl<'a> std::fmt::Display for TokenChunkRef<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.text())
+    }
 }
 
 /// A transcribed segment of audio.
@@ -89,6 +133,14 @@ impl Segment {
     /// Get the text of the segment.
     pub fn text(&self) -> &str {
         &self.result.text
+    }
+
+    /// Get the utf8 token chunks of the segment.
+    pub fn chunks(&self) -> impl Iterator<Item = TokenChunkRef<'_>> {
+        self.result.chunks.iter().map(|chunk| TokenChunkRef {
+            chunk,
+            text: &self.result.text,
+        })
     }
 
     /// Get the start timestamp of the segment.
@@ -169,10 +221,18 @@ where
 }
 
 #[derive(Clone, Copy, Debug)]
-enum Task {
+struct Task {
+    task_type: TaskType,
+    word_level_time_stamps: bool,
+    without_timestamps: bool,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
+enum TaskType {
     Transcribe,
-    #[allow(dead_code)]
     Translate,
+    Unset,
 }
 
 /// A builder with configuration for a Whisper model.

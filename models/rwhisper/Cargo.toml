@@ -33,10 +33,13 @@ half = { version = "2.3.1", features = ["num-traits", "use-intrinsics", "rand_di
 kalosm-common = { workspace = true }
 kalosm-language-model.workspace = true
 serde = { version = "1.0.209", optional = true }
+flate2 = "1.0.35"
+rayon = "1.10.0"
 
 [dev-dependencies]
 kalosm = { workspace = true, features = ["sound"] }
 anyhow.workspace = true
+tracing-subscriber = "0.3.19"
 
 [features]
 accelerate = ["dep:accelerate-src", "candle-core/accelerate", "candle-nn/accelerate", "candle-transformers/accelerate"]
