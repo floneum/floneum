@@ -22,12 +22,10 @@
 //!         .await;
 //!
 //!     // Transcribe the audio.
-//!     let mut text = model.transcribe(audio)?;
+//!     let mut text = model.transcribe(audio);
 //!
 //!     // As the model transcribes the audio, print the text to the console.
-//!     while let Some(text) = text.next().await {
-//!         print!("{}", text.text());
-//!     }
+//!     text.to_std_out().await.unwrap();
 //!
 //!     Ok(())
 //! }
@@ -39,10 +37,15 @@ use cpal::FromSample;
 use kalosm_common::FileSource;
 pub use kalosm_common::ModelLoadingProgress;
 use kalosm_language_model::ModelBuilder;
-use kalosm_streams::text_stream::ChannelTextStream;
-use model::{WhisperError, WhisperInner, WhisperLoadingError};
+use model::{WhisperInner, WhisperLoadingError};
 use rodio::{source::UniformSourceIterator, Source};
-use std::{fmt::Display, ops::Range, str::FromStr, sync::Arc, time::Duration};
+use std::{
+    fmt::Display,
+    ops::Range,
+    str::FromStr,
+    sync::{Arc, RwLock},
+    time::Duration,
+};
 
 use candle_transformers::models::whisper::{self as m};
 
@@ -60,6 +63,50 @@ struct DecodingResult {
     avg_logprob: f64,
     no_speech_prob: f64,
     compression_ratio: f64,
+    chunks: Vec<TokenChunk>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+struct TokenChunk {
+    text_range: Range<usize>,
+    timestamp: Option<Range<f32>>,
+}
+
+/// A reference to a utf8 token chunk in a segment.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TokenChunkRef<'a> {
+    chunk: &'a TokenChunk,
+    text: &'a str,
+}
+
+impl<'a> TokenChunkRef<'a> {
+    /// Get the byte range of the token chunk in the full segment text.
+    pub fn text_range(&self) -> Range<usize> {
+        self.chunk.text_range.clone()
+    }
+
+    /// Get the timestamp range of the token chunk in the full segment text if the transcription was created with word level timestamps.
+    pub fn timestamp(&self) -> Option<Range<f32>> {
+        self.chunk.timestamp.clone()
+    }
+
+    /// Get the text of the token chunk.
+    pub fn text(&self) -> &'a str {
+        &self.text[self.chunk.text_range.clone()]
+    }
+}
+
+impl AsRef<str> for TokenChunkRef<'_> {
+    fn as_ref(&self) -> &str {
+        self.text()
+    }
+}
+
+impl std::fmt::Display for TokenChunkRef<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.text())
+    }
 }
 
 /// A transcribed segment of audio.
@@ -89,6 +136,14 @@ impl Segment {
     /// Get the text of the segment.
     pub fn text(&self) -> &str {
         &self.result.text
+    }
+
+    /// Get the utf8 token chunks of the segment.
+    pub fn chunks(&self) -> impl Iterator<Item = TokenChunkRef<'_>> {
+        self.result.chunks.iter().map(|chunk| TokenChunkRef {
+            chunk,
+            text: &self.result.text,
+        })
     }
 
     /// Get the start timestamp of the segment.
@@ -133,46 +188,100 @@ impl AsRef<str> for Segment {
 }
 
 /// An extension trait to transcribe pre-chunked audio streams
-pub trait TranscribeChunkedAudioStreamExt {
+pub trait TranscribeChunkedAudioStreamExt<S> {
     /// Transcribe each chunk of the audio stream with whisper and stream the result
-    fn transcribe(self, model: Whisper) -> ChannelTextStream<Segment>;
+    fn transcribe(self, model: Whisper) -> ChunkedTranscriptionTask<S>;
 }
 
-impl<S> TranscribeChunkedAudioStreamExt for S
+impl<S> TranscribeChunkedAudioStreamExt<S> for S
 where
     S: Stream + std::marker::Unpin + Send + 'static,
     <S as Stream>::Item: Source + Send + 'static,
     <<S as Stream>::Item as Iterator>::Item: rodio::Sample,
     f32: FromSample<<<S as Stream>::Item as Iterator>::Item>,
 {
-    fn transcribe(self, model: Whisper) -> ChannelTextStream<Segment> {
-        let mut stream = self;
-        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
-        tokio::spawn(async move {
-            while let Some(source) = stream.next().await {
-                let result = model.transcribe(source);
-                match result {
-                    Ok(mut stream) => {
-                        while let Some(segment) = stream.next().await {
-                            if let Err(err) = sender.send(segment) {
-                                tracing::error!("error sending segment: {}", err);
-                                return;
-                            }
+    fn transcribe(self, model: Whisper) -> ChunkedTranscriptionTask<S> {
+        ChunkedTranscriptionTask {
+            word_level_time_stamps: false,
+            stream: self,
+            whisper: model,
+            current_segment_task: None,
+        }
+    }
+}
+
+/// A chunked audio transcription task which can be streamed from a [`Whisper`] model.
+pub struct ChunkedTranscriptionTask<S> {
+    word_level_time_stamps: bool,
+    stream: S,
+    whisper: Whisper,
+    current_segment_task: Option<TranscriptionTask>,
+}
+
+impl<S> ChunkedTranscriptionTask<S> {
+    /// Include word level timestamps in the transcription.
+    pub fn timestamped(mut self) -> Self {
+        self.word_level_time_stamps = true;
+        self
+    }
+}
+
+impl<S> Stream for ChunkedTranscriptionTask<S>
+where
+    S: Stream + std::marker::Unpin + Send + 'static,
+    <S as Stream>::Item: Source + Send + 'static,
+    <<S as Stream>::Item as Iterator>::Item: rodio::Sample,
+    f32: FromSample<<<S as Stream>::Item as Iterator>::Item>,
+{
+    type Item = Segment;
+
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        let myself = self.get_mut();
+
+        loop {
+            if let Some(task) = &mut myself.current_segment_task {
+                match task.poll_next_unpin(cx) {
+                    std::task::Poll::Ready(ready) => {
+                        myself.current_segment_task = None;
+                        if let Some(ready) = ready {
+                            return std::task::Poll::Ready(Some(ready));
                         }
                     }
-                    Err(err) => tracing::error!("error transcribing audio: {}", err),
+                    std::task::Poll::Pending => return std::task::Poll::Pending,
                 }
             }
-        });
-        ChannelTextStream::from(receiver)
+
+            match myself.stream.poll_next_unpin(cx) {
+                std::task::Poll::Ready(Some(source)) => {
+                    let mut task = myself.whisper.transcribe(source);
+                    if myself.word_level_time_stamps {
+                        task = task.timestamped();
+                    }
+                    myself.current_segment_task = Some(task);
+                }
+                std::task::Poll::Ready(None) => return std::task::Poll::Ready(None),
+                std::task::Poll::Pending => return std::task::Poll::Pending,
+            }
+        }
     }
 }
 
 #[derive(Clone, Copy, Debug)]
-enum Task {
+struct Task {
+    task_type: TaskType,
+    word_level_time_stamps: bool,
+    without_timestamps: bool,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
+enum TaskType {
     Transcribe,
-    #[allow(dead_code)]
     Translate,
+    Unset,
 }
 
 /// A builder with configuration for a Whisper model.
@@ -425,8 +534,8 @@ impl WhisperBuilder {
                     while let Ok(message) = tx.recv() {
                         match message {
                             WhisperMessage::Kill => return,
-                            WhisperMessage::Transcribe(input, result) => {
-                                model.transcribe(input, result);
+                            WhisperMessage::Transcribe(input, word_level_time_stamps, result) => {
+                                model.transcribe(input, word_level_time_stamps, result);
                             }
                         }
                     }
@@ -824,41 +933,66 @@ impl Whisper {
     /// Transcribe some audio into text.
     ///
     /// Dropping the returned channel will stop the transcription early.
-    pub fn transcribe<S: Source>(
-        &self,
-        input: S,
-    ) -> Result<ChannelTextStream<Segment>, WhisperError>
+    pub fn transcribe<S: Source>(&self, input: S) -> TranscriptionTask
     where
         <S as Iterator>::Item: rodio::Sample,
         f32: FromSample<<S as Iterator>::Item>,
     {
-        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
-        self.transcribe_into(input, sender);
-        Ok(ChannelTextStream::from(receiver))
-    }
-
-    /// Transcribe some audio into a stream of text
-    ///
-    /// Dropping the receiver will stop the transcription early.
-    pub fn transcribe_into<S: Source>(
-        &self,
-        input: S,
-        sender: tokio::sync::mpsc::UnboundedSender<Segment>,
-    ) where
-        <S as Iterator>::Item: rodio::Sample,
-        f32: FromSample<<S as Iterator>::Item>,
-    {
         let pcm_data: Vec<_> = normalize_audio(input);
-        _ = self
-            .inner
-            .sender
-            .send(WhisperMessage::Transcribe(pcm_data, sender));
+        TranscriptionTask {
+            word_level_time_stamps: false,
+            audio: pcm_data,
+            sender: self.inner.sender.clone(),
+            receiver: Default::default(),
+        }
+    }
+}
+
+/// A transcription task which can be streamed from a [`Whisper`] model.
+pub struct TranscriptionTask {
+    word_level_time_stamps: bool,
+    audio: Vec<f32>,
+    sender: std::sync::mpsc::Sender<WhisperMessage>,
+    receiver: RwLock<Option<tokio::sync::mpsc::UnboundedReceiver<Segment>>>,
+}
+
+impl TranscriptionTask {
+    /// Include word level timestamps in the transcription.
+    pub fn timestamped(mut self) -> Self {
+        self.word_level_time_stamps = true;
+        self
+    }
+}
+
+impl Stream for TranscriptionTask {
+    type Item = Segment;
+
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        let myself = self.get_mut();
+        let mut write = myself.receiver.write().unwrap();
+        if write.is_none() {
+            let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+            let pcm_data = std::mem::take(&mut myself.audio);
+
+            _ = myself.sender.send(WhisperMessage::Transcribe(
+                pcm_data,
+                myself.word_level_time_stamps,
+                sender,
+            ));
+
+            *write = Some(receiver);
+        }
+
+        write.as_mut().unwrap().poll_recv(cx)
     }
 }
 
 enum WhisperMessage {
     Kill,
-    Transcribe(Vec<f32>, tokio::sync::mpsc::UnboundedSender<Segment>),
+    Transcribe(Vec<f32>, bool, tokio::sync::mpsc::UnboundedSender<Segment>),
 }
 
 pub(crate) fn normalize_audio<S: Source>(input: S) -> Vec<f32>

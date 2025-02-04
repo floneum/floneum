@@ -7012,6 +7012,7 @@ dependencies = [
  "candle-transformers",
  "cpal",
  "cudarc 0.9.15",
+ "flate2",
  "futures-util",
  "half 2.4.1",
  "hf-hub 0.3.2",
@@ -7022,6 +7023,7 @@ dependencies = [
  "kalosm-language-model",
  "kalosm-streams",
  "rand 0.8.5",
+ "rayon",
  "rodio",
  "serde",
  "serde_json",
@@ -7029,6 +7031,7 @@ dependencies = [
  "tokenizers 0.21.0",
  "tokio",
  "tracing",
+ "tracing-subscriber 0.3.19",
 ]
 
 [[package]]

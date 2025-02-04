@@ -1,6 +1,6 @@
 // Modified from https://github.com/huggingface/candle/blob/main/candle-transformers/src/models/whisper/quantized_model.rs
 
-use std::sync::Arc;
+use std::{num::NonZeroUsize, sync::Arc};
 
 use candle_core::{DType, Device, Result, Tensor};
 use candle_nn::{Conv1d, Conv1dConfig, LayerNorm, Module};
@@ -9,7 +9,10 @@ use candle_transformers::{
     quantized_nn::{layer_norm, linear, linear_no_bias, Embedding, Linear},
     quantized_var_builder::VarBuilder,
 };
-use kalosm_common::{AttentionMask, KvCache, MaskCache};
+use kalosm_common::{AttentionMask, KvCache, MaskCache, TensorCache};
+use timestamps::extract_timestamps;
+
+pub(crate) mod timestamps;
 
 fn conv1d(
     in_channels: usize,
@@ -87,10 +90,17 @@ impl MultiHeadAttention {
         query: &Tensor,
         kv: (Tensor, Tensor),
         mask: Option<&AttentionMask>,
+        attention_output: Option<&mut TensorCache>,
     ) -> Result<Tensor> {
         let query_states = self.query.forward(query)?;
         let (key_states, value_states) = &kv;
-        let wv = self.qkv_attention(&query_states, key_states, value_states, mask)?;
+        let wv = self.qkv_attention(
+            &query_states,
+            key_states,
+            value_states,
+            mask,
+            attention_output,
+        )?;
         let out = self.out.forward(&wv)?;
         Ok(out)
     }
@@ -107,6 +117,7 @@ impl MultiHeadAttention {
         k: &Tensor,
         v: &Tensor,
         mask: Option<&AttentionMask>,
+        attention_output: Option<&mut TensorCache>,
     ) -> Result<Tensor> {
         let (_, _, n_state) = q.dims3()?;
         let scale = ((n_state / self.n_head) as f64).powf(-0.25);
@@ -119,6 +130,9 @@ impl MultiHeadAttention {
         };
         if let Some(mask) = mask {
             mask.forward(&mut qk)?
+        }
+        if let Some(out) = attention_output {
+            out.append(&qk).unwrap();
         }
         let w = {
             let _enter = self.softmax_span.enter();
@@ -184,20 +198,19 @@ impl ResidualAttentionBlock {
         x: &Tensor,
         mask: Option<&AttentionMask>,
         mut cache: Option<&mut ResidualAttentionBlockCache>,
+        attention_output: Option<&mut TensorCache>,
     ) -> Result<Tensor> {
         let _enter = self.span.enter();
 
         let attn_ln_x = self.attn_ln.forward(x)?;
-        let attn = self.attn.forward(
-            &attn_ln_x,
-            self.attn
-                .forward_kv(&attn_ln_x, cache.as_mut().map(|cache| &mut cache.attn))?,
-            mask,
-        )?;
+        let kv = self
+            .attn
+            .forward_kv(&attn_ln_x, cache.as_mut().map(|cache| &mut cache.attn))?;
+        let attn = self.attn.forward(&attn_ln_x, kv, mask, None)?;
         let mut x = (x + attn)?;
         if let (Some(kv), Some((attn, ln))) = (audio_features_kv, &mut self.cross_attn) {
             let ln_x = ln.forward(&x)?;
-            x = (&x + attn.forward(&ln_x, kv, None)?)?;
+            x = (&x + attn.forward(&ln_x, kv, None, attention_output)?)?;
         }
         let mlp = x
             .apply(&self.mlp_ln)?
@@ -293,7 +306,7 @@ impl AudioEncoder {
         let positional_embedding = self.positional_embedding.narrow(0, 0, seq_len)?;
         let mut x = x.broadcast_add(&positional_embedding)?;
         for block in self.blocks.iter_mut() {
-            x = block.forward(None, &x, None, None)?
+            x = block.forward(None, &x, None, None, None)?
         }
         let x = self.ln_post.forward(&x)?;
         Ok(x)
@@ -359,6 +372,7 @@ impl TextDecoder {
         tokens: &[u32],
         audio_features: &Tensor,
         cache: &mut TextDecoderCache,
+        mut attention_output: Option<&mut [TensorCache]>,
     ) -> Result<Tensor> {
         let index_pos = cache.tokens.len();
         cache.tokens.extend_from_slice(tokens);
@@ -389,7 +403,8 @@ impl TextDecoder {
             }
             let block_cache = &mut cache.blocks[i];
             let query = block_cache.feature_attn_cache.clone();
-            x = block.forward(query, &x, Some(&mask), Some(block_cache))?;
+            let attention_output = attention_output.as_mut().map(|outputs| &mut outputs[i]);
+            x = block.forward(query, &x, Some(&mask), Some(block_cache), attention_output)?;
         }
         self.ln.forward(&x)
     }
@@ -402,6 +417,10 @@ impl TextDecoder {
             x.matmul(&w.t()?)?
         };
         Ok(logits)
+    }
+
+    pub fn block_count(&self) -> usize {
+        self.blocks.len()
     }
 }
 
@@ -422,5 +441,32 @@ impl Whisper {
             decoder,
             config,
         })
+    }
+
+    pub(crate) fn dtw_timestamps(
+        attention_heads: Option<&'static [[usize; 2]]>,
+        filter_width: NonZeroUsize,
+        n_frames: usize,
+        n_start_tokens: usize,
+        attention_output: &[TensorCache],
+    ) -> Result<Vec<Vec<f32>>> {
+        let Some(attention_heads) = attention_heads else {
+            return Err(candle_core::Error::msg(
+                "The attention heads for word-level timestamps are not available for this model",
+            ));
+        };
+
+        let mut attention_output_tensor = Vec::new();
+        for attn in attention_output {
+            attention_output_tensor.push(attn.all_data().clone().unwrap());
+        }
+
+        extract_timestamps(
+            attention_heads,
+            &attention_output_tensor,
+            filter_width,
+            n_frames,
+            n_start_tokens,
+        )
     }
 }
