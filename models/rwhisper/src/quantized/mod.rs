@@ -198,7 +198,7 @@ impl ResidualAttentionBlock {
         x: &Tensor,
         mask: Option<&AttentionMask>,
         mut cache: Option<&mut ResidualAttentionBlockCache>,
-        mut attention_output: Option<&mut TensorCache>,
+        attention_output: Option<&mut TensorCache>,
     ) -> Result<Tensor> {
         let _enter = self.span.enter();
 
@@ -210,7 +210,7 @@ impl ResidualAttentionBlock {
         let mut x = (x + attn)?;
         if let (Some(kv), Some((attn, ln))) = (audio_features_kv, &mut self.cross_attn) {
             let ln_x = ln.forward(&x)?;
-            x = (&x + attn.forward(&ln_x, kv, None, attention_output.as_deref_mut())?)?;
+            x = (&x + attn.forward(&ln_x, kv, None, attention_output)?)?;
         }
         let mlp = x
             .apply(&self.mlp_ln)?

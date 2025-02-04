@@ -10,7 +10,6 @@ use std::{
     ops::RangeInclusive,
     path::PathBuf,
     time::{Duration, Instant},
-    usize,
 };
 use tokenizers::Tokenizer;
 
@@ -242,7 +241,7 @@ impl Decoder {
             *timestamp_tokens.first().unwrap()..=*timestamp_tokens.last().unwrap();
         debug_assert!(timestamp_tokens
             .iter()
-            .all(|t| timestamp_token_range.contains(&t)));
+            .all(|t| timestamp_token_range.contains(t)));
 
         Ok(Self {
             model,
@@ -756,10 +755,8 @@ impl Decoder {
         };
 
         for (i, logit) in logits.iter_mut().enumerate() {
-            if self.timestamp_token_range.contains(&(i as u32)) {
-                if i < timestamp_last as usize {
-                    *logit = 0.;
-                }
+            if self.timestamp_token_range.contains(&(i as u32)) && i < timestamp_last as usize {
+                *logit = 0.;
             }
         }
 
@@ -769,10 +766,8 @@ impl Decoder {
         for (i, logit) in logits.iter().enumerate() {
             if self.is_timestamp_or_eot(i as u32) {
                 timestamp_sum_prob += logit;
-            } else {
-                if *logit > max_text_token_prob {
-                    max_text_token_prob = *logit;
-                }
+            } else if *logit > max_text_token_prob {
+                max_text_token_prob = *logit;
             }
         }
 

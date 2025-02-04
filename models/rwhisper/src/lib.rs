@@ -22,12 +22,10 @@
 //!         .await;
 //!
 //!     // Transcribe the audio.
-//!     let mut text = model.transcribe(audio)?;
+//!     let mut text = model.transcribe(audio);
 //!
 //!     // As the model transcribes the audio, print the text to the console.
-//!     while let Some(text) = text.next().await {
-//!         print!("{}", text.text());
-//!     }
+//!     text.to_std_out().await.unwrap();
 //!
 //!     Ok(())
 //! }
@@ -99,13 +97,13 @@ impl<'a> TokenChunkRef<'a> {
     }
 }
 
-impl<'a> AsRef<str> for TokenChunkRef<'a> {
+impl AsRef<str> for TokenChunkRef<'_> {
     fn as_ref(&self) -> &str {
         self.text()
     }
 }
 
-impl<'a> std::fmt::Display for TokenChunkRef<'a> {
+impl std::fmt::Display for TokenChunkRef<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.text())
     }
