@@ -161,6 +161,7 @@ impl WhisperInner {
     pub(crate) fn transcribe(
         &mut self,
         pcm_data: Vec<f32>,
+        word_level_time_stamps: bool,
         result: tokio::sync::mpsc::UnboundedSender<Segment>,
     ) {
         let mel = audio::pcm_to_mel(&self.config, &pcm_data, &self.mel_filters);
@@ -177,8 +178,8 @@ impl WhisperInner {
             pcm_data.len(),
             Task {
                 task_type: TaskType::Unset,
-                word_level_time_stamps: true,
-                without_timestamps: false,
+                word_level_time_stamps,
+                without_timestamps: true,
             },
             result,
         ) {
@@ -322,13 +323,15 @@ impl Decoder {
         for i in 0..sample_len {
             let ys = match &mut self.model {
                 ModelType::Quantized(model) => {
-                    attention_output.get_or_insert_with(|| {
-                        let mut outputs = Vec::new();
-                        for _ in 0..model.decoder.block_count() {
-                            outputs.push(TensorCache::new(2, usize::MAX));
-                        }
-                        outputs
-                    });
+                    if task.word_level_time_stamps {
+                        attention_output.get_or_insert_with(|| {
+                            let mut outputs = Vec::new();
+                            for _ in 0..model.decoder.block_count() {
+                                outputs.push(TensorCache::new(2, usize::MAX));
+                            }
+                            outputs
+                        });
+                    }
                     if let Some(last_mut) = queued_tokens.last_mut() {
                         if last_mut == &self.eot_token {
                             // When configured to output word-level timestamps, the OpenAI inference
@@ -400,13 +403,15 @@ impl Decoder {
             let logits = logits.broadcast_add(&self.suppress_tokens)?;
             let next_token = if temperature > 0f64 {
                 let prs = softmax(&(&logits / temperature)?, 0)?;
-                let logits_v: Vec<f32> = self.apply_timestamp_rules(prs, &tokens)?;
+                let logits_v: Vec<f32> =
+                    self.apply_timestamp_rules(prs, &tokens, task.without_timestamps)?;
                 let distr = rand::distributions::WeightedIndex::new(&logits_v)
                     .expect("logits_v should not be empty or negative");
                 distr.sample(&mut self.rng) as u32
             } else {
                 let logits = softmax(&logits, 0)?;
-                let logits_v: Vec<f32> = self.apply_timestamp_rules(logits, &tokens)?;
+                let logits_v: Vec<f32> =
+                    self.apply_timestamp_rules(logits, &tokens, task.without_timestamps)?;
                 logits_v
                     .iter()
                     .enumerate()
@@ -445,24 +450,28 @@ impl Decoder {
             let [timestamps] = result.as_slice() else {
                 panic!("The timestamps should be a single vector when the batch size is 1");
             };
-            token_timestamps = Some(timestamps.to_vec());
+            token_timestamps = Some(timestamps.clone());
         }
 
         let (text, chunks) = {
-            let mut remaining_tokens: Vec<_> = tokens.iter().copied().enumerate().rev().collect();
+            let mut remaining_tokens: Vec<_> = tokens
+                .iter()
+                .copied()
+                .filter(|t| !self.is_special(*t))
+                .enumerate()
+                .collect();
+            remaining_tokens.reverse();
             let mut queued_tokens = Vec::new();
             let mut timestamp_start = None;
             let mut prev_text_len = 0;
             let mut chunks = Vec::new();
             let mut current_text = String::new();
             while let Some((index, token)) = remaining_tokens.pop() {
-                if !self.is_special(token) {
-                    queued_tokens.push(token);
-                }
-                if timestamp_start.is_none() {
-                    timestamp_start = token_timestamps
-                        .as_ref()
-                        .map(|timestamps| timestamps[index]);
+                queued_tokens.push(token);
+                if let Some(timestamps) = &token_timestamps {
+                    if timestamp_start.is_none() {
+                        timestamp_start = Some(timestamps[index]);
+                    }
                 }
                 let detokenized = self
                     .tokenizer
@@ -691,6 +700,7 @@ impl Decoder {
         &self,
         logits: Tensor,
         tokens: &[u32],
+        no_timestamps: bool,
     ) -> candle_core::Result<Vec<f32>> {
         let mut logits = logits.to_vec1()?;
 
@@ -698,6 +708,13 @@ impl Decoder {
         logits[self.sot_token as usize] = 0.;
         logits[self.transcribe_token as usize] = 0.;
         logits[self.translate_token as usize] = 0.;
+
+        if no_timestamps {
+            for i in self.timestamp_token_range.clone() {
+                logits[i as usize] = 0.;
+            }
+            return Ok(logits);
+        }
 
         let mut iter_rev = tokens.iter().rev();
         let last_was_timestamp = iter_rev

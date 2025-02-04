@@ -26,7 +26,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
         // Transcribe the source audio into text
         // Only transcribe the first segment
-        let mut text = model.transcribe(audio)?.take(1);
+        let mut text = model.transcribe(audio).take(1);
 
         // As the model transcribes the audio, print the text to the console
         while let Some(text) = text.next().await {

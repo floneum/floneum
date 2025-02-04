@@ -1,4 +1,4 @@
-use kalosm_streams::text_stream::ChannelTextStream;
+use rwhisper::ChunkedTranscriptionTask;
 
 use super::voice_audio_detector::*;
 use super::voice_audio_detector_ext::*;
@@ -29,7 +29,11 @@ pub trait AsyncSourceTranscribeExt: AsyncSource + Unpin + Send + Sized + 'static
     ///     Ok(())
     /// }
     /// ```
-    fn transcribe(self, model: rwhisper::Whisper) -> ChannelTextStream<rwhisper::Segment> {
+    fn transcribe(
+        self,
+        model: rwhisper::Whisper,
+    ) -> ChunkedTranscriptionTask<VoiceActivityRechunkerStream<VoiceActivityDetectorStream<Self>>>
+    {
         rwhisper::TranscribeChunkedAudioStreamExt::transcribe(
             self.voice_activity_stream().rechunk_voice_activity(),
             model,
