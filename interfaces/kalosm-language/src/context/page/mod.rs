@@ -1,6 +1,3 @@
-use super::{document::Document, IntoDocument};
-use url::Url;
-
 mod browse;
 pub use browse::*;
 mod crawl;

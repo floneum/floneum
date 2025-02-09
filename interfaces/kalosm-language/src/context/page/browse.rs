@@ -6,7 +6,8 @@ use serde::de::DeserializeOwned;
 use std::sync::{Arc, OnceLock};
 use url::Url;
 
-use super::{extract_article, NodeRef};
+use super::NodeRef;
+use crate::context::extract_article;
 use crate::context::document::Document;
 
 static BROWSER: Browser = Browser::new();

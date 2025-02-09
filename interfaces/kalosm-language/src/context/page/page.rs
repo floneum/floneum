@@ -1,10 +1,11 @@
 use std::sync::OnceLock;
 
 use super::browse::Tab;
+use super::AnyNode;
 use super::{super::document::Document, NodeRef};
-use super::{extract_article, AnyNode, ExtractDocumentError};
 use crate::context::page::crawl::Crawler;
 pub use crate::context::page::crawl::CrawlingCallback;
+use crate::context::{extract_article, ExtractDocumentError};
 use image::DynamicImage;
 use scraper::{Html, Selector};
 use tokio::time::Instant;
