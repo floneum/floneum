@@ -23,7 +23,7 @@ half = { version = "2.3.1" }
 
 tracing = "0.1.37"
 rand = "0.8.5"
-tokio = { version = "1.32.0", features = ["full"] }
+tokio = { version = "1.32.0", features = ["rt"] }
 rayon = { version = "1.8.0" }
 llm-samplers.workspace = true
 kalosm-sample.workspace = true

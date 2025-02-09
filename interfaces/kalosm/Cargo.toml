@@ -253,4 +253,4 @@ required-features = ["sound"]
 
 [package.metadata.docs.rs]
 # Features to pass to Cargo (default: [])
-features = ["full"]
+features = ["full", "openai", "anthropic"]

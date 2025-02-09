@@ -229,11 +229,11 @@ impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
 ///     ];
 ///
 ///     for test in &tests {
-///         let input = bert.embed(test).await?.to_vec();
-///         let class = classifier.run(&input)?;
+///         let input = bert.embed(test).await?;
+///         let class = classifier.run(input.vector())?;
 ///         println!();
 ///         println!("{test}");
-///         println!("{:?} {:?}", &input[..5], class);
+///         println!("{:?} {:?}", &input.vector()[..5], class);
 ///     }
 ///
 ///     Ok(())

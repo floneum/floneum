@@ -134,7 +134,8 @@ impl<C: Class> ClassificationDatasetBuilder<C> {
     /// dataset.add(vec![1.0, 2.0, 3.0, 4.0], MyClass::Person);
     /// dataset.add(vec![4.0, 3.0, 2.0, 1.0], MyClass::Thing);
     /// ```
-    pub fn add(&mut self, input: Box<[f32]>, class: C) {
+    pub fn add(&mut self, input: impl Into<Box<[f32]>>, class: C) {
+        let input = input.into();
         if let Some(input_size) = self.input_size {
             debug_assert_eq!(input.len(), input_size, "input size mismatch");
         } else {

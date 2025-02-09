@@ -257,6 +257,7 @@ impl RequestBuilderExt for reqwest::RequestBuilder {
     }
 }
 
+#[cfg(test)]
 #[tokio::test]
 async fn downloads_work() {
     let url = "https://httpbin.org/range/102400?duration=2";

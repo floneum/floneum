@@ -40,7 +40,15 @@ impl Bert {
     ) -> Result<Embedding, BertError> {
         let mut tensors = self.embed_batch_raw(vec![input], pooling)?;
 
-        Ok(Embedding::from(tensors.pop().unwrap().to_vec1()?))
+        Ok(Embedding::from(
+            tensors
+                .pop()
+                .unwrap()
+                .to_vec2()?
+                .into_iter()
+                .next()
+                .unwrap(),
+        ))
     }
 
     /// Embed a batch of sentences with a specific pooling strategy.
@@ -53,7 +61,9 @@ impl Bert {
 
         let mut embeddings = Vec::with_capacity(tensors.len());
         for tensor in tensors {
-            embeddings.push(Embedding::from(tensor.to_vec1()?));
+            embeddings.push(Embedding::from(
+                tensor.to_vec2()?.into_iter().next().unwrap(),
+            ));
         }
 
         Ok(embeddings)
@@ -166,6 +176,7 @@ impl Deref for Bert {
     }
 }
 
+#[cfg(test)]
 #[tokio::test]
 async fn test_bert() {
     use crate::BertSource;
