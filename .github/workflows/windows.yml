@@ -78,13 +78,10 @@ jobs:
           rustup target add ${{ matrix.target }}
         shell: powershell
 
-      - name: Checkout
-        run: |
-          mkdir C:/floneum.git
-          git clone https://github.com/floneum/floneum.git C:/floneum.git --depth 1
+      - name: checkout
+        uses: actions/checkout@v4
 
       - name: test
-        working-directory: C:/floneum.git
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
