@@ -251,7 +251,7 @@ impl<T: Class> TextClassifier<T> {
 
     /// Runs the classifier on the given input.
     pub fn run(&self, input: Embedding) -> candle_core::Result<ClassifierOutput<T>> {
-        self.model.run(&input.vector())
+        self.model.run(input.vector())
     }
 
     /// Trains the classifier on the given dataset.

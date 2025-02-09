@@ -238,7 +238,7 @@ impl VectorDB {
 
         let id = self.take_id(&mut wtxn)?;
 
-        writer.add_item(&mut wtxn, id.0, &embedding)?;
+        writer.add_item(&mut wtxn, id.0, embedding)?;
 
         self.rebuild(&mut writer, &mut wtxn)?;
 
@@ -402,7 +402,7 @@ impl VectorDBSearchBuilder<'_> {
         if let Some(filter) = self.filter.as_ref() {
             query.candidates(filter);
         }
-        let arroy_results = query.by_vector(&rtxn, &vector)?;
+        let arroy_results = query.by_vector(&rtxn, vector)?;
 
         Ok(arroy_results
             .into_iter()
