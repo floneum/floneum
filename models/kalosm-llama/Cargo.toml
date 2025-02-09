@@ -2,10 +2,10 @@
 name = "kalosm-llama"
 version = "0.4.0"
 edition = "2021"
-description = "A simple interface for Llama models "
+description = "A simple interface for Llama models"
 license = "MIT/Apache-2.0"
 repository = "https://github.com/floneum/floneum"
-authors = ["Evan Almloff"]
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 keywords = ["llm", "llama", "mistral", "agents", "nlp"]
 
 [dependencies]

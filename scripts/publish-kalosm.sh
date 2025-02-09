@@ -1,3 +1,9 @@
+cd interfaces/kalosm-model-types
+cargo publish
+cd ../../
+cd interfaces/kalosm-common
+cargo publish
+cd ../../
 cd interfaces/kalosm-sample
 cargo publish
 cd ../../

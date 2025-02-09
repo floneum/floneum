@@ -2,7 +2,7 @@
 name = "kalosm"
 edition = "2021"
 version = "0.4.0"
-authors = ["Evan Almloff"]
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 description = "A simple interface for pretrained AI models "
 keywords = ["llm", "llama", "whisper", "ocr", "nlp"]
 license = "MIT/Apache-2.0"
