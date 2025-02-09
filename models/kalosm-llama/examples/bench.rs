@@ -1,5 +1,5 @@
-use kalosm_common::ModelLoadingProgress;
 use kalosm_llama::*;
+use kalosm_model_types::ModelLoadingProgress;
 use prelude::StreamExt;
 use prelude::TextCompletionModelExt;
 

@@ -2,6 +2,7 @@ use candle_core::{Device, IndexOp, Tensor};
 use candle_nn::ops::softmax;
 use candle_transformers::models::whisper::{self as m, audio, Config};
 use flate2::{write::ZlibEncoder, Compression};
+use futures_channel::mpsc::UnboundedSender;
 use kalosm_common::{accelerated_device_if_available, CacheError, TensorCache};
 use rand::{distributions::Distribution, SeedableRng};
 use std::{
@@ -161,7 +162,7 @@ impl WhisperInner {
         &mut self,
         pcm_data: Vec<f32>,
         word_level_time_stamps: bool,
-        result: tokio::sync::mpsc::UnboundedSender<Segment>,
+        result: UnboundedSender<Segment>,
     ) {
         let mel = audio::pcm_to_mel(&self.config, &pcm_data, &self.mel_filters);
         let mel_len = mel.len();
@@ -577,7 +578,7 @@ impl Decoder {
         mel: &Tensor,
         audio_frames: usize,
         task: Task,
-        result: tokio::sync::mpsc::UnboundedSender<Segment>,
+        mut result: UnboundedSender<Segment>,
     ) -> Result<(), WhisperError> {
         // TODO: This should be dynamic based on how much memory the model uses and how much memory is available
         const MAX_CHUNKS: usize = 1;
@@ -676,7 +677,7 @@ impl Decoder {
                     result: dr,
                 };
 
-                if let Err(err) = result.send(segment) {
+                if let Err(err) = result.start_send(segment) {
                     tracing::error!("Error sending segment: {err}");
                     break;
                 }

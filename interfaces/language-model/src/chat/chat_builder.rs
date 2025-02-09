@@ -8,7 +8,6 @@ use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
-use once_cell::sync::OnceCell;
 use std::any::Any;
 use std::fmt::Debug;
 use std::future::IntoFuture;
@@ -36,7 +35,7 @@ use super::StructuredChatModel;
 pub struct Chat<M: CreateChatSession> {
     model: Arc<M>,
     #[allow(clippy::type_complexity)]
-    session: OnceCell<Result<Arc<AsyncMutex<M::ChatSession>>, M::Error>>,
+    session: OnceLock<Result<Arc<AsyncMutex<M::ChatSession>>, M::Error>>,
     queued_messages: Vec<ChatMessage>,
 }
 
@@ -53,7 +52,7 @@ impl<M: CreateChatSession> Clone for Chat<M> {
     fn clone(&self) -> Self {
         let model = self.model.clone();
         let mut queued_messages = self.queued_messages.clone();
-        let session = OnceCell::new();
+        let session = OnceLock::new();
         if let Some(Ok(old_session)) = self.session.get() {
             let old_session = old_session.lock_blocking();
             if let Ok(old_session) = old_session.try_clone() {
@@ -90,7 +89,7 @@ impl<M: CreateChatSession> Chat<M> {
     pub fn new(model: M) -> Chat<M> {
         Self {
             model: Arc::new(model),
-            session: OnceCell::new(),
+            session: OnceLock::new(),
             queued_messages: Vec::new(),
         }
     }

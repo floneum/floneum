@@ -109,8 +109,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ];
 
     for test in &tests {
-        let input = bert.embed(test).await?.to_vec();
-        let class = classifier.run(&input)?;
+        let input = bert.embed(test).await?;
+        let input = input.vector();
+        let class = classifier.run(input)?;
         println!();
         println!("{test}");
         println!("{:?} {:?}", &input[..5], class);

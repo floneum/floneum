@@ -1,6 +1,6 @@
 [package]
 name = "kalosm-streams"
-version = "0.3.2"
+version = "0.4.0"
 edition = "2021"
 description = "A set of streams for pretrained models in Kalosm"
 license = "MIT/Apache-2.0"
@@ -10,5 +10,4 @@ authors = ["Evan Almloff"]
 [dependencies]
 futures-util = "0.3.28"
 pin-project-lite = "0.2"
-tokio = { version = "1.28.1", features = ["full"] }
-image = "0.24.7"
+futures-channel = "0.3.30"

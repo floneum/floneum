@@ -5,8 +5,7 @@ use url::Url;
 
 use super::{
     document::{Document, IntoDocuments},
-    page::get_article,
-    ExtractDocumentError,
+    get_article, ExtractDocumentError,
 };
 
 /// A search query that can be used to search for documents on the web.
@@ -50,7 +49,6 @@ impl<'a> SearchQuery<'a> {
     }
 }
 
-#[async_trait::async_trait]
 impl IntoDocuments for SearchQuery<'_> {
     type Error = ExtractDocumentError;
 

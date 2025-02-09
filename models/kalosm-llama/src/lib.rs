@@ -50,6 +50,7 @@ pub use crate::session::LlamaSession;
 use candle_core::Device;
 pub use kalosm_common::*;
 use kalosm_language_model::{TextCompletionBuilder, TextCompletionModelExt};
+use kalosm_model_types::ModelLoadingProgress;
 use kalosm_sample::{LiteralParser, StopOn};
 use model::LlamaModelError;
 use raw::LlamaConfig;

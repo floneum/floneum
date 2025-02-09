@@ -1,9 +1,9 @@
-use kalosm_common::ModelLoadingProgress;
 use kalosm_language_model::{
     CreateDefaultChatConstraintsForType, CreateDefaultCompletionConstraintsForType,
     CreateTextCompletionSession, GenerationParameters, ModelBuilder, StructuredTextCompletionModel,
     TextCompletionModel,
 };
+use kalosm_model_types::ModelLoadingProgress;
 use kalosm_sample::{ArcParser, CreateParserState, Parse, Parser, ParserExt};
 use llm_samplers::types::Sampler;
 use std::any::Any;
@@ -30,12 +30,13 @@ impl ModelBuilder for LlamaBuilder {
     }
 
     fn requires_download(&self) -> bool {
-        !self.source.model.downloaded()
+        let cache = &self.source.cache;
+        !cache.exists(&self.source.model)
             || self
                 .source
                 .tokenizer
                 .as_ref()
-                .filter(|t| t.downloaded())
+                .filter(|t| cache.exists(t))
                 .is_none()
     }
 }

@@ -6,11 +6,9 @@ use std::fmt::Debug;
 use std::sync::atomic::AtomicUsize;
 
 use arroy::{Database as ArroyDatabase, Reader, Writer};
-use candle_core::Tensor;
 use heed::types::SerdeJson;
 use heed::{Database, EnvOpenOptions};
 use kalosm_language_model::*;
-use kalosm_llama::accelerated_device_if_available;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
@@ -24,9 +22,6 @@ pub enum VectorDbError {
     /// An error from the arroy crate.
     #[error("Arroy error: {0}")]
     Arroy(#[from] arroy::Error),
-    /// An error from the Candle crate.
-    #[error("Candle error: {0}")]
-    Candle(#[from] candle_core::Error),
     /// An error from querying an embedding id that does not exist.
     #[error("Embedding {0:?} not found")]
     EmbeddingNotFound(EmbeddingId),
@@ -230,7 +225,7 @@ impl VectorDB {
     ///
     /// Note: Adding embeddings in a batch with [`VectorDB::add_embeddings`] will be faster.
     pub fn add_embedding(&self, embedding: Embedding) -> Result<EmbeddingId, VectorDbError> {
-        let embedding = embedding.vector().to_vec1()?;
+        let embedding = embedding.vector();
 
         self.set_dim(embedding.len());
 
@@ -240,7 +235,7 @@ impl VectorDB {
 
         let id = self.take_id(&mut wtxn)?;
 
-        writer.add_item(&mut wtxn, id.0, &embedding)?;
+        writer.add_item(&mut wtxn, id.0, embedding)?;
 
         self.rebuild(&mut writer, &mut wtxn)?;
 
@@ -254,10 +249,11 @@ impl VectorDB {
         &self,
         embedding: impl IntoIterator<Item = Embedding>,
     ) -> Result<Vec<EmbeddingId>, VectorDbError> {
-        let mut embeddings = embedding.into_iter().map(|e| e.vector().to_vec1());
-        let first_embedding = match embeddings.next() {
-            Some(e) => e?,
-            None => return Ok(Vec::new()),
+        let mut embeddings = embedding
+            .into_iter()
+            .map(|e| e.vector().to_vec().into_boxed_slice());
+        let Some(first_embedding) = embeddings.next() else {
+            return Ok(Vec::new());
         };
         self.set_dim(first_embedding.len());
 
@@ -274,7 +270,7 @@ impl VectorDB {
 
         for embedding in embeddings {
             let id = self.take_id(&mut wtxn)?;
-            writer.add_item(&mut wtxn, id.0, &embedding?)?;
+            writer.add_item(&mut wtxn, id.0, &embedding)?;
             ids.push(id);
         }
 
@@ -294,12 +290,7 @@ impl VectorDB {
             .item_vector(&rtxn, embedding_id.0)?
             .ok_or_else(|| VectorDbError::EmbeddingNotFound(embedding_id))?;
 
-        let shape = (embedding.len(),);
-        Ok(Embedding::new(Tensor::from_vec(
-            embedding,
-            shape,
-            &accelerated_device_if_available()?,
-        )?))
+        Ok(Embedding::from(embedding))
     }
 
     /// Get the closest N embeddings to the given embedding.
@@ -403,12 +394,12 @@ impl VectorDBSearchBuilder<'_> {
         let rtxn = self.db.env.read_txn()?;
         let reader = Reader::<DotProduct>::open(&rtxn, 0, self.db.database)?;
 
-        let vector = self.embedding.vector().to_vec1()?;
+        let vector = self.embedding.vector();
         let mut query = reader.nns(self.results.unwrap_or(10));
         if let Some(filter) = self.filter.as_ref() {
             query.candidates(filter);
         }
-        let arroy_results = query.by_vector(&rtxn, &vector)?;
+        let arroy_results = query.by_vector(&rtxn, vector)?;
 
         Ok(arroy_results
             .into_iter()
@@ -473,7 +464,7 @@ async fn test_vector_db_get_closest() {
     );
     assert_eq!(
         db.search(&third_embedding)
-            .with_filter(|vector: Embedding| vector.to_vec()[0] < 0.0)
+            .with_filter(|vector: Embedding| vector.vector()[0] < 0.0)
             .run()
             .unwrap()
             .iter()

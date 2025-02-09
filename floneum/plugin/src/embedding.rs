@@ -3,7 +3,6 @@ use crate::plugins::main::types::{Embedding, EmbeddingModelResource, EmbeddingMo
 use crate::resource::{Resource, ResourceStorage};
 
 use kalosm::language::*;
-use kalosm_common::ModelLoadingProgress;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -137,7 +136,7 @@ impl ResourceStorage {
         let index = self_.into();
         let model = self.initialize_text_embedding_model(index).await?;
         Ok(main::types::Embedding {
-            vector: model.embed_string(document).await?.to_vec(),
+            vector: model.embed_string(document).await?.vector().to_vec(),
         })
     }
 

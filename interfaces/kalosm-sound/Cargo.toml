@@ -1,6 +1,6 @@
 [package]
 name = "kalosm-sound"
-version = "0.3.4"
+version = "0.4.0"
 edition = "2021"
 description = "A set of pretrained audio models "
 license = "MIT/Apache-2.0"
@@ -10,7 +10,6 @@ keywords = ["ai", "whisper"]
 
 [dependencies]
 cpal = "0.15.3"
-itertools = "0.10.5"
 rand = "0.8.5"
 candle-core.workspace = true
 candle-nn.workspace = true
@@ -20,14 +19,13 @@ serde_json = "1.0.107"
 hound = "3.5"
 rodio = "0.20.1"
 dasp = { version = "0.11.0", features = ["all"] }
-tokio = { version = "1.32.0", features = ["full"] }
+tokio = { version = "1.32.0", features = ["rt"] }
 tracing = "0.1.37"
 
 futures-core = "0.3.30"
 futures-util = "0.3.30"
 futures-channel = "0.3.30"
 
-kalosm-streams.workspace = true
 rwhisper.workspace = true
 
 voice_activity_detector = { version = "0.1.0", features = ["async"], optional = true }
@@ -44,5 +42,6 @@ denoise = ["dep:nnnoiseless"]
 voice_detection = ["dep:voice_activity_detector", "dep:ort", "dep:ort-sys"]
 
 [dev-dependencies]
-kalosm = { workspace = true, features = ["sound"] }
+kalosm = { workspace = true, features = ["sound"], default-features = true }
 anyhow.workspace = true
+kalosm-streams.workspace = true

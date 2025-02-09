@@ -3,7 +3,7 @@ use crate::{
     ChatMessage, ChatModel, ChatSession, CreateChatSession, GenerationParameters, ModelBuilder,
 };
 use futures_util::StreamExt;
-use kalosm_common::ModelLoadingProgress;
+use kalosm_model_types::ModelLoadingProgress;
 use reqwest_eventsource::{Event, RequestBuilderExt};
 use serde::{Deserialize, Serialize};
 use std::{future::Future, sync::Arc};

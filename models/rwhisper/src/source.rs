@@ -1,6 +1,6 @@
 use std::{fmt::Display, str::FromStr};
 
-use kalosm_common::FileSource;
+use kalosm_model_types::FileSource;
 
 /// The source whisper model to use.
 #[derive(Clone, Copy, Debug, Default)]

@@ -1,15 +1,18 @@
 use std::future::Future;
+use std::mem::MaybeUninit;
+use std::ops::Deref;
+use std::pin::Pin;
 
 pub use crate::Bert;
 use crate::BertBuilder;
 use crate::BertError;
 use crate::BertLoadingError;
 use crate::Pooling;
-use kalosm_common::*;
 pub use kalosm_language_model::{
     Embedder, EmbedderCacheExt, EmbedderExt, Embedding, EmbeddingInput, EmbeddingVariant,
     ModelBuilder,
 };
+use kalosm_model_types::ModelLoadingProgress;
 
 impl ModelBuilder for BertBuilder {
     type Model = Bert;
@@ -37,7 +40,15 @@ impl Bert {
     ) -> Result<Embedding, BertError> {
         let mut tensors = self.embed_batch_raw(vec![input], pooling)?;
 
-        Ok(Embedding::new(tensors.pop().unwrap()))
+        Ok(Embedding::from(
+            tensors
+                .pop()
+                .unwrap()
+                .to_vec2()?
+                .into_iter()
+                .next()
+                .unwrap(),
+        ))
     }
 
     /// Embed a batch of sentences with a specific pooling strategy.
@@ -50,7 +61,9 @@ impl Bert {
 
         let mut embeddings = Vec::with_capacity(tensors.len());
         for tensor in tensors {
-            embeddings.push(Embedding::new(tensor));
+            embeddings.push(Embedding::from(
+                tensor.to_vec2()?.into_iter().next().unwrap(),
+            ));
         }
 
         Ok(embeddings)
@@ -108,4 +121,73 @@ impl Embedder for Bert {
         })
         .await?
     }
+}
+
+impl Deref for Bert {
+    type Target = dyn Fn(
+        &str,
+    ) -> Pin<
+        Box<dyn Future<Output = Result<Embedding, BertError>> + Send + 'static>,
+    >;
+
+    fn deref(&self) -> &Self::Target {
+        // https://github.com/dtolnay/case-studies/tree/master/callable-types
+
+        // Create an empty allocation for Self.
+        let uninit_callable = MaybeUninit::<Self>::uninit();
+        // Move a closure that captures just self into the uninitialized memory. Closures create an anonymous type that implement
+        // FnOnce. In this case, the layout of the type should just be Self because self is the only field in the closure type.
+        let uninit_closure = move |text: &str| {
+            let myself = unsafe { &*uninit_callable.as_ptr() };
+            let self_clone = myself.clone();
+            let input = text.to_string();
+
+            Box::pin(async move {
+                tokio::task::spawn_blocking(move || {
+                    self_clone.embed_with_pooling(&input, Pooling::CLS)
+                })
+                .await?
+            })
+                as Pin<Box<dyn Future<Output = Result<Embedding, BertError>> + Send + 'static>>
+        };
+
+        // Make sure the layout of the closure and Self is the same.
+        let size_of_closure = std::alloc::Layout::for_value(&uninit_closure);
+        assert_eq!(size_of_closure, std::alloc::Layout::new::<Self>());
+
+        // Then cast the lifetime of the closure to the lifetime of &self.
+        fn cast_lifetime<'a, T>(_a: &T, b: &'a T) -> &'a T {
+            b
+        }
+        let reference_to_closure = cast_lifetime(
+            {
+                // The real closure that we will never use.
+                &uninit_closure
+            },
+            #[allow(clippy::missing_transmute_annotations)]
+            // We transmute self into a reference to the closure. This is safe because we know that the closure has the same memory layout as Self so &Closure == &Self.
+            unsafe {
+                std::mem::transmute(self)
+            },
+        );
+
+        // Cast the closure to a trait object.
+        reference_to_closure as &_
+    }
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_bert() {
+    use crate::BertSource;
+
+    let bert = Bert::builder()
+        .with_source(BertSource::snowflake_arctic_embed_extra_small())
+        .build()
+        .await
+        .unwrap();
+    let result = bert("The quick brown fox jumps over the lazy dog.")
+        .await
+        .unwrap();
+    println!("{result:?}");
 }

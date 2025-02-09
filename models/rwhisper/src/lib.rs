@@ -34,9 +34,10 @@
 #![warn(missing_docs)]
 
 use cpal::FromSample;
-use kalosm_common::FileSource;
-pub use kalosm_common::ModelLoadingProgress;
+use futures_channel::mpsc::{UnboundedReceiver, UnboundedSender};
+use kalosm_common::Cache;
 use kalosm_language_model::ModelBuilder;
+pub use kalosm_model_types::{FileSource, ModelLoadingProgress};
 use model::{WhisperInner, WhisperLoadingError};
 use rodio::{source::UniformSourceIterator, Source};
 use std::{
@@ -333,9 +334,10 @@ impl ModelBuilder for WhisperBuilder {
 
     fn requires_download(&self) -> bool {
         let whisper = self.get_whisper_model_config();
-        !whisper.model.downloaded()
-            || !whisper.tokenizer.downloaded()
-            || !whisper.config.downloaded()
+        let cache = Cache::default();
+        !cache.exists(&whisper.model)
+            || !cache.exists(&whisper.tokenizer)
+            || !cache.exists(&whisper.config)
     }
 }
 
@@ -525,21 +527,15 @@ impl WhisperBuilder {
 
         let (rx, tx) = std::sync::mpsc::channel();
         let thread = std::thread::spawn(move || {
-            tokio::runtime::Builder::new_current_thread()
-                .build()
-                .unwrap()
-                .block_on(async move {
-                    let mut model =
-                        WhisperInner::new(self, filename, tokenizer_filename, config).unwrap();
-                    while let Ok(message) = tx.recv() {
-                        match message {
-                            WhisperMessage::Kill => return,
-                            WhisperMessage::Transcribe(input, word_level_time_stamps, result) => {
-                                model.transcribe(input, word_level_time_stamps, result);
-                            }
-                        }
+            let mut model = WhisperInner::new(self, filename, tokenizer_filename, config).unwrap();
+            while let Ok(message) = tx.recv() {
+                match message {
+                    WhisperMessage::Kill => return,
+                    WhisperMessage::Transcribe(input, word_level_time_stamps, result) => {
+                        model.transcribe(input, word_level_time_stamps, result);
                     }
-                });
+                }
+            }
         });
 
         Ok(Whisper {
@@ -953,7 +949,7 @@ pub struct TranscriptionTask {
     word_level_time_stamps: bool,
     audio: Vec<f32>,
     sender: std::sync::mpsc::Sender<WhisperMessage>,
-    receiver: RwLock<Option<tokio::sync::mpsc::UnboundedReceiver<Segment>>>,
+    receiver: RwLock<Option<UnboundedReceiver<Segment>>>,
 }
 
 impl TranscriptionTask {
@@ -974,7 +970,7 @@ impl Stream for TranscriptionTask {
         let myself = self.get_mut();
         let mut write = myself.receiver.write().unwrap();
         if write.is_none() {
-            let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+            let (sender, receiver) = futures_channel::mpsc::unbounded();
             let pcm_data = std::mem::take(&mut myself.audio);
 
             _ = myself.sender.send(WhisperMessage::Transcribe(
@@ -986,13 +982,13 @@ impl Stream for TranscriptionTask {
             *write = Some(receiver);
         }
 
-        write.as_mut().unwrap().poll_recv(cx)
+        write.as_mut().unwrap().poll_next_unpin(cx)
     }
 }
 
 enum WhisperMessage {
     Kill,
-    Transcribe(Vec<f32>, bool, tokio::sync::mpsc::UnboundedSender<Segment>),
+    Transcribe(Vec<f32>, bool, UnboundedSender<Segment>),
 }
 
 pub(crate) fn normalize_audio<S: Source>(input: S) -> Vec<f32>

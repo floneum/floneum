@@ -27,7 +27,6 @@ impl TryFrom<PathBuf> for TextDocument {
     }
 }
 
-#[async_trait::async_trait]
 impl IntoDocument for TextDocument {
     type Error = FsDocumentError;
 

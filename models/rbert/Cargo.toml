@@ -1,6 +1,6 @@
 [package]
 name = "rbert"
-version = "0.3.3"
+version = "0.4.0"
 edition = "2021"
 description = "A simple interface for Bert embeddings "
 license = "MIT/Apache-2.0"
@@ -23,14 +23,15 @@ half = { version = "2.3.1", features = ["num-traits", "use-intrinsics", "rand_di
 tracing = "0.1.37"
 serde_json = "1.0.106"
 serde = { version = "1", features = ["derive"] }
-tokio = { version = "1.33.0", features = ["full"] }
+tokio = { version = "1.33.0", features = ["rt"] }
 
 kalosm-common = { workspace = true }
+kalosm-model-types.workspace = true
 kalosm-language-model.workspace = true
 metal = { version = "0.27.0", features = ["mps"], optional = true }
 
 [dev-dependencies]
-kalosm = { workspace = true, features = ["language"] }
+kalosm = { workspace = true, features = ["language"], default-features = true }
 anyhow.workspace = true
 postcard = { version = "1.0.8", features = ["use-std"] }
 

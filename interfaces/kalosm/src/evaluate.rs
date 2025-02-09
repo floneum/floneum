@@ -2,29 +2,32 @@ use comfy_table::Cell;
 use comfy_table::Row;
 use comfy_table::Table;
 use hdrhistogram::Histogram;
-use once_cell::sync::OnceCell;
 use std::fmt::Display;
+use std::future::Future;
 use std::ops::RangeInclusive;
+use std::sync::OnceLock;
 
-use async_trait::async_trait;
+#[cfg(feature = "bert")]
 use kalosm_language::prelude::Bert;
+#[cfg(feature = "bert")]
 use kalosm_language::prelude::Embedder;
 
 /// A metric is a way to compare two pieces of data. It is used to evaluate the performance of a model.
-#[async_trait]
 pub trait Metric<T> {
     /// The range of values that this metric can return.
     const RANGE: RangeInclusive<f64> = 0.0..=1.0;
 
     /// Compute the distance between this piece of data and another piece of data.
-    async fn distance(&mut self, first: &T, other: &T) -> f64;
+    fn distance(&mut self, first: &T, other: &T) -> impl Future<Output = f64> + Send;
 }
 
+#[cfg(feature = "bert")]
 /// A metric that uses the Bert model to compute the distance between two strings.
 pub struct BertDistance {
     bert: Bert,
 }
 
+#[cfg(feature = "bert")]
 impl BertDistance {
     /// Create a new BertDistance metric.
     pub fn new(model: Bert) -> Self {
@@ -32,7 +35,7 @@ impl BertDistance {
     }
 }
 
-#[async_trait]
+#[cfg(feature = "bert")]
 impl<S: ToString + Send + Sync> Metric<S> for BertDistance {
     async fn distance(&mut self, first: &S, other: &S) -> f64 {
         let embeddings = self
@@ -101,7 +104,7 @@ impl<I> TestCases<I> {
         values.sort_by(|a, b| a.score.partial_cmp(&b.score).unwrap());
         EvaluationResult {
             name: self.name.clone(),
-            histogram: OnceCell::new(),
+            histogram: OnceLock::new(),
             tests: values,
             range: M::RANGE,
         }
@@ -112,7 +115,7 @@ impl<I> TestCases<I> {
 #[derive(Clone)]
 pub struct EvaluationResult<'a, I> {
     name: String,
-    histogram: OnceCell<Histogram<u64>>,
+    histogram: OnceLock<Histogram<u64>>,
     tests: Vec<TestCaseScored<'a, I>>,
     range: RangeInclusive<f64>,
 }
@@ -200,7 +203,7 @@ impl<I> EvaluationResult<'_, I> {
         }
         EvaluationResult {
             name: self.name,
-            histogram: OnceCell::new(),
+            histogram: OnceLock::new(),
             tests: normalized_values,
             range: 0.0..=1.0,
         }

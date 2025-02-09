@@ -36,6 +36,7 @@ use candle_transformers::models::vit;
 use hf_hub::api::sync::Api;
 use image::{GenericImage, GenericImageView, ImageBuffer, Rgba};
 use kalosm_common::*;
+use kalosm_model_types::{FileSource, ModelLoadingProgress};
 use tokenizers::Tokenizer;
 
 /// A builder for [`Ocr`].
@@ -148,9 +149,9 @@ impl OcrSource {
     ) -> Result<VarBuilder, LoadOcrError> {
         let source = format!("Model ({})", self.model);
         let mut create_progress = ModelLoadingProgress::downloading_progress(source);
-        let filename = self
-            .model
-            .download(|progress| handler(create_progress(progress)))
+        let cache = Cache::default();
+        let filename = cache
+            .get(&self.model, |progress| handler(create_progress(progress)))
             .await?;
         Ok(unsafe { VarBuilder::from_mmaped_safetensors(&[filename], DType::F32, device)? })
     }
@@ -168,9 +169,9 @@ impl OcrSource {
         let (encoder_config, decoder_config) = {
             let source = format!("Config ({})", self.model);
             let mut create_progress = ModelLoadingProgress::downloading_progress(source);
-            let config_filename = self
-                .config
-                .download(|progress| handler(create_progress(progress)))
+            let cache = Cache::default();
+            let config_filename = cache
+                .get(&self.config, |progress| handler(create_progress(progress)))
                 .await?;
             let config: Config = serde_json::from_reader(
                 std::fs::File::open(config_filename)

@@ -4,7 +4,7 @@ use crate::{
     GenerationParameters, ModelBuilder, ModelConstraints, StructuredChatModel,
 };
 use futures_util::StreamExt;
-use kalosm_common::ModelLoadingProgress;
+use kalosm_model_types::ModelLoadingProgress;
 use kalosm_sample::Schema;
 use reqwest_eventsource::{Event, RequestBuilderExt};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};

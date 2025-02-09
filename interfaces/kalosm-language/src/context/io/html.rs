@@ -4,8 +4,7 @@ use tokio::{fs::File, io::AsyncReadExt};
 
 use crate::context::{
     document::{Document, IntoDocument},
-    page::extract_article,
-    ExtractDocumentError,
+    extract_article, ExtractDocumentError,
 };
 
 use super::FsDocumentError;
@@ -30,7 +29,6 @@ impl TryFrom<PathBuf> for HtmlDocument {
     }
 }
 
-#[async_trait::async_trait]
 impl IntoDocument for HtmlDocument {
     type Error = FsDocumentError<ExtractDocumentError>;
 

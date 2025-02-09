@@ -1,6 +1,6 @@
 [package]
 name = "kalosm-language"
-version = "0.3.3"
+version = "0.4.0"
 edition = "2021"
 description = "A set of pretrained language models "
 license = "MIT/Apache-2.0"
@@ -10,19 +10,15 @@ keywords = ["ai", "llm", "llama", "mistral", "nlp"]
 
 [dependencies]
 futures-util = "0.3.28"
-llm-samplers = { workspace = true }
-log = "0.4.17"
 rand = "0.8.5"
 reqwest = { version = "0.11.18", features = ["stream", "json"] }
-tokio = { version = "1.28.1", features = ["full"] }
+tokio = { version = "1.28.1", features = ["fs"] }
 slab = { version = "0.4.8", features = ["serde"] }
 arroy = "0.5.0"
 heed = "0.20.0-alpha.9"
 serde = { version = "1.0.163", features = ["derive"] }
-once_cell = "1.18.0"
 url = "2.4.0"
 tracing = "0.1.37"
-async-trait = "0.1.73"
 serde_json = "1.0.107"
 chrono = { version = "0.4.31", features = ["serde"] }
 readability = { version = "0.2.0", default-features = false }
@@ -30,25 +26,21 @@ tempfile = "3.8.0"
 rss = { version = "2.0.6", features = ["atom"] }
 scraper = { version = "0.19.0", features = ["atomic"] }
 kalosm-language-model = { workspace = true }
-headless_chrome = { version = "1.0" }
-candle-core.workspace = true
-candle-nn.workspace = true
+headless_chrome = { version = "1.0", optional = true }
 tokio-util = { version = "0.7.9", features = ["rt"] }
-dashmap = "5.5.3"
-rbert.workspace = true
-kalosm-llama.workspace = true
+dashmap = { version = "5.5.3", optional = true }
+rbert = { workspace = true, optional = true }
+kalosm-llama = { workspace = true, optional = true }
 kalosm-streams.workspace = true
 pulldown-cmark = "0.9.3"
 docx-rs = "0.4.7"
-pdf = { git = "https://github.com/pdf-rs/pdf" }
-pdf_text = { git = "https://github.com/pdf-rs/pdf_text" }
+lopdf = { version = "0.35.0", features = ["async"] }
 convert_case = "0.6.0"
-itertools = "0.11.0"
 kalosm-sample = { workspace = true }
 ego-tree = "0.6.2"
-image = "0.24.7"
+image = { version = "0.24.7", optional = true }
 whatlang = "0.16.3"
-texting_robots = "0.2.2"
+texting_robots = { version = "0.2.2", optional = true }
 half = "2.3.1"
 srx = { version = "0.1.4", features = ["from_xml"] }
 thiserror.workspace = true
@@ -56,15 +48,24 @@ anyhow.workspace = true
 roaring = "0.10.6"
 
 [features]
-metal = ["rbert/metal", "kalosm-llama/metal"]
-cublas = ["rbert/cuda", "rbert/cudnn", "kalosm-llama/cuda", "kalosm-llama/cudnn"]
-mkl = ["rbert/mkl", "kalosm-llama/mkl"]
+default = ["bert", "llama"]
+metal = ["rbert?/metal", "kalosm-llama?/metal"]
+cublas = [
+    "rbert?/cuda",
+    "rbert?/cudnn",
+    "kalosm-llama?/cuda",
+    "kalosm-llama?/cudnn",
+]
+mkl = ["rbert?/mkl", "kalosm-llama?/mkl"]
 openai = ["kalosm-language-model/openai"]
 anthropic = ["kalosm-language-model/anthropic"]
 remote = ["kalosm-language-model/remote"]
+scrape = ["dep:headless_chrome", "dep:image", "dep:dashmap", "dep:texting_robots"]
+bert = ["dep:rbert"]
+llama = ["dep:kalosm-llama"]
 
 [dev-dependencies]
-kalosm = { workspace = true, features = ["language", "surrealdb"] }
+kalosm = { workspace = true, features = ["language", "surrealdb"], default-features = true }
 surrealdb = { version = "2.1.4", features = ["kv-surrealkv"] }
 
 [package.metadata.docs.rs]

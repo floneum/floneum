@@ -1,6 +1,6 @@
 [package]
 name = "kalosm-parse-macro"
-version = "0.3.2"
+version = "0.4.0"
 edition = "2021"
 description = "A macro to derive kalosm parsing traits"
 license = "MIT/Apache-2.0"
@@ -14,7 +14,7 @@ quote = "1.0"
 proc-macro2 = "1.0.86"
 
 [dev-dependencies]
-kalosm = { workspace = true, features = ["language"] }
+kalosm = { workspace = true, features = ["language"], default-features = true }
 serde_json = "1.0.122"
 tokio = { version = "1.28.1", features = ["full"] }
 pretty_assertions = "1.4.0"

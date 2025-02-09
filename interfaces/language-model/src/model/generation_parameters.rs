@@ -1,7 +1,11 @@
+#[cfg(feature = "sample")]
 use std::hash::Hash;
+#[cfg(feature = "sample")]
 use std::hash::Hasher;
 
+#[cfg(feature = "sample")]
 use llm_samplers::configure::SamplerChainBuilder;
+#[cfg(feature = "sample")]
 use llm_samplers::prelude::*;
 
 /// Parameters to use when generating text.
@@ -18,6 +22,7 @@ pub struct GenerationParameters {
     pub(crate) max_length: u32,
     pub(crate) stop_on: Option<String>,
     pub(crate) seed: Option<u64>,
+    #[cfg(feature = "sample")]
     sampler: Option<(u64, SamplerChain)>,
 }
 
@@ -48,8 +53,9 @@ impl Clone for GenerationParameters {
             repetition_penalty_range: self.repetition_penalty_range,
             max_length: self.max_length,
             stop_on: self.stop_on.clone(),
-            sampler: None,
             seed: None,
+            #[cfg(feature = "sample")]
+            sampler: None,
         }
     }
 }
@@ -60,6 +66,7 @@ impl Default for GenerationParameters {
     }
 }
 
+#[cfg(feature = "sample")]
 impl Sampler for GenerationParameters {
     fn sample<'a>(
         &mut self,
@@ -96,11 +103,13 @@ impl GenerationParameters {
             repetition_penalty_range: 64,
             max_length: u32::MAX,
             stop_on: None,
-            sampler: None,
             seed: None,
+            #[cfg(feature = "sample")]
+            sampler: None,
         }
     }
 
+    #[cfg(feature = "sample")]
     fn with_sampler<O>(&mut self, with_sampler: impl FnOnce(&mut SamplerChain) -> O) -> O {
         let mut hash = std::collections::hash_map::DefaultHasher::new();
         self.eta.to_le_bytes().hash(&mut hash);
@@ -123,6 +132,7 @@ impl GenerationParameters {
         output
     }
 
+    #[cfg(feature = "sample")]
     /// Create a sampler chain from the generation parameters.
     pub fn sampler(&self) -> SamplerChain {
         use llm_samplers::configure::SamplerSlot;
@@ -191,6 +201,7 @@ impl GenerationParameters {
         self
     }
 
+    #[cfg(feature = "sample")]
     /// Get the mirostat2 sampler from the generation parameters.
     pub fn mirostat2_sampler(self) -> SampleMirostat2 {
         SampleMirostat2::default()
@@ -199,6 +210,7 @@ impl GenerationParameters {
             .mu(self.mu)
     }
 
+    #[cfg(feature = "sample")]
     /// Create a sampler chain from the generation parameters without removing any tokens. This can be useful in combination with [`ModelExt::stream_structured_text_with_sampler`] which may pick unlikely tokens.
     pub fn bias_only_sampler(self) -> SamplerChain {
         use llm_samplers::configure::SamplerSlot;

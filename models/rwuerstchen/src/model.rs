@@ -15,6 +15,7 @@ use candle_transformers::models::wuerstchen::prior::WPrior;
 use candle_transformers::models::{stable_diffusion, wuerstchen::diffnext::WDiffNeXt};
 
 use candle_core::{DType, Device, Tensor};
+use futures_channel::mpsc::UnboundedSender;
 use image::ImageBuffer;
 use tokenizers::Tokenizer;
 
@@ -311,11 +312,7 @@ impl WuerstchenInner {
     }
 
     /// Run inference with the given settings.
-    pub fn run(
-        &self,
-        settings: WuerstchenInferenceSettings,
-        result: tokio::sync::mpsc::UnboundedSender<Image>,
-    ) {
+    pub fn run(&self, settings: WuerstchenInferenceSettings, mut result: UnboundedSender<Image>) {
         // If the channel is closed, we know that the result will never be read so we can stop early.
         macro_rules! return_if_closed {
             () => {
@@ -370,7 +367,7 @@ impl WuerstchenInner {
                 progress: 1.,
                 result: err,
             };
-            if let Err(err) = result.send(image) {
+            if let Err(err) = result.start_send(image) {
                 tracing::error!("Error sending segment: {err}");
             }
             return;
@@ -406,7 +403,7 @@ impl WuerstchenInner {
                 result: image,
             };
 
-            if let Err(err) = result.send(image) {
+            if let Err(err) = result.start_send(image) {
                 tracing::error!("Error sending segment: {err}");
                 break;
             }
