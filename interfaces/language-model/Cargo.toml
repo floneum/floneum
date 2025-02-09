@@ -22,7 +22,7 @@ lru = { version = "0.12.3", optional = true }
 reqwest = { version = "0.12.12", features = ["json"], optional = true }
 serde_json = { version = "1.0.134", optional = true }
 reqwest-eventsource = { version = "0.6.0", optional = true }
-anyhow = { workspace = true }
+anyhow = { workspace = true, optional = true }
 async-lock = "3.4.0"
 
 [dev-dependencies]
@@ -31,6 +31,7 @@ kalosm = { workspace = true, features = ["language"] }
 kalosm-learning = { workspace = true }
 pretty_assertions = "1.4.1"
 postcard = { version = "1.0.8", features = ["use-std"] }
+anyhow = { workspace = true }
 
 [features]
 default = ["cache"]
@@ -39,7 +40,7 @@ openai = ["dep:reqwest", "dep:serde_json", "dep:reqwest-eventsource"]
 remote = ["anthropic", "openai"]
 serde = ["dep:serde"]
 cache = ["serde", "dep:lru"]
-sample = ["dep:llm-samplers"]
+sample = ["dep:llm-samplers", "dep:anyhow"]
 
 [package.metadata.docs.rs]
 # Features to pass to Cargo (default: [])

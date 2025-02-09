@@ -133,7 +133,7 @@ impl<M: Embedder, S: BuildHasher> CachedEmbeddingModel<M, S> {
         let cache = self.cache.lock().unwrap();
         let items = cache
             .iter()
-            .map(|(k, v)| (k.clone(), v.vector().clone()))
+            .map(|(k, v)| (k.clone(), v.vector().to_vec().into_boxed_slice()))
             .collect::<Vec<_>>();
 
         items

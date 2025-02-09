@@ -54,7 +54,8 @@ impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
     /// Adds a new example to the dataset.
     pub async fn add(&mut self, text: impl ToString, class: T) -> Result<(), E::Error> {
         let embedding = self.embedder.embed(text).await?;
-        self.dataset.add(embedding.vector().clone(), class);
+        self.dataset
+            .add(embedding.vector().to_vec().into_boxed_slice(), class);
         Ok(())
     }
 
@@ -102,7 +103,8 @@ impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
         let (texts, classes): (Vec<_>, Vec<_>) = examples.into_iter().unzip();
         let embeddings = self.embedder.embed_batch(texts).await?;
         for (embedding, class) in embeddings.into_iter().zip(classes) {
-            self.dataset.add(embedding.vector().clone(), class);
+            self.dataset
+                .add(embedding.vector().to_vec().into_boxed_slice(), class);
         }
         Ok(())
     }

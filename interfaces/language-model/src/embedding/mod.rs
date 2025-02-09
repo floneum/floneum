@@ -136,7 +136,7 @@ impl Embedding {
     }
 
     /// Get the tensor that represents this embedding.
-    pub fn vector(&self) -> &Box<[f32]> {
+    pub fn vector(&self) -> &[f32] {
         &self.embedding
     }
 }

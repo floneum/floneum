@@ -252,7 +252,9 @@ impl VectorDB {
         &self,
         embedding: impl IntoIterator<Item = Embedding>,
     ) -> Result<Vec<EmbeddingId>, VectorDbError> {
-        let mut embeddings = embedding.into_iter().map(|e| e.vector().clone());
+        let mut embeddings = embedding
+            .into_iter()
+            .map(|e| e.vector().to_vec().into_boxed_slice());
         let Some(first_embedding) = embeddings.next() else {
             return Ok(Vec::new());
         };
