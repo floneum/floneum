@@ -40,8 +40,7 @@ kalosm-llama.workspace = true
 kalosm-streams.workspace = true
 pulldown-cmark = "0.9.3"
 docx-rs = "0.4.7"
-pdf = { git = "https://github.com/pdf-rs/pdf" }
-pdf_text = { git = "https://github.com/pdf-rs/pdf_text" }
+lopdf = { version = "0.35.0", features = ["async"] }
 convert_case = "0.6.0"
 itertools = "0.11.0"
 kalosm-sample = { workspace = true }
@@ -57,7 +56,12 @@ roaring = "0.10.6"
 
 [features]
 metal = ["rbert/metal", "kalosm-llama/metal"]
-cublas = ["rbert/cuda", "rbert/cudnn", "kalosm-llama/cuda", "kalosm-llama/cudnn"]
+cublas = [
+    "rbert/cuda",
+    "rbert/cudnn",
+    "kalosm-llama/cuda",
+    "kalosm-llama/cudnn",
+]
 mkl = ["rbert/mkl", "kalosm-llama/mkl"]
 openai = ["kalosm-language-model/openai"]
 anthropic = ["kalosm-language-model/anthropic"]

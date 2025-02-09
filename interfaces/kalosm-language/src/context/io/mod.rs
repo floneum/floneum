@@ -1,7 +1,6 @@
 use crate::context::document::Document;
 use crate::context::document::IntoDocument;
 use crate::context::document::IntoDocuments;
-use ::pdf::PdfError;
 use std::path::PathBuf;
 use tokio::task::JoinSet;
 mod docx;
@@ -53,7 +52,7 @@ pub enum TextFileDecodeError {
     Extract(#[from] ExtractDocumentError),
     /// An error decoding the pdf file
     #[error("Failed to decode pdf file: {0}")]
-    Pdf(#[from] PdfError),
+    Pdf(#[from] lopdf::Error),
     /// An error reading the docx file
     #[error("Failed to read docx file: {0}")]
     Docx(#[from] docx_rs::ReaderError),
@@ -129,7 +128,7 @@ impl IntoDocument for FsDocument {
             Self::Pdf(pdf) => pdf
                 .into_document()
                 .await
-                .map_err(|err| err.map_decode(TextFileDecodeError::Pdf)),
+                .map_err(|err| err.map_decode(|_| unreachable!())),
             Self::Txt(txt) => txt
                 .into_document()
                 .await
