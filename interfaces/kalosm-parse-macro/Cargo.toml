@@ -20,8 +20,5 @@ tokio = { version = "1.28.1", features = ["full"] }
 pretty_assertions = "1.4.0"
 
 [features]
-metal = ["kalosm/metal"]
-cuda = ["kalosm/cuda"]
-
 [lib]
 proc-macro = true

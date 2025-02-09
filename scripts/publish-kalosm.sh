@@ -4,6 +4,9 @@ cd ../../
 cd interfaces/kalosm-common
 cargo publish
 cd ../../
+cd interfaces/kalosm-parse-macro
+cargo publish
+cd ../../
 cd interfaces/kalosm-sample
 cargo publish
 cd ../../
