@@ -27,7 +27,7 @@ async-lock = "3.4.0"
 
 [dev-dependencies]
 tokio = { version = "1.28.1", features = ["full"] }
-kalosm = { workspace = true, features = ["language"] }
+kalosm = { workspace = true, features = ["language"], default-features = true }
 kalosm-learning = { workspace = true }
 pretty_assertions = "1.4.1"
 postcard = { version = "1.0.8", features = ["use-std"] }

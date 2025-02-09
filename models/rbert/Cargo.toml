@@ -31,7 +31,7 @@ kalosm-language-model.workspace = true
 metal = { version = "0.27.0", features = ["mps"], optional = true }
 
 [dev-dependencies]
-kalosm = { workspace = true, features = ["language"] }
+kalosm = { workspace = true, features = ["language"], default-features = true }
 anyhow.workspace = true
 postcard = { version = "1.0.8", features = ["use-std"] }
 

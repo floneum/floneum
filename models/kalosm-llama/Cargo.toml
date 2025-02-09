@@ -38,7 +38,7 @@ minijinja-contrib = { version = "2.5.0", features = ["pycompat"] }
 [dev-dependencies]
 tracing-subscriber = "0.3.18"
 pretty_assertions = "1.4.1"
-kalosm = { workspace = true, features = ["language"] }
+kalosm = { workspace = true, features = ["language"], default-features = true }
 anyhow.workspace = true
 kalosm-streams.workspace = true
 

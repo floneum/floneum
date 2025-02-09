@@ -37,7 +37,7 @@ flate2 = "1.0.35"
 rayon = "1.10.0"
 
 [dev-dependencies]
-kalosm = { workspace = true, features = ["sound"] }
+kalosm = { workspace = true, features = ["sound"], default-features = true }
 anyhow.workspace = true
 tracing-subscriber = "0.3.19"
 tokio = { version = "1.32.0", features = ["full"] }

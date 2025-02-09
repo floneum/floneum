@@ -42,6 +42,6 @@ denoise = ["dep:nnnoiseless"]
 voice_detection = ["dep:voice_activity_detector", "dep:ort", "dep:ort-sys"]
 
 [dev-dependencies]
-kalosm = { workspace = true, features = ["sound"] }
+kalosm = { workspace = true, features = ["sound"], default-features = true }
 anyhow.workspace = true
 kalosm-streams.workspace = true

@@ -65,7 +65,7 @@ bert = ["dep:rbert"]
 llama = ["dep:kalosm-llama"]
 
 [dev-dependencies]
-kalosm = { workspace = true, features = ["language", "surrealdb"] }
+kalosm = { workspace = true, features = ["language", "surrealdb"], default-features = true }
 surrealdb = { version = "2.1.4", features = ["kv-surrealkv"] }
 
 [package.metadata.docs.rs]

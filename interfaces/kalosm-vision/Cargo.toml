@@ -15,7 +15,7 @@ rwuerstchen.workspace = true
 segment-anything-rs.workspace = true
 
 [dev-dependencies]
-kalosm = { workspace = true, features = ["vision"] }
+kalosm = { workspace = true, features = ["vision"], default-features = true }
 futures-util = "0.3.28"
 tokio = { version = "1", features = ["full"] }
 
