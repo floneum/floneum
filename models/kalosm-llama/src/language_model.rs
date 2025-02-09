@@ -36,7 +36,7 @@ impl ModelBuilder for LlamaBuilder {
                 .source
                 .tokenizer
                 .as_ref()
-                .filter(|t| cache.exists(&t))
+                .filter(|t| cache.exists(t))
                 .is_none()
     }
 }

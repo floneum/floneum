@@ -150,7 +150,6 @@ where
     }
 }
 
-
 /// An error that can occur when extracting a document from a URL.
 #[derive(Debug, thiserror::Error)]
 pub enum ExtractDocumentError {

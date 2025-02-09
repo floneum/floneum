@@ -7,7 +7,6 @@ pub use kalosm_streams::timed_stream::*;
 #[cfg(feature = "language")]
 pub mod language {
     #![doc = include_str!("../docs/language.md")]
-    pub use kalosm_model_types::{FileSource, ModelLoadingProgress, FileLoadingProgress};
     pub use kalosm_language::context::*;
     pub use kalosm_language::kalosm_language_model::{
         ChatModel as _, ChatModelExt as _, ChatSession as _, CreateChatSession as _,
@@ -27,6 +26,7 @@ pub mod language {
     pub use kalosm_language::rbert::{Bert, BertBuilder, BertSource};
     pub use kalosm_language::search::*;
     pub use kalosm_language::vector_db::*;
+    pub use kalosm_model_types::{FileLoadingProgress, FileSource, ModelLoadingProgress};
     pub use kalosm_streams::text_stream::*;
 
     #[cfg(feature = "surrealdb")]
