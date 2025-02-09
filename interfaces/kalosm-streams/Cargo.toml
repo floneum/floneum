@@ -11,4 +11,3 @@ authors = ["Evan Almloff"]
 futures-util = "0.3.28"
 pin-project-lite = "0.2"
 futures-channel = "0.3.30"
-image = "0.24.7"

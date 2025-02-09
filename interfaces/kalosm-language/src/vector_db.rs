@@ -22,9 +22,6 @@ pub enum VectorDbError {
     /// An error from the arroy crate.
     #[error("Arroy error: {0}")]
     Arroy(#[from] arroy::Error),
-    /// An error from the Candle crate.
-    #[error("Candle error: {0}")]
-    Candle(#[from] candle_core::Error),
     /// An error from querying an embedding id that does not exist.
     #[error("Embedding {0:?} not found")]
     EmbeddingNotFound(EmbeddingId),

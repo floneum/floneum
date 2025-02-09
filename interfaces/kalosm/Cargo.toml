@@ -9,11 +9,9 @@ license = "MIT/Apache-2.0"
 repository = "https://github.com/floneum/floneum"
 
 [dependencies]
-candle-core = { workspace = true, optional = true }
 comfy-table = { version = "7.1.0", optional = true }
 futures-util = "0.3.28"
 hdrhistogram = { version = "7.5.4", optional = true }
-num-traits = "0.2.17"
 thiserror = { workspace = true, optional = true }
 rand = { version = "0.8.5", optional = true }
 arroy = { version = "0.5.0", optional = true }
@@ -74,18 +72,6 @@ anyhow.workspace = true
 image = "0.24.7"
 tokio = { version = "1", features = ["full"] }
 
-[dev-dependencies.candle-datasets]
-features = []
-workspace = true
-
-[dev-dependencies.candle-nn]
-features = []
-workspace = true
-
-[dev-dependencies.candle-transformers]
-features = []
-workspace = true
-
 [dev-dependencies.kalosm]
 features = [
     "sound",
@@ -119,17 +105,12 @@ metal = [
     "kalosm-sound?/metal",
 ]
 sound = ["dep:kalosm-sound"]
-surrealdb = [
-    "dep:surrealdb",
-    "dep:heed",
-    "dep:arroy",
-    "dep:thiserror",
-    "dep:candle-core",
-]
+surrealdb = ["dep:surrealdb", "dep:heed", "dep:arroy", "dep:thiserror"]
 vision = ["dep:kalosm-vision"]
 openai = ["kalosm-language?/openai"]
 anthropic = ["kalosm-language?/anthropic"]
 remote = ["kalosm-language?/remote"]
+scrape = ["kalosm-language?/scrape"]
 
 [[example]]
 name = "axum"
@@ -173,7 +154,7 @@ required-features = ["language"]
 
 [[example]]
 name = "crawl"
-required-features = ["language"]
+required-features = ["language", "scrape"]
 
 [[example]]
 name = "evaluation"
@@ -252,5 +233,5 @@ name = "transcribe"
 required-features = ["sound"]
 
 [package.metadata.docs.rs]
-# Features to pass to Cargo (default: [])
-features = ["full", "openai", "anthropic"]
+# Features to pass to Cargo
+features = ["full", "openai", "anthropic", "scrape"]

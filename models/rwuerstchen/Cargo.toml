@@ -21,7 +21,6 @@ cudarc = { version = "0.9.14", features = ["f16"], optional = true }
 half = { version = "2.3.1", features = ["num-traits", "use-intrinsics", "rand_distr"], optional = true }
 kalosm-common = { workspace = true }
 kalosm-language-model.workspace = true
-kalosm-streams.workspace = true
 kalosm-model-types.workspace = true
 
 futures-util = "0.3.28"

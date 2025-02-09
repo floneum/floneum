@@ -4,7 +4,7 @@ use tokio::{fs::File, io::AsyncReadExt};
 
 use crate::context::{
     document::{Document, IntoDocument},
-    page::extract_article,
+    extract_article,
     ExtractDocumentError,
 };
 
