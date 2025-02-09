@@ -1,6 +1,6 @@
 [package]
 name = "rwuerstchen"
-version = "0.3.2"
+version = "0.4.0"
 edition = "2021"
 description = "A simple interface for RWuerstchen image generation models models"
 license = "MIT/Apache-2.0"

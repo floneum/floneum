@@ -1,6 +1,6 @@
 [package]
 name = "kalosm-llama"
-version = "0.3.3"
+version = "0.4.0"
 edition = "2021"
 description = "A simple interface for Llama models "
 license = "MIT/Apache-2.0"
@@ -35,7 +35,6 @@ minijinja-contrib = { version = "2.5.0", features = ["pycompat"] }
 
 [dev-dependencies]
 tracing-subscriber = "0.3.18"
-criterion = "0.5.1"
 pretty_assertions = "1.4.1"
 kalosm = { workspace = true, features = ["language"] }
 anyhow.workspace = true
@@ -49,7 +48,3 @@ cudnn = ["candle-core/cudnn"]
 mkl = ["dep:intel-mkl-src", "candle-core/mkl", "candle-nn/mkl", "candle-transformers/mkl"]
 nccl = ["cuda", "cudarc/nccl", "half/num-traits", "half/use-intrinsics", "half/rand_distr"]
 metal = ["candle-core/metal", "candle-nn/metal", "candle-transformers/metal", "kalosm-common/metal"]
-
-[[bench]]
-name = "inferance"
-harness = false

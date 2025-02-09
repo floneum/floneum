@@ -3693,7 +3693,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "arroy",
@@ -3730,7 +3730,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-common"
-version = "0.3.3"
+version = "0.4.0"
 dependencies = [
  "candle-core",
  "candle-nn",
@@ -3748,7 +3748,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-language"
-version = "0.3.3"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "arroy",
@@ -3800,7 +3800,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-language-model"
-version = "0.3.3"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-lock",
@@ -3830,7 +3830,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-learning"
-version = "0.3.3"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "candle-core",
@@ -3847,7 +3847,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-learning-macro"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "quote",
  "syn 2.0.91",
@@ -3855,14 +3855,13 @@ dependencies = [
 
 [[package]]
 name = "kalosm-llama"
-version = "0.3.3"
+version = "0.4.0"
 dependencies = [
  "accelerate-src",
  "anyhow",
  "candle-core",
  "candle-nn",
  "candle-transformers",
- "criterion",
  "cudarc 0.9.15",
  "half",
  "intel-mkl-src",
@@ -3888,7 +3887,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-ocr"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "accelerate-src",
  "candle-core",
@@ -3910,7 +3909,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-parse-macro"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "kalosm",
  "pretty_assertions",
@@ -3923,7 +3922,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-sample"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "criterion",
  "kalosm-parse-macro",
@@ -3935,7 +3934,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-sound"
-version = "0.3.4"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "byteorder",
@@ -3965,7 +3964,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-streams"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "futures-util",
  "image 0.24.9",
@@ -3975,7 +3974,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-vision"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "futures-util",
  "image 0.24.9",
@@ -3988,7 +3987,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-workspace"
-version = "0.3.2"
+version = "0.4.0"
 
 [[package]]
 name = "lalrpop"
@@ -5908,7 +5907,7 @@ dependencies = [
 
 [[package]]
 name = "rbert"
-version = "0.3.3"
+version = "0.4.0"
 dependencies = [
  "accelerate-src",
  "anyhow",
@@ -6465,7 +6464,7 @@ checksum = "f7c45b9784283f1b2e7fb61b42047c2fd678ef0960d4f6f1eba131594cc369d4"
 
 [[package]]
 name = "rwhisper"
-version = "0.3.5"
+version = "0.4.0"
 dependencies = [
  "accelerate-src",
  "anyhow",
@@ -6499,7 +6498,7 @@ dependencies = [
 
 [[package]]
 name = "rwuerstchen"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "accelerate-src",
  "anyhow",
@@ -6628,7 +6627,7 @@ dependencies = [
 
 [[package]]
 name = "segment-anything-rs"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "accelerate-src",
  "candle-core",
