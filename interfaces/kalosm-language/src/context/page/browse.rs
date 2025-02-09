@@ -7,8 +7,8 @@ use std::sync::{Arc, OnceLock};
 use url::Url;
 
 use super::NodeRef;
-use crate::context::extract_article;
 use crate::context::document::Document;
+use crate::context::extract_article;
 
 static BROWSER: Browser = Browser::new();
 
