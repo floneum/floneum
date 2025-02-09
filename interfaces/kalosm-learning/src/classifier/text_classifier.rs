@@ -399,7 +399,7 @@ async fn simplified() -> Result<(), Box<dyn std::error::Error>> {
 
     for test in &tests {
         let input = bert.embed(test).await?;
-        let class = classifier.run(&input.vector())?;
+        let class = classifier.run(input.vector())?;
         println!();
         println!("{test}");
         println!("{:?} {:?}", &input.vector()[..5], class);
