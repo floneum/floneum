@@ -11,5 +11,5 @@ crate-type = ["cdylib"]
 
 [dependencies]
 floneum_rust = { path = "../../rust_adapter", version = "0.1.0" }
-rustpython-vm = { git = "https://github.com/RustPython/RustPython" }
-rustpython-ast = { git = "https://github.com/RustPython/Parser" }
+# rustpython-vm = { git = "https://github.com/RustPython/RustPython" }
+# rustpython-ast = { git = "https://github.com/RustPython/Parser" }
