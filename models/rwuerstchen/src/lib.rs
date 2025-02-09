@@ -29,11 +29,11 @@
 
 use std::{sync::OnceLock, time::Duration};
 
-use futures_util::{Stream, StreamExt};
+use futures_channel::mpsc::UnboundedSender;
 use image::ImageBuffer;
-pub use kalosm_common::ModelLoadingProgress;
 use kalosm_common::{CacheError, FileSource};
 use kalosm_language_model::ModelBuilder;
+pub use kalosm_model_types::ModelLoadingProgress;
 
 use kalosm_streams::text_stream::ChannelImageStream;
 use model::{WuerstcheModelSettings, WuerstchenInner};
@@ -107,34 +107,6 @@ impl AsRef<ImageBuffer<image::Rgb<u8>, Vec<u8>>> for Image {
             Ok(val) => &val.image,
             Err(_) => ZERO_IMAGE.get_or_init(|| ImageBuffer::new(0, 0)),
         }
-    }
-}
-
-/// An extension trait for transcribing audio streams.
-pub trait GenerateImageStreamExt {
-    /// Transcribe the audio stream.
-    fn generate(self, model: Wuerstchen) -> ChannelImageStream<Image>;
-}
-
-impl<S> GenerateImageStreamExt for S
-where
-    S: Stream<Item = WuerstchenInferenceSettings> + std::marker::Unpin + Send + 'static,
-{
-    fn generate(self, model: Wuerstchen) -> ChannelImageStream<Image> {
-        let mut stream = self;
-        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
-        tokio::spawn(async move {
-            while let Some(source) = stream.next().await {
-                let mut stream = { model.run(source) };
-                while let Some(segment) = stream.next().await {
-                    if let Err(err) = sender.send(segment) {
-                        tracing::error!("error sending segment: {}", err);
-                        return;
-                    }
-                }
-            }
-        });
-        ChannelImageStream::from(receiver)
     }
 }
 
@@ -324,19 +296,14 @@ impl WuerstchenBuilder {
 
         let (rx, tx) = std::sync::mpsc::channel();
         let thread = std::thread::spawn(move || {
-            tokio::runtime::Builder::new_current_thread()
-                .build()
-                .unwrap()
-                .block_on(async move {
-                    while let Ok(message) = tx.recv() {
-                        match message {
-                            WuerstchenMessage::Kill => return,
-                            WuerstchenMessage::Generate(input, result) => {
-                                model.run(input, result);
-                            }
-                        }
+            while let Ok(message) = tx.recv() {
+                match message {
+                    WuerstchenMessage::Kill => return,
+                    WuerstchenMessage::Generate(input, result) => {
+                        model.run(input, result);
                     }
-                });
+                }
+            }
         });
 
         Ok(Wuerstchen {
@@ -404,7 +371,7 @@ impl Wuerstchen {
     ///
     /// Dropping the returned channel will stop the inference early.
     pub fn run(&self, settings: WuerstchenInferenceSettings) -> ChannelImageStream<Image> {
-        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        let (sender, receiver) = futures_channel::mpsc::unbounded();
         self.run_into(settings, sender);
         ChannelImageStream::from(receiver)
     }
@@ -412,11 +379,7 @@ impl Wuerstchen {
     /// Run inference with the given settings into a stream of images
     ///
     /// Dropping the receiver will stop the inference early.
-    pub fn run_into(
-        &self,
-        settings: WuerstchenInferenceSettings,
-        sender: tokio::sync::mpsc::UnboundedSender<Image>,
-    ) {
+    pub fn run_into(&self, settings: WuerstchenInferenceSettings, sender: UnboundedSender<Image>) {
         _ = self
             .sender
             .send(WuerstchenMessage::Generate(settings, sender));
@@ -432,10 +395,7 @@ impl Drop for Wuerstchen {
 
 enum WuerstchenMessage {
     Kill,
-    Generate(
-        WuerstchenInferenceSettings,
-        tokio::sync::mpsc::UnboundedSender<Image>,
-    ),
+    Generate(WuerstchenInferenceSettings, UnboundedSender<Image>),
 }
 
 /// Settings for running inference with the Wuerstchen model.

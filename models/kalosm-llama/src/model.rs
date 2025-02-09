@@ -4,6 +4,7 @@ use crate::raw::Model;
 use crate::token_stream::TokenOutputStream;
 use crate::token_stream::TokenOutputStreamError;
 use kalosm_common::*;
+use kalosm_model_types::ModelLoadingProgress;
 use llm_samplers::types::Logits;
 use std::collections::HashMap;
 use std::sync::Arc;

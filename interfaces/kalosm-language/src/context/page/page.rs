@@ -1,10 +1,11 @@
+use std::sync::OnceLock;
+
 use super::browse::Tab;
 use super::{super::document::Document, NodeRef};
 use super::{extract_article, AnyNode, ExtractDocumentError};
 use crate::context::page::crawl::Crawler;
 pub use crate::context::page::crawl::CrawlingCallback;
 use image::DynamicImage;
-use once_cell::sync::OnceCell;
 use scraper::{Html, Selector};
 use tokio::time::Instant;
 use url::Url;
@@ -182,24 +183,20 @@ pub enum BrowserMode {
 pub struct StaticPage {
     wait_until: Instant,
     url: Url,
-    html: OnceCell<Html>,
+    html: OnceLock<Html>,
 }
 
 impl StaticPage {
     /// Create a new static page at the given URL.
     pub fn new(url: Url) -> anyhow::Result<Self> {
-        Ok(Self {
-            wait_until: Instant::now(),
-            url: url.clone(),
-            html: OnceCell::new(),
-        })
+        Self::new_wait_until(url, Instant::now())
     }
 
     fn new_wait_until(url: Url, wait_until: Instant) -> anyhow::Result<Self> {
         Ok(Self {
             wait_until,
             url: url.clone(),
-            html: OnceCell::new(),
+            html: OnceLock::new(),
         })
     }
 

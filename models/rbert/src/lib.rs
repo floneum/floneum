@@ -48,12 +48,11 @@ extern crate intel_mkl_src;
 #[cfg(feature = "accelerate")]
 extern crate accelerate_src;
 
-use kalosm_common::*;
-
-use std::sync::{Arc, RwLock};
-
 use candle_core::{IndexOp, Tensor};
 use candle_nn::VarBuilder;
+use kalosm_common::*;
+use kalosm_model_types::ModelLoadingProgress;
+use std::sync::{Arc, RwLock};
 use tokenizers::{Encoding, PaddingParams, Tokenizer};
 
 mod language_model;

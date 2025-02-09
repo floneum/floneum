@@ -30,7 +30,6 @@ impl TryFrom<PathBuf> for MdDocument {
     }
 }
 
-#[async_trait::async_trait]
 impl IntoDocument for MdDocument {
     type Error = FsDocumentError<ExtractDocumentError>;
 

@@ -27,7 +27,6 @@ impl TryFrom<PathBuf> for DocxDocument {
     }
 }
 
-#[async_trait::async_trait]
 impl IntoDocument for DocxDocument {
     type Error = FsDocumentError<docx_rs::ReaderError>;
 

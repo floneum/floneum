@@ -50,7 +50,6 @@ impl<'a> SearchQuery<'a> {
     }
 }
 
-#[async_trait::async_trait]
 impl IntoDocuments for SearchQuery<'_> {
     type Error = ExtractDocumentError;
 

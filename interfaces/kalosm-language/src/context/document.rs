@@ -1,4 +1,4 @@
-use std::convert::Infallible;
+use std::{convert::Infallible, future::Future};
 pub use whatlang::Lang;
 
 /// A document is a piece of text with a title.
@@ -84,16 +84,14 @@ impl std::fmt::Display for Document {
 }
 
 /// A trait for types that can be converted into a document.
-#[async_trait::async_trait]
 pub trait IntoDocument {
     /// The error type that can occur when converting the type into a [`Document`].
     type Error: Send + Sync + 'static;
 
     /// Convert the type into a document.
-    async fn into_document(self) -> Result<Document, Self::Error>;
+    fn into_document(self) -> impl Future<Output = Result<Document, Self::Error>> + Send;
 }
 
-#[async_trait::async_trait]
 impl IntoDocument for String {
     type Error = Infallible;
 
@@ -102,7 +100,6 @@ impl IntoDocument for String {
     }
 }
 
-#[async_trait::async_trait]
 impl IntoDocument for &String {
     type Error = Infallible;
 
@@ -111,7 +108,6 @@ impl IntoDocument for &String {
     }
 }
 
-#[async_trait::async_trait]
 impl IntoDocument for &str {
     type Error = Infallible;
 
@@ -120,7 +116,6 @@ impl IntoDocument for &str {
     }
 }
 
-#[async_trait::async_trait]
 impl IntoDocument for Document {
     type Error = Infallible;
 
@@ -130,16 +125,14 @@ impl IntoDocument for Document {
 }
 
 /// A document that can be added to a search index.
-#[async_trait::async_trait]
 pub trait IntoDocuments {
     /// The error type that can occur when converting the document into [`Document`]s.
     type Error: Send + Sync + 'static;
 
     /// Convert the document into a [`Document`]
-    async fn into_documents(self) -> Result<Vec<Document>, Self::Error>;
+    fn into_documents(self) -> impl Future<Output = Result<Vec<Document>, Self::Error>> + Send;
 }
 
-#[async_trait::async_trait]
 impl<T: IntoDocument + Send + Sync, I> IntoDocuments for I
 where
     I: IntoIterator<Item = T> + Send + Sync,

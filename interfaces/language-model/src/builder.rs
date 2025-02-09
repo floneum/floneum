@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use kalosm_common::ModelLoadingProgress;
+use kalosm_model_types::ModelLoadingProgress;
 
 /// A builder that can create a model asynchronously.
 ///

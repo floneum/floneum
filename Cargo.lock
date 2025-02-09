@@ -2083,27 +2083,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dynosaur"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92fac44672fabad44990176319b9e94393f3a38b960b5ca2af6cd90f5ecd1497"
-dependencies = [
- "dynosaur_derive",
- "trait-variant",
-]
-
-[[package]]
-name = "dynosaur_derive"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16c187d1e575ef546d24f0fcd7701cc04abfe6b5e7e2758aabc450b99e835ac3"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.91",
-]
-
-[[package]]
 name = "earcutr"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3697,14 +3676,12 @@ version = "0.4.0"
 dependencies = [
  "anyhow",
  "arroy",
- "async-trait",
  "axum",
  "candle-core",
  "candle-datasets",
  "candle-nn",
  "candle-transformers",
  "comfy-table",
- "ego-tree",
  "futures-util",
  "hdrhistogram",
  "heed",
@@ -3712,12 +3689,11 @@ dependencies = [
  "kalosm",
  "kalosm-common",
  "kalosm-language",
+ "kalosm-model-types",
  "kalosm-sound",
  "kalosm-streams",
  "kalosm-vision",
- "llm-samplers",
  "num-traits",
- "once_cell",
  "rand 0.8.5",
  "scraper",
  "serde",
@@ -3737,9 +3713,8 @@ dependencies = [
  "dirs",
  "hf-hub 0.3.2",
  "httpdate",
- "indicatif",
+ "kalosm-model-types",
  "metal 0.29.0",
- "once_cell",
  "reqwest 0.11.27",
  "thiserror 2.0.9",
  "tokio",
@@ -3752,7 +3727,6 @@ version = "0.4.0"
 dependencies = [
  "anyhow",
  "arroy",
- "async-trait",
  "candle-core",
  "candle-nn",
  "chrono",
@@ -3765,16 +3739,13 @@ dependencies = [
  "headless_chrome",
  "heed",
  "image 0.24.9",
- "itertools 0.11.0",
  "kalosm",
  "kalosm-language-model",
  "kalosm-llama",
  "kalosm-sample",
  "kalosm-streams",
  "llm-samplers",
- "log",
  "lopdf",
- "once_cell",
  "pulldown-cmark",
  "rand 0.8.5",
  "rbert",
@@ -3804,18 +3775,14 @@ version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-lock",
- "candle-core",
- "dynosaur",
  "futures-channel",
  "futures-util",
  "kalosm",
- "kalosm-common",
  "kalosm-learning",
+ "kalosm-model-types",
  "kalosm-sample",
  "llm-samplers",
- "log",
  "lru",
- "once_cell",
  "postcard",
  "pretty_assertions",
  "rand 0.8.5",
@@ -3842,7 +3809,6 @@ dependencies = [
  "rand 0.8.5",
  "rbert",
  "tokio",
- "tokio-util",
 ]
 
 [[package]]
@@ -3868,12 +3834,12 @@ dependencies = [
  "kalosm",
  "kalosm-common",
  "kalosm-language-model",
+ "kalosm-model-types",
  "kalosm-sample",
  "kalosm-streams",
  "llm-samplers",
  "minijinja",
  "minijinja-contrib",
- "once_cell",
  "pretty_assertions",
  "rand 0.8.5",
  "rayon",
@@ -3883,6 +3849,13 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber 0.3.19",
+]
+
+[[package]]
+name = "kalosm-model-types"
+version = "0.4.0"
+dependencies = [
+ "indicatif",
 ]
 
 [[package]]
@@ -3899,6 +3872,7 @@ dependencies = [
  "image 0.24.9",
  "intel-mkl-src",
  "kalosm-common",
+ "kalosm-model-types",
  "serde",
  "serde_json",
  "thiserror 2.0.9",
@@ -3947,7 +3921,6 @@ dependencies = [
  "futures-core",
  "futures-util",
  "hound",
- "itertools 0.10.5",
  "kalosm",
  "kalosm-streams",
  "nnnoiseless",
@@ -3966,10 +3939,10 @@ dependencies = [
 name = "kalosm-streams"
 version = "0.4.0"
 dependencies = [
+ "futures-channel",
  "futures-util",
  "image 0.24.9",
  "pin-project-lite",
- "tokio",
 ]
 
 [[package]]
@@ -5920,6 +5893,7 @@ dependencies = [
  "kalosm",
  "kalosm-common",
  "kalosm-language-model",
+ "kalosm-model-types",
  "metal 0.27.0",
  "postcard",
  "serde",
@@ -6475,6 +6449,7 @@ dependencies = [
  "cpal",
  "cudarc 0.9.15",
  "flate2",
+ "futures-channel",
  "futures-util",
  "half",
  "hf-hub 0.3.2",
@@ -6483,7 +6458,7 @@ dependencies = [
  "kalosm",
  "kalosm-common",
  "kalosm-language-model",
- "kalosm-streams",
+ "kalosm-model-types",
  "rand 0.8.5",
  "rayon",
  "rodio",
@@ -6506,6 +6481,7 @@ dependencies = [
  "candle-nn",
  "candle-transformers",
  "cudarc 0.9.15",
+ "futures-channel",
  "futures-util",
  "half",
  "hf-hub 0.3.2",
@@ -6513,6 +6489,7 @@ dependencies = [
  "intel-mkl-src",
  "kalosm-common",
  "kalosm-language-model",
+ "kalosm-model-types",
  "kalosm-streams",
  "tokenizers 0.21.0",
  "tokio",
@@ -8011,17 +7988,6 @@ dependencies = [
  "thread_local",
  "tracing-core",
  "tracing-log 0.2.0",
-]
-
-[[package]]
-name = "trait-variant"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70977707304198400eb4835a78f6a9f928bf41bba420deb8fdb175cd965d77a7"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.91",
 ]
 
 [[package]]

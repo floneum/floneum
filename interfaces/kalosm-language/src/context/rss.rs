@@ -38,7 +38,6 @@ impl From<Url> for RssFeed {
     }
 }
 
-#[async_trait::async_trait]
 impl IntoDocuments for RssFeed {
     type Error = RssFeedError;
 

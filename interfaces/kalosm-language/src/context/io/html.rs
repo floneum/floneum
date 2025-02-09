@@ -30,7 +30,6 @@ impl TryFrom<PathBuf> for HtmlDocument {
     }
 }
 
-#[async_trait::async_trait]
 impl IntoDocument for HtmlDocument {
     type Error = FsDocumentError<ExtractDocumentError>;
 

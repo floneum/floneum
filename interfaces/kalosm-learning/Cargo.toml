@@ -13,13 +13,12 @@ kalosm-language-model.workspace = true
 kalosm-learning-macro.workspace = true
 candle-core.workspace = true
 candle-nn.workspace = true
-tokio-util = { version = "0.7.9", features = ["rt"] }
 half = "2.3.1"
 rand = "0.8.5"
-tokio = { version = "1.34.0", features = ["full"] }
 kalosm-common.workspace = true
 
 [dev-dependencies]
+tokio = { version = "1.34.0", features = ["full"] }
 rbert.workspace = true
 anyhow.workspace = true
 

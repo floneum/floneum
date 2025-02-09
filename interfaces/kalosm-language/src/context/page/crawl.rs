@@ -2,7 +2,6 @@ use crate::context::page::BrowserMode;
 use crate::context::page::Page;
 use core::task::Context;
 use dashmap::DashMap;
-use once_cell::sync::OnceCell;
 use std::collections::HashSet;
 use std::future::Future;
 use std::pin::Pin;
@@ -10,6 +9,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::task::Poll;
 use std::task::Waker;
 use texting_robots::Robot;
@@ -146,7 +146,7 @@ impl<T: Fn(Page) -> Pin<Box<dyn Future<Output = CrawlFeedback>>> + Send + Sync +
 
 struct ActiveLinks {
     active: AtomicUsize,
-    waker: OnceCell<Waker>,
+    waker: OnceLock<Waker>,
 }
 
 impl ActiveLinks {
@@ -191,7 +191,7 @@ impl std::future::Future for &ActiveLinks {
             return Poll::Ready(());
         }
 
-        let _ = self.waker.try_insert(cx.waker().clone());
+        self.waker.get_or_init(|| cx.waker().clone());
 
         Poll::Pending
     }
@@ -370,7 +370,7 @@ impl<T: CrawlingCallback> DomainQueue<T> {
 }
 
 fn get_local_pool() -> tokio_util::task::LocalPoolHandle {
-    static LOCAL_POOL: OnceCell<tokio_util::task::LocalPoolHandle> = OnceCell::new();
+    static LOCAL_POOL: OnceLock<tokio_util::task::LocalPoolHandle> = OnceLock::new();
     LOCAL_POOL
         .get_or_init(|| {
             tokio_util::task::LocalPoolHandle::new(

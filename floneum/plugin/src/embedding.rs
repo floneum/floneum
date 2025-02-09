@@ -3,7 +3,7 @@ use crate::plugins::main::types::{Embedding, EmbeddingModelResource, EmbeddingMo
 use crate::resource::{Resource, ResourceStorage};
 
 use kalosm::language::*;
-use kalosm_common::ModelLoadingProgress;
+use kalosm_model_types::ModelLoadingProgress;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::Arc;

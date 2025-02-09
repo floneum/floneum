@@ -8,11 +8,11 @@ use crate::BertBuilder;
 use crate::BertError;
 use crate::BertLoadingError;
 use crate::Pooling;
-use kalosm_common::*;
 pub use kalosm_language_model::{
     Embedder, EmbedderCacheExt, EmbedderExt, Embedding, EmbeddingInput, EmbeddingVariant,
     ModelBuilder,
 };
+use kalosm_model_types::ModelLoadingProgress;
 
 impl ModelBuilder for BertBuilder {
     type Model = Bert;
@@ -40,7 +40,7 @@ impl Bert {
     ) -> Result<Embedding, BertError> {
         let mut tensors = self.embed_batch_raw(vec![input], pooling)?;
 
-        Ok(Embedding::new(tensors.pop().unwrap()))
+        Ok(Embedding::from(tensors.pop().unwrap().to_vec1()?))
     }
 
     /// Embed a batch of sentences with a specific pooling strategy.
@@ -53,7 +53,7 @@ impl Bert {
 
         let mut embeddings = Vec::with_capacity(tensors.len());
         for tensor in tensors {
-            embeddings.push(Embedding::new(tensor));
+            embeddings.push(Embedding::from(tensor.to_vec1()?));
         }
 
         Ok(embeddings)

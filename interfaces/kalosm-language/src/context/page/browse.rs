@@ -1,10 +1,9 @@
 pub use headless_chrome::protocol::cdp::CSS::CSSComputedStyleProperty;
 use headless_chrome::{Browser as HeadlessBrowser, Element, LaunchOptions};
 use image::DynamicImage;
-use once_cell::sync::Lazy;
 use scraper::Html;
 use serde::de::DeserializeOwned;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use url::Url;
 
 use super::{extract_article, NodeRef};
@@ -14,8 +13,8 @@ static BROWSER: Browser = Browser::new();
 
 /// A browser that can be used to interact with web pages.
 pub(crate) struct Browser {
-    headless_client: Lazy<Result<HeadlessBrowser, String>>,
-    headfull_client: Lazy<Result<HeadlessBrowser, String>>,
+    headless_client: OnceLock<Result<HeadlessBrowser, String>>,
+    headfull_client: OnceLock<Result<HeadlessBrowser, String>>,
 }
 
 impl std::fmt::Debug for Browser {
@@ -34,36 +33,44 @@ impl Browser {
     /// Create a new browser.
     pub const fn new() -> Self {
         Self {
-            headless_client: Lazy::new(|| {
-                let browser = HeadlessBrowser::new(
-                    LaunchOptions::default_builder()
-                        .headless(true)
-                        .build()
-                        .expect("Could not find chrome-executable"),
-                )
-                .map_err(|err| err.to_string())?;
-                Ok(browser)
-            }),
-            headfull_client: Lazy::new(|| {
-                let browser = HeadlessBrowser::new(
-                    LaunchOptions::default_builder()
-                        .headless(false)
-                        .build()
-                        .expect("Could not find chrome-executable"),
-                )
-                .map_err(|err| err.to_string())?;
-                Ok(browser)
-            }),
+            headless_client: OnceLock::new(),
+            headfull_client: OnceLock::new(),
         }
+    }
+
+    fn headless_client(&self) -> &Result<HeadlessBrowser, String> {
+        self.headless_client.get_or_init(|| {
+            let browser = HeadlessBrowser::new(
+                LaunchOptions::default_builder()
+                    .headless(true)
+                    .build()
+                    .expect("Could not find chrome-executable"),
+            )
+            .map_err(|err| err.to_string())?;
+            Ok(browser)
+        })
+    }
+
+    fn headfull_client(&self) -> &Result<HeadlessBrowser, String> {
+        self.headfull_client.get_or_init(|| {
+            let browser = HeadlessBrowser::new(
+                LaunchOptions::default_builder()
+                    .headless(false)
+                    .build()
+                    .expect("Could not find chrome-executable"),
+            )
+            .map_err(|err| err.to_string())?;
+            Ok(browser)
+        })
     }
 
     /// Create a new tab.
     #[tracing::instrument]
     pub fn new_tab(&self, headless: bool) -> Result<Tab, anyhow::Error> {
         let client = if headless {
-            &self.headless_client
+            self.headless_client()
         } else {
-            &self.headfull_client
+            self.headfull_client()
         };
         let browser = client.as_ref().map_err(|err| anyhow::anyhow!("{}", err))?;
         let tab = browser.new_tab()?;

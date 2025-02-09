@@ -54,7 +54,7 @@ impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
     /// Adds a new example to the dataset.
     pub async fn add(&mut self, text: impl ToString, class: T) -> Result<(), E::Error> {
         let embedding = self.embedder.embed(text).await?;
-        self.dataset.add(embedding.to_vec(), class);
+        self.dataset.add(embedding.vector().clone(), class);
         Ok(())
     }
 
@@ -102,7 +102,7 @@ impl<'a, T: Class, E: Embedder> TextClassifierDatasetBuilder<'a, T, E> {
         let (texts, classes): (Vec<_>, Vec<_>) = examples.into_iter().unzip();
         let embeddings = self.embedder.embed_batch(texts).await?;
         for (embedding, class) in embeddings.into_iter().zip(classes) {
-            self.dataset.add(embedding.to_vec(), class);
+            self.dataset.add(embedding.vector().clone(), class);
         }
         Ok(())
     }
@@ -249,7 +249,7 @@ impl<T: Class> TextClassifier<T> {
 
     /// Runs the classifier on the given input.
     pub fn run(&self, input: Embedding) -> candle_core::Result<ClassifierOutput<T>> {
-        self.model.run(&input.to_vec())
+        self.model.run(&input.vector())
     }
 
     /// Trains the classifier on the given dataset.
@@ -286,6 +286,7 @@ impl<T: Class> TextClassifier<T> {
     }
 }
 
+#[cfg(test)]
 #[tokio::test]
 async fn simplified() -> Result<(), Box<dyn std::error::Error>> {
     use crate::{Class, Classifier, ClassifierConfig};
@@ -395,11 +396,11 @@ async fn simplified() -> Result<(), Box<dyn std::error::Error>> {
     ];
 
     for test in &tests {
-        let input = bert.embed(test).await?.to_vec();
-        let class = classifier.run(&input)?;
+        let input = bert.embed(test).await?;
+        let class = classifier.run(&input.vector())?;
         println!();
         println!("{test}");
-        println!("{:?} {:?}", &input[..5], class);
+        println!("{:?} {:?}", &input.vector()[..5], class);
     }
 
     Ok(())

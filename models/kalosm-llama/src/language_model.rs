@@ -1,9 +1,9 @@
-use kalosm_common::ModelLoadingProgress;
 use kalosm_language_model::{
     CreateDefaultChatConstraintsForType, CreateDefaultCompletionConstraintsForType,
     CreateTextCompletionSession, GenerationParameters, ModelBuilder, StructuredTextCompletionModel,
     TextCompletionModel,
 };
+use kalosm_model_types::ModelLoadingProgress;
 use kalosm_sample::{ArcParser, CreateParserState, Parse, Parser, ParserExt};
 use llm_samplers::types::Sampler;
 use std::any::Any;

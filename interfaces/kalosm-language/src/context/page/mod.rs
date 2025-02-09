@@ -37,7 +37,6 @@ pub(crate) fn extract_article(html: &str) -> Result<Document, ExtractDocumentErr
     Ok(Document::from_parts(cleaned.title, cleaned.text))
 }
 
-#[async_trait::async_trait]
 impl IntoDocument for Url {
     type Error = ExtractDocumentError;
 

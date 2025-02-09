@@ -1,4 +1,4 @@
-use std::{fmt::Display, future::Future, path::PathBuf, pin::Pin, sync::OnceLock};
+use std::{fmt::Display, path::PathBuf, sync::OnceLock};
 
 use candle_core::{backend::BackendStorage, utils::*, Device, Storage, Tensor, WithDType};
 
@@ -101,9 +101,6 @@ pub fn maybe_autoreleasepool<T>(f: impl FnOnce() -> T) -> T {
         f()
     }
 }
-
-/// A future that is boxed and pinned.
-pub type BoxedFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Clear a `Vec<T>` and copy the contents of a tensor into it.
 pub fn copy_tensor_into_vec<T: WithDType>(

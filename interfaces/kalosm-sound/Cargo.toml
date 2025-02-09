@@ -10,7 +10,6 @@ keywords = ["ai", "whisper"]
 
 [dependencies]
 cpal = "0.15.3"
-itertools = "0.10.5"
 rand = "0.8.5"
 candle-core.workspace = true
 candle-nn.workspace = true
@@ -27,7 +26,6 @@ futures-core = "0.3.30"
 futures-util = "0.3.30"
 futures-channel = "0.3.30"
 
-kalosm-streams.workspace = true
 rwhisper.workspace = true
 
 voice_activity_detector = { version = "0.1.0", features = ["async"], optional = true }
@@ -46,3 +44,4 @@ voice_detection = ["dep:voice_activity_detector", "dep:ort", "dep:ort-sys"]
 [dev-dependencies]
 kalosm = { workspace = true, features = ["sound"] }
 anyhow.workspace = true
+kalosm-streams.workspace = true

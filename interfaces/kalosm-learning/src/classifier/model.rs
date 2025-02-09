@@ -100,7 +100,7 @@ impl ClassificationDataset {
 /// A builder for [`ClassificationDataset`].
 pub struct ClassificationDatasetBuilder<C: Class> {
     input_size: Option<usize>,
-    inputs: Vec<Vec<f32>>,
+    inputs: Vec<Box<[f32]>>,
     classes: Vec<C>,
 }
 
@@ -134,7 +134,7 @@ impl<C: Class> ClassificationDatasetBuilder<C> {
     /// dataset.add(vec![1.0, 2.0, 3.0, 4.0], MyClass::Person);
     /// dataset.add(vec![4.0, 3.0, 2.0, 1.0], MyClass::Thing);
     /// ```
-    pub fn add(&mut self, input: Vec<f32>, class: C) {
+    pub fn add(&mut self, input: Box<[f32]>, class: C) {
         if let Some(input_size) = self.input_size {
             debug_assert_eq!(input.len(), input_size, "input size mismatch");
         } else {
@@ -184,18 +184,18 @@ impl<C: Class> ClassificationDatasetBuilder<C> {
         let mut classes: Vec<u32> = Vec::with_capacity(self.classes.len() - test_len);
         while !self.classes.is_empty() {
             let index = rng.gen_range(0..self.classes.len());
-            let mut input = self.inputs.remove(index);
+            let input = self.inputs.remove(index);
             let class = self.classes.remove(index);
 
             let class_u32 = class.to_class();
             let test_class_counts_goal = test_class_counts_goal.get(&class_u32).unwrap();
             let test_class_count: &mut usize = test_class_counts.entry(class_u32).or_default();
             if *test_class_count < *test_class_counts_goal {
-                input_test.append(&mut input);
+                input_test.extend_from_slice(&input);
                 class_test.push(class_u32);
                 *test_class_count += 1;
             } else {
-                inputs.append(&mut input);
+                inputs.extend_from_slice(&input);
                 classes.push(class_u32);
             }
         }

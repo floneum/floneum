@@ -107,7 +107,6 @@ impl TryFrom<PathBuf> for FsDocument {
     }
 }
 
-#[async_trait::async_trait]
 impl IntoDocument for FsDocument {
     type Error = FsDocumentError<TextFileDecodeError>;
 
@@ -181,7 +180,6 @@ impl TryFrom<PathBuf> for DocumentFolder {
     }
 }
 
-#[async_trait::async_trait]
 impl IntoDocuments for DocumentFolder {
     type Error = FsDocumentError<TextFileDecodeError>;
 

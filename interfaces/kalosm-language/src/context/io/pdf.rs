@@ -1,6 +1,5 @@
 use crate::context::document::Document;
 use crate::context::document::IntoDocument;
-use itertools::Itertools;
 use lopdf::{Document as PdfDoc, Object};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -30,7 +29,6 @@ impl TryFrom<PathBuf> for PdfDocument {
     }
 }
 
-#[async_trait::async_trait]
 impl IntoDocument for PdfDocument {
     type Error = FsDocumentError<lopdf::Error>;
 
@@ -53,7 +51,11 @@ impl IntoDocument for PdfDocument {
             );
         }
 
-        let all_text = text.text.values().flatten().join("\n");
+        let mut all_text = String::new();
+        for paragraph in text.text.values().flatten() {
+            all_text.push_str(paragraph);
+            all_text.push('\n');
+        }
 
         Ok(Document::from_parts(title, all_text))
     }

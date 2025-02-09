@@ -129,11 +129,11 @@ impl<M: Embedder, S: BuildHasher> CachedEmbeddingModel<M, S> {
     /// postcard::to_io(&cache, &mut writer)?;
     /// # Ok(())
     /// # }
-    pub fn export_cache(&self) -> Vec<(EmbeddingInput, Vec<f32>)> {
+    pub fn export_cache(&self) -> Vec<(EmbeddingInput, Box<[f32]>)> {
         let cache = self.cache.lock().unwrap();
         let items = cache
             .iter()
-            .map(|(k, v)| (k.clone(), v.to_vec()))
+            .map(|(k, v)| (k.clone(), v.vector().clone()))
             .collect::<Vec<_>>();
 
         items

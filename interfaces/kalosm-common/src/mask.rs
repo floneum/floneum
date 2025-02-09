@@ -1,7 +1,6 @@
 use candle_core::*;
-use once_cell::sync::OnceCell;
 use std::collections::HashMap;
-use std::sync::RwLock;
+use std::sync::{OnceLock, RwLock};
 
 #[derive(Default, Debug)]
 pub struct MaskCache {
@@ -28,7 +27,7 @@ impl MaskCache {
             let mut masks = self.masks.write().unwrap();
             let mask = AttentionMask {
                 mask,
-                on_true: OnceCell::new(),
+                on_true: OnceLock::new(),
             };
             masks.insert(seq_len, mask.clone());
             mask
@@ -54,7 +53,7 @@ impl MaskCache {
 #[derive(Clone, Debug)]
 pub struct AttentionMask {
     pub mask: Tensor,
-    pub on_true: OnceCell<Tensor>,
+    pub on_true: OnceLock<Tensor>,
 }
 
 impl AttentionMask {

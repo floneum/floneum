@@ -36,6 +36,7 @@ use candle_transformers::models::vit;
 use hf_hub::api::sync::Api;
 use image::{GenericImage, GenericImageView, ImageBuffer, Rgba};
 use kalosm_common::*;
+use kalosm_model_types::ModelLoadingProgress;
 use tokenizers::Tokenizer;
 
 /// A builder for [`Ocr`].

@@ -20,10 +20,9 @@ tokenizers.workspace = true
 serde_json = "1.0.107"
 hound = "3.5"
 rodio = "0.20.1"
-tokio = { version = "1.32.0", features = ["full"] }
+futures-channel = "0.3.31"
 tracing = "0.1.37"
 futures-util = "0.3.28"
-kalosm-streams.workspace = true
 thiserror.workspace = true
 
 accelerate-src = { version = "0.3.2", optional = true }
@@ -32,6 +31,7 @@ cudarc = { version = "0.9.14", features = ["f16"], optional = true }
 half = { version = "2.3.1", features = ["num-traits", "use-intrinsics", "rand_distr"], optional = true }
 kalosm-common = { workspace = true }
 kalosm-language-model.workspace = true
+kalosm-model-types.workspace = true
 serde = { version = "1.0.209", optional = true }
 flate2 = "1.0.35"
 rayon = "1.10.0"
@@ -40,6 +40,7 @@ rayon = "1.10.0"
 kalosm = { workspace = true, features = ["sound"] }
 anyhow.workspace = true
 tracing-subscriber = "0.3.19"
+tokio = { version = "1.32.0", features = ["full"] }
 
 [features]
 accelerate = ["dep:accelerate-src", "candle-core/accelerate", "candle-nn/accelerate", "candle-transformers/accelerate"]

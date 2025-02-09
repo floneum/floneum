@@ -1,0 +1,10 @@
+[package]
+name = "kalosm-model-types"
+version = "0.4.0"
+edition = "2021"
+
+[dependencies]
+indicatif = { version = "0.17.8", optional = true }
+
+[features]
+loading-progress-bar = ["dep:indicatif"]

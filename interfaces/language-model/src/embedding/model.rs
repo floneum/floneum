@@ -1,7 +1,9 @@
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
-use kalosm_common::BoxedFuture;
+/// A future that is boxed and pinned.
+pub(crate) type BoxedFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 use crate::embedding::Embedding;
 

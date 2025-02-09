@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
-use kalosm_common::{CacheError, FileLoadingProgress, FileSource};
+use kalosm_common::{CacheError, FileSource};
+use kalosm_model_types::FileLoadingProgress;
 
 fn llama_tokenizer() -> FileSource {
     FileSource::huggingface(
