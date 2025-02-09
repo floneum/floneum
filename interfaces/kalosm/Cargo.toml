@@ -22,6 +22,12 @@ path = "../kalosm-model-types"
 optional = true
 features = []
 
+[dependencies.kalosm-common]
+version = "0.4.0"
+path = "../kalosm-common"
+optional = true
+features = []
+
 [dependencies.kalosm-language]
 features = []
 optional = true
@@ -92,8 +98,8 @@ language = [
     "dep:kalosm-model-types",
     "dep:comfy-table",
 ]
-bert = ["kalosm-language?/bert"]
-llama = ["kalosm-language?/llama"]
+bert = ["kalosm-language?/bert", "dep:kalosm-common"]
+llama = ["kalosm-language?/llama", "dep:kalosm-common"]
 prompt_annealing = ["language", "dep:rand", "dep:thiserror", "dep:tracing"]
 metal = [
     "kalosm-language?/metal",

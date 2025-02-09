@@ -5625,6 +5625,7 @@ dependencies = [
  "futures-util",
  "hdrhistogram",
  "heed",
+ "kalosm-common",
  "kalosm-language",
  "kalosm-model-types",
  "kalosm-sound",
