@@ -3448,7 +3448,6 @@ dependencies = [
  "heed",
  "image",
  "kalosm",
- "kalosm-common",
  "kalosm-language",
  "kalosm-model-types",
  "kalosm-sound",

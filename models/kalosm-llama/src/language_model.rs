@@ -30,12 +30,13 @@ impl ModelBuilder for LlamaBuilder {
     }
 
     fn requires_download(&self) -> bool {
-        !self.source.model.downloaded()
+        let cache = &self.source.cache;
+        !cache.exists(&self.source.model)
             || self
                 .source
                 .tokenizer
                 .as_ref()
-                .filter(|t| t.downloaded())
+                .filter(|t| cache.exists(&t))
                 .is_none()
     }
 }

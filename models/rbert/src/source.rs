@@ -1,4 +1,4 @@
-use kalosm_common::FileSource;
+use kalosm_model_types::FileSource;
 
 const SNOWFLAKE_EMBEDDING_PREFIX: &str =
     "Represent this sentence for searching relevant passages: ";

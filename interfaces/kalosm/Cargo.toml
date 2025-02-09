@@ -22,12 +22,6 @@ path = "../kalosm-model-types"
 optional = true
 features = []
 
-[dependencies.kalosm-common]
-version = "0.4.0"
-path = "../kalosm-common"
-optional = true
-features = []
-
 [dependencies.kalosm-language]
 features = []
 optional = true
@@ -84,6 +78,7 @@ features = [
 workspace = true
 
 [features]
+default = ["bert", "llama"]
 full = ["language", "vision", "sound", "surrealdb"]
 cuda = [
     "kalosm-language?/cublas",
@@ -95,9 +90,10 @@ language = [
     "dep:kalosm-language",
     "dep:hdrhistogram",
     "dep:kalosm-model-types",
-    "dep:kalosm-common",
     "dep:comfy-table",
 ]
+bert = ["kalosm-language?/bert"]
+llama = ["kalosm-language?/llama"]
 prompt_annealing = ["language", "dep:rand", "dep:thiserror", "dep:tracing"]
 metal = [
     "kalosm-language?/metal",

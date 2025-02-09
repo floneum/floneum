@@ -7,7 +7,9 @@ use std::future::Future;
 use std::ops::RangeInclusive;
 use std::sync::OnceLock;
 
+#[cfg(feature = "bert")]
 use kalosm_language::prelude::Bert;
+#[cfg(feature = "bert")]
 use kalosm_language::prelude::Embedder;
 
 /// A metric is a way to compare two pieces of data. It is used to evaluate the performance of a model.
@@ -19,11 +21,13 @@ pub trait Metric<T> {
     fn distance(&mut self, first: &T, other: &T) -> impl Future<Output = f64> + Send;
 }
 
+#[cfg(feature = "bert")]
 /// A metric that uses the Bert model to compute the distance between two strings.
 pub struct BertDistance {
     bert: Bert,
 }
 
+#[cfg(feature = "bert")]
 impl BertDistance {
     /// Create a new BertDistance metric.
     pub fn new(model: Bert) -> Self {
@@ -31,6 +35,7 @@ impl BertDistance {
     }
 }
 
+#[cfg(feature = "bert")]
 impl<S: ToString + Send + Sync> Metric<S> for BertDistance {
     async fn distance(&mut self, first: &S, other: &S) -> f64 {
         let embeddings = self

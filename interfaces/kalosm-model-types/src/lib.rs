@@ -1,5 +1,7 @@
 //! Common types for Kalosm models
 
+use std::{fmt::Display, path::PathBuf};
+
 /// The progress starting a model
 #[derive(Clone, Debug)]
 pub enum ModelLoadingProgress {
@@ -126,5 +128,54 @@ impl ModelLoadingProgress {
                 m.println(format!("Loading {progress:.2}%")).unwrap();
             }
         }
+    }
+}
+
+/// A source for a file, either from Hugging Face or a local path
+#[derive(Clone, Debug)]
+pub enum FileSource {
+    /// A file from Hugging Face
+    HuggingFace {
+        /// The model id to use
+        model_id: String,
+        /// The revision to use
+        revision: String,
+        /// The file to use
+        file: String,
+    },
+    /// A local file
+    Local(PathBuf),
+}
+
+impl Display for FileSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FileSource::HuggingFace {
+                model_id,
+                revision,
+                file,
+            } => write!(f, "hf://{}/{}/{}", model_id, revision, file),
+            FileSource::Local(path) => write!(f, "{}", path.display()),
+        }
+    }
+}
+
+impl FileSource {
+    /// Create a new source for a file from Hugging Face
+    pub fn huggingface(
+        model_id: impl ToString,
+        revision: impl ToString,
+        file: impl ToString,
+    ) -> Self {
+        Self::HuggingFace {
+            model_id: model_id.to_string(),
+            revision: revision.to_string(),
+            file: file.to_string(),
+        }
+    }
+
+    /// Create a new source for a local file
+    pub fn local(path: PathBuf) -> Self {
+        Self::Local(path)
     }
 }

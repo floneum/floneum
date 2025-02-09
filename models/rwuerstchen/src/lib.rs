@@ -32,8 +32,9 @@ use std::{sync::OnceLock, time::Duration};
 use futures_channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures_util::{Stream, StreamExt};
 use image::ImageBuffer;
-use kalosm_common::{CacheError, FileSource};
+use kalosm_common::{Cache, CacheError};
 use kalosm_language_model::ModelBuilder;
+use kalosm_model_types::FileSource;
 pub use kalosm_model_types::ModelLoadingProgress;
 
 use model::{WuerstcheModelSettings, WuerstchenInner};
@@ -223,29 +224,36 @@ impl WuerstchenBuilder {
         } = self;
 
         // Download section
+        let cache = Cache::default();
         let prior_tokenizer_source = ModelFile::PriorTokenizer.get(prior_tokenizer);
         let prior_tokenizer_source_display =
             format!("Prior Tokenizer ({})", prior_tokenizer_source);
         let mut create_progress =
             ModelLoadingProgress::downloading_progress(prior_tokenizer_source_display);
-        let prior_tokenizer = prior_tokenizer_source
-            .download(|progress| progress_handler(create_progress(progress)))
+        let prior_tokenizer = cache
+            .get(&prior_tokenizer_source, |progress| {
+                progress_handler(create_progress(progress))
+            })
             .await?;
 
         let tokenizer_source = ModelFile::Tokenizer.get(tokenizer);
         let tokenizer_source_display = format!("Tokenizer ({})", tokenizer_source);
         let mut create_progress =
             ModelLoadingProgress::downloading_progress(tokenizer_source_display);
-        let tokenizer = tokenizer_source
-            .download(|progress| progress_handler(create_progress(progress)))
+        let tokenizer = cache
+            .get(&tokenizer_source, |progress| {
+                progress_handler(create_progress(progress))
+            })
             .await?;
 
         let clip_weights_source = ModelFile::Clip.get(clip_weights);
         let clip_weights_source_display = format!("Clip Weights ({})", clip_weights_source);
         let mut create_progress =
             ModelLoadingProgress::downloading_progress(clip_weights_source_display);
-        let clip_weights = clip_weights_source
-            .download(|progress| progress_handler(create_progress(progress)))
+        let clip_weights = cache
+            .get(&clip_weights_source, |progress| {
+                progress_handler(create_progress(progress))
+            })
             .await?;
 
         let prior_clip_weights_source = ModelFile::PriorClip.get(prior_clip_weights);
@@ -253,8 +261,10 @@ impl WuerstchenBuilder {
             format!("Prior Clip Weights ({})", prior_clip_weights_source);
         let mut create_progress =
             ModelLoadingProgress::downloading_progress(prior_clip_weights_source_display);
-        let prior_clip_weights = prior_clip_weights_source
-            .download(|progress| progress_handler(create_progress(progress)))
+        let prior_clip_weights = cache
+            .get(&prior_clip_weights_source, |progress| {
+                progress_handler(create_progress(progress))
+            })
             .await?;
 
         let decoder_weights_source = ModelFile::Decoder.get(decoder_weights);
@@ -262,24 +272,30 @@ impl WuerstchenBuilder {
             format!("Decoder Weights ({})", decoder_weights_source);
         let mut create_progress =
             ModelLoadingProgress::downloading_progress(decoder_weights_source_display);
-        let decoder_weights = decoder_weights_source
-            .download(|progress| progress_handler(create_progress(progress)))
+        let decoder_weights = cache
+            .get(&decoder_weights_source, |progress| {
+                progress_handler(create_progress(progress))
+            })
             .await?;
 
         let prior_weights_source = ModelFile::Prior.get(prior_weights);
         let prior_weights_source_display = format!("Prior Weights ({})", prior_weights_source);
         let mut create_progress =
             ModelLoadingProgress::downloading_progress(prior_weights_source_display);
-        let prior_weights = prior_weights_source
-            .download(|progress| progress_handler(create_progress(progress)))
+        let prior_weights = cache
+            .get(&prior_weights_source, |progress| {
+                progress_handler(create_progress(progress))
+            })
             .await?;
 
         let vqgan_weights_source = ModelFile::VqGan.get(vqgan_weights);
         let vqgan_weights_source_display = format!("VQGAN Weights ({})", vqgan_weights_source);
         let mut create_progress =
             ModelLoadingProgress::downloading_progress(vqgan_weights_source_display);
-        let vqgan_weights = vqgan_weights_source
-            .download(|progress| progress_handler(create_progress(progress)))
+        let vqgan_weights = cache
+            .get(&vqgan_weights_source, |progress| {
+                progress_handler(create_progress(progress))
+            })
             .await?;
 
         let settings = WuerstcheModelSettings {
@@ -325,20 +341,27 @@ impl ModelBuilder for WuerstchenBuilder {
     }
 
     fn requires_download(&self) -> bool {
+        let cache = Cache::default();
         let downloaded_decoder_weights = self.decoder_weights.is_none()
-            || <&ModelFile as Into<FileSource>>::into(&ModelFile::Decoder).downloaded();
+            || cache.exists(&<&ModelFile as Into<FileSource>>::into(&ModelFile::Decoder));
         let downloaded_clip_weights = self.clip_weights.is_none()
-            || <&ModelFile as Into<FileSource>>::into(&ModelFile::Clip).downloaded();
+            || cache.exists(&<&ModelFile as Into<FileSource>>::into(&ModelFile::Clip));
         let downloaded_prior_clip_weights = self.prior_clip_weights.is_none()
-            || <&ModelFile as Into<FileSource>>::into(&ModelFile::PriorClip).downloaded();
+            || cache.exists(&<&ModelFile as Into<FileSource>>::into(
+                &ModelFile::PriorClip,
+            ));
         let downloaded_prior_weights = self.prior_weights.is_none()
-            || <&ModelFile as Into<FileSource>>::into(&ModelFile::Prior).downloaded();
+            || cache.exists(&<&ModelFile as Into<FileSource>>::into(&ModelFile::Prior));
         let downloaded_vqgan_weights = self.vqgan_weights.is_none()
-            || <&ModelFile as Into<FileSource>>::into(&ModelFile::VqGan).downloaded();
+            || cache.exists(&<&ModelFile as Into<FileSource>>::into(&ModelFile::VqGan));
         let downloaded_tokenizer = self.tokenizer.is_none()
-            || <&ModelFile as Into<FileSource>>::into(&ModelFile::Tokenizer).downloaded();
+            || cache.exists(&<&ModelFile as Into<FileSource>>::into(
+                &ModelFile::Tokenizer,
+            ));
         let downloaded_prior_tokenizer = self.prior_tokenizer.is_none()
-            || <&ModelFile as Into<FileSource>>::into(&ModelFile::PriorTokenizer).downloaded();
+            || cache.exists(&<&ModelFile as Into<FileSource>>::into(
+                &ModelFile::PriorTokenizer,
+            ));
 
         !(downloaded_decoder_weights
             && downloaded_clip_weights
@@ -555,4 +578,3 @@ impl<S: AsRef<ImageBuffer<image::Rgb<u8>, Vec<u8>>>> Stream for ChannelImageStre
         self.receiver.poll_next_unpin(cx)
     }
 }
-

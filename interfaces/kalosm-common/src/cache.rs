@@ -1,6 +1,6 @@
 use hf_hub::{Repo, RepoType};
 use httpdate::parse_http_date;
-use kalosm_model_types::FileLoadingProgress;
+use kalosm_model_types::{FileLoadingProgress, FileSource};
 use reqwest::{
     header::{HeaderValue, CONTENT_LENGTH, LAST_MODIFIED, RANGE},
     IntoUrl,
@@ -10,8 +10,6 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use tokio::fs::{File, OpenOptions};
 use tokio::io::AsyncWriteExt;
-
-use crate::FileSource;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CacheError {
@@ -149,17 +147,6 @@ impl Default for Cache {
             location: dirs::data_dir().unwrap().join("kalosm").join("cache"),
             huggingface_token: None,
         }
-    }
-}
-
-impl FileSource {
-    /// Check if the file exists locally (if it is a local file or if it has been downloaded)
-    pub async fn download(
-        &self,
-        progress: impl FnMut(FileLoadingProgress),
-    ) -> Result<PathBuf, CacheError> {
-        let cache = Cache::default();
-        cache.get(self, progress).await
     }
 }
 

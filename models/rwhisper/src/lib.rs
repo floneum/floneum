@@ -35,9 +35,9 @@
 
 use cpal::FromSample;
 use futures_channel::mpsc::{UnboundedReceiver, UnboundedSender};
-use kalosm_common::FileSource;
+use kalosm_common::Cache;
 use kalosm_language_model::ModelBuilder;
-pub use kalosm_model_types::ModelLoadingProgress;
+pub use kalosm_model_types::{FileSource, ModelLoadingProgress};
 use model::{WhisperInner, WhisperLoadingError};
 use rodio::{source::UniformSourceIterator, Source};
 use std::{
@@ -334,9 +334,10 @@ impl ModelBuilder for WhisperBuilder {
 
     fn requires_download(&self) -> bool {
         let whisper = self.get_whisper_model_config();
-        !whisper.model.downloaded()
-            || !whisper.tokenizer.downloaded()
-            || !whisper.config.downloaded()
+        let cache = Cache::default();
+        !cache.exists(&whisper.model)
+            || !cache.exists(&whisper.tokenizer)
+            || !cache.exists(&whisper.config)
     }
 }
 

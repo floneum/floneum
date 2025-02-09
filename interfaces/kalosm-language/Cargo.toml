@@ -29,8 +29,8 @@ kalosm-language-model = { workspace = true }
 headless_chrome = { version = "1.0", optional = true }
 tokio-util = { version = "0.7.9", features = ["rt"] }
 dashmap = { version = "5.5.3", optional = true }
-rbert.workspace = true
-kalosm-llama.workspace = true
+rbert = { workspace = true, optional = true }
+kalosm-llama = { workspace = true, optional = true }
 kalosm-streams.workspace = true
 pulldown-cmark = "0.9.3"
 docx-rs = "0.4.7"
@@ -48,18 +48,21 @@ anyhow.workspace = true
 roaring = "0.10.6"
 
 [features]
-metal = ["rbert/metal", "kalosm-llama/metal"]
+default = ["bert", "llama"]
+metal = ["rbert?/metal", "kalosm-llama?/metal"]
 cublas = [
-    "rbert/cuda",
-    "rbert/cudnn",
-    "kalosm-llama/cuda",
-    "kalosm-llama/cudnn",
+    "rbert?/cuda",
+    "rbert?/cudnn",
+    "kalosm-llama?/cuda",
+    "kalosm-llama?/cudnn",
 ]
-mkl = ["rbert/mkl", "kalosm-llama/mkl"]
+mkl = ["rbert?/mkl", "kalosm-llama?/mkl"]
 openai = ["kalosm-language-model/openai"]
 anthropic = ["kalosm-language-model/anthropic"]
 remote = ["kalosm-language-model/remote"]
 scrape = ["dep:headless_chrome", "dep:image", "dep:dashmap", "dep:texting_robots"]
+bert = ["dep:rbert"]
+llama = ["dep:kalosm-llama"]
 
 [dev-dependencies]
 kalosm = { workspace = true, features = ["language", "surrealdb"] }
