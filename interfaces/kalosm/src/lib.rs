@@ -28,6 +28,8 @@ pub mod language {
     pub use kalosm_language::vector_db::*;
     pub use kalosm_model_types::{FileLoadingProgress, FileSource, ModelLoadingProgress};
     pub use kalosm_streams::text_stream::*;
+    #[cfg(any(feature = "bert", feature = "llama"))]
+    pub use kalosm_common::accelerated_device_if_available;
 
     #[cfg(feature = "surrealdb")]
     pub use crate::surrealdb_integration::document_table::*;
