@@ -20,5 +20,8 @@ tokio = { version = "1.28.1", features = ["full"] }
 pretty_assertions = "1.4.0"
 
 [features]
+metal = []
+cuda = []
+
 [lib]
 proc-macro = true
