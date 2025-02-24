@@ -403,8 +403,18 @@ impl Decoder {
             let logits = logits.broadcast_add(&self.suppress_tokens)?;
             let next_token = if temperature > 0f64 {
                 let prs = softmax(&(&logits / temperature)?, 0)?;
-                let logits_v: Vec<f32> =
+                let mut logits_v: Vec<f32> =
                     self.apply_timestamp_rules(prs, &tokens, task.without_timestamps)?;
+                // Make sure no weights are negative or nan
+                for (token, weight) in logits_v.iter_mut().enumerate() {
+                    if *weight < 0f32 {
+                        tracing::warn!("Negative weight for token {token}. Weight was {weight}");
+                        *weight = 0f32;
+                    } else if !weight.is_finite() {
+                        tracing::warn!("None finite weight for token {token}. Weight was {weight}");
+                        *weight = 0f32;
+                    }
+                }
                 let distr = rand::distributions::WeightedIndex::new(&logits_v)
                     .expect("logits_v should not be empty or negative");
                 distr.sample(&mut self.rng) as u32
