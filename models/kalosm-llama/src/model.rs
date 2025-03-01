@@ -155,8 +155,9 @@ impl LlamaModel {
 
                 let config = match config_path {
                     Some(config_path) => {
-                        let config = std::fs::read_to_string(config_path)
-                            .map_err(|err| LlamaSourceError::Config(serde_json::Error::custom(err)))?;
+                        let config = std::fs::read_to_string(config_path).map_err(|err| {
+                            LlamaSourceError::Config(serde_json::Error::custom(err))
+                        })?;
                         let config: LlamaConfigJson =
                             serde_json::from_str(&config).map_err(LlamaSourceError::Config)?;
                         config.rope_scaling
