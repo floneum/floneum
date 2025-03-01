@@ -34,6 +34,8 @@ thiserror.workspace = true
 safetensors = "0.4.5"
 minijinja = { version = "2.5.0", features = ["json", "loader"] }
 minijinja-contrib = { version = "2.5.0", features = ["pycompat"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1.0.139"
 
 [dev-dependencies]
 tracing-subscriber = "0.3.18"
