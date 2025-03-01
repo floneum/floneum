@@ -50,6 +50,7 @@ impl KvCache {
             // We try to keep the new size a power of two to keep memory alignment nice.
             let next_power_of_two = size_required_for_append.next_power_of_two();
             let new_cache_max_seq_len = next_power_of_two.min(self.max_seq_len);
+            tracing::trace!("Extending KV cache from {current_allocated_size} to {new_cache_max_seq_len}");
 
             // Create a new cache with the new size.
             let mut new_cache =
@@ -121,6 +122,7 @@ impl TensorCache {
             // We try to keep the new size a power of two to keep memory alignment nice.
             let next_power_of_two = size_required_for_append.next_power_of_two();
             let new_cache_max_seq_len = next_power_of_two.min(self.max_seq_len);
+            tracing::trace!("Extending Tensor cache from {current_allocated_size} to {new_cache_max_seq_len}");
 
             // Create a new cache with the new size.
             let mut new_cache =

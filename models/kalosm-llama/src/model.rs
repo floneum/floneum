@@ -3,9 +3,11 @@ use crate::raw::cache::LlamaCache;
 use crate::raw::Model;
 use crate::token_stream::TokenOutputStream;
 use crate::token_stream::TokenOutputStreamError;
+use crate::LlamaConfigJson;
 use kalosm_common::*;
 use kalosm_model_types::ModelLoadingProgress;
 use llm_samplers::types::Logits;
+use serde::de::Error;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -71,9 +73,18 @@ impl LlamaModel {
         tokens: &[u32],
         cache: Option<&mut LlamaCache>,
         logits_vec: &mut Vec<f32>,
+        #[allow(unused)] tokenizer: &Tokenizer,
     ) -> candle_core::Result<()> {
         if tokens.is_empty() {
             candle_core::bail!("Cannot run model on empty input");
+        }
+
+        #[cfg(debug_assertions)]
+        {
+            tracing::trace!(
+                "Running model with tokens: {:?}",
+                tokenizer.decode(tokens, false)
+            );
         }
 
         let logits = model.forward(tokens, device, cache)?;
@@ -107,6 +118,21 @@ impl LlamaModel {
             None => None,
         };
 
+        // Download the config file if it exists
+        let config_path = match &builder.source.config {
+            Some(config) => {
+                let config_source = format!("Config ({})", config);
+                let mut create_progress = ModelLoadingProgress::downloading_progress(config_source);
+                let config_path = builder
+                    .source
+                    .cache
+                    .get(config, |progress| handler(create_progress(progress)))
+                    .await?;
+                Some(config_path)
+            }
+            None => None,
+        };
+
         let source = format!("Model ({})", builder.source.model);
         let mut create_progress = ModelLoadingProgress::downloading_progress(source);
         let filename = builder
@@ -123,6 +149,17 @@ impl LlamaModel {
                         let tokenizer = Tokenizer::from_file(tokenizer_path)
                             .map_err(LlamaSourceError::Tokenizer)?;
                         Some(tokenizer)
+                    }
+                    None => None,
+                };
+
+                let config = match config_path {
+                    Some(config_path) => {
+                        let config = std::fs::read_to_string(config_path)
+                            .map_err(|err| LlamaSourceError::Config(serde_json::Error::custom(err)))?;
+                        let config: LlamaConfigJson =
+                            serde_json::from_str(&config).map_err(LlamaSourceError::Config)?;
+                        config.rope_scaling
                     }
                     None => None,
                 };
@@ -238,6 +275,7 @@ impl LlamaModel {
                             &mut file,
                             &device,
                             override_stop_token_string,
+                            config,
                         )?;
                         Ok((model, tokenizer))
                     }
@@ -286,6 +324,7 @@ impl LlamaModel {
                             start_token_string,
                             stop_token,
                             stop_token_string,
+                            config,
                         )?;
                         Ok((model, tokenizer))
                     }
@@ -341,6 +380,7 @@ impl LlamaModel {
             tokens,
             Some(&mut session),
             &mut logit_probs,
+            &self.tokenizer,
         )?;
         let mut logits = Logits::try_from_iter_top_k(logit_probs, 512)
             .expect("model output should be valid logits");
@@ -356,6 +396,14 @@ impl LlamaModel {
             let new_token = text_stream
                 .sample_token(&mut sampler, logits, stop_on.as_deref(), seed)
                 .map_err(LlamaModelError::TokenOutputStreamError)?;
+            Self::forward(
+                &self.model,
+                &self.device,
+                &[new_token],
+                Some(&mut session),
+                &mut logit_probs,
+                &self.tokenizer,
+            )?;
             if new_token == stop_token {
                 tracing::trace!("Stopping on stop token");
                 break;
@@ -413,13 +461,6 @@ impl LlamaModel {
                     on_token(new_text)?;
                 }
             }
-            Self::forward(
-                &self.model,
-                &self.device,
-                &[new_token],
-                Some(&mut session),
-                &mut logit_probs,
-            )?;
             logits = Logits::try_from_iter_top_k(logit_probs.iter().copied(), 512)
                 .expect("model output should be valid logits");
         }

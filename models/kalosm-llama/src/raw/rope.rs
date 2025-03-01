@@ -1,3 +1,5 @@
+use std::f32::consts::PI;
+
 use super::LlamaConfig;
 use candle_core::{DType, Device, Tensor};
 
@@ -9,7 +11,7 @@ pub struct RopeCache {
 
 impl RopeCache {
     pub fn new(config: &LlamaConfig, dtype: DType, device: &Device) -> candle_core::Result<Self> {
-        let inverse_frequency = (0..config.head_dimension)
+        let mut inverse_frequency = (0..config.head_dimension)
             .step_by(2)
             .map(|i| {
                 1. / (config
@@ -17,6 +19,25 @@ impl RopeCache {
                     .powf(i as f32 / config.head_dimension as f32))
             })
             .collect::<Vec<_>>();
+        if let Some(scaling_config) = &config.rope_scaling {
+            let original_max_position_embeddings = scaling_config.original_max_position_embeddings;
+            let factor = scaling_config.factor;
+            let high_freq_factor = scaling_config.high_freq_factor;
+            let low_freq_factor = scaling_config.low_freq_factor;
+            let low_freq_wavelen = original_max_position_embeddings as f32 / low_freq_factor;
+            let high_freq_wavelen = original_max_position_embeddings as f32 / high_freq_factor;
+            for freq in inverse_frequency.iter_mut() {
+                let wavelen = 2. * PI / *freq;
+                if wavelen > low_freq_wavelen {
+                    *freq = *freq / factor
+                } else if wavelen == high_freq_wavelen {
+                    let smooth = (original_max_position_embeddings as f32 / wavelen
+                        - low_freq_factor)
+                        / (high_freq_factor - low_freq_factor);
+                    *freq = (1. - smooth) * *freq / factor + smooth * *freq
+                }
+            }
+        }
         let inverse_frequency_len = inverse_frequency.len();
         let mut inverse_frequency =
             Tensor::from_vec(inverse_frequency, (1, inverse_frequency_len), device)?
