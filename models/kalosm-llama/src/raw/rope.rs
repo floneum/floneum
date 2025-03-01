@@ -29,7 +29,7 @@ impl RopeCache {
             for freq in inverse_frequency.iter_mut() {
                 let wavelen = 2. * PI / *freq;
                 if wavelen > low_freq_wavelen {
-                    *freq = *freq / factor
+                    *freq /= factor
                 } else if wavelen == high_freq_wavelen {
                     let smooth = (original_max_position_embeddings as f32 / wavelen
                         - low_freq_factor)
