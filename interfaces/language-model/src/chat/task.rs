@@ -61,6 +61,14 @@ impl<M: CreateChatSession> Task<M> {
             constraints: NoConstraints,
         }
     }
+
+    /// Create a new task from an existing chat session.
+    pub fn from_chat(chat: Chat<M>) -> Self {
+        Self {
+            chat,
+            constraints: NoConstraints,
+        }
+    }
 }
 
 impl<M: CreateChatSession, Constraints> Task<M, Constraints> {
@@ -173,6 +181,11 @@ impl<M: CreateChatSession, Constraints> Task<M, Constraints> {
         M: CreateDefaultChatConstraintsForType<T>,
     {
         self.with_constraints(M::create_default_constraints())
+    }
+
+    /// Get a reference to the underlying chat session.
+    pub fn chat(&self) -> &Chat<M> {
+        &self.chat
     }
 }
 
