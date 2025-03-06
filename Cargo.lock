@@ -3483,7 +3483,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-language"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "arroy",
@@ -3528,7 +3528,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-language-model"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "async-lock",
@@ -3578,7 +3578,7 @@ dependencies = [
 
 [[package]]
 name = "kalosm-llama"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "accelerate-src",
  "anyhow",
@@ -6082,7 +6082,7 @@ checksum = "f7c45b9784283f1b2e7fb61b42047c2fd678ef0960d4f6f1eba131594cc369d4"
 
 [[package]]
 name = "rwhisper"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "accelerate-src",
  "anyhow",
