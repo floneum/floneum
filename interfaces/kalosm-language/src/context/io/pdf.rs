@@ -45,7 +45,7 @@ impl IntoDocument for PdfDocument {
             .map(|toc| toc.title.to_string())
             .unwrap_or_default();
         let text = get_pdf_text(&doc)?;
-        for error in &text.errors[..10] {
+        for error in text.errors.iter().take(10) {
             tracing::error!(
                 "Encountered error while extracting text from PDF at {path:?}: {error}"
             );
