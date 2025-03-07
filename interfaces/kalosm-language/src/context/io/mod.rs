@@ -127,7 +127,7 @@ impl IntoDocument for FsDocument {
             Self::Pdf(pdf) => pdf
                 .into_document()
                 .await
-                .map_err(|err| err.map_decode(|_| unreachable!())),
+                .map_err(|err| err.map_decode(TextFileDecodeError::Pdf)),
             Self::Txt(txt) => txt
                 .into_document()
                 .await
