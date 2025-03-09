@@ -39,6 +39,7 @@ const WORK_GROUP_SIZE_ELEMENT: u32 =
 const WORK_GROUP_SIZE: [u32; 3] = [WORK_GROUP_SIZE_ELEMENT, WORK_GROUP_SIZE_ELEMENT, 1];
 
 pub(crate) struct UntypedMatMul {
+    #[allow(unused)]
     sparse_kernel: OnceLock<GenericKernel>,
     first_dim_dense_kernel: OnceLock<GenericKernel>,
     datatype: DataTypeEnum,
@@ -53,7 +54,7 @@ impl UntypedMatMul {
         }
     }
 
-    // 1000x1000 matmul time on M2 mac pro 1.4743 ms 
+    // 1000x1000 dense matmul time on M2 mac pro 1.4743 ms
     fn compile(&self) -> &GenericKernel {
         self.first_dim_dense_kernel.get_or_init(|| {
             // based on https://siboehm.com/articles/22/CUDA-MMM

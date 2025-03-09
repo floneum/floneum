@@ -2,8 +2,8 @@
 use std::time::Duration;
 
 use criterion::BatchSize;
-use futures::executor::block_on;
 use fusor_ml_core::{Device, PerformanceQueries, Tensor};
+use futures::executor::block_on;
 
 use criterion::BenchmarkId;
 use criterion::Criterion;

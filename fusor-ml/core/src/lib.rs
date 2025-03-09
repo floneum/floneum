@@ -1,3 +1,7 @@
+// This crate is still heavily in development. We don't need as strict of a linting policy as the
+// most of the crates in the workspace
+#![allow(missing_docs)]
+
 pub use composite::*;
 pub use device::*;
 pub use element_wise::CastTensor;

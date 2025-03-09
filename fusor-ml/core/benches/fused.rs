@@ -3,9 +3,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use criterion::{BatchSize, black_box};
-use futures::executor::block_on;
 use fusor_ml_core::PerformanceQueries;
 use fusor_ml_core::{Device, Tensor};
+use futures::executor::block_on;
 
 use criterion::BenchmarkId;
 use criterion::Criterion;
