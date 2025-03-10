@@ -271,7 +271,7 @@ impl GenericKernel {
             })
     }
 
-    fn create_bind_group<'a>(
+    fn create_bind_group(
         &self,
         device: &crate::Device,
         bind_group_layout: &BindGroupLayout,
@@ -360,7 +360,7 @@ impl GenericKernel {
             })
     }
 
-    pub(crate) fn run_with_query<'a>(
+    pub(crate) fn run_with_query(
         &self,
         device: &Device,
         tensors: impl IntoIterator<Item = impl Into<KernelInputValue>>,

@@ -7,28 +7,28 @@ use super::{
 pub(crate) trait VisitComputeGraph: Sized {
     fn visit(&mut self, graph: &ComputeGraphInner, key: AnyComputeKey) {
         match key {
-            AnyComputeKey::ElementWiseComputeNodeKey(element_wise_compute_node_key) => {
+            AnyComputeKey::ElementWise(element_wise_compute_node_key) => {
                 self.visit_element_wise(graph, element_wise_compute_node_key)
             }
-            AnyComputeKey::PairWiseComputeNodeKey(pair_wise_compute_node_key) => {
+            AnyComputeKey::PairWise(pair_wise_compute_node_key) => {
                 self.visit_pair_wise(graph, pair_wise_compute_node_key)
             }
-            AnyComputeKey::MatMulComputeNodeKey(mat_mul_compute_node_key) => {
+            AnyComputeKey::MatMul(mat_mul_compute_node_key) => {
                 self.visit_mat_mul(graph, mat_mul_compute_node_key);
             }
-            AnyComputeKey::ReduceComputeNodeKey(reduce_compute_node_key) => {
+            AnyComputeKey::Reduce(reduce_compute_node_key) => {
                 self.visit_reduce(graph, reduce_compute_node_key);
             }
-            AnyComputeKey::MapLayoutComputeNodeKey(slice_compute_node_key) => {
+            AnyComputeKey::MapLayout(slice_compute_node_key) => {
                 self.visit_slice(graph, slice_compute_node_key);
             }
-            AnyComputeKey::ResizeComputeNodeKey(resize_compute_node_key) => {
+            AnyComputeKey::Resize(resize_compute_node_key) => {
                 self.visit_resize(graph, resize_compute_node_key);
             }
-            AnyComputeKey::SliceAssignComputeNodeKey(slice_assign_compute_node_key) => {
+            AnyComputeKey::SliceAssign(slice_assign_compute_node_key) => {
                 self.visit_slice_assign(graph, slice_assign_compute_node_key);
             }
-            AnyComputeKey::TensorComputeNodeKey(tensor_compute_node_key) => {
+            AnyComputeKey::Tensor(tensor_compute_node_key) => {
                 self.visit_tensor(graph, tensor_compute_node_key);
             }
         }

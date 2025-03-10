@@ -168,7 +168,7 @@ impl VisitTiledKernel {
             ]
         } else {
             let workgroup_size_x = shape
-                .get(0)
+                .first()
                 .map(|x| (*x as u32).div_ceil(self.tile_size * max_blocksize))
                 .unwrap_or(1);
             let workgroup_size_y = shape

@@ -10,11 +10,12 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
             }
         }
         for vector in &vectors {
-            for i in 0..shape.len() {
+            let vector_shape = vector.shape();
+            for (i, shape) in shape.iter_mut().enumerate() {
                 if i == dim {
-                    shape[i] += vector.shape()[i];
+                    *shape += vector_shape[i];
                 } else {
-                    assert_eq!(shape[i], vector.shape()[i]);
+                    assert_eq!(*shape, vector_shape[i]);
                 }
             }
         }

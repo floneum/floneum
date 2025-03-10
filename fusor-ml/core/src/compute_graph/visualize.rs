@@ -36,31 +36,35 @@ impl ComputeGraphInner {
             return id.clone();
         }
         let id = match key {
-            AnyComputeKey::ElementWiseComputeNodeKey(element_wise_compute_node_key) => self
+            AnyComputeKey::ElementWise(element_wise_compute_node_key) => self
                 .add_element_wise_to_graph(
                     graph,
                     element_wise_compute_node_key,
                     layout_pass,
                     identities,
                 ),
-            AnyComputeKey::PairWiseComputeNodeKey(pair_wise_compute_node_key) => self
-                .add_pair_wise_to_graph(graph, pair_wise_compute_node_key, layout_pass, identities),
-            AnyComputeKey::MatMulComputeNodeKey(mat_mul_compute_node_key) => {
+            AnyComputeKey::PairWise(pair_wise_compute_node_key) => self.add_pair_wise_to_graph(
+                graph,
+                pair_wise_compute_node_key,
+                layout_pass,
+                identities,
+            ),
+            AnyComputeKey::MatMul(mat_mul_compute_node_key) => {
                 self.add_mat_mul_to_graph(graph, mat_mul_compute_node_key, layout_pass, identities)
             }
-            AnyComputeKey::ReduceComputeNodeKey(reduce_compute_node_key) => {
+            AnyComputeKey::Reduce(reduce_compute_node_key) => {
                 self.add_reduce_to_graph(graph, reduce_compute_node_key, layout_pass, identities)
             }
-            AnyComputeKey::TensorComputeNodeKey(tensor_compute_node_key) => {
+            AnyComputeKey::Tensor(tensor_compute_node_key) => {
                 self.add_tensor_to_graph(graph, tensor_compute_node_key, layout_pass, identities)
             }
-            AnyComputeKey::MapLayoutComputeNodeKey(slice_compute_node_key) => {
+            AnyComputeKey::MapLayout(slice_compute_node_key) => {
                 self.add_slice_to_graph(graph, slice_compute_node_key, layout_pass, identities)
             }
-            AnyComputeKey::ResizeComputeNodeKey(resize_compute_node_key) => {
+            AnyComputeKey::Resize(resize_compute_node_key) => {
                 self.add_resize_to_graph(graph, resize_compute_node_key, layout_pass, identities)
             }
-            AnyComputeKey::SliceAssignComputeNodeKey(slice_assign_compute_node_key) => self
+            AnyComputeKey::SliceAssign(slice_assign_compute_node_key) => self
                 .add_slice_assign_to_graph(
                     graph,
                     slice_assign_compute_node_key,

@@ -19,28 +19,28 @@ impl ComputeGraphInner {
         command_encoder: &mut CommandEncoder,
     ) -> TensorData {
         match key {
-            AnyComputeKey::ElementWiseComputeNodeKey(element_wise_compute_node_key) => {
+            AnyComputeKey::ElementWise(element_wise_compute_node_key) => {
                 self.resolve_element_wise(element_wise_compute_node_key, command_encoder)
             }
-            AnyComputeKey::PairWiseComputeNodeKey(pair_wise_compute_node_key) => {
+            AnyComputeKey::PairWise(pair_wise_compute_node_key) => {
                 self.resolve_pair_wise(pair_wise_compute_node_key, command_encoder)
             }
-            AnyComputeKey::MatMulComputeNodeKey(mat_mul_compute_node_key) => {
+            AnyComputeKey::MatMul(mat_mul_compute_node_key) => {
                 self.resolve_mat_mul(mat_mul_compute_node_key, command_encoder)
             }
-            AnyComputeKey::ReduceComputeNodeKey(reduce_compute_node_key) => {
+            AnyComputeKey::Reduce(reduce_compute_node_key) => {
                 self.resolve_reduce(reduce_compute_node_key, command_encoder)
             }
-            AnyComputeKey::TensorComputeNodeKey(tensor_compute_node_key) => {
+            AnyComputeKey::Tensor(tensor_compute_node_key) => {
                 self.resolve_tensor(tensor_compute_node_key, command_encoder)
             }
-            AnyComputeKey::MapLayoutComputeNodeKey(slice_compute_node_key) => {
+            AnyComputeKey::MapLayout(slice_compute_node_key) => {
                 self.resolve_slice(slice_compute_node_key, command_encoder)
             }
-            AnyComputeKey::ResizeComputeNodeKey(resize_compute_node_key) => {
+            AnyComputeKey::Resize(resize_compute_node_key) => {
                 self.resolve_resize(resize_compute_node_key, command_encoder)
             }
-            AnyComputeKey::SliceAssignComputeNodeKey(slice_assign_compute_node_key) => {
+            AnyComputeKey::SliceAssign(slice_assign_compute_node_key) => {
                 self.resolve_slice_assign(slice_assign_compute_node_key, command_encoder)
             }
         }
@@ -51,8 +51,8 @@ impl ComputeGraphInner {
         key: ElementWiseComputeNodeKey,
     ) -> (Vec<ElementWiseFunction>, AnyComputeKey) {
         let mut functions = Vec::new();
-        let mut current_key = AnyComputeKey::ElementWiseComputeNodeKey(key);
-        while let AnyComputeKey::ElementWiseComputeNodeKey(key) = current_key {
+        let mut current_key = AnyComputeKey::ElementWise(key);
+        while let AnyComputeKey::ElementWise(key) = current_key {
             let operation = self.element_wise.get(&key).unwrap();
             functions.push(operation.function.clone());
             current_key = operation.value;
@@ -69,11 +69,11 @@ impl ComputeGraphInner {
         let (functions, input) = self.collect_element_wise_ops(key);
 
         // Merge into the output of the reduce kernel if possible
-        if let AnyComputeKey::ReduceComputeNodeKey(key) = input {
+        if let AnyComputeKey::Reduce(key) = input {
             self.resolve_reduce_then(key, functions, command_encoder)
         }
         // Merge into the output of the pair wise kernel if possible
-        else if let AnyComputeKey::PairWiseComputeNodeKey(key) = input {
+        else if let AnyComputeKey::PairWise(key) = input {
             self.resolve_pair_wise_then(key, functions, command_encoder)
         } else {
             let input = self.resolve(input, &mut *command_encoder);
@@ -104,22 +104,20 @@ impl ComputeGraphInner {
 
         let mut first_input = operation.first;
         let mut second_input = operation.second;
-        let first_pre_element_wise =
-            if let AnyComputeKey::ElementWiseComputeNodeKey(key) = first_input {
-                let (functions, element_wise_input) = self.collect_element_wise_ops(key);
-                first_input = element_wise_input;
-                functions
-            } else {
-                Vec::new()
-            };
-        let second_pre_element_wise =
-            if let AnyComputeKey::ElementWiseComputeNodeKey(key) = second_input {
-                let (functions, element_wise_input) = self.collect_element_wise_ops(key);
-                second_input = element_wise_input;
-                functions
-            } else {
-                Vec::new()
-            };
+        let first_pre_element_wise = if let AnyComputeKey::ElementWise(key) = first_input {
+            let (functions, element_wise_input) = self.collect_element_wise_ops(key);
+            first_input = element_wise_input;
+            functions
+        } else {
+            Vec::new()
+        };
+        let second_pre_element_wise = if let AnyComputeKey::ElementWise(key) = second_input {
+            let (functions, element_wise_input) = self.collect_element_wise_ops(key);
+            second_input = element_wise_input;
+            functions
+        } else {
+            Vec::new()
+        };
 
         let first = self.resolve(first_input, &mut *command_encoder);
         let second = self.resolve(second_input, &mut *command_encoder);
@@ -172,14 +170,13 @@ impl ComputeGraphInner {
         let axis = operation.axis;
         let function = operation.function.clone();
 
-        let element_wise_before =
-            if let AnyComputeKey::ElementWiseComputeNodeKey(key) = operation.value {
-                let (functions, element_wise_input) = self.collect_element_wise_ops(key);
-                input = element_wise_input;
-                functions
-            } else {
-                Vec::new()
-            };
+        let element_wise_before = if let AnyComputeKey::ElementWise(key) = operation.value {
+            let (functions, element_wise_input) = self.collect_element_wise_ops(key);
+            input = element_wise_input;
+            functions
+        } else {
+            Vec::new()
+        };
 
         let input = self.resolve(input, &mut *command_encoder);
         let mut kernel = UntypedReduceKernel::new(function, input.datatype());

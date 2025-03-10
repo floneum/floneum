@@ -230,7 +230,7 @@ impl LazyTensorData {
             .enumerate()
             .filter_map(|(i, x)| (i != dim).then_some(*x))
             .collect();
-        info = TensorInfo::new(new_shape.into(), info.datatype());
+        info = TensorInfo::new(new_shape, info.datatype());
         let key = graph.create_reduce(function);
 
         Self {
@@ -754,19 +754,19 @@ impl<'a, D: DataType> PartialEq<&'a [D]> for TensorSlice<1, D> {
     }
 }
 
-impl<'a, const N: usize, D: DataType> PartialEq<[D; N]> for TensorSlice<1, D> {
+impl<const N: usize, D: DataType> PartialEq<[D; N]> for TensorSlice<1, D> {
     fn eq(&self, other: &[D; N]) -> bool {
         self.as_slice() == *other
     }
 }
 
-impl<'a, D: DataType> PartialEq<TensorSlice<1, D>> for &'a [D] {
+impl<D: DataType> PartialEq<TensorSlice<1, D>> for &[D] {
     fn eq(&self, other: &TensorSlice<1, D>) -> bool {
         *self == other.as_slice()
     }
 }
 
-impl<'a, const N: usize, D: DataType> PartialEq<TensorSlice<1, D>> for &'a [D; N] {
+impl<const N: usize, D: DataType> PartialEq<TensorSlice<1, D>> for &[D; N] {
     fn eq(&self, other: &TensorSlice<1, D>) -> bool {
         *self == other.as_slice()
     }

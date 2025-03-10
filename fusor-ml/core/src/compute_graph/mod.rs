@@ -91,61 +91,61 @@ impl TensorComputeNodeKey {
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub(crate) enum AnyComputeKey {
-    ElementWiseComputeNodeKey(ElementWiseComputeNodeKey),
-    PairWiseComputeNodeKey(PairWiseComputeNodeKey),
-    MatMulComputeNodeKey(MatMulComputeNodeKey),
-    ReduceComputeNodeKey(ReduceComputeNodeKey),
-    MapLayoutComputeNodeKey(MapLayoutComputeNodeKey),
-    ResizeComputeNodeKey(ResizeComputeNodeKey),
-    SliceAssignComputeNodeKey(SliceAssignComputeNodeKey),
-    TensorComputeNodeKey(TensorComputeNodeKey),
+    ElementWise(ElementWiseComputeNodeKey),
+    PairWise(PairWiseComputeNodeKey),
+    MatMul(MatMulComputeNodeKey),
+    Reduce(ReduceComputeNodeKey),
+    MapLayout(MapLayoutComputeNodeKey),
+    Resize(ResizeComputeNodeKey),
+    SliceAssign(SliceAssignComputeNodeKey),
+    Tensor(TensorComputeNodeKey),
 }
 
 impl From<ElementWiseComputeNodeKey> for AnyComputeKey {
     fn from(value: ElementWiseComputeNodeKey) -> Self {
-        Self::ElementWiseComputeNodeKey(value)
+        Self::ElementWise(value)
     }
 }
 
 impl From<PairWiseComputeNodeKey> for AnyComputeKey {
     fn from(value: PairWiseComputeNodeKey) -> Self {
-        Self::PairWiseComputeNodeKey(value)
+        Self::PairWise(value)
     }
 }
 
 impl From<MatMulComputeNodeKey> for AnyComputeKey {
     fn from(value: MatMulComputeNodeKey) -> Self {
-        Self::MatMulComputeNodeKey(value)
+        Self::MatMul(value)
     }
 }
 
 impl From<ReduceComputeNodeKey> for AnyComputeKey {
     fn from(value: ReduceComputeNodeKey) -> Self {
-        Self::ReduceComputeNodeKey(value)
+        Self::Reduce(value)
     }
 }
 
 impl From<TensorComputeNodeKey> for AnyComputeKey {
     fn from(value: TensorComputeNodeKey) -> Self {
-        Self::TensorComputeNodeKey(value)
+        Self::Tensor(value)
     }
 }
 
 impl From<MapLayoutComputeNodeKey> for AnyComputeKey {
     fn from(value: MapLayoutComputeNodeKey) -> Self {
-        Self::MapLayoutComputeNodeKey(value)
+        Self::MapLayout(value)
     }
 }
 
 impl From<ResizeComputeNodeKey> for AnyComputeKey {
     fn from(value: ResizeComputeNodeKey) -> Self {
-        Self::ResizeComputeNodeKey(value)
+        Self::Resize(value)
     }
 }
 
 impl From<SliceAssignComputeNodeKey> for AnyComputeKey {
     fn from(value: SliceAssignComputeNodeKey) -> Self {
-        Self::SliceAssignComputeNodeKey(value)
+        Self::SliceAssign(value)
     }
 }
 

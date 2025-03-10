@@ -84,12 +84,12 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
             move |offset, strides| {
                 let mut new_strides = [0; R2];
                 let mut new_strides_fill = 0;
-                for i in 0..R {
+                for (i, stride) in strides.iter().enumerate() {
                     if i == new_dim {
                         new_strides[new_strides_fill] = 0;
                         new_strides_fill += 1;
                     }
-                    new_strides[new_strides_fill] = strides[i];
+                    new_strides[new_strides_fill] = *stride;
                     new_strides_fill += 1;
                 }
                 (offset, new_strides.into())
