@@ -4,10 +4,13 @@ use crate::{
     DataType, Layout, Tensor, TensorData, compute_graph::AnyComputeKey, slice_shape, slice_strides,
 };
 
+type MapSize = Box<dyn Fn(&[usize]) -> Box<[usize]>>;
+type MapStride = Box<dyn Fn(usize, &[usize]) -> (usize, Box<[usize]>)>;
+
 pub(crate) struct MapLayoutOperation {
     pub(crate) input: AnyComputeKey,
-    pub(crate) map_size: Box<dyn Fn(&[usize]) -> Box<[usize]>>,
-    pub(crate) map_stride: Box<dyn Fn(usize, &[usize]) -> (usize, Box<[usize]>)>,
+    pub(crate) map_size: MapSize,
+    pub(crate) map_stride: MapStride,
 }
 
 impl MapLayoutOperation {

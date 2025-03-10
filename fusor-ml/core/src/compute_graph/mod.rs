@@ -251,6 +251,7 @@ impl ComputeGraph {
         self.with_mut(|inner| inner.graphvis(key))
     }
 
+    #[allow(clippy::await_holding_lock)]
     pub(crate) async fn all_timing_information(&self) -> Vec<QueryResults> {
         let myself = self.inner.load();
         let myself = myself.read().unwrap();
