@@ -1,0 +1,40 @@
+[package]
+name = "fusor-ml-core"
+version = "0.1.0"
+authors = ["Evan Almloff <evanalmloff@gmail.com>"]
+license = "MIT/Apache-2.0"
+edition = "2024"
+
+[dependencies]
+wgpu = { git = "https://github.com/FL33TW00D/wgpu", branch = "feature/enable" }
+env_logger = "0.10.1"
+bytemuck = { version = "1.14", features = ["derive"] }
+futures-util = "0.3.31"
+futures = "0.3.31"
+futures-channel = "0.3.31"
+tabbycat = "0.1.3"
+half = { version = "2.4.1", features = ["bytemuck"] }
+arc-swap = "1.7.1"
+enumset = "1.1.5"
+
+[dev-dependencies]
+ndarray = "0.16.1"
+rand = "0.9.0"
+tokio = { version = "1.43.0", features = ["full"] }
+criterion = { version = "0.3", features = ["async_futures"] }
+
+[[bench]]
+name = "matmul"
+harness = false
+
+[[bench]]
+name = "elementwise"
+harness = false
+
+[[bench]]
+name = "fused"
+harness = false
+
+[[bench]]
+name = "reduce"
+harness = false

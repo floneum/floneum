@@ -71,7 +71,7 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: cargo test --lib --bins --tests --examples --workspace --features kalosm/language,kalosm/sound,kalosm/vision,kalosm/remote,kalosm/scrape
+        run: cargo test --lib --bins --tests --examples --workspace --features kalosm/language,kalosm/sound,kalosm/vision,kalosm/remote,kalosm/scrape  --exclude fusor-ml-core
 
   doc:
     if: github.event.pull_request.draft == false
