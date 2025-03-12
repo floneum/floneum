@@ -11,7 +11,13 @@ const GGUF_MAGIC_BYTES: [u8; 4] = *b"GGUF";
 fn check_magic<R: std::io::Read>(reader: &mut R) -> Result<(), GgufReadError> {
     let mut magic = [0; 4];
     reader.read_exact(&mut magic)?;
-    if magic == GGUF_MAGIC_BYTES || magic.iter().rev().zip(GGUF_MAGIC_BYTES.iter()).all(|(a, b)| a == b) {
+    if magic == GGUF_MAGIC_BYTES
+        || magic
+            .iter()
+            .rev()
+            .zip(GGUF_MAGIC_BYTES.iter())
+            .all(|(a, b)| a == b)
+    {
         Ok(())
     } else {
         Err(GgufReadError::MagicBytesMismatch)
@@ -204,8 +210,7 @@ pub enum GgufReadError {
     InvalidTensorSize {
         tensor_elems: usize,
         block_size: usize,
-    }
-
+    },
 }
 
 #[derive(Debug)]
@@ -219,12 +224,15 @@ impl TensorMetadata {
     fn read<R: std::io::Read + std::io::Seek>(
         &self,
         reader: &mut R,
-        tensor_data_offset: u64
+        tensor_data_offset: u64,
     ) -> Result<Box<[u8]>, GgufReadError> {
         let tensor_elems = self.shape.iter().copied().product::<u32>() as usize;
         let block_size = self.ggml_dtype.block_size();
         if tensor_elems % block_size != 0 {
-            return Err(GgufReadError::InvalidTensorSize{tensor_elems, block_size});
+            return Err(GgufReadError::InvalidTensorSize {
+                tensor_elems,
+                block_size,
+            });
         }
         let size_in_bytes = (tensor_elems / block_size) * self.ggml_dtype.block_allocation_size();
         let mut raw_data = vec![0u8; size_in_bytes].into_boxed_slice();
@@ -434,14 +442,36 @@ impl GgufMetadata {
     }
 }
 
-
 const Q4_0_BLOCK_SIZE: usize = 32;
 
 #[derive(AnyBitPattern, Clone, Copy)]
 #[repr(C)]
 pub struct BlockQ4_0 {
-    pub(crate) d: half::f16,
+    pub(crate) scale: half::f16,
     pub(crate) qs: [u8; Q4_0_BLOCK_SIZE / 2],
+}
+
+impl BlockQ4_0 {
+    // https://github.com/ggml-org/llama.cpp/blob/80a02aa8588ef167d616f76f1781b104c245ace0/ggml/src/ggml-quants.c#L255
+    fn dequantize(&self) -> [f32; Q4_0_BLOCK_SIZE] {
+        const CENTER_FOUR_BIT: i8 = 8;
+
+        let scale = self.scale.to_f32();
+        let mut data = [0.0; Q4_0_BLOCK_SIZE];
+
+        for (i, byte) in self.qs.iter().enumerate() {
+            let low_data = (byte & 0x0F) as i8 - CENTER_FOUR_BIT;
+            let high_data = (byte >> 4) as i8 - CENTER_FOUR_BIT;
+
+            let low_data = low_data as f32 * scale;
+            let high_data = high_data as f32 * scale;
+
+            data[i] = low_data;
+            data[i + Q4_0_BLOCK_SIZE / 2] = high_data;
+        }
+
+        data
+    }
 }
 
 const Q5_0_BLOCK_SIZE: usize = 32;
@@ -450,34 +480,42 @@ const Q5_0_BLOCK_SIZE: usize = 32;
 #[repr(C)]
 pub struct BlockQ5_0 {
     pub(crate) scale: half::f16,
-    pub(crate) qh: [u8; 4],
-    pub(crate) qs: [u8; Q5_0_BLOCK_SIZE / 2],
+    // The highest bit for each of the 5 bit values
+    pub(crate) data_high_bits: [u8; 4],
+    // The low four bits for each of the 5 bit values
+    pub(crate) data_low_bits: [u8; Q5_0_BLOCK_SIZE / 2],
 }
 
 impl BlockQ5_0 {
     // https://github.com/ggml-org/llama.cpp/blob/80a02aa8588ef167d616f76f1781b104c245ace0/ggml/src/ggml-quants.c#L296
     fn dequantize(&self) -> [f32; Q5_0_BLOCK_SIZE] {
+        const FIFTH_BIT: u8 = 0x10;
+        const CENTER_FIVE_BIT: i8 = 16;
+
         let scale = self.scale.to_f32();
-        let block_scales: u32 = bytemuck::cast(self.qh);
-        const FIFTH_BIT_TRUE: u32 = 0x10;
+        let high_bits: u32 = bytemuck::cast(self.data_high_bits);
+        let mut out = [0.0; Q5_0_BLOCK_SIZE];
 
-        todo!()
+        for (i, byte) in self.data_low_bits.iter().enumerate() {
+            let low = byte & 0x0F;
+            let high = byte >> 4;
+
+            // Get the nth bit from the start and make it our fifth bit
+            let low_bit = ((high_bits >> i) << 4) as u8 & FIFTH_BIT;
+            // Get the nth bit from the last half of the high bits and make it our fifth bit
+            let high_bit = ((high_bits >> (i + 12)) << 4) as u8 & FIFTH_BIT;
+
+            // Merge the two chunks together. The _0 quant variants are always centered at the
+            // middle of the bit range
+            let low_data = (low | low_bit) as i8 - CENTER_FIVE_BIT;
+            let high_data = (high | high_bit) as i8 - CENTER_FIVE_BIT;
+
+            out[i] = low_data as f32 * scale;
+            out[i + Q5_0_BLOCK_SIZE / 2] = high_data as f32 * scale;
+        }
+
+        out
     }
-    //     const float d = GGML_FP16_TO_FP32(x[i].d);
-
-    //     uint32_t qh;
-    //     memcpy(&qh, x[i].qh, sizeof(qh));
-
-    //     for (int j = 0; j < qk/2; ++j) {
-    //         const uint8_t xh_0 = ((qh >> (j +  0)) << 4) & 0x10;
-    //         const uint8_t xh_1 = ((qh >> (j + 12))     ) & 0x10;
-
-    //         const int32_t x0 = ((x[i].qs[j] & 0x0F) | xh_0) - 16;
-    //         const int32_t x1 = ((x[i].qs[j] >>   4) | xh_1) - 16;
-
-    //         y[i*qk + j + 0   ] = x0*d;
-    //         y[i*qk + j + qk/2] = x1*d;
-    //     }
 }
 
 const Q8_0_BLOCK_SIZE: usize = 32;
@@ -536,14 +574,65 @@ impl BlockQ4K {
     }
 }
 
-
 #[derive(Debug, Clone, PartialEq)]
 #[repr(C)]
 pub struct BlockQ6K {
-    pub(crate) ql: [u8; K_BLOCK_SIZE / 2],
-    pub(crate) qh: [u8; K_BLOCK_SIZE / 4],
+    // The 4 low bits of the each value
+    pub(crate) data_low_bits: [u8; K_BLOCK_SIZE / 2],
+    // The 2 high bits of the each value
+    pub(crate) data_high_bits: [u8; K_BLOCK_SIZE / 4],
+    // Full byte scales for each block of 16 values
     pub(crate) scales: [i8; K_BLOCK_SIZE / 16],
-    pub(crate) d: half::f16,
+    // The scale of the super block
+    pub(crate) scale: half::f16,
+}
+
+impl BlockQ6K {
+    // https://github.com/ggml-org/llama.cpp/blob/80a02aa8588ef167d616f76f1781b104c245ace0/ggml/src/ggml-quants.c#L1690
+    fn dequantize(&self) -> [f32; K_BLOCK_SIZE] {
+        const CENTER_SIX_BIT: i8 = 32;
+        const TWO_BITS: u8 = 0b11;
+        const FOUR_BITS: u8 = 0b1111;
+
+        let scale = self.scale.to_f32();
+        let mut data = [0.0; K_BLOCK_SIZE];
+
+        for chunk_index in 0..2 {
+            let output_index = chunk_index * 128;
+            let lower_index = chunk_index * 64;
+            let high_index = chunk_index * 32;
+            let scale_index = chunk_index * 8;
+            // Load 128 6 bit values into data in groups of 4
+            for high_byte_index in 0..32 {
+                let scale_index = scale_index + high_byte_index / 16;
+                let high_byte = self.data_high_bits[high_index + high_byte_index];
+                let first_low_byte = self.data_low_bits[lower_index + high_byte_index];
+                let second_low_byte = self.data_low_bits[lower_index + high_byte_index + 32];
+                
+                let first_two_bits = high_byte & TWO_BITS;
+                let first_high_nibble = first_low_byte & FOUR_BITS;
+                let first_merged = ((first_two_bits << 4) | first_high_nibble) as i8 - CENTER_SIX_BIT;
+                data[output_index + high_byte_index] = scale * self.scales[scale_index] as f32 * first_merged as f32;
+
+                let second_two_bits = (high_byte >> 2) & TWO_BITS;
+                let second_high_nibble = second_low_byte & FOUR_BITS;
+                let second_merged = ((second_two_bits << 4) | second_high_nibble) as i8 - CENTER_SIX_BIT;
+                data[output_index + high_byte_index + 32] = scale * self.scales[scale_index + 2] as f32 * second_merged as f32;
+
+                let third_two_bits = (high_byte >> 4) & TWO_BITS;
+                let third_high_nibble = first_low_byte >> 4;
+                let third_merged = ((third_two_bits << 4) | third_high_nibble) as i8 - CENTER_SIX_BIT;
+                data[output_index + high_byte_index + 64] = scale * self.scales[scale_index + 4] as f32 * third_merged as f32;
+
+                let fourth_two_bits = (high_byte >> 6) & TWO_BITS;
+                let fourth_high_nibble = second_low_byte >> 4;
+                let fourth_merged = ((fourth_two_bits << 4) | fourth_high_nibble) as i8 - CENTER_SIX_BIT;
+                data[output_index + high_byte_index + 96] = scale * self.scales[scale_index + 6] as f32 * fourth_merged as f32;
+            }
+        }
+
+        data
+    }
 }
 
 const SIX_BITS_MASK: u32 = 0b0011_1111_0011_1111_0011_1111_0011_1111;
@@ -633,9 +722,18 @@ async fn test_load_tiny_llama() {
     let bytes = reqwest::get(url).await.unwrap().bytes().await.unwrap();
     let mut reader = std::io::Cursor::new(bytes);
     let metadata = GgufMetadata::read(&mut reader).unwrap();
-    println!("tensor types: {:?}", metadata.tensor_infos.values().map(|t| t.ggml_dtype).collect::<std::collections::HashSet<_>>());
+    println!(
+        "tensor types: {:?}",
+        metadata
+            .tensor_infos
+            .values()
+            .map(|t| t.ggml_dtype)
+            .collect::<std::collections::HashSet<_>>()
+    );
     for (name, tensor) in metadata.tensor_infos {
         println!("{}: {:?}", name, tensor);
-        let _ = tensor.read(&mut reader, metadata.tensor_data_offset).unwrap();
+        let _ = tensor
+            .read(&mut reader, metadata.tensor_data_offset)
+            .unwrap();
     }
 }
