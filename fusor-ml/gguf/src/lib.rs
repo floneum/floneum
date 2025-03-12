@@ -608,26 +608,34 @@ impl BlockQ6K {
                 let high_byte = self.data_high_bits[high_index + high_byte_index];
                 let first_low_byte = self.data_low_bits[lower_index + high_byte_index];
                 let second_low_byte = self.data_low_bits[lower_index + high_byte_index + 32];
-                
+
                 let first_two_bits = high_byte & TWO_BITS;
                 let first_high_nibble = first_low_byte & FOUR_BITS;
-                let first_merged = ((first_two_bits << 4) | first_high_nibble) as i8 - CENTER_SIX_BIT;
-                data[output_index + high_byte_index] = scale * self.scales[scale_index] as f32 * first_merged as f32;
+                let first_merged =
+                    ((first_two_bits << 4) | first_high_nibble) as i8 - CENTER_SIX_BIT;
+                data[output_index + high_byte_index] =
+                    scale * self.scales[scale_index] as f32 * first_merged as f32;
 
                 let second_two_bits = (high_byte >> 2) & TWO_BITS;
                 let second_high_nibble = second_low_byte & FOUR_BITS;
-                let second_merged = ((second_two_bits << 4) | second_high_nibble) as i8 - CENTER_SIX_BIT;
-                data[output_index + high_byte_index + 32] = scale * self.scales[scale_index + 2] as f32 * second_merged as f32;
+                let second_merged =
+                    ((second_two_bits << 4) | second_high_nibble) as i8 - CENTER_SIX_BIT;
+                data[output_index + high_byte_index + 32] =
+                    scale * self.scales[scale_index + 2] as f32 * second_merged as f32;
 
                 let third_two_bits = (high_byte >> 4) & TWO_BITS;
                 let third_high_nibble = first_low_byte >> 4;
-                let third_merged = ((third_two_bits << 4) | third_high_nibble) as i8 - CENTER_SIX_BIT;
-                data[output_index + high_byte_index + 64] = scale * self.scales[scale_index + 4] as f32 * third_merged as f32;
+                let third_merged =
+                    ((third_two_bits << 4) | third_high_nibble) as i8 - CENTER_SIX_BIT;
+                data[output_index + high_byte_index + 64] =
+                    scale * self.scales[scale_index + 4] as f32 * third_merged as f32;
 
                 let fourth_two_bits = (high_byte >> 6) & TWO_BITS;
                 let fourth_high_nibble = second_low_byte >> 4;
-                let fourth_merged = ((fourth_two_bits << 4) | fourth_high_nibble) as i8 - CENTER_SIX_BIT;
-                data[output_index + high_byte_index + 96] = scale * self.scales[scale_index + 6] as f32 * fourth_merged as f32;
+                let fourth_merged =
+                    ((fourth_two_bits << 4) | fourth_high_nibble) as i8 - CENTER_SIX_BIT;
+                data[output_index + high_byte_index + 96] =
+                    scale * self.scales[scale_index + 6] as f32 * fourth_merged as f32;
             }
         }
 
