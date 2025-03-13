@@ -552,51 +552,34 @@ impl BlockQ4K {
         let weights = &self.weights;
         let super_block_scale = self.scale.to_f32();
         let super_block_min = self.min.to_f32();
-        let scales = &self.scales;
-        
+        let scales = bytemuck::cast_slice(&self.scales);
+
         let mut data = [0.0; K_BLOCK_SIZE];
+        let (first_scales, first_offset) = first_scales_min_k4(scales);
+        let (second_scales, second_offset) = second_scales_min_k4(scales);
+        let scales: [u8; 8] = bytemuck::cast([first_scales, second_scales]);
+        let offsets: [u8; 8] = bytemuck::cast([first_offset, second_offset]);
         let mut pair_index = 0;
         for chunk_index in (0..K_BLOCK_SIZE / 2).step_by(32) {
             let out_chunk_index = chunk_index * 2;
-            let (low_scale, low_offset) = get_scale_min_k4(pair_index, scales);
+            let low_scale = scales[pair_index];
+            let low_offset = offsets[pair_index];
             let low_scale = low_scale as f32 * super_block_scale;
             let low_offset = low_offset as f32 * super_block_min;
             pair_index += 1;
-            let (high_scale, high_offset) = get_scale_min_k4(pair_index, scales);
+            let high_scale = scales[pair_index];
+            let high_offset = offsets[pair_index];
             let high_scale = high_scale as f32 * super_block_scale;
             let high_offset = high_offset as f32 * super_block_min;
             pair_index += 1;
-            
+
             for offset in 0..32 {
                 let weight = weights[chunk_index + offset];
                 data[out_chunk_index + offset] = low_scale * (weight & 0xF) as f32 - low_offset;
-                data[out_chunk_index + offset + 32] = high_scale * (weight >> 4) as f32 - high_offset;
+                data[out_chunk_index + offset + 32] =
+                    high_scale * (weight >> 4) as f32 - high_offset;
             }
         }
-        
-        // let scales = bytemuck::cast_slice(&self.scales);
-        // let grab_scales = [first_scales_min_k4, second_scales_min_k4];
-        // let mut index = 0;
-        // let mut weights = weights.iter().copied();
-        // for grab_scale in grab_scales {
-        //     let (scales, offsets) = grab_scale(scales);
-        //     let scales: [[u8; 2]; 2] = bytemuck::cast(scales);
-        //     let offsets: [[u8; 2]; 2] = bytemuck::cast(offsets);
-        //     for (scale, offset) in scales.iter().zip(offsets.iter()) {
-        //         let first_scale = scale[0] as f32 * super_block_scale;
-        //         let second_scale = scale[1] as f32 * super_block_scale;
-        //         let first_offset = offset[0] as f32 * super_block_min;
-        //         let second_offset = offset[1] as f32 * super_block_min;
-        //         const INNER_LOOP: usize = (K_BLOCK_SIZE / 2) / 4;
-        //         for i in 0..INNER_LOOP {
-        //             let weight = weights.next().unwrap();
-        //             data[index + i] = first_scale * (weight & 0xF) as f32 - first_offset;
-        //             data[index + i + INNER_LOOP] = second_scale * (weight >> 4) as f32 - second_offset;
-        //         }
-        //         index += INNER_LOOP * 2;
-        //     }
-        // }
-        // debug_assert!(weights.next().is_none());
 
         data
     }
@@ -671,10 +654,10 @@ impl BlockQ6K {
     }
 }
 
-const SIX_BITS_MASK: u32 = 0b0011_1111_0011_1111_0011_1111_0011_1111;
+const SIX_BITS_MASK: u32     = 0b0011_1111_0011_1111_0011_1111_0011_1111;
 const MSB_TWO_BITS_MASK: u32 = 0b1100_0000_1100_0000_1100_0000_1100_0000;
-const MSB_SCALES_MASK: u32 = 0b1111_0000_1111_0000_1111_0000_1111_0000;
-const MSB_OFFSET_MASK: u32 = 0b0000_1111_0000_1111_0000_1111_0000_1111;
+const MSB_SCALES_MASK: u32 = 0b0000_1111_0000_1111_0000_1111_0000_1111;
+const MSB_OFFSET_MASK: u32 = 0b1111_0000_1111_0000_1111_0000_1111_0000;
 
 fn first_scales_min_k4(packed_scales: &[u32]) -> (u32, u32) {
     let first_four_bytes = packed_scales[0];
@@ -696,7 +679,7 @@ fn second_scales_min_k4(packed_scales: &[u32]) -> (u32, u32) {
     let second_scales = msb_scales | lsb_scales;
 
     let msb_offsets = (middle_four_bytes & MSB_TWO_BITS_MASK) >> 2;
-    let lsb_offsets = last_four_bytes & MSB_OFFSET_MASK;
+    let lsb_offsets = (last_four_bytes & MSB_OFFSET_MASK) >> 4;
     let second_offsets = msb_offsets | lsb_offsets;
 
     (second_scales, second_offsets)
