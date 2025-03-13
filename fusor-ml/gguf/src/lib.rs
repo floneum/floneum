@@ -654,11 +654,20 @@ impl BlockQ6K {
     }
 }
 
-const SIX_BITS_MASK: u32     = 0b0011_1111_0011_1111_0011_1111_0011_1111;
+const SIX_BITS_MASK: u32 = 0b0011_1111_0011_1111_0011_1111_0011_1111;
 const MSB_TWO_BITS_MASK: u32 = 0b1100_0000_1100_0000_1100_0000_1100_0000;
 const MSB_SCALES_MASK: u32 = 0b0000_1111_0000_1111_0000_1111_0000_1111;
 const MSB_OFFSET_MASK: u32 = 0b1111_0000_1111_0000_1111_0000_1111_0000;
 
+// Extracts this bit pattern. The first 6 bits of the first
+// 4 bytes are the scales. The first 6 bits of the second 4
+// bytes are the offsets.
+//
+// dddddddd dddddddd dddddddd dddddddd mmmmmmmm mmmmmmmm
+// __000000|__111111|__222222|__333333|__000000|__111111
+//
+// mmmmmmmm mmmmmmmm mmmmdddd mmmmdddd mmmmdddd mmmmdddd
+// __222222|__333333|________|________|________|________
 fn first_scales_min_k4(packed_scales: &[u32]) -> (u32, u32) {
     let first_four_bytes = packed_scales[0];
     let middle_four_bytes = packed_scales[1];
@@ -669,6 +678,18 @@ fn first_scales_min_k4(packed_scales: &[u32]) -> (u32, u32) {
     (first_scales, first_offsets)
 }
 
+// Extracts this bit pattern. The first 2 bits of the first
+// 4 bytes are the scales. The first 2 bits of the second 4
+// bytes are the offsets.
+// The first 4 bits of the last 4 bytes are the lower 4 bits
+// of the scales. The second 4 bits of the last 4 bytes are
+// the lower 4 bits of the offsets.
+//
+// dddddddd dddddddd dddddddd dddddddd mmmmmmmm mmmmmmmm
+// 44______|55______|66______|77______|44______|55______
+//
+// mmmmmmmm mmmmmmmm mmmmdddd mmmmdddd mmmmdddd mmmmdddd
+// 66______|77______|44444444|55555555|66666666|77777777
 fn second_scales_min_k4(packed_scales: &[u32]) -> (u32, u32) {
     let first_four_bytes = packed_scales[0];
     let middle_four_bytes = packed_scales[1];
@@ -683,55 +704,6 @@ fn second_scales_min_k4(packed_scales: &[u32]) -> (u32, u32) {
     let second_offsets = msb_offsets | lsb_offsets;
 
     (second_scales, second_offsets)
-}
-
-const SIX_BITS: u8 = 0b0011_1111;
-const FOUR_BITS: u8 = 0b0000_1111;
-
-// pair_index is in the range [0, 7]. It is the index of the pair of 6 bit (scale, offset) pairs
-fn get_scale_min_k4(pair_index: u8, packed_scales: &[u8; 12]) -> (u8, u8) {
-    if pair_index < 4 {
-        // Extracts this bit pattern. The first 6 bits of the first
-        // 4 bytes are the scales. The first 6 bits of the second 4
-        // bytes are the offsets.
-        //
-        // dddddddd dddddddd dddddddd dddddddd mmmmmmmm mmmmmmmm
-        // __000000|__111111|__222222|__333333|__000000|__111111
-        //
-        // mmmmmmmm mmmmmmmm mmmmdddd mmmmdddd mmmmdddd mmmmdddd
-        // __222222|__333333|________|________|________|________
-        let scale = packed_scales[pair_index as usize] & SIX_BITS;
-        let offset = packed_scales[(pair_index + 4) as usize] & SIX_BITS;
-
-        (scale, offset)
-    } else {
-        // Extracts this bit pattern. The first 2 bits of the first
-        // 4 bytes are the scales. The first 2 bits of the second 4
-        // bytes are the offsets.
-        // The first 4 bits of the last 4 bytes are the lower 4 bits
-        // of the scales. The second 4 bits of the last 4 bytes are
-        // the lower 4 bits of the offsets.
-        //
-        // dddddddd dddddddd dddddddd dddddddd mmmmmmmm mmmmmmmm
-        // 44______|55______|66______|77______|44______|55______
-        //
-        // mmmmmmmm mmmmmmmm mmmmdddd mmmmdddd mmmmdddd mmmmdddd
-        // 66______|77______|44444444|55555555|66666666|77777777
-        // Get the byte with the 4 LSB of the scale and offset
-        let shared_byte = packed_scales[(pair_index + 4) as usize];
-
-        let scale_bottom_four_bits = shared_byte & FOUR_BITS;
-        // Get the 2 MSB of the scale
-        let scale_top_two_bits = packed_scales[(pair_index - 4) as usize] >> 6;
-        let scale = scale_bottom_four_bits | scale_top_two_bits << 4;
-
-        let offset_bottom_four_bits = shared_byte >> 4;
-        // Get the 2 MSB of the offset
-        let offset_top_two_bits = packed_scales[pair_index as usize] >> 6;
-        let offset = offset_bottom_four_bits | offset_top_two_bits << 4;
-
-        (scale, offset)
-    }
 }
 
 #[cfg(test)]
