@@ -2412,7 +2412,9 @@ name = "fusor-gguf"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "candle-core",
  "half 2.4.1",
+ "pretty_assertions",
  "reqwest 0.12.13",
  "rustc-hash 2.1.1",
  "thiserror 2.0.9",

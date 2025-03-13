@@ -503,7 +503,7 @@ impl BlockQ5_0 {
             // Get the nth bit from the start and make it our fifth bit
             let low_bit = ((high_bits >> i) << 4) as u8 & FIFTH_BIT;
             // Get the nth bit from the last half of the high bits and make it our fifth bit
-            let high_bit = ((high_bits >> (i + 12)) << 4) as u8 & FIFTH_BIT;
+            let high_bit = (high_bits >> (i + 12)) as u8 & FIFTH_BIT;
 
             // Merge the two chunks together. The _0 quant variants are always centered at the
             // middle of the bit range
@@ -520,11 +520,20 @@ impl BlockQ5_0 {
 
 const Q8_0_BLOCK_SIZE: usize = 32;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(AnyBitPattern, Clone, Copy)]
 #[repr(C)]
 pub struct BlockQ8_0 {
-    pub(crate) d: half::f16,
-    pub(crate) qs: [i8; Q8_0_BLOCK_SIZE],
+    pub(crate) scale: half::f16,
+    pub(crate) data: [i8; Q8_0_BLOCK_SIZE],
+}
+
+impl BlockQ8_0 {
+    // https://github.com/ggml-org/llama.cpp/blob/80a02aa8588ef167d616f76f1781b104c245ace0/ggml/src/ggml-quants.c#L349
+    fn dequantize(&self) -> [f32; Q8_0_BLOCK_SIZE] {
+        let scale = self.scale.to_f32();
+
+        std::array::from_fn(|i| self.data[i] as f32 * scale)
+    }
 }
 
 const K_BLOCK_SIZE: usize = 256;
@@ -543,38 +552,57 @@ impl BlockQ4K {
         let weights = &self.weights;
         let super_block_scale = self.scale.to_f32();
         let super_block_min = self.min.to_f32();
-        let scales = bytemuck::cast_slice(&self.scales);
-
+        let scales = &self.scales;
+        
         let mut data = [0.0; K_BLOCK_SIZE];
-
-        let bit_filters = [|i| i & 0xF, |i| i >> 4];
-        let grab_scales = [first_scales_min_k4, second_scales_min_k4];
-        let mut index = 0;
-        for grab_scale in grab_scales {
-            let (scales, offsets) = grab_scale(scales);
-            let scales = bytes_of(&scales);
-            let offsets = bytes_of(&offsets);
-            let mut scale_offset = 0;
-            while scale_offset < std::mem::size_of::<u64>() {
-                for bit_filter in bit_filters {
-                    let scale = scales[scale_offset];
-                    let offset = offsets[scale_offset];
-                    let scale = scale as f32 * super_block_scale;
-                    let offset = offset as f32 * super_block_min;
-                    for _ in 0..32 {
-                        data[index] = scale * bit_filter(weights[index]) as f32 - offset;
-                        index += 1;
-                    }
-                    scale_offset += 1;
-                }
+        let mut pair_index = 0;
+        for chunk_index in (0..K_BLOCK_SIZE / 2).step_by(32) {
+            let out_chunk_index = chunk_index * 2;
+            let (low_scale, low_offset) = get_scale_min_k4(pair_index, scales);
+            let low_scale = low_scale as f32 * super_block_scale;
+            let low_offset = low_offset as f32 * super_block_min;
+            pair_index += 1;
+            let (high_scale, high_offset) = get_scale_min_k4(pair_index, scales);
+            let high_scale = high_scale as f32 * super_block_scale;
+            let high_offset = high_offset as f32 * super_block_min;
+            pair_index += 1;
+            
+            for offset in 0..32 {
+                let weight = weights[chunk_index + offset];
+                data[out_chunk_index + offset] = low_scale * (weight & 0xF) as f32 - low_offset;
+                data[out_chunk_index + offset + 32] = high_scale * (weight >> 4) as f32 - high_offset;
             }
         }
+        
+        // let scales = bytemuck::cast_slice(&self.scales);
+        // let grab_scales = [first_scales_min_k4, second_scales_min_k4];
+        // let mut index = 0;
+        // let mut weights = weights.iter().copied();
+        // for grab_scale in grab_scales {
+        //     let (scales, offsets) = grab_scale(scales);
+        //     let scales: [[u8; 2]; 2] = bytemuck::cast(scales);
+        //     let offsets: [[u8; 2]; 2] = bytemuck::cast(offsets);
+        //     for (scale, offset) in scales.iter().zip(offsets.iter()) {
+        //         let first_scale = scale[0] as f32 * super_block_scale;
+        //         let second_scale = scale[1] as f32 * super_block_scale;
+        //         let first_offset = offset[0] as f32 * super_block_min;
+        //         let second_offset = offset[1] as f32 * super_block_min;
+        //         const INNER_LOOP: usize = (K_BLOCK_SIZE / 2) / 4;
+        //         for i in 0..INNER_LOOP {
+        //             let weight = weights.next().unwrap();
+        //             data[index + i] = first_scale * (weight & 0xF) as f32 - first_offset;
+        //             data[index + i + INNER_LOOP] = second_scale * (weight >> 4) as f32 - second_offset;
+        //         }
+        //         index += INNER_LOOP * 2;
+        //     }
+        // }
+        // debug_assert!(weights.next().is_none());
 
         data
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(AnyBitPattern, Clone, Copy)]
 #[repr(C)]
 pub struct BlockQ6K {
     // The 4 low bits of the each value
@@ -726,22 +754,121 @@ fn get_scale_min_k4(pair_index: u8, packed_scales: &[u8; 12]) -> (u8, u8) {
 #[cfg(test)]
 #[tokio::test]
 async fn test_load_tiny_llama() {
+    use pretty_assertions::assert_eq;
+
     let url = "https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf";
     let bytes = reqwest::get(url).await.unwrap().bytes().await.unwrap();
-    let mut reader = std::io::Cursor::new(bytes);
+    let mut reader = std::io::Cursor::new(&bytes);
     let metadata = GgufMetadata::read(&mut reader).unwrap();
-    println!(
-        "tensor types: {:?}",
-        metadata
-            .tensor_infos
-            .values()
-            .map(|t| t.ggml_dtype)
-            .collect::<std::collections::HashSet<_>>()
-    );
-    for (name, tensor) in metadata.tensor_infos {
+    let mut reader = std::io::Cursor::new(&bytes);
+    let candle_metadata = candle_core::quantized::gguf_file::Content::read(&mut reader).unwrap();
+    let device = candle_core::Device::Cpu;
+    for (name, candle_tensor) in candle_metadata.tensor_infos {
+        let tensor = metadata.tensor_infos.get(&*name).unwrap();
         println!("{}: {:?}", name, tensor);
-        let _ = tensor
+        let tensor_bytes = tensor
             .read(&mut reader, metadata.tensor_data_offset)
             .unwrap();
+        let candle_tensor = candle_tensor
+            .read(&mut reader, candle_metadata.tensor_data_offset, &device)
+            .unwrap();
+        let candle_tensor_de_quantized = candle_tensor.dequantize(&device).unwrap();
+        let candle_tensor_data: Vec<f32> = candle_tensor_de_quantized
+            .flatten_all()
+            .unwrap()
+            .to_vec1()
+            .unwrap();
+        match tensor.ggml_dtype {
+            GgmlDType::Q4_0 => {
+                let blocks: &[BlockQ4_0] = bytemuck::cast_slice(&tensor_bytes);
+                for (block, candle_block) in blocks
+                    .iter()
+                    .zip(candle_tensor_data.chunks(Q4_0_BLOCK_SIZE))
+                {
+                    let dequantized = block.dequantize();
+                    for (a, b) in dequantized.iter().zip(candle_block) {
+                        if (a - b).abs() > 1e-6 {
+                            println!("ours: {:?}", dequantized);
+                            println!("candle: {:?}", candle_block);
+                            assert_eq!(dequantized, candle_block);
+                            panic!();
+                        }
+                    }
+                }
+            }
+            GgmlDType::Q5_0 => {
+                let blocks: &[BlockQ5_0] = bytemuck::cast_slice(&tensor_bytes);
+                for (block, candle_block) in blocks
+                    .iter()
+                    .zip(candle_tensor_data.chunks(Q5_0_BLOCK_SIZE))
+                {
+                    let dequantized = block.dequantize();
+                    for (a, b) in dequantized.iter().zip(candle_block) {
+                        if (a - b).abs() > 1e-6 {
+                            println!("ours: {:?}", dequantized);
+                            println!("candle: {:?}", candle_block);
+                            assert_eq!(dequantized, candle_block);
+                            panic!();
+                        }
+                    }
+                }
+            }
+            GgmlDType::Q8_0 => {
+                let blocks: &[BlockQ8_0] = bytemuck::cast_slice(&tensor_bytes);
+                for (block, candle_block) in blocks
+                    .iter()
+                    .zip(candle_tensor_data.chunks(Q8_0_BLOCK_SIZE))
+                {
+                    let dequantized = block.dequantize();
+                    for (a, b) in dequantized.iter().zip(candle_block) {
+                        if (a - b).abs() > 1e-6 {
+                            println!("ours: {:?}", dequantized);
+                            println!("candle: {:?}", candle_block);
+                            assert_eq!(dequantized, candle_block);
+                            panic!();
+                        }
+                    }
+                }
+            }
+            GgmlDType::Q4K => {
+                let blocks: &[BlockQ4K] = bytemuck::cast_slice(&tensor_bytes);
+                for (block, candle_block) in
+                    blocks.iter().zip(candle_tensor_data.chunks(K_BLOCK_SIZE))
+                {
+                    let dequantized = block.dequantize();
+                    for (a, b) in dequantized.iter().zip(candle_block) {
+                        if (a - b).abs() > 1e-6 {
+                            println!("ours: {:?}", dequantized);
+                            println!("candle: {:?}", candle_block);
+                            assert_eq!(dequantized, candle_block);
+                            panic!();
+                        }
+                    }
+                }
+            }
+            GgmlDType::Q6K => {
+                let blocks: &[BlockQ6K] = bytemuck::cast_slice(&tensor_bytes);
+                for (block, candle_block) in
+                    blocks.iter().zip(candle_tensor_data.chunks(K_BLOCK_SIZE))
+                {
+                    let dequantized = block.dequantize();
+                    for (a, b) in dequantized.iter().zip(candle_block) {
+                        if (a - b).abs() > 1e-6 {
+                            println!("ours: {:?}", dequantized);
+                            println!("candle: {:?}", candle_block);
+                            assert_eq!(dequantized, candle_block);
+                            panic!();
+                        }
+                    }
+                }
+            }
+            GgmlDType::F32 => {
+                let blocks: &[f32] = bytemuck::cast_slice(&tensor_bytes);
+                for (a, b) in blocks.iter().zip(candle_tensor_data) {
+                    assert!((a - b).abs() < 1e-6);
+                }
+            }
+            _ => todo!(),
+        }
     }
 }
