@@ -29,3 +29,4 @@ mod resize;
 mod slice_assign;
 mod tensor;
 mod visit_tiled;
+mod quantized;

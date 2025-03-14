@@ -1,8 +1,10 @@
 use enumset::{EnumSet, EnumSetType};
+use fusor_gguf::{BlockQ4K, BlockQ4_0, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType};
 use std::fmt::{Debug, Write};
 use std::{fmt::Display, sync::OnceLock};
 use wgpu::{BindGroupLayout, CommandEncoder, PipelineCompilationOptions, util::DeviceExt};
 
+use crate::quantized::QMatrix;
 use crate::{DataTypeEnum, Device, PerformanceQueries, TensorData};
 
 #[derive(EnumSetType, Debug)]
@@ -25,6 +27,7 @@ pub(crate) struct GenericKernel {
     functions: Vec<Function>,
     globals: Vec<KernelGlobal>,
     enabled_builtins: EnumSet<EnabledBuiltins>,
+    quantized_type_definitions: EnumSet<GgmlType>,
     kernel: OnceLock<wgpu::ShaderModule>,
     body: String,
 }
@@ -40,6 +43,7 @@ impl GenericKernel {
             globals: Default::default(),
             max_global_id: 0,
             enabled_builtins: Default::default(),
+            quantized_type_definitions: Default::default(),
             kernel: OnceLock::new(),
             body: String::new(),
         }
@@ -90,6 +94,29 @@ impl GenericKernel {
         self.inputs.push(KernelInput {
             ty: KernelInputType::Tensor(input.clone()),
         });
+
+        input
+    }
+
+    pub(crate) fn add_q_matrix_input(
+        &mut self,
+        rank: u32,
+        datatype: GgmlType,
+    ) -> QMatrixInput {
+        let start_index = self.max_binding;
+        self.max_binding += 2;
+
+        let input = QMatrixInput {
+            start_index,
+            datatype,
+            rank,
+        };
+
+        self.inputs.push(KernelInput {
+            ty: KernelInputType::QMatrix(input.clone()),
+        });
+
+        self.quantized_type_definitions |= datatype;
 
         input
     }
@@ -180,6 +207,32 @@ impl GenericKernel {
         let mut entries = Vec::new();
         for input in &self.inputs {
             match &input.ty {
+                KernelInputType::QMatrix(matrix) => {
+                    // Matrix bytes
+                    entries.push(wgpu::BindGroupLayoutEntry {
+                        binding: matrix.get_matrix_binding(),
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage {
+                                read_only: true,
+                            },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    });
+                    // Matrix info
+                    entries.push(wgpu::BindGroupLayoutEntry {
+                        binding: matrix.get_info_binding(),
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    });
+                }
                 KernelInputType::Tensor(tensor_input) => {
                     // Tensor weight
                     entries.push(wgpu::BindGroupLayoutEntry {
@@ -312,6 +365,21 @@ impl GenericKernel {
         };
         for (input, value) in self.inputs.iter().zip(tensors.iter()) {
             match (&input.ty, value) {
+                (KernelInputType::QMatrix(matrix_input), KernelInputValue::QMatrix(matrix)) => {
+                    // Tensor weight
+                    entries.push(wgpu::BindGroupEntry {
+                        binding: matrix_input.get_matrix_binding(),
+                        resource: matrix.buffer().as_entire_binding(),
+                    });
+                    // Tensor info
+                    owned_entries.push((
+                        matrix_input.get_info_binding(),
+                        create_u32_iter_buffer(
+                            device,
+                            matrix.shape().iter().map(|x| *x as u32)
+                        ),
+                    ));
+                }
                 (KernelInputType::Tensor(tensor_input), KernelInputValue::Tensor(tensor)) => {
                     // Tensor weight
                     entries.push(wgpu::BindGroupEntry {
@@ -340,7 +408,7 @@ impl GenericKernel {
                 (KernelInputType::Float(float_input), KernelInputValue::Float(value)) => {
                     owned_entries.push((float_input.index, create_f32_buffer(device, *value)));
                 }
-                _ => todo!(),
+                _ => unreachable!(),
             }
         }
 
@@ -388,8 +456,59 @@ impl GenericKernel {
         }
     }
 
+    fn declare_quantized_types(&self, f: &mut String) -> std::fmt::Result {
+        let q4_0 = GgmlType::Q4_0;
+        if self.quantized_type_definitions.contains(q4_0) {
+            writeln!(f, "struct {q4_0} {{")?;
+            writeln!(f, "    scale: f16,")?;
+            writeln!(f, "    weights: array<u8, {}>,", BlockQ4_0::WEIGHTS_SIZE)?;
+            writeln!(f, "}};")?;
+        }
+
+        let q5_0 = GgmlType::Q5_0;
+        if self.quantized_type_definitions.contains(q5_0) {
+            writeln!(f, "struct {q5_0} {{")?;
+            writeln!(f, "    scale: f16,")?;
+            writeln!(f, "    data_high_bits: array<u8, {}>,", BlockQ5_0::WEIGHTS_HIGH_BITS_SIZE)?;
+            writeln!(f, "    data_low_bits: array<u8, {}>,", BlockQ5_0::WEIGHTS_LOW_BITS_SIZE)?;
+            writeln!(f, "}};")?;
+        }
+
+        let q8_0 = GgmlType::Q8_0;
+        if self.quantized_type_definitions.contains(q8_0) {
+            writeln!(f, "struct {q8_0} {{")?;
+            writeln!(f, "    scale: f16,")?;
+            writeln!(f, "    weights: array<u8, {}>,", BlockQ8_0::WEIGHTS_SIZE)?;
+            writeln!(f, "}};")?;
+        }
+
+        let q4_k = GgmlType::Q4K;
+        if self.quantized_type_definitions.contains(q4_k) {
+            writeln!(f, "struct {q4_k} {{")?;
+            writeln!(f, "    scale: f16,")?;
+            writeln!(f, "    min: f16,")?;
+            writeln!(f, "    scales: array<u8, {}>,", BlockQ4K::WEIGHTS_SIZE)?;
+            writeln!(f, "    weights: array<u8, {}>,", BlockQ4K::WEIGHTS_SIZE)?;
+            writeln!(f, "}};")?;
+        }
+
+        let q6_k = GgmlType::Q6K;
+        if self.quantized_type_definitions.contains(q6_k) {
+            writeln!(f, "struct {q6_k} {{")?;
+            writeln!(f, "    data_low_bits: array<u8, {}>,", BlockQ6K::WEIGHTS_LOW_BITS_SIZE)?;
+            writeln!(f, "    data_high_bits: array<u8, {}>,", BlockQ6K::WEIGHTS_HIGH_BITS_SIZE)?;
+            writeln!(f, "    scales: array<u8, {}>,", BlockQ6K::SCALES_SIZE)?;
+            writeln!(f, "    scale: f16,")?;
+            writeln!(f, "}};")?;
+        }
+
+        Ok(())
+    }
+
     fn kernel(&self, f: &mut String) -> std::fmt::Result {
         writeln!(f, "enable f16;")?;
+
+        self.declare_quantized_types(f)?;
 
         for input in &self.inputs {
             write!(f, "{input}")?;
@@ -496,9 +615,16 @@ impl GenericKernel {
 }
 
 pub(crate) enum KernelInputValue {
+    QMatrix(QMatrix),
     Tensor(TensorData),
     Integer(u32),
     Float(f32),
+}
+
+impl From<QMatrix> for KernelInputValue {
+    fn from(value: QMatrix) -> Self {
+        Self::QMatrix(value)
+    }
 }
 
 impl From<TensorData> for KernelInputValue {
@@ -633,6 +759,23 @@ struct KernelInput {
 impl Display for KernelInput {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.ty {
+            KernelInputType::QMatrix(matrix) => {
+                let start_index = matrix.start_index;
+                let datatype = matrix.datatype;
+                writeln!(f, "@group(0) @binding({start_index}) var<storage, read> i_{start_index}: array<{datatype}>;")?;
+
+                writeln!(f, "struct Tensor{start_index}Info {{")?;
+                for i in 0..matrix.rank {
+                    writeln!(f, "    shape_{}: u32,", i)?;
+                }
+                writeln!(f, "}};")?;
+
+                let info_index = matrix.get_info_binding();
+                writeln!(
+                    f,
+                    "@group(0) @binding({info_index}) var<uniform> i_{info_index}: Tensor{start_index}Info;"
+                )?;
+            }
             KernelInputType::Tensor(tensor) => {
                 let start_index = tensor.start_index;
                 let datatype = tensor.datatype;
@@ -675,6 +818,7 @@ impl Display for KernelInput {
 }
 
 enum KernelInputType {
+    QMatrix(QMatrixInput),
     Tensor(TensorInput),
     Integer(IntegerInput),
     Float(FloatInput),
@@ -699,6 +843,37 @@ pub(crate) struct FloatInput {
 impl Display for FloatInput {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "i_{}", self.index)
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct QMatrixInput {
+    start_index: u32,
+    datatype: GgmlType,
+    rank: u32,
+}
+
+impl QMatrixInput {
+    fn get_matrix_binding(&self) -> u32 {
+        self.start_index
+    }
+
+    fn get_info_binding(&self) -> u32 {
+        self.start_index + 1
+    }
+
+    fn info_binding(&self) -> String {
+        format!("i_{}", self.get_info_binding())
+    }
+
+    pub(crate) fn shape_binding(&self, rank: u32) -> String {
+        format!("{}.shape_{}", self.info_binding(), rank)
+    }
+}
+
+impl Display for QMatrixInput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "i_{}", self.start_index)
     }
 }
 

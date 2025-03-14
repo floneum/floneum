@@ -2413,6 +2413,7 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "candle-core",
+ "enumset",
  "half 2.4.1",
  "pretty_assertions",
  "reqwest 0.12.13",
@@ -2430,6 +2431,7 @@ dependencies = [
  "criterion 0.3.6",
  "enumset",
  "env_logger",
+ "fusor-gguf",
  "futures",
  "futures-channel",
  "futures-util",

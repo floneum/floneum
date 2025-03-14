@@ -3,7 +3,10 @@
 // Tensor layout is described at https://github.com/ggml-org/llama.cpp/wiki/Tensor-Encoding-Schemes
 // Modified from https://github.com/huggingface/candle/blob/e286cf7cc9e34bc426a542264b818e35e6eed05b/candle-core/src/quantized/gguf_file.rs#L31
 
-use bytemuck::{AnyBitPattern, Contiguous, bytes_of};
+use std::fmt::Display;
+
+use bytemuck::{AnyBitPattern, Contiguous};
+use enumset::EnumSetType;
 use rustc_hash::FxHashMap;
 
 const GGUF_MAGIC_BYTES: [u8; 4] = *b"GGUF";
@@ -26,8 +29,8 @@ fn check_magic<R: std::io::Read>(reader: &mut R) -> Result<(), GgufReadError> {
 
 pub const DEFAULT_ALIGNMENT: u64 = 32;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum GgmlDType {
+#[derive(EnumSetType, Debug, Hash)]
+pub enum GgmlType {
     F32 = 0,
     F16 = 1,
     Q4_0 = 2,
@@ -44,7 +47,28 @@ pub enum GgmlDType {
     Q8K = 15,
 }
 
-impl TryFrom<u32> for GgmlDType {
+impl Display for GgmlType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::F32 => write!(f, "f32"),
+            Self::F16 => write!(f, "f16"),
+            Self::Q4_0 => write!(f, "Q40"),
+            Self::Q4_1 => write!(f, "Q41"),
+            Self::Q5_0 => write!(f, "Q50"),
+            Self::Q5_1 => write!(f, "Q51"),
+            Self::Q8_0 => write!(f, "Q80"),
+            Self::Q8_1 => write!(f, "Q81"),
+            Self::Q2K => write!(f, "Q2k"),
+            Self::Q3K => write!(f, "Q3k"),
+            Self::Q4K => write!(f, "Q4k"),
+            Self::Q5K => write!(f, "Q5k"),
+            Self::Q6K => write!(f, "Q6k"),
+            Self::Q8K => write!(f, "Q8k"),
+        }
+    }
+}
+
+impl TryFrom<u32> for GgmlType {
     type Error = GgufReadError;
 
     fn try_from(value: u32) -> Result<Self, Self::Error> {
@@ -68,7 +92,7 @@ impl TryFrom<u32> for GgmlDType {
     }
 }
 
-impl GgmlDType {
+impl GgmlType {
     /// The number of elements in each block
     pub const fn block_size(&self) -> usize {
         match self {
@@ -214,27 +238,27 @@ pub enum GgufReadError {
 }
 
 #[derive(Debug)]
-pub struct TensorMetadata {
-    pub ggml_dtype: GgmlDType,
+pub struct GgufTensorMetadata {
+    pub ty: GgmlType,
     pub shape: Box<[u32]>,
     pub offset: u64,
 }
 
-impl TensorMetadata {
-    fn read<R: std::io::Read + std::io::Seek>(
+impl GgufTensorMetadata {
+    pub fn read_tensor_bytes<R: std::io::Read + std::io::Seek>(
         &self,
         reader: &mut R,
         tensor_data_offset: u64,
     ) -> Result<Box<[u8]>, GgufReadError> {
         let tensor_elems = self.shape.iter().copied().product::<u32>() as usize;
-        let block_size = self.ggml_dtype.block_size();
+        let block_size = self.ty.block_size();
         if tensor_elems % block_size != 0 {
             return Err(GgufReadError::InvalidTensorSize {
                 tensor_elems,
                 block_size,
             });
         }
-        let size_in_bytes = (tensor_elems / block_size) * self.ggml_dtype.block_allocation_size();
+        let size_in_bytes = (tensor_elems / block_size) * self.ty.block_allocation_size();
         let mut raw_data = vec![0u8; size_in_bytes].into_boxed_slice();
         reader.seek(std::io::SeekFrom::Start(tensor_data_offset + self.offset))?;
         reader.read_exact(&mut raw_data)?;
@@ -246,7 +270,7 @@ impl TensorMetadata {
 pub struct GgufMetadata {
     pub version: GgufVersion,
     pub metadata: FxHashMap<Box<str>, GgufValue>,
-    pub tensor_infos: FxHashMap<Box<str>, TensorMetadata>,
+    pub tensor_infos: FxHashMap<Box<str>, GgufTensorMetadata>,
     pub tensor_data_offset: u64,
 }
 
@@ -267,7 +291,7 @@ fn read_string<R: std::io::Read>(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Contiguous)]
 #[repr(u8)]
-pub enum ValueType {
+pub enum GgufMetadataValueType {
     // The value is a 8-bit unsigned integer.
     U8 = 0,
     // The value is a 8-bit signed integer.
@@ -303,7 +327,7 @@ pub enum ValueType {
 #[error("invalid value type {0}")]
 pub struct InvalidValueType(u32);
 
-impl TryFrom<u32> for ValueType {
+impl TryFrom<u32> for GgufMetadataValueType {
     type Error = InvalidValueType;
 
     fn try_from(value: u32) -> Result<Self, Self::Error> {
@@ -330,49 +354,49 @@ pub enum GgufValue {
 }
 
 impl GgufValue {
-    pub fn value_type(&self) -> ValueType {
+    pub fn value_type(&self) -> GgufMetadataValueType {
         match self {
-            Self::U8(_) => ValueType::U8,
-            Self::I8(_) => ValueType::I8,
-            Self::U16(_) => ValueType::U16,
-            Self::I16(_) => ValueType::I16,
-            Self::U32(_) => ValueType::U32,
-            Self::I32(_) => ValueType::I32,
-            Self::U64(_) => ValueType::U64,
-            Self::I64(_) => ValueType::I64,
-            Self::F32(_) => ValueType::F32,
-            Self::F64(_) => ValueType::F64,
-            Self::Bool(_) => ValueType::Bool,
-            Self::String(_) => ValueType::String,
-            Self::Array(_) => ValueType::Array,
+            Self::U8(_) => GgufMetadataValueType::U8,
+            Self::I8(_) => GgufMetadataValueType::I8,
+            Self::U16(_) => GgufMetadataValueType::U16,
+            Self::I16(_) => GgufMetadataValueType::I16,
+            Self::U32(_) => GgufMetadataValueType::U32,
+            Self::I32(_) => GgufMetadataValueType::I32,
+            Self::U64(_) => GgufMetadataValueType::U64,
+            Self::I64(_) => GgufMetadataValueType::I64,
+            Self::F32(_) => GgufMetadataValueType::F32,
+            Self::F64(_) => GgufMetadataValueType::F64,
+            Self::Bool(_) => GgufMetadataValueType::Bool,
+            Self::String(_) => GgufMetadataValueType::String,
+            Self::Array(_) => GgufMetadataValueType::Array,
         }
     }
 
     fn read<R: std::io::Read>(
         reader: &mut R,
-        value_type: ValueType,
+        value_type: GgufMetadataValueType,
         version: GgufVersion,
     ) -> Result<Self, GgufReadError> {
         let v = match value_type {
-            ValueType::U8 => Self::U8(read_le_u8(reader)?),
-            ValueType::I8 => Self::I8(read_le_i8(reader)?),
-            ValueType::U16 => Self::U16(read_le_u16(reader)?),
-            ValueType::I16 => Self::I16(read_le_i16(reader)?),
-            ValueType::U32 => Self::U32(read_le_u32(reader)?),
-            ValueType::I32 => Self::I32(read_le_i32(reader)?),
-            ValueType::U64 => Self::U64(read_le_u64(reader)?),
-            ValueType::I64 => Self::I64(read_le_i64(reader)?),
-            ValueType::F32 => Self::F32(read_le_f32(reader)?),
-            ValueType::F64 => Self::F64(read_le_f64(reader)?),
-            ValueType::Bool => match read_le_u8(reader)? {
+            GgufMetadataValueType::U8 => Self::U8(read_le_u8(reader)?),
+            GgufMetadataValueType::I8 => Self::I8(read_le_i8(reader)?),
+            GgufMetadataValueType::U16 => Self::U16(read_le_u16(reader)?),
+            GgufMetadataValueType::I16 => Self::I16(read_le_i16(reader)?),
+            GgufMetadataValueType::U32 => Self::U32(read_le_u32(reader)?),
+            GgufMetadataValueType::I32 => Self::I32(read_le_i32(reader)?),
+            GgufMetadataValueType::U64 => Self::U64(read_le_u64(reader)?),
+            GgufMetadataValueType::I64 => Self::I64(read_le_i64(reader)?),
+            GgufMetadataValueType::F32 => Self::F32(read_le_f32(reader)?),
+            GgufMetadataValueType::F64 => Self::F64(read_le_f64(reader)?),
+            GgufMetadataValueType::Bool => match read_le_u8(reader)? {
                 0 => Self::Bool(false),
                 1 => Self::Bool(true),
                 _ => return Err(GgufReadError::InvalidBool),
             },
-            ValueType::String => Self::String(read_string(reader, version)?),
-            ValueType::Array => {
+            GgufMetadataValueType::String => Self::String(read_string(reader, version)?),
+            GgufMetadataValueType::Array => {
                 let value_type = read_le_u32(reader)?;
-                let value_type = ValueType::try_from(value_type)?;
+                let value_type = GgufMetadataValueType::try_from(value_type)?;
                 let len = read_array_length(reader, version)?;
                 let vs: Result<Box<[_]>, _> = (0..len)
                     .map(|_| GgufValue::read(reader, value_type, version))
@@ -395,7 +419,7 @@ impl GgufMetadata {
         for _idx in 0..metadata_kv_count {
             let key = read_string(reader, version)?;
             let value_type = read_le_u32(reader)?;
-            let value_type = ValueType::try_from(value_type)?;
+            let value_type = GgufMetadataValueType::try_from(value_type)?;
             let value = GgufValue::read(reader, value_type, version)?;
             metadata.insert(key, value);
         }
@@ -411,14 +435,14 @@ impl GgufMetadata {
 
             shape.reverse();
             let ggml_dtype = read_le_u32(reader)?;
-            let ggml_dtype = GgmlDType::try_from(ggml_dtype)?;
+            let ggml_dtype = GgmlType::try_from(ggml_dtype)?;
             let offset = read_le_u64(reader)?;
             tensor_infos.insert(
                 tensor_name,
-                TensorMetadata {
+                GgufTensorMetadata {
                     shape,
                     offset,
-                    ggml_dtype,
+                    ty: ggml_dtype,
                 },
             );
         }
@@ -452,8 +476,11 @@ pub struct BlockQ4_0 {
 }
 
 impl BlockQ4_0 {
+    pub const BLOCK_SIZE: usize = Q4_0_BLOCK_SIZE;
+    pub const WEIGHTS_SIZE: usize = Q4_0_BLOCK_SIZE / 2;
+
     // https://github.com/ggml-org/llama.cpp/blob/80a02aa8588ef167d616f76f1781b104c245ace0/ggml/src/ggml-quants.c#L255
-    fn dequantize(&self) -> [f32; Q4_0_BLOCK_SIZE] {
+    pub fn dequantize(&self) -> [f32; Q4_0_BLOCK_SIZE] {
         const CENTER_FOUR_BIT: i8 = 8;
 
         let scale = self.scale.to_f32();
@@ -481,14 +508,18 @@ const Q5_0_BLOCK_SIZE: usize = 32;
 pub struct BlockQ5_0 {
     pub(crate) scale: half::f16,
     // The highest bit for each of the 5 bit values
-    pub(crate) data_high_bits: [u8; 4],
+    pub(crate) data_high_bits: [u8; Q5_0_BLOCK_SIZE / 8],
     // The low four bits for each of the 5 bit values
     pub(crate) data_low_bits: [u8; Q5_0_BLOCK_SIZE / 2],
 }
 
 impl BlockQ5_0 {
+    pub const BLOCK_SIZE: usize = Q5_0_BLOCK_SIZE;
+    pub const WEIGHTS_HIGH_BITS_SIZE: usize = Q5_0_BLOCK_SIZE / 8;
+    pub const WEIGHTS_LOW_BITS_SIZE: usize = Q5_0_BLOCK_SIZE / 2;
+
     // https://github.com/ggml-org/llama.cpp/blob/80a02aa8588ef167d616f76f1781b104c245ace0/ggml/src/ggml-quants.c#L296
-    fn dequantize(&self) -> [f32; Q5_0_BLOCK_SIZE] {
+    pub fn dequantize(&self) -> [f32; Q5_0_BLOCK_SIZE] {
         const FIFTH_BIT: u8 = 0x10;
         const CENTER_FIVE_BIT: i8 = 16;
 
@@ -528,8 +559,11 @@ pub struct BlockQ8_0 {
 }
 
 impl BlockQ8_0 {
+    pub const BLOCK_SIZE: usize = Q8_0_BLOCK_SIZE;
+    pub const WEIGHTS_SIZE: usize = Q8_0_BLOCK_SIZE;
+
     // https://github.com/ggml-org/llama.cpp/blob/80a02aa8588ef167d616f76f1781b104c245ace0/ggml/src/ggml-quants.c#L349
-    fn dequantize(&self) -> [f32; Q8_0_BLOCK_SIZE] {
+    pub fn dequantize(&self) -> [f32; Q8_0_BLOCK_SIZE] {
         let scale = self.scale.to_f32();
 
         std::array::from_fn(|i| self.data[i] as f32 * scale)
@@ -540,7 +574,7 @@ const K_BLOCK_SIZE: usize = 256;
 
 #[derive(AnyBitPattern, Clone, Copy)]
 #[repr(C)]
-struct BlockQ4K {
+pub struct BlockQ4K {
     scale: half::f16,
     min: half::f16,
     scales: [u8; 12],
@@ -548,7 +582,11 @@ struct BlockQ4K {
 }
 
 impl BlockQ4K {
-    fn dequantize(&self) -> [f32; K_BLOCK_SIZE] {
+    pub const BLOCK_SIZE: usize = K_BLOCK_SIZE;
+    pub const SCALES_SIZE: usize = 12;
+    pub const WEIGHTS_SIZE: usize = K_BLOCK_SIZE / 2;
+
+    pub fn dequantize(&self) -> [f32; K_BLOCK_SIZE] {
         let weights = &self.weights;
         let super_block_scale = self.scale.to_f32();
         let super_block_min = self.min.to_f32();
@@ -599,8 +637,13 @@ pub struct BlockQ6K {
 }
 
 impl BlockQ6K {
+    pub const BLOCK_SIZE: usize = K_BLOCK_SIZE;
+    pub const SCALES_SIZE: usize = K_BLOCK_SIZE / 16;
+    pub const WEIGHTS_LOW_BITS_SIZE: usize = K_BLOCK_SIZE / 2;
+    pub const WEIGHTS_HIGH_BITS_SIZE: usize = K_BLOCK_SIZE / 4;
+
     // https://github.com/ggml-org/llama.cpp/blob/80a02aa8588ef167d616f76f1781b104c245ace0/ggml/src/ggml-quants.c#L1690
-    fn dequantize(&self) -> [f32; K_BLOCK_SIZE] {
+    pub fn dequantize(&self) -> [f32; K_BLOCK_SIZE] {
         const CENTER_SIX_BIT: i8 = 32;
         const TWO_BITS: u8 = 0b11;
         const FOUR_BITS: u8 = 0b1111;
@@ -722,7 +765,7 @@ async fn test_load_tiny_llama() {
         let tensor = metadata.tensor_infos.get(&*name).unwrap();
         println!("{}: {:?}", name, tensor);
         let tensor_bytes = tensor
-            .read(&mut reader, metadata.tensor_data_offset)
+            .read_tensor_bytes(&mut reader, metadata.tensor_data_offset)
             .unwrap();
         let candle_tensor = candle_tensor
             .read(&mut reader, candle_metadata.tensor_data_offset, &device)
@@ -733,8 +776,8 @@ async fn test_load_tiny_llama() {
             .unwrap()
             .to_vec1()
             .unwrap();
-        match tensor.ggml_dtype {
-            GgmlDType::Q4_0 => {
+        match tensor.ty {
+            GgmlType::Q4_0 => {
                 let blocks: &[BlockQ4_0] = bytemuck::cast_slice(&tensor_bytes);
                 for (block, candle_block) in blocks
                     .iter()
@@ -751,7 +794,7 @@ async fn test_load_tiny_llama() {
                     }
                 }
             }
-            GgmlDType::Q5_0 => {
+            GgmlType::Q5_0 => {
                 let blocks: &[BlockQ5_0] = bytemuck::cast_slice(&tensor_bytes);
                 for (block, candle_block) in blocks
                     .iter()
@@ -768,7 +811,7 @@ async fn test_load_tiny_llama() {
                     }
                 }
             }
-            GgmlDType::Q8_0 => {
+            GgmlType::Q8_0 => {
                 let blocks: &[BlockQ8_0] = bytemuck::cast_slice(&tensor_bytes);
                 for (block, candle_block) in blocks
                     .iter()
@@ -785,7 +828,7 @@ async fn test_load_tiny_llama() {
                     }
                 }
             }
-            GgmlDType::Q4K => {
+            GgmlType::Q4K => {
                 let blocks: &[BlockQ4K] = bytemuck::cast_slice(&tensor_bytes);
                 for (block, candle_block) in
                     blocks.iter().zip(candle_tensor_data.chunks(K_BLOCK_SIZE))
@@ -801,7 +844,7 @@ async fn test_load_tiny_llama() {
                     }
                 }
             }
-            GgmlDType::Q6K => {
+            GgmlType::Q6K => {
                 let blocks: &[BlockQ6K] = bytemuck::cast_slice(&tensor_bytes);
                 for (block, candle_block) in
                     blocks.iter().zip(candle_tensor_data.chunks(K_BLOCK_SIZE))
@@ -817,7 +860,7 @@ async fn test_load_tiny_llama() {
                     }
                 }
             }
-            GgmlDType::F32 => {
+            GgmlType::F32 => {
                 let blocks: &[f32] = bytemuck::cast_slice(&tensor_bytes);
                 for (a, b) in blocks.iter().zip(candle_tensor_data) {
                     assert!((a - b).abs() < 1e-6);

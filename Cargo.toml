@@ -53,6 +53,8 @@ rwhisper = { path = "./models/rwhisper", version = "0.4.0" }
 rwuerstchen = { path = "./models/rwuerstchen", version = "0.4.0" }
 segment-anything-rs = { path = "./models/segment-anything-rs", version = "0.4.0" }
 kalosm-ocr = { path = "./models/kalosm-ocr", version = "0.4.0" }
+fusor-core = { path = "./fusor-ml/core", version = "0.1.0" }
+fusor-gguf = { path = "./fusor-ml/gguf", version = "0.1.0" }
 llm-samplers = "=0.0.7"
 tokenizers = "0.21.0"
 thiserror = "2.0.7"
