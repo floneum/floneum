@@ -10,13 +10,7 @@ use tabbycat::Graph;
 use wgpu::{BufferDescriptor, COPY_BUFFER_ALIGNMENT, util::DownloadBuffer};
 
 use crate::{
-    Device, ElementWiseOperation, MatMulOperation, PairWiseFunction, PairWiseOperation,
-    QueryResults, ReduceFunction, ReduceOperation,
-    compute_graph::{AnyComputeKey, ComputeGraph},
-    layout::Layout,
-    map_layout::MapLayoutOperation,
-    resize::ResizeOperation,
-    slice_assign::SliceAssignOperation,
+    compute_graph::{AnyComputeKey, ComputeGraph}, layout::Layout, map_layout::MapLayoutOperation, quantized::{QMatMulOperation, QMatrix}, resize::ResizeOperation, slice_assign::SliceAssignOperation, Device, ElementWiseOperation, MatMulOperation, PairWiseFunction, PairWiseOperation, QueryResults, ReduceFunction, ReduceOperation
 };
 
 pub trait DataType:
@@ -209,6 +203,20 @@ impl LazyTensorData {
         let device = self.device.clone();
         let info = self.info.clone();
         let key = graph.create_mat_mul(function);
+
+        Self {
+            device,
+            info,
+            graph,
+            key: key.into(),
+        }
+    }
+
+    pub(crate) fn q_mat_mul(&self, function: QMatMulOperation) -> Self {
+        let graph = self.graph.clone();
+        let device = self.device.clone();
+        let info = self.info.clone();
+        let key = graph.create_q_mat_mul(function);
 
         Self {
             device,
@@ -582,6 +590,15 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
 
         Self {
             data: self.data.mat_mul(operation),
+            datatype: PhantomData,
+        }
+    }
+
+    pub(crate) fn add_q_mat_mul(&self, other: &QMatrix) -> Self {
+        let operation = QMatMulOperation::new(self.data.key, other.clone());
+
+        Self {
+            data: self.data.q_mat_mul(operation),
             datatype: PhantomData,
         }
     }

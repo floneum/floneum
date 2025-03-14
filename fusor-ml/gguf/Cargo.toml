@@ -1,0 +1,17 @@
+[package]
+name = "fusor-gguf"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bytemuck = { version = "1.22.0", features = ["derive"] }
+half = { version = "2.4.1", features = ["bytemuck"] }
+rustc-hash = "2.1.1"
+thiserror.workspace = true
+enumset = "1.1.5"
+
+[dev-dependencies]
+candle-core.workspace = true
+pretty_assertions = "1.4.1"
+reqwest = "0.12.13"
+tokio = { version = "1.44.0", features = ["full"] }
