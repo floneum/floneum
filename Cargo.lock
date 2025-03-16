@@ -2437,6 +2437,7 @@ dependencies = [
  "futures-util",
  "half 2.4.1",
  "ndarray 0.16.1",
+ "pretty_assertions",
  "rand 0.9.0",
  "tabbycat",
  "tokio",

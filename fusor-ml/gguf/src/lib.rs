@@ -3,9 +3,9 @@
 // Tensor layout is described at https://github.com/ggml-org/llama.cpp/wiki/Tensor-Encoding-Schemes
 // Modified from https://github.com/huggingface/candle/blob/e286cf7cc9e34bc426a542264b818e35e6eed05b/candle-core/src/quantized/gguf_file.rs#L31
 
-use std::fmt::Display;
+use std::{fmt::Display, mem::offset_of};
 
-use bytemuck::{AnyBitPattern, Contiguous};
+use bytemuck::{AnyBitPattern, Contiguous, NoUninit, Pod, Zeroable};
 use enumset::EnumSetType;
 use rustc_hash::FxHashMap;
 
@@ -469,15 +469,47 @@ impl GgufMetadata {
 const Q4_0_BLOCK_SIZE: usize = 32;
 
 #[derive(AnyBitPattern, Clone, Copy)]
+        #[repr(C)]
+         struct BlockQ4_0_Wgsl {
+            pub(crate) scale: half::f16,
+            pub(crate) data: [u32; Q4_0_BLOCK_SIZE / 8],
+        }
+
+#[derive(Zeroable, Pod, Clone, Copy, PartialEq, Debug)]
 #[repr(C)]
 pub struct BlockQ4_0 {
     pub(crate) scale: half::f16,
-    pub(crate) qs: [u8; Q4_0_BLOCK_SIZE / 2],
+    pub(crate) data: [u8; Q4_0_BLOCK_SIZE / 2],
 }
 
 impl BlockQ4_0 {
     pub const BLOCK_SIZE: usize = Q4_0_BLOCK_SIZE;
     pub const WEIGHTS_SIZE: usize = Q4_0_BLOCK_SIZE / 2;
+
+    pub fn scale_is_finite(&self) -> bool {
+        self.scale.is_finite()
+    }
+
+    pub fn into_wgsl_bytes(self) -> [u8; std::mem::size_of::<BlockQ4_0_Wgsl>()] {
+        let mut bytes = [0; std::mem::size_of::<BlockQ4_0_Wgsl>()];
+        let scale_offset = offset_of!(BlockQ4_0_Wgsl, scale);
+        let scale_bytes = bytemuck::bytes_of(&self.scale);
+        bytes[scale_offset..scale_offset + scale_bytes.len()].copy_from_slice(&scale_bytes);
+        let data_offset = offset_of!(BlockQ4_0_Wgsl, data);
+        let data_bytes = bytemuck::cast_slice(&self.data);
+        bytes[data_offset..data_offset + data_bytes.len()].copy_from_slice(data_bytes);
+        bytes
+    }
+
+    pub fn from_wgsl_bytes(bytes: [u8; std::mem::size_of::<BlockQ4_0_Wgsl>()]) -> Self {
+        let scale_offset = offset_of!(BlockQ4_0_Wgsl, scale);
+        let scale_bytes = &bytes[scale_offset..scale_offset + std::mem::size_of::<half::f16>()];
+        let scale = *bytemuck::from_bytes(scale_bytes);
+        let data_offset = offset_of!(BlockQ4_0_Wgsl, data);
+        let data_bytes = &bytes[data_offset..data_offset + std::mem::size_of::<[u32; Q4_0_BLOCK_SIZE / 8]>()];
+        let data = *bytemuck::from_bytes(data_bytes);
+        Self { scale, data }
+    }
 
     // https://github.com/ggml-org/llama.cpp/blob/80a02aa8588ef167d616f76f1781b104c245ace0/ggml/src/ggml-quants.c#L255
     pub fn dequantize(&self) -> [f32; Q4_0_BLOCK_SIZE] {
@@ -486,7 +518,7 @@ impl BlockQ4_0 {
         let scale = self.scale.to_f32();
         let mut data = [0.0; Q4_0_BLOCK_SIZE];
 
-        for (i, byte) in self.qs.iter().enumerate() {
+        for (i, byte) in self.data.iter().enumerate() {
             let low_data = (byte & 0x0F) as i8 - CENTER_FOUR_BIT;
             let high_data = (byte >> 4) as i8 - CENTER_FOUR_BIT;
 
@@ -503,7 +535,7 @@ impl BlockQ4_0 {
 
 const Q5_0_BLOCK_SIZE: usize = 32;
 
-#[derive(AnyBitPattern, Clone, Copy)]
+#[derive(Zeroable, Pod, Clone, Copy)]
 #[repr(C)]
 pub struct BlockQ5_0 {
     pub(crate) scale: half::f16,
@@ -551,7 +583,7 @@ impl BlockQ5_0 {
 
 const Q8_0_BLOCK_SIZE: usize = 32;
 
-#[derive(AnyBitPattern, Clone, Copy)]
+#[derive(Zeroable, Pod, Clone, Copy)]
 #[repr(C)]
 pub struct BlockQ8_0 {
     pub(crate) scale: half::f16,
@@ -572,13 +604,13 @@ impl BlockQ8_0 {
 
 const K_BLOCK_SIZE: usize = 256;
 
-#[derive(AnyBitPattern, Clone, Copy)]
+#[derive(Zeroable, Pod, Clone, Copy)]
 #[repr(C)]
 pub struct BlockQ4K {
     scale: half::f16,
     min: half::f16,
     scales: [u8; 12],
-    weights: [u8; K_BLOCK_SIZE / 2],
+    data: [u8; K_BLOCK_SIZE / 2],
 }
 
 impl BlockQ4K {
@@ -587,7 +619,7 @@ impl BlockQ4K {
     pub const WEIGHTS_SIZE: usize = K_BLOCK_SIZE / 2;
 
     pub fn dequantize(&self) -> [f32; K_BLOCK_SIZE] {
-        let weights = &self.weights;
+        let weights = &self.data;
         let super_block_scale = self.scale.to_f32();
         let super_block_min = self.min.to_f32();
         let scales = bytemuck::cast_slice(&self.scales);
@@ -623,7 +655,7 @@ impl BlockQ4K {
     }
 }
 
-#[derive(AnyBitPattern, Clone, Copy)]
+#[derive(Zeroable, Pod, Clone, Copy)]
 #[repr(C)]
 pub struct BlockQ6K {
     // The 4 low bits of the each value

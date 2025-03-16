@@ -30,3 +30,4 @@ mod slice_assign;
 mod tensor;
 mod visit_tiled;
 mod quantized;
+mod quantized_types_wgsl;

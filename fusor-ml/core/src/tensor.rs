@@ -32,6 +32,7 @@ pub trait DataType:
 
     fn zero() -> Self;
     fn one() -> Self;
+    fn from_f32(value: f32) -> Self;
 }
 
 impl DataType for f32 {
@@ -44,6 +45,10 @@ impl DataType for f32 {
     fn one() -> Self {
         1.
     }
+
+    fn from_f32(value: f32) -> Self {
+        value
+    }
 }
 
 impl DataType for half::f16 {
@@ -55,6 +60,10 @@ impl DataType for half::f16 {
 
     fn one() -> Self {
         half::f16::from_f32(1.)
+    }
+
+    fn from_f32(value: f32) -> Self {
+        half::f16::from_f32(value)
     }
 }
 

@@ -5,6 +5,7 @@ use std::{fmt::Display, sync::OnceLock};
 use wgpu::{BindGroupLayout, CommandEncoder, PipelineCompilationOptions, util::DeviceExt};
 
 use crate::quantized::QMatrix;
+use crate::quantized_types_wgsl::{write_q4_0_type, write_q4_k_type, write_q5_0_type, write_q6_k_type, write_q8_0_type};
 use crate::{DataTypeEnum, Device, PerformanceQueries, TensorData};
 
 #[derive(EnumSetType, Debug)]
@@ -459,47 +460,27 @@ impl GenericKernel {
     fn declare_quantized_types(&self, f: &mut String) -> std::fmt::Result {
         let q4_0 = GgmlType::Q4_0;
         if self.quantized_type_definitions.contains(q4_0) {
-            writeln!(f, "struct {q4_0} {{")?;
-            writeln!(f, "    scale: f16,")?;
-            writeln!(f, "    weights: array<u8, {}>,", BlockQ4_0::WEIGHTS_SIZE)?;
-            writeln!(f, "}};")?;
+            write_q4_0_type(f)?;
         }
 
         let q5_0 = GgmlType::Q5_0;
         if self.quantized_type_definitions.contains(q5_0) {
-            writeln!(f, "struct {q5_0} {{")?;
-            writeln!(f, "    scale: f16,")?;
-            writeln!(f, "    data_high_bits: array<u8, {}>,", BlockQ5_0::WEIGHTS_HIGH_BITS_SIZE)?;
-            writeln!(f, "    data_low_bits: array<u8, {}>,", BlockQ5_0::WEIGHTS_LOW_BITS_SIZE)?;
-            writeln!(f, "}};")?;
+            write_q5_0_type(f)?;
         }
 
         let q8_0 = GgmlType::Q8_0;
         if self.quantized_type_definitions.contains(q8_0) {
-            writeln!(f, "struct {q8_0} {{")?;
-            writeln!(f, "    scale: f16,")?;
-            writeln!(f, "    weights: array<u8, {}>,", BlockQ8_0::WEIGHTS_SIZE)?;
-            writeln!(f, "}};")?;
+            write_q8_0_type(f)?;
         }
 
         let q4_k = GgmlType::Q4K;
         if self.quantized_type_definitions.contains(q4_k) {
-            writeln!(f, "struct {q4_k} {{")?;
-            writeln!(f, "    scale: f16,")?;
-            writeln!(f, "    min: f16,")?;
-            writeln!(f, "    scales: array<u8, {}>,", BlockQ4K::WEIGHTS_SIZE)?;
-            writeln!(f, "    weights: array<u8, {}>,", BlockQ4K::WEIGHTS_SIZE)?;
-            writeln!(f, "}};")?;
+            write_q4_k_type(f)?;
         }
 
         let q6_k = GgmlType::Q6K;
         if self.quantized_type_definitions.contains(q6_k) {
-            writeln!(f, "struct {q6_k} {{")?;
-            writeln!(f, "    data_low_bits: array<u8, {}>,", BlockQ6K::WEIGHTS_LOW_BITS_SIZE)?;
-            writeln!(f, "    data_high_bits: array<u8, {}>,", BlockQ6K::WEIGHTS_HIGH_BITS_SIZE)?;
-            writeln!(f, "    scales: array<u8, {}>,", BlockQ6K::SCALES_SIZE)?;
-            writeln!(f, "    scale: f16,")?;
-            writeln!(f, "}};")?;
+            write_q6_k_type(f)?;
         }
 
         Ok(())
