@@ -3,15 +3,11 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use fusor_gguf::{BlockQ4_0, BlockQ5_0, GgmlType, GgufBlock, GgufReadError, GgufTensorMetadata};
+use fusor_gguf::{BlockQ4_0, BlockQ5_0, BlockQ8_0, GgmlType, GgufBlock, GgufReadError, GgufTensorMetadata};
 use wgpu::{CommandEncoder, util::DeviceExt};
 
 use crate::{
-    DataType, DataTypeEnum, Device, PerformanceQueries, Tensor, TensorData,
-    compute_graph::AnyComputeKey,
-    kernel::{GenericKernel, KernelGlobalSpace, KernelInputValue},
-    padded_tensor_size,
-    quantized_types_wgsl::{write_q4_0_type, write_q5_0_type},
+    compute_graph::AnyComputeKey, kernel::{GenericKernel, KernelGlobalSpace, KernelInputValue}, padded_tensor_size, quantized_types_wgsl::{write_q4_0_type, write_q5_0_type, write_q8_0_type}, DataType, DataTypeEnum, Device, PerformanceQueries, Tensor, TensorData
 };
 
 pub struct QMatMulOperation {
@@ -444,6 +440,60 @@ impl WgslQuantizedType for BlockQ5_0 {
     }
 }
 
+
+impl WgslQuantizedType for BlockQ8_0 {
+    const GGML_TYPE: GgmlType = GgmlType::Q8_0;
+
+    fn dequantize_block(
+        chunk: String,
+        datatype: DataTypeEnum,
+        mut process_element: impl FnMut(String, String, &mut String),
+    ) -> String {
+        let weights_size_u32 = BlockQ8_0::WEIGHTS_SIZE as u8 / 4;
+        let mut code = String::new();
+
+        writeln!(&mut code, "let scale = {datatype}({chunk}.scale);").unwrap();
+        writeln!(&mut code, "var output_index = 0;").unwrap();
+        writeln!(&mut code, "for (var i = 0u; i < {weights_size_u32}; i++) {{").unwrap();
+        writeln!(
+            &mut code,
+            "let weight_chunk = {chunk}.data[i];"
+        )
+        .unwrap();
+        writeln!(
+            &mut code,
+            "let weight_chunk_bytes = unpack4xI8(weight_chunk);"
+        )
+        .unwrap();
+        for offset in 0..4 {
+            writeln!(
+                &mut code,
+                "let data{offset} = weight_chunk_bytes[{}];",
+                offset
+            )
+            .unwrap();
+            writeln!(
+                &mut code,
+                "let data_float{offset} = {datatype}(data{offset}) * scale;"
+            )
+            .unwrap();
+            process_element(
+                "output_index".to_string(),
+                format!("data_float{offset}"),
+                &mut code,
+            );
+            writeln!(&mut code, "output_index += 1;").unwrap();
+        }
+        writeln!(&mut code, "}}").unwrap();
+
+        code
+    }
+
+    fn write_type<W: Write>(f: &mut W) -> std::fmt::Result {
+        write_q8_0_type(f)
+    }
+}
+
 #[cfg(test)]
 #[tokio::test]
 async fn test_de_quantize_4_0_block() {
@@ -454,6 +504,13 @@ async fn test_de_quantize_4_0_block() {
 #[tokio::test]
 async fn test_de_quantize_5_0_block() {
     fuzz_de_quantize::<BlockQ5_0>().await;
+}
+
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_de_quantize_8_0_block() {
+    fuzz_de_quantize::<BlockQ8_0>().await;
 }
 
 #[cfg(test)]

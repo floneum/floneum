@@ -668,7 +668,7 @@ struct BlockQ8_0Wgsl {
     pub(crate) data: [u32; Q8_0_BLOCK_SIZE / 4],
 }
 
-#[derive(Zeroable, Pod, Clone, Copy)]
+#[derive(Zeroable, Pod, Clone, Copy, PartialEq, Debug)]
 #[repr(C)]
 pub struct BlockQ8_0 {
     pub(crate) scale: half::f16,
