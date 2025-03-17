@@ -3,11 +3,17 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use fusor_gguf::{BlockQ4_0, BlockQ5_0, BlockQ8_0, GgmlType, GgufBlock, GgufReadError, GgufTensorMetadata};
+use fusor_gguf::{
+    BlockQ4_0, BlockQ5_0, BlockQ8_0, GgmlType, GgufBlock, GgufReadError, GgufTensorMetadata,
+};
 use wgpu::{CommandEncoder, util::DeviceExt};
 
 use crate::{
-    compute_graph::AnyComputeKey, kernel::{GenericKernel, KernelGlobalSpace, KernelInputValue}, padded_tensor_size, quantized_types_wgsl::{write_q4_0_type, write_q5_0_type, write_q8_0_type}, DataType, DataTypeEnum, Device, PerformanceQueries, Tensor, TensorData
+    DataType, DataTypeEnum, Device, PerformanceQueries, Tensor, TensorData,
+    compute_graph::AnyComputeKey,
+    kernel::{GenericKernel, KernelGlobalSpace, KernelInputValue},
+    padded_tensor_size,
+    quantized_types_wgsl::{write_q4_0_type, write_q5_0_type, write_q8_0_type},
 };
 
 pub struct QMatMulOperation {
@@ -390,7 +396,11 @@ impl WgslQuantizedType for BlockQ5_0 {
         writeln!(&mut code, "let scale = {datatype}({chunk}.scale);").unwrap();
         writeln!(&mut code, "var output_index = 0;").unwrap();
         writeln!(&mut code, "let high_bits = {chunk}.data_high_bits[0];").unwrap();
-        writeln!(&mut code, "for (var i = 0u; i < {low_weights_size_u32}; i++) {{").unwrap();
+        writeln!(
+            &mut code,
+            "for (var i = 0u; i < {low_weights_size_u32}; i++) {{"
+        )
+        .unwrap();
         writeln!(
             &mut code,
             "let low_weight_chunk = {chunk}.data_low_bits[i];"
@@ -440,7 +450,6 @@ impl WgslQuantizedType for BlockQ5_0 {
     }
 }
 
-
 impl WgslQuantizedType for BlockQ8_0 {
     const GGML_TYPE: GgmlType = GgmlType::Q8_0;
 
@@ -454,12 +463,12 @@ impl WgslQuantizedType for BlockQ8_0 {
 
         writeln!(&mut code, "let scale = {datatype}({chunk}.scale);").unwrap();
         writeln!(&mut code, "var output_index = 0;").unwrap();
-        writeln!(&mut code, "for (var i = 0u; i < {weights_size_u32}; i++) {{").unwrap();
         writeln!(
             &mut code,
-            "let weight_chunk = {chunk}.data[i];"
+            "for (var i = 0u; i < {weights_size_u32}; i++) {{"
         )
         .unwrap();
+        writeln!(&mut code, "let weight_chunk = {chunk}.data[i];").unwrap();
         writeln!(
             &mut code,
             "let weight_chunk_bytes = unpack4xI8(weight_chunk);"
@@ -505,7 +514,6 @@ async fn test_de_quantize_4_0_block() {
 async fn test_de_quantize_5_0_block() {
     fuzz_de_quantize::<BlockQ5_0>().await;
 }
-
 
 #[cfg(test)]
 #[tokio::test]
