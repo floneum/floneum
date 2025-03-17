@@ -309,11 +309,7 @@ fn de_quantize_block_q4_0(
         "const SHIFT_SCALES = vec2({datatype}(1.0), {datatype}({RIGHT_SHIFT_4_SCALE}));"
     )
     .unwrap();
-    writeln!(
-        &mut code,
-        "const CENTER = vec2({datatype}({CENTER}));"
-    )
-    .unwrap();
+    writeln!(&mut code, "const CENTER = vec2({datatype}({CENTER}));").unwrap();
 
     writeln!(&mut code, "let scale = {datatype}({chunk}.scale);").unwrap();
     writeln!(&mut code, "var output_index = 0;").unwrap();
@@ -341,7 +337,11 @@ fn de_quantize_block_q4_0(
             "let data_float{offset} = ((vec2<{datatype}>(data{offset}) * SHIFT_SCALES) - CENTER) * scale;"
         )
         .unwrap();
-        process_element("output_index".to_string(), format!("data_float{offset}.x"), &mut code);
+        process_element(
+            "output_index".to_string(),
+            format!("data_float{offset}.x"),
+            &mut code,
+        );
         process_element(
             format!("output_index + {half_block_size}"),
             format!("data_float{offset}.y"),
@@ -358,16 +358,31 @@ fn de_quantize_block_q4_0(
 #[cfg(test)]
 #[tokio::test]
 async fn test_de_quantize_4_0_block() {
+    fuzz_de_quantize::<BlockQ4_0>().await;
+}
+
+#[cfg(test)]
+async fn fuzz_de_quantize<B: fusor_gguf::GgufBlock + PartialEq + std::fmt::Debug>()
+where
+    rand::distr::StandardUniform: rand::prelude::Distribution<<B as fusor_gguf::GgufBlock>::AsBytes>,
+{
     use crate::quantized_types_wgsl::write_q4_0_type;
-    use wgpu::util::DownloadBuffer;
     use pretty_assertions::assert_eq;
+    use wgpu::util::DownloadBuffer;
 
     println!("testing f32...");
-    test_de_quantize_4_0_block_inner::<f32>().await;
+    test_de_quantize_4_0_block_inner::<B, f32>().await;
     println!("testing f16...");
-    test_de_quantize_4_0_block_inner::<half::f16>().await;
+    test_de_quantize_4_0_block_inner::<B, half::f16>().await;
 
-    async fn test_de_quantize_4_0_block_inner<T: DataType>() {
+    async fn test_de_quantize_4_0_block_inner<
+        B: fusor_gguf::GgufBlock + PartialEq + std::fmt::Debug,
+        T: DataType,
+    >()
+    where
+        rand::distr::StandardUniform:
+            rand::prelude::Distribution<<B as fusor_gguf::GgufBlock>::AsBytes>,
+    {
         let dtype = T::WGSL_TYPE;
         let device = crate::Device::new().await.unwrap();
         let kernel_body = de_quantize_block_q4_0("block".to_string(), dtype, |i, data, code| {
@@ -385,7 +400,7 @@ async fn test_de_quantize_4_0_block() {
         writeln!(
             &mut kernel,
             "@group(0) @binding(1) var<storage, read_write> output: array<{dtype}, {}>;",
-            BlockQ4_0::BLOCK_SIZE
+            B::BLOCK_SIZE
         )
         .unwrap();
         writeln!(&mut kernel, "@compute @workgroup_size(1, 1, 1)").unwrap();
@@ -441,13 +456,13 @@ async fn test_de_quantize_4_0_block() {
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                 });
         for _ in 0..100 {
-            let block_bytes: [u8; size_of::<BlockQ4_0>()] = rand::random();
-            let block = bytemuck::pod_read_unaligned::<BlockQ4_0>(&block_bytes);
-            if !block.scale_is_finite() {
+            let block_bytes: B::AsBytes = rand::random();
+            let block = bytemuck::pod_read_unaligned::<B>(block_bytes.as_ref());
+            if !block.finite() {
                 continue;
             }
             let block_wgsl = block.into_wgsl_bytes();
-            assert_eq!(block, BlockQ4_0::from_wgsl_bytes(block_wgsl));
+            assert_eq!(block, B::from_wgsl_bytes(block_wgsl));
             let output =
                 device
                     .wgpu_device()
@@ -470,7 +485,7 @@ async fn test_de_quantize_4_0_block() {
                                 buffer: &device.wgpu_device().create_buffer_init(
                                     &wgpu::util::BufferInitDescriptor {
                                         label: None,
-                                        contents: bytemuck::bytes_of(&block_wgsl),
+                                        contents: block_wgsl.as_ref(),
                                         usage: wgpu::BufferUsages::STORAGE
                                             | wgpu::BufferUsages::COPY_SRC,
                                     },
@@ -522,7 +537,12 @@ async fn test_de_quantize_4_0_block() {
                 .unwrap();
 
             let ouptut_as_floats = bytemuck::cast_slice::<_, T>(&*output);
-            let expected_result = block.dequantize().map(|x| T::from_f32(x));
+            let expected_result = block
+                .dequantize()
+                .as_ref()
+                .into_iter()
+                .map(|x| T::from_f32(*x))
+                .collect::<Vec<_>>();
             assert_eq!(ouptut_as_floats, expected_result);
         }
     }

@@ -5,7 +5,7 @@
 
 use std::{fmt::Display, mem::offset_of};
 
-use bytemuck::{AnyBitPattern, Contiguous, NoUninit, Pod, Zeroable};
+use bytemuck::{AnyBitPattern, Contiguous, Pod, Zeroable};
 use enumset::EnumSetType;
 use rustc_hash::FxHashMap;
 
@@ -466,14 +466,28 @@ impl GgufMetadata {
     }
 }
 
+pub trait GgufBlock: Pod + Sized {
+    const BLOCK_SIZE: usize;
+
+    type Bytes: AsRef<[u8]> + Copy;
+    type AsBytes: AsRef<[u8]> + Copy;
+    type Dequantized: AsRef<[f32]> + Copy;
+
+    fn finite(&self) -> bool;
+    fn into_wgsl_bytes(self) -> Self::Bytes;
+    fn from_wgsl_bytes(bytes: Self::Bytes) -> Self;
+
+    fn dequantize(&self) -> Self::Dequantized;
+}
+
 const Q4_0_BLOCK_SIZE: usize = 32;
 
 #[derive(AnyBitPattern, Clone, Copy)]
-        #[repr(C)]
-         struct BlockQ4_0_Wgsl {
-            pub(crate) scale: half::f16,
-            pub(crate) data: [u32; Q4_0_BLOCK_SIZE / 8],
-        }
+#[repr(C)]
+struct BlockQ4_0Wgsl {
+    pub(crate) scale: half::f16,
+    pub(crate) data: [u32; Q4_0_BLOCK_SIZE / 8],
+}
 
 #[derive(Zeroable, Pod, Clone, Copy, PartialEq, Debug)]
 #[repr(C)]
@@ -483,36 +497,45 @@ pub struct BlockQ4_0 {
 }
 
 impl BlockQ4_0 {
-    pub const BLOCK_SIZE: usize = Q4_0_BLOCK_SIZE;
     pub const WEIGHTS_SIZE: usize = Q4_0_BLOCK_SIZE / 2;
+    pub const BLOCK_SIZE: usize = Q4_0_BLOCK_SIZE;
+}
 
-    pub fn scale_is_finite(&self) -> bool {
+impl GgufBlock for BlockQ4_0 {
+    const BLOCK_SIZE: usize = Q4_0_BLOCK_SIZE;
+
+    type Bytes = [u8; std::mem::size_of::<BlockQ4_0Wgsl>()];
+    type AsBytes = [u8; std::mem::size_of::<Self>()];
+    type Dequantized = [f32; Q4_0_BLOCK_SIZE];
+
+    fn finite(&self) -> bool {
         self.scale.is_finite()
     }
 
-    pub fn into_wgsl_bytes(self) -> [u8; std::mem::size_of::<BlockQ4_0_Wgsl>()] {
-        let mut bytes = [0; std::mem::size_of::<BlockQ4_0_Wgsl>()];
-        let scale_offset = offset_of!(BlockQ4_0_Wgsl, scale);
+    fn into_wgsl_bytes(self) -> Self::Bytes {
+        let mut bytes = [0; std::mem::size_of::<BlockQ4_0Wgsl>()];
+        let scale_offset = offset_of!(BlockQ4_0Wgsl, scale);
         let scale_bytes = bytemuck::bytes_of(&self.scale);
         bytes[scale_offset..scale_offset + scale_bytes.len()].copy_from_slice(&scale_bytes);
-        let data_offset = offset_of!(BlockQ4_0_Wgsl, data);
+        let data_offset = offset_of!(BlockQ4_0Wgsl, data);
         let data_bytes = bytemuck::cast_slice(&self.data);
         bytes[data_offset..data_offset + data_bytes.len()].copy_from_slice(data_bytes);
         bytes
     }
 
-    pub fn from_wgsl_bytes(bytes: [u8; std::mem::size_of::<BlockQ4_0_Wgsl>()]) -> Self {
-        let scale_offset = offset_of!(BlockQ4_0_Wgsl, scale);
+    fn from_wgsl_bytes(bytes: Self::Bytes) -> Self {
+        let scale_offset = offset_of!(BlockQ4_0Wgsl, scale);
         let scale_bytes = &bytes[scale_offset..scale_offset + std::mem::size_of::<half::f16>()];
         let scale = *bytemuck::from_bytes(scale_bytes);
-        let data_offset = offset_of!(BlockQ4_0_Wgsl, data);
-        let data_bytes = &bytes[data_offset..data_offset + std::mem::size_of::<[u32; Q4_0_BLOCK_SIZE / 8]>()];
+        let data_offset = offset_of!(BlockQ4_0Wgsl, data);
+        let data_bytes =
+            &bytes[data_offset..data_offset + std::mem::size_of::<[u32; Q4_0_BLOCK_SIZE / 8]>()];
         let data = *bytemuck::from_bytes(data_bytes);
         Self { scale, data }
     }
 
     // https://github.com/ggml-org/llama.cpp/blob/80a02aa8588ef167d616f76f1781b104c245ace0/ggml/src/ggml-quants.c#L255
-    pub fn dequantize(&self) -> [f32; Q4_0_BLOCK_SIZE] {
+    fn dequantize(&self) -> Self::Dequantized {
         const CENTER_FOUR_BIT: i8 = 8;
 
         let scale = self.scale.to_f32();
@@ -535,6 +558,14 @@ impl BlockQ4_0 {
 
 const Q5_0_BLOCK_SIZE: usize = 32;
 
+#[derive(AnyBitPattern, Clone, Copy)]
+#[repr(C)]
+struct BlockQ5_0Wgsl {
+    pub(crate) scale: half::f16,
+    pub(crate) data_high_bits: [u32; (Q5_0_BLOCK_SIZE / 8) / 4],
+    pub(crate) data_low_bits: [u32; (Q5_0_BLOCK_SIZE / 2) / 4],
+}
+
 #[derive(Zeroable, Pod, Clone, Copy)]
 #[repr(C)]
 pub struct BlockQ5_0 {
@@ -549,9 +580,56 @@ impl BlockQ5_0 {
     pub const BLOCK_SIZE: usize = Q5_0_BLOCK_SIZE;
     pub const WEIGHTS_HIGH_BITS_SIZE: usize = Q5_0_BLOCK_SIZE / 8;
     pub const WEIGHTS_LOW_BITS_SIZE: usize = Q5_0_BLOCK_SIZE / 2;
+}
+
+impl GgufBlock for BlockQ5_0 {
+    const BLOCK_SIZE: usize = Q5_0_BLOCK_SIZE;
+
+    type Bytes = [u8; std::mem::size_of::<BlockQ5_0Wgsl>()];
+    type AsBytes = [u8; std::mem::size_of::<Self>()];
+    type Dequantized = [f32; Q5_0_BLOCK_SIZE];
+
+    fn finite(&self) -> bool {
+        self.scale.is_finite()
+    }
+
+    fn into_wgsl_bytes(self) -> Self::Bytes {
+        let mut bytes = [0; std::mem::size_of::<BlockQ5_0Wgsl>()];
+        let scale_offset = offset_of!(BlockQ5_0Wgsl, scale);
+        let scale_bytes = bytemuck::bytes_of(&self.scale);
+        bytes[scale_offset..scale_offset + scale_bytes.len()].copy_from_slice(&scale_bytes);
+        let data_high_bits_offset = offset_of!(BlockQ5_0Wgsl, data_high_bits);
+        let data_high_bits_bytes = bytemuck::cast_slice(&self.data_high_bits);
+        bytes[data_high_bits_offset..data_high_bits_offset + data_high_bits_bytes.len()]
+            .copy_from_slice(data_high_bits_bytes);
+        let data_low_bits_offset = offset_of!(BlockQ5_0Wgsl, data_low_bits);
+        let data_low_bits_bytes = bytemuck::cast_slice(&self.data_low_bits);
+        bytes[data_low_bits_offset..data_low_bits_offset + data_low_bits_bytes.len()]
+            .copy_from_slice(data_low_bits_bytes);
+        bytes
+    }
+
+    fn from_wgsl_bytes(bytes: Self::Bytes) -> Self {
+        let scale_offset = offset_of!(BlockQ5_0Wgsl, scale);
+        let scale_bytes = &bytes[scale_offset..scale_offset + std::mem::size_of::<half::f16>()];
+        let scale = *bytemuck::from_bytes(scale_bytes);
+        let data_high_bits_offset = offset_of!(BlockQ5_0Wgsl, data_high_bits);
+        let data_high_bits_bytes =
+            &bytes[data_high_bits_offset..data_high_bits_offset + std::mem::size_of::<[u32; 8]>()];
+        let data_high_bits = *bytemuck::from_bytes(data_high_bits_bytes);
+        let data_low_bits_offset = offset_of!(BlockQ5_0Wgsl, data_low_bits);
+        let data_low_bits_bytes =
+            &bytes[data_low_bits_offset..data_low_bits_offset + std::mem::size_of::<[u32; 16]>()];
+        let data_low_bits = *bytemuck::from_bytes(data_low_bits_bytes);
+        Self {
+            scale,
+            data_high_bits,
+            data_low_bits,
+        }
+    }
 
     // https://github.com/ggml-org/llama.cpp/blob/80a02aa8588ef167d616f76f1781b104c245ace0/ggml/src/ggml-quants.c#L296
-    pub fn dequantize(&self) -> [f32; Q5_0_BLOCK_SIZE] {
+    fn dequantize(&self) -> Self::Dequantized {
         const FIFTH_BIT: u8 = 0x10;
         const CENTER_FIVE_BIT: i8 = 16;
 
@@ -583,6 +661,13 @@ impl BlockQ5_0 {
 
 const Q8_0_BLOCK_SIZE: usize = 32;
 
+#[derive(AnyBitPattern, Clone, Copy)]
+#[repr(C)]
+struct BlockQ8_0Wgsl {
+    pub(crate) scale: half::f16,
+    pub(crate) data: [u32; Q8_0_BLOCK_SIZE / 4],
+}
+
 #[derive(Zeroable, Pod, Clone, Copy)]
 #[repr(C)]
 pub struct BlockQ8_0 {
@@ -593,9 +678,43 @@ pub struct BlockQ8_0 {
 impl BlockQ8_0 {
     pub const BLOCK_SIZE: usize = Q8_0_BLOCK_SIZE;
     pub const WEIGHTS_SIZE: usize = Q8_0_BLOCK_SIZE;
+}
+
+impl GgufBlock for BlockQ8_0 {
+    const BLOCK_SIZE: usize = Q8_0_BLOCK_SIZE;
+
+    type Bytes = [u8; std::mem::size_of::<BlockQ8_0Wgsl>()];
+    type AsBytes = [u8; std::mem::size_of::<Self>()];
+    type Dequantized = [f32; Q8_0_BLOCK_SIZE];
+
+    fn finite(&self) -> bool {
+        self.scale.is_finite()
+    }
+
+    fn into_wgsl_bytes(self) -> Self::Bytes {
+        let mut bytes = [0; std::mem::size_of::<BlockQ8_0Wgsl>()];
+        let scale_offset = offset_of!(BlockQ8_0Wgsl, scale);
+        let scale_bytes = bytemuck::bytes_of(&self.scale);
+        bytes[scale_offset..scale_offset + scale_bytes.len()].copy_from_slice(&scale_bytes);
+        let data_offset = offset_of!(BlockQ8_0Wgsl, data);
+        let data_bytes = bytemuck::cast_slice(&self.data);
+        bytes[data_offset..data_offset + data_bytes.len()].copy_from_slice(data_bytes);
+        bytes
+    }
+
+    fn from_wgsl_bytes(bytes: Self::Bytes) -> Self {
+        let scale_offset = offset_of!(BlockQ8_0Wgsl, scale);
+        let scale_bytes = &bytes[scale_offset..scale_offset + std::mem::size_of::<half::f16>()];
+        let scale = *bytemuck::from_bytes(scale_bytes);
+        let data_offset = offset_of!(BlockQ8_0Wgsl, data);
+        let data_bytes =
+            &bytes[data_offset..data_offset + std::mem::size_of::<[i8; Q8_0_BLOCK_SIZE]>()];
+        let data = *bytemuck::from_bytes(data_bytes);
+        Self { scale, data }
+    }
 
     // https://github.com/ggml-org/llama.cpp/blob/80a02aa8588ef167d616f76f1781b104c245ace0/ggml/src/ggml-quants.c#L349
-    pub fn dequantize(&self) -> [f32; Q8_0_BLOCK_SIZE] {
+    fn dequantize(&self) -> [f32; Q8_0_BLOCK_SIZE] {
         let scale = self.scale.to_f32();
 
         std::array::from_fn(|i| self.data[i] as f32 * scale)
@@ -603,6 +722,15 @@ impl BlockQ8_0 {
 }
 
 const K_BLOCK_SIZE: usize = 256;
+
+#[derive(AnyBitPattern, Clone, Copy)]
+#[repr(C)]
+pub struct BlockQ4KWgsl {
+    scale: half::f16,
+    min: half::f16,
+    scales: [u32; 12 / 4],
+    data: [u32; K_BLOCK_SIZE / 2],
+}
 
 #[derive(Zeroable, Pod, Clone, Copy)]
 #[repr(C)]
@@ -617,8 +745,59 @@ impl BlockQ4K {
     pub const BLOCK_SIZE: usize = K_BLOCK_SIZE;
     pub const SCALES_SIZE: usize = 12;
     pub const WEIGHTS_SIZE: usize = K_BLOCK_SIZE / 2;
+}
 
-    pub fn dequantize(&self) -> [f32; K_BLOCK_SIZE] {
+impl GgufBlock for BlockQ4K {
+    const BLOCK_SIZE: usize = K_BLOCK_SIZE;
+
+    type Bytes = [u8; std::mem::size_of::<BlockQ4KWgsl>()];
+    type AsBytes = [u8; std::mem::size_of::<Self>()];
+    type Dequantized = [f32; K_BLOCK_SIZE];
+
+    fn finite(&self) -> bool {
+        self.scale.is_finite() && self.min.is_finite()
+    }
+
+    fn into_wgsl_bytes(self) -> Self::Bytes {
+        let mut bytes = [0; std::mem::size_of::<BlockQ4KWgsl>()];
+        let scale_offset = offset_of!(BlockQ4KWgsl, scale);
+        let scale_bytes = bytemuck::bytes_of(&self.scale);
+        bytes[scale_offset..scale_offset + scale_bytes.len()].copy_from_slice(&scale_bytes);
+        let min_offset = offset_of!(BlockQ4KWgsl, min);
+        let min_bytes = bytemuck::bytes_of(&self.min);
+        bytes[min_offset..min_offset + min_bytes.len()].copy_from_slice(&min_bytes);
+        let scales_offset = offset_of!(BlockQ4KWgsl, scales);
+        let scales_bytes = bytemuck::cast_slice(&self.scales);
+        bytes[scales_offset..scales_offset + scales_bytes.len()].copy_from_slice(scales_bytes);
+        let data_offset = offset_of!(BlockQ4KWgsl, data);
+        let data_bytes = bytemuck::cast_slice(&self.data);
+        bytes[data_offset..data_offset + data_bytes.len()].copy_from_slice(data_bytes);
+        bytes
+    }
+
+    fn from_wgsl_bytes(bytes: Self::Bytes) -> Self {
+        let scale_offset = offset_of!(BlockQ4KWgsl, scale);
+        let scale_bytes = &bytes[scale_offset..scale_offset + std::mem::size_of::<half::f16>()];
+        let scale = *bytemuck::from_bytes(scale_bytes);
+        let min_offset = offset_of!(BlockQ4KWgsl, min);
+        let min_bytes = &bytes[min_offset..min_offset + std::mem::size_of::<half::f16>()];
+        let min = *bytemuck::from_bytes(min_bytes);
+        let scales_offset = offset_of!(BlockQ4KWgsl, scales);
+        let scales_bytes = &bytes[scales_offset..scales_offset + std::mem::size_of::<[u32; 3]>()];
+        let scales = *bytemuck::from_bytes(scales_bytes);
+        let data_offset = offset_of!(BlockQ4KWgsl, data);
+        let data_bytes =
+            &bytes[data_offset..data_offset + std::mem::size_of::<[u32; K_BLOCK_SIZE / 2]>()];
+        let data = *bytemuck::from_bytes(data_bytes);
+        Self {
+            scale,
+            min,
+            scales,
+            data,
+        }
+    }
+
+    fn dequantize(&self) -> [f32; K_BLOCK_SIZE] {
         let weights = &self.data;
         let super_block_scale = self.scale.to_f32();
         let super_block_min = self.min.to_f32();
@@ -655,6 +834,15 @@ impl BlockQ4K {
     }
 }
 
+#[derive(AnyBitPattern, Clone, Copy)]
+#[repr(C)]
+pub struct BlockQ6KWgsl {
+    pub(crate) data_low_bits: [u32; (K_BLOCK_SIZE / 2) / 4],
+    pub(crate) data_high_bits: [u32; (K_BLOCK_SIZE / 4) / 4],
+    pub(crate) scales: [u32; (K_BLOCK_SIZE / 16) / 4],
+    pub(crate) scale: half::f16,
+}
+
 #[derive(Zeroable, Pod, Clone, Copy)]
 #[repr(C)]
 pub struct BlockQ6K {
@@ -673,9 +861,63 @@ impl BlockQ6K {
     pub const SCALES_SIZE: usize = K_BLOCK_SIZE / 16;
     pub const WEIGHTS_LOW_BITS_SIZE: usize = K_BLOCK_SIZE / 2;
     pub const WEIGHTS_HIGH_BITS_SIZE: usize = K_BLOCK_SIZE / 4;
+}
+
+impl GgufBlock for BlockQ6K {
+    const BLOCK_SIZE: usize = K_BLOCK_SIZE;
+
+    type Bytes = [u8; std::mem::size_of::<BlockQ6KWgsl>()];
+    type AsBytes = [u8; std::mem::size_of::<Self>()];
+    type Dequantized = [f32; K_BLOCK_SIZE];
+
+    fn finite(&self) -> bool {
+        self.scale.is_finite()
+    }
+
+    fn into_wgsl_bytes(self) -> Self::Bytes {
+        let mut bytes = [0; std::mem::size_of::<BlockQ6KWgsl>()];
+        let data_low_bits_offset = offset_of!(BlockQ6KWgsl, data_low_bits);
+        let data_low_bits_bytes = bytemuck::cast_slice(&self.data_low_bits);
+        bytes[data_low_bits_offset..data_low_bits_offset + data_low_bits_bytes.len()]
+            .copy_from_slice(data_low_bits_bytes);
+        let data_high_bits_offset = offset_of!(BlockQ6KWgsl, data_high_bits);
+        let data_high_bits_bytes = bytemuck::cast_slice(&self.data_high_bits);
+        bytes[data_high_bits_offset..data_high_bits_offset + data_high_bits_bytes.len()]
+            .copy_from_slice(data_high_bits_bytes);
+        let scales_offset = offset_of!(BlockQ6KWgsl, scales);
+        let scales_bytes = bytemuck::cast_slice(&self.scales);
+        bytes[scales_offset..scales_offset + scales_bytes.len()].copy_from_slice(scales_bytes);
+        let scale_offset = offset_of!(BlockQ6KWgsl, scale);
+        let scale_bytes = bytemuck::bytes_of(&self.scale);
+        bytes[scale_offset..scale_offset + scale_bytes.len()].copy_from_slice(&scale_bytes);
+        bytes
+    }
+
+    fn from_wgsl_bytes(bytes: Self::Bytes) -> Self {
+        let data_low_bits_offset = offset_of!(BlockQ6KWgsl, data_low_bits);
+        let data_low_bits_bytes =
+            &bytes[data_low_bits_offset..data_low_bits_offset + std::mem::size_of::<[u32; 64]>()];
+        let data_low_bits = *bytemuck::from_bytes(data_low_bits_bytes);
+        let data_high_bits_offset = offset_of!(BlockQ6KWgsl, data_high_bits);
+        let data_high_bits_bytes =
+            &bytes[data_high_bits_offset..data_high_bits_offset + std::mem::size_of::<[u32; 32]>()];
+        let data_high_bits = *bytemuck::from_bytes(data_high_bits_bytes);
+        let scales_offset = offset_of!(BlockQ6KWgsl, scales);
+        let scales_bytes = &bytes[scales_offset..scales_offset + std::mem::size_of::<[u32; 4]>()];
+        let scales = *bytemuck::from_bytes(scales_bytes);
+        let scale_offset = offset_of!(BlockQ6KWgsl, scale);
+        let scale_bytes = &bytes[scale_offset..scale_offset + std::mem::size_of::<half::f16>()];
+        let scale = *bytemuck::from_bytes(scale_bytes);
+        Self {
+            data_low_bits,
+            data_high_bits,
+            scales,
+            scale,
+        }
+    }
 
     // https://github.com/ggml-org/llama.cpp/blob/80a02aa8588ef167d616f76f1781b104c245ace0/ggml/src/ggml-quants.c#L1690
-    pub fn dequantize(&self) -> [f32; K_BLOCK_SIZE] {
+    fn dequantize(&self) -> [f32; K_BLOCK_SIZE] {
         const CENTER_SIX_BIT: i8 = 32;
         const TWO_BITS: u8 = 0b11;
         const FOUR_BITS: u8 = 0b1111;
@@ -821,7 +1063,6 @@ async fn test_load_tiny_llama() {
                             println!("ours: {:?}", dequantized);
                             println!("candle: {:?}", candle_block);
                             assert_eq!(dequantized, candle_block);
-                            panic!();
                         }
                     }
                 }
@@ -838,7 +1079,6 @@ async fn test_load_tiny_llama() {
                             println!("ours: {:?}", dequantized);
                             println!("candle: {:?}", candle_block);
                             assert_eq!(dequantized, candle_block);
-                            panic!();
                         }
                     }
                 }
@@ -855,7 +1095,6 @@ async fn test_load_tiny_llama() {
                             println!("ours: {:?}", dequantized);
                             println!("candle: {:?}", candle_block);
                             assert_eq!(dequantized, candle_block);
-                            panic!();
                         }
                     }
                 }
@@ -871,7 +1110,6 @@ async fn test_load_tiny_llama() {
                             println!("ours: {:?}", dequantized);
                             println!("candle: {:?}", candle_block);
                             assert_eq!(dequantized, candle_block);
-                            panic!();
                         }
                     }
                 }
@@ -887,7 +1125,6 @@ async fn test_load_tiny_llama() {
                             println!("ours: {:?}", dequantized);
                             println!("candle: {:?}", candle_block);
                             assert_eq!(dequantized, candle_block);
-                            panic!();
                         }
                     }
                 }

@@ -1,11 +1,15 @@
 use wgpu::CommandEncoder;
 
 use crate::{
-    element_wise, matmul::UntypedMatMul, quantized::UntypedQMatMul, resize::UntypedResizeKernel, slice_assign::UntypedSliceAssignKernel, tensor::TensorData, ElementWiseFunction, PerformanceQueries, UntypedElementWiseKernel, UntypedPairWiseKernel, UntypedReduceKernel
+    ElementWiseFunction, PerformanceQueries, UntypedElementWiseKernel, UntypedPairWiseKernel,
+    UntypedReduceKernel, element_wise, matmul::UntypedMatMul, quantized::UntypedQMatMul,
+    resize::UntypedResizeKernel, slice_assign::UntypedSliceAssignKernel, tensor::TensorData,
 };
 
 use super::{
-    AnyComputeKey, ComputeGraphInner, ElementWiseComputeNodeKey, MapLayoutComputeNodeKey, MatMulComputeNodeKey, PairWiseComputeNodeKey, QMatMulComputeNodeKey, ReduceComputeNodeKey, ResizeComputeNodeKey, SliceAssignComputeNodeKey, TensorComputeNodeKey
+    AnyComputeKey, ComputeGraphInner, ElementWiseComputeNodeKey, MapLayoutComputeNodeKey,
+    MatMulComputeNodeKey, PairWiseComputeNodeKey, QMatMulComputeNodeKey, ReduceComputeNodeKey,
+    ResizeComputeNodeKey, SliceAssignComputeNodeKey, TensorComputeNodeKey,
 };
 
 impl ComputeGraphInner {

@@ -1,11 +1,13 @@
 use enumset::{EnumSet, EnumSetType};
-use fusor_gguf::{BlockQ4K, BlockQ4_0, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType};
+use fusor_gguf::{BlockQ4_0, BlockQ4K, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType};
 use std::fmt::{Debug, Write};
 use std::{fmt::Display, sync::OnceLock};
 use wgpu::{BindGroupLayout, CommandEncoder, PipelineCompilationOptions, util::DeviceExt};
 
 use crate::quantized::QMatrix;
-use crate::quantized_types_wgsl::{write_q4_0_type, write_q4_k_type, write_q5_0_type, write_q6_k_type, write_q8_0_type};
+use crate::quantized_types_wgsl::{
+    write_q4_0_type, write_q4_k_type, write_q5_0_type, write_q6_k_type, write_q8_0_type,
+};
 use crate::{DataTypeEnum, Device, PerformanceQueries, TensorData};
 
 #[derive(EnumSetType, Debug)]
@@ -99,11 +101,7 @@ impl GenericKernel {
         input
     }
 
-    pub(crate) fn add_q_matrix_input(
-        &mut self,
-        rank: u32,
-        datatype: GgmlType,
-    ) -> QMatrixInput {
+    pub(crate) fn add_q_matrix_input(&mut self, rank: u32, datatype: GgmlType) -> QMatrixInput {
         let start_index = self.max_binding;
         self.max_binding += 2;
 
@@ -214,9 +212,7 @@ impl GenericKernel {
                         binding: matrix.get_matrix_binding(),
                         visibility: wgpu::ShaderStages::COMPUTE,
                         ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage {
-                                read_only: true,
-                            },
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
                             has_dynamic_offset: false,
                             min_binding_size: None,
                         },
@@ -375,10 +371,7 @@ impl GenericKernel {
                     // Tensor info
                     owned_entries.push((
                         matrix_input.get_info_binding(),
-                        create_u32_iter_buffer(
-                            device,
-                            matrix.shape().iter().map(|x| *x as u32)
-                        ),
+                        create_u32_iter_buffer(device, matrix.shape().iter().map(|x| *x as u32)),
                     ));
                 }
                 (KernelInputType::Tensor(tensor_input), KernelInputValue::Tensor(tensor)) => {
@@ -743,7 +736,10 @@ impl Display for KernelInput {
             KernelInputType::QMatrix(matrix) => {
                 let start_index = matrix.start_index;
                 let datatype = matrix.datatype;
-                writeln!(f, "@group(0) @binding({start_index}) var<storage, read> i_{start_index}: array<{datatype}>;")?;
+                writeln!(
+                    f,
+                    "@group(0) @binding({start_index}) var<storage, read> i_{start_index}: array<{datatype}>;"
+                )?;
 
                 writeln!(f, "struct Tensor{start_index}Info {{")?;
                 for i in 0..matrix.rank {

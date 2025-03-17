@@ -12,7 +12,9 @@ mod visit;
 mod visualize;
 
 use crate::{
-    map_layout::MapLayoutOperation, quantized::QMatMulOperation, resize::ResizeOperation, slice_assign::SliceAssignOperation, tensor::TensorData, Device, ElementWiseOperation, MatMulOperation, PairWiseOperation, PerformanceQueries, QueryResults, ReduceOperation
+    Device, ElementWiseOperation, MatMulOperation, PairWiseOperation, PerformanceQueries,
+    QueryResults, ReduceOperation, map_layout::MapLayoutOperation, quantized::QMatMulOperation,
+    resize::ResizeOperation, slice_assign::SliceAssignOperation, tensor::TensorData,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -194,7 +196,9 @@ impl ComputeGraph {
                 inner.slice_assign.extend(other_inner.slice_assign.drain());
                 inner.tensor.extend(other_inner.tensor.drain());
                 inner.q_mat_mul.extend(other_inner.q_mat_mul.drain());
-                inner.timing_information.extend(other_inner.timing_information.drain());
+                inner
+                    .timing_information
+                    .extend(other_inner.timing_information.drain());
             })
         });
         other.inner.store(self.inner.load_full());
