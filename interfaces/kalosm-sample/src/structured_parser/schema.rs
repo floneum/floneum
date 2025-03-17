@@ -909,7 +909,7 @@ pub trait Schema {
 
 impl<T: Schema> Schema for Option<T> {
     fn schema() -> SchemaType {
-        SchemaType::OneOf(OneOfSchema::new([SchemaType::Null, T::schema()]))
+        SchemaType::AnyOf(AnyOfSchema::new([SchemaType::Null, T::schema()]))
     }
 }
 
