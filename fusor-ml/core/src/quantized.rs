@@ -4,16 +4,13 @@ use std::{
 };
 
 use fusor_gguf::{
-    BlockQ4_0, BlockQ5_0, BlockQ8_0, GgmlType, GgufBlock, GgufReadError, GgufTensorMetadata,
+    BlockQ4_0, BlockQ4K, BlockQ5_0, BlockQ8_0, GgmlType, GgufBlock, GgufReadError,
+    GgufTensorMetadata,
 };
 use wgpu::{CommandEncoder, util::DeviceExt};
 
 use crate::{
-    DataType, DataTypeEnum, Device, PerformanceQueries, Tensor, TensorData,
-    compute_graph::AnyComputeKey,
-    kernel::{GenericKernel, KernelGlobalSpace, KernelInputValue},
-    padded_tensor_size,
-    quantized_types_wgsl::{write_q4_0_type, write_q5_0_type, write_q8_0_type},
+    compute_graph::AnyComputeKey, kernel::{GenericKernel, KernelGlobalSpace, KernelInputValue}, padded_tensor_size, quantized_types_wgsl::{write_q4_0_type, write_q4_k_type, write_q5_0_type, write_q8_0_type}, DataType, DataTypeEnum, Device, PerformanceQueries, Tensor, TensorData
 };
 
 pub struct QMatMulOperation {
@@ -503,6 +500,127 @@ impl WgslQuantizedType for BlockQ8_0 {
     }
 }
 
+impl WgslQuantizedType for BlockQ4K {
+    const GGML_TYPE: GgmlType = GgmlType::Q4K;
+
+    fn dequantize_block(
+        chunk: String,
+        datatype: DataTypeEnum,
+        mut process_element: impl FnMut(String, String, &mut String),
+    ) -> String {
+        const SIX_BITS_MASK: u32 = 0b0011_1111_0011_1111_0011_1111_0011_1111;
+        const MSB_TWO_BITS_MASK: u32 = 0b1100_0000_1100_0000_1100_0000_1100_0000;
+        const LOW_FOUR_BITS: u32 = 0b0000_1111_0000_1111_0000_1111_0000_1111;
+        const HIGH_FOUR_BITS: u32 = 0b1111_0000_1111_0000_1111_0000_1111_0000;
+        const MSB_SCALES_MASK: u32 = LOW_FOUR_BITS;
+        const MSB_OFFSET_MASK: u32 = HIGH_FOUR_BITS;
+
+        let mut code = String::new();
+
+        writeln!(&mut code, "let super_block_scale = {datatype}({chunk}.scale);").unwrap();
+        writeln!(&mut code, "let super_block_min = {datatype}({chunk}.min);").unwrap();
+
+        writeln!(&mut code, "let first_four_bytes = {chunk}.scales[0];").unwrap();
+        writeln!(&mut code, "let middle_four_bytes = {chunk}.scales[1];").unwrap();
+        writeln!(&mut code, "let last_four_bytes = {chunk}.scales[2];").unwrap();
+
+        // Extracts this bit pattern. The first 6 bits of the first
+        // 4 bytes are the scales. The first 6 bits of the second 4
+        // bytes are the offsets.
+        //
+        // dddddddd dddddddd dddddddd dddddddd mmmmmmmm mmmmmmmm
+        // __000000|__111111|__222222|__333333|__000000|__111111
+        //
+        // mmmmmmmm mmmmmmmm mmmmdddd mmmmdddd mmmmdddd mmmmdddd
+        // __222222|__333333|________|________|________|________
+        writeln!(
+            &mut code,
+            "let first_scales = first_four_bytes & {SIX_BITS_MASK};"
+        )
+        .unwrap();
+        writeln!(
+            &mut code,
+            "let first_offsets = middle_four_bytes & {SIX_BITS_MASK};"
+        )
+        .unwrap();
+
+        // Extracts this bit pattern. The first 2 bits of the first
+        // 4 bytes are the scales. The first 2 bits of the second 4
+        // bytes are the offsets.
+        // The first 4 bits of the last 4 bytes are the lower 4 bits
+        // of the scales. The second 4 bits of the last 4 bytes are
+        // the lower 4 bits of the offsets.
+        //
+        // dddddddd dddddddd dddddddd dddddddd mmmmmmmm mmmmmmmm
+        // 44______|55______|66______|77______|44______|55______
+        //
+        // mmmmmmmm mmmmmmmm mmmmdddd mmmmdddd mmmmdddd mmmmdddd
+        // 66______|77______|44444444|55555555|66666666|77777777
+        writeln!(
+            &mut code,
+            "let msb_scales = (first_four_bytes & {MSB_TWO_BITS_MASK}) >> 2;"
+        )
+        .unwrap();
+        writeln!(
+            &mut code,
+            "let lsb_scales = last_four_bytes & {MSB_SCALES_MASK};"
+        )
+        .unwrap();
+        writeln!(&mut code, "let second_scales = msb_scales | lsb_scales;").unwrap();
+        writeln!(
+            &mut code,
+            "let msb_offsets = (middle_four_bytes & {MSB_TWO_BITS_MASK}) >> 2;"
+        )
+        .unwrap();
+        writeln!(
+            &mut code,
+            "let lsb_offsets = (last_four_bytes & {MSB_OFFSET_MASK}) >> 4;"
+        )
+        .unwrap();
+        writeln!(&mut code, "let second_offsets = msb_offsets | lsb_offsets;").unwrap();
+
+        writeln!(code, "var weight_index = 0u;").unwrap();
+        writeln!(code, "var output_index = 0u;").unwrap();
+
+        let mut run_chunk = |scales: &str, offsets: &str| {
+            writeln!(code, "{{").unwrap();
+            writeln!(code, "let scales = vec4<{datatype}>(unpack4xU8({scales})) * super_block_scale;").unwrap();
+            writeln!(code, "let low_scales = scales.xz;").unwrap();
+            writeln!(code, "let high_scales = scales.yw * {};", shift_right_scale(4)).unwrap();
+            writeln!(code, "let offsets = vec4<{datatype}>(unpack4xU8({offsets})) * super_block_min;").unwrap();
+            writeln!(code, "let low_offsets = offsets.xz;").unwrap();
+            writeln!(code, "let high_offsets = offsets.yw;").unwrap();
+
+            for suffix in ["x", "y"] {
+                writeln!(code, "for (var i = 0u; i < 32u; i += 4) {{").unwrap();
+                writeln!(code, "let weight_chunk = {chunk}.data[weight_index];").unwrap();
+                writeln!(code, "let weight_chunk_low = vec4<{datatype}>(unpack4xU8(weight_chunk & {LOW_FOUR_BITS}));").unwrap();
+                writeln!(code, "let weight_chunk_high = vec4<{datatype}>(unpack4xU8(weight_chunk & {HIGH_FOUR_BITS}));").unwrap();
+                writeln!(code, "let low_result = weight_chunk_low * low_scales.{suffix} - low_offsets.{suffix};").unwrap();
+                writeln!(code, "let high_result = weight_chunk_high * high_scales.{suffix} - high_offsets.{suffix};").unwrap();
+                for i in 0..4 {
+                    process_element(format!("output_index + i + {i}u"), format!("low_result[{i}]"), &mut code);
+                    process_element(format!("output_index + i + {i}u + 32u"), format!("high_result[{i}]"), &mut code);
+                }
+                writeln!(code, "weight_index += 1;").unwrap();
+                writeln!(code, "}}").unwrap();
+                writeln!(code, "output_index += 64;").unwrap();
+            }
+            writeln!(code, "}}").unwrap();
+
+        };
+
+        run_chunk("first_scales", "first_offsets");
+        run_chunk("second_scales", "second_offsets");
+
+        code
+    }
+
+    fn write_type<W: Write>(f: &mut W) -> std::fmt::Result {
+        write_q4_k_type(f)
+    }
+}
+
 #[cfg(test)]
 #[tokio::test]
 async fn test_de_quantize_4_0_block() {
@@ -522,6 +640,12 @@ async fn test_de_quantize_8_0_block() {
 }
 
 #[cfg(test)]
+#[tokio::test]
+async fn test_de_quantize_4_k_block() {
+    fuzz_de_quantize::<BlockQ4K>().await;
+}
+
+#[cfg(test)]
 async fn fuzz_de_quantize<B: WgslQuantizedType + PartialEq + std::fmt::Debug>()
 where
     rand::distr::StandardUniform:
@@ -531,11 +655,9 @@ where
     use wgpu::util::DownloadBuffer;
 
     println!("testing f32...");
-    test_de_quantize_4_0_block_inner::<B, f32>().await;
-    println!("testing f16...");
-    test_de_quantize_4_0_block_inner::<B, half::f16>().await;
+    test_de_quantize_block_inner::<B, f32>().await;
 
-    async fn test_de_quantize_4_0_block_inner<
+    async fn test_de_quantize_block_inner<
         B: WgslQuantizedType + PartialEq + std::fmt::Debug,
         T: DataType,
     >()
@@ -628,7 +750,7 @@ where
                     .wgpu_device()
                     .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                         label: None,
-                        contents: bytemuck::cast_slice(&[T::zero(); BlockQ4_0::BLOCK_SIZE]),
+                        contents: bytemuck::cast_slice(&vec![T::zero(); B::BLOCK_SIZE]),
                         usage: wgpu::BufferUsages::STORAGE
                             | wgpu::BufferUsages::COPY_DST
                             | wgpu::BufferUsages::COPY_SRC,

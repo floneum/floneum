@@ -729,10 +729,10 @@ pub struct BlockQ4KWgsl {
     scale: half::f16,
     min: half::f16,
     scales: [u32; 12 / 4],
-    data: [u32; K_BLOCK_SIZE / 2],
+    data: [u32; (K_BLOCK_SIZE / 2) / 4],
 }
 
-#[derive(Zeroable, Pod, Clone, Copy)]
+#[derive(Zeroable, Pod, Clone, Copy, PartialEq, Debug)]
 #[repr(C)]
 pub struct BlockQ4K {
     scale: half::f16,
@@ -787,7 +787,7 @@ impl GgufBlock for BlockQ4K {
         let scales = *bytemuck::from_bytes(scales_bytes);
         let data_offset = offset_of!(BlockQ4KWgsl, data);
         let data_bytes =
-            &bytes[data_offset..data_offset + std::mem::size_of::<[u32; K_BLOCK_SIZE / 2]>()];
+            &bytes[data_offset..data_offset + std::mem::size_of::<[u32; K_BLOCK_SIZE / 2 / 4]>()];
         let data = *bytemuck::from_bytes(data_bytes);
         Self {
             scale,
