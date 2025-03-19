@@ -843,7 +843,7 @@ pub struct BlockQ6KWgsl {
     pub(crate) scale: half::f16,
 }
 
-#[derive(Zeroable, Pod, Clone, Copy)]
+#[derive(Zeroable, Pod, Clone, Copy, PartialEq, Debug)]
 #[repr(C)]
 pub struct BlockQ6K {
     // The 4 low bits of the each value
