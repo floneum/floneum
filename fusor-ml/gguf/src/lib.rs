@@ -614,12 +614,12 @@ impl GgufBlock for BlockQ5_0 {
         let scale_bytes = &bytes[scale_offset..scale_offset + std::mem::size_of::<half::f16>()];
         let scale = *bytemuck::from_bytes(scale_bytes);
         let data_high_bits_offset = offset_of!(BlockQ5_0Wgsl, data_high_bits);
-        let data_high_bits_bytes =
-            &bytes[data_high_bits_offset..data_high_bits_offset + std::mem::size_of::<[u8; Q5_0_BLOCK_SIZE / 8]>()];
+        let data_high_bits_bytes = &bytes[data_high_bits_offset
+            ..data_high_bits_offset + std::mem::size_of::<[u8; Q5_0_BLOCK_SIZE / 8]>()];
         let data_high_bits = *bytemuck::from_bytes(data_high_bits_bytes);
         let data_low_bits_offset = offset_of!(BlockQ5_0Wgsl, data_low_bits);
-        let data_low_bits_bytes =
-            &bytes[data_low_bits_offset..data_low_bits_offset + std::mem::size_of::<[u8; Q5_0_BLOCK_SIZE / 2]>()];
+        let data_low_bits_bytes = &bytes[data_low_bits_offset
+            ..data_low_bits_offset + std::mem::size_of::<[u8; Q5_0_BLOCK_SIZE / 2]>()];
         let data_low_bits = *bytemuck::from_bytes(data_low_bits_bytes);
         Self {
             scale,
@@ -745,6 +745,14 @@ impl BlockQ4K {
     pub const BLOCK_SIZE: usize = K_BLOCK_SIZE;
     pub const SCALES_SIZE: usize = 12;
     pub const WEIGHTS_SIZE: usize = K_BLOCK_SIZE / 2;
+
+    pub fn scale(&self) -> f32 {
+        self.scale.to_f32()
+    }
+
+    pub fn min(&self) -> f32 {
+        self.min.to_f32()
+    }
 }
 
 impl GgufBlock for BlockQ4K {
@@ -895,15 +903,16 @@ impl GgufBlock for BlockQ6K {
 
     fn from_wgsl_bytes(bytes: Self::Bytes) -> Self {
         let data_low_bits_offset = offset_of!(BlockQ6KWgsl, data_low_bits);
-        let data_low_bits_bytes =
-            &bytes[data_low_bits_offset..data_low_bits_offset + std::mem::size_of::<[u8; K_BLOCK_SIZE / 2]>()];
+        let data_low_bits_bytes = &bytes[data_low_bits_offset
+            ..data_low_bits_offset + std::mem::size_of::<[u8; K_BLOCK_SIZE / 2]>()];
         let data_low_bits = *bytemuck::from_bytes(data_low_bits_bytes);
         let data_high_bits_offset = offset_of!(BlockQ6KWgsl, data_high_bits);
-        let data_high_bits_bytes =
-            &bytes[data_high_bits_offset..data_high_bits_offset + std::mem::size_of::<[u8; K_BLOCK_SIZE / 4]>()];
+        let data_high_bits_bytes = &bytes[data_high_bits_offset
+            ..data_high_bits_offset + std::mem::size_of::<[u8; K_BLOCK_SIZE / 4]>()];
         let data_high_bits = *bytemuck::from_bytes(data_high_bits_bytes);
         let scales_offset = offset_of!(BlockQ6KWgsl, scales);
-        let scales_bytes = &bytes[scales_offset..scales_offset + std::mem::size_of::<[i8; K_BLOCK_SIZE / 16]>()];
+        let scales_bytes =
+            &bytes[scales_offset..scales_offset + std::mem::size_of::<[i8; K_BLOCK_SIZE / 16]>()];
         let scales = *bytemuck::from_bytes(scales_bytes);
         let scale_offset = offset_of!(BlockQ6KWgsl, scale);
         let scale_bytes = &bytes[scale_offset..scale_offset + std::mem::size_of::<half::f16>()];

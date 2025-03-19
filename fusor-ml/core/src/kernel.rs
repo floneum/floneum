@@ -1,5 +1,5 @@
 use enumset::{EnumSet, EnumSetType};
-use fusor_gguf::{BlockQ4_0, BlockQ4K, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType};
+use fusor_gguf::GgmlType;
 use std::fmt::{Debug, Write};
 use std::{fmt::Display, sync::OnceLock};
 use wgpu::{BindGroupLayout, CommandEncoder, PipelineCompilationOptions, util::DeviceExt};

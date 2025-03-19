@@ -12,7 +12,7 @@ use wgpu::{CommandEncoder, util::DeviceExt};
 use crate::{
     DataType, DataTypeEnum, Device, PerformanceQueries, Tensor, TensorData,
     compute_graph::AnyComputeKey,
-    kernel::{GenericKernel, KernelGlobalSpace, KernelInputValue},
+    kernel::{GenericKernel, KernelInputValue},
     padded_tensor_size,
     quantized_types_wgsl::{
         write_q4_0_type, write_q4_k_type, write_q5_0_type, write_q6_k_type, write_q8_0_type,
@@ -36,6 +36,81 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
     }
 }
 
+#[cfg(test)]
+#[tokio::test]
+async fn fuzz_q_mat_mul() {
+    use crate::Device;
+    use crate::Tensor;
+    use candle_core::Module;
+    use fusor_gguf::GgufMetadata;
+
+    let device = Device::new().await.unwrap();
+
+    std::thread::spawn({
+        let device = device.clone();
+        move || loop {
+            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
+        }
+    });
+
+    let url = "https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf";
+    let bytes = reqwest::get(url).await.unwrap().bytes().await.unwrap();
+    let mut reader = std::io::Cursor::new(&bytes);
+    let metadata = GgufMetadata::read(&mut reader).unwrap();
+    let mut reader = std::io::Cursor::new(&bytes);
+    let candle_metadata = candle_core::quantized::gguf_file::Content::read(&mut reader).unwrap();
+    let candle_q_matrix_metadata = candle_metadata
+        .tensor_infos
+        .get("blk.0.attn_q.weight")
+        .unwrap();
+    let candle_q_matrix = candle_q_matrix_metadata
+        .read(
+            &mut reader,
+            candle_metadata.tensor_data_offset,
+            &candle_core::Device::Cpu,
+        )
+        .unwrap();
+    let candle_q_matrix = candle_core::quantized::QMatMul::from_qtensor(candle_q_matrix).unwrap();
+
+    let q_matrix_metadata = metadata.tensor_infos.get("blk.0.attn_q.weight").unwrap();
+
+    let q_matrix = QMatrix::read(
+        device.wgpu_device(),
+        q_matrix_metadata,
+        &mut reader,
+        metadata.tensor_data_offset,
+    )
+    .unwrap();
+
+    for _ in 0..10 {
+        let random_data: Vec<Vec<f32>> = (0..576)
+            .map(|_| (0..576).map(|_| rand::random()).collect())
+            .collect();
+        let tensor = Tensor::<2, f32>::new(&device, &vec![vec![1.; 576]; 576]);
+        let iter = random_data.iter().flat_map(|x| x.iter().copied());
+        let candle_tensor =
+            candle_core::Tensor::from_iter(iter, &candle_core::Device::Cpu).unwrap();
+        let candle_tensor = candle_tensor.reshape(&[576, 576]).unwrap();
+
+        let result = tensor.q_mat_mul(&q_matrix);
+        let result = result.as_slice().await.unwrap();
+
+        let candle_result = candle_q_matrix.forward(&candle_tensor).unwrap();
+        let candle_result = candle_result.to_vec2::<f32>().unwrap();
+
+        for x in 0..576 {
+            for y in 0..576 {
+                let expected = candle_result[x][y];
+                let actual = result[[x, y]];
+                if (expected - actual).abs() > 1e-5 {
+                    println!("{:?} != {:?}", result, candle_result);
+                    panic!("expected: {}, actual: {}", expected, actual);
+                }
+            }
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct QMatrix {
     shape: Box<[usize]>,
@@ -50,9 +125,17 @@ impl QMatrix {
         reader: &mut R,
         tensor_data_offset: u64,
     ) -> Result<Self, GgufReadError> {
-        let bytes = metadata.read_tensor_bytes(reader, tensor_data_offset)?;
+        let bytes= metadata.read_tensor_bytes(reader, tensor_data_offset)?;
         let shape = metadata.shape.iter().map(|x| *x as usize).collect();
         let ty = metadata.ty;
+        let bytes: Box<[u8]> = match ty {
+            GgmlType::Q4_0 => bytemuck::cast_slice::<_, BlockQ4_0>(&bytes).iter().flat_map(|block| block.into_wgsl_bytes()).collect(),
+            GgmlType::Q5_0 => bytemuck::cast_slice::<_, BlockQ5_0>(&bytes).iter().flat_map(|block| block.into_wgsl_bytes()).collect(),
+            GgmlType::Q8_0 => bytemuck::cast_slice::<_, BlockQ8_0>(&bytes).iter().flat_map(|block| block.into_wgsl_bytes()).collect(),
+            GgmlType::Q4K => bytemuck::cast_slice::<_, BlockQ4K>(&bytes).iter().flat_map(|block| block.into_wgsl_bytes()).collect(),
+            GgmlType::Q6K => bytemuck::cast_slice::<_, BlockQ6K>(&bytes).iter().flat_map(|block| block.into_wgsl_bytes()).collect(),
+            _ => todo!(),
+        };
         let buffer = Arc::new(
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: None,
@@ -97,33 +180,22 @@ impl UntypedQMatMul {
         }
     }
 
-    fn thread_block_m_size(&self) -> u32 {
+    fn elements_per_block(&self) -> u32 {
         self.matrix.datatype.block_size() as u32
     }
 
-    fn work_group_block_m_size(&self) -> u32 {
-        self.thread_block_m_size() * 2
-    }
-
-    fn work_group_block_n_size(&self) -> u32 {
-        8
-    }
-
-    fn work_group_block_k_size(&self) -> u32 {
-        8
-    }
-
-    fn work_group_size_element(&self) -> u32 {
-        (self.work_group_block_n_size() * self.work_group_block_m_size())
-            / self.thread_block_m_size()
+    fn work_group_dispatch(&self, a_shape: &[usize]) -> [u32; 3] {
+        let m = a_shape[0];
+        let n = self.matrix.shape[1];
+        [
+            m as u32 / self.work_group_size()[0],
+            n as u32 / (self.elements_per_block() * self.work_group_size()[1]),
+            1,
+        ]
     }
 
     fn work_group_size(&self) -> [u32; 3] {
-        [
-            self.work_group_size_element(),
-            self.work_group_size_element(),
-            1,
-        ]
+        [16, 16, 1]
     }
 
     // Related files/PRs in llama.cpp for reference:
@@ -134,90 +206,85 @@ impl UntypedQMatMul {
         self.first_dim_dense_kernel.get_or_init(|| {
             // based on https://siboehm.com/articles/22/CUDA-MMM
             let mut generic_kernel = GenericKernel::new();
+
             generic_kernel.set_workgroup_size(self.work_group_size());
 
             let mut kernel = String::new();
 
             let datatype = self.input_datatype;
-            let work_group_block_k_size = self.work_group_block_k_size();
-            let work_group_block_n_size = self.work_group_block_n_size();
-            let work_group_block_m_size = self.work_group_block_m_size();
-            let thread_block_m_size = self.thread_block_m_size();
 
             let input_a = generic_kernel.add_tensor_input(2, false, datatype);
-            let input_b = generic_kernel.add_tensor_input(2, false, datatype);
+            let input_b = generic_kernel.add_q_matrix_input(2, self.matrix.datatype);
             let output = generic_kernel.add_tensor_input(2, true, datatype);
 
-            let cache_a = generic_kernel.add_global_array(
-                KernelGlobalSpace::Workgroup,
-                datatype,
-                (work_group_block_k_size * work_group_block_k_size).to_string(),
-            );
-            let cache_b = generic_kernel.add_global_array(
-                KernelGlobalSpace::Workgroup,
-                datatype,
-                (work_group_block_n_size * work_group_block_n_size).to_string(),
-            );
-
-            let workgroup_index = generic_kernel.workgroup_index();
-            let workgroup_local_index = generic_kernel.workgroup_local_index();
+            let global_id = generic_kernel.global_id();
+            let elements_per_block = self.elements_per_block();
 
             let m_size = input_a.shape_binding(0);
             let n_size = input_b.shape_binding(1);
             let k_size = input_a.shape_binding(1);
 
-            // The index of the workgroup block destination
-            writeln!(&mut kernel, "let block_row = {workgroup_index}.y;").unwrap();
-            writeln!(&mut kernel, "let block_col = {workgroup_index}.x;").unwrap();
-            // The index of the thread within the workgroup block destination
-            writeln!(&mut kernel, "let thread_col = {workgroup_local_index} % {work_group_block_n_size};").unwrap();
-            writeln!(&mut kernel, "let thread_row = {workgroup_local_index} / {work_group_block_n_size};").unwrap();
+            writeln!(&mut kernel, "let x = {global_id}.x;").unwrap();
+            writeln!(&mut kernel, "let y = {global_id}.y;").unwrap();
 
-            // The index of the thread within the workgroup block source
-            writeln!(&mut kernel, "let a_thread_col = {workgroup_local_index} % {work_group_block_k_size};").unwrap();
-            writeln!(&mut kernel, "let a_thread_row = {workgroup_local_index} / {work_group_block_k_size};").unwrap();
-            writeln!(&mut kernel, "let b_thread_col = {workgroup_local_index} % {work_group_block_n_size};").unwrap();
-            writeln!(&mut kernel, "let b_thread_row = {workgroup_local_index} / {work_group_block_n_size};").unwrap();
-            writeln!(&mut kernel, "var results: array<{datatype}, {thread_block_m_size}>;").unwrap();
-            writeln!(&mut kernel, "let a_row = {k_size} * (a_thread_row + block_row * {work_group_block_m_size});").unwrap();
-            writeln!(&mut kernel, "var a_col = a_thread_col;").unwrap();
-            writeln!(&mut kernel, "var b_row = {n_size} * b_thread_row;").unwrap(); 
-            writeln!(&mut kernel, "let b_col = b_thread_col + block_col * {work_group_block_n_size};").unwrap();
+            writeln!(
+                &mut kernel,
+                "var acc: array<{datatype}, {elements_per_block}>;"
+            )
+            .unwrap();
 
-            // Loop over each workgroup block in the K dimension
-            writeln!(&mut kernel, "for (var block_index = 0u; block_index < {k_size}; block_index += {work_group_block_k_size}) {{").unwrap();
+            // Calculate one block sized group
+            writeln!(&mut kernel, "for (var k = 0u; k < {k_size}; k += 1u) {{").unwrap();
 
-            // Load the workgroup block data into memory
-            writeln!(&mut kernel, "let a_index = a_row + a_col;").unwrap();
-            writeln!(&mut kernel, "{cache_a}[a_thread_row * {work_group_block_k_size} + a_thread_col] = {input_a}[a_index];").unwrap();
-            writeln!(&mut kernel, "let b_index = b_row + b_col;").unwrap();
-            writeln!(&mut kernel, "{cache_b}[b_thread_row * {work_group_block_n_size} + b_thread_col] = {input_b}[b_index];").unwrap();
+            writeln!(&mut kernel, "if x < {m_size} {{").unwrap();
 
-            writeln!(&mut kernel, "workgroupBarrier();").unwrap();
+            writeln!(
+                &mut kernel,
+                "let chunk = {input_b}[k * {n_size} / {elements_per_block} + y];"
+            )
+            .unwrap();
 
-            writeln!(&mut kernel, "a_col += {work_group_block_k_size};").unwrap();
-            writeln!(&mut kernel, "b_row += {work_group_block_k_size} * {n_size};").unwrap();
+            writeln!(&mut kernel, "let a = {input_a}[x * {k_size} + k];").unwrap();
 
-            writeln!(&mut kernel, "for (var dot_index = 0u; dot_index < {work_group_block_k_size}; dot_index += 1u) {{").unwrap();
-            writeln!(&mut kernel, "let tmp = {cache_b}[dot_index * {work_group_block_n_size} + thread_col];").unwrap();
-            writeln!(&mut kernel, "for (var result_index = 0u; result_index < {thread_block_m_size}; result_index += 1u) {{").unwrap();
-            writeln!(&mut kernel, "results[result_index] += {cache_a}[(thread_row * {thread_block_m_size} + result_index) * {work_group_block_k_size} + dot_index] * tmp;").unwrap();
-            writeln!(&mut kernel, "}}").unwrap();
-            writeln!(&mut kernel, "}}").unwrap();
-
-            writeln!(&mut kernel, "workgroupBarrier();").unwrap();
+            dequantize_block(
+                &mut kernel,
+                self.matrix.datatype,
+                "chunk".to_string(),
+                DataTypeEnum::F32,
+                |i, data, code| {
+                    writeln!(code, "acc[{i}] += {data};",).unwrap();
+                },
+            );
 
             writeln!(&mut kernel, "}}").unwrap();
 
-            // Write out the results
-            writeln!(&mut kernel, "let start_output_row = thread_row * {thread_block_m_size} + block_row * {work_group_block_m_size};").unwrap();
-            writeln!(&mut kernel, "let start_output_col = thread_col + block_col * {work_group_block_n_size};").unwrap();
-            writeln!(&mut kernel, "for (var result_index = 0u; result_index < {thread_block_m_size}; result_index += 1u) {{").unwrap();
-            writeln!(&mut kernel, "let output_row = start_output_row + result_index;").unwrap();
-            writeln!(&mut kernel, "let output_col = start_output_col;").unwrap();
-            writeln!(&mut kernel, "let output_index = output_row * {n_size} + output_col;").unwrap();
-            writeln!(&mut kernel, "{output}[output_index] = results[result_index];").unwrap();
             writeln!(&mut kernel, "}}").unwrap();
+
+            // Then write the result
+            writeln!(
+                &mut kernel,
+                "for (var y_offset = 0u; y_offset < {elements_per_block}; y_offset += 1u) {{"
+            )
+            .unwrap();
+            writeln!(
+                &mut kernel,
+                "let y_output_index = y * {elements_per_block} + y_offset;"
+            )
+            .unwrap();
+            writeln!(
+                &mut kernel,
+                "if x < {m_size} && y_output_index < {n_size} {{"
+            )
+            .unwrap();
+            writeln!(
+                &mut kernel,
+                "let output_index = x * {k_size} + y_output_index;"
+            )
+            .unwrap();
+            writeln!(&mut kernel, "{output}[output_index] = acc[y_offset];").unwrap();
+            writeln!(&mut kernel, "}}").unwrap();
+            writeln!(&mut kernel, "}}").unwrap();
+            println!("{}", kernel);
 
             generic_kernel.set_body(kernel);
 
@@ -268,14 +335,7 @@ impl UntypedQMatMul {
         let b_shape = matrix_shape;
         assert_eq!(*output_tensor.layout().shape(), [a_shape[0], b_shape[1]]);
 
-        let work_group_size = self.work_group_size();
-        let thread_block_m_size = self.thread_block_m_size();
-
-        let workgroup_dispatch_size = [
-            (a_shape[0] as u32).div_ceil(work_group_size[0] * thread_block_m_size),
-            (b_shape[1] as u32).div_ceil(work_group_size[1]),
-            1,
-        ];
+        let workgroup_dispatch_size = self.work_group_dispatch(a_shape);
 
         module.run_with_query(
             device,
@@ -289,6 +349,24 @@ impl UntypedQMatMul {
             workgroup_dispatch_size,
         );
     }
+}
+
+fn dequantize_block(
+    kernel: &mut String,
+    ty: GgmlType,
+    chunk: String,
+    datatype: DataTypeEnum,
+    process_element: impl FnMut(String, String, &mut String),
+) {
+    let out = match ty {
+        GgmlType::Q4_0 => BlockQ4_0::dequantize_block(chunk, datatype, process_element),
+        GgmlType::Q5_0 => BlockQ5_0::dequantize_block(chunk, datatype, process_element),
+        GgmlType::Q8_0 => BlockQ8_0::dequantize_block(chunk, datatype, process_element),
+        GgmlType::Q4K => BlockQ4K::dequantize_block(chunk, datatype, process_element),
+        GgmlType::Q6K => BlockQ6K::dequantize_block(chunk, datatype, process_element),
+        _ => todo!(),
+    };
+    *kernel += &out;
 }
 
 trait WgslQuantizedType: GgufBlock {
@@ -685,27 +763,73 @@ impl WgslQuantizedType for BlockQ6K {
         writeln!(code, "let lower_index = chunk_index * 64u;").unwrap();
         writeln!(code, "let high_index = chunk_index * 32u;").unwrap();
         writeln!(code, "let scale_index = chunk_index * 8u;").unwrap();
-        writeln!(code, "for (var high_byte_index = 0u; high_byte_index < 32u; high_byte_index += 1u) {{").unwrap();
-        writeln!(code, "let scale_index = scale_index + high_byte_index / 16u;").unwrap();
-        writeln!(code, "let high_byte = {};", index_bytes(format!("{chunk}.data_high_bits"), "high_index + high_byte_index")).unwrap();
-        writeln!(code, "let first_low_byte = {};", index_bytes(format!("{chunk}.data_low_bits"), "lower_index + high_byte_index")).unwrap();
-        writeln!(code, "let second_low_byte = {};", index_bytes(format!("{chunk}.data_low_bits"), "lower_index + high_byte_index + 32")).unwrap();
+        writeln!(
+            code,
+            "for (var high_byte_index = 0u; high_byte_index < 32u; high_byte_index += 1u) {{"
+        )
+        .unwrap();
+        writeln!(
+            code,
+            "let scale_index = scale_index + high_byte_index / 16u;"
+        )
+        .unwrap();
+        writeln!(
+            code,
+            "let high_byte = {};",
+            index_bytes(
+                format!("{chunk}.data_high_bits"),
+                "high_index + high_byte_index"
+            )
+        )
+        .unwrap();
+        writeln!(
+            code,
+            "let first_low_byte = {};",
+            index_bytes(
+                format!("{chunk}.data_low_bits"),
+                "lower_index + high_byte_index"
+            )
+        )
+        .unwrap();
+        writeln!(
+            code,
+            "let second_low_byte = {};",
+            index_bytes(
+                format!("{chunk}.data_low_bits"),
+                "lower_index + high_byte_index + 32"
+            )
+        )
+        .unwrap();
 
         writeln!(code, "let first_two_bits = high_byte & {TWO_BITS};").unwrap();
-        writeln!(code, "let first_high_nibble = first_low_byte & {FOUR_BITS};").unwrap();
+        writeln!(
+            code,
+            "let first_high_nibble = first_low_byte & {FOUR_BITS};"
+        )
+        .unwrap();
         writeln!(code, "let first_merged = {datatype}((first_two_bits << 4) | first_high_nibble) - {datatype}({CENTER_SIX_BIT});").unwrap();
         process_element(
             format!("output_index + high_byte_index"),
-            format!("scale * {datatype}({}) * first_merged", index_signed_bytes(format!("{chunk}.scales"), "scale_index")),
+            format!(
+                "scale * {datatype}({}) * first_merged",
+                index_signed_bytes(format!("{chunk}.scales"), "scale_index")
+            ),
             &mut code,
         );
 
         writeln!(code, "let second_two_bits = (high_byte >> 2) & {TWO_BITS};").unwrap();
-        writeln!(code, "let second_high_nibble = second_low_byte & {FOUR_BITS};").unwrap();
+        writeln!(
+            code,
+            "let second_high_nibble = second_low_byte & {FOUR_BITS};"
+        )
+        .unwrap();
         writeln!(code, "let second_merged = {datatype}((second_two_bits << 4) | second_high_nibble) - {datatype}({CENTER_SIX_BIT});").unwrap();
         process_element(
             format!("output_index + high_byte_index + 32"),
-            format!("scale * {datatype}({}) * second_merged", index_signed_bytes(format!("{chunk}.scales"), "scale_index + 2")),
+            format!(
+                "scale * {datatype}({}) * second_merged",
+                index_signed_bytes(format!("{chunk}.scales"), "scale_index + 2")
+            ),
             &mut code,
         );
 
@@ -714,7 +838,10 @@ impl WgslQuantizedType for BlockQ6K {
         writeln!(code, "let third_merged = {datatype}((third_two_bits << 4) | third_high_nibble) - {datatype}({CENTER_SIX_BIT});").unwrap();
         process_element(
             format!("output_index + high_byte_index + 64"),
-            format!("scale * {datatype}({}) * third_merged", index_signed_bytes(format!("{chunk}.scales"), "scale_index + 4")),
+            format!(
+                "scale * {datatype}({}) * third_merged",
+                index_signed_bytes(format!("{chunk}.scales"), "scale_index + 4")
+            ),
             &mut code,
         );
 
@@ -723,7 +850,10 @@ impl WgslQuantizedType for BlockQ6K {
         writeln!(code, "let fourth_merged = {datatype}((fourth_two_bits << 4) | fourth_high_nibble) - {datatype}({CENTER_SIX_BIT});").unwrap();
         process_element(
             format!("output_index + high_byte_index + 96"),
-            format!("scale * {datatype}({}) * fourth_merged", index_signed_bytes(format!("{chunk}.scales"), "scale_index + 6")),
+            format!(
+                "scale * {datatype}({}) * fourth_merged",
+                index_signed_bytes(format!("{chunk}.scales"), "scale_index + 6")
+            ),
             &mut code,
         );
         writeln!(code, "}}").unwrap();

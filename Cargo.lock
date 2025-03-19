@@ -2416,7 +2416,7 @@ dependencies = [
  "enumset",
  "half 2.4.1",
  "pretty_assertions",
- "reqwest 0.12.13",
+ "reqwest 0.12.15",
  "rustc-hash 2.1.1",
  "thiserror 2.0.9",
  "tokio",
@@ -2428,6 +2428,7 @@ version = "0.1.0"
 dependencies = [
  "arc-swap",
  "bytemuck",
+ "candle-core",
  "criterion 0.3.6",
  "enumset",
  "env_logger",
@@ -2439,6 +2440,7 @@ dependencies = [
  "ndarray 0.16.1",
  "pretty_assertions",
  "rand 0.9.0",
+ "reqwest 0.12.15",
  "tabbycat",
  "tokio",
  "wgpu",
@@ -3911,7 +3913,7 @@ dependencies = [
  "postcard",
  "pretty_assertions",
  "rand 0.8.5",
- "reqwest 0.12.13",
+ "reqwest 0.12.15",
  "reqwest-eventsource",
  "serde",
  "serde_json",
@@ -6224,9 +6226,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.12.13"
+version = "0.12.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "389a89e494bbc88bebf30e23da98742c843863a16a352647716116aa71fae80a"
+checksum = "d19c46a6fdd48bc4dab94b6103fccc55d34c67cc0ad04653aad4ea2a07cd7bbb"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -6286,7 +6288,7 @@ dependencies = [
  "mime",
  "nom",
  "pin-project-lite",
- "reqwest 0.12.13",
+ "reqwest 0.12.15",
  "thiserror 1.0.69",
 ]
 
@@ -7327,7 +7329,7 @@ dependencies = [
  "path-clean",
  "pharos",
  "reblessive",
- "reqwest 0.12.13",
+ "reqwest 0.12.15",
  "revision",
  "ring",
  "rust_decimal",
