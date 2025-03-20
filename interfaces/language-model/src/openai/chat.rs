@@ -572,7 +572,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_gpt_4o_mini_constrained_with_enums() {
+    async fn test_gpt_4o_mini_constrained_with_option() {
+        use kalosm_sample::Schema;
+
         let model = OpenAICompatibleChatModelBuilder::new()
             .with_gpt_4o_mini()
             .build();
@@ -583,6 +585,8 @@ mod tests {
         struct Constraints {
             name: Option<String>,
         }
+
+        println!("schema: {}", Constraints::schema());
 
         {
             let all_text = Arc::new(RwLock::new(String::new()));
@@ -653,6 +657,102 @@ mod tests {
             assert!(!all_text.is_empty());
 
             assert!(response.name.is_none());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_gpt_4o_mini_constrained_with_unit_enum() {
+        use kalosm_sample::Schema;
+
+        let model = OpenAICompatibleChatModelBuilder::new()
+            .with_gpt_4o_mini()
+            .build();
+
+        let mut session = model.new_chat_session().unwrap();
+
+        #[derive(Debug, Clone, kalosm_sample::Parse, kalosm_sample::Schema, Deserialize)]
+        struct Constraints {
+            contains_name: ContainsName,
+        }
+
+        #[derive(Debug, Clone, kalosm_sample::Parse, kalosm_sample::Schema, Deserialize)]
+        enum ContainsName {
+            Yes,
+            No,
+        }
+
+        println!("schema: {}", Constraints::schema());
+
+        {
+            let all_text = Arc::new(RwLock::new(String::new()));
+            let messages = vec![crate::ChatMessage::new(
+                crate::MessageType::UserMessage,
+                "Does this sentence contain a name: Evan is one of the developers of Kalosm"
+                    .to_string(),
+            )];
+
+            let response: Constraints = model
+                .add_message_with_callback_and_constraints(
+                    &mut session,
+                    &messages,
+                    GenerationParameters::default(),
+                    SchemaParser::new(),
+                    {
+                        let all_text = all_text.clone();
+                        move |token| {
+                            let mut all_text = all_text.write().unwrap();
+                            all_text.push_str(&token);
+                            print!("{token}");
+                            std::io::Write::flush(&mut std::io::stdout()).unwrap();
+                            Ok(())
+                        }
+                    },
+                )
+                .await
+                .unwrap();
+            println!("{response:?}");
+
+            let all_text = all_text.read().unwrap();
+            println!("{all_text}");
+
+            assert!(!all_text.is_empty());
+
+            assert!(matches!(response.contains_name, ContainsName::Yes));
+        }
+        {
+            let all_text = Arc::new(RwLock::new(String::new()));
+            let messages = vec![crate::ChatMessage::new(
+                crate::MessageType::UserMessage,
+                "Does this sentence contain a name: The earth is round".to_string(),
+            )];
+
+            let response: Constraints = model
+                .add_message_with_callback_and_constraints(
+                    &mut session,
+                    &messages,
+                    GenerationParameters::default(),
+                    SchemaParser::new(),
+                    {
+                        let all_text = all_text.clone();
+                        move |token| {
+                            let mut all_text = all_text.write().unwrap();
+                            all_text.push_str(&token);
+                            print!("{token}");
+                            std::io::Write::flush(&mut std::io::stdout()).unwrap();
+                            Ok(())
+                        }
+                    },
+                )
+                .await
+                .unwrap();
+            println!("{response:?}");
+
+            let all_text = all_text.read().unwrap();
+            println!("{all_text}");
+
+            assert!(!all_text.is_empty());
+
+            assert!(matches!(response.contains_name, ContainsName::No));
         }
     }
 }
