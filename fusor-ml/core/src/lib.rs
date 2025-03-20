@@ -6,6 +6,7 @@ pub use composite::*;
 pub use device::*;
 pub use element_wise::CastTensor;
 pub use layout::*;
+pub use quantized::*;
 pub use query::*;
 pub use reduce::*;
 pub use tensor::*;
