@@ -32,6 +32,7 @@ kalosm-learning = { workspace = true }
 pretty_assertions = "1.4.1"
 postcard = { version = "1.0.8", features = ["use-std"] }
 anyhow = { workspace = true }
+tracing-subscriber = "0.3.19"
 
 [features]
 default = ["cache"]
