@@ -82,7 +82,7 @@ fn qmatmul(c: &mut Criterion) {
         }
 
         {
-            let candle_device = candle_core::Device::Metal(MetalDevice::new(0).unwrap());
+            let candle_device = candle_core::Device::Cpu;
             let mut reader = std::io::Cursor::new(&bytes);
             let candle_metadata =
                 candle_core::quantized::gguf_file::Content::read(&mut reader).unwrap();

@@ -26,7 +26,7 @@ tokio = { version = "1.43.0", features = ["full"] }
 criterion = { version = "0.3", features = ["async_futures"] }
 pretty_assertions = "1.4.1"
 reqwest = "0.12.15"
-candle-core = { workspace = true, features = ["metal"] }
+candle-core = { workspace = true }
 
 [[bench]]
 name = "matmul"
