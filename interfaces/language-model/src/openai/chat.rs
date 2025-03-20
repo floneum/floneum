@@ -222,16 +222,25 @@ impl ChatModel<GenerationParameters> for OpenAICompatibleChatModel {
         mut on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a {
         let myself = &*self.inner;
-        let json = serde_json::json!({
+        let mut json = serde_json::json!({
             "messages": messages,
             "model": myself.model,
             "stream": true,
             "top_p": sampler.top_p,
             "temperature": sampler.temperature,
-            "frequency_penalty": sampler.repetition_penalty,
-            "max_completion_tokens": if sampler.max_length == u32::MAX { None } else { Some(sampler.max_length) },
-            "stop": sampler.stop_on.clone(),
         });
+        if let Some(repetition_penalty) = sampler.repetition_penalty {
+            json["frequency_penalty"] = serde_json::json!(repetition_penalty);
+        }
+        if sampler.max_length != u32::MAX {
+            json["max_completion_tokens"] = serde_json::json!(sampler.max_length);
+        }
+        if let Some(seed) = sampler.seed() {
+            json["seed"] = serde_json::json!(seed);
+        }
+        if let Some(stop) = &sampler.stop_on {
+            json["stop"] = serde_json::json!(stop);
+        }
         async move {
             let api_key = myself.client.resolve_api_key()?;
             let mut event_source = myself
@@ -392,25 +401,36 @@ where
         }
 
         let myself = &*self.inner;
-        let json = schema.map(|schema| serde_json::json!({
-            "messages": messages,
-            "model": myself.model,
-            "stream": true,
-            "top_p": sampler.top_p,
-            "temperature": sampler.temperature,
-            "frequency_penalty": sampler.repetition_penalty,
-            "max_completion_tokens": if sampler.max_length == u32::MAX { None } else { Some(sampler.max_length) },
-            "stop": sampler.stop_on.clone(),
-            "seed": sampler.seed(),
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "response",
-                    "schema": schema,
-                    "strict": true
+        let json = schema.map(|schema| {
+            let mut json = serde_json::json!({
+                "messages": messages,
+                "model": myself.model,
+                "stream": true,
+                "top_p": sampler.top_p,
+                "temperature": sampler.temperature,
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "response",
+                        "schema": schema,
+                        "strict": true
+                    }
                 }
+            });
+            if let Some(repetition_penalty) = sampler.repetition_penalty {
+                json["frequency_penalty"] = serde_json::json!(repetition_penalty);
             }
-        }));
+            if sampler.max_length != u32::MAX {
+                json["max_completion_tokens"] = serde_json::json!(sampler.max_length);
+            }
+            if let Some(stop) = &sampler.stop_on {
+                json["stop"] = serde_json::json!(stop);
+            }
+            if let Some(seed) = sampler.seed() {
+                json["seed"] = serde_json::json!(seed);
+            }
+            json
+        });
         async move {
             let json = json?;
             let api_key = myself.client.resolve_api_key()?;
@@ -431,7 +451,13 @@ where
                     Event::Open => {}
                     Event::Message(message) => {
                         let data =
-                            serde_json::from_str::<OpenAICompatibleChatResponse>(&message.data)?;
+                            serde_json::from_str::<OpenAICompatibleChatResponse>(&message.data)
+                                .inspect_err(|err| {
+                                    tracing::error!(
+                                        "Failed to parse streaming response: {:?}\nerror: {err:?}",
+                                        message.data
+                                    )
+                                })?;
                         let first_choice = data
                             .choices
                             .first()
@@ -462,7 +488,12 @@ where
                 }
             }
 
-            let result = serde_json::from_str::<P>(&new_message_text)?;
+            let result = serde_json::from_str::<P>(&new_message_text).map_err(|err| {
+                tracing::error!(
+                    "Failed to parse structured response: {new_message_text:?}\nerror: {err:?}"
+                );
+                OpenAICompatibleChatModelError::DeserializeError(err)
+            })?;
 
             let new_message =
                 crate::ChatMessage::new(crate::MessageType::UserMessage, new_message_text);
@@ -479,6 +510,8 @@ mod tests {
     use std::sync::{Arc, RwLock};
 
     use serde::Deserialize;
+
+    use crate::{ChatModelExt, OpenAICompatibleChatModel};
 
     use super::{
         ChatModel, CreateChatSession, GenerationParameters, OpenAICompatibleChatModelBuilder,
@@ -754,5 +787,23 @@ mod tests {
 
             assert!(matches!(response.contains_name, ContainsName::No));
         }
+    }
+
+    #[tokio::test]
+    async fn test_gemini_flash() {
+        let llm = OpenAICompatibleChatModel::builder()
+            .with_model("gemini-2.0-flash")
+            .with_client(
+                crate::OpenAICompatibleClient::new()
+                    .with_base_url("https://generativelanguage.googleapis.com/v1beta/openai")
+                    .with_api_key(std::env::var("GEMINI_API_KEY").unwrap()),
+            )
+            .build();
+        let mut generate_character = llm.chat();
+        let res =
+            generate_character("Candice is the CEO of a fortune 500 company. She is 30 years old.")
+                .await
+                .unwrap();
+        println!("{res}");
     }
 }
