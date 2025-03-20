@@ -609,6 +609,14 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
     }
 
     pub(crate) fn pair_wise(&self, other: &Self, function: PairWiseFunction) -> Self {
+        // If the two tensors are the same, we can lower this to a cheaper element wise operation
+        if self.data.key == other.data.key {
+            return self.element_wise(ElementWiseOperation::new(
+                self.key(),
+                function.lower_to_element_wise(),
+            ));
+        }
+
         self.data.graph.merge(&other.data.graph);
         let operation = PairWiseOperation::new(function, self.data.key, other.data.key);
         Self {

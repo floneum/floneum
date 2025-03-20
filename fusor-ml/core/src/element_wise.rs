@@ -26,6 +26,12 @@ pub(crate) struct ElementWiseOperation {
     pub(crate) function: ElementWiseFunction,
 }
 
+impl ElementWiseOperation {
+    pub fn new(value: AnyComputeKey, function: ElementWiseFunction) -> Self {
+        Self { value, function }
+    }
+}
+
 pub(crate) struct UntypedElementWiseKernel {
     functions: Vec<ElementWiseFunction>,
     dense_kernel: OnceLock<VisitTiledKernel>,
@@ -172,7 +178,7 @@ pub struct ElementWiseFunction {
 }
 
 impl ElementWiseFunction {
-    fn new(operation: impl Display, datatype: DataTypeEnum) -> Self {
+    pub fn new(operation: impl Display, datatype: DataTypeEnum) -> Self {
         Self {
             name: None,
             operation: operation.to_string(),
@@ -180,7 +186,7 @@ impl ElementWiseFunction {
         }
     }
 
-    fn with_name(mut self, name: impl ToString) -> Self {
+    pub(crate) fn with_name(mut self, name: impl ToString) -> Self {
         self.name = Some(name.to_string());
         self
     }
@@ -813,47 +819,6 @@ async fn test_log2() {
     assert!((output[[1, 1]] - data[1][1].log2()).abs() < 0.001);
     assert!((output[[2, 0]] - data[2][0].log2()).abs() < 0.001);
     assert!((output[[2, 1]] - data[2][1].log2()).abs() < 0.001);
-}
-
-impl<const R: usize, T: DataType> Tensor<R, T> {
-    pub fn sqr(&self) -> Self {
-        self.element_wise(ElementWiseOperation {
-            value: self.key(),
-            function: ElementWiseFunction::new(
-                "let output = input * input;".to_string(),
-                T::WGSL_TYPE,
-            )
-            .with_name("sqr"),
-        })
-    }
-}
-
-#[cfg(test)]
-#[tokio::test]
-async fn test_sqr() {
-    use crate::Device;
-
-    let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
-    let data = [[1., 2.], [3., 4.], [5., 6.]];
-
-    let tensor = Tensor::new(&device, &data);
-
-    let tensor = tensor.sqr();
-
-    let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
-    assert!((output[[0, 0]] - 1. * 1.) < 0.001);
-    assert!((output[[0, 1]] - 4. * 4.) < 0.001);
-    assert!((output[[1, 0]] - 9. * 9.) < 0.001);
-    assert!((output[[1, 1]] - 16. * 16.) < 0.001);
-    assert!((output[[2, 0]] - 25. * 25.) < 0.001);
-    assert!((output[[2, 1]] - 36. * 36.) < 0.001);
 }
 
 impl<const R: usize, D: DataType> Tensor<R, D> {

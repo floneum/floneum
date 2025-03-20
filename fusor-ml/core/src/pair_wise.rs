@@ -7,7 +7,7 @@ use std::{
 use wgpu::CommandEncoder;
 
 use crate::{
-    Tensor, UntypedElementWiseKernel,
+    ElementWiseFunction, Tensor, UntypedElementWiseKernel,
     compute_graph::AnyComputeKey,
     kernel::{Function, GenericKernel},
     layout::TILE_SIZE,
@@ -184,7 +184,7 @@ pub struct PairWiseFunction {
 }
 
 impl PairWiseFunction {
-    fn new(operation: impl Display, datatype: DataTypeEnum) -> Self {
+    pub fn new(operation: impl Display, datatype: DataTypeEnum) -> Self {
         Self {
             name: None,
             operation: operation.to_string(),
@@ -199,6 +199,16 @@ impl PairWiseFunction {
 
     pub(crate) fn name(&self) -> &str {
         self.name.as_deref().unwrap_or("pair_wise")
+    }
+
+    /// Lower the function to an element-wise function where the a and b inputs are
+    /// the same.
+    pub(crate) fn lower_to_element_wise(self) -> ElementWiseFunction {
+        ElementWiseFunction::new(
+            format!("let a = input;\nlet b = input;\n{}", self.operation),
+            self.datatype,
+        )
+        .with_name(self.name())
     }
 }
 
