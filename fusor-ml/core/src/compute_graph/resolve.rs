@@ -93,6 +93,10 @@ impl<'a> Resolver<'a> {
         let mut functions = Vec::new();
         let mut current_key = AnyComputeKey::ElementWise(key);
         while let AnyComputeKey::ElementWise(key) = current_key {
+            // If the result is already cached, stop collecting element wise ops
+            if self.graph.cached_results.contains_key(&current_key) {
+                break;
+            }
             let operation = self.graph.nodes.element_wise.get(&key).unwrap();
             functions.push(operation.function.clone());
             current_key = operation.value;
@@ -103,22 +107,27 @@ impl<'a> Resolver<'a> {
     fn resolve_element_wise(&mut self, key: ElementWiseComputeNodeKey) -> TensorData {
         // First collect all element wise ops in this chain
         let (functions, input) = self.collect_element_wise_ops(key);
+        let input_cached = self.graph.cached_results.contains_key(&input);
 
-        // Merge into the output of the reduce kernel if possible
+        // Merge into the output of the reduce kernel if possible and it isn't already cached
         if let AnyComputeKey::Reduce(key) = input {
-            self.resolve_reduce_then(key, functions)
+            if !input_cached {
+                return self.resolve_reduce_then(key, functions);
+            }
         }
-        // Merge into the output of the pair wise kernel if possible
-        else if let AnyComputeKey::PairWise(key) = input {
-            self.resolve_pair_wise_then(key, functions)
-        } else {
-            let input = self.resolve(input);
-            let kernel = UntypedElementWiseKernel::new(functions, input.datatype());
-            let query = PerformanceQueries::new(input.device());
-            let result = kernel.run_with_query(input, Some(&query), &mut *self.command_encoder);
-            self.graph.timing_information.insert(key.into(), query);
-            result
+        // Merge into the output of the pair wise kernel if possible and it isn't already cached
+        if let AnyComputeKey::PairWise(key) = input {
+            if !input_cached {
+                return self.resolve_pair_wise_then(key, functions);
+            }
         }
+        // Otherwise, just run the element wise kernel
+        let input = self.resolve(input);
+        let kernel = UntypedElementWiseKernel::new(functions, input.datatype());
+        let query = PerformanceQueries::new(input.device());
+        let result = kernel.run_with_query(input, Some(&query), &mut *self.command_encoder);
+        self.graph.timing_information.insert(key.into(), query);
+        result
     }
 
     fn resolve_pair_wise(&mut self, key: PairWiseComputeNodeKey) -> TensorData {

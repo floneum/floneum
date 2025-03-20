@@ -5,8 +5,8 @@ use crate::{Layout, TensorLayoutInfo};
 use super::{
     AnyComputeKey,
     visit::{
-        VisitComputeGraph, visit_element_wise, visit_mat_mul, visit_pair_wise, visit_reduce,
-        visit_resize, visit_map_layout, visit_slice_assign, visit_tensor,
+        VisitComputeGraph, visit_element_wise, visit_map_layout, visit_mat_mul, visit_pair_wise,
+        visit_reduce, visit_resize, visit_slice_assign, visit_tensor,
     },
 };
 

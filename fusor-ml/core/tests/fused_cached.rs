@@ -26,15 +26,23 @@ async fn test_fused_cached_results() {
     let tensor_plus_one = (doubled.clone() + 1.0).sum(0);
     let tensor_plus_one_times_two = tensor_plus_one.clone() * 2.0;
     let tensor_plus_one_times_three = tensor_plus_one.clone() * 3.0;
-    let fused_tensor_plus_one_times_two_result = tensor_plus_one_times_two.as_slice().await.unwrap();
-    let fused_tensor_plus_one_times_three_result = tensor_plus_one_times_three.as_slice().await.unwrap();
+    let fused_tensor_plus_one_times_two_result =
+        tensor_plus_one_times_two.as_slice().await.unwrap();
+    let fused_tensor_plus_one_times_three_result =
+        tensor_plus_one_times_three.as_slice().await.unwrap();
     println!("{:?}", fused_tensor_plus_one_times_two_result);
     println!("{:?}", fused_tensor_plus_one_times_three_result);
+    println!();
+    println!();
+    println!();
 
     let doubled = tensor * 2.0;
     println!("doubled: {:?}", doubled.as_slice().await.unwrap());
     let tensor_plus_one = (doubled.clone() + 1.0).sum(0);
-    println!("tensor_plus_one: {:?}", tensor_plus_one.as_slice().await.unwrap());
+    println!(
+        "tensor_plus_one: {:?}",
+        tensor_plus_one.as_slice().await.unwrap()
+    );
     let tensor_plus_one_times_two = tensor_plus_one.clone() * 2.0;
     let tensor_plus_one_times_three = tensor_plus_one.clone() * 3.0;
     let tensor_plus_one_times_two_result = tensor_plus_one_times_two.as_slice().await.unwrap();
@@ -42,6 +50,12 @@ async fn test_fused_cached_results() {
     println!("{:?}", tensor_plus_one_times_two_result);
     println!("{:?}", tensor_plus_one_times_three_result);
 
-    assert_eq!(fused_tensor_plus_one_times_two_result, tensor_plus_one_times_two_result);
-    assert_eq!(fused_tensor_plus_one_times_three_result, tensor_plus_one_times_three_result);
+    assert_eq!(
+        fused_tensor_plus_one_times_two_result,
+        tensor_plus_one_times_two_result
+    );
+    assert_eq!(
+        fused_tensor_plus_one_times_three_result,
+        tensor_plus_one_times_three_result
+    );
 }
