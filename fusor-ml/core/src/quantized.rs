@@ -231,7 +231,7 @@ pub struct QMatrix {
 }
 
 impl QMatrix {
-    pub(crate) fn read<R: std::io::Read + std::io::Seek>(
+    pub fn read<R: std::io::Read + std::io::Seek>(
         device: &wgpu::Device,
         metadata: &GgufTensorMetadata,
         reader: &mut R,
@@ -532,6 +532,8 @@ trait WgslQuantizedType: GgufBlock {
         process_element: impl FnMut(String, String, &mut String),
     ) -> String;
 
+    // This is used in the fuzzing test
+    #[allow(unused)]
     fn write_type<W: Write>(f: &mut W) -> std::fmt::Result;
 }
 
