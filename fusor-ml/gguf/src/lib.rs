@@ -516,7 +516,7 @@ impl GgufBlock for BlockQ4_0 {
         let mut bytes = [0; std::mem::size_of::<BlockQ4_0Wgsl>()];
         let scale_offset = offset_of!(BlockQ4_0Wgsl, scale);
         let scale_bytes = bytemuck::bytes_of(&self.scale);
-        bytes[scale_offset..scale_offset + scale_bytes.len()].copy_from_slice(&scale_bytes);
+        bytes[scale_offset..scale_offset + scale_bytes.len()].copy_from_slice(scale_bytes);
         let data_offset = offset_of!(BlockQ4_0Wgsl, data);
         let data_bytes = bytemuck::cast_slice(&self.data);
         bytes[data_offset..data_offset + data_bytes.len()].copy_from_slice(data_bytes);
@@ -597,7 +597,7 @@ impl GgufBlock for BlockQ5_0 {
         let mut bytes = [0; std::mem::size_of::<BlockQ5_0Wgsl>()];
         let scale_offset = offset_of!(BlockQ5_0Wgsl, scale);
         let scale_bytes = bytemuck::bytes_of(&self.scale);
-        bytes[scale_offset..scale_offset + scale_bytes.len()].copy_from_slice(&scale_bytes);
+        bytes[scale_offset..scale_offset + scale_bytes.len()].copy_from_slice(scale_bytes);
         let data_high_bits_offset = offset_of!(BlockQ5_0Wgsl, data_high_bits);
         let data_high_bits_bytes = bytemuck::cast_slice(&self.data_high_bits);
         bytes[data_high_bits_offset..data_high_bits_offset + data_high_bits_bytes.len()]
@@ -695,7 +695,7 @@ impl GgufBlock for BlockQ8_0 {
         let mut bytes = [0; std::mem::size_of::<BlockQ8_0Wgsl>()];
         let scale_offset = offset_of!(BlockQ8_0Wgsl, scale);
         let scale_bytes = bytemuck::bytes_of(&self.scale);
-        bytes[scale_offset..scale_offset + scale_bytes.len()].copy_from_slice(&scale_bytes);
+        bytes[scale_offset..scale_offset + scale_bytes.len()].copy_from_slice(scale_bytes);
         let data_offset = offset_of!(BlockQ8_0Wgsl, data);
         let data_bytes = bytemuck::cast_slice(&self.data);
         bytes[data_offset..data_offset + data_bytes.len()].copy_from_slice(data_bytes);
@@ -770,10 +770,10 @@ impl GgufBlock for BlockQ4K {
         let mut bytes = [0; std::mem::size_of::<BlockQ4KWgsl>()];
         let scale_offset = offset_of!(BlockQ4KWgsl, scale);
         let scale_bytes = bytemuck::bytes_of(&self.scale);
-        bytes[scale_offset..scale_offset + scale_bytes.len()].copy_from_slice(&scale_bytes);
+        bytes[scale_offset..scale_offset + scale_bytes.len()].copy_from_slice(scale_bytes);
         let min_offset = offset_of!(BlockQ4KWgsl, min);
         let min_bytes = bytemuck::bytes_of(&self.min);
-        bytes[min_offset..min_offset + min_bytes.len()].copy_from_slice(&min_bytes);
+        bytes[min_offset..min_offset + min_bytes.len()].copy_from_slice(min_bytes);
         let scales_offset = offset_of!(BlockQ4KWgsl, scales);
         let scales_bytes = bytemuck::cast_slice(&self.scales);
         bytes[scales_offset..scales_offset + scales_bytes.len()].copy_from_slice(scales_bytes);
@@ -897,7 +897,7 @@ impl GgufBlock for BlockQ6K {
         bytes[scales_offset..scales_offset + scales_bytes.len()].copy_from_slice(scales_bytes);
         let scale_offset = offset_of!(BlockQ6KWgsl, scale);
         let scale_bytes = bytemuck::bytes_of(&self.scale);
-        bytes[scale_offset..scale_offset + scale_bytes.len()].copy_from_slice(&scale_bytes);
+        bytes[scale_offset..scale_offset + scale_bytes.len()].copy_from_slice(scale_bytes);
         bytes
     }
 
