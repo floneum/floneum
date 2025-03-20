@@ -438,7 +438,6 @@ impl UntypedQMatMul {
             writeln!(&mut kernel, "{output}[output_index] = acc[x_offset];").unwrap();
             writeln!(&mut kernel, "}}").unwrap();
             writeln!(&mut kernel, "}}").unwrap();
-            println!("{}", kernel);
 
             generic_kernel.set_body(kernel);
 
