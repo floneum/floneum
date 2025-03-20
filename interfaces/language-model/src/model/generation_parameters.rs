@@ -17,7 +17,7 @@ pub struct GenerationParameters {
     pub(crate) mu: f32,
     pub(crate) top_p: f64,
     pub(crate) top_k: u32,
-    pub(crate) repetition_penalty: f32,
+    pub(crate) repetition_penalty: Option<f32>,
     pub(crate) repetition_penalty_range: u32,
     pub(crate) max_length: u32,
     pub(crate) stop_on: Option<String>,
@@ -99,7 +99,7 @@ impl GenerationParameters {
             mu: 10.,
             top_p: 1.0,
             top_k: 1,
-            repetition_penalty: 1.3,
+            repetition_penalty: None,
             repetition_penalty_range: 64,
             max_length: u32::MAX,
             stop_on: None,
@@ -114,7 +114,9 @@ impl GenerationParameters {
         let mut hash = std::collections::hash_map::DefaultHasher::new();
         self.eta.to_le_bytes().hash(&mut hash);
         self.mu.to_le_bytes().hash(&mut hash);
-        self.repetition_penalty.to_le_bytes().hash(&mut hash);
+        self.repetition_penalty
+            .map(|f| f.to_le_bytes())
+            .hash(&mut hash);
         self.repetition_penalty_range.hash(&mut hash);
         self.tau.to_le_bytes().hash(&mut hash);
         self.top_p.to_le_bytes().hash(&mut hash);
@@ -141,7 +143,6 @@ impl GenerationParameters {
             tau,
             eta,
             mu,
-            repetition_penalty,
             repetition_penalty_range,
             top_p: _,
             max_length: _,
@@ -152,7 +153,7 @@ impl GenerationParameters {
         let tau = *tau;
         let eta = *eta;
         let mu = *mu;
-        let repetition_penalty = *repetition_penalty;
+        let repetition_penalty = self.repetition_penalty();
         let repetition_penalty_range = *repetition_penalty_range;
         SamplerChainBuilder::from([
             (
@@ -216,10 +217,10 @@ impl GenerationParameters {
         use llm_samplers::configure::SamplerSlot;
         let GenerationParameters {
             temperature,
-            repetition_penalty,
             repetition_penalty_range,
             ..
         } = self;
+        let repetition_penalty = self.repetition_penalty();
         SamplerChainBuilder::from([
             (
                 "repetition",
@@ -275,7 +276,7 @@ impl GenerationParameters {
 
     /// Set the repetition penalty to use when generating text.
     pub fn with_repetition_penalty(mut self, repetition_penalty: f32) -> Self {
-        self.repetition_penalty = repetition_penalty;
+        self.repetition_penalty = Some(repetition_penalty);
         self
     }
 
@@ -325,7 +326,7 @@ impl GenerationParameters {
 
     /// Get the repetition penalty to use when generating text.
     pub fn repetition_penalty(&self) -> f32 {
-        self.repetition_penalty
+        self.repetition_penalty.unwrap_or(1.3)
     }
 
     /// Get the repetition penalty range to use when generating text.
