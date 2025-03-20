@@ -19,7 +19,7 @@ impl DependencyMap {
             self.dependant_map
                 .entry(dependent)
                 .or_default()
-                .insert(key.into());
+                .insert(key);
         });
     }
 }
