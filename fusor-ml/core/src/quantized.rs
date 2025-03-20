@@ -38,10 +38,9 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
 
 #[cfg(test)]
 #[tokio::test]
-async fn fuzz_q_mat_mul() {
+async fn test_fuzz_q_mat_mul() {
     use crate::Device;
     use crate::Tensor;
-    use candle_core::Module;
     use fusor_gguf::GgufMetadata;
 
     let device = Device::new().await.unwrap();
@@ -70,7 +69,16 @@ async fn fuzz_q_mat_mul() {
             &candle_core::Device::Cpu,
         )
         .unwrap();
-    let candle_q_matrix = candle_core::quantized::QMatMul::from_qtensor(candle_q_matrix).unwrap();
+    let dequantized = candle_q_matrix
+        .dequantize(&candle_core::Device::Cpu)
+        .unwrap();
+    let as_vec2 = dequantized.to_vec2::<f32>().unwrap();
+    let mut ndarray_a = ndarray::Array2::zeros((576, 576));
+    for i in 0..576 {
+        for j in 0..576 {
+            ndarray_a[[i, j]] = as_vec2[i][j];
+        }
+    }
 
     let q_matrix_metadata = metadata.tensor_infos.get("blk.0.attn_q.weight").unwrap();
 
@@ -86,29 +94,133 @@ async fn fuzz_q_mat_mul() {
         let random_data: Vec<Vec<f32>> = (0..576)
             .map(|_| (0..576).map(|_| rand::random()).collect())
             .collect();
-        let tensor = Tensor::<2, f32>::new(&device, &vec![vec![1.; 576]; 576]);
-        let iter = random_data.iter().flat_map(|x| x.iter().copied());
-        let candle_tensor =
-            candle_core::Tensor::from_iter(iter, &candle_core::Device::Cpu).unwrap();
-        let candle_tensor = candle_tensor.reshape(&[576, 576]).unwrap();
+        let tensor = Tensor::<2, f32>::new(&device, &random_data);
 
         let result = tensor.q_mat_mul(&q_matrix);
+        let fusor_shape = result.shape();
         let result = result.as_slice().await.unwrap();
 
-        let candle_result = candle_q_matrix.forward(&candle_tensor).unwrap();
-        let candle_result = candle_result.to_vec2::<f32>().unwrap();
+        let mut ndarray_b = ndarray::Array2::zeros((576, 576));
+        for i in 0..576 {
+            for j in 0..576 {
+                ndarray_b[[i, j]] = random_data[i][j];
+            }
+        }
+        let nd_array_result = ndarray_b.dot(&ndarray_a);
+
+        assert_eq!(nd_array_result.shape(), &[576, 576]);
+        assert_eq!(fusor_shape, &[576, 576]);
 
         for x in 0..576 {
             for y in 0..576 {
-                let expected = candle_result[x][y];
+                let expected = nd_array_result[[x, y]];
                 let actual = result[[x, y]];
-                if (expected - actual).abs() > 1e-5 {
-                    println!("{:?} != {:?}", result, candle_result);
+                if (expected - actual).abs() > 3. {
+                    println!("Expected: {:?}", nd_array_result);
+                    println!("Actual: {:?}", result);
                     panic!("expected: {}, actual: {}", expected, actual);
                 }
             }
         }
     }
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_q_mat_mul() {
+    use candle_core::Module;
+
+    use crate::Device;
+    use crate::Tensor;
+
+    let device = Device::new().await.unwrap();
+
+    std::thread::spawn({
+        let device = device.clone();
+        move || loop {
+            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
+        }
+    });
+
+    let mut q_data = [[0f32; 256]; 256];
+    q_data[0][0] = 1.;
+    q_data[0][1] = 2.;
+    q_data[0][2] = 3.;
+    q_data[1][0] = 3.;
+    q_data[1][1] = 2.;
+    q_data[1][2] = 1.;
+    q_data[2][0] = 1.;
+    q_data[2][1] = 5.;
+    q_data[2][2] = 3.;
+
+    let tensor = candle_core::Tensor::new(&q_data, &candle_core::Device::Cpu).unwrap();
+    let quantized =
+        candle_core::quantized::QTensor::quantize(&tensor, candle_core::quantized::GgmlDType::Q4K)
+            .unwrap();
+    let q_data = quantized.data().unwrap();
+    let q_matrix = QMatrix::from_parts(
+        device.wgpu_device(),
+        &q_data,
+        quantized.shape().dims().into(),
+        GgmlType::Q4K,
+    )
+    .unwrap();
+    let candle_q_matrix = candle_core::quantized::QMatMul::from_qtensor(quantized).unwrap();
+
+    let mut tensor_data = vec![vec![0f32; 256]; 256];
+    tensor_data[0][0] = 4.;
+    tensor_data[0][1] = 5.;
+    tensor_data[0][2] = 6.;
+    tensor_data[1][0] = 6.;
+    tensor_data[1][1] = 5.;
+    tensor_data[1][2] = 21.;
+    tensor_data[2][0] = 4.;
+    tensor_data[2][1] = 6.;
+    tensor_data[2][2] = 5.;
+
+    let candle_input = candle_core::Tensor::from_iter(
+        tensor_data.iter().flat_map(|x| x.iter().copied()),
+        &candle_core::Device::Cpu,
+    )
+    .unwrap()
+    .reshape(&[256, 256])
+    .unwrap();
+    println!(
+        "candle_input: {:?}",
+        candle_input
+            .narrow(0, 0, 3)
+            .unwrap()
+            .narrow(1, 0, 3)
+            .unwrap()
+            .to_vec2::<f32>()
+            .unwrap()
+    );
+    let candle_output = candle_q_matrix.forward(&candle_input).unwrap();
+    let candle_output = candle_output
+        .narrow(0, 0, 3)
+        .unwrap()
+        .narrow(1, 0, 3)
+        .unwrap()
+        .to_vec2::<f32>()
+        .unwrap();
+    println!("candle_output: {:?}", candle_output);
+
+    let input = Tensor::<2, f32>::new(&device, &tensor_data);
+
+    let result = input.q_mat_mul(&q_matrix);
+    let result = result.slice([0..3, 0..3]).as_slice().await.unwrap();
+    println!("Result: {:?}", result);
+
+    let expected = [[25f32, 48., 35.], [42., 127., 86.], [27., 45., 33.]];
+    assert!((result[[0, 0]] - expected[0][0]).abs() < 3.);
+    assert!((result[[0, 1]] - expected[0][1]).abs() < 3.);
+    assert!((result[[0, 2]] - expected[0][2]).abs() < 3.);
+    assert!((result[[1, 0]] - expected[1][0]).abs() < 3.);
+    assert!((result[[1, 1]] - expected[1][1]).abs() < 3.);
+    assert!((result[[1, 2]] - expected[1][2]).abs() < 3.);
+    assert!((result[[2, 0]] - expected[2][0]).abs() < 3.);
+    assert!((result[[2, 1]] - expected[2][1]).abs() < 3.);
+    assert!((result[[2, 2]] - expected[2][2]).abs() < 3.);
 }
 
 #[derive(Clone)]
@@ -125,15 +237,39 @@ impl QMatrix {
         reader: &mut R,
         tensor_data_offset: u64,
     ) -> Result<Self, GgufReadError> {
-        let bytes= metadata.read_tensor_bytes(reader, tensor_data_offset)?;
+        let bytes = metadata.read_tensor_bytes(reader, tensor_data_offset)?;
         let shape = metadata.shape.iter().map(|x| *x as usize).collect();
         let ty = metadata.ty;
+        QMatrix::from_parts(device, &bytes, shape, ty)
+    }
+
+    pub(crate) fn from_parts(
+        device: &wgpu::Device,
+        bytes: &[u8],
+        shape: Box<[usize]>,
+        ty: GgmlType,
+    ) -> Result<Self, GgufReadError> {
         let bytes: Box<[u8]> = match ty {
-            GgmlType::Q4_0 => bytemuck::cast_slice::<_, BlockQ4_0>(&bytes).iter().flat_map(|block| block.into_wgsl_bytes()).collect(),
-            GgmlType::Q5_0 => bytemuck::cast_slice::<_, BlockQ5_0>(&bytes).iter().flat_map(|block| block.into_wgsl_bytes()).collect(),
-            GgmlType::Q8_0 => bytemuck::cast_slice::<_, BlockQ8_0>(&bytes).iter().flat_map(|block| block.into_wgsl_bytes()).collect(),
-            GgmlType::Q4K => bytemuck::cast_slice::<_, BlockQ4K>(&bytes).iter().flat_map(|block| block.into_wgsl_bytes()).collect(),
-            GgmlType::Q6K => bytemuck::cast_slice::<_, BlockQ6K>(&bytes).iter().flat_map(|block| block.into_wgsl_bytes()).collect(),
+            GgmlType::Q4_0 => bytemuck::cast_slice::<_, BlockQ4_0>(&bytes)
+                .iter()
+                .flat_map(|block| block.into_wgsl_bytes())
+                .collect(),
+            GgmlType::Q5_0 => bytemuck::cast_slice::<_, BlockQ5_0>(&bytes)
+                .iter()
+                .flat_map(|block| block.into_wgsl_bytes())
+                .collect(),
+            GgmlType::Q8_0 => bytemuck::cast_slice::<_, BlockQ8_0>(&bytes)
+                .iter()
+                .flat_map(|block| block.into_wgsl_bytes())
+                .collect(),
+            GgmlType::Q4K => bytemuck::cast_slice::<_, BlockQ4K>(&bytes)
+                .iter()
+                .flat_map(|block| block.into_wgsl_bytes())
+                .collect(),
+            GgmlType::Q6K => bytemuck::cast_slice::<_, BlockQ6K>(&bytes)
+                .iter()
+                .flat_map(|block| block.into_wgsl_bytes())
+                .collect(),
             _ => todo!(),
         };
         let buffer = Arc::new(
@@ -185,11 +321,11 @@ impl UntypedQMatMul {
     }
 
     fn work_group_dispatch(&self, a_shape: &[usize]) -> [u32; 3] {
-        let m = a_shape[0];
-        let n = self.matrix.shape[1];
+        let n = self.matrix.shape[0];
+        let m = a_shape[1];
         [
-            m as u32 / self.work_group_size()[0],
-            n as u32 / (self.elements_per_block() * self.work_group_size()[1]),
+            (n as u32).div_ceil(self.elements_per_block() * self.work_group_size()[0]),
+            (m as u32).div_ceil(self.work_group_size()[1]),
             1,
         ]
     }
@@ -220,31 +356,34 @@ impl UntypedQMatMul {
             let global_id = generic_kernel.global_id();
             let elements_per_block = self.elements_per_block();
 
-            let m_size = input_a.shape_binding(0);
-            let n_size = input_b.shape_binding(1);
-            let k_size = input_a.shape_binding(1);
+            let k_size = input_a.shape_binding(0);
+            let m_size = input_a.shape_binding(1);
+            let n_size = input_b.shape_binding(0);
 
             writeln!(&mut kernel, "let x = {global_id}.x;").unwrap();
             writeln!(&mut kernel, "let y = {global_id}.y;").unwrap();
 
             writeln!(
                 &mut kernel,
-                "var acc: array<{datatype}, {elements_per_block}>;"
+                "var acc = array<{datatype}, {elements_per_block}>();"
             )
             .unwrap();
 
             // Calculate one block sized group
-            writeln!(&mut kernel, "for (var k = 0u; k < {k_size}; k += 1u) {{").unwrap();
-
-            writeln!(&mut kernel, "if x < {m_size} {{").unwrap();
-
             writeln!(
                 &mut kernel,
-                "let chunk = {input_b}[k * {n_size} / {elements_per_block} + y];"
+                "if x * {elements_per_block} < {n_size} && y < {m_size} {{"
             )
             .unwrap();
 
-            writeln!(&mut kernel, "let a = {input_a}[x * {k_size} + k];").unwrap();
+            writeln!(&mut kernel, "for (var k = 0u; k < {k_size}; k += 1u) {{").unwrap();
+
+            writeln!(&mut kernel, "let a = {input_a}[y * {k_size} + k];").unwrap();
+            writeln!(
+                &mut kernel,
+                "let chunk = {input_b}[(k * {n_size}) / {elements_per_block} + x];"
+            )
+            .unwrap();
 
             dequantize_block(
                 &mut kernel,
@@ -252,36 +391,51 @@ impl UntypedQMatMul {
                 "chunk".to_string(),
                 DataTypeEnum::F32,
                 |i, data, code| {
-                    writeln!(code, "acc[{i}] += {data};",).unwrap();
+                    writeln!(code, "acc[{i}] += a * {data};").unwrap();
                 },
             );
 
             writeln!(&mut kernel, "}}").unwrap();
+            // writeln!(
+            //     &mut kernel,
+            //     "let chunk = {input_b}[(y * {n_size}) / {elements_per_block} + x];"
+            // )
+            // .unwrap();
+
+            // dequantize_block(
+            //     &mut kernel,
+            //     self.matrix.datatype,
+            //     "chunk".to_string(),
+            //     DataTypeEnum::F32,
+            //     |i, data, code| {
+            //         writeln!(code, "acc[{i}] += {data};").unwrap();
+            //     },
+            // );
 
             writeln!(&mut kernel, "}}").unwrap();
 
             // Then write the result
             writeln!(
                 &mut kernel,
-                "for (var y_offset = 0u; y_offset < {elements_per_block}; y_offset += 1u) {{"
+                "for (var x_offset = 0u; x_offset < {elements_per_block}; x_offset += 1u) {{"
             )
             .unwrap();
             writeln!(
                 &mut kernel,
-                "let y_output_index = y * {elements_per_block} + y_offset;"
+                "let x_output_index = x * {elements_per_block} + x_offset;"
             )
             .unwrap();
             writeln!(
                 &mut kernel,
-                "if x < {m_size} && y_output_index < {n_size} {{"
+                "if x_output_index < {n_size} && y < {m_size} {{"
             )
             .unwrap();
             writeln!(
                 &mut kernel,
-                "let output_index = x * {k_size} + y_output_index;"
+                "let output_index = x_output_index + y * {n_size};"
             )
             .unwrap();
-            writeln!(&mut kernel, "{output}[output_index] = acc[y_offset];").unwrap();
+            writeln!(&mut kernel, "{output}[output_index] = acc[x_offset];").unwrap();
             writeln!(&mut kernel, "}}").unwrap();
             writeln!(&mut kernel, "}}").unwrap();
             println!("{}", kernel);
