@@ -16,10 +16,7 @@ pub(crate) struct DependencyMap {
 impl DependencyMap {
     pub(crate) fn add_dependents(&mut self, key: AnyComputeKey, graph: &ComputeGraphNodes) {
         visit_dependencies(graph, key, |dependent| {
-            self.dependant_map
-                .entry(dependent)
-                .or_default()
-                .insert(key);
+            self.dependant_map.entry(dependent).or_default().insert(key);
         });
     }
 }
