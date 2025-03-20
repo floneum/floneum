@@ -2,14 +2,14 @@ use wgpu::CommandEncoder;
 
 use crate::{
     ElementWiseFunction, PerformanceQueries, UntypedElementWiseKernel, UntypedPairWiseKernel,
-    UntypedReduceKernel, element_wise, matmul::UntypedMatMul, resize::UntypedResizeKernel,
-    slice_assign::UntypedSliceAssignKernel, tensor::TensorData,
+    UntypedReduceKernel, element_wise, matmul::UntypedMatMul, quantized::UntypedQMatMul,
+    resize::UntypedResizeKernel, slice_assign::UntypedSliceAssignKernel, tensor::TensorData,
 };
 
 use super::{
     AnyComputeKey, ComputeGraphInner, ElementWiseComputeNodeKey, MapLayoutComputeNodeKey,
-    MatMulComputeNodeKey, PairWiseComputeNodeKey, ReduceComputeNodeKey, ResizeComputeNodeKey,
-    SliceAssignComputeNodeKey, TensorComputeNodeKey,
+    MatMulComputeNodeKey, PairWiseComputeNodeKey, QMatMulComputeNodeKey, ReduceComputeNodeKey,
+    ResizeComputeNodeKey, SliceAssignComputeNodeKey, TensorComputeNodeKey,
 };
 
 impl ComputeGraphInner {
@@ -42,6 +42,9 @@ impl ComputeGraphInner {
             }
             AnyComputeKey::SliceAssign(slice_assign_compute_node_key) => {
                 self.resolve_slice_assign(slice_assign_compute_node_key, command_encoder)
+            }
+            AnyComputeKey::QMatMul(q_mat_mul_compute_node_key) => {
+                self.resolve_q_mat_mul(q_mat_mul_compute_node_key, command_encoder)
             }
         }
     }
@@ -147,6 +150,23 @@ impl ComputeGraphInner {
         let kernel = UntypedMatMul::new(first.datatype());
         let query = PerformanceQueries::new(first.device());
         let result = kernel.run_with_query(&first, &second, Some(&query), command_encoder);
+        self.timing_information.insert(key.into(), query);
+        result
+    }
+
+    fn resolve_q_mat_mul(
+        &mut self,
+        key: QMatMulComputeNodeKey,
+        command_encoder: &mut CommandEncoder,
+    ) -> TensorData {
+        let operation = self.q_mat_mul.get(&key).unwrap();
+        let input = operation.input;
+        let matrix = operation.matrix.clone();
+
+        let input = self.resolve(input, &mut *command_encoder);
+        let kernel = UntypedQMatMul::new(input.datatype(), matrix);
+        let query = PerformanceQueries::new(input.device());
+        let result = kernel.run_with_query(&input, Some(&query), command_encoder);
         self.timing_information.insert(key.into(), query);
         result
     }

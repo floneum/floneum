@@ -23,6 +23,8 @@ mod layout;
 mod map_layout;
 mod matmul;
 mod pair_wise;
+mod quantized;
+mod quantized_types_wgsl;
 mod query;
 mod reduce;
 mod resize;

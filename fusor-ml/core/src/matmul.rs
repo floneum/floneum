@@ -28,9 +28,9 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
     }
 }
 
-const WORK_GROUP_BLOCK_M_SIZE: u32 = 8;
+const WORK_GROUP_BLOCK_M_SIZE: u32 = THREAD_BLOCK_M_SIZE * 2;
 const WORK_GROUP_BLOCK_N_SIZE: u32 = 8;
-const WORK_GROUP_BLOCK_K_SIZE: u32 = 8;
+const WORK_GROUP_BLOCK_K_SIZE: u32 = 64;
 
 const THREAD_BLOCK_M_SIZE: u32 = 8;
 
@@ -70,12 +70,12 @@ impl UntypedMatMul {
             let cache_a = generic_kernel.add_global_array(
                 KernelGlobalSpace::Workgroup,
                 self.datatype,
-                (WORK_GROUP_SIZE_ELEMENT * WORK_GROUP_SIZE_ELEMENT).to_string(),
+                (WORK_GROUP_BLOCK_K_SIZE * WORK_GROUP_BLOCK_K_SIZE).to_string(),
             );
             let cache_b = generic_kernel.add_global_array(
                 KernelGlobalSpace::Workgroup,
                 self.datatype,
-                (WORK_GROUP_SIZE_ELEMENT * WORK_GROUP_SIZE_ELEMENT).to_string(),
+                (WORK_GROUP_BLOCK_N_SIZE * WORK_GROUP_BLOCK_N_SIZE).to_string(),
             );
 
             let datatype = self.datatype;
@@ -95,12 +95,12 @@ impl UntypedMatMul {
             writeln!(&mut kernel, "let b_thread_col = {workgroup_local_index} % {WORK_GROUP_BLOCK_N_SIZE};").unwrap();
             writeln!(&mut kernel, "let b_thread_row = {workgroup_local_index} / {WORK_GROUP_BLOCK_N_SIZE};").unwrap();
             writeln!(&mut kernel, "var results: array<{datatype}, {THREAD_BLOCK_M_SIZE}>;").unwrap();
-            writeln!(&mut kernel, "let a_row = {k_size} * (a_thread_row + block_row * {WORK_GROUP_SIZE_ELEMENT});").unwrap();
+            writeln!(&mut kernel, "let a_row = {k_size} * (a_thread_row + block_row * {WORK_GROUP_BLOCK_M_SIZE});").unwrap();
             writeln!(&mut kernel, "var a_col = a_thread_col;").unwrap();
             writeln!(&mut kernel, "let a_row_max = {m_size} * {k_size};").unwrap();
             writeln!(&mut kernel, "let a_col_max = {k_size};").unwrap();
             writeln!(&mut kernel, "var b_row = {n_size} * b_thread_row;").unwrap(); 
-            writeln!(&mut kernel, "let b_col = b_thread_col + block_col * {WORK_GROUP_SIZE_ELEMENT};").unwrap();
+            writeln!(&mut kernel, "let b_col = b_thread_col + block_col * {WORK_GROUP_BLOCK_N_SIZE};").unwrap();
             writeln!(&mut kernel, "let b_row_max = {k_size} * {n_size};").unwrap();
             writeln!(&mut kernel, "let b_col_max = {n_size};").unwrap();
 

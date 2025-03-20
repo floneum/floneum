@@ -15,6 +15,7 @@ use crate::{
     compute_graph::{AnyComputeKey, ComputeGraph},
     layout::Layout,
     map_layout::MapLayoutOperation,
+    quantized::{QMatMulOperation, QMatrix},
     resize::ResizeOperation,
     slice_assign::SliceAssignOperation,
 };
@@ -38,6 +39,7 @@ pub trait DataType:
 
     fn zero() -> Self;
     fn one() -> Self;
+    fn from_f32(value: f32) -> Self;
 }
 
 impl DataType for f32 {
@@ -50,6 +52,10 @@ impl DataType for f32 {
     fn one() -> Self {
         1.
     }
+
+    fn from_f32(value: f32) -> Self {
+        value
+    }
 }
 
 impl DataType for half::f16 {
@@ -61,6 +67,10 @@ impl DataType for half::f16 {
 
     fn one() -> Self {
         half::f16::from_f32(1.)
+    }
+
+    fn from_f32(value: f32) -> Self {
+        half::f16::from_f32(value)
     }
 }
 
@@ -209,6 +219,20 @@ impl LazyTensorData {
         let device = self.device.clone();
         let info = self.info.clone();
         let key = graph.create_mat_mul(function);
+
+        Self {
+            device,
+            info,
+            graph,
+            key: key.into(),
+        }
+    }
+
+    pub(crate) fn q_mat_mul(&self, function: QMatMulOperation) -> Self {
+        let graph = self.graph.clone();
+        let device = self.device.clone();
+        let info = self.info.clone();
+        let key = graph.create_q_mat_mul(function);
 
         Self {
             device,
@@ -582,6 +606,15 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
 
         Self {
             data: self.data.mat_mul(operation),
+            datatype: PhantomData,
+        }
+    }
+
+    pub(crate) fn add_q_mat_mul(&self, other: &QMatrix) -> Self {
+        let operation = QMatMulOperation::new(self.data.key, other.clone());
+
+        Self {
+            data: self.data.q_mat_mul(operation),
             datatype: PhantomData,
         }
     }

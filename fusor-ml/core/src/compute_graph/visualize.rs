@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use super::visit::VisitComputeGraph;
 use super::{
     AnyComputeKey, ComputeGraphInner, ElementWiseComputeNodeKey, MapLayoutComputeNodeKey,
-    MatMulComputeNodeKey, PairWiseComputeNodeKey, ReduceComputeNodeKey, ResizeComputeNodeKey,
-    SliceAssignComputeNodeKey, TensorComputeNodeKey, layout_pass,
+    MatMulComputeNodeKey, PairWiseComputeNodeKey, QMatMulComputeNodeKey, ReduceComputeNodeKey,
+    ResizeComputeNodeKey, SliceAssignComputeNodeKey, TensorComputeNodeKey, layout_pass,
 };
 use tabbycat::Graph;
 use tabbycat::{Edge, GraphBuilder, GraphType, Identity, Stmt, StmtList};
@@ -52,6 +52,13 @@ impl ComputeGraphInner {
             AnyComputeKey::MatMul(mat_mul_compute_node_key) => {
                 self.add_mat_mul_to_graph(graph, mat_mul_compute_node_key, layout_pass, identities)
             }
+            AnyComputeKey::QMatMul(quantized_mat_mul_compute_node_key) => self
+                .add_q_mat_mul_to_graph(
+                    graph,
+                    quantized_mat_mul_compute_node_key,
+                    layout_pass,
+                    identities,
+                ),
             AnyComputeKey::Reduce(reduce_compute_node_key) => {
                 self.add_reduce_to_graph(graph, reduce_compute_node_key, layout_pass, identities)
             }
@@ -156,6 +163,28 @@ impl ComputeGraphInner {
         ));
         graph.push(Stmt::Edge(
             Edge::head_node(second, None).arrow_to_node(id.clone(), None),
+        ));
+        id
+    }
+
+    fn add_q_mat_mul_to_graph(
+        &self,
+        graph: &mut Vec<Stmt>,
+        key: QMatMulComputeNodeKey,
+        layout_pass: &layout_pass::LayoutPass,
+        identities: &mut HashMap<AnyComputeKey, Identity>,
+    ) -> Identity {
+        let operation = self.q_mat_mul.get(&key).unwrap();
+        let input = self.add_node_to_graph(graph, operation.input, layout_pass, identities);
+        let output_layout = layout_pass.output_layout.get(&key.into()).unwrap();
+        let id = Identity::quoted(format!("qmatmul ({}) #{}", output_layout, key.0));
+        graph.push(Stmt::Node {
+            id: id.clone(),
+            port: None,
+            attr: None,
+        });
+        graph.push(Stmt::Edge(
+            Edge::head_node(input, None).arrow_to_node(id.clone(), None),
         ));
         id
     }
