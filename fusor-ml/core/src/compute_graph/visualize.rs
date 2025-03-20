@@ -55,7 +55,7 @@ impl ComputeGraphInner {
             AnyComputeKey::QMatMul(quantized_mat_mul_compute_node_key) => self
                 .add_q_mat_mul_to_graph(
                     graph,
-                    quantized_mat_mul_compute_node_key.into(),
+                    quantized_mat_mul_compute_node_key,
                     layout_pass,
                     identities,
                 ),

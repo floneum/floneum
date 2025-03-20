@@ -250,23 +250,23 @@ impl QMatrix {
         ty: GgmlType,
     ) -> Result<Self, GgufReadError> {
         let bytes: Box<[u8]> = match ty {
-            GgmlType::Q4_0 => bytemuck::cast_slice::<_, BlockQ4_0>(&bytes)
+            GgmlType::Q4_0 => bytemuck::cast_slice::<_, BlockQ4_0>(bytes)
                 .iter()
                 .flat_map(|block| block.into_wgsl_bytes())
                 .collect(),
-            GgmlType::Q5_0 => bytemuck::cast_slice::<_, BlockQ5_0>(&bytes)
+            GgmlType::Q5_0 => bytemuck::cast_slice::<_, BlockQ5_0>(bytes)
                 .iter()
                 .flat_map(|block| block.into_wgsl_bytes())
                 .collect(),
-            GgmlType::Q8_0 => bytemuck::cast_slice::<_, BlockQ8_0>(&bytes)
+            GgmlType::Q8_0 => bytemuck::cast_slice::<_, BlockQ8_0>(bytes)
                 .iter()
                 .flat_map(|block| block.into_wgsl_bytes())
                 .collect(),
-            GgmlType::Q4K => bytemuck::cast_slice::<_, BlockQ4K>(&bytes)
+            GgmlType::Q4K => bytemuck::cast_slice::<_, BlockQ4K>(bytes)
                 .iter()
                 .flat_map(|block| block.into_wgsl_bytes())
                 .collect(),
-            GgmlType::Q6K => bytemuck::cast_slice::<_, BlockQ6K>(&bytes)
+            GgmlType::Q6K => bytemuck::cast_slice::<_, BlockQ6K>(bytes)
                 .iter()
                 .flat_map(|block| block.into_wgsl_bytes())
                 .collect(),
@@ -964,7 +964,7 @@ impl WgslQuantizedType for BlockQ6K {
         .unwrap();
         writeln!(code, "let first_merged = {datatype}((first_two_bits << 4) | first_high_nibble) - {datatype}({CENTER_SIX_BIT});").unwrap();
         process_element(
-            format!("output_index + high_byte_index"),
+            "output_index + high_byte_index".to_string(),
             format!(
                 "scale * {datatype}({}) * first_merged",
                 index_signed_bytes(format!("{chunk}.scales"), "scale_index")
@@ -980,7 +980,7 @@ impl WgslQuantizedType for BlockQ6K {
         .unwrap();
         writeln!(code, "let second_merged = {datatype}((second_two_bits << 4) | second_high_nibble) - {datatype}({CENTER_SIX_BIT});").unwrap();
         process_element(
-            format!("output_index + high_byte_index + 32"),
+            "output_index + high_byte_index + 32".to_string(),
             format!(
                 "scale * {datatype}({}) * second_merged",
                 index_signed_bytes(format!("{chunk}.scales"), "scale_index + 2")
@@ -992,7 +992,7 @@ impl WgslQuantizedType for BlockQ6K {
         writeln!(code, "let third_high_nibble = first_low_byte >> 4;").unwrap();
         writeln!(code, "let third_merged = {datatype}((third_two_bits << 4) | third_high_nibble) - {datatype}({CENTER_SIX_BIT});").unwrap();
         process_element(
-            format!("output_index + high_byte_index + 64"),
+            "output_index + high_byte_index + 64".to_string(),
             format!(
                 "scale * {datatype}({}) * third_merged",
                 index_signed_bytes(format!("{chunk}.scales"), "scale_index + 4")
@@ -1004,7 +1004,7 @@ impl WgslQuantizedType for BlockQ6K {
         writeln!(code, "let fourth_high_nibble = second_low_byte >> 4;").unwrap();
         writeln!(code, "let fourth_merged = {datatype}((fourth_two_bits << 4) | fourth_high_nibble) - {datatype}({CENTER_SIX_BIT});").unwrap();
         process_element(
-            format!("output_index + high_byte_index + 96"),
+            "output_index + high_byte_index + 96".to_string(),
             format!(
                 "scale * {datatype}({}) * fourth_merged",
                 index_signed_bytes(format!("{chunk}.scales"), "scale_index + 6")
@@ -1226,11 +1226,11 @@ where
                 .unwrap()
                 .unwrap();
 
-            let ouptut_as_floats = bytemuck::cast_slice::<_, T>(&*output);
+            let ouptut_as_floats = bytemuck::cast_slice::<_, T>(&output);
             let expected_result = block
                 .dequantize()
                 .as_ref()
-                .into_iter()
+                .iter()
                 .map(|x| T::from_f32(*x))
                 .collect::<Vec<_>>();
             assert_eq!(ouptut_as_floats, expected_result);
