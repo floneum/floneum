@@ -2,14 +2,14 @@ use std::collections::HashMap;
 
 use super::visit::VisitComputeGraph;
 use super::{
-    AnyComputeKey, ComputeGraphInner, ElementWiseComputeNodeKey, MapLayoutComputeNodeKey,
+    AnyComputeKey, ComputeGraphNodes, ElementWiseComputeNodeKey, MapLayoutComputeNodeKey,
     MatMulComputeNodeKey, PairWiseComputeNodeKey, QMatMulComputeNodeKey, ReduceComputeNodeKey,
     ResizeComputeNodeKey, SliceAssignComputeNodeKey, TensorComputeNodeKey, layout_pass,
 };
 use tabbycat::Graph;
 use tabbycat::{Edge, GraphBuilder, GraphType, Identity, Stmt, StmtList};
 
-impl ComputeGraphInner {
+impl ComputeGraphNodes {
     pub(crate) fn graphvis(&self, root: AnyComputeKey) -> Graph {
         let mut layout_pass = layout_pass::LayoutPass::default();
         layout_pass.visit(self, root);

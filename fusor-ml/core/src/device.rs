@@ -15,15 +15,12 @@ impl Device {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
         let adapter = instance.request_adapter(&Default::default()).await.unwrap();
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    required_features: wgpu::Features::SUBGROUP
-                        | wgpu::Features::TIMESTAMP_QUERY
-                        | wgpu::Features::SHADER_F16,
-                    ..Default::default()
-                },
-                None,
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                required_features: wgpu::Features::SUBGROUP
+                    | wgpu::Features::TIMESTAMP_QUERY
+                    | wgpu::Features::SHADER_F16,
+                ..Default::default()
+            })
             .await?;
 
         Ok(Self {

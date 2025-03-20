@@ -1,11 +1,11 @@
 use super::{
-    AnyComputeKey, ComputeGraphInner, ElementWiseComputeNodeKey, MapLayoutComputeNodeKey,
+    AnyComputeKey, ComputeGraphNodes, ElementWiseComputeNodeKey, MapLayoutComputeNodeKey,
     MatMulComputeNodeKey, PairWiseComputeNodeKey, QMatMulComputeNodeKey, ReduceComputeNodeKey,
     ResizeComputeNodeKey, SliceAssignComputeNodeKey, TensorComputeNodeKey,
 };
 
 pub(crate) trait VisitComputeGraph: Sized {
-    fn visit(&mut self, graph: &ComputeGraphInner, key: AnyComputeKey) {
+    fn visit(&mut self, graph: &ComputeGraphNodes, key: AnyComputeKey) {
         match key {
             AnyComputeKey::ElementWise(element_wise_compute_node_key) => {
                 self.visit_element_wise(graph, element_wise_compute_node_key)
@@ -23,7 +23,7 @@ pub(crate) trait VisitComputeGraph: Sized {
                 self.visit_reduce(graph, reduce_compute_node_key);
             }
             AnyComputeKey::MapLayout(slice_compute_node_key) => {
-                self.visit_slice(graph, slice_compute_node_key);
+                self.visit_map_layout(graph, slice_compute_node_key);
             }
             AnyComputeKey::Resize(resize_compute_node_key) => {
                 self.visit_resize(graph, resize_compute_node_key);
@@ -37,46 +37,46 @@ pub(crate) trait VisitComputeGraph: Sized {
         }
     }
 
-    fn visit_element_wise(&mut self, graph: &ComputeGraphInner, key: ElementWiseComputeNodeKey) {
+    fn visit_element_wise(&mut self, graph: &ComputeGraphNodes, key: ElementWiseComputeNodeKey) {
         visit_element_wise(self, graph, key);
     }
 
-    fn visit_pair_wise(&mut self, graph: &ComputeGraphInner, key: PairWiseComputeNodeKey) {
+    fn visit_pair_wise(&mut self, graph: &ComputeGraphNodes, key: PairWiseComputeNodeKey) {
         visit_pair_wise(self, graph, key);
     }
 
-    fn visit_mat_mul(&mut self, graph: &ComputeGraphInner, key: MatMulComputeNodeKey) {
+    fn visit_mat_mul(&mut self, graph: &ComputeGraphNodes, key: MatMulComputeNodeKey) {
         visit_mat_mul(self, graph, key);
     }
 
-    fn visit_q_mat_mul(&mut self, graph: &ComputeGraphInner, key: QMatMulComputeNodeKey) {
+    fn visit_q_mat_mul(&mut self, graph: &ComputeGraphNodes, key: QMatMulComputeNodeKey) {
         visit_q_mat_mul(self, graph, key);
     }
 
-    fn visit_reduce(&mut self, graph: &ComputeGraphInner, key: ReduceComputeNodeKey) {
+    fn visit_reduce(&mut self, graph: &ComputeGraphNodes, key: ReduceComputeNodeKey) {
         visit_reduce(self, graph, key);
     }
 
-    fn visit_slice(&mut self, graph: &ComputeGraphInner, key: MapLayoutComputeNodeKey) {
-        visit_slice(self, graph, key);
+    fn visit_map_layout(&mut self, graph: &ComputeGraphNodes, key: MapLayoutComputeNodeKey) {
+        visit_map_layout(self, graph, key);
     }
 
-    fn visit_resize(&mut self, graph: &ComputeGraphInner, key: ResizeComputeNodeKey) {
+    fn visit_resize(&mut self, graph: &ComputeGraphNodes, key: ResizeComputeNodeKey) {
         visit_resize(self, graph, key);
     }
 
-    fn visit_slice_assign(&mut self, graph: &ComputeGraphInner, key: SliceAssignComputeNodeKey) {
+    fn visit_slice_assign(&mut self, graph: &ComputeGraphNodes, key: SliceAssignComputeNodeKey) {
         visit_slice_assign(self, graph, key);
     }
 
-    fn visit_tensor(&mut self, graph: &ComputeGraphInner, key: TensorComputeNodeKey) {
+    fn visit_tensor(&mut self, graph: &ComputeGraphNodes, key: TensorComputeNodeKey) {
         visit_tensor(self, graph, key);
     }
 }
 
 pub(crate) fn visit_element_wise(
     visitor: &mut impl VisitComputeGraph,
-    graph: &ComputeGraphInner,
+    graph: &ComputeGraphNodes,
     key: ElementWiseComputeNodeKey,
 ) {
     let operation = graph.element_wise.get(&key).unwrap();
@@ -86,7 +86,7 @@ pub(crate) fn visit_element_wise(
 
 pub(crate) fn visit_pair_wise(
     visitor: &mut impl VisitComputeGraph,
-    graph: &ComputeGraphInner,
+    graph: &ComputeGraphNodes,
     key: PairWiseComputeNodeKey,
 ) {
     let operation = graph.pair_wise.get(&key).unwrap();
@@ -98,7 +98,7 @@ pub(crate) fn visit_pair_wise(
 
 pub(crate) fn visit_mat_mul(
     visitor: &mut impl VisitComputeGraph,
-    graph: &ComputeGraphInner,
+    graph: &ComputeGraphNodes,
     key: MatMulComputeNodeKey,
 ) {
     let operation = graph.mat_mul.get(&key).unwrap();
@@ -110,7 +110,7 @@ pub(crate) fn visit_mat_mul(
 
 pub(crate) fn visit_q_mat_mul(
     visitor: &mut impl VisitComputeGraph,
-    graph: &ComputeGraphInner,
+    graph: &ComputeGraphNodes,
     key: QMatMulComputeNodeKey,
 ) {
     let operation = graph.q_mat_mul.get(&key).unwrap();
@@ -120,7 +120,7 @@ pub(crate) fn visit_q_mat_mul(
 
 pub(crate) fn visit_reduce(
     visitor: &mut impl VisitComputeGraph,
-    graph: &ComputeGraphInner,
+    graph: &ComputeGraphNodes,
     key: ReduceComputeNodeKey,
 ) {
     let operation = graph.reduce.get(&key).unwrap();
@@ -128,9 +128,9 @@ pub(crate) fn visit_reduce(
     visitor.visit(graph, value);
 }
 
-pub(crate) fn visit_slice(
+pub(crate) fn visit_map_layout(
     visitor: &mut impl VisitComputeGraph,
-    graph: &ComputeGraphInner,
+    graph: &ComputeGraphNodes,
     key: MapLayoutComputeNodeKey,
 ) {
     let operation = graph.map_layout.get(&key).unwrap();
@@ -140,7 +140,7 @@ pub(crate) fn visit_slice(
 
 pub(crate) fn visit_resize(
     visitor: &mut impl VisitComputeGraph,
-    graph: &ComputeGraphInner,
+    graph: &ComputeGraphNodes,
     key: ResizeComputeNodeKey,
 ) {
     let operation = graph.resize.get(&key).unwrap();
@@ -150,7 +150,7 @@ pub(crate) fn visit_resize(
 
 pub(crate) fn visit_slice_assign(
     visitor: &mut impl VisitComputeGraph,
-    graph: &ComputeGraphInner,
+    graph: &ComputeGraphNodes,
     key: SliceAssignComputeNodeKey,
 ) {
     let operation = graph.slice_assign.get(&key).unwrap();
@@ -162,7 +162,7 @@ pub(crate) fn visit_slice_assign(
 
 pub(crate) fn visit_tensor(
     _: &mut impl VisitComputeGraph,
-    _: &ComputeGraphInner,
+    _: &ComputeGraphNodes,
     _: TensorComputeNodeKey,
 ) {
 }

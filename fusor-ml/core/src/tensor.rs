@@ -163,12 +163,29 @@ impl TensorInfo {
     }
 }
 
-#[derive(Clone)]
 pub(crate) struct LazyTensorData {
     device: Device,
     info: TensorInfo,
     graph: ComputeGraph,
     key: AnyComputeKey,
+}
+
+impl Clone for LazyTensorData {
+    fn clone(&self) -> Self {
+        self.graph.add_reference(self.key);
+        Self {
+            device: self.device.clone(),
+            info: self.info.clone(),
+            graph: self.graph.clone(),
+            key: self.key,
+        }
+    }
+}
+
+impl Drop for LazyTensorData {
+    fn drop(&mut self) {
+        self.graph.remove_reference(self.key);
+    }
 }
 
 impl LazyTensorData {
