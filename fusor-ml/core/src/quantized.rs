@@ -890,31 +890,31 @@ impl WgslQuantizedType for BlockQ6K {
 
 #[cfg(test)]
 #[tokio::test]
-async fn test_de_quantize_4_0_block() {
+async fn test_fuzz_de_quantize_4_0_block() {
     fuzz_de_quantize::<BlockQ4_0>().await;
 }
 
 #[cfg(test)]
 #[tokio::test]
-async fn test_de_quantize_5_0_block() {
+async fn test_fuzz_de_quantize_5_0_block() {
     fuzz_de_quantize::<BlockQ5_0>().await;
 }
 
 #[cfg(test)]
 #[tokio::test]
-async fn test_de_quantize_8_0_block() {
+async fn test_fuzz_de_quantize_8_0_block() {
     fuzz_de_quantize::<BlockQ8_0>().await;
 }
 
 #[cfg(test)]
 #[tokio::test]
-async fn test_de_quantize_4_k_block() {
+async fn test_fuzz_de_quantize_4_k_block() {
     fuzz_de_quantize::<BlockQ4K>().await;
 }
 
 #[cfg(test)]
 #[tokio::test]
-async fn test_de_quantize_6_k_block() {
+async fn test_fuzz_de_quantize_6_k_block() {
     fuzz_de_quantize::<BlockQ6K>().await;
 }
 
@@ -928,9 +928,9 @@ where
     use wgpu::util::DownloadBuffer;
 
     println!("testing f32...");
-    test_de_quantize_block_inner::<B, f32>().await;
+    test_fuzz_de_quantize_block_inner::<B, f32>().await;
 
-    async fn test_de_quantize_block_inner<
+    async fn test_fuzz_de_quantize_block_inner<
         B: WgslQuantizedType + PartialEq + std::fmt::Debug,
         T: DataType,
     >()

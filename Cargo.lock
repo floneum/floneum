@@ -2441,6 +2441,7 @@ dependencies = [
  "pretty_assertions",
  "rand 0.9.0",
  "reqwest 0.12.15",
+ "rustc-hash 2.1.1",
  "tabbycat",
  "tokio",
  "wgpu",
