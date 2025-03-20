@@ -14,6 +14,9 @@ on:
       - floneum/*/src/**
       - floneum/*/examples/**
       - floneum/*/Cargo.toml
+      - fusor-ml/*/src/**
+      - fusor-ml/*/examples/**
+      - fusor-ml/*/Cargo.toml
       - src/**
       - .github/**
       - Cargo.toml
