@@ -32,3 +32,11 @@ mod resize;
 mod slice_assign;
 mod tensor;
 mod visit_tiled;
+
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("Failed to find a suitable device {0}")]
+    RequestDeviceError(#[from] wgpu::RequestDeviceError)
+}
+
+pub type Result<T> = std::result::Result<T, Error>;
