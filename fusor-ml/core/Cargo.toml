@@ -1,5 +1,5 @@
 [package]
-name = "fusor-ml-core"
+name = "fusor-core"
 version = "0.1.0"
 authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 license = "MIT/Apache-2.0"
