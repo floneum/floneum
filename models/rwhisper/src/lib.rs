@@ -245,11 +245,11 @@ where
         loop {
             if let Some(task) = &mut myself.current_segment_task {
                 match task.poll_next_unpin(cx) {
-                    std::task::Poll::Ready(ready) => {
+                    std::task::Poll::Ready(Some(ready)) => {
+                        return std::task::Poll::Ready(Some(ready));
+                    }
+                    std::task::Poll::Ready(None) => {
                         myself.current_segment_task = None;
-                        if let Some(ready) = ready {
-                            return std::task::Poll::Ready(Some(ready));
-                        }
                     }
                     std::task::Poll::Pending => return std::task::Poll::Pending,
                 }
