@@ -406,7 +406,39 @@ impl GgufValue {
         };
         Ok(v)
     }
+ 
 }
+
+macro_rules! try_into_gguf_value {
+    ($variant:ident, $value:ty) => {
+        impl TryInto<$value> for GgufValue {
+            type Error = GgufReadError;
+
+            fn try_into(self) -> Result<$value, Self::Error> {
+                if let GgufValue::$variant(v) = self {
+                    Ok(v)
+                } else {
+                    Err(GgufReadError::InvalidValueType(
+                        InvalidValueType(self.value_type() as u32),
+                    ))
+                }
+            }
+        }
+    };
+}
+try_into_gguf_value!(U8, u8);
+try_into_gguf_value!(I8, i8);
+try_into_gguf_value!(U16, u16);
+try_into_gguf_value!(I16, i16);
+try_into_gguf_value!(U32, u32);
+try_into_gguf_value!(I32, i32);
+try_into_gguf_value!(U64, u64);
+try_into_gguf_value!(I64, i64);
+try_into_gguf_value!(F32, f32);
+try_into_gguf_value!(F64, f64);
+try_into_gguf_value!(Bool, bool);
+try_into_gguf_value!(String, Box<str>);
+try_into_gguf_value!(Array, Box<[GgufValue]>);
 
 impl GgufMetadata {
     pub fn read<R: std::io::Seek + std::io::Read>(reader: &mut R) -> Result<Self, GgufReadError> {
