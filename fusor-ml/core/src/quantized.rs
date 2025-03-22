@@ -927,12 +927,14 @@ where
     use pretty_assertions::assert_eq;
     use wgpu::util::DownloadBuffer;
 
+    use crate::FloatDataType;
+
     println!("testing f32...");
     test_fuzz_de_quantize_block_inner::<B, f32>().await;
 
     async fn test_fuzz_de_quantize_block_inner<
         B: WgslQuantizedType + PartialEq + std::fmt::Debug,
-        T: DataType,
+        T: FloatDataType,
     >()
     where
         rand::distr::StandardUniform:

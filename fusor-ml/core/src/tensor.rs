@@ -13,6 +13,7 @@ use crate::{
     Device, ElementWiseOperation, MatMulOperation, PairWiseFunction, PairWiseOperation,
     QueryResults, ReduceFunction, ReduceOperation,
     compute_graph::{AnyComputeKey, ComputeGraph},
+    index_select::IndexSelectOperation,
     layout::Layout,
     map_layout::MapLayoutOperation,
     quantized::{QMatMulOperation, QMatrix},
@@ -39,6 +40,9 @@ pub trait DataType:
 
     fn zero() -> Self;
     fn one() -> Self;
+}
+
+pub trait FloatDataType: DataType {
     fn from_f32(value: f32) -> Self;
 }
 
@@ -52,7 +56,9 @@ impl DataType for f32 {
     fn one() -> Self {
         1.
     }
+}
 
+impl FloatDataType for f32 {
     fn from_f32(value: f32) -> Self {
         value
     }
@@ -68,9 +74,23 @@ impl DataType for half::f16 {
     fn one() -> Self {
         half::f16::from_f32(1.)
     }
+}
 
+impl FloatDataType for half::f16 {
     fn from_f32(value: f32) -> Self {
         half::f16::from_f32(value)
+    }
+}
+
+impl DataType for u32 {
+    const WGSL_TYPE: DataTypeEnum = DataTypeEnum::U32;
+
+    fn zero() -> Self {
+        0
+    }
+
+    fn one() -> Self {
+        1
     }
 }
 
@@ -79,6 +99,7 @@ impl DataType for half::f16 {
 pub enum DataTypeEnum {
     F32,
     F16,
+    U32,
 }
 
 impl DataTypeEnum {
@@ -86,6 +107,7 @@ impl DataTypeEnum {
         match self {
             DataTypeEnum::F32 => "f32",
             DataTypeEnum::F16 => "f16",
+            DataTypeEnum::U32 => "u32",
         }
     }
 
@@ -93,6 +115,7 @@ impl DataTypeEnum {
         match self {
             DataTypeEnum::F32 => size_of::<f32>(),
             DataTypeEnum::F16 => size_of::<half::f16>(),
+            DataTypeEnum::U32 => size_of::<u32>(),
         }
     }
 }
@@ -315,6 +338,20 @@ impl LazyTensorData {
         let info = self.info.clone();
         let graph = self.graph.clone();
         let key = self.graph.create_slice_assign(op);
+
+        Self {
+            device,
+            info,
+            graph,
+            key: key.into(),
+        }
+    }
+
+    pub(crate) fn index_select(&self, op: IndexSelectOperation) -> Self {
+        let device = self.device.clone();
+        let info = self.info.clone();
+        let graph = self.graph.clone();
+        let key = self.graph.create_index_select(op);
 
         Self {
             device,
@@ -656,6 +693,15 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         let op = SliceAssignOperation::new(self.data.key, other.data.key, slices.into());
         Self {
             data: self.data.slice_assign(op),
+            datatype: PhantomData,
+        }
+    }
+
+    pub(crate) fn add_index_select(&self, dimension: usize, indexes: &Tensor<1, u32>) -> Self {
+        self.data.graph.merge(&indexes.data.graph);
+        let op = IndexSelectOperation::new(self.data.key, indexes.data.key, dimension);
+        Self {
+            data: self.data.index_select(op),
             datatype: PhantomData,
         }
     }

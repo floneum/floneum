@@ -1,9 +1,9 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::{
-    AnyComputeKey, ComputeGraphNodes, ElementWiseComputeNodeKey, MapLayoutComputeNodeKey,
-    MatMulComputeNodeKey, PairWiseComputeNodeKey, QMatMulComputeNodeKey, ReduceComputeNodeKey,
-    ResizeComputeNodeKey, SliceAssignComputeNodeKey,
+    AnyComputeKey, ComputeGraphNodes, ElementWiseComputeNodeKey, IndexSelectComputeNodeKey,
+    MapLayoutComputeNodeKey, MatMulComputeNodeKey, PairWiseComputeNodeKey, QMatMulComputeNodeKey,
+    ReduceComputeNodeKey, ResizeComputeNodeKey, SliceAssignComputeNodeKey,
 };
 
 #[derive(Default)]
@@ -67,6 +67,12 @@ pub(crate) fn visit_dependencies(
             graph,
             slice_assign_compute_node_key,
             slice_assign_dependencies,
+            f,
+        ),
+        AnyComputeKey::IndexSelect(index_select_compute_node_key) => add_dependents_generic(
+            graph,
+            index_select_compute_node_key,
+            index_select_dependencies,
             f,
         ),
         AnyComputeKey::QMatMul(q_mat_mul_compute_node_key) => {
@@ -150,4 +156,14 @@ pub(crate) fn slice_assign_dependencies(
     let input = operation.input;
     let value = operation.value;
     [input, value]
+}
+
+pub(crate) fn index_select_dependencies(
+    graph: &ComputeGraphNodes,
+    key: IndexSelectComputeNodeKey,
+) -> [AnyComputeKey; 2] {
+    let operation = graph.index_select.get(&key).unwrap();
+    let input = operation.input;
+    let indices = operation.indexes;
+    [input, indices]
 }

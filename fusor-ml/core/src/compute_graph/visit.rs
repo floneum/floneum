@@ -1,7 +1,7 @@
 use super::{
-    AnyComputeKey, ComputeGraphNodes, ElementWiseComputeNodeKey, MapLayoutComputeNodeKey,
-    MatMulComputeNodeKey, PairWiseComputeNodeKey, QMatMulComputeNodeKey, ReduceComputeNodeKey,
-    ResizeComputeNodeKey, SliceAssignComputeNodeKey, TensorComputeNodeKey,
+    AnyComputeKey, ComputeGraphNodes, ElementWiseComputeNodeKey, IndexSelectComputeNodeKey,
+    MapLayoutComputeNodeKey, MatMulComputeNodeKey, PairWiseComputeNodeKey, QMatMulComputeNodeKey,
+    ReduceComputeNodeKey, ResizeComputeNodeKey, SliceAssignComputeNodeKey, TensorComputeNodeKey,
 };
 
 pub(crate) trait VisitComputeGraph: Sized {
@@ -30,6 +30,9 @@ pub(crate) trait VisitComputeGraph: Sized {
             }
             AnyComputeKey::SliceAssign(slice_assign_compute_node_key) => {
                 self.visit_slice_assign(graph, slice_assign_compute_node_key);
+            }
+            AnyComputeKey::IndexSelect(index_select_compute_node_key) => {
+                self.visit_index_select(graph, index_select_compute_node_key);
             }
             AnyComputeKey::Tensor(tensor_compute_node_key) => {
                 self.visit_tensor(graph, tensor_compute_node_key);
@@ -67,6 +70,10 @@ pub(crate) trait VisitComputeGraph: Sized {
 
     fn visit_slice_assign(&mut self, graph: &ComputeGraphNodes, key: SliceAssignComputeNodeKey) {
         visit_slice_assign(self, graph, key);
+    }
+
+    fn visit_index_select(&mut self, graph: &ComputeGraphNodes, key: IndexSelectComputeNodeKey) {
+        visit_index_select(self, graph, key);
     }
 
     fn visit_tensor(&mut self, graph: &ComputeGraphNodes, key: TensorComputeNodeKey) {
@@ -158,6 +165,18 @@ pub(crate) fn visit_slice_assign(
     visitor.visit(graph, input);
     let value = operation.value;
     visitor.visit(graph, value);
+}
+
+pub(crate) fn visit_index_select(
+    visitor: &mut impl VisitComputeGraph,
+    graph: &ComputeGraphNodes,
+    key: IndexSelectComputeNodeKey,
+) {
+    let operation = graph.index_select.get(&key).unwrap();
+    let input = operation.input;
+    visitor.visit(graph, input);
+    let index = operation.indexes;
+    visitor.visit(graph, index);
 }
 
 pub(crate) fn visit_tensor(

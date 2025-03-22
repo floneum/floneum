@@ -299,6 +299,35 @@ async fn test_pair_wise_add_f16() {
 
 #[cfg(test)]
 #[tokio::test]
+async fn test_pair_wise_add_u32() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+    std::thread::spawn({
+        let device = device.clone();
+        move || loop {
+            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
+        }
+    });
+    let data_a = [[1_u32, 2_u32], [3_u32, 4_u32], [5_u32, 6_u32]];
+    let data_b = [[1_u32, 2_u32], [3_u32, 4_u32], [5_u32, 6_u32]];
+    let tensor_a = Tensor::new(&device, &data_a);
+    let tensor_b = Tensor::new(&device, &data_b);
+
+    let tensor = &tensor_a + &tensor_b;
+    let as_slice = tensor.as_slice().await.unwrap();
+    println!("{:?}", as_slice);
+
+    assert_eq!(as_slice[[0, 0]], 1 + 1);
+    assert_eq!(as_slice[[0, 1]], 2 + 2);
+    assert_eq!(as_slice[[1, 0]], 3 + 3);
+    assert_eq!(as_slice[[1, 1]], 4 + 4);
+    assert_eq!(as_slice[[2, 0]], 5 + 5);
+    assert_eq!(as_slice[[2, 1]], 6 + 6);
+}
+
+#[cfg(test)]
+#[tokio::test]
 async fn test_pair_wise_add_const_mul_const_add_fused() {
     use crate::Device;
 

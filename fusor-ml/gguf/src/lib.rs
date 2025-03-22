@@ -406,7 +406,6 @@ impl GgufValue {
         };
         Ok(v)
     }
- 
 }
 
 macro_rules! try_into_gguf_value {
@@ -418,9 +417,9 @@ macro_rules! try_into_gguf_value {
                 if let GgufValue::$variant(v) = self {
                     Ok(v)
                 } else {
-                    Err(GgufReadError::InvalidValueType(
-                        InvalidValueType(self.value_type() as u32),
-                    ))
+                    Err(GgufReadError::InvalidValueType(InvalidValueType(
+                        self.value_type() as u32,
+                    )))
                 }
             }
         }

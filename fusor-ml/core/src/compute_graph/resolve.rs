@@ -2,14 +2,15 @@ use wgpu::CommandEncoder;
 
 use crate::{
     ElementWiseFunction, PerformanceQueries, UntypedElementWiseKernel, UntypedPairWiseKernel,
-    UntypedReduceKernel, element_wise, matmul::UntypedMatMul, quantized::UntypedQMatMul,
-    resize::UntypedResizeKernel, slice_assign::UntypedSliceAssignKernel, tensor::TensorData,
+    UntypedReduceKernel, element_wise, index_select::UntypedIndexSelectKernel,
+    matmul::UntypedMatMul, quantized::UntypedQMatMul, resize::UntypedResizeKernel,
+    slice_assign::UntypedSliceAssignKernel, tensor::TensorData,
 };
 
 use super::{
-    AnyComputeKey, ComputeGraphInner, ElementWiseComputeNodeKey, MapLayoutComputeNodeKey,
-    MatMulComputeNodeKey, PairWiseComputeNodeKey, QMatMulComputeNodeKey, ReduceComputeNodeKey,
-    ResizeComputeNodeKey, SliceAssignComputeNodeKey, TensorComputeNodeKey,
+    AnyComputeKey, ComputeGraphInner, ElementWiseComputeNodeKey, IndexSelectComputeNodeKey,
+    MapLayoutComputeNodeKey, MatMulComputeNodeKey, PairWiseComputeNodeKey, QMatMulComputeNodeKey,
+    ReduceComputeNodeKey, ResizeComputeNodeKey, SliceAssignComputeNodeKey, TensorComputeNodeKey,
     dependency_map::visit_dependencies,
 };
 
@@ -66,6 +67,9 @@ impl<'a> Resolver<'a> {
             }
             AnyComputeKey::SliceAssign(slice_assign_compute_node_key) => {
                 self.resolve_slice_assign(slice_assign_compute_node_key)
+            }
+            AnyComputeKey::IndexSelect(index_select_compute_node_key) => {
+                self.resolve_index_select(index_select_compute_node_key)
             }
             AnyComputeKey::QMatMul(q_mat_mul_compute_node_key) => {
                 self.resolve_q_mat_mul(q_mat_mul_compute_node_key)
@@ -270,6 +274,59 @@ impl<'a> Resolver<'a> {
         let query = PerformanceQueries::new(input.device());
         let result =
             kernel.run_with_query(&input, &value, Some(&query), &mut *self.command_encoder);
+        self.graph.timing_information.insert(key.into(), query);
+        result
+    }
+
+    fn resolve_index_select(&mut self, key: IndexSelectComputeNodeKey) -> TensorData {
+        self.resolve_index_select_then(key, Vec::new())
+    }
+
+    fn resolve_index_select_then(
+        &mut self,
+        key: IndexSelectComputeNodeKey,
+        then: Vec<ElementWiseFunction>,
+    ) -> TensorData {
+        let operation = self.graph.nodes.index_select.get(&key).unwrap();
+
+        let dimension = operation.dimension;
+        let mut input = operation.input;
+        let mut indexes = operation.indexes;
+        let mut input_pre_element_wise = if let AnyComputeKey::ElementWise(key) = input {
+            let (functions, element_wise_input) = self.collect_element_wise_ops(key);
+            input = element_wise_input;
+            functions
+        } else {
+            Vec::new()
+        };
+        // pre and post elementwise are the same since the index select operation doesn't effect element wise values
+        for function in then {
+            input_pre_element_wise.push(function);
+        }
+        let indexes_pre_element_wise = if let AnyComputeKey::ElementWise(key) = indexes {
+            let (functions, element_wise_input) = self.collect_element_wise_ops(key);
+            indexes = element_wise_input;
+            functions
+        } else {
+            Vec::new()
+        };
+
+        let input = self.resolve(input);
+        let indexes = self.resolve(indexes);
+        let mut kernel =
+            UntypedIndexSelectKernel::new(dimension, input.datatype(), input.layout().rank());
+        kernel.set_pre_element_wise_input(UntypedElementWiseKernel::new(
+            input_pre_element_wise,
+            input.datatype(),
+        ));
+        kernel.set_pre_element_wise_indexes(UntypedElementWiseKernel::new(
+            indexes_pre_element_wise,
+            indexes.datatype(),
+        ));
+
+        let query = PerformanceQueries::new(input.device());
+        let result =
+            kernel.run_with_query(&input, &indexes, Some(&query), &mut *self.command_encoder);
         self.graph.timing_information.insert(key.into(), query);
         result
     }

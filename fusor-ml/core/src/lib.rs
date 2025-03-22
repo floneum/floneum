@@ -19,6 +19,7 @@ mod composite;
 mod compute_graph;
 mod device;
 mod element_wise;
+mod index_select;
 mod kernel;
 mod layout;
 mod map_layout;
@@ -36,7 +37,7 @@ mod visit_tiled;
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("Failed to find a suitable device {0}")]
-    RequestDeviceError(#[from] wgpu::RequestDeviceError)
+    RequestDeviceError(#[from] wgpu::RequestDeviceError),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
