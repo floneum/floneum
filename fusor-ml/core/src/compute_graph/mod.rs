@@ -17,7 +17,7 @@ mod visualize;
 use crate::{
     Device, ElementWiseOperation, MatMulOperation, PairWiseOperation, PerformanceQueries,
     QueryResults, ReduceOperation, index_select::IndexSelectOperation,
-    map_layout::MapLayoutOperation, quantized::QMatMulOperation, resize::ResizeOperation,
+    map_layout::MapLayoutOperation, quantized::matmul::QMatMulOperation, resize::ResizeOperation,
     slice_assign::SliceAssignOperation, tensor::TensorData,
 };
 

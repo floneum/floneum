@@ -1,11 +1,9 @@
-use std::{fmt::Write, sync::OnceLock};
-
-use wgpu::CommandEncoder;
-
 use crate::{
     DataTypeEnum, PerformanceQueries, TILE_SIZE, Tensor, TensorData, UntypedElementWiseKernel,
     compute_graph::AnyComputeKey, kernel::GenericKernel, padded_tensor_size,
 };
+use std::{fmt::Write, sync::OnceLock};
+use wgpu::CommandEncoder;
 
 pub(crate) struct IndexSelectOperation {
     pub(crate) input: AnyComputeKey,

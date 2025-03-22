@@ -16,7 +16,7 @@ use crate::{
     index_select::IndexSelectOperation,
     layout::Layout,
     map_layout::MapLayoutOperation,
-    quantized::{QMatMulOperation, QMatrix},
+    quantized::{matmul::QMatMulOperation, QMatrix},
     resize::ResizeOperation,
     slice_assign::SliceAssignOperation,
 };

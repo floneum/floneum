@@ -3,7 +3,7 @@ use wgpu::CommandEncoder;
 use crate::{
     ElementWiseFunction, PerformanceQueries, UntypedElementWiseKernel, UntypedPairWiseKernel,
     UntypedReduceKernel, element_wise, index_select::UntypedIndexSelectKernel,
-    matmul::UntypedMatMul, quantized::UntypedQMatMul, resize::UntypedResizeKernel,
+    matmul::UntypedMatMul, quantized::matmul::UntypedQMatMul, resize::UntypedResizeKernel,
     slice_assign::UntypedSliceAssignKernel, tensor::TensorData,
 };
 
