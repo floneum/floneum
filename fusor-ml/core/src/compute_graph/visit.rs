@@ -1,7 +1,8 @@
 use super::{
-    AnyComputeKey, ComputeGraphNodes, ElementWiseComputeNodeKey, IndexSelectComputeNodeKey,
-    MapLayoutComputeNodeKey, MatMulComputeNodeKey, PairWiseComputeNodeKey, QMatMulComputeNodeKey,
-    ReduceComputeNodeKey, ResizeComputeNodeKey, SliceAssignComputeNodeKey, TensorComputeNodeKey,
+    AnyComputeKey, ComputeGraphNodes, DequantizeComputeKey, ElementWiseComputeNodeKey,
+    IndexSelectComputeNodeKey, MapLayoutComputeNodeKey, MatMulComputeNodeKey,
+    PairWiseComputeNodeKey, QMatMulComputeNodeKey, ReduceComputeNodeKey, ResizeComputeNodeKey,
+    SliceAssignComputeNodeKey, TensorComputeNodeKey,
 };
 
 pub(crate) trait VisitComputeGraph: Sized {
@@ -36,6 +37,9 @@ pub(crate) trait VisitComputeGraph: Sized {
             }
             AnyComputeKey::Tensor(tensor_compute_node_key) => {
                 self.visit_tensor(graph, tensor_compute_node_key);
+            }
+            AnyComputeKey::Dequantize(dequantize_compute_node_key) => {
+                self.visit_dequantize(graph, dequantize_compute_node_key);
             }
         }
     }
@@ -78,6 +82,10 @@ pub(crate) trait VisitComputeGraph: Sized {
 
     fn visit_tensor(&mut self, graph: &ComputeGraphNodes, key: TensorComputeNodeKey) {
         visit_tensor(self, graph, key);
+    }
+
+    fn visit_dequantize(&mut self, graph: &ComputeGraphNodes, key: DequantizeComputeKey) {
+        visit_dequantize(self, graph, key);
     }
 }
 
@@ -183,5 +191,12 @@ pub(crate) fn visit_tensor(
     _: &mut impl VisitComputeGraph,
     _: &ComputeGraphNodes,
     _: TensorComputeNodeKey,
+) {
+}
+
+pub(crate) fn visit_dequantize(
+    _: &mut impl VisitComputeGraph,
+    _: &ComputeGraphNodes,
+    _: DequantizeComputeKey,
 ) {
 }

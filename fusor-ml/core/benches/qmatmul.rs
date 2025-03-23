@@ -48,7 +48,7 @@ fn qmatmul(c: &mut Criterion) {
             let q_matrix_metadata = metadata.tensor_infos.get("blk.0.attn_q.weight").unwrap();
 
             let q_matrix = QMatrix::read(
-                device.wgpu_device(),
+                &device,
                 q_matrix_metadata,
                 &mut reader,
                 metadata.tensor_data_offset,

@@ -1,11 +1,11 @@
-use std::{fmt::Write, sync::OnceLock};
-use wgpu::CommandEncoder;
 use crate::{
     DataType, DataTypeEnum, Device, PerformanceQueries, Tensor, TensorData,
     compute_graph::AnyComputeKey,
     kernel::{GenericKernel, KernelInputValue},
     padded_tensor_size,
 };
+use std::{fmt::Write, sync::OnceLock};
+use wgpu::CommandEncoder;
 
 use super::{QMatrix, dequantize_block};
 
@@ -65,7 +65,7 @@ async fn test_fuzz_q_mat_mul() {
     let q_matrix_metadata = metadata.tensor_infos.get("blk.0.attn_q.weight").unwrap();
 
     let q_matrix = QMatrix::read(
-        device.wgpu_device(),
+        &device,
         q_matrix_metadata,
         &mut reader,
         metadata.tensor_data_offset,
@@ -159,10 +159,11 @@ impl UntypedQMatMul {
             let mut kernel = String::new();
 
             let datatype = self.input_datatype;
+            let rank = self.matrix.shape.len() as u32;
 
-            let input_a = generic_kernel.add_tensor_input(2, false, datatype);
-            let input_b = generic_kernel.add_q_matrix_input(2, self.matrix.datatype);
-            let output = generic_kernel.add_tensor_input(2, true, datatype);
+            let input_a = generic_kernel.add_tensor_input(rank, false, datatype);
+            let input_b = generic_kernel.add_q_matrix_input(rank, self.matrix.datatype);
+            let output = generic_kernel.add_tensor_input(rank, true, datatype);
 
             let global_id = generic_kernel.global_id();
             let elements_per_block = self.elements_per_block();

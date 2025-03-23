@@ -16,7 +16,7 @@ use crate::{
     index_select::IndexSelectOperation,
     layout::Layout,
     map_layout::MapLayoutOperation,
-    quantized::{matmul::QMatMulOperation, QMatrix},
+    quantized::{QMatrix, matmul::QMatMulOperation},
     resize::ResizeOperation,
     slice_assign::SliceAssignOperation,
 };
@@ -213,8 +213,8 @@ impl Drop for LazyTensorData {
 
 impl LazyTensorData {
     pub(crate) fn new(data: TensorData) -> Self {
-        let graph = ComputeGraph::new();
         let device = data.device.clone();
+        let graph = ComputeGraph::new(device.clone());
         let info = data.info.clone();
         let key = graph.create_tensor(data);
 
@@ -223,6 +223,20 @@ impl LazyTensorData {
             info: TensorInfo::new(info.shape().into(), info.datatype()),
             graph,
             key: key.into(),
+        }
+    }
+
+    pub(crate) fn from_parts(
+        device: Device,
+        graph: ComputeGraph,
+        info: TensorInfo,
+        key: AnyComputeKey,
+    ) -> Self {
+        Self {
+            device,
+            info,
+            graph,
+            key,
         }
     }
 
@@ -595,6 +609,13 @@ where
 impl<D: DataType, const R: usize> Tensor<R, D> {
     pub fn new(device: &Device, data: impl IntoTensor<R, D>) -> Self {
         data.into_tensor(device)
+    }
+
+    pub(crate) fn from_parts(data: LazyTensorData) -> Self {
+        Self {
+            data,
+            datatype: PhantomData,
+        }
     }
 
     fn new_inner<'a, I: Iterator<Item = &'a D>>(

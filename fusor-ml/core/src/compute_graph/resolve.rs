@@ -2,16 +2,17 @@ use wgpu::CommandEncoder;
 
 use crate::{
     ElementWiseFunction, PerformanceQueries, UntypedElementWiseKernel, UntypedPairWiseKernel,
-    UntypedReduceKernel, element_wise, index_select::UntypedIndexSelectKernel,
-    matmul::UntypedMatMul, quantized::matmul::UntypedQMatMul, resize::UntypedResizeKernel,
+    UntypedReduceKernel, dequantize::UntypedDequantize, element_wise,
+    index_select::UntypedIndexSelectKernel, matmul::UntypedMatMul,
+    quantized::matmul::UntypedQMatMul, resize::UntypedResizeKernel,
     slice_assign::UntypedSliceAssignKernel, tensor::TensorData,
 };
 
 use super::{
-    AnyComputeKey, ComputeGraphInner, ElementWiseComputeNodeKey, IndexSelectComputeNodeKey,
-    MapLayoutComputeNodeKey, MatMulComputeNodeKey, PairWiseComputeNodeKey, QMatMulComputeNodeKey,
-    ReduceComputeNodeKey, ResizeComputeNodeKey, SliceAssignComputeNodeKey, TensorComputeNodeKey,
-    dependency_map::visit_dependencies,
+    AnyComputeKey, ComputeGraphInner, DequantizeComputeKey, ElementWiseComputeNodeKey,
+    IndexSelectComputeNodeKey, MapLayoutComputeNodeKey, MatMulComputeNodeKey,
+    PairWiseComputeNodeKey, QMatMulComputeNodeKey, ReduceComputeNodeKey, ResizeComputeNodeKey,
+    SliceAssignComputeNodeKey, TensorComputeNodeKey, dependency_map::visit_dependencies,
 };
 
 pub(crate) struct Resolver<'a> {
@@ -74,6 +75,9 @@ impl<'a> Resolver<'a> {
             AnyComputeKey::QMatMul(q_mat_mul_compute_node_key) => {
                 self.resolve_q_mat_mul(q_mat_mul_compute_node_key)
             }
+            AnyComputeKey::Dequantize(dequantize_compute_node_key) => {
+                self.resolve_dequantize(dequantize_compute_node_key)
+            }
         };
 
         // Cache the result
@@ -114,15 +118,17 @@ impl<'a> Resolver<'a> {
         let input_cached = self.graph.cached_results.contains_key(&input);
 
         // Merge into the output of the reduce kernel if possible and it isn't already cached
-        if let AnyComputeKey::Reduce(key) = input {
-            if !input_cached {
+        if !input_cached {
+            if let AnyComputeKey::Reduce(key) = input {
                 return self.resolve_reduce_then(key, functions);
             }
-        }
-        // Merge into the output of the pair wise kernel if possible and it isn't already cached
-        if let AnyComputeKey::PairWise(key) = input {
-            if !input_cached {
+            // Merge into the output of the pair wise kernel if possible and it isn't already cached
+            if let AnyComputeKey::PairWise(key) = input {
                 return self.resolve_pair_wise_then(key, functions);
+            }
+            // Merge into the output of the dequantize kernel if possible and it isn't already cached
+            if let AnyComputeKey::Dequantize(key) = input {
+                return self.resolve_dequantize_then(key, functions);
             }
         }
         // Otherwise, just run the element wise kernel
@@ -184,7 +190,7 @@ impl<'a> Resolver<'a> {
 
         let first = self.resolve(first);
         let second = self.resolve(second);
-        let kernel = UntypedMatMul::new(first.datatype());
+        let kernel = UntypedMatMul::new(first.datatype(), first.layout().rank() as u32);
         let query = PerformanceQueries::new(first.device());
         let result =
             kernel.run_with_query(&first, &second, Some(&query), &mut *self.command_encoder);
@@ -201,6 +207,27 @@ impl<'a> Resolver<'a> {
         let kernel = UntypedQMatMul::new(input.datatype(), matrix);
         let query = PerformanceQueries::new(input.device());
         let result = kernel.run_with_query(&input, Some(&query), &mut *self.command_encoder);
+        self.graph.timing_information.insert(key.into(), query);
+        result
+    }
+
+    fn resolve_dequantize(&mut self, key: DequantizeComputeKey) -> TensorData {
+        self.resolve_dequantize_then(key, Vec::new())
+    }
+
+    fn resolve_dequantize_then(
+        &mut self,
+        key: DequantizeComputeKey,
+        then: Vec<ElementWiseFunction>,
+    ) -> TensorData {
+        let operation = self.graph.nodes.dequanitze.get(&key).unwrap();
+
+        let mut kernel = UntypedDequantize::new(operation.datatype, operation.matrix.clone());
+        let then = element_wise::UntypedElementWiseKernel::new(then, operation.datatype);
+        kernel.set_post_element_wise(then);
+        let query = PerformanceQueries::new(&self.graph.device);
+        let result =
+            kernel.run_with_query(&self.graph.device, Some(&query), &mut *self.command_encoder);
         self.graph.timing_information.insert(key.into(), query);
         result
     }

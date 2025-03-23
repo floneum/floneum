@@ -15,9 +15,10 @@ mod visit;
 mod visualize;
 
 use crate::{
-    Device, ElementWiseOperation, MatMulOperation, PairWiseOperation, PerformanceQueries,
-    QueryResults, ReduceOperation, index_select::IndexSelectOperation,
-    map_layout::MapLayoutOperation, quantized::matmul::QMatMulOperation, resize::ResizeOperation,
+    DataTypeEnum, Device, ElementWiseOperation, MatMulOperation, PairWiseOperation,
+    PerformanceQueries, QMatrix, QueryResults, ReduceOperation, dequantize::DequantizeOperation,
+    index_select::IndexSelectOperation, map_layout::MapLayoutOperation,
+    quantized::matmul::QMatMulOperation, resize::ResizeOperation,
     slice_assign::SliceAssignOperation, tensor::TensorData,
 };
 
@@ -103,6 +104,15 @@ impl TensorComputeNodeKey {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub(crate) struct DequantizeComputeKey(usize);
+impl DequantizeComputeKey {
+    fn new() -> Self {
+        static COUNT: AtomicUsize = AtomicUsize::new(0);
+        Self(COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst))
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub(crate) struct QMatMulComputeNodeKey(usize);
 impl QMatMulComputeNodeKey {
     fn new() -> Self {
@@ -123,6 +133,7 @@ pub(crate) enum AnyComputeKey {
     IndexSelect(IndexSelectComputeNodeKey),
     Tensor(TensorComputeNodeKey),
     QMatMul(QMatMulComputeNodeKey),
+    Dequantize(DequantizeComputeKey),
 }
 
 impl From<ElementWiseComputeNodeKey> for AnyComputeKey {
@@ -185,14 +196,24 @@ impl From<QMatMulComputeNodeKey> for AnyComputeKey {
     }
 }
 
-#[derive(Clone, Default)]
+impl From<DequantizeComputeKey> for AnyComputeKey {
+    fn from(value: DequantizeComputeKey) -> Self {
+        Self::Dequantize(value)
+    }
+}
+
+#[derive(Clone)]
 pub(crate) struct ComputeGraph {
     inner: Arc<ArcSwap<RwLock<ComputeGraphInner>>>,
 }
 
 impl ComputeGraph {
-    pub(crate) fn new() -> Self {
-        Self::default()
+    pub(crate) fn new(device: Device) -> Self {
+        Self {
+            inner: Arc::new(ArcSwap::new(Arc::new(RwLock::new(ComputeGraphInner::new(
+                device,
+            ))))),
+        }
     }
 
     fn with_mut<R, F: FnOnce(&mut ComputeGraphInner) -> R>(&self, f: F) -> R {
@@ -357,6 +378,18 @@ impl ComputeGraph {
         id
     }
 
+    pub(crate) fn dequantize(&self, matrix: QMatrix, ty: DataTypeEnum) -> DequantizeComputeKey {
+        let id = DequantizeComputeKey::new();
+        self.with_mut(|inner| {
+            inner
+                .nodes
+                .dequanitze
+                .insert(id, DequantizeOperation::new(matrix, ty));
+            inner.add_reference(id.into());
+        });
+        id
+    }
+
     pub(crate) fn resolve(&self, key: AnyComputeKey, device: &Device) -> TensorData {
         let mut encoder = device
             .wgpu_device()
@@ -406,10 +439,11 @@ pub(crate) struct ComputeGraphNodes {
     index_select: HashMap<IndexSelectComputeNodeKey, IndexSelectOperation>,
     tensor: HashMap<TensorComputeNodeKey, TensorData>,
     q_mat_mul: HashMap<QMatMulComputeNodeKey, QMatMulOperation>,
+    dequanitze: HashMap<DequantizeComputeKey, DequantizeOperation>,
 }
 
-#[derive(Default)]
 struct ComputeGraphInner {
+    device: Device,
     nodes: ComputeGraphNodes,
 
     timing_information: HashMap<AnyComputeKey, PerformanceQueries>,
@@ -419,6 +453,16 @@ struct ComputeGraphInner {
 }
 
 impl ComputeGraphInner {
+    fn new(device: Device) -> Self {
+        Self {
+            device,
+            nodes: ComputeGraphNodes::default(),
+            timing_information: HashMap::new(),
+            cached_results: HashMap::new(),
+            dependency_map: DependencyMap::default(),
+        }
+    }
+
     fn add_reference(&mut self, key: AnyComputeKey) {
         match self.dependency_map.reference_count.get_mut(&key) {
             Some(count) => {
@@ -517,6 +561,9 @@ impl ComputeGraphInner {
             }
             AnyComputeKey::Tensor(tensor_compute_node_key) => {
                 self.nodes.tensor.remove(&tensor_compute_node_key);
+            }
+            AnyComputeKey::Dequantize(dequantize_compute_key) => {
+                self.nodes.dequanitze.remove(&dequantize_compute_key);
             }
         }
     }

@@ -28,6 +28,7 @@ criterion = { version = "0.3", features = ["async_futures"] }
 pretty_assertions = "1.4.1"
 reqwest = "0.12.15"
 candle-core = { workspace = true }
+num-traits = "0.2.19"
 
 [[bench]]
 name = "matmul"

@@ -78,6 +78,7 @@ pub(crate) fn visit_dependencies(
         AnyComputeKey::QMatMul(q_mat_mul_compute_node_key) => {
             add_dependents_generic(graph, q_mat_mul_compute_node_key, q_mat_mul_dependencies, f)
         }
+        AnyComputeKey::Dequantize(_) => {}
         AnyComputeKey::Tensor(_) => {}
     }
 }

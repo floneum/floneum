@@ -1,5 +1,5 @@
 use crate::{
-    DataTypeEnum,
+    DataTypeEnum, Device,
     quantized_types_wgsl::{
         write_q4_0_type, write_q4_k_type, write_q5_0_type, write_q6_k_type, write_q8_0_type,
     },
@@ -14,10 +14,12 @@ use std::{
 };
 use wgpu::util::DeviceExt;
 
+pub(crate) mod dequantize;
 pub(crate) mod matmul;
 
 #[derive(Clone)]
 pub struct QMatrix {
+    device: Device,
     shape: Box<[usize]>,
     buffer: Arc<wgpu::Buffer>,
     datatype: GgmlType,
@@ -25,7 +27,7 @@ pub struct QMatrix {
 
 impl QMatrix {
     pub fn read<R: std::io::Read + std::io::Seek>(
-        device: &wgpu::Device,
+        device: &Device,
         metadata: &GgufTensorMetadata,
         reader: &mut R,
         tensor_data_offset: u64,
@@ -37,7 +39,7 @@ impl QMatrix {
     }
 
     pub(crate) fn from_parts(
-        device: &wgpu::Device,
+        device: &Device,
         bytes: &[u8],
         shape: Box<[usize]>,
         ty: GgmlType,
@@ -63,19 +65,21 @@ impl QMatrix {
                 .iter()
                 .flat_map(|block| block.into_wgsl_bytes())
                 .collect(),
+            GgmlType::F16 | GgmlType::F32 => bytes.into(),
             _ => todo!(),
         };
-        let buffer = Arc::new(
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let buffer = Arc::new(device.wgpu_device().create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
                 label: None,
                 contents: &bytes,
                 usage: wgpu::BufferUsages::STORAGE
                     | wgpu::BufferUsages::COPY_SRC
                     | wgpu::BufferUsages::COPY_DST,
-            }),
-        );
+            },
+        ));
 
         Ok(QMatrix {
+            device: device.clone(),
             shape,
             buffer,
             datatype: ty,
@@ -96,7 +100,7 @@ fn dequantize_block(
     ty: GgmlType,
     chunk: String,
     datatype: DataTypeEnum,
-    process_element: impl FnMut(String, String, &mut String),
+    mut process_element: impl FnMut(String, String, &mut String),
 ) {
     let out = match ty {
         GgmlType::Q4_0 => BlockQ4_0::dequantize_block(chunk, datatype, process_element),
@@ -104,6 +108,11 @@ fn dequantize_block(
         GgmlType::Q8_0 => BlockQ8_0::dequantize_block(chunk, datatype, process_element),
         GgmlType::Q4K => BlockQ4K::dequantize_block(chunk, datatype, process_element),
         GgmlType::Q6K => BlockQ6K::dequantize_block(chunk, datatype, process_element),
+        GgmlType::F16 | GgmlType::F32 => {
+            let mut body = String::new();
+            process_element("0".to_string(), format!("{datatype}({chunk})"), &mut body);
+            body
+        }
         _ => todo!(),
     };
     *kernel += &out;

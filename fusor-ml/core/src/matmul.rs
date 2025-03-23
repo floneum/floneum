@@ -43,14 +43,16 @@ pub(crate) struct UntypedMatMul {
     sparse_kernel: OnceLock<GenericKernel>,
     first_dim_dense_kernel: OnceLock<GenericKernel>,
     datatype: DataTypeEnum,
+    rank: u32,
 }
 
 impl UntypedMatMul {
-    pub(crate) const fn new(datatype: DataTypeEnum) -> Self {
+    pub(crate) const fn new(datatype: DataTypeEnum, rank: u32) -> Self {
         Self {
             sparse_kernel: OnceLock::new(),
             first_dim_dense_kernel: OnceLock::new(),
             datatype,
+            rank,
         }
     }
 
@@ -63,9 +65,9 @@ impl UntypedMatMul {
 
             let mut kernel = String::new();
 
-            let input_a = generic_kernel.add_tensor_input(2, false, self.datatype);
-            let input_b = generic_kernel.add_tensor_input(2, false, self.datatype);
-            let output = generic_kernel.add_tensor_input(2, true, self.datatype);
+            let input_a = generic_kernel.add_tensor_input(self.rank, false, self.datatype);
+            let input_b = generic_kernel.add_tensor_input(self.rank, false, self.datatype);
+            let output = generic_kernel.add_tensor_input(self.rank, true, self.datatype);
 
             let cache_a = generic_kernel.add_global_array(
                 KernelGlobalSpace::Workgroup,

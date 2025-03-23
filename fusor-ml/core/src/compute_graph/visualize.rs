@@ -2,10 +2,10 @@ use std::collections::HashMap;
 
 use super::visit::VisitComputeGraph;
 use super::{
-    AnyComputeKey, ComputeGraphNodes, ElementWiseComputeNodeKey, IndexSelectComputeNodeKey,
-    MapLayoutComputeNodeKey, MatMulComputeNodeKey, PairWiseComputeNodeKey, QMatMulComputeNodeKey,
-    ReduceComputeNodeKey, ResizeComputeNodeKey, SliceAssignComputeNodeKey, TensorComputeNodeKey,
-    layout_pass,
+    AnyComputeKey, ComputeGraphNodes, DequantizeComputeKey, ElementWiseComputeNodeKey,
+    IndexSelectComputeNodeKey, MapLayoutComputeNodeKey, MatMulComputeNodeKey,
+    PairWiseComputeNodeKey, QMatMulComputeNodeKey, ReduceComputeNodeKey, ResizeComputeNodeKey,
+    SliceAssignComputeNodeKey, TensorComputeNodeKey, layout_pass,
 };
 use tabbycat::Graph;
 use tabbycat::{Edge, GraphBuilder, GraphType, Identity, Stmt, StmtList};
@@ -81,6 +81,13 @@ impl ComputeGraphNodes {
                 ),
             AnyComputeKey::IndexSelect(index_select_compute_node_key) => self
                 .add_index_select_to_graph(
+                    graph,
+                    index_select_compute_node_key,
+                    layout_pass,
+                    identities,
+                ),
+            AnyComputeKey::Dequantize(index_select_compute_node_key) => self
+                .add_dequantize_to_graph(
                     graph,
                     index_select_compute_node_key,
                     layout_pass,
@@ -317,6 +324,23 @@ impl ComputeGraphNodes {
         graph.push(Stmt::Edge(
             Edge::head_node(value, None).arrow_to_node(id.clone(), None),
         ));
+        id
+    }
+
+    fn add_dequantize_to_graph(
+        &self,
+        graph: &mut Vec<Stmt>,
+        key: DequantizeComputeKey,
+        layout_pass: &layout_pass::LayoutPass,
+        _: &mut HashMap<AnyComputeKey, Identity>,
+    ) -> Identity {
+        let output_layout = layout_pass.output_layout.get(&key.into()).unwrap();
+        let id = Identity::quoted(format!("dequantize ({}) #{}", output_layout, key.0));
+        graph.push(Stmt::Node {
+            id: id.clone(),
+            port: None,
+            attr: None,
+        });
         id
     }
 
