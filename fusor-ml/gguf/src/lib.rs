@@ -423,6 +423,20 @@ macro_rules! try_into_gguf_value {
                 }
             }
         }
+
+        impl<'a> TryInto<&'a $value> for &'a GgufValue {
+            type Error = GgufReadError;
+
+            fn try_into(self) -> Result<&'a $value, Self::Error> {
+                if let GgufValue::$variant(v) = &self {
+                    Ok(v)
+                } else {
+                    Err(GgufReadError::InvalidValueType(InvalidValueType(
+                        self.value_type() as u32,
+                    )))
+                }
+            }
+        }
     };
 }
 try_into_gguf_value!(U8, u8);

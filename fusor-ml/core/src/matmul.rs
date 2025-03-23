@@ -279,7 +279,7 @@ async fn fuzz_matmul() {
             device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
         }
     });
-    let max_size = if cfg!(debug_assertions) { 5 } else { 125 };
+    let max_size = 125;
     let iterations = if cfg!(debug_assertions) { 10 } else { 100 };
 
     for _ in 0..iterations {

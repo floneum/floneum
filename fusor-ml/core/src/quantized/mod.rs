@@ -5,8 +5,8 @@ use crate::{
     },
 };
 use fusor_gguf::{
-    BlockQ4_0, BlockQ4K, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType, GgufBlock, GgufReadError,
-    GgufTensorMetadata,
+    BlockQ4_0, BlockQ4K, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType, GgufBlock, GgufMetadata,
+    GgufReadError, GgufTensorMetadata,
 };
 use std::{
     fmt::{Display, Write},
@@ -26,6 +26,26 @@ pub struct QMatrix {
 }
 
 impl QMatrix {
+    pub fn read_from_file<R: std::io::Read + std::io::Seek>(
+        device: &Device,
+        metadata: &GgufMetadata,
+        reader: &mut R,
+        key: &str,
+    ) -> Result<Option<Self>, GgufReadError> {
+        Ok(match metadata.tensor_infos.get(key) {
+            Some(rope_freq_weight) => {
+                let rope_freq_weight = QMatrix::read(
+                    device,
+                    rope_freq_weight,
+                    reader,
+                    metadata.tensor_data_offset,
+                )?;
+                Some(rope_freq_weight)
+            }
+            None => None,
+        })
+    }
+
     pub fn read<R: std::io::Read + std::io::Seek>(
         device: &Device,
         metadata: &GgufTensorMetadata,

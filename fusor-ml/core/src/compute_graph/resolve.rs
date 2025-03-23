@@ -171,9 +171,9 @@ impl<'a> Resolver<'a> {
 
         let first = self.resolve(first_input);
         let second = self.resolve(second_input);
-        let mut kernel = UntypedPairWiseKernel::new(function, first.datatype());
+        let mut kernel = UntypedPairWiseKernel::new(function);
         let first_pre = UntypedElementWiseKernel::new(first_pre_element_wise, first.datatype());
-        let second_pre = UntypedElementWiseKernel::new(second_pre_element_wise, first.datatype());
+        let second_pre = UntypedElementWiseKernel::new(second_pre_element_wise, second.datatype());
         let pre_element_wise_output = first_pre.out_datatype();
         kernel.set_pre_element_wise([first_pre, second_pre]);
         kernel.set_post_element_wise(UntypedElementWiseKernel::new(then, pre_element_wise_output));

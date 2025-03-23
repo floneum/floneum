@@ -1,6 +1,6 @@
 use std::{
     fmt::Display,
-    ops::{Add, Div, Mul, Neg, Sub},
+    ops::{Add, Div, Mul, Neg, Rem, Sub},
     sync::OnceLock,
 };
 
@@ -708,6 +708,158 @@ async fn test_div_const_reversed() {
     assert_eq!(output[[1, 1]], 6.0 / data[1][1]);
     assert_eq!(output[[2, 0]], 6.0 / data[2][0]);
     assert_eq!(output[[2, 1]], 6.0 / data[2][1]);
+}
+
+impl<const R: usize> Rem<u32> for Tensor<R, u32> {
+    type Output = Tensor<R, u32>;
+
+    fn rem(self, rhs: u32) -> Self::Output {
+        self.element_wise(ElementWiseOperation {
+            value: self.key(),
+            function: ElementWiseFunction::new(
+                format!("let output = input % {};", rhs),
+                u32::WGSL_TYPE,
+            )
+            .with_name("mod_const"),
+        })
+    }
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_mod_const() {
+    let device = Device::new().await.unwrap();
+    std::thread::spawn({
+        let device = device.clone();
+        move || loop {
+            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
+        }
+    });
+    let data = [[1, 2], [3, 4], [5, 6]];
+    let tensor = Tensor::new(&device, &data);
+
+    let tensor = tensor % 2;
+
+    let output = tensor.as_slice().await.unwrap();
+    println!("{:?}", output);
+    assert_eq!(output[[0, 0]], 1);
+    assert_eq!(output[[0, 1]], 0);
+    assert_eq!(output[[1, 0]], 1);
+    assert_eq!(output[[1, 1]], 0);
+    assert_eq!(output[[2, 0]], 1);
+    assert_eq!(output[[2, 1]], 0);
+}
+
+macro_rules! impl_mod {
+    ($($t:ty),*) => {
+        $(
+            impl<const R: usize> Rem<Tensor<R, $t>> for $t {
+                type Output = Tensor<R, $t>;
+
+                fn rem(self, rhs: Tensor<R, $t>) -> Self::Output {
+                    rhs.element_wise(ElementWiseOperation {
+                        value: rhs.key(),
+                        function: ElementWiseFunction::new(
+                            format!("let output = {} % input;", self),
+                            <$t>::WGSL_TYPE,
+                        )
+                        .with_name("mod_const"),
+                    })
+                }
+            }
+        )*
+    };
+}
+impl_mod!(f32, half::f16, u32);
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_mod_const_reversed() {
+    let device = Device::new().await.unwrap();
+    std::thread::spawn({
+        let device = device.clone();
+        move || loop {
+            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
+        }
+    });
+    let data = [[1, 2], [3, 4], [5, 6]];
+    let tensor = Tensor::new(&device, &data);
+
+    let tensor = 6 % tensor;
+
+    let output = tensor.as_slice().await.unwrap();
+    println!("{:?}", output);
+    assert_eq!(output[[0, 0]], 6 % data[0][0]);
+    assert_eq!(output[[0, 1]], 6 % data[0][1]);
+    assert_eq!(output[[1, 0]], 6 % data[1][0]);
+    assert_eq!(output[[1, 1]], 6 % data[1][1]);
+    assert_eq!(output[[2, 0]], 6 % data[2][0]);
+    assert_eq!(output[[2, 1]], 6 % data[2][1]);
+}
+
+impl<const R: usize, T: DataType> Tensor<R, T> {
+    /// Check if each value in the tensor is equal to the given value. Returns 1 for true and 0 for false.
+    pub fn eq<D: DataType>(self, rhs: T) -> Tensor<R, D> {
+        let datatype = D::WGSL_TYPE;
+        self.element_wise(ElementWiseOperation {
+            value: self.key(),
+            function: ElementWiseFunction::new(
+                format!("let output = {datatype}(input == {});", rhs),
+                D::WGSL_TYPE,
+            )
+            .with_name("equal_const"),
+        })
+    }
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_eq_const() {
+    let device = Device::new().await.unwrap();
+    std::thread::spawn({
+        let device = device.clone();
+        move || loop {
+            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
+        }
+    });
+    let data = [[1., 2.], [3., 4.], [5., 6.]];
+    let tensor = Tensor::new(&device, &data);
+
+    let tensor: Tensor<2, f32> = tensor.eq(1.0);
+
+    let output = tensor.as_slice().await.unwrap();
+    println!("{:?}", output);
+    assert_eq!(output[[0, 0]], 1.);
+    assert_eq!(output[[0, 1]], 0.);
+    assert_eq!(output[[1, 0]], 0.);
+    assert_eq!(output[[1, 1]], 0.);
+    assert_eq!(output[[2, 0]], 0.);
+    assert_eq!(output[[2, 1]], 0.);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_eq_const_cast() {
+    let device = Device::new().await.unwrap();
+    std::thread::spawn({
+        let device = device.clone();
+        move || loop {
+            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
+        }
+    });
+    let data = [[1., 2.], [3., 4.], [5., 6.]];
+    let tensor = Tensor::new(&device, &data);
+
+    let tensor: Tensor<2, u32> = tensor.eq(1.0);
+
+    let output = tensor.as_slice().await.unwrap();
+    println!("{:?}", output);
+    assert_eq!(output[[0, 0]], 1);
+    assert_eq!(output[[0, 1]], 0);
+    assert_eq!(output[[1, 0]], 0);
+    assert_eq!(output[[1, 1]], 0);
+    assert_eq!(output[[2, 0]], 0);
+    assert_eq!(output[[2, 1]], 0);
 }
 
 impl<const R: usize, D: DataType> Tensor<R, D> {

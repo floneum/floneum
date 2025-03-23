@@ -7,7 +7,10 @@ use std::{
 
 use bytemuck::{AnyBitPattern, NoUninit};
 use tabbycat::Graph;
-use wgpu::{BufferDescriptor, COPY_BUFFER_ALIGNMENT, util::DownloadBuffer};
+use wgpu::{
+    BufferDescriptor, COPY_BUFFER_ALIGNMENT,
+    util::{DeviceExt, DownloadBuffer},
+};
 
 use crate::{
     Device, ElementWiseOperation, MatMulOperation, PairWiseFunction, PairWiseOperation,
@@ -434,6 +437,22 @@ impl TensorData {
         Self::new_from_buffer(device, buffer, shape, datatype)
     }
 
+    pub(crate) fn new_splat<D: DataType>(device: &Device, shape: &[usize], data: D) -> Self {
+        let datatype = D::WGSL_TYPE;
+        let buffer = device
+            .wgpu_device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: bytemuck::bytes_of(&data),
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_SRC
+                    | wgpu::BufferUsages::COPY_DST,
+            });
+        let strides = (0..shape.len()).map(|_| 0).collect();
+        let layout = Layout::from_parts(0, shape.into(), strides);
+        Self::new_from_parts(device, buffer, layout, datatype)
+    }
+
     fn new_inner<'a, D: DataType, I: Iterator<Item = &'a D>>(
         device: &Device,
         data: I,
@@ -609,6 +628,13 @@ where
 impl<D: DataType, const R: usize> Tensor<R, D> {
     pub fn new(device: &Device, data: impl IntoTensor<R, D>) -> Self {
         data.into_tensor(device)
+    }
+
+    pub fn splat(device: &Device, value: D, shape: [usize; R]) -> Self {
+        Self {
+            data: LazyTensorData::new(TensorData::new_splat(device, &shape, value)),
+            datatype: PhantomData,
+        }
     }
 
     pub(crate) fn from_parts(data: LazyTensorData) -> Self {
