@@ -15,9 +15,11 @@ mod visit;
 mod visualize;
 
 use crate::{
-    Device, ElementWiseOperation, MatMulOperation, PairWiseOperation, PerformanceQueries,
-    QueryResults, ReduceOperation, map_layout::MapLayoutOperation, quantized::QMatMulOperation,
-    resize::ResizeOperation, slice_assign::SliceAssignOperation, tensor::TensorData,
+    DataTypeEnum, Device, ElementWiseOperation, MatMulOperation, PairWiseOperation,
+    PerformanceQueries, QMatrix, QueryResults, ReduceOperation, dequantize::DequantizeOperation,
+    index_select::IndexSelectOperation, map_layout::MapLayoutOperation,
+    quantized::matmul::QMatMulOperation, resize::ResizeOperation,
+    slice_assign::SliceAssignOperation, tensor::TensorData,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -84,8 +86,26 @@ impl SliceAssignComputeNodeKey {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub(crate) struct IndexSelectComputeNodeKey(usize);
+impl IndexSelectComputeNodeKey {
+    fn new() -> Self {
+        static COUNT: AtomicUsize = AtomicUsize::new(0);
+        Self(COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst))
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub(crate) struct TensorComputeNodeKey(usize);
 impl TensorComputeNodeKey {
+    fn new() -> Self {
+        static COUNT: AtomicUsize = AtomicUsize::new(0);
+        Self(COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst))
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub(crate) struct DequantizeComputeKey(usize);
+impl DequantizeComputeKey {
     fn new() -> Self {
         static COUNT: AtomicUsize = AtomicUsize::new(0);
         Self(COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst))
@@ -110,8 +130,10 @@ pub(crate) enum AnyComputeKey {
     MapLayout(MapLayoutComputeNodeKey),
     Resize(ResizeComputeNodeKey),
     SliceAssign(SliceAssignComputeNodeKey),
+    IndexSelect(IndexSelectComputeNodeKey),
     Tensor(TensorComputeNodeKey),
     QMatMul(QMatMulComputeNodeKey),
+    Dequantize(DequantizeComputeKey),
 }
 
 impl From<ElementWiseComputeNodeKey> for AnyComputeKey {
@@ -162,20 +184,36 @@ impl From<SliceAssignComputeNodeKey> for AnyComputeKey {
     }
 }
 
+impl From<IndexSelectComputeNodeKey> for AnyComputeKey {
+    fn from(value: IndexSelectComputeNodeKey) -> Self {
+        Self::IndexSelect(value)
+    }
+}
+
 impl From<QMatMulComputeNodeKey> for AnyComputeKey {
     fn from(value: QMatMulComputeNodeKey) -> Self {
         Self::QMatMul(value)
     }
 }
 
-#[derive(Clone, Default)]
+impl From<DequantizeComputeKey> for AnyComputeKey {
+    fn from(value: DequantizeComputeKey) -> Self {
+        Self::Dequantize(value)
+    }
+}
+
+#[derive(Clone)]
 pub(crate) struct ComputeGraph {
     inner: Arc<ArcSwap<RwLock<ComputeGraphInner>>>,
 }
 
 impl ComputeGraph {
-    pub(crate) fn new() -> Self {
-        Self::default()
+    pub(crate) fn new(device: Device) -> Self {
+        Self {
+            inner: Arc::new(ArcSwap::new(Arc::new(RwLock::new(ComputeGraphInner::new(
+                device,
+            ))))),
+        }
     }
 
     fn with_mut<R, F: FnOnce(&mut ComputeGraphInner) -> R>(&self, f: F) -> R {
@@ -212,11 +250,16 @@ impl ComputeGraph {
                     .nodes
                     .slice_assign
                     .extend(other_inner.nodes.slice_assign.drain());
+                inner
+                    .nodes
+                    .index_select
+                    .extend(other_inner.nodes.index_select.drain());
                 inner.nodes.tensor.extend(other_inner.nodes.tensor.drain());
                 inner
                     .nodes
                     .q_mat_mul
                     .extend(other_inner.nodes.q_mat_mul.drain());
+
                 inner
                     .timing_information
                     .extend(other_inner.timing_information.drain());
@@ -314,10 +357,34 @@ impl ComputeGraph {
         id
     }
 
+    pub(crate) fn create_index_select(
+        &self,
+        op: IndexSelectOperation,
+    ) -> IndexSelectComputeNodeKey {
+        let id = IndexSelectComputeNodeKey::new();
+        self.with_mut(|inner| {
+            inner.nodes.index_select.insert(id, op);
+            inner.add_reference(id.into());
+        });
+        id
+    }
+
     pub(crate) fn create_tensor(&self, info: TensorData) -> TensorComputeNodeKey {
         let id = TensorComputeNodeKey::new();
         self.with_mut(|inner| {
             inner.nodes.tensor.insert(id, info);
+            inner.add_reference(id.into());
+        });
+        id
+    }
+
+    pub(crate) fn dequantize(&self, matrix: QMatrix, ty: DataTypeEnum) -> DequantizeComputeKey {
+        let id = DequantizeComputeKey::new();
+        self.with_mut(|inner| {
+            inner
+                .nodes
+                .dequanitze
+                .insert(id, DequantizeOperation::new(matrix, ty));
             inner.add_reference(id.into());
         });
         id
@@ -369,12 +436,14 @@ pub(crate) struct ComputeGraphNodes {
     map_layout: HashMap<MapLayoutComputeNodeKey, MapLayoutOperation>,
     resize: HashMap<ResizeComputeNodeKey, ResizeOperation>,
     slice_assign: HashMap<SliceAssignComputeNodeKey, SliceAssignOperation>,
+    index_select: HashMap<IndexSelectComputeNodeKey, IndexSelectOperation>,
     tensor: HashMap<TensorComputeNodeKey, TensorData>,
     q_mat_mul: HashMap<QMatMulComputeNodeKey, QMatMulOperation>,
+    dequanitze: HashMap<DequantizeComputeKey, DequantizeOperation>,
 }
 
-#[derive(Default)]
 struct ComputeGraphInner {
+    device: Device,
     nodes: ComputeGraphNodes,
 
     timing_information: HashMap<AnyComputeKey, PerformanceQueries>,
@@ -384,6 +453,16 @@ struct ComputeGraphInner {
 }
 
 impl ComputeGraphInner {
+    fn new(device: Device) -> Self {
+        Self {
+            device,
+            nodes: ComputeGraphNodes::default(),
+            timing_information: HashMap::new(),
+            cached_results: HashMap::new(),
+            dependency_map: DependencyMap::default(),
+        }
+    }
+
     fn add_reference(&mut self, key: AnyComputeKey) {
         match self.dependency_map.reference_count.get_mut(&key) {
             Some(count) => {
@@ -472,11 +551,19 @@ impl ComputeGraphInner {
                     .slice_assign
                     .remove(&slice_assign_compute_node_key);
             }
+            AnyComputeKey::IndexSelect(index_select_compute_node_key) => {
+                self.nodes
+                    .index_select
+                    .remove(&index_select_compute_node_key);
+            }
             AnyComputeKey::QMatMul(q_mat_mul_compute_node_key) => {
                 self.nodes.q_mat_mul.remove(&q_mat_mul_compute_node_key);
             }
             AnyComputeKey::Tensor(tensor_compute_node_key) => {
                 self.nodes.tensor.remove(&tensor_compute_node_key);
+            }
+            AnyComputeKey::Dequantize(dequantize_compute_key) => {
+                self.nodes.dequanitze.remove(&dequantize_compute_key);
             }
         }
     }

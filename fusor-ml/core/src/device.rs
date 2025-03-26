@@ -11,7 +11,7 @@ pub struct Device {
 }
 
 impl Device {
-    pub async fn new() -> Result<Self, wgpu::RequestDeviceError> {
+    pub async fn new() -> Result<Self, crate::Error> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
         let adapter = instance.request_adapter(&Default::default()).await.unwrap();
         let (device, queue) = adapter

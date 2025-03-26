@@ -6,7 +6,7 @@ use criterion::BatchSize;
 use criterion::BenchmarkId;
 use criterion::Criterion;
 use criterion::{criterion_group, criterion_main};
-use fusor_ml_core::{Device, Tensor};
+use fusor_core::{Device, Tensor};
 use futures::executor::block_on;
 
 use criterion::async_executor::FuturesExecutor;

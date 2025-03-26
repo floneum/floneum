@@ -4,8 +4,8 @@ use std::time::Duration;
 use candle_core::MetalDevice;
 use candle_core::backend::BackendDevice;
 use criterion::BatchSize;
-use fusor_ml_core::QMatrix;
-use fusor_ml_core::{Device, PerformanceQueries, Tensor};
+use fusor_core::QMatrix;
+use fusor_core::{Device, PerformanceQueries, Tensor};
 use futures::executor::block_on;
 
 use criterion::BenchmarkId;
@@ -48,7 +48,7 @@ fn qmatmul(c: &mut Criterion) {
             let q_matrix_metadata = metadata.tensor_infos.get("blk.0.attn_q.weight").unwrap();
 
             let q_matrix = QMatrix::read(
-                device.wgpu_device(),
+                &device,
                 q_matrix_metadata,
                 &mut reader,
                 metadata.tensor_data_offset,

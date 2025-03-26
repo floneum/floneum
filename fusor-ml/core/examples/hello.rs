@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use fusor_ml_core::*;
+use fusor_core::*;
 
 #[tokio::main]
 async fn main() {

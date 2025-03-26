@@ -1,7 +1,8 @@
 use super::{
-    AnyComputeKey, ComputeGraphNodes, ElementWiseComputeNodeKey, MapLayoutComputeNodeKey,
-    MatMulComputeNodeKey, PairWiseComputeNodeKey, QMatMulComputeNodeKey, ReduceComputeNodeKey,
-    ResizeComputeNodeKey, SliceAssignComputeNodeKey, TensorComputeNodeKey,
+    AnyComputeKey, ComputeGraphNodes, DequantizeComputeKey, ElementWiseComputeNodeKey,
+    IndexSelectComputeNodeKey, MapLayoutComputeNodeKey, MatMulComputeNodeKey,
+    PairWiseComputeNodeKey, QMatMulComputeNodeKey, ReduceComputeNodeKey, ResizeComputeNodeKey,
+    SliceAssignComputeNodeKey, TensorComputeNodeKey,
 };
 
 pub(crate) trait VisitComputeGraph: Sized {
@@ -31,8 +32,14 @@ pub(crate) trait VisitComputeGraph: Sized {
             AnyComputeKey::SliceAssign(slice_assign_compute_node_key) => {
                 self.visit_slice_assign(graph, slice_assign_compute_node_key);
             }
+            AnyComputeKey::IndexSelect(index_select_compute_node_key) => {
+                self.visit_index_select(graph, index_select_compute_node_key);
+            }
             AnyComputeKey::Tensor(tensor_compute_node_key) => {
                 self.visit_tensor(graph, tensor_compute_node_key);
+            }
+            AnyComputeKey::Dequantize(dequantize_compute_node_key) => {
+                self.visit_dequantize(graph, dequantize_compute_node_key);
             }
         }
     }
@@ -69,8 +76,16 @@ pub(crate) trait VisitComputeGraph: Sized {
         visit_slice_assign(self, graph, key);
     }
 
+    fn visit_index_select(&mut self, graph: &ComputeGraphNodes, key: IndexSelectComputeNodeKey) {
+        visit_index_select(self, graph, key);
+    }
+
     fn visit_tensor(&mut self, graph: &ComputeGraphNodes, key: TensorComputeNodeKey) {
         visit_tensor(self, graph, key);
+    }
+
+    fn visit_dequantize(&mut self, graph: &ComputeGraphNodes, key: DequantizeComputeKey) {
+        visit_dequantize(self, graph, key);
     }
 }
 
@@ -160,9 +175,28 @@ pub(crate) fn visit_slice_assign(
     visitor.visit(graph, value);
 }
 
+pub(crate) fn visit_index_select(
+    visitor: &mut impl VisitComputeGraph,
+    graph: &ComputeGraphNodes,
+    key: IndexSelectComputeNodeKey,
+) {
+    let operation = graph.index_select.get(&key).unwrap();
+    let input = operation.input;
+    visitor.visit(graph, input);
+    let index = operation.indexes;
+    visitor.visit(graph, index);
+}
+
 pub(crate) fn visit_tensor(
     _: &mut impl VisitComputeGraph,
     _: &ComputeGraphNodes,
     _: TensorComputeNodeKey,
+) {
+}
+
+pub(crate) fn visit_dequantize(
+    _: &mut impl VisitComputeGraph,
+    _: &ComputeGraphNodes,
+    _: DequantizeComputeKey,
 ) {
 }

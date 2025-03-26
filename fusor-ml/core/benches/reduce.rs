@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use criterion::BatchSize;
-use fusor_ml_core::Sum;
-use fusor_ml_core::{Device, Tensor};
+use fusor_core::Sum;
+use fusor_core::{Device, Tensor};
 use futures::executor::block_on;
 use ndarray::Axis;
 

@@ -1,8 +1,8 @@
 // Make sure in-place opts don't change immutable tensors
 
-use fusor_ml_core::Device;
-use fusor_ml_core::Sum;
-use fusor_ml_core::Tensor;
+use fusor_core::Device;
+use fusor_core::Sum;
+use fusor_core::Tensor;
 
 #[tokio::test]
 async fn test_fused_cached_results() {

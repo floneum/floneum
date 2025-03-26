@@ -39,11 +39,11 @@ pub(crate) struct UntypedPairWiseKernel {
     post_element_wise: UntypedElementWiseKernel,
     dense_kernel: OnceLock<VisitTiledKernel>,
     sparse_kernel: OnceLock<VisitTiledKernel>,
-    input_datatype: DataTypeEnum,
 }
 
 impl UntypedPairWiseKernel {
-    pub fn new(function: PairWiseFunction, datatype: DataTypeEnum) -> Self {
+    pub fn new(function: PairWiseFunction) -> Self {
+        let datatype = function.datatype;
         Self {
             pre_element_wise: [
                 UntypedElementWiseKernel::empty(datatype),
@@ -53,7 +53,6 @@ impl UntypedPairWiseKernel {
             post_element_wise: UntypedElementWiseKernel::empty(datatype),
             dense_kernel: OnceLock::new(),
             sparse_kernel: OnceLock::new(),
-            input_datatype: datatype,
         }
     }
 
@@ -92,14 +91,16 @@ impl UntypedPairWiseKernel {
         assert_eq!(first.layout().shape(), second.layout().shape());
         let contiguous = first.layout().is_contiguous() && second.layout().is_contiguous();
         let rank = first.layout().rank();
-        let re_used_allocation_index = if self.input_datatype == self.output_datatype() {
-            if first.owned() && !first.layout().allocation_overlaps() {
-                Some(0)
-            } else if second.owned() && !second.layout().allocation_overlaps() {
-                Some(1)
-            } else {
-                None
-            }
+        let re_used_allocation_index = if first.datatype() == self.output_datatype()
+            && first.owned()
+            && !first.layout().allocation_overlaps()
+        {
+            Some(0)
+        } else if second.datatype() == self.output_datatype()
+            && second.owned()
+            && !second.layout().allocation_overlaps()
+        {
+            Some(1)
         } else {
             None
         };
@@ -110,7 +111,7 @@ impl UntypedPairWiseKernel {
         let pair_wise_function = OnceLock::new();
         let post_element_wise_functions = OnceLock::new();
         let create_kernel = || {
-            let mut datatypes = vec![self.input_datatype, self.input_datatype];
+            let mut datatypes = vec![first.datatype(), second.datatype()];
 
             if requires_new_tensor {
                 datatypes.push(self.output_datatype());
@@ -295,6 +296,35 @@ async fn test_pair_wise_add_f16() {
     assert_eq!(as_slice[[1, 1]], half::f16::from_f32(4. + 4.));
     assert_eq!(as_slice[[2, 0]], half::f16::from_f32(5. + 5.));
     assert_eq!(as_slice[[2, 1]], half::f16::from_f32(6. + 6.));
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_pair_wise_add_u32() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+    std::thread::spawn({
+        let device = device.clone();
+        move || loop {
+            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
+        }
+    });
+    let data_a = [[1_u32, 2_u32], [3_u32, 4_u32], [5_u32, 6_u32]];
+    let data_b = [[1_u32, 2_u32], [3_u32, 4_u32], [5_u32, 6_u32]];
+    let tensor_a = Tensor::new(&device, &data_a);
+    let tensor_b = Tensor::new(&device, &data_b);
+
+    let tensor = &tensor_a + &tensor_b;
+    let as_slice = tensor.as_slice().await.unwrap();
+    println!("{:?}", as_slice);
+
+    assert_eq!(as_slice[[0, 0]], 1 + 1);
+    assert_eq!(as_slice[[0, 1]], 2 + 2);
+    assert_eq!(as_slice[[1, 0]], 3 + 3);
+    assert_eq!(as_slice[[1, 1]], 4 + 4);
+    assert_eq!(as_slice[[2, 0]], 5 + 5);
+    assert_eq!(as_slice[[2, 1]], 6 + 6);
 }
 
 #[cfg(test)]

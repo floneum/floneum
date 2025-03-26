@@ -7,15 +7,19 @@ use std::{
 
 use bytemuck::{AnyBitPattern, NoUninit};
 use tabbycat::Graph;
-use wgpu::{BufferDescriptor, COPY_BUFFER_ALIGNMENT, util::DownloadBuffer};
+use wgpu::{
+    BufferDescriptor, COPY_BUFFER_ALIGNMENT,
+    util::{DeviceExt, DownloadBuffer},
+};
 
 use crate::{
     Device, ElementWiseOperation, MatMulOperation, PairWiseFunction, PairWiseOperation,
     QueryResults, ReduceFunction, ReduceOperation,
     compute_graph::{AnyComputeKey, ComputeGraph},
+    index_select::IndexSelectOperation,
     layout::Layout,
     map_layout::MapLayoutOperation,
-    quantized::{QMatMulOperation, QMatrix},
+    quantized::{QMatrix, matmul::QMatMulOperation},
     resize::ResizeOperation,
     slice_assign::SliceAssignOperation,
 };
@@ -39,6 +43,9 @@ pub trait DataType:
 
     fn zero() -> Self;
     fn one() -> Self;
+}
+
+pub trait FloatDataType: DataType {
     fn from_f32(value: f32) -> Self;
 }
 
@@ -52,7 +59,9 @@ impl DataType for f32 {
     fn one() -> Self {
         1.
     }
+}
 
+impl FloatDataType for f32 {
     fn from_f32(value: f32) -> Self {
         value
     }
@@ -68,9 +77,23 @@ impl DataType for half::f16 {
     fn one() -> Self {
         half::f16::from_f32(1.)
     }
+}
 
+impl FloatDataType for half::f16 {
     fn from_f32(value: f32) -> Self {
         half::f16::from_f32(value)
+    }
+}
+
+impl DataType for u32 {
+    const WGSL_TYPE: DataTypeEnum = DataTypeEnum::U32;
+
+    fn zero() -> Self {
+        0
+    }
+
+    fn one() -> Self {
+        1
     }
 }
 
@@ -79,6 +102,7 @@ impl DataType for half::f16 {
 pub enum DataTypeEnum {
     F32,
     F16,
+    U32,
 }
 
 impl DataTypeEnum {
@@ -86,6 +110,7 @@ impl DataTypeEnum {
         match self {
             DataTypeEnum::F32 => "f32",
             DataTypeEnum::F16 => "f16",
+            DataTypeEnum::U32 => "u32",
         }
     }
 
@@ -93,6 +118,7 @@ impl DataTypeEnum {
         match self {
             DataTypeEnum::F32 => size_of::<f32>(),
             DataTypeEnum::F16 => size_of::<half::f16>(),
+            DataTypeEnum::U32 => size_of::<u32>(),
         }
     }
 }
@@ -190,8 +216,8 @@ impl Drop for LazyTensorData {
 
 impl LazyTensorData {
     pub(crate) fn new(data: TensorData) -> Self {
-        let graph = ComputeGraph::new();
         let device = data.device.clone();
+        let graph = ComputeGraph::new(device.clone());
         let info = data.info.clone();
         let key = graph.create_tensor(data);
 
@@ -200,6 +226,20 @@ impl LazyTensorData {
             info: TensorInfo::new(info.shape().into(), info.datatype()),
             graph,
             key: key.into(),
+        }
+    }
+
+    pub(crate) fn from_parts(
+        device: Device,
+        graph: ComputeGraph,
+        info: TensorInfo,
+        key: AnyComputeKey,
+    ) -> Self {
+        Self {
+            device,
+            info,
+            graph,
+            key,
         }
     }
 
@@ -324,6 +364,20 @@ impl LazyTensorData {
         }
     }
 
+    pub(crate) fn index_select(&self, op: IndexSelectOperation) -> Self {
+        let device = self.device.clone();
+        let info = self.info.clone();
+        let graph = self.graph.clone();
+        let key = self.graph.create_index_select(op);
+
+        Self {
+            device,
+            info,
+            graph,
+            key: key.into(),
+        }
+    }
+
     pub(crate) fn materialize(&self) -> TensorData {
         self.graph.resolve(self.key, &self.device)
     }
@@ -381,6 +435,22 @@ impl TensorData {
             mapped_at_creation: false,
         });
         Self::new_from_buffer(device, buffer, shape, datatype)
+    }
+
+    pub(crate) fn new_splat<D: DataType>(device: &Device, shape: &[usize], data: D) -> Self {
+        let datatype = D::WGSL_TYPE;
+        let buffer = device
+            .wgpu_device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: bytemuck::bytes_of(&data),
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_SRC
+                    | wgpu::BufferUsages::COPY_DST,
+            });
+        let strides = (0..shape.len()).map(|_| 0).collect();
+        let layout = Layout::from_parts(0, shape.into(), strides);
+        Self::new_from_parts(device, buffer, layout, datatype)
     }
 
     fn new_inner<'a, D: DataType, I: Iterator<Item = &'a D>>(
@@ -560,6 +630,20 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         data.into_tensor(device)
     }
 
+    pub fn splat(device: &Device, value: D, shape: [usize; R]) -> Self {
+        Self {
+            data: LazyTensorData::new(TensorData::new_splat(device, &shape, value)),
+            datatype: PhantomData,
+        }
+    }
+
+    pub(crate) fn from_parts(data: LazyTensorData) -> Self {
+        Self {
+            data,
+            datatype: PhantomData,
+        }
+    }
+
     fn new_inner<'a, I: Iterator<Item = &'a D>>(
         device: &Device,
         data: I,
@@ -656,6 +740,15 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         let op = SliceAssignOperation::new(self.data.key, other.data.key, slices.into());
         Self {
             data: self.data.slice_assign(op),
+            datatype: PhantomData,
+        }
+    }
+
+    pub(crate) fn add_index_select(&self, dimension: usize, indexes: &Tensor<1, u32>) -> Self {
+        self.data.graph.merge(&indexes.data.graph);
+        let op = IndexSelectOperation::new(self.data.key, indexes.data.key, dimension);
+        Self {
+            data: self.data.index_select(op),
             datatype: PhantomData,
         }
     }

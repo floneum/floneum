@@ -9,9 +9,8 @@ authors = ["Evan Almloff <evanalmloff@gmail.com>"]
 keywords = ["llm", "llama", "mistral", "agents", "nlp"]
 
 [dependencies]
-candle-core.workspace = true
-candle-nn.workspace = true
-candle-transformers.workspace = true
+fusor-core = { workspace = true }
+fusor-gguf = { workspace = true }
 tokenizers = { workspace = true }
 
 accelerate-src = { version = "0.3.2", optional = true }
@@ -46,30 +45,3 @@ kalosm-streams.workspace = true
 
 [features]
 default = []
-accelerate = [
-    "dep:accelerate-src",
-    "candle-core/accelerate",
-    "candle-nn/accelerate",
-    "candle-transformers/accelerate",
-]
-cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
-cudnn = ["candle-core/cudnn"]
-mkl = [
-    "dep:intel-mkl-src",
-    "candle-core/mkl",
-    "candle-nn/mkl",
-    "candle-transformers/mkl",
-]
-nccl = [
-    "cuda",
-    "cudarc/nccl",
-    "half/num-traits",
-    "half/use-intrinsics",
-    "half/rand_distr",
-]
-metal = [
-    "candle-core/metal",
-    "candle-nn/metal",
-    "candle-transformers/metal",
-    "kalosm-common/metal",
-]
