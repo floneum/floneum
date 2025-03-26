@@ -61,21 +61,7 @@ pub(super) fn extract_timestamps(
                 .to_vec2::<f32>()?,
         )?;
 
-        let jumps = std::iter::once(true)
-            .chain(
-                text_indices
-                    .iter()
-                    .zip(text_indices.iter().skip(1))
-                    .map(|(a, b)| (b - a) as usize == 1),
-            )
-            .zip(time_indices)
-            .filter_map(|(is_jump, time_index)| {
-                if is_jump {
-                    Some(time_index / (SAMPLE_RATE / (HOP_LENGTH * 2)) as f32)
-                } else {
-                    None
-                }
-            });
+        let jumps = text_jumps(&text_indices, &time_indices);
 
         Ok(jumps.collect())
     }))
@@ -218,10 +204,31 @@ fn median_filter(filter_width: NonZeroUsize, weights: Tensor) -> candle_core::Re
         .to_device(weights.device())
 }
 
+fn text_jumps<'a>(
+    text_indices: &'a [f32],
+    time_indices: &'a [f32],
+) -> impl Iterator<Item = f32> + 'a {
+    std::iter::once(true)
+        .chain(
+            text_indices
+                .windows(2)
+                .map(|window| (window[1] - window[0]) as usize == 1),
+        )
+        .zip(time_indices.iter())
+        .filter_map(|(is_jump, &time_index)| {
+            if is_jump {
+                Some(time_index / (SAMPLE_RATE / (HOP_LENGTH * 2)) as f32)
+            } else {
+                None
+            }
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use candle_core::{Device, Tensor};
+    use rand::Rng;
 
     // Basic test for dynamic_time_warp function
     #[test]
@@ -344,6 +351,34 @@ mod tests {
 
         // Ideally should follow the diagonal path
         assert_eq!(xs.len(), 3, "Diagonal path length is 3");
+    }
+
+    // Test DTW algorithm with different path selection strategies
+    #[test]
+    fn test_fuzz_dtw_timestamps() {
+        for _ in 0..1000 {
+            let mut rng = rand::thread_rng();
+            let size = rng.gen_range(1..100);
+            let path_matrix = (0..size)
+                .map(|_| {
+                    (0..size)
+                        .map(|_| rng.gen_range(0.0..1.0))
+                        .collect::<Vec<f32>>()
+                })
+                .collect::<Vec<Vec<f32>>>();
+
+            let text_token_count = path_matrix.len();
+
+            let (xs, ys) = dynamic_time_warp(path_matrix).unwrap();
+
+            let jumps: Vec<f32> = text_jumps(&xs, &ys).collect();
+
+            assert!(
+                    jumps.len() == text_token_count,
+                    "Jumps length should be exactly equal to text indices length. Text: {:?}, Time: {:?}, Jumps: {:?}",
+                    xs, ys, jumps
+                );
+        }
     }
 
     // Test conversion from DTW results to timestamps
@@ -577,21 +612,7 @@ mod tests {
             let time_indices = [0.0, 1.0, 2.0, 3.0, 4.0];
             let time_indices_len = time_indices.len();
 
-            let jumps: Vec<f32> = std::iter::once(true)
-                .chain(
-                    text_indices
-                        .windows(2)
-                        .map(|window| (window[1] - window[0]) as usize == 1),
-                )
-                .zip(time_indices.iter())
-                .filter_map(|(is_jump, &time_index)| {
-                    if is_jump {
-                        Some(time_index / (SAMPLE_RATE / (HOP_LENGTH * 2)) as f32)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
+            let jumps: Vec<f32> = text_jumps(&text_indices, &time_indices).collect();
 
             assert_eq!(
                 jumps.len(),
@@ -606,21 +627,7 @@ mod tests {
             let time_indices = [0.0, 2.0, 4.0, 5.0, 8.0];
             let time_indices_len = time_indices.len();
 
-            let jumps: Vec<f32> = std::iter::once(true)
-                .chain(
-                    text_indices
-                        .windows(2)
-                        .map(|window| (window[1] - window[0]) as usize == 1),
-                )
-                .zip(time_indices.iter())
-                .filter_map(|(is_jump, &time_index)| {
-                    if is_jump {
-                        Some(time_index / (SAMPLE_RATE / (HOP_LENGTH * 2)) as f32)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
+            let jumps: Vec<f32> = text_jumps(&text_indices, &time_indices).collect();
 
             assert!(
                 jumps.len() < time_indices_len,
@@ -644,21 +651,7 @@ mod tests {
             let text_indices: [f32; 0] = [];
             let time_indices: [f32; 0] = [];
 
-            let jumps: Vec<f32> = std::iter::once(true)
-                .chain(
-                    text_indices
-                        .windows(2)
-                        .map(|window| (window[1] - window[0]) as usize == 1),
-                )
-                .zip(time_indices.iter())
-                .filter_map(|(is_jump, &time_index)| {
-                    if is_jump {
-                        Some(time_index / (SAMPLE_RATE / (HOP_LENGTH * 2)) as f32)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
+            let jumps: Vec<f32> = text_jumps(&text_indices, &time_indices).collect();
 
             assert_eq!(jumps.len(), 0, "For empty indices, jumps should be empty");
         }
@@ -714,8 +707,8 @@ mod tests {
 
             for timestamps in &result {
                 assert!(
-                    timestamps.len() <= 1,
-                    "Single token alignment should produce at most 1 timestamp"
+                    timestamps.len() == 1,
+                    "Single token alignment should produce exactly 1 timestamp"
                 );
             }
         }
