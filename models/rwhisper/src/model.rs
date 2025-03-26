@@ -484,7 +484,18 @@ impl Decoder {
                 {
                     let timestamp = token_timestamps.as_ref().map(|timestamps| {
                         let start = timestamp_start.unwrap();
-                        let end = timestamps[index];
+                        // Defensive boundary check
+                        let end = if index < timestamps.len() {
+                            timestamps[index]
+                        } else {
+                            tracing::warn!(
+                                "Index out of bounds: timestamps.len()={}, index={}",
+                                timestamps.len(),
+                                index
+                            );
+                            // Use the last timestamp or start time as fallback value
+                            *timestamps.last().unwrap_or(&start)
+                        };
                         timestamp_start = Some(end);
                         start..end
                     });
