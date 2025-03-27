@@ -211,22 +211,21 @@ jobs:
           #   }
     # uses: actions/checkout@v4
     steps:
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-      - name: Rust Setup
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ env.TOOLCHAIN }}
           targets: ${{ matrix.platform.rust_target }}
           # llvm-tools-preview stuff is essential, breaks the build otherwise
           components: rust-src, llvm-tools-preview
-
       - name: Build
         run: |
           #rustup target add ${{matrix.platform.rust_target}}
           # --features rustler/staticlib
           cargo +nightly rustc -Zbuild-std --lib --crate-type staticlib --target=${{matrix.platform.rust_target}} -- $CARGO_OPTIMIZATION_FLAGS
           find . -name "*.a" -exec ls -lah {} \;
+          find . -name "*.a" -exec lipo -info {} \;
 
   test:
     if: false
