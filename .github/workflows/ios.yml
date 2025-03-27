@@ -56,6 +56,7 @@ jobs:
       TOOLCHAIN: nightly
       CARGO_OPTIMIZATION_FLAGS: "-C debuginfo=0 -C lto=off -C embed-bitcode=no -C opt-level=z -C codegen-units=1 -C strip=symbols -C link-arg=-Wl,-dead_strip -C link-arg=-Wl,--gc-sections"
     strategy:
+      fail-fast: false
       matrix:
         platform:
           - {
