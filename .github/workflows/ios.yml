@@ -226,58 +226,60 @@ jobs:
           cargo +nightly rustc -Zbuild-std --lib --crate-type staticlib --target=${{matrix.platform.rust_target}} -- $CARGO_OPTIMIZATION_FLAGS
           find . -name "*.a" -exec ls -lah {} \;
           find . -name "*.a" -exec lipo -info {} \;
+          cargo +nightly test --target ${{matrix.platform.rust_target}} --all --tests --features kalosm/language,kalosm/sound,kalosm/vision,kalosm/remote,kalosm/scrape,kalosm/metal --exclude fusor-ml-core
 
-  test:
-    # if: false
-    # && github.event.pull_request.draft == false
-    name: iOS Test Suite
-    runs-on: macos-latest
+  # test:
+  #   # if: false
+  #   # && github.event.pull_request.draft == false
+  #   name: iOS Test Suite
+  #   runs-on: macos-latest
 
-    strategy:
-      matrix:
-        platform:
-          - {
-              id: "ios",
-              name: "iOS",
-              sdk: iphoneos,
-              arch: arm64,
-              base_arch: ios,
-              openssl_prefix: "_build/ios-openssl/build/openssl.ios",
-              openssl_arch: "ios64-xcrun",
-              otp_arch: "aarch64-apple-ios",
-              rust_target: "aarch64-apple-ios",
-            }
-          - {
-              id: "ios_sim_arm64",
-              name: "iOS Simulator arm64",
-              sdk: iphonesimulator,
-              arch: arm64,
-              base_arch: ios_sim,
-              openssl_prefix: "_build/ios-openssl/build/openssl.iossim.arm64",
-              openssl_arch: "iossimulator-arm64-xcrun",
-              otp_arch: "aarch64-apple-iossimulator",
-              rust_target: "aarch64-apple-ios-sim",
-            }
-          - {
-              id: "ios_sim_x86_64",
-              name: "iOS Simulator x86_64",
-              sdk: iphonesimulator,
-              arch: x86_64,
-              base_arch: ios_sim,
-              openssl_prefix: "_build/ios-openssl/build/openssl.iossim.x86_64",
-              openssl_arch: "iossimulator-x86_64-xcrun",
-              otp_arch: "x86_64-apple-iossimulator",
-              rust_target: "x86_64-apple-ios",
-            }
-    environment:
-      name: OPENAI_API_KEY
-    steps:
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - uses: actions/checkout@v4
-      - name: Run tests
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: cargo test --target ${{matrix.platform.rust_target}} --all --tests --features kalosm/language,kalosm/sound,kalosm/vision,kalosm/remote,kalosm/scrape,kalosm/metal --exclude fusor-ml-core
+  #   strategy:
+  #     matrix:
+  #       platform:
+  #         - {
+  #             id: "ios",
+  #             name: "iOS",
+  #             sdk: iphoneos,
+  #             arch: arm64,
+  #             base_arch: ios,
+  #             openssl_prefix: "_build/ios-openssl/build/openssl.ios",
+  #             openssl_arch: "ios64-xcrun",
+  #             otp_arch: "aarch64-apple-ios",
+  #             rust_target: "aarch64-apple-ios",
+  #           }
+  #         - {
+  #             id: "ios_sim_arm64",
+  #             name: "iOS Simulator arm64",
+  #             sdk: iphonesimulator,
+  #             arch: arm64,
+  #             base_arch: ios_sim,
+  #             openssl_prefix: "_build/ios-openssl/build/openssl.iossim.arm64",
+  #             openssl_arch: "iossimulator-arm64-xcrun",
+  #             otp_arch: "aarch64-apple-iossimulator",
+  #             rust_target: "aarch64-apple-ios-sim",
+  #           }
+  #         - {
+  #             id: "ios_sim_x86_64",
+  #             name: "iOS Simulator x86_64",
+  #             sdk: iphonesimulator,
+  #             arch: x86_64,
+  #             base_arch: ios_sim,
+  #             openssl_prefix: "_build/ios-openssl/build/openssl.iossim.x86_64",
+  #             openssl_arch: "iossimulator-x86_64-xcrun",
+  #             otp_arch: "x86_64-apple-iossimulator",
+  #             rust_target: "x86_64-apple-ios",
+  #           }
+  #   environment:
+  #     name: OPENAI_API_KEY
+  #   steps:
+  #     - uses: dtolnay/rust-toolchain@stable
+  #     - uses: Swatinem/rust-cache@v2
+  #     - uses: actions/checkout@v4
+  #     - name: Run tests
+  #       env:
+  #         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+  #         ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  #         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+  #         # kalosm/remote,
+  #       run: cargo test --target ${{matrix.platform.rust_target}} --all --tests --features kalosm/language,kalosm/sound,kalosm/vision,kalosm/scrape,kalosm/metal --exclude fusor-ml-core
