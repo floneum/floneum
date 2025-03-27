@@ -48,47 +48,48 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build: 
+  build:
     name: iOS build
     runs-on: macos-latest
-    env: 
+
+    env:
       TOOLCHAIN: nightly
       CARGO_OPTIMIZATION_FLAGS: "-C debuginfo=0 -C lto=off -C embed-bitcode=no -C opt-level=z -C codegen-units=1 -C strip=symbols -C link-arg=-Wl,-dead_strip -C link-arg=-Wl,--gc-sections"
-    strategy: 
-      matrix: 
+    strategy:
+      matrix:
         platform:
           - {
-              id: 'ios',
-              name: 'iOS',
+              id: "ios",
+              name: "iOS",
               sdk: iphoneos,
               arch: arm64,
               base_arch: ios,
-              openssl_prefix: '_build/ios-openssl/build/openssl.ios',
-              openssl_arch: 'ios64-xcrun',
-              otp_arch: 'aarch64-apple-ios',
-              rust_target: 'aarch64-apple-ios',
+              openssl_prefix: "_build/ios-openssl/build/openssl.ios",
+              openssl_arch: "ios64-xcrun",
+              otp_arch: "aarch64-apple-ios",
+              rust_target: "aarch64-apple-ios",
             }
           - {
-              id: 'ios_sim_arm64',
-              name: 'iOS Simulator arm64',
+              id: "ios_sim_arm64",
+              name: "iOS Simulator arm64",
               sdk: iphonesimulator,
               arch: arm64,
               base_arch: ios_sim,
-              openssl_prefix: '_build/ios-openssl/build/openssl.iossim.arm64',
-              openssl_arch: 'iossimulator-arm64-xcrun',
-              otp_arch: 'aarch64-apple-iossimulator',
-              rust_target: 'aarch64-apple-ios-sim',
+              openssl_prefix: "_build/ios-openssl/build/openssl.iossim.arm64",
+              openssl_arch: "iossimulator-arm64-xcrun",
+              otp_arch: "aarch64-apple-iossimulator",
+              rust_target: "aarch64-apple-ios-sim",
             }
           - {
-              id: 'ios_sim_x86_64',
-              name: 'iOS Simulator x86_64',
+              id: "ios_sim_x86_64",
+              name: "iOS Simulator x86_64",
               sdk: iphonesimulator,
               arch: x86_64,
               base_arch: ios_sim,
-              openssl_prefix: '_build/ios-openssl/build/openssl.iossim.x86_64',
-              openssl_arch: 'iossimulator-x86_64-xcrun',
-              otp_arch: 'x86_64-apple-iossimulator',
-              rust_target: 'x86_64-apple-ios',
+              openssl_prefix: "_build/ios-openssl/build/openssl.iossim.x86_64",
+              openssl_arch: "iossimulator-x86_64-xcrun",
+              otp_arch: "x86_64-apple-iossimulator",
+              rust_target: "x86_64-apple-ios",
             }
 
           # - {
@@ -172,28 +173,28 @@ jobs:
           #   }
 
           - {
-              id: 'visionos',
-              name: 'visionOS',
+              id: "visionos",
+              name: "visionOS",
               sdk: xros,
               arch: arm64,
               base_arch: xros,
-              openssl_prefix: '_build/ios-openssl/build/openssl.xros',
-              openssl_arch: 'xros-xcrun',
-              otp_arch: 'aarch64-apple-visionos',
-              rust_target: 'aarch64-apple-visionos',
+              openssl_prefix: "_build/ios-openssl/build/openssl.xros",
+              openssl_arch: "xros-xcrun",
+              otp_arch: "aarch64-apple-visionos",
+              rust_target: "aarch64-apple-visionos",
               rust_is_3rd_tier: true,
             }
           - {
-              id: 'visionos_sim_arm64',
-              name: 'visionOS Simulator arm64',
+              id: "visionos_sim_arm64",
+              name: "visionOS Simulator arm64",
               sdk: xrsimulator,
               arch: arm64,
               base_arch: xrossim,
-              openssl_prefix: '_build/ios-openssl/build/openssl.xrossim.arm64',
-              openssl_arch: 'xrossimulator-xcrun',
+              openssl_prefix: "_build/ios-openssl/build/openssl.xrossim.arm64",
+              openssl_arch: "xrossimulator-xcrun",
               #otp_arch: 'aarch64-apple-visionos-sim',
-              otp_arch: 'aarch64-apple-visionossim',
-              rust_target: 'aarch64-apple-visionos-sim',
+              otp_arch: "aarch64-apple-visionossim",
+              rust_target: "aarch64-apple-visionos-sim",
               rust_is_3rd_tier: true,
             }
           # - {
@@ -208,20 +209,25 @@ jobs:
           #     rust_target: 'x86_64-apple-visionos',
           #     rust_is_3rd_tier: true,
           #   }
-      - uses: dtolnay/rust-toolchain@stable
-        with: 
+    # uses: actions/checkout@v4
+    steps:
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+      - name: Rust Setup
+        uses: dtolnay/rust-toolchain@stable
+        with:
           toolchain: ${{ env.TOOLCHAIN }}
           targets: ${{ matrix.platform.rust_target }}
           # llvm-tools-preview stuff is essential, breaks the build otherwise
           components: rust-src, llvm-tools-preview
-      - uses: Swatinem/rust-cache@v2
-      - uses: actions/checkout@v4
+
+      - name: Build
         run: |
           #rustup target add ${{matrix.platform.rust_target}}
           # --features rustler/staticlib
           cargo +nightly rustc -Zbuild-std --lib --crate-type staticlib --target=${{matrix.platform.rust_target}} -- $CARGO_OPTIMIZATION_FLAGS
           find . -name "*.a" -exec ls -lah {} \;
-      
+
   test:
     if: false
     # && github.event.pull_request.draft == false
