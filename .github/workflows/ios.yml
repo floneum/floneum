@@ -223,10 +223,11 @@ jobs:
         run: |
           #rustup target add ${{matrix.platform.rust_target}}
           # --features rustler/staticlib
-          cargo +nightly rustc -Zbuild-std --lib --crate-type staticlib --target=${{matrix.platform.rust_target}} -- $CARGO_OPTIMIZATION_FLAGS
+          # cargo +nightly rustc -Zbuild-std --lib --crate-type staticlib --target=${{matrix.platform.rust_target}} -- $CARGO_OPTIMIZATION_FLAGS
+          # requires onnxruntime kalosm/sound,
+          cargo +nightly test --target ${{matrix.platform.rust_target}} --all --tests --features kalosm/language,kalosm/vision,kalosm/remote,kalosm/scrape,kalosm/metal --exclude fusor-ml-core
           find . -name "*.a" -exec ls -lah {} \;
           find . -name "*.a" -exec lipo -info {} \;
-          cargo +nightly test --target ${{matrix.platform.rust_target}} --all --tests --features kalosm/language,kalosm/sound,kalosm/vision,kalosm/remote,kalosm/scrape,kalosm/metal --exclude fusor-ml-core
 
   # test:
   #   # if: false
