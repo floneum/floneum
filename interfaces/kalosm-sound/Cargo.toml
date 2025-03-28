@@ -34,7 +34,7 @@ ort-sys = { version = "=2.0.0-rc.4", optional = true }
 nnnoiseless = { version = "0.5.1", optional = true }
 
 [features]
-default = ["voice_detection", "denoise"]
+default = ["denoise"]
 metal = ["candle-core/metal", "rwhisper/accelerate", "rwhisper/metal"]
 cuda = ["candle-core/cuda", "rwhisper/cuda", "rwhisper/cudnn"]
 mkl = ["candle-core/mkl", "rwhisper/mkl"]
