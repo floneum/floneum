@@ -74,7 +74,6 @@ tokio = { version = "1", features = ["full"] }
 
 [dev-dependencies.kalosm]
 features = [
-    "sound",
     "language",
     "vision",
     "remote",

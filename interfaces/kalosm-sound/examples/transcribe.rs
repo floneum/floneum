@@ -14,7 +14,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let stream = mic.stream();
 
     // Chunk that audio into chunks based on voice activity
-    let vad = stream.voice_activity_stream().rechunk_voice_activity();
+    let vad = stream.denoise_and_detect_voice_activity().rechunk_voice_activity();
 
     // And then transcribe the audio into text
     let mut text_stream = vad.transcribe(model);

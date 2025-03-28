@@ -1,0 +1,287 @@
+name: iOS pipeline
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - interfaces/*/src/**
+      - interfaces/*/examples/**
+      - interfaces/*/Cargo.toml
+      - models/*/src/**
+      - models/*/examples/**
+      - models/*/Cargo.toml
+      - floneum/*/src/**
+      - floneum/*/examples/**
+      - floneum/*/Cargo.toml
+      - fusor-ml/*/src/**
+      - fusor-ml/*/examples/**
+      - fusor-ml/*/Cargo.toml
+      - src/**
+      - .github/**
+      - Cargo.toml
+
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - main
+    paths:
+      - interfaces/*/src/**
+      - interfaces/*/examples/**
+      - interfaces/*/Cargo.toml
+      - models/*/src/**
+      - models/*/examples/**
+      - models/*/Cargo.toml
+      - floneum/*/src/**
+      - floneum/*/examples/**
+      - floneum/*/Cargo.toml
+      - fusor-ml/*/src/**
+      - fusor-ml/*/examples/**
+      - fusor-ml/*/Cargo.toml
+      - src/**
+      - .github/**
+      - Cargo.toml
+
+# workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: iOS build
+    runs-on: macos-latest
+
+    env:
+      TOOLCHAIN: nightly
+      CARGO_OPTIMIZATION_FLAGS: "-C debuginfo=0 -C lto=off -C embed-bitcode=no -C opt-level=z -C codegen-units=1 -C strip=symbols -C link-arg=-Wl,-dead_strip -C link-arg=-Wl,--gc-sections"
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - {
+              id: "ios",
+              name: "iOS",
+              sdk: iphoneos,
+              arch: arm64,
+              base_arch: ios,
+              openssl_prefix: "_build/ios-openssl/build/openssl.ios",
+              openssl_arch: "ios64-xcrun",
+              otp_arch: "aarch64-apple-ios",
+              rust_target: "aarch64-apple-ios",
+            }
+          - {
+              id: "ios_sim_arm64",
+              name: "iOS Simulator arm64",
+              sdk: iphonesimulator,
+              arch: arm64,
+              base_arch: ios_sim,
+              openssl_prefix: "_build/ios-openssl/build/openssl.iossim.arm64",
+              openssl_arch: "iossimulator-arm64-xcrun",
+              otp_arch: "aarch64-apple-iossimulator",
+              rust_target: "aarch64-apple-ios-sim",
+            }
+          - {
+              id: "ios_sim_x86_64",
+              name: "iOS Simulator x86_64",
+              sdk: iphonesimulator,
+              arch: x86_64,
+              base_arch: ios_sim,
+              openssl_prefix: "_build/ios-openssl/build/openssl.iossim.x86_64",
+              openssl_arch: "iossimulator-x86_64-xcrun",
+              otp_arch: "x86_64-apple-iossimulator",
+              rust_target: "x86_64-apple-ios",
+            }
+
+          # - {
+          #     id: 'watchos',
+          #     name: 'watchOS',
+          #     sdk: watchos,
+          #     arch: arm64,
+          #     base_arch: watchos,
+          #     openssl_prefix: '_build/ios-openssl/build/openssl.watchos',
+          #     #openssl_arch: 'watchos-arm64_32-xcrun',
+          #     openssl_arch: 'watchos-arm64-xcrun',
+          #     otp_arch: 'aarch64-apple-watchos',
+          #     rust_target: 'aarch64-apple-watchos',
+          #     rust_is_3rd_tier: true,
+          #     erl-opts: ' --disable-hipe --disable-sctp --disable-vm-probes --without-termcap --without-odbc --disable-jit',
+          #   }
+          # - {
+          #     id: 'watchos_sim',
+          #     name: 'watchOS Simulator',
+          #     sdk: watchsimulator,
+          #     arch: x86_64,
+          #     base_arch: watchos_sim,
+          #     openssl_prefix: '_build/ios-openssl/build/openssl.watchossim.x86_64',
+          #     openssl_arch: 'watchsimulator-xcrun',
+          #     otp_arch: 'x86_64-apple-watchossim',
+          #     rust_target: 'x86_64-apple-watchos-sim',
+          #     rust_is_3rd_tier: true,
+          #     erl-opts: ' --disable-hipe --disable-sctp --disable-vm-probes --without-termcap --without-odbc --disable-jit',
+          #   }
+          # - {
+          #     id: 'watchos_sim',
+          #     name: 'watchOS Simulator',
+          #     sdk: watchsimulator,
+          #     arch: arm64,
+          #     base_arch: watchos_sim,
+          #     openssl_prefix: '_build/ios-openssl/build/openssl.watchossim.arm64',
+          #     openssl_arch: 'watchsimulator-xcrun',
+          #     otp_arch: 'aarch64-apple-watchossim',
+          #     rust_target: 'aarch64-apple-watchos-sim',
+          #     rust_is_3rd_tier: true,
+          #     erl-opts: ' --disable-hipe --disable-sctp --disable-vm-probes --without-termcap --without-odbc --disable-jit',
+          #   }
+          # - {
+          #     id: 'tvos',
+          #     name: 'tvOS',
+          #     sdk: appletvos,
+          #     arch: arm64,
+          #     base_arch: tvos,
+          #     openssl_prefix: '_build/ios-openssl/build/openssl.tvos',
+          #     openssl_arch: 'tvos-xcrun',
+          #     otp_arch: 'aarch64-apple-tvos',
+          #     rust_target: 'aarch64-apple-tvos',
+          #     rust_is_3rd_tier: true,
+          #     erl-opts: ' --disable-hipe --disable-sctp --disable-vm-probes --without-termcap --without-odbc --disable-jit',
+          #   }
+          # - {
+          #     id: 'tvos_sim_arm64',
+          #     name: 'tvOS Simulator arm64',
+          #     sdk: appletvsimulator,
+          #     arch: arm64,
+          #     base_arch: tvos_sim,
+          #     openssl_prefix: '_build/ios-openssl/build/openssl.tvossim.arm64',
+          #     openssl_arch: 'tvossimulator-xcrun',
+          #     otp_arch: 'aarch64-apple-tvossimulator',
+          #     rust_target: 'aarch64-apple-tvos-sim',
+          #     rust_is_3rd_tier: true,
+          #     erl-opts: ' --disable-hipe --disable-sctp --disable-vm-probes --without-termcap --without-odbc --disable-jit',
+          #   }
+          # - {
+          #     id: 'tvos_sim_x86_64',
+          #     name: 'tvOS Simulator x86_64',
+          #     sdk: appletvsimulator,
+          #     arch: x86_64,
+          #     base_arch: tvos_sim,
+          #     openssl_prefix: '_build/ios-openssl/build/openssl.tvossim.x86_64',
+          #     openssl_arch: 'tvossimulator-x86_64-xcrun',
+          #     otp_arch: 'x86_64-apple-tvos',
+          #     rust_target: 'x86_64-apple-tvos',
+          #     rust_is_3rd_tier: true,
+          #     erl-opts: ' --disable-hipe --disable-sctp --disable-vm-probes --without-termcap --without-odbc --disable-jit',
+          #   }
+
+          # - {
+          #     id: "visionos",
+          #     name: "visionOS",
+          #     sdk: xros,
+          #     arch: arm64,
+          #     base_arch: xros,
+          #     openssl_prefix: "_build/ios-openssl/build/openssl.xros",
+          #     openssl_arch: "xros-xcrun",
+          #     otp_arch: "aarch64-apple-visionos",
+          #     rust_target: "aarch64-apple-visionos",
+          #     rust_is_3rd_tier: true,
+          #   }
+          # - {
+          #     id: "visionos_sim_arm64",
+          #     name: "visionOS Simulator arm64",
+          #     sdk: xrsimulator,
+          #     arch: arm64,
+          #     base_arch: xrossim,
+          #     openssl_prefix: "_build/ios-openssl/build/openssl.xrossim.arm64",
+          #     openssl_arch: "xrossimulator-xcrun",
+          #     #otp_arch: 'aarch64-apple-visionos-sim',
+          #     otp_arch: "aarch64-apple-visionossim",
+          #     rust_target: "aarch64-apple-visionos-sim",
+          #     rust_is_3rd_tier: true,
+          #   }
+          # - {
+          #     id: 'visionos_sim_x86_64',
+          #     name: 'visionOS Simulator x86_64',
+          #     sdk: xrsimulator,
+          #     arch: x86_64,
+          #     base_arch: xrossim,
+          #     openssl_prefix: '_build/ios-openssl/build/openssl.xrossim.x86_64',
+          #     openssl_arch: 'xrossimulator-xcrun',
+          #     otp_arch: 'x86_64-apple-visionos',
+          #     rust_target: 'x86_64-apple-visionos',
+          #     rust_is_3rd_tier: true,
+          #   }
+    # uses: actions/checkout@v4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.TOOLCHAIN }}
+          targets: ${{ matrix.platform.rust_target }}
+          # llvm-tools-preview stuff is essential, breaks the build otherwise
+          components: rust-src, llvm-tools-preview
+      - name: Build
+        run: |
+          #rustup target add ${{matrix.platform.rust_target}}
+          # --features rustler/staticlib
+          # cargo +nightly rustc -Zbuild-std --lib --crate-type staticlib --target=${{matrix.platform.rust_target}} -- $CARGO_OPTIMIZATION_FLAGS
+          # requires onnxruntime kalosm/sound,
+          cargo +nightly -Zbuild-std test --target ${{matrix.platform.rust_target}} --all --tests --features kalosm/language,kalosm/sound,kalosm/vision,kalosm/remote,kalosm/scrape,kalosm/metal --exclude fusor-ml-core
+          find . -name "*.a" -exec ls -lah {} \;
+          find . -name "*.a" -exec lipo -info {} \;
+
+  # test:
+  #   # if: false
+  #   # && github.event.pull_request.draft == false
+  #   name: iOS Test Suite
+  #   runs-on: macos-latest
+
+  #   strategy:
+  #     matrix:
+  #       platform:
+  #         - {
+  #             id: "ios",
+  #             name: "iOS",
+  #             sdk: iphoneos,
+  #             arch: arm64,
+  #             base_arch: ios,
+  #             openssl_prefix: "_build/ios-openssl/build/openssl.ios",
+  #             openssl_arch: "ios64-xcrun",
+  #             otp_arch: "aarch64-apple-ios",
+  #             rust_target: "aarch64-apple-ios",
+  #           }
+  #         - {
+  #             id: "ios_sim_arm64",
+  #             name: "iOS Simulator arm64",
+  #             sdk: iphonesimulator,
+  #             arch: arm64,
+  #             base_arch: ios_sim,
+  #             openssl_prefix: "_build/ios-openssl/build/openssl.iossim.arm64",
+  #             openssl_arch: "iossimulator-arm64-xcrun",
+  #             otp_arch: "aarch64-apple-iossimulator",
+  #             rust_target: "aarch64-apple-ios-sim",
+  #           }
+  #         - {
+  #             id: "ios_sim_x86_64",
+  #             name: "iOS Simulator x86_64",
+  #             sdk: iphonesimulator,
+  #             arch: x86_64,
+  #             base_arch: ios_sim,
+  #             openssl_prefix: "_build/ios-openssl/build/openssl.iossim.x86_64",
+  #             openssl_arch: "iossimulator-x86_64-xcrun",
+  #             otp_arch: "x86_64-apple-iossimulator",
+  #             rust_target: "x86_64-apple-ios",
+  #           }
+  #   environment:
+  #     name: OPENAI_API_KEY
+  #   steps:
+  #     - uses: dtolnay/rust-toolchain@stable
+  #     - uses: Swatinem/rust-cache@v2
+  #     - uses: actions/checkout@v4
+  #     - name: Run tests
+  #       env:
+  #         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+  #         ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  #         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+  #         # kalosm/remote,
+  #       run: cargo test --target ${{matrix.platform.rust_target}} --all --tests --features kalosm/language,kalosm/sound,kalosm/vision,kalosm/scrape,kalosm/metal --exclude fusor-ml-core

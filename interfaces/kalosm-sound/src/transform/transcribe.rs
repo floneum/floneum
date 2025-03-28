@@ -1,6 +1,6 @@
 use rwhisper::ChunkedTranscriptionTask;
 
-use super::voice_audio_detector::*;
+use super::denoise::*;
 use super::voice_audio_detector_ext::*;
 use crate::AsyncSource;
 
@@ -32,10 +32,11 @@ pub trait AsyncSourceTranscribeExt: AsyncSource + Unpin + Send + Sized + 'static
     fn transcribe(
         self,
         model: rwhisper::Whisper,
-    ) -> ChunkedTranscriptionTask<VoiceActivityRechunkerStream<VoiceActivityDetectorStream<Self>>>
+    ) -> ChunkedTranscriptionTask<VoiceActivityRechunkerStream<DenoisedStream<Self>>>
     {
         rwhisper::TranscribeChunkedAudioStreamExt::transcribe(
-            self.voice_activity_stream().rechunk_voice_activity(),
+            self.denoise_and_detect_voice_activity()
+                .rechunk_voice_activity(),
             model,
         )
     }
