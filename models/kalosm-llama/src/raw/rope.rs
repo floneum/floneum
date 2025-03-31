@@ -1,16 +1,16 @@
 use std::f32::consts::PI;
 
 use super::LlamaConfig;
-use candle_core::{DType, Device, Tensor};
+use fusor_core::{Device, Tensor};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RopeCache {
-    sin: Tensor,
-    cos: Tensor,
+    sin: Tensor<2, f32>,
+    cos: Tensor<2, f32>,
 }
 
 impl RopeCache {
-    pub fn new(config: &LlamaConfig, dtype: DType, device: &Device) -> candle_core::Result<Self> {
+    pub fn new(config: &LlamaConfig, device: &Device) -> fusor_core::Result<Self> {
         let mut inverse_frequency = (0..config.head_dimension)
             .step_by(2)
             .map(|i| {
@@ -40,124 +40,105 @@ impl RopeCache {
         }
         let inverse_frequency_len = inverse_frequency.len();
         let mut inverse_frequency =
-            Tensor::from_vec(inverse_frequency, (1, inverse_frequency_len), device)?
-                .to_dtype(dtype)?;
+            Tensor::new(device, &inverse_frequency).reshape([1, inverse_frequency_len]);
         if let Some(weight) = &config.rope_freq_weight {
-            inverse_frequency = inverse_frequency.mul(&weight.reshape((1, ()))?)?;
+            inverse_frequency = inverse_frequency * weight.reshape([1, inverse_frequency_len]);
         }
 
         let llama_context_length_indices =
-            Tensor::arange(0f32, config.context_length as f32, device)?
-                .reshape((config.context_length, 1))?
-                .to_dtype(dtype)?;
+            Tensor::arange(device, 0f32, config.context_length as f32)
+                .reshape([config.context_length, 1]);
 
-        let outer_product = llama_context_length_indices.matmul(&inverse_frequency)?;
+        let outer_product = llama_context_length_indices.mat_mul(&inverse_frequency);
 
-        let sin = outer_product.sin()?;
-        let cos = outer_product.cos()?;
+        let sin = outer_product.sin();
+        let cos = outer_product.cos();
 
         Ok(Self { sin, cos })
     }
 
     fn forward_with_embed(
         &self,
-        q: &Tensor,
-        k: &Tensor,
+        q: Tensor<3, f32>,
+        k: Tensor<3, f32>,
         start_pos: usize,
-        apply_rotary_emb: fn(&Tensor, &Tensor, &Tensor) -> candle_core::Result<Tensor>,
-    ) -> candle_core::Result<(Tensor, Tensor)> {
-        let apply_rotary_emb = |sin: &Tensor, cos: &Tensor, x: &Tensor, index_pos| {
-            let (_b_sz, _n_head, seq_len, _n_embd) = x.dims4()?;
-            let cos = cos.narrow(0, index_pos, seq_len)?;
-            let sin = sin.narrow(0, index_pos, seq_len)?;
-            apply_rotary_emb(&x.contiguous()?, &cos, &sin)
-        };
-        let device = q.device();
-        let (q, k) = if matches!(device, Device::Cpu) {
-            std::thread::scope(|s| {
-                let q = s.spawn(|| apply_rotary_emb(&self.sin, &self.cos, q, start_pos));
-                let k = apply_rotary_emb(&self.sin, &self.cos, k, start_pos)?;
-                candle_core::Result::Ok((
-                    q.join()
-                        .map_err(|e| candle_core::Error::Msg(format!("Error in q: {:?}", e)))??,
-                    k,
-                ))
-            })?
-        } else {
-            let q = apply_rotary_emb(&self.sin, &self.cos, q, start_pos)?;
-            let k = apply_rotary_emb(&self.sin, &self.cos, k, start_pos)?;
-            (q, k)
-        };
+        apply_rotary_emb: fn(Tensor<3, f32>, Tensor<2, f32>, Tensor<2, f32>) -> Tensor<3, f32>,
+    ) -> (Tensor<3, f32>, Tensor<3, f32>) {
+        let apply_rotary_emb =
+            |sin: &Tensor<2, f32>, cos: &Tensor<2, f32>, x: Tensor<3, f32>, index_pos| {
+                let [_n_head, seq_len, _n_embd] = *x.shape();
+                let cos = cos.narrow(0, index_pos, seq_len);
+                let sin = sin.narrow(0, index_pos, seq_len);
+                apply_rotary_emb(x, cos, sin)
+            };
 
-        Ok((q, k))
+        let q = apply_rotary_emb(&self.sin, &self.cos, q, start_pos);
+        let k = apply_rotary_emb(&self.sin, &self.cos, k, start_pos);
+        (q, k)
     }
 
     pub fn forward(
         &self,
-        q: &Tensor,
-        k: &Tensor,
+        q: Tensor<3, f32>,
+        k: Tensor<3, f32>,
         start_pos: usize,
-    ) -> candle_core::Result<(Tensor, Tensor)> {
-        self.forward_with_embed(q, k, start_pos, candle_nn::rotary_emb::rope)
+    ) -> (Tensor<3, f32>, Tensor<3, f32>) {
+        self.forward_with_embed(q, k, start_pos, Tensor::rope)
     }
 
     pub fn forward_i(
         &self,
-        q: &Tensor,
-        k: &Tensor,
+        q: Tensor<3, f32>,
+        k: Tensor<3, f32>,
         start_pos: usize,
-    ) -> candle_core::Result<(Tensor, Tensor)> {
-        self.forward_with_embed(q, k, start_pos, candle_nn::rotary_emb::rope_i)
+    ) -> (Tensor<3, f32>, Tensor<3, f32>) {
+        todo!()
     }
 }
 
-#[test]
-fn test_rope_cache() {
+#[cfg(test)]
+#[tokio::test]
+async fn test_rope_cache() {
+    use fusor_core::Sum;
+
     let config = LlamaConfig::mock_test();
-    let device = Device::cuda_if_available(0).unwrap();
-    let cache = RopeCache::new(&config, DType::F32, &device).unwrap();
+    let device = Device::new().await.unwrap();
+    let cache = RopeCache::new(&config, &device).unwrap();
+
+    println!("cache cos: {:?}", cache.cos.as_slice().await.unwrap());
+    println!("cache sin: {:?}", cache.sin.as_slice().await.unwrap());
 
     let expected_cos = Tensor::new(
-        vec![
-            vec![1.0000f32],
-            vec![0.5403f32],
-            vec![-0.4161f32],
-            vec![-0.9900f32],
-            vec![-0.6536f32],
-            vec![0.2837f32],
-        ],
         &device,
-    )
-    .unwrap();
+        vec![
+            &[1.0000f32],
+            &[0.5403f32],
+            &[-0.4161f32],
+            &[-0.9900f32],
+            &[-0.6536f32],
+            &[0.2837f32],
+        ],
+    );
     let expected_sin = Tensor::new(
-        vec![
-            vec![0.0000f32],
-            vec![0.8415f32],
-            vec![0.9093f32],
-            vec![0.1411f32],
-            vec![-0.7568f32],
-            vec![-0.9589f32],
-        ],
         &device,
-    )
-    .unwrap();
+        vec![
+            &[0.0000f32],
+            &[0.8415f32],
+            &[0.9093f32],
+            &[0.1411f32],
+            &[-0.7568f32],
+            &[-0.9589f32],
+        ],
+    );
 
-    let cos_error: f32 = (cache.cos - expected_cos)
-        .unwrap()
-        .abs()
-        .unwrap()
-        .sum_all()
-        .unwrap()
-        .to_scalar()
-        .unwrap();
+    let cos_difference = (cache.cos - expected_cos).abs();
+    println!("cos_difference: {:?}", cos_difference.as_slice().await.unwrap());
+
+    let cos_error: f32 = cos_difference.sum(0).sum(0).as_slice().await.unwrap()[[]];
     assert!(cos_error < 1e-2);
-    let sin_error: f32 = (cache.sin - expected_sin)
-        .unwrap()
-        .abs()
-        .unwrap()
-        .sum_all()
-        .unwrap()
-        .to_scalar()
-        .unwrap();
+
+    let sin_difference = (cache.sin - expected_sin).abs();
+    println!("sin_difference: {:?}", sin_difference.as_slice().await.unwrap());
+    let sin_error: f32 = sin_difference.sum(0).sum(0).as_slice().await.unwrap()[[]];
     assert!(sin_error < 1e-2);
 }

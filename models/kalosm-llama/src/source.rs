@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use fusor_gguf::GgufReadError;
 use kalosm_common::CacheError;
 use kalosm_model_types::{FileLoadingProgress, FileSource};
 
@@ -66,9 +67,18 @@ pub enum LlamaSourceError {
     /// An error occurred while loading the model (from the cache or downloading it).
     #[error("Failed to load the model: {0}")]
     Model(#[from] CacheError),
+    /// The model file is not a valid gguf file.
+    #[error("The model file is not a valid gguf file")]
+    InvalidGguf,
+    /// Could not find a specific entry in the gguf file.
+    #[error("Could not find {0} in the gguf file")]
+    MissingGgufEntry(String),
+    /// Failed to read the gguf file
+    #[error("Failed to read the gguf file: {0}")]
+    GgufRead(#[from] GgufReadError),
     /// An error occurred while loading the model onto the device.
     #[error("Failed to load the model onto the device: {0}")]
-    Device(#[from] candle_core::Error),
+    Device(#[from] fusor_core::Error),
     /// No stop token was found.
     #[error("No stop token was found")]
     NoStopToken,

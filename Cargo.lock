@@ -2434,22 +2434,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6d5a32815ae3f33302d95fdcb2ce17862f8c65363dcfd29360480ba1001fc9c"
 
 [[package]]
-name = "fusor-gguf"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "candle-core",
- "enumset",
- "half 2.5.0",
- "pretty_assertions",
- "reqwest 0.12.15",
- "rustc-hash 2.1.1",
- "thiserror 2.0.12",
- "tokio",
-]
-
-[[package]]
-name = "fusor-ml-core"
+name = "fusor-core"
 version = "0.1.0"
 dependencies = [
  "arc-swap",
@@ -2464,13 +2449,30 @@ dependencies = [
  "futures-util",
  "half 2.5.0",
  "ndarray 0.16.1",
+ "num-traits",
  "pretty_assertions",
  "rand 0.9.0",
  "reqwest 0.12.15",
  "rustc-hash 2.1.1",
  "tabbycat",
+ "thiserror 2.0.12",
  "tokio",
  "wgpu",
+]
+
+[[package]]
+name = "fusor-gguf"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "candle-core",
+ "enumset",
+ "half 2.5.0",
+ "pretty_assertions",
+ "reqwest 0.12.15",
+ "rustc-hash 2.1.1",
+ "thiserror 2.0.12",
+ "tokio",
 ]
 
 [[package]]
@@ -4072,10 +4074,9 @@ version = "0.4.1"
 dependencies = [
  "accelerate-src",
  "anyhow",
- "candle-core",
- "candle-nn",
- "candle-transformers",
  "cudarc 0.9.15",
+ "fusor-core",
+ "fusor-gguf",
  "half 2.5.0",
  "intel-mkl-src",
  "kalosm",
