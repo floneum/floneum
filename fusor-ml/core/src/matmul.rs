@@ -222,12 +222,7 @@ impl UntypedMatMul {
 #[tokio::test]
 async fn test_matmul() {
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+    
     let data_a = [[1.], [3.]];
     let data_b = [[1., 2.]];
     let tensor_a = Tensor::new(&device, &data_a);
@@ -246,12 +241,7 @@ async fn test_matmul() {
 #[tokio::test]
 async fn test_matmul_f16() {
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+    
     let data_a = [[half::f16::from_f32(1.)], [half::f16::from_f32(3.)]];
     let data_b = [[half::f16::from_f32(1.), half::f16::from_f32(2.)]];
     let tensor_a = Tensor::new(&device, &data_a);
@@ -273,12 +263,7 @@ async fn fuzz_matmul() {
     use rand::Rng;
 
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+    
     let max_size = 125;
     let iterations = if cfg!(debug_assertions) { 10 } else { 100 };
 

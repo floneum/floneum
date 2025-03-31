@@ -6,12 +6,7 @@ use fusor_core::Tensor;
 #[tokio::test]
 async fn test_add_const() {
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+    
 
     let data = [
         [[1., 2.], [1., 2.]],

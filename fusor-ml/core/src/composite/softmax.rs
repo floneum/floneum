@@ -22,12 +22,7 @@ async fn test_softmax() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+    
 
     let data = [1f32, -2., -3., 4., 5., -6.];
     let exp: [f32; 6] = std::array::from_fn(|i| data[i].exp());

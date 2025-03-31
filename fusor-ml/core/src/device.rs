@@ -23,9 +23,19 @@ impl Device {
             })
             .await?;
 
-        Ok(Self {
+        let device = Self {
             inner: Arc::new(DeviceInner { device, queue }),
-        })
+        };
+
+        #[cfg(not(target_arch = "wasm32"))]
+        std::thread::spawn({
+            let device = device.clone();
+            move || loop {
+                device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
+            }
+        });
+
+        Ok(device)
     }
 
     pub(crate) fn create_shader_module<'a>(

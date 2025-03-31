@@ -36,12 +36,6 @@ fn qmatmul(c: &mut Criterion) {
             let mut group = c.benchmark_group("qmatmul-wgpu");
 
             let device = block_on(Device::new()).unwrap();
-            std::thread::spawn({
-                let device = device.clone();
-                move || loop {
-                    device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-                }
-            });
 
             let mut reader = std::io::Cursor::new(&bytes);
             let metadata = GgufMetadata::read(&mut reader).unwrap();

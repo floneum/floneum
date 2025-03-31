@@ -20,12 +20,6 @@ fn bench_add_const(c: &mut Criterion) {
         let group = group.sample_size(20);
         for size in SIZES {
             let device = block_on(Device::new()).unwrap();
-            std::thread::spawn({
-                let device = device.clone();
-                move || loop {
-                    device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-                }
-            });
 
             group.bench_with_input(
                 BenchmarkId::new("add-const-wgpu", size),

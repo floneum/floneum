@@ -36,12 +36,7 @@ async fn test_fuzz_q_mat_mul() {
 
     let device = Device::new().await.unwrap();
 
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+    
 
     let url = "https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf";
     let bytes = reqwest::get(url).await.unwrap().bytes().await.unwrap();

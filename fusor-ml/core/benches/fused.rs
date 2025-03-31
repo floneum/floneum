@@ -21,12 +21,6 @@ fn fused(c: &mut Criterion) {
         let group = group.sample_size(20);
         for size in SIZES {
             let device = block_on(Device::new()).unwrap();
-            std::thread::spawn({
-                let device = device.clone();
-                move || loop {
-                    device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-                }
-            });
             let tensor = Tensor::new(&device, &vec![vec![1.; size]; size]);
             block_on(tensor.as_slice()).unwrap();
 
@@ -62,12 +56,6 @@ fn fused(c: &mut Criterion) {
         let group = group.sample_size(20);
         for size in SIZES {
             let device = block_on(Device::new()).unwrap();
-            std::thread::spawn({
-                let device = device.clone();
-                move || loop {
-                    device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-                }
-            });
             let tensor = Tensor::new(&device, &vec![vec![1.; size]; size]);
             block_on(tensor.as_slice()).unwrap();
 

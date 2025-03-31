@@ -22,12 +22,7 @@ async fn test_where_cond() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+    
     let data = Tensor::arange(&device, 0., 10.);
     let even = Tensor::arange(&device, 0, 10) % 2;
     let zero = Tensor::splat(&device, 0., *data.shape());

@@ -18,12 +18,6 @@ fn matmul(c: &mut Criterion) {
         let mut group = c.benchmark_group("matmul-wgpu");
 
         let device = block_on(Device::new()).unwrap();
-        std::thread::spawn({
-            let device = device.clone();
-            move || loop {
-                device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-            }
-        });
 
         for size in SIZES {
             let device = device.clone();
