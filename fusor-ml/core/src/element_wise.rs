@@ -7,14 +7,7 @@ use std::{
 use wgpu::CommandEncoder;
 
 use crate::{
-    Tensor,
-    compute_graph::AnyComputeKey,
-    kernel::{Function, GenericKernel},
-    layout::TILE_SIZE,
-    padded_tensor_size,
-    query::PerformanceQueries,
-    tensor::{DataType, DataTypeEnum, TensorData},
-    visit_tiled::VisitTiledKernel,
+    compute_graph::AnyComputeKey, kernel::{Function, GenericKernel}, layout::TILE_SIZE, padded_tensor_size, query::PerformanceQueries, tensor::{DataType, DataTypeEnum, TensorData}, visit_tiled::{MaybeQData, VisitTiledKernel}, Tensor
 };
 
 #[cfg(test)]
@@ -94,7 +87,7 @@ impl UntypedElementWiseKernel {
 
     pub fn run_with_query(
         &self,
-        tensor: TensorData,
+        tensor: MaybeQData,
         query: Option<&PerformanceQueries>,
         command_encoder: &mut CommandEncoder,
     ) -> TensorData {
@@ -106,28 +99,28 @@ impl UntypedElementWiseKernel {
 
         let functions = OnceLock::new();
         let create_kernel = || {
-            let mut datatypes = vec![tensor.datatype()];
+            let mut datatypes = vec![tensor.datatype().into()];
             if requires_new_tensor {
-                datatypes.push(output_type);
+                datatypes.push(output_type.into());
             }
             VisitTiledKernel::new(
                 rank as u32,
                 TILE_SIZE,
                 contiguous,
                 datatypes,
-                |kernel, indexes, tensors| match (indexes, tensors) {
-                    ([index], [tensor]) => {
+                |kernel, indexes, tensors, values| match (indexes, tensors, values) {
+                    ([index], [tensor], [value]) => {
                         let result = functions
                             .get_or_init(|| self.add_functions(kernel))
                             .iter()
-                            .fold(format!("{tensor}[{index}]"), |acc, f| f.call(vec![acc]));
+                            .fold(value.to_string(), |acc, f| f.call(vec![acc]));
                         format!("{tensor}[{index}] = {result};")
                     }
-                    ([in_index, out_index], [tensor, output]) => {
+                    ([_, out_index], [_, output], [value, _]) => {
                         let result = functions
                             .get_or_init(|| self.add_functions(kernel))
                             .iter()
-                            .fold(format!("{tensor}[{in_index}]"), |acc, f| f.call(vec![acc]));
+                            .fold(value.to_string(), |acc, f| f.call(vec![acc]));
                         format!("{output}[{out_index}] = {result};")
                     }
                     _ => panic!("invalid number of tensors"),
@@ -141,7 +134,7 @@ impl UntypedElementWiseKernel {
         };
         let mut output = None;
         let mut tensors = Vec::new();
-        tensors.push(tensor.clone());
+        tensors.push(tensor.clone().into());
         if requires_new_tensor {
             let output_buf = tensor
                 .device()
@@ -161,12 +154,15 @@ impl UntypedElementWiseKernel {
                 tensor.layout().shape(),
                 output_type,
             );
-            tensors.push(output_tensor.clone());
+            tensors.push(output_tensor.clone().into());
             output = Some(output_tensor);
         }
-        kernel.run_with_query(&tensors, query, command_encoder);
+        kernel.run_with_query(tensors, query, command_encoder);
 
-        output.unwrap_or(tensor)
+        output.unwrap_or(match tensor {
+            MaybeQData::Tensor(tensor) => tensor,
+            _ => unreachable!()
+        })
     }
 }
 

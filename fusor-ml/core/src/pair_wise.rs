@@ -7,13 +7,7 @@ use std::{
 use wgpu::CommandEncoder;
 
 use crate::{
-    ElementWiseFunction, Tensor, UntypedElementWiseKernel,
-    compute_graph::AnyComputeKey,
-    kernel::{Function, GenericKernel},
-    layout::TILE_SIZE,
-    query::PerformanceQueries,
-    tensor::{DataType, DataTypeEnum, TensorData},
-    visit_tiled::VisitTiledKernel,
+    compute_graph::AnyComputeKey, kernel::{Function, GenericKernel}, layout::TILE_SIZE, query::PerformanceQueries, tensor::{DataType, DataTypeEnum, TensorData}, visit_tiled::{MaybeQData, VisitTiledKernel}, ElementWiseFunction, Tensor, UntypedElementWiseKernel
 };
 
 #[derive(Clone)]
@@ -83,20 +77,20 @@ impl UntypedPairWiseKernel {
 
     pub fn run_with_query(
         &self,
-        first: TensorData,
-        second: TensorData,
+        first: MaybeQData,
+        second: MaybeQData,
         query: Option<&PerformanceQueries>,
         command_encoder: &mut CommandEncoder,
     ) -> TensorData {
         assert_eq!(first.layout().shape(), second.layout().shape());
         let contiguous = first.layout().is_contiguous() && second.layout().is_contiguous();
         let rank = first.layout().rank();
-        let re_used_allocation_index = if first.datatype() == self.output_datatype()
+        let re_used_allocation_index = if first.datatype() == self.output_datatype().into()
             && first.owned()
             && !first.layout().allocation_overlaps()
         {
             Some(0)
-        } else if second.datatype() == self.output_datatype()
+        } else if second.datatype() == self.output_datatype().into()
             && second.owned()
             && !second.layout().allocation_overlaps()
         {
@@ -111,10 +105,10 @@ impl UntypedPairWiseKernel {
         let pair_wise_function = OnceLock::new();
         let post_element_wise_functions = OnceLock::new();
         let create_kernel = || {
-            let mut datatypes = vec![first.datatype(), second.datatype()];
+            let mut datatypes = vec![first.datatype().into(), second.datatype().into()];
 
             if requires_new_tensor {
-                datatypes.push(self.output_datatype());
+                datatypes.push(self.output_datatype().into());
             }
 
             VisitTiledKernel::new(
@@ -122,12 +116,10 @@ impl UntypedPairWiseKernel {
                 TILE_SIZE,
                 contiguous,
                 datatypes,
-                |kernel, indexes, tensors| {
-                    let first_index = &indexes[0];
-                    let second_index = &indexes[1];
+                |kernel, indexes, tensors, values| {
+                    let first_value = &values[0];
+                    let second_value = &values[1];
                     let output_index = &indexes[output_tensor_index];
-                    let first_tensor = &tensors[0];
-                    let second_tensor = &tensors[1];
                     let out_tensor = &tensors[output_tensor_index];
                     let mut kernel_text = String::new();
                     let pre_element_wise_functions = pre_element_wise_functions.get_or_init(|| {
@@ -135,15 +127,11 @@ impl UntypedPairWiseKernel {
                     });
                     let first_value = pre_element_wise_functions[0]
                         .iter()
-                        .fold(format!("{first_tensor}[{first_index}]"), |acc, f| {
-                            f.call(vec![acc])
-                        });
+                        .fold(first_value.to_string(), |acc, f| f.call(vec![acc]));
                     writeln!(&mut kernel_text, "let a = {first_value};").unwrap();
                     let second_value = pre_element_wise_functions[1]
                         .iter()
-                        .fold(format!("{second_tensor}[{second_index}]"), |acc, f| {
-                            f.call(vec![acc])
-                        });
+                        .fold(second_value.to_string(), |acc, f| f.call(vec![acc]));
                     writeln!(&mut kernel_text, "let b = {second_value};").unwrap();
                     let pair_wise_function =
                         pair_wise_function.get_or_init(|| self.add_function(kernel));
@@ -163,17 +151,22 @@ impl UntypedPairWiseKernel {
         } else {
             self.sparse_kernel.get_or_init(create_kernel)
         };
-        let mut tensors = vec![first.clone(), second.clone()];
+        let mut tensors: Vec<crate::visit_tiled::MaybeQData> =
+            vec![first.clone().into(), second.into()];
         if requires_new_tensor {
             let output_tensor = TensorData::new_for_shape(
                 first.device(),
                 first.layout().shape(),
                 self.output_datatype(),
             );
-            tensors.push(output_tensor);
+            tensors.push(output_tensor.into());
         }
-        kernel.run_with_query(&tensors, query, command_encoder);
-        tensors[output_tensor_index].clone()
+        let output = match tensors[output_tensor_index].clone() {
+            crate::visit_tiled::MaybeQData::Tensor(tensor) => tensor,
+            crate::visit_tiled::MaybeQData::QMatrix(_) => unreachable!(),
+        };
+        kernel.run_with_query(tensors, query, command_encoder);
+        output
     }
 }
 

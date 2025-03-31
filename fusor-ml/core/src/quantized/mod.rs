@@ -113,9 +113,17 @@ impl QMatrix {
     pub(crate) fn shape(&self) -> &[usize] {
         &self.shape
     }
+
+    pub(crate) fn device(&self) -> &Device {
+        &self.device
+    }
+
+    pub(crate) fn datatype(&self) -> GgmlType {
+        self.datatype
+    }
 }
 
-fn dequantize_block(
+pub(crate) fn dequantize_block(
     kernel: &mut String,
     ty: GgmlType,
     chunk: String,

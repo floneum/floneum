@@ -1,12 +1,18 @@
 use crate::{DataType, Sum, Tensor};
 
-impl<D: DataType> Tensor<1, D> {
-    pub fn softmax(&self) -> Self {
+impl<const R: usize, const R2: usize, D: DataType> Tensor<R, D> where Tensor<R, D>: Sum<Output = Tensor<R2, D>> {
+    pub fn softmax(&self, dim: usize) -> Self {
         let size = *self.shape();
         let exp = self.exp();
-        let sum_all = exp.sum(0);
-        let sum_all: Tensor<1, D> = sum_all.broadcast(size);
+        let sum_all = exp.sum(dim);
+        let sum_all = sum_all.broadcast(size);
         exp / sum_all
+    }
+
+    pub fn softmax_last_dim(&self) -> Self {
+        let size = *self.shape();
+        let dim = size.len() - 1;
+        self.softmax(dim)
     }
 }
 
@@ -31,7 +37,7 @@ async fn test_softmax() {
 
     let tensor = Tensor::new(&device, &data);
 
-    let tensor = tensor.softmax();
+    let tensor = tensor.softmax(0);
 
     let output = tensor.as_slice().await.unwrap();
     println!("{:?}", output);

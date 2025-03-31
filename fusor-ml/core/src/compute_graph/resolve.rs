@@ -5,7 +5,7 @@ use crate::{
     UntypedReduceKernel, dequantize::UntypedDequantize, element_wise,
     index_select::UntypedIndexSelectKernel, matmul::UntypedMatMul,
     quantized::matmul::UntypedQMatMul, resize::UntypedResizeKernel,
-    slice_assign::UntypedSliceAssignKernel, tensor::TensorData,
+    slice_assign::UntypedSliceAssignKernel, tensor::TensorData, visit_tiled::MaybeQData,
 };
 
 use super::{
@@ -117,8 +117,8 @@ impl<'a> Resolver<'a> {
         let (functions, input) = self.collect_element_wise_ops(key);
         let input_cached = self.graph.cached_results.contains_key(&input);
 
-        // Merge into the output of the reduce kernel if possible and it isn't already cached
         if !input_cached {
+            // Merge into the output of the reduce kernel if possible and it isn't already cached
             if let AnyComputeKey::Reduce(key) = input {
                 return self.resolve_reduce_then(key, functions);
             }
@@ -135,7 +135,7 @@ impl<'a> Resolver<'a> {
         let input = self.resolve(input);
         let kernel = UntypedElementWiseKernel::new(functions, input.datatype());
         let query = PerformanceQueries::new(input.device());
-        let result = kernel.run_with_query(input, Some(&query), &mut *self.command_encoder);
+        let result = kernel.run_with_query(input.into(), Some(&query), &mut *self.command_encoder);
         self.graph.timing_information.insert(key.into(), query);
         result
     }
@@ -169,11 +169,35 @@ impl<'a> Resolver<'a> {
             Vec::new()
         };
 
-        let first = self.resolve(first_input);
-        let second = self.resolve(second_input);
+        let first: MaybeQData = if let AnyComputeKey::Dequantize(key) = first_input {
+            self.graph
+                .nodes
+                .dequanitze
+                .get(&key)
+                .unwrap()
+                .matrix
+                .clone()
+                .into()
+        } else {
+            self.resolve(first_input).into()
+        };
+        let second: MaybeQData = if let AnyComputeKey::Dequantize(key) = second_input {
+            self.graph
+                .nodes
+                .dequanitze
+                .get(&key)
+                .unwrap()
+                .matrix
+                .clone()
+                .into()
+        } else {
+            self.resolve(second_input).into()
+        };
         let mut kernel = UntypedPairWiseKernel::new(function);
-        let first_pre = UntypedElementWiseKernel::new(first_pre_element_wise, first.datatype());
-        let second_pre = UntypedElementWiseKernel::new(second_pre_element_wise, second.datatype());
+        let first_pre =
+            UntypedElementWiseKernel::new(first_pre_element_wise, first.dequantized_datatype());
+        let second_pre =
+            UntypedElementWiseKernel::new(second_pre_element_wise, second.dequantized_datatype());
         let pre_element_wise_output = first_pre.out_datatype();
         kernel.set_pre_element_wise([first_pre, second_pre]);
         kernel.set_post_element_wise(UntypedElementWiseKernel::new(then, pre_element_wise_output));

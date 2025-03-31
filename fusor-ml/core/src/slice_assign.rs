@@ -47,19 +47,18 @@ impl UntypedSliceAssignKernel {
         let datatype = target.datatype();
 
         let create_kernel = || {
-            let datatypes = vec![datatype; 2];
+            let datatypes = vec![datatype.into(); 2];
 
             VisitTiledKernel::new(
                 rank as u32,
                 TILE_SIZE,
                 false,
                 datatypes,
-                |_, indexes, tensors| {
+                |_, indexes, tensors, values| {
                     let target_index = &indexes[0];
-                    let value_index = &indexes[1];
                     let target_tensor = &tensors[0];
-                    let value_tensor = &tensors[1];
-                    format!("{target_tensor}[{target_index}] = {value_tensor}[{value_index}];")
+                    let value = &values[1];
+                    format!("{target_tensor}[{target_index}] = {value};")
                 },
             )
         };
@@ -67,7 +66,7 @@ impl UntypedSliceAssignKernel {
 
         let sliced = target.slice(&self.slices);
         assert_eq!(sliced.layout().shape(), value.layout().shape());
-        let tensors = vec![&sliced, value];
+        let tensors = vec![sliced.into(), value.into()];
         kernel.run_with_query(tensors, query, command_encoder);
         target.clone()
     }

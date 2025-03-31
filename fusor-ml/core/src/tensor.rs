@@ -789,6 +789,10 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         self.data.info.datatype()
     }
 
+    pub fn device(&self) -> &Device {
+        &self.data.device
+    }
+
     pub fn graphvis(&self) -> Graph {
         self.data.graphvis()
     }
