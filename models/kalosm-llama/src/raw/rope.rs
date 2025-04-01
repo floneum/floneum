@@ -11,6 +11,10 @@ pub struct RopeCache {
 
 impl RopeCache {
     pub fn new(config: &LlamaConfig, device: &Device) -> fusor_core::Result<Self> {
+        todo!()
+    }
+
+    pub async fn async_new(config: &LlamaConfig, device: &Device) -> Self {
         let mut inverse_frequency = (0..config.head_dimension)
             .step_by(2)
             .map(|i| {
@@ -41,20 +45,36 @@ impl RopeCache {
         let inverse_frequency_len = inverse_frequency.len();
         let mut inverse_frequency =
             Tensor::new(device, &inverse_frequency).reshape([1, inverse_frequency_len]);
+        println!(
+            "Inverse frequency: {:?}",
+            inverse_frequency.as_slice().await.unwrap()
+        );
         if let Some(weight) = &config.rope_freq_weight {
             inverse_frequency = inverse_frequency * weight.reshape([1, inverse_frequency_len]);
+            println!(
+                "Inverse frequency with weight: {:?}",
+                inverse_frequency.as_slice().await.unwrap()
+            );
         }
 
         let llama_context_length_indices =
             Tensor::arange(device, 0f32, config.context_length as f32)
                 .reshape([config.context_length, 1]);
+        println!(
+            "Llama context length indices: {:?}",
+            llama_context_length_indices.as_slice().await.unwrap()
+        );
 
         let outer_product = llama_context_length_indices.mat_mul(&inverse_frequency);
+        println!(
+            "Outer product: {:?}",
+            outer_product.as_slice().await.unwrap()
+        );
 
         let sin = outer_product.sin();
         let cos = outer_product.cos();
 
-        Ok(Self { sin, cos })
+        Self { sin, cos }
     }
 
     fn forward_with_embed(
@@ -103,7 +123,7 @@ async fn test_rope_cache() {
 
     let config = LlamaConfig::mock_test();
     let device = Device::new().await.unwrap();
-    let cache = RopeCache::new(&config, &device).unwrap();
+    let cache = RopeCache::async_new(&config, &device).await;
 
     println!("cache cos: {:?}", cache.cos.as_slice().await.unwrap());
     println!("cache sin: {:?}", cache.sin.as_slice().await.unwrap());
@@ -132,13 +152,19 @@ async fn test_rope_cache() {
     );
 
     let cos_difference = (cache.cos - expected_cos).abs();
-    println!("cos_difference: {:?}", cos_difference.as_slice().await.unwrap());
+    println!(
+        "cos_difference: {:?}",
+        cos_difference.as_slice().await.unwrap()
+    );
 
     let cos_error: f32 = cos_difference.sum(0).sum(0).as_slice().await.unwrap()[[]];
     assert!(cos_error < 1e-2);
 
     let sin_difference = (cache.sin - expected_sin).abs();
-    println!("sin_difference: {:?}", sin_difference.as_slice().await.unwrap());
+    println!(
+        "sin_difference: {:?}",
+        sin_difference.as_slice().await.unwrap()
+    );
     let sin_error: f32 = sin_difference.sum(0).sum(0).as_slice().await.unwrap()[[]];
     assert!(sin_error < 1e-2);
 }
