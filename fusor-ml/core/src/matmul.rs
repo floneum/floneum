@@ -28,9 +28,9 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
     }
 }
 
-const WORK_GROUP_BLOCK_M_SIZE: u32 = THREAD_BLOCK_M_SIZE * 2;
-const WORK_GROUP_BLOCK_N_SIZE: u32 = 8;
-const WORK_GROUP_BLOCK_K_SIZE: u32 = 8;
+const WORK_GROUP_BLOCK_M_SIZE: u32 = THREAD_BLOCK_M_SIZE * 16;
+const WORK_GROUP_BLOCK_N_SIZE: u32 = 16;
+const WORK_GROUP_BLOCK_K_SIZE: u32 = 16;
 
 const THREAD_BLOCK_M_SIZE: u32 = 8;
 
@@ -83,9 +83,9 @@ impl UntypedMatMul {
             let workgroup_index = generic_kernel.workgroup_index();
             let workgroup_local_index = generic_kernel.workgroup_local_index();
 
-            let k_size = input_a.shape_binding(0);
-            let m_size = input_a.shape_binding(1);
-            let n_size = input_b.shape_binding(0);
+            let k_size = input_a.shape_binding(1);
+            let m_size = input_a.shape_binding(0);
+            let n_size = input_b.shape_binding(1);
 
             writeln!(&mut kernel, "let block_col = {workgroup_index}.x;").unwrap();
             writeln!(&mut kernel, "let block_row = {workgroup_index}.y;").unwrap();
@@ -218,8 +218,8 @@ impl UntypedMatMul {
         assert_eq!(*output_tensor.layout().shape(), [a_shape[0], b_shape[1]]);
 
         let workgroup_dispatch_size = [
-            (a_shape[1] as u32).div_ceil(WORK_GROUP_BLOCK_M_SIZE),
-            (b_shape[0] as u32).div_ceil(WORK_GROUP_BLOCK_N_SIZE),
+            (a_shape[0] as u32).div_ceil(WORK_GROUP_BLOCK_M_SIZE),
+            (b_shape[1] as u32).div_ceil(WORK_GROUP_BLOCK_N_SIZE),
             1,
         ];
 
@@ -267,8 +267,8 @@ async fn test_matmul_f16() {
     println!("{:?}", as_slice);
 
     assert_eq!(as_slice[[0, 0]], half::f16::from_f32(1.));
-    assert_eq!(as_slice[[1, 0]], half::f16::from_f32(2.));
-    assert_eq!(as_slice[[0, 1]], half::f16::from_f32(3.));
+    assert_eq!(as_slice[[0, 1]], half::f16::from_f32(2.));
+    assert_eq!(as_slice[[1, 0]], half::f16::from_f32(3.));
     assert_eq!(as_slice[[1, 1]], half::f16::from_f32(6.));
 }
 
@@ -316,7 +316,17 @@ async fn fuzz_matmul() {
         let as_slice = tensor.as_slice().await.unwrap();
         for i in 0..size1 {
             for j in 0..size3 {
-                assert_eq!(as_slice[[i, j]], dot[[i, j]]);
+                if (as_slice[[i, j]] - dot[[i, j]]).abs() > 0.0001 {
+                    println!("correct result: {:?}", dot);
+                    println!("result: {:?}", as_slice);
+                    panic!(
+                        "Mismatch at ({}, {}): {} != {}",
+                        i,
+                        j,
+                        as_slice[[i, j]],
+                        dot[[i, j]]
+                    );
+                }
             }
         }
     }
