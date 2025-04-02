@@ -32,8 +32,9 @@ pub struct Embedding {
 
 impl Embedding {
     pub fn new(weights: QMatrix, hidden_size: usize) -> Self {
+        let weights = weights.dequantize();
         Self {
-            weights: weights.dequantize(),
+            weights,
             hidden_size,
         }
     }
@@ -149,30 +150,30 @@ impl Model {
 
         // Get the eos and bos tokens from the metadata
         let tokens: Box<[GgufValue]> = md_get("tokenizer.ggml.tokens")?.clone().try_into()?;
-        let tokens: Result<Vec<&str>, LlamaSourceError> = tokens
+        let tokens: Result<Vec<Box<str>>, LlamaSourceError> = tokens
             .iter()
             .map(|v| {
-                let v: &Box<str> = v.try_into()?;
-                Ok(v.as_ref())
+                let v: Box<str> = v.try_into()?;
+                Ok(v)
             })
             .collect();
         let tokens = tokens?;
-        let start_token: Option<&u32> = md_get("tokenizer.ggml.bos_token_id")
+        let start_token: Option<u32> = md_get("tokenizer.ggml.bos_token_id")
             .ok()
             .and_then(|v| v.try_into().ok());
         let stop_token = if let Some(override_stop_token_string) = override_stop_token_string {
             tokens
                 .iter()
-                .position(|v| *v == override_stop_token_string)
+                .position(|v| &**v == override_stop_token_string)
                 .unwrap_or(0) as u32
         } else {
             md_get("tokenizer.ggml.eos_token_id")?.clone().try_into()?
         };
         let start_token_string = start_token
-            .map(|v| tokens[*v as usize].to_string())
+            .map(|v| tokens[v as usize].to_string())
             .unwrap_or_else(|| "".to_string());
         let stop_token_string = tokens[stop_token as usize].to_string();
-        let chat_template: Option<&Box<str>> = md_get("tokenizer.chat_template")
+        let chat_template: Option<Box<str>> = md_get("tokenizer.chat_template")
             .ok()
             .and_then(|v| v.try_into().ok());
         let chat_template = match chat_template {
@@ -185,24 +186,23 @@ impl Model {
         };
 
         // Parameter extraction from metadata.
-        let head_count: &u32 = md_get(".attention.head_count")?.try_into()?;
-        let head_count = *head_count as usize;
-        let head_count_kv: &u32 = md_get(".attention.head_count_kv")?.try_into()?;
-        let head_count_kv = *head_count_kv as usize;
-        let block_count: &u32 = md_get(".block_count")?.try_into()?;
-        let block_count = *block_count as usize;
-        let embedding_length: &u32 = md_get(".embedding_length")?.try_into()?;
-        let embedding_length = *embedding_length as usize;
+        let head_count: u32 = md_get(".attention.head_count")?.try_into()?;
+        let head_count = head_count as usize;
+        let head_count_kv: u32 = md_get(".attention.head_count_kv")?.try_into()?;
+        let head_count_kv = head_count_kv as usize;
+        let block_count: u32 = md_get(".block_count")?.try_into()?;
+        let block_count = block_count as usize;
+        let embedding_length: u32 = md_get(".embedding_length")?.try_into()?;
+        let embedding_length = embedding_length as usize;
         // Strangely this value is generally 1e-6 in GGUF file but used to be 1e-5 by default.
-        let rms_norm_eps: &f64 = md_get(".attention.layer_norm_rms_epsilon")?.try_into()?;
-        let rms_norm_eps = *rms_norm_eps;
+        let rms_norm_eps: f64 = md_get(".attention.layer_norm_rms_epsilon")?.try_into()?;
 
         let rope_freq_base = md_get(".rope.freq_base")
             .and_then(|m| Ok(m.clone().try_into()?))
             .unwrap_or(10_000f32);
 
-        let context_length: &u32 = md_get(".context_length")?.try_into()?;
-        let context_length = *context_length as usize;
+        let context_length: u32 = md_get(".context_length")?.try_into()?;
+        let context_length = context_length as usize;
         let head_dim = embedding_length / head_count;
 
         let config = LlamaConfig {
@@ -256,7 +256,7 @@ impl Model {
                 } else {
                     None
                 };
-                let architecture: &Box<str> = md_get("general.architecture")?.try_into()?;
+                let architecture: Box<str> = md_get("general.architecture")?.try_into()?;
                 let separate = SeparateAttention {
                     attention_wq: q,
                     attention_wk: k,
@@ -284,8 +284,8 @@ impl Model {
                 let up = md_tensor(&format!("{prefix}.ffn_up.weight"), reader)?;
                 // Transpose the down tensor
                 let down = md_tensor(&format!("{prefix}.ffn_down.weight"), reader)?;
-                let feed_forward_length: &u32 = md_get(".feed_forward_length")?.try_into()?;
-                let feed_forward_length = *feed_forward_length as usize;
+                let feed_forward_length: u32 = md_get(".feed_forward_length")?.try_into()?;
+                let feed_forward_length = feed_forward_length as usize;
 
                 FeedForwardVariant::Phi(PhiFeedForward {
                     up,

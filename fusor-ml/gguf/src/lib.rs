@@ -409,46 +409,54 @@ impl GgufValue {
 }
 
 macro_rules! try_into_gguf_value {
-    ($variant:ident, $value:ty) => {
+    ($variant:ident, $value:ty $(=> from $($from:ident)+)?) => {
         impl TryInto<$value> for GgufValue {
             type Error = GgufReadError;
 
             fn try_into(self) -> Result<$value, Self::Error> {
-                if let GgufValue::$variant(v) = self {
-                    Ok(v)
-                } else {
-                    Err(GgufReadError::InvalidValueType(InvalidValueType(
+                match self {
+                    GgufValue::$variant(v) => Ok(v),
+                    $(
+                        $(
+                            GgufValue::$from(v) => Ok(v as $value),
+                        )+
+                    )?
+                    _ => Err(GgufReadError::InvalidValueType(InvalidValueType(
                         self.value_type() as u32,
-                    )))
+                    ))),
                 }
             }
         }
 
-        impl<'a> TryInto<&'a $value> for &'a GgufValue {
+        impl<'a> TryInto<$value> for &'a GgufValue {
             type Error = GgufReadError;
 
-            fn try_into(self) -> Result<&'a $value, Self::Error> {
-                if let GgufValue::$variant(v) = &self {
-                    Ok(v)
-                } else {
-                    Err(GgufReadError::InvalidValueType(InvalidValueType(
+            fn try_into(self) -> Result<$value, Self::Error> {
+                match self {
+                    GgufValue::$variant(v) => Ok(v.clone()),
+                    $(
+                        $(
+                            GgufValue::$from(v) => Ok(v.clone() as $value),
+                        )+
+                    )?
+                    _ => Err(GgufReadError::InvalidValueType(InvalidValueType(
                         self.value_type() as u32,
-                    )))
+                    ))),
                 }
             }
         }
     };
 }
-try_into_gguf_value!(U8, u8);
-try_into_gguf_value!(I8, i8);
-try_into_gguf_value!(U16, u16);
-try_into_gguf_value!(I16, i16);
-try_into_gguf_value!(U32, u32);
-try_into_gguf_value!(I32, i32);
-try_into_gguf_value!(U64, u64);
-try_into_gguf_value!(I64, i64);
-try_into_gguf_value!(F32, f32);
-try_into_gguf_value!(F64, f64);
+try_into_gguf_value!(U8, u8 => from U16 U32 U64);
+try_into_gguf_value!(I8, i8 => from I16 I32 I64);
+try_into_gguf_value!(U16, u16 => from U8 U32 U64);
+try_into_gguf_value!(I16, i16 => from I8 I32 I64);
+try_into_gguf_value!(U32, u32 => from U8 U16 U64);
+try_into_gguf_value!(I32, i32 => from I8 I16 I64);
+try_into_gguf_value!(U64, u64 => from U8 U16 U32);
+try_into_gguf_value!(I64, i64 => from I8 I16 I32);
+try_into_gguf_value!(F32, f32 => from F64);
+try_into_gguf_value!(F64, f64 => from F32);
 try_into_gguf_value!(Bool, bool);
 try_into_gguf_value!(String, Box<str>);
 try_into_gguf_value!(Array, Box<[GgufValue]>);

@@ -9,7 +9,6 @@ const CONCAT_DIMENSION: usize = 1;
 /// A cache for llama inference. This cache will speed up generation of sequential text significantly.
 #[derive(Clone)]
 pub(crate) struct LlamaCache {
-    max_seq_len: usize,
     pub(crate) tokens: Vec<u32>,
     pub(crate) blocks: Vec<KvCache>,
 }
@@ -23,7 +22,6 @@ impl LlamaCache {
             blocks.push(KvCache::new(CONCAT_DIMENSION, max_seq_len))
         }
         Self {
-            max_seq_len,
             tokens: Vec::new(),
             blocks,
         }

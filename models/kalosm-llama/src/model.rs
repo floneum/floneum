@@ -261,17 +261,17 @@ impl LlamaModel {
                                     .metadata
                                     .get("tokenizer.ggml.eos_token_id")
                                     .ok_or(LlamaSourceError::NoTokenizer)?;
-                                let eos: &u32 =
+                                let eos: u32 =
                                     eos.try_into().map_err(|_| LlamaSourceError::NoTokenizer)?;
-                                let eos = &tokens[*eos as usize];
+                                let eos = &tokens[eos as usize];
 
                                 let bos = model
                                     .metadata
                                     .get("tokenizer.ggml.bos_token_id")
                                     .ok_or(LlamaSourceError::NoTokenizer)?;
-                                let bos: &u32 =
+                                let bos: u32 =
                                     bos.try_into().map_err(|_| LlamaSourceError::NoTokenizer)?;
-                                let bos = &tokens[*bos as usize];
+                                let bos = &tokens[bos as usize];
 
                                 config
                                     .build(vocab, types, merges, bos, eos)
