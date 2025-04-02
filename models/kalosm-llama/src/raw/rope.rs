@@ -10,11 +10,7 @@ pub struct RopeCache {
 }
 
 impl RopeCache {
-    pub fn new(config: &LlamaConfig, device: &Device) -> fusor_core::Result<Self> {
-        todo!()
-    }
-
-    pub async fn async_new(config: &LlamaConfig, device: &Device) -> Self {
+    pub fn new(config: &LlamaConfig, device: &Device) -> Self {
         let mut inverse_frequency = (0..config.head_dimension)
             .step_by(2)
             .map(|i| {
@@ -45,31 +41,15 @@ impl RopeCache {
         let inverse_frequency_len = inverse_frequency.len();
         let mut inverse_frequency =
             Tensor::new(device, &inverse_frequency).reshape([1, inverse_frequency_len]);
-        println!(
-            "Inverse frequency: {:?}",
-            inverse_frequency.as_slice().await.unwrap()
-        );
         if let Some(weight) = &config.rope_freq_weight {
             inverse_frequency = inverse_frequency * weight.reshape([1, inverse_frequency_len]);
-            println!(
-                "Inverse frequency with weight: {:?}",
-                inverse_frequency.as_slice().await.unwrap()
-            );
         }
 
         let llama_context_length_indices =
             Tensor::arange(device, 0f32, config.context_length as f32)
                 .reshape([config.context_length, 1]);
-        println!(
-            "Llama context length indices: {:?}",
-            llama_context_length_indices.as_slice().await.unwrap()
-        );
 
         let outer_product = llama_context_length_indices.mat_mul(&inverse_frequency);
-        println!(
-            "Outer product: {:?}",
-            outer_product.as_slice().await.unwrap()
-        );
 
         let sin = outer_product.sin();
         let cos = outer_product.cos();
@@ -123,7 +103,7 @@ async fn test_rope_cache() {
 
     let config = LlamaConfig::mock_test();
     let device = Device::new().await.unwrap();
-    let cache = RopeCache::async_new(&config, &device).await;
+    let cache = RopeCache::new(&config, &device);
 
     println!("cache cos: {:?}", cache.cos.as_slice().await.unwrap());
     println!("cache sin: {:?}", cache.sin.as_slice().await.unwrap());

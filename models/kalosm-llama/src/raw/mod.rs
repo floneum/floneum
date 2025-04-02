@@ -221,7 +221,7 @@ impl Model {
         };
         let config = Arc::new(config);
 
-        let rope = RopeCache::new(&config, device)?;
+        let rope = RopeCache::new(&config, device);
 
         let tok_embeddings_q = md_tensor("token_embd.weight", reader)?;
 
