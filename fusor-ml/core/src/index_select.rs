@@ -9,14 +9,21 @@ pub(crate) struct IndexSelectOperation {
     pub(crate) input: AnyComputeKey,
     pub(crate) indexes: AnyComputeKey,
     pub(crate) dimension: usize,
+    pub(crate) length: usize,
 }
 
 impl IndexSelectOperation {
-    pub fn new(input: AnyComputeKey, indexes: AnyComputeKey, dimension: usize) -> Self {
+    pub fn new(
+        input: AnyComputeKey,
+        indexes: AnyComputeKey,
+        dimension: usize,
+        length: usize,
+    ) -> Self {
         Self {
             input,
             indexes,
             dimension,
+            length,
         }
     }
 }

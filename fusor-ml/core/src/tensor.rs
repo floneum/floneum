@@ -366,7 +366,8 @@ impl LazyTensorData {
 
     pub(crate) fn index_select(&self, op: IndexSelectOperation) -> Self {
         let device = self.device.clone();
-        let info = self.info.clone();
+        let mut info = self.info.clone();
+        info.shape[op.dimension] = op.length;
         let graph = self.graph.clone();
         let key = self.graph.create_index_select(op);
 
@@ -746,7 +747,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
 
     pub(crate) fn add_index_select(&self, dimension: usize, indexes: &Tensor<1, u32>) -> Self {
         self.data.graph.merge(&indexes.data.graph);
-        let op = IndexSelectOperation::new(self.data.key, indexes.data.key, dimension);
+        let op = IndexSelectOperation::new(self.data.key, indexes.data.key, dimension, indexes.shape()[0]);
         Self {
             data: self.data.index_select(op),
             datatype: PhantomData,
