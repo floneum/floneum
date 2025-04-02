@@ -208,10 +208,8 @@ impl LlamaModel {
                                     .clone()
                                     .try_into()
                                     .map_err(|_| LlamaSourceError::NoTokenizer)?;
-                                let tokens: Result<Vec<_>, _> = token_values
-                                    .iter()
-                                    .map(|v| v.clone().try_into())
-                                    .collect();
+                                let tokens: Result<Vec<_>, _> =
+                                    token_values.iter().map(|v| v.clone().try_into()).collect();
                                 let tokens: Vec<Box<str>> =
                                     tokens.map_err(|_| LlamaSourceError::NoTokenizer)?;
                                 let token_type_values: Box<[GgufValue]> = model

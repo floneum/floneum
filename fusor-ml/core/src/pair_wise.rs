@@ -7,7 +7,13 @@ use std::{
 use wgpu::CommandEncoder;
 
 use crate::{
-    compute_graph::AnyComputeKey, kernel::{Function, GenericKernel}, layout::TILE_SIZE, query::PerformanceQueries, tensor::{DataType, DataTypeEnum, TensorData}, visit_tiled::{MaybeQData, VisitTiledKernel}, ElementWiseFunction, Tensor, UntypedElementWiseKernel
+    ElementWiseFunction, Tensor, UntypedElementWiseKernel,
+    compute_graph::AnyComputeKey,
+    kernel::{Function, GenericKernel},
+    layout::TILE_SIZE,
+    query::PerformanceQueries,
+    tensor::{DataType, DataTypeEnum, TensorData},
+    visit_tiled::{MaybeQData, VisitTiledKernel},
 };
 
 #[derive(Clone)]
@@ -231,7 +237,7 @@ async fn test_pair_wise_add() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data_a = [[1., 2.], [3., 4.], [5., 6.]];
     let data_b = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor_a = Tensor::new(&device, &data_a);
@@ -255,7 +261,7 @@ async fn test_pair_wise_add_f16() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data_a = [
         [half::f16::from_f32(1.), half::f16::from_f32(2.)],
         [half::f16::from_f32(3.), half::f16::from_f32(4.)],
@@ -287,7 +293,7 @@ async fn test_pair_wise_add_u32() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data_a = [[1_u32, 2_u32], [3_u32, 4_u32], [5_u32, 6_u32]];
     let data_b = [[1_u32, 2_u32], [3_u32, 4_u32], [5_u32, 6_u32]];
     let tensor_a = Tensor::new(&device, &data_a);
@@ -311,7 +317,7 @@ async fn test_pair_wise_add_const_mul_const_add_fused() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data_a = [[1., 2.], [3., 4.], [5., 6.]];
     let data_b = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor_a = Tensor::new(&device, &data_a);
@@ -335,7 +341,7 @@ async fn test_pair_wise_add_sub_const_fused() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data_a = [[1., 2.], [3., 4.], [5., 6.]];
     let data_b = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor_a = Tensor::new(&device, &data_a);
@@ -359,7 +365,7 @@ async fn test_pair_wise_add_sparse() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data_a = [[1., 2.], [3., 4.], [5., 6.]];
     let data_b = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor_a = Tensor::new(&device, &data_a);
@@ -401,7 +407,7 @@ async fn test_pair_wise_sub() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data_a = [[1., 2.], [3., 4.], [5., 6.]];
     let data_b = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor_a = Tensor::new(&device, &data_a);
@@ -444,7 +450,7 @@ async fn test_pair_wise_mul() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data_a = [[1., 2.], [3., 4.], [5., 6.]];
     let data_b = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor_a = Tensor::new(&device, &data_a);
@@ -487,7 +493,7 @@ async fn test_pair_wise_div() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data_a = [[1., 4.], [3., 4.], [5., 6.]];
     let data_b = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor_a = Tensor::new(&device, &data_a);
@@ -521,7 +527,7 @@ async fn test_pair_wise_pow() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data_a = [[1., 2.], [3., 4.], [5., 6.]];
     let data_b = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor_a = Tensor::new(&device, &data_a);

@@ -6,7 +6,6 @@ use fusor_core::Tensor;
 #[tokio::test]
 async fn test_add_const() {
     let device = Device::new().await.unwrap();
-    
 
     let data = [
         [[1., 2.], [1., 2.]],

@@ -12,7 +12,7 @@ async fn test_sqr() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
 
     let tensor = Tensor::new(&device, &data);

@@ -22,7 +22,7 @@ async fn test_where_cond() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data = Tensor::arange(&device, 0., 10.);
     let even = Tensor::arange(&device, 0, 10) % 2;
     let zero = Tensor::splat(&device, 0., *data.shape());

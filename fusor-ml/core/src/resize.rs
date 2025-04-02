@@ -150,7 +150,7 @@ async fn test_resize() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
     let tensor = tensor.resize([30, 20]);
@@ -170,7 +170,6 @@ async fn test_reshape() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);

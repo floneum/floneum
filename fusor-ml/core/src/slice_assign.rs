@@ -84,7 +84,7 @@ async fn test_slice_assign() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
     let value_tensor = Tensor::new(&device, &[[10., 20.], [30., 40.]]);

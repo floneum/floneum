@@ -474,7 +474,7 @@ async fn test_reduce_sum() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
 
@@ -500,7 +500,7 @@ async fn test_reduce_sum_f16() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data = [
         [half::f16::from_f32(1.), half::f16::from_f32(2.)],
         [half::f16::from_f32(3.), half::f16::from_f32(4.)],
@@ -530,7 +530,7 @@ async fn test_reduce_sliced_sum() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
     let tensor = tensor.slice([0..3, 0..1]);
@@ -556,7 +556,7 @@ async fn test_reduce_const_add_then_sum_fused() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
 
@@ -585,7 +585,7 @@ async fn test_reduce_const_sum_then_add_fused() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
 
@@ -653,7 +653,7 @@ async fn test_reduce_max() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
 
@@ -721,7 +721,7 @@ async fn test_reduce_min() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
 
@@ -785,7 +785,7 @@ async fn test_reduce_product() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
 

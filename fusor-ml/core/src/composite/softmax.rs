@@ -1,6 +1,9 @@
 use crate::{DataType, Sum, Tensor};
 
-impl<const R: usize, const R2: usize, D: DataType> Tensor<R, D> where Tensor<R, D>: Sum<Output = Tensor<R2, D>> {
+impl<const R: usize, const R2: usize, D: DataType> Tensor<R, D>
+where
+    Tensor<R, D>: Sum<Output = Tensor<R2, D>>,
+{
     pub fn softmax(&self, dim: usize) -> Self {
         let size = *self.shape();
         let exp = self.exp();
@@ -22,7 +25,6 @@ async fn test_softmax() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
 
     let data = [1f32, -2., -3., 4., 5., -6.];
     let exp: [f32; 6] = std::array::from_fn(|i| data[i].exp());

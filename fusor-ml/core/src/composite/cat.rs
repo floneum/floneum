@@ -47,7 +47,7 @@ async fn test_cat() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data1 = [[1., -2.], [-3., 4.], [5., -6.]];
     let tensor1 = Tensor::new(&device, &data1);
     let data2 = [[1., 2.], [3., 4.], [5., 6.]];

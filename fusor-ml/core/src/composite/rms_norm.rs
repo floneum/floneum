@@ -21,7 +21,6 @@ async fn test_layer_norm() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
 
     let tensor = Tensor::new(&device, &[[1., 2.], [3., 4.], [5., 6.]]);
     let weight = Tensor::new(&device, &[2., 3.]);

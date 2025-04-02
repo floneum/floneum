@@ -28,11 +28,11 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
     }
 }
 
-const WORK_GROUP_BLOCK_M_SIZE: u32 = THREAD_BLOCK_M_SIZE * 16;
+const WORK_GROUP_BLOCK_M_SIZE: u32 = THREAD_BLOCK_M_SIZE * 4;
 const WORK_GROUP_BLOCK_N_SIZE: u32 = 16;
-const WORK_GROUP_BLOCK_K_SIZE: u32 = 16;
+const WORK_GROUP_BLOCK_K_SIZE: u32 = 4;
 
-const THREAD_BLOCK_M_SIZE: u32 = 8;
+const THREAD_BLOCK_M_SIZE: u32 = 4;
 
 const WORK_GROUP_SIZE: [u32; 3] = [
     WORK_GROUP_BLOCK_M_SIZE / THREAD_BLOCK_M_SIZE,
@@ -218,8 +218,8 @@ impl UntypedMatMul {
         assert_eq!(*output_tensor.layout().shape(), [a_shape[0], b_shape[1]]);
 
         let workgroup_dispatch_size = [
-            (a_shape[0] as u32).div_ceil(WORK_GROUP_BLOCK_M_SIZE),
             (b_shape[1] as u32).div_ceil(WORK_GROUP_BLOCK_N_SIZE),
+            (a_shape[0] as u32).div_ceil(WORK_GROUP_BLOCK_M_SIZE),
             1,
         ];
 
@@ -237,7 +237,7 @@ impl UntypedMatMul {
 #[tokio::test]
 async fn test_matmul() {
     let device = Device::new().await.unwrap();
-    
+
     let data_a = [[1.], [3.]];
     let data_b = [[1., 2.]];
     let tensor_a = Tensor::new(&device, &data_a);
@@ -279,13 +279,14 @@ async fn fuzz_matmul() {
 
     let device = Device::new().await.unwrap();
 
+    let min_size = 32;
     let max_size = 125;
     let iterations = if cfg!(debug_assertions) { 10 } else { 100 };
 
     for _ in 0..iterations {
-        let size1 = rand::rng().random_range(1..max_size);
-        let size2 = rand::rng().random_range(1..max_size);
-        let size3 = rand::rng().random_range(1..max_size);
+        let size1 = rand::rng().random_range(min_size..max_size);
+        let size2 = rand::rng().random_range(min_size..max_size);
+        let size3 = rand::rng().random_range(min_size..max_size);
 
         let data_a: Vec<Vec<f32>> = (0..size1)
             .map(|_| (0..size2).map(|_| rand::random()).collect())

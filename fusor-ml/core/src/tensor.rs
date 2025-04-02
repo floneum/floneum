@@ -802,7 +802,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
 #[tokio::test]
 async fn test_tensor_slice() {
     let device = Device::new().await.unwrap();
-    
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
 
@@ -936,7 +936,7 @@ pub(crate) fn padded_tensor_size(size: u64) -> u64 {
 #[tokio::test]
 async fn test_tensor_compare() {
     let device = Device::new().await.unwrap();
-    
+
     let data = [
         [[1., 2.], [1., 2.]],
         [[3., 4.], [3., 4.]],
@@ -1003,7 +1003,7 @@ impl<D: DataType, const R: usize> Index<[usize; R]> for TensorSlice<R, D> {
 #[tokio::test]
 async fn test_tensor() {
     let device = Device::new().await.unwrap();
-    
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
     let as_slice = tensor.as_slice().await.unwrap();

@@ -278,7 +278,7 @@ async fn test_index_select_dim_0() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data = [[1., 2., 3.], [4., 5., 6.]];
     let tensor = Tensor::new(&device, &data);
     let indexes = Tensor::new(&device, &[1, 0]);
@@ -297,7 +297,7 @@ async fn test_index_select_dim_1() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data = [[1., 2., 3.], [4., 5., 6.]];
     let tensor = Tensor::new(&device, &data);
     let indexes = Tensor::new(&device, &[1, 2, 0]);
@@ -316,7 +316,7 @@ async fn test_index_select_fused() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data = [[1., 2., 3.], [4., 5., 6.]];
     let tensor = Tensor::new(&device, &data);
     let indexes = Tensor::new(&device, &[1, 0]);

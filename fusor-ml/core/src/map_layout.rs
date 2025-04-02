@@ -107,7 +107,7 @@ async fn test_transpose() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
     let transposed = tensor.transpose(0, 1);
@@ -127,7 +127,7 @@ async fn test_broadcast() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    
+
     let data = [[1., 2.], [3., 4.]];
     let tensor = Tensor::new(&device, &data);
     let broadcasted = tensor.broadcast([2, 2, 3]);
