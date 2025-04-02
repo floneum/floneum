@@ -12,11 +12,14 @@ use super::{QMatrix, dequantize_block};
 pub(crate) struct QMatMulOperation {
     pub(crate) input: AnyComputeKey,
     pub(crate) matrix: QMatrix,
+    pub(crate) out_shape: Box<[usize]>,
 }
 
 impl QMatMulOperation {
-    pub(crate) fn new(input: AnyComputeKey, matrix: QMatrix) -> Self {
-        QMatMulOperation { input, matrix }
+    pub(crate) fn new(input_shape: &[usize], input: AnyComputeKey, matrix: QMatrix) -> Self {
+        let out_shape = vec![input_shape[0], matrix.shape[0]];
+        let out_shape = out_shape.into_boxed_slice();
+        QMatMulOperation { input, matrix, out_shape }
     }
 }
 
@@ -235,7 +238,7 @@ impl UntypedQMatMul {
         let output_tensor = TensorData::new_from_buffer(
             device,
             output_buf,
-            &[a_shape[0], b_shape[1]],
+            &[a_shape[0], b_shape[0]],
             input.datatype(),
         );
         self.run_with_query_and_out_tensor(device, input, query, &output_tensor, command_encoder);
@@ -251,12 +254,12 @@ impl UntypedQMatMul {
         command_encoder: &mut CommandEncoder,
     ) {
         let matrix_shape = &self.matrix.shape;
-        assert_eq!(input.layout().shape()[1], matrix_shape[0]);
+        assert_eq!(input.layout().shape()[1], matrix_shape[1]);
         let module = self.compile();
 
         let a_shape = input.layout().shape();
         let b_shape = matrix_shape;
-        assert_eq!(*output_tensor.layout().shape(), [a_shape[0], b_shape[1]]);
+        assert_eq!(*output_tensor.layout().shape(), [a_shape[0], b_shape[0]]);
 
         let workgroup_dispatch_size = self.work_group_dispatch(a_shape);
 

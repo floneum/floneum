@@ -17,7 +17,7 @@ use wgpu::util::DeviceExt;
 pub(crate) mod dequantize;
 pub(crate) mod matmul;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct QMatrix {
     device: Device,
     shape: Box<[usize]>,

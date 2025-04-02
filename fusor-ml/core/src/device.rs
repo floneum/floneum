@@ -1,11 +1,12 @@
 use std::{borrow::Cow, sync::Arc};
 
+#[derive(Debug)]
 struct DeviceInner {
     device: wgpu::Device,
     queue: wgpu::Queue,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Device {
     inner: Arc<DeviceInner>,
 }

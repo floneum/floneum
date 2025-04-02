@@ -288,7 +288,8 @@ impl LazyTensorData {
     pub(crate) fn q_mat_mul(&self, function: QMatMulOperation) -> Self {
         let graph = self.graph.clone();
         let device = self.device.clone();
-        let info = self.info.clone();
+        let mut info = self.info.clone();
+        info.shape = function.out_shape.clone();
         let key = graph.create_q_mat_mul(function);
 
         Self {
@@ -532,6 +533,12 @@ pub struct Tensor<const R: usize, D> {
     datatype: PhantomData<D>,
 }
 
+impl<const R: usize, D: DataType> Debug for Tensor<R, D> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Tensor({} x {:?})", self.datatype(), self.shape())
+    }
+}
+
 impl<const R: usize, D: DataType> From<TensorData> for Tensor<R, D> {
     fn from(value: TensorData) -> Self {
         Self {
@@ -721,7 +728,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
     }
 
     pub(crate) fn add_q_mat_mul(&self, other: &QMatrix) -> Self {
-        let operation = QMatMulOperation::new(self.data.key, other.clone());
+        let operation = QMatMulOperation::new(self.shape(), self.data.key, other.clone());
 
         Self {
             data: self.data.q_mat_mul(operation),

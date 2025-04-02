@@ -132,7 +132,11 @@ impl<const R: usize, T: crate::DataType> Tensor<R, T> {
     pub fn reshape<const R2: usize>(&self, new_shape: [usize; R2]) -> Tensor<R2, T> {
         assert_eq!(
             new_shape.iter().product::<usize>(),
-            self.shape().iter().product::<usize>()
+            self.shape().iter().product::<usize>(),
+            "Reshape requires the number of elements to be the same. \
+            Current shape: {:?}, target shape: {:?}",
+            self.shape(),
+            new_shape
         );
         let new_shape: Box<[usize]> = new_shape.into();
         let input = self.key();
