@@ -24,10 +24,6 @@ impl<D: DataType> Tensor<3, D> {
     pub fn rope_interleaved(self, cos: Tensor<2, D>, sin: Tensor<2, D>) -> Tensor<3, D> {
         let shape = *self.shape();
         let [height, sequence_length, embed] = shape;
-        println!("height: {height}, sequence_length: {sequence_length}, embed: {embed}");
-
-        println!("cos: {:?}", cos);
-        println!("sin: {:?}", sin);
 
         let cos = cos
             .narrow(0, 0, sequence_length)

@@ -6,11 +6,11 @@ fn unchecked_unsqueeze<const R1: usize, const R2: usize, D: DataType>(
 ) -> Tensor<R2, D> {
     let shape = tensor.shape();
     assert!(axis < R1);
-    tensor.reshape(dbg!(std::array::from_fn(|i| match i.cmp(&axis) {
+    tensor.reshape(std::array::from_fn(|i| match i.cmp(&axis) {
         std::cmp::Ordering::Less => shape[i],
         std::cmp::Ordering::Equal => 1,
         std::cmp::Ordering::Greater => shape[i - 1],
-    })))
+    }))
 }
 
 pub trait Unsqueeze {
