@@ -19,7 +19,11 @@ impl QMatMulOperation {
     pub(crate) fn new(input_shape: &[usize], input: AnyComputeKey, matrix: QMatrix) -> Self {
         let out_shape = vec![input_shape[0], matrix.shape[0]];
         let out_shape = out_shape.into_boxed_slice();
-        QMatMulOperation { input, matrix, out_shape }
+        QMatMulOperation {
+            input,
+            matrix,
+            out_shape,
+        }
     }
 }
 

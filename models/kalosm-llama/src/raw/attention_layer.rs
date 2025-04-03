@@ -95,7 +95,7 @@ impl SeparateAttention {
 
             query_states
                 .reshape([seq_len, num_heads, head_dim])
-                .transpose(1, 2)
+                .transpose(0, 1)
         };
         let key_states = {
             let mut key_states = hidden_states.q_mat_mul(&self.attention_wk);
@@ -106,7 +106,7 @@ impl SeparateAttention {
 
             key_states
                 .reshape([seq_len, num_key_value_heads, head_dim])
-                .transpose(1, 2)
+                .transpose(0, 1)
         };
         let value_states = {
             let mut value_states = hidden_states.q_mat_mul(&self.attention_wv);
@@ -117,7 +117,7 @@ impl SeparateAttention {
 
             value_states
                 .reshape([seq_len, num_key_value_heads, head_dim])
-                .transpose(1, 2)
+                .transpose(0, 1)
         };
 
         let (query_states, key_states) = if self.interleaved_rope {

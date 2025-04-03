@@ -92,7 +92,7 @@ impl RopeCache {
         k: Tensor<3, f32>,
         start_pos: usize,
     ) -> (Tensor<3, f32>, Tensor<3, f32>) {
-        todo!()
+        self.forward_with_embed(q, k, start_pos, Tensor::rope_interleaved)
     }
 }
 

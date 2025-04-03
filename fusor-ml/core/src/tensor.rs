@@ -274,7 +274,8 @@ impl LazyTensorData {
     pub(crate) fn mat_mul(&self, function: MatMulOperation) -> Self {
         let graph = self.graph.clone();
         let device = self.device.clone();
-        let info = self.info.clone();
+        let mut info = self.info.clone();
+        info.shape = function.out_shape.clone();
         let key = graph.create_mat_mul(function);
 
         Self {
@@ -719,7 +720,8 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
 
     pub(crate) fn add_mat_mul(&self, other: &Self) -> Self {
         self.data.graph.merge(&other.data.graph);
-        let operation = MatMulOperation::new(self.data.key, other.data.key);
+        let operation =
+            MatMulOperation::new(self.data.key, other.data.key, self.shape(), other.shape());
 
         Self {
             data: self.data.mat_mul(operation),
@@ -754,7 +756,12 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
 
     pub(crate) fn add_index_select(&self, dimension: usize, indexes: &Tensor<1, u32>) -> Self {
         self.data.graph.merge(&indexes.data.graph);
-        let op = IndexSelectOperation::new(self.data.key, indexes.data.key, dimension, indexes.shape()[0]);
+        let op = IndexSelectOperation::new(
+            self.data.key,
+            indexes.data.key,
+            dimension,
+            indexes.shape()[0],
+        );
         Self {
             data: self.data.index_select(op),
             datatype: PhantomData,

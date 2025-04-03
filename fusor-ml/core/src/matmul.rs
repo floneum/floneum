@@ -14,11 +14,21 @@ use crate::{
 pub(crate) struct MatMulOperation {
     pub(crate) first: AnyComputeKey,
     pub(crate) second: AnyComputeKey,
+    pub(crate) out_shape: Box<[usize]>,
 }
 
 impl MatMulOperation {
-    pub fn new(first: AnyComputeKey, second: AnyComputeKey) -> Self {
-        Self { first, second }
+    pub fn new(
+        first: AnyComputeKey,
+        second: AnyComputeKey,
+        first_shape: &[usize],
+        second_shape: &[usize],
+    ) -> Self {
+        Self {
+            first,
+            second,
+            out_shape: [first_shape[0], second_shape[1]].into(),
+        }
     }
 }
 

@@ -23,7 +23,9 @@ impl DequantizeOperation {
 
 impl QMatrix {
     pub fn dequantize<const R: usize, T: DataType>(&self) -> Tensor<R, T> {
-        assert_eq!(self.shape.len(), R, 
+        assert_eq!(
+            self.shape.len(),
+            R,
             "Dequantize: expected {}D tensor, got {}D tensor. Shape: {:?}",
             R,
             self.shape.len(),
