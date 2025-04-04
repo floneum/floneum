@@ -182,6 +182,7 @@ pub(crate) fn generate_structured<P: Parser>(
             let Logit {
                 token_id, logit, ..
             } = logits_indexed[i];
+
             let Some(text) = token_cache.get(token_id as usize) else {
                 continue;
             };
@@ -215,6 +216,24 @@ pub(crate) fn generate_structured<P: Parser>(
             .sample_token(resources, &mut logits)
             .map_err(|err| LlamaModelError::SamplerError(err.into()))?
             .ok_or(LlamaModelError::NoValidTokens)?;
+
+        // If this and the last token would result in a valid merge, then the probability in the training data should be close
+        // to zero
+        if let Some(&last) = token_stream.tokens().last() {
+            let pair = [last, token_id];
+            let decoded = tokenizer.decode(&pair, false).unwrap();
+            let encoded = tokenizer
+                .encode_fast(&*decoded, false)
+                .map_err(LlamaModelError::Tokenizer)?;
+            if encoded.get_ids().len() == 1 {
+                println!(
+                    "Tokens {:?} and {:?} should have already merged into {}",
+                    tokenizer.id_to_token(last),
+                    tokenizer.id_to_token(token_id),
+                    decoded
+                );
+            }
+        }
 
         unprocessed_token_count = 1;
         let (result, parsed_bytes) = state_map

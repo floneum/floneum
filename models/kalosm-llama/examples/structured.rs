@@ -4,7 +4,11 @@ use std::{io::Write, sync::Arc};
 
 #[tokio::main]
 async fn main() {
-    let llm = Llama::phi_3().await.unwrap();
+    let llm = Llama::builder()
+        .with_source(LlamaSource::llama_3_2_1b_chat())
+        .build()
+        .await
+        .unwrap();
     let prompt = "Generate a list of 4 pets in JSON form with a name, description, color, and diet";
 
     #[derive(Debug, Clone, Parse)]
@@ -60,8 +64,8 @@ async fn time_stream(mut stream: impl TextStream + Unpin) {
     while let Some(token) = stream.next().await {
         tokens += 1;
         string_length += token.len();
-        print!("{token}");
-        std::io::stdout().flush().unwrap();
+        // print!("{token}");
+        // std::io::stdout().flush().unwrap();
     }
     let elapsed = start_time.elapsed();
     println!(
