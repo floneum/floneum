@@ -61,13 +61,16 @@ async fn time_stream(mut stream: impl TextStream + Unpin) {
     let start_time = std::time::Instant::now();
     let mut tokens = 0;
     let mut string_length = 0;
+    let mut all_text = String::new();
     while let Some(token) = stream.next().await {
         tokens += 1;
         string_length += token.len();
+        all_text.push_str(&token);
         // print!("{token}");
         // std::io::stdout().flush().unwrap();
     }
     let elapsed = start_time.elapsed();
+    println!("\n\n{all_text}");
     println!(
         "\n\nGenerated {} tokens ({} characters) in {:?}",
         tokens, string_length, elapsed

@@ -40,6 +40,7 @@ pub(crate) fn generate_structured<P: Parser>(
     let tokenizer = &llm.tokenizer;
 
     let prompt_text = prompt.to_string();
+    println!("prompt text\n{}", prompt_text);
     let prompt_tokens = tokenizer
         .encode_fast(prompt_text, false)
         .map_err(LlamaModelError::Tokenizer)?;
@@ -51,6 +52,7 @@ pub(crate) fn generate_structured<P: Parser>(
         if tokenizer.get_added_tokens_decoder().contains_key(last) {
             None
         } else {
+            println!("healing token {:?}", tokenizer.id_to_token(*last));
             prompt_tokens = tokens;
             Some(*last)
         }
@@ -183,13 +185,51 @@ pub(crate) fn generate_structured<P: Parser>(
                 token_id, logit, ..
             } = logits_indexed[i];
 
+            if let Some(&last) = token_stream.tokens().last() {
+                let pair = [last, token_id];
+                let decoded = tokenizer.decode(&pair, false).unwrap();
+                let encoded = tokenizer
+                    .encode_fast(&*decoded, false)
+                    .map_err(LlamaModelError::Tokenizer)?;
+                if encoded.get_ids().len() == 1 {
+                    continue;
+                }
+            }
+
             let Some(text) = token_cache.get(token_id as usize) else {
                 continue;
             };
             if let Ok(result) = parser.parse(&parser_state, text.as_bytes()) {
-                let parsed_bytes = match result {
+                let parsed_bytes = match &result {
                     ParseStatus::Finished { remaining, .. } => text.len() - remaining.len(),
-                    ParseStatus::Incomplete { .. } => text.len(),
+                    ParseStatus::Incomplete { .. } => {
+                        let mut has_valid_next = false;
+                        // If this is incomplete, make sure there is a token that can follow this one that will be valid.
+                        for logit in 0..logits_indexed.len() {
+                            let logit = logit as u32;
+                            let pair = [token_id, logit];
+                            // let decoded = tokenizer.decode(&pair, false).unwrap();
+                            let Some(decoded) = token_stream.peek_next_tokens(pair).unwrap() else {
+                                continue;
+                            };
+                            let encoded = tokenizer
+                                .encode_fast(&*decoded, false)
+                                .map_err(LlamaModelError::Tokenizer)?;
+                            if encoded.get_ids().len() == 1 {
+                                continue;
+                            }
+                            if parser.parse(&parser_state, decoded.as_bytes()).is_err() {
+                                continue;
+                            }
+                            has_valid_next = true;
+                            break;
+                        }
+                        if !has_valid_next {
+                            println!("Token {:?} is invalid", tokenizer.id_to_token(token_id));
+                            continue;
+                        }
+                        text.len()
+                    }
                 };
                 let result = result.without_remaining();
                 state_map[token_id as usize] = Some((result, parsed_bytes));
@@ -254,6 +294,7 @@ pub(crate) fn generate_structured<P: Parser>(
             }
             strip_required_next = false;
         }
+        println!("Adding token {} to parser", token);
         on_token(token)?;
 
         if let Some(result) = update_state(
