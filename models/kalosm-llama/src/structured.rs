@@ -188,11 +188,8 @@ pub(crate) fn generate_structured<P: Parser>(
 
             if let Some(&last) = token_stream.tokens().last() {
                 let pair = [last, token_id];
-                let decoded = tokenizer.decode(&pair, false).unwrap();
-                let encoded = tokenizer
-                    .encode_fast(&*decoded, false)
-                    .map_err(LlamaModelError::Tokenizer)?;
-                if encoded.get_ids().len() == 1 {
+                if llm.merges.contains(&pair) {
+                    println!("Skipping... Token {:?} is invalid", tokenizer.id_to_token(token_id));
                     continue;
                 }
             }
@@ -240,8 +237,15 @@ pub(crate) fn generate_structured<P: Parser>(
                     .as_ref()
                     .unwrap_or_else(|| panic!("Token {} not found in state map", token_id));
                 let has_valid_next = if let ParseStatus::Incomplete { .. } = result {
-                    // If this is incomplete, make sure there is a token that can follow this one that will be valid.
-                    (0..logits_indexed.len()).any(|logit| {
+                    #[inline(never)]
+                    fn loop_inner<P: Parser>(
+                        llm: &LlamaModel,
+                        token_stream: &TokenOutputStream,
+                        parser: &P,
+                        parser_state: &P::PartialState,
+                        token_id: u32,
+                        logit: usize,
+                    ) -> bool {
                         let logit = logit as u32;
                         let pair = [token_id, logit];
                         let Some(decoded) = token_stream.peek_next_tokens(pair).unwrap() else {
@@ -256,6 +260,10 @@ pub(crate) fn generate_structured<P: Parser>(
                             return false;
                         }
                         true
+                    }
+                    // If this is incomplete, make sure there is a token that can follow this one that will be valid.
+                    (0..logits_indexed.len()).any(|logit| {
+                        loop_inner(llm, &token_stream, &parser, &parser_state, token_id, logit)
                     })
                 } else {
                     true
@@ -263,7 +271,7 @@ pub(crate) fn generate_structured<P: Parser>(
                 if has_valid_next {
                     break;
                 } else {
-                    println!("Token {:?} is invalid", tokenizer.id_to_token(token_id));
+                    println!("Skipping... Token {:?} is invalid", tokenizer.id_to_token(token_id));
                     logits.retain(|logit| logit.token_id != token_id);
                 }
             }
