@@ -4090,6 +4090,7 @@ dependencies = [
  "pretty_assertions",
  "rand 0.8.5",
  "rayon",
+ "rustc-hash 2.1.1",
  "safetensors",
  "serde",
  "serde_json",

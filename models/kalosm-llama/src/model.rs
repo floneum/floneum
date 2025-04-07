@@ -7,8 +7,12 @@ use crate::LlamaConfigJson;
 use kalosm_common::*;
 use kalosm_model_types::ModelLoadingProgress;
 use llm_samplers::types::Logits;
+use rustc_hash::FxHashSet;
 use serde::de::Error;
+use serde::Deserialize;
+use serde::Serialize;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use candle_core::{
@@ -64,6 +68,7 @@ pub(crate) struct LlamaModel {
     pub(crate) model: Model,
     pub(crate) device: Device,
     pub(crate) tokenizer: Arc<Tokenizer>,
+    pub(crate) merges: FxHashSet<[u32; 2]>,
 }
 
 impl LlamaModel {
@@ -139,6 +144,12 @@ impl LlamaModel {
             .source
             .model(|progress| handler(create_progress(progress)))
             .await?;
+
+        let merges = extract_merges(
+            &std::fs::read(tokenizer_path.as_ref().unwrap()).map_err(|err| {
+                LlamaSourceError::Tokenizer(serde_json::Error::custom(err).into())
+            })?,
+        )?;
 
         // Then actually load the model and tokenizer. This is expensive, so we do it in a blocking task
         let (model, tokenizer) = tokio::task::spawn_blocking({
@@ -339,6 +350,7 @@ impl LlamaModel {
             model,
             tokenizer: Arc::new(tokenizer),
             device,
+            merges,
         })
     }
 
@@ -493,4 +505,59 @@ impl LlamaModel {
 
         Ok(())
     }
+}
+
+fn normalize_token(token: &str) -> String {
+    token
+        .replace(" ", "Ġ")
+        .replace("\t", "ĉ")
+        .replace("\n", "Ċ")
+        .replace("\r", "č")
+}
+
+fn extract_merges(bytes: &[u8]) -> Result<FxHashSet<[u32; 2]>, LlamaSourceError> {
+    #[derive(Debug, Serialize, Deserialize)]
+    struct SerializedModel {
+        vocab: std::collections::HashMap<String, u32>,
+        merges: Vec<String>,
+    }
+    let json = serde_json::from_slice::<serde_json::Value>(bytes).unwrap();
+    let model = json["model"].clone();
+    let deserialized = serde_json::from_value::<SerializedModel>(model).unwrap();
+
+    let vocab: HashMap<_, _> = deserialized
+        .vocab
+        .into_iter()
+        .map(|(k, v)| {
+            let k = normalize_token(&k);
+            (k.as_bytes().to_vec(), v)
+        })
+        .collect();
+    let mut vocab_sorted: Vec<_> = vocab.iter().map(|(k, v)| (k.clone(), *v)).collect();
+    vocab_sorted.sort_by_key(|(_, v)| *v);
+    let tokens: Vec<_> = vocab_sorted.into_iter().map(|(k, _)| k).collect();
+
+    let merges = deserialized
+        .merges
+        .into_iter()
+        .map(|merge| {
+            let (first, second) = merge.split_once(' ').unwrap();
+            let first = normalize_token(first);
+            let second = normalize_token(second);
+            let first_bytes = first.as_bytes();
+            let second_bytes = second.as_bytes();
+            let merged: Vec<u8> = first_bytes
+                .iter()
+                .chain(second_bytes.iter())
+                .copied()
+                .collect();
+            let new_token = *vocab.get(&merged).unwrap();
+            debug_assert_eq!(merged, tokens[new_token as usize]);
+            let first = *vocab.get(first_bytes).unwrap();
+            let second = *vocab.get(second_bytes).unwrap();
+            [first, second]
+        })
+        .collect();
+
+    Ok(merges)
 }

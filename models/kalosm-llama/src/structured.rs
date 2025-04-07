@@ -9,6 +9,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tokenizers::tokenizer::Tokenizer;
+use tokenizers::Model;
 
 use crate::model::LlamaModelError;
 use crate::token_stream::TokenOutputStream;
@@ -202,34 +203,7 @@ pub(crate) fn generate_structured<P: Parser>(
             if let Ok(result) = parser.parse(&parser_state, text.as_bytes()) {
                 let parsed_bytes = match &result {
                     ParseStatus::Finished { remaining, .. } => text.len() - remaining.len(),
-                    ParseStatus::Incomplete { .. } => {
-                        let mut has_valid_next = false;
-                        // If this is incomplete, make sure there is a token that can follow this one that will be valid.
-                        for logit in 0..logits_indexed.len() {
-                            let logit = logit as u32;
-                            let pair = [token_id, logit];
-                            // let decoded = tokenizer.decode(&pair, false).unwrap();
-                            let Some(decoded) = token_stream.peek_next_tokens(pair).unwrap() else {
-                                continue;
-                            };
-                            let encoded = tokenizer
-                                .encode_fast(&*decoded, false)
-                                .map_err(LlamaModelError::Tokenizer)?;
-                            if encoded.get_ids().len() == 1 {
-                                continue;
-                            }
-                            if parser.parse(&parser_state, decoded.as_bytes()).is_err() {
-                                continue;
-                            }
-                            has_valid_next = true;
-                            break;
-                        }
-                        if !has_valid_next {
-                            println!("Token {:?} is invalid", tokenizer.id_to_token(token_id));
-                            continue;
-                        }
-                        text.len()
-                    }
+                    ParseStatus::Incomplete { .. } => text.len(),
                 };
                 let result = result.without_remaining();
                 state_map[token_id as usize] = Some((result, parsed_bytes));
@@ -252,25 +226,60 @@ pub(crate) fn generate_structured<P: Parser>(
         if !valid_tokens {
             return Err(LlamaModelError::NoValidTokens);
         }
-        let token_id = sampler
-            .sample_token(resources, &mut logits)
-            .map_err(|err| LlamaModelError::SamplerError(err.into()))?
-            .ok_or(LlamaModelError::NoValidTokens)?;
+        let token_id = {
+            let mut token_id;
+
+            loop {
+                token_id = sampler
+                    .sample_token(resources, &mut logits.clone())
+                    .map_err(|err| LlamaModelError::SamplerError(err.into()))?
+                    .ok_or(LlamaModelError::NoValidTokens)?;
+                let (result, _) = state_map
+                    .get(token_id as usize)
+                    .unwrap()
+                    .as_ref()
+                    .unwrap_or_else(|| panic!("Token {} not found in state map", token_id));
+                let has_valid_next = if let ParseStatus::Incomplete { .. } = result {
+                    // If this is incomplete, make sure there is a token that can follow this one that will be valid.
+                    (0..logits_indexed.len()).any(|logit| {
+                        let logit = logit as u32;
+                        let pair = [token_id, logit];
+                        let Some(decoded) = token_stream.peek_next_tokens(pair).unwrap() else {
+                            return false;
+                        };
+
+                        if llm.merges.contains(&pair) {
+                            return false;
+                        }
+
+                        if parser.parse(&parser_state, decoded.as_bytes()).is_err() {
+                            return false;
+                        }
+                        true
+                    })
+                } else {
+                    true
+                };
+                if has_valid_next {
+                    break;
+                } else {
+                    println!("Token {:?} is invalid", tokenizer.id_to_token(token_id));
+                    logits.retain(|logit| logit.token_id != token_id);
+                }
+            }
+            token_id
+        };
 
         // If this and the last token would result in a valid merge, then the probability in the training data should be close
         // to zero
         if let Some(&last) = token_stream.tokens().last() {
             let pair = [last, token_id];
-            let decoded = tokenizer.decode(&pair, false).unwrap();
-            let encoded = tokenizer
-                .encode_fast(&*decoded, false)
-                .map_err(LlamaModelError::Tokenizer)?;
-            if encoded.get_ids().len() == 1 {
+            if llm.merges.contains(&pair) {
                 println!(
-                    "Tokens {:?} and {:?} should have already merged into {}",
+                    "Tokens {:?} and {:?} should have already merged into {:?}",
                     tokenizer.id_to_token(last),
                     tokenizer.id_to_token(token_id),
-                    decoded
+                    tokenizer.decode(&pair, false)
                 );
             }
         }
