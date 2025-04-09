@@ -300,5 +300,6 @@ impl<const R: usize, D: DataType> TensorCache<R, D> {
             );
             self.cache = Some(cache);
         }
+        self.filled_size = size_required_for_append;
     }
 }
