@@ -59,9 +59,7 @@ impl AttentionMask {
         let shape = attn_weights.shape();
         let attention_mask = self.mask.broadcast(*shape);
         let on_true = self.on_true.get_or_init(|| {
-            let on_true = Tensor::splat(attn_weights.device(), f32::NEG_INFINITY, *shape);
-            _ = self.on_true.set(on_true.clone());
-            on_true
+            Tensor::splat(attn_weights.device(), f32::NEG_INFINITY, *shape)
         });
         *attn_weights = attention_mask.where_cond(on_true.clone(), attn_weights.clone());
     }
