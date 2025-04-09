@@ -91,9 +91,14 @@ impl LlamaModel {
 
         let logits = model.forward(tokens, device, cache);
 
-        // let logits = logits.squeeze(0)?.to_dtype(DType::F32)?;
-        // copy_tensor_into_vec(&logits, logits_vec)?;
-        todo!();
+        let logits = logits.cast::<f32>();
+        let len = logits.shape()[0];
+        let logits = futures::executor::block_on(async move { logits.as_slice().await.unwrap() });
+        logits_vec.clear();
+        for i in 0..len {
+            let logit = logits[[i]];
+            logits_vec.push(logit);
+        }
 
         Ok(())
     }

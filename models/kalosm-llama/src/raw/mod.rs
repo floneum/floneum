@@ -376,10 +376,10 @@ impl Model {
             layer_in = layer.feed_forward_variant.forward(&x) + residual;
         }
         let x = self.norm.forward(&layer_in);
-        let [hidden_size, _] = x.shape();
-        let x = x
-            .slice([0..*hidden_size, (seq_len - 2)..(seq_len - 1)])
-            .reshape([*hidden_size]);
-        x.q_mat_mul(&self.output)
+        let [_, hidden_size] = x.shape();
+        let x = x.slice([(seq_len - 2)..(seq_len - 1), 0..*hidden_size]);
+        let out = x.q_mat_mul(&self.output);
+        let [_, size] = *out.shape();
+        out.reshape([size])
     }
 }

@@ -4077,6 +4077,7 @@ dependencies = [
  "cudarc 0.9.15",
  "fusor-core",
  "fusor-gguf",
+ "futures",
  "half 2.5.0",
  "intel-mkl-src",
  "kalosm",
