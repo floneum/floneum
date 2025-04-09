@@ -27,7 +27,7 @@ impl QMatMulOperation {
     }
 }
 
-impl<const R: usize, T: DataType> Tensor<R, T> {
+impl<T: DataType> Tensor<2, T> {
     pub fn q_mat_mul(&self, other: &QMatrix) -> Self {
         self.add_q_mat_mul(other)
     }

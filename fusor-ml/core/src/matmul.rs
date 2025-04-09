@@ -24,15 +24,21 @@ impl MatMulOperation {
         first_shape: &[usize],
         second_shape: &[usize],
     ) -> Self {
+        let last_dim = first_shape.len() - 1;
+        let second_to_last_dim = first_shape.len() - 2;
+        let mut out_shape = first_shape.to_vec();
+        out_shape[second_to_last_dim] = first_shape[second_to_last_dim];
+        out_shape[last_dim] = second_shape[last_dim];
         Self {
             first,
             second,
-            out_shape: [first_shape[0], second_shape[1]].into(),
+            out_shape: out_shape.into(),
         }
     }
 }
 
 impl<const R: usize, T: DataType> Tensor<R, T> {
+    // (..., M, K) @ (..., K, N) -> (..., M, N)
     pub fn mat_mul(&self, other: &Self) -> Self {
         self.add_mat_mul(other)
     }
@@ -93,12 +99,32 @@ impl UntypedMatMul {
             let workgroup_index = generic_kernel.workgroup_index();
             let workgroup_local_index = generic_kernel.workgroup_local_index();
 
-            let k_size = input_a.shape_binding(1);
-            let m_size = input_a.shape_binding(0);
-            let n_size = input_b.shape_binding(1);
+            let k_size = input_a.shape_binding(self.rank - 1);
+            let m_size = input_a.shape_binding(self.rank - 2);
+            let n_size = input_b.shape_binding(self.rank - 1);
 
             writeln!(&mut kernel, "let block_col = {workgroup_index}.x;").unwrap();
             writeln!(&mut kernel, "let block_row = {workgroup_index}.y;").unwrap();
+            writeln!(&mut kernel, "var block_batch = {workgroup_index}.z;").unwrap();
+
+            for dim in (0..self.rank).rev().skip(2) {
+                let shape = input_a.shape_binding(dim);
+                writeln!(&mut kernel, "let block_batch_{dim} = block_batch % {shape};").unwrap();
+                writeln!(&mut kernel, "block_batch /= {shape};").unwrap();
+            }
+
+            // Find the batch offset for a, b and output
+            for (name, tensor) in [("a", &input_a), ("b", &input_b), ("output", &output)] {
+                writeln!(&mut kernel, "let {name}_start_index = ").unwrap();
+                let offset = tensor.offset_binding();
+                write!(&mut kernel, "{offset}").unwrap();
+                for dim in (0..self.rank).rev().skip(2) {
+                    let stride = tensor.stride_binding(dim);
+                    write!(&mut kernel, " + block_batch_{dim}*{stride}").unwrap();
+                }
+                writeln!(&mut kernel, ";").unwrap();
+            }
+
             writeln!(&mut kernel, "let thread_col = {workgroup_local_index} % {WORK_GROUP_BLOCK_N_SIZE};").unwrap();
             writeln!(&mut kernel, "let thread_row = {workgroup_local_index} / {WORK_GROUP_BLOCK_N_SIZE};").unwrap();
             writeln!(&mut kernel, "let a_thread_col = {workgroup_local_index} % {WORK_GROUP_BLOCK_K_SIZE};").unwrap();
@@ -131,7 +157,7 @@ impl UntypedMatMul {
             writeln!(&mut kernel, "if a_col < a_col_max && a_row < a_row_max {{").unwrap();
             writeln!(&mut kernel, "let a_index = a_row + a_col;").unwrap();
             // If everything is in range, load the value into the workgroup cache
-            writeln!(&mut kernel, "{cache_a}[a_thread_row * {WORK_GROUP_BLOCK_K_SIZE} + a_thread_col] = {input_a}[a_index];").unwrap();
+            writeln!(&mut kernel, "{cache_a}[a_thread_row * {WORK_GROUP_BLOCK_K_SIZE} + a_thread_col] = {input_a}[a_start_index + a_index];").unwrap();
             writeln!(&mut kernel, "}}").unwrap();
             writeln!(&mut kernel, "else {{").unwrap();
             writeln!(&mut kernel, "{cache_a}[a_thread_row * {WORK_GROUP_BLOCK_K_SIZE} + a_thread_col] = 0.0;").unwrap();
@@ -140,7 +166,7 @@ impl UntypedMatMul {
             writeln!(&mut kernel, "if b_col < b_col_max && b_row < b_row_max {{").unwrap();
             writeln!(&mut kernel, "let b_index = b_row + b_col;").unwrap();
             // If everything is in range, load the value into the workgroup cache
-            writeln!(&mut kernel, "{cache_b}[b_thread_row * {WORK_GROUP_BLOCK_N_SIZE} + b_thread_col] = {input_b}[b_index];").unwrap(); 
+            writeln!(&mut kernel, "{cache_b}[b_thread_row * {WORK_GROUP_BLOCK_N_SIZE} + b_thread_col] = {input_b}[b_start_index + b_index];").unwrap(); 
             writeln!(&mut kernel, "}}").unwrap();
             writeln!(&mut kernel, "else {{").unwrap();
             writeln!(&mut kernel, "{cache_b}[b_thread_row * {WORK_GROUP_BLOCK_N_SIZE} + b_thread_col] = 0.0;").unwrap();
@@ -173,7 +199,7 @@ impl UntypedMatMul {
             writeln!(&mut kernel, "let output_row = start_output_row + result_index;").unwrap();
             writeln!(&mut kernel, "if output_col < {n_size} && output_row < {m_size} {{").unwrap();
             writeln!(&mut kernel, "let output_index = output_row * {n_size} + output_col;").unwrap();
-            writeln!(&mut kernel, "{output}[output_index] += results[result_index];").unwrap();
+            writeln!(&mut kernel, "{output}[output_start_index + output_index] += results[result_index];").unwrap();
             writeln!(&mut kernel, "}}").unwrap();
             writeln!(&mut kernel, "}}").unwrap();
 
@@ -190,23 +216,25 @@ impl UntypedMatMul {
         query: Option<&PerformanceQueries>,
         command_encoder: &mut CommandEncoder,
     ) -> TensorData {
+        let last_dim = self.rank as usize - 1;
+        let second_to_last_dim = self.rank as usize - 2;
         let device = a.device();
         let a_shape = a.layout().shape();
         let b_shape = b.layout().shape();
+        let output_element_count = a_shape[second_to_last_dim]
+            * b_shape[last_dim]
+            * a_shape.iter().rev().skip(2).product::<usize>();
         let output_buf = device.wgpu_device().create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: padded_tensor_size(
-                (a_shape[0] * b_shape[1] * a.datatype().element_size()) as u64,
-            ),
+            size: padded_tensor_size((output_element_count * a.datatype().element_size()) as u64),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
-        let output_tensor = TensorData::new_from_buffer(
-            device,
-            output_buf,
-            &[a_shape[0], b_shape[1]],
-            a.datatype(),
-        );
+        let mut out_shape = a_shape.to_vec();
+        out_shape[second_to_last_dim] = a_shape[second_to_last_dim];
+        out_shape[last_dim] = b_shape[last_dim];
+        let output_tensor =
+            TensorData::new_from_buffer(device, output_buf, &out_shape, a.datatype());
         self.run_with_query_and_out_tensor(device, a, b, query, &output_tensor, command_encoder);
         output_tensor
     }
@@ -220,17 +248,46 @@ impl UntypedMatMul {
         output_tensor: &TensorData,
         command_encoder: &mut CommandEncoder,
     ) {
-        assert_eq!(a.layout().shape()[1], b.layout().shape()[0]);
+        let last_dim = self.rank as usize - 1;
+        let second_to_last_dim = self.rank as usize - 2;
+        assert_eq!(
+            a.layout().shape()[last_dim],
+            b.layout().shape()[second_to_last_dim]
+        );
+        assert!(
+            a.layout()
+                .shape()
+                .iter()
+                .rev()
+                .skip(2)
+                .zip(b.layout().shape().iter().rev().skip(2))
+                .all(|(a, b)| a == b)
+        );
+        assert!(
+            a.layout()
+                .shape()
+                .iter()
+                .rev()
+                .skip(2)
+                .zip(output_tensor.layout().shape().iter().rev().skip(2))
+                .all(|(a, o)| a == o)
+        );
         let module = self.compile();
 
         let a_shape = a.layout().shape();
         let b_shape = b.layout().shape();
-        assert_eq!(*output_tensor.layout().shape(), [a_shape[0], b_shape[1]]);
+        assert_eq!(output_tensor.layout().shape()[last_dim], b_shape[last_dim]);
+        assert_eq!(
+            output_tensor.layout().shape()[second_to_last_dim],
+            a_shape[second_to_last_dim]
+        );
+
+        let batch_size = a_shape.iter().rev().skip(2).product::<usize>();
 
         let workgroup_dispatch_size = [
-            (b_shape[1] as u32).div_ceil(WORK_GROUP_BLOCK_N_SIZE),
-            (a_shape[0] as u32).div_ceil(WORK_GROUP_BLOCK_M_SIZE),
-            1,
+            (b_shape[last_dim] as u32).div_ceil(WORK_GROUP_BLOCK_N_SIZE),
+            (a_shape[second_to_last_dim] as u32).div_ceil(WORK_GROUP_BLOCK_M_SIZE),
+            batch_size as u32,
         ];
 
         module.run_with_query(
@@ -260,6 +317,30 @@ async fn test_matmul() {
     assert_eq!(as_slice[[0, 1]], 2.);
     assert_eq!(as_slice[[1, 0]], 3.);
     assert_eq!(as_slice[[1, 1]], 6.);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_batched_matmul() {
+    let device = Device::new().await.unwrap();
+
+    let data_a = [[[1.], [3.]], [[2.], [6.]]];
+    let data_b = [[[1., 2.]], [[2., 4.]]];
+    let tensor_a = Tensor::new(&device, &data_a);
+    let tensor_b = Tensor::new(&device, &data_b);
+    let tensor = tensor_a.mat_mul(&tensor_b);
+    let as_slice = tensor.as_slice().await.unwrap();
+    println!("{:?}", as_slice);
+
+    assert_eq!(as_slice[[0, 0, 0]], 1.);
+    assert_eq!(as_slice[[0, 0, 1]], 2.);
+    assert_eq!(as_slice[[0, 1, 0]], 3.);
+    assert_eq!(as_slice[[0, 1, 1]], 6.);
+
+    assert_eq!(as_slice[[1, 0, 0]], 4.);
+    assert_eq!(as_slice[[1, 0, 1]], 8.);
+    assert_eq!(as_slice[[1, 1, 0]], 12.);
+    assert_eq!(as_slice[[1, 1, 1]], 24.);
 }
 
 #[cfg(test)]

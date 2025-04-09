@@ -793,7 +793,13 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
     }
 
     pub fn shape(&self) -> &[usize; R] {
-        self.data.info.shape().try_into().unwrap()
+        let shape = self.data.info.shape();
+        match shape.try_into() {
+            Ok(shape) => shape,
+            Err(_) => {
+                panic!("Internal error. Expected a tensor of rank {R}, found shape: {shape:?}")
+            }
+        }
     }
 
     pub fn rank(&self) -> usize {

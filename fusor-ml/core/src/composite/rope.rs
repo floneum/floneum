@@ -1,7 +1,5 @@
 use crate::{DataType, Tensor};
 
-const LAST_OF_THREE_DIMS: usize = 2;
-
 fn rotate_half<const N: usize, D: DataType>(xs: Tensor<N, D>) -> Tensor<N, D> {
     let last_dim = xs.shape().last().unwrap();
     let xs1 = xs.narrow(N - 1, 0, last_dim / 2);
@@ -11,10 +9,11 @@ fn rotate_half<const N: usize, D: DataType>(xs: Tensor<N, D>) -> Tensor<N, D> {
 
 impl<D: DataType> Tensor<3, D> {
     pub fn rope(self, cos: Tensor<2, D>, sin: Tensor<2, D>) -> Tensor<3, D> {
+        const LAST_DIM: usize = 2;
         let shape = *self.shape();
         let [_height, sequence_length, _embed] = shape;
-        let cos = Tensor::cat([cos.clone(), cos.clone()], LAST_OF_THREE_DIMS);
-        let sin = Tensor::cat([sin.clone(), sin.clone()], LAST_OF_THREE_DIMS);
+        let cos = Tensor::cat([cos.clone(), cos.clone()], LAST_DIM);
+        let sin = Tensor::cat([sin.clone(), sin.clone()], LAST_DIM);
         let cos = cos.narrow(0, 0, sequence_length);
         let sin = sin.narrow(0, 0, sequence_length);
         let rotated = rotate_half(self.clone());
@@ -22,6 +21,7 @@ impl<D: DataType> Tensor<3, D> {
     }
 
     pub fn rope_interleaved(self, cos: Tensor<2, D>, sin: Tensor<2, D>) -> Tensor<3, D> {
+        const LAST_DIM: usize = 3;
         let shape = *self.shape();
         let [height, sequence_length, embed] = shape;
 
@@ -34,13 +34,15 @@ impl<D: DataType> Tensor<3, D> {
 
         let x = self.reshape([height, sequence_length, embed / 2, 2]);
 
-        let x0 = x.narrow(LAST_OF_THREE_DIMS, 0, 1);
-        let x1 = x.narrow(LAST_OF_THREE_DIMS, 1, 1);
+        let x0 = x.narrow(LAST_DIM, 0, 1);
+        let x1 = x.narrow(LAST_DIM, 1, 1);
 
-        let y0 = &x0 * &cos - &x1 * &sin;
+        let a = &x0 * &cos;
+        let b = &x1 * &sin;
+        let y0 = a - b;
         let y1 = &x0 * &sin + &x1 * &cos;
 
-        let rope = Tensor::cat([y0, y1], LAST_OF_THREE_DIMS);
+        let rope = Tensor::cat([y0, y1], LAST_DIM);
         let rope = rope.reshape([height, sequence_length, embed]);
         rope
     }
