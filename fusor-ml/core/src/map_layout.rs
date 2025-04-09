@@ -54,6 +54,8 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
     }
 
     pub fn transpose(&self, first_axis: usize, second_axis: usize) -> Tensor<R, T> {
+        assert!(first_axis < self.rank());
+        assert!(second_axis < self.rank());
         self.add_map_layout(MapLayoutOperation::new(
             self.key(),
             move |shape| {

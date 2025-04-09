@@ -259,6 +259,10 @@ impl ComputeGraph {
                     .nodes
                     .q_mat_mul
                     .extend(other_inner.nodes.q_mat_mul.drain());
+                inner
+                    .nodes
+                    .dequantize
+                    .extend(other_inner.nodes.dequantize.drain());
 
                 inner
                     .timing_information
@@ -383,7 +387,7 @@ impl ComputeGraph {
         self.with_mut(|inner| {
             inner
                 .nodes
-                .dequanitze
+                .dequantize
                 .insert(id, DequantizeOperation::new(matrix, ty));
             inner.add_reference(id.into());
         });
@@ -439,7 +443,7 @@ pub(crate) struct ComputeGraphNodes {
     index_select: HashMap<IndexSelectComputeNodeKey, IndexSelectOperation>,
     tensor: HashMap<TensorComputeNodeKey, TensorData>,
     q_mat_mul: HashMap<QMatMulComputeNodeKey, QMatMulOperation>,
-    dequanitze: HashMap<DequantizeComputeKey, DequantizeOperation>,
+    dequantize: HashMap<DequantizeComputeKey, DequantizeOperation>,
 }
 
 struct ComputeGraphInner {
@@ -563,7 +567,7 @@ impl ComputeGraphInner {
                 self.nodes.tensor.remove(&tensor_compute_node_key);
             }
             AnyComputeKey::Dequantize(dequantize_compute_key) => {
-                self.nodes.dequanitze.remove(&dequantize_compute_key);
+                self.nodes.dequantize.remove(&dequantize_compute_key);
             }
         }
     }

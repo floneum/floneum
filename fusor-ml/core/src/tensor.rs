@@ -759,6 +759,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         let op = IndexSelectOperation::new(
             self.data.key,
             indexes.data.key,
+            self.datatype(),
             dimension,
             indexes.shape()[0],
         );

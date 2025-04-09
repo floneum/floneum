@@ -8,6 +8,7 @@ use wgpu::CommandEncoder;
 pub(crate) struct IndexSelectOperation {
     pub(crate) input: AnyComputeKey,
     pub(crate) indexes: AnyComputeKey,
+    pub(crate) datatype: DataTypeEnum,
     pub(crate) dimension: usize,
     pub(crate) length: usize,
 }
@@ -16,15 +17,35 @@ impl IndexSelectOperation {
     pub fn new(
         input: AnyComputeKey,
         indexes: AnyComputeKey,
+        datatype: DataTypeEnum,
         dimension: usize,
         length: usize,
     ) -> Self {
         Self {
             input,
             indexes,
+            datatype,
             dimension,
             length,
         }
+    }
+
+    pub(crate) fn output_shape(
+        dimension: usize,
+        value_shape: &[usize],
+        indexes_shape: &[usize],
+    ) -> Box<[usize]> {
+        value_shape
+            .iter()
+            .enumerate()
+            .map(|(i, dim)| {
+                if i == dimension {
+                    indexes_shape[0]
+                } else {
+                    *dim
+                }
+            })
+            .collect()
     }
 }
 
@@ -77,17 +98,7 @@ impl UntypedIndexSelectKernel {
         let device = value.device();
         let value_shape = value.layout().shape();
         let indexes_shape = indexes.layout().shape();
-        let output_shape: Box<[usize]> = value_shape
-            .iter()
-            .enumerate()
-            .map(|(i, dim)| {
-                if i == self.dimension {
-                    indexes_shape[0]
-                } else {
-                    *dim
-                }
-            })
-            .collect();
+        let output_shape: Box<[usize]> = IndexSelectOperation::output_shape(self.dimension, value_shape, indexes_shape);
         let output_buf = device.wgpu_device().create_buffer(&wgpu::BufferDescriptor {
             label: None,
             size: padded_tensor_size(

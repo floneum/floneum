@@ -43,6 +43,7 @@ impl<'a> Resolver<'a> {
         if let Some(tensor) = self.graph.cached_results.get(&key) {
             return tensor.clone();
         }
+        println!("Resolving {:?}", key);
 
         let resolved = match key {
             AnyComputeKey::ElementWise(element_wise_compute_node_key) => {
@@ -172,7 +173,7 @@ impl<'a> Resolver<'a> {
         let first: MaybeQData = if let AnyComputeKey::Dequantize(key) = first_input {
             self.graph
                 .nodes
-                .dequanitze
+                .dequantize
                 .get(&key)
                 .unwrap()
                 .matrix
@@ -184,7 +185,7 @@ impl<'a> Resolver<'a> {
         let second: MaybeQData = if let AnyComputeKey::Dequantize(key) = second_input {
             self.graph
                 .nodes
-                .dequanitze
+                .dequantize
                 .get(&key)
                 .unwrap()
                 .matrix
@@ -244,7 +245,7 @@ impl<'a> Resolver<'a> {
         key: DequantizeComputeKey,
         then: Vec<ElementWiseFunction>,
     ) -> TensorData {
-        let operation = self.graph.nodes.dequanitze.get(&key).unwrap();
+        let operation = self.graph.nodes.dequantize.get(&key).unwrap();
 
         let mut kernel = UntypedDequantize::new(operation.datatype, operation.matrix.clone());
         let then = element_wise::UntypedElementWiseKernel::new(then, operation.datatype);
