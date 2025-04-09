@@ -223,7 +223,7 @@ impl ComputeGraph {
     }
 
     pub(crate) fn merge(&self, other: &Self) {
-        if Arc::ptr_eq(&self.inner, &other.inner) {
+        if Arc::ptr_eq(&self.inner.load(), &other.inner.load()) {
             return;
         }
         self.with_mut(|inner| {
