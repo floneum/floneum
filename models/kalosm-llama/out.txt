@@ -1,0 +1,36 @@
+# with constraints
+iteration 0 sampled text:
+
+[{ "name": "Lion", "description": "The king of the jungle", "color": "Golden", "size": "large", "diet": "carnivore" }, { "name": "Tiger", "description": "A fierce and powerful predator", "color": "Orange", "size": "medium", "diet": "carnivore" }, { "name": "Bear", "description": "A massive and powerful mammal", "color": "Brown", "size": "large", "diet": "herbivore" }, { "name": "Monkey", "description": "A agile and intelligent primate", "color": "Brown", "size": "small", "diet": "carnivore" }]
+
+
+iteration 1 sampled text:
+
+[{ "name": "Lion", "description": "The king of the jungle", "color": "Golden", "size": "small", "diet": "carnivore" }, { "name": "Tiger", "description": "A fierce and powerful predator", "color": "Orange", "size": "medium", "diet": "carnivore" }, { "name": "Bear", "description": "A massive and powerful mammal", "color": "Brown", "size": "large", "diet": "herbivore" }, { "name": "Monkey", "description": "A agile and intelligent primate", "color": "Brown", "size": "small", "diet": "carnivore" }]
+
+
+iteration 2 sampled text:
+
+[{ "name": "Lion", "description": "The king of the jungle", "color": "Golden brown", "size": "large", "diet": "carnivore" }, { "name": "Tiger", "description": "A fierce and powerful predator", "color": "Orange", "size": "medium", "diet": "carnivore" }, { "name": "Bear", "description": "A massive and powerful mammal", "color": "Brown", "size": "large", "diet": "herbivore" }, { "name": "Monkey", "description": "A agile and intelligent primate", "color": "Brown", "size": "small", "diet": "carnivore" }]
+
+
+iteration 3 sampled text:
+
+[{ "name": "Lion", "description": "The king of the jungle", "color": "Golden fur", "size": "large", "diet": "carnivore" }, { "name": "Tiger", "description": "A fierce and powerful predator", "color": "Orange and black stripes", "size": "medium", "diet": "carnivore" }, { "name": "Bear", "description": "A massive and powerful mammal", "color": "Brown fur", "size": "large", "diet": "herbivore" }, { "name": "Monkey", "description": "A agile and intelligent primate", "color": "Brown and gray", "size": "small", "diet": "carnivore" }]
+
+
+iteration 4 sampled text:
+
+[{ "name": "Lion", "description": "The king of the jungle", "color": "Golden", "size": "large", "diet": "carnivore" }, { "name": "Tiger", "description": "A fierce and powerful predator", "color": "Orange", "size": "medium", "diet": "carnivore" }, { "name": "Bear", "description": "A massive and powerful animal", "color": "Brown", "size": "large", "diet": "herbivore" }, { "name": "Monkey", "description": "A agile and playful primate", "color": "Brown", "size": "small", "diet": "carnivore" }]
+
+
+iteration 5 sampled text:
+
+[{ "name": "Lion", "description": "The king of the jungle", "color": "Golden", "size": "large", "diet": "carnivore" }, { "name": "Tiger", "description": "A fierce and powerful predator", "color": "Orange", "size": "medium", "diet": "carnivore" }, { "name": "Bear", "description": "A massive and powerful mammal", "color": "Brown", "size": "large", "diet": "herbivore" }, { "name": "Monkey", "description": "A agile and playful primate", "color": "Brown", "size": "small", "diet": "carnivore" }]
+
+
+iteration 6 sampled text:
+
+[{ "name": "Lion", "description": "The king of the jungle", "color": "Golden", "size": "large", "diet": "carnivore" }, { "name": "Tiger", "description": "A fierce and powerful predator", "color": "Orange", "size": "medium", "diet": "carnivore" }, { "name": "Bear", "description": "A massive and powerful mammal", "color": "Brown", "size": "large", "diet": "herbivore" }, { "name": "Monkey", "description": "A agile and intelligent primate", "color": "Brown", "size": "small", "diet": "omnivore" }]
+
+

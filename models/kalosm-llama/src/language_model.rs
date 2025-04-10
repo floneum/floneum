@@ -139,11 +139,17 @@ where
                 .send(Task::StructuredGeneration(StructuredGenerationTask {
                     runner: Box::new(move |model| {
                         let mut trie = EvaluationTrie::new();
+                        let mut iteration = 0;
                         let result = loop {
                             let parser_state = parser.create_parser_state();
                             let cache = session.cache.read().unwrap().clone();
                             let mut session = LlamaSession {
                                 cache: Arc::new(RwLock::new(cache)),
+                            };
+                            let mut all_text = String::new();
+                            let mut on_token = |token: &str| {
+                                all_text += token;
+                                Ok(())
                             };
                             let result = generate_structured(
                                 text.clone(),
@@ -152,15 +158,17 @@ where
                                 &parser,
                                 parser_state,
                                 sampler.clone(),
-                                |tok| on_token(tok),
+                                |tok| on_token(tok.as_str()),
                                 Some(64),
                                 seed,
                                 &mut trie,
                             );
                             println!("graph:\n\n{}\n\n", trie.graphvis(&model.tokenizer));
+                            println!("iteration {iteration} sampled text:\n\n{}\n\n", all_text);
                             if false {
                                 break result;
                             }
+                            iteration += 1;
                         };
                         _ = tx.send(result);
                     }),
