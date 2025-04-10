@@ -321,7 +321,7 @@ pub(crate) fn generate_structured<P: Parser>(
                         .position(|node| node.token == token_id)
                         .unwrap();
                     for logit in logits_indexed.as_slice() {
-                        trie.push(logit.token_id, logit.prob, Some(parent_id), false, true);
+                        trie.push(logit.token_id, 0., Some(parent_id), false, true);
                     }
                     logits.retain(|logit| logit.token_id != token_id);
                 }
