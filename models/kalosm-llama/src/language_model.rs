@@ -8,9 +8,10 @@ use kalosm_sample::{ArcParser, CreateParserState, Parse, Parser, ParserExt};
 use llm_samplers::types::Sampler;
 use std::any::Any;
 use std::future::Future;
+use std::sync::{Arc, RwLock};
 
 use crate::model::LlamaModelError;
-use crate::structured::generate_structured;
+use crate::structured::{generate_structured, EvaluationTrie};
 pub use crate::Llama;
 use crate::LlamaBuilder;
 use crate::{
@@ -125,7 +126,7 @@ where
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
     ) -> impl Future<Output = Result<Constraints::Output, Self::Error>> + Send + 'a {
         let text = text.to_string();
-        let mut session = session.clone();
+        let session = session.clone();
         async {
             let (tx, rx) = tokio::sync::oneshot::channel();
             let seed = match (&sampler as &dyn Any).downcast_ref::<GenerationParameters>() {
@@ -133,22 +134,34 @@ where
                 None => None,
             };
             let sampler = std::sync::Arc::new(std::sync::Mutex::new(sampler));
-            let on_token = Box::new(on_token);
+            let mut on_token = Box::new(on_token);
             self.task_sender
                 .send(Task::StructuredGeneration(StructuredGenerationTask {
                     runner: Box::new(move |model| {
-                        let parser_state = parser.create_parser_state();
-                        let result = generate_structured(
-                            text,
-                            model,
-                            &mut session,
-                            parser,
-                            parser_state,
-                            sampler,
-                            on_token,
-                            Some(64),
-                            seed,
-                        );
+                        let mut trie = EvaluationTrie::new();
+                        let result = loop {
+                            let parser_state = parser.create_parser_state();
+                            let cache = session.cache.read().unwrap().clone();
+                            let mut session = LlamaSession {
+                                cache: Arc::new(RwLock::new(cache)),
+                            };
+                            let result = generate_structured(
+                                text.clone(),
+                                model,
+                                &mut session,
+                                &parser,
+                                parser_state,
+                                sampler.clone(),
+                                |tok| on_token(tok),
+                                Some(64),
+                                seed,
+                                &mut trie,
+                            );
+                            println!("graph:\n\n{}\n\n", trie.graphvis(&model.tokenizer));
+                            if false {
+                                break result;
+                            }
+                        };
                         _ = tx.send(result);
                     }),
                 }))

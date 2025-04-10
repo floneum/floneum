@@ -4,12 +4,13 @@ use llm_samplers::prelude::{Logit, Logits};
 use llm_samplers::types::{HasSamplerResources, Sampler, SamplerError};
 use rand::SeedableRng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use rustc_hash::FxHashMap;
+use std::collections::HashSet;
 use std::{
     fmt::{Debug, Display, Formatter},
     sync::{Arc, Mutex},
 };
 use tokenizers::tokenizer::Tokenizer;
-use tokenizers::Model;
 
 use crate::model::LlamaModelError;
 use crate::token_stream::TokenOutputStream;
@@ -26,6 +27,7 @@ pub(crate) fn generate_structured<P: Parser>(
     mut on_token: impl FnMut(String) -> Result<(), LlamaModelError>,
     top_k: Option<usize>,
     seed: Option<u64>,
+    trie: &mut EvaluationTrie,
 ) -> Result<P::Output, LlamaModelError> {
     let eos_token = llm.model.config.stop_token_string.clone();
     let mut on_token = move |tok: String| {
@@ -41,7 +43,6 @@ pub(crate) fn generate_structured<P: Parser>(
     let tokenizer = &llm.tokenizer;
 
     let prompt_text = prompt.to_string();
-    println!("prompt text\n{}", prompt_text);
     let prompt_tokens = tokenizer
         .encode_fast(prompt_text, false)
         .map_err(LlamaModelError::Tokenizer)?;
@@ -53,7 +54,6 @@ pub(crate) fn generate_structured<P: Parser>(
         if tokenizer.get_added_tokens_decoder().contains_key(last) {
             None
         } else {
-            println!("healing token {:?}", tokenizer.id_to_token(*last));
             prompt_tokens = tokens;
             Some(*last)
         }
@@ -102,10 +102,12 @@ pub(crate) fn generate_structured<P: Parser>(
         rand::rngs::StdRng::from_entropy()
     };
     let mut state_map = vec![];
-    let mut logits_indexed = Vec::new();
+    let mut logits_indexed = Logits::default();
     let mut token_cache = DetokenizationCache::new();
     let mut logits = Logits::default();
     let mut logit_probs = Vec::new();
+
+    let mut current_token = None;
 
     loop {
         let tokens = token_stream.tokens();
@@ -135,6 +137,8 @@ pub(crate) fn generate_structured<P: Parser>(
             });
             state_map.push(None);
         }
+        logits_indexed.set_softmax(false);
+        logits_indexed.ensure_softmax().unwrap();
 
         let mut valid_tokens = false;
 
@@ -163,7 +167,8 @@ pub(crate) fn generate_structured<P: Parser>(
                 let remaining_possible = partitioned_index - i;
                 if remaining_possible <= remaining_needed {
                     // We batch together updates to the cache by detokenization_batch_size
-                    let logits_to_update = (remaining_needed.max(detokenization_batch_size))
+                    let logits_to_update = remaining_needed
+                        .max(detokenization_batch_size)
                         .min(logits_indexed.len() - 1 - i);
                     let new_partitioned_index = i + logits_to_update;
 
@@ -183,13 +188,15 @@ pub(crate) fn generate_structured<P: Parser>(
             }
 
             let Logit {
-                token_id, logit, ..
+                token_id,
+                logit,
+                prob,
+                ..
             } = logits_indexed[i];
 
             if let Some(&last) = token_stream.tokens().last() {
                 let pair = [last, token_id];
                 if llm.merges.contains(&pair) {
-                    println!("Skipping... Token {:?} is invalid", tokenizer.id_to_token(token_id));
                     continue;
                 }
             }
@@ -197,7 +204,9 @@ pub(crate) fn generate_structured<P: Parser>(
             let Some(text) = token_cache.get(token_id as usize) else {
                 continue;
             };
-            if let Ok(result) = parser.parse(&parser_state, text.as_bytes()) {
+            let result = parser.parse(&parser_state, text.as_bytes());
+            trie.push(token_id, prob, current_token, result.is_ok(), false);
+            if let Ok(result) = result {
                 let parsed_bytes = match &result {
                     ParseStatus::Finished { remaining, .. } => text.len() - remaining.len(),
                     ParseStatus::Incomplete { .. } => text.len(),
@@ -226,9 +235,32 @@ pub(crate) fn generate_structured<P: Parser>(
         let token_id = {
             let mut token_id;
 
+            // softmax logits
+            logits.set_softmax(false);
+            logits.ensure_softmax().unwrap();
+            for logit in &mut *logits {
+                let estimate = match current_token {
+                    Some(current) => trie.nodes[current]
+                        .evaluated_children
+                        .get(&logit.token_id)
+                        .map(|i| trie.estimated_probability(*i)),
+                    None => trie
+                        .roots
+                        .get(&logit.token_id)
+                        .map(|i| trie.estimated_probability(*i)),
+                };
+                if let Some(estimate) = estimate {
+                    logit.logit = estimate;
+                    logit.prob = estimate;
+                } else {
+                    logit.logit = logit.prob.exp();
+                }
+            }
+
             loop {
+                let mut sampled_logits = logits.clone();
                 token_id = sampler
-                    .sample_token(resources, &mut logits.clone())
+                    .sample_token(resources, &mut sampled_logits)
                     .map_err(|err| LlamaModelError::SamplerError(err.into()))?
                     .ok_or(LlamaModelError::NoValidTokens)?;
                 let (result, _) = state_map
@@ -271,12 +303,39 @@ pub(crate) fn generate_structured<P: Parser>(
                 if has_valid_next {
                     break;
                 } else {
-                    println!("Skipping... Token {:?} is invalid", tokenizer.id_to_token(token_id));
+                    // println!(
+                    //     "Skipping sampled token... Token {:?} is invalid",
+                    //     tokenizer.id_to_token(token_id)
+                    // );
+                    // println!(
+                    //     "probability: {}",
+                    //     sampled_logits
+                    //         .iter()
+                    //         .find(|logit| logit.token_id == token_id)
+                    //         .unwrap()
+                    //         .prob
+                    // );
+                    let parent_id = trie
+                        .nodes
+                        .iter()
+                        .position(|node| node.token == token_id)
+                        .unwrap();
+                    for logit in logits_indexed.as_slice() {
+                        trie.push(logit.token_id, logit.prob, Some(parent_id), false, true);
+                    }
                     logits.retain(|logit| logit.token_id != token_id);
                 }
             }
             token_id
         };
+
+        current_token = Some(match current_token {
+            Some(current) => *trie.nodes[current]
+                .evaluated_children
+                .get(&token_id)
+                .unwrap(),
+            None => *trie.roots.get(&token_id).unwrap(),
+        });
 
         // If this and the last token would result in a valid merge, then the probability in the training data should be close
         // to zero
@@ -303,7 +362,6 @@ pub(crate) fn generate_structured<P: Parser>(
             .map_err(LlamaModelError::TokenOutputStreamError)?
             .unwrap();
         token.truncate(parsed_bytes);
-        tracing::trace!("Adding token {} to parser", token);
         // If we are still loading the initial prompt, don't send that part of the text
         if strip_required_next {
             if let Some(stripped) = token.strip_prefix(&remaining_prompt_text) {
@@ -311,7 +369,6 @@ pub(crate) fn generate_structured<P: Parser>(
             }
             strip_required_next = false;
         }
-        println!("Adding token {} to parser", token);
         on_token(token)?;
 
         if let Some(result) = update_state(
@@ -328,11 +385,213 @@ pub(crate) fn generate_structured<P: Parser>(
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct EvaluationTrie {
+    roots: FxHashMap<u32, usize>,
+    nodes: Vec<EvaluationNode>,
+}
+
+impl EvaluationTrie {
+    pub fn new() -> Self {
+        Self {
+            roots: Default::default(),
+            nodes: Vec::new(),
+        }
+    }
+
+    fn push(
+        &mut self,
+        token: u32,
+        probability: f32,
+        parent: Option<usize>,
+        in_grammar: bool,
+        from_tokenization_constraint: bool,
+    ) -> usize {
+        let id = match parent {
+            Some(parent_id) => {
+                let parent = &self.nodes[parent_id];
+                if let Some(id) = parent.evaluated_children.get(&token) {
+                    return *id;
+                }
+                let id =
+                    self.create_node(token, probability, in_grammar, from_tokenization_constraint);
+                self.nodes[parent_id].evaluated_children.insert(token, id);
+                id
+            }
+            None => {
+                if let Some(id) = self.roots.get(&token) {
+                    return *id;
+                }
+                let id =
+                    self.create_node(token, probability, in_grammar, from_tokenization_constraint);
+                self.roots.insert(token, id);
+                id
+            }
+        };
+        assert!(!self.check_for_cycle(id, &HashSet::new()));
+        id
+    }
+
+    fn check_for_cycle(&self, node: usize, parents: &HashSet<usize>) -> bool {
+        if parents.contains(&node) {
+            return true;
+        }
+        let mut new_parents = parents.clone();
+        new_parents.insert(node);
+        let node = &self.nodes[node];
+        for child in node.evaluated_children.values() {
+            if self.check_for_cycle(*child, &new_parents) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn create_node(
+        &mut self,
+        token: u32,
+        probability: f32,
+        in_grammar: bool,
+        from_tokenization_constraint: bool,
+    ) -> usize {
+        let node = EvaluationNode {
+            token,
+            probability,
+            in_grammar,
+            from_tokenization_constraint,
+            evaluated_children: Default::default(),
+        };
+        assert!(probability >= 0.0 && probability <= 1.0);
+        let id = self.nodes.len();
+        self.nodes.push(node);
+        id
+    }
+
+    fn estimated_probability(&self, node: usize) -> f32 {
+        let node = &self.nodes[node];
+        if !node.in_grammar {
+            return 0.0;
+        }
+        let initial_estimate = node.probability;
+        if node.evaluated_children.is_empty() {
+            return initial_estimate;
+        }
+        let sum_probability_of_children = node
+            .evaluated_children
+            .values()
+            .map(|child| self.estimated_probability(*child))
+            .sum::<f32>();
+        let result = initial_estimate * sum_probability_of_children;
+        assert!(result >= 0.0 && result <= 1.0);
+        result
+    }
+
+    pub(crate) fn graphvis(&self, tokenizer: &Tokenizer) -> String {
+        let mut graph = String::new();
+        graph.push_str("digraph G {\n");
+        fn filter_children(
+            trie: &EvaluationTrie,
+            children_slice: &FxHashMap<u32, usize>,
+        ) -> Vec<usize> {
+            let mut children = Vec::new();
+            let mut included = Vec::new();
+            for child_id in children_slice.values() {
+                let child = &trie.nodes[*child_id];
+                if !child.evaluated_children.is_empty() {
+                    included.push(*child_id);
+                } else {
+                    children.push(*child_id);
+                }
+            }
+
+            children.sort_by(|a, b| {
+                let a = &trie.nodes[*a];
+                let b = &trie.nodes[*b];
+
+                if a.probability < b.probability {
+                    std::cmp::Ordering::Less
+                } else {
+                    std::cmp::Ordering::Greater
+                }
+            });
+            included.extend(children.iter().take(4).copied());
+            included
+        }
+        let mut queue = filter_children(self, &self.roots);
+        while let Some(node_id) = queue.pop() {
+            let start_id = node_id;
+            let mut node_id = node_id;
+            let mut all_text = String::new();
+            loop {
+                let node = &self.nodes[node_id];
+                all_text += &tokenizer
+                    .id_to_token(node.token)
+                    .unwrap()
+                    .escape_debug()
+                    .to_string();
+                let probable_children = filter_children(self, &node.evaluated_children);
+
+                match &*probable_children {
+                    [] => break,
+                    [single_item] => {
+                        node_id = *single_item;
+                    }
+                    _ => {
+                        for child_id in &probable_children {
+                            graph.push_str(&format!("  {} -> {};\n", start_id, child_id));
+                        }
+                        queue.extend(probable_children);
+                        break;
+                    }
+                }
+            }
+            let start_node = &self.nodes[start_id];
+            graph.push_str(&format!(
+                "  {} [label=\"{}; prob {}; updated {}\" {} {}];\n",
+                start_id,
+                all_text,
+                start_node.probability,
+                self.estimated_probability(start_id),
+                if start_node.evaluated_children.is_empty() {
+                    if start_node.in_grammar {
+                        "color=black"
+                    } else {
+                        "color=red"
+                    }
+                } else {
+                    "color=green"
+                },
+                if start_node.from_tokenization_constraint {
+                    " style=dashed"
+                } else {
+                    ""
+                }
+            ));
+            if start_id != node_id {
+                graph.push_str(&format!("  {} -> {};\n", start_id, node_id));
+            }
+        }
+        graph.push_str("}\n");
+        graph
+    }
+}
+
+#[derive(Debug)]
+struct EvaluationNode {
+    token: u32,
+    probability: f32,
+    in_grammar: bool,
+    from_tokenization_constraint: bool,
+    evaluated_children: FxHashMap<u32, usize>,
+}
+
 fn cmp_logits(a: &Logit, b: &Logit) -> std::cmp::Ordering {
     // SAFETY: Logits should never be NaN or Inf
     let compare = b.logit.partial_cmp(&a.logit);
-    debug_assert!(compare.is_some());
-    unsafe { compare.unwrap_unchecked() }
+    match compare {
+        Some(ordering) => ordering,
+        None => std::cmp::Ordering::Less,
+    }
 }
 
 #[allow(unused, clippy::all)]

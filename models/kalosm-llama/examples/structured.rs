@@ -9,7 +9,7 @@ async fn main() {
         .build()
         .await
         .unwrap();
-    let prompt = "Generate a list of 4 pets in JSON form with a name, description, color, and diet";
+    let prompt = "Create a list of pets";
 
     #[derive(Debug, Clone, Parse)]
     struct Pet {
@@ -42,17 +42,20 @@ async fn main() {
 
     println!("# with constraints");
 
+    // let sampler = GenerationParameters::new().with_seed(0);
+    let sampler = GenerationParameters::new();
+
     let task = llm
         .task("You generate realistic JSON placeholders")
         .with_constraints(Arc::new(<[Pet; 4] as Parse>::new_parser()));
-    let stream = task.run(prompt);
+    let stream = task.run(prompt).with_sampler(sampler.clone());
 
     time_stream(stream).await;
 
     println!("\n\n# without constraints");
 
     let task = llm.task("You generate realistic JSON placeholders");
-    let stream = task(prompt);
+    let stream = task(prompt).with_sampler(sampler);
 
     time_stream(stream).await;
 }
