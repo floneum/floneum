@@ -197,6 +197,12 @@ pub(crate) fn generate_structured<P: Parser>(
             if let Some(&last) = token_stream.tokens().last() {
                 let pair = [last, token_id];
                 if llm.merges.contains(&pair) {
+                    // println!(
+                    //     "Skipping tokens {:?} and {:?} should have already merged into {:?}",
+                    //     tokenizer.id_to_token(last),
+                    //     tokenizer.id_to_token(token_id),
+                    //     tokenizer.decode(&pair, false)
+                    // );
                     continue;
                 }
             }
@@ -277,6 +283,7 @@ pub(crate) fn generate_structured<P: Parser>(
                         parser_state: &P::PartialState,
                         token_id: u32,
                         logit: usize,
+                        start_text: &str,
                     ) -> bool {
                         let logit = logit as u32;
                         let pair = [token_id, logit];
@@ -284,18 +291,45 @@ pub(crate) fn generate_structured<P: Parser>(
                             return false;
                         };
 
-                        if llm.merges.contains(&pair) {
+                        // If there isn't any new text, reject the token
+                        if decoded == start_text {
                             return false;
                         }
 
+                        // If this would create an invalid merge, reject the token
+                        if llm.merges.contains(&pair) {
+                            // println!(
+                            //     "lookahead skipping tokens {:?} and {:?} should have already merged into {:?}",
+                            //     llm.tokenizer.id_to_token(token_id),
+                            //     llm.tokenizer.id_to_token(logit),
+                            //     llm.tokenizer.decode(&pair, false)
+                            // );
+                            return false;
+                        }
+
+                        // If the token is not in the grammar, reject the token
                         if parser.parse(&parser_state, decoded.as_bytes()).is_err() {
                             return false;
                         }
+
+                        // println!(
+                        //     "lookahead token {:?} is valid",
+                        //     decoded
+                        // );
                         true
                     }
                     // If this is incomplete, make sure there is a token that can follow this one that will be valid.
                     (0..logits_indexed.len()).any(|logit| {
-                        loop_inner(llm, &token_stream, &parser, &parser_state, token_id, logit)
+                        let start_text = token_stream.peek_token(token_id).unwrap().unwrap();
+                        loop_inner(
+                            llm,
+                            &token_stream,
+                            &parser,
+                            &parser_state,
+                            token_id,
+                            logit,
+                            &start_text,
+                        )
                     })
                 } else {
                     true
@@ -315,11 +349,13 @@ pub(crate) fn generate_structured<P: Parser>(
                     //         .unwrap()
                     //         .prob
                     // );
-                    let parent_id = trie
-                        .nodes
-                        .iter()
-                        .position(|node| node.token == token_id)
-                        .unwrap();
+                    let parent_id = match current_token {
+                        Some(current) => *trie.nodes[current]
+                            .evaluated_children
+                            .get(&token_id)
+                            .unwrap(),
+                        None => *trie.roots.get(&token_id).unwrap(),
+                    };
                     for logit in logits_indexed.as_slice() {
                         trie.push(logit.token_id, 0., Some(parent_id), false, true);
                     }
@@ -328,6 +364,16 @@ pub(crate) fn generate_structured<P: Parser>(
             }
             token_id
         };
+
+        // println!(
+        //     "Sampled token {:?} with probability {}",
+        //     tokenizer.id_to_token(token_id),
+        //     logits
+        //         .iter()
+        //         .find(|logit| logit.token_id == token_id)
+        //         .unwrap()
+        //         .prob
+        // );
 
         current_token = Some(match current_token {
             Some(current) => *trie.nodes[current]
@@ -342,8 +388,8 @@ pub(crate) fn generate_structured<P: Parser>(
         if let Some(&last) = token_stream.tokens().last() {
             let pair = [last, token_id];
             if llm.merges.contains(&pair) {
-                println!(
-                    "Tokens {:?} and {:?} should have already merged into {:?}",
+                eprintln!(
+                    "ERROR: Tokens {:?} and {:?} should have already merged into {:?}",
                     tokenizer.id_to_token(last),
                     tokenizer.id_to_token(token_id),
                     tokenizer.decode(&pair, false)
