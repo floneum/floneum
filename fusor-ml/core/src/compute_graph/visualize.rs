@@ -1,5 +1,6 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::HashMap;
 
+use super::queue::ComputeQueue;
 use super::{
     AnyComputeKey, ComputeGraphNodes, DequantizeComputeKey, ElementWiseComputeNodeKey,
     IndexSelectComputeNodeKey, MapLayoutComputeNodeKey, MatMulComputeNodeKey,
@@ -11,25 +12,18 @@ use tabbycat::{Edge, GraphBuilder, GraphType, Identity, Stmt, StmtList};
 
 #[derive(Default)]
 struct GraphVisPass {
-    pub(crate) queued_nodes: VecDeque<AnyComputeKey>,
-    pub(crate) queued_nodes_set: HashSet<AnyComputeKey>,
+    queued: ComputeQueue,
     layout_pass: layout_pass::LayoutPass,
     identities: HashMap<AnyComputeKey, Identity>,
     statements: Vec<Stmt>,
 }
 
 impl GraphVisPass {
-    fn push_back(&mut self, key: AnyComputeKey) {
-        if self.queued_nodes_set.insert(key) {
-            self.queued_nodes.push_back(key);
-        }
-    }
-
     fn visit_element_wise(&mut self, key: ElementWiseComputeNodeKey, graph: &ComputeGraphNodes) {
         let operation = graph.element_wise.get(&key).unwrap();
         let Some(input) = self.identities.get(&operation.value.into()) else {
-            self.push_back(operation.value);
-            self.push_back(key.into());
+            self.queued.push_back(operation.value);
+            self.queued.push_back(key.into());
             return;
         };
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
@@ -53,13 +47,13 @@ impl GraphVisPass {
     fn visit_pair_wise(&mut self, key: PairWiseComputeNodeKey, graph: &ComputeGraphNodes) {
         let operation = graph.pair_wise.get(&key).unwrap();
         let Some(first) = self.identities.get(&operation.first.into()) else {
-            self.push_back(operation.first);
-            self.push_back(key.into());
+            self.queued.push_back(operation.first);
+            self.queued.push_back(key.into());
             return;
         };
         let Some(second) = self.identities.get(&operation.second.into()) else {
-            self.push_back(operation.second);
-            self.push_back(key.into());
+            self.queued.push_back(operation.second);
+            self.queued.push_back(key.into());
             return;
         };
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
@@ -86,13 +80,13 @@ impl GraphVisPass {
     fn visit_mat_mul(&mut self, key: MatMulComputeNodeKey, graph: &ComputeGraphNodes) {
         let operation = graph.mat_mul.get(&key).unwrap();
         let Some(first) = self.identities.get(&operation.first.into()) else {
-            self.push_back(operation.first);
-            self.push_back(key.into());
+            self.queued.push_back(operation.first);
+            self.queued.push_back(key.into());
             return;
         };
         let Some(second) = self.identities.get(&operation.second.into()) else {
-            self.push_back(operation.second);
-            self.push_back(key.into());
+            self.queued.push_back(operation.second);
+            self.queued.push_back(key.into());
             return;
         };
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
@@ -114,8 +108,8 @@ impl GraphVisPass {
     fn visit_q_mat_mul(&mut self, key: QMatMulComputeNodeKey, graph: &ComputeGraphNodes) {
         let operation = graph.q_mat_mul.get(&key).unwrap();
         let Some(input) = self.identities.get(&operation.input.into()) else {
-            self.push_back(operation.input);
-            self.push_back(key.into());
+            self.queued.push_back(operation.input);
+            self.queued.push_back(key.into());
             return;
         };
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
@@ -134,8 +128,8 @@ impl GraphVisPass {
     fn visit_reduce(&mut self, key: ReduceComputeNodeKey, graph: &ComputeGraphNodes) {
         let operation = graph.reduce.get(&key).unwrap();
         let Some(input) = self.identities.get(&operation.value.into()) else {
-            self.push_back(operation.value);
-            self.push_back(key.into());
+            self.queued.push_back(operation.value);
+            self.queued.push_back(key.into());
             return;
         };
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
@@ -155,15 +149,11 @@ impl GraphVisPass {
         ));
     }
 
-    fn visit_map_layout(
-        &mut self,
-        key: MapLayoutComputeNodeKey,
-        graph: &ComputeGraphNodes,
-    ) {
+    fn visit_map_layout(&mut self, key: MapLayoutComputeNodeKey, graph: &ComputeGraphNodes) {
         let operation = graph.map_layout.get(&key).unwrap();
         let Some(input) = self.identities.get(&operation.input.into()) else {
-            self.push_back(operation.input);
-            self.push_back(key.into());
+            self.queued.push_back(operation.input);
+            self.queued.push_back(key.into());
             return;
         };
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
@@ -179,31 +169,11 @@ impl GraphVisPass {
         self.identities.insert(key.into(), id.clone());
     }
 
-    fn visit_slice(&mut self, key: MapLayoutComputeNodeKey, graph: &ComputeGraphNodes) {
-        let operation = graph.map_layout.get(&key).unwrap();
-        let Some(input) = self.identities.get(&operation.input.into()) else {
-            self.push_back(operation.input);
-            self.push_back(key.into());
-            return;
-        };
-        let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
-        let id = Identity::quoted(format!("slice ({}) #{}", output_layout, key.0));
-        self.statements.push(Stmt::Node {
-            id: id.clone(),
-            port: None,
-            attr: None,
-        });
-        self.statements.push(Stmt::Edge(
-            Edge::head_node(input.clone(), None).arrow_to_node(id.clone(), None),
-        ));
-        self.identities.insert(key.into(), id.clone());
-    }
-
     fn visit_resize(&mut self, key: ResizeComputeNodeKey, graph: &ComputeGraphNodes) {
         let operation = graph.resize.get(&key).unwrap();
         let Some(input) = self.identities.get(&operation.input.into()) else {
-            self.push_back(operation.input);
-            self.push_back(key.into());
+            self.queued.push_back(operation.input);
+            self.queued.push_back(key.into());
             return;
         };
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
@@ -222,13 +192,13 @@ impl GraphVisPass {
     fn visit_slice_assign(&mut self, key: SliceAssignComputeNodeKey, graph: &ComputeGraphNodes) {
         let operation = graph.slice_assign.get(&key).unwrap();
         let Some(input) = self.identities.get(&operation.input.into()) else {
-            self.push_back(operation.input);
-            self.push_back(key.into());
+            self.queued.push_back(operation.input);
+            self.queued.push_back(key.into());
             return;
         };
         let Some(value) = self.identities.get(&operation.value.into()) else {
-            self.push_back(operation.value);
-            self.push_back(key.into());
+            self.queued.push_back(operation.value);
+            self.queued.push_back(key.into());
             return;
         };
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
@@ -250,13 +220,13 @@ impl GraphVisPass {
     fn visit_index_select(&mut self, key: IndexSelectComputeNodeKey, graph: &ComputeGraphNodes) {
         let operation = graph.index_select.get(&key).unwrap();
         let Some(input) = self.identities.get(&key.into()) else {
-            self.push_back(operation.input);
-            self.push_back(key.into());
+            self.queued.push_back(operation.input);
+            self.queued.push_back(key.into());
             return;
         };
         let Some(value) = self.identities.get(&key.into()) else {
-            self.push_back(operation.indexes);
-            self.push_back(key.into());
+            self.queued.push_back(operation.indexes);
+            self.queued.push_back(key.into());
             return;
         };
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
@@ -304,9 +274,8 @@ impl ComputeGraphNodes {
         layout_pass.visit(self, root);
         let mut graph_vis_pass = GraphVisPass::default();
         graph_vis_pass.layout_pass = layout_pass;
-        graph_vis_pass.push_back(root);
-        while let Some(node) = graph_vis_pass.queued_nodes.pop_front() {
-            graph_vis_pass.queued_nodes_set.remove(&node);
+        graph_vis_pass.queued.push_back(root);
+        while let Some(node) = graph_vis_pass.queued.pop_front() {
             if graph_vis_pass.identities.contains_key(&node) {
                 continue;
             }

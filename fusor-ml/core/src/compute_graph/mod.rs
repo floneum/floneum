@@ -13,6 +13,7 @@ mod layout_pass;
 mod resolve;
 mod visit;
 mod visualize;
+mod queue;
 
 use crate::{
     DataTypeEnum, Device, ElementWiseOperation, MatMulOperation, PairWiseOperation,

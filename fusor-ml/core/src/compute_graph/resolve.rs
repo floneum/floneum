@@ -13,12 +13,14 @@ use super::{
     IndexSelectComputeNodeKey, MapLayoutComputeNodeKey, MatMulComputeNodeKey,
     PairWiseComputeNodeKey, QMatMulComputeNodeKey, ReduceComputeNodeKey, ResizeComputeNodeKey,
     SliceAssignComputeNodeKey, TensorComputeNodeKey, dependency_map::visit_dependencies,
+    queue::ComputeQueue,
 };
 
 pub(crate) struct Resolver<'a> {
     graph: &'a mut ComputeGraphInner,
     command_encoder: &'a mut CommandEncoder,
     target: AnyComputeKey,
+    queue: ComputeQueue,
 }
 
 impl<'a> Resolver<'a> {
@@ -31,68 +33,82 @@ impl<'a> Resolver<'a> {
             graph,
             command_encoder,
             target,
+            queue: Default::default(),
         }
     }
 
     pub(crate) fn run(&mut self) -> TensorData {
-        self.resolve(self.target)
-    }
+        self.queue.push_back(self.target);
 
-    fn resolve(&mut self, key: AnyComputeKey) -> TensorData {
-        // Check if the key is already resolved
-        if let Some(tensor) = self.graph.cached_results.get(&key) {
-            return tensor.clone();
+        while let Some(node) = self.queue.pop_front() {
+            if self.graph.cached_results.contains_key(&node) {
+                continue;
+            }
+
+            let mut dependencies = Vec::new();
+            visit_dependencies(&self.graph.nodes, node, |dependent_key| {
+                dependencies.push(dependent_key);
+            });
+            dependencies.retain(|dependency| !self.graph.cached_results.contains_key(dependency));
+            if !dependencies.is_empty() {
+                // If there are dependencies that are not resolved, push them to the queue then
+                // revisit this node
+                for dependency in dependencies {
+                    self.queue.push_back(dependency);
+                }
+                self.queue.push_back(node);
+                continue;
+            }
+
+            let resolved = match node {
+                AnyComputeKey::ElementWise(element_wise_compute_node_key) => {
+                    self.resolve_element_wise(element_wise_compute_node_key)
+                }
+                AnyComputeKey::PairWise(pair_wise_compute_node_key) => {
+                    self.resolve_pair_wise(pair_wise_compute_node_key)
+                }
+                AnyComputeKey::MatMul(mat_mul_compute_node_key) => {
+                    self.resolve_mat_mul(mat_mul_compute_node_key)
+                }
+                AnyComputeKey::Reduce(reduce_compute_node_key) => {
+                    self.resolve_reduce(reduce_compute_node_key)
+                }
+                AnyComputeKey::Tensor(tensor_compute_node_key) => {
+                    self.resolve_tensor(tensor_compute_node_key)
+                }
+                AnyComputeKey::MapLayout(slice_compute_node_key) => {
+                    self.resolve_slice(slice_compute_node_key)
+                }
+                AnyComputeKey::Resize(resize_compute_node_key) => {
+                    self.resolve_resize(resize_compute_node_key)
+                }
+                AnyComputeKey::SliceAssign(slice_assign_compute_node_key) => {
+                    self.resolve_slice_assign(slice_assign_compute_node_key)
+                }
+                AnyComputeKey::IndexSelect(index_select_compute_node_key) => {
+                    self.resolve_index_select(index_select_compute_node_key)
+                }
+                AnyComputeKey::QMatMul(q_mat_mul_compute_node_key) => {
+                    self.resolve_q_mat_mul(q_mat_mul_compute_node_key)
+                }
+                AnyComputeKey::Dequantize(dequantize_compute_node_key) => {
+                    self.resolve_dequantize(dequantize_compute_node_key)
+                }
+            };
+
+            // Cache the result
+            self.graph.cached_results.insert(node, resolved.clone());
+            // Check if that makes any of this nodes dependents dead
+            let mut dependencies = Vec::new();
+            visit_dependencies(&self.graph.nodes, node, |dependent_key| {
+                dependencies.push(dependent_key);
+            });
+            for dependency in dependencies {
+                self.graph.check_life(dependency);
+            }
         }
-        println!("Resolving {:?}", key);
 
-        let resolved = match key {
-            AnyComputeKey::ElementWise(element_wise_compute_node_key) => {
-                self.resolve_element_wise(element_wise_compute_node_key)
-            }
-            AnyComputeKey::PairWise(pair_wise_compute_node_key) => {
-                self.resolve_pair_wise(pair_wise_compute_node_key)
-            }
-            AnyComputeKey::MatMul(mat_mul_compute_node_key) => {
-                self.resolve_mat_mul(mat_mul_compute_node_key)
-            }
-            AnyComputeKey::Reduce(reduce_compute_node_key) => {
-                self.resolve_reduce(reduce_compute_node_key)
-            }
-            AnyComputeKey::Tensor(tensor_compute_node_key) => {
-                self.resolve_tensor(tensor_compute_node_key)
-            }
-            AnyComputeKey::MapLayout(slice_compute_node_key) => {
-                self.resolve_slice(slice_compute_node_key)
-            }
-            AnyComputeKey::Resize(resize_compute_node_key) => {
-                self.resolve_resize(resize_compute_node_key)
-            }
-            AnyComputeKey::SliceAssign(slice_assign_compute_node_key) => {
-                self.resolve_slice_assign(slice_assign_compute_node_key)
-            }
-            AnyComputeKey::IndexSelect(index_select_compute_node_key) => {
-                self.resolve_index_select(index_select_compute_node_key)
-            }
-            AnyComputeKey::QMatMul(q_mat_mul_compute_node_key) => {
-                self.resolve_q_mat_mul(q_mat_mul_compute_node_key)
-            }
-            AnyComputeKey::Dequantize(dequantize_compute_node_key) => {
-                self.resolve_dequantize(dequantize_compute_node_key)
-            }
-        };
-
-        // Cache the result
-        self.graph.cached_results.insert(key, resolved.clone());
-        // Check if that makes any of this nodes dependents dead
-        let mut dependencies = Vec::new();
-        visit_dependencies(&self.graph.nodes, key, |dependent_key| {
-            dependencies.push(dependent_key);
-        });
-        for dependency in dependencies {
-            self.graph.check_life(dependency);
-        }
-
-        resolved
+        self.graph.cached_results[&self.target].clone()
     }
 
     fn collect_element_wise_ops(
@@ -133,7 +149,7 @@ impl<'a> Resolver<'a> {
             }
         }
         // Otherwise, just run the element wise kernel
-        let input = self.resolve(input);
+        let input = self.graph.cached_results[&input].clone();
         let kernel = UntypedElementWiseKernel::new(functions, input.datatype());
         let query = PerformanceQueries::new(input.device());
         let result = kernel.run_with_query(input.into(), Some(&query), &mut *self.command_encoder);
@@ -180,7 +196,7 @@ impl<'a> Resolver<'a> {
                 .clone()
                 .into()
         } else {
-            self.resolve(first_input).into()
+            self.graph.cached_results[&first_input].clone().into()
         };
         let second: MaybeQData = if let AnyComputeKey::Dequantize(key) = second_input {
             self.graph
@@ -192,7 +208,7 @@ impl<'a> Resolver<'a> {
                 .clone()
                 .into()
         } else {
-            self.resolve(second_input).into()
+            self.graph.cached_results[&second_input].clone().into()
         };
         let mut kernel = UntypedPairWiseKernel::new(function);
         let first_pre =
@@ -213,8 +229,8 @@ impl<'a> Resolver<'a> {
         let first = operation.first;
         let second = operation.second;
 
-        let first = self.resolve(first);
-        let second = self.resolve(second);
+        let first = self.graph.cached_results[&first].clone();
+        let second = self.graph.cached_results[&second].clone();
         let kernel = UntypedMatMul::new(first.datatype(), first.layout().rank() as u32);
         let query = PerformanceQueries::new(first.device());
         let result =
@@ -228,7 +244,7 @@ impl<'a> Resolver<'a> {
         let input = operation.input;
         let matrix = operation.matrix.clone();
 
-        let input = self.resolve(input);
+        let input = self.graph.cached_results[&input].clone();
         let kernel = UntypedQMatMul::new(input.datatype(), matrix);
         let query = PerformanceQueries::new(input.device());
         let result = kernel.run_with_query(&input, Some(&query), &mut *self.command_encoder);
@@ -279,7 +295,7 @@ impl<'a> Resolver<'a> {
             Vec::new()
         };
 
-        let input = self.resolve(input);
+        let input = self.graph.cached_results[&input].clone();
         let mut kernel = UntypedReduceKernel::new(function, input.datatype());
         let element_wise_before =
             element_wise::UntypedElementWiseKernel::new(element_wise_before, input.datatype());
@@ -295,7 +311,7 @@ impl<'a> Resolver<'a> {
 
     fn resolve_slice(&mut self, key: MapLayoutComputeNodeKey) -> TensorData {
         let operation = self.graph.nodes.map_layout.get(&key).unwrap();
-        let input = self.resolve(operation.input);
+        let input = self.graph.cached_results[&operation.input].clone();
         let operation = self.graph.nodes.map_layout.get(&key).unwrap();
 
         operation.run(&input)
@@ -306,7 +322,7 @@ impl<'a> Resolver<'a> {
         let input = operation.input;
         let new_shape = operation.new_shape.clone();
         let fill_shape = operation.fill_shape.clone();
-        let input = self.resolve(input);
+        let input = self.graph.cached_results[&input].clone();
         let kernel = UntypedResizeKernel::new(&new_shape, &fill_shape);
 
         let query = PerformanceQueries::new(input.device());
@@ -320,8 +336,8 @@ impl<'a> Resolver<'a> {
         let input = operation.input;
         let value = operation.value;
         let kernel = UntypedSliceAssignKernel::new(&operation.slices);
-        let input = self.resolve(input);
-        let value = self.resolve(value);
+        let input = self.graph.cached_results[&input].clone();
+        let value = self.graph.cached_results[&value].clone();
 
         let query = PerformanceQueries::new(input.device());
         let result =
@@ -363,8 +379,8 @@ impl<'a> Resolver<'a> {
             Vec::new()
         };
 
-        let input = self.resolve(input);
-        let indexes = self.resolve(indexes);
+        let input = self.graph.cached_results[&input].clone();
+        let indexes = self.graph.cached_results[&indexes].clone();
         let mut kernel =
             UntypedIndexSelectKernel::new(dimension, input.datatype(), input.layout().rank());
         kernel.set_pre_element_wise_input(UntypedElementWiseKernel::new(

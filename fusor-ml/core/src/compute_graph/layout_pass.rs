@@ -1,22 +1,20 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::HashMap;
 
 use crate::{Layout, TensorLayoutInfo, index_select::IndexSelectOperation};
 
-use super::AnyComputeKey;
+use super::{AnyComputeKey, queue::ComputeQueue};
 
 #[derive(Default)]
 pub(crate) struct LayoutPass {
-    pub(crate) queued_nodes: VecDeque<AnyComputeKey>,
-    pub(crate) queued_nodes_set: HashSet<AnyComputeKey>,
+    queue: ComputeQueue,
     pub(crate) output_layout: HashMap<AnyComputeKey, TensorLayoutInfo>,
 }
 
 impl LayoutPass {
     pub fn visit(&mut self, graph: &super::ComputeGraphNodes, key: AnyComputeKey) {
-        self.push_back(key);
+        self.queue.push_back(key);
 
-        while let Some(node) = self.queued_nodes.pop_front() {
-            self.queued_nodes_set.remove(&node);
+        while let Some(node) = self.queue.pop_front() {
             if self.output_layout.contains_key(&node) {
                 continue;
             }
@@ -36,12 +34,6 @@ impl LayoutPass {
         }
     }
 
-    fn push_back(&mut self, key: AnyComputeKey) {
-        if self.queued_nodes_set.insert(key) {
-            self.queued_nodes.push_back(key);
-        }
-    }
-
     fn visit_element_wise(
         &mut self,
         graph: &super::ComputeGraphNodes,
@@ -50,8 +42,8 @@ impl LayoutPass {
         let operation = graph.element_wise.get(&key).unwrap();
         let input = operation.value;
         let Some(input_layout) = self.output_layout.get(&input) else {
-            self.push_back(input);
-            self.push_back(key.into());
+            self.queue.push_back(input);
+            self.queue.push_back(key.into());
             return;
         };
         let output_layout =
@@ -66,13 +58,13 @@ impl LayoutPass {
     ) {
         let operation = graph.pair_wise.get(&key).unwrap();
         let Some(first_layout) = self.output_layout.get(&operation.first) else {
-            self.push_back(operation.first);
-            self.push_back(key.into());
+            self.queue.push_back(operation.first);
+            self.queue.push_back(key.into());
             return;
         };
         let Some(_) = self.output_layout.get(&operation.second) else {
-            self.push_back(operation.second);
-            self.push_back(key.into());
+            self.queue.push_back(operation.second);
+            self.queue.push_back(key.into());
             return;
         };
         self.output_layout.insert(key.into(), first_layout.clone());
@@ -85,13 +77,13 @@ impl LayoutPass {
     ) {
         let operation = graph.mat_mul.get(&key).unwrap();
         let Some(first_layout) = self.output_layout.get(&operation.first) else {
-            self.push_back(operation.first);
-            self.push_back(key.into());
+            self.queue.push_back(operation.first);
+            self.queue.push_back(key.into());
             return;
         };
         let Some(_) = self.output_layout.get(&operation.second) else {
-            self.push_back(operation.second);
-            self.push_back(key.into());
+            self.queue.push_back(operation.second);
+            self.queue.push_back(key.into());
             return;
         };
         let output_shape = &operation.out_shape;
@@ -109,8 +101,8 @@ impl LayoutPass {
     ) {
         let operation = graph.q_mat_mul.get(&key).unwrap();
         let Some(first_layout) = self.output_layout.get(&operation.input) else {
-            self.push_back(operation.input);
-            self.push_back(key.into());
+            self.queue.push_back(operation.input);
+            self.queue.push_back(key.into());
             return;
         };
         let output_layout = Layout::contiguous(&operation.out_shape);
@@ -124,8 +116,8 @@ impl LayoutPass {
         let operation = graph.reduce.get(&key).unwrap();
         let dim = operation.axis;
         let Some(input_layout) = self.output_layout.get(&operation.value) else {
-            self.push_back(operation.value);
-            self.push_back(key.into());
+            self.queue.push_back(operation.value);
+            self.queue.push_back(key.into());
             return;
         };
         let new_shape = input_layout
@@ -149,8 +141,8 @@ impl LayoutPass {
     ) {
         let operation = graph.map_layout.get(&key).unwrap();
         let Some(input_layout) = self.output_layout.get(&operation.input) else {
-            self.push_back(operation.input);
-            self.push_back(key.into());
+            self.queue.push_back(operation.input);
+            self.queue.push_back(key.into());
             return;
         };
         let new_layout = operation.map_layout(input_layout.layout());
@@ -163,8 +155,8 @@ impl LayoutPass {
     fn visit_resize(&mut self, graph: &super::ComputeGraphNodes, key: super::ResizeComputeNodeKey) {
         let operation = graph.resize.get(&key).unwrap();
         let Some(input_layout) = self.output_layout.get(&operation.input) else {
-            self.push_back(operation.input);
-            self.push_back(key.into());
+            self.queue.push_back(operation.input);
+            self.queue.push_back(key.into());
             return;
         };
         let new_layout = Layout::contiguous(&operation.new_shape);
@@ -181,13 +173,13 @@ impl LayoutPass {
     ) {
         let operation = graph.slice_assign.get(&key).unwrap();
         let Some(input_layout) = self.output_layout.get(&operation.input) else {
-            self.push_back(operation.input);
-            self.push_back(key.into());
+            self.queue.push_back(operation.input);
+            self.queue.push_back(key.into());
             return;
         };
         let Some(_) = self.output_layout.get(&operation.value) else {
-            self.push_back(operation.value);
-            self.push_back(key.into());
+            self.queue.push_back(operation.value);
+            self.queue.push_back(key.into());
             return;
         };
         self.output_layout.insert(key.into(), input_layout.clone());
@@ -220,13 +212,13 @@ impl LayoutPass {
     ) {
         let operation = graph.index_select.get(&key).unwrap();
         let Some(indexes_shape) = self.output_layout.get(&operation.indexes) else {
-            self.push_back(operation.indexes);
-            self.push_back(key.into());
+            self.queue.push_back(operation.indexes);
+            self.queue.push_back(key.into());
             return;
         };
         let Some(input_shape) = self.output_layout.get(&operation.input) else {
-            self.push_back(operation.input);
-            self.push_back(key.into());
+            self.queue.push_back(operation.input);
+            self.queue.push_back(key.into());
             return;
         };
         let shape = IndexSelectOperation::output_shape(
