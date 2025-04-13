@@ -32,7 +32,12 @@ impl Device {
         std::thread::spawn({
             let device = device.clone();
             move || loop {
-                device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
+                let Ok(status) = device.wgpu_device().poll(wgpu::PollType::Wait) else {
+                    break;
+                };
+                if status == wgpu::PollStatus::QueueEmpty {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
             }
         });
 
