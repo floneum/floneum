@@ -21,6 +21,9 @@ rustc-hash = "2.1.1"
 thiserror.workspace = true
 parking_lot = "0.12.3"
 
+[features]
+extra_assertions = []
+
 [dev-dependencies]
 ndarray = "0.16.1"
 rand = "0.9.0"

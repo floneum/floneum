@@ -220,7 +220,7 @@ impl ComputeGraph {
         let write = self.inner.load();
         let mut inner = write.write();
         let result = f(&mut inner);
-        #[cfg(debug_assertions)]
+        #[cfg(feature = "extra_assertions")]
         {
             inner.verify_integrity()
         }
@@ -558,7 +558,7 @@ impl ComputeGraphInner {
         }
     }
 
-    #[cfg(debug_assertions)]
+    #[cfg(feature = "extra_assertions")]
     fn contains_key(&self, key: AnyComputeKey) -> bool {
         if self.cached_results.contains_key(&key) {
             return true;
@@ -578,7 +578,7 @@ impl ComputeGraphInner {
         }
     }
 
-    #[cfg(debug_assertions)]
+    #[cfg(feature = "extra_assertions")]
     fn verify_integrity(&self) {
         // Check that all node references exist in the graph
         for key in self.dependency_map.reference_count.keys() {
