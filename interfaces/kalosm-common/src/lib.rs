@@ -1,14 +1,21 @@
+#[cfg(feature = "candle")]
 use std::sync::OnceLock;
 
+#[cfg(feature = "candle")]
 use candle_core::{backend::BackendStorage, utils::*, Device, Storage, Tensor, WithDType};
 
 mod cache;
 pub use cache::*;
+#[cfg(feature = "candle")]
 mod kv_cache;
+#[cfg(feature = "candle")]
 pub use kv_cache::*;
+#[cfg(feature = "candle")]
 mod mask;
+#[cfg(feature = "candle")]
 pub use mask::*;
 
+#[cfg(feature = "candle")]
 /// Create a candle device that uses any available accelerator.
 pub fn accelerated_device_if_available() -> candle_core::Result<Device> {
     static DEVICE: OnceLock<Device> = OnceLock::new();
@@ -34,6 +41,7 @@ pub fn accelerated_device_if_available() -> candle_core::Result<Device> {
     Ok(device)
 }
 
+#[cfg(feature = "candle")]
 /// Wrap a closure in a release pool if the metal feature is enabled
 pub fn maybe_autoreleasepool<T>(f: impl FnOnce() -> T) -> T {
     #[cfg(feature = "metal")]
@@ -47,6 +55,7 @@ pub fn maybe_autoreleasepool<T>(f: impl FnOnce() -> T) -> T {
     }
 }
 
+#[cfg(feature = "candle")]
 /// Clear a `Vec<T>` and copy the contents of a tensor into it.
 pub fn copy_tensor_into_vec<T: WithDType>(
     tensor: &Tensor,

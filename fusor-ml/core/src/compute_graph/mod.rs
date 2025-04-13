@@ -1,20 +1,18 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, atomic::AtomicUsize},
-};
+use std::sync::{Arc, atomic::AtomicUsize};
 
 use arc_swap::ArcSwap;
 use dependency_map::{DependencyMap, visit_dependencies};
 use parking_lot::RwLock;
 use resolve::Resolver;
+use rustc_hash::FxHashMap;
 use tabbycat::Graph;
 
 mod dependency_map;
 mod layout_pass;
+mod queue;
 mod resolve;
 mod visit;
 mod visualize;
-mod queue;
 
 use crate::{
     DataTypeEnum, Device, ElementWiseOperation, MatMulOperation, PairWiseOperation,
@@ -435,25 +433,25 @@ impl ComputeGraph {
 
 #[derive(Default)]
 pub(crate) struct ComputeGraphNodes {
-    element_wise: HashMap<ElementWiseComputeNodeKey, ElementWiseOperation>,
-    pair_wise: HashMap<PairWiseComputeNodeKey, PairWiseOperation>,
-    mat_mul: HashMap<MatMulComputeNodeKey, MatMulOperation>,
-    reduce: HashMap<ReduceComputeNodeKey, ReduceOperation>,
-    map_layout: HashMap<MapLayoutComputeNodeKey, MapLayoutOperation>,
-    resize: HashMap<ResizeComputeNodeKey, ResizeOperation>,
-    slice_assign: HashMap<SliceAssignComputeNodeKey, SliceAssignOperation>,
-    index_select: HashMap<IndexSelectComputeNodeKey, IndexSelectOperation>,
-    tensor: HashMap<TensorComputeNodeKey, TensorData>,
-    q_mat_mul: HashMap<QMatMulComputeNodeKey, QMatMulOperation>,
-    dequantize: HashMap<DequantizeComputeKey, DequantizeOperation>,
+    element_wise: FxHashMap<ElementWiseComputeNodeKey, ElementWiseOperation>,
+    pair_wise: FxHashMap<PairWiseComputeNodeKey, PairWiseOperation>,
+    mat_mul: FxHashMap<MatMulComputeNodeKey, MatMulOperation>,
+    reduce: FxHashMap<ReduceComputeNodeKey, ReduceOperation>,
+    map_layout: FxHashMap<MapLayoutComputeNodeKey, MapLayoutOperation>,
+    resize: FxHashMap<ResizeComputeNodeKey, ResizeOperation>,
+    slice_assign: FxHashMap<SliceAssignComputeNodeKey, SliceAssignOperation>,
+    index_select: FxHashMap<IndexSelectComputeNodeKey, IndexSelectOperation>,
+    tensor: FxHashMap<TensorComputeNodeKey, TensorData>,
+    q_mat_mul: FxHashMap<QMatMulComputeNodeKey, QMatMulOperation>,
+    dequantize: FxHashMap<DequantizeComputeKey, DequantizeOperation>,
 }
 
 struct ComputeGraphInner {
     device: Device,
     nodes: ComputeGraphNodes,
 
-    timing_information: HashMap<AnyComputeKey, PerformanceQueries>,
-    cached_results: HashMap<AnyComputeKey, TensorData>,
+    timing_information: FxHashMap<AnyComputeKey, PerformanceQueries>,
+    cached_results: FxHashMap<AnyComputeKey, TensorData>,
 
     dependency_map: DependencyMap,
 }
@@ -463,8 +461,8 @@ impl ComputeGraphInner {
         Self {
             device,
             nodes: ComputeGraphNodes::default(),
-            timing_information: HashMap::new(),
-            cached_results: HashMap::new(),
+            timing_information: Default::default(),
+            cached_results: Default::default(),
             dependency_map: DependencyMap::default(),
         }
     }

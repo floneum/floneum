@@ -25,7 +25,7 @@ tracing = "0.1.37"
 image = "0.24.7"
 serde = "1.0.193"
 serde_json = "1.0"
-kalosm-common = { workspace = true }
+kalosm-common = { workspace = true, features = ["candle"] }
 kalosm-model-types = { workspace = true }
 
 [dev-dependencies]

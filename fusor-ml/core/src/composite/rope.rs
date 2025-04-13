@@ -29,19 +29,15 @@ impl<D: DataType> Tensor<3, D> {
             .narrow(0, 0, sequence_length)
             .reshape([sequence_length, embed / 2, 1])
             .broadcast([height, sequence_length, embed / 2, 1]);
-        println!("cos: {:?}", cos);
         let sin = sin
             .narrow(0, 0, sequence_length)
             .reshape([sequence_length, embed / 2, 1])
             .broadcast([height, sequence_length, embed / 2, 1]);
-        println!("sin: {:?}", sin);
 
         let x = self.reshape([height, sequence_length, embed / 2, 2]);
 
         let x0 = x.narrow(LAST_DIM, 0, 1);
-        println!("x0: {:?}", x0);
         let x1 = x.narrow(LAST_DIM, 1, 1);
-        println!("x1: {:?}", x1);
 
         let a = &x0 * &cos;
         let b = &x1 * &sin;

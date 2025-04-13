@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use crate::{Layout, TensorLayoutInfo, index_select::IndexSelectOperation};
 
@@ -7,7 +7,7 @@ use super::{AnyComputeKey, queue::ComputeQueue};
 #[derive(Default)]
 pub(crate) struct LayoutPass {
     queue: ComputeQueue,
-    pub(crate) output_layout: HashMap<AnyComputeKey, TensorLayoutInfo>,
+    pub(crate) output_layout: FxHashMap<AnyComputeKey, TensorLayoutInfo>,
 }
 
 impl LayoutPass {

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use super::queue::ComputeQueue;
 use super::{
@@ -14,7 +14,7 @@ use tabbycat::{Edge, GraphBuilder, GraphType, Identity, Stmt, StmtList};
 struct GraphVisPass {
     queued: ComputeQueue,
     layout_pass: layout_pass::LayoutPass,
-    identities: HashMap<AnyComputeKey, Identity>,
+    identities: FxHashMap<AnyComputeKey, Identity>,
     statements: Vec<Stmt>,
 }
 
