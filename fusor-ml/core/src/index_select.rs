@@ -5,6 +5,7 @@ use crate::{
 use std::{fmt::Write, sync::OnceLock};
 use wgpu::CommandEncoder;
 
+#[derive(Debug)]
 pub(crate) struct IndexSelectOperation {
     pub(crate) input: AnyComputeKey,
     pub(crate) indexes: AnyComputeKey,

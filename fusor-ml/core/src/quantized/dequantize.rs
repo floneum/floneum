@@ -10,6 +10,7 @@ use wgpu::CommandEncoder;
 
 use super::{QMatrix, dequantize_block};
 
+#[derive(Debug)]
 pub(crate) struct DequantizeOperation {
     pub(crate) matrix: QMatrix,
     pub(crate) datatype: DataTypeEnum,

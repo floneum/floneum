@@ -219,7 +219,12 @@ impl ComputeGraph {
     fn with_mut<R, F: FnOnce(&mut ComputeGraphInner) -> R>(&self, f: F) -> R {
         let write = self.inner.load();
         let mut inner = write.write();
-        f(&mut inner)
+        let result = f(&mut inner);
+        #[cfg(debug_assertions)]
+        {
+            inner.verify_integrity()
+        }
+        result
     }
 
     pub(crate) fn merge(&self, other: &Self) {
@@ -228,41 +233,7 @@ impl ComputeGraph {
         }
         self.with_mut(|inner| {
             other.with_mut(|other_inner| {
-                inner
-                    .nodes
-                    .element_wise
-                    .extend(other_inner.nodes.element_wise.drain());
-                inner
-                    .nodes
-                    .pair_wise
-                    .extend(other_inner.nodes.pair_wise.drain());
-                inner
-                    .nodes
-                    .mat_mul
-                    .extend(other_inner.nodes.mat_mul.drain());
-                inner.nodes.reduce.extend(other_inner.nodes.reduce.drain());
-                inner
-                    .nodes
-                    .map_layout
-                    .extend(other_inner.nodes.map_layout.drain());
-                inner.nodes.resize.extend(other_inner.nodes.resize.drain());
-                inner
-                    .nodes
-                    .slice_assign
-                    .extend(other_inner.nodes.slice_assign.drain());
-                inner
-                    .nodes
-                    .index_select
-                    .extend(other_inner.nodes.index_select.drain());
-                inner.nodes.tensor.extend(other_inner.nodes.tensor.drain());
-                inner
-                    .nodes
-                    .q_mat_mul
-                    .extend(other_inner.nodes.q_mat_mul.drain());
-                inner
-                    .nodes
-                    .dequantize
-                    .extend(other_inner.nodes.dequantize.drain());
+                inner.nodes.merge(&mut other_inner.nodes);
 
                 inner
                     .timing_information
@@ -270,14 +241,7 @@ impl ComputeGraph {
                 inner
                     .cached_results
                     .extend(other_inner.cached_results.drain());
-                inner
-                    .dependency_map
-                    .reference_count
-                    .extend(other_inner.dependency_map.reference_count.drain());
-                inner
-                    .dependency_map
-                    .dependant_map
-                    .extend(other_inner.dependency_map.dependant_map.drain());
+                inner.dependency_map.merge(&mut other_inner.dependency_map);
             })
         });
         other.inner.store(self.inner.load_full());
@@ -404,7 +368,7 @@ impl ComputeGraph {
     }
 
     pub(crate) fn graphvis(&self, key: AnyComputeKey) -> Graph {
-        self.with_mut(|inner| inner.nodes.graphvis(key))
+        self.with_mut(|inner| inner.graphvis(key))
     }
 
     pub(crate) fn remove_reference(&self, key: AnyComputeKey) {
@@ -444,6 +408,22 @@ pub(crate) struct ComputeGraphNodes {
     tensor: FxHashMap<TensorComputeNodeKey, TensorData>,
     q_mat_mul: FxHashMap<QMatMulComputeNodeKey, QMatMulOperation>,
     dequantize: FxHashMap<DequantizeComputeKey, DequantizeOperation>,
+}
+
+impl ComputeGraphNodes {
+    pub(crate) fn merge(&mut self, other: &mut Self) {
+        self.element_wise.extend(other.element_wise.drain());
+        self.pair_wise.extend(other.pair_wise.drain());
+        self.mat_mul.extend(other.mat_mul.drain());
+        self.reduce.extend(other.reduce.drain());
+        self.map_layout.extend(other.map_layout.drain());
+        self.resize.extend(other.resize.drain());
+        self.slice_assign.extend(other.slice_assign.drain());
+        self.index_select.extend(other.index_select.drain());
+        self.tensor.extend(other.tensor.drain());
+        self.q_mat_mul.extend(other.q_mat_mul.drain());
+        self.dequantize.extend(other.dequantize.drain());
+    }
 }
 
 struct ComputeGraphInner {
@@ -527,6 +507,12 @@ impl ComputeGraphInner {
 
     fn remove_key(&mut self, key: AnyComputeKey) {
         // Remove the cached result if it exists
+        visit_dependencies(&self.nodes, key, |dependency| {
+            if let Some(map) = self.dependency_map.dependant_map.get_mut(&dependency) {
+                map.remove(&key);
+            }
+        });
+        self.dependency_map.dependant_map.remove(&key);
         self.cached_results.remove(&key);
         self.dependency_map.reference_count.remove(&key);
         match key {
@@ -569,6 +555,105 @@ impl ComputeGraphInner {
             AnyComputeKey::Dequantize(dequantize_compute_key) => {
                 self.nodes.dequantize.remove(&dequantize_compute_key);
             }
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    fn contains_key(&self, key: AnyComputeKey) -> bool {
+        if self.cached_results.contains_key(&key) {
+            return true;
+        }
+        match key {
+            AnyComputeKey::ElementWise(key) => self.nodes.element_wise.contains_key(&key),
+            AnyComputeKey::PairWise(key) => self.nodes.pair_wise.contains_key(&key),
+            AnyComputeKey::MatMul(key) => self.nodes.mat_mul.contains_key(&key),
+            AnyComputeKey::Reduce(key) => self.nodes.reduce.contains_key(&key),
+            AnyComputeKey::MapLayout(key) => self.nodes.map_layout.contains_key(&key),
+            AnyComputeKey::Resize(key) => self.nodes.resize.contains_key(&key),
+            AnyComputeKey::SliceAssign(key) => self.nodes.slice_assign.contains_key(&key),
+            AnyComputeKey::IndexSelect(key) => self.nodes.index_select.contains_key(&key),
+            AnyComputeKey::Tensor(key) => self.nodes.tensor.contains_key(&key),
+            AnyComputeKey::QMatMul(key) => self.nodes.q_mat_mul.contains_key(&key),
+            AnyComputeKey::Dequantize(key) => self.nodes.dequantize.contains_key(&key),
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    fn verify_integrity(&self) {
+        // Check that all node references exist in the graph
+        for key in self.dependency_map.reference_count.keys() {
+            assert!(self.contains_key(*key));
+        }
+        for (key, dependants) in self.dependency_map.dependant_map.iter() {
+            assert!(self.contains_key(*key));
+            for dependant in dependants {
+                assert!(
+                    self.contains_key(*dependant),
+                    "the dependant {dependant:?} of {key:?} does not exist"
+                );
+            }
+        }
+
+        let keys = self
+            .nodes
+            .element_wise
+            .keys()
+            .copied()
+            .map(AnyComputeKey::from)
+            .chain(
+                self.nodes
+                    .pair_wise
+                    .keys()
+                    .copied()
+                    .map(AnyComputeKey::from),
+            )
+            .chain(self.nodes.mat_mul.keys().copied().map(AnyComputeKey::from))
+            .chain(self.nodes.reduce.keys().copied().map(AnyComputeKey::from))
+            .chain(
+                self.nodes
+                    .map_layout
+                    .keys()
+                    .copied()
+                    .map(AnyComputeKey::from),
+            )
+            .chain(self.nodes.resize.keys().copied().map(AnyComputeKey::from))
+            .chain(
+                self.nodes
+                    .slice_assign
+                    .keys()
+                    .copied()
+                    .map(AnyComputeKey::from),
+            )
+            .chain(
+                self.nodes
+                    .index_select
+                    .keys()
+                    .copied()
+                    .map(AnyComputeKey::from),
+            )
+            .chain(self.nodes.tensor.keys().copied().map(AnyComputeKey::from))
+            .chain(
+                self.nodes
+                    .q_mat_mul
+                    .keys()
+                    .copied()
+                    .map(AnyComputeKey::from),
+            )
+            .chain(
+                self.nodes
+                    .dequantize
+                    .keys()
+                    .copied()
+                    .map(AnyComputeKey::from),
+            );
+
+        for key in keys {
+            if self.cached_results.contains_key(&key) {
+                continue;
+            }
+            visit_dependencies(&self.nodes, key, |dependency| {
+                assert!(self.contains_key(dependency));
+            });
         }
     }
 }

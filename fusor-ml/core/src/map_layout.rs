@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::{fmt::Debug, ops::Range};
 
 use crate::{
     DataType, Layout, Tensor, TensorData, compute_graph::AnyComputeKey, slice_shape, slice_strides,
@@ -11,6 +11,14 @@ pub(crate) struct MapLayoutOperation {
     pub(crate) input: AnyComputeKey,
     pub(crate) map_size: MapSize,
     pub(crate) map_stride: MapStride,
+}
+
+impl Debug for MapLayoutOperation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MapLayoutOperation")
+            .field("input", &self.input)
+            .finish()
+    }
 }
 
 impl MapLayoutOperation {

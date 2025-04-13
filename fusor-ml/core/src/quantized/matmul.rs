@@ -9,6 +9,7 @@ use wgpu::CommandEncoder;
 
 use super::{QMatrix, dequantize_block};
 
+#[derive(Debug)]
 pub(crate) struct QMatMulOperation {
     pub(crate) input: AnyComputeKey,
     pub(crate) matrix: QMatrix,

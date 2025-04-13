@@ -20,7 +20,7 @@ use crate::{
 #[cfg(test)]
 use crate::Device;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct ElementWiseOperation {
     pub(crate) value: AnyComputeKey,
     pub(crate) function: ElementWiseFunction,

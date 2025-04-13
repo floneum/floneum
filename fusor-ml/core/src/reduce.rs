@@ -13,7 +13,7 @@ use crate::{
     tensor::{DataType, DataTypeEnum, TensorData, padded_tensor_size},
 };
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct ReduceOperation {
     pub(crate) value: AnyComputeKey,
     pub(crate) function: ReduceFunction,
@@ -386,7 +386,7 @@ impl UntypedReduceKernel {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ReduceFunction {
     name: Option<String>,
     operation: String,

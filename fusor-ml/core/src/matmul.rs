@@ -10,7 +10,7 @@ use crate::{
     tensor::{DataType, DataTypeEnum, TensorData, padded_tensor_size},
 };
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct MatMulOperation {
     pub(crate) first: AnyComputeKey,
     pub(crate) second: AnyComputeKey,

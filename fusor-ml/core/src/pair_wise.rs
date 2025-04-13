@@ -16,7 +16,7 @@ use crate::{
     visit_tiled::{MaybeQData, VisitTiledKernel},
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct PairWiseOperation {
     pub(crate) first: AnyComputeKey,
     pub(crate) second: AnyComputeKey,
@@ -176,7 +176,7 @@ impl UntypedPairWiseKernel {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PairWiseFunction {
     name: Option<String>,
     operation: String,

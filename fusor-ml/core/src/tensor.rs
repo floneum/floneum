@@ -767,6 +767,8 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
             ));
         }
 
+        println!("merging graphs for {:?} and {:?}", self.key(), other.key());
+
         self.data.graph.merge(&other.data.graph);
         assert_eq!(self.shape(), other.shape());
         let operation = PairWiseOperation::new(function, self.data.key, other.data.key);

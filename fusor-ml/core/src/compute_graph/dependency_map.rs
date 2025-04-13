@@ -19,6 +19,11 @@ impl DependencyMap {
             self.dependant_map.entry(dependent).or_default().insert(key);
         });
     }
+
+    pub(crate) fn merge(&mut self, other: &mut Self) {
+        self.dependant_map.extend(other.dependant_map.drain());
+        self.reference_count.extend(other.reference_count.drain());
+    }
 }
 
 pub(crate) fn visit_dependencies(
