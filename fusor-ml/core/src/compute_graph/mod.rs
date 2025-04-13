@@ -1,10 +1,11 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, RwLock, atomic::AtomicUsize},
+    sync::{Arc, atomic::AtomicUsize},
 };
 
 use arc_swap::ArcSwap;
 use dependency_map::{DependencyMap, visit_dependencies};
+use parking_lot::RwLock;
 use resolve::Resolver;
 use tabbycat::Graph;
 
@@ -219,7 +220,7 @@ impl ComputeGraph {
 
     fn with_mut<R, F: FnOnce(&mut ComputeGraphInner) -> R>(&self, f: F) -> R {
         let write = self.inner.load();
-        let mut inner = write.write().unwrap();
+        let mut inner = write.write();
         f(&mut inner)
     }
 
@@ -423,7 +424,7 @@ impl ComputeGraph {
     #[allow(clippy::await_holding_lock)]
     pub(crate) async fn all_timing_information(&self) -> Vec<QueryResults> {
         let myself = self.inner.load();
-        let myself = myself.read().unwrap();
+        let myself = myself.read();
         let mut output = Vec::new();
         for timing_information in myself.timing_information.values() {
             output.push(timing_information.wait_for_results().await);

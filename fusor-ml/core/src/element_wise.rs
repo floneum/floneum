@@ -265,6 +265,45 @@ async fn test_add_const() {
     assert_eq!(output[[1]], 3.);
 }
 
+#[cfg(test)]
+#[tokio::test]
+async fn test_add_const_4_dim() {
+    let device = Device::new().await.unwrap();
+
+    let data = [
+        [
+            [[1., 2.], [1., 2.]],
+            [[3., 4.], [3., 4.]],
+            [[5., 6.], [5., 6.]],
+        ],
+        [
+            [[6., 2.], [1., 2.]],
+            [[3., 4.], [3., 4.]],
+            [[5., 6.], [5., 6.]],
+        ],
+    ];
+    let tensor = Tensor::new(&device, &data);
+
+    let tensor = tensor + 1.0;
+
+    let output = tensor.as_slice().await.unwrap();
+    println!("{:?}", output);
+    let result = [
+        [
+            [[2.0, 3.0], [2.0, 3.0]],
+            [[4.0, 5.0], [4.0, 5.0]],
+            [[6.0, 7.0], [6.0, 7.0]],
+        ],
+        [
+            [[7.0, 3.0], [2.0, 3.0]],
+            [[4.0, 5.0], [4.0, 5.0]],
+            [[6.0, 7.0], [6.0, 7.0]],
+        ],
+    ];
+    let result = Tensor::new(&device, &result);
+    assert_eq!(output, result.as_slice().await.unwrap());
+}
+
 macro_rules! impl_add {
     ($($t:ty),*) => {
         $(

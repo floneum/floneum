@@ -187,8 +187,6 @@ impl VisitTiledKernel {
             &[String],
         ) -> String,
     ) -> String {
-        assert!(rank <= 3, "TensorLayout only supports up to 3 rank tensors");
-
         let mut kernel_body = String::new();
         let global_id = kernel.global_id();
         let tensors = datatypes
@@ -227,9 +225,24 @@ impl VisitTiledKernel {
                 _ => None,
             });
 
+        let first = first_tensor_input(&tensors);
+        let mut global_indexes = Vec::new();
+        for index in ["x", "y"].iter().take(rank as usize) {
+            global_indexes.push(format!("{global_id}.{index}"));
+        }
+        if rank > 2 {
+            writeln!(&mut kernel_body, "var remaining_z = {global_id}.z;").unwrap();
+        }
+        for index in (0..rank).skip(2) {
+            let size = first.shape_binding(index);
+            writeln!(&mut kernel_body, "let z_{index} = remaining_z % {size};").unwrap();
+            writeln!(&mut kernel_body, "remaining_z = remaining_z / {size};").unwrap();
+            global_indexes.push(format!("z_{index}"));
+        }
+
         if let Some((quantized_type, quantized_input)) = quantized_block {
             for i in 0..rank as usize {
-                let index = ["x", "y", "z"][i];
+                let index = &global_indexes[i];
                 let chunk_size = if i == rank as usize - 1 {
                     quantized_type.block_size() as u32
                 } else {
@@ -237,7 +250,7 @@ impl VisitTiledKernel {
                 };
                 writeln!(
                     &mut kernel_body,
-                    "let tile_index_{i} = {global_id}.{index} * {chunk_size};"
+                    "let tile_index_{i} = {index} * {chunk_size};"
                 )
                 .unwrap();
             }
@@ -340,10 +353,10 @@ impl VisitTiledKernel {
             }
         } else {
             for i in 0..rank as usize {
-                let index = ["x", "y", "z"][i];
+                let index = &global_indexes[i];
                 writeln!(
                     &mut kernel_body,
-                    "let tile_index_{i} = {global_id}.{index} * {tile_size};"
+                    "let tile_index_{i} = {index} * {tile_size};"
                 )
                 .unwrap();
             }

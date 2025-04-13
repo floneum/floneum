@@ -634,6 +634,63 @@ where
     }
 }
 
+impl<'a, I, I2, I3, I4, D: DataType> IntoTensor<4, D> for I
+where
+    I: IntoIterator<Item = I2, IntoIter: ExactSizeIterator>,
+    I2: IntoIterator<Item = I3, IntoIter: ExactSizeIterator>,
+    I3: IntoIterator<Item = I4, IntoIter: ExactSizeIterator>,
+    I4: IntoIterator<Item = &'a D, IntoIter: ExactSizeIterator>,
+{
+    fn into_tensor(self, device: &Device) -> Tensor<4, D> {
+        let mut iter = self
+            .into_iter()
+            .map(|i| {
+                i.into_iter()
+                    .map(|i| i.into_iter().map(IntoIterator::into_iter).peekable())
+                    .peekable()
+            })
+            .peekable();
+        let mut shape = [iter.len(), 0, 0, 0];
+        if let Some(iter) = iter.peek_mut() {
+            let size = iter.len();
+            shape[1] = size;
+            if let Some(iter) = iter.peek_mut() {
+                let size = iter.len();
+                shape[2] = size;
+                if let Some(iter) = iter.peek() {
+                    let size = iter.len();
+                    shape[3] = size;
+                }
+            }
+        }
+
+        let iter = iter.flat_map(|i| {
+            let size = i.len();
+            let required_size = shape[1];
+            if size != required_size {
+                panic!("expected a rectangular matrix. The first inner iterator size was {required_size}, but another inner iterator size was {size}");
+            }
+            i.flat_map(|i| {
+                let size = i.len();
+                let required_size = shape[2];
+                if size != required_size {
+                    panic!("expected a rectangular matrix. The first inner inner iterator size was {required_size}, but another inner inner iterator size was {size}");
+                }
+                i.flat_map(|i| {
+                    let size = i.len();
+                    let required_size = shape[3];
+                    if size != required_size {
+                        panic!("expected a rectangular matrix. The first inner inner inner iterator size was {required_size}, but another inner inner inner iterator size was {size}");
+                    }
+                    i
+                })
+            })
+        });
+
+        Tensor::new_inner(device, iter, shape)
+    }
+}
+
 impl<D: DataType, const R: usize> Tensor<R, D> {
     pub fn new(device: &Device, data: impl IntoTensor<R, D>) -> Self {
         data.into_tensor(device)
@@ -711,6 +768,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         }
 
         self.data.graph.merge(&other.data.graph);
+        assert_eq!(self.shape(), other.shape());
         let operation = PairWiseOperation::new(function, self.data.key, other.data.key);
         Self {
             data: self.data.pair_wise(operation),
@@ -883,6 +941,28 @@ impl<D: DataType + Debug> Debug for TensorSlice<3, D> {
                     .map(|j| {
                         (0..shape[2])
                             .map(|k| self.get([i, j, k]).unwrap())
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        vec.fmt(f)
+    }
+}
+
+impl<D: DataType + Debug> Debug for TensorSlice<4, D> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let shape = self.layout.shape();
+        let vec = (0..shape[0])
+            .map(|i| {
+                (0..shape[1])
+                    .map(|j| {
+                        (0..shape[2])
+                            .map(|k| {
+                                (0..shape[3])
+                                    .map(|l| self.get([i, j, k, l]).unwrap())
+                                    .collect::<Vec<_>>()
+                            })
                             .collect::<Vec<_>>()
                     })
                     .collect::<Vec<_>>()

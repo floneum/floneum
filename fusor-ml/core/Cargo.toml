@@ -19,6 +19,7 @@ enumset = "1.1.5"
 fusor-gguf = { workspace = true }
 rustc-hash = "2.1.1"
 thiserror.workspace = true
+parking_lot = "0.12.3"
 
 [dev-dependencies]
 ndarray = "0.16.1"
