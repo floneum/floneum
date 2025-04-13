@@ -21,6 +21,7 @@ pub(crate) struct Resolver<'a> {
     command_encoder: &'a mut CommandEncoder,
     target: AnyComputeKey,
     queue: ComputeQueue,
+    timing_information: bool,
 }
 
 impl<'a> Resolver<'a> {
@@ -34,7 +35,23 @@ impl<'a> Resolver<'a> {
             command_encoder,
             target,
             queue: Default::default(),
+            timing_information: false,
         }
+    }
+
+    fn with_query<O>(
+        &mut self,
+        key: AnyComputeKey,
+        with_query: impl FnOnce(&mut Self, Option<&PerformanceQueries>) -> O,
+    ) -> O {
+        let query = self
+            .timing_information
+            .then(|| PerformanceQueries::new(&self.graph.device));
+        let result = with_query(self, query.as_ref());
+        if let Some(query) = query {
+            self.graph.timing_information.insert(key, query);
+        }
+        result
     }
 
     pub(crate) fn run(&mut self) -> TensorData {
@@ -151,9 +168,9 @@ impl<'a> Resolver<'a> {
         // Otherwise, just run the element wise kernel
         let input = self.graph.cached_results[&input].clone();
         let kernel = UntypedElementWiseKernel::new(functions, input.datatype());
-        let query = PerformanceQueries::new(input.device());
-        let result = kernel.run_with_query(input.into(), Some(&query), &mut *self.command_encoder);
-        self.graph.timing_information.insert(key.into(), query);
+        let result = self.with_query(key.into(), |resolver, query| {
+            kernel.run_with_query(input.into(), query, &mut *resolver.command_encoder)
+        });
         result
     }
 
@@ -218,9 +235,9 @@ impl<'a> Resolver<'a> {
         let pre_element_wise_output = first_pre.out_datatype();
         kernel.set_pre_element_wise([first_pre, second_pre]);
         kernel.set_post_element_wise(UntypedElementWiseKernel::new(then, pre_element_wise_output));
-        let query = PerformanceQueries::new(first.device());
-        let result = kernel.run_with_query(first, second, Some(&query), &mut *self.command_encoder);
-        self.graph.timing_information.insert(key.into(), query);
+        let result = self.with_query(key.into(), |resolver, query| {
+            kernel.run_with_query(first, second, query, &mut *resolver.command_encoder)
+        });
         result
     }
 
@@ -232,11 +249,9 @@ impl<'a> Resolver<'a> {
         let first = self.graph.cached_results[&first].clone();
         let second = self.graph.cached_results[&second].clone();
         let kernel = UntypedMatMul::new(first.datatype(), first.layout().rank() as u32);
-        let query = PerformanceQueries::new(first.device());
-        let result =
-            kernel.run_with_query(&first, &second, Some(&query), &mut *self.command_encoder);
-        self.graph.timing_information.insert(key.into(), query);
-        result
+        self.with_query(key.into(), |resolver, query| {
+            kernel.run_with_query(&first, &second, query, &mut *resolver.command_encoder)
+        })
     }
 
     fn resolve_q_mat_mul(&mut self, key: QMatMulComputeNodeKey) -> TensorData {
@@ -246,9 +261,9 @@ impl<'a> Resolver<'a> {
 
         let input = self.graph.cached_results[&input].clone();
         let kernel = UntypedQMatMul::new(input.datatype(), matrix);
-        let query = PerformanceQueries::new(input.device());
-        let result = kernel.run_with_query(&input, Some(&query), &mut *self.command_encoder);
-        self.graph.timing_information.insert(key.into(), query);
+        let result = self.with_query(key.into(), |resolver, query| {
+            kernel.run_with_query(&input, query, &mut *resolver.command_encoder)
+        });
         result
     }
 
@@ -266,11 +281,13 @@ impl<'a> Resolver<'a> {
         let mut kernel = UntypedDequantize::new(operation.datatype, operation.matrix.clone());
         let then = element_wise::UntypedElementWiseKernel::new(then, operation.datatype);
         kernel.set_post_element_wise(then);
-        let query = PerformanceQueries::new(&self.graph.device);
-        let result =
-            kernel.run_with_query(&self.graph.device, Some(&query), &mut *self.command_encoder);
-        self.graph.timing_information.insert(key.into(), query);
-        result
+        self.with_query(key.into(), |resolver, query| {
+            kernel.run_with_query(
+                &resolver.graph.device,
+                query,
+                &mut *resolver.command_encoder,
+            )
+        })
     }
 
     fn resolve_reduce(&mut self, key: ReduceComputeNodeKey) -> TensorData {
@@ -303,10 +320,9 @@ impl<'a> Resolver<'a> {
             element_wise::UntypedElementWiseKernel::new(then, element_wise_before.out_datatype());
         kernel.set_post_element_wise(element_wise_after);
         kernel.set_pre_element_wise(element_wise_before);
-        let query = PerformanceQueries::new(input.device());
-        let result = kernel.run_with_query(&input, axis, Some(&query), &mut *self.command_encoder);
-        self.graph.timing_information.insert(key.into(), query);
-        result
+        self.with_query(key.into(), |resolver, query| {
+            kernel.run_with_query(&input, axis, query, &mut *resolver.command_encoder)
+        })
     }
 
     fn resolve_slice(&mut self, key: MapLayoutComputeNodeKey) -> TensorData {
@@ -325,10 +341,9 @@ impl<'a> Resolver<'a> {
         let input = self.graph.cached_results[&input].clone();
         let kernel = UntypedResizeKernel::new(&new_shape, &fill_shape);
 
-        let query = PerformanceQueries::new(input.device());
-        let result = kernel.run_with_query(&input, Some(&query), &mut *self.command_encoder);
-        self.graph.timing_information.insert(key.into(), query);
-        result
+        self.with_query(key.into(), |resolver, query| {
+            kernel.run_with_query(&input, query, &mut *resolver.command_encoder)
+        })
     }
 
     fn resolve_slice_assign(&mut self, key: SliceAssignComputeNodeKey) -> TensorData {
@@ -339,11 +354,9 @@ impl<'a> Resolver<'a> {
         let input = self.graph.cached_results[&input].clone();
         let value = self.graph.cached_results[&value].clone();
 
-        let query = PerformanceQueries::new(input.device());
-        let result =
-            kernel.run_with_query(&input, &value, Some(&query), &mut *self.command_encoder);
-        self.graph.timing_information.insert(key.into(), query);
-        result
+        self.with_query(key.into(), |resolver, query| {
+            kernel.run_with_query(&input, &value, query, &mut *resolver.command_encoder)
+        })
     }
 
     fn resolve_index_select(&mut self, key: IndexSelectComputeNodeKey) -> TensorData {
@@ -392,11 +405,9 @@ impl<'a> Resolver<'a> {
             indexes.datatype(),
         ));
 
-        let query = PerformanceQueries::new(input.device());
-        let result =
-            kernel.run_with_query(&input, &indexes, Some(&query), &mut *self.command_encoder);
-        self.graph.timing_information.insert(key.into(), query);
-        result
+        self.with_query(key.into(), |resolver, query| {
+            kernel.run_with_query(&input, &indexes, query, &mut *resolver.command_encoder)
+        })
     }
 
     fn resolve_tensor(&mut self, key: TensorComputeNodeKey) -> TensorData {
