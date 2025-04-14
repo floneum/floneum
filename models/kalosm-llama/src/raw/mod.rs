@@ -319,7 +319,7 @@ impl Model {
         })
     }
 
-    pub fn forward(
+    pub async fn forward(
         &self,
         tokens: &[u32],
         device: &Device,
@@ -374,10 +374,11 @@ impl Model {
             let x = layer.ffn_norm.forward(&x);
 
             layer_in = layer.feed_forward_variant.forward(&x) + residual;
+            _ = layer_in.as_slice().await;
         }
         let x = self.norm.forward(&layer_in);
         let [_, hidden_size] = x.shape();
-        let x = x.slice([(seq_len - 2)..(seq_len - 1), 0..*hidden_size]);
+        let x = x.slice([(seq_len - 1)..seq_len, 0..*hidden_size]);
         let out = x.q_mat_mul(&self.output);
         let [_, size] = *out.shape();
         out.reshape([size])
