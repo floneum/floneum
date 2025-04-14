@@ -244,7 +244,28 @@ impl ComputeGraph {
                 inner.dependency_map.merge(&mut other_inner.dependency_map);
             })
         });
-        other.inner.store(self.inner.load_full());
+
+        other.point_to(self);
+    }
+
+    fn point_to(&self, target: &Self) {
+        {
+            if Arc::ptr_eq(&self.inner.load(), &target.inner.load()) {
+                return;
+            }
+        }
+
+        let pointed_to_by = self.with_mut(|inner| std::mem::take(&mut inner.pointed_to_by));
+
+        for pointed_to in pointed_to_by {
+            pointed_to.point_to(target);
+        }
+
+        target.with_mut(|inner| {
+            inner.pointed_to_by.push(self.clone());
+        });
+        let target = target.inner.load_full();
+        self.inner.store(target);
     }
 
     pub(crate) fn create_element_wise(
@@ -434,6 +455,8 @@ struct ComputeGraphInner {
     cached_results: FxHashMap<AnyComputeKey, TensorData>,
 
     dependency_map: DependencyMap,
+
+    pointed_to_by: Vec<ComputeGraph>,
 }
 
 impl ComputeGraphInner {
@@ -444,6 +467,7 @@ impl ComputeGraphInner {
             timing_information: Default::default(),
             cached_results: Default::default(),
             dependency_map: DependencyMap::default(),
+            pointed_to_by: Vec::new(),
         }
     }
 
@@ -582,10 +606,16 @@ impl ComputeGraphInner {
     fn verify_integrity(&self) {
         // Check that all node references exist in the graph
         for key in self.dependency_map.reference_count.keys() {
-            assert!(self.contains_key(*key));
+            assert!(
+                self.contains_key(*key),
+                "{key:?} does not exist in the reference map"
+            );
         }
         for (key, dependants) in self.dependency_map.dependant_map.iter() {
-            assert!(self.contains_key(*key));
+            assert!(
+                self.contains_key(*key),
+                "{key:?} is in the dependant map, but it doesn't exist"
+            );
             for dependant in dependants {
                 assert!(
                     self.contains_key(*dependant),
