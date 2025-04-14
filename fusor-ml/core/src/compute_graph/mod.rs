@@ -1,6 +1,6 @@
-use std::sync::{Arc, atomic::AtomicUsize};
+use std::sync::{Arc, Weak, atomic::AtomicUsize};
 
-use arc_swap::ArcSwap;
+use arc_swap::{ArcSwap, ArcSwapAny};
 use dependency_map::{DependencyMap, visit_dependencies};
 use parking_lot::RwLock;
 use resolve::Resolver;
@@ -209,11 +209,17 @@ pub(crate) struct ComputeGraph {
 
 impl ComputeGraph {
     pub(crate) fn new(device: Device) -> Self {
-        Self {
+        let myself = Self {
             inner: Arc::new(ArcSwap::new(Arc::new(RwLock::new(ComputeGraphInner::new(
                 device,
             ))))),
-        }
+        };
+
+        let weak = Arc::downgrade(&myself.inner);
+        myself.with_mut(|inner| {
+            inner.pointed_to_by.push(weak);
+        });
+        myself
     }
 
     fn with_mut<R, F: FnOnce(&mut ComputeGraphInner) -> R>(&self, f: F) -> R {
@@ -258,11 +264,19 @@ impl ComputeGraph {
         let pointed_to_by = self.with_mut(|inner| std::mem::take(&mut inner.pointed_to_by));
 
         for pointed_to in pointed_to_by {
-            pointed_to.point_to(target);
+            if let Some(pointed_to) = pointed_to.upgrade() {
+                if Arc::ptr_eq(&pointed_to, &target.inner) {
+                    continue;
+                }
+                let pointed_to = Self {
+                    inner: pointed_to,
+                };
+                pointed_to.point_to(target);
+            }
         }
 
         target.with_mut(|inner| {
-            inner.pointed_to_by.push(self.clone());
+            inner.pointed_to_by.push(Arc::downgrade(&self.inner));
         });
         let target = target.inner.load_full();
         self.inner.store(target);
@@ -456,7 +470,7 @@ struct ComputeGraphInner {
 
     dependency_map: DependencyMap,
 
-    pointed_to_by: Vec<ComputeGraph>,
+    pointed_to_by: Vec<Weak<ArcSwapAny<Arc<RwLock<ComputeGraphInner>>>>>,
 }
 
 impl ComputeGraphInner {
