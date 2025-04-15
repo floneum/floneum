@@ -507,7 +507,13 @@ impl EvaluationTrie {
             from_tokenization_constraint,
             evaluated_children: Default::default(),
         };
-        assert!(probability >= 0.0 && probability <= 1.0);
+        if probability <= -0.1 || probability > 1.1 {
+            tracing::error!(
+                "Probability of token {} is {}, this should never happen",
+                token,
+                probability
+            );
+        }
         let id = self.nodes.len();
         self.nodes.push(node);
         id
@@ -619,6 +625,61 @@ impl EvaluationTrie {
         }
         graph.push_str("}\n");
         graph
+    }
+
+    /// Calculate the Shannon entropy of the tree
+    pub fn shannon_entropy(&self) -> f32 {
+        let mut current_nodes = self
+            .roots
+            .values()
+            .map(|index| (self.estimated_probability(*index), *index))
+            .collect::<Vec<_>>();
+        let total_root_prob = current_nodes.iter().map(|(prob, _)| prob).sum::<f32>();
+        for (prob, _) in &mut current_nodes {
+            if *prob > 0.0 {
+                *prob /= total_root_prob;
+            }
+        }
+
+        let mut leaf_node_probabilities = Vec::new();
+        while let Some((parent_prob, node_id)) = current_nodes.pop() {
+            let node = &self.nodes[node_id];
+            if !node.evaluated_children.is_empty() {
+                let child_probabilities = node
+                    .evaluated_children
+                    .values()
+                    .map(|child| (self.estimated_probability(*child), *child))
+                    .collect::<Vec<_>>();
+                let total_child_prob = child_probabilities
+                    .iter()
+                    .map(|(prob, _)| prob)
+                    .sum::<f32>();
+                current_nodes.extend(child_probabilities.into_iter().map(|(prob, child_id)| {
+                    let prob = if prob == 0.0 {
+                        prob
+                    } else {
+                        (prob / total_child_prob) * parent_prob
+                    };
+                    (prob, child_id)
+                }));
+            } else {
+                leaf_node_probabilities.push(parent_prob);
+            }
+        }
+        let total_probability: f32 = leaf_node_probabilities.iter().copied().sum();
+        assert!(0.9 < total_probability && total_probability < 1.1);
+        let entropy: f32 = leaf_node_probabilities
+            .iter()
+            .map(|&prob| {
+                let prob = prob / total_probability;
+                if prob > 0.0 {
+                    -prob * prob.log2()
+                } else {
+                    0.0
+                }
+            })
+            .sum();
+        entropy
     }
 }
 

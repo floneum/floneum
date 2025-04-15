@@ -5,12 +5,14 @@ use std::{io::Write, sync::Arc};
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt().init();
+
     #[derive(Debug, Clone, Parse)]
     struct Pet {
         name: String,
         description: String,
         color: String,
-        size: Size,
+        // size: Size,
         diet: Diet,
     }
 
@@ -38,7 +40,7 @@ async fn main() {
 
     // let sampler = GenerationParameters::new().with_seed(0);
     let sampler = GenerationParameters::new();
-    
+
     let mut llm = LlamaModel::from_builder(
         Llama::builder().with_source(LlamaSource::llama_3_2_1b_chat()),
         ModelLoadingProgress::multi_bar_loading_indicator(),
@@ -48,12 +50,13 @@ async fn main() {
 
     tokio::task::spawn_blocking(move || {
         let mut trie = EvaluationTrie::new();
+        let mut last_entropy = 0.0;
         for generation in 0.. {
             let mut session = llm.new_session();
 
             let output = llm.generate_structured_with_trie(
                 &mut session,
-                "Generate a JSON object with the following properties: name, description, color, size, diet",
+                "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\nCreate JSON for a cat<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
                 sampler.clone(),
                 Pet::new_parser(),
                 |token| {
@@ -65,6 +68,11 @@ async fn main() {
             ).unwrap();
 
             println!("generation {generation}:\n{output:?}");
+            let shannon_entropy = trie.shannon_entropy();
+            let entropy_diff = (shannon_entropy - last_entropy).abs();
+            println!("entropy diff: {entropy_diff}");
+            println!("shannon entropy: {shannon_entropy}");
+            last_entropy = shannon_entropy;
         }
     }).await.unwrap();
 }
