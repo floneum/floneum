@@ -63,7 +63,7 @@ pub enum LlamaModelError {
 }
 
 /// The inner, synchronous Llama model.
-pub(crate) struct LlamaModel {
+pub struct LlamaModel {
     pub(crate) model: Model,
     pub(crate) device: Device,
     pub(crate) tokenizer: Arc<Tokenizer>,
@@ -100,7 +100,7 @@ impl LlamaModel {
     }
 
     /// Create a new sync Llama model from a builder.
-    pub(crate) async fn from_builder(
+    pub async fn from_builder(
         builder: crate::LlamaBuilder,
         mut handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
     ) -> Result<Self, LlamaSourceError> {

@@ -76,7 +76,7 @@ pub struct RopeScalingConfig {
     pub(crate) original_max_position_embeddings: usize,
 }
 
-pub struct Model {
+pub(crate) struct Model {
     pub(crate) config: Arc<LlamaConfig>,
     tok_embeddings: Embedding,
     layers: Vec<LlamaAttention>,

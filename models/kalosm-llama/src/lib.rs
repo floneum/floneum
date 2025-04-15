@@ -44,7 +44,7 @@ mod structured;
 mod token_stream;
 
 pub use crate::chat::LlamaChatSession;
-use crate::model::LlamaModel;
+pub use crate::model::LlamaModel;
 pub use crate::raw::cache::*;
 pub use crate::session::LlamaSession;
 use candle_core::Device;
@@ -59,6 +59,7 @@ use std::mem::MaybeUninit;
 use std::ops::Deref;
 use std::sync::Arc;
 use tokenizers::Tokenizer;
+pub use structured::EvaluationTrie;
 
 /// A prelude of commonly used items in kalosm-llama.
 pub mod prelude {

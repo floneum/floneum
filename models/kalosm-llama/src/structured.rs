@@ -432,7 +432,7 @@ pub(crate) fn generate_structured<P: Parser>(
 }
 
 #[derive(Debug)]
-pub(crate) struct EvaluationTrie {
+pub struct EvaluationTrie {
     roots: FxHashMap<u32, usize>,
     nodes: Vec<EvaluationNode>,
 }

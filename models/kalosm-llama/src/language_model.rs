@@ -13,11 +13,11 @@ use std::sync::{Arc, RwLock};
 use crate::model::LlamaModelError;
 use crate::structured::{generate_structured, EvaluationTrie};
 pub use crate::Llama;
-use crate::LlamaBuilder;
 use crate::{
     InferenceSettings, LlamaSession, LlamaSourceError, StructuredGenerationTask, Task,
     UnstructuredGenerationTask,
 };
+use crate::{LlamaBuilder, LlamaModel};
 
 impl ModelBuilder for LlamaBuilder {
     type Model = Llama;
@@ -111,6 +111,54 @@ impl<T: Parse + 'static> CreateDefaultCompletionConstraintsForType<T> for Llama 
     }
 }
 
+impl LlamaModel {
+    pub fn new_session(
+        &self,
+    ) -> LlamaSession {
+        let config = &self.model.config;
+        LlamaSession::new(config)
+    }
+
+    pub fn generate_structured_with_trie<'a, S, Constraints>(
+        &'a mut self,
+        session: &'a mut LlamaSession,
+        text: &str,
+        sampler: S,
+        parser: Constraints,
+        on_token: impl FnMut(String) -> Result<(), LlamaModelError> + Send + Sync + 'static,
+        trie: &mut EvaluationTrie,
+    ) -> Result<Constraints::Output, LlamaModelError>
+    where
+        <Constraints as Parser>::Output: Send,
+        Constraints: CreateParserState + Send + 'static,
+        S: Sampler + 'static,
+    {
+        let parser_state = parser.create_parser_state();
+        let cache = session.cache.read().unwrap().clone();
+        let mut session = LlamaSession {
+            cache: Arc::new(RwLock::new(cache)),
+        };
+        let seed = match (&sampler as &dyn Any).downcast_ref::<GenerationParameters>() {
+            Some(sampler) => sampler.seed(),
+            None => None,
+        };
+        let sampler = std::sync::Arc::new(std::sync::Mutex::new(sampler));
+        let result = generate_structured(
+            text,
+            self,
+            &mut session,
+            &parser,
+            parser_state,
+            sampler,
+            on_token,
+            Some(64),
+            seed,
+            trie,
+        );
+        result
+    }
+}
+
 impl<S, Constraints> StructuredTextCompletionModel<Constraints, S> for Llama
 where
     <Constraints as Parser>::Output: Send,
@@ -126,51 +174,22 @@ where
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
     ) -> impl Future<Output = Result<Constraints::Output, Self::Error>> + Send + 'a {
         let text = text.to_string();
-        let session = session.clone();
+        let mut session = session.clone();
         async {
             let (tx, rx) = tokio::sync::oneshot::channel();
-            let seed = match (&sampler as &dyn Any).downcast_ref::<GenerationParameters>() {
-                Some(sampler) => sampler.seed(),
-                None => None,
-            };
-            let sampler = std::sync::Arc::new(std::sync::Mutex::new(sampler));
-            let mut on_token = Box::new(on_token);
+            let on_token = Box::new(on_token);
             self.task_sender
                 .send(Task::StructuredGeneration(StructuredGenerationTask {
                     runner: Box::new(move |model| {
                         let mut trie = EvaluationTrie::new();
-                        let mut iteration = 0;
-                        let result = loop {
-                            let parser_state = parser.create_parser_state();
-                            let cache = session.cache.read().unwrap().clone();
-                            let mut session = LlamaSession {
-                                cache: Arc::new(RwLock::new(cache)),
-                            };
-                            let mut all_text = String::new();
-                            let mut on_token = |token: &str| {
-                                all_text += token;
-                                Ok(())
-                            };
-                            let result = generate_structured(
-                                text.clone(),
-                                model,
-                                &mut session,
-                                &parser,
-                                parser_state,
-                                sampler.clone(),
-                                |tok| on_token(tok.as_str()),
-                                Some(64),
-                                seed,
-                                &mut trie,
-                            );
-                            println!("graph:\n\n{}\n\n", trie.graphvis(&model.tokenizer));
-                            println!("iteration {iteration} sampled text:\n\n{}\n\n", all_text);
-                            if false {
-                                break result;
-                            }
-                            iteration += 1;
-                        };
-                        _ = tx.send(result);
+                        _ = tx.send(model.generate_structured_with_trie(
+                            &mut session,
+                            &text,
+                            sampler,
+                            parser,
+                            on_token,
+                            &mut trie,
+                        ));
                     }),
                 }))
                 .map_err(|_| LlamaModelError::ModelStopped)?;

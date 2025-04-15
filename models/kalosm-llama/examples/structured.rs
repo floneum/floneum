@@ -1,16 +1,10 @@
 #![allow(unused)]
 use kalosm::language::*;
+use kalosm_llama::{EvaluationTrie, LlamaModel};
 use std::{io::Write, sync::Arc};
 
 #[tokio::main]
 async fn main() {
-    let llm = Llama::builder()
-        .with_source(LlamaSource::llama_3_2_1b_chat())
-        .build()
-        .await
-        .unwrap();
-    let prompt = "Create a list of pets";
-
     #[derive(Debug, Clone, Parse)]
     struct Pet {
         name: String,
@@ -44,42 +38,33 @@ async fn main() {
 
     // let sampler = GenerationParameters::new().with_seed(0);
     let sampler = GenerationParameters::new();
+    
+    let mut llm = LlamaModel::from_builder(
+        Llama::builder().with_source(LlamaSource::llama_3_2_1b_chat()),
+        ModelLoadingProgress::multi_bar_loading_indicator(),
+    )
+    .await
+    .unwrap();
 
-    let task = llm
-        .task("You generate realistic JSON placeholders")
-        .with_constraints(Arc::new(<[Pet; 4] as Parse>::new_parser()));
-    let stream = task.run(prompt).with_sampler(sampler.clone());
+    tokio::task::spawn_blocking(move || {
+        let mut trie = EvaluationTrie::new();
+        for generation in 0.. {
+            let mut session = llm.new_session();
 
-    time_stream(stream).await;
+            let output = llm.generate_structured_with_trie(
+                &mut session,
+                "Generate a JSON object with the following properties: name, description, color, size, diet",
+                sampler.clone(),
+                Pet::new_parser(),
+                |token| {
+                    // print!("{}", token);
+                    // std::io::stdout().flush().unwrap();
+                    Ok(())
+                },
+                &mut trie,
+            ).unwrap();
 
-    println!("\n\n# without constraints");
-
-    let task = llm.task("You generate realistic JSON placeholders");
-    let stream = task(prompt).with_sampler(sampler);
-
-    time_stream(stream).await;
-}
-
-async fn time_stream(mut stream: impl TextStream + Unpin) {
-    let start_time = std::time::Instant::now();
-    let mut tokens = 0;
-    let mut string_length = 0;
-    let mut all_text = String::new();
-    while let Some(token) = stream.next().await {
-        tokens += 1;
-        string_length += token.len();
-        all_text.push_str(&token);
-        // print!("{token}");
-        // std::io::stdout().flush().unwrap();
-    }
-    let elapsed = start_time.elapsed();
-    println!("\n\n{all_text}");
-    println!(
-        "\n\nGenerated {} tokens ({} characters) in {:?}",
-        tokens, string_length, elapsed
-    );
-    println!(
-        "Tokens per second: {:.2}",
-        tokens as f64 / elapsed.as_secs_f64()
-    );
+            println!("generation {generation}:\n{output:?}");
+        }
+    }).await.unwrap();
 }
