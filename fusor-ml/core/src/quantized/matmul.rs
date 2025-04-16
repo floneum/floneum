@@ -112,7 +112,7 @@ async fn test_fuzz_q_mat_mul() {
 
 #[cfg(test)]
 #[tokio::test]
-async fn test_fuzz_q_mat_mul() {
+async fn test_fuzz_q_mat_mul_q8_0() {
     use crate::Device;
     use crate::Tensor;
     use candle_core::Module;
@@ -128,7 +128,7 @@ async fn test_fuzz_q_mat_mul() {
     let candle_metadata = candle_core::quantized::gguf_file::Content::read(&mut reader).unwrap();
     let candle_q_matrix_metadata = candle_metadata
         .tensor_infos
-        .get("output_norm.weight")
+        .get("token_embd.weight")
         .unwrap();
     let candle_q_tensor = candle_q_matrix_metadata
         .read(
@@ -139,7 +139,7 @@ async fn test_fuzz_q_mat_mul() {
         .unwrap();
     let candle_q_matrix = candle_core::quantized::QMatMul::from_qtensor(candle_q_tensor).unwrap();
 
-    let q_matrix_metadata = metadata.tensor_infos.get("output_norm.weight").unwrap();
+    let q_matrix_metadata = metadata.tensor_infos.get("token_embd.weight").unwrap();
 
     let q_matrix = QMatrix::read(
         &device,
@@ -150,7 +150,7 @@ async fn test_fuzz_q_mat_mul() {
     .unwrap();
 
     for _ in 0..10 {
-        let random_data: Vec<Vec<f32>> = (0..576)
+        let random_data: Vec<Vec<f32>> = (0..1)
             .map(|_| (0..576).map(|_| rand::random()).collect())
             .collect();
         let tensor = Tensor::<2, f32>::new(&device, &random_data);
@@ -164,16 +164,16 @@ async fn test_fuzz_q_mat_mul() {
             &candle_core::Device::Cpu,
         )
         .unwrap()
-        .reshape(&[576, 576])
+        .reshape(&[1, 576])
         .unwrap();
         let candle_result = candle_q_matrix.forward(&candle_b).unwrap();
-        assert_eq!(candle_result.shape().dims(), &[576, 576]);
+        assert_eq!(candle_result.shape().dims(), &[1, 49152]);
         let candle_result = candle_result.to_vec2::<f32>().unwrap();
 
-        assert_eq!(fusor_shape, &[576, 576]);
+        assert_eq!(fusor_shape, &[1, 49152]);
 
-        for x in 0..576 {
-            for y in 0..576 {
+        for x in 0..1 {
+            for y in 0..49152 {
                 let expected = candle_result[x][y];
                 let actual = result[[x, y]];
                 if (expected - actual).abs() > 3. {
@@ -209,8 +209,8 @@ impl UntypedQMatMul {
     }
 
     fn work_group_dispatch(&self, a_shape: &[usize]) -> [u32; 3] {
+        let m = a_shape[0];
         let n = self.matrix.shape[0];
-        let m = a_shape[1];
         [
             (n as u32).div_ceil(self.work_group_size()[0]),
             (m as u32).div_ceil(self.work_group_size()[1]),
@@ -245,8 +245,8 @@ impl UntypedQMatMul {
             let global_id = generic_kernel.global_id();
             let elements_per_block = self.elements_per_block();
 
-            let k_size = input_a.shape_binding(0);
-            let m_size = input_a.shape_binding(1);
+            let k_size = input_a.shape_binding(1);
+            let m_size = input_a.shape_binding(0);
             let n_size = input_b.shape_binding(0);
 
             writeln!(&mut kernel, "let x = {global_id}.x;").unwrap();
@@ -343,7 +343,6 @@ impl UntypedQMatMul {
         assert_eq!(*output_tensor.layout().shape(), [a_shape[0], b_shape[0]]);
 
         let workgroup_dispatch_size = self.work_group_dispatch(a_shape);
-        println!("workgroup dispatch size: {:?}", workgroup_dispatch_size);
 
         module.run_with_query(
             device,
