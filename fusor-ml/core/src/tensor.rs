@@ -739,6 +739,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         Ok(TensorSlice::new(downloaded, tensor.layout().clone()))
     }
 
+    #[must_use]
     pub async fn as_slice(&self) -> Result<TensorSlice<R, D>, wgpu::BufferAsyncError> {
         let tensor = self.data.materialize();
         Self::as_slice_from_tensor_data(&tensor).await

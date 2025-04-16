@@ -1,21 +1,21 @@
-use crate::{DataType, Sum, Tensor};
+use crate::{DataType, Max, Sum, Tensor};
 
 impl<const R: usize, const R2: usize, D: DataType> Tensor<R, D>
 where
+    Tensor<R, D>: Max<Output = Tensor<R2, D>>,
     Tensor<R, D>: Sum<Output = Tensor<R2, D>>,
 {
     pub fn softmax(&self, dim: usize) -> Self {
         let size = *self.shape();
-        let exp = self.exp();
-        let sum_all = exp.sum(dim);
-        let sum_all = sum_all.broadcast(size);
-        exp / sum_all
+        let max = self.max(dim);
+        let normalized = self - &max.broadcast(size);
+        let exp = normalized.exp();
+        let sum = exp.sum(dim);
+        self / &sum.broadcast(size)
     }
 
     pub fn softmax_last_dim(&self) -> Self {
-        let size = *self.shape();
-        let dim = size.len() - 1;
-        self.softmax(dim)
+        self.softmax(self.rank() - 1)
     }
 }
 

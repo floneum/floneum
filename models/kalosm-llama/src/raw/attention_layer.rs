@@ -187,7 +187,7 @@ pub struct LlamaAttention {
 }
 
 impl LlamaAttention {
-    pub(crate) fn forward(
+    pub(crate) async fn forward(
         &self,
         hidden_states: &Tensor<2, f32>,
         attention_mask: Option<&AttentionMask>,
@@ -219,7 +219,6 @@ impl LlamaAttention {
                 start_pos,
             ),
         };
-
         let key_states = repeat_kv(key_states.clone(), num_key_value_groups);
         let value_states = repeat_kv(value_states, num_key_value_groups);
 
@@ -228,6 +227,7 @@ impl LlamaAttention {
             Some(cache) => cache.append(&key_states, &value_states),
         };
 
+        debug_assert!(head_dim > 0);
         let scale = 1. / (head_dim as f32).sqrt();
 
         let attn_output = {
@@ -236,7 +236,6 @@ impl LlamaAttention {
             if let Some(attention_mask) = attention_mask {
                 attention_mask.forward(&mut attn_weights);
             }
-
             attn_weights = attn_weights.softmax_last_dim();
 
             attn_weights.mat_mul(&value_states)

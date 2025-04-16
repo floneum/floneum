@@ -92,7 +92,6 @@ impl LlamaModel {
         futures::executor::block_on(async move {
             let logits = model.forward(tokens, device, cache).await;
 
-            let logits = logits.cast::<f32>();
             let len = logits.shape()[0];
             let logits = logits.as_slice().await.unwrap();
             logits_vec.clear();

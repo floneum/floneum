@@ -59,7 +59,9 @@ impl RmsNorm {
     fn forward(&self, x: &Tensor<2, f32>) -> Tensor<2, f32> {
         let shape = *x.shape();
         // Create a sum of everything but the last dimension
-        let norm = x.sqr().sum(0) / *x.shape().last().unwrap() as f32;
+        let last_dim_size = *shape.last().unwrap() as f32;
+        debug_assert!(last_dim_size > 0.);
+        let norm = x.sqr().sum(0) / last_dim_size;
         // Divide the input tensor by the sqrt of the sum plus the epsilon
         let x = x.clone() / (norm + self.eps).sqrt().broadcast(shape);
         // Finally, multiply the result by the weights
@@ -366,7 +368,7 @@ impl Model {
                 Some(&mask),
                 index_pos,
                 cache.as_mut().map(|c| &mut c.blocks[i]),
-            );
+            ).await;
             let x = attn + residual;
 
             // MLP
@@ -374,7 +376,7 @@ impl Model {
             let x = layer.ffn_norm.forward(&x);
 
             layer_in = layer.feed_forward_variant.forward(&x) + residual;
-            _ = layer_in.as_slice().await;
+            let out = layer_in.as_slice().await;
         }
         let x = self.norm.forward(&layer_in);
         let [_, hidden_size] = x.shape();
