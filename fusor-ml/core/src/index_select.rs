@@ -99,7 +99,8 @@ impl UntypedIndexSelectKernel {
         let device = value.device();
         let value_shape = value.layout().shape();
         let indexes_shape = indexes.layout().shape();
-        let output_shape: Box<[usize]> = IndexSelectOperation::output_shape(self.dimension, value_shape, indexes_shape);
+        let output_shape: Box<[usize]> =
+            IndexSelectOperation::output_shape(self.dimension, value_shape, indexes_shape);
         let output_buf = device.wgpu_device().create_buffer(&wgpu::BufferDescriptor {
             label: None,
             size: padded_tensor_size(

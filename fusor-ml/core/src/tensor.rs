@@ -246,7 +246,8 @@ impl LazyTensorData {
     pub(crate) fn element_wise(&self, function: ElementWiseOperation) -> Self {
         let graph = self.graph.clone();
         let device = self.device.clone();
-        let info = self.info.clone();
+        let mut info = self.info.clone();
+        info.datatype = function.function.datatype();
         let key = graph.create_element_wise(function);
 
         Self {
@@ -697,13 +698,13 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
     }
 
     pub fn splat(device: &Device, value: D, shape: [usize; R]) -> Self {
-        Self {
-            data: LazyTensorData::new(TensorData::new_splat(device, &shape, value)),
-            datatype: PhantomData,
-        }
+        Self::from_parts(LazyTensorData::new(TensorData::new_splat(
+            device, &shape, value,
+        )))
     }
 
     pub(crate) fn from_parts(data: LazyTensorData) -> Self {
+        debug_assert_eq!(D::WGSL_TYPE, data.info.datatype());
         Self {
             data,
             datatype: PhantomData,
@@ -715,10 +716,9 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         data: I,
         shape: [usize; R],
     ) -> Self {
-        Self {
-            data: LazyTensorData::new(TensorData::new_inner(device, data, &shape)),
-            datatype: PhantomData,
-        }
+        Self::from_parts(LazyTensorData::new(TensorData::new_inner(
+            device, data, &shape,
+        )))
     }
 
     async fn as_slice_from_tensor_data(
@@ -752,10 +752,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         &self,
         function: ElementWiseOperation,
     ) -> Tensor<R, D2> {
-        Tensor {
-            data: self.data.element_wise(function),
-            datatype: PhantomData,
-        }
+        Tensor::from_parts(self.data.element_wise(function))
     }
 
     pub(crate) fn pair_wise(&self, other: &Self, function: PairWiseFunction) -> Self {
@@ -770,10 +767,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         self.data.graph.merge(&other.data.graph);
         assert_eq!(self.shape(), other.shape());
         let operation = PairWiseOperation::new(function, self.data.key, other.data.key);
-        Self {
-            data: self.data.pair_wise(operation),
-            datatype: PhantomData,
-        }
+        Self::from_parts(self.data.pair_wise(operation))
     }
 
     pub(crate) fn add_mat_mul(&self, other: &Self) -> Self {
@@ -781,19 +775,13 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         let operation =
             MatMulOperation::new(self.data.key, other.data.key, self.shape(), other.shape());
 
-        Self {
-            data: self.data.mat_mul(operation),
-            datatype: PhantomData,
-        }
+        Self::from_parts(self.data.mat_mul(operation))
     }
 
     pub(crate) fn add_q_mat_mul(&self, other: &QMatrix) -> Self {
         let operation = QMatMulOperation::new(self.shape(), self.data.key, other.clone());
 
-        Self {
-            data: self.data.q_mat_mul(operation),
-            datatype: PhantomData,
-        }
+        Self::from_parts(self.data.q_mat_mul(operation))
     }
 
     pub(crate) fn add_resize<const R2: usize>(&self, op: ResizeOperation) -> Tensor<R2, D> {
@@ -806,10 +794,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
     pub(crate) fn add_slice_assign(&self, other: &Self, slices: [Range<usize>; R]) -> Self {
         self.data.graph.merge(&other.data.graph);
         let op = SliceAssignOperation::new(self.data.key, other.data.key, slices.into());
-        Self {
-            data: self.data.slice_assign(op),
-            datatype: PhantomData,
-        }
+        Self::from_parts(self.data.slice_assign(op))
     }
 
     pub(crate) fn add_index_select(&self, dimension: usize, indexes: &Tensor<1, u32>) -> Self {
@@ -821,10 +806,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
             dimension,
             indexes.shape()[0],
         );
-        Self {
-            data: self.data.index_select(op),
-            datatype: PhantomData,
-        }
+        Self::from_parts(self.data.index_select(op))
     }
 
     pub(crate) fn reduce<const OUT: usize>(
@@ -841,10 +823,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
     }
 
     pub(crate) fn add_map_layout<const R2: usize>(&self, op: MapLayoutOperation) -> Tensor<R2, D> {
-        Tensor {
-            data: self.data.map_layout(op),
-            datatype: PhantomData,
-        }
+        Tensor::from_parts(self.data.map_layout(op))
     }
 
     pub(crate) fn key(&self) -> AnyComputeKey {

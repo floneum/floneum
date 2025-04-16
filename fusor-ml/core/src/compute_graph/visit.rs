@@ -55,7 +55,11 @@ pub(crate) trait VisitComputeGraph: Sized {
     }
 }
 
-pub(crate) fn visit(visitor: &mut impl VisitComputeGraph, graph: &ComputeGraphNodes, key: AnyComputeKey) {
+pub(crate) fn visit(
+    visitor: &mut impl VisitComputeGraph,
+    graph: &ComputeGraphNodes,
+    key: AnyComputeKey,
+) {
     match key {
         AnyComputeKey::ElementWise(element_wise_compute_node_key) => {
             visitor.visit_element_wise(graph, element_wise_compute_node_key)

@@ -80,7 +80,12 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
     }
 
     pub fn broadcast<const R2: usize>(&self, out_shape: [usize; R2]) -> Tensor<R2, T> {
-        const { assert!(R2 == R + 1, "The output dimension must be one more than the input dimension") };
+        const {
+            assert!(
+                R2 == R + 1,
+                "The output dimension must be one more than the input dimension"
+            )
+        };
 
         let new_dim = self
             .shape()

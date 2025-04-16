@@ -110,6 +110,82 @@ async fn test_fuzz_q_mat_mul() {
     }
 }
 
+#[cfg(test)]
+#[tokio::test]
+async fn test_fuzz_q_mat_mul() {
+    use crate::Device;
+    use crate::Tensor;
+    use candle_core::Module;
+    use fusor_gguf::GgufMetadata;
+
+    let device = Device::new().await.unwrap();
+
+    let url = "https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf";
+    let bytes = reqwest::get(url).await.unwrap().bytes().await.unwrap();
+    let mut reader = std::io::Cursor::new(&bytes);
+    let metadata = GgufMetadata::read(&mut reader).unwrap();
+    let mut reader = std::io::Cursor::new(&bytes);
+    let candle_metadata = candle_core::quantized::gguf_file::Content::read(&mut reader).unwrap();
+    let candle_q_matrix_metadata = candle_metadata
+        .tensor_infos
+        .get("output_norm.weight")
+        .unwrap();
+    let candle_q_tensor = candle_q_matrix_metadata
+        .read(
+            &mut reader,
+            candle_metadata.tensor_data_offset,
+            &candle_core::Device::Cpu,
+        )
+        .unwrap();
+    let candle_q_matrix = candle_core::quantized::QMatMul::from_qtensor(candle_q_tensor).unwrap();
+
+    let q_matrix_metadata = metadata.tensor_infos.get("output_norm.weight").unwrap();
+
+    let q_matrix = QMatrix::read(
+        &device,
+        q_matrix_metadata,
+        &mut reader,
+        metadata.tensor_data_offset,
+    )
+    .unwrap();
+
+    for _ in 0..10 {
+        let random_data: Vec<Vec<f32>> = (0..576)
+            .map(|_| (0..576).map(|_| rand::random()).collect())
+            .collect();
+        let tensor = Tensor::<2, f32>::new(&device, &random_data);
+
+        let result = tensor.q_mat_mul(&q_matrix);
+        let fusor_shape = result.shape();
+        let result = result.as_slice().await.unwrap();
+
+        let candle_b = candle_core::Tensor::from_iter(
+            random_data.iter().flat_map(|x| x.iter().copied()),
+            &candle_core::Device::Cpu,
+        )
+        .unwrap()
+        .reshape(&[576, 576])
+        .unwrap();
+        let candle_result = candle_q_matrix.forward(&candle_b).unwrap();
+        assert_eq!(candle_result.shape().dims(), &[576, 576]);
+        let candle_result = candle_result.to_vec2::<f32>().unwrap();
+
+        assert_eq!(fusor_shape, &[576, 576]);
+
+        for x in 0..576 {
+            for y in 0..576 {
+                let expected = candle_result[x][y];
+                let actual = result[[x, y]];
+                if (expected - actual).abs() > 3. {
+                    println!("Expected: {:?}", candle_result);
+                    println!("Actual: {:?}", result);
+                    panic!("expected: {}, actual: {}", expected, actual);
+                }
+            }
+        }
+    }
+}
+
 pub(crate) struct UntypedQMatMul {
     #[allow(unused)]
     sparse_kernel: OnceLock<GenericKernel>,
@@ -267,6 +343,7 @@ impl UntypedQMatMul {
         assert_eq!(*output_tensor.layout().shape(), [a_shape[0], b_shape[0]]);
 
         let workgroup_dispatch_size = self.work_group_dispatch(a_shape);
+        println!("workgroup dispatch size: {:?}", workgroup_dispatch_size);
 
         module.run_with_query(
             device,

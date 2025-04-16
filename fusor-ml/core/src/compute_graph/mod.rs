@@ -268,9 +268,7 @@ impl ComputeGraph {
                 if Arc::ptr_eq(&pointed_to, &target.inner) {
                     continue;
                 }
-                let pointed_to = Self {
-                    inner: pointed_to,
-                };
+                let pointed_to = Self { inner: pointed_to };
                 pointed_to.point_to(target);
             }
         }

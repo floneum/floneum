@@ -7,7 +7,8 @@ use crate::{
     visit_tiled::VisitTiledKernel,
 };
 
-#[derive(Debug)]pub(crate) struct SliceAssignOperation {
+#[derive(Debug)]
+pub(crate) struct SliceAssignOperation {
     pub(crate) input: AnyComputeKey,
     pub(crate) value: AnyComputeKey,
     pub(crate) slices: Box<[Range<usize>]>,
