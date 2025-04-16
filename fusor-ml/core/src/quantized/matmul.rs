@@ -235,7 +235,7 @@ impl UntypedQMatMul {
         let output_buf = device.wgpu_device().create_buffer(&wgpu::BufferDescriptor {
             label: None,
             size: padded_tensor_size(
-                (a_shape[0] * b_shape[1] * input.datatype().element_size()) as u64,
+                (a_shape[0] * b_shape[0] * input.datatype().element_size()) as u64,
             ),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
