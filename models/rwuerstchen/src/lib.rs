@@ -135,6 +135,9 @@ pub struct WuerstchenBuilder {
 
     /// The file specifying the tokenizer to used for prior tokenization.
     prior_tokenizer: Option<String>,
+
+    /// The cache to use for downloading the model files.
+    cache: Cache,
 }
 
 impl Default for WuerstchenBuilder {
@@ -148,6 +151,7 @@ impl Default for WuerstchenBuilder {
             vqgan_weights: None,
             tokenizer: None,
             prior_tokenizer: None,
+            cache: Cache::default(),
         }
     }
 }
@@ -201,6 +205,13 @@ impl WuerstchenBuilder {
         self
     }
 
+    /// Set the cache location to use for the model (defaults DATA_DIR/kalosm/cache)
+    pub fn with_cache(mut self, cache: kalosm_common::Cache) -> Self {
+        self.cache = cache;
+
+        self
+    }
+
     /// Build the model.
     pub async fn build(self) -> Result<Wuerstchen, CacheError> {
         self.build_with_loading_handler(ModelLoadingProgress::multi_bar_loading_indicator())
@@ -221,10 +232,10 @@ impl WuerstchenBuilder {
             vqgan_weights,
             tokenizer,
             prior_tokenizer,
+            cache,
         } = self;
 
         // Download section
-        let cache = Cache::default();
         let prior_tokenizer_source = ModelFile::PriorTokenizer.get(prior_tokenizer);
         let prior_tokenizer_source_display =
             format!("Prior Tokenizer ({})", prior_tokenizer_source);
