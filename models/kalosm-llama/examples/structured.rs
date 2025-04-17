@@ -9,10 +9,13 @@ async fn main() {
 
     #[derive(Debug, Clone, Parse)]
     struct Pet {
+        #[parse(len = 10..=20)]
         name: String,
+        #[parse(len = 1..=40)]
         description: String,
+        #[parse(len = 5..=10)]
         color: String,
-        // size: Size,
+        size: Size,
         diet: Diet,
     }
 
@@ -51,17 +54,18 @@ async fn main() {
     tokio::task::spawn_blocking(move || {
         let mut trie = EvaluationTrie::new();
         let mut last_entropy = 0.0;
+        let task = prompt_input("Enter a task: ").unwrap();
         for generation in 0.. {
             let mut session = llm.new_session();
 
             let output = llm.generate_structured_with_trie(
                 &mut session,
-                "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\nCreate JSON for a cat<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
+                &format!("<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{task}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"),
                 sampler.clone(),
                 Pet::new_parser(),
                 |token| {
-                    // print!("{}", token);
-                    // std::io::stdout().flush().unwrap();
+                    print!("{}", token);
+                    std::io::stdout().flush().unwrap();
                     Ok(())
                 },
                 &mut trie,
@@ -69,8 +73,12 @@ async fn main() {
 
             println!("generation {generation}:\n{output:?}");
             let shannon_entropy = trie.shannon_entropy();
-            let entropy_diff = (shannon_entropy - last_entropy).abs();
+            let entropy_diff = last_entropy - shannon_entropy;
             println!("entropy diff: {entropy_diff}");
+            if entropy_diff.abs() < 0.00001 {
+                println!("looks like entropy is converging, stopping generation");
+                break;
+            }
             println!("shannon entropy: {shannon_entropy}");
             last_entropy = shannon_entropy;
         }

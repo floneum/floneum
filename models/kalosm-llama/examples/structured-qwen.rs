@@ -16,7 +16,7 @@ async fn main() {
         #[parse(len = 5..=10)]
         color: String,
         size: Size,
-        // diet: Diet,
+        diet: Diet,
     }
 
     #[derive(Debug, Clone, Parse)]
@@ -52,26 +52,32 @@ async fn main() {
     tokio::task::spawn_blocking(move || {
        let mut trie = EvaluationTrie::new();
          let mut last_entropy = 0.0;
+         let task = prompt_input("Enter a task: ").unwrap();
        for generation in 0.. {
            let mut session = llm.new_session();
 
            let output = llm.generate_structured_with_trie(
                &mut session,
-               "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n<|im_start|>user\nCreate JSON for a cat<|im_end|>\n<|im_start|>assistant\n",
+               &format!("<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n<|im_start|>user\n{task}<|im_end|>\n<|im_start|>assistant\n"),
                sampler.clone(),
                Pet::new_parser(),
                |token| {
-                   // print!("{}", token);
-                   // std::io::stdout().flush().unwrap();
+                   print!("{}", token);
+                   std::io::stdout().flush().unwrap();
                    Ok(())
                },
                &mut trie,
            ).unwrap();
+           println!("\n\n");
 
             println!("generation {generation}:\n{output:?}");
             let mut shannon_entropy = trie.shannon_entropy();
-            let entropy_diff = (shannon_entropy - last_entropy).abs();
+            let entropy_diff = last_entropy - shannon_entropy;
             println!("entropy diff: {entropy_diff}");
+            if entropy_diff.abs() < 0.00001 {
+                println!("looks like entropy is converging, stopping generation");
+                break;
+            }
             println!("shannon entropy: {shannon_entropy}");
             last_entropy = shannon_entropy;
        }
