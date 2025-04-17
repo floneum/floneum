@@ -246,7 +246,7 @@ impl UntypedIndexSelectKernel {
                 let dimension = self.dimension;
                 writeln!(
                     kernel_body,
-                    "let select_index_value = {indexes}[local_index_{dimension}];",
+                    "let select_index_value = {indexes}[merged_index_{dimension}];",
                 )
                 .unwrap();
                 write!(kernel_body, "let select_index = ",).unwrap();
@@ -313,6 +313,34 @@ async fn test_index_select_dim_0() {
 
 #[cfg(test)]
 #[tokio::test]
+async fn test_index_select_large_dim_0() {
+    use rand::seq::SliceRandom;
+
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    const SIZE_1: usize = 100;
+    const SIZE_0: usize = 100;
+    let mut indexes_array: [u32; SIZE_0] = std::array::from_fn(|i| i as u32);
+    indexes_array.shuffle(&mut rand::rng());
+    let data: [[f32; SIZE_1]; SIZE_0] = std::array::from_fn(|i| std::array::from_fn(|j| (i * SIZE_1 + j) as f32));
+    let tensor = Tensor::new(&device, &data);
+    let indexes = Tensor::new(&device, &indexes_array);
+    let tensor = tensor.index_select(0, &indexes);
+    let as_slice = tensor.as_slice().await.unwrap();
+    println!("{:?}", as_slice);
+    let expected_data: [[f32; SIZE_1]; SIZE_0] = std::array::from_fn(|i| {
+        let index = indexes_array[i];
+        data[index as usize]
+    });
+    let expected_tensor = Tensor::new(&device, &expected_data);
+    let expected_as_slice = expected_tensor.as_slice().await.unwrap();
+    assert_eq!(as_slice, expected_as_slice);
+}
+
+#[cfg(test)]
+#[tokio::test]
 async fn test_index_select_dim_1() {
     use crate::Device;
 
@@ -325,6 +353,37 @@ async fn test_index_select_dim_1() {
     let as_slice = tensor.as_slice().await.unwrap();
     println!("{:?}", as_slice);
     let expected_data = [[2., 3., 1.], [5., 6., 4.]];
+    let expected_tensor = Tensor::new(&device, &expected_data);
+    let expected_as_slice = expected_tensor.as_slice().await.unwrap();
+    assert_eq!(as_slice, expected_as_slice);
+}
+
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_index_select_large_dim_1() {
+    use rand::seq::SliceRandom;
+
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    const SIZE_1: usize = 100;
+    const SIZE_0: usize = 100;
+    let mut indexes_array: [u32; SIZE_1] = std::array::from_fn(|i| i as u32);
+    indexes_array.shuffle(&mut rand::rng());
+    let data: [[f32; SIZE_1]; SIZE_0] = std::array::from_fn(|i| std::array::from_fn(|j| (i * SIZE_1 + j) as f32));
+    let tensor = Tensor::new(&device, &data);
+    let indexes = Tensor::new(&device, &indexes_array);
+    let tensor = tensor.index_select(1, &indexes);
+    let as_slice = tensor.as_slice().await.unwrap();
+    println!("{:?}", as_slice);
+    let expected_data: [[f32; SIZE_1]; SIZE_0] = std::array::from_fn(|i| {
+        std::array::from_fn(|j| {
+            let index = indexes_array[j];
+            data[i][index as usize]
+        })
+    });
     let expected_tensor = Tensor::new(&device, &expected_data);
     let expected_as_slice = expected_tensor.as_slice().await.unwrap();
     assert_eq!(as_slice, expected_as_slice);

@@ -36,7 +36,7 @@ async fn test_softmax() {
     println!("{:?}", softmax_array);
 
     let tensor = Tensor::new(&device, &data);
-    let tensor = tensor.softmax(0).await;
+    let tensor = tensor.softmax(0);
     let output = tensor.as_slice().await.unwrap();
     println!("{:?}", output);
     assert!((output[[0]] - softmax_array[0]).abs() < 0.001);
