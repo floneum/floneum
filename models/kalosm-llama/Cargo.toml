@@ -44,6 +44,7 @@ pretty_assertions = "1.4.1"
 kalosm = { workspace = true, features = ["language"], default-features = true }
 anyhow.workspace = true
 kalosm-streams.workspace = true
+html-parser = { git = "https://github.com/ealmloff/html-parser" }
 
 [features]
 default = []

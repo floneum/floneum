@@ -3344,6 +3344,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "62adaabb884c94955b19907d60019f4e145d091c75345379e70d1ee696f7854f"
 
 [[package]]
+name = "html-parser"
+version = "0.1.0"
+source = "git+https://github.com/ealmloff/html-parser#b4bcec57132632d6c069d4772b22f21f1a4a3357"
+dependencies = [
+ "convert_case 0.6.0",
+ "kalosm-sample",
+ "reqwest 0.12.15",
+ "serde",
+]
+
+[[package]]
 name = "html5ever"
 version = "0.25.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4077,6 +4088,7 @@ dependencies = [
  "candle-transformers",
  "cudarc 0.9.15",
  "half 2.5.0",
+ "html-parser",
  "intel-mkl-src",
  "kalosm",
  "kalosm-common",
@@ -6400,6 +6412,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "encoding_rs",
+ "futures-channel",
  "futures-core",
  "futures-util",
  "h2 0.4.8",
