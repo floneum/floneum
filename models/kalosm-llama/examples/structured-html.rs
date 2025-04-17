@@ -12,7 +12,7 @@ async fn main() {
     let sampler = GenerationParameters::new();
 
     let mut llm = LlamaModel::from_builder(
-        Llama::builder().with_source(LlamaSource::qwen_2_5_0_5b_instruct()),
+        Llama::builder().with_source(LlamaSource::llama_3_2_3b_chat()),
         ModelLoadingProgress::multi_bar_loading_indicator(),
     )
     .await
@@ -24,7 +24,7 @@ async fn main() {
         let task = prompt_input("Enter a task: ").unwrap();
         for generation in 0.. {
            let mut session = llm.new_session();
-           let parser = Element::new_parser();
+           let parser = Element::new_parser().repeat(1..=10).then(LiteralParser::new("<|im_end|>\n<|im_start|>user\n"));
 
            let output = llm.generate_structured_with_trie(
                &mut session,
