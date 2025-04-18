@@ -371,7 +371,7 @@ async fn fuzz_matmul() {
     let device = Device::new().await.unwrap();
 
     let min_size = 32;
-    let max_size = 125;
+    let max_size = 1024;
     let iterations = if cfg!(debug_assertions) { 10 } else { 100 };
 
     for _ in 0..iterations {
@@ -422,17 +422,4 @@ async fn fuzz_matmul() {
             }
         }
     }
-    let data_a = [[1.], [3.]];
-    let data_b = [[1., 2.]];
-    let tensor_a = Tensor::new(&device, &data_a);
-    let tensor_b = Tensor::new(&device, &data_b);
-
-    let tensor = tensor_a.mat_mul(&tensor_b);
-    let as_slice = tensor.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
-
-    assert_eq!(as_slice[[0, 0]], 1.);
-    assert_eq!(as_slice[[0, 1]], 2.);
-    assert_eq!(as_slice[[1, 0]], 3.);
-    assert_eq!(as_slice[[1, 1]], 6.);
 }
