@@ -59,9 +59,9 @@ impl RmsNorm {
     fn forward(&self, x: &Tensor<2, f32>) -> Tensor<2, f32> {
         let shape = *x.shape();
         // Create a sum of everything but the last dimension
-        let last_dim_size = *shape.last().unwrap() as f32;
+        let last_dim_size = shape[1] as f32;
         debug_assert!(last_dim_size > 0.);
-        let norm = x.sqr().sum(0) / last_dim_size;
+        let norm = x.sqr().sum(1) / last_dim_size;
         // Divide the input tensor by the sqrt of the sum plus the epsilon
         let x = x.clone() / (norm + self.eps).sqrt().broadcast(shape);
         // Finally, multiply the result by the weights
