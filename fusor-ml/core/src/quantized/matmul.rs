@@ -187,9 +187,7 @@ async fn test_fuzz_q_mat_mul_q8_0() {
 }
 
 pub(crate) struct UntypedQMatMul {
-    #[allow(unused)]
-    sparse_kernel: OnceLock<GenericKernel>,
-    first_dim_dense_kernel: OnceLock<GenericKernel>,
+    kernel: OnceLock<GenericKernel>,
     input_datatype: DataTypeEnum,
     matrix: QMatrix,
 }
@@ -197,8 +195,7 @@ pub(crate) struct UntypedQMatMul {
 impl UntypedQMatMul {
     pub(crate) const fn new(datatype: DataTypeEnum, matrix: QMatrix) -> Self {
         Self {
-            sparse_kernel: OnceLock::new(),
-            first_dim_dense_kernel: OnceLock::new(),
+            kernel: OnceLock::new(),
             input_datatype: datatype,
             matrix,
         }
@@ -227,7 +224,7 @@ impl UntypedQMatMul {
     // https://github.com/ggml-org/llama.cpp/blob/add2a3aa5a1571211aa5c7303b8e80c8d1824b91/ggml/src/ggml-metal/ggml-metal.metal#L4561
     // https://github.com/ggml-org/llama.cpp/blob/add2a3aa5a1571211aa5c7303b8e80c8d1824b91/ggml/src/ggml-metal/ggml-metal.metal#L5881
     fn compile(&self) -> &GenericKernel {
-        self.first_dim_dense_kernel.get_or_init(|| {
+        self.kernel.get_or_init(|| {
             // based on https://siboehm.com/articles/22/CUDA-MMM
             let mut generic_kernel = GenericKernel::new();
 
@@ -275,11 +272,12 @@ impl UntypedQMatMul {
                 "chunk".to_string(),
                 DataTypeEnum::F32,
                 |i, data, code| {
-                    writeln!(
+                    write!(
                         code,
-                        "acc += {input_a}[y * {k_size} + k * {elements_per_block} + {i}] * {data};"
-                    )
-                    .unwrap();
+                        "acc = fma({input_a}["
+                    ).unwrap();
+                    input_a.strided_index(code, ["y".to_string(), format!("k * {elements_per_block} + {i}")]);
+                    write!(code, "], {data}, acc);").unwrap();
                 },
             );
 
@@ -289,7 +287,9 @@ impl UntypedQMatMul {
 
             // Then write the result
             writeln!(&mut kernel, "if x < {n_size} && y < {m_size} {{").unwrap();
-            writeln!(&mut kernel, "let output_index = x + y * {n_size};").unwrap();
+            write!(&mut kernel, "let output_index = ").unwrap();
+            output.strided_index(&mut kernel, ["y".to_string(), "x".to_string()]);
+            writeln!(&mut kernel, ";").unwrap();
             writeln!(&mut kernel, "{output}[output_index] = acc;").unwrap();
             writeln!(&mut kernel, "}}").unwrap();
 

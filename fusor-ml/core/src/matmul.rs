@@ -482,7 +482,7 @@ async fn fuzz_batched_matmul() {
             })
             .collect::<Vec<_>>();
 
-        let mut ndarray_b = (0..batch_size)
+        let ndarray_b = (0..batch_size)
             .map(|i| {
                 let mut array = ndarray::Array2::zeros((size2, size3));
                 for j in 0..size2 {
