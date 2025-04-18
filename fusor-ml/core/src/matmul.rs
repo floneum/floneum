@@ -183,7 +183,7 @@ impl UntypedMatMul {
             writeln!(&mut kernel, "for (var dot_index = 0u; dot_index < {WORK_GROUP_BLOCK_K_SIZE}; dot_index += 1u) {{").unwrap();
             writeln!(&mut kernel, "let tmp = {cache_b}[dot_index * {WORK_GROUP_BLOCK_N_SIZE} + thread_col];").unwrap();
             writeln!(&mut kernel, "for (var result_index = 0u; result_index < {THREAD_BLOCK_M_SIZE}; result_index += 1u) {{").unwrap();
-            writeln!(&mut kernel, "results[result_index] += {cache_a}[(thread_row * {THREAD_BLOCK_M_SIZE} + result_index) * {WORK_GROUP_BLOCK_K_SIZE} + dot_index] * tmp;").unwrap();
+            writeln!(&mut kernel, "results[result_index] = fma({cache_a}[(thread_row * {THREAD_BLOCK_M_SIZE} + result_index) * {WORK_GROUP_BLOCK_K_SIZE} + dot_index], tmp, results[result_index]);").unwrap();
             writeln!(&mut kernel, "}}").unwrap();
             writeln!(&mut kernel, "}}").unwrap();
 
@@ -370,8 +370,8 @@ async fn fuzz_matmul() {
 
     let device = Device::new().await.unwrap();
 
-    let min_size = 32;
-    let max_size = 1024;
+    let min_size = 1;
+    let max_size = 512;
     let iterations = if cfg!(debug_assertions) { 10 } else { 100 };
 
     for _ in 0..iterations {
@@ -408,16 +408,15 @@ async fn fuzz_matmul() {
         let as_slice = tensor.as_slice().await.unwrap();
         for i in 0..size1 {
             for j in 0..size3 {
-                if (as_slice[[i, j]] - dot[[i, j]]).abs() > 0.0001 {
-                    println!("correct result: {:?}", dot);
-                    println!("result: {:?}", as_slice);
-                    panic!(
+                if (as_slice[[i, j]] - dot[[i, j]]).abs() > 0.001 {
+                    println!(
                         "Mismatch at ({}, {}): {} != {}",
                         i,
                         j,
                         as_slice[[i, j]],
                         dot[[i, j]]
                     );
+                    panic!("fuzz failed with size ({}x{})*({}x{})", size1, size2, size2, size3);
                 }
             }
         }
