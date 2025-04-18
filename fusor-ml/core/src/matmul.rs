@@ -57,7 +57,7 @@ const WORK_GROUP_SIZE: [u32; 3] = [
 ];
 
 pub(crate) struct UntypedMatMul {
-    first_dim_dense_kernel: OnceLock<GenericKernel>,
+    kernel: OnceLock<GenericKernel>,
     datatype: DataTypeEnum,
     rank: u32,
 }
@@ -65,7 +65,7 @@ pub(crate) struct UntypedMatMul {
 impl UntypedMatMul {
     pub(crate) const fn new(datatype: DataTypeEnum, rank: u32) -> Self {
         Self {
-            first_dim_dense_kernel: OnceLock::new(),
+            kernel: OnceLock::new(),
             datatype,
             rank,
         }
@@ -73,7 +73,7 @@ impl UntypedMatMul {
 
     // 1000x1000 dense matmul time on M2 mac pro 1.4743 ms
     fn compile(&self) -> &GenericKernel {
-        self.first_dim_dense_kernel.get_or_init(|| {
+        self.kernel.get_or_init(|| {
             // based on https://siboehm.com/articles/22/CUDA-MMM
             let mut generic_kernel = GenericKernel::new();
             generic_kernel.set_workgroup_size(WORK_GROUP_SIZE);
@@ -100,8 +100,16 @@ impl UntypedMatMul {
             let workgroup_local_index = generic_kernel.workgroup_local_index();
 
             let k_size = input_a.shape_binding(self.rank - 1);
+            let a_k_stride = input_a.stride_binding(self.rank - 1);
+            let b_k_stride = input_b.stride_binding(self.rank - 2);
+
             let m_size = input_a.shape_binding(self.rank - 2);
+            let a_m_stride = input_a.stride_binding(self.rank - 2);
+            let c_m_stride = output.stride_binding(self.rank - 2);
+
             let n_size = input_b.shape_binding(self.rank - 1);
+            let b_n_stride = input_b.stride_binding(self.rank - 1);
+            let c_n_stride = output.stride_binding(self.rank - 1);
 
             writeln!(&mut kernel, "let block_col = {workgroup_index}.x;").unwrap();
             writeln!(&mut kernel, "let block_row = {workgroup_index}.y;").unwrap();
@@ -134,21 +142,21 @@ impl UntypedMatMul {
             writeln!(&mut kernel, "var results: array<{datatype}, {THREAD_BLOCK_M_SIZE}>;").unwrap();
             // Each thread in the workgroup is offset by an amount in the a matrix in the x direction. It will shift
             // by blocks inside the loop in the K direction.
-            writeln!(&mut kernel, "var a_col = a_thread_col;").unwrap();
+            writeln!(&mut kernel, "var a_col = {a_k_stride} * a_thread_col;").unwrap();
             // Each thread in the workgroup is offset by an amount in the a matrix in the y direction. 
-            writeln!(&mut kernel, "let a_row = {k_size} * (a_thread_row + block_row * {WORK_GROUP_BLOCK_M_SIZE});").unwrap();
+            writeln!(&mut kernel, "let a_row = {a_m_stride} * (a_thread_row + block_row * {WORK_GROUP_BLOCK_M_SIZE});").unwrap();
             // The max x index on the a matrix is k size
-            writeln!(&mut kernel, "let a_col_max = {k_size};").unwrap();
+            writeln!(&mut kernel, "let a_col_max = {k_size} * {a_k_stride};").unwrap();
             // The max y index on the a matrix is m*k size
-            writeln!(&mut kernel, "let a_row_max = {m_size} * {k_size};").unwrap();
+            writeln!(&mut kernel, "let a_row_max = {m_size} * {a_m_stride};").unwrap();
             // The b matrix x index it determined by the thread and block index. It doesn't change with k
-            writeln!(&mut kernel, "let b_col = b_thread_col + block_col * {WORK_GROUP_BLOCK_N_SIZE};").unwrap();
+            writeln!(&mut kernel, "let b_col = {b_n_stride} * (b_thread_col + block_col * {WORK_GROUP_BLOCK_N_SIZE});").unwrap();
             // The b matrix y index has an offset based on the thread index. It will shift by blocks of k in the loop
-            writeln!(&mut kernel, "var b_row = {n_size} * b_thread_row;").unwrap(); 
+            writeln!(&mut kernel, "var b_row = {b_k_stride} * b_thread_row;").unwrap(); 
             // The max x index on the b matrix is n size
-            writeln!(&mut kernel, "let b_col_max = {n_size};").unwrap();
+            writeln!(&mut kernel, "let b_col_max = {n_size} * {b_n_stride};").unwrap();
             // The max y index on the b matrix is k*n size
-            writeln!(&mut kernel, "let b_row_max = {k_size} * {n_size};").unwrap();
+            writeln!(&mut kernel, "let b_row_max = {k_size} * {b_k_stride};").unwrap();
 
             // Loop over the K dimension in blocks of WORK_GROUP_BLOCK_K_SIZE
             writeln!(&mut kernel, "for (var block_index = 0u; block_index < {k_size}; block_index += {WORK_GROUP_BLOCK_K_SIZE}) {{").unwrap();
@@ -175,9 +183,9 @@ impl UntypedMatMul {
             writeln!(&mut kernel, "workgroupBarrier();").unwrap();
 
             // Move a forward by WORK_GROUP_BLOCK_K_SIZE
-            writeln!(&mut kernel, "a_col += {WORK_GROUP_BLOCK_K_SIZE};").unwrap();
+            writeln!(&mut kernel, "a_col += {WORK_GROUP_BLOCK_K_SIZE} * {a_k_stride};").unwrap();
             // Move b forward by WORK_GROUP_BLOCK_K_SIZE in the y direction
-            writeln!(&mut kernel, "b_row += {WORK_GROUP_BLOCK_K_SIZE} * {n_size};").unwrap();
+            writeln!(&mut kernel, "b_row += {WORK_GROUP_BLOCK_K_SIZE} * {b_k_stride};").unwrap();
 
             // Go through every row/column pair in the K dim
             writeln!(&mut kernel, "for (var dot_index = 0u; dot_index < {WORK_GROUP_BLOCK_K_SIZE}; dot_index += 1u) {{").unwrap();
@@ -198,7 +206,7 @@ impl UntypedMatMul {
             writeln!(&mut kernel, "let output_col = start_output_col;").unwrap();
             writeln!(&mut kernel, "let output_row = start_output_row + result_index;").unwrap();
             writeln!(&mut kernel, "if output_col < {n_size} && output_row < {m_size} {{").unwrap();
-            writeln!(&mut kernel, "let output_index = output_row * {n_size} + output_col;").unwrap();
+            writeln!(&mut kernel, "let output_index = output_row * {c_m_stride} + output_col * {c_n_stride};").unwrap();
             writeln!(&mut kernel, "{output}[output_start_index + output_index] += results[result_index];").unwrap();
             writeln!(&mut kernel, "}}").unwrap();
             writeln!(&mut kernel, "}}").unwrap();
@@ -416,7 +424,99 @@ async fn fuzz_matmul() {
                         as_slice[[i, j]],
                         dot[[i, j]]
                     );
-                    panic!("fuzz failed with size ({}x{})*({}x{})", size1, size2, size2, size3);
+                    panic!(
+                        "fuzz failed with size ({}x{})*({}x{})",
+                        size1, size2, size2, size3
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn fuzz_batched_matmul() {
+    use rand::Rng;
+    let device = Device::new().await.unwrap();
+
+    let min_batch_size = 2;
+    let max_batch_size = 20;
+    let min_size = 1;
+    let max_size = 512;
+    let iterations = if cfg!(debug_assertions) { 10 } else { 100 };
+
+    for _ in 0..iterations {
+        let batch_size = rand::rng().random_range(min_batch_size..max_batch_size);
+        let size1 = rand::rng().random_range(min_size..max_size);
+        let size2 = rand::rng().random_range(min_size..max_size);
+        let size3 = rand::rng().random_range(min_size..max_size);
+
+        let data_a: Vec<Vec<Vec<f32>>> = (0..batch_size)
+            .map(|_| {
+                (0..size1)
+                    .map(|_| (0..size2).map(|_| rand::random()).collect())
+                    .collect()
+            })
+            .collect();
+        let data_b: Vec<Vec<Vec<f32>>> = (0..batch_size)
+            .map(|_| {
+                (0..size2)
+                    .map(|_| (0..size3).map(|_| rand::random()).collect())
+                    .collect()
+            })
+            .collect();
+
+        let tensor_a = Tensor::new(&device, &data_a);
+        let tensor_b = Tensor::new(&device, &data_b);
+
+        let ndarray_a = (0..batch_size)
+            .map(|i| {
+                let mut array = ndarray::Array2::zeros((size1, size2));
+                for j in 0..size1 {
+                    for k in 0..size2 {
+                        array[[j, k]] = data_a[i][j][k];
+                    }
+                }
+                array
+            })
+            .collect::<Vec<_>>();
+
+        let mut ndarray_b = (0..batch_size)
+            .map(|i| {
+                let mut array = ndarray::Array2::zeros((size2, size3));
+                for j in 0..size2 {
+                    for k in 0..size3 {
+                        array[[j, k]] = data_b[i][j][k];
+                    }
+                }
+                array
+            })
+            .collect::<Vec<_>>();
+        let dot = ndarray_a
+            .iter()
+            .zip(ndarray_b.iter())
+            .map(|(a, b)| a.dot(b))
+            .collect::<Vec<_>>();
+
+        let tensor = tensor_a.mat_mul(&tensor_b);
+        let as_slice = tensor.as_slice().await.unwrap();
+        for batch in 0..batch_size {
+            for i in 0..size1 {
+                for j in 0..size3 {
+                    if (as_slice[[batch, i, j]] - dot[batch][[i, j]]).abs() > 0.001 {
+                        println!(
+                            "Mismatch at ({}, {}): {} != {}",
+                            i,
+                            j,
+                            as_slice[[batch, i, j]],
+                            dot[batch][[i, j]]
+                        );
+                        panic!(
+                            "fuzz failed with size ({}x{})*({}x{})",
+                            size1, size2, size2, size3
+                        );
+                    }
                 }
             }
         }
