@@ -53,10 +53,10 @@ impl UntypedResizeKernel {
                 writeln!(&mut kernel_body, "{{").unwrap();
                 for (prefix, tensor) in [("input", &input), ("output", &output)] {
                     writeln!(
-                    &mut kernel_body,
-                    "var {prefix}_remaining_index = {global_id}.x * {tile_size} + {local_index};"
-                )
-                .unwrap();
+                        &mut kernel_body,
+                        "var {prefix}_remaining_index = {global_id}.x * {tile_size} + {local_index};"
+                    )
+                    .unwrap();
                     for i in (0..tensor.rank()).rev() {
                         let shape_i = tensor.shape_binding(i);
                         writeln!(
@@ -199,4 +199,25 @@ async fn test_reshape() {
     assert_eq!(as_slice[[3]], 4.);
     assert_eq!(as_slice[[4]], 5.);
     assert_eq!(as_slice[[5]], 6.);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_transposed_reshape() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., 2.], [3., 4.], [5., 6.]];
+    let tensor = Tensor::new(&device, &data);
+    let tensor = tensor.t();
+    let tensor = tensor.reshape([2, 3]);
+    let as_slice = tensor.as_slice().await.unwrap();
+    println!("{:?}", as_slice);
+    assert_eq!(as_slice[[0, 0]], 1.);
+    assert_eq!(as_slice[[0, 1]], 3.);
+    assert_eq!(as_slice[[0, 2]], 5.);
+    assert_eq!(as_slice[[1, 0]], 2.);
+    assert_eq!(as_slice[[1, 1]], 4.);
+    assert_eq!(as_slice[[1, 2]], 6.);
 }

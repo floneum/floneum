@@ -329,6 +329,22 @@ async fn test_matmul() {
 
 #[cfg(test)]
 #[tokio::test]
+async fn test_transposed_matmul() {
+    let device = Device::new().await.unwrap();
+
+    let data_a = [[1.], [3.]];
+    let data_b = [[1., 2.]];
+    let tensor_a = Tensor::new(&device, &data_a).t();
+    let tensor_b = Tensor::new(&device, &data_b).t();
+    let tensor = tensor_a.mat_mul(&tensor_b);
+    let as_slice = tensor.as_slice().await.unwrap();
+    println!("{:?}", as_slice);
+
+    assert_eq!(as_slice[[0, 0]], 7.);
+}
+
+#[cfg(test)]
+#[tokio::test]
 async fn test_batched_matmul() {
     let device = Device::new().await.unwrap();
 

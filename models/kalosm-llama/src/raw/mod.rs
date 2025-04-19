@@ -368,7 +368,7 @@ impl Model {
                 Some(&mask),
                 index_pos,
                 cache.as_mut().map(|c| &mut c.blocks[i]),
-            ).await;
+            );
             let x = attn + residual;
 
             // MLP
@@ -376,7 +376,7 @@ impl Model {
             let x = layer.ffn_norm.forward(&x);
 
             layer_in = layer.feed_forward_variant.forward(&x) + residual;
-            let out = layer_in.as_slice().await;
+            let _ = layer_in.as_slice().await;
         }
         let x = self.norm.forward(&layer_in);
         let [_, hidden_size] = x.shape();

@@ -79,6 +79,18 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
         ))
     }
 
+    pub fn t(&self) -> Tensor<R, T> {
+        const {
+            assert!(
+                R >= 2,
+                "The tensor must have at least 2 dimensions to transpose"
+            )
+        };
+        let last_dim = self.rank() - 1;
+        let second_last_dim = self.rank() - 2;
+        self.transpose(last_dim, second_last_dim)
+    }
+
     pub fn broadcast<const R2: usize>(&self, out_shape: [usize; R2]) -> Tensor<R2, T> {
         const {
             assert!(
