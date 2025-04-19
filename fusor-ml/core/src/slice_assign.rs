@@ -7,6 +7,7 @@ use crate::{
     visit_tiled::VisitTiledKernel,
 };
 
+#[derive(Debug)]
 pub(crate) struct SliceAssignOperation {
     pub(crate) input: AnyComputeKey,
     pub(crate) value: AnyComputeKey,
@@ -47,19 +48,18 @@ impl UntypedSliceAssignKernel {
         let datatype = target.datatype();
 
         let create_kernel = || {
-            let datatypes = vec![datatype; 2];
+            let datatypes = vec![datatype.into(); 2];
 
             VisitTiledKernel::new(
                 rank as u32,
                 TILE_SIZE,
                 false,
                 datatypes,
-                |_, indexes, tensors| {
+                |_, indexes, tensors, values| {
                     let target_index = &indexes[0];
-                    let value_index = &indexes[1];
                     let target_tensor = &tensors[0];
-                    let value_tensor = &tensors[1];
-                    format!("{target_tensor}[{target_index}] = {value_tensor}[{value_index}];")
+                    let value = &values[1];
+                    format!("{target_tensor}[{target_index}] = {value};")
                 },
             )
         };
@@ -67,7 +67,7 @@ impl UntypedSliceAssignKernel {
 
         let sliced = target.slice(&self.slices);
         assert_eq!(sliced.layout().shape(), value.layout().shape());
-        let tensors = vec![&sliced, value];
+        let tensors = vec![sliced.into(), value.into()];
         kernel.run_with_query(tensors, query, command_encoder);
         target.clone()
     }
@@ -85,12 +85,7 @@ async fn test_slice_assign() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
     let value_tensor = Tensor::new(&device, &[[10., 20.], [30., 40.]]);

@@ -21,12 +21,7 @@ async fn test_narrow() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
     let narrowed = tensor.narrow(0, 1, 2);

@@ -1,17 +1,18 @@
 use std::{borrow::Cow, sync::Arc};
 
+#[derive(Debug)]
 struct DeviceInner {
     device: wgpu::Device,
     queue: wgpu::Queue,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Device {
     inner: Arc<DeviceInner>,
 }
 
 impl Device {
-    pub async fn new() -> Result<Self, wgpu::RequestDeviceError> {
+    pub async fn new() -> Result<Self, crate::Error> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
         let adapter = instance.request_adapter(&Default::default()).await.unwrap();
         let (device, queue) = adapter
@@ -23,9 +24,24 @@ impl Device {
             })
             .await?;
 
-        Ok(Self {
+        let device = Self {
             inner: Arc::new(DeviceInner { device, queue }),
-        })
+        };
+
+        #[cfg(not(target_arch = "wasm32"))]
+        std::thread::spawn({
+            let device = device.clone();
+            move || loop {
+                let Ok(status) = device.wgpu_device().poll(wgpu::PollType::Wait) else {
+                    break;
+                };
+                if status == wgpu::PollStatus::QueueEmpty {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+            }
+        });
+
+        Ok(device)
     }
 
     pub(crate) fn create_shader_module<'a>(

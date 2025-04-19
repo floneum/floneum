@@ -1,11 +1,11 @@
-use std::ops::Range;
+use std::{fmt::Debug, ops::Range};
 
 use crate::{
     DataType, Layout, Tensor, TensorData, compute_graph::AnyComputeKey, slice_shape, slice_strides,
 };
 
-type MapSize = Box<dyn Fn(&[usize]) -> Box<[usize]>>;
-type MapStride = Box<dyn Fn(usize, &[usize]) -> (usize, Box<[usize]>)>;
+type MapSize = Box<dyn Fn(&[usize]) -> Box<[usize]> + Send + Sync>;
+type MapStride = Box<dyn Fn(usize, &[usize]) -> (usize, Box<[usize]>) + Send + Sync>;
 
 pub(crate) struct MapLayoutOperation {
     pub(crate) input: AnyComputeKey,
@@ -13,11 +13,19 @@ pub(crate) struct MapLayoutOperation {
     pub(crate) map_stride: MapStride,
 }
 
+impl Debug for MapLayoutOperation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MapLayoutOperation")
+            .field("input", &self.input)
+            .finish()
+    }
+}
+
 impl MapLayoutOperation {
     pub fn new(
         input: AnyComputeKey,
-        map_size: impl Fn(&[usize]) -> Box<[usize]> + 'static,
-        map_stride: impl Fn(usize, &[usize]) -> (usize, Box<[usize]>) + 'static,
+        map_size: impl Fn(&[usize]) -> Box<[usize]> + Send + Sync + 'static,
+        map_stride: impl Fn(usize, &[usize]) -> (usize, Box<[usize]>) + Send + Sync + 'static,
     ) -> Self {
         Self {
             input,
@@ -54,6 +62,8 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
     }
 
     pub fn transpose(&self, first_axis: usize, second_axis: usize) -> Tensor<R, T> {
+        assert!(first_axis < self.rank());
+        assert!(second_axis < self.rank());
         self.add_map_layout(MapLayoutOperation::new(
             self.key(),
             move |shape| {
@@ -69,8 +79,25 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
         ))
     }
 
+    pub fn t(&self) -> Tensor<R, T> {
+        const {
+            assert!(
+                R >= 2,
+                "The tensor must have at least 2 dimensions to transpose"
+            )
+        };
+        let last_dim = self.rank() - 1;
+        let second_last_dim = self.rank() - 2;
+        self.transpose(last_dim, second_last_dim)
+    }
+
     pub fn broadcast<const R2: usize>(&self, out_shape: [usize; R2]) -> Tensor<R2, T> {
-        const { assert!(R2 == R + 1) };
+        const {
+            assert!(
+                R2 == R + 1,
+                "The output dimension must be one more than the input dimension"
+            )
+        };
 
         let new_dim = self
             .shape()
@@ -107,12 +134,7 @@ async fn test_transpose() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
     let transposed = tensor.transpose(0, 1);
@@ -132,12 +154,7 @@ async fn test_broadcast() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+
     let data = [[1., 2.], [3., 4.]];
     let tensor = Tensor::new(&device, &data);
     let broadcasted = tensor.broadcast([2, 2, 3]);

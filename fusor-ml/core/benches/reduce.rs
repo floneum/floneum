@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use criterion::BatchSize;
-use fusor_ml_core::Sum;
-use fusor_ml_core::{Device, Tensor};
+use fusor_core::Sum;
+use fusor_core::{Device, Tensor};
 use futures::executor::block_on;
 use ndarray::Axis;
 
@@ -22,12 +22,6 @@ fn bench_sum_reduce(c: &mut Criterion) {
         let group = group.sample_size(20);
         for size in SIZES {
             let device = block_on(Device::new()).unwrap();
-            std::thread::spawn({
-                let device = device.clone();
-                move || loop {
-                    device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-                }
-            });
 
             group.bench_with_input(BenchmarkId::new("sum-wgpu", size), &size, move |b, &s| {
                 let device = device.clone();

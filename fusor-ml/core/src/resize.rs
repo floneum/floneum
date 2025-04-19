@@ -9,6 +9,7 @@ use crate::{
 
 const BLOCKSIZE: u32 = 256;
 
+#[derive(Debug)]
 pub(crate) struct ResizeOperation {
     pub(crate) input: AnyComputeKey,
     pub(crate) new_shape: Box<[usize]>,
@@ -52,10 +53,10 @@ impl UntypedResizeKernel {
                 writeln!(&mut kernel_body, "{{").unwrap();
                 for (prefix, tensor) in [("input", &input), ("output", &output)] {
                     writeln!(
-                    &mut kernel_body,
-                    "var {prefix}_remaining_index = {global_id}.x * {tile_size} + {local_index};"
-                )
-                .unwrap();
+                        &mut kernel_body,
+                        "var {prefix}_remaining_index = {global_id}.x * {tile_size} + {local_index};"
+                    )
+                    .unwrap();
                     for i in (0..tensor.rank()).rev() {
                         let shape_i = tensor.shape_binding(i);
                         writeln!(
@@ -132,7 +133,11 @@ impl<const R: usize, T: crate::DataType> Tensor<R, T> {
     pub fn reshape<const R2: usize>(&self, new_shape: [usize; R2]) -> Tensor<R2, T> {
         assert_eq!(
             new_shape.iter().product::<usize>(),
-            self.shape().iter().product::<usize>()
+            self.shape().iter().product::<usize>(),
+            "Reshape requires the number of elements to be the same. \
+            Current shape: {:?}, target shape: {:?}",
+            self.shape(),
+            new_shape
         );
         let new_shape: Box<[usize]> = new_shape.into();
         let input = self.key();
@@ -150,12 +155,7 @@ async fn test_resize() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
     let tensor = tensor.resize([30, 20]);
@@ -175,12 +175,6 @@ async fn test_reshape() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -205,4 +199,25 @@ async fn test_reshape() {
     assert_eq!(as_slice[[3]], 4.);
     assert_eq!(as_slice[[4]], 5.);
     assert_eq!(as_slice[[5]], 6.);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_transposed_reshape() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    let data = [[1., 2.], [3., 4.], [5., 6.]];
+    let tensor = Tensor::new(&device, &data);
+    let tensor = tensor.t();
+    let tensor = tensor.reshape([2, 3]);
+    let as_slice = tensor.as_slice().await.unwrap();
+    println!("{:?}", as_slice);
+    assert_eq!(as_slice[[0, 0]], 1.);
+    assert_eq!(as_slice[[0, 1]], 3.);
+    assert_eq!(as_slice[[0, 2]], 5.);
+    assert_eq!(as_slice[[1, 0]], 2.);
+    assert_eq!(as_slice[[1, 1]], 4.);
+    assert_eq!(as_slice[[1, 2]], 6.);
 }

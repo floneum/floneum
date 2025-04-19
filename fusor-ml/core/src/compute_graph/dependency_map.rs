@@ -1,9 +1,9 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::{
-    AnyComputeKey, ComputeGraphNodes, ElementWiseComputeNodeKey, MapLayoutComputeNodeKey,
-    MatMulComputeNodeKey, PairWiseComputeNodeKey, QMatMulComputeNodeKey, ReduceComputeNodeKey,
-    ResizeComputeNodeKey, SliceAssignComputeNodeKey,
+    AnyComputeKey, ComputeGraphNodes, ElementWiseComputeNodeKey, IndexSelectComputeNodeKey,
+    MapLayoutComputeNodeKey, MatMulComputeNodeKey, PairWiseComputeNodeKey, QMatMulComputeNodeKey,
+    ReduceComputeNodeKey, ResizeComputeNodeKey, SliceAssignComputeNodeKey,
 };
 
 #[derive(Default)]
@@ -18,6 +18,16 @@ impl DependencyMap {
         visit_dependencies(graph, key, |dependent| {
             self.dependant_map.entry(dependent).or_default().insert(key);
         });
+    }
+
+    pub(crate) fn merge(&mut self, other: &mut Self) {
+        for (dependant, dependants) in other.dependant_map.drain() {
+            self.dependant_map
+                .entry(dependant)
+                .or_default()
+                .extend(dependants);
+        }
+        self.reference_count.extend(other.reference_count.drain());
     }
 }
 
@@ -69,9 +79,16 @@ pub(crate) fn visit_dependencies(
             slice_assign_dependencies,
             f,
         ),
+        AnyComputeKey::IndexSelect(index_select_compute_node_key) => add_dependents_generic(
+            graph,
+            index_select_compute_node_key,
+            index_select_dependencies,
+            f,
+        ),
         AnyComputeKey::QMatMul(q_mat_mul_compute_node_key) => {
             add_dependents_generic(graph, q_mat_mul_compute_node_key, q_mat_mul_dependencies, f)
         }
+        AnyComputeKey::Dequantize(_) => {}
         AnyComputeKey::Tensor(_) => {}
     }
 }
@@ -150,4 +167,14 @@ pub(crate) fn slice_assign_dependencies(
     let input = operation.input;
     let value = operation.value;
     [input, value]
+}
+
+pub(crate) fn index_select_dependencies(
+    graph: &ComputeGraphNodes,
+    key: IndexSelectComputeNodeKey,
+) -> [AnyComputeKey; 2] {
+    let operation = graph.index_select.get(&key).unwrap();
+    let input = operation.input;
+    let indices = operation.indexes;
+    [input, indices]
 }
