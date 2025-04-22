@@ -1,8 +1,8 @@
 #![allow(unused)]
+use html_parser::Element;
 use kalosm::language::*;
 use kalosm_llama::{EvaluationTrie, LlamaModel};
 use std::{io::Write, sync::Arc};
-use html_parser::Element;
 
 #[tokio::main]
 async fn main() {

@@ -58,8 +58,8 @@ pub use source::*;
 use std::mem::MaybeUninit;
 use std::ops::Deref;
 use std::sync::Arc;
-use tokenizers::Tokenizer;
 pub use structured::EvaluationTrie;
+use tokenizers::Tokenizer;
 
 /// A prelude of commonly used items in kalosm-llama.
 pub mod prelude {

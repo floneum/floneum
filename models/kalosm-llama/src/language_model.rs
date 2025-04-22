@@ -112,9 +112,7 @@ impl<T: Parse + 'static> CreateDefaultCompletionConstraintsForType<T> for Llama 
 }
 
 impl LlamaModel {
-    pub fn new_session(
-        &self,
-    ) -> LlamaSession {
+    pub fn new_session(&self) -> LlamaSession {
         let config = &self.model.config;
         LlamaSession::new(config)
     }

@@ -257,21 +257,22 @@ async fn main() {
          let mut last_entropy = 0.0;
          let task = r#"Write code for the maximum length of the two strings "hello" and "world". Functions available are: (max2 int int), and (str.len string)."#;
        for generation in 0.. {
-           let mut session = llm.new_session();
+            let mut session = llm.new_session();
+            let prompt = format!("<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n<|im_start|>user\n{task}<|im_end|>\n<|im_start|>assistant\nHere is the code:\n");
 
-           let output = llm.generate_structured_with_trie(
-               &mut session,
-               &format!("<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n<|im_start|>user\n{task}<|im_end|>\n<|im_start|>assistant\nHere is the code:\n"),
-               sampler.clone(),
-               parser.clone(),
-               |token| {
-                   print!("{}", token);
-                   std::io::stdout().flush().unwrap();
-                   Ok(())
-               },
-               &mut trie,
-           ).unwrap();
-           println!("\n\n");
+            let output = llm.generate_structured_with_trie(
+                &mut session,
+                &prompt,
+                sampler.clone(),
+                parser.clone(),
+                |token| {
+                    print!("{}", token);
+                    std::io::stdout().flush().unwrap();
+                    Ok(())
+                },
+                &mut trie,
+            ).unwrap();
+            println!("\n\n");
 
             println!("generation {generation}:\n{output:?}");
             let shannon_entropy = trie.shannon_entropy();
