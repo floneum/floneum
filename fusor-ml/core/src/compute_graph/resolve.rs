@@ -1,11 +1,8 @@
+
 use wgpu::CommandEncoder;
 
 use crate::{
-    ElementWiseFunction, PerformanceQueries, UntypedElementWiseKernel, UntypedPairWiseKernel,
-    UntypedReduceKernel, dequantize::UntypedDequantize, element_wise,
-    index_select::UntypedIndexSelectKernel, matmul::UntypedMatMul,
-    quantized::matmul::UntypedQMatMul, resize::UntypedResizeKernel,
-    slice_assign::UntypedSliceAssignKernel, tensor::TensorData, visit_tiled::MaybeQData,
+    dequantize::UntypedDequantize, element_wise, index_select::UntypedIndexSelectKernel, matmul::UntypedMatMul, quantized::matmul::UntypedQMatMul, resize::UntypedResizeKernel, slice_assign::UntypedSliceAssignKernel, tensor::TensorData, visit_tiled::MaybeQData, ElementWiseFunction, QueryItem, UntypedElementWiseKernel, UntypedPairWiseKernel, UntypedReduceKernel
 };
 
 use super::{
@@ -21,7 +18,6 @@ pub(crate) struct Resolver<'a> {
     command_encoder: &'a mut CommandEncoder,
     target: AnyComputeKey,
     queue: ComputeQueue,
-    timing_information: bool,
 }
 
 impl<'a> Resolver<'a> {
@@ -35,21 +31,18 @@ impl<'a> Resolver<'a> {
             command_encoder,
             target,
             queue: Default::default(),
-            timing_information: false,
         }
     }
 
     fn with_query<O>(
         &mut self,
         key: AnyComputeKey,
-        with_query: impl FnOnce(&mut Self, Option<&PerformanceQueries>) -> O,
+        with_query: impl FnOnce(&mut Self, Option<&QueryItem>) -> O,
     ) -> O {
-        let query = self
-            .timing_information
-            .then(|| PerformanceQueries::new(&self.graph.device));
+        let query = self.graph.device.query().as_ref().map(|q| q.compute_timestamp_writes());
         let result = with_query(self, query.as_ref());
-        if let Some(query) = query {
-            self.graph.timing_information.insert(key, query);
+        if let Some(query_item) = query {
+            self.graph.timing_information.insert(key, query_item);
         }
         result
     }

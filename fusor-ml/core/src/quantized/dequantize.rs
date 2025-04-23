@@ -6,7 +6,7 @@ use crate::{
     padded_tensor_size,
 };
 use std::{fmt::Write, sync::OnceLock};
-use wgpu::CommandEncoder;
+use wgpu::CommandEncoder;use crate::QueryItem;
 
 use super::{QMatrix, dequantize_block};
 
@@ -168,7 +168,7 @@ impl UntypedDequantize {
     pub fn run_with_query(
         &self,
         device: &crate::Device,
-        query: Option<&PerformanceQueries>,
+        query: Option<&QueryItem>,
         command_encoder: &mut CommandEncoder,
     ) -> TensorData {
         let shape = &self.matrix.shape;
@@ -188,7 +188,7 @@ impl UntypedDequantize {
     pub fn run_with_query_and_out_tensor(
         &self,
         device: &Device,
-        query: Option<&PerformanceQueries>,
+        query: Option<&QueryItem>,
         output_tensor: &TensorData,
         command_encoder: &mut CommandEncoder,
     ) {

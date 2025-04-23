@@ -3,7 +3,7 @@ use crate::{
     compute_graph::AnyComputeKey, kernel::GenericKernel, padded_tensor_size,
 };
 use std::{fmt::Write, sync::OnceLock};
-use wgpu::CommandEncoder;
+use wgpu::CommandEncoder;use crate::QueryItem;
 
 #[derive(Debug)]
 pub(crate) struct IndexSelectOperation {
@@ -93,7 +93,7 @@ impl UntypedIndexSelectKernel {
         &self,
         value: &TensorData,
         indexes: &TensorData,
-        query: Option<&PerformanceQueries>,
+        query: Option<&QueryItem>,
         command_encoder: &mut CommandEncoder,
     ) -> TensorData {
         let device = value.device();
@@ -120,7 +120,7 @@ impl UntypedIndexSelectKernel {
         &self,
         value: &TensorData,
         indexes: &TensorData,
-        query: Option<&PerformanceQueries>,
+        query: Option<&QueryItem>,
         command_encoder: &mut CommandEncoder,
         output_tensor: &TensorData,
     ) {

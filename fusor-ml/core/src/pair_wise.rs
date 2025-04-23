@@ -14,7 +14,7 @@ use crate::{
     query::PerformanceQueries,
     tensor::{DataType, DataTypeEnum, TensorData},
     visit_tiled::{MaybeQData, VisitTiledKernel},
-};
+};use crate::QueryItem;
 
 #[derive(Clone, Debug)]
 pub(crate) struct PairWiseOperation {
@@ -85,7 +85,7 @@ impl UntypedPairWiseKernel {
         &self,
         first: MaybeQData,
         second: MaybeQData,
-        query: Option<&PerformanceQueries>,
+        query: Option<&QueryItem>,
         command_encoder: &mut CommandEncoder,
     ) -> TensorData {
         assert_eq!(first.layout().shape(), second.layout().shape());

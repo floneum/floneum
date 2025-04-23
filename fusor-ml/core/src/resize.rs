@@ -5,7 +5,7 @@ use wgpu::CommandEncoder;
 use crate::{
     DataTypeEnum, PerformanceQueries, TILE_SIZE, Tensor, TensorData, compute_graph::AnyComputeKey,
     kernel::GenericKernel,
-};
+};use crate::QueryItem;
 
 const BLOCKSIZE: u32 = 256;
 
@@ -91,7 +91,7 @@ impl UntypedResizeKernel {
     pub fn run_with_query(
         &self,
         input: &TensorData,
-        query: Option<&PerformanceQueries>,
+        query: Option<&QueryItem>,
         command_encoder: &mut CommandEncoder,
     ) -> TensorData {
         let rank = input.layout().rank();

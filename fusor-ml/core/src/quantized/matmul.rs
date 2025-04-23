@@ -6,6 +6,7 @@ use crate::{
 };
 use std::{fmt::Write, sync::OnceLock};
 use wgpu::CommandEncoder;
+use crate::QueryItem;
 
 use super::{QMatrix, dequantize_block};
 
@@ -302,7 +303,7 @@ impl UntypedQMatMul {
     pub fn run_with_query(
         &self,
         input: &TensorData,
-        query: Option<&PerformanceQueries>,
+        query: Option<&QueryItem>,
         command_encoder: &mut CommandEncoder,
     ) -> TensorData {
         let device = input.device();
@@ -330,7 +331,7 @@ impl UntypedQMatMul {
         &self,
         device: &Device,
         input: &TensorData,
-        query: Option<&PerformanceQueries>,
+        query: Option<&QueryItem>,
         output_tensor: &TensorData,
         command_encoder: &mut CommandEncoder,
     ) {

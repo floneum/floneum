@@ -3,6 +3,7 @@ use kalosm_streams::text_stream::TextStream;
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt::init();
     let model = Llama::builder()
         .with_source(
             LlamaSource::new(kalosm_model_types::FileSource::HuggingFace {

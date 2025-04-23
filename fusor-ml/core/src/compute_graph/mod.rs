@@ -15,11 +15,7 @@ mod visit;
 mod visualize;
 
 use crate::{
-    DataTypeEnum, Device, ElementWiseOperation, MatMulOperation, PairWiseOperation,
-    PerformanceQueries, QMatrix, QueryResults, ReduceOperation, dequantize::DequantizeOperation,
-    index_select::IndexSelectOperation, map_layout::MapLayoutOperation,
-    quantized::matmul::QMatMulOperation, resize::ResizeOperation,
-    slice_assign::SliceAssignOperation, tensor::TensorData,
+    dequantize::DequantizeOperation, index_select::IndexSelectOperation, map_layout::MapLayoutOperation, quantized::matmul::QMatMulOperation, resize::ResizeOperation, slice_assign::SliceAssignOperation, tensor::TensorData, DataTypeEnum, Device, ElementWiseOperation, MatMulOperation, PairWiseOperation, PerformanceQueries, QMatrix, QueryItem, QueryResults, ReduceOperation
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -463,7 +459,7 @@ struct ComputeGraphInner {
     device: Device,
     nodes: ComputeGraphNodes,
 
-    timing_information: FxHashMap<AnyComputeKey, PerformanceQueries>,
+    timing_information: FxHashMap<AnyComputeKey, QueryItem>,
     cached_results: FxHashMap<AnyComputeKey, TensorData>,
 
     dependency_map: DependencyMap,

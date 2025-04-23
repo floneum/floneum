@@ -1,9 +1,12 @@
 use std::{borrow::Cow, sync::Arc};
 
+use crate::PerformanceQueries;
+
 #[derive(Debug)]
 struct DeviceInner {
     device: wgpu::Device,
     queue: wgpu::Queue,
+    query: Option<Arc<PerformanceQueries>>,
 }
 
 #[derive(Clone, Debug)]
@@ -24,8 +27,15 @@ impl Device {
             })
             .await?;
 
+        let timing_information = true;
+        let query = timing_information.then(|| Arc::new(PerformanceQueries::new(&device, &queue)));
+
         let device = Self {
-            inner: Arc::new(DeviceInner { device, queue }),
+            inner: Arc::new(DeviceInner {
+                device,
+                queue,
+                query,
+            }),
         };
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -62,5 +72,9 @@ impl Device {
 
     pub(crate) fn wgpu_queue(&self) -> &wgpu::Queue {
         &self.inner.queue
+    }
+
+    pub fn query(&self) -> Option<Arc<PerformanceQueries>> {
+        self.inner.query.clone()
     }
 }

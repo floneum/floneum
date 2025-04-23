@@ -6,7 +6,7 @@ use wgpu::CommandEncoder;
 use crate::{
     DataTypeEnum, Layout, PerformanceQueries, QMatrix, TensorData, dequantize_block,
     kernel::{GenericKernel, KernelInputValue, QMatrixInput, TensorInput},
-};
+};use crate::QueryItem;
 
 #[derive(Clone)]
 pub(crate) enum MaybeQData {
@@ -412,7 +412,7 @@ impl VisitTiledKernel {
     pub(crate) fn run_with_query<'a>(
         &self,
         tensors: impl IntoIterator<Item = MaybeQData>,
-        query: Option<&PerformanceQueries>,
+        query: Option<&QueryItem>,
         command_encoder: &mut CommandEncoder,
     ) {
         let tensors = tensors.into_iter().collect::<Vec<_>>();

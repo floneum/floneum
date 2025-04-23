@@ -9,6 +9,7 @@ use crate::{
     query::PerformanceQueries,
     tensor::{DataType, DataTypeEnum, TensorData, padded_tensor_size},
 };
+use crate::QueryItem;
 
 #[derive(Debug, Clone)]
 pub(crate) struct MatMulOperation {
@@ -221,7 +222,7 @@ impl UntypedMatMul {
         &self,
         a: &TensorData,
         b: &TensorData,
-        query: Option<&PerformanceQueries>,
+        query: Option<&QueryItem>,
         command_encoder: &mut CommandEncoder,
     ) -> TensorData {
         let last_dim = self.rank as usize - 1;
@@ -252,7 +253,7 @@ impl UntypedMatMul {
         device: &Device,
         a: &TensorData,
         b: &TensorData,
-        query: Option<&PerformanceQueries>,
+        query: Option<&QueryItem>,
         output_tensor: &TensorData,
         command_encoder: &mut CommandEncoder,
     ) {

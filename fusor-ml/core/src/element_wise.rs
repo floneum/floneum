@@ -4,7 +4,7 @@ use std::{
     sync::OnceLock,
 };
 
-use wgpu::CommandEncoder;
+use wgpu::CommandEncoder;use crate::QueryItem;
 
 use crate::{
     Tensor,
@@ -95,7 +95,7 @@ impl UntypedElementWiseKernel {
     pub fn run_with_query(
         &self,
         tensor: MaybeQData,
-        query: Option<&PerformanceQueries>,
+        query: Option<&QueryItem>,
         command_encoder: &mut CommandEncoder,
     ) -> TensorData {
         let contiguous = tensor.layout().is_contiguous();

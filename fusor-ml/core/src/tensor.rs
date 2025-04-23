@@ -741,8 +741,13 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
 
     #[must_use]
     pub async fn as_slice(&self) -> Result<TensorSlice<R, D>, wgpu::BufferAsyncError> {
+        let start_time = std::time::Instant::now();
         let tensor = self.data.materialize();
-        Self::as_slice_from_tensor_data(&tensor).await
+        tracing::trace!("Materialized tensor in {:?}", start_time.elapsed());
+        let start_time = std::time::Instant::now();
+        let out = Self::as_slice_from_tensor_data(&tensor).await;
+        tracing::trace!("Downloaded tensor in {:?}", start_time.elapsed());
+        out
     }
 
     pub async fn all_timing_information(&self) -> Vec<QueryResults> {

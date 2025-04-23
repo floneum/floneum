@@ -12,6 +12,7 @@ use crate::{
     query::PerformanceQueries,
     tensor::{DataType, DataTypeEnum, TensorData, padded_tensor_size},
 };
+use crate::QueryItem;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ReduceOperation {
@@ -284,7 +285,7 @@ impl UntypedReduceKernel {
         &self,
         tensor: &TensorData,
         dim: usize,
-        query: Option<&PerformanceQueries>,
+        query: Option<&QueryItem>,
         command_encoder: &mut CommandEncoder,
     ) -> TensorData {
         let shape = tensor.layout().shape();
@@ -322,7 +323,7 @@ impl UntypedReduceKernel {
         &self,
         tensor: &TensorData,
         dim: usize,
-        query: Option<&PerformanceQueries>,
+        query: Option<&QueryItem>,
         output_tensor: &TensorData,
         command_encoder: &mut CommandEncoder,
     ) {

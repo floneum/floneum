@@ -5,7 +5,7 @@ use wgpu::CommandEncoder;
 use crate::{
     PerformanceQueries, TILE_SIZE, Tensor, TensorData, compute_graph::AnyComputeKey,
     visit_tiled::VisitTiledKernel,
-};
+};use crate::QueryItem;
 
 #[derive(Debug)]
 pub(crate) struct SliceAssignOperation {
@@ -41,7 +41,7 @@ impl UntypedSliceAssignKernel {
         &self,
         target: &TensorData,
         value: &TensorData,
-        query: Option<&PerformanceQueries>,
+        query: Option<&QueryItem>,
         command_encoder: &mut CommandEncoder,
     ) -> TensorData {
         let rank = target.layout().rank();
