@@ -2,14 +2,13 @@ use std::{fmt::Write, sync::OnceLock};
 
 use wgpu::CommandEncoder;
 
+use crate::QueryItem;
 use crate::{
-    Device, Tensor,
+    Device, Tensor, UntypedElementWiseKernel,
     compute_graph::AnyComputeKey,
-    kernel::{GenericKernel, KernelGlobalSpace},
-    query::PerformanceQueries,
+    kernel::{Function, GenericKernel, KernelGlobalSpace},
     tensor::{DataType, DataTypeEnum, TensorData, padded_tensor_size},
 };
-use crate::QueryItem;
 
 #[derive(Debug, Clone)]
 pub(crate) struct MatMulOperation {
@@ -58,22 +57,40 @@ const WORK_GROUP_SIZE: [u32; 3] = [
 ];
 
 pub(crate) struct UntypedMatMul {
+    pre_element_wise: [UntypedElementWiseKernel; 2],
     kernel: OnceLock<GenericKernel>,
+    post_element_wise: UntypedElementWiseKernel,
     datatype: DataTypeEnum,
     rank: u32,
 }
 
 impl UntypedMatMul {
-    pub(crate) const fn new(datatype: DataTypeEnum, rank: u32) -> Self {
+    pub(crate) fn new(datatype: DataTypeEnum, rank: u32) -> Self {
         Self {
+            pre_element_wise: [
+                UntypedElementWiseKernel::empty(datatype),
+                UntypedElementWiseKernel::empty(datatype),
+            ],
             kernel: OnceLock::new(),
+            post_element_wise: UntypedElementWiseKernel::empty(datatype),
             datatype,
             rank,
         }
     }
 
+    pub(crate) fn set_pre_element_wise(
+        &mut self,
+        pre_element_wise: [UntypedElementWiseKernel; 2],
+    ) {
+        self.pre_element_wise = pre_element_wise;
+    }
+
+    pub(crate) fn set_post_element_wise(&mut self, post_element_wise: UntypedElementWiseKernel) {
+        self.post_element_wise = post_element_wise;
+    }
+
     // 1000x1000 dense matmul time on M2 mac pro 1.4743 ms
-    fn compile(&self) -> &GenericKernel {
+    fn compile(&self, input_a_datatype: DataTypeEnum, input_b_datatype: DataTypeEnum) -> &GenericKernel {
         self.kernel.get_or_init(|| {
             // based on https://siboehm.com/articles/22/CUDA-MMM
             let mut generic_kernel = GenericKernel::new();
@@ -81,9 +98,12 @@ impl UntypedMatMul {
 
             let mut kernel = String::new();
 
-            let input_a = generic_kernel.add_tensor_input(self.rank, false, self.datatype);
-            let input_b = generic_kernel.add_tensor_input(self.rank, false, self.datatype);
-            let output = generic_kernel.add_tensor_input(self.rank, true, self.datatype);
+            let pre_element_wise_functions: OnceLock<[Vec<Function>; 2]> = OnceLock::new();
+            let post_element_wise_functions = OnceLock::new();
+
+            let input_a = generic_kernel.add_tensor_input(self.rank, false, input_a_datatype);
+            let input_b = generic_kernel.add_tensor_input(self.rank, false, input_b_datatype);
+            let output = generic_kernel.add_tensor_input(self.rank, true, self.post_element_wise.out_datatype());
 
             let cache_a = generic_kernel.add_global_array(
                 KernelGlobalSpace::Workgroup,
@@ -162,11 +182,19 @@ impl UntypedMatMul {
             // Loop over the K dimension in blocks of WORK_GROUP_BLOCK_K_SIZE
             writeln!(&mut kernel, "for (var block_index = 0u; block_index < {k_size}; block_index += {WORK_GROUP_BLOCK_K_SIZE}) {{").unwrap();
 
+            let pre_element_wise_functions = pre_element_wise_functions.get_or_init(|| {
+                std::array::from_fn(|i| self.pre_element_wise[i].add_functions(&mut generic_kernel))
+            });
+
             // Make sure everything is in bounds of the a matrix
             writeln!(&mut kernel, "if a_col < a_col_max && a_row < a_row_max {{").unwrap();
             writeln!(&mut kernel, "let a_index = a_row + a_col;").unwrap();
             // If everything is in range, load the value into the workgroup cache
-            writeln!(&mut kernel, "{cache_a}[a_thread_row * {WORK_GROUP_BLOCK_K_SIZE} + a_thread_col] = {input_a}[a_start_index + a_index];").unwrap();
+            write!(&mut kernel, "{cache_a}[a_thread_row * {WORK_GROUP_BLOCK_K_SIZE} + a_thread_col] = ").unwrap();
+            let first_value = pre_element_wise_functions[0]
+                .iter()
+                .fold(format!("{input_a}[a_start_index + a_index]"), |acc, f| f.call(vec![acc]));
+            writeln!(&mut kernel, "{first_value};").unwrap();
             writeln!(&mut kernel, "}}").unwrap();
             writeln!(&mut kernel, "else {{").unwrap();
             writeln!(&mut kernel, "{cache_a}[a_thread_row * {WORK_GROUP_BLOCK_K_SIZE} + a_thread_col] = 0.0;").unwrap();
@@ -175,7 +203,11 @@ impl UntypedMatMul {
             writeln!(&mut kernel, "if b_col < b_col_max && b_row < b_row_max {{").unwrap();
             writeln!(&mut kernel, "let b_index = b_row + b_col;").unwrap();
             // If everything is in range, load the value into the workgroup cache
-            writeln!(&mut kernel, "{cache_b}[b_thread_row * {WORK_GROUP_BLOCK_N_SIZE} + b_thread_col] = {input_b}[b_start_index + b_index];").unwrap(); 
+            write!(&mut kernel, "{cache_b}[b_thread_row * {WORK_GROUP_BLOCK_N_SIZE} + b_thread_col] = ").unwrap();
+            let first_value = pre_element_wise_functions[1]
+                .iter()
+                .fold(format!("{input_b}[b_start_index + b_index]"), |acc, f| f.call(vec![acc]));
+            writeln!(&mut kernel, "{first_value};").unwrap();
             writeln!(&mut kernel, "}}").unwrap();
             writeln!(&mut kernel, "else {{").unwrap();
             writeln!(&mut kernel, "{cache_b}[b_thread_row * {WORK_GROUP_BLOCK_N_SIZE} + b_thread_col] = 0.0;").unwrap();
@@ -208,7 +240,14 @@ impl UntypedMatMul {
             writeln!(&mut kernel, "let output_row = start_output_row + result_index;").unwrap();
             writeln!(&mut kernel, "if output_col < {n_size} && output_row < {m_size} {{").unwrap();
             writeln!(&mut kernel, "let output_index = output_row * {c_m_stride} + output_col * {c_n_stride};").unwrap();
-            writeln!(&mut kernel, "{output}[output_start_index + output_index] += results[result_index];").unwrap();
+            write!(&mut kernel, "{output}[output_start_index + output_index] = ").unwrap();
+            let post_element_wise_functions = post_element_wise_functions.get_or_init(|| {
+                self.post_element_wise.add_functions(&mut generic_kernel)
+            });
+            let result = post_element_wise_functions
+                .iter()
+                .fold(format!("results[result_index]"), |acc, f| f.call(vec![acc]));
+            writeln!(&mut kernel, "{result};").unwrap();
             writeln!(&mut kernel, "}}").unwrap();
             writeln!(&mut kernel, "}}").unwrap();
 
@@ -281,7 +320,7 @@ impl UntypedMatMul {
                 .zip(output_tensor.layout().shape().iter().rev().skip(2))
                 .all(|(a, o)| a == o)
         );
-        let module = self.compile();
+        let module = self.compile(a.datatype(), b.datatype());
 
         let a_shape = a.layout().shape();
         let b_shape = b.layout().shape();
@@ -326,6 +365,25 @@ async fn test_matmul() {
     assert_eq!(as_slice[[0, 1]], 2.);
     assert_eq!(as_slice[[1, 0]], 3.);
     assert_eq!(as_slice[[1, 1]], 6.);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_matmul_fused() {
+    let device = Device::new().await.unwrap();
+
+    let data_a = [[1.], [3.]];
+    let data_b = [[1., 2.]];
+    let tensor_a = Tensor::new(&device, &data_a) * 2.;
+    let tensor_b = Tensor::new(&device, &data_b);
+    let tensor = tensor_a.mat_mul(&tensor_b) / 4.;
+    let as_slice = tensor.as_slice().await.unwrap();
+    println!("{:?}", as_slice);
+
+    assert_eq!(as_slice[[0, 0]], 1. / 2.);
+    assert_eq!(as_slice[[0, 1]], 2. / 2.);
+    assert_eq!(as_slice[[1, 0]], 3. / 2.);
+    assert_eq!(as_slice[[1, 1]], 6. / 2.);
 }
 
 #[cfg(test)]

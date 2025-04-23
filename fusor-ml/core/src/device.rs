@@ -27,7 +27,7 @@ impl Device {
             })
             .await?;
 
-        let timing_information = true;
+        let timing_information = cfg!(feature = "timing_information");
         let query = timing_information.then(|| Arc::new(PerformanceQueries::new(&device, &queue)));
 
         let device = Self {

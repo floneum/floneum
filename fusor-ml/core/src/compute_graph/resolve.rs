@@ -153,6 +153,10 @@ impl<'a> Resolver<'a> {
             if let AnyComputeKey::PairWise(key) = input {
                 return self.resolve_pair_wise_then(key, functions);
             }
+            // Merge into the output of the mat mul kernel if possible and it isn't already cached
+            if let AnyComputeKey::MatMul(key) = input {
+                return self.resolve_mat_mul_then(key, functions);
+            }
             // Merge into the output of the dequantize kernel if possible and it isn't already cached
             if let AnyComputeKey::Dequantize(key) = input {
                 return self.resolve_dequantize_then(key, functions);
@@ -235,13 +239,43 @@ impl<'a> Resolver<'a> {
     }
 
     fn resolve_mat_mul(&mut self, key: MatMulComputeNodeKey) -> TensorData {
+        self.resolve_mat_mul_then(key, Vec::new())
+    }
+
+    fn resolve_mat_mul_then(
+        &mut self,
+        key: MatMulComputeNodeKey,
+        then: Vec<ElementWiseFunction>,
+    ) -> TensorData {
         let operation = self.graph.nodes.mat_mul.get(&key).unwrap();
-        let first = operation.first;
-        let second = operation.second;
+        let mut first = operation.first;
+        let mut second = operation.second;
+
+        let first_pre_element_wise = if let AnyComputeKey::ElementWise(key) = first {
+            let (functions, element_wise_input) = self.collect_element_wise_ops(key);
+            first = element_wise_input;
+            functions
+        } else {
+            Vec::new()
+        };
+        let second_pre_element_wise = if let AnyComputeKey::ElementWise(key) = second {
+            let (functions, element_wise_input) = self.collect_element_wise_ops(key);
+            second = element_wise_input;
+            functions
+        } else {
+            Vec::new()
+        };
 
         let first = self.graph.cached_results[&first].clone();
         let second = self.graph.cached_results[&second].clone();
-        let kernel = UntypedMatMul::new(first.datatype(), first.layout().rank() as u32);
+        let mut kernel = UntypedMatMul::new(first.datatype(), first.layout().rank() as u32);
+        let first_pre =
+            UntypedElementWiseKernel::new(first_pre_element_wise, first.datatype());
+        let second_pre =
+            UntypedElementWiseKernel::new(second_pre_element_wise, second.datatype());
+        let pre_element_wise_output = first_pre.out_datatype();
+        kernel.set_pre_element_wise([first_pre, second_pre]);
+        kernel.set_post_element_wise(UntypedElementWiseKernel::new(then, pre_element_wise_output));
         self.with_query(key.into(), |resolver, query| {
             kernel.run_with_query(&first, &second, query, &mut *resolver.command_encoder)
         })

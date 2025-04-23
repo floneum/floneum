@@ -21,8 +21,10 @@ rustc-hash = "2.1.1"
 thiserror.workspace = true
 parking_lot = "0.12.3"
 tracing = "0.1.41"
+
 [features]
 extra_assertions = []
+timing_information = []
 
 [dev-dependencies]
 ndarray = "0.16.1"
