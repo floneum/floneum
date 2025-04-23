@@ -1,5 +1,6 @@
 use rustc_hash::FxHashMap;
 
+use super::dependency_map::visit_dependencies;
 use super::queue::ComputeQueue;
 use super::{
     AnyComputeKey, ComputeGraphInner, ComputeGraphNodes, DequantizeComputeKey,
@@ -21,11 +22,7 @@ struct GraphVisPass {
 impl GraphVisPass {
     fn visit_element_wise(&mut self, key: ElementWiseComputeNodeKey, graph: &ComputeGraphNodes) {
         let operation = graph.element_wise.get(&key).unwrap();
-        let Some(input) = self.identities.get(&operation.value.into()) else {
-            self.queued.push_back(operation.value);
-            self.queued.push_back(key.into());
-            return;
-        };
+        let input = self.identities.get(&operation.value.into()).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
         let id = Identity::quoted(format!(
             "{} ({}) #{}",
@@ -46,16 +43,8 @@ impl GraphVisPass {
 
     fn visit_pair_wise(&mut self, key: PairWiseComputeNodeKey, graph: &ComputeGraphNodes) {
         let operation = graph.pair_wise.get(&key).unwrap();
-        let Some(first) = self.identities.get(&operation.first.into()) else {
-            self.queued.push_back(operation.first);
-            self.queued.push_back(key.into());
-            return;
-        };
-        let Some(second) = self.identities.get(&operation.second.into()) else {
-            self.queued.push_back(operation.second);
-            self.queued.push_back(key.into());
-            return;
-        };
+        let first = self.identities.get(&operation.first.into()).unwrap();
+        let second = self.identities.get(&operation.second.into()).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
         let id = Identity::quoted(format!(
             "{} ({}) #{}",
@@ -79,16 +68,8 @@ impl GraphVisPass {
 
     fn visit_mat_mul(&mut self, key: MatMulComputeNodeKey, graph: &ComputeGraphNodes) {
         let operation = graph.mat_mul.get(&key).unwrap();
-        let Some(first) = self.identities.get(&operation.first.into()) else {
-            self.queued.push_back(operation.first);
-            self.queued.push_back(key.into());
-            return;
-        };
-        let Some(second) = self.identities.get(&operation.second.into()) else {
-            self.queued.push_back(operation.second);
-            self.queued.push_back(key.into());
-            return;
-        };
+        let first = self.identities.get(&operation.first.into()).unwrap();
+        let second = self.identities.get(&operation.second.into()).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
         let id = Identity::quoted(format!("matmul ({}) #{}", output_layout, key.0));
         self.statements.push(Stmt::Node {
@@ -107,11 +88,7 @@ impl GraphVisPass {
 
     fn visit_q_mat_mul(&mut self, key: QMatMulComputeNodeKey, graph: &ComputeGraphNodes) {
         let operation = graph.q_mat_mul.get(&key).unwrap();
-        let Some(input) = self.identities.get(&operation.input.into()) else {
-            self.queued.push_back(operation.input);
-            self.queued.push_back(key.into());
-            return;
-        };
+        let input = self.identities.get(&operation.input.into()).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
         let id = Identity::quoted(format!("qmatmul ({}) #{}", output_layout, key.0));
         self.statements.push(Stmt::Node {
@@ -127,11 +104,7 @@ impl GraphVisPass {
 
     fn visit_reduce(&mut self, key: ReduceComputeNodeKey, graph: &ComputeGraphNodes) {
         let operation = graph.reduce.get(&key).unwrap();
-        let Some(input) = self.identities.get(&operation.value.into()) else {
-            self.queued.push_back(operation.value);
-            self.queued.push_back(key.into());
-            return;
-        };
+        let input = self.identities.get(&operation.value.into()).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
         let id = Identity::quoted(format!(
             "{} ({}) #{}",
@@ -147,15 +120,12 @@ impl GraphVisPass {
         self.statements.push(Stmt::Edge(
             Edge::head_node(input.clone(), None).arrow_to_node(id.clone(), None),
         ));
+        self.identities.insert(key.into(), id.clone());
     }
 
     fn visit_map_layout(&mut self, key: MapLayoutComputeNodeKey, graph: &ComputeGraphNodes) {
         let operation = graph.map_layout.get(&key).unwrap();
-        let Some(input) = self.identities.get(&operation.input.into()) else {
-            self.queued.push_back(operation.input);
-            self.queued.push_back(key.into());
-            return;
-        };
+        let input = self.identities.get(&operation.input.into()).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
         let id = Identity::quoted(format!("map_layout ({}) #{}", output_layout, key.0));
         self.statements.push(Stmt::Node {
@@ -171,11 +141,7 @@ impl GraphVisPass {
 
     fn visit_resize(&mut self, key: ResizeComputeNodeKey, graph: &ComputeGraphNodes) {
         let operation = graph.resize.get(&key).unwrap();
-        let Some(input) = self.identities.get(&operation.input.into()) else {
-            self.queued.push_back(operation.input);
-            self.queued.push_back(key.into());
-            return;
-        };
+        let input = self.identities.get(&operation.input.into()).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
         let id = Identity::quoted(format!("resize ({}) #{}", output_layout, key.0));
         self.statements.push(Stmt::Node {
@@ -191,16 +157,8 @@ impl GraphVisPass {
 
     fn visit_slice_assign(&mut self, key: SliceAssignComputeNodeKey, graph: &ComputeGraphNodes) {
         let operation = graph.slice_assign.get(&key).unwrap();
-        let Some(input) = self.identities.get(&operation.input.into()) else {
-            self.queued.push_back(operation.input);
-            self.queued.push_back(key.into());
-            return;
-        };
-        let Some(value) = self.identities.get(&operation.value.into()) else {
-            self.queued.push_back(operation.value);
-            self.queued.push_back(key.into());
-            return;
-        };
+        let input = self.identities.get(&operation.input.into()).unwrap();
+        let value = self.identities.get(&operation.value.into()).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
         let id = Identity::quoted(format!("slice_assign ({}) #{}", output_layout, key.0));
         self.statements.push(Stmt::Node {
@@ -219,16 +177,8 @@ impl GraphVisPass {
 
     fn visit_index_select(&mut self, key: IndexSelectComputeNodeKey, graph: &ComputeGraphNodes) {
         let operation = graph.index_select.get(&key).unwrap();
-        let Some(input) = self.identities.get(&key.into()) else {
-            self.queued.push_back(operation.input);
-            self.queued.push_back(key.into());
-            return;
-        };
-        let Some(value) = self.identities.get(&key.into()) else {
-            self.queued.push_back(operation.indexes);
-            self.queued.push_back(key.into());
-            return;
-        };
+        let input = self.identities.get(&operation.input.into()).unwrap();
+        let value = self.identities.get(&operation.indexes.into()).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
         let id = Identity::quoted(format!("index_select ({}) #{}", output_layout, key.0));
         self.statements.push(Stmt::Node {
@@ -279,6 +229,22 @@ impl ComputeGraphInner {
             if graph_vis_pass.identities.contains_key(&node) {
                 continue;
             }
+
+            let mut dependencies = Vec::new();
+            visit_dependencies(&self.nodes, node, |dependent_key| {
+                dependencies.push(dependent_key);
+            });
+            dependencies.retain(|dependency| !graph_vis_pass.identities.contains_key(dependency));
+            if !dependencies.is_empty() {
+                // If there are dependencies that are not resolved, push them to the queue then
+                // revisit this node
+                for dependency in dependencies {
+                    graph_vis_pass.queued.push_back(dependency);
+                }
+                graph_vis_pass.queued.push_back(node);
+                continue;
+            }
+
             if let Some(data) = self.cached_results.get(&node) {
                 let id = Identity::quoted(format!("cached ({}) #{:?}", data.info(), node));
                 graph_vis_pass.statements.push(Stmt::Node {
