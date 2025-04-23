@@ -9,7 +9,6 @@ use crate::{
     Layout, Tensor, UntypedElementWiseKernel,
     compute_graph::AnyComputeKey,
     kernel::{Function, GenericKernel, KernelGlobalSpace, KernelInputValue},
-    query::PerformanceQueries,
     tensor::{DataType, DataTypeEnum, TensorData, padded_tensor_size},
 };
 use crate::QueryItem;

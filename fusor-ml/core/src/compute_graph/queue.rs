@@ -16,9 +16,8 @@ impl ComputeQueue {
     }
 
     pub(crate) fn pop_front(&mut self) -> Option<AnyComputeKey> {
-        self.nodes.pop_front().map(|key| {
-            self.set.remove(&key);
-            key
+        self.nodes.pop_front().inspect(|key| {
+            self.set.remove(key);
         })
     }
 }

@@ -22,7 +22,7 @@ struct GraphVisPass {
 impl GraphVisPass {
     fn visit_element_wise(&mut self, key: ElementWiseComputeNodeKey, graph: &ComputeGraphNodes) {
         let operation = graph.element_wise.get(&key).unwrap();
-        let input = self.identities.get(&operation.value.into()).unwrap();
+        let input = self.identities.get(&operation.value).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
         let id = Identity::quoted(format!(
             "{} ({}) #{}",
@@ -43,8 +43,8 @@ impl GraphVisPass {
 
     fn visit_pair_wise(&mut self, key: PairWiseComputeNodeKey, graph: &ComputeGraphNodes) {
         let operation = graph.pair_wise.get(&key).unwrap();
-        let first = self.identities.get(&operation.first.into()).unwrap();
-        let second = self.identities.get(&operation.second.into()).unwrap();
+        let first = self.identities.get(&operation.first).unwrap();
+        let second = self.identities.get(&operation.second).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
         let id = Identity::quoted(format!(
             "{} ({}) #{}",
@@ -68,8 +68,8 @@ impl GraphVisPass {
 
     fn visit_mat_mul(&mut self, key: MatMulComputeNodeKey, graph: &ComputeGraphNodes) {
         let operation = graph.mat_mul.get(&key).unwrap();
-        let first = self.identities.get(&operation.first.into()).unwrap();
-        let second = self.identities.get(&operation.second.into()).unwrap();
+        let first = self.identities.get(&operation.first).unwrap();
+        let second = self.identities.get(&operation.second).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
         let id = Identity::quoted(format!("matmul ({}) #{}", output_layout, key.0));
         self.statements.push(Stmt::Node {
@@ -88,7 +88,7 @@ impl GraphVisPass {
 
     fn visit_q_mat_mul(&mut self, key: QMatMulComputeNodeKey, graph: &ComputeGraphNodes) {
         let operation = graph.q_mat_mul.get(&key).unwrap();
-        let input = self.identities.get(&operation.input.into()).unwrap();
+        let input = self.identities.get(&operation.input).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
         let id = Identity::quoted(format!("qmatmul ({}) #{}", output_layout, key.0));
         self.statements.push(Stmt::Node {
@@ -104,7 +104,7 @@ impl GraphVisPass {
 
     fn visit_reduce(&mut self, key: ReduceComputeNodeKey, graph: &ComputeGraphNodes) {
         let operation = graph.reduce.get(&key).unwrap();
-        let input = self.identities.get(&operation.value.into()).unwrap();
+        let input = self.identities.get(&operation.value).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
         let id = Identity::quoted(format!(
             "{} ({}) #{}",
@@ -125,7 +125,7 @@ impl GraphVisPass {
 
     fn visit_map_layout(&mut self, key: MapLayoutComputeNodeKey, graph: &ComputeGraphNodes) {
         let operation = graph.map_layout.get(&key).unwrap();
-        let input = self.identities.get(&operation.input.into()).unwrap();
+        let input = self.identities.get(&operation.input).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
         let id = Identity::quoted(format!("map_layout ({}) #{}", output_layout, key.0));
         self.statements.push(Stmt::Node {
@@ -141,7 +141,7 @@ impl GraphVisPass {
 
     fn visit_resize(&mut self, key: ResizeComputeNodeKey, graph: &ComputeGraphNodes) {
         let operation = graph.resize.get(&key).unwrap();
-        let input = self.identities.get(&operation.input.into()).unwrap();
+        let input = self.identities.get(&operation.input).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
         let id = Identity::quoted(format!("resize ({}) #{}", output_layout, key.0));
         self.statements.push(Stmt::Node {
@@ -157,8 +157,8 @@ impl GraphVisPass {
 
     fn visit_slice_assign(&mut self, key: SliceAssignComputeNodeKey, graph: &ComputeGraphNodes) {
         let operation = graph.slice_assign.get(&key).unwrap();
-        let input = self.identities.get(&operation.input.into()).unwrap();
-        let value = self.identities.get(&operation.value.into()).unwrap();
+        let input = self.identities.get(&operation.input).unwrap();
+        let value = self.identities.get(&operation.value).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
         let id = Identity::quoted(format!("slice_assign ({}) #{}", output_layout, key.0));
         self.statements.push(Stmt::Node {
@@ -177,8 +177,8 @@ impl GraphVisPass {
 
     fn visit_index_select(&mut self, key: IndexSelectComputeNodeKey, graph: &ComputeGraphNodes) {
         let operation = graph.index_select.get(&key).unwrap();
-        let input = self.identities.get(&operation.input.into()).unwrap();
-        let value = self.identities.get(&operation.indexes.into()).unwrap();
+        let input = self.identities.get(&operation.input).unwrap();
+        let value = self.identities.get(&operation.indexes).unwrap();
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
         let id = Identity::quoted(format!("index_select ({}) #{}", output_layout, key.0));
         self.statements.push(Stmt::Node {

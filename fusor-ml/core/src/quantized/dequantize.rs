@@ -1,5 +1,5 @@
 use crate::{
-    DataType, DataTypeEnum, Device, LazyTensorData, PerformanceQueries, Tensor, TensorData,
+    DataType, DataTypeEnum, Device, LazyTensorData, Tensor, TensorData,
     TensorInfo, UntypedElementWiseKernel,
     compute_graph::ComputeGraph,
     kernel::{GenericKernel, KernelInputValue},
@@ -180,7 +180,7 @@ impl UntypedDequantize {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
-        let output_tensor = TensorData::new_from_buffer(device, output_buf, &shape, self.datatype);
+        let output_tensor = TensorData::new_from_buffer(device, output_buf, shape, self.datatype);
         self.run_with_query_and_out_tensor(device, query, &output_tensor, command_encoder);
         output_tensor
     }

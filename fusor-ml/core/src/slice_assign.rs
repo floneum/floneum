@@ -3,7 +3,7 @@ use std::{ops::Range, sync::OnceLock};
 use wgpu::CommandEncoder;
 
 use crate::{
-    PerformanceQueries, TILE_SIZE, Tensor, TensorData, compute_graph::AnyComputeKey,
+    TILE_SIZE, Tensor, TensorData, compute_graph::AnyComputeKey,
     visit_tiled::VisitTiledKernel,
 };use crate::QueryItem;
 

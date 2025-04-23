@@ -1,5 +1,5 @@
 use crate::{
-    DataType, DataTypeEnum, Device, PerformanceQueries, Tensor, TensorData,
+    DataType, DataTypeEnum, Device, Tensor, TensorData,
     compute_graph::AnyComputeKey,
     kernel::{GenericKernel, KernelInputValue},
     padded_tensor_size,

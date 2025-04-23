@@ -4,7 +4,7 @@ use fusor_gguf::GgmlType;
 use wgpu::CommandEncoder;
 
 use crate::{
-    DataTypeEnum, Layout, PerformanceQueries, QMatrix, TensorData, dequantize_block,
+    DataTypeEnum, Layout, QMatrix, TensorData, dequantize_block,
     kernel::{GenericKernel, KernelInputValue, QMatrixInput, TensorInput},
 };use crate::QueryItem;
 
@@ -75,9 +75,9 @@ impl From<&QMatrix> for MaybeQData {
     }
 }
 
-impl Into<KernelInputValue> for MaybeQData {
-    fn into(self) -> KernelInputValue {
-        match self {
+impl From<MaybeQData> for KernelInputValue {
+    fn from(val: MaybeQData) -> Self {
+        match val {
             MaybeQData::Tensor(tensor) => KernelInputValue::Tensor(tensor.clone()),
             MaybeQData::QMatrix(qmatrix) => KernelInputValue::QMatrix(qmatrix.clone()),
         }

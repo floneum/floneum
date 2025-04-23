@@ -11,7 +11,6 @@ use crate::{
     compute_graph::AnyComputeKey,
     kernel::{Function, GenericKernel},
     layout::TILE_SIZE,
-    query::PerformanceQueries,
     tensor::{DataType, DataTypeEnum, TensorData},
     visit_tiled::{MaybeQData, VisitTiledKernel},
 };use crate::QueryItem;
@@ -111,7 +110,7 @@ impl UntypedPairWiseKernel {
         let pair_wise_function = OnceLock::new();
         let post_element_wise_functions = OnceLock::new();
         let create_kernel = || {
-            let mut datatypes = vec![first.datatype().into(), second.datatype().into()];
+            let mut datatypes = vec![first.datatype(), second.datatype()];
 
             if requires_new_tensor {
                 datatypes.push(self.output_datatype().into());
@@ -158,7 +157,7 @@ impl UntypedPairWiseKernel {
             self.sparse_kernel.get_or_init(create_kernel)
         };
         let mut tensors: Vec<crate::visit_tiled::MaybeQData> =
-            vec![first.clone().into(), second.into()];
+            vec![first.clone(), second];
         if requires_new_tensor {
             let output_tensor = TensorData::new_for_shape(
                 first.device(),

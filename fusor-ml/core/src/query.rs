@@ -131,7 +131,7 @@ impl QueryItem {
             self.index as u64 * size_of::<u64>() as u64,
             &self.in_query.destination_buffer,
             (self.index as u64 + 2) * size_of::<u64>() as u64,
-            NUM_QUERIES as u64 * size_of::<u64>() as u64,
+            NUM_QUERIES * size_of::<u64>() as u64,
         );
     }
 

@@ -12,7 +12,6 @@ use crate::{
     kernel::{Function, GenericKernel},
     layout::TILE_SIZE,
     padded_tensor_size,
-    query::PerformanceQueries,
     tensor::{DataType, DataTypeEnum, TensorData},
     visit_tiled::{MaybeQData, VisitTiledKernel},
 };
@@ -106,7 +105,7 @@ impl UntypedElementWiseKernel {
 
         let functions = OnceLock::new();
         let create_kernel = || {
-            let mut datatypes = vec![tensor.datatype().into()];
+            let mut datatypes = vec![tensor.datatype()];
             if requires_new_tensor {
                 datatypes.push(output_type.into());
             }
@@ -141,7 +140,7 @@ impl UntypedElementWiseKernel {
         };
         let mut output = None;
         let mut tensors = Vec::new();
-        tensors.push(tensor.clone().into());
+        tensors.push(tensor.clone());
         if requires_new_tensor {
             let output_buf = tensor
                 .device()

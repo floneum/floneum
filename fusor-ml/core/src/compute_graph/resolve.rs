@@ -165,10 +165,10 @@ impl<'a> Resolver<'a> {
         // Otherwise, just run the element wise kernel
         let input = self.graph.cached_results[&input].clone();
         let kernel = UntypedElementWiseKernel::new(functions, input.datatype());
-        let result = self.with_query(key.into(), |resolver, query| {
+        
+        self.with_query(key.into(), |resolver, query| {
             kernel.run_with_query(input.into(), query, &mut *resolver.command_encoder)
-        });
-        result
+        })
     }
 
     fn resolve_pair_wise(&mut self, key: PairWiseComputeNodeKey) -> TensorData {
@@ -232,10 +232,10 @@ impl<'a> Resolver<'a> {
         let pre_element_wise_output = first_pre.out_datatype();
         kernel.set_pre_element_wise([first_pre, second_pre]);
         kernel.set_post_element_wise(UntypedElementWiseKernel::new(then, pre_element_wise_output));
-        let result = self.with_query(key.into(), |resolver, query| {
+        
+        self.with_query(key.into(), |resolver, query| {
             kernel.run_with_query(first, second, query, &mut *resolver.command_encoder)
-        });
-        result
+        })
     }
 
     fn resolve_mat_mul(&mut self, key: MatMulComputeNodeKey) -> TensorData {
@@ -288,10 +288,10 @@ impl<'a> Resolver<'a> {
 
         let input = self.graph.cached_results[&input].clone();
         let kernel = UntypedQMatMul::new(input.datatype(), matrix);
-        let result = self.with_query(key.into(), |resolver, query| {
+        
+        self.with_query(key.into(), |resolver, query| {
             kernel.run_with_query(&input, query, &mut *resolver.command_encoder)
-        });
-        result
+        })
     }
 
     fn resolve_dequantize(&mut self, key: DequantizeComputeKey) -> TensorData {

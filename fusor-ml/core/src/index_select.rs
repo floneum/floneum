@@ -1,5 +1,5 @@
 use crate::{
-    DataTypeEnum, PerformanceQueries, TILE_SIZE, Tensor, TensorData, UntypedElementWiseKernel,
+    DataTypeEnum, TILE_SIZE, Tensor, TensorData, UntypedElementWiseKernel,
     compute_graph::AnyComputeKey, kernel::GenericKernel, padded_tensor_size,
 };
 use std::{fmt::Write, sync::OnceLock};
@@ -141,7 +141,7 @@ impl UntypedIndexSelectKernel {
         let output_layout = output_tensor.layout();
         let output_shape = output_layout.shape();
 
-        let tensors = vec![value, indexes, output_tensor];
+        let tensors = [value, indexes, output_tensor];
         let kernel = self.kernel();
         let max_blocksize = self.blocksize();
         let workgroup_dispatch_size = {
@@ -177,7 +177,7 @@ impl UntypedIndexSelectKernel {
             kernel.set_body(kernel_text);
             let blocksize = self.blocksize();
             let workgroup_size =
-                std::array::from_fn(|i| if self.rank as usize > i { blocksize } else { 1 });
+                std::array::from_fn(|i| if self.rank > i { blocksize } else { 1 });
             kernel.set_workgroup_size(workgroup_size);
             kernel
         };
@@ -217,7 +217,7 @@ impl UntypedIndexSelectKernel {
                 .fold(input.to_string(), |acc, f| f.call(vec![acc]))
         };
 
-        for i in 0..self.rank as usize {
+        for i in 0..self.rank {
             let index = ["x", "y", "z"][i];
             writeln!(
                 &mut kernel_body,

@@ -8,7 +8,7 @@ use crate::quantized::QMatrix;
 use crate::quantized_types_wgsl::{
     write_q4_0_type, write_q4_k_type, write_q5_0_type, write_q6_k_type, write_q8_0_type,
 };
-use crate::{DataTypeEnum, Device, PerformanceQueries, QueryItem, TensorData};
+use crate::{DataTypeEnum, Device, QueryItem, TensorData};
 
 #[derive(EnumSetType, Debug)]
 pub(crate) enum EnabledBuiltins {

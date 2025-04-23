@@ -3,7 +3,7 @@ use std::{fmt::Write, sync::OnceLock};
 use wgpu::CommandEncoder;
 
 use crate::{
-    DataTypeEnum, PerformanceQueries, TILE_SIZE, Tensor, TensorData, compute_graph::AnyComputeKey,
+    DataTypeEnum, TILE_SIZE, Tensor, TensorData, compute_graph::AnyComputeKey,
     kernel::GenericKernel,
 };use crate::QueryItem;
 

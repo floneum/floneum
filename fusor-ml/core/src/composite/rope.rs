@@ -45,7 +45,7 @@ impl<D: DataType> Tensor<3, D> {
         let y1 = &x0 * &sin + &x1 * &cos;
 
         let rope = Tensor::cat([y0, y1], LAST_DIM);
-        let rope = rope.reshape([height, sequence_length, embed]);
-        rope
+        
+        rope.reshape([height, sequence_length, embed])
     }
 }

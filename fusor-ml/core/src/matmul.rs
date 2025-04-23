@@ -246,7 +246,7 @@ impl UntypedMatMul {
             });
             let result = post_element_wise_functions
                 .iter()
-                .fold(format!("results[result_index]"), |acc, f| f.call(vec![acc]));
+                .fold("results[result_index]".to_string(), |acc, f| f.call(vec![acc]));
             writeln!(&mut kernel, "{result};").unwrap();
             writeln!(&mut kernel, "}}").unwrap();
             writeln!(&mut kernel, "}}").unwrap();
