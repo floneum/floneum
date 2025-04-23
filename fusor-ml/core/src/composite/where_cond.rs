@@ -3,13 +3,13 @@ use std::ops::Sub;
 use crate::{DataType, Tensor};
 
 impl<const R: usize, D: DataType> Tensor<R, D> {
-    pub fn where_cond<D2: DataType>(
+    pub fn where_cond<D2>(
         self,
         on_true: Tensor<R, D2>,
         on_false: Tensor<R, D2>,
     ) -> Tensor<R, D2>
     where
-        D2: Sub<Tensor<R, D2>, Output = Tensor<R, D2>>,
+        D2: DataType + Sub<Tensor<R, D2>, Output = Tensor<R, D2>>,
     {
         let is_zero: Tensor<R, D2> = self.eq(D::zero());
         is_zero.clone() * on_false + (D2::one() - is_zero) * on_true
