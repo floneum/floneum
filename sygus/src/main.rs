@@ -166,7 +166,8 @@ fn to_command(expr: SExpr) -> Option<Command> {
                     gr.iter()
                         .filter_map(|p| {
                             if let SExpr::List(v) = p {
-                                if let [SExpr::Atom(n), SExpr::Atom(ty), SExpr::List(rhs)] = &v[..] {
+                                if let [SExpr::Atom(n), SExpr::Atom(ty), SExpr::List(rhs)] = &v[..]
+                                {
                                     Some((n.clone(), ty.clone(), rhs.clone()))
                                 } else {
                                     None
@@ -179,13 +180,13 @@ fn to_command(expr: SExpr) -> Option<Command> {
                 } else {
                     return None;
                 };
-                Some(Command::SynthFun {
+                Some(Command::SynthFun(SynthFun {
                     name,
                     args,
                     ret_ty,
                     non_terms,
                     grammar,
-                })
+                }))
             }
             (SExpr::Atom(cmd), [SExpr::Atom(var), SExpr::Atom(ty)]) if cmd == "declare-var" => {
                 Some(Command::DeclareVar(var.clone(), ty.clone()))
@@ -205,17 +206,21 @@ pub enum SExpr {
     List(Vec<SExpr>),
 }
 
+/// A synthesized function
+#[derive(Debug, Clone, PartialEq)]
+struct SynthFun {
+    name: String,
+    args: Vec<(String, String)>,
+    ret_ty: String,
+    non_terms: Vec<(String, String)>,
+    grammar: Vec<(String, String, Vec<SExpr>)>,
+}
+
 /// High-level SyGuS commands
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
     SetLogic(String),
-    SynthFun {
-        name: String,
-        args: Vec<(String, String)>,
-        ret_ty: String,
-        non_terms: Vec<(String, String)>,
-        grammar: Vec<(String, String, Vec<SExpr>)>,
-    },
+    SynthFun(SynthFun),
     DeclareVar(String, String),
     Constraint(SExpr),
     CheckSynth,
