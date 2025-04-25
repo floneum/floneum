@@ -6,8 +6,7 @@ use std::{
 use kalosm::language::*;
 use kalosm_llama::{EvaluationTrie, LlamaModel};
 use kalosm_sample::{
-    ArcParser, LazyParser, LiteralParser, Parser, ParserExt,
-    SendCreateParserState,
+    ArcParser, LazyParser, LiteralParser, Parser, ParserExt, SendCreateParserState,
 };
 use std::io::Write;
 
@@ -18,7 +17,7 @@ use nom::{
     character::complete::multispace1,
     combinator::map,
     multi::many0,
-    sequence::{delimited, preceded},
+    sequence::{self, delimited, preceded},
 };
 
 /// Skip zero-or-more comments (`;; …\n`) or whitespace
@@ -43,10 +42,16 @@ fn skip_ws() {
 
 /// Parse an atomic symbol: letters, digits, or punctuation (simple)
 fn atom(input: &str) -> IResult<&str, SExpr> {
-    map(
-        take_while1(|c: char| !c.is_whitespace() && !['(', ')', ';'].contains(&c)),
-        |s: &str| SExpr::Atom(s.to_string()),
-    )
+    alt((
+        // parse quoted strings
+        tag("\"")
+            .and(is_not("\""))
+            .and(tag("\""))
+            .map(|((_, s), _)| SExpr::Atom(format!("\"{}\"", s))),
+        // parse idents
+        take_while1(|c: char| !c.is_whitespace() && !['(', ')'].contains(&c))
+            .map(|s: &str| SExpr::Atom(s.to_string())),
+    ))
     .parse(input)
 }
 
@@ -54,6 +59,12 @@ fn atom(input: &str) -> IResult<&str, SExpr> {
 fn test_atom() {
     assert_eq!(atom("x"), Ok(("", SExpr::Atom("x".to_string()))));
     assert_eq!(atom("x y"), Ok((" y", SExpr::Atom("x".to_string()))));
+
+    assert_eq!(atom("\"x y\""), Ok(("", SExpr::Atom("x y".to_string()))));
+    assert_eq!(
+        atom("\"x y\" z"),
+        Ok((" z", SExpr::Atom("x y".to_string())))
+    );
 }
 
 /// Parse a parenthesized list: '(' SExpr* ')'
