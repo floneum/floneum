@@ -1,13 +1,13 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, OnceLock, RwLock},
+    sync::{Arc, OnceLock},
 };
 
 use kalosm::language::*;
 use kalosm_llama::{EvaluationTrie, LlamaModel};
 use kalosm_sample::{
-    ArcParser, CreateParserState, LazyParser, LiteralParser, Parse, Parser, ParserExt,
-    SendCreateParserState, SequenceParser,
+    ArcParser, LazyParser, LiteralParser, Parser, ParserExt,
+    SendCreateParserState,
 };
 use std::io::Write;
 
@@ -247,7 +247,7 @@ impl TermMap {
 
     fn parser(&self, expr: &SExpr) -> ArcParser<SExpr> {
         match expr {
-            SExpr::Atom(atom) => self.parser_for_term(&*atom).unwrap_or_else(|| {
+            SExpr::Atom(atom) => self.parser_for_term(atom).unwrap_or_else(|| {
                 let atom = atom.clone();
                 LiteralParser::new(atom.clone())
                     .map_output(move |_| SExpr::Atom(atom.clone()))
@@ -331,8 +331,8 @@ fn parse_any_of_non_empty_list<P: SendCreateParserState + 'static>(
 
 #[tokio::main]
 async fn main() {
-    let text = include_str!("./grammar.sl");
-    let parsed = parse_sygus(text).unwrap();
+    let grammar_text = include_str!("./grammar.sl");
+    let parsed = parse_sygus(grammar_text).unwrap();
     println!("parsed: {:#?}", parsed);
     let synth_fun = parsed
         .into_iter()
@@ -352,7 +352,7 @@ async fn main() {
     let sampler = GenerationParameters::new();
 
     let mut llm = LlamaModel::from_builder(
-        Llama::builder().with_source(LlamaSource::qwen_2_5_0_5b_instruct()),
+        Llama::builder().with_source(LlamaSource::qwen_2_5_3b_instruct()),
         ModelLoadingProgress::multi_bar_loading_indicator(),
     )
     .await
@@ -360,11 +360,11 @@ async fn main() {
 
     tokio::task::spawn_blocking(move || {
            let mut trie = EvaluationTrie::new();
-             let mut last_entropy = 0.0;
-             let task = r#"Write code for the maximum length of the two strings "hello" and "world". Functions available are: (max2 int int), and (str.len string)."#;
+            let mut last_entropy = 0.0;
+            let task = grammar_text;
            for generation in 0.. {
                 let mut session = llm.new_session();
-                let prompt = format!("<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n<|im_start|>user\n{task}<|im_end|>\n<|im_start|>assistant\nHere is the code:\n");
+                let prompt = format!("<|im_start|>system\nYou are a programmer tasked with finding the solutions to the sygus benchmark set. You create programs such that the constraints are satisfied.<|im_end|>\n<|im_start|>user\n{task}<|im_end|>\n<|im_start|>assistant\nHere is the code:\n");
 
                 let output = llm.generate_structured_with_trie(
                     &mut session,

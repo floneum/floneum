@@ -141,7 +141,8 @@ impl LlamaModel {
             None => None,
         };
         let sampler = std::sync::Arc::new(std::sync::Mutex::new(sampler));
-        let result = generate_structured(
+        
+        generate_structured(
             text,
             self,
             &mut session,
@@ -152,8 +153,7 @@ impl LlamaModel {
             Some(64),
             seed,
             trie,
-        );
-        result
+        )
     }
 }
 

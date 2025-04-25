@@ -308,7 +308,7 @@ pub(crate) fn generate_structured<P: Parser>(
                         }
 
                         // If the token is not in the grammar, reject the token
-                        if parser.parse(&parser_state, decoded.as_bytes()).is_err() {
+                        if parser.parse(parser_state, decoded.as_bytes()).is_err() {
                             return false;
                         }
 
@@ -437,6 +437,12 @@ pub struct EvaluationTrie {
     nodes: Vec<EvaluationNode>,
 }
 
+impl Default for EvaluationTrie {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EvaluationTrie {
     pub fn new() -> Self {
         Self {
@@ -534,7 +540,7 @@ impl EvaluationTrie {
             .map(|child| self.estimated_probability(*child))
             .sum::<f32>();
         let result = initial_estimate * sum_probability_of_children;
-        assert!(result >= 0.0 && result <= 1.0);
+        assert!((0.0..=1.0).contains(&result));
         result
     }
 
