@@ -447,7 +447,7 @@ impl Whisper {
         attention_heads: Option<&'static [[usize; 2]]>,
         filter_width: NonZeroUsize,
         n_frames: usize,
-        n_start_tokens: usize,
+        mask: Vec<Vec<bool>>,
         attention_output: &[TensorCache],
     ) -> Result<Vec<Vec<f32>>> {
         let Some(attention_heads) = attention_heads else {
@@ -458,7 +458,7 @@ impl Whisper {
 
         let mut attention_output_tensor = Vec::new();
         for attn in attention_output {
-            attention_output_tensor.push(attn.all_data().clone().unwrap());
+            attention_output_tensor.push(attn.current_data()?.clone().unwrap());
         }
 
         extract_timestamps(
@@ -466,7 +466,7 @@ impl Whisper {
             &attention_output_tensor,
             filter_width,
             n_frames,
-            n_start_tokens,
+            mask,
         )
     }
 }

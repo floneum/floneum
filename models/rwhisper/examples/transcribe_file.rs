@@ -1,22 +1,23 @@
 use kalosm::sound::*;
 use rodio::Decoder;
-use std::fs::File;
-use std::io::BufReader;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    tracing_subscriber::fmt::init();
+    // tracing_subscriber::fmt::init();
 
     // Create a new small whisper model
     let model = WhisperBuilder::default()
-        .with_source(WhisperSource::QuantizedLargeV3Turbo)
+        .with_source(WhisperSource::QuantizedTinyEn)
         .build()
         .await?;
 
     // Load audio from a file
-    let file = BufReader::new(File::open("./models/rwhisper/examples/samples_jfk.wav").unwrap());
-    // Decode that sound file into a source
-    let audio = Decoder::new(file).unwrap();
+    let contents = std::fs::read("./models/rwhisper/examples/samples_jfk.wav").unwrap();
+    let audio = Decoder::new(std::io::Cursor::new(contents.clone())).unwrap();
+
+    let (_stream, stream_handle) = rodio::OutputStream::try_default()?;
+    let sink = rodio::Sink::try_new(&stream_handle).unwrap();
+    let rate = audio.sample_rate() as f32;
 
     // Transcribe the source audio into text
     let mut text = model.transcribe(audio).timestamped();
@@ -27,6 +28,18 @@ async fn main() -> Result<(), anyhow::Error> {
             let timestamp = chunk.timestamp().unwrap();
             println!("{:0.2}..{:0.2}", timestamp.start, timestamp.end);
             println!("{chunk}");
+            // Play the audio chunk
+            if let Some(timestamp) = chunk.timestamp() {
+                let start = timestamp.start;
+                let end = timestamp.end;
+                let start = (start * rate) as usize;
+                let end = (end * rate) as usize;
+                let audio = Decoder::new(std::io::Cursor::new(contents.clone())).unwrap();
+                let audio_chunk = audio.skip(start).take(end - start).collect::<Vec<_>>();
+                let audio_source = rodio::buffer::SamplesBuffer::new(1, rate as u32, audio_chunk);
+                sink.append(audio_source);
+                sink.sleep_until_end();
+            }
         }
     }
 
