@@ -98,9 +98,14 @@ impl TensorCache {
         &mut self.cache
     }
 
-    /// Get the current tensor in the cache.
+    /// Get the all tensor data in the cache.
     pub fn all_data(&self) -> &Option<Tensor> {
         self.cache.all_data()
+    }
+
+    /// Get the current data in the cache.
+    pub fn current_data(&self) -> Result<Option<Tensor>, candle_core::Error> {
+        self.cache.current_data()
     }
 
     /// Reset the cache.

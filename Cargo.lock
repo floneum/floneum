@@ -6716,6 +6716,7 @@ dependencies = [
  "kalosm-model-types",
  "rand 0.8.5",
  "rayon",
+ "reqwest 0.12.15",
  "rodio",
  "serde",
  "serde_json",
