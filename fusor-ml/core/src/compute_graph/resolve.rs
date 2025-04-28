@@ -1,8 +1,11 @@
-
 use wgpu::CommandEncoder;
 
 use crate::{
-    dequantize::UntypedDequantize, element_wise, index_select::UntypedIndexSelectKernel, matmul::UntypedMatMul, quantized::matmul::UntypedQMatMul, resize::UntypedResizeKernel, slice_assign::UntypedSliceAssignKernel, tensor::TensorData, visit_tiled::MaybeQData, ElementWiseFunction, QueryItem, UntypedElementWiseKernel, UntypedPairWiseKernel, UntypedReduceKernel
+    ElementWiseFunction, QueryItem, UntypedElementWiseKernel, UntypedPairWiseKernel,
+    UntypedReduceKernel, dequantize::UntypedDequantize, element_wise,
+    index_select::UntypedIndexSelectKernel, matmul::UntypedMatMul,
+    quantized::matmul::UntypedQMatMul, resize::UntypedResizeKernel,
+    slice_assign::UntypedSliceAssignKernel, tensor::TensorData, visit_tiled::MaybeQData,
 };
 
 use super::{
@@ -39,7 +42,12 @@ impl<'a> Resolver<'a> {
         key: AnyComputeKey,
         with_query: impl FnOnce(&mut Self, Option<&QueryItem>) -> O,
     ) -> O {
-        let query = self.graph.device.query().as_ref().map(|q| q.compute_timestamp_writes());
+        let query = self
+            .graph
+            .device
+            .query()
+            .as_ref()
+            .map(|q| q.compute_timestamp_writes());
         let result = with_query(self, query.as_ref());
         if let Some(query_item) = query {
             self.graph.timing_information.insert(key, query_item);
@@ -155,16 +163,16 @@ impl<'a> Resolver<'a> {
         }
         // Otherwise, just run the element wise kernel
         let Some(input) = self.graph.cached_results.get(&input).cloned() else {
-            self.queue.push_back(input.into());
+            self.queue.push_back(input);
             return None;
         };
         let kernel = UntypedElementWiseKernel::new(functions, input.datatype());
-        
+
         let result = self.with_query(key.into(), |resolver, query| {
             kernel.run_with_query(input.into(), query, &mut *resolver.command_encoder)
         });
 
-        Some(result) 
+        Some(result)
     }
 
     fn resolve_pair_wise(&mut self, key: PairWiseComputeNodeKey) -> Option<TensorData> {
@@ -207,7 +215,7 @@ impl<'a> Resolver<'a> {
                 .into()
         } else {
             let Some(first) = self.graph.cached_results.get(&first_input) else {
-                self.queue.push_back(first_input.into());
+                self.queue.push_back(first_input);
                 return None;
             };
             first.clone().into()
@@ -223,7 +231,7 @@ impl<'a> Resolver<'a> {
                 .into()
         } else {
             let Some(second) = self.graph.cached_results.get(&second_input) else {
-                self.queue.push_back(second_input.into());
+                self.queue.push_back(second_input);
                 return None;
             };
             second.clone().into()
@@ -236,7 +244,7 @@ impl<'a> Resolver<'a> {
         let pre_element_wise_output = first_pre.out_datatype();
         kernel.set_pre_element_wise([first_pre, second_pre]);
         kernel.set_post_element_wise(UntypedElementWiseKernel::new(then, pre_element_wise_output));
-        
+
         let result = self.with_query(key.into(), |resolver, query| {
             kernel.run_with_query(first, second, query, &mut *resolver.command_encoder)
         });
@@ -273,18 +281,16 @@ impl<'a> Resolver<'a> {
         };
 
         let Some(first) = self.graph.cached_results.get(&first).cloned() else {
-            self.queue.push_back(first.into());
+            self.queue.push_back(first);
             return None;
         };
         let Some(second) = self.graph.cached_results.get(&second).cloned() else {
-            self.queue.push_back(second.into());
+            self.queue.push_back(second);
             return None;
         };
         let mut kernel = UntypedMatMul::new(first.datatype(), first.layout().rank() as u32);
-        let first_pre =
-            UntypedElementWiseKernel::new(first_pre_element_wise, first.datatype());
-        let second_pre =
-            UntypedElementWiseKernel::new(second_pre_element_wise, second.datatype());
+        let first_pre = UntypedElementWiseKernel::new(first_pre_element_wise, first.datatype());
+        let second_pre = UntypedElementWiseKernel::new(second_pre_element_wise, second.datatype());
         let pre_element_wise_output = first_pre.out_datatype();
         kernel.set_pre_element_wise([first_pre, second_pre]);
         kernel.set_post_element_wise(UntypedElementWiseKernel::new(then, pre_element_wise_output));
@@ -301,11 +307,11 @@ impl<'a> Resolver<'a> {
         let matrix = operation.matrix.clone();
 
         let Some(input) = self.graph.cached_results.get(&input).cloned() else {
-            self.queue.push_back(input.into());
+            self.queue.push_back(input);
             return None;
         };
         let kernel = UntypedQMatMul::new(input.datatype(), matrix);
-        
+
         let result = self.with_query(key.into(), |resolver, query| {
             kernel.run_with_query(&input, query, &mut *resolver.command_encoder)
         });
@@ -361,7 +367,7 @@ impl<'a> Resolver<'a> {
         };
 
         let Some(input) = self.graph.cached_results.get(&input).cloned() else {
-            self.queue.push_back(input.into());
+            self.queue.push_back(input);
             return None;
         };
         let mut kernel = UntypedReduceKernel::new(function, input.datatype());
@@ -381,12 +387,12 @@ impl<'a> Resolver<'a> {
     fn resolve_slice(&mut self, key: MapLayoutComputeNodeKey) -> Option<TensorData> {
         let operation = self.graph.nodes.map_layout.get(&key).unwrap();
         let Some(input) = self.graph.cached_results.get(&operation.input) else {
-            self.queue.push_back(operation.input.into());
+            self.queue.push_back(operation.input);
             return None;
         };
         let operation = self.graph.nodes.map_layout.get(&key).unwrap();
 
-        let result = operation.run(&input);
+        let result = operation.run(input);
 
         Some(result)
     }
@@ -397,7 +403,7 @@ impl<'a> Resolver<'a> {
         let new_shape = operation.new_shape.clone();
         let fill_shape = operation.fill_shape.clone();
         let Some(input) = self.graph.cached_results.get(&input).cloned() else {
-            self.queue.push_back(input.into());
+            self.queue.push_back(input);
             return None;
         };
         let kernel = UntypedResizeKernel::new(&new_shape, &fill_shape);
@@ -415,11 +421,11 @@ impl<'a> Resolver<'a> {
         let value = operation.value;
         let kernel = UntypedSliceAssignKernel::new(&operation.slices);
         let Some(input) = self.graph.cached_results.get(&input).cloned() else {
-            self.queue.push_back(input.into());
+            self.queue.push_back(input);
             return None;
         };
         let Some(value) = self.graph.cached_results.get(&value).cloned() else {
-            self.queue.push_back(value.into());
+            self.queue.push_back(value);
             return None;
         };
 
@@ -464,11 +470,11 @@ impl<'a> Resolver<'a> {
         };
 
         let Some(input) = self.graph.cached_results.get(&input).cloned() else {
-            self.queue.push_back(input.into());
+            self.queue.push_back(input);
             return None;
         };
         let Some(indexes) = self.graph.cached_results.get(&indexes).cloned() else {
-            self.queue.push_back(indexes.into());
+            self.queue.push_back(indexes);
             return None;
         };
         let mut kernel =

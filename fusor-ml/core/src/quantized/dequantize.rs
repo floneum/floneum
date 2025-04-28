@@ -1,12 +1,12 @@
+use crate::QueryItem;
+use crate::mir::inputs::KernelInputValue;
 use crate::{
-    DataType, DataTypeEnum, Device, LazyTensorData, Tensor, TensorData,
-    TensorInfo, UntypedElementWiseKernel,
-    compute_graph::ComputeGraph,
-    kernel::{GenericKernel, KernelInputValue},
+    DataType, DataTypeEnum, Device, LazyTensorData, Tensor, TensorData, TensorInfo,
+    UntypedElementWiseKernel, compute_graph::ComputeGraph, mir::kernel::GenericKernel,
     padded_tensor_size,
 };
 use std::{fmt::Write, sync::OnceLock};
-use wgpu::CommandEncoder;use crate::QueryItem;
+use wgpu::CommandEncoder;
 
 use super::{QMatrix, dequantize_block};
 

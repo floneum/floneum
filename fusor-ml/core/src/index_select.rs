@@ -1,9 +1,10 @@
+use crate::QueryItem;
 use crate::{
     DataTypeEnum, TILE_SIZE, Tensor, TensorData, UntypedElementWiseKernel,
-    compute_graph::AnyComputeKey, kernel::GenericKernel, padded_tensor_size,
+    compute_graph::AnyComputeKey, mir::kernel::GenericKernel, padded_tensor_size,
 };
 use std::{fmt::Write, sync::OnceLock};
-use wgpu::CommandEncoder;use crate::QueryItem;
+use wgpu::CommandEncoder;
 
 #[derive(Debug)]
 pub(crate) struct IndexSelectOperation {
@@ -176,8 +177,7 @@ impl UntypedIndexSelectKernel {
             let kernel_text = self.build_tiled_map_kernel(&mut kernel);
             kernel.set_body(kernel_text);
             let blocksize = self.blocksize();
-            let workgroup_size =
-                std::array::from_fn(|i| if self.rank > i { blocksize } else { 1 });
+            let workgroup_size = std::array::from_fn(|i| if self.rank > i { blocksize } else { 1 });
             kernel.set_workgroup_size(workgroup_size);
             kernel
         };
@@ -324,7 +324,8 @@ async fn test_index_select_large_dim_0() {
     const SIZE_0: usize = 100;
     let mut indexes_array: [u32; SIZE_0] = std::array::from_fn(|i| i as u32);
     indexes_array.shuffle(&mut rand::rng());
-    let data: [[f32; SIZE_1]; SIZE_0] = std::array::from_fn(|i| std::array::from_fn(|j| (i * SIZE_1 + j) as f32));
+    let data: [[f32; SIZE_1]; SIZE_0] =
+        std::array::from_fn(|i| std::array::from_fn(|j| (i * SIZE_1 + j) as f32));
     let tensor = Tensor::new(&device, &data);
     let indexes = Tensor::new(&device, &indexes_array);
     let tensor = tensor.index_select(0, &indexes);
@@ -358,7 +359,6 @@ async fn test_index_select_dim_1() {
     assert_eq!(as_slice, expected_as_slice);
 }
 
-
 #[cfg(test)]
 #[tokio::test]
 async fn test_index_select_large_dim_1() {
@@ -372,7 +372,8 @@ async fn test_index_select_large_dim_1() {
     const SIZE_0: usize = 100;
     let mut indexes_array: [u32; SIZE_1] = std::array::from_fn(|i| i as u32);
     indexes_array.shuffle(&mut rand::rng());
-    let data: [[f32; SIZE_1]; SIZE_0] = std::array::from_fn(|i| std::array::from_fn(|j| (i * SIZE_1 + j) as f32));
+    let data: [[f32; SIZE_1]; SIZE_0] =
+        std::array::from_fn(|i| std::array::from_fn(|j| (i * SIZE_1 + j) as f32));
     let tensor = Tensor::new(&device, &data);
     let indexes = Tensor::new(&device, &indexes_array);
     let tensor = tensor.index_select(1, &indexes);

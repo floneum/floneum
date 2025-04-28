@@ -15,7 +15,11 @@ mod visit;
 mod visualize;
 
 use crate::{
-    dequantize::DequantizeOperation, index_select::IndexSelectOperation, map_layout::MapLayoutOperation, quantized::matmul::QMatMulOperation, resize::ResizeOperation, slice_assign::SliceAssignOperation, tensor::TensorData, DataTypeEnum, Device, ElementWiseOperation, MatMulOperation, PairWiseOperation, QMatrix, QueryItem, QueryResults, ReduceOperation
+    DataTypeEnum, Device, ElementWiseOperation, MatMulOperation, PairWiseOperation, QMatrix,
+    QueryItem, QueryResults, ReduceOperation, dequantize::DequantizeOperation,
+    index_select::IndexSelectOperation, map_layout::MapLayoutOperation,
+    quantized::matmul::QMatMulOperation, resize::ResizeOperation,
+    slice_assign::SliceAssignOperation, tensor::TensorData,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]

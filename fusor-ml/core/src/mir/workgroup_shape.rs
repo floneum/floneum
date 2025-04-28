@@ -1,9 +1,9 @@
 // The shape of the workgroup. [x, y, z] where their product is <= 256.
 //
-// Kernels can be fused if their workgroup shape can be cohered. Coercion can happen if
+// Kernels can be fused if their workgroup shape can be coerced. Coercion can happen if
 // the biggest linearized workgroup shape is a multiple of all smaller workgroup shapes.
 
-use crate::kernel::GenericKernel;
+use crate::mir::kernel::GenericKernel;
 
 struct RealWorkgroupShape {
     size: WorkgroupShape,

@@ -92,7 +92,8 @@ impl PerformanceQueries {
         } else {
             0
         };
-        let generation = self.generation
+        let generation = self
+            .generation
             .fetch_add(add_generation, std::sync::atomic::Ordering::SeqCst);
 
         QueryItem {
@@ -136,7 +137,12 @@ impl QueryItem {
     }
 
     pub async fn wait_for_results(&self) -> QueryResults {
-        assert_eq!(self.generation, self.in_query.generation.load(std::sync::atomic::Ordering::SeqCst));
+        assert_eq!(
+            self.generation,
+            self.in_query
+                .generation
+                .load(std::sync::atomic::Ordering::SeqCst)
+        );
         let (sender, receiver) = oneshot::channel();
         let sliced = self.in_query.destination_buffer.slice(
             (self.index as u64) * size_of::<u64>() as u64

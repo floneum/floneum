@@ -6,14 +6,15 @@ use std::{
 
 use wgpu::CommandEncoder;
 
+use crate::QueryItem;
 use crate::{
     ElementWiseFunction, Tensor, UntypedElementWiseKernel,
     compute_graph::AnyComputeKey,
-    kernel::{Function, GenericKernel},
     layout::TILE_SIZE,
+    mir::{function::Function, kernel::GenericKernel},
     tensor::{DataType, DataTypeEnum, TensorData},
     visit_tiled::{MaybeQData, VisitTiledKernel},
-};use crate::QueryItem;
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct PairWiseOperation {
@@ -156,8 +157,7 @@ impl UntypedPairWiseKernel {
         } else {
             self.sparse_kernel.get_or_init(create_kernel)
         };
-        let mut tensors: Vec<crate::visit_tiled::MaybeQData> =
-            vec![first.clone(), second];
+        let mut tensors: Vec<crate::visit_tiled::MaybeQData> = vec![first.clone(), second];
         if requires_new_tensor {
             let output_tensor = TensorData::new_for_shape(
                 first.device(),

@@ -2,10 +2,11 @@ use std::{fmt::Write, sync::OnceLock};
 
 use wgpu::CommandEncoder;
 
+use crate::QueryItem;
 use crate::{
     DataTypeEnum, TILE_SIZE, Tensor, TensorData, compute_graph::AnyComputeKey,
-    kernel::GenericKernel,
-};use crate::QueryItem;
+    mir::kernel::GenericKernel,
+};
 
 const BLOCKSIZE: u32 = 256;
 

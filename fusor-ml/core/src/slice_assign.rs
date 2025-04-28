@@ -2,10 +2,10 @@ use std::{ops::Range, sync::OnceLock};
 
 use wgpu::CommandEncoder;
 
+use crate::QueryItem;
 use crate::{
-    TILE_SIZE, Tensor, TensorData, compute_graph::AnyComputeKey,
-    visit_tiled::VisitTiledKernel,
-};use crate::QueryItem;
+    TILE_SIZE, Tensor, TensorData, compute_graph::AnyComputeKey, visit_tiled::VisitTiledKernel,
+};
 
 #[derive(Debug)]
 pub(crate) struct SliceAssignOperation {

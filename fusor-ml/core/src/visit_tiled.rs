@@ -3,10 +3,12 @@ use std::fmt::{Display, Write};
 use fusor_gguf::GgmlType;
 use wgpu::CommandEncoder;
 
+use crate::QueryItem;
 use crate::{
     DataTypeEnum, Layout, QMatrix, TensorData, dequantize_block,
-    kernel::{GenericKernel, KernelInputValue, QMatrixInput, TensorInput},
-};use crate::QueryItem;
+    mir::inputs::{KernelInputValue, QMatrixInput, TensorInput},
+    mir::kernel::GenericKernel,
+};
 
 #[derive(Clone)]
 pub(crate) enum MaybeQData {

@@ -4,13 +4,14 @@ use std::{
     sync::OnceLock,
 };
 
-use wgpu::CommandEncoder;use crate::QueryItem;
+use crate::QueryItem;
+use wgpu::CommandEncoder;
 
 use crate::{
     Tensor,
     compute_graph::AnyComputeKey,
-    kernel::{Function, GenericKernel},
     layout::TILE_SIZE,
+    mir::{function::Function, kernel::GenericKernel},
     padded_tensor_size,
     tensor::{DataType, DataTypeEnum, TensorData},
     visit_tiled::{MaybeQData, VisitTiledKernel},

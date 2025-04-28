@@ -1,12 +1,10 @@
+use crate::QueryItem;
 use crate::{
-    DataType, DataTypeEnum, Device, Tensor, TensorData,
-    compute_graph::AnyComputeKey,
-    kernel::{GenericKernel, KernelInputValue},
-    padded_tensor_size,
+    DataType, DataTypeEnum, Device, Tensor, TensorData, compute_graph::AnyComputeKey,
+    mir::inputs::KernelInputValue, mir::kernel::GenericKernel, padded_tensor_size,
 };
 use std::{fmt::Write, sync::OnceLock};
 use wgpu::CommandEncoder;
-use crate::QueryItem;
 
 use super::{QMatrix, dequantize_block};
 
@@ -273,11 +271,11 @@ impl UntypedQMatMul {
                 "chunk".to_string(),
                 DataTypeEnum::F32,
                 |i, data, code| {
-                    write!(
+                    write!(code, "acc = fma({input_a}[").unwrap();
+                    input_a.strided_index(
                         code,
-                        "acc = fma({input_a}["
-                    ).unwrap();
-                    input_a.strided_index(code, ["y".to_string(), format!("k * {elements_per_block} + {i}")]);
+                        ["y".to_string(), format!("k * {elements_per_block} + {i}")],
+                    );
                     write!(code, "], {data}, acc);").unwrap();
                 },
             );

@@ -8,10 +8,10 @@ use wgpu::CommandEncoder;
 use crate::{
     Layout, Tensor, UntypedElementWiseKernel,
     compute_graph::AnyComputeKey,
-    kernel::{Function, GenericKernel, KernelGlobalSpace, KernelInputValue},
+    mir::{function::Function, inputs::KernelInputValue, kernel::GenericKernel},
     tensor::{DataType, DataTypeEnum, TensorData, padded_tensor_size},
 };
-use crate::QueryItem;
+use crate::{QueryItem, mir::globals::KernelGlobalSpace};
 
 #[derive(Debug, Clone)]
 pub(crate) struct ReduceOperation {

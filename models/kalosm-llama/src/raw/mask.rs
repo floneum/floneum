@@ -58,9 +58,9 @@ impl AttentionMask {
     pub fn forward(&self, attn_weights: &mut Tensor<3, f32>) {
         let shape = attn_weights.shape();
         let attention_mask = self.mask.broadcast(*shape);
-        let on_true = self.on_true.get_or_init(|| {
-            Tensor::splat(attn_weights.device(), -3.4028235e35, *shape)
-        });
+        let on_true = self
+            .on_true
+            .get_or_init(|| Tensor::splat(attn_weights.device(), -3.4028235e35, *shape));
         *attn_weights = attention_mask.where_cond(on_true.clone(), attn_weights.clone());
     }
 }

@@ -3,10 +3,11 @@ use std::{fmt::Write, sync::OnceLock};
 use wgpu::CommandEncoder;
 
 use crate::QueryItem;
+use crate::mir::globals::KernelGlobalSpace;
 use crate::{
     Device, Tensor, UntypedElementWiseKernel,
     compute_graph::AnyComputeKey,
-    kernel::{Function, GenericKernel, KernelGlobalSpace},
+    mir::{function::Function, kernel::GenericKernel},
     tensor::{DataType, DataTypeEnum, TensorData, padded_tensor_size},
 };
 
@@ -78,10 +79,7 @@ impl UntypedMatMul {
         }
     }
 
-    pub(crate) fn set_pre_element_wise(
-        &mut self,
-        pre_element_wise: [UntypedElementWiseKernel; 2],
-    ) {
+    pub(crate) fn set_pre_element_wise(&mut self, pre_element_wise: [UntypedElementWiseKernel; 2]) {
         self.pre_element_wise = pre_element_wise;
     }
 
@@ -90,7 +88,11 @@ impl UntypedMatMul {
     }
 
     // 1000x1000 dense matmul time on M2 mac pro 1.4743 ms
-    fn compile(&self, input_a_datatype: DataTypeEnum, input_b_datatype: DataTypeEnum) -> &GenericKernel {
+    fn compile(
+        &self,
+        input_a_datatype: DataTypeEnum,
+        input_b_datatype: DataTypeEnum,
+    ) -> &GenericKernel {
         self.kernel.get_or_init(|| {
             // based on https://siboehm.com/articles/22/CUDA-MMM
             let mut generic_kernel = GenericKernel::new();
