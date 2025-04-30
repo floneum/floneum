@@ -1,3 +1,4 @@
+use super::assert_all_f32_not_nan;
 use super::rope::RopeCache;
 use super::silu::fast_cpu_silu;
 use candle_core::{quantized::QMatMul, Module, Tensor};
@@ -300,6 +301,9 @@ impl LlamaAttention {
                 start_pos,
             )?,
         };
+        assert_all_f32_not_nan(&query_states);
+        assert_all_f32_not_nan(&key_states);
+        assert_all_f32_not_nan(&value_states);
 
         let key_states = repeat_kv(key_states.clone(), num_key_value_groups)?;
         let value_states = repeat_kv(value_states, num_key_value_groups)?;
@@ -311,11 +315,7 @@ impl LlamaAttention {
 
         let scale = 1. / (head_dim as f64).sqrt();
 
-        let mut attn_output = if query_states.device().is_metal() && q_len == 1 {
-            // SDPA use fuzed softmax(qk^T*scale)v kernel on metal
-            candle_nn::ops::sdpa(&query_states, &key_states, &value_states, scale as f32, 1.)
-                .unwrap()
-        } else {
+        let mut attn_output = {
             let mut attn_weights = (query_states.matmul(&key_states.t()?)? * scale)?;
 
             if let Some(attention_mask) = attention_mask {
@@ -323,9 +323,11 @@ impl LlamaAttention {
             }
 
             attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights)?;
+            assert_all_f32_not_nan(&attn_weights);
 
             attn_weights.matmul(&value_states)?
         };
+        assert_all_f32_not_nan(&attn_output);
 
         if attn_output.dims() != [bsz, num_heads, q_len, head_dim] {
             return Err(candle_core::Error::Msg(format!(

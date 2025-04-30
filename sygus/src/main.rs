@@ -17,7 +17,7 @@ use nom::{
     character::complete::multispace1,
     combinator::map,
     multi::many0,
-    sequence::{self, delimited, preceded},
+    sequence::{delimited, preceded},
 };
 
 /// Skip zero-or-more comments (`;; …\n`) or whitespace
@@ -357,50 +357,103 @@ async fn main() {
         .unwrap();
 
     let parser = synth_fun.parser();
+    let parser = MaxLengthParser::new(
+        LiteralParser::new("(define-fun f ((firstname String) (lastname String)) String ")
+            .then(parser.clone()),
+        200,
+    );
 
     tracing_subscriber::fmt().init();
 
     let sampler = GenerationParameters::new();
 
     let mut llm = LlamaModel::from_builder(
-        Llama::builder().with_source(LlamaSource::qwen_2_5_3b_instruct()),
+        Llama::builder().with_source(LlamaSource::deepseek_r1_distill_qwen_1_5b()),
         ModelLoadingProgress::multi_bar_loading_indicator(),
     )
     .await
     .unwrap();
 
     tokio::task::spawn_blocking(move || {
-           let mut trie = EvaluationTrie::new();
-            let mut last_entropy = 0.0;
-            let task = grammar_text;
-           for generation in 0.. {
-                let mut session = llm.new_session();
-                let prompt = format!("<|im_start|>system\nYou are a programmer tasked with finding the solutions to the sygus benchmark set. You create programs such that the constraints are satisfied.<|im_end|>\n<|im_start|>user\n{task}<|im_end|>\n<|im_start|>assistant\nHere is the code:\n");
+        let mut trie = EvaluationTrie::new();
+        let mut last_entropy = 0.0;
+        let prompt = include_str!("prompt");
+        let task = grammar_text;
+        for generation in 0.. {
+            let mut session = llm.new_session();
+            // let prompt = format!("<|im_start|>system\n{prompt}<|im_end|>\n<|im_start|>user\nQuestion:\n{task}<|im_end|>\n<|im_start|>assistant\n");
+            let prompt =
+                format!("<｜begin▁of▁sentence｜>{prompt}<｜User｜>{task}<｜Assistant｜><think>\n");
 
-                let output = llm.generate_structured_with_trie(
+            let output = llm
+                .generate_structured_with_trie(
                     &mut session,
                     &prompt,
                     sampler.clone(),
-                    parser.clone(),
+                    StopOn::new("</think>").ignore_output_then(parser.clone()),
                     |token| {
                         print!("{}", token);
                         std::io::stdout().flush().unwrap();
                         Ok(())
                     },
                     &mut trie,
-                ).unwrap();
-                println!("\n\n");
+                )
+                .unwrap();
+            println!("\n\n");
 
-                println!("generation {generation}:\n{output:?}");
-                let shannon_entropy = trie.shannon_entropy();
-                let entropy_diff = last_entropy - shannon_entropy;
-                println!("entropy diff: {entropy_diff}");
-                if entropy_diff.abs() < 0.00001 {
-                    println!("looks like entropy is converging, stopping generation");
-                    break;
-                }
-                println!("shannon entropy: {shannon_entropy}");
-                last_entropy = shannon_entropy;
-           }
-       }).await.unwrap();
+            println!("generation {generation}:\n{output:?}");
+            let shannon_entropy = trie.shannon_entropy();
+            let entropy_diff = last_entropy - shannon_entropy;
+            println!("entropy diff: {entropy_diff}");
+            // if entropy_diff.abs() < 0.00001 {
+            //     println!("looks like entropy is converging, stopping generation");
+            //     break;
+            // }
+            println!("shannon entropy: {shannon_entropy}");
+            last_entropy = shannon_entropy;
+        }
+    })
+    .await
+    .unwrap();
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct MaxLengthParser<P: SendCreateParserState> {
+    parser: P,
+    max_length: usize,
+}
+
+impl<P: SendCreateParserState> MaxLengthParser<P> {
+    fn new(parser: P, max_length: usize) -> Self {
+        Self { parser, max_length }
+    }
+}
+
+impl<P: SendCreateParserState> Parser for MaxLengthParser<P> {
+    type Output = Either<P::Output, ()>;
+    type PartialState = (P::PartialState, usize);
+
+    fn parse<'a>(
+        &self,
+        state: &Self::PartialState,
+        input: &'a [u8],
+    ) -> ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>> {
+        let (partial_state, length) = state;
+        let new_length = length + input.len();
+        if new_length >= self.max_length {
+            return Ok(ParseStatus::Finished {
+                result: Either::Right(()),
+                remaining: input,
+            });
+        }
+        let new_state = self.parser.parse(partial_state, input)?;
+        let new_state = new_state.map_state(|s| (s, new_length));
+        Ok(new_state.map(Either::Left))
+    }
+}
+
+impl<P: SendCreateParserState> CreateParserState for MaxLengthParser<P> {
+    fn create_parser_state(&self) -> Self::PartialState {
+        (self.parser.create_parser_state(), 0)
+    }
 }

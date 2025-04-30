@@ -401,22 +401,31 @@ impl Model {
             let x = layer_in;
             let residual = &x;
             let x = layer.attention_norm.forward(&x)?;
+            assert_all_f32_not_nan(&x);
             let attn = layer.forward(
                 &x,
                 Some(&mask),
                 index_pos,
                 cache.as_mut().map(|c| &mut c.blocks[i]),
             )?;
+            assert_all_f32_not_nan(&attn);
             let x = (attn + residual)?;
+            assert_all_f32_not_nan(&x);
 
             // MLP
             let residual = &x;
             let x = layer.ffn_norm.forward(&x)?;
+            assert_all_f32_not_nan(&x);
 
             layer_in = (&layer.feed_forward_variant.forward(&x)? + residual)?;
+            assert_all_f32_not_nan(&layer_in);
         }
         let x = self.norm.forward(&layer_in)?;
         let x = x.i((.., seq_len - 1, ..))?;
         self.output.forward(&x)
     }
+}
+
+pub(crate) fn assert_all_f32_not_nan(tensor: &Tensor) {
+    debug_assert!(tensor.flatten_all().unwrap().to_vec1().unwrap().iter().all(|v: &f32| !v.is_nan()));
 }
