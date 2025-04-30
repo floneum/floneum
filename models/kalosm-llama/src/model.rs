@@ -353,7 +353,7 @@ impl LlamaModel {
         })
     }
 
-    pub(crate) fn _infer(
+    pub fn _infer(
         &mut self,
         settings: InferenceSettings,
         mut on_token: Box<dyn FnMut(String) -> Result<(), LlamaModelError> + Send + Sync>,

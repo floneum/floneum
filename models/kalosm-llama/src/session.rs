@@ -81,4 +81,12 @@ impl LlamaSession {
             cache: Arc::new(RwLock::new(LlamaCache::from_tensor_map(map)?)),
         })
     }
+
+    pub fn deep_clone(&self) -> Self {
+        let cache = self.cache.read().unwrap();
+        let new_cache = cache.clone();
+        Self {
+            cache: Arc::new(RwLock::new(new_cache)),
+        }
+    }
 }

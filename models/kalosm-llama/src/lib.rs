@@ -290,7 +290,7 @@ impl LlamaBuilder {
 }
 
 #[derive(Debug)]
-pub(crate) struct InferenceSettings {
+pub struct InferenceSettings {
     prompt: String,
 
     /// The token to stop on.

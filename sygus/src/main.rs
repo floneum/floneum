@@ -1,13 +1,15 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, OnceLock},
+    sync::{Arc, Mutex, OnceLock},
+    u32,
 };
 
 use kalosm::language::*;
-use kalosm_llama::{EvaluationTrie, LlamaModel};
+use kalosm_llama::{EvaluationTrie, InferenceSettings, LlamaModel};
 use kalosm_sample::{
     ArcParser, LazyParser, LiteralParser, Parser, ParserExt, SendCreateParserState,
 };
+use tokio::sync::oneshot;
 use std::io::Write;
 
 use nom::{
@@ -368,7 +370,7 @@ async fn main() {
     let sampler = GenerationParameters::new();
 
     let mut llm = LlamaModel::from_builder(
-        Llama::builder().with_source(LlamaSource::deepseek_r1_distill_qwen_1_5b()),
+        Llama::builder().with_source(LlamaSource::deepseek_r1_distill_qwen_7b()),
         ModelLoadingProgress::multi_bar_loading_indicator(),
     )
     .await
@@ -379,26 +381,49 @@ async fn main() {
         let mut last_entropy = 0.0;
         let prompt = include_str!("prompt");
         let task = grammar_text;
-        for generation in 0.. {
-            let mut session = llm.new_session();
-            // let prompt = format!("<|im_start|>system\n{prompt}<|im_end|>\n<|im_start|>user\nQuestion:\n{task}<|im_end|>\n<|im_start|>assistant\n");
-            let prompt =
-                format!("<｜begin▁of▁sentence｜>{prompt}<｜User｜>{task}<｜Assistant｜><think>\n");
+        let session = llm.new_session();
+        // let prompt = format!("<|im_start|>system\n{prompt}<|im_end|>\n<|im_start|>user\nQuestion:\n{task}<|im_end|>\n<|im_start|>assistant\n");
+        let prompt =
+            format!("<｜begin▁of▁sentence｜>{prompt}<｜User｜>Solve this problem:\n{task}<｜Assistant｜><think>\n");
 
-            let output = llm
-                .generate_structured_with_trie(
-                    &mut session,
-                    &prompt,
-                    sampler.clone(),
-                    StopOn::new("</think>").ignore_output_then(parser.clone()),
-                    |token| {
-                        print!("{}", token);
-                        std::io::stdout().flush().unwrap();
-                        Ok(())
-                    },
-                    &mut trie,
-                )
-                .unwrap();
+        let (finished, _keep) = oneshot::channel();
+        llm._infer(
+            InferenceSettings::new(
+                &prompt,
+                session.clone(),
+                Arc::new(Mutex::new(sampler.clone())),
+                u32::MAX,
+                Some("</think>".to_string()),
+                None,
+            ),
+            Box::new(|token| {
+                print!("{}", token);
+                std::io::stdout().flush().unwrap();
+                Ok(())
+            }),
+            &finished
+        )
+        .unwrap();
+        for generation in 0.. {
+            let mut session = session.deep_clone();
+            let output = match llm.generate_structured_with_trie(
+                &mut session,
+                &prompt,
+                sampler.clone(),
+                parser.clone(),
+                |token| {
+                    print!("{}", token);
+                    std::io::stdout().flush().unwrap();
+                    Ok(())
+                },
+                &mut trie,
+            ) {
+                Ok(output) => output,
+                Err(e) => {
+                    println!("Error: {e}");
+                    continue;
+                }
+            };
             println!("\n\n");
 
             println!("generation {generation}:\n{output:?}");
@@ -430,7 +455,7 @@ impl<P: SendCreateParserState> MaxLengthParser<P> {
 }
 
 impl<P: SendCreateParserState> Parser for MaxLengthParser<P> {
-    type Output = Either<P::Output, ()>;
+    type Output = P::Output;
     type PartialState = (P::PartialState, usize);
 
     fn parse<'a>(
@@ -441,14 +466,11 @@ impl<P: SendCreateParserState> Parser for MaxLengthParser<P> {
         let (partial_state, length) = state;
         let new_length = length + input.len();
         if new_length >= self.max_length {
-            return Ok(ParseStatus::Finished {
-                result: Either::Right(()),
-                remaining: input,
-            });
+            return Err(ParserError::msg("Max length exceeded"));
         }
         let new_state = self.parser.parse(partial_state, input)?;
         let new_state = new_state.map_state(|s| (s, new_length));
-        Ok(new_state.map(Either::Left))
+        Ok(new_state)
     }
 }
 
