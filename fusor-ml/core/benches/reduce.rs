@@ -2,6 +2,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use candle_core::backend::BackendDevice;
 use criterion::BatchSize;
 use fusor_core::Sum;
 use fusor_core::{Device, Tensor};
@@ -59,6 +60,64 @@ fn bench_sum_reduce(c: &mut Criterion) {
                 },
             );
         }
+    }
+    
+    {
+        let candle_device = candle_core::Device::Cpu;
+        bench_candle_with_device(
+            candle_device,
+            "sum-candle-cpu",
+            c,
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let candle_device = candle_core::Device::Metal(candle_core::MetalDevice::new(0).unwrap());
+        bench_candle_with_device(candle_device, "sum-candle-metal", c);
+    }
+}
+
+fn bench_candle_with_device(candle_device: candle_core::Device, name: &str, c: &mut Criterion) {
+    let mut group = c.benchmark_group(name);
+    let group = group.sample_size(20);
+    for size in SIZES {
+        let candle_device = candle_device.clone();
+        group.bench_with_input(
+            BenchmarkId::new(name, size),
+            &size,
+            move |b, &s| {
+                b.to_async(FuturesExecutor).iter_batched(
+                    {
+                        let candle_device = candle_device.clone();
+                        let random_data: Vec<Vec<f32>> = (0..size)
+                            .map(|_| (0..size).map(|_| 1.).collect::<Vec<f32>>())
+                            .collect();
+                        move || {
+                            candle_core::Tensor::from_iter(
+                                random_data.iter().flat_map(|x| x.iter().copied()),
+                                &candle_device,
+                            )
+                            .unwrap()
+                            .reshape(&[size, size])
+                            .unwrap()
+                        }
+                    },
+                    {
+                        let candle_device = candle_device.clone();
+                        move |tensor| {
+                            let candle_device = candle_device.clone();
+                            async move {
+                                let output = tensor.sum(0).unwrap();
+                                candle_device.synchronize().unwrap();
+                                output
+                            }
+                        }
+                    },
+                    BatchSize::LargeInput,
+                );
+            },
+        );
     }
 }
 
