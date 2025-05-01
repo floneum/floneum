@@ -1,4 +1,3 @@
-use crate::QueryItem;
 use crate::mir::inputs::KernelInputValue;
 use crate::{
     DataType, DataTypeEnum, Device, LazyTensorData, Tensor, TensorData, TensorInfo,
@@ -165,12 +164,7 @@ impl UntypedDequantize {
         })
     }
 
-    pub fn run_with_query(
-        &self,
-        device: &crate::Device,
-        query: Option<&QueryItem>,
-        command_encoder: &mut CommandEncoder,
-    ) -> TensorData {
+    pub fn run(&self, device: &crate::Device, command_encoder: &mut CommandEncoder) -> TensorData {
         let shape = &self.matrix.shape;
         let output_buf = device.wgpu_device().create_buffer(&wgpu::BufferDescriptor {
             label: None,
@@ -181,14 +175,14 @@ impl UntypedDequantize {
             mapped_at_creation: false,
         });
         let output_tensor = TensorData::new_from_buffer(device, output_buf, shape, self.datatype);
-        self.run_with_query_and_out_tensor(device, query, &output_tensor, command_encoder);
+        self.run_and_out_tensor(device, &output_tensor, command_encoder);
         output_tensor
     }
 
-    pub fn run_with_query_and_out_tensor(
+    pub fn run_and_out_tensor(
         &self,
         device: &Device,
-        query: Option<&QueryItem>,
+
         output_tensor: &TensorData,
         command_encoder: &mut CommandEncoder,
     ) {
@@ -198,13 +192,12 @@ impl UntypedDequantize {
 
         let workgroup_dispatch_size = self.work_group_dispatch();
 
-        module.run_with_query(
+        module.run(
             device,
             [
                 KernelInputValue::from(self.matrix.clone()),
                 output_tensor.clone().into(),
             ],
-            query,
             command_encoder,
             workgroup_dispatch_size,
         );

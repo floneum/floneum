@@ -2,7 +2,6 @@ use std::{ops::Range, sync::OnceLock};
 
 use wgpu::CommandEncoder;
 
-use crate::QueryItem;
 use crate::{
     TILE_SIZE, Tensor, TensorData, compute_graph::AnyComputeKey, visit_tiled::VisitTiledKernel,
 };
@@ -37,11 +36,11 @@ impl UntypedSliceAssignKernel {
         }
     }
 
-    pub fn run_with_query(
+    pub fn run(
         &self,
         target: &TensorData,
         value: &TensorData,
-        query: Option<&QueryItem>,
+
         command_encoder: &mut CommandEncoder,
     ) -> TensorData {
         let rank = target.layout().rank();
@@ -68,7 +67,7 @@ impl UntypedSliceAssignKernel {
         let sliced = target.slice(&self.slices);
         assert_eq!(sliced.layout().shape(), value.layout().shape());
         let tensors = vec![sliced.into(), value.into()];
-        kernel.run_with_query(tensors, query, command_encoder);
+        kernel.run(tensors, command_encoder);
         target.clone()
     }
 }

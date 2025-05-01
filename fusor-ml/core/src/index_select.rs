@@ -1,4 +1,3 @@
-use crate::QueryItem;
 use crate::{
     DataTypeEnum, TILE_SIZE, Tensor, TensorData, UntypedElementWiseKernel,
     compute_graph::AnyComputeKey, mir::kernel::GenericKernel, padded_tensor_size,
@@ -90,11 +89,11 @@ impl UntypedIndexSelectKernel {
         self
     }
 
-    pub fn run_with_query(
+    pub fn run(
         &self,
         value: &TensorData,
         indexes: &TensorData,
-        query: Option<&QueryItem>,
+
         command_encoder: &mut CommandEncoder,
     ) -> TensorData {
         let device = value.device();
@@ -113,15 +112,15 @@ impl UntypedIndexSelectKernel {
         });
         let output_tensor =
             TensorData::new_from_buffer(device, output_buf, &output_shape, value.datatype());
-        self.run_with_query_and_out_tensor(value, indexes, query, command_encoder, &output_tensor);
+        self.run_and_out_tensor(value, indexes, command_encoder, &output_tensor);
         output_tensor
     }
 
-    pub fn run_with_query_and_out_tensor(
+    pub fn run_and_out_tensor(
         &self,
         value: &TensorData,
         indexes: &TensorData,
-        query: Option<&QueryItem>,
+
         command_encoder: &mut CommandEncoder,
         output_tensor: &TensorData,
     ) {
@@ -162,10 +161,9 @@ impl UntypedIndexSelectKernel {
         };
 
         let device = value.device();
-        kernel.run_with_query(
+        kernel.run(
             device,
             tensors.iter().map(|x| (*x).clone()),
-            query,
             command_encoder,
             workgroup_dispatch_size,
         );

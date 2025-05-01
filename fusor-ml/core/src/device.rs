@@ -1,12 +1,24 @@
-use std::{borrow::Cow, sync::Arc};
+use std::{
+    borrow::Cow,
+    fmt::Debug,
+    ops::{Deref, DerefMut},
+    sync::Arc,
+};
 
-use crate::PerformanceQueries;
+use parking_lot::RwLock;
 
-#[derive(Debug)]
 struct DeviceInner {
     device: wgpu::Device,
     queue: wgpu::Queue,
-    query: Option<Arc<PerformanceQueries>>,
+}
+
+impl Debug for DeviceInner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DeviceInner")
+            .field("device", &self.device)
+            .field("queue", &self.queue)
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -20,22 +32,13 @@ impl Device {
         let adapter = instance.request_adapter(&Default::default()).await.unwrap();
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
-                required_features: wgpu::Features::SUBGROUP
-                    | wgpu::Features::TIMESTAMP_QUERY
-                    | wgpu::Features::SHADER_F16,
+                required_features: wgpu::Features::SUBGROUP | wgpu::Features::SHADER_F16,
                 ..Default::default()
             })
             .await?;
 
-        let timing_information = cfg!(feature = "timing_information");
-        let query = timing_information.then(|| Arc::new(PerformanceQueries::new(&device, &queue)));
-
         let device = Self {
-            inner: Arc::new(DeviceInner {
-                device,
-                queue,
-                query,
-            }),
+            inner: Arc::new(DeviceInner { device, queue }),
         };
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -72,9 +75,5 @@ impl Device {
 
     pub(crate) fn wgpu_queue(&self) -> &wgpu::Queue {
         &self.inner.queue
-    }
-
-    pub fn query(&self) -> Option<Arc<PerformanceQueries>> {
-        self.inner.query.clone()
     }
 }

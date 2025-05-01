@@ -7,7 +7,7 @@ use wgpu::{BindGroupLayout, CommandEncoder, PipelineCompilationOptions, util::De
 use crate::quantized_types_wgsl::{
     write_q4_0_type, write_q4_k_type, write_q5_0_type, write_q6_k_type, write_q8_0_type,
 };
-use crate::{DataTypeEnum, Device, QueryItem};
+use crate::{DataTypeEnum, Device};
 
 use super::function::Function;
 use super::globals::{ArrayType, KernelGlobal, KernelGlobalSpace, KernelGlobalType};
@@ -425,11 +425,10 @@ impl GenericKernel {
             })
     }
 
-    pub(crate) fn run_with_query(
+    pub(crate) fn run(
         &self,
         device: &Device,
         tensors: impl IntoIterator<Item = impl Into<KernelInputValue>>,
-        query: Option<&QueryItem>,
         command_encoder: &mut CommandEncoder,
         workgroup_dispatch_size: [u32; 3],
     ) {
@@ -440,16 +439,12 @@ impl GenericKernel {
         {
             let mut cpass = command_encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: None,
-                timestamp_writes: query.map(|query| query.compute_pass_timestamp_writes()),
+                timestamp_writes: None,
             });
             cpass.set_pipeline(&pipeline);
             cpass.set_bind_group(0, &bind_group, &[]);
             let [workgroup_size_x, workgroup_size_y, workgroup_size_z] = workgroup_dispatch_size;
             cpass.dispatch_workgroups(workgroup_size_x, workgroup_size_y, workgroup_size_z);
-        }
-
-        if let Some(query_item) = query {
-            query_item.resolve(command_encoder);
         }
     }
 

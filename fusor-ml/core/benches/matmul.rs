@@ -2,7 +2,7 @@
 use std::time::Duration;
 
 use criterion::BatchSize;
-use fusor_core::{Device, PerformanceQueries, Tensor};
+use fusor_core::{Device, Tensor};
 use futures::executor::block_on;
 
 use criterion::BenchmarkId;
@@ -33,8 +33,9 @@ fn matmul(c: &mut Criterion) {
                                 let tensor = Tensor::new(&device, &vec![vec![1.; size]; size]);
                                 _ = tensor.as_slice().await.unwrap();
                                 let new = tensor.mat_mul(&tensor);
-                                let timing = new.all_timing_information().await;
-                                sum += timing.iter().map(|x| x.elapsed()).sum::<Duration>();
+                                let start = std::time::Instant::now();
+                                let _ = new.as_slice().await.unwrap();
+                                sum += start.elapsed();
                             }
                         }
                         sum

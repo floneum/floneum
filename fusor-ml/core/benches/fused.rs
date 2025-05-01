@@ -3,7 +3,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use criterion::{BatchSize, black_box};
-use fusor_core::PerformanceQueries;
 use fusor_core::{Device, Tensor};
 use futures::executor::block_on;
 
@@ -36,12 +35,9 @@ fn fused(c: &mut Criterion) {
                                 let tensor = Tensor::new(&device, &vec![vec![1.; size]; size]);
                                 _ = tensor.as_slice().await.unwrap();
                                 let new = (tensor + 1.) + 1.;
-                                sum += new
-                                    .all_timing_information()
-                                    .await
-                                    .iter()
-                                    .map(|x| x.elapsed())
-                                    .sum::<Duration>();
+                                let start = std::time::Instant::now();
+                                let _ = new.as_slice().await.unwrap();
+                                sum += start.elapsed();
                             }
                         }
                         sum
@@ -72,12 +68,9 @@ fn fused(c: &mut Criterion) {
                                     let tensor = Tensor::new(&device, &vec![vec![1.; size]; size]);
                                     _ = tensor.as_slice().await.unwrap();
                                     let new = tensor + 1.;
-                                    sum += new
-                                        .all_timing_information()
-                                        .await
-                                        .iter()
-                                        .map(|x| x.elapsed())
-                                        .sum::<Duration>();
+                                    let start = std::time::Instant::now();
+                                    let _ = new.as_slice().await.unwrap();
+                                    sum += start.elapsed();
                                 }
                             }
                         }

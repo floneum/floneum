@@ -1,4 +1,3 @@
-use crate::QueryItem;
 use crate::{
     DataType, DataTypeEnum, Device, Tensor, TensorData, compute_graph::AnyComputeKey,
     mir::inputs::KernelInputValue, mir::kernel::GenericKernel, padded_tensor_size,
@@ -298,12 +297,7 @@ impl UntypedQMatMul {
         })
     }
 
-    pub fn run_with_query(
-        &self,
-        input: &TensorData,
-        query: Option<&QueryItem>,
-        command_encoder: &mut CommandEncoder,
-    ) -> TensorData {
+    pub fn run(&self, input: &TensorData, command_encoder: &mut CommandEncoder) -> TensorData {
         let device = input.device();
         let a_shape = input.layout().shape();
         let b_shape = &self.matrix.shape;
@@ -321,15 +315,15 @@ impl UntypedQMatMul {
             &[a_shape[0], b_shape[0]],
             input.datatype(),
         );
-        self.run_with_query_and_out_tensor(device, input, query, &output_tensor, command_encoder);
+        self.run_and_out_tensor(device, input, &output_tensor, command_encoder);
         output_tensor
     }
 
-    pub fn run_with_query_and_out_tensor(
+    pub fn run_and_out_tensor(
         &self,
         device: &Device,
         input: &TensorData,
-        query: Option<&QueryItem>,
+
         output_tensor: &TensorData,
         command_encoder: &mut CommandEncoder,
     ) {
@@ -343,14 +337,13 @@ impl UntypedQMatMul {
 
         let workgroup_dispatch_size = self.work_group_dispatch(a_shape);
 
-        module.run_with_query(
+        module.run(
             device,
             [
                 KernelInputValue::from(input.clone()),
                 self.matrix.clone().into(),
                 output_tensor.clone().into(),
             ],
-            query,
             command_encoder,
             workgroup_dispatch_size,
         );

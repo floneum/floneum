@@ -33,8 +33,9 @@ fn bench_add_const(c: &mut Criterion) {
                                 let tensor = Tensor::new(&device, &vec![vec![1.; size]; size]);
                                 _ = tensor.as_slice().await.unwrap();
                                 let new = tensor + 1.;
-                                let timing = new.all_timing_information().await;
-                                sum += timing.iter().map(|x| x.elapsed()).sum::<Duration>();
+                                let start = std::time::Instant::now();
+                                let _ = new.as_slice().await.unwrap();
+                                sum += start.elapsed();
                             }
                         }
                         sum

@@ -1,7 +1,6 @@
 use fusor_gguf::GgmlType;
-use std::fmt::Write;
 use std::fmt::Display;
-
+use std::fmt::Write;
 
 #[derive(Clone)]
 pub(crate) struct QMatrixInput {

@@ -5,7 +5,7 @@ use candle_core::MetalDevice;
 use candle_core::backend::BackendDevice;
 use criterion::BatchSize;
 use fusor_core::QMatrix;
-use fusor_core::{Device, PerformanceQueries, Tensor};
+use fusor_core::{Device, Tensor};
 use futures::executor::block_on;
 
 use criterion::BenchmarkId;
@@ -65,8 +65,9 @@ fn qmatmul(c: &mut Criterion) {
                                 _ = tensor.as_slice().await.unwrap();
 
                                 let new = tensor.q_mat_mul(&q_matrix);
-                                let timing = new.all_timing_information().await;
-                                sum += timing.iter().map(|x| x.elapsed()).sum::<Duration>();
+                                let start = std::time::Instant::now();
+                                let _ = new.as_slice().await.unwrap();
+                                sum += start.elapsed();
                             }
                         }
                         sum

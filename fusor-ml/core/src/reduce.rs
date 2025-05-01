@@ -5,13 +5,13 @@ use std::{
 
 use wgpu::CommandEncoder;
 
+use crate::mir::globals::KernelGlobalSpace;
 use crate::{
     Layout, Tensor, UntypedElementWiseKernel,
     compute_graph::AnyComputeKey,
     mir::{function::Function, inputs::KernelInputValue, kernel::GenericKernel},
     tensor::{DataType, DataTypeEnum, TensorData, padded_tensor_size},
 };
-use crate::{QueryItem, mir::globals::KernelGlobalSpace};
 
 #[derive(Debug, Clone)]
 pub(crate) struct ReduceOperation {
@@ -280,11 +280,11 @@ impl UntypedReduceKernel {
         kernel
     }
 
-    pub fn run_with_query(
+    pub fn run(
         &self,
         tensor: &TensorData,
         dim: usize,
-        query: Option<&QueryItem>,
+
         command_encoder: &mut CommandEncoder,
     ) -> TensorData {
         let shape = tensor.layout().shape();
@@ -313,16 +313,16 @@ impl UntypedReduceKernel {
             output_type,
         );
 
-        self.run_with_query_and_out_tensor(tensor, dim, query, &output_tensor, command_encoder);
+        self.run_and_out_tensor(tensor, dim, &output_tensor, command_encoder);
 
         output_tensor
     }
 
-    pub fn run_with_query_and_out_tensor(
+    pub fn run_and_out_tensor(
         &self,
         tensor: &TensorData,
         dim: usize,
-        query: Option<&QueryItem>,
+
         output_tensor: &TensorData,
         command_encoder: &mut CommandEncoder,
     ) {
@@ -371,7 +371,7 @@ impl UntypedReduceKernel {
             trimmed_tensor_layout,
             tensor.datatype(),
         );
-        kernel.run_with_query(
+        kernel.run(
             tensor.device(),
             [
                 KernelInputValue::Tensor(trimmed_tensor.clone()),
@@ -379,7 +379,6 @@ impl UntypedReduceKernel {
                 KernelInputValue::Integer(tensor.layout().shape()[dim] as u32),
                 KernelInputValue::Integer(tensor.layout().strides()[dim] as u32),
             ],
-            query,
             command_encoder,
             workgroup_dispatch_size,
         );

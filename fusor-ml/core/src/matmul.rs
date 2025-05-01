@@ -2,7 +2,6 @@ use std::{fmt::Write, sync::OnceLock};
 
 use wgpu::CommandEncoder;
 
-use crate::QueryItem;
 use crate::mir::globals::KernelGlobalSpace;
 use crate::{
     Device, Tensor, UntypedElementWiseKernel,
@@ -259,11 +258,11 @@ impl UntypedMatMul {
         })
     }
 
-    pub fn run_with_query(
+    pub fn run(
         &self,
         a: &TensorData,
         b: &TensorData,
-        query: Option<&QueryItem>,
+
         command_encoder: &mut CommandEncoder,
     ) -> TensorData {
         let last_dim = self.rank as usize - 1;
@@ -285,16 +284,16 @@ impl UntypedMatMul {
         out_shape[last_dim] = b_shape[last_dim];
         let output_tensor =
             TensorData::new_from_buffer(device, output_buf, &out_shape, a.datatype());
-        self.run_with_query_and_out_tensor(device, a, b, query, &output_tensor, command_encoder);
+        self.run_and_out_tensor(device, a, b, &output_tensor, command_encoder);
         output_tensor
     }
 
-    pub fn run_with_query_and_out_tensor(
+    pub fn run_and_out_tensor(
         &self,
         device: &Device,
         a: &TensorData,
         b: &TensorData,
-        query: Option<&QueryItem>,
+
         output_tensor: &TensorData,
         command_encoder: &mut CommandEncoder,
     ) {
@@ -340,10 +339,9 @@ impl UntypedMatMul {
             batch_size as u32,
         ];
 
-        module.run_with_query(
+        module.run(
             device,
             [a.clone(), b.clone(), output_tensor.clone()],
-            query,
             command_encoder,
             workgroup_dispatch_size,
         );

@@ -1,8 +1,7 @@
-use std::fmt::Write;
 use std::fmt::Display;
+use std::fmt::Write;
 
 use crate::DataTypeEnum;
-
 
 #[derive(Clone)]
 pub enum KernelGlobalSpace {

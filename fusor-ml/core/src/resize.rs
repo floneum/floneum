@@ -2,7 +2,6 @@ use std::{fmt::Write, sync::OnceLock};
 
 use wgpu::CommandEncoder;
 
-use crate::QueryItem;
 use crate::{
     DataTypeEnum, TILE_SIZE, Tensor, TensorData, compute_graph::AnyComputeKey,
     mir::kernel::GenericKernel,
@@ -89,12 +88,7 @@ impl UntypedResizeKernel {
         })
     }
 
-    pub fn run_with_query(
-        &self,
-        input: &TensorData,
-        query: Option<&QueryItem>,
-        command_encoder: &mut CommandEncoder,
-    ) -> TensorData {
+    pub fn run(&self, input: &TensorData, command_encoder: &mut CommandEncoder) -> TensorData {
         let rank = input.layout().rank();
         let datatype = input.datatype();
 
@@ -109,10 +103,9 @@ impl UntypedResizeKernel {
             1,
             1,
         ];
-        kernel.run_with_query(
+        kernel.run(
             input.device(),
             tensors,
-            query,
             command_encoder,
             workgroup_dispatch_size,
         );

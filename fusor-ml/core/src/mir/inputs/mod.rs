@@ -1,9 +1,8 @@
-use std::fmt::Write;
 use std::fmt::Display;
+use std::fmt::Write;
 
-use crate::quantized::QMatrix;
 use crate::TensorData;
-
+use crate::quantized::QMatrix;
 
 mod float;
 mod integer;

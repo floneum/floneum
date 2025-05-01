@@ -3,7 +3,6 @@ use std::fmt::{Display, Write};
 use fusor_gguf::GgmlType;
 use wgpu::CommandEncoder;
 
-use crate::QueryItem;
 use crate::{
     DataTypeEnum, Layout, QMatrix, TensorData, dequantize_block,
     mir::inputs::{KernelInputValue, QMatrixInput, TensorInput},
@@ -411,10 +410,9 @@ impl VisitTiledKernel {
         kernel_body
     }
 
-    pub(crate) fn run_with_query<'a>(
+    pub(crate) fn run<'a>(
         &self,
         tensors: impl IntoIterator<Item = MaybeQData>,
-        query: Option<&QueryItem>,
         command_encoder: &mut CommandEncoder,
     ) {
         let tensors = tensors.into_iter().collect::<Vec<_>>();
@@ -448,12 +446,7 @@ impl VisitTiledKernel {
         };
 
         let device = tensors[0].device().clone();
-        self.kernel.run_with_query(
-            &device,
-            tensors,
-            query,
-            command_encoder,
-            workgroup_dispatch_size,
-        );
+        self.kernel
+            .run(&device, tensors, command_encoder, workgroup_dispatch_size);
     }
 }

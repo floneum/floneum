@@ -4,7 +4,6 @@ use std::{
     sync::OnceLock,
 };
 
-use crate::QueryItem;
 use wgpu::CommandEncoder;
 
 use crate::{
@@ -92,12 +91,7 @@ impl UntypedElementWiseKernel {
         }
     }
 
-    pub fn run_with_query(
-        &self,
-        tensor: MaybeQData,
-        query: Option<&QueryItem>,
-        command_encoder: &mut CommandEncoder,
-    ) -> TensorData {
+    pub fn run(&self, tensor: MaybeQData, command_encoder: &mut CommandEncoder) -> TensorData {
         let contiguous = tensor.layout().is_contiguous();
         let rank = tensor.layout().rank();
         let output_type = self.out_datatype();
@@ -164,7 +158,7 @@ impl UntypedElementWiseKernel {
             tensors.push(output_tensor.clone().into());
             output = Some(output_tensor);
         }
-        kernel.run_with_query(tensors, query, command_encoder);
+        kernel.run(tensors, command_encoder);
 
         output.unwrap_or(match tensor {
             MaybeQData::Tensor(tensor) => tensor,

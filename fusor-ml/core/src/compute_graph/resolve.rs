@@ -1,10 +1,9 @@
 use wgpu::CommandEncoder;
 
 use crate::{
-    ElementWiseFunction, QueryItem, UntypedElementWiseKernel, UntypedPairWiseKernel,
-    UntypedReduceKernel, dequantize::UntypedDequantize, element_wise,
-    index_select::UntypedIndexSelectKernel, matmul::UntypedMatMul,
-    quantized::matmul::UntypedQMatMul, resize::UntypedResizeKernel,
+    ElementWiseFunction, UntypedElementWiseKernel, UntypedPairWiseKernel, UntypedReduceKernel,
+    dequantize::UntypedDequantize, element_wise, index_select::UntypedIndexSelectKernel,
+    matmul::UntypedMatMul, quantized::matmul::UntypedQMatMul, resize::UntypedResizeKernel,
     slice_assign::UntypedSliceAssignKernel, tensor::TensorData, visit_tiled::MaybeQData,
 };
 
@@ -35,24 +34,6 @@ impl<'a> Resolver<'a> {
             target,
             queue: Default::default(),
         }
-    }
-
-    fn with_query<O>(
-        &mut self,
-        key: AnyComputeKey,
-        with_query: impl FnOnce(&mut Self, Option<&QueryItem>) -> O,
-    ) -> O {
-        let query = self
-            .graph
-            .device
-            .query()
-            .as_ref()
-            .map(|q| q.compute_timestamp_writes());
-        let result = with_query(self, query.as_ref());
-        if let Some(query_item) = query {
-            self.graph.timing_information.insert(key, query_item);
-        }
-        result
     }
 
     pub(crate) fn run(&mut self) -> TensorData {
@@ -168,9 +149,7 @@ impl<'a> Resolver<'a> {
         };
         let kernel = UntypedElementWiseKernel::new(functions, input.datatype());
 
-        let result = self.with_query(key.into(), |resolver, query| {
-            kernel.run_with_query(input.into(), query, &mut *resolver.command_encoder)
-        });
+        let result = kernel.run(input.into(), &mut *self.command_encoder);
 
         Some(result)
     }
@@ -245,9 +224,7 @@ impl<'a> Resolver<'a> {
         kernel.set_pre_element_wise([first_pre, second_pre]);
         kernel.set_post_element_wise(UntypedElementWiseKernel::new(then, pre_element_wise_output));
 
-        let result = self.with_query(key.into(), |resolver, query| {
-            kernel.run_with_query(first, second, query, &mut *resolver.command_encoder)
-        });
+        let result = kernel.run(first, second, &mut *self.command_encoder);
 
         Some(result)
     }
@@ -294,9 +271,7 @@ impl<'a> Resolver<'a> {
         let pre_element_wise_output = first_pre.out_datatype();
         kernel.set_pre_element_wise([first_pre, second_pre]);
         kernel.set_post_element_wise(UntypedElementWiseKernel::new(then, pre_element_wise_output));
-        let result = self.with_query(key.into(), |resolver, query| {
-            kernel.run_with_query(&first, &second, query, &mut *resolver.command_encoder)
-        });
+        let result = kernel.run(&first, &second, &mut *self.command_encoder);
 
         Some(result)
     }
@@ -312,9 +287,7 @@ impl<'a> Resolver<'a> {
         };
         let kernel = UntypedQMatMul::new(input.datatype(), matrix);
 
-        let result = self.with_query(key.into(), |resolver, query| {
-            kernel.run_with_query(&input, query, &mut *resolver.command_encoder)
-        });
+        let result = kernel.run(&input, &mut *self.command_encoder);
 
         Some(result)
     }
@@ -333,13 +306,7 @@ impl<'a> Resolver<'a> {
         let mut kernel = UntypedDequantize::new(operation.datatype, operation.matrix.clone());
         let then = element_wise::UntypedElementWiseKernel::new(then, operation.datatype);
         kernel.set_post_element_wise(then);
-        let result = self.with_query(key.into(), |resolver, query| {
-            kernel.run_with_query(
-                &resolver.graph.device,
-                query,
-                &mut *resolver.command_encoder,
-            )
-        });
+        let result = kernel.run(&self.graph.device, &mut *self.command_encoder);
 
         Some(result)
     }
@@ -377,9 +344,7 @@ impl<'a> Resolver<'a> {
             element_wise::UntypedElementWiseKernel::new(then, element_wise_before.out_datatype());
         kernel.set_post_element_wise(element_wise_after);
         kernel.set_pre_element_wise(element_wise_before);
-        let result = self.with_query(key.into(), |resolver, query| {
-            kernel.run_with_query(&input, axis, query, &mut *resolver.command_encoder)
-        });
+        let result = kernel.run(&input, axis, &mut *self.command_encoder);
 
         Some(result)
     }
@@ -408,9 +373,7 @@ impl<'a> Resolver<'a> {
         };
         let kernel = UntypedResizeKernel::new(&new_shape, &fill_shape);
 
-        let result = self.with_query(key.into(), |resolver, query| {
-            kernel.run_with_query(&input, query, &mut *resolver.command_encoder)
-        });
+        let result = kernel.run(&input, &mut *self.command_encoder);
 
         Some(result)
     }
@@ -429,9 +392,7 @@ impl<'a> Resolver<'a> {
             return None;
         };
 
-        let result = self.with_query(key.into(), |resolver, query| {
-            kernel.run_with_query(&input, &value, query, &mut *resolver.command_encoder)
-        });
+        let result = kernel.run(&input, &value, &mut *self.command_encoder);
 
         Some(result)
     }
@@ -488,9 +449,7 @@ impl<'a> Resolver<'a> {
             indexes.datatype(),
         ));
 
-        let result = self.with_query(key.into(), |resolver, query| {
-            kernel.run_with_query(&input, &indexes, query, &mut *resolver.command_encoder)
-        });
+        let result = kernel.run(&input, &indexes, &mut *self.command_encoder);
 
         Some(result)
     }

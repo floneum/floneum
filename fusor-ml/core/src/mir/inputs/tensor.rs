@@ -1,5 +1,5 @@
-use std::fmt::Write;
 use std::fmt::Display;
+use std::fmt::Write;
 
 use crate::DataTypeEnum;
 

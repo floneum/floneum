@@ -24,7 +24,6 @@ tracing = "0.1.41"
 
 [features]
 extra_assertions = []
-timing_information = []
 
 [dev-dependencies]
 ndarray = "0.16.1"
@@ -35,6 +34,7 @@ pretty_assertions = "1.4.1"
 reqwest = "0.12.15"
 candle-core = { workspace = true }
 num-traits = "0.2.19"
+tracing-subscriber = "0.3.19"
 
 [[bench]]
 name = "matmul"

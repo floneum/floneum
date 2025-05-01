@@ -16,9 +16,8 @@ mod visualize;
 
 use crate::{
     DataTypeEnum, Device, ElementWiseOperation, MatMulOperation, PairWiseOperation, QMatrix,
-    QueryItem, QueryResults, ReduceOperation, dequantize::DequantizeOperation,
-    index_select::IndexSelectOperation, map_layout::MapLayoutOperation,
-    quantized::matmul::QMatMulOperation, resize::ResizeOperation,
+    ReduceOperation, dequantize::DequantizeOperation, index_select::IndexSelectOperation,
+    map_layout::MapLayoutOperation, quantized::matmul::QMatMulOperation, resize::ResizeOperation,
     slice_assign::SliceAssignOperation, tensor::TensorData,
 };
 
@@ -242,9 +241,6 @@ impl ComputeGraph {
                 inner.nodes.merge(&mut other_inner.nodes);
 
                 inner
-                    .timing_information
-                    .extend(other_inner.timing_information.drain());
-                inner
                     .cached_results
                     .extend(other_inner.cached_results.drain());
                 inner.dependency_map.merge(&mut other_inner.dependency_map);
@@ -415,17 +411,6 @@ impl ComputeGraph {
             inner.add_reference(key);
         });
     }
-
-    #[allow(clippy::await_holding_lock)]
-    pub(crate) async fn all_timing_information(&self) -> Vec<QueryResults> {
-        let myself = self.inner.load();
-        let myself = myself.read();
-        let mut output = Vec::new();
-        for timing_information in myself.timing_information.values() {
-            output.push(timing_information.wait_for_results().await);
-        }
-        output
-    }
 }
 
 #[derive(Default)]
@@ -463,7 +448,6 @@ struct ComputeGraphInner {
     device: Device,
     nodes: ComputeGraphNodes,
 
-    timing_information: FxHashMap<AnyComputeKey, QueryItem>,
     cached_results: FxHashMap<AnyComputeKey, TensorData>,
 
     dependency_map: DependencyMap,
@@ -476,7 +460,6 @@ impl ComputeGraphInner {
         Self {
             device,
             nodes: ComputeGraphNodes::default(),
-            timing_information: Default::default(),
             cached_results: Default::default(),
             dependency_map: DependencyMap::default(),
             pointed_to_by: Vec::new(),

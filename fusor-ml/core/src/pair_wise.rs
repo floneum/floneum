@@ -6,7 +6,6 @@ use std::{
 
 use wgpu::CommandEncoder;
 
-use crate::QueryItem;
 use crate::{
     ElementWiseFunction, Tensor, UntypedElementWiseKernel,
     compute_graph::AnyComputeKey,
@@ -81,11 +80,11 @@ impl UntypedPairWiseKernel {
         )
     }
 
-    pub fn run_with_query(
+    pub fn run(
         &self,
         first: MaybeQData,
         second: MaybeQData,
-        query: Option<&QueryItem>,
+
         command_encoder: &mut CommandEncoder,
     ) -> TensorData {
         assert_eq!(first.layout().shape(), second.layout().shape());
@@ -170,7 +169,7 @@ impl UntypedPairWiseKernel {
             crate::visit_tiled::MaybeQData::Tensor(tensor) => tensor,
             crate::visit_tiled::MaybeQData::QMatrix(_) => unreachable!(),
         };
-        kernel.run_with_query(tensors, query, command_encoder);
+        kernel.run(tensors, command_encoder);
         output
     }
 }

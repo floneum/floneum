@@ -14,7 +14,7 @@ use wgpu::{
 
 use crate::{
     Device, ElementWiseOperation, MatMulOperation, PairWiseFunction, PairWiseOperation,
-    QueryResults, ReduceFunction, ReduceOperation,
+    ReduceFunction, ReduceOperation,
     compute_graph::{AnyComputeKey, ComputeGraph},
     index_select::IndexSelectOperation,
     layout::Layout,
@@ -386,11 +386,6 @@ impl LazyTensorData {
         self.graph.resolve(self.key, &self.device)
     }
 
-    pub(crate) async fn all_timing_information(&self) -> Vec<QueryResults> {
-        self.materialize();
-        self.graph.all_timing_information().await
-    }
-
     pub fn graphvis(&self) -> Graph {
         self.graph.graphvis(self.key)
     }
@@ -748,10 +743,6 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         let out = Self::as_slice_from_tensor_data(&tensor).await;
         tracing::trace!("Downloaded tensor in {:?}", start_time.elapsed());
         out
-    }
-
-    pub async fn all_timing_information(&self) -> Vec<QueryResults> {
-        self.data.all_timing_information().await
     }
 
     pub(crate) fn element_wise<D2: DataType>(
