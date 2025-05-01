@@ -34,7 +34,7 @@ fn matmul(c: &mut Criterion) {
                                 _ = tensor.as_slice().await.unwrap();
                                 let new = tensor.mat_mul(&tensor);
                                 let start = std::time::Instant::now();
-                                let _ = new.as_slice().await.unwrap();
+                                new.materialize().await;
                                 sum += start.elapsed();
                             }
                         }

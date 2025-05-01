@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use candle_core::MetalDevice;
 use candle_core::backend::BackendDevice;
+use candle_nn::Module;
 use criterion::BatchSize;
 use fusor_core::QMatrix;
 use fusor_core::{Device, Tensor};
@@ -66,7 +67,7 @@ fn qmatmul(c: &mut Criterion) {
 
                                 let new = tensor.q_mat_mul(&q_matrix);
                                 let start = std::time::Instant::now();
-                                let _ = new.as_slice().await.unwrap();
+                                new.materialize().await;
                                 sum += start.elapsed();
                             }
                         }
@@ -78,7 +79,40 @@ fn qmatmul(c: &mut Criterion) {
 
         {
             let candle_device = candle_core::Device::Cpu;
-            let mut reader = std::io::Cursor::new(&bytes);
+            bench_candle_with_device(
+                &bytes,
+                size,
+                random_data.clone(),
+                candle_device,
+                "qmatmul-candle-cpu",
+                c,
+            );
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            let candle_device = candle_core::Device::Metal(MetalDevice::new(0).unwrap());
+            bench_candle_with_device(
+                &bytes,
+                size,
+                random_data.clone(),
+                candle_device,
+                "qmatmul-candle-metal",
+                c,
+            );
+        }
+    }
+}
+
+fn bench_candle_with_device(
+    bytes: &[u8],
+    size: usize,
+    random_data: Vec<Vec<f32>>,
+    candle_device: candle_core::Device,
+    name: &str,
+    c: &mut Criterion,
+) {
+    let mut reader = std::io::Cursor::new(&bytes);
             let candle_metadata =
                 candle_core::quantized::gguf_file::Content::read(&mut reader).unwrap();
             let candle_q_matrix_metadata = candle_metadata
@@ -94,11 +128,11 @@ fn qmatmul(c: &mut Criterion) {
                 .unwrap();
             let candle_q_matrix =
                 candle_core::quantized::QMatMul::from_qtensor(candle_q_tensor).unwrap();
-            let mut group = c.benchmark_group("qmatmul-candle");
+            let mut group = c.benchmark_group(name);
             let group = group.sample_size(20);
 
             group.bench_with_input(
-                BenchmarkId::new("qmatmul-candle", size),
+                BenchmarkId::new(name, size),
                 &size,
                 move |b, &s| {
                     b.to_async(FuturesExecutor).iter_batched(
@@ -125,8 +159,6 @@ fn qmatmul(c: &mut Criterion) {
                     );
                 },
             );
-        }
-    }
 }
 
 criterion_group!(benches, qmatmul);

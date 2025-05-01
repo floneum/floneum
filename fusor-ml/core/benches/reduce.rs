@@ -33,7 +33,7 @@ fn bench_sum_reduce(c: &mut Criterion) {
                             _ = tensor.as_slice().await.unwrap();
                             let new = tensor.sum(0);
                             let start = std::time::Instant::now();
-                            let _ = new.as_slice().await.unwrap();
+                            new.materialize().await;
                             sum += start.elapsed();
                         }
                     }

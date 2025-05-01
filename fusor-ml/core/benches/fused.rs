@@ -36,7 +36,7 @@ fn fused(c: &mut Criterion) {
                                 _ = tensor.as_slice().await.unwrap();
                                 let new = (tensor + 1.) + 1.;
                                 let start = std::time::Instant::now();
-                                let _ = new.as_slice().await.unwrap();
+                                new.materialize().await;
                                 sum += start.elapsed();
                             }
                         }
@@ -69,7 +69,7 @@ fn fused(c: &mut Criterion) {
                                     _ = tensor.as_slice().await.unwrap();
                                     let new = tensor + 1.;
                                     let start = std::time::Instant::now();
-                                    let _ = new.as_slice().await.unwrap();
+                                    new.materialize().await;
                                     sum += start.elapsed();
                                 }
                             }

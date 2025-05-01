@@ -735,6 +735,16 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
     }
 
     #[must_use]
+    pub async fn materialize(&self) {
+        self.data.materialize();
+        let (sender, receiver) = futures_channel::oneshot::channel();
+        self.device().wgpu_queue().on_submitted_work_done(|| {
+            _ = sender.send(());
+        });
+        let _ = receiver.await;
+    }
+
+    #[must_use]
     pub async fn as_slice(&self) -> Result<TensorSlice<R, D>, wgpu::BufferAsyncError> {
         let start_time = std::time::Instant::now();
         let tensor = self.data.materialize();

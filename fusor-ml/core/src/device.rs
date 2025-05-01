@@ -49,7 +49,7 @@ impl Device {
                     break;
                 };
                 if status == wgpu::PollStatus::QueueEmpty {
-                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    std::thread::sleep(std::time::Duration::from_nanos(10));
                 }
             }
         });

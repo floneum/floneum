@@ -2441,6 +2441,7 @@ dependencies = [
  "arc-swap",
  "bytemuck",
  "candle-core",
+ "candle-nn",
  "criterion 0.3.6",
  "enumset",
  "env_logger",

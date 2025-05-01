@@ -30,7 +30,7 @@ fn bench_add(c: &mut Criterion) {
                             _ = tensor.as_slice().await.unwrap();
                             let new = &tensor + &tensor;
                             let start = std::time::Instant::now();
-                            let _ = new.as_slice().await.unwrap();
+                            new.materialize().await;
                             sum += start.elapsed();
                         }
                     }
