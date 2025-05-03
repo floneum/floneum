@@ -369,7 +369,6 @@ pub(crate) fn titled_map_dispatch_size<'a>(
     let mut tensors = tensors.into_iter();
     let layout = tensors.next().unwrap().layout();
     let shape = layout.shape();
-    println!("shape: {shape:?}");
     let workgroup_size_x = shape
         .first()
         .map(|x| (*x as u32).div_ceil(tile_size * workgroup_shape.x()))
@@ -382,5 +381,5 @@ pub(crate) fn titled_map_dispatch_size<'a>(
         .get(2)
         .map(|x| (*x as u32).div_ceil(tile_size * workgroup_shape.z()))
         .unwrap_or(1);
-    dbg!([workgroup_size_x, workgroup_size_y, workgroup_size_z])
+    [workgroup_size_x, workgroup_size_y, workgroup_size_z]
 }
