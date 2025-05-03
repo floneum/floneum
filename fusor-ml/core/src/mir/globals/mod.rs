@@ -1,9 +1,8 @@
 use std::fmt::Display;
-use std::fmt::Write;
 
 use crate::DataTypeEnum;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum KernelGlobalSpace {
     Workgroup,
 }
@@ -16,7 +15,7 @@ impl Display for KernelGlobalSpace {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct KernelGlobal {
     id: u32,
     space: KernelGlobalSpace,
@@ -46,12 +45,12 @@ impl Display for KernelGlobal {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum KernelGlobalType {
     Array(ArrayType),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ArrayType {
     size: String,
     datatype: DataTypeEnum,

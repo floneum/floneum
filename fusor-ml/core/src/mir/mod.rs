@@ -3,3 +3,4 @@ pub(crate) mod globals;
 pub(crate) mod inputs;
 pub(crate) mod kernel;
 pub(crate) mod workgroup_shape;
+pub(crate) mod operation;

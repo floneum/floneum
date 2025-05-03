@@ -1,10 +1,17 @@
 use wgpu::CommandEncoder;
 
 use crate::{
-    ElementWiseFunction, UntypedElementWiseKernel, UntypedPairWiseKernel, UntypedReduceKernel,
-    dequantize::UntypedDequantize, element_wise, index_select::UntypedIndexSelectKernel,
-    matmul::UntypedMatMul, quantized::matmul::UntypedQMatMul, resize::UntypedResizeKernel,
-    slice_assign::UntypedSliceAssignKernel, tensor::TensorData, visit_tiled::MaybeQData,
+    ElementWiseFunction, ElementWiseFunctions, ElementWiseOperation, PairWiseOperation,
+    UntypedReduceKernel,
+    dequantize::UntypedDequantize,
+    element_wise,
+    index_select::UntypedIndexSelectKernel,
+    matmul::UntypedMatMul,
+    mir::{inputs::KernelInputValue, operation::Operation},
+    quantized::matmul::UntypedQMatMul,
+    resize::UntypedResizeKernel,
+    tensor::TensorData,
+    visit_tiled::MaybeQData,
 };
 
 use super::{
@@ -61,7 +68,7 @@ impl<'a> Resolver<'a> {
                     self.resolve_tensor(tensor_compute_node_key)
                 }
                 AnyComputeKey::MapLayout(slice_compute_node_key) => {
-                    self.resolve_slice(slice_compute_node_key)
+                    self.resolve_map_layout(slice_compute_node_key)
                 }
                 AnyComputeKey::Resize(resize_compute_node_key) => {
                     self.resolve_resize(resize_compute_node_key)
@@ -113,7 +120,7 @@ impl<'a> Resolver<'a> {
                 break;
             }
             let operation = &self.graph.nodes.element_wise[&key];
-            functions.push(operation.function.clone());
+            functions.extend(operation.functions.iter().cloned());
             current_key = operation.value;
         }
         (functions, current_key)
@@ -143,13 +150,22 @@ impl<'a> Resolver<'a> {
             }
         }
         // Otherwise, just run the element wise kernel
-        let Some(input) = self.graph.cached_results.get(&input).cloned() else {
+        let Some(input_cached) = self.graph.cached_results.get(&input) else {
             self.queue.push_back(input);
             return None;
         };
-        let kernel = UntypedElementWiseKernel::new(functions, input.datatype());
+        let functions = ElementWiseFunctions::new(functions, input_cached.datatype());
+        let kernel = ElementWiseOperation::from_element_wise(
+            input.into(),
+            functions,
+            input_cached.layout().rank() as u32,
+        );
 
-        let result = kernel.run(input.into(), &mut *self.command_encoder);
+        let result = kernel.run(&self.graph, &mut *self.command_encoder);
+
+        let KernelInputValue::Tensor(result) = result else {
+            panic!("Kernel input value is not a tensor");
+        };
 
         Some(result)
     }
@@ -215,16 +231,25 @@ impl<'a> Resolver<'a> {
             };
             second.clone().into()
         };
-        let mut kernel = UntypedPairWiseKernel::new(function);
+        let mut kernel = PairWiseOperation::new(
+            function,
+            first_input,
+            second_input,
+            first.layout().rank() as _,
+        );
         let first_pre =
-            UntypedElementWiseKernel::new(first_pre_element_wise, first.dequantized_datatype());
+            ElementWiseFunctions::new(first_pre_element_wise, first.dequantized_datatype());
         let second_pre =
-            UntypedElementWiseKernel::new(second_pre_element_wise, second.dequantized_datatype());
+            ElementWiseFunctions::new(second_pre_element_wise, second.dequantized_datatype());
         let pre_element_wise_output = first_pre.out_datatype();
         kernel.set_pre_element_wise([first_pre, second_pre]);
-        kernel.set_post_element_wise(UntypedElementWiseKernel::new(then, pre_element_wise_output));
+        kernel.set_post_element_wise(ElementWiseFunctions::new(then, pre_element_wise_output));
 
-        let result = kernel.run(first, second, &mut *self.command_encoder);
+        let result = kernel.run(&self.graph, &mut *self.command_encoder);
+
+        let KernelInputValue::Tensor(result) = result else {
+            panic!("Kernel input value is not a tensor");
+        };
 
         Some(result)
     }
@@ -266,11 +291,11 @@ impl<'a> Resolver<'a> {
             return None;
         };
         let mut kernel = UntypedMatMul::new(first.datatype(), first.layout().rank() as u32);
-        let first_pre = UntypedElementWiseKernel::new(first_pre_element_wise, first.datatype());
-        let second_pre = UntypedElementWiseKernel::new(second_pre_element_wise, second.datatype());
+        let first_pre = ElementWiseFunctions::new(first_pre_element_wise, first.datatype());
+        let second_pre = ElementWiseFunctions::new(second_pre_element_wise, second.datatype());
         let pre_element_wise_output = first_pre.out_datatype();
         kernel.set_pre_element_wise([first_pre, second_pre]);
-        kernel.set_post_element_wise(UntypedElementWiseKernel::new(then, pre_element_wise_output));
+        kernel.set_post_element_wise(ElementWiseFunctions::new(then, pre_element_wise_output));
         let result = kernel.run(&first, &second, &mut *self.command_encoder);
 
         Some(result)
@@ -304,7 +329,7 @@ impl<'a> Resolver<'a> {
         let operation = &self.graph.nodes.dequantize[&key];
 
         let mut kernel = UntypedDequantize::new(operation.datatype, operation.matrix.clone());
-        let then = element_wise::UntypedElementWiseKernel::new(then, operation.datatype);
+        let then = element_wise::ElementWiseFunctions::new(then, operation.datatype);
         kernel.set_post_element_wise(then);
         let result = kernel.run(&self.graph.device, &mut *self.command_encoder);
 
@@ -339,9 +364,9 @@ impl<'a> Resolver<'a> {
         };
         let mut kernel = UntypedReduceKernel::new(function, input.datatype());
         let element_wise_before =
-            element_wise::UntypedElementWiseKernel::new(element_wise_before, input.datatype());
+            element_wise::ElementWiseFunctions::new(element_wise_before, input.datatype());
         let element_wise_after =
-            element_wise::UntypedElementWiseKernel::new(then, element_wise_before.out_datatype());
+            element_wise::ElementWiseFunctions::new(then, element_wise_before.out_datatype());
         kernel.set_post_element_wise(element_wise_after);
         kernel.set_pre_element_wise(element_wise_before);
         let result = kernel.run(&input, axis, &mut *self.command_encoder);
@@ -349,7 +374,7 @@ impl<'a> Resolver<'a> {
         Some(result)
     }
 
-    fn resolve_slice(&mut self, key: MapLayoutComputeNodeKey) -> Option<TensorData> {
+    fn resolve_map_layout(&mut self, key: MapLayoutComputeNodeKey) -> Option<TensorData> {
         let operation = self.graph.nodes.map_layout.get(&key).unwrap();
         let Some(input) = self.graph.cached_results.get(&operation.input) else {
             self.queue.push_back(operation.input);
@@ -382,17 +407,19 @@ impl<'a> Resolver<'a> {
         let operation = self.graph.nodes.slice_assign.get(&key).unwrap();
         let input = operation.input;
         let value = operation.value;
-        let kernel = UntypedSliceAssignKernel::new(&operation.slices);
-        let Some(input) = self.graph.cached_results.get(&input).cloned() else {
+        if !self.graph.cached_results.contains_key(&input) {
             self.queue.push_back(input);
             return None;
-        };
-        let Some(value) = self.graph.cached_results.get(&value).cloned() else {
+        }
+        if !self.graph.cached_results.contains_key(&value) {
             self.queue.push_back(value);
             return None;
-        };
+        }
 
-        let result = kernel.run(&input, &value, &mut *self.command_encoder);
+        let result = operation.run(&self.graph, &mut *self.command_encoder);
+        let KernelInputValue::Tensor(result) = result else {
+            panic!("Kernel input value is not a tensor");
+        };
 
         Some(result)
     }
@@ -440,11 +467,11 @@ impl<'a> Resolver<'a> {
         };
         let mut kernel =
             UntypedIndexSelectKernel::new(dimension, input.datatype(), input.layout().rank());
-        kernel.set_pre_element_wise_input(UntypedElementWiseKernel::new(
+        kernel.set_pre_element_wise_input(ElementWiseFunctions::new(
             input_pre_element_wise,
             input.datatype(),
         ));
-        kernel.set_pre_element_wise_indexes(UntypedElementWiseKernel::new(
+        kernel.set_pre_element_wise_indexes(ElementWiseFunctions::new(
             indexes_pre_element_wise,
             indexes.datatype(),
         ));

@@ -30,7 +30,7 @@ pub(crate) fn slice_shape(slices: &[Range<usize>], _shape: &[usize]) -> Box<[usi
     slices.iter().map(|range| range.len()).collect()
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)] 
 pub struct Layout {
     offset: usize,
     shape: Box<[usize]>,

@@ -3,7 +3,7 @@ use std::fmt::Write;
 
 use crate::DataTypeEnum;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct TensorInput {
     pub(crate) start_index: u32,
     pub(crate) rank: u32,

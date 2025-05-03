@@ -51,7 +51,7 @@ impl LayoutPass {
             return;
         };
         let output_layout =
-            TensorLayoutInfo::new(input_layout.layout().clone(), operation.function.datatype());
+            TensorLayoutInfo::new(input_layout.layout().clone(), operation.functions.out_datatype());
         self.output_layout.insert(key.into(), output_layout);
     }
 

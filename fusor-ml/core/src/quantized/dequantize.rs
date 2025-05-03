@@ -1,7 +1,7 @@
 use crate::mir::inputs::KernelInputValue;
 use crate::{
     DataType, DataTypeEnum, Device, LazyTensorData, Tensor, TensorData, TensorInfo,
-    UntypedElementWiseKernel, compute_graph::ComputeGraph, mir::kernel::GenericKernel,
+    ElementWiseFunctions, compute_graph::ComputeGraph, mir::kernel::GenericKernel,
     padded_tensor_size,
 };
 use std::{fmt::Write, sync::OnceLock};
@@ -49,7 +49,7 @@ impl QMatrix {
 
 pub(crate) struct UntypedDequantize {
     kernel: OnceLock<GenericKernel>,
-    post_dequantize: UntypedElementWiseKernel,
+    post_dequantize: ElementWiseFunctions,
     datatype: DataTypeEnum,
     matrix: QMatrix,
 }
@@ -58,13 +58,13 @@ impl UntypedDequantize {
     pub(crate) fn new(datatype: DataTypeEnum, matrix: QMatrix) -> Self {
         Self {
             kernel: OnceLock::new(),
-            post_dequantize: UntypedElementWiseKernel::empty(datatype),
+            post_dequantize: ElementWiseFunctions::empty(datatype),
             datatype,
             matrix,
         }
     }
 
-    pub(crate) fn set_post_element_wise(&mut self, post_dequantize: UntypedElementWiseKernel) {
+    pub(crate) fn set_post_element_wise(&mut self, post_dequantize: ElementWiseFunctions) {
         self.post_dequantize = post_dequantize;
     }
 

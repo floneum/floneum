@@ -4,7 +4,7 @@ use wgpu::CommandEncoder;
 
 use crate::mir::globals::KernelGlobalSpace;
 use crate::{
-    Device, Tensor, UntypedElementWiseKernel,
+    Device, Tensor, ElementWiseFunctions,
     compute_graph::AnyComputeKey,
     mir::{function::Function, kernel::GenericKernel},
     tensor::{DataType, DataTypeEnum, TensorData, padded_tensor_size},
@@ -57,9 +57,9 @@ const WORK_GROUP_SIZE: [u32; 3] = [
 ];
 
 pub(crate) struct UntypedMatMul {
-    pre_element_wise: [UntypedElementWiseKernel; 2],
+    pre_element_wise: [ElementWiseFunctions; 2],
     kernel: OnceLock<GenericKernel>,
-    post_element_wise: UntypedElementWiseKernel,
+    post_element_wise: ElementWiseFunctions,
     datatype: DataTypeEnum,
     rank: u32,
 }
@@ -68,21 +68,21 @@ impl UntypedMatMul {
     pub(crate) fn new(datatype: DataTypeEnum, rank: u32) -> Self {
         Self {
             pre_element_wise: [
-                UntypedElementWiseKernel::empty(datatype),
-                UntypedElementWiseKernel::empty(datatype),
+                ElementWiseFunctions::empty(datatype),
+                ElementWiseFunctions::empty(datatype),
             ],
             kernel: OnceLock::new(),
-            post_element_wise: UntypedElementWiseKernel::empty(datatype),
+            post_element_wise: ElementWiseFunctions::empty(datatype),
             datatype,
             rank,
         }
     }
 
-    pub(crate) fn set_pre_element_wise(&mut self, pre_element_wise: [UntypedElementWiseKernel; 2]) {
+    pub(crate) fn set_pre_element_wise(&mut self, pre_element_wise: [ElementWiseFunctions; 2]) {
         self.pre_element_wise = pre_element_wise;
     }
 
-    pub(crate) fn set_post_element_wise(&mut self, post_element_wise: UntypedElementWiseKernel) {
+    pub(crate) fn set_post_element_wise(&mut self, post_element_wise: ElementWiseFunctions) {
         self.post_element_wise = post_element_wise;
     }
 
@@ -262,7 +262,6 @@ impl UntypedMatMul {
         &self,
         a: &TensorData,
         b: &TensorData,
-
         command_encoder: &mut CommandEncoder,
     ) -> TensorData {
         let last_dim = self.rank as usize - 1;
@@ -293,7 +292,6 @@ impl UntypedMatMul {
         device: &Device,
         a: &TensorData,
         b: &TensorData,
-
         output_tensor: &TensorData,
         command_encoder: &mut CommandEncoder,
     ) {

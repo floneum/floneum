@@ -5,9 +5,9 @@ use std::{
 
 use wgpu::CommandEncoder;
 
-use crate::mir::globals::KernelGlobalSpace;
+use crate::{mir::globals::KernelGlobalSpace, ElementWiseFunctions};
 use crate::{
-    Layout, Tensor, UntypedElementWiseKernel,
+    Layout, Tensor,
     compute_graph::AnyComputeKey,
     mir::{function::Function, inputs::KernelInputValue, kernel::GenericKernel},
     tensor::{DataType, DataTypeEnum, TensorData, padded_tensor_size},
@@ -31,9 +31,9 @@ impl ReduceOperation {
 }
 
 pub(crate) struct UntypedReduceKernel {
-    pre_element_wise: UntypedElementWiseKernel,
+    pre_element_wise: ElementWiseFunctions,
     reduce: ReduceFunction,
-    post_element_wise: UntypedElementWiseKernel,
+    post_element_wise: ElementWiseFunctions,
     kernel: OnceLock<GenericKernel>,
     datatype: DataTypeEnum,
 }
@@ -41,19 +41,19 @@ pub(crate) struct UntypedReduceKernel {
 impl UntypedReduceKernel {
     pub fn new(reduce: ReduceFunction, datatype: DataTypeEnum) -> Self {
         Self {
-            pre_element_wise: UntypedElementWiseKernel::empty(datatype),
+            pre_element_wise: ElementWiseFunctions::empty(datatype),
             reduce,
-            post_element_wise: UntypedElementWiseKernel::empty(datatype),
+            post_element_wise: ElementWiseFunctions::empty(datatype),
             kernel: OnceLock::new(),
             datatype,
         }
     }
 
-    pub fn set_post_element_wise(&mut self, kernel: UntypedElementWiseKernel) {
+    pub fn set_post_element_wise(&mut self, kernel: ElementWiseFunctions) {
         self.post_element_wise = kernel;
     }
 
-    pub fn set_pre_element_wise(&mut self, kernel: UntypedElementWiseKernel) {
+    pub fn set_pre_element_wise(&mut self, kernel: ElementWiseFunctions) {
         self.pre_element_wise = kernel;
     }
 
@@ -284,7 +284,6 @@ impl UntypedReduceKernel {
         &self,
         tensor: &TensorData,
         dim: usize,
-
         command_encoder: &mut CommandEncoder,
     ) -> TensorData {
         let shape = tensor.layout().shape();
@@ -322,21 +321,9 @@ impl UntypedReduceKernel {
         &self,
         tensor: &TensorData,
         dim: usize,
-
         output_tensor: &TensorData,
         command_encoder: &mut CommandEncoder,
     ) {
-        // assert_eq!(
-        //     *output_tensor.layout().shape(),
-        //     [tensor
-        //         .layout()
-        //         .shape()
-        //         .iter()
-        //         .enumerate()
-        //         .filter_map(|(i, x)| { (i != dim).then_some(*x as u32) })
-        //         .product::<u32>() as usize]
-        // );
-
         let limits = tensor.device().wgpu_device().limits();
         let max_blocksize = (tensor.layout().shape()[dim] as u32)
             .min(limits.max_compute_workgroup_size_x)

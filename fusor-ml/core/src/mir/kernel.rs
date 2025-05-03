@@ -15,6 +15,7 @@ use super::inputs::{
     FloatInput, IntegerInput, KernelInput, KernelInputType, KernelInputValue, QMatrixInput,
     TensorInput,
 };
+use super::workgroup_shape::WorkgroupShape;
 
 #[derive(EnumSetType, Debug)]
 pub(crate) enum EnabledBuiltins {
@@ -27,6 +28,7 @@ pub(crate) enum EnabledBuiltins {
     SubgroupsPerWorkgroup,
 }
 
+#[derive(Debug)]
 pub(crate) struct GenericKernel {
     workgroup_size: [u32; 3],
     max_binding: u32,
@@ -62,7 +64,8 @@ impl GenericKernel {
         self.body = body;
     }
 
-    pub(crate) fn set_workgroup_size(&mut self, workgroup_size: [u32; 3]) {
+    pub(crate) fn set_workgroup_size(&mut self, workgroup_size: impl Into<WorkgroupShape>) {
+        let workgroup_size = workgroup_size.into().shape();
         assert!(
             workgroup_size.iter().product::<u32>() <= 256,
             "{workgroup_size:?} product must be <= 256"
@@ -405,7 +408,7 @@ impl GenericKernel {
                 (KernelInputType::Float(float_input), KernelInputValue::Float(value)) => {
                     owned_entries.push((float_input.index, create_f32_buffer(device, *value)));
                 }
-                _ => unreachable!(),
+                _ => panic!("cannot bind {input:?} to {value:?}"),
             }
         }
 

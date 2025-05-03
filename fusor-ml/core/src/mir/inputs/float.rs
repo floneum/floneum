@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct FloatInput {
     pub(crate) index: u32,
 }

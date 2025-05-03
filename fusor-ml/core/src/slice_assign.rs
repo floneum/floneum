@@ -1,9 +1,13 @@
-use std::{ops::Range, sync::OnceLock};
-
-use wgpu::CommandEncoder;
+use std::ops::Range;
 
 use crate::{
-    TILE_SIZE, Tensor, TensorData, compute_graph::AnyComputeKey, visit_tiled::VisitTiledKernel,
+    TILE_SIZE, Tensor,
+    compute_graph::{AnyComputeKey, ComputeGraphInner},
+    mir::operation::Operation,
+    visit_tiled::{
+        MaybeQData, build_visit_tiled_kernel, titled_map_dispatch_size,
+        titled_map_workgroup_size_constraints,
+    },
 };
 
 #[derive(Debug)]
@@ -21,54 +25,76 @@ impl SliceAssignOperation {
             slices,
         }
     }
+
+    pub fn rank(&self) -> usize {
+        self.slices.len()
+    }
 }
 
-pub(crate) struct UntypedSliceAssignKernel {
-    slices: Box<[Range<usize>]>,
-    sparse_kernel: OnceLock<VisitTiledKernel>,
-}
-
-impl UntypedSliceAssignKernel {
-    pub(crate) fn new(slices: &[Range<usize>]) -> Self {
-        Self {
-            slices: slices.into(),
-            sparse_kernel: OnceLock::new(),
-        }
+impl Operation for SliceAssignOperation {
+    fn workgroup_shape_constraints(
+        &self,
+    ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
+        titled_map_workgroup_size_constraints(self.rank() as _)
     }
 
-    pub fn run(
+    fn dispatch_size(
         &self,
-        target: &TensorData,
-        value: &TensorData,
+        workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
+        inputs: &[crate::mir::inputs::KernelInputValue],
+    ) -> [u32; 3] {
+        let inputs: Box<[_]> = inputs
+            .iter()
+            .map(|input| {
+                let tensor: MaybeQData = input.clone().try_into().unwrap();
+                tensor
+            })
+            .collect();
+        titled_map_dispatch_size(TILE_SIZE, *workgroup_shape, &inputs)
+    }
 
-        command_encoder: &mut CommandEncoder,
-    ) -> TensorData {
-        let rank = target.layout().rank();
-        let datatype = target.datatype();
+    fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {
+        f(self.value);
+        f(self.input);
+    }
 
-        let create_kernel = || {
-            let datatypes = vec![datatype.into(); 2];
+    fn inputs(&self, nodes: &ComputeGraphInner) -> Vec<crate::mir::inputs::KernelInputValue> {
+        let input = nodes.cached_results.get(&self.input).unwrap();
+        let input = input.slice(&self.slices);
+        let value = nodes.get_result_or_qmatrix(self.value).unwrap();
 
-            VisitTiledKernel::new(
-                rank as u32,
-                TILE_SIZE,
-                false,
-                datatypes,
-                |_, indexes, tensors, values| {
-                    let target_index = &indexes[0];
-                    let target_tensor = &tensors[0];
-                    let value = &values[1];
-                    format!("{target_tensor}[{target_index}] = {value};")
-                },
-            )
-        };
-        let kernel = self.sparse_kernel.get_or_init(create_kernel);
+        vec![input.into(), value.into()]
+    }
 
-        let sliced = target.slice(&self.slices);
-        assert_eq!(sliced.layout().shape(), value.layout().shape());
-        let tensors = vec![sliced.into(), value.into()];
-        kernel.run(tensors, command_encoder);
-        target.clone()
+    fn build_kernel(
+        &self,
+        nodes: &ComputeGraphInner,
+        _: &crate::mir::workgroup_shape::WorkgroupShape,
+        inputs: &[crate::mir::inputs::KernelInputValue],
+        kernel: &mut crate::mir::kernel::GenericKernel,
+    ) -> crate::mir::inputs::KernelInputValue {
+        let input: MaybeQData = inputs[0].clone().try_into().unwrap();
+        let value: MaybeQData = inputs[1].clone().try_into().unwrap();
+        assert_eq!(input.layout().shape(), value.layout().shape());
+        let rank = input.layout().rank();
+        let datatype = input.datatype();
+
+        let datatypes = vec![datatype.into(); 2];
+
+        build_visit_tiled_kernel(
+            rank as u32,
+            TILE_SIZE,
+            datatypes,
+            |_, indexes, tensors, values| {
+                let target_index = &indexes[0];
+                let target_tensor = &tensors[0];
+                let value = &values[1];
+                format!("{target_tensor}[{target_index}] = {value};")
+            },
+            kernel,
+        );
+
+        nodes.get_result_or_qmatrix(self.input).unwrap().into()
     }
 }
 

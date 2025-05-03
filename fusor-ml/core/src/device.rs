@@ -1,11 +1,9 @@
 use std::{
     borrow::Cow,
     fmt::Debug,
-    ops::{Deref, DerefMut},
     sync::Arc,
 };
 
-use parking_lot::RwLock;
 
 struct DeviceInner {
     device: wgpu::Device,

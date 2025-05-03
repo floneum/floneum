@@ -1,5 +1,4 @@
 use std::fmt::Display;
-use std::fmt::Write;
 
 use crate::TensorData;
 use crate::quantized::QMatrix;
@@ -14,6 +13,7 @@ pub(crate) use integer::IntegerInput;
 pub(crate) use qmatrix::QMatrixInput;
 pub(crate) use tensor::TensorInput;
 
+#[derive(Clone, Debug)] 
 pub(crate) enum KernelInputValue {
     QMatrix(QMatrix),
     Tensor(TensorData),
@@ -45,6 +45,7 @@ impl From<f32> for KernelInputValue {
     }
 }
 
+#[derive(Clone, Debug)]
 pub(crate) struct KernelInput {
     pub(crate) ty: KernelInputType,
 }
@@ -113,6 +114,7 @@ impl Display for KernelInput {
     }
 }
 
+#[derive(Clone, Debug)]
 pub(crate) enum KernelInputType {
     QMatrix(QMatrixInput),
     Tensor(TensorInput),

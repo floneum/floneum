@@ -2,7 +2,7 @@ use fusor_gguf::GgmlType;
 use std::fmt::Display;
 use std::fmt::Write;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct QMatrixInput {
     pub(crate) start_index: u32,
     pub(crate) datatype: GgmlType,

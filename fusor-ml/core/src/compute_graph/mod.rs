@@ -15,10 +15,7 @@ mod visit;
 mod visualize;
 
 use crate::{
-    DataTypeEnum, Device, ElementWiseOperation, MatMulOperation, PairWiseOperation, QMatrix,
-    ReduceOperation, dequantize::DequantizeOperation, index_select::IndexSelectOperation,
-    map_layout::MapLayoutOperation, quantized::matmul::QMatMulOperation, resize::ResizeOperation,
-    slice_assign::SliceAssignOperation, tensor::TensorData,
+    dequantize::DequantizeOperation, index_select::IndexSelectOperation, map_layout::MapLayoutOperation, quantized::matmul::QMatMulOperation, resize::ResizeOperation, slice_assign::SliceAssignOperation, tensor::TensorData, visit_tiled::MaybeQData, DataTypeEnum, Device, ElementWiseOperation, MatMulOperation, PairWiseOperation, QMatrix, ReduceOperation
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -415,17 +412,17 @@ impl ComputeGraph {
 
 #[derive(Default)]
 pub(crate) struct ComputeGraphNodes {
-    element_wise: FxHashMap<ElementWiseComputeNodeKey, ElementWiseOperation>,
-    pair_wise: FxHashMap<PairWiseComputeNodeKey, PairWiseOperation>,
-    mat_mul: FxHashMap<MatMulComputeNodeKey, MatMulOperation>,
-    reduce: FxHashMap<ReduceComputeNodeKey, ReduceOperation>,
-    map_layout: FxHashMap<MapLayoutComputeNodeKey, MapLayoutOperation>,
-    resize: FxHashMap<ResizeComputeNodeKey, ResizeOperation>,
-    slice_assign: FxHashMap<SliceAssignComputeNodeKey, SliceAssignOperation>,
-    index_select: FxHashMap<IndexSelectComputeNodeKey, IndexSelectOperation>,
-    tensor: FxHashMap<TensorComputeNodeKey, TensorData>,
-    q_mat_mul: FxHashMap<QMatMulComputeNodeKey, QMatMulOperation>,
-    dequantize: FxHashMap<DequantizeComputeKey, DequantizeOperation>,
+    pub(crate) element_wise: FxHashMap<ElementWiseComputeNodeKey, ElementWiseOperation>,
+    pub(crate) pair_wise: FxHashMap<PairWiseComputeNodeKey, PairWiseOperation>,
+    pub(crate) mat_mul: FxHashMap<MatMulComputeNodeKey, MatMulOperation>,
+    pub(crate) reduce: FxHashMap<ReduceComputeNodeKey, ReduceOperation>,
+    pub(crate) map_layout: FxHashMap<MapLayoutComputeNodeKey, MapLayoutOperation>,
+    pub(crate) resize: FxHashMap<ResizeComputeNodeKey, ResizeOperation>,
+    pub(crate) slice_assign: FxHashMap<SliceAssignComputeNodeKey, SliceAssignOperation>,
+    pub(crate) index_select: FxHashMap<IndexSelectComputeNodeKey, IndexSelectOperation>,
+    pub(crate) tensor: FxHashMap<TensorComputeNodeKey, TensorData>,
+    pub(crate) q_mat_mul: FxHashMap<QMatMulComputeNodeKey, QMatMulOperation>,
+    pub(crate) dequantize: FxHashMap<DequantizeComputeKey, DequantizeOperation>,
 }
 
 impl ComputeGraphNodes {
@@ -444,11 +441,11 @@ impl ComputeGraphNodes {
     }
 }
 
-struct ComputeGraphInner {
-    device: Device,
-    nodes: ComputeGraphNodes,
+pub(crate) struct ComputeGraphInner {
+    pub(crate) device: Device,
+    pub(crate) nodes: ComputeGraphNodes,
 
-    cached_results: FxHashMap<AnyComputeKey, TensorData>,
+    pub(crate) cached_results: FxHashMap<AnyComputeKey, TensorData>,
 
     dependency_map: DependencyMap,
 
@@ -575,6 +572,16 @@ impl ComputeGraphInner {
                 self.nodes.dequantize.remove(&dequantize_compute_key);
             }
         }
+    }
+
+    pub(crate) fn get_result_or_qmatrix(&self, key: AnyComputeKey) -> Option<MaybeQData> {
+        let result = if let AnyComputeKey::Dequantize(key) = key {
+            let tensor = &self.nodes.dequantize.get(&key)?;
+            tensor.matrix.clone().into()
+        } else {
+            self.cached_results.get(&key)?.clone().into()
+        };
+        Some(result)
     }
 
     #[cfg(feature = "extra_assertions")]

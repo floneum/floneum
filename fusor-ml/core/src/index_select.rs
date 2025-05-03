@@ -1,6 +1,5 @@
 use crate::{
-    DataTypeEnum, TILE_SIZE, Tensor, TensorData, UntypedElementWiseKernel,
-    compute_graph::AnyComputeKey, mir::kernel::GenericKernel, padded_tensor_size,
+    compute_graph::AnyComputeKey, mir::kernel::GenericKernel, padded_tensor_size, DataTypeEnum, ElementWiseFunctions, Tensor, TensorData, TILE_SIZE
 };
 use std::{fmt::Write, sync::OnceLock};
 use wgpu::CommandEncoder;
@@ -55,8 +54,8 @@ pub(crate) struct UntypedIndexSelectKernel {
     datatype: DataTypeEnum,
     rank: usize,
     tile_size: u32,
-    pre_element_wise_input: UntypedElementWiseKernel,
-    pre_element_wise_indexes: UntypedElementWiseKernel,
+    pre_element_wise_input: ElementWiseFunctions,
+    pre_element_wise_indexes: ElementWiseFunctions,
     sparse_kernel: OnceLock<GenericKernel>,
 }
 
@@ -67,15 +66,15 @@ impl UntypedIndexSelectKernel {
             datatype,
             rank,
             tile_size: TILE_SIZE,
-            pre_element_wise_input: UntypedElementWiseKernel::empty(datatype),
-            pre_element_wise_indexes: UntypedElementWiseKernel::empty(DataTypeEnum::U32),
+            pre_element_wise_input: ElementWiseFunctions::empty(datatype),
+            pre_element_wise_indexes: ElementWiseFunctions::empty(DataTypeEnum::U32),
             sparse_kernel: OnceLock::new(),
         }
     }
 
     pub fn set_pre_element_wise_input(
         &mut self,
-        pre_element_wise: UntypedElementWiseKernel,
+        pre_element_wise: ElementWiseFunctions,
     ) -> &mut Self {
         self.pre_element_wise_input = pre_element_wise;
         self
@@ -83,7 +82,7 @@ impl UntypedIndexSelectKernel {
 
     pub fn set_pre_element_wise_indexes(
         &mut self,
-        pre_element_wise: UntypedElementWiseKernel,
+        pre_element_wise: ElementWiseFunctions,
     ) -> &mut Self {
         self.pre_element_wise_indexes = pre_element_wise;
         self

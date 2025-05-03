@@ -129,7 +129,7 @@ impl Display for DataTypeEnum {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)] 
 pub(crate) struct TensorLayoutInfo {
     layout: Layout,
     datatype: DataTypeEnum,
@@ -247,7 +247,7 @@ impl LazyTensorData {
         let graph = self.graph.clone();
         let device = self.device.clone();
         let mut info = self.info.clone();
-        info.datatype = function.function.datatype();
+        info.datatype = function.functions.out_datatype();
         let key = graph.create_element_wise(function);
 
         Self {
@@ -391,7 +391,7 @@ impl LazyTensorData {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)] 
 pub(crate) struct TensorData {
     device: Device,
     buffer: Arc<wgpu::Buffer>,
@@ -766,14 +766,16 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         // If the two tensors are the same, we can lower this to a cheaper element wise operation
         if self.data.key == other.data.key {
             return self.element_wise(ElementWiseOperation::new(
+                self.datatype(),
                 self.key(),
                 function.lower_to_element_wise(),
+                self.rank() as _
             ));
         }
 
         self.data.graph.merge(&other.data.graph);
         assert_eq!(self.shape(), other.shape());
-        let operation = PairWiseOperation::new(function, self.data.key, other.data.key);
+        let operation = PairWiseOperation::new(function, self.data.key, other.data.key, self.rank() as _);
         Self::from_parts(self.data.pair_wise(operation))
     }
 

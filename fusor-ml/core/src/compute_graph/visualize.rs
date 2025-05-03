@@ -26,7 +26,7 @@ impl GraphVisPass {
         let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
         let id = Identity::quoted(format!(
             "{} ({}) #{}",
-            operation.function.name(),
+            operation.name(),
             output_layout,
             key.0
         ));
