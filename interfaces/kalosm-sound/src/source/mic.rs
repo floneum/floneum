@@ -39,6 +39,18 @@ impl Default for MicInput {
 }
 
 impl MicInput {
+    /// Create a new MicInput from a specific device.
+    pub fn from_device(device: cpal::Device) -> Self {
+        let host = cpal::default_host();
+        let config = device.default_input_config()
+            .expect("Failed to get default input config");
+        Self {
+            host,
+            device,
+            config,
+        }
+    }
+
     /// Records audio for a given duration.
     pub async fn record_until(&self, deadline: Instant) -> SamplesBuffer<f32> {
         let mut stream = self.stream();
