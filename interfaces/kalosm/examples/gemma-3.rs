@@ -9,8 +9,7 @@ async fn main() {
         .unwrap();
 
     let mut chat = model
-        .chat()
-        .with_system_prompt("The assistant will act like a pirate");
+        .chat();
 
     loop {
         println!();
