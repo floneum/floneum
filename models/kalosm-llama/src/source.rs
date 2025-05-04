@@ -677,6 +677,8 @@ impl LlamaSource {
     }
 
     /// A preset for gemma 3 1b instruction fine tuned
+    /// 
+    /// Note: The gemma model series does not support system prompts
     pub fn gemma_3_1b_chat() -> Self {
         Self::new(FileSource::huggingface(
             "google/gemma-3-1b-it-qat-q4_0-gguf".to_string(),
