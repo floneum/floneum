@@ -10,12 +10,11 @@ pub struct RopeCache {
 }
 
 impl RopeCache {
-    pub fn new(config: &LlamaConfig, dtype: DType, device: &Device) -> candle_core::Result<Self> {
+    pub fn new(config: &LlamaConfig, dtype: DType, rope_theta: f32, device: &Device) -> candle_core::Result<Self> {
         let mut inverse_frequency = (0..config.head_dimension)
             .step_by(2)
             .map(|i| {
-                1. / (config
-                    .rope_theta
+                1. / (rope_theta
                     .powf(i as f32 / config.head_dimension as f32))
             })
             .collect::<Vec<_>>();
@@ -114,8 +113,8 @@ impl RopeCache {
 #[test]
 fn test_rope_cache() {
     let config = LlamaConfig::mock_test();
-    let device = Device::cuda_if_available(0).unwrap();
-    let cache = RopeCache::new(&config, DType::F32, &device).unwrap();
+    let device = Device::cuda_if_available(0)?;
+    let cache = RopeCache::new(&config, DType::F32, config.rope_theta, &device)?;
 
     let expected_cos = Tensor::new(
         vec![
@@ -128,7 +127,7 @@ fn test_rope_cache() {
         ],
         &device,
     )
-    .unwrap();
+    ?;
     let expected_sin = Tensor::new(
         vec![
             vec![0.0000f32],
@@ -140,24 +139,24 @@ fn test_rope_cache() {
         ],
         &device,
     )
-    .unwrap();
+    ?;
 
     let cos_error: f32 = (cache.cos - expected_cos)
-        .unwrap()
+        ?
         .abs()
-        .unwrap()
+        ?
         .sum_all()
-        .unwrap()
+        ?
         .to_scalar()
-        .unwrap();
+        ?;
     assert!(cos_error < 1e-2);
     let sin_error: f32 = (cache.sin - expected_sin)
-        .unwrap()
+        ?
         .abs()
-        .unwrap()
+        ?
         .sum_all()
-        .unwrap()
+        ?
         .to_scalar()
-        .unwrap();
+        ?;
     assert!(sin_error < 1e-2);
 }

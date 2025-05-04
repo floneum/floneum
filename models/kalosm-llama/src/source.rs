@@ -133,8 +133,8 @@ impl LlamaSource {
     }
 
     /// Override the stop token string. This is useful for models that have the wrong default stop token string.
-    pub fn with_override_stop_token_string(mut self, stop_token_string: String) -> Self {
-        self.override_stop_token_string = Some(stop_token_string);
+    pub fn with_override_stop_token_string(mut self, stop_token_string: impl ToString) -> Self {
+        self.override_stop_token_string = Some(stop_token_string.to_string());
 
         self
     }
@@ -674,6 +674,20 @@ impl LlamaSource {
             "main".to_string(),
             "DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf".to_string(),
         ))
+    }
+
+    /// A preset for gemma 3 1b instruction fine tuned
+    pub fn gemma_3_1b_chat() -> Self {
+        Self::new(FileSource::huggingface(
+            "google/gemma-3-1b-it-qat-q4_0-gguf".to_string(),
+            "main".to_string(),
+            "gemma-3-1b-it-q4_0.gguf".to_string(),
+        ))
+        .with_tokenizer(FileSource::huggingface(
+            "google/gemma-3-1b-it".to_string(),
+            "main".to_string(),
+            "tokenizer.json".to_string(),
+        )).with_override_stop_token_string("<end_of_turn>")
     }
 }
 

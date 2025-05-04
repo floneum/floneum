@@ -131,10 +131,18 @@ impl Model {
             let attention_wk = ct.remove(&format!("{prefix}.attention.wk.weight"))?;
             let attention_wv = ct.remove(&format!("{prefix}.attention.wv.weight"))?;
             let attention_wo = ct.remove(&format!("{prefix}.attention.wo.weight"))?;
-            let feed_forward_w1 = ct.remove(&format!("{prefix}.feed_forward.w1.weight"))?;
-            let feed_forward_w2 = ct.remove(&format!("{prefix}.feed_forward.w2.weight"))?;
-            let feed_forward_w3 = ct.remove(&format!("{prefix}.feed_forward.w3.weight"))?;
-            let attention_norm = ct.remove(&format!("{prefix}.attention_norm.weight"))?;
+            let feed_forward_w1 = ct
+                .remove(&format!("{prefix}.feed_forward.w1.weight"))
+                ?;
+            let feed_forward_w2 = ct
+                .remove(&format!("{prefix}.feed_forward.w2.weight"))
+                ?;
+            let feed_forward_w3 = ct
+                .remove(&format!("{prefix}.feed_forward.w3.weight"))
+                ?;
+            let attention_norm = ct
+                .remove(&format!("{prefix}.attention_norm.weight"))
+                ?;
             let ffn_norm = ct.remove(&format!("{prefix}.ffn_norm.weight"))?;
             let attention_variant = AttentionVariant::Separate(SeparateAttention {
                 attention_wq: QMatMul::from_qtensor(attention_wq)?,
@@ -199,8 +207,10 @@ impl Model {
         };
 
         // Get the eos and bos tokens from the metadata
-        let tokens: std::result::Result<Vec<_>, _> = md_get("tokenizer.ggml.tokens")?
-            .to_vec()?
+        let tokens: std::result::Result<Vec<_>, _> = md_get("tokenizer.ggml.tokens")
+            ?
+            .to_vec()
+            ?
             .iter()
             .map(|v| v.to_string())
             .collect();
@@ -214,7 +224,10 @@ impl Model {
                 .position(|v| **v == override_stop_token_string)
                 .unwrap_or(0) as u32
         } else {
-            md_get("tokenizer.ggml.eos_token_id")?.to_u32()?
+            md_get("tokenizer.ggml.eos_token_id")
+                ?
+                .to_u32()
+                ?
         };
         let start_token_string = start_token
             .map(|v| tokens[v as usize].clone())
@@ -226,20 +239,30 @@ impl Model {
         let chat_template = match chat_template {
             Some(chat_template) => {
                 let chat_template = HuggingFaceChatTemplate::create(chat_template)
-                    .map_err(LlamaSourceError::ChatTemplate)?;
+                    .map_err(LlamaSourceError::ChatTemplate)
+                    ?;
                 Some(chat_template)
             }
             None => None,
         };
 
         // Parameter extraction from metadata.
-        let architecture = ct.metadata["general.architecture"].to_string()?.clone();
+        let architecture = ct.metadata["general.architecture"]
+            .to_string()
+            ?
+            .clone();
         let head_count = md_get(".attention.head_count")?.to_u32()? as usize;
-        let head_count_kv = md_get(".attention.head_count_kv")?.to_u32()? as usize;
+        let head_count_kv = md_get(".attention.head_count_kv")
+            ?
+            .to_u32()
+            ? as usize;
         let block_count = md_get(".block_count")?.to_u32()? as usize;
         let embedding_length = md_get(".embedding_length")?.to_u32()? as usize;
         // Strangely this value is generally 1e-6 in GGUF file but used to be 1e-5 by default.
-        let rms_norm_eps = md_get(".attention.layer_norm_rms_epsilon")?.to_f32()? as f64;
+        let rms_norm_eps = md_get(".attention.layer_norm_rms_epsilon")
+            ?
+            .to_f32()
+            ? as f64;
 
         let rope_freq_base = md_get(".rope.freq_base")
             .and_then(|m| m.to_f32())
@@ -260,8 +283,8 @@ impl Model {
             .or_else(|| (architecture == "gemma3").then_some(GEMMA_DEFAULT_ROPE_FREQUENCY_SLIDING));
 
         let context_length = md_get(".context_length")?.to_u32()? as usize;
-        let head_dim = md_get(".attention.key_length")
-            .and_then(|v| v.to_u32())
+        let head_dim = md_get("").ok()
+            .to_u32()
             .ok()
             .map(|x| x as usize)
             .unwrap_or_else(|| embedding_length / head_count);
@@ -289,7 +312,8 @@ impl Model {
             .map(|rope_freq_base_sliding| {
                 RopeCache::new(&config, DType::F32, rope_freq_base_sliding, device)
             })
-            .transpose()?;
+            .transpose()
+            ?;
 
         let tok_embeddings_q = ct.tensor(reader, "token_embd.weight", device)?;
         let mut tok_embeddings = tok_embeddings_q.dequantize(device)?;
@@ -316,9 +340,15 @@ impl Model {
                         attention_qkv: QMatMul::from_qtensor(qkv)?,
                     })
                 } else {
-                    let q = ct.tensor(reader, &format!("{prefix}.attn_q.weight"), device)?;
-                    let k = ct.tensor(reader, &format!("{prefix}.attn_k.weight"), device)?;
-                    let v = ct.tensor(reader, &format!("{prefix}.attn_v.weight"), device)?;
+                    let q = ct
+                        .tensor(reader, &format!("{prefix}.attn_q.weight"), device)
+                        ?;
+                    let k = ct
+                        .tensor(reader, &format!("{prefix}.attn_k.weight"), device)
+                        ?;
+                    let v = ct
+                        .tensor(reader, &format!("{prefix}.attn_v.weight"), device)
+                        ?;
                     let bias = if let (Ok(bias_q), Ok(bias_k), Ok(bias_v)) = (
                         ct.tensor(reader, &format!("{prefix}.attn_q.bias"), device),
                         ct.tensor(reader, &format!("{prefix}.attn_k.bias"), device),
@@ -342,28 +372,33 @@ impl Model {
                         attention_wq: QMatMul::from_qtensor(q)?,
                         attention_q_norm: q_norm
                             .map(|norm| decode_norm(norm, rms_norm_eps))
-                            .transpose()?,
+                            .transpose()
+                            ?,
                         attention_wk: QMatMul::from_qtensor(k)?,
                         attention_k_norm: k_norm
                             .map(|norm| decode_norm(norm, rms_norm_eps))
-                            .transpose()?,
+                            .transpose()
+                            ?,
                         attention_wv: QMatMul::from_qtensor(v)?,
                         interleaved_rope: architecture != "qwen2" && architecture != "gemma3",
                         bias,
                     };
                     AttentionVariant::Separate(separate)
                 };
-            let attention_wo =
-                ct.tensor(reader, &format!("{prefix}.attn_output.weight"), device)?;
+            let attention_wo = ct
+                .tensor(reader, &format!("{prefix}.attn_output.weight"), device)
+                ?;
             // Try to read from the up, down and gate weights
             let feed_forward_variant = if let Ok(ffn_gate) =
                 ct.tensor(reader, &format!("{prefix}.ffn_gate.weight"), device)
             {
                 let feed_forward_w1 = ffn_gate;
-                let feed_forward_w2 =
-                    ct.tensor(reader, &format!("{prefix}.ffn_down.weight"), device)?;
-                let feed_forward_w3 =
-                    ct.tensor(reader, &format!("{prefix}.ffn_up.weight"), device)?;
+                let feed_forward_w2 = ct
+                    .tensor(reader, &format!("{prefix}.ffn_down.weight"), device)
+                    ?;
+                let feed_forward_w3 = ct
+                    .tensor(reader, &format!("{prefix}.ffn_up.weight"), device)
+                    ?;
                 FeedForwardVariant::Llama(LlamaFeedForward {
                     gate: QMatMul::from_qtensor(feed_forward_w1)?,
                     up: QMatMul::from_qtensor(feed_forward_w2)?,
@@ -371,10 +406,15 @@ impl Model {
                 })
             } else {
                 // Otherwise, try to read from the up, and down weights
-                let up = ct.tensor(reader, &format!("{prefix}.ffn_up.weight"), device)?;
+                let up = ct
+                    .tensor(reader, &format!("{prefix}.ffn_up.weight"), device)
+                    ?;
                 // Transpose the down tensor
-                let down = ct.tensor(reader, &format!("{prefix}.ffn_down.weight"), device)?;
-                let feed_forward_length = md_get(".feed_forward_length")?.to_u32()? as usize;
+                let down = ct
+                    .tensor(reader, &format!("{prefix}.ffn_down.weight"), device)
+                    ?;
+                let feed_forward_length =
+                    md_get(".feed_forward_length")?.to_u32()? as usize;
 
                 FeedForwardVariant::Phi(PhiFeedForward {
                     up: QMatMul::from_qtensor(up)?,
@@ -382,8 +422,9 @@ impl Model {
                     feed_forward_length,
                 })
             };
-            let attention_norm =
-                ct.tensor(reader, &format!("{prefix}.attn_norm.weight"), device)?;
+            let attention_norm = ct
+                .tensor(reader, &format!("{prefix}.attn_norm.weight"), device)
+                ?;
             let post_attention_norm = ct
                 .tensor(
                     reader,
@@ -391,7 +432,9 @@ impl Model {
                     device,
                 )
                 .ok();
-            let ffn_norm = ct.tensor(reader, &format!("{prefix}.ffn_norm.weight"), device)?;
+            let ffn_norm = ct
+                .tensor(reader, &format!("{prefix}.ffn_norm.weight"), device)
+                ?;
             let ffn_post_norm = ct
                 .tensor(reader, &format!("{prefix}.post_ffw_norm.weight"), device)
                 .ok();
@@ -424,12 +467,14 @@ impl Model {
                 attention_norm: decode_norm(attention_norm, rms_norm_eps)?,
                 post_attention_norm: post_attention_norm
                     .map(|norm| decode_norm(norm, rms_norm_eps))
-                    .transpose()?,
+                    .transpose()
+                    ?,
                 feed_forward_variant,
                 ffn_norm: decode_norm(ffn_norm, rms_norm_eps)?,
                 post_ffn_norm: ffn_post_norm
                     .map(|norm| decode_norm(norm, rms_norm_eps))
-                    .transpose()?,
+                    .transpose()
+                    ?,
                 n_head: head_count,
                 n_kv_head: head_count_kv,
                 head_dim,
@@ -475,13 +520,22 @@ impl Model {
                 cache.tokens = all_tokens.to_vec();
             }
             assert!(all_tokens.len() <= self.config.context_length);
-            (Tensor::new(all_tokens, device)?.unsqueeze(0)?, 0)
+            (
+                Tensor::new(all_tokens, device)
+                    ?
+                    .unsqueeze(0)
+                    ?,
+                0,
+            )
         } else {
             let index_pos = cache.as_ref().map(|c| c.tokens.len()).unwrap_or_default();
             if let Some(cache) = cache.as_mut() {
                 cache.tokens.extend_from_slice(tokens);
             }
-            (Tensor::new(tokens, device)?.unsqueeze(0)?, index_pos)
+            (
+                Tensor::new(tokens, device)?.unsqueeze(0)?,
+                index_pos,
+            )
         };
 
         let mut layer_in = self.tok_embeddings.forward(&x)?;
@@ -492,15 +546,18 @@ impl Model {
             debug_assert_none_nan(&residual);
             let x = layer.attention_norm.forward(&x)?;
             debug_assert_none_nan(&x);
-            let mask =
-                self.masks
-                    .get_mask(seq_len, index_pos, layer.sliding_window_size, device)?;
-            let mut attn = layer.forward(
-                &x,
-                Some(&mask),
-                index_pos,
-                cache.as_mut().map(|c| &mut c.blocks[i]),
-            )?;
+            let mask = self
+                .masks
+                .get_mask(seq_len, index_pos, layer.sliding_window_size, device)
+                ?;
+            let mut attn = layer
+                .forward(
+                    &x,
+                    Some(&mask),
+                    index_pos,
+                    cache.as_mut().map(|c| &mut c.blocks[i]),
+                )
+                ?;
             debug_assert_none_nan(&attn);
             if let Some(post_attention_norm) = &layer.post_attention_norm {
                 attn = post_attention_norm.forward(&attn)?;
@@ -533,9 +590,9 @@ fn debug_assert_none_nan(tensor: &Tensor) {
     #[cfg(debug_assertions)]
     tensor
         .flatten_all()
-        .unwrap()
+        ?
         .to_vec1()
-        .unwrap()
+        ?
         .iter()
         .for_each(|v: &f32| {
             if v.is_nan() {
