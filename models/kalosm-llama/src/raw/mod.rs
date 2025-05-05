@@ -189,7 +189,9 @@ impl Model {
             let value = if s.starts_with('.') {
                 ct.metadata
                     .iter()
-                    .find_map(|(k, value)| k.ends_with(s).then_some(value))
+                    .filter(|(k, _)| k.ends_with(s))
+                    .min_by_key(|(k, _)| k.len())
+                    .map(|(_, v)| v)
             } else {
                 ct.metadata.get(s)
             };
