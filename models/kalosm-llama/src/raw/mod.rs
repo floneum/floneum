@@ -182,6 +182,7 @@ impl Model {
         reader: &mut R,
         device: &Device,
         override_stop_token_string: Option<String>,
+        override_chat_template: Option<String>,
         rope_scaling: Option<RopeScalingConfig>,
     ) -> std::result::Result<Self, LlamaSourceError> {
         let md_get = |s: &str| {
@@ -220,9 +221,12 @@ impl Model {
             .map(|v| tokens[v as usize].clone())
             .unwrap_or_else(|| "".to_string());
         let stop_token_string = tokens[stop_token as usize].clone();
-        let chat_template = md_get("tokenizer.chat_template")
-            .ok()
-            .and_then(|v| v.to_string().ok());
+        let chat_template = override_chat_template.or_else(|| {
+            md_get("tokenizer.chat_template")
+                .ok()
+                .and_then(|v| v.to_string().ok())
+                .cloned()
+        });
         let chat_template = match chat_template {
             Some(chat_template) => {
                 let chat_template = HuggingFaceChatTemplate::create(chat_template)
