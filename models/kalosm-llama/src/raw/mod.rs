@@ -491,7 +491,6 @@ impl Model {
         };
 
         let mut layer_in = self.tok_embeddings.forward(&x)?;
-        // layer_in = (layer_in * (self.tok_embeddings.hidden_size() as f64).sqrt())?;
         for (i, layer) in self.layers.iter().enumerate() {
             let x = layer_in;
             let residual = &x;
