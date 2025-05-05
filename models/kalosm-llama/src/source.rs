@@ -756,7 +756,7 @@ impl LlamaSource {
     }
 
     /// A preset for gemma 3 27b instruction fine tuned
-    /// 
+    ///
     /// Note: The gemma model series does not support system prompts
     pub fn gemma_3_27b_chat() -> Self {
         Self::new(FileSource::huggingface(

@@ -495,7 +495,7 @@ impl Model {
         for (i, layer) in self.layers.iter().enumerate() {
             let x = layer_in;
             let residual = &x;
-            debug_assert_none_nan(&residual);
+            debug_assert_none_nan(residual);
             let x = layer.attention_norm.forward(&x)?;
             debug_assert_none_nan(&x);
             let mask =
