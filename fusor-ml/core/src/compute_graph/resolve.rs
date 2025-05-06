@@ -9,7 +9,6 @@ use crate::{
     matmul::UntypedMatMul,
     mir::{inputs::KernelInputValue, operation::Operation},
     quantized::matmul::UntypedQMatMul,
-    resize::UntypedResizeKernel,
     tensor::TensorData,
     visit_tiled::MaybeQData,
 };
@@ -360,7 +359,12 @@ impl<'a> Resolver<'a> {
             self.queue.push_back(input_key);
             return None;
         };
-        let mut kernel = ReduceOperation::new(input_key, operation.function, operation.axis, operation.rank);
+        let mut kernel = ReduceOperation::new(
+            input_key,
+            operation.function,
+            operation.axis,
+            operation.rank,
+        );
         let element_wise_before =
             element_wise::ElementWiseFunctions::new(element_wise_before, input.datatype());
         let element_wise_after =
@@ -392,15 +396,16 @@ impl<'a> Resolver<'a> {
     fn resolve_resize(&mut self, key: ResizeComputeNodeKey) -> Option<TensorData> {
         let operation = self.graph.nodes.resize.get(&key).unwrap();
         let input = operation.input;
-        let new_shape = operation.new_shape.clone();
-        let fill_shape = operation.fill_shape.clone();
-        let Some(input) = self.graph.cached_results.get(&input).cloned() else {
+        if !self.graph.cached_results.contains_key(&input) {
             self.queue.push_back(input);
             return None;
-        };
-        let kernel = UntypedResizeKernel::new(&new_shape, &fill_shape);
+        }
 
-        let result = kernel.run(&input, &mut *self.command_encoder);
+        let result = operation.run(&self.graph, &mut *self.command_encoder);
+
+        let KernelInputValue::Tensor(result) = result else {
+            panic!("Kernel input value is not a tensor");
+        };
 
         Some(result)
     }
