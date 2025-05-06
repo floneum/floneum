@@ -168,6 +168,7 @@ impl LlamaModel {
                 let mut file = std::fs::File::open(&filename)
                     .expect("The path returned by LlamaSource::model should be valid");
                 let override_stop_token_string = builder.source.override_stop_token_string;
+                let override_chat_template = builder.source.override_chat_template;
                 match filename.extension().and_then(|v| v.to_str()) {
                     Some("gguf") => {
                         let model = gguf_file::Content::read(&mut file)?;
@@ -276,6 +277,7 @@ impl LlamaModel {
                             &mut file,
                             &device,
                             override_stop_token_string,
+                            override_chat_template,
                             config,
                         )?;
                         Ok((model, tokenizer))

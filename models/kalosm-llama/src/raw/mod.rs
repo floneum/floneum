@@ -30,6 +30,10 @@ fn decode_norm(tensor: QTensor, eps: f64) -> candle_core::Result<RmsNorm> {
     RmsNorm::from_qtensor(tensor, eps)
 }
 
+pub const DEFAULT_ROPE_FREQUENCY: f32 = 1_000_000.;
+pub const GEMMA_DEFAULT_SLIDING_WINDOW_TYPE: usize = 6;
+pub const GEMMA_DEFAULT_ROPE_FREQUENCY_SLIDING: f32 = 10_000.;
+
 /// The configuration of a Llama model.
 pub struct LlamaConfig {
     rope_freq_weight: Option<Tensor>,
@@ -111,7 +115,7 @@ impl Model {
             rope_scaling,
         };
         let config = Arc::new(config);
-        let rope = RopeCache::new(&config, DType::F32, device)?;
+        let rope = RopeCache::new(&config, DType::F32, config.rope_theta, device)?;
         let tok_embeddings_q = ct.remove("tok_embeddings.weight")?;
         let tok_embeddings = tok_embeddings_q.dequantize(device)?;
         let output = if let Ok(output) = ct.remove("output.weight") {
@@ -134,27 +138,32 @@ impl Model {
             let ffn_norm = ct.remove(&format!("{prefix}.ffn_norm.weight"))?;
             let attention_variant = AttentionVariant::Separate(SeparateAttention {
                 attention_wq: QMatMul::from_qtensor(attention_wq)?,
+                attention_q_norm: None,
                 attention_wk: QMatMul::from_qtensor(attention_wk)?,
+                attention_k_norm: None,
                 attention_wv: QMatMul::from_qtensor(attention_wv)?,
                 interleaved_rope: true,
                 bias: None,
             });
             let feed_forward_variant = FeedForwardVariant::Llama(LlamaFeedForward {
-                feed_forward_w1: QMatMul::from_qtensor(feed_forward_w1)?,
-                feed_forward_w2: QMatMul::from_qtensor(feed_forward_w2)?,
-                feed_forward_w3: QMatMul::from_qtensor(feed_forward_w3)?,
+                gate: QMatMul::from_qtensor(feed_forward_w1)?,
+                up: QMatMul::from_qtensor(feed_forward_w2)?,
+                down: QMatMul::from_qtensor(feed_forward_w3)?,
             });
             layers.push(LlamaAttention {
                 attention_variant,
                 attention_wo: QMatMul::from_qtensor(attention_wo)?,
                 attention_norm: decode_norm(attention_norm, 1e-5)?,
+                post_attention_norm: None,
                 feed_forward_variant,
                 ffn_norm: decode_norm(ffn_norm, 1e-5)?,
+                post_ffn_norm: None,
                 n_head: ct.hparams.n_head as usize,
                 n_kv_head: ct.hparams.n_head as usize / gqa,
                 head_dim: (ct.hparams.n_embd / ct.hparams.n_head) as usize,
                 hidden_size: config.hidden_size(),
                 rope_cache: rope.clone(),
+                sliding_window_size: None,
             })
         }
 
@@ -173,13 +182,16 @@ impl Model {
         reader: &mut R,
         device: &Device,
         override_stop_token_string: Option<String>,
+        override_chat_template: Option<String>,
         rope_scaling: Option<RopeScalingConfig>,
     ) -> std::result::Result<Self, LlamaSourceError> {
         let md_get = |s: &str| {
             let value = if s.starts_with('.') {
                 ct.metadata
                     .iter()
-                    .find_map(|(k, value)| k.ends_with(s).then_some(value))
+                    .filter(|(k, _)| k.ends_with(s))
+                    .min_by_key(|(k, _)| k.len())
+                    .map(|(_, v)| v)
             } else {
                 ct.metadata.get(s)
             };
@@ -211,9 +223,12 @@ impl Model {
             .map(|v| tokens[v as usize].clone())
             .unwrap_or_else(|| "".to_string());
         let stop_token_string = tokens[stop_token as usize].clone();
-        let chat_template = md_get("tokenizer.chat_template")
-            .ok()
-            .and_then(|v| v.to_string().ok());
+        let chat_template = override_chat_template.or_else(|| {
+            md_get("tokenizer.chat_template")
+                .ok()
+                .and_then(|v| v.to_string().ok())
+                .cloned()
+        });
         let chat_template = match chat_template {
             Some(chat_template) => {
                 let chat_template = HuggingFaceChatTemplate::create(chat_template)
@@ -224,6 +239,7 @@ impl Model {
         };
 
         // Parameter extraction from metadata.
+        let architecture = ct.metadata["general.architecture"].to_string()?.clone();
         let head_count = md_get(".attention.head_count")?.to_u32()? as usize;
         let head_count_kv = md_get(".attention.head_count_kv")?.to_u32()? as usize;
         let block_count = md_get(".block_count")?.to_u32()? as usize;
@@ -233,10 +249,28 @@ impl Model {
 
         let rope_freq_base = md_get(".rope.freq_base")
             .and_then(|m| m.to_f32())
-            .unwrap_or(10_000f32);
+            .unwrap_or(DEFAULT_ROPE_FREQUENCY);
+        let sliding_window_size = md_get(".attention.sliding_window")
+            .and_then(|m| m.to_u32())
+            .ok()
+            .map(|x| x as usize);
+        let sliding_window_type = md_get(".attention.sliding_window_type")
+            .and_then(|m| m.to_u32())
+            .ok()
+            .map(|x| x as usize)
+            .or_else(|| (architecture == "gemma3").then_some(GEMMA_DEFAULT_SLIDING_WINDOW_TYPE));
+
+        let rope_freq_base_sliding = md_get(".rope.local_freq_base")
+            .and_then(|m| m.to_f32())
+            .ok()
+            .or_else(|| (architecture == "gemma3").then_some(GEMMA_DEFAULT_ROPE_FREQUENCY_SLIDING));
 
         let context_length = md_get(".context_length")?.to_u32()? as usize;
-        let head_dim = embedding_length / head_count;
+        let head_dim = md_get(".attention.key_length")
+            .and_then(|v| v.to_u32())
+            .ok()
+            .map(|x| x as usize)
+            .unwrap_or_else(|| embedding_length / head_count);
 
         let config = LlamaConfig {
             rope_freq_weight: match ct.tensor(reader, "rope_freqs.weight", device).ok() {
@@ -256,10 +290,20 @@ impl Model {
         };
         let config = Arc::new(config);
 
-        let rope = RopeCache::new(&config, DType::F32, device)?;
+        let rope = RopeCache::new(&config, DType::F32, config.rope_theta, device)?;
+        let sliding_rope = rope_freq_base_sliding
+            .map(|rope_freq_base_sliding| {
+                RopeCache::new(&config, DType::F32, rope_freq_base_sliding, device)
+            })
+            .transpose()?;
 
         let tok_embeddings_q = ct.tensor(reader, "token_embd.weight", device)?;
-        let tok_embeddings = tok_embeddings_q.dequantize(device)?;
+        let mut tok_embeddings = tok_embeddings_q.dequantize(device)?;
+        // if this is gemma3, scale the tok_embeddings by sqrt(embedding_length)
+        if architecture == "gemma3" {
+            tok_embeddings = (tok_embeddings * (embedding_length as f64).sqrt())?;
+        }
+        let tok_embeddings = Embedding::new(tok_embeddings, embedding_length);
 
         let norm = ct.tensor(reader, "output_norm.weight", device)?;
         let norm = decode_norm(norm, rms_norm_eps)?;
@@ -294,12 +338,23 @@ impl Model {
                     } else {
                         None
                     };
-                    let architecture = ct.metadata["general.architecture"].to_string().unwrap();
+                    let q_norm = ct
+                        .tensor(reader, &format!("{prefix}.attn_q_norm.weight"), device)
+                        .ok();
+                    let k_norm = ct
+                        .tensor(reader, &format!("{prefix}.attn_k_norm.weight"), device)
+                        .ok();
                     let separate = SeparateAttention {
                         attention_wq: QMatMul::from_qtensor(q)?,
+                        attention_q_norm: q_norm
+                            .map(|norm| decode_norm(norm, rms_norm_eps))
+                            .transpose()?,
                         attention_wk: QMatMul::from_qtensor(k)?,
+                        attention_k_norm: k_norm
+                            .map(|norm| decode_norm(norm, rms_norm_eps))
+                            .transpose()?,
                         attention_wv: QMatMul::from_qtensor(v)?,
-                        interleaved_rope: architecture != "qwen2",
+                        interleaved_rope: architecture != "qwen2" && architecture != "gemma3",
                         bias,
                     };
                     AttentionVariant::Separate(separate)
@@ -316,9 +371,9 @@ impl Model {
                 let feed_forward_w3 =
                     ct.tensor(reader, &format!("{prefix}.ffn_up.weight"), device)?;
                 FeedForwardVariant::Llama(LlamaFeedForward {
-                    feed_forward_w1: QMatMul::from_qtensor(feed_forward_w1)?,
-                    feed_forward_w2: QMatMul::from_qtensor(feed_forward_w2)?,
-                    feed_forward_w3: QMatMul::from_qtensor(feed_forward_w3)?,
+                    gate: QMatMul::from_qtensor(feed_forward_w1)?,
+                    up: QMatMul::from_qtensor(feed_forward_w2)?,
+                    down: QMatMul::from_qtensor(feed_forward_w3)?,
                 })
             } else {
                 // Otherwise, try to read from the up, and down weights
@@ -335,23 +390,63 @@ impl Model {
             };
             let attention_norm =
                 ct.tensor(reader, &format!("{prefix}.attn_norm.weight"), device)?;
+            let post_attention_norm = ct
+                .tensor(
+                    reader,
+                    &format!("{prefix}.post_attention_norm.weight"),
+                    device,
+                )
+                .ok();
             let ffn_norm = ct.tensor(reader, &format!("{prefix}.ffn_norm.weight"), device)?;
+            let ffn_post_norm = ct
+                .tensor(reader, &format!("{prefix}.post_ffw_norm.weight"), device)
+                .ok();
+
+            let mut layer_sliding_window_size = None;
+
+            let rope_cache = if let (
+                Some(rope_sliding),
+                Some(sliding_window_type),
+                Some(sliding_window_size),
+            ) = (
+                sliding_rope.as_ref(),
+                sliding_window_type,
+                sliding_window_size,
+            ) {
+                let is_sliding = (layer_idx + 1) % sliding_window_type != 0;
+                if is_sliding {
+                    layer_sliding_window_size = Some(sliding_window_size);
+                    rope_sliding.clone()
+                } else {
+                    rope.clone()
+                }
+            } else {
+                rope.clone()
+            };
+
             layers.push(LlamaAttention {
                 attention_variant,
                 attention_wo: QMatMul::from_qtensor(attention_wo)?,
                 attention_norm: decode_norm(attention_norm, rms_norm_eps)?,
+                post_attention_norm: post_attention_norm
+                    .map(|norm| decode_norm(norm, rms_norm_eps))
+                    .transpose()?,
                 feed_forward_variant,
                 ffn_norm: decode_norm(ffn_norm, rms_norm_eps)?,
+                post_ffn_norm: ffn_post_norm
+                    .map(|norm| decode_norm(norm, rms_norm_eps))
+                    .transpose()?,
                 n_head: head_count,
                 n_kv_head: head_count_kv,
                 head_dim,
                 hidden_size: config.hidden_size(),
-                rope_cache: rope.clone(),
+                rope_cache,
+                sliding_window_size: layer_sliding_window_size,
             })
         }
         Ok(Self {
             config,
-            tok_embeddings: Embedding::new(tok_embeddings, embedding_length),
+            tok_embeddings,
             layers,
             norm,
             output,
@@ -394,29 +489,62 @@ impl Model {
             }
             (Tensor::new(tokens, device)?.unsqueeze(0)?, index_pos)
         };
-        let mask = self.masks.get_mask(seq_len, index_pos, device)?;
 
         let mut layer_in = self.tok_embeddings.forward(&x)?;
         for (i, layer) in self.layers.iter().enumerate() {
             let x = layer_in;
             let residual = &x;
+            debug_assert_none_nan(residual);
             let x = layer.attention_norm.forward(&x)?;
-            let attn = layer.forward(
+            debug_assert_none_nan(&x);
+            let mask =
+                self.masks
+                    .get_mask(seq_len, index_pos, layer.sliding_window_size, device)?;
+            let mut attn = layer.forward(
                 &x,
                 Some(&mask),
                 index_pos,
                 cache.as_mut().map(|c| &mut c.blocks[i]),
             )?;
+            debug_assert_none_nan(&attn);
+            if let Some(post_attention_norm) = &layer.post_attention_norm {
+                attn = post_attention_norm.forward(&attn)?;
+                debug_assert_none_nan(&attn);
+            }
             let x = (attn + residual)?;
+            debug_assert_none_nan(&x);
 
             // MLP
             let residual = &x;
             let x = layer.ffn_norm.forward(&x)?;
+            debug_assert_none_nan(&x);
+            let mut x = layer.feed_forward_variant.forward(&x)?;
+            debug_assert_none_nan(&x);
+            if let Some(post_ffn_norm) = &layer.post_ffn_norm {
+                x = post_ffn_norm.forward(&x)?;
+                debug_assert_none_nan(&x);
+            }
 
-            layer_in = (&layer.feed_forward_variant.forward(&x)? + residual)?;
+            layer_in = (&x + residual)?;
+            debug_assert_none_nan(&layer_in);
         }
         let x = self.norm.forward(&layer_in)?;
         let x = x.i((.., seq_len - 1, ..))?;
         self.output.forward(&x)
     }
+}
+
+fn debug_assert_none_nan(tensor: &Tensor) {
+    #[cfg(debug_assertions)]
+    tensor
+        .flatten_all()
+        .unwrap()
+        .to_vec1()
+        .unwrap()
+        .iter()
+        .for_each(|v: &f32| {
+            if v.is_nan() {
+                panic!("Tensor contains NaN values");
+            }
+        });
 }

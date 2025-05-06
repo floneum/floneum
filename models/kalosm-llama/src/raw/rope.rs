@@ -10,14 +10,15 @@ pub struct RopeCache {
 }
 
 impl RopeCache {
-    pub fn new(config: &LlamaConfig, dtype: DType, device: &Device) -> candle_core::Result<Self> {
+    pub fn new(
+        config: &LlamaConfig,
+        dtype: DType,
+        rope_theta: f32,
+        device: &Device,
+    ) -> candle_core::Result<Self> {
         let mut inverse_frequency = (0..config.head_dimension)
             .step_by(2)
-            .map(|i| {
-                1. / (config
-                    .rope_theta
-                    .powf(i as f32 / config.head_dimension as f32))
-            })
+            .map(|i| 1. / (rope_theta.powf(i as f32 / config.head_dimension as f32)))
             .collect::<Vec<_>>();
         if let Some(scaling_config) = &config.rope_scaling {
             let original_max_position_embeddings = scaling_config.original_max_position_embeddings;
@@ -115,7 +116,7 @@ impl RopeCache {
 fn test_rope_cache() {
     let config = LlamaConfig::mock_test();
     let device = Device::cuda_if_available(0).unwrap();
-    let cache = RopeCache::new(&config, DType::F32, &device).unwrap();
+    let cache = RopeCache::new(&config, DType::F32, config.rope_theta, &device).unwrap();
 
     let expected_cos = Tensor::new(
         vec![

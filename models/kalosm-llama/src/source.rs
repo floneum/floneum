@@ -51,6 +51,7 @@ pub struct LlamaSource {
     pub(crate) group_query_attention: u8,
     pub(crate) cache: kalosm_common::Cache,
     pub(crate) override_stop_token_string: Option<String>,
+    pub(crate) override_chat_template: Option<String>,
 }
 
 /// Errors that can occur when loading the Llama model.
@@ -93,6 +94,7 @@ impl LlamaSource {
             group_query_attention: 1,
             cache: Default::default(),
             override_stop_token_string: None,
+            override_chat_template: None,
         }
     }
 
@@ -133,8 +135,15 @@ impl LlamaSource {
     }
 
     /// Override the stop token string. This is useful for models that have the wrong default stop token string.
-    pub fn with_override_stop_token_string(mut self, stop_token_string: String) -> Self {
-        self.override_stop_token_string = Some(stop_token_string);
+    pub fn with_override_stop_token_string(mut self, stop_token_string: impl ToString) -> Self {
+        self.override_stop_token_string = Some(stop_token_string.to_string());
+
+        self
+    }
+
+    /// Override the chat template. This is useful for models that have a missing or incorrect chat template.
+    pub fn with_override_chat_template(mut self, chat_template: impl ToString) -> Self {
+        self.override_chat_template = Some(chat_template.to_string());
 
         self
     }
@@ -178,6 +187,25 @@ impl LlamaSource {
         ))
         .with_tokenizer(mistral_tokenizer())
         .with_group_query_attention(8)
+    }
+
+    /// A preset for Codestral 22b
+    pub fn codestral_22b() -> Self {
+        Self::new(
+            FileSource::HuggingFace {
+                model_id: "bartowski/Codestral-22B-v0.1-GGUF".to_string(),
+                revision: "main".to_string(),
+                file: "Codestral-22B-v0.1-Q4_K_M.gguf".to_string(),
+            },
+        )
+        .with_tokenizer(
+            FileSource::HuggingFace {
+                model_id: "mistralai/Codestral-22B-v0.1".to_string(),
+                revision: "main".to_string(),
+                file: "tokenizer.json".to_string(),
+            },
+        )
+        .with_override_chat_template(r#"{%- if messages[0]['role'] == 'system' %}\n    {%- set system_message = messages[0]['content'] %}\n    {%- set loop_messages = messages[1:] %}\n{%- else %}\n    {%- set loop_messages = messages %}\n{%- endif %}\n\n{{- bos_token }}\n{%- for message in loop_messages %}\n    {%- if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}\n        {{- raise_exception('After the optional system message, conversation roles must alternate user/assistant/user/assistant/...') }}\n    {%- endif %}\n    {%- if message['role'] == 'user' %}\n        {%- if loop.last and system_message is defined %}\n            {{- '[INST] ' + system_message + '\\n\\n' + message['content'] + '[/INST]' }}\n        {%- else %}\n            {{- '[INST] ' + message['content'] + '[/INST]' }}\n        {%- endif %}\n    {%- elif message['role'] == 'assistant' %}\n        {{- ' ' + message['content'] + eos_token}}\n    {%- else %}\n        {{- raise_exception('Only user and assistant roles are supported, with the exception of an initial optional system message!') }}\n    {%- endif %}\n{%- endfor %}\n"#)
     }
 
     /// A preset for NeuralHermes-2.5-Mistral-7B-GGUF
@@ -674,6 +702,74 @@ impl LlamaSource {
             "main".to_string(),
             "DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf".to_string(),
         ))
+    }
+
+    /// A preset for gemma 3 1b instruction fine tuned
+    ///
+    /// Note: The gemma model series does not support system prompts
+    pub fn gemma_3_1b_chat() -> Self {
+        Self::new(FileSource::huggingface(
+            "google/gemma-3-1b-it-qat-q4_0-gguf".to_string(),
+            "main".to_string(),
+            "gemma-3-1b-it-q4_0.gguf".to_string(),
+        ))
+        .with_tokenizer(FileSource::huggingface(
+            "google/gemma-3-1b-it".to_string(),
+            "main".to_string(),
+            "tokenizer.json".to_string(),
+        ))
+        .with_override_stop_token_string("<end_of_turn>")
+    }
+
+    /// A preset for gemma 3 4b instruction fine tuned
+    ///
+    /// Note: The gemma model series does not support system prompts
+    pub fn gemma_3_4b_chat() -> Self {
+        Self::new(FileSource::huggingface(
+            "google/gemma-3-4b-it-qat-q4_0-gguf".to_string(),
+            "main".to_string(),
+            "gemma-3-4b-it-q4_0.gguf".to_string(),
+        ))
+        .with_tokenizer(FileSource::huggingface(
+            "google/gemma-3-4b-it".to_string(),
+            "main".to_string(),
+            "tokenizer.json".to_string(),
+        ))
+        .with_override_stop_token_string("<end_of_turn>")
+    }
+
+    /// A preset for gemma 3 12b instruction fine tuned
+    ///
+    /// Note: The gemma model series does not support system prompts
+    pub fn gemma_3_12b_chat() -> Self {
+        Self::new(FileSource::huggingface(
+            "google/gemma-3-12b-it-qat-q4_0-gguf".to_string(),
+            "main".to_string(),
+            "gemma-3-12b-it-q4_0.gguf".to_string(),
+        ))
+        .with_tokenizer(FileSource::huggingface(
+            "google/gemma-3-12b-it".to_string(),
+            "main".to_string(),
+            "tokenizer.json".to_string(),
+        ))
+        .with_override_stop_token_string("<end_of_turn>")
+    }
+
+    /// A preset for gemma 3 27b instruction fine tuned
+    ///
+    /// Note: The gemma model series does not support system prompts
+    pub fn gemma_3_27b_chat() -> Self {
+        Self::new(FileSource::huggingface(
+            "google/gemma-3-27b-it-qat-q4_0-gguf".to_string(),
+            "main".to_string(),
+            "gemma-3-27b-it-q4_0.gguf".to_string(),
+        ))
+        .with_tokenizer(FileSource::huggingface(
+            "google/gemma-3-27b-it".to_string(),
+            "main".to_string(),
+            "tokenizer.json".to_string(),
+        ))
+        .with_override_stop_token_string("<end_of_turn>")
     }
 }
 
