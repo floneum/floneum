@@ -1,25 +1,13 @@
-use std::time::Duration;
-
-use fusor_ml_core::*;
+use fusor_core::*;
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt().init();
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
 
-    let tensor = Tensor::new(&device, &vec![vec![[1.; 20]; 10]; 10]);
-    let new = tensor.sum(0).sum(0).softmax().sum(0);
-    let graph = new.graphvis();
-    println!("{}", graph);
-    let timing = new.all_timing_information().await;
-    println!(
-        "segment time: {:?}",
-        timing.iter().map(|x| x.elapsed()).collect::<Vec<_>>()
-    );
-    println!("{:?}", timing.iter().map(|x| x.elapsed()).sum::<Duration>());
+    let tensor = Tensor::new(&device, &vec![vec![[1.; 1000]; 10]; 10]);
+    let new = tensor.softmax_last_dim();
+    println!("{}", new.graphvis());
+    let slice = new.as_slice().await;
+    // println!("{:?}", slice);
 }

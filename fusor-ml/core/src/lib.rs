@@ -7,7 +7,6 @@ pub use device::*;
 pub use element_wise::CastTensor;
 pub use layout::*;
 pub use quantized::*;
-pub use query::*;
 pub use reduce::*;
 pub use tensor::*;
 
@@ -19,16 +18,24 @@ mod composite;
 mod compute_graph;
 mod device;
 mod element_wise;
-mod kernel;
+mod index_select;
 mod layout;
 mod map_layout;
 mod matmul;
+mod mir;
 mod pair_wise;
 mod quantized;
 mod quantized_types_wgsl;
-mod query;
 mod reduce;
 mod resize;
 mod slice_assign;
 mod tensor;
 mod visit_tiled;
+
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("Failed to find a suitable device {0}")]
+    RequestDeviceError(#[from] wgpu::RequestDeviceError),
+}
+
+pub type Result<T, E = Error> = std::result::Result<T, E>;

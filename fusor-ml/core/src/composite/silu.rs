@@ -1,9 +1,9 @@
-use crate::{DataType, Tensor};
+use crate::{FloatDataType, Tensor};
 
-impl<const R: usize, D: DataType> Tensor<R, D> {
+impl<const R: usize, D: FloatDataType> Tensor<R, D> {
     pub fn silu(&self) -> Self {
         // silu(x) = x / (1 + exp(-x))
-        self / &(1. + (-self.clone()).exp())
+        self / &((-self.clone()).exp() + D::from_f32(1.0))
     }
 }
 
@@ -13,12 +13,7 @@ async fn test_silu() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+
     let data = [[1., -2.], [-3., 4.], [5., -6.]];
 
     let tensor = Tensor::new(&device, &data);

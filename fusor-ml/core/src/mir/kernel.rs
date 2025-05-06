@@ -1,14 +1,21 @@
 use enumset::{EnumSet, EnumSetType};
 use fusor_gguf::GgmlType;
 use std::fmt::{Debug, Write};
-use std::{fmt::Display, sync::OnceLock};
+use std::sync::OnceLock;
 use wgpu::{BindGroupLayout, CommandEncoder, PipelineCompilationOptions, util::DeviceExt};
 
-use crate::quantized::QMatrix;
 use crate::quantized_types_wgsl::{
     write_q4_0_type, write_q4_k_type, write_q5_0_type, write_q6_k_type, write_q8_0_type,
 };
-use crate::{DataTypeEnum, Device, PerformanceQueries, TensorData};
+use crate::{DataTypeEnum, Device};
+
+use super::function::Function;
+use super::globals::{ArrayType, KernelGlobal, KernelGlobalSpace, KernelGlobalType};
+use super::inputs::{
+    FloatInput, IntegerInput, KernelInput, KernelInputType, KernelInputValue, QMatrixInput,
+    TensorInput,
+};
+use super::workgroup_shape::WorkgroupShape;
 
 #[derive(EnumSetType, Debug)]
 pub(crate) enum EnabledBuiltins {
@@ -21,6 +28,7 @@ pub(crate) enum EnabledBuiltins {
     SubgroupsPerWorkgroup,
 }
 
+#[derive(Debug)]
 pub(crate) struct GenericKernel {
     workgroup_size: [u32; 3],
     max_binding: u32,
@@ -56,7 +64,8 @@ impl GenericKernel {
         self.body = body;
     }
 
-    pub(crate) fn set_workgroup_size(&mut self, workgroup_size: [u32; 3]) {
+    pub(crate) fn set_workgroup_size(&mut self, workgroup_size: impl Into<WorkgroupShape>) {
+        let workgroup_size = workgroup_size.into().shape();
         assert!(
             workgroup_size.iter().product::<u32>() <= 256,
             "{workgroup_size:?} product must be <= 256"
@@ -158,10 +167,7 @@ impl GenericKernel {
         let global = KernelGlobal::new(
             index,
             space,
-            KernelGlobalType::Array(ArrayType {
-                size,
-                datatype: array_type,
-            }),
+            KernelGlobalType::Array(ArrayType::new(size, array_type)),
         );
         self.globals.push(global.clone());
         global
@@ -402,7 +408,7 @@ impl GenericKernel {
                 (KernelInputType::Float(float_input), KernelInputValue::Float(value)) => {
                     owned_entries.push((float_input.index, create_f32_buffer(device, *value)));
                 }
-                _ => unreachable!(),
+                _ => panic!("cannot bind {input:?} to {value:?}"),
             }
         }
 
@@ -422,11 +428,10 @@ impl GenericKernel {
             })
     }
 
-    pub(crate) fn run_with_query(
+    pub(crate) fn run(
         &self,
         device: &Device,
         tensors: impl IntoIterator<Item = impl Into<KernelInputValue>>,
-        query: Option<&PerformanceQueries>,
         command_encoder: &mut CommandEncoder,
         workgroup_dispatch_size: [u32; 3],
     ) {
@@ -437,16 +442,12 @@ impl GenericKernel {
         {
             let mut cpass = command_encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: None,
-                timestamp_writes: query.map(|query| query.compute_timestamp_writes()),
+                timestamp_writes: None,
             });
             cpass.set_pipeline(&pipeline);
             cpass.set_bind_group(0, &bind_group, &[]);
             let [workgroup_size_x, workgroup_size_y, workgroup_size_z] = workgroup_dispatch_size;
             cpass.dispatch_workgroups(workgroup_size_x, workgroup_size_y, workgroup_size_z);
-        }
-
-        if let Some(query) = query {
-            query.resolve(command_encoder);
         }
     }
 
@@ -585,363 +586,5 @@ impl GenericKernel {
         writeln!(f, "}}")?;
 
         Ok(())
-    }
-}
-
-pub(crate) enum KernelInputValue {
-    QMatrix(QMatrix),
-    Tensor(TensorData),
-    Integer(u32),
-    Float(f32),
-}
-
-impl From<QMatrix> for KernelInputValue {
-    fn from(value: QMatrix) -> Self {
-        Self::QMatrix(value)
-    }
-}
-
-impl From<TensorData> for KernelInputValue {
-    fn from(value: TensorData) -> Self {
-        Self::Tensor(value)
-    }
-}
-
-impl From<u32> for KernelInputValue {
-    fn from(value: u32) -> Self {
-        Self::Integer(value)
-    }
-}
-
-impl From<f32> for KernelInputValue {
-    fn from(value: f32) -> Self {
-        Self::Float(value)
-    }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct Function {
-    id: u32,
-    ty: String,
-    body: String,
-    inputs: Vec<(String, String)>,
-}
-
-impl Function {
-    fn new(id: u32, ty: String, body: String, inputs: Vec<(String, String)>) -> Self {
-        Self {
-            id,
-            ty,
-            body,
-            inputs,
-        }
-    }
-
-    fn function_definition(&self) -> String {
-        let name = self.function_name();
-        let inputs = &self.inputs;
-        let mut inputs_string = String::new();
-        for (name, ty) in inputs {
-            inputs_string.push_str(&format!("{name}: {ty}, "));
-        }
-        for _ in 0..2 {
-            inputs_string.pop();
-        }
-        let body = &self.body;
-        let ty = &self.ty;
-        format!("fn {name}({inputs_string}) -> {ty} {{ {body} return output; }}")
-    }
-
-    fn function_name(&self) -> String {
-        format!("f_{}", self.id)
-    }
-
-    pub(crate) fn call(&self, inputs: Vec<String>) -> String {
-        format!("{}({})", self.function_name(), inputs.join(", "))
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn call_inlined(&self, inputs: Vec<String>) -> String {
-        let mut output = String::new();
-        output.push_str("{\n");
-        for (i_value, (i_name, ty)) in inputs.iter().zip(&self.inputs) {
-            output.push_str(&format!("let {i_name}: {ty} = {i_value};\n"));
-        }
-        output.push_str("}\n");
-        output
-    }
-}
-
-#[derive(Clone)]
-pub enum KernelGlobalSpace {
-    Workgroup,
-}
-
-impl Display for KernelGlobalSpace {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            KernelGlobalSpace::Workgroup => write!(f, "workgroup"),
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct KernelGlobal {
-    id: u32,
-    space: KernelGlobalSpace,
-    ty: KernelGlobalType,
-}
-
-impl KernelGlobal {
-    pub fn new(id: u32, space: KernelGlobalSpace, ty: KernelGlobalType) -> Self {
-        Self { id, space, ty }
-    }
-
-    pub fn global_definition(&self) -> String {
-        match &self.ty {
-            KernelGlobalType::Array(array) => {
-                let dtype = &array.datatype;
-                let size = &array.size;
-                let space = &self.space;
-                format!("var<{space}> {self}: array<{dtype}, {size}>;\n")
-            }
-        }
-    }
-}
-
-impl Display for KernelGlobal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "g_{}", self.id)
-    }
-}
-
-#[derive(Clone)]
-pub enum KernelGlobalType {
-    Array(ArrayType),
-}
-
-#[derive(Clone)]
-pub struct ArrayType {
-    size: String,
-    datatype: DataTypeEnum,
-}
-
-struct KernelInput {
-    ty: KernelInputType,
-}
-
-impl Display for KernelInput {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.ty {
-            KernelInputType::QMatrix(matrix) => {
-                let start_index = matrix.start_index;
-                let datatype = matrix.datatype;
-                writeln!(
-                    f,
-                    "@group(0) @binding({start_index}) var<storage, read> i_{start_index}: array<{datatype}>;"
-                )?;
-
-                writeln!(f, "struct Tensor{start_index}Info {{")?;
-                for i in 0..matrix.rank {
-                    writeln!(f, "    shape_{}: u32,", i)?;
-                }
-                writeln!(f, "}};")?;
-
-                let info_index = matrix.get_info_binding();
-                writeln!(
-                    f,
-                    "@group(0) @binding({info_index}) var<uniform> i_{info_index}: Tensor{start_index}Info;"
-                )?;
-            }
-            KernelInputType::Tensor(tensor) => {
-                let start_index = tensor.start_index;
-                let datatype = tensor.datatype;
-                write!(f, "@group(0) @binding({start_index}) ")?;
-
-                if tensor.mutable {
-                    write!(f, "var<storage, read_write> ")?;
-                } else {
-                    write!(f, "var<storage, read> ")?;
-                }
-
-                writeln!(f, "i_{start_index}: array<{datatype}>;")?;
-
-                writeln!(f, "struct Tensor{start_index}Info {{")?;
-                writeln!(f, "    offset: u32,")?;
-                for i in 0..tensor.rank {
-                    writeln!(f, "    stride_{}: u32,", i)?;
-                    writeln!(f, "    shape_{}: u32,", i)?;
-                }
-                writeln!(f, "}};")?;
-
-                let info_index = tensor.get_info_binding();
-                writeln!(
-                    f,
-                    "@group(0) @binding({info_index}) var<uniform> i_{info_index}: Tensor{start_index}Info;"
-                )?;
-            }
-            KernelInputType::Integer(integer) => {
-                let index = integer.index;
-                write!(
-                    f,
-                    "@group(0) @binding({index}) var<uniform> i_{index}: u32;"
-                )?
-            }
-            KernelInputType::Float(float) => write!(f, "var<uniform> i_{}: f32;", float.index)?,
-        }
-
-        Ok(())
-    }
-}
-
-enum KernelInputType {
-    QMatrix(QMatrixInput),
-    Tensor(TensorInput),
-    Integer(IntegerInput),
-    Float(FloatInput),
-}
-
-#[derive(Clone)]
-pub(crate) struct IntegerInput {
-    index: u32,
-}
-
-impl Display for IntegerInput {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "i_{}", self.index)
-    }
-}
-
-#[derive(Clone)]
-pub(crate) struct FloatInput {
-    index: u32,
-}
-
-impl Display for FloatInput {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "i_{}", self.index)
-    }
-}
-
-#[derive(Clone)]
-pub(crate) struct QMatrixInput {
-    start_index: u32,
-    datatype: GgmlType,
-    rank: u32,
-}
-
-impl QMatrixInput {
-    fn get_matrix_binding(&self) -> u32 {
-        self.start_index
-    }
-
-    fn get_info_binding(&self) -> u32 {
-        self.start_index + 1
-    }
-
-    fn info_binding(&self) -> String {
-        format!("i_{}", self.get_info_binding())
-    }
-
-    pub(crate) fn shape_binding(&self, rank: u32) -> String {
-        format!("{}.shape_{}", self.info_binding(), rank)
-    }
-}
-
-impl Display for QMatrixInput {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "i_{}", self.start_index)
-    }
-}
-
-#[derive(Clone)]
-pub(crate) struct TensorInput {
-    start_index: u32,
-    rank: u32,
-    mutable: bool,
-    datatype: DataTypeEnum,
-}
-
-impl TensorInput {
-    fn get_tensor_binding(&self) -> u32 {
-        self.start_index
-    }
-
-    fn get_info_binding(&self) -> u32 {
-        self.start_index + 1
-    }
-
-    fn info_binding(&self) -> String {
-        format!("i_{}", self.get_info_binding())
-    }
-
-    pub(crate) fn offset_binding(&self) -> String {
-        format!("{}.offset", self.info_binding())
-    }
-
-    pub(crate) fn stride_binding(&self, rank: u32) -> String {
-        format!("{}.stride_{}", self.info_binding(), rank)
-    }
-
-    pub(crate) fn shape_binding(&self, rank: u32) -> String {
-        format!("{}.shape_{}", self.info_binding(), rank)
-    }
-
-    pub(crate) fn check_bounds(
-        &self,
-        write: &mut String,
-        indexes: impl IntoIterator<Item = String>,
-        in_bounds: impl FnOnce(&mut String),
-    ) {
-        write!(write, "if true ").unwrap();
-        for (i, index) in indexes.into_iter().enumerate().take(self.rank as usize) {
-            let stride = self.shape_binding(i as u32);
-            write!(write, "&& {index} < {stride} ").unwrap();
-        }
-        write!(write, "{{").unwrap();
-        in_bounds(write);
-        write!(write, "}}").unwrap();
-    }
-
-    pub(crate) fn check_bounds_contiguous(
-        &self,
-        write: &mut String,
-        contiguous_index: String,
-        in_bounds: impl FnOnce(&mut String),
-    ) {
-        write!(write, "if {contiguous_index} < 1 ").unwrap();
-        for i in 0..self.rank {
-            let stride = self.shape_binding(i);
-            write!(write, "* {stride} ").unwrap();
-        }
-        write!(write, "{{").unwrap();
-        in_bounds(write);
-        write!(write, "}}").unwrap();
-    }
-
-    pub(crate) fn strided_index(
-        &self,
-        write: &mut String,
-        indexes: impl IntoIterator<Item = String>,
-    ) {
-        let offset = self.offset_binding();
-        write!(write, "{offset} + ").unwrap();
-        for (i, index) in indexes.into_iter().enumerate().take(self.rank as usize) {
-            let stride = self.stride_binding(i as u32);
-            write!(write, "{index}*{stride} + ").unwrap();
-        }
-        for _ in 0..3 {
-            write.pop();
-        }
-    }
-
-    pub fn rank(&self) -> u32 {
-        self.rank
-    }
-}
-
-impl Display for TensorInput {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "i_{}", self.start_index)
     }
 }

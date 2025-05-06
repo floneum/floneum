@@ -10,8 +10,8 @@ repository = "https://github.com/floneum/floneum"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-candle-core.workspace = true
-candle-nn.workspace = true
+candle-core = { workspace = true, optional = true }
+candle-nn = { workspace = true, optional = true }
 hf-hub = { version = "0.3.0" }
 reqwest = "0.11.24"
 tokio = { version = "1.36.0", features = ["fs"] }
@@ -24,3 +24,4 @@ kalosm-model-types = { workspace = true, features = ["loading-progress-bar"] }
 
 [features]
 metal = ["dep:metal"]
+candle = ["dep:candle-core", "dep:candle-nn"]

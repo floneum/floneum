@@ -26,12 +26,6 @@
 
 #![warn(missing_docs)]
 
-#[cfg(feature = "mkl")]
-extern crate intel_mkl_src;
-
-#[cfg(feature = "accelerate")]
-extern crate accelerate_src;
-
 mod chat;
 mod chat_template;
 mod gguf_tokenizer;
@@ -45,10 +39,8 @@ mod token_stream;
 
 pub use crate::chat::LlamaChatSession;
 use crate::model::LlamaModel;
-pub use crate::raw::cache::*;
 pub use crate::session::LlamaSession;
-use candle_core::Device;
-pub use kalosm_common::*;
+use fusor_core::Device;
 use kalosm_language_model::{TextCompletionBuilder, TextCompletionModelExt};
 use kalosm_model_types::ModelLoadingProgress;
 use kalosm_sample::{LiteralParser, StopOn};
@@ -242,10 +234,10 @@ impl LlamaBuilder {
     }
 
     /// Get the device or the default device if not set.
-    pub(crate) fn get_device(&self) -> Result<Device, LlamaSourceError> {
+    pub(crate) async fn get_device(&self) -> Result<Device, LlamaSourceError> {
         match self.device.clone() {
             Some(device) => Ok(device),
-            None => Ok(accelerated_device_if_available()?),
+            None => Ok(Device::new().await?),
         }
     }
 
@@ -288,7 +280,6 @@ impl LlamaBuilder {
     }
 }
 
-#[derive(Debug)]
 pub(crate) struct InferenceSettings {
     prompt: String,
 
