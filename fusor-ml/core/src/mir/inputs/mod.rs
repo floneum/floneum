@@ -21,6 +21,36 @@ pub(crate) enum KernelInputValue {
     Float(f32),
 }
 
+impl KernelInputValue {
+    pub(crate) fn as_tensor(&self) -> Option<&TensorData> {
+        match self {
+            KernelInputValue::Tensor(tensor) => Some(tensor),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn as_qmatrix(&self) -> Option<&QMatrix> {
+        match self {
+            KernelInputValue::QMatrix(matrix) => Some(matrix),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn as_integer(&self) -> Option<u32> {
+        match self {
+            KernelInputValue::Integer(integer) => Some(*integer),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn as_float(&self) -> Option<f32> {
+        match self {
+            KernelInputValue::Float(float) => Some(*float),
+            _ => None,
+        }
+    }
+}
+
 impl From<QMatrix> for KernelInputValue {
     fn from(value: QMatrix) -> Self {
         Self::QMatrix(value)

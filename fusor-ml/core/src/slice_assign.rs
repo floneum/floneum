@@ -34,6 +34,7 @@ impl SliceAssignOperation {
 impl Operation for SliceAssignOperation {
     fn workgroup_shape_constraints(
         &self,
+        _: &crate::Device,
     ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
         titled_map_workgroup_size_constraints(self.rank() as _)
     }

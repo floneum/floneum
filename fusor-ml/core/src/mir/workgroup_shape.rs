@@ -286,6 +286,34 @@ pub(crate) enum Constraint {
 }
 
 impl Constraint {
+    pub(crate) fn equals(value: u32) -> Self {
+        Constraint::Equals(value)
+    }
+
+    pub(crate) fn less_than(value: u32) -> Self {
+        Constraint::LessThan(value)
+    }
+
+    pub(crate) fn more_than_or_equals(value: u32) -> Self {
+        Constraint::Not(Box::new(Constraint::LessThan(value)))
+    }
+
+    pub(crate) fn multiple_of(value: u32) -> Self {
+        Constraint::MultipleOf(value)
+    }
+
+    pub(crate) fn or(left: Constraint, right: Constraint) -> Self {
+        Constraint::Or(Box::new(left), Box::new(right))
+    }
+
+    pub(crate) fn and(left: Constraint, right: Constraint) -> Self {
+        Constraint::And(Box::new(left), Box::new(right))
+    }
+
+    pub(crate) fn not(inner: Constraint) -> Self {
+        Constraint::Not(Box::new(inner))
+    }
+
     fn fits(&self, shape: u32) -> bool {
         match self {
             Constraint::Equals(value) => {
