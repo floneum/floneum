@@ -52,22 +52,6 @@ impl TensorInput {
         write!(write, "}}").unwrap();
     }
 
-    pub(crate) fn check_bounds_contiguous(
-        &self,
-        write: &mut String,
-        contiguous_index: String,
-        in_bounds: impl FnOnce(&mut String),
-    ) {
-        write!(write, "if {contiguous_index} < 1 ").unwrap();
-        for i in 0..self.rank {
-            let stride = self.shape_binding(i);
-            write!(write, "* {stride} ").unwrap();
-        }
-        write!(write, "{{").unwrap();
-        in_bounds(write);
-        write!(write, "}}").unwrap();
-    }
-
     pub(crate) fn strided_index(
         &self,
         write: &mut String,
