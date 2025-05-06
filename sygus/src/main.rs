@@ -9,8 +9,8 @@ use kalosm_llama::{EvaluationTrie, InferenceSettings, LlamaModel};
 use kalosm_sample::{
     ArcParser, LazyParser, LiteralParser, Parser, ParserExt, SendCreateParserState,
 };
-use tokio::sync::oneshot;
 use std::io::Write;
+use tokio::sync::oneshot;
 
 use nom::{
     IResult, Parser as _,
@@ -217,6 +217,24 @@ fn to_command(expr: SExpr) -> Option<Command> {
 pub enum SExpr {
     Atom(String),
     List(Vec<SExpr>),
+}
+
+impl SExpr {
+    pub fn as_int(&self) -> Option<i32> {
+        if let SExpr::Atom(s) = self {
+            s.parse::<i32>().ok()
+        } else {
+            None
+        }
+    }
+
+    pub fn as_string(&self) -> Option<String> {
+        if let SExpr::Atom(s) = self {
+            Some(s.clone())
+        } else {
+            None
+        }
+    }
 }
 
 /// A synthesized function
@@ -478,4 +496,93 @@ impl<P: SendCreateParserState> CreateParserState for MaxLengthParser<P> {
     fn create_parser_state(&self) -> Self::PartialState {
         (self.parser.create_parser_state(), 0)
     }
+}
+
+fn built_in_functions() -> HashMap<String, Box<dyn Fn(&[SExpr]) -> SExpr>> {
+    let mut functions = HashMap::new();
+    fn binary_op(op: fn(i32, i32) -> i32) -> impl Fn(&[SExpr]) -> SExpr {
+        move |args: &[SExpr]| {
+            let first = args[0].as_int().unwrap();
+            let second = args[1].as_int().unwrap();
+            SExpr::Atom((op(first, second)).to_string())
+        }
+    }
+
+    fn insert(
+        functions: &mut HashMap<String, Box<dyn Fn(&[SExpr]) -> SExpr>>,
+        name: impl ToString,
+        op: impl Fn(&[SExpr]) -> SExpr + 'static,
+    ) {
+        functions.insert(name.to_string(), Box::new(op));
+    }
+    
+    insert(&mut functions, "+", binary_op(|a, b| a + b));
+    insert(&mut functions, "-", binary_op(|a, b| a - b));
+    insert(&mut functions, "*", binary_op(|a, b| a * b));
+    insert(&mut functions, "/", binary_op(|a, b| a / b));
+    insert(&mut functions, "=", binary_op(|a, b| (a == b) as i32));
+
+    insert(&mut functions, "str.++", |args: &[SExpr]| {
+        let first = args[0].as_string().unwrap();
+        let second = args[1].as_string().unwrap();
+        let merged = first + &second;
+        SExpr::Atom(merged)
+    });
+    insert(&mut functions, "str.len", |args: &[SExpr]| {
+        let first = args[0].as_string().unwrap();
+        SExpr::Atom(first.len().to_string())
+    });
+    insert(&mut functions, "str.substr", |args: &[SExpr]| {
+        let first = args[0].as_string().unwrap();
+        let start = args[1].as_int().unwrap();
+        let end = args[2].as_int().unwrap();
+        SExpr::Atom(first[start as usize..end as usize].to_string())
+    });
+    insert(&mut functions, "str.at", |args: &[SExpr]| {
+        let first = args[0].as_string().unwrap();
+        let index = args[1].as_int().unwrap();
+        SExpr::Atom(first[index as usize..index as usize + 1].to_string())
+    });
+    insert(&mut functions, "str.to.int", |args: &[SExpr]| {
+        let first = args[0].as_string().unwrap();
+        SExpr::Atom(first.parse::<i32>().unwrap().to_string())
+    });
+    insert(&mut functions, "str.indexof", |args: &[SExpr]| {
+        let first = args[0].as_string().unwrap();
+        let second = args[1].as_string().unwrap();
+        let offset = args[2].as_int().unwrap();
+        let index = first[offset as usize..]
+            .find(&second)
+            .map(|i| offset + i as i32)
+            .unwrap_or(-1);
+        SExpr::Atom(index.to_string())
+    });
+    insert(&mut functions, "str.replace", |args: &[SExpr]| {
+        let first = args[0].as_string().unwrap();
+        let second = args[1].as_string().unwrap();
+        let third = args[2].as_string().unwrap();
+        SExpr::Atom(first.replace(&second, &third))
+    });
+    insert(&mut functions, "str.prefixof", |args: &[SExpr]| {
+        let first = args[0].as_string().unwrap();
+        let second = args[1].as_string().unwrap();
+        SExpr::Atom(first.starts_with(&second).to_string())
+    });
+    insert(&mut functions, "str.suffixof", |args: &[SExpr]| {
+        let first = args[0].as_string().unwrap();
+        let second = args[1].as_string().unwrap();
+        SExpr::Atom(first.ends_with(&second).to_string())
+    });
+    insert(&mut functions, "str.contains", |args: &[SExpr]| {
+        let first = args[0].as_string().unwrap();
+        let second = args[1].as_string().unwrap();
+        SExpr::Atom(first.contains(&second).to_string())
+    });
+
+    insert(&mut functions, "int.to.str", |args: &[SExpr]| {
+        let first = args[0].as_int().unwrap();
+        SExpr::Atom(first.to_string())
+    });
+
+    todo!()
 }
