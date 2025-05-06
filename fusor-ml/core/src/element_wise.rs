@@ -247,9 +247,6 @@ impl ElementWiseFunction {
         self.name.as_deref().unwrap_or("element_wise")
     }
 
-    pub(crate) fn datatype(&self) -> DataTypeEnum {
-        self.datatype
-    }
 }
 
 impl<const R: usize, T: DataType> Add<T> for Tensor<R, T> {
