@@ -826,7 +826,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         Tensor {
             data: self
                 .data
-                .reduce(ReduceOperation::new(self.data.key, function, dim)),
+                .reduce(ReduceOperation::new(self.data.key, function, dim, self.rank() as u32)),
             datatype: PhantomData,
         }
     }

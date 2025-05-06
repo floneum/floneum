@@ -2,7 +2,7 @@ use wgpu::CommandEncoder;
 
 use crate::{
     ElementWiseFunction, ElementWiseFunctions, ElementWiseOperation, PairWiseOperation,
-    UntypedReduceKernel,
+    ReduceOperation,
     dequantize::UntypedDequantize,
     element_wise,
     index_select::UntypedIndexSelectKernel,
@@ -345,31 +345,33 @@ impl<'a> Resolver<'a> {
         key: ReduceComputeNodeKey,
         then: Vec<ElementWiseFunction>,
     ) -> Option<TensorData> {
-        let operation = &self.graph.nodes.reduce[&key];
-        let mut input = operation.value;
-        let axis = operation.axis;
-        let function = operation.function.clone();
+        let operation = self.graph.nodes.reduce[&key].clone();
+        let mut input_key = operation.value;
 
         let element_wise_before = if let AnyComputeKey::ElementWise(key) = operation.value {
             let (functions, element_wise_input) = self.collect_element_wise_ops(key);
-            input = element_wise_input;
+            input_key = element_wise_input;
             functions
         } else {
             Vec::new()
         };
 
-        let Some(input) = self.graph.cached_results.get(&input).cloned() else {
-            self.queue.push_back(input);
+        let Some(input) = self.graph.cached_results.get(&input_key).cloned() else {
+            self.queue.push_back(input_key);
             return None;
         };
-        let mut kernel = UntypedReduceKernel::new(function, input.datatype());
+        let mut kernel = ReduceOperation::new(input_key, operation.function, operation.axis, operation.rank);
         let element_wise_before =
             element_wise::ElementWiseFunctions::new(element_wise_before, input.datatype());
         let element_wise_after =
             element_wise::ElementWiseFunctions::new(then, element_wise_before.out_datatype());
         kernel.set_post_element_wise(element_wise_after);
         kernel.set_pre_element_wise(element_wise_before);
-        let result = kernel.run(&input, axis, &mut *self.command_encoder);
+        let result = kernel.run(&self.graph, &mut *self.command_encoder);
+
+        let KernelInputValue::Tensor(result) = result else {
+            panic!("Kernel input value is not a tensor");
+        };
 
         Some(result)
     }
