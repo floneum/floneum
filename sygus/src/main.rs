@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    fmt::{Debug, Display},
     sync::{Arc, Mutex, OnceLock},
     u32,
 };
@@ -230,10 +231,14 @@ impl SExpr {
 
     pub fn as_string(&self) -> Option<String> {
         if let SExpr::Atom(s) = self {
-            Some(s.clone())
+            Some(s[1..s.len() - 1].to_string())
         } else {
             None
         }
+    }
+
+    pub fn from_string(s: impl Display) -> SExpr {
+        SExpr::Atom(format!("\"{}\"", s))
     }
 }
 
@@ -498,6 +503,36 @@ impl<P: SendCreateParserState> CreateParserState for MaxLengthParser<P> {
     }
 }
 
+struct Interpreter {
+    functions: HashMap<String, Box<dyn Fn(&[SExpr]) -> SExpr>>,
+}
+
+impl Interpreter {
+    fn new() -> Self {
+        Self {
+            functions: built_in_functions(),
+        }
+    }
+
+    fn eval(&self, expr: &SExpr) -> SExpr {
+        match expr {
+            SExpr::Atom(_) => expr.clone(),
+            SExpr::List(items) => {
+                let (first, rest) = items.split_first().unwrap();
+                if let SExpr::Atom(name) = first {
+                    if let Some(func) = self.functions.get(name) {
+                        func(&rest)
+                    } else {
+                        panic!("Unknown function: {}", name)
+                    }
+                } else {
+                    panic!("Expected function name, got: {:?}", first)
+                }
+            }
+        }
+    }
+}
+
 fn built_in_functions() -> HashMap<String, Box<dyn Fn(&[SExpr]) -> SExpr>> {
     let mut functions = HashMap::new();
     fn binary_op(op: fn(i32, i32) -> i32) -> impl Fn(&[SExpr]) -> SExpr {
@@ -515,7 +550,7 @@ fn built_in_functions() -> HashMap<String, Box<dyn Fn(&[SExpr]) -> SExpr>> {
     ) {
         functions.insert(name.to_string(), Box::new(op));
     }
-    
+
     insert(&mut functions, "+", binary_op(|a, b| a + b));
     insert(&mut functions, "-", binary_op(|a, b| a - b));
     insert(&mut functions, "*", binary_op(|a, b| a * b));
@@ -526,7 +561,7 @@ fn built_in_functions() -> HashMap<String, Box<dyn Fn(&[SExpr]) -> SExpr>> {
         let first = args[0].as_string().unwrap();
         let second = args[1].as_string().unwrap();
         let merged = first + &second;
-        SExpr::Atom(merged)
+        SExpr::from_string(merged)
     });
     insert(&mut functions, "str.len", |args: &[SExpr]| {
         let first = args[0].as_string().unwrap();
@@ -536,7 +571,7 @@ fn built_in_functions() -> HashMap<String, Box<dyn Fn(&[SExpr]) -> SExpr>> {
         let first = args[0].as_string().unwrap();
         let start = args[1].as_int().unwrap();
         let end = args[2].as_int().unwrap();
-        SExpr::Atom(first[start as usize..end as usize].to_string())
+        SExpr::from_string(first[start as usize..end as usize].to_string())
     });
     insert(&mut functions, "str.at", |args: &[SExpr]| {
         let first = args[0].as_string().unwrap();
@@ -561,7 +596,7 @@ fn built_in_functions() -> HashMap<String, Box<dyn Fn(&[SExpr]) -> SExpr>> {
         let first = args[0].as_string().unwrap();
         let second = args[1].as_string().unwrap();
         let third = args[2].as_string().unwrap();
-        SExpr::Atom(first.replace(&second, &third))
+        SExpr::from_string(first.replace(&second, &third))
     });
     insert(&mut functions, "str.prefixof", |args: &[SExpr]| {
         let first = args[0].as_string().unwrap();
@@ -581,8 +616,35 @@ fn built_in_functions() -> HashMap<String, Box<dyn Fn(&[SExpr]) -> SExpr>> {
 
     insert(&mut functions, "int.to.str", |args: &[SExpr]| {
         let first = args[0].as_int().unwrap();
-        SExpr::Atom(first.to_string())
+        SExpr::from_string(first.to_string())
     });
 
-    todo!()
+    functions
+}
+
+#[test]
+fn test_interpreter() {
+    let interpreter = Interpreter::new();
+    let expr = "(+ 1 2)";
+    let expr = sexpr(expr).unwrap().1;
+    let result = interpreter.eval(&expr);
+    assert_eq!(result, SExpr::Atom("3".to_string()));
+}
+
+#[test]
+fn test_interpreter_str() {
+    let interpreter = Interpreter::new();
+    let expr = "(str.++ \"Hello, \" \"world!\")";
+    let expr = sexpr(expr).unwrap().1;
+    let result = interpreter.eval(&expr);
+    assert_eq!(result, SExpr::Atom("\"Hello, world!\"".to_string()));
+}
+
+#[test]
+fn test_interpreter_str_len() {
+    let interpreter = Interpreter::new();
+    let expr = "(str.len \"Hello, world!\")";
+    let expr = sexpr(expr).unwrap().1;
+    let result = interpreter.eval(&expr);
+    assert_eq!(result, SExpr::Atom("13".to_string()));
 }
