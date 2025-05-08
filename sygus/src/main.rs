@@ -498,7 +498,7 @@ async fn main() {
     let sampler = GenerationParameters::new();
 
     let mut llm = LlamaModel::from_builder(
-        Llama::builder().with_source(LlamaSource::deepseek_r1_distill_qwen_7b()),
+        Llama::builder().with_source(LlamaSource::deepseek_r1_distill_qwen_1_5b()),
         ModelLoadingProgress::multi_bar_loading_indicator(),
     )
     .await
@@ -511,29 +511,27 @@ async fn main() {
         let mut last_entropy = 0.0;
         let prompt = include_str!("prompt");
         let task = grammar_text;
-        let session = llm.new_session();
+        let mut session = llm.new_session();
         // let prompt = format!("<|im_start|>system\n{prompt}<|im_end|>\n<|im_start|>user\nQuestion:\n{task}<|im_end|>\n<|im_start|>assistant\n");
         let prompt =
             format!("<｜begin▁of▁sentence｜>{prompt}<｜User｜>Solve this problem:\n{task}<｜Assistant｜><think>\n");
 
-        let (finished, _keep) = oneshot::channel();
-        llm._infer(
-            InferenceSettings::new(
-                &prompt,
-                session.clone(),
-                Arc::new(Mutex::new(sampler.clone())),
-                u32::MAX,
-                Some("</think>".to_string()),
-                None,
-            ),
+        while llm.generate_structured_with_trie(
+            &mut session,
+            &prompt,
+            sampler.clone(),
+            MaxLengthParser::new(StopOn::new("</think>"), 8192),
             Box::new(|token| {
                 print!("{}", token);
                 std::io::stdout().flush().unwrap();
                 Ok(())
             }),
-            &finished
+            &mut EvaluationTrie::new(),
         )
-        .unwrap();
+        .is_err() {
+            println!("Initial prompt too long, retrying");
+            session = llm.new_session();
+        }
         for generation in 0.. {
             let mut session = session.deep_clone();
             let output = match llm.generate_structured_with_trie(
@@ -671,6 +669,7 @@ impl Interpreter {
                 if let SExpr::Atom(Atom::Ident(name)) = first {
                     if let Some(func) = self.functions.get(name).cloned() {
                         let rest = rest.iter().map(|item| self.eval(item)).collect::<Vec<_>>();
+                        println!("args: {rest:?}");
                         func(&rest, self)
                     } else {
                         panic!("Unknown function: {}", name)

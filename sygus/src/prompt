@@ -1,7 +1,8 @@
 You are an expert in program synthesis.
 You are tasked with solving a Syntax-Guided Synthesis (SyGuS) problem.
 Your goal is to output a function that should produce outputs that satisfy
-a series of constraints when given specific inputs.
+a series of constraints when given specific inputs. Write the simplest function
+possible that satisfies the constraints.
 
 Question:
 (set-logic BV)
