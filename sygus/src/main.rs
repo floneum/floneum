@@ -46,27 +46,41 @@ fn skip_ws() {
 /// Parse an atomic symbol: letters, digits, or punctuation (simple)
 fn atom(input: &str) -> IResult<&str, SExpr> {
     alt((
+        // parse booleans
+        alt((
+            tag("true").map(|_| SExpr::Atom(Atom::Bool(true))),
+            tag("false").map(|_| SExpr::Atom(Atom::Bool(false))),
+        )),
+        // parse maybe negative integers
+        nom::character::complete::i32.map(|i| SExpr::Atom(Atom::Int(i))),
         // parse quoted strings
-        tag("\"")
-            .and(is_not("\""))
-            .and(tag("\""))
-            .map(|((_, s), _)| SExpr::Atom(format!("\"{}\"", s))),
+        delimited(tag("\""), is_not("\""), tag("\""))
+            .map(|s: &str| SExpr::Atom(Atom::String(s.to_string()))),
         // parse idents
         take_while1(|c: char| !c.is_whitespace() && !['(', ')'].contains(&c))
-            .map(|s: &str| SExpr::Atom(s.to_string())),
+            .map(|s: &str| SExpr::Atom(Atom::Ident(s.to_string()))),
     ))
     .parse(input)
 }
 
 #[test]
 fn test_atom() {
-    assert_eq!(atom("x"), Ok(("", SExpr::Atom("x".to_string()))));
-    assert_eq!(atom("x y"), Ok((" y", SExpr::Atom("x".to_string()))));
+    assert_eq!(
+        atom("x"),
+        Ok(("", SExpr::Atom(Atom::Ident("x".to_string()))))
+    );
+    assert_eq!(
+        atom("x y"),
+        Ok((" y", SExpr::Atom(Atom::Ident("x".to_string()))))
+    );
 
-    assert_eq!(atom("\"x y\""), Ok(("", SExpr::Atom("x y".to_string()))));
+    assert_eq!(
+        atom("\"x y\""),
+        Ok(("", SExpr::Atom(Atom::String("x y".to_string()))))
+    );
     assert_eq!(
         atom("\"x y\" z"),
-        Ok((" z", SExpr::Atom("x y".to_string())))
+        Ok((" z", SExpr::Atom(Atom::String("x y".to_string()))))
     );
 }
 
@@ -90,8 +104,8 @@ fn test_list() {
         Ok((
             "",
             SExpr::List(vec![
-                SExpr::Atom("x".to_string()),
-                SExpr::Atom("y".to_string())
+                SExpr::Atom(Atom::Ident("x".to_string())),
+                SExpr::Atom(Atom::Ident("y".to_string()))
             ])
         ))
     );
@@ -100,10 +114,10 @@ fn test_list() {
         Ok((
             "",
             SExpr::List(vec![
-                SExpr::Atom("x".to_string()),
+                SExpr::Atom(Atom::Ident("x".to_string())),
                 SExpr::List(vec![
-                    SExpr::Atom("y".to_string()),
-                    SExpr::Atom("z".to_string())
+                    SExpr::Atom(Atom::Ident("y".to_string())),
+                    SExpr::Atom(Atom::Ident("z".to_string()))
                 ])
             ])
         ))
@@ -122,38 +136,43 @@ fn test_sexpr() {
         Ok((
             "",
             SExpr::List(vec![
-                SExpr::Atom("x".to_string()),
-                SExpr::Atom("y".to_string())
+                SExpr::Atom(Atom::Ident("x".to_string())),
+                SExpr::Atom(Atom::Ident("y".to_string()))
             ])
         ))
     );
-    assert_eq!(sexpr("x"), Ok(("", SExpr::Atom("x".to_string()))));
+    assert_eq!(
+        sexpr("x"),
+        Ok(("", SExpr::Atom(Atom::Ident("x".to_string()))))
+    );
 }
 
 /// Transform an SExpr into a Command
 fn to_command(expr: SExpr) -> Option<Command> {
     match expr {
         SExpr::List(items) => match items.split_first()? {
-            (SExpr::Atom(cmd), rest) if cmd == "set-logic" => {
-                if let [SExpr::Atom(logic)] = rest {
+            (SExpr::Atom(Atom::Ident(cmd)), rest) if cmd == "set-logic" => {
+                if let [SExpr::Atom(Atom::Ident(logic))] = rest {
                     Some(Command::SetLogic(logic.clone()))
                 } else {
                     None
                 }
             }
-            (SExpr::Atom(cmd), rest) if cmd == "synth-fun" => {
+            (SExpr::Atom(Atom::Ident(cmd)), rest) if cmd == "synth-fun" => {
                 // (synth-fun name ((x T) ...) Ret
                 //   ((Nt Ty) ...)          ; non-terminals
                 //   ((Nt1 ...) (Nt2 ...) …) ; grammar
                 let name = match &rest[0] {
-                    SExpr::Atom(n) => n.clone(),
+                    SExpr::Atom(Atom::Ident(n)) => n.clone(),
                     _ => return None,
                 };
                 let args = if let SExpr::List(a) = &rest[1] {
                     a.iter()
                         .filter_map(|p| {
                             if let SExpr::List(v) = p {
-                                if let [SExpr::Atom(n), SExpr::Atom(t)] = &v[..] {
+                                if let [SExpr::Atom(Atom::Ident(n)), SExpr::Atom(Atom::Ident(t))] =
+                                    v.as_slice()
+                                {
                                     Some((n.clone(), t.clone()))
                                 } else {
                                     None
@@ -168,7 +187,7 @@ fn to_command(expr: SExpr) -> Option<Command> {
                     return None;
                 };
                 let ret_ty = match &rest[2] {
-                    SExpr::Atom(t) => t.clone(),
+                    SExpr::Atom(Atom::Ident(t)) => t.clone(),
                     _ => {
                         println!("ret was none");
                         return None;
@@ -180,7 +199,11 @@ fn to_command(expr: SExpr) -> Option<Command> {
                     gr.iter()
                         .filter_map(|p| {
                             if let SExpr::List(v) = p {
-                                if let [SExpr::Atom(n), SExpr::Atom(ty), SExpr::List(rhs)] = &v[..]
+                                if let [
+                                    SExpr::Atom(Atom::Ident(n)),
+                                    SExpr::Atom(Atom::Ident(ty)),
+                                    SExpr::List(rhs),
+                                ] = &v[..]
                                 {
                                     Some((n.clone(), ty.clone(), rhs.clone()))
                                 } else {
@@ -202,11 +225,16 @@ fn to_command(expr: SExpr) -> Option<Command> {
                     grammar,
                 }))
             }
-            (SExpr::Atom(cmd), [SExpr::Atom(var), SExpr::Atom(ty)]) if cmd == "declare-var" => {
-                Some(Command::DeclareVar(var.clone(), ty.clone()))
+            (
+                SExpr::Atom(Atom::Ident(cmd)),
+                [SExpr::Atom(Atom::Ident(var)), SExpr::Atom(Atom::Ident(ty))],
+            ) if cmd == "declare-var" => Some(Command::DeclareVar(var.clone(), ty.clone())),
+            (SExpr::Atom(Atom::Ident(cmd)), [c]) if cmd == "constraint" => {
+                Some(Command::Constraint(c.clone()))
             }
-            (SExpr::Atom(cmd), [c]) if cmd == "constraint" => Some(Command::Constraint(c.clone())),
-            (SExpr::Atom(cmd), []) if cmd == "check-synth" => Some(Command::CheckSynth),
+            (SExpr::Atom(Atom::Ident(cmd)), []) if cmd == "check-synth" => {
+                Some(Command::CheckSynth)
+            }
             _ => None,
         },
         _ => None,
@@ -216,29 +244,48 @@ fn to_command(expr: SExpr) -> Option<Command> {
 /// Minimal S-expression AST
 #[derive(Debug, Clone, PartialEq)]
 pub enum SExpr {
-    Atom(String),
+    Atom(Atom),
     List(Vec<SExpr>),
 }
 
 impl SExpr {
     pub fn as_int(&self) -> Option<i32> {
-        if let SExpr::Atom(s) = self {
-            s.parse::<i32>().ok()
+        if let SExpr::Atom(Atom::Int(i)) = self {
+            Some(*i)
         } else {
             None
         }
     }
 
     pub fn as_string(&self) -> Option<String> {
-        if let SExpr::Atom(s) = self {
-            Some(s[1..s.len() - 1].to_string())
+        if let SExpr::Atom(Atom::String(s)) = self {
+            Some(s.clone())
         } else {
             None
         }
     }
 
     pub fn from_string(s: impl Display) -> SExpr {
-        SExpr::Atom(format!("\"{}\"", s))
+        SExpr::Atom(Atom::String(s.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum Atom {
+    String(String),
+    Int(i32),
+    Bool(bool),
+    Ident(String),
+}
+
+impl Display for Atom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Atom::String(s) => write!(f, "\"{}\"", s),
+            Atom::Int(i) => write!(f, "{}", i),
+            Atom::Bool(b) => write!(f, "{}", b),
+            Atom::Ident(s) => write!(f, "{}", s),
+        }
     }
 }
 
@@ -283,12 +330,13 @@ impl TermMap {
 
     fn parser(&self, expr: &SExpr) -> ArcParser<SExpr> {
         match expr {
-            SExpr::Atom(atom) => self.parser_for_term(atom).unwrap_or_else(|| {
+            SExpr::Atom(Atom::Ident(atom)) => self.parser_for_term(atom).unwrap(),
+            SExpr::Atom(atom) => {
                 let atom = atom.clone();
-                LiteralParser::new(atom.clone())
+                LiteralParser::new(atom.to_string())
                     .map_output(move |_| SExpr::Atom(atom.clone()))
                     .boxed()
-            }),
+            }
             SExpr::List(sexprs) => LiteralParser::new("(")
                 .ignore_output_then(
                     parse_non_empty_list_sequentially(sexprs.iter().map(|term| self.parser(term)))
@@ -453,10 +501,10 @@ async fn main() {
             let shannon_entropy = trie.shannon_entropy();
             let entropy_diff = last_entropy - shannon_entropy;
             println!("entropy diff: {entropy_diff}");
-            // if entropy_diff.abs() < 0.00001 {
-            //     println!("looks like entropy is converging, stopping generation");
-            //     break;
-            // }
+            if entropy_diff.abs() < 0.00001 {
+                println!("looks like entropy is converging, stopping generation");
+                break;
+            }
             println!("shannon entropy: {shannon_entropy}");
             last_entropy = shannon_entropy;
         }
@@ -519,7 +567,7 @@ impl Interpreter {
             SExpr::Atom(_) => expr.clone(),
             SExpr::List(items) => {
                 let (first, rest) = items.split_first().unwrap();
-                if let SExpr::Atom(name) = first {
+                if let SExpr::Atom(Atom::Ident(name)) = first {
                     if let Some(func) = self.functions.get(name) {
                         func(&rest)
                     } else {
@@ -539,7 +587,7 @@ fn built_in_functions() -> HashMap<String, Box<dyn Fn(&[SExpr]) -> SExpr>> {
         move |args: &[SExpr]| {
             let first = args[0].as_int().unwrap();
             let second = args[1].as_int().unwrap();
-            SExpr::Atom((op(first, second)).to_string())
+            SExpr::Atom(Atom::Int(op(first, second)))
         }
     }
 
@@ -565,7 +613,7 @@ fn built_in_functions() -> HashMap<String, Box<dyn Fn(&[SExpr]) -> SExpr>> {
     });
     insert(&mut functions, "str.len", |args: &[SExpr]| {
         let first = args[0].as_string().unwrap();
-        SExpr::Atom(first.len().to_string())
+        SExpr::Atom(Atom::Int(first.len() as _))
     });
     insert(&mut functions, "str.substr", |args: &[SExpr]| {
         let first = args[0].as_string().unwrap();
@@ -576,11 +624,13 @@ fn built_in_functions() -> HashMap<String, Box<dyn Fn(&[SExpr]) -> SExpr>> {
     insert(&mut functions, "str.at", |args: &[SExpr]| {
         let first = args[0].as_string().unwrap();
         let index = args[1].as_int().unwrap();
-        SExpr::Atom(first[index as usize..index as usize + 1].to_string())
+        SExpr::Atom(Atom::String(
+            first[index as usize..index as usize + 1].to_string(),
+        ))
     });
     insert(&mut functions, "str.to.int", |args: &[SExpr]| {
         let first = args[0].as_string().unwrap();
-        SExpr::Atom(first.parse::<i32>().unwrap().to_string())
+        SExpr::Atom(Atom::Int(first.parse::<i32>().unwrap()))
     });
     insert(&mut functions, "str.indexof", |args: &[SExpr]| {
         let first = args[0].as_string().unwrap();
@@ -590,7 +640,7 @@ fn built_in_functions() -> HashMap<String, Box<dyn Fn(&[SExpr]) -> SExpr>> {
             .find(&second)
             .map(|i| offset + i as i32)
             .unwrap_or(-1);
-        SExpr::Atom(index.to_string())
+        SExpr::Atom(Atom::String(index.to_string()))
     });
     insert(&mut functions, "str.replace", |args: &[SExpr]| {
         let first = args[0].as_string().unwrap();
@@ -601,17 +651,17 @@ fn built_in_functions() -> HashMap<String, Box<dyn Fn(&[SExpr]) -> SExpr>> {
     insert(&mut functions, "str.prefixof", |args: &[SExpr]| {
         let first = args[0].as_string().unwrap();
         let second = args[1].as_string().unwrap();
-        SExpr::Atom(first.starts_with(&second).to_string())
+        SExpr::Atom(Atom::String(first.starts_with(&second).to_string()))
     });
     insert(&mut functions, "str.suffixof", |args: &[SExpr]| {
         let first = args[0].as_string().unwrap();
         let second = args[1].as_string().unwrap();
-        SExpr::Atom(first.ends_with(&second).to_string())
+        SExpr::Atom(Atom::String(first.ends_with(&second).to_string()))
     });
     insert(&mut functions, "str.contains", |args: &[SExpr]| {
         let first = args[0].as_string().unwrap();
         let second = args[1].as_string().unwrap();
-        SExpr::Atom(first.contains(&second).to_string())
+        SExpr::Atom(Atom::Bool(first.contains(&second)))
     });
 
     insert(&mut functions, "int.to.str", |args: &[SExpr]| {
@@ -628,7 +678,7 @@ fn test_interpreter() {
     let expr = "(+ 1 2)";
     let expr = sexpr(expr).unwrap().1;
     let result = interpreter.eval(&expr);
-    assert_eq!(result, SExpr::Atom("3".to_string()));
+    assert_eq!(result, SExpr::Atom(Atom::Int(3)));
 }
 
 #[test]
@@ -637,7 +687,7 @@ fn test_interpreter_str() {
     let expr = "(str.++ \"Hello, \" \"world!\")";
     let expr = sexpr(expr).unwrap().1;
     let result = interpreter.eval(&expr);
-    assert_eq!(result, SExpr::Atom("\"Hello, world!\"".to_string()));
+    assert_eq!(result, SExpr::Atom(Atom::String("Hello, world!".to_string())));
 }
 
 #[test]
@@ -646,5 +696,5 @@ fn test_interpreter_str_len() {
     let expr = "(str.len \"Hello, world!\")";
     let expr = sexpr(expr).unwrap().1;
     let result = interpreter.eval(&expr);
-    assert_eq!(result, SExpr::Atom("13".to_string()));
+    assert_eq!(result, SExpr::Atom(Atom::Int(13)));
 }
