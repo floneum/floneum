@@ -249,6 +249,14 @@ pub enum SExpr {
 }
 
 impl SExpr {
+    pub fn as_bool(&self) -> Option<bool> {
+        if let SExpr::Atom(Atom::Bool(b)) = self {
+            Some(*b)
+        } else {
+            None
+        }
+    }
+
     pub fn as_int(&self) -> Option<i32> {
         if let SExpr::Atom(Atom::Int(i)) = self {
             Some(*i)
@@ -260,6 +268,14 @@ impl SExpr {
     pub fn as_string(&self) -> Option<String> {
         if let SExpr::Atom(Atom::String(s)) = self {
             Some(s.clone())
+        } else {
+            None
+        }
+    }
+
+    pub fn as_atom(&self) -> Option<&Atom> {
+        if let SExpr::Atom(a) = self {
+            Some(a)
         } else {
             None
         }
@@ -575,25 +591,64 @@ impl<P: SendCreateParserState> CreateParserState for MaxLengthParser<P> {
     }
 }
 
+#[derive(Clone)]
 struct Interpreter {
-    functions: HashMap<String, Box<dyn Fn(&[SExpr]) -> SExpr>>,
+    functions: HashMap<String, Arc<dyn Fn(&[SExpr], &mut Self) -> SExpr>>,
+    bindings: Vec<HashMap<String, Atom>>,
 }
 
 impl Interpreter {
     fn new() -> Self {
         Self {
             functions: built_in_functions(),
+            bindings: Vec::new(),
         }
     }
 
-    fn eval(&self, expr: &SExpr) -> SExpr {
+    fn check(&self, constraints: &SExpr, variables: Vec<String>, fn_body: &SExpr) -> bool {
+        let mut fn_map = self.clone();
+        let fn_body = fn_body.clone();
+        fn_map.functions.insert(
+            "f".to_string(),
+            Arc::new(move |args, fn_map| {
+                fn_map.bindings.push(
+                    variables
+                        .iter()
+                        .zip(args.iter().cloned())
+                        .map(|(name, value)| (name.clone(), value.as_atom().unwrap().clone()))
+                        .collect(),
+                );
+                let value = fn_map.eval(&fn_body.clone());
+                fn_map.bindings.pop();
+                value
+            }),
+        );
+        fn_map.eval(constraints).as_bool().unwrap()
+    }
+
+    fn eval(&mut self, expr: &SExpr) -> SExpr {
         match expr {
+            SExpr::Atom(Atom::Ident(name)) => {
+                if let Some(binding) = self.bindings.last() {
+                    if let Some(value) = binding.get(name) {
+                        SExpr::Atom(value.clone())
+                    } else {
+                        panic!("Unknown variable: {}", name)
+                    }
+                } else {
+                    panic!("No bindings available")
+                }
+            }
             SExpr::Atom(_) => expr.clone(),
             SExpr::List(items) => {
                 let (first, rest) = items.split_first().unwrap();
                 if let SExpr::Atom(Atom::Ident(name)) = first {
-                    if let Some(func) = self.functions.get(name) {
-                        func(&rest)
+                    if let Some(func) = self.functions.get(name).cloned() {
+                        let rest = rest
+                            .iter()
+                            .map(|item| self.eval(item))
+                            .collect::<Vec<_>>();
+                        func(&rest, self)
                     } else {
                         panic!("Unknown function: {}", name)
                     }
@@ -605,35 +660,40 @@ impl Interpreter {
     }
 }
 
-fn built_in_functions() -> HashMap<String, Box<dyn Fn(&[SExpr]) -> SExpr>> {
+fn built_in_functions() -> HashMap<String, Arc<dyn Fn(&[SExpr], &mut Interpreter) -> SExpr>> {
     let mut functions = HashMap::new();
-    fn binary_op(op: fn(i32, i32) -> i32) -> impl Fn(&[SExpr]) -> SExpr {
+    fn binary_op(op: fn(i32, i32) -> i32) -> impl Fn(&[SExpr]) -> i32 {
         move |args: &[SExpr]| {
             let first = args[0].as_int().unwrap();
             let second = args[1].as_int().unwrap();
-            SExpr::Atom(Atom::Int(op(first, second)))
+            op(first, second)
         }
     }
 
-    fn insert(
-        functions: &mut HashMap<String, Box<dyn Fn(&[SExpr]) -> SExpr>>,
+    fn insert<O: Into<SExpr>>(
+        functions: &mut HashMap<String, Arc<dyn Fn(&[SExpr], &mut Interpreter) -> SExpr>>,
         name: impl ToString,
-        op: impl Fn(&[SExpr]) -> SExpr + 'static,
+        op: impl Fn(&[SExpr]) -> O + 'static,
     ) {
-        functions.insert(name.to_string(), Box::new(op));
+        functions.insert(name.to_string(), Arc::new(move |i, _| op(i).into()));
     }
 
     insert(&mut functions, "+", binary_op(|a, b| a + b));
     insert(&mut functions, "-", binary_op(|a, b| a - b));
     insert(&mut functions, "*", binary_op(|a, b| a * b));
     insert(&mut functions, "/", binary_op(|a, b| a / b));
-    insert(&mut functions, "=", binary_op(|a, b| (a == b) as i32));
+    insert(&mut functions, "=", |args| {
+        let [first, second] = args else {
+            unreachable!()
+        };
+        first == second
+    });
 
     insert(&mut functions, "str.++", |args: &[SExpr]| {
         let first = args[0].as_string().unwrap();
         let second = args[1].as_string().unwrap();
         let merged = first + &second;
-        merged.into()
+        merged
     });
     insert(&mut functions, "str.len", |args: &[SExpr]| {
         let first = args[0].as_string().unwrap();
@@ -644,9 +704,9 @@ fn built_in_functions() -> HashMap<String, Box<dyn Fn(&[SExpr]) -> SExpr>> {
         let start = args[1].as_int().unwrap();
         let end = args[2].as_int().unwrap();
         if end < 0 || start < 0 || start > first.len() as _ {
-            "".into()
+            "".to_string()
         } else {
-            first[start as usize..end as usize].into()
+            first[start as usize..end as usize].to_string()
         }
     });
     insert(&mut functions, "str.at", |args: &[SExpr]| {
@@ -706,7 +766,7 @@ fn built_in_functions() -> HashMap<String, Box<dyn Fn(&[SExpr]) -> SExpr>> {
 
 #[test]
 fn test_interpreter() {
-    let interpreter = Interpreter::new();
+    let mut interpreter = Interpreter::new();
     let expr = "(+ 1 2)";
     let expr = sexpr(expr).unwrap().1;
     let result = interpreter.eval(&expr);
@@ -715,7 +775,7 @@ fn test_interpreter() {
 
 #[test]
 fn test_interpreter_str() {
-    let interpreter = Interpreter::new();
+    let mut interpreter = Interpreter::new();
     let expr = "(str.++ \"Hello, \" \"world!\")";
     let expr = sexpr(expr).unwrap().1;
     let result = interpreter.eval(&expr);
@@ -727,9 +787,34 @@ fn test_interpreter_str() {
 
 #[test]
 fn test_interpreter_str_len() {
-    let interpreter = Interpreter::new();
+    let mut interpreter = Interpreter::new();
     let expr = "(str.len \"Hello, world!\")";
     let expr = sexpr(expr).unwrap().1;
     let result = interpreter.eval(&expr);
     assert_eq!(result, SExpr::Atom(Atom::Int(13)));
+}
+
+#[test]
+fn test_nested_expressions() {
+    let mut interpreter = Interpreter::new();
+    let expr = "(str.++ (str.substr \"Hello, world!\" 0 5) \"!\")";
+    let expr = sexpr(expr).unwrap().1;
+    let result = interpreter.eval(&expr);
+    assert_eq!(
+        result,
+        SExpr::Atom(Atom::String("Hello!".to_string()))
+    );
+}
+
+#[test]
+fn test_check_solution() {
+    let interpreter = Interpreter::new();
+    let constraints = r#"(= (f "Launa" "Withers") "Withers, L.")"#;
+    let constraints = sexpr(constraints).unwrap().1;
+    let arguments = ["firstname".to_string(), "lastname".to_string()];
+    let body = r#"(str.++ (str.++ (str.++ lastname ", ") (str.substr firstname 0 1)) ".")"#;
+    let body = sexpr(body).unwrap().1;
+    assert!(
+        interpreter.check(&constraints, arguments.to_vec(), &body)
+    );
 }
