@@ -370,12 +370,13 @@ impl TermMap {
 
     fn parser(&self, expr: &SExpr) -> ArcParser<SExpr> {
         match expr {
-            SExpr::Atom(Atom::Ident(atom)) => self.parser_for_term(atom).unwrap(),
             SExpr::Atom(atom) => {
-                let atom = atom.clone();
-                LiteralParser::new(atom.to_string())
-                    .map_output(move |_| SExpr::Atom(atom.clone()))
-                    .boxed()
+                self.parser_for_term(&atom.to_string()).unwrap_or_else(||{
+                    let atom = atom.clone();
+                    LiteralParser::new(atom.to_string())
+                        .map_output(move |_| SExpr::Atom(atom.clone()))
+                        .boxed()
+                })
             }
             SExpr::List(sexprs) => LiteralParser::new("(")
                 .ignore_output_then(
@@ -459,20 +460,36 @@ async fn main() {
     let parsed = parse_sygus(grammar_text).unwrap();
     println!("parsed: {:#?}", parsed);
     let synth_fun = parsed
-        .into_iter()
+        .iter()
         .find_map(|command| {
             if let Command::SynthFun(fun) = command {
-                Some(fun)
+                Some(fun.clone())
             } else {
                 None
             }
         })
         .unwrap();
 
+    let vars = synth_fun
+        .args
+        .iter()
+        .map(|(name, _)| name.clone())
+        .collect::<Vec<_>>();
+    let constraints = parsed
+        .iter()
+        .filter_map(|command| {
+            if let Command::Constraint(expr) = command {
+                Some(expr.clone())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
     let parser = synth_fun.parser();
     let parser = MaxLengthParser::new(
         LiteralParser::new("(define-fun f ((firstname String) (lastname String)) String ")
-            .then(parser.clone()),
+            .ignore_output_then(parser.clone()),
         200,
     );
 
@@ -488,6 +505,8 @@ async fn main() {
     .unwrap();
 
     tokio::task::spawn_blocking(move || {
+        let interpreter = Interpreter::new();
+        
         let mut trie = EvaluationTrie::new();
         let mut last_entropy = 0.0;
         let prompt = include_str!("prompt");
@@ -538,6 +557,13 @@ async fn main() {
             println!("\n\n");
 
             println!("generation {generation}:\n{output:?}");
+
+            println!("Checking constraints:");
+            for constraint in &constraints {
+                let result = interpreter.check(constraint, vars.clone(), &output);
+                println!("  {constraint:?} => {result}");
+            }
+
             let shannon_entropy = trie.shannon_entropy();
             let entropy_diff = last_entropy - shannon_entropy;
             println!("entropy diff: {entropy_diff}");
@@ -644,10 +670,7 @@ impl Interpreter {
                 let (first, rest) = items.split_first().unwrap();
                 if let SExpr::Atom(Atom::Ident(name)) = first {
                     if let Some(func) = self.functions.get(name).cloned() {
-                        let rest = rest
-                            .iter()
-                            .map(|item| self.eval(item))
-                            .collect::<Vec<_>>();
+                        let rest = rest.iter().map(|item| self.eval(item)).collect::<Vec<_>>();
                         func(&rest, self)
                     } else {
                         panic!("Unknown function: {}", name)
@@ -800,10 +823,7 @@ fn test_nested_expressions() {
     let expr = "(str.++ (str.substr \"Hello, world!\" 0 5) \"!\")";
     let expr = sexpr(expr).unwrap().1;
     let result = interpreter.eval(&expr);
-    assert_eq!(
-        result,
-        SExpr::Atom(Atom::String("Hello!".to_string()))
-    );
+    assert_eq!(result, SExpr::Atom(Atom::String("Hello!".to_string())));
 }
 
 #[test]
@@ -814,7 +834,5 @@ fn test_check_solution() {
     let arguments = ["firstname".to_string(), "lastname".to_string()];
     let body = r#"(str.++ (str.++ (str.++ lastname ", ") (str.substr firstname 0 1)) ".")"#;
     let body = sexpr(body).unwrap().1;
-    assert!(
-        interpreter.check(&constraints, arguments.to_vec(), &body)
-    );
+    assert!(interpreter.check(&constraints, arguments.to_vec(), &body));
 }
