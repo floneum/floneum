@@ -270,6 +270,30 @@ impl SExpr {
     }
 }
 
+impl From<i32> for SExpr {
+    fn from(value: i32) -> Self {
+        SExpr::Atom(Atom::Int(value))
+    }
+}
+
+impl From<bool> for SExpr {
+    fn from(value: bool) -> Self {
+        SExpr::Atom(Atom::Bool(value))
+    }
+}
+
+impl From<String> for SExpr {
+    fn from(value: String) -> Self {
+        SExpr::Atom(Atom::String(value))
+    }
+}
+
+impl From<&str> for SExpr {
+    fn from(value: &str) -> Self {
+        SExpr::Atom(Atom::String(value.to_string()))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 enum Atom {
     String(String),
@@ -609,7 +633,7 @@ fn built_in_functions() -> HashMap<String, Box<dyn Fn(&[SExpr]) -> SExpr>> {
         let first = args[0].as_string().unwrap();
         let second = args[1].as_string().unwrap();
         let merged = first + &second;
-        SExpr::from_string(merged)
+        merged.into()
     });
     insert(&mut functions, "str.len", |args: &[SExpr]| {
         let first = args[0].as_string().unwrap();
@@ -619,7 +643,11 @@ fn built_in_functions() -> HashMap<String, Box<dyn Fn(&[SExpr]) -> SExpr>> {
         let first = args[0].as_string().unwrap();
         let start = args[1].as_int().unwrap();
         let end = args[2].as_int().unwrap();
-        SExpr::from_string(first[start as usize..end as usize].to_string())
+        if end < 0 || start < 0 || start > first.len() as _ {
+            "".into()
+        } else {
+            first[start as usize..end as usize].into()
+        }
     });
     insert(&mut functions, "str.at", |args: &[SExpr]| {
         let first = args[0].as_string().unwrap();
@@ -630,7 +658,7 @@ fn built_in_functions() -> HashMap<String, Box<dyn Fn(&[SExpr]) -> SExpr>> {
     });
     insert(&mut functions, "str.to.int", |args: &[SExpr]| {
         let first = args[0].as_string().unwrap();
-        SExpr::Atom(Atom::Int(first.parse::<i32>().unwrap()))
+        SExpr::Atom(Atom::Int(first.parse::<i32>().unwrap_or(-1)))
     });
     insert(&mut functions, "str.indexof", |args: &[SExpr]| {
         let first = args[0].as_string().unwrap();
@@ -666,7 +694,11 @@ fn built_in_functions() -> HashMap<String, Box<dyn Fn(&[SExpr]) -> SExpr>> {
 
     insert(&mut functions, "int.to.str", |args: &[SExpr]| {
         let first = args[0].as_int().unwrap();
-        SExpr::from_string(first.to_string())
+        if first >= 0 {
+            SExpr::from(first)
+        } else {
+            SExpr::from_string("")
+        }
     });
 
     functions
@@ -687,7 +719,10 @@ fn test_interpreter_str() {
     let expr = "(str.++ \"Hello, \" \"world!\")";
     let expr = sexpr(expr).unwrap().1;
     let result = interpreter.eval(&expr);
-    assert_eq!(result, SExpr::Atom(Atom::String("Hello, world!".to_string())));
+    assert_eq!(
+        result,
+        SExpr::Atom(Atom::String("Hello, world!".to_string()))
+    );
 }
 
 #[test]
