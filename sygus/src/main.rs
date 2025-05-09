@@ -461,10 +461,19 @@ struct Args {
     think: bool,
 
     #[arg(long)]
+    small: bool,
+    
+    #[arg(long)]
+    smaller: bool,
+
+    #[arg(long)]
     grammar: String,
 
     #[arg(long)]
     task: String,
+
+    #[arg(long)]
+    vis: bool,
 }
 
 #[tokio::main]
@@ -473,6 +482,8 @@ async fn main() {
 
     let args = Args::parse();
     let think = args.think;
+    let small = args.small;
+    let smaller = args.smaller;
 
     let grammar_text = std::fs::read_to_string(args.grammar).unwrap();
     let prompt = std::fs::read_to_string(args.task).unwrap();
@@ -515,9 +526,19 @@ async fn main() {
         .with_top_k(1);
 
     let source = if think {
-        LlamaSource::deepseek_r1_distill_qwen_7b()
+        if small {
+            LlamaSource::deepseek_r1_distill_qwen_1_5b()
+        } else {
+            LlamaSource::deepseek_r1_distill_qwen_7b()
+        }
     } else {
-        LlamaSource::qwen_2_5_7b_instruct()
+        if smaller {
+            LlamaSource::qwen_2_5_3b_instruct()
+        } else if small {
+            LlamaSource::qwen_2_5_1_5b_instruct()
+        }else {
+            LlamaSource::qwen_2_5_7b_instruct()
+        }
     };
     let mut llm = LlamaModel::from_builder(
         Llama::builder().with_source(source),
@@ -559,7 +580,9 @@ async fn main() {
         }
 
         for generation in 0.. {
-            println!("Trie {}", trie.graphvis(&llm.tokenizer));
+            if args.vis {
+                println!("{}", trie.graphvis(&llm.tokenizer));
+            }
             let mut session = session.deep_clone();
             let output = match llm.generate_structured_with_trie(
                 &mut session,

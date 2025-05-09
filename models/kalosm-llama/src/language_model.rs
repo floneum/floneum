@@ -150,7 +150,7 @@ impl LlamaModel {
             parser_state,
             sampler,
             on_token,
-            Some(1),
+            Some(128),
             seed,
             trie,
         )

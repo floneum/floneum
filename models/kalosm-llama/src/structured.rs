@@ -270,7 +270,12 @@ pub(crate) fn generate_structured<P: Parser>(
                 token_id = sampler
                     .sample_token(resources, &mut sampled_logits)
                     .map_err(|err| LlamaModelError::SamplerError(err.into()))?
-                    .ok_or(LlamaModelError::NoValidTokens)?;
+                    .ok_or_else(|| {
+                        LlamaModelError::SamplerError(Box::new(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            "Sampler returned None",
+                        )))
+                    })?;
                 let (result, _) = state_map
                     .get(token_id as usize)
                     .unwrap()
