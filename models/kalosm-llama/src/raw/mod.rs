@@ -23,6 +23,7 @@ mod attention_layer;
 pub mod cache;
 mod rope;
 mod silu;
+mod vision;
 
 use cache::LlamaCache;
 

@@ -1,7 +1,49 @@
 use std::f32::consts::PI;
 
-use super::LlamaConfig;
-use candle_core::{DType, Device, Tensor};
+use super::{LlamaConfig, RopeScalingConfig};
+use candle_core::{DType, Device, IndexOp, Tensor, D};
+use candle_nn::{Conv2d, Conv2dConfig, Module};
+use candle_transformers::quantized_var_builder::VarBuilder;
+
+pub(crate) fn create_inverse_frequency(
+    rope_scaling: Option<&RopeScalingConfig>,
+    rope_freq_weight: Option<&Tensor>,
+    dtype: DType,
+    dim: usize,
+    rope_theta: f32,
+    device: &Device,
+) -> candle_core::Result<Tensor> {
+    let mut inverse_frequency = (0..dim)
+        .step_by(2)
+        .map(|i| 1. / (rope_theta.powf(i as f32 / dim as f32)))
+        .collect::<Vec<_>>();
+    if let Some(scaling_config) = &rope_scaling {
+        let original_max_position_embeddings = scaling_config.original_max_position_embeddings;
+        let factor = scaling_config.factor;
+        let high_freq_factor = scaling_config.high_freq_factor;
+        let low_freq_factor = scaling_config.low_freq_factor;
+        let low_freq_wavelen = original_max_position_embeddings as f32 / low_freq_factor;
+        let high_freq_wavelen = original_max_position_embeddings as f32 / high_freq_factor;
+        for freq in inverse_frequency.iter_mut() {
+            let wavelen = 2. * PI / *freq;
+            if wavelen > low_freq_wavelen {
+                *freq /= factor
+            } else if wavelen == high_freq_wavelen {
+                let smooth = (original_max_position_embeddings as f32 / wavelen - low_freq_factor)
+                    / (high_freq_factor - low_freq_factor);
+                *freq = (1. - smooth) * *freq / factor + smooth * *freq
+            }
+        }
+    }
+    let inverse_frequency_len = inverse_frequency.len();
+    let mut inverse_frequency =
+        Tensor::from_vec(inverse_frequency, (1, inverse_frequency_len), device)?.to_dtype(dtype)?;
+    if let Some(weight) = &rope_freq_weight {
+        inverse_frequency = inverse_frequency.mul(&weight.reshape((1, ()))?)?;
+    }
+
+    Ok(inverse_frequency)
+}
 
 #[derive(Debug, Clone)]
 pub struct RopeCache {
@@ -16,36 +58,14 @@ impl RopeCache {
         rope_theta: f32,
         device: &Device,
     ) -> candle_core::Result<Self> {
-        let mut inverse_frequency = (0..config.head_dimension)
-            .step_by(2)
-            .map(|i| 1. / (rope_theta.powf(i as f32 / config.head_dimension as f32)))
-            .collect::<Vec<_>>();
-        if let Some(scaling_config) = &config.rope_scaling {
-            let original_max_position_embeddings = scaling_config.original_max_position_embeddings;
-            let factor = scaling_config.factor;
-            let high_freq_factor = scaling_config.high_freq_factor;
-            let low_freq_factor = scaling_config.low_freq_factor;
-            let low_freq_wavelen = original_max_position_embeddings as f32 / low_freq_factor;
-            let high_freq_wavelen = original_max_position_embeddings as f32 / high_freq_factor;
-            for freq in inverse_frequency.iter_mut() {
-                let wavelen = 2. * PI / *freq;
-                if wavelen > low_freq_wavelen {
-                    *freq /= factor
-                } else if wavelen == high_freq_wavelen {
-                    let smooth = (original_max_position_embeddings as f32 / wavelen
-                        - low_freq_factor)
-                        / (high_freq_factor - low_freq_factor);
-                    *freq = (1. - smooth) * *freq / factor + smooth * *freq
-                }
-            }
-        }
-        let inverse_frequency_len = inverse_frequency.len();
-        let mut inverse_frequency =
-            Tensor::from_vec(inverse_frequency, (1, inverse_frequency_len), device)?
-                .to_dtype(dtype)?;
-        if let Some(weight) = &config.rope_freq_weight {
-            inverse_frequency = inverse_frequency.mul(&weight.reshape((1, ()))?)?;
-        }
+        let inverse_frequency = create_inverse_frequency(
+            config.rope_scaling.as_ref(),
+            config.rope_freq_weight.as_ref(),
+            dtype,
+            config.head_dimension,
+            rope_theta,
+            device,
+        )?;
 
         let llama_context_length_indices =
             Tensor::arange(0f32, config.context_length as f32, device)?
