@@ -462,7 +462,7 @@ struct Args {
 
     #[arg(long)]
     small: bool,
-    
+
     #[arg(long)]
     smaller: bool,
 
@@ -516,10 +516,77 @@ async fn main() {
         })
         .collect::<Vec<_>>();
 
+    let check_constraints = {
+        let constraints = constraints.clone();
+        let vars = vars.clone();
+        move |output: &SExpr, interpreter: &Interpreter| {
+            for constraint in &constraints {
+                let result = interpreter.check(constraint, vars.clone(), &output);
+                println!("  {constraint:?} => {result}");
+            }
+        }
+    };
+
     let parser = synth_fun.parser();
-    let parser = 
-        LiteralParser::new("(define-fun f ((firstname String) (lastname String)) String ")
-            .ignore_output_then(MaxLengthParser::new(parser.clone(), 100));
+    let parser = LiteralParser::new("(define-fun f ((firstname String) (lastname String)) String ")
+        .ignore_output_then(MaxLengthParser::new(parser.clone(), 100))
+        .then_lazy({
+            let interpreter = Interpreter::new();
+            let constraints = constraints.clone();
+            let vars = vars.clone();
+            move |result| {
+                let mut valid = true;
+                for constraint in &constraints {
+                    let result = interpreter.check(constraint, vars.clone(), &result);
+                    println!("  {constraint:?} => {result}");
+                    valid = valid && result;
+                }
+                struct FailParser<T>(std::marker::PhantomData<T>);
+                impl<T: Clone> Parser for FailParser<T> {
+                    type Output = T;
+                    type PartialState = ();
+
+                    fn parse<'a>(
+                        &self,
+                        _: &Self::PartialState,
+                        _: &'a [u8],
+                    ) -> ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>>
+                    {
+                        Err(ParserError::msg("Fail"))
+                    }
+                }
+                impl<T: Clone> CreateParserState for FailParser<T> {
+                    fn create_parser_state(&self) -> Self::PartialState {}
+                }
+                struct SuccessParser<T>(T);
+                impl<T: Clone> Parser for SuccessParser<T> {
+                    type Output = T;
+                    type PartialState = ();
+
+                    fn parse<'a>(
+                        &self,
+                        _: &Self::PartialState,
+                        _: &'a [u8],
+                    ) -> ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>>
+                    {
+                        Ok(ParseStatus::Finished {
+                            result: self.0.clone(),
+                            remaining: &[],
+                        })
+                    }
+                }
+                impl<T: Clone> CreateParserState for SuccessParser<T> {
+                    fn create_parser_state(&self) -> Self::PartialState {}
+                }
+                if valid {
+                    FailParser(std::marker::PhantomData).boxed()
+                } else {
+                    SuccessParser(()).boxed()
+                }
+            }
+        })
+        .map_output(|(a, _)| a)
+        .boxed();
 
     let sampler = GenerationParameters::new()
         .with_repetition_penalty_range(256)
@@ -536,7 +603,7 @@ async fn main() {
             LlamaSource::qwen_2_5_3b_instruct()
         } else if small {
             LlamaSource::qwen_2_5_1_5b_instruct()
-        }else {
+        } else {
             LlamaSource::qwen_2_5_7b_instruct()
         }
     };
@@ -607,18 +674,15 @@ async fn main() {
             println!("generation {generation}:\n{output:?}");
 
             println!("Checking constraints:");
-            for constraint in &constraints {
-                let result = interpreter.check(constraint, vars.clone(), &output);
-                println!("  {constraint:?} => {result}");
-            }
+            check_constraints(&output, &interpreter);
 
             let shannon_entropy = trie.shannon_entropy();
             let entropy_diff = last_entropy - shannon_entropy;
             println!("entropy diff: {entropy_diff}");
-            if entropy_diff.abs() < 0.00001 {
-                println!("looks like entropy is converging, stopping generation");
-                break;
-            }
+            // if entropy_diff.abs() < 0.00001 {
+            //     println!("looks like entropy is converging, stopping generation");
+            //     break;
+            // }
             println!("shannon entropy: {shannon_entropy}");
             last_entropy = shannon_entropy;
         }
@@ -667,7 +731,7 @@ impl<P: SendCreateParserState> CreateParserState for MaxLengthParser<P> {
 
 #[derive(Clone)]
 struct Interpreter {
-    functions: HashMap<String, Arc<dyn Fn(&[SExpr], &mut Self) -> SExpr>>,
+    functions: HashMap<String, Arc<dyn Fn(&[SExpr], &mut Self) -> SExpr + Send + Sync>>,
     bindings: Vec<HashMap<String, Atom>>,
 }
 
@@ -731,9 +795,10 @@ impl Interpreter {
     }
 }
 
-fn built_in_functions() -> HashMap<String, Arc<dyn Fn(&[SExpr], &mut Interpreter) -> SExpr>> {
+fn built_in_functions()
+-> HashMap<String, Arc<dyn Fn(&[SExpr], &mut Interpreter) -> SExpr + Send + Sync>> {
     let mut functions = HashMap::new();
-    fn binary_op(op: fn(i32, i32) -> i32) -> impl Fn(&[SExpr]) -> i32 {
+    fn binary_op(op: fn(i32, i32) -> i32) -> impl Fn(&[SExpr]) -> i32 + Send + Sync {
         move |args: &[SExpr]| {
             let first = args[0].as_int().unwrap();
             let second = args[1].as_int().unwrap();
@@ -742,9 +807,12 @@ fn built_in_functions() -> HashMap<String, Arc<dyn Fn(&[SExpr], &mut Interpreter
     }
 
     fn insert<O: Into<SExpr>>(
-        functions: &mut HashMap<String, Arc<dyn Fn(&[SExpr], &mut Interpreter) -> SExpr>>,
+        functions: &mut HashMap<
+            String,
+            Arc<dyn Fn(&[SExpr], &mut Interpreter) -> SExpr + Send + Sync>,
+        >,
         name: impl ToString,
-        op: impl Fn(&[SExpr]) -> O + 'static,
+        op: impl Fn(&[SExpr]) -> O + Send + Sync + 'static,
     ) {
         functions.insert(name.to_string(), Arc::new(move |i, _| op(i).into()));
     }
