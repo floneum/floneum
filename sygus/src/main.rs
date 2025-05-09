@@ -469,6 +469,8 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt().init();
+
     let args = Args::parse();
     let think = args.think;
 
@@ -504,13 +506,9 @@ async fn main() {
         .collect::<Vec<_>>();
 
     let parser = synth_fun.parser();
-    let parser = MaxLengthParser::new(
+    let parser = 
         LiteralParser::new("(define-fun f ((firstname String) (lastname String)) String ")
-            .ignore_output_then(parser.clone()),
-        200,
-    );
-
-    tracing_subscriber::fmt().init();
+            .ignore_output_then(MaxLengthParser::new(parser.clone(), 100));
 
     let sampler = GenerationParameters::new()
         .with_repetition_penalty_range(256)
@@ -561,6 +559,7 @@ async fn main() {
         }
 
         for generation in 0.. {
+            println!("Trie {}", trie.graphvis(&llm.tokenizer));
             let mut session = session.deep_clone();
             let output = match llm.generate_structured_with_trie(
                 &mut session,
