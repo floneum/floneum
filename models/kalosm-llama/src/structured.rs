@@ -262,6 +262,8 @@ pub(crate) fn generate_structured<P: Parser>(
                     logit.logit = logit.prob.exp();
                 }
             }
+            logits.set_softmax(false);
+            logits.ensure_softmax().unwrap();
 
             loop {
                 let mut sampled_logits = logits.clone();
@@ -338,7 +340,7 @@ pub(crate) fn generate_structured<P: Parser>(
                     break;
                 } else {
                     println!(
-                        "Skipping sampled token... Token {:?} is invalid",
+                        "\nSkipping sampled token... Token {:?} is invalid",
                         tokenizer.id_to_token(token_id)
                     );
                     println!(
@@ -544,7 +546,7 @@ impl EvaluationTrie {
         result
     }
 
-    pub(crate) fn graphvis(&self, tokenizer: &Tokenizer) -> String {
+    pub fn graphvis(&self, tokenizer: &Tokenizer) -> String {
         let mut graph = String::new();
         graph.push_str("digraph G {\n");
         fn filter_children(

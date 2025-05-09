@@ -66,7 +66,7 @@ pub enum LlamaModelError {
 pub struct LlamaModel {
     pub(crate) model: Model,
     pub(crate) device: Device,
-    pub(crate) tokenizer: Arc<Tokenizer>,
+    pub tokenizer: Arc<Tokenizer>,
     pub(crate) merges: FxHashSet<[u32; 2]>,
 }
 
