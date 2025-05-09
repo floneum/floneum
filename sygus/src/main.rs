@@ -516,17 +516,6 @@ async fn main() {
         })
         .collect::<Vec<_>>();
 
-    let check_constraints = {
-        let constraints = constraints.clone();
-        let vars = vars.clone();
-        move |output: &SExpr, interpreter: &Interpreter| {
-            for constraint in &constraints {
-                let result = interpreter.check(constraint, vars.clone(), &output);
-                println!("  {constraint:?} => {result}");
-            }
-        }
-    };
-
     let parser = synth_fun.parser();
     let parser = LiteralParser::new("(define-fun f ((firstname String) (lastname String)) String ")
         .ignore_output_then(MaxLengthParser::new(parser.clone(), 100))
@@ -536,6 +525,7 @@ async fn main() {
             let vars = vars.clone();
             move |result| {
                 let mut valid = true;
+                println!("Checking constraints for expression: {result:?}");
                 for constraint in &constraints {
                     let result = interpreter.check(constraint, vars.clone(), &result);
                     println!("  {constraint:?} => {result}");
@@ -616,7 +606,7 @@ async fn main() {
 
     tokio::task::spawn_blocking(move || {
         let interpreter = Interpreter::new();
-        
+
         let mut trie = EvaluationTrie::new();
         let mut last_entropy = 0.0;
         let task = grammar_text;
@@ -647,6 +637,7 @@ async fn main() {
         }
 
         for generation in 0.. {
+            println!("Iteration {generation}");
             if args.vis {
                 println!("{}", trie.graphvis(&llm.tokenizer));
             }
@@ -672,9 +663,6 @@ async fn main() {
             println!("\n\n");
 
             println!("generation {generation}:\n{output:?}");
-
-            println!("Checking constraints:");
-            check_constraints(&output, &interpreter);
 
             let shannon_entropy = trie.shannon_entropy();
             let entropy_diff = last_entropy - shannon_entropy;
