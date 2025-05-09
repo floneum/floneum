@@ -697,7 +697,6 @@ impl Interpreter {
                 if let SExpr::Atom(Atom::Ident(name)) = first {
                     if let Some(func) = self.functions.get(name).cloned() {
                         let rest = rest.iter().map(|item| self.eval(item)).collect::<Vec<_>>();
-                        println!("args: {rest:?}");
                         func(&rest, self)
                     } else {
                         panic!("Unknown function: {}", name)
