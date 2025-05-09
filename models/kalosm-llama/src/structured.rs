@@ -337,18 +337,18 @@ pub(crate) fn generate_structured<P: Parser>(
                 if has_valid_next {
                     break;
                 } else {
-                    // println!(
-                    //     "Skipping sampled token... Token {:?} is invalid",
-                    //     tokenizer.id_to_token(token_id)
-                    // );
-                    // println!(
-                    //     "probability: {}",
-                    //     sampled_logits
-                    //         .iter()
-                    //         .find(|logit| logit.token_id == token_id)
-                    //         .unwrap()
-                    //         .prob
-                    // );
+                    println!(
+                        "Skipping sampled token... Token {:?} is invalid",
+                        tokenizer.id_to_token(token_id)
+                    );
+                    println!(
+                        "probability: {}",
+                        sampled_logits
+                            .iter()
+                            .find(|logit| logit.token_id == token_id)
+                            .unwrap()
+                            .prob
+                    );
                     let parent_id = match current_token {
                         Some(current) => *trie.nodes[current]
                             .evaluated_children

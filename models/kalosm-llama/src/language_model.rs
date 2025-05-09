@@ -141,7 +141,7 @@ impl LlamaModel {
             None => None,
         };
         let sampler = std::sync::Arc::new(std::sync::Mutex::new(sampler));
-        
+
         generate_structured(
             text,
             self,
@@ -150,7 +150,7 @@ impl LlamaModel {
             parser_state,
             sampler,
             on_token,
-            Some(64),
+            Some(1),
             seed,
             trie,
         )

@@ -427,5 +427,11 @@ impl Model {
 }
 
 pub(crate) fn assert_all_f32_not_nan(tensor: &Tensor) {
-    debug_assert!(tensor.flatten_all().unwrap().to_vec1().unwrap().iter().all(|v: &f32| !v.is_nan()));
+    debug_assert!(tensor
+        .flatten_all()
+        .unwrap()
+        .to_vec1()
+        .unwrap()
+        .iter()
+        .all(|v: &f32| !v.is_nan()));
 }

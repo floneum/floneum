@@ -13,6 +13,7 @@ use kalosm_sample::{
 use std::io::Write;
 use tokio::sync::oneshot;
 
+use clap::Parser as _;
 use nom::{
     IResult, Parser as _,
     branch::alt,
@@ -370,14 +371,12 @@ impl TermMap {
 
     fn parser(&self, expr: &SExpr) -> ArcParser<SExpr> {
         match expr {
-            SExpr::Atom(atom) => {
-                self.parser_for_term(&atom.to_string()).unwrap_or_else(||{
-                    let atom = atom.clone();
-                    LiteralParser::new(atom.to_string())
-                        .map_output(move |_| SExpr::Atom(atom.clone()))
-                        .boxed()
-                })
-            }
+            SExpr::Atom(atom) => self.parser_for_term(&atom.to_string()).unwrap_or_else(|| {
+                let atom = atom.clone();
+                LiteralParser::new(atom.to_string())
+                    .map_output(move |_| SExpr::Atom(atom.clone()))
+                    .boxed()
+            }),
             SExpr::List(sexprs) => LiteralParser::new("(")
                 .ignore_output_then(
                     parse_non_empty_list_sequentially(sexprs.iter().map(|term| self.parser(term)))
@@ -454,10 +453,28 @@ fn parse_any_of_non_empty_list<P: SendCreateParserState + 'static>(
     parser
 }
 
+/// Simple program to greet a person
+#[derive(clap::Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    #[arg(long)]
+    think: bool,
+
+    #[arg(long)]
+    grammar: String,
+
+    #[arg(long)]
+    task: String,
+}
+
 #[tokio::main]
 async fn main() {
-    let grammar_text = include_str!("./grammar.sl");
-    let parsed = parse_sygus(grammar_text).unwrap();
+    let args = Args::parse();
+    let think = args.think;
+
+    let grammar_text = std::fs::read_to_string(args.grammar).unwrap();
+    let prompt = std::fs::read_to_string(args.task).unwrap();
+    let parsed = parse_sygus(&grammar_text).unwrap();
     println!("parsed: {:#?}", parsed);
     let synth_fun = parsed
         .iter()
@@ -495,10 +512,17 @@ async fn main() {
 
     tracing_subscriber::fmt().init();
 
-    let sampler = GenerationParameters::new();
+    let sampler = GenerationParameters::new()
+        .with_repetition_penalty_range(256)
+        .with_top_k(1);
 
+    let source = if think {
+        LlamaSource::deepseek_r1_distill_qwen_7b()
+    } else {
+        LlamaSource::qwen_2_5_7b_instruct()
+    };
     let mut llm = LlamaModel::from_builder(
-        Llama::builder().with_source(LlamaSource::deepseek_r1_distill_qwen_1_5b()),
+        Llama::builder().with_source(source),
         ModelLoadingProgress::multi_bar_loading_indicator(),
     )
     .await
@@ -509,29 +533,33 @@ async fn main() {
         
         let mut trie = EvaluationTrie::new();
         let mut last_entropy = 0.0;
-        let prompt = include_str!("prompt");
         let task = grammar_text;
         let mut session = llm.new_session();
-        // let prompt = format!("<|im_start|>system\n{prompt}<|im_end|>\n<|im_start|>user\nQuestion:\n{task}<|im_end|>\n<|im_start|>assistant\n");
-        let prompt =
-            format!("<｜begin▁of▁sentence｜>{prompt}<｜User｜>Solve this problem:\n{task}<｜Assistant｜><think>\n");
+        let prompt = if think {
+            format!("<｜begin▁of▁sentence｜>{prompt}<｜User｜>Solve this problem:\n{task}<｜Assistant｜><think>\n")
+        } else {
+            format!("<|im_start|>system\n{prompt}<|im_end|>\n<|im_start|>user\nQuestion:\n{task}<|im_end|>\n<|im_start|>assistant\n")
+        };
 
-        while llm.generate_structured_with_trie(
-            &mut session,
-            &prompt,
-            sampler.clone(),
-            MaxLengthParser::new(StopOn::new("</think>"), 8192),
-            Box::new(|token| {
-                print!("{}", token);
-                std::io::stdout().flush().unwrap();
-                Ok(())
-            }),
-            &mut EvaluationTrie::new(),
-        )
-        .is_err() {
-            println!("Initial prompt too long, retrying");
-            session = llm.new_session();
+        if think {
+            while llm.generate_structured_with_trie(
+                &mut session,
+                &prompt,
+                sampler.clone(),
+                MaxLengthParser::new(StopOn::new("</think>"), 8192),
+                Box::new(|token| {
+                    print!("{}", token);
+                    std::io::stdout().flush().unwrap();
+                    Ok(())
+                }),
+                &mut EvaluationTrie::new(),
+            )
+            .is_err() {
+                println!("Initial prompt too long, retrying");
+                session = llm.new_session();
+            }
         }
+
         for generation in 0.. {
             let mut session = session.deep_clone();
             let output = match llm.generate_structured_with_trie(
