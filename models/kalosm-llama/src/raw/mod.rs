@@ -16,6 +16,7 @@ use candle_core::IndexOp;
 use candle_core::Module;
 use candle_core::{DType, Device, Result, Tensor};
 use candle_nn::Embedding;
+use candle_transformers::quantized_nn::Linear;
 use candle_transformers::quantized_nn::RmsNorm;
 use kalosm_common::MaskCache;
 
@@ -146,14 +147,17 @@ impl Model {
                 interleaved_rope: true,
                 bias: None,
             });
-            let feed_forward_variant = FeedForwardVariant::Llama(LlamaFeedForward {
-                gate: QMatMul::from_qtensor(feed_forward_w1)?,
-                up: QMatMul::from_qtensor(feed_forward_w2)?,
-                down: QMatMul::from_qtensor(feed_forward_w3)?,
-            });
+            let feed_forward_variant = FeedForwardVariant::Llama(LlamaFeedForward::new(
+                QMatMul::from_qtensor(feed_forward_w1)?,
+                QMatMul::from_qtensor(feed_forward_w2)?,
+                QMatMul::from_qtensor(feed_forward_w3)?,
+            ));
             layers.push(LlamaAttention {
                 attention_variant,
-                attention_wo: QMatMul::from_qtensor(attention_wo)?,
+                attention_wo: Linear::from_arc(
+                    attention_wo.into(),
+                    None,
+                )?,
                 attention_norm: decode_norm(attention_norm, 1e-5)?,
                 post_attention_norm: None,
                 feed_forward_variant,
@@ -331,11 +335,7 @@ impl Model {
                         ct.tensor(reader, &format!("{prefix}.attn_k.bias"), device),
                         ct.tensor(reader, &format!("{prefix}.attn_v.bias"), device),
                     ) {
-                        Some(AttentionBias {
-                            bias_q: bias_q.dequantize(device)?,
-                            bias_k: bias_k.dequantize(device)?,
-                            bias_v: bias_v.dequantize(device)?,
-                        })
+                        Some(AttentionBias::from_qtensor(&bias_q, &bias_k, &bias_v)?)
                     } else {
                         None
                     };
@@ -371,11 +371,11 @@ impl Model {
                     ct.tensor(reader, &format!("{prefix}.ffn_down.weight"), device)?;
                 let feed_forward_w3 =
                     ct.tensor(reader, &format!("{prefix}.ffn_up.weight"), device)?;
-                FeedForwardVariant::Llama(LlamaFeedForward {
-                    gate: QMatMul::from_qtensor(feed_forward_w1)?,
-                    up: QMatMul::from_qtensor(feed_forward_w2)?,
-                    down: QMatMul::from_qtensor(feed_forward_w3)?,
-                })
+                FeedForwardVariant::Llama(LlamaFeedForward::new(
+                    QMatMul::from_qtensor(feed_forward_w1)?,
+                    QMatMul::from_qtensor(feed_forward_w2)?,
+                    QMatMul::from_qtensor(feed_forward_w3)?,
+                ))
             } else {
                 // Otherwise, try to read from the up, and down weights
                 let up = ct.tensor(reader, &format!("{prefix}.ffn_up.weight"), device)?;
@@ -427,7 +427,7 @@ impl Model {
 
             layers.push(LlamaAttention {
                 attention_variant,
-                attention_wo: QMatMul::from_qtensor(attention_wo)?,
+                attention_wo: Linear::from_arc(attention_wo.into(), None)?,
                 attention_norm: decode_norm(attention_norm, rms_norm_eps)?,
                 post_attention_norm: post_attention_norm
                     .map(|norm| decode_norm(norm, rms_norm_eps))

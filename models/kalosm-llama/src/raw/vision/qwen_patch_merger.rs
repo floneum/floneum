@@ -6,6 +6,8 @@ use candle_transformers::{
     quantized_var_builder::VarBuilder,
 };
 
+use super::QWEN_EPS;
+
 struct Qwen2VLPatchMerger {
     hidden_size: usize,
     ln_q: RmsNorm,
@@ -20,7 +22,7 @@ impl Qwen2VLPatchMerger {
         vb: &VarBuilder,
     ) -> Result<Self> {
         let hidden_size = context_dim * spatial_merge_size.pow(2);
-        let ln_q = RmsNorm::new(context_dim, 1e-6, vb.pp("ln_q"))?;
+        let ln_q = RmsNorm::new(context_dim, QWEN_EPS, vb.pp("ln_q"))?;
         let mlp_0 = vb.get((hidden_size, hidden_size), "mlp.0")?;
         let mlp_2 = vb.get((hidden_size, dim), "mlp.2")?;
         let mlp = [

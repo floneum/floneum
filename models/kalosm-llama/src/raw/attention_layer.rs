@@ -1,14 +1,17 @@
 use super::debug_assert_none_nan;
 use super::rope::RopeCache;
 use super::silu::fast_cpu_silu;
+use candle_core::quantized::QTensor;
 use candle_core::{quantized::QMatMul, Module, Tensor};
 use candle_core::{Device, D};
-use candle_transformers::quantized_nn::RmsNorm;
+use candle_transformers::quantized_nn::{Linear, RmsNorm};
 use kalosm_common::AttentionMask;
 use kalosm_common::KvCache;
 
 pub enum FeedForwardVariant {
+    // Used by the Llama, Qwen, and Gemma models
     Llama(LlamaFeedForward),
+    // Used by the Phi models
     Phi(PhiFeedForward),
 }
 
@@ -43,35 +46,89 @@ impl PhiFeedForward {
 }
 
 pub struct LlamaFeedForward {
-    pub gate: QMatMul,
-    pub up: QMatMul,
-    pub down: QMatMul,
+    gate: QMatMul,
+    gate_bias: Option<Tensor>,
+    up: QMatMul,
+    up_bias: Option<Tensor>,
+    down: QMatMul,
+    down_bias: Option<Tensor>,
 }
 
 impl LlamaFeedForward {
-    fn forward(&self, x: &Tensor) -> candle_core::Result<Tensor> {
+    pub(crate) fn new(gate: QMatMul, up: QMatMul, down: QMatMul) -> Self {
+        Self {
+            gate,
+            up,
+            down,
+            gate_bias: None,
+            up_bias: None,
+            down_bias: None,
+        }
+    }
+
+    pub(crate) fn new_with_bias(
+        gate: QMatMul,
+        gate_bias: Option<Tensor>,
+        up: QMatMul,
+        up_bias: Option<Tensor>,
+        down: QMatMul,
+        down_bias: Option<Tensor>,
+    ) -> Self {
+        Self {
+            gate,
+            gate_bias,
+            up,
+            up_bias,
+            down,
+            down_bias,
+        }
+    }
+
+    pub(crate) fn forward(&self, x: &Tensor) -> candle_core::Result<Tensor> {
         let device = x.device();
         if matches!(device, Device::Cpu) {
             std::thread::scope(|scope| {
                 let w1 = scope.spawn(|| {
-                    let w1 = self.gate.forward(x)?;
+                    let mut w1 = self.gate.forward(x)?;
+                    if let Some(ref bias) = self.gate_bias {
+                        w1 = w1.broadcast_add(bias)?;
+                    }
                     fast_cpu_silu(&w1)
                 });
 
-                let w3 = self.down.forward(x)?;
+                let mut w3 = self.down.forward(x)?;
+                if let Some(ref bias) = self.down_bias {
+                    w3 = w3.broadcast_add(bias)?;
+                }
                 let w1 = w1
                     .join()
                     .map_err(|_| candle_core::Error::Msg("Failed to join thread".to_string()))??;
 
-                self.up.forward(&(&w1 * w3)?)
+                let mut up = self.up.forward(&(&w1 * w3)?)?;
+
+                if let Some(ref bias) = self.up_bias {
+                    up = up.broadcast_add(bias)?;
+                }
+
+                Ok(up)
             })
         } else {
-            let w1 = self.gate.forward(x)?;
+            let mut w1 = self.gate.forward(x)?;
+            if let Some(ref bias) = self.gate_bias {
+                w1 = w1.broadcast_add(bias)?;
+            }
             let w1 = fast_cpu_silu(&w1)?;
 
-            let w3 = self.down.forward(x)?;
+            let mut w3 = self.down.forward(x)?;
+            if let Some(ref bias) = self.down_bias {
+                w3 = w3.broadcast_add(bias)?;
+            }
 
-            self.up.forward(&(&w1 * w3)?)
+            let mut up = self.up.forward(&(&w1 * w3)?)?;
+            if let Some(ref bias) = self.up_bias {
+                up = up.broadcast_add(bias)?;
+            }
+            Ok(up)
         }
     }
 }
@@ -82,9 +139,27 @@ pub enum AttentionVariant {
 }
 
 pub struct AttentionBias {
-    pub bias_q: Tensor,
-    pub bias_k: Tensor,
-    pub bias_v: Tensor,
+    bias_q: Tensor,
+    bias_k: Tensor,
+    bias_v: Tensor,
+}
+
+impl AttentionBias {
+    pub fn new(q: Tensor, k: Tensor, v: Tensor) -> Self {
+        Self {
+            bias_q: q,
+            bias_k: k,
+            bias_v: v,
+        }
+    }
+
+    pub fn from_qtensor(q: &QTensor, k: &QTensor, v: &QTensor) -> candle_core::Result<Self> {
+        Ok(Self {
+            bias_q: q.dequantize(&q.device())?,
+            bias_k: k.dequantize(&k.device())?,
+            bias_v: v.dequantize(&v.device())?,
+        })
+    }
 }
 
 pub struct SeparateAttention {
@@ -284,7 +359,7 @@ impl GroupedAttention {
 
 pub struct LlamaAttention {
     pub attention_variant: AttentionVariant,
-    pub attention_wo: QMatMul,
+    pub attention_wo: Linear,
     pub attention_norm: RmsNorm,
     pub post_attention_norm: Option<RmsNorm>,
     pub feed_forward_variant: FeedForwardVariant,
@@ -344,42 +419,18 @@ impl LlamaAttention {
             Some(cache) => cache.append(&key_states, &value_states)?,
         };
 
-        let scale = 1. / (head_dim as f64).sqrt();
-
-        let mut attn_output = if query_states.device().is_metal() && q_len == 1 {
-            // SDPA use fuzed softmax(qk^T*scale)v kernel on metal
-            candle_nn::ops::sdpa(&query_states, &key_states, &value_states, scale as f32, 1.)?
-        } else {
-            let mut attn_weights = (query_states.matmul(&key_states.t()?)? * scale)?;
-            debug_assert_none_nan(&attn_weights);
-
-            if let Some(attention_mask) = attention_mask {
-                attention_mask.forward(&mut attn_weights)?;
-                debug_assert_none_nan(&attn_weights);
-            }
-
-            attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights)?;
-            debug_assert_none_nan(&attn_weights);
-
-            attn_weights.matmul(&value_states)?
-        };
-        debug_assert_none_nan(&attn_output);
-
-        if attn_output.dims() != [bsz, num_heads, q_len, head_dim] {
-            return Err(candle_core::Error::Msg(format!(
-                "`attn_output` should be of size {:?}, but is {:?}",
-                [bsz, self.n_head, q_len, head_dim],
-                attn_output.dims()
-            )));
-        }
-
-        attn_output = attn_output.transpose(1, 2)?;
-
-        attn_output = attn_output.reshape(&[bsz, q_len, hidden_size])?;
-
-        attn_output = self.attention_wo.forward(&attn_output)?;
-
-        Ok(attn_output)
+        forward_attention_qkv(
+            &query_states,
+            &key_states,
+            &value_states,
+            &self.attention_wo,
+            attention_mask,
+            num_heads,
+            head_dim,
+            bsz,
+            q_len,
+            hidden_size,
+        )
     }
 }
 
@@ -395,4 +446,56 @@ fn repeat_kv(x: Tensor, num_key_value_groups: usize) -> candle_core::Result<Tens
             head_dim,
         ))
     }
+}
+
+pub(crate) fn forward_attention_qkv(
+    query_states: &Tensor,
+    key_states: &Tensor,
+    value_states: &Tensor,
+    attention_wo: &Linear,
+    attention_mask: Option<&AttentionMask>,
+    num_heads: usize,
+    head_dim: usize,
+    bsz: usize,
+    q_len: usize,
+    hidden_size: usize,
+) -> candle_core::Result<Tensor> {
+    let scale = 1. / (head_dim as f64).sqrt();
+    let mut attn_output = if query_states.device().is_metal() && q_len == 1 {
+        // SDPA use fuzed softmax(qk^T*scale)v kernel on metal
+        candle_nn::ops::sdpa(&query_states, &key_states, &value_states, scale as f32, 1.)?
+    } else {
+        let mut attn_weights = (query_states.matmul(&key_states.t()?)? * scale)?;
+        debug_assert_none_nan(&attn_weights);
+
+        if let Some(attention_mask) = attention_mask {
+            attention_mask.forward(&mut attn_weights)?;
+            debug_assert_none_nan(&attn_weights);
+        }
+
+        attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights)?;
+        debug_assert_none_nan(&attn_weights);
+
+        attn_weights.matmul(&value_states)?
+    };
+
+    debug_assert_none_nan(&attn_output);
+
+    if attn_output.dims() != [bsz, num_heads, q_len, head_dim] {
+        return Err(candle_core::Error::Msg(format!(
+            "`attn_output` should be of size {:?}, but is {:?}",
+            [bsz, num_heads, q_len, head_dim],
+            attn_output.dims()
+        )));
+    }
+
+    attn_output = attn_output.transpose(1, 2)?;
+
+    attn_output = attn_output.reshape(&[bsz, q_len, hidden_size])?;
+
+    attn_output = attention_wo.forward(&attn_output)?;
+
+    debug_assert_none_nan(&attn_output);
+
+    Ok(attn_output)
 }
