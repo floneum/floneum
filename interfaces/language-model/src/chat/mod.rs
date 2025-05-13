@@ -12,6 +12,8 @@ mod chat_builder;
 pub use chat_builder::*;
 mod boxed;
 pub use boxed::*;
+mod content;
+pub use content::*;
 
 /// A trait for creating a chat session. While it the core trait
 /// every chat session implementation implements, most methods to use models that implement
