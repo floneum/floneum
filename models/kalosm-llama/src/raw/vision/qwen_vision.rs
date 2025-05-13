@@ -1,7 +1,7 @@
 use candle_core::{Tensor, WithDType};
 
 fn pad(tensor: &Tensor, shape: &[usize], value: impl WithDType) -> candle_core::Result<Tensor> {
-    let new_tensor = Tensor::full(value, shape, tensor.device())?;
+    let new_tensor = Tensor::full(value, shape, tensor.device()).unwrap();
 
     let ranges = tensor
         .shape()
@@ -40,18 +40,21 @@ fn get_window_index(
     window_size: usize,
     spatial_merge_size: usize,
     spatial_merge_unit: usize,
+    patch_size: usize,
     device: &candle_core::Device,
 ) -> candle_core::Result<(Tensor, Vec<u32>)> {
     let mut window_index = vec![];
     let mut cu_window_seqlens = vec![0];
     let mut window_index_id = 0;
-    let vit_merger_window_size = window_size / spatial_merge_size;
+    let vit_merger_window_size = window_size / spatial_merge_size / patch_size;
 
     for (grid_t, grid_h, grid_w) in grid_thw {
         let llm_grid_h = grid_h / spatial_merge_size;
         let llm_grid_w = grid_w / spatial_merge_size;
-        let index = Tensor::arange(0, (grid_t * llm_grid_h * llm_grid_w) as u32, device)?
-            .reshape((grid_t, llm_grid_h, llm_grid_w))?;
+        let index = Tensor::arange(0, (grid_t * llm_grid_h * llm_grid_w) as u32, device)
+            .unwrap()
+            .reshape((grid_t, llm_grid_h, llm_grid_w))
+            .unwrap();
         let pad_h = vit_merger_window_size - llm_grid_h % vit_merger_window_size;
         let pad_w = vit_merger_window_size - llm_grid_w % vit_merger_window_size;
         let num_windows_h = (llm_grid_h + pad_h) / vit_merger_window_size;
@@ -61,42 +64,63 @@ fn get_window_index(
                 &index,
                 &[grid_t, llm_grid_h + pad_h, llm_grid_w + pad_w],
                 u32::MAX,
-            )?
+            )
+            .unwrap()
             .reshape((
                 grid_t,
                 num_windows_h,
                 vit_merger_window_size,
                 num_windows_w,
                 vit_merger_window_size,
-            ))?
-            .permute([0, 1, 3, 2, 4])?
+            ))
+            .unwrap()
+            .permute([0, 1, 3, 2, 4])
+            .unwrap()
             .reshape((
                 grid_t,
                 num_windows_h * num_windows_w,
                 vit_merger_window_size,
                 vit_merger_window_size,
-            ))?
+            ))
+            .unwrap()
         };
-        let seqlens = index_padded.ne(u32::MAX)?.sum([2, 3])?.reshape(((),))?;
-        let index_padded = index_padded.reshape(((),))?;
-        let index_new = index_padded.ne(u32::MAX)?;
-        window_index.push((index_new + window_index_id as f64)?);
-        let cu_seqlens_tmp = ((seqlens.cumsum(0)? * spatial_merge_unit as f64)?
-            + *cu_window_seqlens.last().unwrap() as f64)?;
-        cu_window_seqlens.extend(cu_seqlens_tmp.to_vec1::<u32>()?);
+        let seqlens = index_padded
+            .ne(u32::MAX)
+            .unwrap()
+            .sum([2, 3])
+            .unwrap()
+            .reshape(((),))
+            .unwrap();
+        let index_padded = index_padded.reshape(((),)).unwrap();
+        let index_new = index_padded.to_vec1::<u32>().unwrap().into_iter().filter(|&x| x != u32::MAX).collect::<Vec<_>>();
+        let index_new = Tensor::new(index_new, device).unwrap();
+        window_index.push((index_new + window_index_id as f64).unwrap());
+        let cu_seqlens_tmp = ((seqlens
+            .to_dtype(candle_core::DType::F32)
+            .unwrap()
+            .cumsum(0)
+            .unwrap()
+            .to_dtype(candle_core::DType::U32)
+            .unwrap()
+            * spatial_merge_unit as f64)
+            .unwrap()
+            + *cu_window_seqlens.last().unwrap() as f64)
+            .unwrap();
+        cu_window_seqlens.extend(cu_seqlens_tmp.to_vec1::<u32>().unwrap());
         window_index_id += (grid_t * llm_grid_h * llm_grid_w) as usize;
     }
-    let window_index = Tensor::cat(&window_index, 0)?;
+    let window_index = Tensor::cat(&window_index, 0).unwrap();
 
     Ok((window_index, cu_window_seqlens))
 }
 
 #[test]
 fn test_get_window_index() {
-    let grid_thw = vec![(1, 4, 4)];
     let window_size = 2;
-    let spatial_merge_size = 2;
-    let spatial_merge_unit = 1;
+    let spatial_merge_size = 1;
+    let spatial_merge_unit = 2;
+    let patch_size = 1;
+    let grid_thw = vec![(1, 8, 4)];
     let device = candle_core::Device::Cpu;
 
     let (window_index, cu_window_seqlens) = get_window_index(
@@ -104,10 +128,18 @@ fn test_get_window_index() {
         window_size,
         spatial_merge_size,
         spatial_merge_unit,
+        patch_size,
         &device,
     )
     .unwrap();
 
-    println!("Window Index: {:?}", window_index);
-    println!("CU Window Seqlens: {:?}", cu_window_seqlens);
+    let window_index = window_index.to_vec1::<u32>().unwrap();
+    println!("Window Index: {window_index:?}");
+    assert_eq!(
+        window_index,
+        vec![ 0,  1,  4,  5,  2,  3,  6,  7,  8,  9, 12, 13, 10, 11, 14, 15, 16, 17,
+         20, 21, 18, 19, 22, 23, 24, 25, 28, 29, 26, 27, 30, 31]
+    );
+    println!("CU Window Seqlens: {cu_window_seqlens:?}");
+    assert_eq!(cu_window_seqlens, vec![0, 8, 16, 16, 24, 32, 32, 40, 48, 48, 56, 64, 64, 64, 64, 64]);
 }
