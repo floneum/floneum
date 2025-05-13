@@ -1,7 +1,7 @@
 use candle_core::{Tensor, WithDType};
 
 fn pad(tensor: &Tensor, shape: &[usize], value: impl WithDType) -> candle_core::Result<Tensor> {
-    let new_tensor = Tensor::full(value, shape, tensor.device()).unwrap();
+    let new_tensor = Tensor::full(value, shape, tensor.device())?;
 
     let ranges = tensor
         .shape()
@@ -91,10 +91,10 @@ fn get_window_index(
             .unwrap()
             .reshape(((),))
             .unwrap();
-        let index_padded = index_padded.reshape(((),)).unwrap();
-        let index_new = index_padded.to_vec1::<u32>().unwrap().into_iter().filter(|&x| x != u32::MAX).collect::<Vec<_>>();
-        let index_new = Tensor::new(index_new, device).unwrap();
-        window_index.push((index_new + window_index_id as f64).unwrap());
+        let index_padded = index_padded.reshape(((),))?;
+        let index_new = index_padded.to_vec1::<u32>()?.into_iter().filter(|&x| x != u32::MAX).collect::<Vec<_>>();
+        let index_new = Tensor::new(index_new, device)?;
+        window_index.push((index_new + window_index_id as f64)?);
         let cu_seqlens_tmp = ((seqlens
             .to_dtype(candle_core::DType::F32)
             .unwrap()
@@ -106,10 +106,10 @@ fn get_window_index(
             .unwrap()
             + *cu_window_seqlens.last().unwrap() as f64)
             .unwrap();
-        cu_window_seqlens.extend(cu_seqlens_tmp.to_vec1::<u32>().unwrap());
+        cu_window_seqlens.extend(cu_seqlens_tmp.to_vec1::<u32>()?);
         window_index_id += (grid_t * llm_grid_h * llm_grid_w) as usize;
     }
-    let window_index = Tensor::cat(&window_index, 0).unwrap();
+    let window_index = Tensor::cat(&window_index, 0)?;
 
     Ok((window_index, cu_window_seqlens))
 }
