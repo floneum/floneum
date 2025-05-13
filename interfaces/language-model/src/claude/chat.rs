@@ -326,7 +326,7 @@ impl ChatModel<GenerationParameters> for AnthropicCompatibleChatModel {
             .iter()
             .filter(|message| {
                 if let crate::MessageType::SystemPrompt = message.role() {
-                    system_prompt = Some(message.content().to_string());
+                    system_prompt = message.content().as_str().map(ToString::to_string);
                     false
                 } else {
                     true

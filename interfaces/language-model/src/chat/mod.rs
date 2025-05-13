@@ -298,7 +298,7 @@ pub enum MessageType {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChatMessage {
     role: MessageType,
-    content: String,
+    content: MessageContent,
 }
 
 impl ChatMessage {
@@ -314,10 +314,10 @@ impl ChatMessage {
     /// chat.add_message(ChatMessage::new(MessageType::UserMessage, "Hello, world!"));
     /// # }
     /// ```
-    pub fn new(role: MessageType, contents: impl ToString) -> Self {
+    pub fn new(role: MessageType, contents: impl Into<MessageContent>) -> Self {
         Self {
             role,
-            content: contents.to_string(),
+            content: contents.into(),
         }
     }
 
@@ -347,7 +347,7 @@ impl ChatMessage {
     /// assert_eq!(message.content(), "Hello, world!");
     /// # }
     /// ```
-    pub fn content(&self) -> &str {
+    pub fn content(&self) -> &MessageContent {
         &self.content
     }
 }

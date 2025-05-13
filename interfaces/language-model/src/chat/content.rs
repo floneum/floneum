@@ -4,6 +4,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use serde::{Deserialize, Serialize};
+
 /// The contents of a chat message. The message can contain chunks of interleaved text and media.
 ///
 /// ```rust, no_run
@@ -28,7 +30,7 @@ use std::{
 /// contents += MediaSource::url("https://example.com/image.png");
 /// contents += MediaSource::try_from(PathBuf::from("path/to/file.png")).unwrap();
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MessageContent {
     chunks: Vec<ContentChunk>,
 }
@@ -55,6 +57,27 @@ impl MessageContent {
     /// Get the chunks of this message.
     pub fn chunks(&self) -> &[ContentChunk] {
         &self.chunks
+    }
+
+    /// Try to get a reference to the message contents as a [`&str`]. This will only succeed if the message
+    /// contains a single text chunk.
+    pub fn as_str(&self) -> Option<&str> {
+        match self.chunks.as_slice() {
+            [ContentChunk::Text(text)] => Some(text),
+            _ => None,
+        }
+    }
+}
+
+impl PartialEq<&str> for MessageContent {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str().is_some_and(|text| text == *other)
+    }
+}
+
+impl PartialEq<String> for MessageContent {
+    fn eq(&self, other: &String) -> bool {
+        self.as_str().is_some_and(|text| text == *other)
     }
 }
 
@@ -107,7 +130,7 @@ where
 }
 
 /// A chunk of content in a chat message.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ContentChunk {
     /// A text chunk.
     Text(String),
@@ -154,7 +177,7 @@ impl TryFrom<PathBuf> for ContentChunk {
 }
 
 /// A chunk of media content that can be used with a LLM.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MediaChunk {
     media_type: MediaType,
     source: MediaSource,
@@ -179,7 +202,7 @@ impl MediaChunk {
 
 /// The type of a [`MediaChunk`].
 #[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MediaType {
     /// An image media type (e.g. PNG, JPEG).
     Image,
@@ -199,7 +222,7 @@ pub enum MediaType {
 /// // or a file path.
 /// let source = MediaSource::try_from(PathBuf::from("path/to/file.png")).unwrap();
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MediaSource {
     variant: MediaSourceVariant,
 }
@@ -272,7 +295,7 @@ impl From<&[u8]> for MediaSource {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 enum MediaSourceVariant {
     Url(String),
     Bytes(Box<[u8]>),
@@ -283,7 +306,7 @@ impl MediaChunk {
     /// Create a url from the media chunk by either using the url or encoding the bytes as base64.
     pub fn as_url(&self) -> String {
         use base64::{prelude::BASE64_STANDARD_NO_PAD, Engine};
-        
+
         match (&self.source.variant, &self.media_type) {
             (MediaSourceVariant::Url(url), _) => url.to_string(),
             (MediaSourceVariant::Bytes(bytes), MediaType::Image) => format!(

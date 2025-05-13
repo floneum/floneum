@@ -9,6 +9,7 @@ use super::ChatMessage;
 use super::ChatResponseBuilder;
 use super::CreateChatSession;
 use super::CreateDefaultChatConstraintsForType;
+use super::MessageContent;
 use super::MessageType;
 
 /// A task session lets you efficiently run a task with a model. The task session will reuse the model's cache to avoid re-feeding the task prompt repeatedly.
@@ -87,11 +88,13 @@ impl<M: CreateChatSession, Constraints> Task<M, Constraints> {
     ///     stream.to_std_out().await.unwrap();
     /// }
     /// ```
-    pub fn with_example(mut self, input: impl ToString, output: impl ToString) -> Self {
+    pub fn with_example(mut self, input: impl Into<MessageContent>, output: impl ToString) -> Self {
         self.chat
             .add_message(ChatMessage::new(MessageType::UserMessage, input));
-        self.chat
-            .add_message(ChatMessage::new(MessageType::ModelAnswer, output));
+        self.chat.add_message(ChatMessage::new(
+            MessageType::ModelAnswer,
+            output.to_string(),
+        ));
         self
     }
 
@@ -116,7 +119,7 @@ impl<M: CreateChatSession, Constraints> Task<M, Constraints> {
     /// ```
     pub fn with_examples(
         mut self,
-        examples: impl IntoIterator<Item = (impl ToString, impl ToString)>,
+        examples: impl IntoIterator<Item = (impl Into<MessageContent>, impl ToString)>,
     ) -> Self {
         for (input, output) in examples {
             self = self.with_example(input, output);
