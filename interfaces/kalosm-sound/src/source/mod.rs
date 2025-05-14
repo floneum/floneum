@@ -95,7 +95,7 @@ impl<S: AsyncSource + Unpin> Stream for ResampledAsyncSource<S> {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
         let myself = self.get_mut();
-        let mut source = myself.source.as_stream();
+        let source = myself.source.as_stream();
         let mut source = std::pin::pin!(source);
         let source_output_sample_ratio = myself.source_output_sample_ratio;
 

@@ -15,8 +15,6 @@ use crate::AsyncSource;
 
 /// A microphone input.
 pub struct MicInput {
-    #[allow(dead_code)]
-    host: cpal::Host,
     device: cpal::Device,
     config: cpal::SupportedStreamConfig,
 }
@@ -30,25 +28,22 @@ impl Default for MicInput {
         let config = device
             .default_input_config()
             .expect("Failed to get default input config");
-        Self {
-            host,
-            device,
-            config,
-        }
+        Self { device, config }
     }
 }
 
 impl MicInput {
     /// Create a new MicInput from a specific device.
     pub fn from_device(device: cpal::Device) -> Self {
-        let host = cpal::default_host();
-        let config = device.default_input_config()
+        let config = device
+            .default_input_config()
             .expect("Failed to get default input config");
-        Self {
-            host,
-            device,
-            config,
-        }
+        Self::from_parts(device, config)
+    }
+
+    /// Create a new MicInput from parts.
+    pub fn from_parts(device: cpal::Device, config: cpal::SupportedStreamConfig) -> Self {
+        Self { device, config }
     }
 
     /// Records audio for a given duration.
