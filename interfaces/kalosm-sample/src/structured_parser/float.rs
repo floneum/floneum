@@ -1,6 +1,8 @@
 use crate::{CreateParserState, ParseStatus, Parser};
 use std::ops::RangeInclusive;
 
+use super::{Parse, ParserExt};
+
 #[derive(Debug, PartialEq, Eq, Default, Copy, Clone)]
 enum FloatParserProgress {
     #[default]
@@ -325,6 +327,18 @@ impl Parser for FloatParser {
             },
             required_next: Default::default(),
         })
+    }
+}
+
+impl Parse for f32 {
+    fn new_parser() -> impl super::SendCreateParserState<Output = Self> {
+        FloatParser::new(f64::MIN..=f64::MAX).map_output(|value| value as f32)
+    }
+}
+
+impl Parse for f64 {
+    fn new_parser() -> impl super::SendCreateParserState<Output = Self> {
+        FloatParser::new(f64::MIN..=f64::MAX)
     }
 }
 
