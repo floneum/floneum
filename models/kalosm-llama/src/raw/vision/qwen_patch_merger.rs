@@ -1,6 +1,4 @@
-use std::sync::Arc;
-
-use candle_core::{quantized::QTensor, DType, Device, Result, Tensor};
+use candle_core::{Result, Tensor};
 use candle_transformers::{
     quantized_nn::{Linear, RmsNorm},
     quantized_var_builder::VarBuilder,
@@ -8,14 +6,14 @@ use candle_transformers::{
 
 use super::QWEN_EPS;
 
-struct Qwen2VLPatchMerger {
+pub(crate) struct Qwen2VLPatchMerger {
     hidden_size: usize,
     ln_q: RmsNorm,
     mlp: [Linear; 2],
 }
 
 impl Qwen2VLPatchMerger {
-    fn new(
+    pub(crate) fn new(
         dim: usize,
         context_dim: usize,
         spatial_merge_size: usize,

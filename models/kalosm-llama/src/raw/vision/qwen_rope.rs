@@ -2,12 +2,12 @@ use candle_core::{Device, Result, Tensor, D};
 
 use crate::raw::rope::create_inverse_frequency;
 
-struct VisionRotaryEmbedding {
+pub struct VisionRotaryEmbedding {
     inv_freq: Tensor,
 }
 
 impl VisionRotaryEmbedding {
-    fn new(dim: usize, rope_theta: f32, device: &Device) -> Result<Self> {
+    pub(crate) fn new(dim: usize, rope_theta: f32, device: &Device) -> Result<Self> {
         Ok(Self {
             inv_freq: create_inverse_frequency(
                 None,
@@ -20,7 +20,7 @@ impl VisionRotaryEmbedding {
         })
     }
 
-    fn make_embeds(&self, sequence_length: usize) -> Result<Tensor> {
+    pub(crate) fn make_embeds(&self, sequence_length: u32) -> Result<Tensor> {
         let seq = Tensor::arange(0f32, sequence_length as f32, self.inv_freq.device())?
             .unsqueeze(D::Minus1)?;
         seq.broadcast_matmul(&self.inv_freq)

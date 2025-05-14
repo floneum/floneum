@@ -10,7 +10,7 @@ use crate::raw::{attention_layer::{forward_attention_qkv, LlamaFeedForward}, rop
 
 use super::QWEN_EPS;
 
-struct VisionBlock {
+pub(crate) struct VisionBlock {
     norm1: RmsNorm,
     norm2: RmsNorm,
     mlp: LlamaFeedForward,
@@ -18,7 +18,7 @@ struct VisionBlock {
 }
 
 impl VisionBlock {
-    fn new(vb: VarBuilder, head_count: usize, head_dim: usize, hidden_size: usize) -> Result<Self> {
+    pub(crate) fn new(vb: &VarBuilder, head_count: usize, head_dim: usize, hidden_size: usize) -> Result<Self> {
         let device = vb.device();
         let norm1 = RmsNorm::new(hidden_size, QWEN_EPS, vb.pp("norm1"))?;
         let norm2 = RmsNorm::new(hidden_size, QWEN_EPS, vb.pp("norm2"))?;
@@ -67,7 +67,7 @@ struct VisionAttention {
 }
 
 impl VisionAttention {
-    fn new(vb: VarBuilder, head_count: usize, head_dim: usize, hidden_size: usize) -> Result<Self> {
+    fn new(vb: &VarBuilder, head_count: usize, head_dim: usize, hidden_size: usize) -> Result<Self> {
         let qkv = vb.get_no_shape("qkv.weight")?;
         let qkv_bias = vb.get_no_shape("qkv.bias")?.dequantize(&vb.device())?;
         let qkv = Linear::from_arc(qkv, Some(qkv_bias))?;

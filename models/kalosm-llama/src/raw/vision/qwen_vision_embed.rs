@@ -2,7 +2,7 @@ use candle_core::{IndexOp, Tensor};
 use candle_nn::{Conv2d, Conv2dConfig, Module};
 use candle_transformers::quantized_var_builder::VarBuilder;
 
-struct Qwen2_5VisionPatchEmbed {
+pub(crate) struct Qwen2_5VisionPatchEmbed {
     patch_size: usize,
     temporal_patch_size: usize,
     in_channels: usize,

@@ -4011,6 +4011,7 @@ version = "0.4.1"
 dependencies = [
  "anyhow",
  "async-lock",
+ "base64 0.22.1",
  "futures-channel",
  "futures-util",
  "kalosm",
