@@ -339,17 +339,17 @@ pub struct SynthFun {
 }
 
 impl SynthFun {
-    fn parser(&self) -> ArcParser<SExpr> {
+    fn parser(&self, recursion_depth: usize) -> ArcParser<SExpr> {
         let map = TermMap::new(self.grammar.iter().map(|(n, _, _)| n.clone()));
 
         for (name, _, rules) in &self.grammar {
-            let parser = parse_any_of_non_empty_list(rules.iter().map(|term| map.parser(term)));
+            let parser = parse_any_of_non_empty_list(rules.iter().map(|term| map.parser(term, recursion_depth)));
             if map.functions_with_return_type[name].set(parser).is_err() {
                 panic!("Multiple grammars for the same term")
             }
         }
 
-        map.parser_for_term("Start").unwrap()
+        map.parser_for_term("Start", recursion_depth).unwrap()
     }
 }
 
@@ -367,9 +367,9 @@ impl TermMap {
         }
     }
 
-    fn parser(&self, expr: &SExpr) -> ArcParser<SExpr> {
+    fn parser(&self, expr: &SExpr, recursion_depth_left: usize) -> ArcParser<SExpr> {
         match expr {
-            SExpr::Atom(atom) => self.parser_for_term(&atom.to_string()).unwrap_or_else(|| {
+            SExpr::Atom(atom) => self.parser_for_term(&atom.to_string(), recursion_depth_left).unwrap_or_else(|| {
                 let atom = atom.clone();
                 LiteralParser::new(atom.to_string())
                     .map_output(move |_| SExpr::Atom(atom.clone()))
@@ -377,7 +377,7 @@ impl TermMap {
             }),
             SExpr::List(sexprs) => LiteralParser::new("(")
                 .ignore_output_then(
-                    parse_non_empty_list_sequentially(sexprs.iter().map(|term| self.parser(term)))
+                    parse_non_empty_list_sequentially(sexprs.iter().map(|term| self.parser(term, recursion_depth_left - 1)))
                         .map_output(SExpr::List),
                 )
                 .then_literal(")")
@@ -385,7 +385,10 @@ impl TermMap {
         }
     }
 
-    fn parser_for_term(&self, term: &str) -> Option<ArcParser<SExpr>> {
+    fn parser_for_term(&self, term: &str, recursion_depth_left: usize) -> Option<ArcParser<SExpr>> {
+        if recursion_depth_left == 0 {
+            return Some(FailParser(std::marker::PhantomData).boxed());
+        }
         self.functions_with_return_type
             .get(term)
             .map(|parser_list| {
@@ -466,6 +469,9 @@ struct Args {
 
     #[arg(long)]
     vis: bool,
+
+    #[arg(long, default_value_t = 3)]
+    recursion_depth: usize,
 }
 
 /// Doc comment
@@ -488,6 +494,9 @@ enum Model {
 
     #[value(name = "qwen7b-think")]
     Qwen7bThink,
+
+    #[value(name = "smol-lm")]
+    SmolLM,
 
     #[value(name = "llama1b")]
     Llama1b,
@@ -520,6 +529,13 @@ impl Model {
             _ => false,
         }
     }
+
+    fn smol_lm(&self) -> bool {
+        match self {
+            Model::SmolLM => true,
+            _ => false,
+        }
+    }
 }
 
 #[tokio::main]
@@ -528,6 +544,7 @@ async fn main() {
 
     let args = Args::parse();
     let model = args.model;
+    let recursion_depth = args.recursion_depth;
 
     let grammar_text = std::fs::read_to_string(args.grammar).unwrap();
     let prompt = std::fs::read_to_string(args.task).unwrap();
@@ -560,9 +577,9 @@ async fn main() {
         })
         .collect::<Vec<_>>();
 
-    let parser = synth_fun.parser();
+    let parser = synth_fun.parser(recursion_depth);
     let parser = LiteralParser::new("(define-fun f ((firstname String) (lastname String)) String ")
-        .ignore_output_then(MaxLengthParser::new(parser.clone(), 100))
+        .ignore_output_then(parser.clone())
         .then_lazy({
             let interpreter = Interpreter::new();
             let constraints = constraints.clone();
@@ -575,43 +592,7 @@ async fn main() {
                     println!("  {constraint:?} => {result}");
                     valid = valid && result;
                 }
-                struct FailParser<T>(std::marker::PhantomData<T>);
-                impl<T: Clone> Parser for FailParser<T> {
-                    type Output = T;
-                    type PartialState = ();
 
-                    fn parse<'a>(
-                        &self,
-                        _: &Self::PartialState,
-                        _: &'a [u8],
-                    ) -> ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>>
-                    {
-                        Err(ParserError::msg("Fail"))
-                    }
-                }
-                impl<T: Clone> CreateParserState for FailParser<T> {
-                    fn create_parser_state(&self) -> Self::PartialState {}
-                }
-                struct SuccessParser<T>(T);
-                impl<T: Clone> Parser for SuccessParser<T> {
-                    type Output = T;
-                    type PartialState = ();
-
-                    fn parse<'a>(
-                        &self,
-                        _: &Self::PartialState,
-                        _: &'a [u8],
-                    ) -> ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>>
-                    {
-                        Ok(ParseStatus::Finished {
-                            result: self.0.clone(),
-                            remaining: &[],
-                        })
-                    }
-                }
-                impl<T: Clone> CreateParserState for SuccessParser<T> {
-                    fn create_parser_state(&self) -> Self::PartialState {}
-                }
                 if valid {
                     FailParser(std::marker::PhantomData).boxed()
                 } else {
@@ -627,6 +608,19 @@ async fn main() {
         .with_top_k(1);
 
     let source = match model {
+        Model::SmolLM => LlamaSource::new(
+            // Llama source takes a gguf file to load the model, tokenizer, and chat template from
+            FileSource::HuggingFace {
+                model_id: "QuantFactory/SmolLM2-135M-Instruct-GGUF".to_string(),
+                revision: "main".to_string(),
+                file: "SmolLM2-135M-Instruct.Q4_K_M.gguf".to_string(),
+            },
+        )
+        .with_tokenizer(FileSource::HuggingFace {
+            model_id: "HuggingFaceTB/SmolLM2-135M-Instruct".to_string(),
+            revision: "main".to_string(),
+            file: "tokenizer.json".to_string(),
+        }),
         Model::Qwen0_5b => LlamaSource::qwen_2_5_1_5b_instruct(),
         Model::Qwen1_5b => LlamaSource::qwen_2_5_1_5b_instruct(),
         Model::Qwen3b => LlamaSource::qwen_2_5_3b_instruct(),
@@ -649,7 +643,7 @@ async fn main() {
         let mut last_entropy = 0.0;
         let task = grammar_text;
         let mut session = llm.new_session();
-        let prompt = if model.qwen_normal() {
+        let prompt = if model.qwen_normal() || model.smol_lm() {
             format!("<|im_start|>system\n{prompt}<|im_end|>\n<|im_start|>user\nQuestion:\n{task}<|im_end|>\n<|im_start|>assistant\n")
         } else if model.llama() {
             format!("<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{task}<|eot_id|><|start_header_id|>assistant<|end_header_id|>")
@@ -979,4 +973,40 @@ fn test_check_solution() {
     let body = r#"(str.++ (str.++ (str.++ lastname ", ") (str.substr firstname 0 1)) ".")"#;
     let body = sexpr(body).unwrap().1;
     assert!(interpreter.check(&constraints, arguments.to_vec(), &body));
+}
+
+struct FailParser<T>(std::marker::PhantomData<T>);
+impl<T: Clone> Parser for FailParser<T> {
+    type Output = T;
+    type PartialState = ();
+
+    fn parse<'a>(
+        &self,
+        _: &Self::PartialState,
+        _: &'a [u8],
+    ) -> ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>> {
+        Err(ParserError::msg("Fail"))
+    }
+}
+impl<T: Clone> CreateParserState for FailParser<T> {
+    fn create_parser_state(&self) -> Self::PartialState {}
+}
+struct SuccessParser<T>(T);
+impl<T: Clone> Parser for SuccessParser<T> {
+    type Output = T;
+    type PartialState = ();
+
+    fn parse<'a>(
+        &self,
+        _: &Self::PartialState,
+        _: &'a [u8],
+    ) -> ParseResult<ParseStatus<'a, Self::PartialState, Self::Output>> {
+        Ok(ParseStatus::Finished {
+            result: self.0.clone(),
+            remaining: &[],
+        })
+    }
+}
+impl<T: Clone> CreateParserState for SuccessParser<T> {
+    fn create_parser_state(&self) -> Self::PartialState {}
 }
