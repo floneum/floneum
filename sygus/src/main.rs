@@ -476,6 +476,9 @@ struct Args {
 
     #[arg(long, default_value_t = 3)]
     recursion_depth: usize,
+
+    #[arg(long, default_value_t = 25)]
+    iterations: usize,
 }
 
 /// Doc comment
@@ -549,6 +552,7 @@ async fn main() {
     let args = Args::parse();
     let model = args.model;
     let recursion_depth = args.recursion_depth;
+    let iterations = args.iterations;
 
     let grammar_text = std::fs::read_to_string(args.grammar).unwrap();
     let prompt = std::fs::read_to_string(args.task).unwrap();
@@ -590,7 +594,7 @@ async fn main() {
             let vars = vars.clone();
             move |result| {
                 let mut valid = true;
-                println!("Checking constraints for expression: {result:?}");
+                // println!("Checking constraints for expression: {result:?}");
                 for constraint in &constraints {
                     let result = interpreter.check(constraint, vars.clone(), &result);
                     println!("  {constraint:?} => {result}");
@@ -674,7 +678,7 @@ async fn main() {
             }
         }
 
-        for generation in 0.. {
+        for generation in 0..iterations {
             println!("Iteration {generation}");
             if args.vis {
                 println!("{}", trie.graphvis(&llm.tokenizer));
