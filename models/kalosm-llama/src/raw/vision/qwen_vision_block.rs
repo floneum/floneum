@@ -25,22 +25,23 @@ impl VisionBlock {
         vb: &VarBuilder,
         head_count: usize,
         head_dim: usize,
-        hidden_size: usize,
+        embed_dim: usize,
     ) -> Result<Self> {
         let device = vb.device();
-        let norm1 = RmsNorm::new(hidden_size, QWEN_EPS, vb.pp("norm1"))?;
-        let norm2 = RmsNorm::new(hidden_size, QWEN_EPS, vb.pp("norm2"))?;
+        let norm1 = RmsNorm::new(embed_dim, QWEN_EPS, vb.pp("norm1"))?;
+        let norm2 = RmsNorm::new(embed_dim, QWEN_EPS, vb.pp("norm2"))?;
 
+        let mlp_vb = vb.pp("mlp");
         let mlp = LlamaFeedForward::new_with_bias(
-            QMatMul::from_arc(vb.get_no_shape("gate_proj.weight")?)?,
-            Some(vb.get_no_shape("gate_proj.bias")?.dequantize(&device)?),
-            QMatMul::from_arc(vb.get_no_shape("up_proj.weight")?)?,
-            Some(vb.get_no_shape("up_proj.bias")?.dequantize(&device)?),
-            QMatMul::from_arc(vb.get_no_shape("down_proj.weight")?)?,
-            Some(vb.get_no_shape("down_proj.bias")?.dequantize(&device)?),
+            QMatMul::from_arc(mlp_vb.get_no_shape("gate_proj.weight")?)?,
+            Some(mlp_vb.get_no_shape("gate_proj.bias")?.dequantize(&device)?),
+            QMatMul::from_arc(mlp_vb.get_no_shape("up_proj.weight")?)?,
+            Some(mlp_vb.get_no_shape("up_proj.bias")?.dequantize(&device)?),
+            QMatMul::from_arc(mlp_vb.get_no_shape("down_proj.weight")?)?,
+            Some(mlp_vb.get_no_shape("down_proj.bias")?.dequantize(&device)?),
         );
 
-        let attn = VisionAttention::new(vb, head_count, head_dim, hidden_size)?;
+        let attn = VisionAttention::new(&vb.pp("attn"), head_count, head_dim, embed_dim)?;
 
         Ok(Self {
             norm1,
@@ -75,7 +76,7 @@ struct VisionAttention {
     proj: Linear,
     head_count: usize,
     head_dim: usize,
-    hidden_size: usize,
+    embed_dim: usize,
 }
 
 impl VisionAttention {
@@ -83,7 +84,7 @@ impl VisionAttention {
         vb: &VarBuilder,
         head_count: usize,
         head_dim: usize,
-        hidden_size: usize,
+        embed_dim: usize,
     ) -> Result<Self> {
         let qkv = vb.get_no_shape("qkv.weight")?;
         let qkv_bias = vb.get_no_shape("qkv.bias")?.dequantize(&vb.device())?;
@@ -97,7 +98,7 @@ impl VisionAttention {
             proj,
             head_count,
             head_dim,
-            hidden_size,
+            embed_dim,
         })
     }
 
@@ -169,7 +170,7 @@ impl VisionAttention {
             self.head_dim,
             bsz,
             seq_len,
-            self.hidden_size,
+            self.embed_dim,
         )
     }
 }

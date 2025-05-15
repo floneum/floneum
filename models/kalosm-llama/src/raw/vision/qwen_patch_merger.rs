@@ -21,11 +21,13 @@ impl Qwen2VLPatchMerger {
     ) -> Result<Self> {
         let hidden_size = context_dim * spatial_merge_size.pow(2);
         let ln_q = RmsNorm::new(context_dim, QWEN_EPS, vb.pp("ln_q"))?;
-        let mlp_0 = vb.get((hidden_size, hidden_size), "mlp.0")?;
-        let mlp_2 = vb.get((hidden_size, dim), "mlp.2")?;
+        let mlp_0_weight = vb.get((hidden_size, hidden_size), "mlp.0.weight")?;
+        let mlp_0_bias = vb.get((hidden_size,), "mlp.0.bias")?.dequantize(vb.device())?;
+        let mlp_2_weight = vb.get((dim, hidden_size), "mlp.2.weight")?;
+        let mlp_2_bias = vb.get((dim,), "mlp.2.bias")?.dequantize(vb.device())?;
         let mlp = [
-            Linear::from_arc(mlp_0, None)?,
-            Linear::from_arc(mlp_2, None)?,
+            Linear::from_arc(mlp_0_weight, Some(mlp_0_bias))?,
+            Linear::from_arc(mlp_2_weight, Some(mlp_2_bias))?,
         ];
 
         Ok(Self {

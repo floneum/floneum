@@ -23,8 +23,8 @@ impl Qwen2_5VisionPatchEmbed {
         let ws = vb
             .get(
                 (
-                    in_channels,
                     embed_dim,
+                    in_channels,
                     temporal_patch_size,
                     patch_size,
                     patch_size,

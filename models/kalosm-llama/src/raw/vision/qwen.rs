@@ -1,6 +1,7 @@
 use candle_core::{Tensor, D};
 use candle_transformers::quantized_var_builder::VarBuilder;
-use kalosm_common::KvCache;
+use kalosm_common::{accelerated_device_if_available, KvCache};
+use tracing::span;
 
 use crate::raw::rope::RopeCache;
 
@@ -32,6 +33,8 @@ impl QwenVisionTransformer {
         window_size: usize,
         in_channels: usize,
         hidden_size: usize,
+        out_hidden_size: usize,
+        embed_dim: usize,
         num_heads: usize,
         depth: usize,
         vb: &VarBuilder,
@@ -42,10 +45,10 @@ impl QwenVisionTransformer {
             temporal_patch_size,
             in_channels,
             hidden_size,
-            vb,
+            &vb.pp("visual.patch_embed"),
         )
         .unwrap();
-        let head_dim = hidden_size / num_heads;
+        let head_dim = embed_dim / num_heads;
         let rope_theta = 10000.0;
         let rotary_pos_emb = VisionRotaryEmbedding::new(head_dim / 2, rope_theta, vb.device())?;
         let blocks = (0..depth)
@@ -59,7 +62,7 @@ impl QwenVisionTransformer {
             })
             .collect::<candle_core::Result<Vec<_>>>()?;
         let merger = Qwen2VLPatchMerger::new(
-            hidden_size,
+            out_hidden_size,
             hidden_size,
             spacial_merge_size,
             &vb.pp("visual.merger"),
@@ -198,4 +201,60 @@ impl QwenVisionTransformer {
 
         Ok(hidden_states)
     }
+}
+
+#[tokio::test]
+async fn test_loading_qwen_vision() {
+    let device = accelerated_device_if_available().unwrap();
+    let vb = VarBuilder::from_gguf(
+        "/Users/evanalmloff/Desktop/Github/candle/qwen_2_5_3b_f16.gguf",
+        &device,
+    )
+    .unwrap();
+    // "depth": 32,
+    //     "hidden_act": "silu",
+    //     "hidden_size": 1280,
+    //     "intermediate_size": 3420,
+    //     "num_heads": 16,
+    //     "in_chans": 3,
+    //     "out_hidden_size": 2048,
+    //     "patch_size": 14,
+    //     "spatial_merge_size": 2,
+    //     "spatial_patch_size": 14,
+    //     "window_size": 112,
+    //     "fullatt_block_indexes": [
+    //       7,
+    //       15,
+    //       23,
+    //       31
+    //     ],
+    //     "tokens_per_second": 2,
+    //     "temporal_patch_size": 2
+
+    let spacial_merge_size = 2;
+    let temporal_patch_size = 2;
+    let patch_size = 14;
+    let fullatt_block_indexes = vec![7, 15, 23, 31];
+    let window_size = 112;
+    let in_channels = 3;
+    let hidden_size = 1280;
+    let out_hidden_size = 2048;
+    let embed_dim = 1152;
+    let num_heads = 16;
+    let depth = 32;
+    let qwen_vision = QwenVisionTransformer::new(
+        spacial_merge_size,
+        temporal_patch_size,
+        patch_size,
+        fullatt_block_indexes,
+        window_size,
+        in_channels,
+        hidden_size,
+        out_hidden_size,
+        embed_dim,
+        num_heads,
+        depth,
+        &vb,
+    )
+    .unwrap();
 }
