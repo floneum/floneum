@@ -6,8 +6,9 @@ use std::{
 use crate::{model::LlamaModelError, session::LlamaSessionLoadingError, Llama, LlamaSession};
 use kalosm_common::accelerated_device_if_available;
 use kalosm_language_model::{
-    ChatMessage, ChatModel, ChatSession, CreateChatSession, CreateTextCompletionSession,
-    MessageType, StructuredChatModel, StructuredTextCompletionModel, TextCompletionModel,
+    ChatMessage, ChatModel, ChatSession, ContentChunk, CreateChatSession,
+    CreateTextCompletionSession, MessageType, StructuredChatModel, StructuredTextCompletionModel,
+    TextCompletionModel,
 };
 use kalosm_sample::{CreateParserState, Parser};
 use llm_samplers::types::Sampler;
@@ -164,7 +165,18 @@ impl ChatSession for LlamaChatSession {
                 MessageType::SystemPrompt => 2,
             };
             all_bytes.extend_from_slice(&ty.to_le_bytes());
-            let content_bytes = item.content().as_bytes();
+            let text_content = item
+                .content()
+                .chunks()
+                .iter()
+                .fold(String::new(), |acc, chunk| {
+                    let content = match chunk {
+                        ContentChunk::Text(text) => text,
+                        ContentChunk::Media(_) => return acc,
+                    };
+                    acc + content
+                });
+            let content_bytes = text_content.as_bytes();
             let content_bytes_len = content_bytes.len() as u32;
             all_bytes.extend_from_slice(&content_bytes_len.to_le_bytes());
             all_bytes.extend_from_slice(content_bytes);

@@ -92,7 +92,11 @@ pub(crate) fn get_window_index(
             .reshape(((),))
             .unwrap();
         let index_padded = index_padded.reshape(((),))?;
-        let index_new = index_padded.to_vec1::<u32>()?.into_iter().filter(|&x| x != u32::MAX).collect::<Vec<_>>();
+        let index_new = index_padded
+            .to_vec1::<u32>()?
+            .into_iter()
+            .filter(|&x| x != u32::MAX)
+            .collect::<Vec<_>>();
         let index_new = Tensor::new(index_new, device)?;
         window_index.push((index_new + window_index_id as f64)?);
         let cu_seqlens_tmp = ((seqlens
@@ -137,9 +141,14 @@ fn test_get_window_index() {
     println!("Window Index: {window_index:?}");
     assert_eq!(
         window_index,
-        vec![ 0,  1,  4,  5,  2,  3,  6,  7,  8,  9, 12, 13, 10, 11, 14, 15, 16, 17,
-         20, 21, 18, 19, 22, 23, 24, 25, 28, 29, 26, 27, 30, 31]
+        vec![
+            0, 1, 4, 5, 2, 3, 6, 7, 8, 9, 12, 13, 10, 11, 14, 15, 16, 17, 20, 21, 18, 19, 22, 23,
+            24, 25, 28, 29, 26, 27, 30, 31
+        ]
     );
     println!("CU Window Seqlens: {cu_window_seqlens:?}");
-    assert_eq!(cu_window_seqlens, vec![0, 8, 16, 16, 24, 32, 32, 40, 48, 48, 56, 64, 64, 64, 64, 64]);
+    assert_eq!(
+        cu_window_seqlens,
+        vec![0, 8, 16, 16, 24, 32, 32, 40, 48, 48, 56, 64, 64, 64, 64, 64]
+    );
 }

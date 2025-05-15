@@ -154,10 +154,7 @@ impl Model {
             ));
             layers.push(LlamaAttention {
                 attention_variant,
-                attention_wo: Linear::from_arc(
-                    attention_wo.into(),
-                    None,
-                )?,
+                attention_wo: Linear::from_arc(attention_wo.into(), None)?,
                 attention_norm: decode_norm(attention_norm, 1e-5)?,
                 post_attention_norm: None,
                 feed_forward_variant,

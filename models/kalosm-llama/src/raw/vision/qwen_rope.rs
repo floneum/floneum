@@ -81,7 +81,7 @@ struct RopeIndex {
 //
 // Rope indexes are calculated with an monotonic increasing time index.
 // The x and y indexes are calculated based on the patch index of the image or video.
-// 
+//
 // Eg. The series [vision_start_token_id, image_token_id, image_token_id, image_token_id, image_token_id]
 //     will be encoded as:
 //     [RopeIndex { x: 0, y: 0, time: 0 }, RopeIndex { x: 1, y: 1, time: 1 }, RopeIndex { x: 1, y: 2, time: 1 },

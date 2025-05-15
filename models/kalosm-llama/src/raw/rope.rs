@@ -1,9 +1,7 @@
 use std::f32::consts::PI;
 
 use super::{LlamaConfig, RopeScalingConfig};
-use candle_core::{DType, Device, IndexOp, Tensor, D};
-use candle_nn::{Conv2d, Conv2dConfig, Module};
-use candle_transformers::quantized_var_builder::VarBuilder;
+use candle_core::{DType, Device, Tensor};
 
 pub(crate) fn create_inverse_frequency(
     rope_scaling: Option<&RopeScalingConfig>,
@@ -80,10 +78,7 @@ impl RopeCache {
         Ok(Self { sin, cos })
     }
 
-    pub(crate) fn from_parts(
-        cos: Tensor,
-        sin: Tensor,
-    ) -> candle_core::Result<Self> {
+    pub(crate) fn from_parts(cos: Tensor, sin: Tensor) -> candle_core::Result<Self> {
         let cos = cos.contiguous()?;
         let sin = sin.contiguous()?;
         Ok(Self { cos, sin })

@@ -183,8 +183,13 @@ impl QwenVisionTransformer {
             } else {
                 &cu_window_seqlens
             };
-            hidden_states =
-                blk.forward(&hidden_states, cu_seqlens_now.as_slice(), &rope_cache, 0, cache.as_deref_mut())?;
+            hidden_states = blk.forward(
+                &hidden_states,
+                cu_seqlens_now.as_slice(),
+                &rope_cache,
+                0,
+                cache.as_deref_mut(),
+            )?;
         }
 
         let hidden_states = self.merger.forward(&hidden_states)?;
