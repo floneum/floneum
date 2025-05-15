@@ -1,9 +1,13 @@
 use candle_core::{Tensor, D};
 use candle_transformers::quantized_var_builder::VarBuilder;
+use kalosm_common::KvCache;
+
+use crate::raw::rope::RopeCache;
 
 use super::{
     qwen_patch_merger::Qwen2VLPatchMerger, qwen_rope::VisionRotaryEmbedding,
-    qwen_vision_block::VisionBlock, qwen_vision_embed::Qwen2_5VisionPatchEmbed,
+    qwen_vision::get_window_index, qwen_vision_block::VisionBlock,
+    qwen_vision_embed::Qwen2_5VisionPatchEmbed,
 };
 
 struct QwenVisionTransformer {
@@ -113,4 +117,80 @@ impl QwenVisionTransformer {
         Ok(rotary_pos_emb)
     }
 
+    fn forward(
+        &self,
+        hidden_states: Tensor,
+        grid_thw: &Vec<(u32, u32, u32)>,
+        mut cache: Option<&mut KvCache>,
+    ) -> candle_core::Result<Tensor> {
+        let hidden_states = self.patch_embed.forward(&hidden_states)?;
+        let rotary_pos_emb = self.rot_pos_emb(grid_thw)?;
+        let (window_index, mut cu_window_seqlens) = get_window_index(
+            grid_thw
+                .iter()
+                .map(|(t, h, w)| (*t as usize, *h as usize, *w as usize)),
+            self.window_size,
+            self.spacial_merge_size,
+            self.spacial_merge_unit,
+            self.patch_size,
+            &self.device,
+        )?;
+        let mut last_item = None;
+        cu_window_seqlens.retain(|&x| {
+            if let Some(last) = last_item {
+                if last == x {
+                    return false;
+                }
+            }
+            last_item = Some(x);
+            true
+        });
+
+        let seq_len = hidden_states.dim(0)?;
+        let hidden_states = hidden_states.reshape((
+            seq_len / self.spacial_merge_unit,
+            self.spacial_merge_unit,
+            (),
+        ))?;
+        let hidden_states = hidden_states.index_select(&window_index, 0)?;
+        let mut hidden_states = hidden_states.reshape((seq_len, ()))?;
+        let rotary_pos_emb = rotary_pos_emb.reshape((
+            seq_len / self.spacial_merge_unit,
+            self.spacial_merge_unit,
+            (),
+        ))?;
+        let rotary_pos_emb = rotary_pos_emb.index_select(&window_index, 0)?;
+        let rotary_pos_emb = rotary_pos_emb.reshape((seq_len, ()))?;
+        let emb = Tensor::cat(&[rotary_pos_emb.clone(), rotary_pos_emb], D::Minus1)?;
+        let rope_cache = RopeCache::from_parts(emb.cos()?, emb.sin()?)?;
+
+        let cu_seqlens = grid_thw
+            .iter()
+            .flat_map(|(t, h, w)| std::iter::repeat_n((*h * *w) as u32, *t as usize))
+            .map({
+                let mut sum = 0;
+                move |x| {
+                    sum += x;
+                    sum
+                }
+            });
+
+        let cu_seqlens = std::iter::once(0).chain(cu_seqlens).collect::<Vec<_>>();
+
+        for (layer_num, blk) in self.blocks.iter().enumerate() {
+            let cu_seqlens_now = if self.fullatt_block_indexes.contains(&layer_num) {
+                &cu_seqlens
+            } else {
+                &cu_window_seqlens
+            };
+            hidden_states =
+                blk.forward(&hidden_states, cu_seqlens_now.as_slice(), &rope_cache, 0, cache.as_deref_mut())?;
+        }
+
+        let hidden_states = self.merger.forward(&hidden_states)?;
+        let reverse_indices = window_index.arg_sort_last_dim(true)?;
+        let hidden_states = hidden_states.index_select(&reverse_indices, 0)?;
+
+        Ok(hidden_states)
+    }
 }

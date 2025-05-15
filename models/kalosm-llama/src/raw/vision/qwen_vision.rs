@@ -1,6 +1,6 @@
 use candle_core::{Tensor, WithDType};
 
-fn pad(tensor: &Tensor, shape: &[usize], value: impl WithDType) -> candle_core::Result<Tensor> {
+fn pad_to(tensor: &Tensor, shape: &[usize], value: impl WithDType) -> candle_core::Result<Tensor> {
     let new_tensor = Tensor::full(value, shape, tensor.device())?;
 
     let ranges = tensor
@@ -20,7 +20,7 @@ fn test_pad() {
         .unwrap();
     let value = u32::MAX;
 
-    let padded_tensor = pad(&tensor, &[4, 5], value).unwrap();
+    let padded_tensor = pad_to(&tensor, &[4, 5], value).unwrap();
 
     println!("Original Tensor: {:?}", tensor);
     println!("Padded Tensor: {:?}", padded_tensor);
@@ -35,8 +35,8 @@ fn test_pad() {
     );
 }
 
-fn get_window_index(
-    grid_thw: Vec<(usize, usize, usize)>,
+pub(crate) fn get_window_index(
+    grid_thw: impl IntoIterator<Item = (usize, usize, usize)>,
     window_size: usize,
     spatial_merge_size: usize,
     spatial_merge_unit: usize,
@@ -60,7 +60,7 @@ fn get_window_index(
         let num_windows_h = (llm_grid_h + pad_h) / vit_merger_window_size;
         let num_windows_w = (llm_grid_w + pad_w) / vit_merger_window_size;
         let index_padded = {
-            pad(
+            pad_to(
                 &index,
                 &[grid_t, llm_grid_h + pad_h, llm_grid_w + pad_w],
                 u32::MAX,

@@ -80,6 +80,15 @@ impl RopeCache {
         Ok(Self { sin, cos })
     }
 
+    pub(crate) fn from_parts(
+        cos: Tensor,
+        sin: Tensor,
+    ) -> candle_core::Result<Self> {
+        let cos = cos.contiguous()?;
+        let sin = sin.contiguous()?;
+        Ok(Self { cos, sin })
+    }
+
     fn forward_with_embed(
         &self,
         q: &Tensor,

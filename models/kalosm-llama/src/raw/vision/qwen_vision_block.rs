@@ -6,7 +6,10 @@ use candle_transformers::{
 };
 use kalosm_common::{AttentionMask, KvCache};
 
-use crate::raw::{attention_layer::{forward_attention_qkv, LlamaFeedForward}, rope::RopeCache};
+use crate::raw::{
+    attention_layer::{forward_attention_qkv, LlamaFeedForward},
+    rope::RopeCache,
+};
 
 use super::QWEN_EPS;
 
@@ -18,7 +21,12 @@ pub(crate) struct VisionBlock {
 }
 
 impl VisionBlock {
-    pub(crate) fn new(vb: &VarBuilder, head_count: usize, head_dim: usize, hidden_size: usize) -> Result<Self> {
+    pub(crate) fn new(
+        vb: &VarBuilder,
+        head_count: usize,
+        head_dim: usize,
+        hidden_size: usize,
+    ) -> Result<Self> {
         let device = vb.device();
         let norm1 = RmsNorm::new(hidden_size, QWEN_EPS, vb.pp("norm1"))?;
         let norm2 = RmsNorm::new(hidden_size, QWEN_EPS, vb.pp("norm2"))?;
@@ -42,18 +50,22 @@ impl VisionBlock {
         })
     }
 
-    fn forward(
+    pub(crate) fn forward(
         &self,
         xs: &Tensor,
-        attention_mask: Option<&AttentionMask>,
+        cu_seqlens: &[u32],
         rope_cache: &RopeCache,
         start_pos: usize,
         cache: Option<&mut KvCache>,
     ) -> Result<Tensor> {
         let xs = (xs
-            + self
-                .attn
-                .forward(&self.norm1.forward(&xs)?, attention_mask, rope_cache, start_pos, cache)?)?;
+            + self.attn.forward(
+                &self.norm1.forward(&xs)?,
+                cu_seqlens,
+                rope_cache,
+                start_pos,
+                cache,
+            )?)?;
         &xs + self.mlp.forward(&self.norm2.forward(&xs)?)?
     }
 }
@@ -67,7 +79,12 @@ struct VisionAttention {
 }
 
 impl VisionAttention {
-    fn new(vb: &VarBuilder, head_count: usize, head_dim: usize, hidden_size: usize) -> Result<Self> {
+    fn new(
+        vb: &VarBuilder,
+        head_count: usize,
+        head_dim: usize,
+        hidden_size: usize,
+    ) -> Result<Self> {
         let qkv = vb.get_no_shape("qkv.weight")?;
         let qkv_bias = vb.get_no_shape("qkv.bias")?.dequantize(&vb.device())?;
         let qkv = Linear::from_arc(qkv, Some(qkv_bias))?;
@@ -80,14 +97,14 @@ impl VisionAttention {
             proj,
             head_count,
             head_dim,
-            hidden_size
+            hidden_size,
         })
     }
 
     fn forward(
         &self,
         xs: &Tensor,
-        attention_mask: Option<&AttentionMask>,
+        cu_seqlens: &[u32],
         rope_cache: &RopeCache,
         start_pos: usize,
         cache: Option<&mut KvCache>,
@@ -122,12 +139,32 @@ impl VisionAttention {
         };
 
         let bsz = query_states.dim(2)?;
+
+        let mut attention_mask = vec![vec![f32::NEG_INFINITY; seq_len]; seq_len];
+        for pair in cu_seqlens.windows(2) {
+            let [last, next] = pair else { unreachable!() };
+            let last = *last as usize;
+            let next = *next as usize;
+            for i in last..next {
+                for j in last..next {
+                    attention_mask[i][j] = 0.0;
+                }
+            }
+        }
+        let attention_mask = AttentionMask::new(
+            Tensor::from_iter(
+                attention_mask.iter().flatten().copied(),
+                query_states.device(),
+            )?
+            .reshape((1, seq_len, seq_len))?,
+        );
+
         forward_attention_qkv(
             &query_states,
             &key_states,
             &value_states,
             &self.proj,
-            attention_mask,
+            Some(&attention_mask),
             self.head_count,
             self.head_dim,
             bsz,

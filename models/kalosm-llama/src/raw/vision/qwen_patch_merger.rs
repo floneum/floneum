@@ -35,7 +35,7 @@ impl Qwen2VLPatchMerger {
         })
     }
 
-    fn forward(&self, x: &Tensor) -> Result<Tensor> {
+    pub(crate) fn forward(&self, x: &Tensor) -> Result<Tensor> {
         x.unsqueeze(0)?
             .apply(&self.ln_q)?
             .reshape(((), self.hidden_size))?
