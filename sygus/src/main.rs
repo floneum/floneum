@@ -594,10 +594,8 @@ async fn main() {
             let vars = vars.clone();
             move |result| {
                 let mut valid = true;
-                // println!("Checking constraints for expression: {result:?}");
                 for constraint in &constraints {
                     let result = interpreter.check(constraint, vars.clone(), &result);
-                    println!("  {constraint:?} => {result}");
                     valid = valid && result;
                 }
 
@@ -705,6 +703,18 @@ async fn main() {
             println!("\n\n");
 
             println!("generation {generation}:\n{output:?}");
+
+            let interpreter = Interpreter::new();
+            let mut valid = true;
+            println!("Checking constraints for expression: {output:?}");
+            for constraint in &constraints {
+                let result = interpreter.check(constraint, vars.clone(), &output);
+                println!("  {constraint:?} => {result}");
+                valid = valid && result;
+            }
+            if valid {
+                println!("Valid solution found!");
+            }
 
             let shannon_entropy = trie.shannon_entropy();
             let entropy_diff = last_entropy - shannon_entropy;
