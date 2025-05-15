@@ -1,17 +1,15 @@
 use std::{
     collections::HashMap,
     fmt::{Debug, Display},
-    sync::{Arc, Mutex, OnceLock},
-    u32,
+    sync::{Arc, OnceLock},
 };
 
 use kalosm::language::*;
-use kalosm_llama::{EvaluationTrie, InferenceSettings, LlamaModel};
+use kalosm_llama::{EvaluationTrie, LlamaModel};
 use kalosm_sample::{
     ArcParser, LazyParser, LiteralParser, Parser, ParserExt, SendCreateParserState,
 };
 use std::io::Write;
-use tokio::sync::oneshot;
 
 use clap::Parser as _;
 use nom::{
@@ -312,7 +310,7 @@ impl From<&str> for SExpr {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum Atom {
+pub enum Atom {
     String(String),
     Int(i32),
     Bool(bool),
@@ -457,14 +455,8 @@ fn parse_any_of_non_empty_list<P: SendCreateParserState + 'static>(
 #[derive(clap::Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
-    #[arg(long)]
-    think: bool,
-
-    #[arg(long)]
-    small: bool,
-
-    #[arg(long)]
-    smaller: bool,
+    #[arg(long, value_enum)]
+    model: Model,
 
     #[arg(long)]
     grammar: String,
@@ -476,14 +468,66 @@ struct Args {
     vis: bool,
 }
 
+/// Doc comment
+#[derive(clap::ValueEnum, Clone, Debug)]
+enum Model {
+    #[value(name = "qwen0.5b")]
+    Qwen0_5b,
+
+    #[value(name = "qwen1.5b")]
+    Qwen1_5b,
+
+    #[value(name = "qwen3b")]
+    Qwen3b,
+
+    #[value(name = "qwen7b")]
+    Qwen7b,
+
+    #[value(name = "qwen1.5b-think")]
+    Qwen1_5bThink,
+
+    #[value(name = "qwen7b-think")]
+    Qwen7bThink,
+
+    #[value(name = "llama1b")]
+    Llama1b,
+
+    #[value(name = "llama3b")]
+    Llama3b,
+
+    #[value(name = "llama8b")]
+    Llama8b,
+}
+
+impl Model {
+    fn qwen_normal(&self) -> bool {
+        match self {
+            Model::Qwen0_5b | Model::Qwen1_5b | Model::Qwen3b | Model::Qwen7b => true,
+            _ => false,
+        }
+    }
+
+    fn qwen_think(&self) -> bool {
+        match self {
+            Model::Qwen1_5bThink | Model::Qwen7bThink => true,
+            _ => false,
+        }
+    }
+
+    fn llama(&self) -> bool {
+        match self {
+            Model::Llama1b | Model::Llama3b | Model::Llama8b => true,
+            _ => false,
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt().init();
 
     let args = Args::parse();
-    let think = args.think;
-    let small = args.small;
-    let smaller = args.smaller;
+    let model = args.model;
 
     let grammar_text = std::fs::read_to_string(args.grammar).unwrap();
     let prompt = std::fs::read_to_string(args.task).unwrap();
@@ -582,20 +626,16 @@ async fn main() {
         .with_repetition_penalty_range(256)
         .with_top_k(1);
 
-    let source = if think {
-        if small {
-            LlamaSource::deepseek_r1_distill_qwen_1_5b()
-        } else {
-            LlamaSource::deepseek_r1_distill_qwen_7b()
-        }
-    } else {
-        if smaller {
-            LlamaSource::qwen_2_5_3b_instruct()
-        } else if small {
-            LlamaSource::qwen_2_5_1_5b_instruct()
-        } else {
-            LlamaSource::qwen_2_5_7b_instruct()
-        }
+    let source = match model {
+        Model::Qwen0_5b => LlamaSource::qwen_2_5_1_5b_instruct(),
+        Model::Qwen1_5b => LlamaSource::qwen_2_5_1_5b_instruct(),
+        Model::Qwen3b => LlamaSource::qwen_2_5_3b_instruct(),
+        Model::Qwen7b => LlamaSource::qwen_2_5_7b_instruct(),
+        Model::Qwen1_5bThink => LlamaSource::qwen_2_5_1_5b_instruct(),
+        Model::Qwen7bThink => LlamaSource::qwen_2_5_7b_instruct(),
+        Model::Llama1b => LlamaSource::llama_3_2_1b_chat(),
+        Model::Llama3b => LlamaSource::llama_3_2_3b_chat(),
+        Model::Llama8b => LlamaSource::llama_3_1_8b_chat(),
     };
     let mut llm = LlamaModel::from_builder(
         Llama::builder().with_source(source),
@@ -605,19 +645,19 @@ async fn main() {
     .unwrap();
 
     tokio::task::spawn_blocking(move || {
-        let interpreter = Interpreter::new();
-
         let mut trie = EvaluationTrie::new();
         let mut last_entropy = 0.0;
         let task = grammar_text;
         let mut session = llm.new_session();
-        let prompt = if think {
-            format!("<｜begin▁of▁sentence｜>{prompt}<｜User｜>Solve this problem:\n{task}<｜Assistant｜><think>\n")
-        } else {
+        let prompt = if model.qwen_normal() {
             format!("<|im_start|>system\n{prompt}<|im_end|>\n<|im_start|>user\nQuestion:\n{task}<|im_end|>\n<|im_start|>assistant\n")
+        } else if model.llama() {
+            format!("<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{task}<|eot_id|><|start_header_id|>assistant<|end_header_id|>")
+        } else {
+            format!("<｜begin▁of▁sentence｜>{prompt}<｜User｜>Solve this problem:\n{task}<｜Assistant｜><think>\n")
         };
 
-        if think {
+        if model.qwen_think() {
             while llm.generate_structured_with_trie(
                 &mut session,
                 &prompt,
