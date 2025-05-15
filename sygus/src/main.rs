@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     fmt::{Debug, Display},
-    sync::{Arc, OnceLock},
+    sync::Arc,
 };
 
 use kalosm::language::*;
@@ -340,45 +340,49 @@ pub struct SynthFun {
 
 impl SynthFun {
     fn parser(&self, recursion_depth: usize) -> ArcParser<SExpr> {
-        let map = TermMap::new(self.grammar.iter().map(|(n, _, _)| n.clone()));
-
-        for (name, _, rules) in &self.grammar {
-            let parser = parse_any_of_non_empty_list(rules.iter().map(|term| map.parser(term, recursion_depth)));
-            if map.functions_with_return_type[name].set(parser).is_err() {
-                panic!("Multiple grammars for the same term")
-            }
-        }
+        let map = TermMap::new(
+            self.grammar
+                .iter()
+                .map(|(n, _, rule)| (n.clone(), rule.clone())),
+        );
 
         map.parser_for_term("Start", recursion_depth).unwrap()
     }
 }
 
+#[derive(Debug, Clone)]
 struct TermMap {
-    functions_with_return_type: HashMap<String, Arc<OnceLock<ArcParser<SExpr>>>>,
+    functions_with_return_type: Arc<HashMap<String, Vec<SExpr>>>,
 }
 
 impl TermMap {
-    fn new(terms: impl IntoIterator<Item = String>) -> Self {
+    fn new(terms: impl IntoIterator<Item = (String, Vec<SExpr>)>) -> Self {
         Self {
-            functions_with_return_type: terms
-                .into_iter()
-                .map(|term| (term, Arc::new(OnceLock::new())))
-                .collect(),
+            functions_with_return_type: Arc::new(terms.into_iter().collect()),
         }
     }
 
     fn parser(&self, expr: &SExpr, recursion_depth_left: usize) -> ArcParser<SExpr> {
+        if recursion_depth_left == 0 {
+            return FailParser(std::marker::PhantomData).boxed();
+        }
         match expr {
-            SExpr::Atom(atom) => self.parser_for_term(&atom.to_string(), recursion_depth_left).unwrap_or_else(|| {
-                let atom = atom.clone();
-                LiteralParser::new(atom.to_string())
-                    .map_output(move |_| SExpr::Atom(atom.clone()))
-                    .boxed()
-            }),
+            SExpr::Atom(atom) => self
+                .parser_for_term(&atom.to_string(), recursion_depth_left)
+                .unwrap_or_else(|| {
+                    let atom = atom.clone();
+                    LiteralParser::new(atom.to_string())
+                        .map_output(move |_| SExpr::Atom(atom.clone()))
+                        .boxed()
+                }),
             SExpr::List(sexprs) => LiteralParser::new("(")
                 .ignore_output_then(
-                    parse_non_empty_list_sequentially(sexprs.iter().map(|term| self.parser(term, recursion_depth_left - 1)))
-                        .map_output(SExpr::List),
+                    parse_non_empty_list_sequentially(sexprs.iter().map(|term| {
+                        let term = term.clone();
+                        let this = self.clone();
+                        LazyParser::new(move || this.parser(&term, recursion_depth_left - 1))
+                    }))
+                    .map_output(SExpr::List),
                 )
                 .then_literal(")")
                 .boxed(),
@@ -386,14 +390,14 @@ impl TermMap {
     }
 
     fn parser_for_term(&self, term: &str, recursion_depth_left: usize) -> Option<ArcParser<SExpr>> {
-        if recursion_depth_left == 0 {
-            return Some(FailParser(std::marker::PhantomData).boxed());
-        }
         self.functions_with_return_type
             .get(term)
             .map(|parser_list| {
-                let parser_list = parser_list.clone();
-                LazyParser::new(move || parser_list.get().unwrap().clone()).boxed()
+                parse_any_of_non_empty_list(
+                    parser_list
+                        .iter()
+                        .map(|parser| self.parser(parser, recursion_depth_left)),
+                )
             })
     }
 }
