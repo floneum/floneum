@@ -934,7 +934,7 @@ fn built_in_functions()
     insert(&mut functions, "int.to.str", |args: &[SExpr]| {
         let first = args[0].as_int().unwrap();
         if first >= 0 {
-            SExpr::from(first)
+            SExpr::from(first.to_string())
         } else {
             SExpr::from_string("")
         }
@@ -961,6 +961,26 @@ fn test_interpreter_str() {
     assert_eq!(
         result,
         SExpr::Atom(Atom::String("Hello, world!".to_string()))
+    );
+
+    // (str.++ (int.to.str 0) (str.substr " " 0 1))
+    let expr = SExpr::List(vec![
+        SExpr::Atom(Atom::Ident("str.++".to_string())),
+        SExpr::List(vec![
+            SExpr::Atom(Atom::Ident("int.to.str".to_string())),
+            SExpr::Atom(Atom::Int(0)),
+        ]),
+        SExpr::List(vec![
+            SExpr::Atom(Atom::Ident("str.substr".to_string())),
+            SExpr::Atom(Atom::String(" ".to_string())),
+            SExpr::Atom(Atom::Int(0)),
+            SExpr::Atom(Atom::Int(1)),
+        ]),
+    ]);
+    let result = interpreter.eval(&expr);
+    assert_eq!(
+        result,
+        SExpr::Atom(Atom::String("0 ".to_string()))
     );
 }
 
