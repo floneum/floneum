@@ -1,0 +1,887 @@
+warning: missing documentation for a struct
+   --> models/kalosm-llama/src/lib.rs:293:1
+    |
+293 | pub struct InferenceSettings {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+note: the lint level is defined here
+   --> models/kalosm-llama/src/lib.rs:27:9
+    |
+27  | #![warn(missing_docs)]
+    |         ^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> models/kalosm-llama/src/lib.rs:313:5
+    |
+313 | /     pub fn new(
+314 | |         prompt: impl Into<String>,
+315 | |         session: LlamaSession,
+316 | |         sampler: std::sync::Arc<std::sync::Mutex<dyn l...
+...   |
+319 | |         seed: Option<u64>,
+320 | |     ) -> Self {
+    | |_____________^
+
+warning: missing documentation for a method
+   --> models/kalosm-llama/src/language_model.rs:115:5
+    |
+115 |     pub fn new_session(&self) -> LlamaSession {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> models/kalosm-llama/src/language_model.rs:120:5
+    |
+120 | /     pub fn generate_structured_with_trie<'a, S, Constr...
+121 | |         &'a mut self,
+122 | |         session: &'a mut LlamaSession,
+123 | |         text: &str,
+...   |
+131 | |         Constraints: CreateParserState + Send + 'static,
+132 | |         S: Sampler + 'static,
+    | |_____________________________^
+
+warning: missing documentation for a struct field
+  --> models/kalosm-llama/src/model.rs:69:5
+   |
+69 |     pub tokenizer: Arc<Tokenizer>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> models/kalosm-llama/src/model.rs:356:5
+    |
+356 | /     pub fn _infer(
+357 | |         &mut self,
+358 | |         settings: InferenceSettings,
+359 | |         mut on_token: Box<dyn FnMut(String) -> Result<...
+360 | |         finished: &tokio::sync::oneshot::Sender<Result...
+361 | |     ) -> Result<(), LlamaModelError> {
+    | |____________________________________^
+
+warning: missing documentation for a method
+  --> models/kalosm-llama/src/session.rs:85:5
+   |
+85 |     pub fn deep_clone(&self) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct
+   --> models/kalosm-llama/src/structured.rs:442:1
+    |
+442 | pub struct EvaluationTrie {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> models/kalosm-llama/src/structured.rs:454:5
+    |
+454 |     pub fn new() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> models/kalosm-llama/src/structured.rs:554:5
+    |
+554 |     pub fn graphvis(&self, tokenizer: &Tokenizer) -> String {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `kalosm-llama` (lib) generated 10 warnings
+    Finished `release` profile [optimized] target(s) in 0.77s
+warning: the following packages contain code that will be rejected by a future version of Rust: xml5ever v0.16.2
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 2`
+     Running `/Users/evanalmloff/Desktop/Github/floneum/target/release/sygus --model smol-lm --grammar ./src/firstname.sl --task ./src/prompt`
+parsed: [
+    SetLogic(
+        "SLIA",
+    ),
+    SynthFun(
+        SynthFun {
+            name: "f",
+            args: [
+                (
+                    "name",
+                    "String",
+                ),
+            ],
+            ret_ty: "String",
+            non_terminals: [],
+            grammar: [
+                (
+                    "Start",
+                    "String",
+                    [
+                        Atom(
+                            Ident(
+                                "ntString",
+                            ),
+                        ),
+                    ],
+                ),
+                (
+                    "ntString",
+                    "String",
+                    [
+                        Atom(
+                            Ident(
+                                "name",
+                            ),
+                        ),
+                        Atom(
+                            String(
+                                " ",
+                            ),
+                        ),
+                        List(
+                            [
+                                Atom(
+                                    Ident(
+                                        "str.++",
+                                    ),
+                                ),
+                                Atom(
+                                    Ident(
+                                        "ntString",
+                                    ),
+                                ),
+                                Atom(
+                                    Ident(
+                                        "ntString",
+                                    ),
+                                ),
+                            ],
+                        ),
+                        List(
+                            [
+                                Atom(
+                                    Ident(
+                                        "str.replace",
+                                    ),
+                                ),
+                                Atom(
+                                    Ident(
+                                        "ntString",
+                                    ),
+                                ),
+                                Atom(
+                                    Ident(
+                                        "ntString",
+                                    ),
+                                ),
+                                Atom(
+                                    Ident(
+                                        "ntString",
+                                    ),
+                                ),
+                            ],
+                        ),
+                        List(
+                            [
+                                Atom(
+                                    Ident(
+                                        "str.at",
+                                    ),
+                                ),
+                                Atom(
+                                    Ident(
+                                        "ntString",
+                                    ),
+                                ),
+                                Atom(
+                                    Ident(
+                                        "ntInt",
+                                    ),
+                                ),
+                            ],
+                        ),
+                        List(
+                            [
+                                Atom(
+                                    Ident(
+                                        "int.to.str",
+                                    ),
+                                ),
+                                Atom(
+                                    Ident(
+                                        "ntInt",
+                                    ),
+                                ),
+                            ],
+                        ),
+                        List(
+                            [
+                                Atom(
+                                    Ident(
+                                        "str.substr",
+                                    ),
+                                ),
+                                Atom(
+                                    Ident(
+                                        "ntString",
+                                    ),
+                                ),
+                                Atom(
+                                    Ident(
+                                        "ntInt",
+                                    ),
+                                ),
+                                Atom(
+                                    Ident(
+                                        "ntInt",
+                                    ),
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+                (
+                    "ntInt",
+                    "Int",
+                    [
+                        Atom(
+                            Int(
+                                0,
+                            ),
+                        ),
+                        Atom(
+                            Int(
+                                1,
+                            ),
+                        ),
+                        Atom(
+                            Int(
+                                2,
+                            ),
+                        ),
+                        List(
+                            [
+                                Atom(
+                                    Ident(
+                                        "+",
+                                    ),
+                                ),
+                                Atom(
+                                    Ident(
+                                        "ntInt",
+                                    ),
+                                ),
+                                Atom(
+                                    Ident(
+                                        "ntInt",
+                                    ),
+                                ),
+                            ],
+                        ),
+                        List(
+                            [
+                                Atom(
+                                    Ident(
+                                        "-",
+                                    ),
+                                ),
+                                Atom(
+                                    Ident(
+                                        "ntInt",
+                                    ),
+                                ),
+                                Atom(
+                                    Ident(
+                                        "ntInt",
+                                    ),
+                                ),
+                            ],
+                        ),
+                        List(
+                            [
+                                Atom(
+                                    Ident(
+                                        "str.len",
+                                    ),
+                                ),
+                                Atom(
+                                    Ident(
+                                        "ntString",
+                                    ),
+                                ),
+                            ],
+                        ),
+                        List(
+                            [
+                                Atom(
+                                    Ident(
+                                        "str.to.int",
+                                    ),
+                                ),
+                                Atom(
+                                    Ident(
+                                        "ntString",
+                                    ),
+                                ),
+                            ],
+                        ),
+                        List(
+                            [
+                                Atom(
+                                    Ident(
+                                        "str.indexof",
+                                    ),
+                                ),
+                                Atom(
+                                    Ident(
+                                        "ntString",
+                                    ),
+                                ),
+                                Atom(
+                                    Ident(
+                                        "ntString",
+                                    ),
+                                ),
+                                Atom(
+                                    Ident(
+                                        "ntInt",
+                                    ),
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+                (
+                    "ntBool",
+                    "Bool",
+                    [
+                        Atom(
+                            Bool(
+                                true,
+                            ),
+                        ),
+                        Atom(
+                            Bool(
+                                false,
+                            ),
+                        ),
+                        List(
+                            [
+                                Atom(
+                                    Ident(
+                                        "str.prefixof",
+                                    ),
+                                ),
+                                Atom(
+                                    Ident(
+                                        "ntString",
+                                    ),
+                                ),
+                                Atom(
+                                    Ident(
+                                        "ntString",
+                                    ),
+                                ),
+                            ],
+                        ),
+                        List(
+                            [
+                                Atom(
+                                    Ident(
+                                        "str.suffixof",
+                                    ),
+                                ),
+                                Atom(
+                                    Ident(
+                                        "ntString",
+                                    ),
+                                ),
+                                Atom(
+                                    Ident(
+                                        "ntString",
+                                    ),
+                                ),
+                            ],
+                        ),
+                        List(
+                            [
+                                Atom(
+                                    Ident(
+                                        "str.contains",
+                                    ),
+                                ),
+                                Atom(
+                                    Ident(
+                                        "ntString",
+                                    ),
+                                ),
+                                Atom(
+                                    Ident(
+                                        "ntString",
+                                    ),
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+            ],
+        },
+    ),
+    DeclareVar(
+        "name",
+        "String",
+    ),
+    Constraint(
+        List(
+            [
+                Atom(
+                    Ident(
+                        "=",
+                    ),
+                ),
+                List(
+                    [
+                        Atom(
+                            Ident(
+                                "f",
+                            ),
+                        ),
+                        Atom(
+                            String(
+                                "Nancy FreeHafer",
+                            ),
+                        ),
+                    ],
+                ),
+                Atom(
+                    String(
+                        "Nancy",
+                    ),
+                ),
+            ],
+        ),
+    ),
+    Constraint(
+        List(
+            [
+                Atom(
+                    Ident(
+                        "=",
+                    ),
+                ),
+                List(
+                    [
+                        Atom(
+                            Ident(
+                                "f",
+                            ),
+                        ),
+                        Atom(
+                            String(
+                                "Andrew Cencici",
+                            ),
+                        ),
+                    ],
+                ),
+                Atom(
+                    String(
+                        "Andrew",
+                    ),
+                ),
+            ],
+        ),
+    ),
+    Constraint(
+        List(
+            [
+                Atom(
+                    Ident(
+                        "=",
+                    ),
+                ),
+                List(
+                    [
+                        Atom(
+                            Ident(
+                                "f",
+                            ),
+                        ),
+                        Atom(
+                            String(
+                                "Jan Kotas",
+                            ),
+                        ),
+                    ],
+                ),
+                Atom(
+                    String(
+                        "Jan",
+                    ),
+                ),
+            ],
+        ),
+    ),
+    Constraint(
+        List(
+            [
+                Atom(
+                    Ident(
+                        "=",
+                    ),
+                ),
+                List(
+                    [
+                        Atom(
+                            Ident(
+                                "f",
+                            ),
+                        ),
+                        Atom(
+                            String(
+                                "Mariya Sergienko",
+                            ),
+                        ),
+                    ],
+                ),
+                Atom(
+                    String(
+                        "Mariya",
+                    ),
+                ),
+            ],
+        ),
+    ),
+    CheckSynth,
+]
+Iteration 0
+(define-fun f ((firstname String) (lastname String)) String (str.++ (str.++ name " ") (str.substr name 0 1)))
+
+
+generation 0:
+List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])])
+Checking constraints for expression: List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])])
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
+entropy diff: -4.130717
+shannon entropy: 4.130717
+Iteration 1
+(define-fun f ((firstname String) (lastname String)) String (str.++ (str.++
+Skipping sampled token... Token Some("Ġn") is invalid
+probability: 1
+ name "
+Skipping sampled token... Token Some("Ġ\"") is invalid
+probability: 1
+ ") (str.replace name " " " ")))
+
+
+generation 1:
+List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(String(" ")), Atom(String(" "))])])
+Checking constraints for expression: List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(String(" ")), Atom(String(" "))])])
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
+entropy diff: 0.15880251
+shannon entropy: 3.9719143
+Iteration 2
+(define-fun f ((firstname String) (lastname String)) String (str.++ (str.++ " " " ") (str.substr name 0 1)))
+
+
+generation 2:
+List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(String(" ")), Atom(String(" "))]), List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])])
+Checking constraints for expression: List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(String(" ")), Atom(String(" "))]), List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])])
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
+entropy diff: 0.0681932
+shannon entropy: 3.903721
+Iteration 3
+(define-fun f ((firstname String) (lastname String)) String (str.++
+Skipping sampled token... Token Some("Ġn") is invalid
+probability: 1
+ (str.++ name name) " ")))
+
+
+generation 3:
+List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(Ident("name"))]), Atom(String(" "))])
+Checking constraints for expression: List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(Ident("name"))]), Atom(String(" "))])
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
+entropy diff: 0.041636705
+shannon entropy: 3.8620844
+Iteration 4
+(define-fun f ((firstname String) (lastname String)) String (str.++ (str.
+Skipping sampled token... Token Some("+") is invalid
+probability: 1
+++ name " ") (str.substr name 0 1)))
+
+
+generation 4:
+List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])])
+Checking constraints for expression: List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])])
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
+entropy diff: 0.20817566
+shannon entropy: 3.6539087
+Iteration 5
+(define-fun f ((firstname String) (lastname String)) String (str.++ (str.++ name " ") (str.substr name 0 1)))
+
+
+generation 5:
+List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])])
+Checking constraints for expression: List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])])
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
+entropy diff: 0.06594443
+shannon entropy: 3.5879643
+Iteration 6
+(define-fun f ((firstname String) (lastname String)) String (str.++ name " ")
+
+
+generation 6:
+List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))])
+Checking constraints for expression: List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))])
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
+entropy diff: 0.12368059
+shannon entropy: 3.4642837
+Iteration 7
+(define-fun f ((firstname String) (lastname String)) String (str.++ (
+Skipping sampled token... Token Some("st") is invalid
+probability: 1
+str.++ name " ") (str.replace name name " ")))
+
+
+generation 7:
+List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+Checking constraints for expression: List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
+entropy diff: 0.10424137
+shannon entropy: 3.3600423
+Iteration 8
+(define-fun f ((firstname String) (lastname String)) String (str.
+Skipping sampled token... Token Some("+") is invalid
+probability: 1
+++ (str.++ name name) " ")))
+
+
+generation 8:
+List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(Ident("name"))]), Atom(String(" "))])
+Checking constraints for expression: List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(Ident("name"))]), Atom(String(" "))])
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
+entropy diff: 0.17451572
+shannon entropy: 3.1855266
+Iteration 9
+(define-fun f ((firstname String) (lastname String)) String (str.++ (str.++ name " ") (str.replace name name " "))
+
+
+generation 9:
+List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+Checking constraints for expression: List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
+entropy diff: 0
+shannon entropy: 3.1855266
+Iteration 10
+(define-fun f ((firstname String) (lastname String)) String (str.++ (str.++ name " ") (str.replace name name " "))
+
+
+generation 10:
+List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+Checking constraints for expression: List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
+entropy diff: 0
+shannon entropy: 3.1855266
+Iteration 11
+(define-fun f ((firstname String) (lastname String)) String (str.++ (str.++ name " ") (str.replace name name " "))
+
+
+generation 11:
+List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+Checking constraints for expression: List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
+entropy diff: 0
+shannon entropy: 3.1855266
+Iteration 12
+(define-fun f ((firstname String) (lastname String)) String (str.++ (str.++ name " ") (str.replace name name " "))
+
+
+generation 12:
+List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+Checking constraints for expression: List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
+entropy diff: 0
+shannon entropy: 3.1855266
+Iteration 13
+(define-fun f ((firstname String) (lastname String)) String (str.++ (str.++ name " ") (str.replace name name " "))
+
+
+generation 13:
+List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+Checking constraints for expression: List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
+entropy diff: 0
+shannon entropy: 3.1855266
+Iteration 14
+(define-fun f ((firstname String) (lastname String)) String (str.++ (str.++ name " ") (str.replace name name " "))
+
+
+generation 14:
+List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+Checking constraints for expression: List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
+entropy diff: 0
+shannon entropy: 3.1855266
+Iteration 15
+(define-fun f ((firstname String) (lastname String)) String (str.++ (str.++ name " ") (str.replace name name " "))
+
+
+generation 15:
+List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+Checking constraints for expression: List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
+entropy diff: 0
+shannon entropy: 3.1855266
+Iteration 16
+(define-fun f ((firstname String) (lastname String)) String (str.++ (str.++ name " ") (str.replace name name " "))
+
+
+generation 16:
+List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+Checking constraints for expression: List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
+entropy diff: 0
+shannon entropy: 3.1855266
+Iteration 17
+(define-fun f ((firstname String) (lastname String)) String (str.++ (str.++ name " ") (str.replace name name " "))
+
+
+generation 17:
+List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+Checking constraints for expression: List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
+entropy diff: 0
+shannon entropy: 3.1855266
+Iteration 18
+(define-fun f ((firstname String) (lastname String)) String (str.++ (str.++ name " ") (str.replace name name " "))
+
+
+generation 18:
+List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+Checking constraints for expression: List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
+entropy diff: 0
+shannon entropy: 3.1855266
+Iteration 19
+(define-fun f ((firstname String) (lastname String)) String (str.++ (str.++ name " ") (str.replace name name " "))
+
+
+generation 19:
+List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+Checking constraints for expression: List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
+entropy diff: 0
+shannon entropy: 3.1855266
+Iteration 20
+(define-fun f ((firstname String) (lastname String)) String (str.++ (str.++ name " ") (str.replace name name " "))
+
+
+generation 20:
+List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+Checking constraints for expression: List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
+entropy diff: 0
+shannon entropy: 3.1855266
+Iteration 21
+(define-fun f ((firstname String) (lastname String)) String (str.++ (str.++ name " ") (str.replace name name " "))
+
+
+generation 21:
+List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+Checking constraints for expression: List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
+entropy diff: 0
+shannon entropy: 3.1855266
+Iteration 22
+(define-fun f ((firstname String) (lastname String)) String (str.++ (str.++ name " ") (str.replace name name " "))
+
+
+generation 22:
+List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+Checking constraints for expression: List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
+entropy diff: 0
+shannon entropy: 3.1855266
+Iteration 23
+(define-fun f ((firstname String) (lastname String)) String (str.++ (str.++ name " ") (str.replace name name " "))
+
+
+generation 23:
+List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+Checking constraints for expression: List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
+entropy diff: 0
+shannon entropy: 3.1855266
+Iteration 24
+(define-fun f ((firstname String) (lastname String)) String (str.++ (str.++ name " ") (str.replace name name " "))
+
+
+generation 24:
+List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+Checking constraints for expression: List([Atom(Ident("str.++")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(Ident("name")), Atom(String(" "))])])
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
+entropy diff: 0
+shannon entropy: 3.1855266

@@ -684,7 +684,11 @@ async fn main() {
             let mut session = session.deep_clone();
             let output = match llm.generate_structured_with_trie(
                 &mut session,
-                &prompt,
+                if model.qwen_think() {
+                    "\n"
+                } else {
+                    &prompt
+                },
                 sampler.clone(),
                 parser.clone(),
                 |token| {
@@ -978,10 +982,7 @@ fn test_interpreter_str() {
         ]),
     ]);
     let result = interpreter.eval(&expr);
-    assert_eq!(
-        result,
-        SExpr::Atom(Atom::String("0 ".to_string()))
-    );
+    assert_eq!(result, SExpr::Atom(Atom::String("0 ".to_string())));
 }
 
 #[test]
