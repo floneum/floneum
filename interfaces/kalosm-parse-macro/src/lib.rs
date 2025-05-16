@@ -1532,7 +1532,7 @@ impl ToTokens for StringParserOptions {
                     pattern_str = new_pattern_str;
                 }
             }
-            let pattern = LitStr::new(&format!(r#""{}""#, pattern_str), pattern.span());
+            let pattern = LitStr::new(&format!(r#""{pattern_str}""#), pattern.span());
             let quote = quote_spanned! {
                 pattern.span() =>
                 kalosm_sample::ParserExt::map_output(

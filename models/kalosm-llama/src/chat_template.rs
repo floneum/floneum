@@ -25,7 +25,7 @@ impl HuggingFaceChatTemplate {
         let raise_exception = |err_text: String| -> Result<String, minijinja::Error> {
             Err(minijinja::Error::new(
                 ErrorKind::InvalidOperation,
-                format!("The template raised an exception: {}", err_text),
+                format!("The template raised an exception: {err_text}"),
             ))
         };
         environment.add_function("raise_exception", raise_exception);
