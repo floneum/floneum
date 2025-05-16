@@ -607,7 +607,7 @@ impl EnumVariant {
                     ));
                 };
 
-                EnumVariantType::Tuple(TupleEnumVariantParser::new(inner))
+                EnumVariantType::Tuple(Box::new(TupleEnumVariantParser::new(inner)))
             }
             // If this is a unit variant, we can just parse the type
             syn::Fields::Unit => EnumVariantType::Unit(UnitEnumVariantParser::new()),
@@ -657,7 +657,7 @@ impl EnumVariant {
 
 enum EnumVariantType {
     Unit(UnitEnumVariantParser),
-    Tuple(TupleEnumVariantParser),
+    Tuple(Box<TupleEnumVariantParser>),
     Struct(StructEnumVariantParser),
 }
 
