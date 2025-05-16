@@ -35,7 +35,7 @@ impl<M: CreateChatSession> Summarizer<M> {
         M::ChatSession: Clone + Send + Sync + Unpin + 'static,
         M::Error: Send + Sync + Unpin,
     {
-        let prompt = format!("Generate a summary of the following text:\n{}", text);
+        let prompt = format!("Generate a summary of the following text:\n{text}");
 
         let parser = LiteralParser::new("Summary: ").then(OneLine);
         let questions = self.task.run(prompt).with_constraints(parser).await?;

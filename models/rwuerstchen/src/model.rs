@@ -327,10 +327,10 @@ impl WuerstchenInner {
         let width = settings.width;
 
         if height < 1024 || width < 1024 {
-            println!("Warning: Würstchen was trained on image resolutions between 1024x1024 & 1536x1536. {}x{} is below the minimum resolution. Image quality may be poor.", height, width);
+            println!("Warning: Würstchen was trained on image resolutions between 1024x1024 & 1536x1536. {height}x{width} is below the minimum resolution. Image quality may be poor.");
         }
         if height > 1536 || width > 1536 {
-            println!("Warning: Würstchen was trained on image resolutions between 1024x1024 & 1536x1536. {}x{} is above the maximum resolution. Image quality may be poor.", height, width);
+            println!("Warning: Würstchen was trained on image resolutions between 1024x1024 & 1536x1536. {height}x{width} is above the maximum resolution. Image quality may be poor.");
         }
         let chech_dims = if height % 128 != 0 || width % 128 != 0 {
             Err(candle_core::Error::Msg(

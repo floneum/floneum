@@ -207,7 +207,7 @@ impl<const R: usize, T: DataType> Add<f32> for Tensor<R, T> {
         self.element_wise(ElementWiseOperation {
             value: self.key(),
             function: ElementWiseFunction::new(
-                format!("let output = input + {};", rhs),
+                format!("let output = input + {rhs};"),
                 T::WGSL_TYPE,
             )
             .with_name("add_const"),
@@ -455,7 +455,7 @@ impl<const R: usize, T: DataType> Sub<f32> for Tensor<R, T> {
         self.element_wise(ElementWiseOperation {
             value: self.key(),
             function: ElementWiseFunction::new(
-                format!("let output = input - {};", rhs),
+                format!("let output = input - {rhs};"),
                 T::WGSL_TYPE,
             )
             .with_name("subtract_const"),
@@ -535,7 +535,7 @@ impl<const R: usize, T: DataType> Mul<f32> for Tensor<R, T> {
         self.element_wise(ElementWiseOperation {
             value: self.key(),
             function: ElementWiseFunction::new(
-                format!("let output = input * {};", rhs),
+                format!("let output = input * {rhs};"),
                 T::WGSL_TYPE,
             )
             .with_name("multiply_const"),
@@ -608,7 +608,7 @@ impl<const R: usize, T: DataType> Div<f32> for Tensor<R, T> {
         self.element_wise(ElementWiseOperation {
             value: self.key(),
             function: ElementWiseFunction::new(
-                format!("let output = input / {};", rhs),
+                format!("let output = input / {rhs};"),
                 T::WGSL_TYPE,
             )
             .with_name("divide_const"),
@@ -648,7 +648,7 @@ impl<const R: usize, T: DataType> Div<Tensor<R, T>> for f32 {
         rhs.element_wise(ElementWiseOperation {
             value: rhs.key(),
             function: ElementWiseFunction::new(
-                format!("let output = {} / input;", self),
+                format!("let output = {self} / input;"),
                 T::WGSL_TYPE,
             )
             .with_name("divide_const"),

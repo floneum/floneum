@@ -80,7 +80,7 @@ impl RopeCache {
                 let k = apply_rotary_emb(&self.sin, &self.cos, k, start_pos)?;
                 candle_core::Result::Ok((
                     q.join()
-                        .map_err(|e| candle_core::Error::Msg(format!("Error in q: {:?}", e)))??,
+                        .map_err(|e| candle_core::Error::Msg(format!("Error in q: {e:?}")))??,
                     k,
                 ))
             })?

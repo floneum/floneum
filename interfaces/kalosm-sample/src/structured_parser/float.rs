@@ -128,7 +128,7 @@ impl FloatParser {
         } else {
             *self.range.end() - value
         };
-        println!("Distance: {}", distance);
+        println!("Distance: {distance}");
 
         distance < 10.0_f64.powi(-(digits_after_decimal_point as i32))
     }

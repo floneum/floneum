@@ -105,7 +105,7 @@ impl LlamaModel {
         // Download the model and tokenizer. These are relatively cheep operations that can be run in the async runtime
         let tokenizer_path = match &builder.source.tokenizer {
             Some(tokenizer) => {
-                let tokenizer_source = format!("Tokenizer ({})", tokenizer);
+                let tokenizer_source = format!("Tokenizer ({tokenizer})");
                 let mut create_progress =
                     ModelLoadingProgress::downloading_progress(tokenizer_source);
                 let tokenizer_path = builder
@@ -121,7 +121,7 @@ impl LlamaModel {
         // Download the config file if it exists
         let config_path = match &builder.source.config {
             Some(config) => {
-                let config_source = format!("Config ({})", config);
+                let config_source = format!("Config ({config})");
                 let mut create_progress = ModelLoadingProgress::downloading_progress(config_source);
                 let config_path = builder
                     .source

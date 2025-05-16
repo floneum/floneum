@@ -44,11 +44,11 @@ impl LlamaCache {
         for (i, kv_cache) in self.blocks.iter().enumerate() {
             if let (Ok(Some(k)), Ok(Some(v))) = (kv_cache.cache().k(), kv_cache.cache().v()) {
                 map.insert(
-                    format!("llama.cache.blocks.{}.key", i),
+                    format!("llama.cache.blocks.{i}.key"),
                     k.to_device(device).unwrap(),
                 );
                 map.insert(
-                    format!("llama.cache.blocks.{}.value", i),
+                    format!("llama.cache.blocks.{i}.value"),
                     v.to_device(device).unwrap(),
                 );
             }

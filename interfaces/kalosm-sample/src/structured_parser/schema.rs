@@ -54,9 +54,9 @@ pub enum SchemaLiteral {
 impl Display for SchemaLiteral {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SchemaLiteral::String(string) => write!(f, "\"{}\"", string),
-            SchemaLiteral::Number(number) => write!(f, "{}", number),
-            SchemaLiteral::Boolean(boolean) => write!(f, "{}", boolean),
+            SchemaLiteral::String(string) => write!(f, "\"{string}\""),
+            SchemaLiteral::Number(number) => write!(f, "{number}"),
+            SchemaLiteral::Boolean(boolean) => write!(f, "{boolean}"),
             SchemaLiteral::Null => write!(f, "null"),
         }
     }
@@ -199,7 +199,7 @@ impl AnyOfSchema {
                         if i > 0 {
                             writer.write_char(',')?;
                         }
-                        write!(writer, "\n{}", schema)?;
+                        write!(writer, "\n{schema}")?;
                     }
                     Ok(())
                 })?;
@@ -249,7 +249,7 @@ impl OneOfSchema {
                         if i > 0 {
                             writer.write_char(',')?;
                         }
-                        write!(writer, "\n{}", schema)?;
+                        write!(writer, "\n{schema}")?;
                     }
                     Ok(())
                 })?;
@@ -342,7 +342,7 @@ impl EnumSchema {
                     if i > 0 {
                         writer.write_str(", ")?;
                     }
-                    write!(writer, "{}", variant)?;
+                    write!(writer, "{variant}")?;
                 }
             }
             writer.write_str("]\n")?;
@@ -423,7 +423,7 @@ impl StringSchema {
                 }
             }
             if let Some(pattern) = &self.pattern {
-                writer.write_fmt(format_args!(",\n\"pattern\": \"{}\"", pattern))?;
+                writer.write_fmt(format_args!(",\n\"pattern\": \"{pattern}\""))?;
             }
         }
         f.write_str("\n}")
@@ -778,7 +778,7 @@ impl JsonObjectSchema {
                 writer.write_str("\",\n")?;
             }
             if let Some(description) = &self.description {
-                writer.write_fmt(format_args!("\"description\": \"{}\",\n", description))?;
+                writer.write_fmt(format_args!("\"description\": \"{description}\",\n"))?;
             }
             writer.write_str("\"type\": \"object\",\n")?;
             writer.write_str("\"properties\": {")?;
@@ -788,7 +788,7 @@ impl JsonObjectSchema {
                         if i > 0 {
                             writer.write_char(',')?;
                         }
-                        write!(writer, "\n{}", property)?;
+                        write!(writer, "\n{property}")?;
                     }
                     Ok(())
                 })?;
@@ -807,7 +807,7 @@ impl JsonObjectSchema {
                         if i > 0 {
                             writer.write_str(", ")?;
                         }
-                        write!(writer, "\"{}\"", required)?;
+                        write!(writer, "\"{required}\"")?;
                     }
                 }
                 writer.write_str("]")?;

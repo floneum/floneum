@@ -4,7 +4,7 @@ use lopdf::{Document as PdfDoc, Object};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt::Debug;
-use std::io::{Error, ErrorKind};
+use std::io::Error;
 use std::path::{Path, PathBuf};
 
 use super::FsDocumentError;
@@ -116,7 +116,7 @@ fn filter_func(object_id: (u32, u16), object: &mut Object) -> Option<((u32, u16)
 async fn load_pdf<P: AsRef<Path>>(path: P) -> Result<PdfDoc, Error> {
     PdfDoc::load_filtered(path, filter_func)
         .await
-        .map_err(|e| Error::new(ErrorKind::Other, e.to_string()))
+        .map_err(|e| Error::other(e.to_string()))
 }
 
 fn get_pdf_text(doc: &PdfDoc) -> Result<PdfText, Error> {
@@ -130,10 +130,9 @@ fn get_pdf_text(doc: &PdfDoc) -> Result<PdfText, Error> {
         .map(
             |(page_num, page_id): (u32, (u32, u16))| -> Result<(u32, Vec<String>), Error> {
                 let text = doc.extract_text(&[page_num]).map_err(|e| {
-                    Error::new(
-                        ErrorKind::Other,
-                        format!("Failed to extract text from page {page_num} id={page_id:?}: {e:}"),
-                    )
+                    Error::other(format!(
+                        "Failed to extract text from page {page_num} id={page_id:?}: {e:}"
+                    ))
                 })?;
                 Ok((
                     page_num,

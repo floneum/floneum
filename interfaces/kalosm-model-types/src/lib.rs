@@ -154,7 +154,7 @@ impl Display for FileSource {
                 model_id,
                 revision,
                 file,
-            } => write!(f, "hf://{}/{}/{}", model_id, revision, file),
+            } => write!(f, "hf://{model_id}/{revision}/{file}"),
             FileSource::Local(path) => write!(f, "{}", path.display()),
         }
     }

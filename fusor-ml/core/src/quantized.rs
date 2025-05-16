@@ -442,8 +442,7 @@ impl WgslQuantizedType for BlockQ4_0 {
         for offset in 0..4 {
             writeln!(
                 &mut code,
-                "let byte{offset} = weight_chunk_bytes[{}];",
-                offset
+                "let byte{offset} = weight_chunk_bytes[{offset}];"
             )
             .unwrap();
             writeln!(
@@ -515,8 +514,7 @@ impl WgslQuantizedType for BlockQ5_0 {
         for offset in 0..4 {
             writeln!(
                 &mut code,
-                "let byte{offset} = low_weight_chunk_bytes[{}];",
-                offset
+                "let byte{offset} = low_weight_chunk_bytes[{offset}];"
             )
             .unwrap();
             writeln!(
@@ -578,8 +576,7 @@ impl WgslQuantizedType for BlockQ8_0 {
         for offset in 0..4 {
             writeln!(
                 &mut code,
-                "let data{offset} = weight_chunk_bytes[{}];",
-                offset
+                "let data{offset} = weight_chunk_bytes[{offset}];"
             )
             .unwrap();
             writeln!(
