@@ -11,7 +11,7 @@ use super::{
     qwen_vision_embed::Qwen2_5VisionPatchEmbed,
 };
 
-struct QwenVisionTransformer {
+pub(crate) struct QwenVisionTransformer {
     spacial_merge_size: usize,
     patch_size: usize,
     fullatt_block_indexes: Vec<usize>,
@@ -320,7 +320,19 @@ async fn test_loading_qwen_vision() {
     ];
     assert_2d_vec_eq(out_first_5_by_5, expected, 1e-2);
 
-    let hidden_states = Tensor::randn(0.0, 1.0, (1, 3, 224, 224), &device).unwrap();
+    let hidden_states = Tensor::randn(
+        0.0,
+        1.0,
+        (
+            224,
+            in_channels,
+            temporal_patch_size,
+            patch_size,
+            patch_size,
+        ),
+        &device,
+    )
+    .unwrap();
     let grid_thw = vec![(1, 112, 112)];
     qwen_vision.forward(hidden_states, &grid_thw, None).unwrap();
 }

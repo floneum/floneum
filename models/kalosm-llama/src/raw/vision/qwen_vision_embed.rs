@@ -223,7 +223,7 @@ fn test_vision_patch_embed() {
 }
 
 #[cfg(test)]
-fn assert_2d_vec_eq(
+pub(crate) fn assert_2d_vec_eq(
     a: impl IntoIterator<Item = impl IntoIterator<Item = f32>>,
     b: impl IntoIterator<Item = impl IntoIterator<Item = f32>>,
     tolerance: f32,
