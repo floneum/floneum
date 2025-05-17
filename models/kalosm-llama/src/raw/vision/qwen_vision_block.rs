@@ -81,12 +81,7 @@ struct VisionAttention {
 }
 
 impl VisionAttention {
-    fn new(
-        vb: &VarBuilder,
-        head_count: usize,
-        head_dim: usize,
-        embed_dim: usize,
-    ) -> Result<Self> {
+    fn new(vb: &VarBuilder, head_count: usize, head_dim: usize, embed_dim: usize) -> Result<Self> {
         let qkv = vb.get_no_shape("qkv.weight")?;
         let qkv_bias = vb.get_no_shape("qkv.bias")?.dequantize(&vb.device())?;
         let qkv = Linear::from_arc(qkv, Some(qkv_bias))?;
@@ -111,15 +106,18 @@ impl VisionAttention {
         start_pos: usize,
         cache: Option<&mut KvCache>,
     ) -> Result<Tensor> {
+        println!("xs: {:?}", xs);
         let seq_len = xs.dim(0)?;
+        println!("seq_len: {seq_len}");
 
         // First, pass the input through the qkv layer
-        let qkv = xs.apply(&self.qkv)?;
+        let qkv = xs
+            .apply(&self.qkv)?
+            .reshape((seq_len, 3, self.head_count, ()))?;
+        println!("qkv: {:?}", qkv);
 
         // Then split up the qkv tensor into q, k, and v
-        let qkv = qkv
-            .reshape((seq_len, 3, self.head_count, ()))?
-            .permute((1, 0, 2, 3))?;
+        let qkv = qkv.permute((1, 0, 2, 3))?;
 
         let unbound = unbind(&qkv, 0)?;
         let [q, k, v] = unbound.as_slice() else {
@@ -133,6 +131,8 @@ impl VisionAttention {
         println!("rope cache: {:?}", rope_cache);
 
         let (q, k) = rope_cache.forward(&q.unsqueeze(0)?, &k.unsqueeze(0)?, start_pos)?;
+        let q = q.squeeze(0)?;
+        let k = k.squeeze(0)?;
 
         // Convert from [seq_len, head_count, batch_size] to [head_count, seq_len, batch_size]
         let query_states = q.transpose(0, 1)?;
@@ -144,16 +144,22 @@ impl VisionAttention {
             Some(cache) => cache.append(&key_states, &value_states)?,
         };
 
+        //         q shape: torch.Size([1944, 16, 80]), k shape: torch.Size([1944, 16, 80]), v shape: torch.Size([1944, 16, 80])
+        // q shape: torch.Size([16, 1944, 80]), k shape: torch.Size([16, 1944, 80]), v shape: torch.Size([16, 1944, 80])
+        println!("query_states: {:?}", query_states);
+        println!("key_states: {:?}", key_states);
+        println!("value_states: {:?}", value_states);
+
         let bsz = query_states.dim(2)?;
 
-        let mut attention_mask = vec![vec![f32::NEG_INFINITY; seq_len]; seq_len];
+        let mut attention_mask = vec![vec![1u32; seq_len]; seq_len];
         for pair in cu_seqlens.windows(2) {
             let [last, next] = pair else { unreachable!() };
             let last = *last as usize;
             let next = *next as usize;
             for i in last..next {
                 for j in last..next {
-                    attention_mask[i][j] = 0.0;
+                    attention_mask[i][j] = 0;
                 }
             }
         }

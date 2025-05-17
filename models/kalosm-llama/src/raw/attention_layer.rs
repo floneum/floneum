@@ -461,11 +461,11 @@ pub(crate) fn forward_attention_qkv(
     hidden_size: usize,
 ) -> candle_core::Result<Tensor> {
     let scale = 1. / (head_dim as f64).sqrt();
-    let mut attn_output = if query_states.device().is_metal() && q_len == 1 {
-        // SDPA use fuzed softmax(qk^T*scale)v kernel on metal
-        candle_nn::ops::sdpa(&query_states, &key_states, &value_states, scale as f32, 1.)?
-    } else {
+    let mut attn_output = {
+        println!("query_states: {:?}", query_states);
+        println!("key_states: {:?}", key_states);
         let mut attn_weights = (query_states.matmul(&key_states.t()?)? * scale)?;
+        println!("attn_weights: {:?}", attn_weights);
         debug_assert_none_nan(&attn_weights);
 
         if let Some(attention_mask) = attention_mask {
