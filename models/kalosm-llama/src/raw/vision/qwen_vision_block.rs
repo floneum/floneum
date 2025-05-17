@@ -1,4 +1,4 @@
-use candle_core::{quantized::QMatMul, Result, Tensor};
+use candle_core::{quantized::QMatMul, DType, Result, Tensor};
 use candle_nn::Module;
 use candle_transformers::{
     quantized_nn::{Linear, RmsNorm},
@@ -59,7 +59,8 @@ impl VisionBlock {
         start_pos: usize,
         cache: Option<&mut KvCache>,
     ) -> Result<Tensor> {
-        let xs = (xs
+        let xs = xs.to_dtype(DType::F32)?;
+        let xs = (&xs
             + self.attn.forward(
                 &self.norm1.forward(&xs)?,
                 cu_seqlens,
@@ -127,6 +128,10 @@ impl VisionAttention {
             ));
         };
 
+        println!("q: {:?}", q);
+        println!("k: {:?}", k);
+        println!("rope cache: {:?}", rope_cache);
+
         let (q, k) = rope_cache.forward(&q.unsqueeze(0)?, &k.unsqueeze(0)?, start_pos)?;
 
         // Convert from [seq_len, head_count, batch_size] to [head_count, seq_len, batch_size]
@@ -176,8 +181,9 @@ impl VisionAttention {
 }
 
 fn unbind(tensor: &Tensor, dim: usize) -> Result<Vec<Tensor>> {
+    println!("tensor: {:?}", tensor);
     tensor
-        .chunk(dim, tensor.dim(dim)?)?
+        .chunk(tensor.dim(dim)?, dim)?
         .into_iter()
         .map(|t| t.squeeze(dim))
         .collect()
