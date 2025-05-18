@@ -48,39 +48,39 @@ impl PhiFeedForward {
 pub struct LlamaFeedForward {
     gate: QMatMul,
     gate_bias: Option<Tensor>,
-    up: QMatMul,
-    up_bias: Option<Tensor>,
     down: QMatMul,
     down_bias: Option<Tensor>,
+    up: QMatMul,
+    up_bias: Option<Tensor>,
 }
 
 impl LlamaFeedForward {
-    pub(crate) fn new(gate: QMatMul, up: QMatMul, down: QMatMul) -> Self {
+    pub(crate) fn new(gate: QMatMul, down: QMatMul, up: QMatMul) -> Self {
         Self {
             gate,
-            up,
             down,
+            up,
             gate_bias: None,
-            up_bias: None,
             down_bias: None,
+            up_bias: None,
         }
     }
 
     pub(crate) fn new_with_bias(
         gate: QMatMul,
         gate_bias: Option<Tensor>,
-        up: QMatMul,
-        up_bias: Option<Tensor>,
         down: QMatMul,
         down_bias: Option<Tensor>,
+        up: QMatMul,
+        up_bias: Option<Tensor>,
     ) -> Self {
         Self {
             gate,
             gate_bias,
-            up,
-            up_bias,
             down,
             down_bias,
+            up,
+            up_bias,
         }
     }
 
@@ -96,17 +96,17 @@ impl LlamaFeedForward {
                     fast_cpu_silu(&w1)
                 });
 
-                let mut w3 = self.down.forward(x)?;
-                if let Some(ref bias) = self.down_bias {
+                let mut w3 = self.up.forward(x)?;
+                if let Some(ref bias) = self.up_bias {
                     w3 = w3.broadcast_add(bias)?;
                 }
                 let w1 = w1
                     .join()
                     .map_err(|_| candle_core::Error::Msg("Failed to join thread".to_string()))??;
 
-                let mut up = self.up.forward(&(&w1 * w3)?)?;
+                let mut up = self.down.forward(&(&w1 * w3)?)?;
 
-                if let Some(ref bias) = self.up_bias {
+                if let Some(ref bias) = self.down_bias {
                     up = up.broadcast_add(bias)?;
                 }
 
@@ -119,19 +119,20 @@ impl LlamaFeedForward {
             }
             let w1 = fast_cpu_silu(&w1)?;
 
-            let mut w3 = self.down.forward(x)?;
-            if let Some(ref bias) = self.down_bias {
+            let mut w3 = self.up.forward(x)?;
+            if let Some(ref bias) = self.up_bias {
                 w3 = w3.broadcast_add(bias)?;
             }
 
-            let mut up = self.up.forward(&(&w1 * w3)?)?;
-            if let Some(ref bias) = self.up_bias {
+            let mut up = self.down.forward(&(&w1 * w3)?)?;
+            if let Some(ref bias) = self.down_bias {
                 up = up.broadcast_add(bias)?;
             }
             Ok(up)
         }
     }
 }
+
 
 pub enum AttentionVariant {
     Separate(SeparateAttention),
@@ -464,19 +465,19 @@ pub(crate) fn forward_attention_qkv(
     let mut attn_output = {
         println!("query_states: {:?}", query_states);
         println!("key_states: {:?}", key_states);
-        let mut attn_weights = (query_states.matmul(&key_states.t()?)? * scale)?;
+        let mut attn_weights = (query_states.matmul(&key_states.t().unwrap()).unwrap() * scale).unwrap();
         println!("attn_weights: {:?}", attn_weights);
         debug_assert_none_nan(&attn_weights);
 
         if let Some(attention_mask) = attention_mask {
-            attention_mask.forward(&mut attn_weights)?;
+            attention_mask.forward(&mut attn_weights).unwrap();
             debug_assert_none_nan(&attn_weights);
         }
 
-        attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights)?;
+        attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights).unwrap();
         debug_assert_none_nan(&attn_weights);
 
-        attn_weights.matmul(&value_states)?
+        attn_weights.matmul(&value_states).unwrap()
     };
 
     debug_assert_none_nan(&attn_output);
@@ -489,11 +490,11 @@ pub(crate) fn forward_attention_qkv(
         )));
     }
 
-    attn_output = attn_output.transpose(1, 2)?;
+    attn_output = attn_output.transpose(1, 2).unwrap();
 
-    attn_output = attn_output.reshape(&[bsz, q_len, hidden_size])?;
+    attn_output = attn_output.reshape(&[bsz, q_len, hidden_size]).unwrap();
 
-    attn_output = attention_wo.forward(&attn_output)?;
+    attn_output = attention_wo.forward(&attn_output).unwrap();
 
     debug_assert_none_nan(&attn_output);
 

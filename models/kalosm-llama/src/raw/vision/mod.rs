@@ -1,4 +1,5 @@
 mod qwen;
+mod qwen_image_processing;
 mod qwen_patch_merger;
 mod qwen_rope;
 mod qwen_vision;

@@ -35,10 +35,10 @@ impl VisionBlock {
         let mlp = LlamaFeedForward::new_with_bias(
             QMatMul::from_arc(mlp_vb.get_no_shape("gate_proj.weight")?)?,
             Some(mlp_vb.get_no_shape("gate_proj.bias")?.dequantize(&device)?),
-            QMatMul::from_arc(mlp_vb.get_no_shape("up_proj.weight")?)?,
-            Some(mlp_vb.get_no_shape("up_proj.bias")?.dequantize(&device)?),
             QMatMul::from_arc(mlp_vb.get_no_shape("down_proj.weight")?)?,
             Some(mlp_vb.get_no_shape("down_proj.bias")?.dequantize(&device)?),
+            QMatMul::from_arc(mlp_vb.get_no_shape("up_proj.weight")?)?,
+            Some(mlp_vb.get_no_shape("up_proj.bias")?.dequantize(&device)?),
         );
 
         let attn = VisionAttention::new(&vb.pp("attn"), head_count, head_dim, embed_dim)?;
@@ -59,16 +59,16 @@ impl VisionBlock {
         start_pos: usize,
         cache: Option<&mut KvCache>,
     ) -> Result<Tensor> {
-        let xs = xs.to_dtype(DType::F32)?;
+        let xs = xs.to_dtype(DType::F32).unwrap();
         let xs = (&xs
             + self.attn.forward(
-                &self.norm1.forward(&xs)?,
+                &self.norm1.forward(&xs).unwrap(),
                 cu_seqlens,
                 rope_cache,
                 start_pos,
                 cache,
-            )?)?;
-        &xs + self.mlp.forward(&self.norm2.forward(&xs)?)?
+            ).unwrap()).unwrap();
+        &xs + self.mlp.forward(&self.norm2.forward(&xs).unwrap()).unwrap()
     }
 }
 
@@ -135,9 +135,9 @@ impl VisionAttention {
         let k = k.squeeze(0)?;
 
         // Convert from [seq_len, head_count, batch_size] to [head_count, seq_len, batch_size]
-        let query_states = q.transpose(0, 1)?;
-        let key_states = k.transpose(0, 1)?;
-        let value_states = v.transpose(0, 1)?;
+        let query_states = q.transpose(0, 1)?.unsqueeze(0)?;
+        let key_states = k.transpose(0, 1)?.unsqueeze(0)?;
+        let value_states = v.transpose(0, 1)?.unsqueeze(0)?;
 
         let (key_states, value_states) = match cache {
             None => (key_states, value_states),
@@ -150,7 +150,7 @@ impl VisionAttention {
         println!("key_states: {:?}", key_states);
         println!("value_states: {:?}", value_states);
 
-        let bsz = query_states.dim(2)?;
+        let bsz = 1;
 
         let mut attention_mask = vec![vec![1u32; seq_len]; seq_len];
         for pair in cu_seqlens.windows(2) {
@@ -168,7 +168,7 @@ impl VisionAttention {
                 attention_mask.iter().flatten().copied(),
                 query_states.device(),
             )?
-            .reshape((1, seq_len, seq_len))?,
+            .reshape((1, 1, seq_len, seq_len))?,
         );
 
         forward_attention_qkv(
@@ -182,7 +182,7 @@ impl VisionAttention {
             bsz,
             seq_len,
             self.embed_dim,
-        )
+        )?.squeeze(0)
     }
 }
 
