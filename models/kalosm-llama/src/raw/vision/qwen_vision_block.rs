@@ -106,15 +106,12 @@ impl VisionAttention {
         start_pos: usize,
         cache: Option<&mut KvCache>,
     ) -> Result<Tensor> {
-        println!("xs: {:?}", xs);
         let seq_len = xs.dim(0)?;
-        println!("seq_len: {seq_len}");
 
         // First, pass the input through the qkv layer
         let qkv = xs
             .apply(&self.qkv)?
             .reshape((seq_len, 3, self.head_count, ()))?;
-        println!("qkv: {:?}", qkv);
 
         // Then split up the qkv tensor into q, k, and v
         let qkv = qkv.permute((1, 0, 2, 3))?;
@@ -126,29 +123,20 @@ impl VisionAttention {
             ));
         };
 
-        println!("q: {:?}", q);
-        println!("k: {:?}", k);
-        println!("rope cache: {:?}", rope_cache);
-
         let (q, k) = rope_cache.forward(&q.unsqueeze(0)?, &k.unsqueeze(0)?, start_pos)?;
         let q = q.squeeze(0)?;
         let k = k.squeeze(0)?;
 
         // Convert from [seq_len, head_count, batch_size] to [head_count, seq_len, batch_size]
-        let query_states = q.transpose(0, 1)?.unsqueeze(0)?;
-        let key_states = k.transpose(0, 1)?.unsqueeze(0)?;
-        let value_states = v.transpose(0, 1)?.unsqueeze(0)?;
+        let query_states = q.transpose(0, 1)?.unsqueeze(0)?.contiguous()?;
+        let key_states = k.transpose(0, 1)?.unsqueeze(0)?.contiguous()?;
+        let value_states = v.transpose(0, 1)?.unsqueeze(0)?.contiguous()?;
 
         let (key_states, value_states) = match cache {
             None => (key_states, value_states),
             Some(cache) => cache.append(&key_states, &value_states)?,
         };
 
-        //         q shape: torch.Size([1944, 16, 80]), k shape: torch.Size([1944, 16, 80]), v shape: torch.Size([1944, 16, 80])
-        // q shape: torch.Size([16, 1944, 80]), k shape: torch.Size([16, 1944, 80]), v shape: torch.Size([16, 1944, 80])
-        println!("query_states: {:?}", query_states);
-        println!("key_states: {:?}", key_states);
-        println!("value_states: {:?}", value_states);
 
         let bsz = 1;
 
@@ -187,7 +175,6 @@ impl VisionAttention {
 }
 
 fn unbind(tensor: &Tensor, dim: usize) -> Result<Vec<Tensor>> {
-    println!("tensor: {:?}", tensor);
     tensor
         .chunk(tensor.dim(dim)?, dim)?
         .into_iter()

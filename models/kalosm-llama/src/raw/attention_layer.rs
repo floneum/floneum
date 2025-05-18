@@ -463,10 +463,7 @@ pub(crate) fn forward_attention_qkv(
 ) -> candle_core::Result<Tensor> {
     let scale = 1. / (head_dim as f64).sqrt();
     let mut attn_output = {
-        println!("query_states: {:?}", query_states);
-        println!("key_states: {:?}", key_states);
         let mut attn_weights = (query_states.matmul(&key_states.t().unwrap()).unwrap() * scale).unwrap();
-        println!("attn_weights: {:?}", attn_weights);
         debug_assert_none_nan(&attn_weights);
 
         if let Some(attention_mask) = attention_mask {

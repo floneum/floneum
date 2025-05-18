@@ -132,14 +132,18 @@ impl QwenVisionTransformer {
         }
         let pos_ids = Tensor::cat(&pos_ids, 0).unwrap();
         let max_grid_size = grid_thw.iter().map(|(_, h, w)| (*h).max(*w)).max().unwrap();
-        let rotary_pos_emb_full = self.rotary_pos_emb.make_embeds(max_grid_size).unwrap();
+        let rotary_pos_emb_full = self
+            .rotary_pos_emb
+            .make_embeds(max_grid_size)
+            .unwrap()
+            .contiguous()?;
 
         let rotary_pos_emb_0 = rotary_pos_emb_full
-            .index_select(&pos_ids.i((.., 0)).unwrap(), 0)
+            .index_select(&pos_ids.i((.., 0)).unwrap().contiguous()?, 0)
             .unwrap();
 
         let rotary_pos_emb_1 = rotary_pos_emb_full
-            .index_select(&pos_ids.i((.., 1)).unwrap(), 0)
+            .index_select(&pos_ids.i((.., 1)).unwrap().contiguous()?, 0)
             .unwrap();
 
         let rotary_pos_emb = Tensor::cat(&[rotary_pos_emb_0, rotary_pos_emb_1], D::Minus1).unwrap();
@@ -196,7 +200,9 @@ impl QwenVisionTransformer {
             .unwrap();
         let rotary_pos_emb = rotary_pos_emb.index_select(&window_index, 0).unwrap();
         let rotary_pos_emb = rotary_pos_emb.reshape((seq_len, ())).unwrap();
-        let rope_cache = RopeCache::from_parts(rotary_pos_emb.cos().unwrap(), rotary_pos_emb.sin().unwrap()).unwrap();
+        let rope_cache =
+            RopeCache::from_parts(rotary_pos_emb.cos().unwrap(), rotary_pos_emb.sin().unwrap())
+                .unwrap();
 
         let cu_seqlens = grid_thw
             .iter()
@@ -319,8 +325,8 @@ async fn test_loading_qwen_vision() {
     ];
     assert_2d_vec_eq(out_first_5_by_5, expected, 1e-2);
 
-//     pixel_values torch.Size([1944, 1176])
-// image_grid_thw tensor([[ 1, 36, 54]])
+    //     pixel_values torch.Size([1944, 1176])
+    // image_grid_thw tensor([[ 1, 36, 54]])
     // let hidden_states = Tensor::randn(
     //     0.0,
     //     1.0,
@@ -335,12 +341,10 @@ async fn test_loading_qwen_vision() {
     // )
     // .unwrap();
     // let grid_thw = vec![(1, 1, 1)];
-    let hidden_states = Tensor::randn(
-        0.0,
-        1.0,
-        (1944, 1176),
-        &device,
-    ).unwrap();
+    let hidden_states = Tensor::randn(0.0f32, 1.0, (1944, 1176), &candle_core::Device::Cpu)
+        .unwrap()
+        .to_device(&device)
+        .unwrap();
     let grid_thw = vec![(1, 36, 54)];
     qwen_vision.forward(hidden_states, &grid_thw, None).unwrap();
 }
