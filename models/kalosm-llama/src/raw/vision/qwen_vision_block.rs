@@ -59,16 +59,16 @@ impl VisionBlock {
         start_pos: usize,
         cache: Option<&mut KvCache>,
     ) -> Result<Tensor> {
-        let xs = xs.to_dtype(DType::F32).unwrap();
+        let xs = xs.to_dtype(DType::F32)?;
         let xs = (&xs
             + self.attn.forward(
-                &self.norm1.forward(&xs).unwrap(),
+                &self.norm1.forward(&xs)?,
                 cu_seqlens,
                 rope_cache,
                 start_pos,
                 cache,
-            ).unwrap()).unwrap();
-        &xs + self.mlp.forward(&self.norm2.forward(&xs).unwrap()).unwrap()
+            )?)?;
+        &xs + self.mlp.forward(&self.norm2.forward(&xs)?)?
     }
 }
 
@@ -137,7 +137,6 @@ impl VisionAttention {
             Some(cache) => cache.append(&key_states, &value_states)?,
         };
 
-
         let bsz = 1;
 
         let mut attention_mask = vec![vec![1u32; seq_len]; seq_len];
@@ -170,7 +169,8 @@ impl VisionAttention {
             bsz,
             seq_len,
             self.embed_dim,
-        )?.squeeze(0)
+        )?
+        .squeeze(0)
     }
 }
 
