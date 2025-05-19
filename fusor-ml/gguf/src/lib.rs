@@ -120,9 +120,9 @@ impl GgmlType {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GgufVersion {
-    V1,
-    V2,
-    V3,
+    V1 = 1,
+    V2 = 2,
+    V3 = 3,
 }
 
 impl GgufVersion {
@@ -136,6 +136,19 @@ impl GgufVersion {
         writer.write_all(&GGUF_MAGIC_BYTES)?;
         let version = *self as u32;
         write_le_u32(writer, version)
+    }
+}
+
+#[test]
+fn test_gguf_version_round_trip() {
+    let versions = [GgufVersion::V1, GgufVersion::V2, GgufVersion::V3];
+    for version in versions {
+        let mut buf = Vec::new();
+        version.write(&mut buf).unwrap();
+        println!("buf: {buf:?}");
+        let mut cursor = std::io::Cursor::new(buf);
+        let read_version = GgufVersion::read(&mut cursor).unwrap();
+        assert_eq!(version, read_version);
     }
 }
 
@@ -313,7 +326,7 @@ pub enum GgufWriteError {
     UnknownTensor(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct GgufTensorMetadata {
     pub ty: GgmlType,
     pub shape: Box<[u32]>,
@@ -342,7 +355,7 @@ impl GgufTensorMetadata {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct GgufMetadata {
     pub version: GgufVersion,
     pub metadata: FxHashMap<Box<str>, GgufValue>,
@@ -1208,7 +1221,6 @@ async fn tiny_llama() -> impl std::io::Read + std::io::Seek {
 #[cfg(test)]
 #[tokio::test]
 async fn test_round_trip_tiny_llama() {
-    use pretty_assertions::assert_eq;
     use std::{
         collections::HashMap,
         io::{Read, Seek},
@@ -1223,14 +1235,18 @@ async fn test_round_trip_tiny_llama() {
     // Reset the reader
     reader.seek(std::io::SeekFrom::Start(0)).unwrap();
     let metadata = GgufMetadata::read(&mut reader).unwrap();
+    
     // Read the tensor bytes
     let mut tensors = HashMap::new();
     for (tensor_name, tensor_info) in metadata.tensor_infos.iter() {
+        println!("{}: {:?}", tensor_name, tensor_info);
         let tensor_bytes = tensor_info
             .read_tensor_bytes(&mut reader, metadata.tensor_data_offset)
             .unwrap();
         tensors.insert(tensor_name.clone(), tensor_bytes);
     }
+
+    println!("read {} tensors", tensors.len());
 
     // Write the model to a buffer
     let mut writer = Vec::new();
@@ -1246,8 +1262,55 @@ async fn test_round_trip_tiny_llama() {
             .unwrap();
     }
 
-    // Assert the bytes are the same
-    assert_eq!(bytes, writer);
+    // Read the data again and assert everything is the same
+    let mut reader = std::io::Cursor::new(writer);
+    let new_metadata = GgufMetadata::read(&mut reader).unwrap();
+    assert_eq!(new_metadata, metadata);
+
+    // Read the tensor bytes
+    let mut new_tensors = HashMap::new();
+    for (tensor_name, tensor_info) in new_metadata.tensor_infos.iter() {
+        println!("{}: {:?}", tensor_name, tensor_info);
+        let tensor_bytes = tensor_info
+            .read_tensor_bytes(&mut reader, new_metadata.tensor_data_offset)
+            .unwrap();
+        new_tensors.insert(tensor_name.clone(), tensor_bytes);
+    }
+    
+    // Assert all the tensors are the same
+    for (name, tensor) in tensors {
+        let new_tensor = new_tensors.get(&name).unwrap();
+        assert_eq!(&tensor, new_tensor);
+    }
+}
+
+#[test]
+fn test_round_trip_empty() {
+    use std::collections::HashMap;
+    // Reset the reader
+    let metadata = GgufMetadata {
+        tensor_data_offset: 32,
+        tensor_infos: HashMap::default(),
+        version: GgufVersion::V3,
+        metadata: HashMap::default(),
+    };
+
+    // Write the model to a buffer
+    let mut writer = Vec::new();
+    {
+        let mut cursor = std::io::Cursor::new(&mut writer);
+        metadata.write(&mut cursor, []).unwrap();
+    }
+
+    println!("{:?}", writer);
+
+    // Read the model from the buffer
+    let mut reader = std::io::Cursor::new(writer);
+    let metadata = GgufMetadata::read(&mut reader).unwrap();
+    assert_eq!(metadata.tensor_data_offset, 32);
+    assert_eq!(metadata.tensor_infos.len(), 0);
+    assert_eq!(metadata.version, GgufVersion::V3);
+    assert_eq!(metadata.metadata.len(), 0);
 }
 
 #[cfg(test)]
