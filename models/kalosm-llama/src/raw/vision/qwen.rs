@@ -1,7 +1,6 @@
 use candle_core::{IndexOp, Tensor, D};
 use candle_transformers::quantized_var_builder::VarBuilder;
-use kalosm_common::{accelerated_device_if_available, KvCache};
-use tracing::span;
+use kalosm_common::KvCache;
 
 use crate::raw::rope::RopeCache;
 
@@ -136,7 +135,7 @@ impl QwenVisionTransformer {
 
     fn forward(
         &self,
-        hidden_states: Tensor,
+        hidden_states: &Tensor,
         grid_thw: &Vec<(u32, u32, u32)>,
         mut cache: Option<&mut KvCache>,
     ) -> candle_core::Result<Tensor> {
@@ -154,10 +153,8 @@ impl QwenVisionTransformer {
         )?;
         let mut last_item = None;
         cu_window_seqlens.retain(|&x| {
-            if let Some(last) = last_item {
-                if last == x {
-                    return false;
-                }
+            if last_item.is_some_and(|y| y == x) {
+                return false;
             }
             last_item = Some(x);
             true
@@ -219,6 +216,7 @@ impl QwenVisionTransformer {
 #[tokio::test]
 async fn test_loading_qwen_vision() {
     use super::qwen_vision_embed::assert_2d_vec_eq;
+    use kalosm_common::accelerated_device_if_available;
 
     let device = accelerated_device_if_available().unwrap();
     let vb = VarBuilder::from_gguf(
@@ -226,25 +224,6 @@ async fn test_loading_qwen_vision() {
         &device,
     )
     .unwrap();
-    // "depth": 32,
-    //     "hidden_act": "silu",
-    //     "hidden_size": 1280,
-    //     "intermediate_size": 3420,
-    //     "num_heads": 16,
-    //     "in_chans": 3,
-    //     "out_hidden_size": 2048,
-    //     "patch_size": 14,
-    //     "spatial_merge_size": 2,
-    //     "spatial_patch_size": 14,
-    //     "window_size": 112,
-    //     "fullatt_block_indexes": [
-    //       7,
-    //       15,
-    //       23,
-    //       31
-    //     ],
-    //     "tokens_per_second": 2,
-    //     "temporal_patch_size": 2
 
     let spacial_merge_size = 2;
     let temporal_patch_size = 2;
@@ -299,27 +278,13 @@ async fn test_loading_qwen_vision() {
     ];
     assert_2d_vec_eq(out_first_5_by_5, expected, 1e-2);
 
-    //     pixel_values torch.Size([1944, 1176])
-    // image_grid_thw tensor([[ 1, 36, 54]])
-    // let hidden_states = Tensor::randn(
-    //     0.0,
-    //     1.0,
-    //     (
-    //         224,
-    //         in_channels,
-    //         temporal_patch_size,
-    //         patch_size,
-    //         patch_size,
-    //     ),
-    //     &device,
-    // )
-    // ?;
-    // let grid_thw = vec![(1, 1, 1)];
     let hidden_states = Tensor::randn(0.0f32, 1.0, (1944, 1176), &candle_core::Device::Cpu)
         .unwrap()
         .to_device(&device)
         .unwrap();
     let grid_thw = vec![(1, 36, 54)];
-    let out = qwen_vision.forward(hidden_states, &grid_thw, None).unwrap();
+    let out = qwen_vision
+        .forward(&hidden_states, &grid_thw, None)
+        .unwrap();
     println!("Qwen Vision: {:?}", out);
 }

@@ -154,11 +154,11 @@ impl AttentionBias {
     }
 
     pub fn from_qtensor(q: &QTensor, k: &QTensor, v: &QTensor) -> candle_core::Result<Self> {
-        Ok(Self {
-            bias_q: q.dequantize(&q.device())?,
-            bias_k: k.dequantize(&k.device())?,
-            bias_v: v.dequantize(&v.device())?,
-        })
+        Ok(Self::new(
+            q.dequantize(&q.device())?,
+            k.dequantize(&k.device())?,
+            v.dequantize(&v.device())?,
+        ))
     }
 }
 
