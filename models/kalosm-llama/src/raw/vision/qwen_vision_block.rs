@@ -28,20 +28,19 @@ impl VisionBlock {
         embed_dim: usize,
     ) -> Result<Self> {
         let device = vb.device();
-        let norm1 = RmsNorm::new(embed_dim, QWEN_EPS, vb.pp("norm1"))?;
-        let norm2 = RmsNorm::new(embed_dim, QWEN_EPS, vb.pp("norm2"))?;
+        let norm1 = RmsNorm::new(embed_dim, QWEN_EPS, vb.pp("ln1"))?;
+        let norm2 = RmsNorm::new(embed_dim, QWEN_EPS, vb.pp("ln2"))?;
 
-        let mlp_vb = vb.pp("mlp");
         let mlp = LlamaFeedForward::new_with_bias(
-            QMatMul::from_arc(mlp_vb.get_no_shape("gate_proj.weight")?)?,
-            Some(mlp_vb.get_no_shape("gate_proj.bias")?.dequantize(&device)?),
-            QMatMul::from_arc(mlp_vb.get_no_shape("down_proj.weight")?)?,
-            Some(mlp_vb.get_no_shape("down_proj.bias")?.dequantize(&device)?),
-            QMatMul::from_arc(mlp_vb.get_no_shape("up_proj.weight")?)?,
-            Some(mlp_vb.get_no_shape("up_proj.bias")?.dequantize(&device)?),
+            QMatMul::from_arc(vb.get_no_shape("ffn_gate.weight")?)?,
+            Some(vb.get_no_shape("ffn_gate.bias")?.dequantize(&device)?),
+            QMatMul::from_arc(vb.get_no_shape("ffn_down.weight")?)?,
+            Some(vb.get_no_shape("ffn_down.bias")?.dequantize(&device)?),
+            QMatMul::from_arc(vb.get_no_shape("ffn_up.weight")?)?,
+            Some(vb.get_no_shape("ffn_up.bias")?.dequantize(&device)?),
         );
 
-        let attn = VisionAttention::new(&vb.pp("attn"), head_count, head_dim, embed_dim)?;
+        let attn = VisionAttention::new(&vb, head_count, head_dim, embed_dim)?;
 
         Ok(Self {
             norm1,
@@ -73,7 +72,9 @@ impl VisionBlock {
 }
 
 struct VisionAttention {
-    qkv: Linear,
+    q: Linear,
+    k: Linear,
+    v: Linear,
     proj: Linear,
     head_count: usize,
     head_dim: usize,
@@ -82,15 +83,23 @@ struct VisionAttention {
 
 impl VisionAttention {
     fn new(vb: &VarBuilder, head_count: usize, head_dim: usize, embed_dim: usize) -> Result<Self> {
-        let qkv = vb.get_no_shape("qkv.weight")?;
-        let qkv_bias = vb.get_no_shape("qkv.bias")?.dequantize(&vb.device())?;
-        let qkv = Linear::from_arc(qkv, Some(qkv_bias))?;
-        let proj = vb.get_no_shape("proj.weight")?;
-        let proj_bias = vb.get_no_shape("proj.bias")?.dequantize(&vb.device())?;
+        let q = vb.get_no_shape("attn_q.weight")?;
+        let q_bias = vb.get_no_shape("attn_q.bias")?.dequantize(&vb.device())?;
+        let q = Linear::from_arc(q, Some(q_bias))?;
+        let k = vb.get_no_shape("attn_k.weight")?;
+        let k_bias = vb.get_no_shape("attn_k.bias")?.dequantize(&vb.device())?;
+        let k = Linear::from_arc(k, Some(k_bias))?;
+        let v = vb.get_no_shape("attn_v.weight")?;
+        let v_bias = vb.get_no_shape("attn_v.bias")?.dequantize(&vb.device())?;
+        let v = Linear::from_arc(v, Some(v_bias))?;
+        let proj = vb.get_no_shape("attn_out.weight")?;
+        let proj_bias = vb.get_no_shape("attn_out.bias")?.dequantize(&vb.device())?;
         let proj = Linear::from_arc(proj, Some(proj_bias))?;
 
         Ok(Self {
-            qkv,
+            q,
+            k,
+            v,
             proj,
             head_count,
             head_dim,
@@ -109,19 +118,17 @@ impl VisionAttention {
         let seq_len = xs.dim(0)?;
 
         // First, pass the input through the qkv layer
-        let qkv = xs
-            .apply(&self.qkv)?
-            .reshape((seq_len, 3, self.head_count, ()))?;
+        let q = xs
+            .apply(&self.q)?
+            .reshape((seq_len, self.head_count, ()))?;
 
-        // Then split up the qkv tensor into q, k, and v
-        let qkv = qkv.permute((1, 0, 2, 3))?;
+        let k = xs
+            .apply(&self.k)?
+            .reshape((seq_len, self.head_count, ()))?;
 
-        let unbound = unbind(&qkv, 0)?;
-        let [q, k, v] = unbound.as_slice() else {
-            return Err(candle_core::Error::msg(
-                "Failed to unbind qkv tensor into q, k, and v",
-            ));
-        };
+        let v = xs
+            .apply(&self.v)?
+            .reshape((seq_len, self.head_count, ()))?;
 
         let (q, k) = rope_cache.forward(&q.unsqueeze(0)?, &k.unsqueeze(0)?, start_pos)?;
         let q = q.squeeze(0)?;

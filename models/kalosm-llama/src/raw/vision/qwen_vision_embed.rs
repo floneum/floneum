@@ -20,20 +20,30 @@ impl Qwen2_5VisionPatchEmbed {
         vb: &VarBuilder,
     ) -> candle_core::Result<Self> {
         let device = vb.device();
-        let ws = vb
+        let ws_1 = vb
             .get(
                 (
                     embed_dim,
                     in_channels,
-                    temporal_patch_size,
                     patch_size,
                     patch_size,
                 ),
-                "proj.weight",
+                "weight",
+            )?
+            .dequantize_f16(device)?;
+        let ws_2 = vb
+            .get(
+                (
+                    embed_dim,
+                    in_channels,
+                    patch_size,
+                    patch_size,
+                ),
+                "weight.1",
             )?
             .dequantize_f16(device)?;
 
-        Self::from_weight(patch_size, temporal_patch_size, in_channels, embed_dim, &ws)
+        Self::from_weight(patch_size, temporal_patch_size, in_channels, embed_dim, &ws_1, &ws_2)
     }
 
     pub fn from_weight(
@@ -41,14 +51,13 @@ impl Qwen2_5VisionPatchEmbed {
         temporal_patch_size: usize,
         in_channels: usize,
         embed_dim: usize,
-        weight: &Tensor,
+        weight_one: &Tensor,
+        weight_two: &Tensor,
     ) -> candle_core::Result<Self> {
         assert_eq!(
             temporal_patch_size, 2,
             "Only 2 temporal patch size is supported"
         );
-
-        let (first_frame, second_frame) = split_frames(weight)?;
 
         let cfg = Conv2dConfig {
             stride: patch_size,
@@ -60,8 +69,8 @@ impl Qwen2_5VisionPatchEmbed {
             temporal_patch_size,
             in_channels,
             embed_dim,
-            first_frame_conv: Conv2d::new(first_frame.contiguous()?, None, cfg),
-            second_frame_conv: Conv2d::new(second_frame.contiguous()?, None, cfg),
+            first_frame_conv: Conv2d::new(weight_one.contiguous()?, None, cfg),
+            second_frame_conv: Conv2d::new(weight_two.contiguous()?, None, cfg),
         })
     }
 
@@ -186,13 +195,15 @@ fn test_vision_patch_embed() {
     .unwrap()
     .to_dtype(DType::F16)
     .unwrap();
+let (weight_1, weight_2) = split_frames(&weight).unwrap();
 
     let patch_embed = Qwen2_5VisionPatchEmbed::from_weight(
         patch_size,
         temporal_patch_size,
         in_channels,
         embed_dim,
-        &weight,
+        &weight_1,
+        &weight_2,
     )
     .unwrap();
 

@@ -1,6 +1,6 @@
 use candle_core::{IndexOp, Tensor, D};
 use candle_transformers::quantized_var_builder::VarBuilder;
-use kalosm_common::KvCache;
+use kalosm_common::{Cache, KvCache};
 
 use crate::raw::rope::RopeCache;
 
@@ -44,7 +44,7 @@ impl QwenVisionTransformer {
             temporal_patch_size,
             in_channels,
             hidden_size,
-            &vb.pp("visual.patch_embed"),
+            &vb.pp("v.patch_embd"),
         )?;
         let head_dim = hidden_size / num_heads;
         let rope_theta = 10000.0;
@@ -52,7 +52,7 @@ impl QwenVisionTransformer {
         let blocks = (0..depth)
             .map(|i| {
                 VisionBlock::new(
-                    &vb.pp(&format!("visual.blocks.{i}")),
+                    &vb.pp(&format!("v.blk.{i}")),
                     num_heads,
                     head_dim,
                     hidden_size,
@@ -63,7 +63,7 @@ impl QwenVisionTransformer {
             out_hidden_size,
             hidden_size,
             spacial_merge_size,
-            &vb.pp("visual.merger"),
+            &vb,
         )?;
 
         Ok(Self {
@@ -219,11 +219,18 @@ async fn test_loading_qwen_vision() {
     use kalosm_common::accelerated_device_if_available;
 
     let device = accelerated_device_if_available().unwrap();
-    let vb = VarBuilder::from_gguf(
-        "/Users/evanalmloff/Desktop/Github/candle/qwen_2_5_3b_f16.gguf",
-        &device,
-    )
-    .unwrap();
+    let path = Cache::default()
+        .get(
+            &kalosm_model_types::FileSource::HuggingFace {
+                model_id: "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF".into(),
+                revision: "main".into(),
+                file: "mmproj-Qwen2.5-VL-3B-Instruct-f16.gguf".into(),
+            },
+            |_| {},
+        )
+        .await
+        .unwrap();
+    let vb = VarBuilder::from_gguf(&path, &device).unwrap();
 
     let spacial_merge_size = 2;
     let temporal_patch_size = 2;

@@ -6,9 +6,13 @@ async fn main() {
     tracing_subscriber::fmt::init();
     let model = Llama::builder()
         .with_source(
-            LlamaSource::new(kalosm_model_types::FileSource::Local(
-                "/Users/evanalmloff/Desktop/Github/candle/qwen_2_5_3b_f16.gguf".into(),
-            ))
+            LlamaSource::new(
+                kalosm_model_types::FileSource::HuggingFace {
+                    model_id: "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF".into(),
+                    revision: "main".into(),
+                    file: "Qwen2.5-VL-3B-Instruct-f16.gguf".into(),
+                },
+        )
             .with_tokenizer(
                 kalosm_model_types::FileSource::HuggingFace {
                     model_id: "Qwen/Qwen2.5-VL-3B-Instruct".into(),

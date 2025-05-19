@@ -241,7 +241,7 @@ impl Model {
         };
 
         // Parameter extraction from metadata.
-        let architecture = ct.metadata["general.architecture"].to_string()?.clone();
+        let architecture = md_get("general.architecture")?.to_string()?.clone();
         let head_count = md_get(".attention.head_count")?.to_u32()? as usize;
         let head_count_kv = md_get(".attention.head_count_kv")?.to_u32()? as usize;
         let block_count = md_get(".block_count")?.to_u32()? as usize;
