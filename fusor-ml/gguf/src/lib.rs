@@ -339,6 +339,14 @@ impl GgufTensorMetadata {
         reader: &mut R,
         tensor_data_offset: u64,
     ) -> Result<Box<[u8]>, GgufReadError> {
+        let size_in_bytes = self.byte_size()?;
+        let mut raw_data = vec![0u8; size_in_bytes].into_boxed_slice();
+        reader.seek(std::io::SeekFrom::Start(tensor_data_offset + self.offset))?;
+        reader.read_exact(&mut raw_data)?;
+        Ok(raw_data)
+    }
+
+    fn byte_size(&self) -> Result<usize, GgufReadError> {
         let tensor_elems = self.shape.iter().copied().product::<u32>() as usize;
         let block_size = self.ty.block_size();
         if tensor_elems % block_size != 0 {
@@ -347,11 +355,7 @@ impl GgufTensorMetadata {
                 block_size,
             });
         }
-        let size_in_bytes = (tensor_elems / block_size) * self.ty.block_allocation_size();
-        let mut raw_data = vec![0u8; size_in_bytes].into_boxed_slice();
-        reader.seek(std::io::SeekFrom::Start(tensor_data_offset + self.offset))?;
-        reader.read_exact(&mut raw_data)?;
-        Ok(raw_data)
+        Ok((tensor_elems / block_size) * self.ty.block_allocation_size())
     }
 }
 
@@ -628,13 +632,15 @@ impl GgufMetadata {
             write_le_u64(writer, tensor_metadata.offset)?;
         }
 
+        let tensor_data_offset = writer.stream_position()?;
+
         // Write the tensor data
         for (tensor_name, tensor_data) in tensors {
             let tensor_metadata = self
                 .tensor_infos
                 .get(tensor_name)
                 .ok_or(GgufWriteError::UnknownTensor(tensor_name.to_string()))?;
-            let tensor_data_offset = self.tensor_data_offset + tensor_metadata.offset;
+            let tensor_data_offset = tensor_data_offset + tensor_metadata.offset;
             writer.seek(std::io::SeekFrom::Start(tensor_data_offset))?;
 
             // Write the tensor data
@@ -1235,7 +1241,7 @@ async fn test_round_trip_tiny_llama() {
     // Reset the reader
     reader.seek(std::io::SeekFrom::Start(0)).unwrap();
     let metadata = GgufMetadata::read(&mut reader).unwrap();
-    
+
     // Read the tensor bytes
     let mut tensors = HashMap::new();
     for (tensor_name, tensor_info) in metadata.tensor_infos.iter() {
@@ -1276,7 +1282,7 @@ async fn test_round_trip_tiny_llama() {
             .unwrap();
         new_tensors.insert(tensor_name.clone(), tensor_bytes);
     }
-    
+
     // Assert all the tensors are the same
     for (name, tensor) in tensors {
         let new_tensor = new_tensors.get(&name).unwrap();
