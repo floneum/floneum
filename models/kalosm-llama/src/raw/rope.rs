@@ -159,10 +159,6 @@ impl QwenVLRopeCache {
         key: &Tensor,
     ) -> candle_core::Result<(Tensor, Tensor)> {
         let (cos, sin) = self.forward_sin_cos(position_ids)?;
-        println!("cos: {:?}", cos.dims());
-        println!("sin: {:?}", sin.dims());
-        println!("query: {:?}", query.dims());
-        println!("key: {:?}", key.dims());
         let key = candle_nn::rotary_emb::rope(&key.contiguous()?, &cos, &sin)?;
         let query = candle_nn::rotary_emb::rope(&query.contiguous()?, &cos, &sin)?;
         Ok((query, key))
