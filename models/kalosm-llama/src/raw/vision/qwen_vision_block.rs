@@ -34,11 +34,26 @@ impl VisionBlock {
 
         let mlp = LlamaFeedForward::new_with_bias(
             QMatMul::from_arc(vb.get_no_shape("ffn_gate.weight").unwrap()).unwrap(),
-            Some(vb.get_no_shape("ffn_gate.bias").unwrap().dequantize(&device).unwrap()),
+            Some(
+                vb.get_no_shape("ffn_gate.bias")
+                    .unwrap()
+                    .dequantize(&device)
+                    .unwrap(),
+            ),
             QMatMul::from_arc(vb.get_no_shape("ffn_down.weight").unwrap()).unwrap(),
-            Some(vb.get_no_shape("ffn_down.bias").unwrap().dequantize(&device).unwrap()),
+            Some(
+                vb.get_no_shape("ffn_down.bias")
+                    .unwrap()
+                    .dequantize(&device)
+                    .unwrap(),
+            ),
             QMatMul::from_arc(vb.get_no_shape("ffn_up.weight").unwrap()).unwrap(),
-            Some(vb.get_no_shape("ffn_up.bias").unwrap().dequantize(&device).unwrap()),
+            Some(
+                vb.get_no_shape("ffn_up.bias")
+                    .unwrap()
+                    .dequantize(&device)
+                    .unwrap(),
+            ),
         );
 
         let attn = VisionAttention::new(&vb, head_count, head_dim, embed_dim).unwrap();
@@ -61,13 +76,17 @@ impl VisionBlock {
     ) -> Result<Tensor> {
         let xs = xs.to_dtype(DType::F32).unwrap();
         let xs = (&xs
-            + self.attn.forward(
-                &self.norm1.forward(&xs).unwrap(),
-                cu_seqlens,
-                rope_cache,
-                start_pos,
-                cache,
-            ).unwrap()).unwrap();
+            + self
+                .attn
+                .forward(
+                    &self.norm1.forward(&xs).unwrap(),
+                    cu_seqlens,
+                    rope_cache,
+                    start_pos,
+                    cache,
+                )
+                .unwrap())
+        .unwrap();
         &xs + self.mlp.forward(&self.norm2.forward(&xs).unwrap()).unwrap()
     }
 }
@@ -85,16 +104,32 @@ struct VisionAttention {
 impl VisionAttention {
     fn new(vb: &VarBuilder, head_count: usize, head_dim: usize, embed_dim: usize) -> Result<Self> {
         let q = vb.get_no_shape("attn_q.weight").unwrap();
-        let q_bias = vb.get_no_shape("attn_q.bias").unwrap().dequantize(&vb.device()).unwrap();
+        let q_bias = vb
+            .get_no_shape("attn_q.bias")
+            .unwrap()
+            .dequantize(&vb.device())
+            .unwrap();
         let q = Linear::from_arc(q, Some(q_bias)).unwrap();
         let k = vb.get_no_shape("attn_k.weight").unwrap();
-        let k_bias = vb.get_no_shape("attn_k.bias").unwrap().dequantize(&vb.device()).unwrap();
+        let k_bias = vb
+            .get_no_shape("attn_k.bias")
+            .unwrap()
+            .dequantize(&vb.device())
+            .unwrap();
         let k = Linear::from_arc(k, Some(k_bias)).unwrap();
         let v = vb.get_no_shape("attn_v.weight").unwrap();
-        let v_bias = vb.get_no_shape("attn_v.bias").unwrap().dequantize(&vb.device()).unwrap();
+        let v_bias = vb
+            .get_no_shape("attn_v.bias")
+            .unwrap()
+            .dequantize(&vb.device())
+            .unwrap();
         let v = Linear::from_arc(v, Some(v_bias)).unwrap();
         let proj = vb.get_no_shape("attn_out.weight").unwrap();
-        let proj_bias = vb.get_no_shape("attn_out.bias").unwrap().dequantize(&vb.device()).unwrap();
+        let proj_bias = vb
+            .get_no_shape("attn_out.bias")
+            .unwrap()
+            .dequantize(&vb.device())
+            .unwrap();
         let proj = Linear::from_arc(proj, Some(proj_bias)).unwrap();
 
         Ok(Self {
@@ -119,20 +154,56 @@ impl VisionAttention {
         let seq_len = xs.dim(0).unwrap();
 
         // First, pass the input through the qkv layer
-        let q = xs.apply(&self.q).unwrap().reshape((seq_len, self.head_count, ())).unwrap();
+        let q = xs
+            .apply(&self.q)
+            .unwrap()
+            .reshape((seq_len, self.head_count, ()))
+            .unwrap();
 
-        let k = xs.apply(&self.k).unwrap().reshape((seq_len, self.head_count, ())).unwrap();
+        let k = xs
+            .apply(&self.k)
+            .unwrap()
+            .reshape((seq_len, self.head_count, ()))
+            .unwrap();
 
-        let v = xs.apply(&self.v).unwrap().reshape((seq_len, self.head_count, ())).unwrap();
+        let v = xs
+            .apply(&self.v)
+            .unwrap()
+            .reshape((seq_len, self.head_count, ()))
+            .unwrap();
 
-        let (q, k) = rope_cache.forward(&q.unsqueeze(0).unwrap(), &k.unsqueeze(0).unwrap(), start_pos).unwrap();
+        let (q, k) = rope_cache
+            .forward(
+                &q.unsqueeze(0).unwrap(),
+                &k.unsqueeze(0).unwrap(),
+                start_pos,
+            )
+            .unwrap();
         let q = q.squeeze(0).unwrap();
         let k = k.squeeze(0).unwrap();
 
         // Convert from [seq_len, head_count, batch_size] to [head_count, seq_len, batch_size]
-        let query_states = q.transpose(0, 1).unwrap().unsqueeze(0).unwrap().contiguous().unwrap();
-        let key_states = k.transpose(0, 1).unwrap().unsqueeze(0).unwrap().contiguous().unwrap();
-        let value_states = v.transpose(0, 1).unwrap().unsqueeze(0).unwrap().contiguous().unwrap();
+        let query_states = q
+            .transpose(0, 1)
+            .unwrap()
+            .unsqueeze(0)
+            .unwrap()
+            .contiguous()
+            .unwrap();
+        let key_states = k
+            .transpose(0, 1)
+            .unwrap()
+            .unsqueeze(0)
+            .unwrap()
+            .contiguous()
+            .unwrap();
+        let value_states = v
+            .transpose(0, 1)
+            .unwrap()
+            .unsqueeze(0)
+            .unwrap()
+            .contiguous()
+            .unwrap();
 
         let (key_states, value_states) = match cache {
             None => (key_states, value_states),
@@ -156,8 +227,10 @@ impl VisionAttention {
             Tensor::from_iter(
                 attention_mask.iter().flatten().copied(),
                 query_states.device(),
-            ).unwrap()
-            .reshape((1, 1, seq_len, seq_len)).unwrap(),
+            )
+            .unwrap()
+            .reshape((1, 1, seq_len, seq_len))
+            .unwrap(),
         );
 
         forward_attention_qkv(
@@ -171,14 +244,16 @@ impl VisionAttention {
             bsz,
             seq_len,
             self.embed_dim,
-        ).unwrap()
+        )
+        .unwrap()
         .squeeze(0)
     }
 }
 
 fn unbind(tensor: &Tensor, dim: usize) -> Result<Vec<Tensor>> {
     tensor
-        .chunk(tensor.dim(dim).unwrap(), dim).unwrap()
+        .chunk(tensor.dim(dim).unwrap(), dim)
+        .unwrap()
         .into_iter()
         .map(|t| t.squeeze(dim))
         .collect()

@@ -1,7 +1,8 @@
 use std::{
     fmt::Arguments,
     ops::AddAssign,
-    path::{Path, PathBuf}, sync::Arc,
+    path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use image::ImageResult;
@@ -82,13 +83,16 @@ impl MessageContent {
 
     /// Get just the media content of this message.
     pub fn media(&self) -> Vec<MediaChunk> {
-        self.chunks.iter().filter_map(|chunk| {
-            if let ContentChunk::Media(media) = chunk {
-                Some(media.clone())
-            } else {
-                None
-            }
-        }).collect()
+        self.chunks
+            .iter()
+            .filter_map(|chunk| {
+                if let ContentChunk::Media(media) = chunk {
+                    Some(media.clone())
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     /// Collect all images from the message content.
@@ -117,18 +121,21 @@ impl MessageContent {
 
     /// Collect all images that are loaded in memory. This will not return any images from [`MediaSourceVariant::Url`].
     pub fn images_in_memory(&self) -> ImageResult<Vec<image::DynamicImage>> {
-        self.chunks.iter().filter_map(|chunk| {
-            if let ContentChunk::Media(media) = chunk {
-                if let MediaSourceVariant::Bytes(bytes) = &media.source.variant {
-                    // Decode the image from the bytes
-                    Some(image::load_from_memory(bytes.as_ref()))
+        self.chunks
+            .iter()
+            .filter_map(|chunk| {
+                if let ContentChunk::Media(media) = chunk {
+                    if let MediaSourceVariant::Bytes(bytes) = &media.source.variant {
+                        // Decode the image from the bytes
+                        Some(image::load_from_memory(bytes.as_ref()))
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
-            } else {
-                None
-            }
-        }).collect()
+            })
+            .collect()
     }
 
     /// Resolve all media sources and returned the message content with only [`MediaSourceVariant::Bytes`].
@@ -157,7 +164,9 @@ impl MessageContent {
                 resolved_chunks.push(chunk.clone());
             }
         }
-        Ok(MessageContent { chunks: resolved_chunks })
+        Ok(MessageContent {
+            chunks: resolved_chunks,
+        })
     }
 }
 

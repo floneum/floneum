@@ -41,7 +41,7 @@ pub(crate) fn generate_structured<P: Parser>(
     let tokenizer = &llm.tokenizer;
 
     let prompt_text = prompt.text();
-    let images= prompt.images_in_memory()?;
+    let images = prompt.images_in_memory()?;
     let prompt_tokens = tokenizer
         .encode_fast(prompt_text, false)
         .map_err(LlamaModelError::Tokenizer)?;
