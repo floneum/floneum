@@ -8,5 +8,5 @@ async fn main() {
         .recognize_text(OcrInferenceSettings::new(image))
         .unwrap();
 
-    println!("{}", text);
+    println!("{text}");
 }

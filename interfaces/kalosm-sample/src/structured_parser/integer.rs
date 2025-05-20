@@ -247,8 +247,8 @@ fn integer_parser() {
         let range = random_number.saturating_sub(rand::random::<u8>() as i128)
             ..=random_number.saturating_add(rand::random::<u8>() as i128);
         assert!(range.contains(&random_number));
-        println!("range: {:?}", range);
-        println!("random_number: {:?}", random_number);
+        println!("range: {range:?}");
+        println!("random_number: {random_number:?}");
 
         let parser = IntegerParser { range };
         let mut state = IntegerParserState::default();
@@ -271,7 +271,7 @@ fn integer_parser() {
                         break;
                     }
                 },
-                Err(_) => panic!("should parse correctly failed to parse {:?}", as_string),
+                Err(_) => panic!("should parse correctly failed to parse {as_string:?}"),
             }
         }
     }

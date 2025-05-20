@@ -25,7 +25,7 @@ async fn test_add_const() {
         let tensor_plus_one = tensor.clone() + 1.0;
 
         let output = tensor_plus_one.as_slice().await.unwrap();
-        println!("{:?}", output);
+        println!("{output:?}");
         let result = [
             [[2.0, 3.0], [2.0, 3.0]],
             [[4.0, 5.0], [4.0, 5.0]],

@@ -26,7 +26,7 @@ async fn test_silu() {
     let tensor = tensor.silu();
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     let silu = |x: f32| x / (1. + (-x).exp());
     assert!((output[[0, 0]] - silu(data[0][0])).abs() < 0.001);
     assert!((output[[0, 1]] - silu(data[0][1])).abs() < 0.001);

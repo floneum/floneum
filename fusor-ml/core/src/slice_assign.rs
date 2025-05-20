@@ -96,7 +96,7 @@ async fn test_slice_assign() {
     let value_tensor = Tensor::new(&device, &[[10., 20.], [30., 40.]]);
     let tensor = tensor.slice_assign([0..2, 0..2], &value_tensor);
     let as_slice = tensor.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
     assert_eq!(as_slice[[0, 0]], 10.);
     assert_eq!(as_slice[[0, 1]], 20.);
     assert_eq!(as_slice[[1, 0]], 30.);

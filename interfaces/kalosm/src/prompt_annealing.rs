@@ -445,8 +445,8 @@ where
 
     let llama_distance = llama_test_cases.evaluate(metric).await.normalized();
 
-    println!("evaluating examples {:?}", examples);
-    println!("{}", llama_distance);
+    println!("evaluating examples {examples:?}");
+    println!("{llama_distance}");
 
     let similarity_scope = llama_distance.mean_score();
     let token_penalty = examples_bytes as f64 * 0.0001;
@@ -478,17 +478,16 @@ where
 
     // diversity_bonus should now be in the range 0..1
     if diversity_bonus <= 1.0 {
-        println!("diversity bonus: {}", diversity_bonus);
+        println!("diversity bonus: {diversity_bonus}");
     }
 
     println!(
-        "similarity scope: {}, token penalty: {}, diversity bonus: {}",
-        similarity_scope, token_penalty, diversity_bonus
+        "similarity scope: {similarity_scope}, token penalty: {token_penalty}, diversity bonus: {diversity_bonus}"
     );
 
     let final_score = similarity_scope - token_penalty + diversity_bonus as f64 / 2.;
 
-    println!("final score: {}", final_score);
+    println!("final score: {final_score}");
 
     final_score
 }

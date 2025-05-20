@@ -8,7 +8,7 @@ async fn main() {
         .await
         .unwrap();
     let prompt = "The following is a 300 word essay about why the capital of France is Paris:";
-    print!("{}", prompt);
+    print!("{prompt}");
 
     llm(prompt).to_std_out().await.unwrap();
 }

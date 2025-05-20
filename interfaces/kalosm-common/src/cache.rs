@@ -250,7 +250,7 @@ async fn downloads_work() {
     let url = "https://httpbin.org/range/102400?duration=2";
     let file = PathBuf::from("download.bin");
     let progress = |p| {
-        println!("Progress: {:?}", p);
+        println!("Progress: {p:?}");
     };
     let client = reqwest::Client::new();
     let response = client.head(url).send().await.unwrap();

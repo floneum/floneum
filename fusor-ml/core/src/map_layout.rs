@@ -117,7 +117,7 @@ async fn test_transpose() {
     let tensor = Tensor::new(&device, &data);
     let transposed = tensor.transpose(0, 1);
     let as_slice = transposed.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
     assert_eq!(as_slice[[0, 0]], 1.);
     assert_eq!(as_slice[[0, 1]], 3.);
     assert_eq!(as_slice[[0, 2]], 5.);
@@ -142,7 +142,7 @@ async fn test_broadcast() {
     let tensor = Tensor::new(&device, &data);
     let broadcasted = tensor.broadcast([2, 2, 3]);
     let as_slice = broadcasted.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
     for i in 0..2 {
         assert_eq!(as_slice[[0, 0, i]], 1.);
         assert_eq!(as_slice[[0, 1, i]], 2.);

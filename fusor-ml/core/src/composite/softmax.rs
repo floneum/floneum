@@ -26,7 +26,7 @@ async fn test_softmax() {
     let data = [1f32, -2., -3., 4., 5., -6.];
     let exp: [f32; 6] = std::array::from_fn(|i| data[i].exp());
     let sum = exp.iter().sum::<f32>();
-    println!("{:?}", sum);
+    println!("{sum:?}");
     let softmax_array: [f32; 6] = std::array::from_fn(|i| exp[i] / sum);
 
     let tensor = Tensor::new(&device, &data);
@@ -34,8 +34,8 @@ async fn test_softmax() {
     let tensor = tensor.softmax();
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
-    println!("{:?}", softmax_array);
+    println!("{output:?}");
+    println!("{softmax_array:?}");
     assert!((output[[0]] - softmax_array[0]).abs() < 0.001);
     assert!((output[[1]] - softmax_array[1]).abs() < 0.001);
     assert!((output[[2]] - softmax_array[2]).abs() < 0.001);
