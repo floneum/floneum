@@ -13,7 +13,7 @@ use super::{
 };
 
 pub(crate) struct QwenVisionTransformer {
-    spacial_merge_size: usize,
+    pub(crate) spacial_merge_size: usize,
     patch_size: usize,
     fullatt_block_indexes: Vec<usize>,
     window_size: usize,
@@ -235,12 +235,12 @@ impl QwenVisionTransformer {
 
     pub(crate) fn preprocess_image(
         &self,
-        image: image::DynamicImage,
+        image: &image::DynamicImage,
         min_pixels: Option<u32>,
         max_pixels: Option<u32>,
     ) -> candle_core::Result<(Tensor, [u32; 3])> {
         process_image(
-            &image,
+            image,
             self.patch_size,
             self.spacial_merge_size,
             min_pixels,
@@ -441,7 +441,7 @@ async fn test_loading_qwen_vision() {
     let image = image::load_from_memory(&image_bytes).unwrap();
 
     let (pixels, grid) = qwen_vision
-        .preprocess_image(image, Some(256 * 28 * 28), Some(512 * 28 * 28))
+        .preprocess_image(&image, Some(256 * 28 * 28), Some(512 * 28 * 28))
         .unwrap();
     let out = qwen_vision.forward_image(&pixels, grid).unwrap();
     println!(

@@ -381,6 +381,12 @@ impl ToChatMessage for str {
     }
 }
 
+impl ToChatMessage for &str {
+    fn to_chat_message(&self) -> ChatMessage {
+        ChatMessage::new(MessageType::UserMessage, self.to_string())
+    }
+}
+
 impl ToChatMessage for String {
     fn to_chat_message(&self) -> ChatMessage {
         ChatMessage::new(MessageType::UserMessage, self.clone())

@@ -5,6 +5,7 @@ use crate::token_stream::TokenOutputStream;
 use crate::token_stream::TokenOutputStreamError;
 use crate::LlamaConfigJson;
 use kalosm_common::*;
+use kalosm_language_model::ImageFetchError;
 use kalosm_model_types::ModelLoadingProgress;
 use llm_samplers::types::Logits;
 use serde::de::Error;
@@ -57,6 +58,16 @@ pub enum LlamaModelError {
     /// Error running the chat template
     #[error("Error running the chat template: {0}")]
     ChatTemplateError(#[from] minijinja::Error),
+
+    /// Failed to load images
+    #[error("Failed to load images: {0}")]
+    ImageLoadingError(#[from] ImageFetchError),
+}
+
+impl From<image::ImageError> for LlamaModelError {
+    fn from(err: image::ImageError) -> Self {
+        LlamaModelError::ImageLoadingError(err.into())
+    }
 }
 
 /// The inner, synchronous Llama model.
@@ -71,7 +82,7 @@ impl LlamaModel {
         model: &Model,
         device: &Device,
         tokens: &[u32],
-        images: Vec<image::DynamicImage>,
+        images: &[image::DynamicImage],
         cache: Option<&mut LlamaCache>,
         logits_vec: &mut Vec<f32>,
         #[allow(unused)] tokenizer: &Tokenizer,
@@ -405,7 +416,7 @@ impl LlamaModel {
             &self.model,
             &self.device,
             tokens,
-            images,
+            &images,
             Some(&mut session),
             &mut logit_probs,
             &self.tokenizer,
@@ -428,7 +439,7 @@ impl LlamaModel {
                 &self.model,
                 &self.device,
                 &[new_token],
-                Vec::new(),
+                &images,
                 Some(&mut session),
                 &mut logit_probs,
                 &self.tokenizer,

@@ -322,8 +322,9 @@ impl InferenceSettings {
         stop_on: Option<String>,
         seed: Option<u64>,
     ) -> Self {
+        let prompt = prompt.to_string();
         Self {
-            prompt: prompt.to_string(),
+            prompt,
             images,
             stop_on,
             sampler,

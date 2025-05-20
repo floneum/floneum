@@ -507,7 +507,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, RwLock};
+    use std::{ops::DerefMut, sync::{Arc, RwLock}};
 
     use serde::Deserialize;
 
@@ -801,7 +801,7 @@ mod tests {
             .build();
         let mut generate_character = llm.chat();
         let res =
-            generate_character("Candice is the CEO of a fortune 500 company. She is 30 years old.")
+            generate_character(&"Candice is the CEO of a fortune 500 company. She is 30 years old.")
                 .await
                 .unwrap();
         println!("{res}");

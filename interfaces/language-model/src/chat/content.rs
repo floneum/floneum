@@ -4,7 +4,9 @@ use std::{
     path::{Path, PathBuf}, sync::Arc,
 };
 
+use image::ImageResult;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 /// The contents of a chat message. The message can contain chunks of interleaved text and media.
 ///
@@ -88,6 +90,86 @@ impl MessageContent {
             }
         }).collect()
     }
+
+    /// Collect all images from the message content.
+    pub async fn images(&self) -> Result<Vec<image::DynamicImage>, ImageFetchError> {
+        let mut images = Vec::new();
+        for chunk in &self.chunks {
+            if let ContentChunk::Media(media) = chunk {
+                match &media.source.variant {
+                    MediaSourceVariant::Url(url) => {
+                        // Fetch the image from the URL
+                        let response = reqwest::get(url).await?;
+                        let bytes = response.bytes().await?;
+                        let image = image::load_from_memory(&bytes)?;
+                        images.push(image);
+                    }
+                    MediaSourceVariant::Bytes(bytes) => {
+                        // Decode the image from the bytes
+                        let image = image::load_from_memory(bytes.as_ref())?;
+                        images.push(image);
+                    }
+                }
+            }
+        }
+        Ok(images)
+    }
+
+    /// Collect all images that are loaded in memory. This will not return any images from [`MediaSourceVariant::Url`].
+    pub fn images_in_memory(&self) -> ImageResult<Vec<image::DynamicImage>> {
+        self.chunks.iter().filter_map(|chunk| {
+            if let ContentChunk::Media(media) = chunk {
+                if let MediaSourceVariant::Bytes(bytes) = &media.source.variant {
+                    // Decode the image from the bytes
+                    Some(image::load_from_memory(bytes.as_ref()))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }).collect()
+    }
+
+    /// Resolve all media sources and returned the message content with only [`MediaSourceVariant::Bytes`].
+    pub async fn resolve_media_sources(&self) -> Result<Self, ImageFetchError> {
+        let mut resolved_chunks = Vec::new();
+        for chunk in &self.chunks {
+            if let ContentChunk::Media(media) = chunk {
+                match &media.source.variant {
+                    MediaSourceVariant::Url(url) => {
+                        // Fetch the image from the URL
+                        let response = reqwest::get(url).await?;
+                        let bytes = response.bytes().await?;
+                        resolved_chunks.push(ContentChunk::Media(MediaChunk {
+                            media_type: media.media_type,
+                            source: MediaSource::bytes(bytes.to_vec()),
+                        }));
+                    }
+                    MediaSourceVariant::Bytes(bytes) => {
+                        resolved_chunks.push(ContentChunk::Media(MediaChunk {
+                            media_type: media.media_type,
+                            source: MediaSource::bytes(bytes.clone()),
+                        }));
+                    }
+                }
+            } else {
+                resolved_chunks.push(chunk.clone());
+            }
+        }
+        Ok(MessageContent { chunks: resolved_chunks })
+    }
+}
+
+/// An error that can occur when fetching images from a URL.
+#[derive(Error, Debug)]
+pub enum ImageFetchError {
+    /// An error that occurs when fetching a URL.
+    #[error("Failed to fetch image from URL")]
+    FetchError(#[from] reqwest::Error),
+    /// An error that occurs when decoding an image.
+    #[error("Failed to decode image")]
+    DecodeError(#[from] image::ImageError),
 }
 
 impl PartialEq<&str> for MessageContent {
@@ -162,6 +244,12 @@ pub enum ContentChunk {
 impl From<String> for ContentChunk {
     fn from(text: String) -> Self {
         ContentChunk::Text(text)
+    }
+}
+
+impl From<&String> for ContentChunk {
+    fn from(text: &String) -> Self {
+        ContentChunk::Text(text.clone())
     }
 }
 

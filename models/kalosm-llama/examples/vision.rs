@@ -13,9 +13,16 @@ async fn main() {
     println!("First message\n");
 
     let mut chat = model.chat();
-    loop {
-        let mut response = chat(&prompt_input("> ").unwrap());
-        response.to_std_out().await.unwrap();
-        println!("\n");
-    }
+    let mut response = chat(&(
+        MediaChunk::new(
+            MediaSource::url(
+                "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg",
+            ),
+            MediaType::Image,
+        ),
+        "Describe the image in detail.",
+    ));
+    response.to_std_out().await.unwrap();
+    response.await.unwrap();
+    println!("\n");
 }

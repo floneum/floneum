@@ -1,5 +1,7 @@
 use kalosm_language_model::{
-    CreateDefaultChatConstraintsForType, CreateDefaultCompletionConstraintsForType, CreateTextCompletionSession, GenerationParameters, MessageContent, ModelBuilder, StructuredTextCompletionModel, TextCompletionModel
+    CreateDefaultChatConstraintsForType, CreateDefaultCompletionConstraintsForType,
+    CreateTextCompletionSession, GenerationParameters, MessageContent, ModelBuilder,
+    StructuredTextCompletionModel, TextCompletionModel,
 };
 use kalosm_model_types::ModelLoadingProgress;
 use kalosm_sample::{ArcParser, CreateParserState, Parse, Parser, ParserExt};
@@ -56,7 +58,6 @@ impl<S: Sampler + 'static> TextCompletionModel<S> for Llama {
         sampler: S,
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a {
-        let text = msg.text();
         async move {
             let (tx, rx) = tokio::sync::oneshot::channel();
             let (max_tokens, stop_on, seed) =
@@ -70,11 +71,13 @@ impl<S: Sampler + 'static> TextCompletionModel<S> for Llama {
                 };
             let sampler = std::sync::Arc::new(std::sync::Mutex::new(sampler));
             let on_token = Box::new(on_token);
+            let text = msg.text();
+            let images = msg.images().await?;
             self.task_sender
                 .send(Task::UnstructuredGeneration(UnstructuredGenerationTask {
                     settings: InferenceSettings::new(
                         text,
-                        Vec::new(),
+                        images,
                         session.clone(),
                         sampler,
                         max_tokens,
@@ -123,9 +126,8 @@ where
         parser: Constraints,
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
     ) -> impl Future<Output = Result<Constraints::Output, Self::Error>> + Send + 'a {
-        let text = text.text();
         let mut session = session.clone();
-        async {
+        async move {
             let (tx, rx) = tokio::sync::oneshot::channel();
             let seed = match (&sampler as &dyn Any).downcast_ref::<GenerationParameters>() {
                 Some(sampler) => sampler.seed(),
@@ -133,12 +135,13 @@ where
             };
             let sampler = std::sync::Arc::new(std::sync::Mutex::new(sampler));
             let on_token = Box::new(on_token);
+            let resolved_message = text.resolve_media_sources().await?;
             self.task_sender
                 .send(Task::StructuredGeneration(StructuredGenerationTask {
                     runner: Box::new(move |model| {
                         let parser_state = parser.create_parser_state();
                         let result = generate_structured(
-                            text,
+                            resolved_message,
                             model,
                             &mut session,
                             parser,

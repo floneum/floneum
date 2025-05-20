@@ -4222,6 +4222,7 @@ dependencies = [
  "base64 0.22.1",
  "futures-channel",
  "futures-util",
+ "image 0.25.6",
  "kalosm",
  "kalosm-learning",
  "kalosm-model-types",
