@@ -160,7 +160,7 @@ async fn test_resize() {
     let tensor = Tensor::new(&device, &data);
     let tensor = tensor.resize([30, 20]);
     let as_slice = tensor.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
     assert_eq!(as_slice[[0, 0]], 1.);
     assert_eq!(as_slice[[0, 1]], 2.);
     assert_eq!(as_slice[[1, 0]], 3.);
@@ -186,7 +186,7 @@ async fn test_reshape() {
     let tensor = Tensor::new(&device, &data);
     let tensor = tensor.reshape([2, 3]);
     let as_slice = tensor.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
     assert_eq!(as_slice[[0, 0]], 1.);
     assert_eq!(as_slice[[0, 1]], 2.);
     assert_eq!(as_slice[[0, 2]], 3.);
@@ -198,7 +198,7 @@ async fn test_reshape() {
     let tensor = Tensor::new(&device, &data);
     let tensor = tensor.reshape([6]);
     let as_slice = tensor.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
     assert_eq!(as_slice[[0]], 1.);
     assert_eq!(as_slice[[1]], 2.);
     assert_eq!(as_slice[[2]], 3.);

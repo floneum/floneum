@@ -248,7 +248,7 @@ impl ChatModel<GenerationParameters> for OpenAICompatibleChatModel {
                 .reqwest_client
                 .post(format!("{}/chat/completions", myself.client.base_url()))
                 .header("Content-Type", "application/json")
-                .header("Authorization", format!("Bearer {}", api_key))
+                .header("Authorization", format!("Bearer {api_key}"))
                 .json(&json)
                 .eventsource()
                 .unwrap();
@@ -439,7 +439,7 @@ where
                 .reqwest_client
                 .post(format!("{}/chat/completions", myself.client.base_url()))
                 .header("Content-Type", "application/json")
-                .header("Authorization", format!("Bearer {}", api_key))
+                .header("Authorization", format!("Bearer {api_key}"))
                 .json(&json)
                 .eventsource()
                 .unwrap();

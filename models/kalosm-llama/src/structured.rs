@@ -224,7 +224,7 @@ pub(crate) fn generate_structured<P: Parser>(
             .get_mut(token_id as usize)
             .unwrap()
             .take()
-            .unwrap_or_else(|| panic!("Token {} not found in state map", token_id));
+            .unwrap_or_else(|| panic!("Token {token_id} not found in state map"));
         let mut token = token_stream
             .next_token(token_id)
             .map_err(LlamaModelError::TokenOutputStreamError)?
@@ -387,7 +387,7 @@ impl DetokenizationCache {
 
     fn get(&self, index: usize) -> Option<&str> {
         match &self.cache[index] {
-            TokenCacheStatus::Empty => panic!("cache for token {} is empty", index),
+            TokenCacheStatus::Empty => panic!("cache for token {index} is empty"),
             TokenCacheStatus::Invalid => None,
             TokenCacheStatus::Valid(token) => Some(token),
         }

@@ -112,6 +112,7 @@ impl AsRef<ImageBuffer<image::Rgb<u8>, Vec<u8>>> for Image {
 }
 
 /// A builder for the Wuerstchen model.
+#[derive(Default)]
 pub struct WuerstchenBuilder {
     use_flash_attn: bool,
 
@@ -138,22 +139,6 @@ pub struct WuerstchenBuilder {
 
     /// The cache to use for downloading the model files.
     cache: Cache,
-}
-
-impl Default for WuerstchenBuilder {
-    fn default() -> Self {
-        Self {
-            use_flash_attn: { cfg!(feature = "flash") },
-            decoder_weights: None,
-            clip_weights: None,
-            prior_clip_weights: None,
-            prior_weights: None,
-            vqgan_weights: None,
-            tokenizer: None,
-            prior_tokenizer: None,
-            cache: Cache::default(),
-        }
-    }
 }
 
 impl WuerstchenBuilder {
@@ -237,8 +222,7 @@ impl WuerstchenBuilder {
 
         // Download section
         let prior_tokenizer_source = ModelFile::PriorTokenizer.get(prior_tokenizer);
-        let prior_tokenizer_source_display =
-            format!("Prior Tokenizer ({})", prior_tokenizer_source);
+        let prior_tokenizer_source_display = format!("Prior Tokenizer ({prior_tokenizer_source})");
         let mut create_progress =
             ModelLoadingProgress::downloading_progress(prior_tokenizer_source_display);
         let prior_tokenizer = cache
@@ -248,7 +232,7 @@ impl WuerstchenBuilder {
             .await?;
 
         let tokenizer_source = ModelFile::Tokenizer.get(tokenizer);
-        let tokenizer_source_display = format!("Tokenizer ({})", tokenizer_source);
+        let tokenizer_source_display = format!("Tokenizer ({tokenizer_source})");
         let mut create_progress =
             ModelLoadingProgress::downloading_progress(tokenizer_source_display);
         let tokenizer = cache
@@ -258,7 +242,7 @@ impl WuerstchenBuilder {
             .await?;
 
         let clip_weights_source = ModelFile::Clip.get(clip_weights);
-        let clip_weights_source_display = format!("Clip Weights ({})", clip_weights_source);
+        let clip_weights_source_display = format!("Clip Weights ({clip_weights_source})");
         let mut create_progress =
             ModelLoadingProgress::downloading_progress(clip_weights_source_display);
         let clip_weights = cache
@@ -269,7 +253,7 @@ impl WuerstchenBuilder {
 
         let prior_clip_weights_source = ModelFile::PriorClip.get(prior_clip_weights);
         let prior_clip_weights_source_display =
-            format!("Prior Clip Weights ({})", prior_clip_weights_source);
+            format!("Prior Clip Weights ({prior_clip_weights_source})");
         let mut create_progress =
             ModelLoadingProgress::downloading_progress(prior_clip_weights_source_display);
         let prior_clip_weights = cache
@@ -279,8 +263,7 @@ impl WuerstchenBuilder {
             .await?;
 
         let decoder_weights_source = ModelFile::Decoder.get(decoder_weights);
-        let decoder_weights_source_display =
-            format!("Decoder Weights ({})", decoder_weights_source);
+        let decoder_weights_source_display = format!("Decoder Weights ({decoder_weights_source})");
         let mut create_progress =
             ModelLoadingProgress::downloading_progress(decoder_weights_source_display);
         let decoder_weights = cache
@@ -290,7 +273,7 @@ impl WuerstchenBuilder {
             .await?;
 
         let prior_weights_source = ModelFile::Prior.get(prior_weights);
-        let prior_weights_source_display = format!("Prior Weights ({})", prior_weights_source);
+        let prior_weights_source_display = format!("Prior Weights ({prior_weights_source})");
         let mut create_progress =
             ModelLoadingProgress::downloading_progress(prior_weights_source_display);
         let prior_weights = cache
@@ -300,7 +283,7 @@ impl WuerstchenBuilder {
             .await?;
 
         let vqgan_weights_source = ModelFile::VqGan.get(vqgan_weights);
-        let vqgan_weights_source_display = format!("VQGAN Weights ({})", vqgan_weights_source);
+        let vqgan_weights_source_display = format!("VQGAN Weights ({vqgan_weights_source})");
         let mut create_progress =
             ModelLoadingProgress::downloading_progress(vqgan_weights_source_display);
         let vqgan_weights = cache

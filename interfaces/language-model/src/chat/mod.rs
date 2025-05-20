@@ -273,7 +273,7 @@ pub trait ChatSession {
 /// A simple helper function for prompting the user for input.
 pub fn prompt_input(prompt: impl Display) -> Result<String, std::io::Error> {
     use std::io::Write;
-    print!("{}", prompt);
+    print!("{prompt}");
     std::io::stdout().flush()?;
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;

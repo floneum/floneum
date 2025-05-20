@@ -79,6 +79,6 @@ async fn main() {
             table.add_row(row);
         }
 
-        println!("{}", table);
+        println!("{table}");
     }
 }

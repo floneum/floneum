@@ -63,7 +63,7 @@ async fn main() -> anyhow::Result<()> {
         let prompt = format!("{context}\n{user_question}");
 
         // Display the prompt to the user for debugging purposes
-        println!("{}", prompt);
+        println!("{prompt}");
 
         // And finally, respond to the user
         let mut output_stream = chat(&prompt);

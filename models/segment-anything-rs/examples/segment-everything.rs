@@ -5,6 +5,6 @@ fn main() {
     let image = image::open("examples/landscape.jpg").unwrap();
     let images = model.segment_everything(image).unwrap();
     for (i, img) in images.iter().enumerate() {
-        img.save(format!("{}.png", i)).unwrap();
+        img.save(format!("{i}.png")).unwrap();
     }
 }

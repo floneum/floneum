@@ -497,7 +497,7 @@ impl WhisperBuilder {
         let model_source = whisper.model;
         let config_source = whisper.config;
 
-        let display_tokenizer_source = format!("Tokenizer ({})", tokenizer_source);
+        let display_tokenizer_source = format!("Tokenizer ({tokenizer_source})");
         let mut create_progress =
             ModelLoadingProgress::downloading_progress(display_tokenizer_source);
         let tokenizer_filename = self
@@ -507,7 +507,7 @@ impl WhisperBuilder {
             })
             .await?;
 
-        let display_model_source = format!("Model ({})", model_source);
+        let display_model_source = format!("Model ({model_source})");
         let mut create_progress = ModelLoadingProgress::downloading_progress(display_model_source);
         let filename = self
             .cache
@@ -516,7 +516,7 @@ impl WhisperBuilder {
             })
             .await?;
 
-        let display_config_source = format!("Config ({})", config_source);
+        let display_config_source = format!("Config ({config_source})");
         let mut create_progress = ModelLoadingProgress::downloading_progress(display_config_source);
         let config = self
             .cache

@@ -110,9 +110,9 @@ async fn test_fuzz_q_mat_mul() {
                 let expected = candle_result[x][y];
                 let actual = result[[x, y]];
                 if (expected - actual).abs() > 3. {
-                    println!("Expected: {:?}", candle_result);
-                    println!("Actual: {:?}", result);
-                    panic!("expected: {}, actual: {}", expected, actual);
+                    println!("Expected: {candle_result:?}");
+                    println!("Actual: {result:?}");
+                    panic!("expected: {expected}, actual: {actual}");
                 }
             }
         }
@@ -442,8 +442,7 @@ impl WgslQuantizedType for BlockQ4_0 {
         for offset in 0..4 {
             writeln!(
                 &mut code,
-                "let byte{offset} = weight_chunk_bytes[{}];",
-                offset
+                "let byte{offset} = weight_chunk_bytes[{offset}];"
             )
             .unwrap();
             writeln!(
@@ -515,8 +514,7 @@ impl WgslQuantizedType for BlockQ5_0 {
         for offset in 0..4 {
             writeln!(
                 &mut code,
-                "let byte{offset} = low_weight_chunk_bytes[{}];",
-                offset
+                "let byte{offset} = low_weight_chunk_bytes[{offset}];"
             )
             .unwrap();
             writeln!(
@@ -578,8 +576,7 @@ impl WgslQuantizedType for BlockQ8_0 {
         for offset in 0..4 {
             writeln!(
                 &mut code,
-                "let data{offset} = weight_chunk_bytes[{}];",
-                offset
+                "let data{offset} = weight_chunk_bytes[{offset}];"
             )
             .unwrap();
             writeln!(
@@ -960,7 +957,7 @@ where
         .unwrap();
         writeln!(&mut kernel, "@compute @workgroup_size(1, 1, 1)").unwrap();
         writeln!(&mut kernel, "fn main() {{").unwrap();
-        writeln!(&mut kernel, "{}", kernel_body).unwrap();
+        writeln!(&mut kernel, "{kernel_body}").unwrap();
         writeln!(&mut kernel, "}}").unwrap();
         let bind_group_layout =
             device
