@@ -96,8 +96,8 @@ pub(crate) fn get_rope_index(
     video_sizes: &[[u32; 3]],
     start_time: u32,
 ) -> Vec<RopeIndex> {
-    let mut images = image_sizes.iter().map(|&[w, h, _]| ImageSize::new(w, h));
-    let mut videos = video_sizes.iter().map(|&[w, h, f]| VideoSize::new(w, h, f));
+    let mut images = image_sizes.iter().map(|&[_, w, h]| ImageSize::new(w, h));
+    let mut videos = video_sizes.iter().map(|&[t, w, h]| VideoSize::new(w, h, t));
     let mut indexes = Vec::new();
     let mut max_time_index = start_time;
     let mut index = 0;
@@ -173,8 +173,8 @@ fn test_get_rope_index_text() {
     let video_token_id = 200;
     let vision_start_token_id = 10;
     let input_ids = vec![0, 1, 2, 3, 4, 5];
-    let image_sizes = vec![ImageSize::new(32, 32), ImageSize::new(64, 64)];
-    let video_sizes = vec![VideoSize::new(32, 32, 10), VideoSize::new(64, 64, 20)];
+    let image_sizes = vec![[1, 32, 32], [1, 64, 64]];
+    let video_sizes = vec![[5, 32, 32], [20, 64, 64]];
 
     let indexes = get_rope_index(
         spatial_merge_size,
@@ -234,7 +234,7 @@ fn test_get_rope_index() {
         0, 1, 1, 1, 1, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 4, 5,
     ];
     let image_sizes = vec![[1, 32, 32]];
-    let video_sizes = vec![[32, 32, 5]];
+    let video_sizes = vec![[5, 32, 32]];
 
     let indexes = get_rope_index(
         spatial_merge_size,
