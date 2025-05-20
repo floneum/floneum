@@ -276,7 +276,7 @@ impl QwenVisionTransformer {
             rope_index.iter().flat_map(|x| [x.x, x.y, x.time]),
             &self.device,
         )?
-        .reshape((3, ()))?;
+        .reshape(((), 3))?.t()?;
 
         Ok((tensor, new_start_time))
     }

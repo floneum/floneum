@@ -523,11 +523,7 @@ impl Model {
         // Embed all images
         if let Some(vision_encoder) = &self.vision_encoder {
             for image in raw_images {
-                let (image, thw) = vision_encoder.preprocess_image(
-                    image,
-                    Some(128 * 14 * 14),
-                    Some(512 * 14 * 14),
-                )?;
+                let (image, thw) = vision_encoder.preprocess_image(image, None, None)?;
                 images.push(image);
                 grid_thw.push(thw)
             }
@@ -577,7 +573,9 @@ impl Model {
         let cached_tokens = cache.as_ref().map(|c| c.tokens.len()).unwrap_or_default();
         // We use a lower cutoff than the context length to avoid recomputing the attention every single token
         let cutoff_len: usize = self.config.context_length.saturating_sub(32).max(8);
-        let (tokens, index_pos, start_time) = if seq_len + cached_tokens > self.config.context_length {
+        let (tokens, index_pos, start_time) = if seq_len + cached_tokens
+            > self.config.context_length
+        {
             let all_tokens = if let Some(cache) = cache.as_mut() {
                 cache.clear();
                 let mut all_tokens = cache.tokens.clone();
@@ -618,7 +616,8 @@ impl Model {
                     &image_embeds.unsqueeze(0)?,
                 )?;
             }
-            let (new_pos_ids, new_start_time) = vision_encoder.get_rope_index(&tokens, &grid_thw, &self.config, start_time)?;
+            let (new_pos_ids, new_start_time) =
+                vision_encoder.get_rope_index(&tokens, &grid_thw, &self.config, start_time)?;
             if let Some(cache) = cache.as_mut() {
                 cache.start_time = new_start_time;
             }
@@ -682,7 +681,7 @@ impl Model {
     }
 }
 
-fn debug_assert_none_nan(tensor: &Tensor) {
+fn debug_assert_none_nan(#[allow(unused)] tensor: &Tensor) {
     #[cfg(debug_assertions)]
     tensor
         .flatten_all()

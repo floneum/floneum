@@ -20,7 +20,7 @@ async fn main() {
             ),
             MediaType::Image,
         ),
-        "Describe the image in detail.",
+        "Describe this image.",
     ));
     response.to_std_out().await.unwrap();
     response.await.unwrap();

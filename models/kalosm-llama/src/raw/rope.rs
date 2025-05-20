@@ -116,12 +116,12 @@ impl QwenVLRopeCache {
     }
 
     fn forward_sin_cos(&self, position_ids: &Tensor) -> Result<(Tensor, Tensor)> {
-        let seq_length = position_ids.dim(1)?;
         let inv_freq_expanded = self
             .inverse_frequency
-            .reshape((1, 1, (), 1))?
-            .repeat((3, 1, 1, 1))?;
-        let position_ids_expanded = position_ids.reshape((3, 1, 1, seq_length))?;
+            .reshape(((),))?
+            .repeat((3, 1, 1, 1))?
+            .reshape((3, 1, (), 1))?;
+        let position_ids_expanded = position_ids.unsqueeze(1)?.unsqueeze(1)?;
         let freqs = inv_freq_expanded
             .matmul(&position_ids_expanded.to_dtype(inv_freq_expanded.dtype())?)?
             .transpose(2, 3)?;

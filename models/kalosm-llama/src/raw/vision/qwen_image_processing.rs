@@ -12,8 +12,10 @@ pub(crate) fn process_image(
     let merge_patch = (patch_size * merge_size) as u32;
     let resized = normalize_image_shape(
         [merge_patch, merge_patch],
-        min_pixels.unwrap_or(56 * 56),
-        max_pixels.unwrap_or(14 * 14 * 4 * 1280),
+        // min_pixels.unwrap_or(56 * 56),
+        // max_pixels.unwrap_or(14 * 14 * 4 * 1280),
+        min_pixels.unwrap_or(256 * 28 * 28),
+        max_pixels.unwrap_or(512 * 28 * 28),
         image,
     );
 
