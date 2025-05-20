@@ -1,4 +1,4 @@
-use candle_core::{IndexOp, Tensor, D};
+use candle_core::{quantized::gguf_file, IndexOp, Tensor, D};
 use candle_transformers::quantized_var_builder::VarBuilder;
 use kalosm_common::{Cache, KvCache};
 
@@ -7,7 +7,7 @@ use crate::raw::rope::RopeCache;
 use super::{
     qwen_patch_merger::Qwen2VLPatchMerger, qwen_rope::VisionRotaryEmbedding,
     qwen_vision::get_window_index, qwen_vision_block::VisionBlock,
-    qwen_vision_embed::Qwen2_5VisionPatchEmbed,
+    qwen_vision_embed::Qwen2_5VisionPatchEmbed, QWEN_EPS,
 };
 
 pub(crate) struct QwenVisionTransformer {
@@ -24,6 +24,79 @@ pub(crate) struct QwenVisionTransformer {
 }
 
 impl QwenVisionTransformer {
+
+    pub(crate) fn from_gguf<R: std::io::Read>(
+        vision_ct: gguf_file::Content,
+        vision_reader: &mut R,
+        device: &candle_core::Device,
+    ) -> candle_core::Result<Self> {
+        let block_count = vision_ct
+            .metadata
+            .get("clip.vision.block_count")
+            .and_then(|x| x.to_u64().ok())
+            .unwrap_or(32) as usize;
+        let head_count = vision_ct
+            .metadata
+            .get("clip.vision.attention.head_count")
+            .and_then(|x| x.to_u64().ok())
+            .unwrap_or(16) as usize;
+        let spacial_merge_size = 2;
+        let temporal_patch_size = 2;
+        let patch_size = vision_ct
+            .metadata
+            .get("clip.vision.patch_size")
+            .and_then(|x| x.to_u64().ok())
+            .map(|x| x as usize)
+            .unwrap_or(14);
+        let fullatt_block    = vision_ct
+            .metadata
+            .get("clip.vision.n_wa_pattern")
+            .and_then(|x| x.to_u64().ok())
+            .map(|x| {
+                let mut v = vec![];
+                for i in (0..block_count).step_by(x as usize) {
+                    v.push(i as usize);
+                }
+                v
+            })
+            .unwrap_or(vec![7, 15, 23, 31]);
+        let layer_norm_eps = vision_ct
+            .metadata.get("clip.vision.attention.layer_norm_epsilon")
+            .and_then(|x| x.to_f64().ok())
+            .unwrap_or(QWEN_EPS);
+        let hidden_size = vision_ct
+            .metadata
+            .get("clip.vision.embedding_length")
+            .and_then(|x| x.to_u64().ok())
+            .unwrap_or(1280) as usize;
+        let feed_forward_length = vision_ct
+            .metadata
+            .get("clip.vision.feed_forward_length")
+            .and_then(|x| x.to_u64().ok())
+            .unwrap_or(3420) as usize;
+            let out_hidden_size = vision_ct
+            .metadata
+            .get("clip.vision.projection_dim")
+            .and_then(|x| x.to_u64().ok())
+            .unwrap_or(2048) as usize;
+        let in_channels = 3;
+
+        let vb = todo!();
+        Self::new(
+            spacial_merge_size,
+            temporal_patch_size,
+            patch_size,
+            fullatt_block,
+            112,
+            in_channels,
+            hidden_size,
+            out_hidden_size,
+            head_count,
+            block_count,
+            &vb,
+        )
+    }
+
     fn new(
         spacial_merge_size: usize,
         temporal_patch_size: usize,
@@ -33,7 +106,6 @@ impl QwenVisionTransformer {
         in_channels: usize,
         hidden_size: usize,
         out_hidden_size: usize,
-        embed_dim: usize,
         num_heads: usize,
         depth: usize,
         vb: &VarBuilder,
@@ -240,7 +312,6 @@ async fn test_loading_qwen_vision() {
     let in_channels = 3;
     let hidden_size = 1280;
     let out_hidden_size = 2048;
-    let embed_dim = 1152;
     let num_heads = 16;
     let depth = 32;
     let qwen_vision = QwenVisionTransformer::new(
@@ -252,7 +323,6 @@ async fn test_loading_qwen_vision() {
         in_channels,
         hidden_size,
         out_hidden_size,
-        embed_dim,
         num_heads,
         depth,
         &vb,

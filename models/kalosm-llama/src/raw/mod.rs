@@ -84,6 +84,7 @@ pub struct RopeScalingConfig {
 
 pub struct Model {
     pub(crate) config: Arc<LlamaConfig>,
+    vision_encoder: Option<vision::QwenVisionTransformer>,
     tok_embeddings: Embedding,
     layers: Vec<LlamaAttention>,
     norm: RmsNorm,
@@ -175,6 +176,7 @@ impl Model {
             layers,
             norm: decode_norm(ct.remove("norm.weight")?, 1e-5)?,
             output,
+            vision_encoder: None,
             masks: Default::default(),
         })
     }
@@ -182,6 +184,8 @@ impl Model {
     pub fn from_gguf<R: std::io::Seek + std::io::Read>(
         ct: gguf_file::Content,
         reader: &mut R,
+        vision_ct: Option<gguf_file::Content>,
+        vision_reader: Option<&mut R>,
         device: &Device,
         override_stop_token_string: Option<String>,
         override_chat_template: Option<String>,
@@ -442,6 +446,16 @@ impl Model {
                 sliding_window_size: layer_sliding_window_size,
             })
         }
+
+        // If the model is a vision model, load the vision encoder
+        let vision_encoder: Option<std::result::Result<vision::QwenVisionTransformer, _>> = vision_ct.map(|vision_ct| {
+            vision::QwenVisionTransformer::from_gguf(
+                vision_ct,
+                vision_reader.unwrap(),
+                device,
+            )
+        });
+
         Ok(Self {
             config,
             tok_embeddings,
@@ -449,6 +463,7 @@ impl Model {
             norm,
             output,
             masks: Default::default(),
+            vision_encoder: vision_encoder.transpose()?,
         })
     }
 
