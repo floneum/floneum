@@ -7,9 +7,9 @@ use kalosm_common::{Cache, KvCache};
 use crate::raw::rope::RopeCache;
 
 use super::{
-    qwen_patch_merger::Qwen2VLPatchMerger, qwen_rope::VisionRotaryEmbedding,
-    qwen_vision::get_window_index, qwen_vision_block::VisionBlock,
-    qwen_vision_embed::Qwen2_5VisionPatchEmbed, QWEN_EPS,
+    qwen_image_processing::process_image, qwen_patch_merger::Qwen2VLPatchMerger,
+    qwen_rope::VisionRotaryEmbedding, qwen_vision::get_window_index,
+    qwen_vision_block::VisionBlock, qwen_vision_embed::Qwen2_5VisionPatchEmbed, QWEN_EPS,
 };
 
 pub(crate) struct QwenVisionTransformer {
@@ -95,6 +95,7 @@ impl QwenVisionTransformer {
             out_hidden_size,
             head_count,
             block_count,
+            layer_norm_eps,
             &vb,
         )
     }
@@ -110,6 +111,7 @@ impl QwenVisionTransformer {
         out_hidden_size: usize,
         num_heads: usize,
         depth: usize,
+        layer_norm_eps: f64,
         vb: &VarBuilder,
     ) -> candle_core::Result<Self> {
         let spacial_merge_unit = spacial_merge_size * spacial_merge_size;
@@ -130,11 +132,17 @@ impl QwenVisionTransformer {
                     num_heads,
                     head_dim,
                     hidden_size,
+                    layer_norm_eps,
                 )
             })
             .collect::<candle_core::Result<Vec<_>>>()?;
-        let merger =
-            Qwen2VLPatchMerger::new(out_hidden_size, hidden_size, spacial_merge_size, &vb)?;
+        let merger = Qwen2VLPatchMerger::new(
+            out_hidden_size,
+            hidden_size,
+            spacial_merge_size,
+            layer_norm_eps,
+            &vb,
+        )?;
 
         Ok(Self {
             spacial_merge_size,
@@ -150,10 +158,10 @@ impl QwenVisionTransformer {
         })
     }
 
-    fn rot_pos_emb(&self, grid_thw: &Vec<(u32, u32, u32)>) -> candle_core::Result<Tensor> {
+    fn rot_pos_emb(&self, grid_thw: &Vec<[u32; 3]>) -> candle_core::Result<Tensor> {
         let device = &self.device;
         let mut pos_ids = vec![];
-        for (t, h, w) in grid_thw {
+        for [t, h, w] in grid_thw {
             let hpos_ids = Tensor::arange(0, *h, device)?
                 .unsqueeze(1)?
                 .expand(&[*h as usize, *w as usize])?
@@ -184,7 +192,7 @@ impl QwenVisionTransformer {
         let pos_ids = Tensor::cat(&pos_ids, 0)?;
         let max_grid_size = grid_thw
             .iter()
-            .map(|(_, h, w)| (*h).max(*w))
+            .map(|[_, h, w]| (*h).max(*w))
             .max()
             .unwrap_or_default();
         let rotary_pos_emb_full = self
@@ -203,10 +211,23 @@ impl QwenVisionTransformer {
         Ok(rotary_pos_emb)
     }
 
+    fn forward_images(&self, images: Vec<image::DynamicImage>) -> candle_core::Result<Tensor> {
+        let mut image_tensors = Vec::new();
+        let mut grid_thw = Vec::new();
+
+        for image in images {
+            let (image, grid) = process_image(&image, self.patch_size, self.spacial_merge_size, &self.device)?;
+            image_tensors.push(image);
+            grid_thw.push(grid);
+        }
+        let images = Tensor::cat(&image_tensors, 0)?;
+        self.forward(&images, &grid_thw, None)
+    }
+
     fn forward(
         &self,
         hidden_states: &Tensor,
-        grid_thw: &Vec<(u32, u32, u32)>,
+        grid_thw: &Vec<[u32; 3]>,
         mut cache: Option<&mut KvCache>,
     ) -> candle_core::Result<Tensor> {
         let hidden_states = self.patch_embed.forward(&hidden_states)?;
@@ -214,7 +235,7 @@ impl QwenVisionTransformer {
         let (window_index, mut cu_window_seqlens) = get_window_index(
             grid_thw
                 .iter()
-                .map(|(t, h, w)| (*t as usize, *h as usize, *w as usize)),
+                .map(|[t, h, w]| (*t as usize, *h as usize, *w as usize)),
             self.window_size,
             self.spacial_merge_size,
             self.spacial_merge_unit,
@@ -249,7 +270,7 @@ impl QwenVisionTransformer {
 
         let cu_seqlens = grid_thw
             .iter()
-            .flat_map(|(t, h, w)| std::iter::repeat_n((*h * *w) as u32, *t as usize))
+            .flat_map(|[t, h, w]| std::iter::repeat_n((*h * *w) as u32, *t as usize))
             .map({
                 let mut sum = 0;
                 move |x| {
@@ -323,11 +344,12 @@ async fn test_loading_qwen_vision() {
         out_hidden_size,
         num_heads,
         depth,
+        QWEN_EPS,
         &vb,
     )
     .unwrap();
 
-    let out = qwen_vision.rot_pos_emb(&vec![(2, 4, 4)]).unwrap();
+    let out = qwen_vision.rot_pos_emb(&vec![[2, 4, 4]]).unwrap();
     println!("Rotary Pos Emb: {:?}", out);
     let out_first_5_by_5 = out.i((0..5, 0..5)).unwrap();
     let out_first_5_by_5 = out_first_5_by_5.to_vec2::<f32>().unwrap();
@@ -357,9 +379,22 @@ async fn test_loading_qwen_vision() {
         .unwrap()
         .to_device(&device)
         .unwrap();
-    let grid_thw = vec![(1, 36, 54)];
+    let grid_thw = vec![[1, 36, 54]];
     let out = qwen_vision
         .forward(&hidden_states, &grid_thw, None)
         .unwrap();
+    println!("Qwen Vision: {:?}", out);
+
+    // download image from https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg
+    let image_bytes =
+        reqwest::get("https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg")
+            .await
+            .unwrap()
+            .bytes()
+            .await
+            .unwrap();
+    let image = image::load_from_memory(&image_bytes).unwrap();
+
+    let out = qwen_vision.forward_images(vec![image]).unwrap();
     println!("Qwen Vision: {:?}", out);
 }

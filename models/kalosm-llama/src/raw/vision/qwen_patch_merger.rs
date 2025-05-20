@@ -17,10 +17,12 @@ impl Qwen2VLPatchMerger {
         dim: usize,
         context_dim: usize,
         spatial_merge_size: usize,
+
+        layer_norm_eps: f64,
         vb: &VarBuilder,
     ) -> Result<Self> {
         let hidden_size = context_dim * spatial_merge_size.pow(2);
-        let ln_q = RmsNorm::new(context_dim, QWEN_EPS, vb.pp("v.post_ln"))?;
+        let ln_q = RmsNorm::new(context_dim, layer_norm_eps, vb.pp("v.post_ln"))?;
         let mlp_0_weight = vb.get((hidden_size, hidden_size), "mm.0.weight")?;
         let mlp_0_bias = vb
             .get((hidden_size,), "mm.0.bias")?

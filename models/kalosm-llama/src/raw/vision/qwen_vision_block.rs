@@ -26,10 +26,11 @@ impl VisionBlock {
         head_count: usize,
         head_dim: usize,
         embed_dim: usize,
+        layer_norm_eps: f64,
     ) -> Result<Self> {
         let device = vb.device();
-        let norm1 = RmsNorm::new(embed_dim, QWEN_EPS, vb.pp("ln1"))?;
-        let norm2 = RmsNorm::new(embed_dim, QWEN_EPS, vb.pp("ln2"))?;
+        let norm1 = RmsNorm::new(embed_dim, layer_norm_eps, vb.pp("ln1"))?;
+        let norm2 = RmsNorm::new(embed_dim, layer_norm_eps, vb.pp("ln2"))?;
 
         let mlp = LlamaFeedForward::new_with_bias(
             QMatMul::from_arc(vb.get_no_shape("ffn_gate.weight")?)?,
