@@ -5,80 +5,76 @@ pub(crate) fn process_image(
     image: &DynamicImage,
     patch_size: usize,
     merge_size: usize,
+    min_pixels: Option<u32>,
+    max_pixels: Option<u32>,
     device: &Device,
 ) -> candle_core::Result<(Tensor, [u32; 3])> {
     let merge_patch = (patch_size * merge_size) as u32;
-    let resized = normalize_image_shape([merge_patch, merge_patch], [56, 56], [1001, 1001], image);
+    let resized = normalize_image_shape(
+        [merge_patch, merge_patch],
+        min_pixels.unwrap_or(56 * 56),
+        max_pixels.unwrap_or(14 * 14 * 4 * 1280),
+        image,
+    );
 
     assert!(resized.height() % merge_patch == 0);
     assert!(resized.width() % merge_patch == 0);
-    let rgb = image_to_rgb(&resized, device)?;
+    let rgb: Tensor = image_to_rgb(&resized, device)?;
     let grid_t = 1;
-    let grid_h = resized.height() as usize / merge_patch as usize;
-    let grid_w = resized.width() as usize / merge_patch as usize;
-    let rgb = rgb
-        .reshape(&[
-            grid_t,     // time size
-            3,          // channels
-            grid_h,     // height patches
-            merge_size, // height merge size
-            patch_size, // height patch size
-            grid_w,     // width patches
-            merge_size, // width merge size
-            patch_size, // width patch size
-        ])
-        .unwrap();
+    let grid_h = resized.height() as usize / patch_size as usize;
+    let grid_w = resized.width() as usize / patch_size as usize;
+    let rgb = rgb.reshape(&[
+        1,                                         // time size
+        1,                                         // temporal patch size
+        3,                                         // channels
+        (resized.height() / merge_patch) as usize, // height patches
+        merge_size,                                // height merge size
+        patch_size,                                // height patch size
+        (resized.width() / merge_patch) as usize,  // width patches
+        merge_size,                                // width merge size
+        patch_size,                                // width patch size
+    ])?;
+    // Repeat along time axis
+    let rgb = Tensor::cat(&[&rgb, &rgb], 1)?;
     // Move the time, height, and width dimensions to the start
-    // shape is now [time patches, height patches, width patches, height merges, width merges, channels, height patch size, width patch size]
-    let rgb = rgb.permute([0, 2, 5, 3, 6, 1, 4, 7]).unwrap();
+    let rgb = rgb.permute([0, 3, 6, 4, 7, 2, 1, 5, 8])?;
     // Reshape to [patch count, patch data]
-    let rgb = rgb
-        .reshape(&[
-            // patch count
-            grid_h * grid_w,
-            // patch data
-            (3 * merge_patch * merge_patch) as usize,
-        ])
-        .unwrap();
+    let rgb = rgb.reshape(&[
+        // patch count
+        grid_h * grid_w,
+        // patch data
+        (3 * patch_size * patch_size * 2) as usize,
+    ])?;
     Ok((rgb, [grid_t as u32, grid_h as u32, grid_w as u32]))
 }
 
 fn normalize_image_shape(
     patch_size: [u32; 2],
-    min_size: [u32; 2],
-    max_size: [u32; 2],
+    min_pixels: u32,
+    max_pixels: u32,
     image: &DynamicImage,
 ) -> DynamicImage {
     let mut width = image.width();
     let mut height = image.height();
 
-    // Scale up the image while keeping the aspect ratio to at least the minimum size
-    if width < min_size[0] as u32 {
-        let scale_up_by = min_size[0] as f32 / width as f32;
-        width = (width as f32 * scale_up_by).round() as u32;
-        height = (height as f32 * scale_up_by).round() as u32;
+    // Scale up the image while keeping the aspect ratio to at least the minimum pixels
+    if width * height < min_pixels {
+        let scale_up_by = ((width * height) as f32 / min_pixels as f32).sqrt();
+        width = (width as f32 / scale_up_by / patch_size[0] as f32).floor() as u32 * patch_size[0];
+        height =
+            (height as f32 / scale_up_by / patch_size[1] as f32).floor() as u32 * patch_size[1];
+    } else if width * height > max_pixels {
+        // Scale down the image while keeping the aspect ratio to at most the maximum pixels
+        let scale_down_by = ((width * height) as f32 / max_pixels as f32).sqrt();
+        width =
+            (width as f32 / scale_down_by / patch_size[0] as f32).floor() as u32 * patch_size[0];
+        height =
+            (height as f32 / scale_down_by / patch_size[1] as f32).floor() as u32 * patch_size[1];
+    } else {
+        // Round to the nearest multiple of the patch size
+        width = (width as f32 / patch_size[0] as f32).round() as u32 * patch_size[0];
+        height = (height as f32 / patch_size[1] as f32).round() as u32 * patch_size[1];
     }
-    if height < min_size[1] as u32 {
-        let scale_up_by = min_size[1] as f32 / height as f32;
-        width = (width as f32 * scale_up_by).round() as u32;
-        height = (height as f32 * scale_up_by).round() as u32;
-    }
-
-    // Scale down the image while keeping the aspect ratio to at most the maximum size
-    if width > max_size[0] as u32 {
-        let scale_down_by = max_size[0] as f32 / width as f32;
-        width = (width as f32 * scale_down_by).round() as u32;
-        height = (height as f32 * scale_down_by).round() as u32;
-    }
-    if height > max_size[1] as u32 {
-        let scale_down_by = max_size[1] as f32 / height as f32;
-        width = (width as f32 * scale_down_by).round() as u32;
-        height = (height as f32 * scale_down_by).round() as u32;
-    }
-
-    // Round to the nearest multiple of the patch size
-    width = (width as f32 / patch_size[0] as f32).round() as u32 * patch_size[0];
-    height = (height as f32 / patch_size[1] as f32).round() as u32 * patch_size[1];
 
     // Finally, resize the image to the new dimensions
     image.resize_exact(width, height, image::imageops::FilterType::CatmullRom)
@@ -112,17 +108,30 @@ mod tests {
         let image = image::load_from_memory(&image_bytes).unwrap();
         let spacial_merge_size = 2;
         let patch_size = 14;
-        let (rgb, [grid_t, grid_h, grid_w]) =
-            process_image(&image, patch_size, spacial_merge_size, &Device::Cpu).unwrap();
+        let resized = normalize_image_shape(
+            [patch_size as u32 * spacial_merge_size as u32; 2],
+            256 * 28 * 28,
+            512 * 28 * 28,
+            &image,
+        );
+        println!(
+            "Resized image size: {:?}",
+            [resized.height(), resized.width()]
+        );
+        assert_eq!(resized.height(), 504);
+        assert_eq!(resized.width(), 756);
+        let (rgb, [grid_t, grid_h, grid_w]) = process_image(
+            &image,
+            patch_size,
+            spacial_merge_size,
+            Some(256 * 28 * 28),
+            Some(512 * 28 * 28),
+            &Device::Cpu,
+        )
+        .unwrap();
         println!("RGB shape: {:?}", rgb);
         println!("Grid shape: {:?}", [grid_t, grid_h, grid_w]);
-        assert_eq!(
-            rgb.dims(),
-            [
-                (grid_h * grid_w) as usize,
-                3 * patch_size * patch_size * spacial_merge_size * spacial_merge_size,
-            ]
-        );
-        assert_eq!([grid_t, grid_h, grid_w], [1, 24, 36]);
+        assert_eq!(rgb.dims(), [1944, 1176]);
+        assert_eq!([grid_t, grid_h, grid_w], [1, 36, 54]);
     }
 }

@@ -17,7 +17,6 @@ impl Qwen2VLPatchMerger {
         dim: usize,
         context_dim: usize,
         spatial_merge_size: usize,
-
         layer_norm_eps: f64,
         vb: &VarBuilder,
     ) -> Result<Self> {
