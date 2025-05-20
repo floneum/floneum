@@ -330,7 +330,7 @@ impl Model {
                 .and_then(|m| {
                     m.to_vec()
                         .ok()
-                        .map(|v| v.iter().map(|x| x.to_u32().map(|x| x as usize)).collect())
+                        .map(|v| v.iter().map(|x| x.to_i32().map(|x| x as usize)).collect())
                 })
                 .transpose()?,
         };
