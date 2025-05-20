@@ -233,8 +233,8 @@ fn test_get_rope_index() {
     let input_ids = vec![
         0, 1, 1, 1, 1, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 4, 5,
     ];
-    let image_sizes = vec![ImageSize::new(32, 32)];
-    let video_sizes = vec![VideoSize::new(32, 32, 5)];
+    let image_sizes = vec![[1, 32, 32]];
+    let video_sizes = vec![[32, 32, 5]];
 
     let indexes = get_rope_index(
         spatial_merge_size,
