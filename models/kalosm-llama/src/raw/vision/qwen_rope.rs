@@ -95,7 +95,7 @@ pub(crate) fn get_rope_index(
     image_sizes: &[[u32; 3]],
     video_sizes: &[[u32; 3]],
     start_time: u32,
-) -> Vec<RopeIndex> {
+) -> (Vec<RopeIndex>, u32) {
     let mut images = image_sizes.iter().map(|&[_, w, h]| ImageSize::new(w, h));
     let mut videos = video_sizes.iter().map(|&[t, w, h]| VideoSize::new(w, h, t));
     let mut indexes = Vec::new();
@@ -152,7 +152,7 @@ pub(crate) fn get_rope_index(
         "The length of indexes should match the length of input_ids"
     );
 
-    indexes
+    (indexes, max_time_index)
 }
 
 fn push_text_token(indexes: &mut Vec<RopeIndex>, max_time_index: &mut u32, index: &mut usize) {
@@ -176,7 +176,7 @@ fn test_get_rope_index_text() {
     let image_sizes = vec![[1, 32, 32], [1, 64, 64]];
     let video_sizes = vec![[5, 32, 32], [20, 64, 64]];
 
-    let indexes = get_rope_index(
+    let (indexes, max_time_index) = get_rope_index(
         spatial_merge_size,
         image_token_id,
         video_token_id,
@@ -186,6 +186,7 @@ fn test_get_rope_index_text() {
         &video_sizes,
         0,
     );
+    assert_eq!(max_time_index, 6);
 
     assert_eq!(
         indexes,
@@ -236,7 +237,7 @@ fn test_get_rope_index() {
     let image_sizes = vec![[1, 32, 32]];
     let video_sizes = vec![[5, 32, 32]];
 
-    let indexes = get_rope_index(
+    let (indexes, max_time_index) = get_rope_index(
         spatial_merge_size,
         image_token_id,
         video_token_id,
@@ -246,6 +247,7 @@ fn test_get_rope_index() {
         &video_sizes,
         0,
     );
+    assert_eq!(max_time_index, 13);
 
     assert_eq!(
         indexes,

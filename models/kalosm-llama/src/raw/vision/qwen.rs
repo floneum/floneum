@@ -260,7 +260,7 @@ impl QwenVisionTransformer {
         config: &crate::raw::LlamaConfig,
         start_time: u32,
     ) -> candle_core::Result<(Tensor, u32)> {
-        let rope_index = get_rope_index(
+        let (rope_index, max_time_index) = get_rope_index(
             self.spacial_merge_size,
             config.image_pad_token.unwrap(),
             config.video_pad_token.unwrap(),
@@ -271,14 +271,13 @@ impl QwenVisionTransformer {
             start_time,
         );
 
-        let new_start_time = rope_index.last().map(|x| x.time).unwrap_or(0);
         let tensor = Tensor::from_iter(
             rope_index.iter().flat_map(|x| [x.x, x.y, x.time]),
             &self.device,
         )?
         .reshape(((), 3))?.t()?;
 
-        Ok((tensor, new_start_time))
+        Ok((tensor, max_time_index))
     }
 
     pub(crate) fn forward_image(
