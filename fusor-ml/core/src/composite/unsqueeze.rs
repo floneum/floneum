@@ -68,7 +68,7 @@ async fn test_unsqueeze() {
     let tensor = Tensor::new(&device, &data);
     let unsqueezed = tensor.unsqueeze(0);
     let as_slice = unsqueezed.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
     assert_eq!(as_slice[[0, 0, 0]], 1.);
     assert_eq!(as_slice[[0, 0, 1]], 2.);
     assert_eq!(as_slice[[0, 1, 0]], 3.);

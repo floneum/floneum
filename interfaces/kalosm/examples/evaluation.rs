@@ -47,7 +47,7 @@ async fn main() {
     let mut bert_distance = BertDistance::new(Bert::new().await.unwrap());
     let evaluation = test_cases.evaluate(&mut bert_distance).await.normalized();
 
-    println!("Original\n{}", evaluation);
+    println!("Original\n{evaluation}");
 
     let alternate_examples = [
         ("While traditional databases rely on a fixed schema, NoSQL databases like MongoDB offer a flexible structure, allowing you to store and retrieve data in a more dynamic way. This flexibility is particularly beneficial for applications with evolving data requirements.", "How does MongoDB differ from traditional databases?"),
@@ -68,5 +68,5 @@ async fn main() {
 
     let evaluation = test_cases.evaluate(&mut bert_distance).await.normalized();
 
-    println!("Alternate\n{}", evaluation);
+    println!("Alternate\n{evaluation}");
 }

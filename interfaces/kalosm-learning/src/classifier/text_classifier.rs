@@ -379,7 +379,7 @@ async fn simplified() -> Result<(), Box<dyn std::error::Error>> {
         )?);
         println!("Training...");
         if let Err(error) = classifier.train(&dataset, 100, 0.05, 100, |_| {}) {
-            println!("Error: {:?}", error);
+            println!("Error: {error:?}");
         } else {
             break;
         }

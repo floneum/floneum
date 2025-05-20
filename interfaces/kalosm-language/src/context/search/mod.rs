@@ -147,6 +147,6 @@ pub async fn search(api_key: &str, query: &str) -> Result<SearchResult, reqwest:
 async fn search_result() {
     if let Some(key) = option_env!("SERPER_API_KEY") {
         let result = search(key, "apple inc").await.unwrap();
-        println!("{:#?}", result);
+        println!("{result:#?}");
     }
 }

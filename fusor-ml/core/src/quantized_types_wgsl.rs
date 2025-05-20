@@ -5,7 +5,7 @@ use fusor_gguf::{BlockQ4_0, BlockQ4K, BlockQ5_0, BlockQ6K, BlockQ8_0, GgmlType};
 fn byte_array_array_u32<W: Write>(f: &mut W, name: &str, byte_size: usize) -> std::fmt::Result {
     assert!(byte_size % 4 == 0);
     let size = byte_size / 4;
-    writeln!(f, "    {}: array<u32, {}>,", name, size)
+    writeln!(f, "    {name}: array<u32, {size}>,")
 }
 
 pub(crate) fn write_q4_0_type<W: Write>(f: &mut W) -> std::fmt::Result {

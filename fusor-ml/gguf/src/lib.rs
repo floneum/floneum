@@ -1046,7 +1046,7 @@ async fn test_load_tiny_llama() {
     let device = candle_core::Device::Cpu;
     for (name, candle_tensor) in candle_metadata.tensor_infos {
         let tensor = metadata.tensor_infos.get(&*name).unwrap();
-        println!("{}: {:?}", name, tensor);
+        println!("{name}: {tensor:?}");
         let tensor_bytes = tensor
             .read_tensor_bytes(&mut reader, metadata.tensor_data_offset)
             .unwrap();
@@ -1069,8 +1069,8 @@ async fn test_load_tiny_llama() {
                     let dequantized = block.dequantize();
                     for (a, b) in dequantized.iter().zip(candle_block) {
                         if (a - b).abs() > 1e-6 {
-                            println!("ours: {:?}", dequantized);
-                            println!("candle: {:?}", candle_block);
+                            println!("ours: {dequantized:?}");
+                            println!("candle: {candle_block:?}");
                             assert_eq!(dequantized, candle_block);
                         }
                     }
@@ -1085,8 +1085,8 @@ async fn test_load_tiny_llama() {
                     let dequantized = block.dequantize();
                     for (a, b) in dequantized.iter().zip(candle_block) {
                         if (a - b).abs() > 1e-6 {
-                            println!("ours: {:?}", dequantized);
-                            println!("candle: {:?}", candle_block);
+                            println!("ours: {dequantized:?}");
+                            println!("candle: {candle_block:?}");
                             assert_eq!(dequantized, candle_block);
                         }
                     }
@@ -1101,8 +1101,8 @@ async fn test_load_tiny_llama() {
                     let dequantized = block.dequantize();
                     for (a, b) in dequantized.iter().zip(candle_block) {
                         if (a - b).abs() > 1e-6 {
-                            println!("ours: {:?}", dequantized);
-                            println!("candle: {:?}", candle_block);
+                            println!("ours: {dequantized:?}");
+                            println!("candle: {candle_block:?}");
                             assert_eq!(dequantized, candle_block);
                         }
                     }
@@ -1116,8 +1116,8 @@ async fn test_load_tiny_llama() {
                     let dequantized = block.dequantize();
                     for (a, b) in dequantized.iter().zip(candle_block) {
                         if (a - b).abs() > 1e-6 {
-                            println!("ours: {:?}", dequantized);
-                            println!("candle: {:?}", candle_block);
+                            println!("ours: {dequantized:?}");
+                            println!("candle: {candle_block:?}");
                             assert_eq!(dequantized, candle_block);
                         }
                     }
@@ -1131,8 +1131,8 @@ async fn test_load_tiny_llama() {
                     let dequantized = block.dequantize();
                     for (a, b) in dequantized.iter().zip(candle_block) {
                         if (a - b).abs() > 1e-6 {
-                            println!("ours: {:?}", dequantized);
-                            println!("candle: {:?}", candle_block);
+                            println!("ours: {dequantized:?}");
+                            println!("candle: {candle_block:?}");
                             assert_eq!(dequantized, candle_block);
                         }
                     }

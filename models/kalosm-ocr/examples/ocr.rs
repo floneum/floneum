@@ -9,7 +9,7 @@ async fn main() {
             .recognize_text(OcrInferenceSettings::new(image))
             .unwrap();
 
-        println!("{}", text);
+        println!("{text}");
     }
     {
         let mut model = Ocr::builder()
@@ -22,6 +22,6 @@ async fn main() {
             .recognize_text(OcrInferenceSettings::new(image))
             .unwrap();
 
-        println!("{}", text);
+        println!("{text}");
     }
 }

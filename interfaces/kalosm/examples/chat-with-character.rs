@@ -9,7 +9,7 @@ async fn main() {
 
     let model = Llama::new_chat().await.unwrap();
     // Create constraints that parses (Responding as <character_name>) and then stops on the end of the assistant's response
-    let constraints = LiteralParser::new(format!("(Responding as {}) ", character_name))
+    let constraints = LiteralParser::new(format!("(Responding as {character_name}) "))
         .then(model.default_assistant_constraints());
     // Create a chat session with the model and the constraints
     let mut chat = model.chat().with_system_prompt(character_description);

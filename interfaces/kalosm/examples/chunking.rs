@@ -24,5 +24,5 @@ async fn main() {
         .chunk_batch(&documents, &embedder)
         .await
         .unwrap();
-    println!("chunked: {:?}", chunked);
+    println!("chunked: {chunked:?}");
 }

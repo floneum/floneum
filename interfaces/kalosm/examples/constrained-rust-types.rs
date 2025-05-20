@@ -32,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
     let account: Account =
         task("Candice is the CEO of a fortune 500 company. She is a 30 years old.").await?;
 
-    println!("{:#?}", account);
+    println!("{account:#?}");
 
     Ok(())
 }
