@@ -6,12 +6,15 @@ fn process_image(
     patch_size: usize,
     merge_size: usize,
 ) -> candle_core::Result<(Tensor, [usize; 3])> {
-    let resized = normalize_image_shape([28, 28], [56, 56], [1001, 1001], image);
+    let merge_patch = (patch_size * merge_size) as u32;
+    let resized = normalize_image_shape([merge_patch, merge_patch], [56, 56], [1001, 1001], image);
 
+    assert!(resized.height() % merge_patch == 0);
+    assert!(resized.width() % merge_patch == 0);
     let rgb = image_to_rgb(&resized, &Device::Cpu)?;
-    let grid_t = 0;
-    let grid_h = resized.height() as usize / patch_size;
-    let grid_w = resized.width() as usize / patch_size;
+    let grid_t = 1;
+    let grid_h = resized.height() as usize / merge_patch as usize;
+    let grid_w = resized.width() as usize / merge_patch as usize;
     let rgb = rgb.reshape(&[
         grid_t,     // time size
         3,          // channels
@@ -21,17 +24,17 @@ fn process_image(
         grid_w,     // width patches
         merge_size, // width merge size
         patch_size, // width patch size
-    ])?;
+    ]).unwrap();
     // Move the time, height, and width dimensions to the start
     // shape is now [time patches, height patches, width patches, height merges, width merges, channels, height patch size, width patch size]
-    let rgb = rgb.permute([0, 2, 5, 3, 6, 1, 4, 7])?;
+    let rgb = rgb.permute([0, 2, 5, 3, 6, 1, 4, 7]).unwrap();
     // Reshape to [patch count, patch data]
     let rgb = rgb.reshape(&[
         // patch count
         grid_h * grid_w,
         // patch data
-        3 * patch_size * patch_size,
-    ])?;
+        (3 * merge_patch * merge_patch) as usize,
+    ]).unwrap();
     Ok((rgb, [grid_t, grid_h, grid_w]))
 }
 
@@ -84,4 +87,29 @@ fn image_to_rgb(image: &DynamicImage, device: &Device) -> candle_core::Result<Te
     });
 
     Tensor::from_iter(grid, device)?.reshape(&[1, 3, rgb.height() as usize, rgb.width() as usize])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use candle_core::Device;
+
+    #[tokio::test]
+    async fn test_process_image() {
+        // download image from https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg
+        let image_bytes = reqwest::get(
+            "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg",
+        )
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
+        let image = image::load_from_memory(&image_bytes).unwrap();
+        let spacial_merge_size = 2;
+        let patch_size = 14;
+        let (rgb, [grid_t, grid_h, grid_w]) =
+            process_image(&image, patch_size, spacial_merge_size).unwrap();
+        println!("RGB shape: {:?}", rgb);
+    }
 }

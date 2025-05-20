@@ -471,12 +471,13 @@ impl Model {
         })
     }
 
-    pub fn forward(
+    pub fn encode_tokens(
         &self,
         tokens: &[u32],
+        images: Vec<Tensor>,
         device: &Device,
         mut cache: Option<&mut LlamaCache>,
-    ) -> Result<Tensor> {
+    ) -> Result<(Tensor, usize, usize)> {
         let mut seq_len = tokens.len();
         let cached_tokens = cache.as_ref().map(|c| c.tokens.len()).unwrap_or_default();
         // We use a lower cutoff than the context length to avoid recomputing the attention every single token
@@ -507,7 +508,21 @@ impl Model {
             (Tensor::new(tokens, device)?.unsqueeze(0)?, index_pos)
         };
 
-        let mut layer_in = self.tok_embeddings.forward(&x)?;
+        let layer_in = self.tok_embeddings.forward(&x)?;
+
+        Ok((layer_in, seq_len, index_pos))
+    }
+
+    pub fn forward(
+        &self,
+        tokens: &[u32],
+        images: Vec<Tensor>,
+        device: &Device,
+        mut cache: Option<&mut LlamaCache>,
+    ) -> Result<Tensor> {
+        let (mut layer_in, seq_len, index_pos) =
+            self.encode_tokens(tokens, images, device, cache.as_deref_mut())?;
+
         for (i, layer) in self.layers.iter().enumerate() {
             let x = layer_in;
             let residual = &x;

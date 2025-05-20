@@ -87,7 +87,7 @@ impl LlamaModel {
             );
         }
 
-        let logits = model.forward(tokens, device, cache)?;
+        let logits = model.forward(tokens, Vec::new(), device, cache)?;
 
         let logits = logits.squeeze(0)?.to_dtype(DType::F32)?;
         copy_tensor_into_vec(&logits, logits_vec)?;

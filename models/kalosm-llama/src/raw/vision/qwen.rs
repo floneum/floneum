@@ -71,7 +71,7 @@ impl QwenVisionTransformer {
             .get("clip.vision.embedding_length")
             .and_then(|x| x.to_u64().ok())
             .unwrap_or(1280) as usize;
-        let feed_forward_length = vision_ct
+        let _feed_forward_length = vision_ct
             .metadata
             .get("clip.vision.feed_forward_length")
             .and_then(|x| x.to_u64().ok())
