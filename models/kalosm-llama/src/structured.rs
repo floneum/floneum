@@ -110,6 +110,7 @@ pub(crate) fn generate_structured<P: Parser>(
             &llm.model,
             &llm.device,
             &tokens[tokens.len() - unprocessed_token_count..],
+            Vec::new(),
             Some(&mut *session),
             &mut logit_probs,
             &llm.tokenizer,

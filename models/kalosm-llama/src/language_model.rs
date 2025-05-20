@@ -1,7 +1,5 @@
 use kalosm_language_model::{
-    CreateDefaultChatConstraintsForType, CreateDefaultCompletionConstraintsForType,
-    CreateTextCompletionSession, GenerationParameters, ModelBuilder, StructuredTextCompletionModel,
-    TextCompletionModel,
+    CreateDefaultChatConstraintsForType, CreateDefaultCompletionConstraintsForType, CreateTextCompletionSession, GenerationParameters, MessageContent, ModelBuilder, StructuredTextCompletionModel, TextCompletionModel
 };
 use kalosm_model_types::ModelLoadingProgress;
 use kalosm_sample::{ArcParser, CreateParserState, Parse, Parser, ParserExt};
@@ -54,11 +52,11 @@ impl<S: Sampler + 'static> TextCompletionModel<S> for Llama {
     fn stream_text_with_callback<'a>(
         &'a self,
         session: &'a mut Self::Session,
-        text: &str,
+        msg: MessageContent,
         sampler: S,
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a {
-        let text = text.to_string();
+        let text = msg.text();
         async move {
             let (tx, rx) = tokio::sync::oneshot::channel();
             let (max_tokens, stop_on, seed) =
@@ -76,6 +74,7 @@ impl<S: Sampler + 'static> TextCompletionModel<S> for Llama {
                 .send(Task::UnstructuredGeneration(UnstructuredGenerationTask {
                     settings: InferenceSettings::new(
                         text,
+                        Vec::new(),
                         session.clone(),
                         sampler,
                         max_tokens,
@@ -119,12 +118,12 @@ where
     fn stream_text_with_callback_and_parser<'a>(
         &'a self,
         session: &'a mut Self::Session,
-        text: &str,
+        text: MessageContent,
         sampler: S,
         parser: Constraints,
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
     ) -> impl Future<Output = Result<Constraints::Output, Self::Error>> + Send + 'a {
-        let text = text.to_string();
+        let text = text.text();
         let mut session = session.clone();
         async {
             let (tx, rx) = tokio::sync::oneshot::channel();

@@ -290,7 +290,11 @@ impl LlamaBuilder {
 
 #[derive(Debug)]
 pub(crate) struct InferenceSettings {
+    /// The prompt to use.
     prompt: String,
+
+    /// Images in the prompt
+    images: Vec<image::DynamicImage>,
 
     /// The token to stop on.
     stop_on: Option<String>,
@@ -310,7 +314,8 @@ pub(crate) struct InferenceSettings {
 
 impl InferenceSettings {
     pub fn new(
-        prompt: impl Into<String>,
+        prompt: impl ToString,
+        images: Vec<image::DynamicImage>,
         session: LlamaSession,
         sampler: std::sync::Arc<std::sync::Mutex<dyn llm_samplers::prelude::Sampler>>,
         max_tokens: u32,
@@ -318,7 +323,8 @@ impl InferenceSettings {
         seed: Option<u64>,
     ) -> Self {
         Self {
-            prompt: prompt.into(),
+            prompt: prompt.to_string(),
+            images,
             stop_on,
             sampler,
             session,

@@ -8,6 +8,8 @@ pub use ext::*;
 mod boxed;
 pub use boxed::*;
 
+use crate::MessageContent;
+
 #[doc = include_str!("../../docs/completion_session.md")]
 pub trait TextCompletionSession {
     /// The type of error the session may return during operations.
@@ -239,7 +241,7 @@ pub trait TextCompletionModel<Sampler = GenerationParameters>: CreateTextComplet
     fn stream_text_with_callback<'a>(
         &'a self,
         session: &'a mut Self::Session,
-        text: &str,
+        text: MessageContent,
         sampler: Sampler,
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a;
@@ -278,7 +280,7 @@ pub trait StructuredTextCompletionModel<
     fn stream_text_with_callback_and_parser<'a>(
         &'a self,
         session: &'a mut Self::Session,
-        text: &str,
+        text: MessageContent,
         sampler: Sampler,
         parser: Constraints,
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,

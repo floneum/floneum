@@ -2,6 +2,7 @@ use crate::GenerationParameters;
 use crate::ModelConstraints;
 use futures_util::Future;
 use serde::{Deserialize, Serialize};
+use std::fmt::Arguments;
 use std::fmt::Display;
 
 mod ext;
@@ -369,19 +370,58 @@ impl ChatMessage {
 /// assert_eq!(chat_message.role(), MessageType::ModelAnswer);
 /// # }
 /// ```
-pub trait IntoChatMessage {
+pub trait ToChatMessage {
     /// Convert the type into a chat message.
-    fn into_chat_message(self) -> ChatMessage;
+    fn to_chat_message(&self) -> ChatMessage;
 }
 
-impl<S: ToString> IntoChatMessage for S {
-    fn into_chat_message(self) -> ChatMessage {
+impl ToChatMessage for str {
+    fn to_chat_message(&self) -> ChatMessage {
         ChatMessage::new(MessageType::UserMessage, self.to_string())
     }
 }
 
-impl IntoChatMessage for ChatMessage {
-    fn into_chat_message(self) -> ChatMessage {
-        self
+impl ToChatMessage for String {
+    fn to_chat_message(&self) -> ChatMessage {
+        ChatMessage::new(MessageType::UserMessage, self.clone())
     }
 }
+
+impl<'a> ToChatMessage for Arguments<'_> {
+    fn to_chat_message(&self) -> ChatMessage {
+        ChatMessage::new(MessageType::UserMessage, self.to_string())
+    }
+}
+
+impl ToChatMessage for ChatMessage {
+    fn to_chat_message(&self) -> ChatMessage {
+        self.clone()
+    }
+}
+
+macro_rules! impl_to_chat_message_tuple {
+    ($($name:ident),+) => {
+        #[allow(non_snake_case)]
+        impl<$($name: Into<ContentChunk> + Clone),+> ToChatMessage for ($($name,)+) {
+            fn to_chat_message(&self) -> ChatMessage {
+                let ($($name,)+) = self;
+                ChatMessage::new(MessageType::UserMessage, ($($name.clone(),)+))
+            }
+        }
+    };
+}
+
+impl_to_chat_message_tuple!(A);
+impl_to_chat_message_tuple!(A, B);
+impl_to_chat_message_tuple!(A, B, C);
+impl_to_chat_message_tuple!(A, B, C, D);
+impl_to_chat_message_tuple!(A, B, C, D, E);
+impl_to_chat_message_tuple!(A, B, C, D, E, F);
+impl_to_chat_message_tuple!(A, B, C, D, E, F, G);
+impl_to_chat_message_tuple!(A, B, C, D, E, F, G, H);
+impl_to_chat_message_tuple!(A, B, C, D, E, F, G, H, I);
+impl_to_chat_message_tuple!(A, B, C, D, E, F, G, H, I, J);
+impl_to_chat_message_tuple!(A, B, C, D, E, F, G, H, I, J, K);
+impl_to_chat_message_tuple!(A, B, C, D, E, F, G, H, I, J, K, L);
+impl_to_chat_message_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M);
+impl_to_chat_message_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N);

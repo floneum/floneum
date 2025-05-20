@@ -11,6 +11,7 @@ use super::CreateChatSession;
 use super::CreateDefaultChatConstraintsForType;
 use super::MessageContent;
 use super::MessageType;
+use super::ToChatMessage;
 
 /// A task session lets you efficiently run a task with a model. The task session will reuse the model's cache to avoid re-feeding the task prompt repeatedly.
 ///
@@ -90,8 +91,8 @@ impl<M: CreateChatSession, Constraints> Task<M, Constraints> {
     /// ```
     pub fn with_example(mut self, input: impl Into<MessageContent>, output: impl ToString) -> Self {
         self.chat
-            .add_message(ChatMessage::new(MessageType::UserMessage, input));
-        self.chat.add_message(ChatMessage::new(
+            .add_message(&ChatMessage::new(MessageType::UserMessage, input));
+        self.chat.add_message(&ChatMessage::new(
             MessageType::ModelAnswer,
             output.to_string(),
         ));
@@ -208,7 +209,10 @@ impl<M: CreateChatSession, Constraints: Clone> Task<M, Constraints> {
     ///     println!("{result}");
     /// }
     /// ```
-    pub fn run(&self, message: impl ToString) -> ChatResponseBuilder<'static, M, Constraints> {
+    pub fn run<Msg: ToChatMessage + ?Sized>(
+        &self,
+        message: &Msg,
+    ) -> ChatResponseBuilder<'static, M, Constraints> {
         self.chat
             .clone()
             .into_add_message(message)

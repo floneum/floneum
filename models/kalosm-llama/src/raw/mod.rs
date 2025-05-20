@@ -50,6 +50,10 @@ pub struct LlamaConfig {
     pub(crate) stop_token_string: String,
     pub(crate) chat_template: Option<HuggingFaceChatTemplate>,
     pub(crate) rope_scaling: Option<RopeScalingConfig>,
+    pub(crate) vision_start_token: Option<u32>,
+    pub(crate) vision_end_token: Option<u32>,
+    pub(crate) image_pad_token: Option<u32>,
+    pub(crate) video_pad_token: Option<u32>,
 }
 
 impl LlamaConfig {
@@ -71,6 +75,10 @@ impl LlamaConfig {
             stop_token_string: "<|endoftext|>".to_string(),
             chat_template: None,
             rope_scaling: None,
+            vision_start_token: None,
+            vision_end_token: None,
+            image_pad_token: None,
+            video_pad_token: None,
         }
     }
 }
@@ -117,6 +125,10 @@ impl Model {
             stop_token_string,
             chat_template: None,
             rope_scaling,
+            vision_start_token: None,
+            vision_end_token: None,
+            image_pad_token: None,
+            video_pad_token: None,
         };
         let config = Arc::new(config);
         let rope = RopeCache::new(&config, DType::F32, config.rope_theta, device)?;
@@ -294,6 +306,22 @@ impl Model {
             stop_token_string,
             chat_template,
             rope_scaling,
+            vision_start_token: tokens
+                .iter()
+                .position(|v| **v == "<|vision_start|>")
+                .map(|v| v as u32),
+            vision_end_token: tokens
+                .iter()
+                .position(|v| **v == "<|vision_end|>")
+                .map(|v| v as u32),
+            image_pad_token: tokens
+                .iter()
+                .position(|v| **v == "<|image_pad|>")
+                .map(|v| v as u32),
+            video_pad_token: tokens
+                .iter()
+                .position(|v| **v == "<|video_pad|>")
+                .map(|v| v as u32),
         };
         let config = Arc::new(config);
 
@@ -473,11 +501,60 @@ impl Model {
 
     pub fn encode_tokens(
         &self,
-        tokens: &[u32],
-        images: Vec<Tensor>,
+        raw_tokens: &[u32],
+        raw_images: Vec<image::DynamicImage>,
         device: &Device,
         mut cache: Option<&mut LlamaCache>,
     ) -> Result<(Tensor, usize, usize)> {
+        let mut images = Vec::new();
+        let mut image_token_ranges = Vec::new();
+        // Embed all images
+        if let Some(vision_encoder) = &self.vision_encoder {
+            for image in raw_images {
+                images.push(vision_encoder.preprocess_image(
+                    image,
+                    Some(128 * 14 * 14),
+                    Some(512 * 14 * 14),
+                )?);
+            }
+        }
+
+        // Add any image padding tokens to the tokens if needed
+        let tokens = if let (Some(image_pad_token), Some(vision_start_token)) =
+            (self.config.image_pad_token, self.config.vision_start_token)
+        {
+            let mut tokens = Vec::new();
+            let mut token_iter = raw_tokens.iter().copied();
+            let mut image_iter = images.iter();
+            while let Some(token) = token_iter.next() {
+                let start_index = tokens.len();
+                tokens.push(token);
+                if token == vision_start_token {
+                    match token_iter.next() {
+                        Some(next) if next == image_pad_token => {
+                            // Push a pad token for every image token
+                            let (_, grid) = image_iter.next().ok_or_else(|| {
+                                candle_core::Error::Msg(
+                                    "Image pad token found without matching image".to_string(),
+                                )
+                            })?;
+                            for _ in 0..grid.iter().product() {
+                                tokens.push(image_pad_token);
+                            }
+                            image_token_ranges.push(start_index..tokens.len());
+                        }
+                        Some(next) => {
+                            tokens.push(next);
+                        }
+                        None => break,
+                    }
+                }
+            }
+            tokens
+        } else {
+            raw_tokens.to_vec()
+        };
+
         let mut seq_len = tokens.len();
         let cached_tokens = cache.as_ref().map(|c| c.tokens.len()).unwrap_or_default();
         // We use a lower cutoff than the context length to avoid recomputing the attention every single token
@@ -503,20 +580,29 @@ impl Model {
         } else {
             let index_pos = cache.as_ref().map(|c| c.tokens.len()).unwrap_or_default();
             if let Some(cache) = cache.as_mut() {
-                cache.tokens.extend_from_slice(tokens);
+                cache.tokens.extend_from_slice(&tokens);
             }
             (Tensor::new(tokens, device)?.unsqueeze(0)?, index_pos)
         };
 
-        let layer_in = self.tok_embeddings.forward(&x)?;
+        let embeddings = self.tok_embeddings.forward(&x)?;
+        let embed_dim = embeddings.dim(0)?;
 
-        Ok((layer_in, seq_len, index_pos))
+        if let Some(vision_encoder) = &self.vision_encoder {
+            for ((pixels, grid), range) in images.iter().zip(image_token_ranges) {
+                let image_embeds = vision_encoder
+                    .forward_image(pixels, *grid)?;
+                embeddings.slice_assign(&[0..embed_dim, range], &image_embeds)?;
+            }
+        }
+
+        Ok((embeddings, seq_len, index_pos))
     }
 
     pub fn forward(
         &self,
         tokens: &[u32],
-        images: Vec<Tensor>,
+        images: Vec<image::DynamicImage>,
         device: &Device,
         mut cache: Option<&mut LlamaCache>,
     ) -> Result<Tensor> {

@@ -71,6 +71,7 @@ impl LlamaModel {
         model: &Model,
         device: &Device,
         tokens: &[u32],
+        images: Vec<image::DynamicImage>,
         cache: Option<&mut LlamaCache>,
         logits_vec: &mut Vec<f32>,
         #[allow(unused)] tokenizer: &Tokenizer,
@@ -87,7 +88,7 @@ impl LlamaModel {
             );
         }
 
-        let logits = model.forward(tokens, Vec::new(), device, cache)?;
+        let logits = model.forward(tokens, images, device, cache)?;
 
         let logits = logits.squeeze(0)?.to_dtype(DType::F32)?;
         copy_tensor_into_vec(&logits, logits_vec)?;
@@ -374,6 +375,7 @@ impl LlamaModel {
     ) -> Result<(), LlamaModelError> {
         let InferenceSettings {
             prompt,
+            images,
             stop_on,
             mut sampler,
             session,
@@ -403,6 +405,7 @@ impl LlamaModel {
             &self.model,
             &self.device,
             tokens,
+            images,
             Some(&mut session),
             &mut logit_probs,
             &self.tokenizer,
@@ -425,6 +428,7 @@ impl LlamaModel {
                 &self.model,
                 &self.device,
                 &[new_token],
+                Vec::new(),
                 Some(&mut session),
                 &mut logit_probs,
                 &self.tokenizer,

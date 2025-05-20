@@ -81,7 +81,7 @@ impl<S: Sampler + 'static> ChatModel<S> for Llama {
                     on_token(token)
                 }
             };
-            self.stream_text_with_callback(&mut session.session, &new_text, sampler, on_token)
+            self.stream_text_with_callback(&mut session.session, new_text.into(), sampler, on_token)
                 .await?;
             session.history.push(ChatMessage::new(
                 MessageType::ModelAnswer,
@@ -127,7 +127,7 @@ where
             let result = self
                 .stream_text_with_callback_and_parser(
                     &mut session.session,
-                    &new_text,
+                    new_text.into(),
                     sampler,
                     constraints,
                     on_token,

@@ -15,6 +15,7 @@ use std::sync::RwLock;
 use std::task::Poll;
 
 use crate::GenerationParameters;
+use crate::MessageContent;
 use crate::ModelConstraints;
 use crate::NoConstraints;
 
@@ -29,13 +30,13 @@ use super::TextCompletionSession;
 #[doc = include_str!("../../docs/completion.md")]
 pub trait TextCompletionModelExt: CreateTextCompletionSession {
     /// Create a new text completion builder for this model. See [`TextCompletionBuilder`] for more details.
-    fn complete(&self, text: impl ToString) -> TextCompletionBuilder<Self>
+    fn complete(&self, text: impl Into<MessageContent>) -> TextCompletionBuilder<Self>
     where
         Self: Clone,
     {
         // Then create the builder that will respond to the message if it is awaited
         TextCompletionBuilder {
-            text: text.to_string(),
+            text: text.into(),
             model: Some(self.clone()),
             constraints: None,
             sampler: Some(GenerationParameters::default()),
@@ -131,7 +132,7 @@ pub struct TextCompletionBuilder<
     Constraints = NoConstraints,
     Sampler = GenerationParameters,
 > {
-    text: String,
+    text: MessageContent,
     model: Option<M>,
     constraints: Option<Constraints>,
     sampler: Option<Sampler>,
@@ -290,7 +291,7 @@ where
             let future = async move {
                 let mut session = model.new_session()?;
                 model
-                    .stream_text_with_callback(&mut session, &text, sampler, on_token)
+                    .stream_text_with_callback(&mut session, text, sampler, on_token)
                     .await?;
                 let mut all_text = all_text.lock().unwrap();
                 let all_text = std::mem::take(&mut *all_text);
@@ -392,7 +393,7 @@ where
                 model
                     .stream_text_with_callback_and_parser(
                         &mut session,
-                        &text,
+                        text,
                         sampler,
                         constraints,
                         on_token,

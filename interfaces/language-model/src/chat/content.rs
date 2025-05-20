@@ -1,7 +1,7 @@
 use std::{
     fmt::Arguments,
     ops::AddAssign,
-    path::{Path, PathBuf},
+    path::{Path, PathBuf}, sync::Arc,
 };
 
 use serde::{Deserialize, Serialize};
@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 /// contents += MediaSource::url("https://example.com/image.png");
 /// contents += MediaSource::try_from(PathBuf::from("path/to/file.png")).unwrap();
 /// ```
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct MessageContent {
     chunks: Vec<ContentChunk>,
 }
@@ -66,6 +66,27 @@ impl MessageContent {
             [ContentChunk::Text(text)] => Some(text),
             _ => None,
         }
+    }
+
+    /// Get just the text content of this message.
+    pub fn text(&self) -> String {
+        self.chunks.iter().fold(String::new(), |mut acc, chunk| {
+            if let ContentChunk::Text(text) = chunk {
+                acc.push_str(text);
+            }
+            acc
+        })
+    }
+
+    /// Get just the media content of this message.
+    pub fn media(&self) -> Vec<MediaChunk> {
+        self.chunks.iter().filter_map(|chunk| {
+            if let ContentChunk::Media(media) = chunk {
+                Some(media.clone())
+            } else {
+                None
+            }
+        }).collect()
     }
 }
 
@@ -165,6 +186,12 @@ impl From<MediaSource> for ContentChunk {
     }
 }
 
+impl From<MediaChunk> for ContentChunk {
+    fn from(chunk: MediaChunk) -> Self {
+        ContentChunk::Media(chunk)
+    }
+}
+
 impl TryFrom<PathBuf> for ContentChunk {
     type Error = std::io::Error;
 
@@ -236,7 +263,7 @@ impl MediaSource {
     }
 
     /// Create a new `MediaSource` from a byte array.
-    pub fn bytes(bytes: impl Into<Box<[u8]>>) -> Self {
+    pub fn bytes(bytes: impl Into<Arc<[u8]>>) -> Self {
         MediaSource {
             variant: MediaSourceVariant::Bytes(bytes.into()),
         }
@@ -247,7 +274,7 @@ impl MediaSource {
     pub fn file(path: impl AsRef<Path>) -> Result<Self, std::io::Error> {
         let bytes = std::fs::read(path)?;
         Ok(MediaSource {
-            variant: MediaSourceVariant::Bytes(bytes.into_boxed_slice()),
+            variant: MediaSourceVariant::Bytes(bytes.into()),
         })
     }
 }
@@ -274,7 +301,7 @@ impl TryFrom<PathBuf> for MediaSource {
     fn try_from(path: PathBuf) -> Result<Self, Self::Error> {
         let bytes = std::fs::read(path)?;
         Ok(MediaSource {
-            variant: MediaSourceVariant::Bytes(bytes.into_boxed_slice()),
+            variant: MediaSourceVariant::Bytes(bytes.into()),
         })
     }
 }
@@ -282,7 +309,7 @@ impl TryFrom<PathBuf> for MediaSource {
 impl From<Vec<u8>> for MediaSource {
     fn from(bytes: Vec<u8>) -> Self {
         MediaSource {
-            variant: MediaSourceVariant::Bytes(bytes.into_boxed_slice()),
+            variant: MediaSourceVariant::Bytes(bytes.into()),
         }
     }
 }
@@ -298,7 +325,24 @@ impl From<&[u8]> for MediaSource {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 enum MediaSourceVariant {
     Url(String),
-    Bytes(Box<[u8]>),
+    #[serde(serialize_with = "serialize_bytes")]
+    #[serde(deserialize_with = "deserialize_bytes")]
+    Bytes(Arc<[u8]>),
+}
+
+fn serialize_bytes<S>(bytes: &Arc<[u8]>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_bytes(&bytes[..])
+}
+
+fn deserialize_bytes<'de, D>(deserializer: D) -> Result<Arc<[u8]>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let bytes = Vec::<u8>::deserialize(deserializer)?;
+    Ok(bytes.into())
 }
 
 #[cfg(feature = "remote")]
