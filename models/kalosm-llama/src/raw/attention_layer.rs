@@ -1,5 +1,5 @@
 use super::debug_assert_none_nan;
-use super::rope::RopeCache;
+use super::rope::RopeImplementation;
 use super::silu::fast_cpu_silu;
 use candle_core::quantized::QTensor;
 use candle_core::{quantized::QMatMul, Module, Tensor};
@@ -179,8 +179,9 @@ impl SeparateAttention {
         head_dim: usize,
         num_key_value_heads: usize,
         hidden_states: &Tensor,
-        rope_cache: &RopeCache,
+        rope_cache: &RopeImplementation,
         start_pos: usize,
+        pos_ids: Option<&Tensor>,
     ) -> candle_core::Result<(Tensor, Tensor, Tensor)> {
         let b_sz = hidden_states.dims()[0];
         let seq_len = hidden_states.dims()[1];
@@ -243,11 +244,13 @@ impl SeparateAttention {
                     candle_core::Error::Msg("failed to join key states".to_string())
                 })??;
 
-                let (query_states, key_states) = if self.interleaved_rope {
-                    rope_cache.forward_i(&query_states, &key_states, start_pos)?
-                } else {
-                    rope_cache.forward(&query_states, &key_states, start_pos)?
-                };
+                let (query_states, key_states) = rope_cache.forward(
+                    &query_states,
+                    &key_states,
+                    start_pos,
+                    pos_ids,
+                    self.interleaved_rope,
+                )?;
 
                 let value_states = value_states.join().map_err(|_| {
                     candle_core::Error::Msg("failed to join value states".to_string())
@@ -302,11 +305,13 @@ impl SeparateAttention {
                     .transpose(1, 2)?
             };
 
-            let (query_states, key_states) = if self.interleaved_rope {
-                rope_cache.forward_i(&query_states, &key_states, start_pos)?
-            } else {
-                rope_cache.forward(&query_states, &key_states, start_pos)?
-            };
+            let (query_states, key_states) = rope_cache.forward(
+                &query_states,
+                &key_states,
+                start_pos,
+                pos_ids,
+                self.interleaved_rope,
+            )?;
 
             Ok((query_states, key_states, value_states))
         }
@@ -324,8 +329,9 @@ impl GroupedAttention {
         head_dim: usize,
         num_key_value_heads: usize,
         x: &Tensor,
-        rope_cache: &RopeCache,
+        rope_cache: &RopeImplementation,
         start_pos: usize,
+        pos_ids: Option<&Tensor>,
     ) -> candle_core::Result<(Tensor, Tensor, Tensor)> {
         let b_sz = x.dims()[0];
         let seq_len = x.dims()[1];
@@ -351,7 +357,7 @@ impl GroupedAttention {
             .transpose(1, 2)?;
 
         let (query_states, key_states) =
-            rope_cache.forward(&query_states, &key_states, start_pos)?;
+            rope_cache.forward(&query_states, &key_states, start_pos, pos_ids, false)?;
 
         Ok((query_states, key_states, value_states))
     }
@@ -369,7 +375,7 @@ pub struct LlamaAttention {
     pub n_kv_head: usize,
     pub head_dim: usize,
     pub hidden_size: usize,
-    pub rope_cache: RopeCache,
+    pub rope_cache: RopeImplementation,
     pub(crate) sliding_window_size: Option<usize>,
 }
 
@@ -379,6 +385,7 @@ impl LlamaAttention {
         hidden_states: &Tensor,
         attention_mask: Option<&AttentionMask>,
         start_pos: usize,
+        pos_ids: Option<&Tensor>,
         cache: Option<&mut KvCache>,
     ) -> candle_core::Result<Tensor> {
         let bsz = hidden_states.dims()[0];
@@ -397,6 +404,7 @@ impl LlamaAttention {
                 hidden_states,
                 &self.rope_cache,
                 start_pos,
+                pos_ids,
             )?,
             AttentionVariant::Grouped(ref attention) => attention.forward(
                 num_heads,
@@ -405,6 +413,7 @@ impl LlamaAttention {
                 hidden_states,
                 &self.rope_cache,
                 start_pos,
+                pos_ids,
             )?,
         };
         debug_assert_none_nan(&query_states);

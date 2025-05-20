@@ -12,6 +12,7 @@ const CONCAT_DIMENSION: usize = 2;
 #[derive(Debug, Clone)]
 pub struct LlamaCache {
     max_seq_len: usize,
+    pub(crate) start_time: u32,
     pub(crate) tokens: Vec<u32>,
     pub(crate) blocks: Vec<KvCache>,
 }
@@ -25,6 +26,7 @@ impl LlamaCache {
             blocks.push(KvCache::new(CONCAT_DIMENSION, max_seq_len))
         }
         Self {
+            start_time: 0,
             max_seq_len,
             tokens: Vec::new(),
             blocks,
@@ -64,6 +66,10 @@ impl LlamaCache {
             "llama.cache.max_seq_len".to_string(),
             Tensor::new(self.max_seq_len as u32, device).unwrap(),
         );
+        map.insert(
+            "llama.cache.start_time".to_string(),
+            Tensor::new(self.start_time as u32, device).unwrap(),
+        );
         map
     }
 
@@ -77,6 +83,10 @@ impl LlamaCache {
             .get("llama.cache.max_seq_len")
             .and_then(|max_seq_len| max_seq_len.to_scalar::<u32>().ok())
             .unwrap_or(2048) as usize;
+        let start_time = map
+            .get("llama.cache.start_time")
+            .and_then(|start_time| start_time.to_scalar::<u32>().ok())
+            .unwrap_or(0);
         let mut blocks = Vec::with_capacity(24);
         for (k, v) in map {
             if let Some(i) = k.strip_prefix("llama.cache.blocks.") {
@@ -125,6 +135,7 @@ impl LlamaCache {
             }
         }
         Ok(Self {
+            start_time,
             tokens,
             blocks,
             max_seq_len,

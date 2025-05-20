@@ -4,7 +4,6 @@ use candle_transformers::{
     quantized_var_builder::VarBuilder,
 };
 
-use super::QWEN_EPS;
 
 pub(crate) struct Qwen2VLPatchMerger {
     hidden_size: usize,

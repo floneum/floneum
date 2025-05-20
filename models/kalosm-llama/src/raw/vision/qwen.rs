@@ -7,9 +7,13 @@ use kalosm_common::KvCache;
 use crate::raw::rope::RopeCache;
 
 use super::{
-    qwen_image_processing::process_image, qwen_patch_merger::Qwen2VLPatchMerger,
-    qwen_rope::VisionRotaryEmbedding, qwen_vision::get_window_index,
-    qwen_vision_block::VisionBlock, qwen_vision_embed::Qwen2_5VisionPatchEmbed, QWEN_EPS,
+    qwen_image_processing::process_image,
+    qwen_patch_merger::Qwen2VLPatchMerger,
+    qwen_rope::{get_rope_index, VisionRotaryEmbedding},
+    qwen_vision::get_window_index,
+    qwen_vision_block::VisionBlock,
+    qwen_vision_embed::Qwen2_5VisionPatchEmbed,
+    QWEN_EPS,
 };
 
 pub(crate) struct QwenVisionTransformer {
@@ -247,6 +251,34 @@ impl QwenVisionTransformer {
             max_pixels,
             &self.device,
         )
+    }
+
+    pub(crate) fn get_rope_index(
+        &self,
+        input_ids: &[u32],
+        grid_thw: &[[u32; 3]],
+        config: &crate::raw::LlamaConfig,
+        start_time: u32,
+    ) -> candle_core::Result<(Tensor, u32)> {
+        let rope_index = get_rope_index(
+            self.spacial_merge_size,
+            config.image_pad_token.unwrap(),
+            config.video_pad_token.unwrap(),
+            config.vision_start_token.unwrap(),
+            input_ids,
+            grid_thw,
+            &[],
+            start_time,
+        );
+
+        let new_start_time = rope_index.last().map(|x| x.time).unwrap_or(0);
+        let tensor = Tensor::from_iter(
+            rope_index.iter().flat_map(|x| [x.x, x.y, x.time]),
+            &self.device,
+        )?
+        .reshape((3, ()))?;
+
+        Ok((tensor, new_start_time))
     }
 
     pub(crate) fn forward_image(

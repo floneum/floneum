@@ -11,8 +11,6 @@ use crate::raw::{
     rope::RopeCache,
 };
 
-use super::QWEN_EPS;
-
 pub(crate) struct VisionBlock {
     norm1: RmsNorm,
     norm2: RmsNorm,
@@ -248,13 +246,4 @@ impl VisionAttention {
         .unwrap()
         .squeeze(0)
     }
-}
-
-fn unbind(tensor: &Tensor, dim: usize) -> Result<Vec<Tensor>> {
-    tensor
-        .chunk(tensor.dim(dim).unwrap(), dim)
-        .unwrap()
-        .into_iter()
-        .map(|t| t.squeeze(dim))
-        .collect()
 }

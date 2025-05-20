@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use crate::chat_template::HuggingFaceChatTemplate;
 use crate::raw::attention_layer::LlamaAttention;
-use crate::raw::rope::RopeCache;
 use crate::LlamaSourceError;
 use attention_layer::AttentionBias;
 use attention_layer::AttentionVariant;
@@ -28,6 +27,7 @@ mod silu;
 mod vision;
 
 use cache::LlamaCache;
+use rope::RopeImplementation;
 
 fn decode_norm(tensor: QTensor, eps: f64) -> candle_core::Result<RmsNorm> {
     RmsNorm::from_qtensor(tensor, eps)
@@ -53,7 +53,8 @@ pub struct LlamaConfig {
     pub(crate) vision_start_token: Option<u32>,
     pub(crate) _vision_end_token: Option<u32>,
     pub(crate) image_pad_token: Option<u32>,
-    pub(crate) _video_pad_token: Option<u32>,
+    pub(crate) video_pad_token: Option<u32>,
+    pub(crate) mrope_sections: Option<Vec<usize>>,
 }
 
 impl LlamaConfig {
@@ -78,7 +79,8 @@ impl LlamaConfig {
             vision_start_token: None,
             _vision_end_token: None,
             image_pad_token: None,
-            _video_pad_token: None,
+            video_pad_token: None,
+            mrope_sections: None,
         }
     }
 }
@@ -128,10 +130,11 @@ impl Model {
             vision_start_token: None,
             _vision_end_token: None,
             image_pad_token: None,
-            _video_pad_token: None,
+            video_pad_token: None,
+            mrope_sections: None,
         };
         let config = Arc::new(config);
-        let rope = RopeCache::new(&config, DType::F32, config.rope_theta, device)?;
+        let rope = RopeImplementation::new(&config, DType::F32, config.rope_theta, device)?;
         let tok_embeddings_q = ct.remove("tok_embeddings.weight")?;
         let tok_embeddings = tok_embeddings_q.dequantize(device)?;
         let output = if let Ok(output) = ct.remove("output.weight") {
@@ -318,17 +321,25 @@ impl Model {
                 .iter()
                 .position(|v| **v == "<|image_pad|>")
                 .map(|v| v as u32),
-            _video_pad_token: tokens
+            video_pad_token: tokens
                 .iter()
                 .position(|v| **v == "<|video_pad|>")
                 .map(|v| v as u32),
+            mrope_sections: md_get(".rope.dimension_sections")
+                .ok()
+                .and_then(|m| {
+                    m.to_vec()
+                        .ok()
+                        .map(|v| v.iter().map(|x| x.to_u32().map(|x| x as usize)).collect())
+                })
+                .transpose()?,
         };
         let config = Arc::new(config);
 
-        let rope = RopeCache::new(&config, DType::F32, config.rope_theta, device)?;
+        let rope = RopeImplementation::new(&config, DType::F32, config.rope_theta, device)?;
         let sliding_rope = rope_freq_base_sliding
             .map(|rope_freq_base_sliding| {
-                RopeCache::new(&config, DType::F32, rope_freq_base_sliding, device)
+                RopeImplementation::new(&config, DType::F32, rope_freq_base_sliding, device)
             })
             .transpose()?;
 
@@ -505,17 +516,20 @@ impl Model {
         raw_images: &[image::DynamicImage],
         device: &Device,
         mut cache: Option<&mut LlamaCache>,
-    ) -> Result<(Tensor, usize, usize)> {
+    ) -> Result<(Tensor, usize, usize, Option<Tensor>)> {
+        let mut grid_thw = Vec::new();
         let mut images = Vec::new();
         let mut image_token_ranges = Vec::new();
         // Embed all images
         if let Some(vision_encoder) = &self.vision_encoder {
             for image in raw_images {
-                images.push(vision_encoder.preprocess_image(
+                let (image, thw) = vision_encoder.preprocess_image(
                     image,
                     Some(128 * 14 * 14),
                     Some(512 * 14 * 14),
-                )?);
+                )?;
+                images.push(image);
+                grid_thw.push(thw)
             }
         }
 
@@ -527,7 +541,7 @@ impl Model {
         ) {
             let mut tokens = Vec::new();
             let mut token_iter = raw_tokens.iter().copied();
-            let mut image_iter = images.iter();
+            let mut image_iter = grid_thw.iter();
             while let Some(token) = token_iter.next() {
                 tokens.push(token);
                 let start_index = tokens.len();
@@ -535,7 +549,7 @@ impl Model {
                     match token_iter.next() {
                         Some(next) if next == image_pad_token => {
                             // Push a pad token for every image token
-                            let (_, grid) = image_iter.next().ok_or_else(|| {
+                            let grid = image_iter.next().ok_or_else(|| {
                                 candle_core::Error::Msg(format!(
                                     "Image pad token found without matching image."
                                 ))
@@ -563,7 +577,7 @@ impl Model {
         let cached_tokens = cache.as_ref().map(|c| c.tokens.len()).unwrap_or_default();
         // We use a lower cutoff than the context length to avoid recomputing the attention every single token
         let cutoff_len: usize = self.config.context_length.saturating_sub(32).max(8);
-        let (x, index_pos) = if seq_len + cached_tokens > self.config.context_length {
+        let (tokens, index_pos, start_time) = if seq_len + cached_tokens > self.config.context_length {
             let all_tokens = if let Some(cache) = cache.as_mut() {
                 cache.clear();
                 let mut all_tokens = cache.tokens.clone();
@@ -580,30 +594,38 @@ impl Model {
                 cache.tokens = all_tokens.to_vec();
             }
             assert!(all_tokens.len() <= self.config.context_length);
-            (Tensor::new(all_tokens, device)?.unsqueeze(0)?, 0)
+            (all_tokens.to_vec(), 0, 0)
         } else {
             let index_pos = cache.as_ref().map(|c| c.tokens.len()).unwrap_or_default();
+            let start_time = cache.as_ref().map(|c| c.start_time).unwrap_or_default();
             if let Some(cache) = cache.as_mut() {
                 cache.tokens.extend_from_slice(&tokens);
             }
-            (Tensor::new(tokens, device)?.unsqueeze(0)?, index_pos)
+            (tokens, index_pos, start_time)
         };
+        let x = Tensor::new(tokens.as_slice(), device)?.unsqueeze(0)?;
 
         let mut embeddings = self.tok_embeddings.forward(&x)?;
+        let mut pos_ids = None;
         let batch_size = embeddings.dim(0)?;
         let embed_dim = embeddings.dim(2)?;
 
         if let Some(vision_encoder) = &self.vision_encoder {
-            for ((pixels, grid), range) in images.iter().zip(image_token_ranges) {
+            for ((pixels, grid), range) in images.iter().zip(&grid_thw).zip(image_token_ranges) {
                 let image_embeds = vision_encoder.forward_image(pixels, *grid)?;
                 embeddings = embeddings.slice_assign(
                     &[0..batch_size, range, 0..embed_dim],
                     &image_embeds.unsqueeze(0)?,
                 )?;
             }
+            let (new_pos_ids, new_start_time) = vision_encoder.get_rope_index(&tokens, &grid_thw, &self.config, start_time)?;
+            if let Some(cache) = cache.as_mut() {
+                cache.start_time = new_start_time;
+            }
+            pos_ids = Some(new_pos_ids);
         }
 
-        Ok((embeddings, seq_len, index_pos))
+        Ok((embeddings, seq_len, index_pos, pos_ids))
     }
 
     pub fn forward(
@@ -613,7 +635,7 @@ impl Model {
         device: &Device,
         mut cache: Option<&mut LlamaCache>,
     ) -> Result<Tensor> {
-        let (mut layer_in, seq_len, index_pos) =
+        let (mut layer_in, seq_len, index_pos, pos_ids) =
             self.encode_tokens(tokens, images, device, cache.as_deref_mut())?;
 
         for (i, layer) in self.layers.iter().enumerate() {
@@ -629,6 +651,7 @@ impl Model {
                 &x,
                 Some(&mask),
                 index_pos,
+                pos_ids.as_ref(),
                 cache.as_mut().map(|c| &mut c.blocks[i]),
             )?;
             debug_assert_none_nan(&attn);

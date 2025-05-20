@@ -69,10 +69,10 @@ impl VideoSize {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct RopeIndex {
-    x: u32,
-    y: u32,
-    time: u32,
+pub(crate) struct RopeIndex {
+    pub(crate) x: u32,
+    pub(crate) y: u32,
+    pub(crate) time: u32,
 }
 
 // Calculate the rope index for each token in the input_ids.
@@ -86,19 +86,20 @@ struct RopeIndex {
 //     will be encoded as:
 //     [RopeIndex { x: 0, y: 0, time: 0 }, RopeIndex { x: 1, y: 1, time: 1 }, RopeIndex { x: 1, y: 2, time: 1 },
 //      RopeIndex { x: 2, y: 1, time: 1 }, RopeIndex { x: 2, y: 2, time: 1 }]
-fn get_rope_index(
+pub(crate) fn get_rope_index(
     spatial_merge_size: usize,
     image_token_id: u32,
     video_token_id: u32,
     vision_start_token_id: u32,
     input_ids: &[u32],
-    image_sizes: &[ImageSize],
-    video_sizes: &[VideoSize],
+    image_sizes: &[[u32; 3]],
+    video_sizes: &[[u32; 3]],
+    start_time: u32,
 ) -> Vec<RopeIndex> {
-    let mut images = image_sizes.iter();
-    let mut videos = video_sizes.iter();
+    let mut images = image_sizes.iter().map(|&[w, h, _]| ImageSize::new(w, h));
+    let mut videos = video_sizes.iter().map(|&[w, h, f]| VideoSize::new(w, h, f));
     let mut indexes = Vec::new();
-    let mut max_time_index = 0;
+    let mut max_time_index = start_time;
     let mut index = 0;
 
     while let Some(token) = input_ids.get(index).copied() {
@@ -183,6 +184,7 @@ fn test_get_rope_index_text() {
         &input_ids,
         &image_sizes,
         &video_sizes,
+        0,
     );
 
     assert_eq!(
@@ -242,6 +244,7 @@ fn test_get_rope_index() {
         &input_ids,
         &image_sizes,
         &video_sizes,
+        0,
     );
 
     assert_eq!(

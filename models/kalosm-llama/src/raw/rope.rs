@@ -1,7 +1,7 @@
 use std::f32::consts::PI;
 
 use super::{LlamaConfig, RopeScalingConfig};
-use candle_core::{DType, Device, Tensor};
+use candle_core::{shape::Dim, DType, Device, IndexOp, Result, Tensor, D};
 
 pub(crate) fn create_inverse_frequency(
     rope_scaling: Option<&RopeScalingConfig>,
@@ -41,6 +41,144 @@ pub(crate) fn create_inverse_frequency(
     }
 
     Ok(inverse_frequency)
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum RopeImplementation {
+    QwenVL(QwenVLRopeCache),
+    Llama(RopeCache),
+}
+
+impl RopeImplementation {
+    pub fn new(
+        config: &LlamaConfig,
+        dtype: DType,
+        rope_theta: f32,
+        device: &Device,
+    ) -> candle_core::Result<Self> {
+        if let Some(mrope_sections) = &config.mrope_sections {
+            let cache = QwenVLRopeCache::new(config, dtype, rope_theta, mrope_sections, device)?;
+            Ok(Self::QwenVL(cache))
+        } else {
+            let cache = RopeCache::new(config, dtype, rope_theta, device)?;
+            Ok(Self::Llama(cache))
+        }
+    }
+
+    pub fn forward(
+        &self,
+        query: &Tensor,
+        key: &Tensor,
+        start_pos: usize,
+        position_ids: Option<&Tensor>,
+        interleaved_rope: bool,
+    ) -> candle_core::Result<(Tensor, Tensor)> {
+        match self {
+            Self::QwenVL(cache) => cache.forward(position_ids.unwrap(), query, key),
+            Self::Llama(cache) => {
+                if interleaved_rope {
+                    cache.forward_i(query, key, start_pos)
+                } else {
+                    cache.forward(query, key, start_pos)
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct QwenVLRopeCache {
+    inverse_frequency: Tensor,
+    mrope_sections: Vec<usize>,
+}
+
+impl QwenVLRopeCache {
+    pub fn new(
+        config: &LlamaConfig,
+        dtype: DType,
+        rope_theta: f32,
+        mrope_sections: &[usize],
+        device: &Device,
+    ) -> candle_core::Result<Self> {
+        let inverse_frequency = create_inverse_frequency(
+            config.rope_scaling.as_ref(),
+            config.rope_freq_weight.as_ref(),
+            dtype,
+            config.head_dimension,
+            rope_theta,
+            device,
+        )?;
+        let mrope_sections = mrope_sections.to_vec();
+        Ok(Self {
+            inverse_frequency,
+            mrope_sections,
+        })
+    }
+
+    fn forward_sin_cos(&self, position_ids: &Tensor) -> Result<(Tensor, Tensor)> {
+        let inv_freq_expanded = self.inverse_frequency.reshape((1, 1, (), 1))?.repeat((
+            3,
+            position_ids.dim(1)?,
+            1,
+            1,
+        ))?;
+        let position_ids_expanded = position_ids.unsqueeze(2)?;
+        let freqs = inv_freq_expanded
+            .matmul(&position_ids_expanded.to_dtype(inv_freq_expanded.dtype())?)?
+            .transpose(2, 3)?;
+        let cos = freqs.cos()?;
+        let sin = freqs.sin()?;
+
+        let cos = Tensor::cat(
+            &split(&cos, D::Minus1, &self.mrope_sections)?
+                .iter()
+                .enumerate()
+                .map(|(i, m)| m.i(i % 3))
+                .collect::<Result<Vec<_>>>()?,
+            D::Minus1,
+        )?
+        .squeeze(0)?
+        .contiguous()?;
+        let sin = Tensor::cat(
+            &split(&sin, D::Minus1, &self.mrope_sections)?
+                .iter()
+                .enumerate()
+                .map(|(i, m)| m.i(i % 3))
+                .collect::<Result<Vec<_>>>()?,
+            D::Minus1,
+        )?
+        .squeeze(0)?
+        .contiguous()?;
+
+        Ok((cos, sin))
+    }
+
+    pub(crate) fn forward(
+        &self,
+        position_ids: &Tensor,
+        query: &Tensor,
+        key: &Tensor,
+    ) -> candle_core::Result<(Tensor, Tensor)> {
+        let (cos, sin) = self.forward_sin_cos(position_ids)?;
+        let key = candle_nn::rotary_emb::rope(&key.contiguous()?, &cos, &sin)?;
+        let query = candle_nn::rotary_emb::rope(&query.contiguous()?, &cos, &sin)?;
+        Ok((query, key))
+    }
+}
+
+fn split(
+    tensor: &Tensor,
+    dim: impl Dim + Copy,
+    split_at: &[usize],
+) -> candle_core::Result<Vec<Tensor>> {
+    let mut result = Vec::new();
+    let mut start = 0;
+    for len in split_at.iter().copied() {
+        let slice = tensor.narrow(dim, start, len)?;
+        result.push(slice);
+        start += len;
+    }
+    Ok(result)
 }
 
 #[derive(Debug, Clone)]
