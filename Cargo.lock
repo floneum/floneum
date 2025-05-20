@@ -2574,6 +2574,7 @@ dependencies = [
  "clap 4.5.38",
  "fusor-gguf",
  "nom 8.0.0",
+ "serde_json",
 ]
 
 [[package]]

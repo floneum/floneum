@@ -46,6 +46,7 @@ pub(crate) struct LlamaConfigJson {
 #[derive(Clone, Debug)]
 pub struct LlamaSource {
     pub(crate) model: FileSource,
+    pub(crate) vision_model: Option<FileSource>,
     pub(crate) tokenizer: Option<FileSource>,
     pub(crate) config: Option<FileSource>,
     pub(crate) group_query_attention: u8,
@@ -95,6 +96,7 @@ impl LlamaSource {
             cache: Default::default(),
             override_stop_token_string: None,
             override_chat_template: None,
+            vision_model: None,
         }
     }
 
@@ -144,6 +146,13 @@ impl LlamaSource {
     /// Override the chat template. This is useful for models that have a missing or incorrect chat template.
     pub fn with_override_chat_template(mut self, chat_template: impl ToString) -> Self {
         self.override_chat_template = Some(chat_template.to_string());
+
+        self
+    }
+
+    /// Set the clip model to use for vision encoding. This is used for Qwen-2.5 VL models to enable vision.
+    pub fn with_vision_model(mut self, model: FileSource) -> Self {
+        self.vision_model = Some(model);
 
         self
     }
@@ -770,6 +779,25 @@ impl LlamaSource {
             "tokenizer.json".to_string(),
         ))
         .with_override_stop_token_string("<end_of_turn>")
+    }
+
+    /// A preset for qwen 2.5 3b VL chat in f16 precision
+    pub fn qwen_2_5_3b_vl_chat_f16() -> Self {
+        Self::new(kalosm_model_types::FileSource::HuggingFace {
+            model_id: "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF".into(),
+            revision: "main".into(),
+            file: "Qwen2.5-VL-3B-Instruct-f16.gguf".into(),
+        })
+        .with_vision_model(kalosm_model_types::FileSource::HuggingFace {
+            model_id: "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF".into(),
+            revision: "main".into(),
+            file: "mmproj-Qwen2.5-VL-3B-Instruct-f16.gguf".into(),
+        })
+        .with_tokenizer(kalosm_model_types::FileSource::HuggingFace {
+            model_id: "Qwen/Qwen2.5-VL-3B-Instruct".into(),
+            revision: "main".into(),
+            file: "tokenizer.json".into(),
+        })
     }
 }
 
