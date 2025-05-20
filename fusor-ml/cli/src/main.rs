@@ -38,7 +38,6 @@ enum Command {
     },
 }
 
-
 fn main() {
     let command = Command::parse();
 

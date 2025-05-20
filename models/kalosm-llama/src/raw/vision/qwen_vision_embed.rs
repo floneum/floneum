@@ -21,29 +21,20 @@ impl Qwen2_5VisionPatchEmbed {
     ) -> candle_core::Result<Self> {
         let device = vb.device();
         let ws_1 = vb
-            .get(
-                (
-                    embed_dim,
-                    in_channels,
-                    patch_size,
-                    patch_size,
-                ),
-                "weight",
-            )?
+            .get((embed_dim, in_channels, patch_size, patch_size), "weight")?
             .dequantize_f16(device)?;
         let ws_2 = vb
-            .get(
-                (
-                    embed_dim,
-                    in_channels,
-                    patch_size,
-                    patch_size,
-                ),
-                "weight.1",
-            )?
+            .get((embed_dim, in_channels, patch_size, patch_size), "weight.1")?
             .dequantize_f16(device)?;
 
-        Self::from_weight(patch_size, temporal_patch_size, in_channels, embed_dim, &ws_1, &ws_2)
+        Self::from_weight(
+            patch_size,
+            temporal_patch_size,
+            in_channels,
+            embed_dim,
+            &ws_1,
+            &ws_2,
+        )
     }
 
     pub fn from_weight(
@@ -195,7 +186,7 @@ fn test_vision_patch_embed() {
     .unwrap()
     .to_dtype(DType::F16)
     .unwrap();
-let (weight_1, weight_2) = split_frames(&weight).unwrap();
+    let (weight_1, weight_2) = split_frames(&weight).unwrap();
 
     let patch_embed = Qwen2_5VisionPatchEmbed::from_weight(
         patch_size,

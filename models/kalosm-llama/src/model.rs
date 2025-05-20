@@ -141,26 +141,23 @@ impl LlamaModel {
             .await?;
 
         let mut vision = None;
-        let mut vision_file = None;
+        let mut vision_path = None;
         if let Some(vision_source) = builder.source.vision_model {
             let mut create_progress = ModelLoadingProgress::downloading_progress(format!(
                 "Vision model ({})",
                 vision_source
             ));
-            let vision_path = builder
+            let path = builder
                 .source
                 .cache
                 .get(&vision_source, |progress| {
                     handler(create_progress(progress))
                 })
                 .await?;
-            vision_file = Some(
-                std::fs::File::open(&vision_path)
-                    .expect("The path returned by LlamaSource::model should be valid"),
-            );
-            vision = Some(gguf_file::Content::read(
-                &mut vision_file.as_mut().unwrap(),
-            )?);
+            let mut vision_file = std::fs::File::open(&path)
+                .expect("The path returned by LlamaSource::model should be valid");
+            vision = Some(gguf_file::Content::read(&mut vision_file)?);
+            vision_path = Some(path);
         }
 
         // Then actually load the model and tokenizer. This is expensive, so we do it in a blocking task
@@ -299,7 +296,7 @@ impl LlamaModel {
                             model,
                             &mut file,
                             vision,
-                            vision_file.as_mut(),
+                            vision_path,
                             &device,
                             override_stop_token_string,
                             override_chat_template,

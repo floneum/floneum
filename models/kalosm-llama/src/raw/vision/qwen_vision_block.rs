@@ -118,17 +118,11 @@ impl VisionAttention {
         let seq_len = xs.dim(0)?;
 
         // First, pass the input through the qkv layer
-        let q = xs
-            .apply(&self.q)?
-            .reshape((seq_len, self.head_count, ()))?;
+        let q = xs.apply(&self.q)?.reshape((seq_len, self.head_count, ()))?;
 
-        let k = xs
-            .apply(&self.k)?
-            .reshape((seq_len, self.head_count, ()))?;
+        let k = xs.apply(&self.k)?.reshape((seq_len, self.head_count, ()))?;
 
-        let v = xs
-            .apply(&self.v)?
-            .reshape((seq_len, self.head_count, ()))?;
+        let v = xs.apply(&self.v)?.reshape((seq_len, self.head_count, ()))?;
 
         let (q, k) = rope_cache.forward(&q.unsqueeze(0)?, &k.unsqueeze(0)?, start_pos)?;
         let q = q.squeeze(0)?;

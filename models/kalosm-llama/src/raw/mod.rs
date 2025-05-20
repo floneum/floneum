@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::chat_template::HuggingFaceChatTemplate;
@@ -185,7 +186,7 @@ impl Model {
         ct: gguf_file::Content,
         reader: &mut R,
         vision_ct: Option<gguf_file::Content>,
-        vision_reader: Option<&mut R>,
+        vision_file: Option<PathBuf>,
         device: &Device,
         override_stop_token_string: Option<String>,
         override_chat_template: Option<String>,
@@ -448,13 +449,16 @@ impl Model {
         }
 
         // If the model is a vision model, load the vision encoder
-        let vision_encoder: Option<std::result::Result<vision::QwenVisionTransformer, _>> = vision_ct.map(|vision_ct| {
-            vision::QwenVisionTransformer::from_gguf(
-                vision_ct,
-                vision_reader.unwrap(),
-                device,
-            )
-        });
+        let vision_encoder: Option<std::result::Result<vision::QwenVisionTransformer, _>> =
+            if let (Some(vision_ct), Some(vision_file)) = (vision_ct, vision_file) {
+                Some(vision::QwenVisionTransformer::from_gguf(
+                    vision_ct,
+                    &vision_file,
+                    device,
+                ))
+            } else {
+                None
+            };
 
         Ok(Self {
             config,

@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use candle_core::{quantized::gguf_file, IndexOp, Tensor, D};
 use candle_transformers::quantized_var_builder::VarBuilder;
 use kalosm_common::{Cache, KvCache};
@@ -24,10 +26,9 @@ pub(crate) struct QwenVisionTransformer {
 }
 
 impl QwenVisionTransformer {
-
-    pub(crate) fn from_gguf<R: std::io::Read>(
+    pub(crate) fn from_gguf(
         vision_ct: gguf_file::Content,
-        vision_reader: &mut R,
+        vision_file: &Path,
         device: &candle_core::Device,
     ) -> candle_core::Result<Self> {
         let block_count = vision_ct
@@ -48,7 +49,7 @@ impl QwenVisionTransformer {
             .and_then(|x| x.to_u64().ok())
             .map(|x| x as usize)
             .unwrap_or(14);
-        let fullatt_block    = vision_ct
+        let fullatt_block = vision_ct
             .metadata
             .get("clip.vision.n_wa_pattern")
             .and_then(|x| x.to_u64().ok())
@@ -61,7 +62,8 @@ impl QwenVisionTransformer {
             })
             .unwrap_or(vec![7, 15, 23, 31]);
         let layer_norm_eps = vision_ct
-            .metadata.get("clip.vision.attention.layer_norm_epsilon")
+            .metadata
+            .get("clip.vision.attention.layer_norm_epsilon")
             .and_then(|x| x.to_f64().ok())
             .unwrap_or(QWEN_EPS);
         let hidden_size = vision_ct
@@ -74,14 +76,14 @@ impl QwenVisionTransformer {
             .get("clip.vision.feed_forward_length")
             .and_then(|x| x.to_u64().ok())
             .unwrap_or(3420) as usize;
-            let out_hidden_size = vision_ct
+        let out_hidden_size = vision_ct
             .metadata
             .get("clip.vision.projection_dim")
             .and_then(|x| x.to_u64().ok())
             .unwrap_or(2048) as usize;
         let in_channels = 3;
 
-        let vb = todo!();
+        let vb = VarBuilder::from_gguf(vision_file, device)?;
         Self::new(
             spacial_merge_size,
             temporal_patch_size,
@@ -131,12 +133,8 @@ impl QwenVisionTransformer {
                 )
             })
             .collect::<candle_core::Result<Vec<_>>>()?;
-        let merger = Qwen2VLPatchMerger::new(
-            out_hidden_size,
-            hidden_size,
-            spacial_merge_size,
-            &vb,
-        )?;
+        let merger =
+            Qwen2VLPatchMerger::new(out_hidden_size, hidden_size, spacial_merge_size, &vb)?;
 
         Ok(Self {
             spacial_merge_size,

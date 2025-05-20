@@ -5,9 +5,7 @@ use kalosm_streams::text_stream::TextStream;
 async fn main() {
     tracing_subscriber::fmt::init();
     let model = Llama::builder()
-        .with_source(
-            LlamaSource::qwen_2_5_3b_vl_chat_f16()
-        )
+        .with_source(LlamaSource::qwen_2_5_3b_vl_chat_f16())
         .build()
         .await
         .unwrap();
