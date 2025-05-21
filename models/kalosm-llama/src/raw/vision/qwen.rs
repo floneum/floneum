@@ -59,13 +59,7 @@ impl QwenVisionTransformer {
             .metadata
             .get("clip.vision.n_wa_pattern")
             .and_then(|x| x.to_u64().ok())
-            .map(|x| {
-                let mut v = vec![];
-                for i in (0..block_count).step_by(x as usize) {
-                    v.push(i as usize);
-                }
-                v
-            })
+            .map(|x| generate_full_attention_blocks(block_count, x))
             .unwrap_or(vec![7, 15, 23, 31]);
         let layer_norm_eps = vision_ct
             .metadata
@@ -333,30 +327,7 @@ impl QwenVisionTransformer {
         grid_thw: &Vec<[u32; 3]>,
         mut cache: Option<&mut KvCache>,
     ) -> candle_core::Result<Tensor> {
-        println!("input");
-        let vec2 = hidden_states
-            .i((..25, ..))
-            .unwrap()
-            .to_dtype(candle_core::DType::F32)
-            .unwrap()
-            .to_vec2::<f32>()
-            .unwrap();
-        for list in vec2.iter() {
-            println!("{:?}", list);
-        }
-        println!("input shape: {:?}", hidden_states.dims());
         let hidden_states = self.patch_embed.forward(&hidden_states).unwrap();
-        // println!("input patch");
-        // let vec2 = hidden_states
-        //     .i((..25, ..25))
-        //     .unwrap()
-        //     .to_dtype(candle_core::DType::F32)
-        //     .unwrap()
-        //     .to_vec2::<f32>()
-        //     .unwrap();
-        // for list in vec2.iter() {
-        //     println!("{:?}", list);
-        // }
         let rotary_pos_emb = self.rot_pos_emb(grid_thw).unwrap();
         let (window_index, mut cu_window_seqlens) = get_window_index(
             grid_thw
@@ -414,18 +385,6 @@ impl QwenVisionTransformer {
 
         let cu_seqlens = std::iter::once(0).chain(cu_seqlens).collect::<Vec<_>>();
 
-        // println!("start");
-        // let vec2 = hidden_states
-        //     .i((..25, ..25))
-        //     .unwrap()
-        //     .to_dtype(candle_core::DType::F32)
-        //     .unwrap()
-        //     .to_vec2::<f32>()
-        //     .unwrap();
-        // for list in vec2.iter() {
-        //     println!("{:?}", list);
-        // }
-
         for (layer_num, blk) in self.blocks.iter().enumerate() {
             let cu_seqlens_now = if self.fullatt_block_indexes.contains(&layer_num) {
                 &cu_seqlens
@@ -441,15 +400,6 @@ impl QwenVisionTransformer {
                     cache.as_deref_mut(),
                 )
                 .unwrap();
-            // println!("{layer_num} {}/{}", layer_num, self.blocks.len());
-            // let vec2 = hidden_states
-            //     .i((..25, ..25))
-            //     .unwrap()
-            //     .to_vec2::<f32>()
-            //     .unwrap();
-            // for list in vec2.iter() {
-            //     println!("{:?}", list);
-            // }
         }
 
         let hidden_states = self.merger.forward(&hidden_states).unwrap();
@@ -502,7 +452,12 @@ async fn test_loading_qwen_vision() {
         depth,
         QWEN_EPS,
         [0.2686295509338379, 0.2613025903701782, 0.27577710151672363].to_vec(),
-        [0.48145467042922974, 0.45782750844955444, 0.40821072459220886].to_vec(),
+        [
+            0.48145467042922974,
+            0.45782750844955444,
+            0.40821072459220886,
+        ]
+        .to_vec(),
         &vb,
     )
     .unwrap();
@@ -564,4 +519,21 @@ async fn test_loading_qwen_vision() {
         "Qwen Vision: {:?}",
         out.i((0..5, 0..5)).unwrap().to_vec2::<f32>().unwrap()
     );
+}
+
+fn generate_full_attention_blocks(block_count: usize, n_wa_pattern: u64) -> Vec<usize> {
+    let n_wa_pattern = n_wa_pattern as usize;
+    let mut fullatt_block_indexes = vec![];
+    for i in (n_wa_pattern - 1..block_count).step_by(n_wa_pattern) {
+        fullatt_block_indexes.push(i);
+    }
+    fullatt_block_indexes
+}
+
+#[test]
+fn test_generate_full_attention_blocks() {
+    let block_count = 32;
+    let n_wa_pattern = 8;
+    let fullatt_block_indexes = generate_full_attention_blocks(block_count, n_wa_pattern);
+    assert_eq!(fullatt_block_indexes, [7, 15, 23, 31])
 }
