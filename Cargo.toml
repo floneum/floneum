@@ -29,6 +29,7 @@ members = [
     "interfaces/kalosm-model-types",
     "fusor-ml/core",
     "fusor-ml/gguf",
+    "fusor-ml/cli",
 ]
 
 [workspace.dependencies]

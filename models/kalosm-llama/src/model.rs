@@ -5,6 +5,8 @@ use crate::token_stream::TokenOutputStream;
 use crate::token_stream::TokenOutputStreamError;
 use crate::LlamaConfigJson;
 use kalosm_common::*;
+use kalosm_language_model::ImageFetchError;
+use kalosm_language_model::MediaHints;
 use kalosm_model_types::ModelLoadingProgress;
 use llm_samplers::types::Logits;
 use serde::de::Error;
@@ -57,6 +59,16 @@ pub enum LlamaModelError {
     /// Error running the chat template
     #[error("Error running the chat template: {0}")]
     ChatTemplateError(#[from] minijinja::Error),
+
+    /// Failed to load images
+    #[error("Failed to load images: {0}")]
+    ImageLoadingError(#[from] ImageFetchError),
+}
+
+impl From<image::ImageError> for LlamaModelError {
+    fn from(err: image::ImageError) -> Self {
+        LlamaModelError::ImageLoadingError(err.into())
+    }
 }
 
 /// The inner, synchronous Llama model.
@@ -71,6 +83,7 @@ impl LlamaModel {
         model: &Model,
         device: &Device,
         tokens: &[u32],
+        images: &[(image::DynamicImage, MediaHints)],
         cache: Option<&mut LlamaCache>,
         logits_vec: &mut Vec<f32>,
         #[allow(unused)] tokenizer: &Tokenizer,
@@ -87,7 +100,7 @@ impl LlamaModel {
             );
         }
 
-        let logits = model.forward(tokens, device, cache)?;
+        let logits = model.forward(tokens, images, device, cache)?;
 
         let logits = logits.squeeze(0)?.to_dtype(DType::F32)?;
         copy_tensor_into_vec(&logits, logits_vec)?;
@@ -139,6 +152,25 @@ impl LlamaModel {
             .source
             .model(|progress| handler(create_progress(progress)))
             .await?;
+
+        let mut vision = None;
+        let mut vision_path = None;
+        if let Some(vision_source) = builder.source.vision_model {
+            let mut create_progress = ModelLoadingProgress::downloading_progress(format!(
+                "Vision model ({vision_source})"
+            ));
+            let path = builder
+                .source
+                .cache
+                .get(&vision_source, |progress| {
+                    handler(create_progress(progress))
+                })
+                .await?;
+            let mut vision_file = std::fs::File::open(&path)
+                .expect("The path returned by LlamaSource::model should be valid");
+            vision = Some(gguf_file::Content::read(&mut vision_file)?);
+            vision_path = Some(path);
+        }
 
         // Then actually load the model and tokenizer. This is expensive, so we do it in a blocking task
         let (model, tokenizer) = tokio::task::spawn_blocking({
@@ -275,6 +307,8 @@ impl LlamaModel {
                         let model = Model::from_gguf(
                             model,
                             &mut file,
+                            vision,
+                            vision_path,
                             &device,
                             override_stop_token_string,
                             override_chat_template,
@@ -352,6 +386,7 @@ impl LlamaModel {
     ) -> Result<(), LlamaModelError> {
         let InferenceSettings {
             prompt,
+            images,
             stop_on,
             mut sampler,
             session,
@@ -381,6 +416,7 @@ impl LlamaModel {
             &self.model,
             &self.device,
             tokens,
+            &images,
             Some(&mut session),
             &mut logit_probs,
             &self.tokenizer,
@@ -403,6 +439,7 @@ impl LlamaModel {
                 &self.model,
                 &self.device,
                 &[new_token],
+                &[],
                 Some(&mut session),
                 &mut logit_probs,
                 &self.tokenizer,

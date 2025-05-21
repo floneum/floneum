@@ -9,7 +9,10 @@ use super::ChatMessage;
 use super::ChatResponseBuilder;
 use super::CreateChatSession;
 use super::CreateDefaultChatConstraintsForType;
+use super::IntoChatMessage;
+use super::MessageContent;
 use super::MessageType;
+use super::ToChatMessage;
 
 /// A task session lets you efficiently run a task with a model. The task session will reuse the model's cache to avoid re-feeding the task prompt repeatedly.
 ///
@@ -83,15 +86,17 @@ impl<M: CreateChatSession, Constraints> Task<M, Constraints> {
     ///     let model = Llama::new_chat().await.unwrap();
     ///     let task = model.task("You are a math assistant who helps students with their homework. You solve equations and answer questions. When solving problems, you will always solve problems step by step.")
     ///         .with_example("What is 1 + 2?", "Step 1: 1 + 2 = 3\nOutput: 3");
-    ///     let mut stream = task("What is 2 + 2?");
+    ///     let mut stream = task(&"What is 2 + 2?");
     ///     stream.to_std_out().await.unwrap();
     /// }
     /// ```
-    pub fn with_example(mut self, input: impl ToString, output: impl ToString) -> Self {
+    pub fn with_example(mut self, input: impl Into<MessageContent>, output: impl ToString) -> Self {
         self.chat
             .add_message(ChatMessage::new(MessageType::UserMessage, input));
-        self.chat
-            .add_message(ChatMessage::new(MessageType::ModelAnswer, output));
+        self.chat.add_message(ChatMessage::new(
+            MessageType::ModelAnswer,
+            output.to_string(),
+        ));
         self
     }
 
@@ -110,13 +115,13 @@ impl<M: CreateChatSession, Constraints> Task<M, Constraints> {
     ///             ("What is 3 + 4?", "Step 1: 3 + 4 = 7\nOutput: 7"),
     ///             ("What is (4 + 8) / 3?", "Step 1: 4 + 8 = 12\nStep 2: 12 / 3 = 4\nOutput: 4"),
     ///         ]);
-    ///     let mut stream = task("What is 3 + 4?");
+    ///     let mut stream = task(&"What is 3 + 4?");
     ///     stream.to_std_out().await.unwrap();
     /// }
     /// ```
     pub fn with_examples(
         mut self,
-        examples: impl IntoIterator<Item = (impl ToString, impl ToString)>,
+        examples: impl IntoIterator<Item = (impl Into<MessageContent>, impl ToString)>,
     ) -> Self {
         for (input, output) in examples {
             self = self.with_example(input, output);
@@ -140,7 +145,7 @@ impl<M: CreateChatSession, Constraints> Task<M, Constraints> {
     ///     let task = model
     ///         .task("You are a math assistant. Respond with just the number answer and nothing else.")
     ///         .with_constraints(Arc::new(i32::new_parser()));
-    ///     let mut stream = task("What is 2 + 2?");
+    ///     let mut stream = task(&"What is 2 + 2?");
     ///     stream.to_std_out().await.unwrap();
     ///     let result: i32 = stream.await.unwrap();
     ///     println!("{result}");
@@ -168,7 +173,7 @@ impl<M: CreateChatSession, Constraints> Task<M, Constraints> {
     ///     let task = model
     ///         .task("You are a math assistant. Respond with just the number answer and nothing else.")
     ///         .typed();
-    ///     let mut stream = task("What is 2 + 2?");
+    ///     let mut stream = task(&"What is 2 + 2?");
     ///     stream.to_std_out().await.unwrap();
     ///     let result: i32 = stream.await.unwrap();
     ///     println!("{result}");
@@ -201,11 +206,14 @@ impl<M: CreateChatSession, Constraints: Clone> Task<M, Constraints> {
     ///     let mut llm = Llama::new_chat().await.unwrap();
     ///     let task = llm.task("You are a math assistant who helps students with their homework. You solve equations and answer questions. When solving problems, you will always solve problems step by step.");
     ///
-    ///     let result = task("What is 2 + 2?").await.unwrap();
+    ///     let result = task(&"What is 2 + 2?").await.unwrap();
     ///     println!("{result}");
     /// }
     /// ```
-    pub fn run(&self, message: impl ToString) -> ChatResponseBuilder<'static, M, Constraints> {
+    pub fn run<Msg: IntoChatMessage>(
+        &self,
+        message: Msg,
+    ) -> ChatResponseBuilder<'static, M, Constraints> {
         self.chat
             .clone()
             .into_add_message(message)
@@ -216,7 +224,7 @@ impl<M: CreateChatSession, Constraints: Clone> Task<M, Constraints> {
 impl<M: CreateChatSession + 'static, Constraints: ModelConstraints + Clone + 'static> Deref
     for Task<M, Constraints>
 {
-    type Target = dyn Fn(&str) -> ChatResponseBuilder<'static, M, Constraints>;
+    type Target = dyn Fn(&dyn ToChatMessage) -> ChatResponseBuilder<'static, M, Constraints>;
 
     fn deref(&self) -> &Self::Target {
         // https://github.com/dtolnay/case-studies/tree/master/callable-types
@@ -225,8 +233,12 @@ impl<M: CreateChatSession + 'static, Constraints: ModelConstraints + Clone + 'st
         let uninit_callable = MaybeUninit::<Self>::uninit();
         // Move a closure that captures just self into the uninitialized memory. Closures create an anonymous type that implement
         // FnOnce. In this case, the layout of the type should just be Self because self is the only field in the closure type.
-        let uninit_closure =
-            move |input: &str| Self::run(unsafe { &*uninit_callable.as_ptr() }, input);
+        let uninit_closure = move |input: &dyn ToChatMessage| {
+            Self::run(
+                unsafe { &*uninit_callable.as_ptr() },
+                input.to_chat_message(),
+            )
+        };
 
         // Make sure the layout of the closure and Self is the same.
         let size_of_closure = std::alloc::Layout::for_value(&uninit_closure);
@@ -254,7 +266,7 @@ impl<M: CreateChatSession + 'static, Constraints: ModelConstraints + Clone + 'st
 }
 
 impl<M: CreateChatSession + 'static> Deref for Task<M> {
-    type Target = dyn Fn(&str) -> ChatResponseBuilder<'static, M>;
+    type Target = dyn Fn(&dyn ToChatMessage) -> ChatResponseBuilder<'static, M>;
 
     fn deref(&self) -> &Self::Target {
         // https://github.com/dtolnay/case-studies/tree/master/callable-types
@@ -263,8 +275,12 @@ impl<M: CreateChatSession + 'static> Deref for Task<M> {
         let uninit_callable = MaybeUninit::<Self>::uninit();
         // Move a closure that captures just self into the uninitialized memory. Closures create an anonymous type that implement
         // FnOnce. In this case, the layout of the type should just be Self because self is the only field in the closure type.
-        let uninit_closure =
-            move |input: &str| Self::run(unsafe { &*uninit_callable.as_ptr() }, input);
+        let uninit_closure = move |input: &dyn ToChatMessage| {
+            Self::run(
+                unsafe { &*uninit_callable.as_ptr() },
+                input.to_chat_message(),
+            )
+        };
 
         // Make sure the layout of the closure and Self is the same.
         let size_of_closure = std::alloc::Layout::for_value(&uninit_closure);

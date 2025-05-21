@@ -2,6 +2,7 @@ use crate::GenerationParameters;
 use crate::ModelConstraints;
 use futures_util::Future;
 use serde::{Deserialize, Serialize};
+use std::fmt::Arguments;
 use std::fmt::Display;
 
 mod ext;
@@ -12,6 +13,8 @@ mod chat_builder;
 pub use chat_builder::*;
 mod boxed;
 pub use boxed::*;
+mod content;
+pub use content::*;
 
 /// A trait for creating a chat session. While it the core trait
 /// every chat session implementation implements, most methods to use models that implement
@@ -28,7 +31,7 @@ pub use boxed::*;
 ///     // Create a new chat for the model
 ///     let mut chat = llm.chat();
 ///     // Add a message to the chat session
-///     chat("Hello, world!").to_std_out().await.unwrap();
+///     chat(&"Hello, world!").to_std_out().await.unwrap();
 /// }
 /// ```
 pub trait CreateChatSession {
@@ -170,7 +173,7 @@ pub trait ChatSession {
     ///     let mut chat = llm.chat();
     ///
     ///     // Feed some text into the session
-    ///     chat("What is the capital of France?").await.unwrap();
+    ///     chat(&"What is the capital of France?").await.unwrap();
     ///
     ///     // Save the session to bytes
     ///     let session = chat.session().unwrap();
@@ -203,7 +206,7 @@ pub trait ChatSession {
     ///     let mut chat = llm.chat().with_session(session);
     ///
     ///     // Feed some more text into the session
-    ///     chat("What was my first question?")
+    ///     chat(&"What was my first question?")
     ///         .to_std_out()
     ///         .await
     ///         .unwrap();
@@ -225,7 +228,7 @@ pub trait ChatSession {
     /// let mut llm = Llama::new_chat().await.unwrap();
     /// let mut chat = llm.chat();
     /// // Add a message to the session
-    /// chat("Hello, world!");
+    /// chat(&"Hello, world!");
     /// // Get the history of the session
     /// let history = chat.session().unwrap().history();
     /// assert_eq!(history.len(), 1);
@@ -251,7 +254,7 @@ pub trait ChatSession {
     ///     let mut chat = llm.chat();
     ///
     ///     // Feed some text into the session
-    ///     chat("What is the capital of France?").await.unwrap();
+    ///     chat(&"What is the capital of France?").await.unwrap();
     ///     let mut session = chat.session().unwrap();
     ///
     ///     // Clone the session
@@ -259,7 +262,7 @@ pub trait ChatSession {
     ///
     ///     // Feed some more text into the cloned session
     ///     let mut chat = llm.chat().with_session(cloned_session);
-    ///     chat("What was my first question?").await.unwrap();
+    ///     chat(&"What was my first question?").await.unwrap();
     /// }
     /// ```
     fn try_clone(&self) -> Result<Self, Self::Error>
@@ -296,7 +299,7 @@ pub enum MessageType {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChatMessage {
     role: MessageType,
-    content: String,
+    content: MessageContent,
 }
 
 impl ChatMessage {
@@ -312,10 +315,10 @@ impl ChatMessage {
     /// chat.add_message(ChatMessage::new(MessageType::UserMessage, "Hello, world!"));
     /// # }
     /// ```
-    pub fn new(role: MessageType, contents: impl ToString) -> Self {
+    pub fn new(role: MessageType, contents: impl Into<MessageContent>) -> Self {
         Self {
             role,
-            content: contents.to_string(),
+            content: contents.into(),
         }
     }
 
@@ -345,7 +348,7 @@ impl ChatMessage {
     /// assert_eq!(message.content(), "Hello, world!");
     /// # }
     /// ```
-    pub fn content(&self) -> &str {
+    pub fn content(&self) -> &MessageContent {
         &self.content
     }
 }
@@ -372,7 +375,19 @@ pub trait IntoChatMessage {
     fn into_chat_message(self) -> ChatMessage;
 }
 
-impl<S: ToString> IntoChatMessage for S {
+impl IntoChatMessage for &str {
+    fn into_chat_message(self) -> ChatMessage {
+        ChatMessage::new(MessageType::UserMessage, self.to_string())
+    }
+}
+
+impl IntoChatMessage for String {
+    fn into_chat_message(self) -> ChatMessage {
+        ChatMessage::new(MessageType::UserMessage, self)
+    }
+}
+
+impl IntoChatMessage for Arguments<'_> {
     fn into_chat_message(self) -> ChatMessage {
         ChatMessage::new(MessageType::UserMessage, self.to_string())
     }
@@ -380,6 +395,46 @@ impl<S: ToString> IntoChatMessage for S {
 
 impl IntoChatMessage for ChatMessage {
     fn into_chat_message(self) -> ChatMessage {
-        self
+        self.clone()
+    }
+}
+
+macro_rules! impl_to_chat_message_tuple {
+    ($($name:ident),+) => {
+        #[allow(non_snake_case)]
+        impl<$($name: Into<ContentChunk> + Clone),+> IntoChatMessage for ($($name,)+) {
+            fn into_chat_message(self) -> ChatMessage {
+                let ($($name,)+) = self;
+                ChatMessage::new(MessageType::UserMessage, ($($name.clone(),)+))
+            }
+        }
+    };
+}
+
+impl_to_chat_message_tuple!(A);
+impl_to_chat_message_tuple!(A, B);
+impl_to_chat_message_tuple!(A, B, C);
+impl_to_chat_message_tuple!(A, B, C, D);
+impl_to_chat_message_tuple!(A, B, C, D, E);
+impl_to_chat_message_tuple!(A, B, C, D, E, F);
+impl_to_chat_message_tuple!(A, B, C, D, E, F, G);
+impl_to_chat_message_tuple!(A, B, C, D, E, F, G, H);
+impl_to_chat_message_tuple!(A, B, C, D, E, F, G, H, I);
+impl_to_chat_message_tuple!(A, B, C, D, E, F, G, H, I, J);
+impl_to_chat_message_tuple!(A, B, C, D, E, F, G, H, I, J, K);
+impl_to_chat_message_tuple!(A, B, C, D, E, F, G, H, I, J, K, L);
+impl_to_chat_message_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M);
+impl_to_chat_message_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N);
+
+/// A trait for any type that can be converted from a reference to a [`ChatMessage`]. This trait is implemented for any types
+/// that implement [`Clone`] + [`IntoChatMessage`].
+pub trait ToChatMessage {
+    /// Convert the type from a reference to a [`ChatMessage`].
+    fn to_chat_message(&self) -> ChatMessage;
+}
+
+impl<T: IntoChatMessage + Clone> ToChatMessage for T {
+    fn to_chat_message(&self) -> ChatMessage {
+        <T as Clone>::clone(self).into_chat_message()
     }
 }

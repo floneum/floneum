@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
-use kalosm_language_model::ChatMessage;
-use minijinja::{context, Environment, ErrorKind};
+use kalosm_language_model::{ChatMessage, ContentChunk};
+use minijinja::{context, Environment, ErrorKind, Value};
 use minijinja_contrib::pycompat;
 
 #[cfg(test)]
@@ -44,6 +44,31 @@ impl HuggingFaceChatTemplate {
         add_generation_prompt: bool,
     ) -> Result<String, minijinja::Error> {
         let tools: Option<()> = None;
+        let messages = messages
+            .iter()
+            .map(|message| {
+                let role = message.role();
+                let content = message.content();
+                let content: Value = if let Some(content) = content.as_str() {
+                    content.into()
+                } else {
+                    let chunks = content
+                        .chunks()
+                        .iter()
+                        .map(|chunk| match chunk {
+                            ContentChunk::Text(text) => {
+                                context! { text }
+                            }
+                            ContentChunk::Media(_) => {
+                                context! { image => "" }
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    chunks.into()
+                };
+                context! { role, content }
+            })
+            .collect::<Vec<_>>();
         let ctx = context! { bos_token, eos_token, messages, add_generation_prompt, tools };
         let template = self.environment.get_template("main")?;
         let result = template.render(&ctx)?;
@@ -135,6 +160,73 @@ Hello, how are you?<|im_end|>
 I'm doing great. How can I help you today?<|im_end|>
 <|im_start|>user
 I'd like to show off how chat templating works!<|im_end|>
+"#
+    );
+}
+
+#[test]
+fn test_qwen_vl_chat_template() {
+    use kalosm_language_model::{MediaChunk, MediaSource};
+
+    let template = "{% set image_count = namespace(value=0) %}{% set video_count = namespace(value=0) %}{% for message in messages %}{% if loop.first and message['role'] != 'system' %}<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n{% endif %}<|im_start|>{{ message['role'] }}\n{% if message['content'] is string %}{{ message['content'] }}<|im_end|>\n{% else %}{% for content in message['content'] %}{% if content['type'] == 'image' or 'image' in content or 'image_url' in content %}{% set image_count.value = image_count.value + 1 %}{% if add_vision_id %}Picture {{ image_count.value }}: {% endif %}<|vision_start|><|image_pad|><|vision_end|>{% elif content['type'] == 'video' or 'video' in content %}{% set video_count.value = video_count.value + 1 %}{% if add_vision_id %}Video {{ video_count.value }}: {% endif %}<|vision_start|><|video_pad|><|vision_end|>{% elif 'text' in content %}{{ content['text'] }}{% endif %}{% endfor %}<|im_end|>\n{% endif %}{% endfor %}{% if add_generation_prompt %}<|im_start|>assistant\n{% endif %}";
+    let template = HuggingFaceChatTemplate::create(template).unwrap();
+    let inputs = [
+        ChatMessage::new(MessageType::UserMessage, "Hello, how are you?".to_string()),
+        ChatMessage::new(
+            MessageType::ModelAnswer,
+            "I'm doing great. How can I help you today?".to_string(),
+        ),
+        ChatMessage::new(
+            MessageType::UserMessage,
+            "I'd like to show off how chat templating works!".to_string(),
+        ),
+    ];
+    let result = template
+        .format("<|begin_of_text|>", "<|end_of_text|>", &inputs, false)
+        .unwrap();
+    assert_eq!(
+        result,
+        r#"<|im_start|>system
+You are a helpful assistant.<|im_end|>
+<|im_start|>user
+Hello, how are you?<|im_end|>
+<|im_start|>assistant
+I'm doing great. How can I help you today?<|im_end|>
+<|im_start|>user
+I'd like to show off how chat templating works!<|im_end|>
+"#
+    );
+
+    let inputs = [
+        ChatMessage::new(MessageType::UserMessage, "Hello, how are you?".to_string()),
+        ChatMessage::new(
+            MessageType::ModelAnswer,
+            "I'm doing great. How can I help you today?".to_string(),
+        ),
+        ChatMessage::new(
+            MessageType::UserMessage,
+            (
+                "I'd like to show off how chat templating works!".to_string(),
+                MediaChunk::new(
+                    MediaSource::url("https://example.com/image.png"),
+                    kalosm_language_model::MediaType::Image,
+                ),
+            ),
+        ),
+    ];
+    let result = template
+        .format("<|begin_of_text|>", "<|end_of_text|>", &inputs, false)
+        .unwrap();
+    assert_eq!(
+        result,
+        r#"<|im_start|>system
+You are a helpful assistant.<|im_end|>
+<|im_start|>user
+Hello, how are you?<|im_end|>
+<|im_start|>assistant
+I'm doing great. How can I help you today?<|im_end|>
+<|im_start|>user
+I'd like to show off how chat templating works!<|vision_start|><|image_pad|><|vision_end|><|im_end|>
 "#
     );
 }

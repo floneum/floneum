@@ -11,7 +11,7 @@ use kalosm::language::*;
 async fn main() {
     let model = Llama::new_chat().await.unwrap();
     let task = model.task("You are an editing assistant who offers suggestions for improving the quality of the text. You will be given some text and will respond with a list of suggestions for how to improve the text.");
-    let mut stream = task("this isnt correct. or is it?");
+    let mut stream = task(&"this isnt correct. or is it?");
     stream.to_std_out().await.unwrap();
 }
 ```
@@ -24,7 +24,7 @@ use kalosm::language::*;
 async fn main() {
     let model = Llama::new_chat().await.unwrap();
     let task = model.task("You are an editing assistant who offers suggestions for improving the quality of the text. You will be given some text and will respond with a list of suggestions for how to improve the text.");
-    let mut stream = task("this isnt correct. or is it?").with_sampler(GenerationParameters::default());
+    let mut stream = task(&"this isnt correct. or is it?").with_sampler(GenerationParameters::default());
     stream.to_std_out().await.unwrap();
 }
 ```
@@ -77,7 +77,7 @@ async fn main() {
         // The task constraints must be clone. If they don't implement Clone, you can wrap them in an Arc
         .with_constraints(Arc::new(parser));
     // Then run the task
-    let pet: Pet = task("Ruffles is a 3 year old adorable dog").await.unwrap();
+    let pet: Pet = task(&"Ruffles is a 3 year old adorable dog").await.unwrap();
     println!("{pet:?}");
 }
 ```
@@ -107,7 +107,7 @@ async fn main() {
         // The task constraints must be clone. If they don't implement Clone, you can wrap them in an Arc
         .with_constraints(Arc::new(parser));
     // Then run the task
-    let ((name, age), description) = task("Ruffles is a 3 year old adorable dog").await.unwrap();
+    let ((name, age), description) = task(&"Ruffles is a 3 year old adorable dog").await.unwrap();
     println!("{name} {age} {description}");
 }
 ```
@@ -131,7 +131,7 @@ async fn main() {
         // The task constraints must be clone. If they don't implement Clone, you can wrap them in an Arc
         .with_constraints(Arc::new(parser));
     // Finally, run the task. Unlike derived and custom parsers, regex parsers do not provide a useful output type
-    task("Ruffles is a 3 year old adorable dog").to_std_out().await.unwrap();
+    task(&"Ruffles is a 3 year old adorable dog").to_std_out().await.unwrap();
 }
 ```
 
@@ -162,7 +162,7 @@ async fn main() {
             // The task constraints must be clone. If they don't implement Clone, you can wrap them in an Arc
         .with_constraints(Arc::new(parser));
     // Then run the task
-    let pet: Pet = task("Ruffles is a 3 year old adorable dog").await.unwrap();
+    let pet: Pet = task(&"Ruffles is a 3 year old adorable dog").await.unwrap();
     println!("{pet:?}");
 }
 ```

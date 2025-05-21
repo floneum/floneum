@@ -1,6 +1,7 @@
 use crate::GenerationParameters;
 use crate::ModelConstraints;
 use crate::NoConstraints;
+use crate::ToChatMessage;
 use async_lock::Mutex as AsyncMutex;
 use futures_channel::mpsc::UnboundedReceiver;
 use futures_channel::oneshot::Receiver;
@@ -24,6 +25,7 @@ use std::task::Poll;
 use super::ChatMessage;
 use super::ChatModel;
 use super::ChatSession;
+use super::ContentChunk;
 use super::CreateChatSession;
 use super::CreateDefaultChatConstraintsForType;
 use super::IntoChatMessage;
@@ -175,7 +177,10 @@ impl<M: CreateChatSession> Chat<M> {
     /// response_stream.to_std_out().await.unwrap();
     /// # }
     /// ```
-    pub fn add_message(&mut self, message: impl IntoChatMessage) -> ChatResponseBuilder<'_, M> {
+    pub fn add_message<Msg: IntoChatMessage>(
+        &mut self,
+        message: Msg,
+    ) -> ChatResponseBuilder<'_, M> {
         // First push the message to the queue
         self.queued_messages.push(message.into_chat_message());
 
@@ -207,9 +212,9 @@ impl<M: CreateChatSession> Chat<M> {
     /// response_stream.to_std_out().await.unwrap();
     /// # }
     /// ```
-    pub fn into_add_message(
+    pub fn into_add_message<Msg: IntoChatMessage>(
         mut self,
-        message: impl IntoChatMessage,
+        message: Msg,
     ) -> ChatResponseBuilder<'static, M> {
         // First push the message to the queue
         self.queued_messages.push(message.into_chat_message());
@@ -267,7 +272,7 @@ impl<M: CreateChatSession> Chat<M> {
     /// let model = Llama::new_chat().await.unwrap();
     /// let mut chat = model.chat();
     /// // Add a message to the chat history
-    /// chat("Hello, world!").to_std_out().await.unwrap();
+    /// chat(&"Hello, world!").to_std_out().await.unwrap();
     /// // Get the chat session
     /// let session = chat.session().unwrap();
     /// // Get the chat history
@@ -292,7 +297,7 @@ impl<M: CreateChatSession> Chat<M> {
 }
 
 impl<M: CreateChatSession + Clone + 'static> Deref for Chat<M> {
-    type Target = dyn FnMut(&str) -> ChatResponseBuilder<'static, M>;
+    type Target = dyn FnMut(&dyn ToChatMessage) -> ChatResponseBuilder<'static, M>;
 
     fn deref(&self) -> &Self::Target {
         // https://github.com/dtolnay/case-studies/tree/master/callable-types
@@ -301,7 +306,7 @@ impl<M: CreateChatSession + Clone + 'static> Deref for Chat<M> {
         let uninit_callable = MaybeUninit::<Self>::uninit();
         // Move a closure that captures just self into the uninitialized memory. Closures create an anonymous type that implement
         // FnOnce. In this case, the layout of the type should just be Self because self is the only field in the closure type.
-        let uninit_closure = move |_: &str| {
+        let uninit_closure = move |_: &dyn ToChatMessage| {
             #[allow(clippy::diverging_sub_expression)]
             let _unreachable: ChatResponseBuilder<'static, M> = unreachable!(
                 "FnMut cannot be called from a reference. Called from pointer {:p}",
@@ -344,8 +349,11 @@ impl<M: CreateChatSession + Clone + 'static> DerefMut for Chat<M> {
         let mut uninit_callable = MaybeUninit::<Self>::uninit();
         // Move a closure that captures just self into the uninitialized memory. Closures create an anonymous type that implement
         // FnOnce. In this case, the layout of the type should just be Self because self is the only field in the closure type.
-        let mut uninit_closure = move |message: &str| {
-            Self::add_message(unsafe { &mut *uninit_callable.as_mut_ptr() }, message)
+        let mut uninit_closure = move |message: &dyn ToChatMessage| {
+            Self::add_message(
+                unsafe { &mut *uninit_callable.as_mut_ptr() },
+                message.to_chat_message(),
+            )
         };
 
         // Make sure the layout of the closure and Self is the same.
@@ -497,7 +505,7 @@ impl<'a, M: CreateChatSession, Constraints, Sampler>
     ///     Pet::schema()
     /// ));
     /// // Finally, add a message and make it typed to get the parsed response
-    /// let pet: Pet = chat("JSON for an adorable dog named ruffles")
+    /// let pet: Pet = chat(&"JSON for an adorable dog named ruffles")
     ///     .typed()
     ///     .await
     ///     .unwrap();
@@ -553,6 +561,40 @@ impl<'a, M: CreateChatSession, Constraints, Sampler>
             result: None,
             task: OnceLock::new(),
         }
+    }
+
+    /// Add a new chunk to the current message
+    ///
+    /// # Example
+    /// ```rust, no_run
+    /// # use kalosm::language::*;
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let model = Llama::new_chat().await.unwrap();
+    /// let mut chat = model.chat();
+    /// let prompt = prompt_input("\n> ").unwrap();
+    ///
+    /// // You can add the user message to the chat session by calling the chat function
+    /// let mut response_stream = chat(prompt)
+    ///     // Then add a new chunk to the current message
+    ///     .then(" and then some more");
+    /// // And then stream the result to std out
+    /// response_stream.to_std_out().await.unwrap();
+    /// # }
+    /// ```
+    pub fn then<P, Msg: Into<ContentChunk>>(
+        self,
+        message: Msg,
+    ) -> ChatResponseBuilder<'a, M, Constraints, Sampler> {
+        let mut myself = self;
+        myself
+            .chat_session
+            .queued_messages
+            .last_mut()
+            .unwrap()
+            .content
+            .push(message.into());
+        myself
     }
 }
 

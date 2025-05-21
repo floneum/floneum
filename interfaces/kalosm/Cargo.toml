@@ -131,6 +131,10 @@ name = "chat-tiny-llama"
 required-features = ["language"]
 
 [[example]]
+name = "vision"
+required-features = ["language"]
+
+[[example]]
 name = "chat-with-character"
 required-features = ["language"]
 

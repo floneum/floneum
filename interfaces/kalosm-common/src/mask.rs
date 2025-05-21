@@ -97,6 +97,13 @@ pub struct AttentionMask {
 }
 
 impl AttentionMask {
+    pub fn new(mask: Tensor) -> Self {
+        Self {
+            mask,
+            on_true: OnceLock::new(),
+        }
+    }
+
     pub fn forward(&self, attn_weights: &mut Tensor) -> candle_core::Result<()> {
         let shape = attn_weights.shape();
         let attention_mask = self.mask.broadcast_as(shape)?;

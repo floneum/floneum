@@ -13,7 +13,7 @@
 //!
 //! #[tokio::main]
 //! async fn main() {
-//!     let mut model = Llama::new().await.unwrap();
+//!     let mut model = Llama::new().await?;
 //!     let prompt = "The capital of France is ";
 //!     let mut stream = model(prompt);
 //!
@@ -49,7 +49,7 @@ pub use crate::raw::cache::*;
 pub use crate::session::LlamaSession;
 use candle_core::Device;
 pub use kalosm_common::*;
-use kalosm_language_model::{TextCompletionBuilder, TextCompletionModelExt};
+use kalosm_language_model::{MediaHints, TextCompletionBuilder, TextCompletionModelExt};
 use kalosm_model_types::ModelLoadingProgress;
 use kalosm_sample::{LiteralParser, StopOn};
 use model::LlamaModelError;
@@ -290,7 +290,11 @@ impl LlamaBuilder {
 
 #[derive(Debug)]
 pub(crate) struct InferenceSettings {
+    /// The prompt to use.
     prompt: String,
+
+    /// Images in the prompt
+    images: Vec<(image::DynamicImage, MediaHints)>,
 
     /// The token to stop on.
     stop_on: Option<String>,
@@ -310,15 +314,18 @@ pub(crate) struct InferenceSettings {
 
 impl InferenceSettings {
     pub fn new(
-        prompt: impl Into<String>,
+        prompt: impl ToString,
+        images: Vec<(image::DynamicImage, MediaHints)>,
         session: LlamaSession,
         sampler: std::sync::Arc<std::sync::Mutex<dyn llm_samplers::prelude::Sampler>>,
         max_tokens: u32,
         stop_on: Option<String>,
         seed: Option<u64>,
     ) -> Self {
+        let prompt = prompt.to_string();
         Self {
-            prompt: prompt.into(),
+            prompt,
+            images,
             stop_on,
             sampler,
             session,

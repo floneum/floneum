@@ -6,8 +6,9 @@ use std::{
 use crate::{model::LlamaModelError, session::LlamaSessionLoadingError, Llama, LlamaSession};
 use kalosm_common::accelerated_device_if_available;
 use kalosm_language_model::{
-    ChatMessage, ChatModel, ChatSession, CreateChatSession, CreateTextCompletionSession,
-    MessageType, StructuredChatModel, StructuredTextCompletionModel, TextCompletionModel,
+    ChatMessage, ChatModel, ChatSession, ContentChunk, CreateChatSession,
+    CreateTextCompletionSession, MessageContent, MessageType, StructuredChatModel,
+    StructuredTextCompletionModel, TextCompletionModel,
 };
 use kalosm_sample::{CreateParserState, Parser};
 use llm_samplers::types::Sampler;
@@ -69,6 +70,14 @@ impl<S: Sampler + 'static> ChatModel<S> for Llama {
         mut on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a {
         let new_text = get_new_tokens(messages, session, self);
+        let mut content = MessageContent::new();
+        for message in messages {
+            for chunk in message.content().chunks() {
+                if matches!(chunk, ContentChunk::Media(_)) {
+                    content.push(chunk.clone());
+                }
+            }
+        }
         async move {
             let new_text = new_text?;
             let model_response = Arc::new(RwLock::new(String::new()));
@@ -80,7 +89,9 @@ impl<S: Sampler + 'static> ChatModel<S> for Llama {
                     on_token(token)
                 }
             };
-            self.stream_text_with_callback(&mut session.session, &new_text, sampler, on_token)
+            content.push(new_text);
+
+            self.stream_text_with_callback(&mut session.session, content, sampler, on_token)
                 .await?;
             session.history.push(ChatMessage::new(
                 MessageType::ModelAnswer,
@@ -111,6 +122,14 @@ where
         >,
     > + Send
            + 'a {
+        let mut content = MessageContent::new();
+        for message in messages {
+            for chunk in message.content().chunks() {
+                if matches!(chunk, ContentChunk::Media(_)) {
+                    content.push(chunk.clone());
+                }
+            }
+        }
         let new_text = get_new_tokens(messages, session, self);
         async move {
             let new_text = new_text?;
@@ -123,10 +142,11 @@ where
                     on_token(token)
                 }
             };
+            content.push(new_text);
             let result = self
                 .stream_text_with_callback_and_parser(
                     &mut session.session,
-                    &new_text,
+                    content,
                     sampler,
                     constraints,
                     on_token,
@@ -164,7 +184,18 @@ impl ChatSession for LlamaChatSession {
                 MessageType::SystemPrompt => 2,
             };
             all_bytes.extend_from_slice(&ty.to_le_bytes());
-            let content_bytes = item.content().as_bytes();
+            let text_content = item
+                .content()
+                .chunks()
+                .iter()
+                .fold(String::new(), |acc, chunk| {
+                    let content = match chunk {
+                        ContentChunk::Text(text) => text,
+                        ContentChunk::Media(_) => return acc,
+                    };
+                    acc + content
+                });
+            let content_bytes = text_content.as_bytes();
             let content_bytes_len = content_bytes.len() as u32;
             all_bytes.extend_from_slice(&content_bytes_len.to_le_bytes());
             all_bytes.extend_from_slice(content_bytes);

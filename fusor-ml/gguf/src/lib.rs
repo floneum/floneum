@@ -120,9 +120,9 @@ impl GgmlType {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GgufVersion {
-    V1,
-    V2,
-    V3,
+    V1 = 1,
+    V2 = 2,
+    V3 = 3,
 }
 
 impl GgufVersion {
@@ -130,6 +130,25 @@ impl GgufVersion {
         check_magic(reader)?;
         let version = read_le_u32(reader)?;
         Self::try_from(version)
+    }
+
+    fn write<W: std::io::Write>(&self, writer: &mut W) -> Result<(), GgufWriteError> {
+        writer.write_all(&GGUF_MAGIC_BYTES)?;
+        let version = *self as u32;
+        write_le_u32(writer, version)
+    }
+}
+
+#[test]
+fn test_gguf_version_round_trip() {
+    let versions = [GgufVersion::V1, GgufVersion::V2, GgufVersion::V3];
+    for version in versions {
+        let mut buf = Vec::new();
+        version.write(&mut buf).unwrap();
+        println!("buf: {buf:?}");
+        let mut cursor = std::io::Cursor::new(buf);
+        let read_version = GgufVersion::read(&mut cursor).unwrap();
+        assert_eq!(version, read_version);
     }
 }
 
@@ -216,6 +235,67 @@ fn read_array_length<R: std::io::Read>(
     })
 }
 
+fn write_le_u8<W: std::io::Write>(writer: &mut W, value: u8) -> Result<(), GgufWriteError> {
+    writer.write_all(&value.to_le_bytes())?;
+    Ok(())
+}
+
+fn write_le_u16<W: std::io::Write>(writer: &mut W, value: u16) -> Result<(), GgufWriteError> {
+    writer.write_all(&value.to_le_bytes())?;
+    Ok(())
+}
+
+fn write_le_u32<W: std::io::Write>(writer: &mut W, value: u32) -> Result<(), GgufWriteError> {
+    writer.write_all(&value.to_le_bytes())?;
+    Ok(())
+}
+
+fn write_le_u64<W: std::io::Write>(writer: &mut W, value: u64) -> Result<(), GgufWriteError> {
+    writer.write_all(&value.to_le_bytes())?;
+    Ok(())
+}
+
+fn write_le_i8<W: std::io::Write>(writer: &mut W, value: i8) -> Result<(), GgufWriteError> {
+    writer.write_all(&value.to_le_bytes())?;
+    Ok(())
+}
+
+fn write_le_i16<W: std::io::Write>(writer: &mut W, value: i16) -> Result<(), GgufWriteError> {
+    writer.write_all(&value.to_le_bytes())?;
+    Ok(())
+}
+
+fn write_le_i32<W: std::io::Write>(writer: &mut W, value: i32) -> Result<(), GgufWriteError> {
+    writer.write_all(&value.to_le_bytes())?;
+    Ok(())
+}
+
+fn write_le_i64<W: std::io::Write>(writer: &mut W, value: i64) -> Result<(), GgufWriteError> {
+    writer.write_all(&value.to_le_bytes())?;
+    Ok(())
+}
+
+fn write_le_f32<W: std::io::Write>(writer: &mut W, value: f32) -> Result<(), GgufWriteError> {
+    writer.write_all(&value.to_le_bytes())?;
+    Ok(())
+}
+
+fn write_le_f64<W: std::io::Write>(writer: &mut W, value: f64) -> Result<(), GgufWriteError> {
+    writer.write_all(&value.to_le_bytes())?;
+    Ok(())
+}
+
+fn write_array_length<W: std::io::Write>(
+    writer: &mut W,
+    version: GgufVersion,
+    value: usize,
+) -> Result<(), GgufWriteError> {
+    match version {
+        GgufVersion::V1 => write_le_u32(writer, value as u32),
+        GgufVersion::V2 | GgufVersion::V3 => write_le_u64(writer, value as u64),
+    }
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum GgufReadError {
     #[error("io error {0}")]
@@ -237,7 +317,16 @@ pub enum GgufReadError {
     },
 }
 
-#[derive(Debug)]
+/// Error type for GGUF writing
+#[derive(thiserror::Error, Debug)]
+pub enum GgufWriteError {
+    #[error("io error {0}")]
+    Io(#[from] std::io::Error),
+    #[error("unknown tensor {0}")]
+    UnknownTensor(String),
+}
+
+#[derive(Debug, PartialEq)]
 pub struct GgufTensorMetadata {
     pub ty: GgmlType,
     pub shape: Box<[u32]>,
@@ -250,6 +339,14 @@ impl GgufTensorMetadata {
         reader: &mut R,
         tensor_data_offset: u64,
     ) -> Result<Box<[u8]>, GgufReadError> {
+        let size_in_bytes = self.byte_size()?;
+        let mut raw_data = vec![0u8; size_in_bytes].into_boxed_slice();
+        reader.seek(std::io::SeekFrom::Start(tensor_data_offset + self.offset))?;
+        reader.read_exact(&mut raw_data)?;
+        Ok(raw_data)
+    }
+
+    fn byte_size(&self) -> Result<usize, GgufReadError> {
         let tensor_elems = self.shape.iter().copied().product::<u32>() as usize;
         let block_size = self.ty.block_size();
         if tensor_elems % block_size != 0 {
@@ -258,15 +355,11 @@ impl GgufTensorMetadata {
                 block_size,
             });
         }
-        let size_in_bytes = (tensor_elems / block_size) * self.ty.block_allocation_size();
-        let mut raw_data = vec![0u8; size_in_bytes].into_boxed_slice();
-        reader.seek(std::io::SeekFrom::Start(tensor_data_offset + self.offset))?;
-        reader.read_exact(&mut raw_data)?;
-        Ok(raw_data)
+        Ok((tensor_elems / block_size) * self.ty.block_allocation_size())
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct GgufMetadata {
     pub version: GgufVersion,
     pub metadata: FxHashMap<Box<str>, GgufValue>,
@@ -276,9 +369,9 @@ pub struct GgufMetadata {
 
 fn read_string<R: std::io::Read>(
     reader: &mut R,
-    magic: GgufVersion,
+    version: GgufVersion,
 ) -> Result<Box<str>, GgufReadError> {
-    let len = read_array_length(reader, magic)?;
+    let len = read_array_length(reader, version)?;
     let mut bytes = vec![0u8; len];
     reader.read_exact(&mut bytes)?;
     // GGUF strings are supposed to be non-null terminated but in practice this happens.
@@ -287,6 +380,17 @@ fn read_string<R: std::io::Read>(
     }
     // GGUF strings are utf8 encoded but there are cases that don't seem to be valid.
     Ok(String::from_utf8_lossy(&bytes).into())
+}
+
+fn write_string<W: std::io::Write>(
+    writer: &mut W,
+    value: &str,
+    version: GgufVersion,
+) -> Result<(), GgufWriteError> {
+    let len = value.len();
+    write_array_length(writer, version, len)?;
+    writer.write_all(value.as_bytes())?;
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Contiguous)]
@@ -336,7 +440,7 @@ impl TryFrom<u32> for GgufMetadataValueType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum GgufValue {
     U8(u8),
     I8(i8),
@@ -406,6 +510,37 @@ impl GgufValue {
         };
         Ok(v)
     }
+
+    fn write<W: std::io::Write>(
+        &self,
+        writer: &mut W,
+        version: GgufVersion,
+    ) -> Result<(), GgufWriteError> {
+        match self {
+            Self::U8(v) => write_le_u8(writer, *v),
+            Self::I8(v) => write_le_i8(writer, *v),
+            Self::U16(v) => write_le_u16(writer, *v),
+            Self::I16(v) => write_le_i16(writer, *v),
+            Self::U32(v) => write_le_u32(writer, *v),
+            Self::I32(v) => write_le_i32(writer, *v),
+            Self::U64(v) => write_le_u64(writer, *v),
+            Self::I64(v) => write_le_i64(writer, *v),
+            Self::F32(v) => write_le_f32(writer, *v),
+            Self::F64(v) => write_le_f64(writer, *v),
+            Self::Bool(v) => write_le_u8(writer, if *v { 1 } else { 0 }),
+            Self::String(s) => write_string(writer, s, version),
+            Self::Array(arr) => {
+                let value_type = arr[0].value_type();
+                write_le_u32(writer, value_type as u32)?;
+                let len = arr.len();
+                write_array_length(writer, version, len)?;
+                for v in arr.iter() {
+                    v.write(writer, version)?;
+                }
+                Ok(())
+            }
+        }
+    }
 }
 
 impl GgufMetadata {
@@ -463,6 +598,56 @@ impl GgufMetadata {
             tensor_infos,
             tensor_data_offset,
         })
+    }
+
+    pub fn write<'a, W: std::io::Write + std::io::Seek>(
+        &self,
+        writer: &mut W,
+        tensors: impl IntoIterator<Item = (&'a str, &'a [u8])>,
+    ) -> Result<(), GgufWriteError> {
+        self.version.write(writer)?;
+
+        // Write the tensor count
+        write_array_length(writer, self.version, self.tensor_infos.len())?;
+        // Write the metadata key-value count
+        write_array_length(writer, self.version, self.metadata.len())?;
+
+        // Write the metadata key-value pairs
+        for (key, value) in &self.metadata {
+            write_string(writer, key, self.version)?;
+            let value_type = value.value_type();
+            write_le_u32(writer, value_type as u32)?;
+            value.write(writer, self.version)?;
+        }
+
+        // Write the tensor metadata
+        for (tensor_name, tensor_metadata) in &self.tensor_infos {
+            write_string(writer, tensor_name, self.version)?;
+            let dimensions = tensor_metadata.shape.len() as u32;
+            write_le_u32(writer, dimensions)?;
+            for dim in tensor_metadata.shape.iter().rev() {
+                write_array_length(writer, self.version, *dim as usize)?;
+            }
+            write_le_u32(writer, tensor_metadata.ty as u32)?;
+            write_le_u64(writer, tensor_metadata.offset)?;
+        }
+
+        let tensor_data_offset = writer.stream_position()?;
+
+        // Write the tensor data
+        for (tensor_name, tensor_data) in tensors {
+            let tensor_metadata = self
+                .tensor_infos
+                .get(tensor_name)
+                .ok_or(GgufWriteError::UnknownTensor(tensor_name.to_string()))?;
+            let tensor_data_offset = tensor_data_offset + tensor_metadata.offset;
+            writer.seek(std::io::SeekFrom::Start(tensor_data_offset))?;
+
+            // Write the tensor data
+            writer.write_all(tensor_data)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -1033,15 +1218,116 @@ fn second_scales_min_k4(packed_scales: &[u32]) -> (u32, u32) {
 }
 
 #[cfg(test)]
+async fn tiny_llama() -> impl std::io::Read + std::io::Seek {
+    let url = "https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf";
+    let bytes = reqwest::get(url).await.unwrap().bytes().await.unwrap();
+    std::io::Cursor::new(bytes)
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_round_trip_tiny_llama() {
+    use std::{
+        collections::HashMap,
+        io::{Read, Seek},
+    };
+
+    // Load the model
+    let mut reader = tiny_llama().await;
+    // Copy the memory
+    let mut bytes = Vec::new();
+    reader.read_to_end(&mut bytes).unwrap();
+
+    // Reset the reader
+    reader.seek(std::io::SeekFrom::Start(0)).unwrap();
+    let metadata = GgufMetadata::read(&mut reader).unwrap();
+
+    // Read the tensor bytes
+    let mut tensors = HashMap::new();
+    for (tensor_name, tensor_info) in metadata.tensor_infos.iter() {
+        println!("{}: {:?}", tensor_name, tensor_info);
+        let tensor_bytes = tensor_info
+            .read_tensor_bytes(&mut reader, metadata.tensor_data_offset)
+            .unwrap();
+        tensors.insert(tensor_name.clone(), tensor_bytes);
+    }
+
+    println!("read {} tensors", tensors.len());
+
+    // Write the model to a buffer
+    let mut writer = Vec::new();
+    {
+        let mut cursor = std::io::Cursor::new(&mut writer);
+        metadata
+            .write(
+                &mut cursor,
+                tensors
+                    .iter()
+                    .map(|(name, bytes)| (&**name, bytes.as_ref())),
+            )
+            .unwrap();
+    }
+
+    // // Read the data again and assert everything is the same
+    // let mut reader = std::io::Cursor::new(writer);
+    // let new_metadata = GgufMetadata::read(&mut reader).unwrap();
+    // assert_eq!(new_metadata, metadata);
+
+    // // Read the tensor bytes
+    // let mut new_tensors = HashMap::new();
+    // for (tensor_name, tensor_info) in new_metadata.tensor_infos.iter() {
+    //     println!("{}: {:?}", tensor_name, tensor_info);
+    //     let tensor_bytes = tensor_info
+    //         .read_tensor_bytes(&mut reader, new_metadata.tensor_data_offset)
+    //         .unwrap();
+    //     new_tensors.insert(tensor_name.clone(), tensor_bytes);
+    // }
+
+    // // Assert all the tensors are the same
+    // for (name, tensor) in tensors {
+    //     let new_tensor = new_tensors.get(&name).unwrap();
+    //     assert_eq!(&tensor, new_tensor);
+    // }
+}
+
+#[test]
+fn test_round_trip_empty() {
+    use std::collections::HashMap;
+    // Reset the reader
+    let metadata = GgufMetadata {
+        tensor_data_offset: 32,
+        tensor_infos: HashMap::default(),
+        version: GgufVersion::V3,
+        metadata: HashMap::default(),
+    };
+
+    // Write the model to a buffer
+    let mut writer = Vec::new();
+    {
+        let mut cursor = std::io::Cursor::new(&mut writer);
+        metadata.write(&mut cursor, []).unwrap();
+    }
+
+    println!("{:?}", writer);
+
+    // Read the model from the buffer
+    let mut reader = std::io::Cursor::new(writer);
+    let metadata = GgufMetadata::read(&mut reader).unwrap();
+    assert_eq!(metadata.tensor_data_offset, 32);
+    assert_eq!(metadata.tensor_infos.len(), 0);
+    assert_eq!(metadata.version, GgufVersion::V3);
+    assert_eq!(metadata.metadata.len(), 0);
+}
+
+#[cfg(test)]
 #[tokio::test]
 async fn test_load_tiny_llama() {
     use pretty_assertions::assert_eq;
+    use std::io::Seek;
 
-    let url = "https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf";
-    let bytes = reqwest::get(url).await.unwrap().bytes().await.unwrap();
-    let mut reader = std::io::Cursor::new(&bytes);
+    let mut reader = tiny_llama().await;
     let metadata = GgufMetadata::read(&mut reader).unwrap();
-    let mut reader = std::io::Cursor::new(&bytes);
+    reader.seek(std::io::SeekFrom::Start(0)).unwrap();
     let candle_metadata = candle_core::quantized::gguf_file::Content::read(&mut reader).unwrap();
     let device = candle_core::Device::Cpu;
     for (name, candle_tensor) in candle_metadata.tensor_infos {

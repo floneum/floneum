@@ -41,7 +41,7 @@ async fn main() {
     let model = Llama::new_chat().await.unwrap();
     // Create a new task that summarizes text
     let task = model.task("You take a long description and summarize it into a single short sentence");
-    let mut output = task("You can define a Task with a description then run it with an input. The task will cache the description to repeated calls faster. Tasks work with chat models.");
+    let mut output = task(&"You can define a Task with a description then run it with an input. The task will cache the description to repeated calls faster. Tasks work with chat models.");
     // Then stream the output to the console
     output.to_std_out().await.unwrap();
 }
@@ -82,7 +82,7 @@ async fn main() {
     let task = model.task("You generate realistic JSON placeholders")
         .with_constraints(parser);
     // Finally, run the task
-    let pet: Pet = task("Generate a pet in the form {\"name\": \"Pet name\", \"age\": 0, \"description\": \"Pet description\"}").await.unwrap();
+    let pet: Pet = task(&"Generate a pet in the form {\"name\": \"Pet name\", \"age\": 0, \"description\": \"Pet description\"}").await.unwrap();
     println!("{pet:?}");
 }
 ```

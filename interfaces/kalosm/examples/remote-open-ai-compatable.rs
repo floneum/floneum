@@ -20,5 +20,5 @@ async fn main() {
     print!("{prompt}");
 
     let mut chat = llm.chat();
-    chat(prompt).to_std_out().await.unwrap();
+    chat(&prompt).to_std_out().await.unwrap();
 }
