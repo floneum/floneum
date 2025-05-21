@@ -5,18 +5,16 @@ use kalosm_streams::text_stream::TextStream;
 async fn main() {
     tracing_subscriber::fmt::init();
     let model = Llama::builder()
-        .with_source(LlamaSource::qwen_2_5_3b_vl_chat_f16())
+        .with_source(LlamaSource::qwen_2_5_32b_vl_chat_q4())
         .build()
         .await
         .unwrap();
-
-    println!("First message\n");
 
     let mut chat = model.chat();
     let mut response = chat(&(
         MediaChunk::new(
             MediaSource::url(
-                "https://preview.redd.it/bgw66bknw32f1.png?width=1080&crop=smart&auto=webp&s=128c68de9c9301e80d73f94cac07cc2970f28f34",
+                "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg",
             ),
             MediaType::Image,
         ),
