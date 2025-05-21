@@ -75,3 +75,4 @@ metal = [
     "candle-transformers/metal",
     "kalosm-common/metal",
 ]
+extra_assertions = []

@@ -180,10 +180,13 @@ fn test_vision_patch_embed() {
     let weight = Tensor::from_iter(
         weights.into_iter().flatten().flatten().flatten().flatten(),
         &Device::Cpu,
-    )?
-    .reshape(&dims)?
-    .to_dtype(DType::F16)?;
-    let (weight_1, weight_2) = split_frames(&weight)?;
+    )
+    .unwrap()
+    .reshape(&dims)
+    .unwrap()
+    .to_dtype(DType::F16)
+    .unwrap();
+    let (weight_1, weight_2) = split_frames(&weight).unwrap();
 
     let patch_embed = Qwen2_5VisionPatchEmbed::from_weight(
         patch_size,
@@ -192,7 +195,8 @@ fn test_vision_patch_embed() {
         embed_dim,
         &weight_1,
         &weight_2,
-    )?;
+    )
+    .unwrap();
 
     let input = [[
         [[[0., 1.], [2., 3.]], [[4., 5.], [6., 7.]]],
@@ -202,12 +206,19 @@ fn test_vision_patch_embed() {
     let input = Tensor::from_iter(
         input.into_iter().flatten().flatten().flatten().flatten(),
         &Device::Cpu,
-    )?
-    .reshape(&[1, in_channels, temporal_patch_size, patch_size, patch_size])?
-    .to_dtype(DType::F32)?;
+    )
+    .unwrap()
+    .reshape(&[1, in_channels, temporal_patch_size, patch_size, patch_size])
+    .unwrap()
+    .to_dtype(DType::F32)
+    .unwrap();
 
-    let output = patch_embed.forward(&input)?.to_dtype(DType::F32)?;
-    let output_vec = output.to_vec2::<f32>()?;
+    let output = patch_embed
+        .forward(&input)
+        .unwrap()
+        .to_dtype(DType::F32)
+        .unwrap();
+    let output_vec = output.to_vec2::<f32>().unwrap();
     println!("Output: {:?}", output_vec);
     let expected_output = [[0.3058, 0.6866, -0.7391, -0.6952]];
     assert_2d_vec_eq(output_vec, expected_output, 1e-2);

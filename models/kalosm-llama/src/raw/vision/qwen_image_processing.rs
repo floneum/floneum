@@ -17,8 +17,8 @@ pub(crate) fn process_image(
     let merge_patch = patch_size_u32 * merge_size_u32;
     let resized = normalize_image_shape(
         [merge_patch; 2],
-        min_pixels.unwrap_or(56 * 56),
-        max_pixels.unwrap_or(14 * 14 * 4 * 1280),
+        min_pixels.unwrap_or(4 * 28 * 28),
+        max_pixels.unwrap_or(512 * 28 * 28),
         image,
     );
 
@@ -116,10 +116,12 @@ mod tests {
         let image_bytes = reqwest::get(
             "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg",
         )
-        .await?
+        .await
+        .unwrap()
         .bytes()
-        .await?;
-        let image = image::load_from_memory(&image_bytes)?;
+        .await
+        .unwrap();
+        let image = image::load_from_memory(&image_bytes).unwrap();
         let spacial_merge_size = 2;
         let patch_size = 14;
         let resized = normalize_image_shape(
@@ -143,7 +145,8 @@ mod tests {
             &[0.5, 0.5, 0.5],
             &[0.5, 0.5, 0.5],
             &Device::Cpu,
-        )?;
+        )
+        .unwrap();
         println!("RGB shape: {:?}", rgb);
         println!("Grid shape: {:?}", [grid_t, grid_h, grid_w]);
         assert_eq!(rgb.dims(), [1944, 1176]);
@@ -157,8 +160,10 @@ mod tests {
             img.iter()
                 .flat_map(|x| x.iter().flat_map(|y| y.iter().copied())),
             &Device::Cpu,
-        )?
-        .reshape(&[3, 2, 1])?;
+        )
+        .unwrap()
+        .reshape(&[3, 2, 1])
+        .unwrap();
         println!("img shape: {:?}", img.to_vec3::<u32>());
     }
 }

@@ -377,7 +377,7 @@ async fn test_loading_qwen_vision() {
     use super::qwen_vision_embed::assert_2d_vec_eq;
     use kalosm_common::{accelerated_device_if_available, Cache};
 
-    let device = accelerated_device_if_available()?;
+    let device = accelerated_device_if_available().unwrap();
     let path = Cache::default()
         .get(
             &kalosm_model_types::FileSource::HuggingFace {
@@ -387,8 +387,9 @@ async fn test_loading_qwen_vision() {
             },
             |_| {},
         )
-        .await?;
-    let vb = VarBuilder::from_gguf(&path, &device)?;
+        .await
+        .unwrap();
+    let vb = VarBuilder::from_gguf(&path, &device).unwrap();
 
     let spacial_merge_size = 2;
     let temporal_patch_size = 2;
@@ -420,12 +421,13 @@ async fn test_loading_qwen_vision() {
         ]
         .to_vec(),
         &vb,
-    )?;
+    )
+    .unwrap();
 
-    let out = qwen_vision.rot_pos_emb(&vec![[2, 4, 4]])?;
+    let out = qwen_vision.rot_pos_emb(&vec![[2, 4, 4]]).unwrap();
     println!("Rotary Pos Emb: {:?}", out);
-    let out_first_5_by_5 = out.i((0..5, 0..5))?;
-    let out_first_5_by_5 = out_first_5_by_5.to_vec2::<f32>()?;
+    let out_first_5_by_5 = out.i((0..5, 0..5)).unwrap();
+    let out_first_5_by_5 = out_first_5_by_5.to_vec2::<f32>().unwrap();
 
     let expected = [
         [0.0, 0.0, 0.0, 0.0, 0.0],
@@ -448,24 +450,37 @@ async fn test_loading_qwen_vision() {
     ];
     assert_2d_vec_eq(out_first_5_by_5, expected, 1e-2);
 
-    let hidden_states =
-        Tensor::randn(0.0f32, 1.0, (1944, 1176), &candle_core::Device::Cpu)?.to_device(&device)?;
+    let hidden_states = Tensor::randn(0.0f32, 1.0, (1944, 1176), &candle_core::Device::Cpu)
+        .unwrap()
+        .to_device(&device)
+        .unwrap();
     let grid_thw = vec![[1, 36, 54]];
-    let out = qwen_vision.forward(&hidden_states, &grid_thw, None)?;
-    println!("Qwen Vision: {:?}", out.i((0..5, 0..5))?.to_vec2::<f32>()?);
+    let out = qwen_vision
+        .forward(&hidden_states, &grid_thw, None)
+        .unwrap();
+    println!(
+        "Qwen Vision: {:?}",
+        out.i((0..5, 0..5)).unwrap().to_vec2::<f32>().unwrap()
+    );
 
     // download image from https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg
     let image_bytes =
         reqwest::get("https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg")
-            .await?
+            .await
+            .unwrap()
             .bytes()
-            .await?;
-    let image = image::load_from_memory(&image_bytes)?;
+            .await
+            .unwrap();
+    let image = image::load_from_memory(&image_bytes).unwrap();
 
-    let (pixels, grid) =
-        qwen_vision.preprocess_image(&image, Some(256 * 28 * 28), Some(512 * 28 * 28))?;
-    let out = qwen_vision.forward_image(&pixels, grid)?;
-    println!("Qwen Vision: {:?}", out.i((0..5, 0..5))?.to_vec2::<f32>()?);
+    let (pixels, grid) = qwen_vision
+        .preprocess_image(&image, Some(256 * 28 * 28), Some(512 * 28 * 28))
+        .unwrap();
+    let out = qwen_vision.forward_image(&pixels, grid).unwrap();
+    println!(
+        "Qwen Vision: {:?}",
+        out.i((0..5, 0..5)).unwrap().to_vec2::<f32>().unwrap()
+    );
 }
 
 fn generate_full_attention_blocks(block_count: usize, n_wa_pattern: u64) -> Vec<usize> {

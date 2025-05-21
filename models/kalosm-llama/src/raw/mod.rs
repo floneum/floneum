@@ -687,7 +687,7 @@ impl Model {
 }
 
 fn debug_assert_none_nan(#[allow(unused)] tensor: &Tensor) {
-    #[cfg(debug_assertions)]
+    #[cfg(feature = "extra_assertions")]
     tensor
         .flatten_all()
         .unwrap()

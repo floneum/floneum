@@ -33,7 +33,7 @@ async fn main() {
 
     // Task can be called like a function with the input to the task. You can await the stream, modify the
     // constraints, or sampler
-    let mut response = task("Candice is the CEO of a fortune 500 company. She is a 30 years old.")
+    let mut response = task(&"Candice is the CEO of a fortune 500 company. She is a 30 years old.")
         .with_constraints(
             LiteralParser::new("<think>")
                 .then(StopOn::new("</think>"))

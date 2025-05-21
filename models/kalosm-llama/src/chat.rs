@@ -293,8 +293,8 @@ fn test_serialize_deserialize_chat_session() {
         session: LlamaSession::new(&config),
     };
 
-    let bytes = session.to_bytes()?;
-    let session = LlamaChatSession::from_bytes(&bytes)?;
+    let bytes = session.to_bytes().unwrap();
+    let session = LlamaChatSession::from_bytes(&bytes).unwrap();
 
     assert_eq!(session.history, session.history);
 }
