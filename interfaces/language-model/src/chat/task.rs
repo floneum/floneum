@@ -86,7 +86,7 @@ impl<M: CreateChatSession, Constraints> Task<M, Constraints> {
     ///     let model = Llama::new_chat().await.unwrap();
     ///     let task = model.task("You are a math assistant who helps students with their homework. You solve equations and answer questions. When solving problems, you will always solve problems step by step.")
     ///         .with_example("What is 1 + 2?", "Step 1: 1 + 2 = 3\nOutput: 3");
-    ///     let mut stream = task("What is 2 + 2?");
+    ///     let mut stream = task(&"What is 2 + 2?");
     ///     stream.to_std_out().await.unwrap();
     /// }
     /// ```
@@ -115,7 +115,7 @@ impl<M: CreateChatSession, Constraints> Task<M, Constraints> {
     ///             ("What is 3 + 4?", "Step 1: 3 + 4 = 7\nOutput: 7"),
     ///             ("What is (4 + 8) / 3?", "Step 1: 4 + 8 = 12\nStep 2: 12 / 3 = 4\nOutput: 4"),
     ///         ]);
-    ///     let mut stream = task("What is 3 + 4?");
+    ///     let mut stream = task(&"What is 3 + 4?");
     ///     stream.to_std_out().await.unwrap();
     /// }
     /// ```
@@ -145,7 +145,7 @@ impl<M: CreateChatSession, Constraints> Task<M, Constraints> {
     ///     let task = model
     ///         .task("You are a math assistant. Respond with just the number answer and nothing else.")
     ///         .with_constraints(Arc::new(i32::new_parser()));
-    ///     let mut stream = task("What is 2 + 2?");
+    ///     let mut stream = task(&"What is 2 + 2?");
     ///     stream.to_std_out().await.unwrap();
     ///     let result: i32 = stream.await.unwrap();
     ///     println!("{result}");
@@ -173,7 +173,7 @@ impl<M: CreateChatSession, Constraints> Task<M, Constraints> {
     ///     let task = model
     ///         .task("You are a math assistant. Respond with just the number answer and nothing else.")
     ///         .typed();
-    ///     let mut stream = task("What is 2 + 2?");
+    ///     let mut stream = task(&"What is 2 + 2?");
     ///     stream.to_std_out().await.unwrap();
     ///     let result: i32 = stream.await.unwrap();
     ///     println!("{result}");

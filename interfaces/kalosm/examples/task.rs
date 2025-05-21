@@ -19,17 +19,17 @@ async fn main() {
     let start_timestamp = std::time::Instant::now();
     println!("question 1");
     // The first time we use the task, it will load the model and prompt.
-    task("What is 2 + 2?").to_std_out().await.unwrap();
+    task(&"What is 2 + 2?").to_std_out().await.unwrap();
     println!("\nfirst question took: {:?}", start_timestamp.elapsed());
 
     let start_timestamp = std::time::Instant::now();
     println!("question 2");
     // After the first time, the model and prompt are cached.
-    task("What is 4 + 4?").to_std_out().await.unwrap();
+    task(&"What is 4 + 4?").to_std_out().await.unwrap();
     println!("\nsecond question took: {:?}", start_timestamp.elapsed());
 
     let start_timestamp = std::time::Instant::now();
     println!("question 3");
-    task("What is (7 + 5)/2?").to_std_out().await.unwrap();
+    task(&"What is (7 + 5)/2?").to_std_out().await.unwrap();
     println!("\nthird question took: {:?}", start_timestamp.elapsed());
 }

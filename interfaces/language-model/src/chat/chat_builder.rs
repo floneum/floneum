@@ -272,7 +272,7 @@ impl<M: CreateChatSession> Chat<M> {
     /// let model = Llama::new_chat().await.unwrap();
     /// let mut chat = model.chat();
     /// // Add a message to the chat history
-    /// chat("Hello, world!").to_std_out().await.unwrap();
+    /// chat(&"Hello, world!").to_std_out().await.unwrap();
     /// // Get the chat session
     /// let session = chat.session().unwrap();
     /// // Get the chat history
@@ -505,7 +505,7 @@ impl<'a, M: CreateChatSession, Constraints, Sampler>
     ///     Pet::schema()
     /// ));
     /// // Finally, add a message and make it typed to get the parsed response
-    /// let pet: Pet = chat("JSON for an adorable dog named ruffles")
+    /// let pet: Pet = chat(&"JSON for an adorable dog named ruffles")
     ///     .typed()
     ///     .await
     ///     .unwrap();

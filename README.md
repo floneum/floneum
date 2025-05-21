@@ -92,7 +92,7 @@ async fn main() {
     let task = model.task("You generate realistic JSON placeholders for characters")
         .typed();
     // Finally, run the task
-    let mut stream = task("Create a list of random characters", &model);
+    let mut stream = task(&"Create a list of random characters", &model);
     stream.to_std_out().await.unwrap();
     let characters: [Character; 10] = stream.await.unwrap();
     println!("{characters:?}");
