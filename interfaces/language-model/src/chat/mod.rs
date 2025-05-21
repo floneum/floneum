@@ -433,7 +433,7 @@ pub trait ToChatMessage {
     fn to_chat_message(&self) -> ChatMessage;
 }
 
-impl<T: IntoChatMessage + Clone> ToChatMessage for &T {
+impl<T: IntoChatMessage + Clone> ToChatMessage for T {
     fn to_chat_message(&self) -> ChatMessage {
         <T as Clone>::clone(self).into_chat_message()
     }
