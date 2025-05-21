@@ -26,6 +26,8 @@ pub(crate) struct QwenVisionTransformer {
     rotary_pos_emb: VisionRotaryEmbedding,
     blocks: Vec<VisionBlock>,
     merger: Qwen2VLPatchMerger,
+    image_mean: Vec<f32>,
+    image_std: Vec<f32>,
     device: candle_core::Device,
 }
 
@@ -85,6 +87,34 @@ impl QwenVisionTransformer {
             .get("clip.vision.projection_dim")
             .and_then(|x| x.to_u64().ok())
             .unwrap_or(2048) as usize;
+        let image_mean = vision_ct
+            .metadata
+            .get("clip.vision.image_mean")
+            .and_then(|x| {
+                x.to_vec()
+                    .ok()
+                    .map(|x| x.iter().map(|x| x.to_f32()).collect())
+            })
+            .transpose()?
+            .unwrap_or(vec![
+                0.48145467042922974,
+                0.45782750844955444,
+                0.40821072459220886,
+            ]);
+        let image_std = vision_ct
+            .metadata
+            .get("clip.vision.image_std")
+            .and_then(|x| {
+                x.to_vec()
+                    .ok()
+                    .map(|x| x.iter().map(|x| x.to_f32()).collect())
+            })
+            .transpose()?
+            .unwrap_or(vec![
+                0.2686295509338379,
+                0.2613025903701782,
+                0.27577710151672363,
+            ]);
         let in_channels = 3;
 
         let vb = VarBuilder::from_gguf(vision_file, device).unwrap();
@@ -100,6 +130,8 @@ impl QwenVisionTransformer {
             head_count,
             block_count,
             layer_norm_eps,
+            image_mean,
+            image_std,
             &vb,
         )
     }
@@ -116,6 +148,8 @@ impl QwenVisionTransformer {
         num_heads: usize,
         depth: usize,
         layer_norm_eps: f64,
+        image_mean: Vec<f32>,
+        image_std: Vec<f32>,
         vb: &VarBuilder,
     ) -> candle_core::Result<Self> {
         let spacial_merge_unit = spacial_merge_size * spacial_merge_size;
@@ -162,6 +196,8 @@ impl QwenVisionTransformer {
             rotary_pos_emb,
             blocks,
             merger,
+            image_mean,
+            image_std,
             device: vb.device().clone(),
         })
     }
@@ -249,6 +285,8 @@ impl QwenVisionTransformer {
             self.spacial_merge_size,
             min_pixels,
             max_pixels,
+            &self.image_mean,
+            &self.image_std,
             &self.device,
         )
     }
@@ -275,7 +313,8 @@ impl QwenVisionTransformer {
             rope_index.iter().flat_map(|x| [x.x, x.y, x.time]),
             &self.device,
         )?
-        .reshape(((), 3))?.t()?;
+        .reshape(((), 3))?
+        .t()?;
 
         Ok((tensor, max_time_index))
     }
@@ -294,7 +333,29 @@ impl QwenVisionTransformer {
         grid_thw: &Vec<[u32; 3]>,
         mut cache: Option<&mut KvCache>,
     ) -> candle_core::Result<Tensor> {
+        // println!("input");
+        // let vec2 = hidden_states
+        //     .i((..25, ..25))
+        //     .unwrap()
+        //     .to_dtype(candle_core::DType::F32)
+        //     .unwrap()
+        //     .to_vec2::<f32>()
+        //     .unwrap();
+        // for list in vec2.iter() {
+        //     println!("{:?}", list);
+        // }
         let hidden_states = self.patch_embed.forward(&hidden_states).unwrap();
+        // println!("input patch");
+        // let vec2 = hidden_states
+        //     .i((..25, ..25))
+        //     .unwrap()
+        //     .to_dtype(candle_core::DType::F32)
+        //     .unwrap()
+        //     .to_vec2::<f32>()
+        //     .unwrap();
+        // for list in vec2.iter() {
+        //     println!("{:?}", list);
+        // }
         let rotary_pos_emb = self.rot_pos_emb(grid_thw).unwrap();
         let (window_index, mut cu_window_seqlens) = get_window_index(
             grid_thw
@@ -352,6 +413,18 @@ impl QwenVisionTransformer {
 
         let cu_seqlens = std::iter::once(0).chain(cu_seqlens).collect::<Vec<_>>();
 
+        // println!("start");
+        // let vec2 = hidden_states
+        //     .i((..25, ..25))
+        //     .unwrap()
+        //     .to_dtype(candle_core::DType::F32)
+        //     .unwrap()
+        //     .to_vec2::<f32>()
+        //     .unwrap();
+        // for list in vec2.iter() {
+        //     println!("{:?}", list);
+        // }
+
         for (layer_num, blk) in self.blocks.iter().enumerate() {
             let cu_seqlens_now = if self.fullatt_block_indexes.contains(&layer_num) {
                 &cu_seqlens
@@ -367,6 +440,15 @@ impl QwenVisionTransformer {
                     cache.as_deref_mut(),
                 )
                 .unwrap();
+            // println!("{layer_num} {}/{}", layer_num, self.blocks.len());
+            // let vec2 = hidden_states
+            //     .i((..25, ..25))
+            //     .unwrap()
+            //     .to_vec2::<f32>()
+            //     .unwrap();
+            // for list in vec2.iter() {
+            //     println!("{:?}", list);
+            // }
         }
 
         let hidden_states = self.merger.forward(&hidden_states).unwrap();
@@ -418,6 +500,8 @@ async fn test_loading_qwen_vision() {
         num_heads,
         depth,
         QWEN_EPS,
+        [0.2686295509338379, 0.2613025903701782, 0.27577710151672363].to_vec(),
+        [0.48145467042922974, 0.45782750844955444, 0.40821072459220886].to_vec(),
         &vb,
     )
     .unwrap();

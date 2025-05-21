@@ -16,7 +16,7 @@ async fn main() {
     let mut response = chat(&(
         MediaChunk::new(
             MediaSource::url(
-                "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg",
+                "https://avatars.githubusercontent.com/u/76850177?v=4",
             ),
             MediaType::Image,
         ),
