@@ -329,6 +329,10 @@ impl QwenVisionTransformer {
     ) -> candle_core::Result<Tensor> {
         let hidden_states = self.patch_embed.forward(&hidden_states).unwrap();
         let rotary_pos_emb = self.rot_pos_emb(grid_thw).unwrap();
+        println!("rotary_pos_emb");
+        for row in rotary_pos_emb.i((0..5, ..)).unwrap().to_vec2::<f32>().unwrap() {
+            println!("{:?}", row);
+        }
         let (window_index, mut cu_window_seqlens) = get_window_index(
             grid_thw
                 .iter()
@@ -340,6 +344,7 @@ impl QwenVisionTransformer {
             &self.device,
         )
         .unwrap();
+    println!("window_index: {:?}", window_index.to_vec1::<u32>().unwrap());
         let mut last_item = None;
         cu_window_seqlens.retain(|&x| {
             if last_item.is_some_and(|y| y == x) {
@@ -368,6 +373,10 @@ impl QwenVisionTransformer {
             .unwrap();
         let rotary_pos_emb = rotary_pos_emb.index_select(&window_index, 0).unwrap();
         let rotary_pos_emb = rotary_pos_emb.reshape((seq_len, ())).unwrap();
+        println!("rotary_pos_emb new shape: {:?}", rotary_pos_emb.shape());
+        for row in rotary_pos_emb.i((..25, ..25)).unwrap().to_vec2::<f32>().unwrap() {
+            println!("{:?}", row);
+        }
         let rope_cache =
             RopeCache::from_parts(rotary_pos_emb.cos().unwrap(), rotary_pos_emb.sin().unwrap())
                 .unwrap();
@@ -391,6 +400,7 @@ impl QwenVisionTransformer {
             } else {
                 &cu_window_seqlens
             };
+            println!("cu_seqlens_now: {cu_seqlens_now:?}");
             hidden_states = blk
                 .forward(
                     &hidden_states,

@@ -230,6 +230,9 @@ impl RopeCache {
     ) -> candle_core::Result<(Tensor, Tensor)> {
         let apply_rotary_emb = |sin: &Tensor, cos: &Tensor, x: &Tensor, index_pos| {
             let (_b_sz, _n_head, seq_len, _n_embd) = x.dims4()?;
+            println!("seq_len: {seq_len}");
+            println!("x shape: {:?}", x.dims());
+            println!("cos shape: {:?}", cos.dims());
             let cos = cos.narrow(0, index_pos, seq_len)?;
             let sin = sin.narrow(0, index_pos, seq_len)?;
             apply_rotary_emb(&x.contiguous()?, &cos, &sin)
@@ -270,6 +273,14 @@ impl RopeCache {
         start_pos: usize,
     ) -> candle_core::Result<(Tensor, Tensor)> {
         self.forward_with_embed(q, k, start_pos, candle_nn::rotary_emb::rope_i)
+    }
+
+    pub(crate) fn sin(&self) -> &Tensor {
+        &self.sin
+    }
+    
+    pub(crate) fn cos(&self) -> &Tensor {
+        &self.cos
     }
 }
 

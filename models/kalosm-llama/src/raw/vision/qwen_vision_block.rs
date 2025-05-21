@@ -1,4 +1,4 @@
-use candle_core::{quantized::QMatMul, DType, Result, Tensor};
+use candle_core::{quantized::QMatMul, DType, IndexOp, Result, Tensor, D};
 use candle_nn::Module;
 use candle_transformers::{
     quantized_nn::{Linear, RmsNorm},
@@ -73,18 +73,16 @@ impl VisionBlock {
         cache: Option<&mut KvCache>,
     ) -> Result<Tensor> {
         let xs = xs.to_dtype(DType::F32).unwrap();
-        let xs = (&xs
-            + self
-                .attn
-                .forward(
-                    &self.norm1.forward(&xs).unwrap(),
-                    cu_seqlens,
-                    rope_cache,
-                    start_pos,
-                    cache,
-                )
-                .unwrap())
-        .unwrap();
+        let after_norm = self.norm1.forward(&xs).unwrap();
+        println!("after norm shape: {:?}", after_norm.shape());
+        for row in after_norm.i((..25, ..5)).unwrap().to_vec2::<f32>().unwrap() {
+            println!("{:?}", row);
+        }
+        let after_attention = self
+            .attn
+            .forward(&after_norm, cu_seqlens, rope_cache, start_pos, cache)
+            .unwrap();
+        let xs = (&xs + after_attention).unwrap();
         &xs + self.mlp.forward(&self.norm2.forward(&xs).unwrap()).unwrap()
     }
 }
@@ -170,15 +168,75 @@ impl VisionAttention {
             .reshape((seq_len, self.head_count, ()))
             .unwrap();
 
-        let (q, k) = rope_cache
-            .forward(
-                &q.unsqueeze(0).unwrap(),
-                &k.unsqueeze(0).unwrap(),
-                start_pos,
-            )
-            .unwrap();
+        println!("q");
+        let slice = q.i((..25, ..5, 0)).unwrap().to_vec2::<f32>().unwrap();
+        for row in slice.iter() {
+            println!("{:?}", row);
+        }
+        println!("k");
+        let slice = k.i((..25, ..5, 0)).unwrap().to_vec2::<f32>().unwrap();
+        for row in slice.iter() {
+            println!("{:?}", row);
+        }
+
+        //      cos, sin = cos.unsqueeze(-2).float(), sin.unsqueeze(-2).float()
+        // print("cos shape", cos.shape)
+        // print("sin shape", sin.shape)
+        // print("q shape", q.shape)
+        // print("k shape", k.shape)
+        // q_embed = (q * cos) + (rotate_half(q) * sin)
+        // k_embed = (k * cos) + (rotate_half(k) * sin)
+        // q_embed = q_embed.to(orig_q_dtype)
+        // k_embed = k_embed.to(orig_k_dtype)
+        // return q_embed, k_embed
+        // let q = candle_nn::rotary_emb::rope(&q, &cos, &sin).unwrap();
+        // let k = candle_nn::rotary_emb::rope(&k, &cos, &sin).unwrap();
+
+        fn apply_rotary_pos_emb_vision(
+            rope_cache: &RopeCache,
+            q: &Tensor,
+            k: &Tensor,
+        ) -> candle_core::Result<(Tensor, Tensor)> {
+            let sin = rope_cache.sin();
+            let cos = rope_cache.cos();
+            let sin = Tensor::cat(&[sin, sin], D::Minus1)?.unsqueeze(1)?;
+            let cos = Tensor::cat(&[cos, cos], D::Minus1)?.unsqueeze(1)?;
+
+            Ok((
+                (q.broadcast_mul(&cos)? + rotate_half(&q)?.broadcast_mul(&sin)?)?,
+                (k.broadcast_mul(&cos)? + rotate_half(&k)?.broadcast_mul(&sin)?)?,
+            ))
+        }
+
+        fn rotate_half(xs: &Tensor) -> Result<Tensor> {
+            let last_dim = xs.dim(D::Minus1)?;
+            let xs1 = xs.narrow(D::Minus1, 0, last_dim / 2)?;
+            let xs2 = xs.narrow(D::Minus1, last_dim / 2, last_dim - last_dim / 2)?;
+            Tensor::cat(&[&xs2.neg()?, &xs1], D::Minus1)
+        }
+
+        let (q, k) = apply_rotary_pos_emb_vision(rope_cache, &q, &k).unwrap();
+
+        // candle_nn::rotary_emb::rope
+        // let (q, k) = rope_cache
+        //     .forward(
+        //         &q.unsqueeze(0).unwrap(),
+        //         &k.unsqueeze(0).unwrap(),
+        //         start_pos,
+        //     )
+        //     .unwrap();
         let q = q.squeeze(0).unwrap();
         let k = k.squeeze(0).unwrap();
+        println!("q after rope");
+        let slice = q.i((..25, ..5, 0)).unwrap().to_vec2::<f32>().unwrap();
+        for row in slice.iter() {
+            println!("{:?}", row);
+        }
+        println!("k after rope");
+        let slice = k.i((..25, ..5, 0)).unwrap().to_vec2::<f32>().unwrap();
+        for row in slice.iter() {
+            println!("{:?}", row);
+        }
 
         // Convert from [seq_len, head_count, batch_size] to [head_count, seq_len, batch_size]
         let query_states = q
@@ -215,6 +273,7 @@ impl VisionAttention {
             let [last, next] = pair else { unreachable!() };
             let last = *last as usize;
             let next = *next as usize;
+            println!("last: {}, next: {}", last, next);
             for i in last..next {
                 for j in last..next {
                     attention_mask[i][j] = 0;
