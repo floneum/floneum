@@ -1,4 +1,4 @@
-use kalosm_language_model::MessageContent;
+use kalosm_language_model::{ContentChunk, MessageContent};
 use kalosm_sample::CreateParserState;
 use kalosm_sample::{LiteralParser, ParseStatus, Parser, ParserExt};
 use llm_samplers::prelude::{Logit, Logits};
@@ -41,7 +41,19 @@ pub(crate) fn generate_structured<P: Parser>(
     let tokenizer = &llm.tokenizer;
 
     let prompt_text = prompt.text();
-    let images = prompt.images_in_memory()?;
+    let images = prompt
+        .chunks()
+        .iter()
+        .filter_map(|chunk| {
+            if let ContentChunk::Media(media) = chunk {
+                media.source().as_bytes().as_ref().map(|bytes| {
+                    image::load_from_memory(bytes).map(|img| (img, media.hints().clone()))
+                })
+            } else {
+                None
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     let prompt_tokens = tokenizer
         .encode_fast(prompt_text, false)
         .map_err(LlamaModelError::Tokenizer)?;

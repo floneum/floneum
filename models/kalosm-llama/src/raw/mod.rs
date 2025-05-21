@@ -27,6 +27,7 @@ mod silu;
 mod vision;
 
 use cache::LlamaCache;
+use kalosm_language_model::MediaHints;
 use rope::RopeImplementation;
 
 fn decode_norm(tensor: QTensor, eps: f64) -> candle_core::Result<RmsNorm> {
@@ -514,7 +515,7 @@ impl Model {
     pub fn encode_tokens(
         &self,
         raw_tokens: &[u32],
-        raw_images: &[image::DynamicImage],
+        raw_images: &[(image::DynamicImage, MediaHints)],
         device: &Device,
         mut cache: Option<&mut LlamaCache>,
     ) -> Result<(Tensor, usize, usize, Option<Tensor>)> {
@@ -523,8 +524,11 @@ impl Model {
         let mut image_token_ranges = Vec::new();
         // Embed all images
         if let Some(vision_encoder) = &self.vision_encoder {
-            for image in raw_images {
-                let (image, thw) = vision_encoder.preprocess_image(image, None, None)?;
+            for (image, hints) in raw_images {
+                let min_pixels = hints.min_tokens();
+                let max_pixels = hints.max_tokens();
+                let (image, thw) =
+                    vision_encoder.preprocess_image(image, min_pixels, max_pixels)?;
                 images.push(image);
                 grid_thw.push(thw)
             }
@@ -631,7 +635,7 @@ impl Model {
     pub fn forward(
         &self,
         tokens: &[u32],
-        images: &[image::DynamicImage],
+        images: &[(image::DynamicImage, MediaHints)],
         device: &Device,
         mut cache: Option<&mut LlamaCache>,
     ) -> Result<Tensor> {

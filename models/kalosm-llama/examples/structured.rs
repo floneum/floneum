@@ -48,7 +48,7 @@ async fn main() {
     println!("\n\n# without constraints");
 
     let task = llm.task("You generate realistic JSON placeholders");
-    let stream = task(prompt);
+    let stream = task(&prompt);
 
     time_stream(stream).await;
 }

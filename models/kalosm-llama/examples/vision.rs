@@ -5,7 +5,7 @@ use kalosm_streams::text_stream::TextStream;
 async fn main() {
     tracing_subscriber::fmt::init();
     let model = Llama::builder()
-        .with_source(LlamaSource::qwen_2_5_32b_vl_chat_q4())
+        .with_source(LlamaSource::qwen_2_5_3b_vl_chat_q4())
         .build()
         .await
         .unwrap();
@@ -17,10 +17,18 @@ async fn main() {
                 "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg",
             ),
             MediaType::Image,
-        ),
+        )
+        .with_hints(MediaHints::new().with_max_pixels(512)),
         "Describe this image.",
     ));
     response.to_std_out().await.unwrap();
     response.await.unwrap();
     println!("\n");
+
+    loop {
+        chat(&prompt_input("\n> ").unwrap())
+            .to_std_out()
+            .await
+            .unwrap();
+    }
 }

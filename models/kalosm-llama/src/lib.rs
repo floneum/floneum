@@ -49,7 +49,7 @@ pub use crate::raw::cache::*;
 pub use crate::session::LlamaSession;
 use candle_core::Device;
 pub use kalosm_common::*;
-use kalosm_language_model::{TextCompletionBuilder, TextCompletionModelExt};
+use kalosm_language_model::{MediaHints, TextCompletionBuilder, TextCompletionModelExt};
 use kalosm_model_types::ModelLoadingProgress;
 use kalosm_sample::{LiteralParser, StopOn};
 use model::LlamaModelError;
@@ -294,7 +294,7 @@ pub(crate) struct InferenceSettings {
     prompt: String,
 
     /// Images in the prompt
-    images: Vec<image::DynamicImage>,
+    images: Vec<(image::DynamicImage, MediaHints)>,
 
     /// The token to stop on.
     stop_on: Option<String>,
@@ -315,7 +315,7 @@ pub(crate) struct InferenceSettings {
 impl InferenceSettings {
     pub fn new(
         prompt: impl ToString,
-        images: Vec<image::DynamicImage>,
+        images: Vec<(image::DynamicImage, MediaHints)>,
         session: LlamaSession,
         sampler: std::sync::Arc<std::sync::Mutex<dyn llm_samplers::prelude::Sampler>>,
         max_tokens: u32,

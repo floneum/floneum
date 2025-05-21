@@ -17,10 +17,8 @@ pub(crate) fn process_image(
     let merge_patch = patch_size_u32 * merge_size_u32;
     let resized = normalize_image_shape(
         [merge_patch; 2],
-        // min_pixels.unwrap_or(56 * 56),
-        // max_pixels.unwrap_or(14 * 14 * 4 * 1280),
-        min_pixels.unwrap_or(256 * 28 * 28),
-        max_pixels.unwrap_or(512 * 28 * 28),
+        min_pixels.unwrap_or(56 * 56),
+        max_pixels.unwrap_or(14 * 14 * 4 * 1280),
         image,
     );
 
@@ -87,6 +85,11 @@ fn normalize_image_shape(
         let scale_up_by = (min_pixels as f64 / (width * height) as f64).sqrt();
         width = (width as f64 * scale_up_by / patch_size[0] as f64).ceil() as u32 * patch_size[0];
         height = (height as f64 * scale_up_by / patch_size[1] as f64).ceil() as u32 * patch_size[1];
+    }
+    // Ensure the new dimensions are not zero
+    if width == 0 || height == 0 {
+        width = patch_size[0];
+        height = patch_size[1];
     }
 
     // Finally, resize the image to the new dimensions

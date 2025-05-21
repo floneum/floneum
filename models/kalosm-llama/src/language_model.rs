@@ -1,5 +1,5 @@
 use kalosm_language_model::{
-    CreateDefaultChatConstraintsForType, CreateDefaultCompletionConstraintsForType,
+    ContentChunk, CreateDefaultChatConstraintsForType, CreateDefaultCompletionConstraintsForType,
     CreateTextCompletionSession, GenerationParameters, MessageContent, ModelBuilder,
     StructuredTextCompletionModel, TextCompletionModel,
 };
@@ -71,7 +71,16 @@ impl<S: Sampler + 'static> TextCompletionModel<S> for Llama {
         let sampler = std::sync::Arc::new(std::sync::Mutex::new(sampler));
         let on_token = Box::new(on_token);
         let text = msg.text();
-        let images = msg.images().await?;
+        let msg = msg.resolve_media_sources().await?;
+        let mut images = Vec::new();
+        for chunk in msg.chunks() {
+            if let ContentChunk::Media(media) = chunk {
+                if let Some(bytes) = &media.source().as_bytes() {
+                    // Decode the image from the bytes
+                    images.push((image::load_from_memory(bytes)?, media.hints().clone()))
+                }
+            }
+        }
         self.task_sender
             .send(Task::UnstructuredGeneration(UnstructuredGenerationTask {
                 settings: InferenceSettings::new(

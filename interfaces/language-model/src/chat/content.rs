@@ -151,12 +151,14 @@ impl MessageContent {
                         resolved_chunks.push(ContentChunk::Media(MediaChunk {
                             media_type: media.media_type,
                             source: MediaSource::bytes(bytes.to_vec()),
+                            hints: media.hints.clone(),
                         }));
                     }
                     MediaSourceVariant::Bytes(bytes) => {
                         resolved_chunks.push(ContentChunk::Media(MediaChunk {
                             media_type: media.media_type,
                             source: MediaSource::bytes(bytes.clone()),
+                            hints: media.hints.clone(),
                         }));
                     }
                 }
@@ -279,6 +281,7 @@ impl From<MediaSource> for ContentChunk {
         ContentChunk::Media(MediaChunk {
             media_type: MediaType::Image,
             source,
+            hints: MediaHints::default(),
         })
     }
 }
@@ -296,6 +299,7 @@ impl TryFrom<PathBuf> for ContentChunk {
         Ok(ContentChunk::Media(MediaChunk {
             media_type: MediaType::Image,
             source: MediaSource::try_from(path)?,
+            hints: MediaHints::default(),
         }))
     }
 }
@@ -305,12 +309,17 @@ impl TryFrom<PathBuf> for ContentChunk {
 pub struct MediaChunk {
     media_type: MediaType,
     source: MediaSource,
+    hints: MediaHints,
 }
 
 impl MediaChunk {
     /// Create a new [`MediaChunk`] from a [`MediaSource`] and a [`MediaType`].
     pub fn new(source: MediaSource, media_type: MediaType) -> Self {
-        MediaChunk { media_type, source }
+        MediaChunk {
+            media_type,
+            source,
+            hints: MediaHints::default(),
+        }
     }
 
     /// Get the media type of this chunk.
@@ -321,6 +330,56 @@ impl MediaChunk {
     /// Get the source of this chunk.
     pub fn source(&self) -> &MediaSource {
         &self.source
+    }
+
+    /// Get the hints of this chunk.
+    pub fn hints(&self) -> &MediaHints {
+        &self.hints
+    }
+
+    /// Set the hints of this chunk.
+    pub fn with_hints(mut self, hints: MediaHints) -> Self {
+        self.hints = hints;
+        self
+    }
+}
+
+/// Additional hints the LLM backend may use to process the media content.
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MediaHints {
+    min_pixels: Option<u32>,
+    max_pixels: Option<u32>,
+}
+
+impl MediaHints {
+    /// Create a new [`MediaHints`] with the default values.
+    pub fn new() -> Self {
+        MediaHints {
+            min_pixels: None,
+            max_pixels: None,
+        }
+    }
+
+    /// Get the minimum number of tokens for this chunk.
+    pub fn min_tokens(&self) -> Option<u32> {
+        self.min_pixels
+    }
+
+    /// Get the maximum number of tokens for this chunk.
+    pub fn max_tokens(&self) -> Option<u32> {
+        self.max_pixels
+    }
+
+    /// Set the minimum number of tokens for this chunk.
+    pub fn with_min_pixels(mut self, min_pixels: u32) -> Self {
+        self.min_pixels = Some(min_pixels);
+        self
+    }
+
+    /// Set the maximum number of tokens for this chunk.
+    pub fn with_max_pixels(mut self, max_pixels: u32) -> Self {
+        self.max_pixels = Some(max_pixels);
+        self
     }
 }
 
@@ -373,6 +432,24 @@ impl MediaSource {
         Ok(MediaSource {
             variant: MediaSourceVariant::Bytes(bytes.into()),
         })
+    }
+
+    /// Try to get the contents as bytes
+    pub fn as_bytes(&self) -> Option<&[u8]> {
+        if let MediaSourceVariant::Bytes(bytes) = &self.variant {
+            Some(bytes)
+        } else {
+            None
+        }
+    }
+
+    /// Try to get the contents as a URL
+    pub fn as_url(&self) -> Option<&str> {
+        if let MediaSourceVariant::Url(url) = &self.variant {
+            Some(url)
+        } else {
+            None
+        }
     }
 }
 

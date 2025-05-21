@@ -6,6 +6,7 @@ use crate::token_stream::TokenOutputStreamError;
 use crate::LlamaConfigJson;
 use kalosm_common::*;
 use kalosm_language_model::ImageFetchError;
+use kalosm_language_model::MediaHints;
 use kalosm_model_types::ModelLoadingProgress;
 use llm_samplers::types::Logits;
 use serde::de::Error;
@@ -82,7 +83,7 @@ impl LlamaModel {
         model: &Model,
         device: &Device,
         tokens: &[u32],
-        images: &[image::DynamicImage],
+        images: &[(image::DynamicImage, MediaHints)],
         cache: Option<&mut LlamaCache>,
         logits_vec: &mut Vec<f32>,
         #[allow(unused)] tokenizer: &Tokenizer,
@@ -438,7 +439,7 @@ impl LlamaModel {
                 &self.model,
                 &self.device,
                 &[new_token],
-                &images,
+                &[],
                 Some(&mut session),
                 &mut logit_probs,
                 &self.tokenizer,
