@@ -102,36 +102,6 @@ fn image_to_rgb(image: &DynamicImage, device: &Device) -> candle_core::Result<Te
     Ok(img.unsqueeze(0)?)
 }
 
-fn save_image_tensor(img: &Tensor) {
-    let width = img.dim(2).unwrap();
-    let height = img.dim(1).unwrap();
-    let flattened_samples = (img * 255.0)
-        .unwrap()
-        .to_dtype(candle_core::DType::U8)
-        .unwrap()
-        .permute([1, 2, 0])
-        .unwrap()
-        .flatten_all()
-        .unwrap()
-        .to_vec1::<u8>()
-        .unwrap();
-    let mut img_from_samples = DynamicImage::new_rgb8(width as u32, height as u32);
-    for (y, row) in flattened_samples.chunks(width * 3).enumerate() {
-        for (x, pixel) in row.chunks(3).enumerate() {
-            let &[r, g, b] = pixel else {
-                panic!("Invalid pixel data");
-            };
-            let pixel = Rgba([r, g, b, 255]);
-            // println!("flattened_samples len: {}", flattened_samples.len());
-            // println!("width: {}, height: {}", width, height);
-            // println!("x {} y {} pixel {:?}", x, y, pixel);
-            img_from_samples.put_pixel(x as u32, y as u32, pixel);
-        }
-    }
-    // Save the image to ./img_from_samples.png
-    img_from_samples.save("./img_from_samples.png").unwrap();
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
