@@ -548,7 +548,7 @@ impl Model {
                             // Push a pad token for every image token
                             let grid = image_iter.next().ok_or_else(|| {
                                 candle_core::Error::Msg(
-                                    "Image pad token found without matching image.".to_string()
+                                    "Image pad token found without matching image.".to_string(),
                                 )
                             })?;
                             for _ in 0..grid.iter().product::<u32>()

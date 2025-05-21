@@ -38,7 +38,7 @@ impl<M: CreateChatSession> Summarizer<M> {
         let prompt = format!("Generate a summary of the following text:\n{text}");
 
         let parser = LiteralParser::new("Summary: ").then(OneLine);
-        let questions = self.task.run(&prompt).with_constraints(parser).await?;
+        let questions = self.task.run(prompt).with_constraints(parser).await?;
         let documents = vec![questions.1];
 
         Ok(documents)

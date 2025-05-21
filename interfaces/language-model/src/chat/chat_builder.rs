@@ -1,6 +1,7 @@
 use crate::GenerationParameters;
 use crate::ModelConstraints;
 use crate::NoConstraints;
+use crate::ToChatMessage;
 use async_lock::Mutex as AsyncMutex;
 use futures_channel::mpsc::UnboundedReceiver;
 use futures_channel::oneshot::Receiver;
@@ -27,9 +28,9 @@ use super::ChatSession;
 use super::ContentChunk;
 use super::CreateChatSession;
 use super::CreateDefaultChatConstraintsForType;
+use super::IntoChatMessage;
 use super::MessageType;
 use super::StructuredChatModel;
-use super::ToChatMessage;
 
 /// [`Chat`] is a chat interface that builds on top of [`crate::ChatModel`] and [`crate::StructuredChatModel`]. It makes it easy to create a chat session with streaming responses, and constraints.
 #[doc = include_str!("../../docs/chat.md")]
@@ -176,12 +177,12 @@ impl<M: CreateChatSession> Chat<M> {
     /// response_stream.to_std_out().await.unwrap();
     /// # }
     /// ```
-    pub fn add_message<Msg: ToChatMessage + ?Sized>(
+    pub fn add_message<Msg: IntoChatMessage>(
         &mut self,
-        message: &Msg,
+        message: Msg,
     ) -> ChatResponseBuilder<'_, M> {
         // First push the message to the queue
-        self.queued_messages.push(message.to_chat_message());
+        self.queued_messages.push(message.into_chat_message());
 
         // Then create the builder that will respond to the message if it is awaited
         ChatResponseBuilder {
@@ -211,12 +212,12 @@ impl<M: CreateChatSession> Chat<M> {
     /// response_stream.to_std_out().await.unwrap();
     /// # }
     /// ```
-    pub fn into_add_message<Msg: ToChatMessage + ?Sized>(
+    pub fn into_add_message<Msg: IntoChatMessage>(
         mut self,
-        message: &Msg,
+        message: Msg,
     ) -> ChatResponseBuilder<'static, M> {
         // First push the message to the queue
-        self.queued_messages.push(message.to_chat_message());
+        self.queued_messages.push(message.into_chat_message());
 
         // Then create the builder that will respond to the message if it is awaited
         ChatResponseBuilder {
@@ -349,7 +350,10 @@ impl<M: CreateChatSession + Clone + 'static> DerefMut for Chat<M> {
         // Move a closure that captures just self into the uninitialized memory. Closures create an anonymous type that implement
         // FnOnce. In this case, the layout of the type should just be Self because self is the only field in the closure type.
         let mut uninit_closure = move |message: &dyn ToChatMessage| {
-            Self::add_message(unsafe { &mut *uninit_callable.as_mut_ptr() }, message)
+            Self::add_message(
+                unsafe { &mut *uninit_callable.as_mut_ptr() },
+                message.to_chat_message(),
+            )
         };
 
         // Make sure the layout of the closure and Self is the same.

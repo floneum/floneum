@@ -9,6 +9,7 @@ use super::ChatMessage;
 use super::ChatResponseBuilder;
 use super::CreateChatSession;
 use super::CreateDefaultChatConstraintsForType;
+use super::IntoChatMessage;
 use super::MessageContent;
 use super::MessageType;
 use super::ToChatMessage;
@@ -91,8 +92,8 @@ impl<M: CreateChatSession, Constraints> Task<M, Constraints> {
     /// ```
     pub fn with_example(mut self, input: impl Into<MessageContent>, output: impl ToString) -> Self {
         self.chat
-            .add_message(&ChatMessage::new(MessageType::UserMessage, input));
-        self.chat.add_message(&ChatMessage::new(
+            .add_message(ChatMessage::new(MessageType::UserMessage, input));
+        self.chat.add_message(ChatMessage::new(
             MessageType::ModelAnswer,
             output.to_string(),
         ));
@@ -205,13 +206,13 @@ impl<M: CreateChatSession, Constraints: Clone> Task<M, Constraints> {
     ///     let mut llm = Llama::new_chat().await.unwrap();
     ///     let task = llm.task("You are a math assistant who helps students with their homework. You solve equations and answer questions. When solving problems, you will always solve problems step by step.");
     ///
-    ///     let result = task("What is 2 + 2?").await.unwrap();
+    ///     let result = task(&"What is 2 + 2?").await.unwrap();
     ///     println!("{result}");
     /// }
     /// ```
-    pub fn run<Msg: ToChatMessage + ?Sized>(
+    pub fn run<Msg: IntoChatMessage>(
         &self,
-        message: &Msg,
+        message: Msg,
     ) -> ChatResponseBuilder<'static, M, Constraints> {
         self.chat
             .clone()
@@ -223,7 +224,7 @@ impl<M: CreateChatSession, Constraints: Clone> Task<M, Constraints> {
 impl<M: CreateChatSession + 'static, Constraints: ModelConstraints + Clone + 'static> Deref
     for Task<M, Constraints>
 {
-    type Target = dyn Fn(&str) -> ChatResponseBuilder<'static, M, Constraints>;
+    type Target = dyn Fn(&dyn ToChatMessage) -> ChatResponseBuilder<'static, M, Constraints>;
 
     fn deref(&self) -> &Self::Target {
         // https://github.com/dtolnay/case-studies/tree/master/callable-types
@@ -232,8 +233,12 @@ impl<M: CreateChatSession + 'static, Constraints: ModelConstraints + Clone + 'st
         let uninit_callable = MaybeUninit::<Self>::uninit();
         // Move a closure that captures just self into the uninitialized memory. Closures create an anonymous type that implement
         // FnOnce. In this case, the layout of the type should just be Self because self is the only field in the closure type.
-        let uninit_closure =
-            move |input: &str| Self::run(unsafe { &*uninit_callable.as_ptr() }, input);
+        let uninit_closure = move |input: &dyn ToChatMessage| {
+            Self::run(
+                unsafe { &*uninit_callable.as_ptr() },
+                input.to_chat_message(),
+            )
+        };
 
         // Make sure the layout of the closure and Self is the same.
         let size_of_closure = std::alloc::Layout::for_value(&uninit_closure);
@@ -261,7 +266,7 @@ impl<M: CreateChatSession + 'static, Constraints: ModelConstraints + Clone + 'st
 }
 
 impl<M: CreateChatSession + 'static> Deref for Task<M> {
-    type Target = dyn Fn(&str) -> ChatResponseBuilder<'static, M>;
+    type Target = dyn Fn(&dyn ToChatMessage) -> ChatResponseBuilder<'static, M>;
 
     fn deref(&self) -> &Self::Target {
         // https://github.com/dtolnay/case-studies/tree/master/callable-types
@@ -270,8 +275,12 @@ impl<M: CreateChatSession + 'static> Deref for Task<M> {
         let uninit_callable = MaybeUninit::<Self>::uninit();
         // Move a closure that captures just self into the uninitialized memory. Closures create an anonymous type that implement
         // FnOnce. In this case, the layout of the type should just be Self because self is the only field in the closure type.
-        let uninit_closure =
-            move |input: &str| Self::run(unsafe { &*uninit_callable.as_ptr() }, input);
+        let uninit_closure = move |input: &dyn ToChatMessage| {
+            Self::run(
+                unsafe { &*uninit_callable.as_ptr() },
+                input.to_chat_message(),
+            )
+        };
 
         // Make sure the layout of the closure and Self is the same.
         let size_of_closure = std::alloc::Layout::for_value(&uninit_closure);

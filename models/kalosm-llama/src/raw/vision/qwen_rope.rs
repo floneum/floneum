@@ -124,7 +124,7 @@ pub(crate) fn get_rope_index(
                     }
                 }
                 max_time_index += 2;
-                index = index + image_width as usize * image_height as usize;
+                index += image_width as usize * image_height as usize;
             } else if token == video_token_id {
                 let video = videos.next().unwrap();
                 let video_size = video.patch_size(spatial_merge_size);
@@ -141,8 +141,7 @@ pub(crate) fn get_rope_index(
                         }
                     }
                 }
-                index =
-                    index + image_width as usize * image_height as usize * video.frames as usize;
+                index += image_width as usize * image_height as usize * video.frames as usize;
                 max_time_index = max_time_index.max(max_time_index + video.frames + 1);
             }
         }

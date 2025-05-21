@@ -35,26 +35,26 @@ impl VisionBlock {
             Some(
                 vb.get_no_shape("ffn_gate.bias")
                     .unwrap()
-                    .dequantize(&device)
+                    .dequantize(device)
                     .unwrap(),
             ),
             QMatMul::from_arc(vb.get_no_shape("ffn_down.weight").unwrap()).unwrap(),
             Some(
                 vb.get_no_shape("ffn_down.bias")
                     .unwrap()
-                    .dequantize(&device)
+                    .dequantize(device)
                     .unwrap(),
             ),
             QMatMul::from_arc(vb.get_no_shape("ffn_up.weight").unwrap()).unwrap(),
             Some(
                 vb.get_no_shape("ffn_up.bias")
                     .unwrap()
-                    .dequantize(&device)
+                    .dequantize(device)
                     .unwrap(),
             ),
         );
 
-        let attn = VisionAttention::new(&vb, head_count, head_dim, embed_dim).unwrap();
+        let attn = VisionAttention::new(vb, head_count, head_dim, embed_dim).unwrap();
 
         Ok(Self {
             norm1,
@@ -98,28 +98,28 @@ impl VisionAttention {
         let q_bias = vb
             .get_no_shape("attn_q.bias")
             .unwrap()
-            .dequantize(&vb.device())
+            .dequantize(vb.device())
             .unwrap();
         let q = Linear::from_arc(q, Some(q_bias)).unwrap();
         let k = vb.get_no_shape("attn_k.weight").unwrap();
         let k_bias = vb
             .get_no_shape("attn_k.bias")
             .unwrap()
-            .dequantize(&vb.device())
+            .dequantize(vb.device())
             .unwrap();
         let k = Linear::from_arc(k, Some(k_bias)).unwrap();
         let v = vb.get_no_shape("attn_v.weight").unwrap();
         let v_bias = vb
             .get_no_shape("attn_v.bias")
             .unwrap()
-            .dequantize(&vb.device())
+            .dequantize(vb.device())
             .unwrap();
         let v = Linear::from_arc(v, Some(v_bias)).unwrap();
         let proj = vb.get_no_shape("attn_out.weight").unwrap();
         let proj_bias = vb
             .get_no_shape("attn_out.bias")
             .unwrap()
-            .dequantize(&vb.device())
+            .dequantize(vb.device())
             .unwrap();
         let proj = Linear::from_arc(proj, Some(proj_bias)).unwrap();
 
@@ -173,8 +173,8 @@ impl VisionAttention {
             let cos = Tensor::cat(&[cos, cos], D::Minus1)?.unsqueeze(1)?;
 
             Ok((
-                (q.broadcast_mul(&cos)? + rotate_half(&q)?.broadcast_mul(&sin)?)?,
-                (k.broadcast_mul(&cos)? + rotate_half(&k)?.broadcast_mul(&sin)?)?,
+                (q.broadcast_mul(&cos)? + rotate_half(q)?.broadcast_mul(&sin)?)?,
+                (k.broadcast_mul(&cos)? + rotate_half(k)?.broadcast_mul(&sin)?)?,
             ))
         }
 

@@ -51,48 +51,46 @@ impl CreateTextCompletionSession for Llama {
 }
 
 impl<S: Sampler + 'static> TextCompletionModel<S> for Llama {
-    fn stream_text_with_callback<'a>(
+    async fn stream_text_with_callback<'a>(
         &'a self,
         session: &'a mut Self::Session,
         msg: MessageContent,
         sampler: S,
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a {
-        async move {
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            let (max_tokens, stop_on, seed) =
-                match (&sampler as &dyn Any).downcast_ref::<GenerationParameters>() {
-                    Some(sampler) => (
-                        sampler.max_length(),
-                        sampler.stop_on().map(|s| s.to_string()),
-                        sampler.seed(),
-                    ),
-                    None => (u32::MAX, None, None),
-                };
-            let sampler = std::sync::Arc::new(std::sync::Mutex::new(sampler));
-            let on_token = Box::new(on_token);
-            let text = msg.text();
-            let images = msg.images().await?;
-            self.task_sender
-                .send(Task::UnstructuredGeneration(UnstructuredGenerationTask {
-                    settings: InferenceSettings::new(
-                        text,
-                        images,
-                        session.clone(),
-                        sampler,
-                        max_tokens,
-                        stop_on,
-                        seed,
-                    ),
-                    on_token,
-                    finished: tx,
-                }))
-                .map_err(|_| LlamaModelError::ModelStopped)?;
+    ) -> Result<(), Self::Error> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let (max_tokens, stop_on, seed) =
+            match (&sampler as &dyn Any).downcast_ref::<GenerationParameters>() {
+                Some(sampler) => (
+                    sampler.max_length(),
+                    sampler.stop_on().map(|s| s.to_string()),
+                    sampler.seed(),
+                ),
+                None => (u32::MAX, None, None),
+            };
+        let sampler = std::sync::Arc::new(std::sync::Mutex::new(sampler));
+        let on_token = Box::new(on_token);
+        let text = msg.text();
+        let images = msg.images().await?;
+        self.task_sender
+            .send(Task::UnstructuredGeneration(UnstructuredGenerationTask {
+                settings: InferenceSettings::new(
+                    text,
+                    images,
+                    session.clone(),
+                    sampler,
+                    max_tokens,
+                    stop_on,
+                    seed,
+                ),
+                on_token,
+                finished: tx,
+            }))
+            .map_err(|_| LlamaModelError::ModelStopped)?;
 
-            rx.await.map_err(|_| LlamaModelError::ModelStopped)??;
+        rx.await.map_err(|_| LlamaModelError::ModelStopped)??;
 
-            Ok(())
-        }
+        Ok(())
     }
 }
 

@@ -36,7 +36,7 @@ pub(crate) fn process_image(
 
     let grid_t = 1;
     let grid_h = resized.height() as usize / patch_size;
-    let grid_w = resized.width() as usize / patch_size ;
+    let grid_w = resized.width() as usize / patch_size;
     let rgb = rgb.reshape(&[
         1,                                         // time size
         1,                                         // temporal patch size
@@ -106,7 +106,6 @@ fn image_to_rgb(image: &DynamicImage, device: &Device) -> candle_core::Result<Te
 #[cfg(test)]
 mod tests {
     use super::*;
-    use image::{GenericImage, Rgb, Rgba};
 
     #[tokio::test]
     async fn test_process_image() {

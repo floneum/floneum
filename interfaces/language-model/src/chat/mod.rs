@@ -370,37 +370,31 @@ impl ChatMessage {
 /// assert_eq!(chat_message.role(), MessageType::ModelAnswer);
 /// # }
 /// ```
-pub trait ToChatMessage {
+pub trait IntoChatMessage {
     /// Convert the type into a chat message.
-    fn to_chat_message(&self) -> ChatMessage;
+    fn into_chat_message(self) -> ChatMessage;
 }
 
-impl ToChatMessage for str {
-    fn to_chat_message(&self) -> ChatMessage {
+impl IntoChatMessage for &str {
+    fn into_chat_message(self) -> ChatMessage {
         ChatMessage::new(MessageType::UserMessage, self.to_string())
     }
 }
 
-impl ToChatMessage for &str {
-    fn to_chat_message(&self) -> ChatMessage {
+impl IntoChatMessage for String {
+    fn into_chat_message(self) -> ChatMessage {
+        ChatMessage::new(MessageType::UserMessage, self)
+    }
+}
+
+impl IntoChatMessage for Arguments<'_> {
+    fn into_chat_message(self) -> ChatMessage {
         ChatMessage::new(MessageType::UserMessage, self.to_string())
     }
 }
 
-impl ToChatMessage for String {
-    fn to_chat_message(&self) -> ChatMessage {
-        ChatMessage::new(MessageType::UserMessage, self.clone())
-    }
-}
-
-impl<'a> ToChatMessage for Arguments<'_> {
-    fn to_chat_message(&self) -> ChatMessage {
-        ChatMessage::new(MessageType::UserMessage, self.to_string())
-    }
-}
-
-impl ToChatMessage for ChatMessage {
-    fn to_chat_message(&self) -> ChatMessage {
+impl IntoChatMessage for ChatMessage {
+    fn into_chat_message(self) -> ChatMessage {
         self.clone()
     }
 }
@@ -408,8 +402,8 @@ impl ToChatMessage for ChatMessage {
 macro_rules! impl_to_chat_message_tuple {
     ($($name:ident),+) => {
         #[allow(non_snake_case)]
-        impl<$($name: Into<ContentChunk> + Clone),+> ToChatMessage for ($($name,)+) {
-            fn to_chat_message(&self) -> ChatMessage {
+        impl<$($name: Into<ContentChunk> + Clone),+> IntoChatMessage for ($($name,)+) {
+            fn into_chat_message(self) -> ChatMessage {
                 let ($($name,)+) = self;
                 ChatMessage::new(MessageType::UserMessage, ($($name.clone(),)+))
             }
@@ -431,3 +425,16 @@ impl_to_chat_message_tuple!(A, B, C, D, E, F, G, H, I, J, K);
 impl_to_chat_message_tuple!(A, B, C, D, E, F, G, H, I, J, K, L);
 impl_to_chat_message_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M);
 impl_to_chat_message_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N);
+
+/// A trait for any type that can be converted from a reference to a [`ChatMessage`]. This trait is implemented for any types
+/// that implement [`Clone`] + [`IntoChatMessage`].
+pub trait ToChatMessage {
+    /// Convert the type from a reference to a [`ChatMessage`].
+    fn to_chat_message(&self) -> ChatMessage;
+}
+
+impl<T: IntoChatMessage + Clone> ToChatMessage for &T {
+    fn to_chat_message(&self) -> ChatMessage {
+        <T as Clone>::clone(self).into_chat_message()
+    }
+}

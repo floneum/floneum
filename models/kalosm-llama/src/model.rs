@@ -156,8 +156,7 @@ impl LlamaModel {
         let mut vision_path = None;
         if let Some(vision_source) = builder.source.vision_model {
             let mut create_progress = ModelLoadingProgress::downloading_progress(format!(
-                "Vision model ({})",
-                vision_source
+                "Vision model ({vision_source})"
             ));
             let path = builder
                 .source

@@ -90,11 +90,7 @@ impl QwenVisionTransformer {
                     .map(|x| x.iter().map(|x| x.to_f32()).collect())
             })
             .transpose()?
-            .unwrap_or(vec![
-                0.48145467042922974,
-                0.45782750844955444,
-                0.40821072459220886,
-            ]);
+            .unwrap_or(vec![0.481_454_67, 0.457_827_5, 0.408_210_72]);
         let image_std = vision_ct
             .metadata
             .get("clip.vision.image_std")
@@ -104,11 +100,7 @@ impl QwenVisionTransformer {
                     .map(|x| x.iter().map(|x| x.to_f32()).collect())
             })
             .transpose()?
-            .unwrap_or(vec![
-                0.2686295509338379,
-                0.2613025903701782,
-                0.27577710151672363,
-            ]);
+            .unwrap_or(vec![0.268_629_55, 0.261_302_6, 0.275_777_1]);
         let in_channels = 3;
 
         let vb = VarBuilder::from_gguf(vision_file, device).unwrap();
@@ -163,7 +155,7 @@ impl QwenVisionTransformer {
         let blocks = (0..depth)
             .map(|i| {
                 VisionBlock::new(
-                    &vb.pp(&format!("v.blk.{i}")),
+                    &vb.pp(format!("v.blk.{i}")),
                     num_heads,
                     head_dim,
                     hidden_size,
@@ -177,7 +169,7 @@ impl QwenVisionTransformer {
             hidden_size,
             spacial_merge_size,
             layer_norm_eps,
-            &vb,
+            vb,
         )
         .unwrap();
 
@@ -328,7 +320,7 @@ impl QwenVisionTransformer {
         grid_thw: &Vec<[u32; 3]>,
         mut cache: Option<&mut KvCache>,
     ) -> candle_core::Result<Tensor> {
-        let hidden_states = self.patch_embed.forward(&hidden_states).unwrap();
+        let hidden_states = self.patch_embed.forward(hidden_states).unwrap();
         let rotary_pos_emb = self.rot_pos_emb(grid_thw).unwrap();
         let (window_index, mut cu_window_seqlens) = get_window_index(
             grid_thw
@@ -375,7 +367,7 @@ impl QwenVisionTransformer {
 
         let cu_seqlens = grid_thw
             .iter()
-            .flat_map(|[t, h, w]| std::iter::repeat_n((*h * *w), *t as usize))
+            .flat_map(|[t, h, w]| std::iter::repeat_n(*h * *w, *t as usize))
             .map({
                 let mut sum = 0;
                 move |x| {

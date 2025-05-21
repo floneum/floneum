@@ -10,7 +10,7 @@ async fn main() {
 
     let mut chat = model.chat();
 
-    let mut stream = chat("Finish this code: fn main() { println");
+    let mut stream = chat(&"Finish this code: fn main() { println");
 
     stream.to_std_out().await.unwrap();
 

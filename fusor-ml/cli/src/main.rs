@@ -136,7 +136,7 @@ fn add_metadata(
         let mut reader = std::io::BufReader::new(reader);
         gguf = fusor_gguf::GgufMetadata::read(&mut reader)?;
         gguf.metadata
-            .extend(data.into_iter().map(|(k, v)| (k.into(), v.into())));
+            .extend(data.into_iter().map(|(k, v)| (k.into(), v)));
         tensor = HashMap::new();
         for (key, value) in gguf.tensor_infos.iter() {
             tensor.insert(

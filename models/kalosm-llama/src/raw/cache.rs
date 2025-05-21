@@ -68,7 +68,7 @@ impl LlamaCache {
         );
         map.insert(
             "llama.cache.start_time".to_string(),
-            Tensor::new(self.start_time as u32, device).unwrap(),
+            Tensor::new(self.start_time, device).unwrap(),
         );
         map
     }

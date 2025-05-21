@@ -94,7 +94,7 @@ pub(crate) fn get_window_index(
             * spatial_merge_unit as f64)?
             + *cu_window_seqlens.last().unwrap() as f64)?;
         cu_window_seqlens.extend(cu_seqlens_tmp.to_vec1::<u32>()?);
-        window_index_id += (grid_t * llm_grid_h * llm_grid_w) as usize;
+        window_index_id += grid_t * llm_grid_h * llm_grid_w;
     }
     let window_index = Tensor::cat(&window_index, 0)?;
 

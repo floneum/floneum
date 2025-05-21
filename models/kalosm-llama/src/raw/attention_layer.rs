@@ -173,6 +173,7 @@ pub struct SeparateAttention {
 }
 
 impl SeparateAttention {
+    #[allow(clippy::too_many_arguments)]
     fn forward(
         &self,
         num_heads: usize,
@@ -323,6 +324,7 @@ pub struct GroupedAttention {
 }
 
 impl GroupedAttention {
+    #[allow(clippy::too_many_arguments)]
     fn forward(
         &self,
         num_heads: usize,
@@ -457,6 +459,7 @@ fn repeat_kv(x: Tensor, num_key_value_groups: usize) -> candle_core::Result<Tens
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn forward_attention_qkv(
     query_states: &Tensor,
     key_states: &Tensor,
@@ -483,7 +486,7 @@ pub(crate) fn forward_attention_qkv(
         attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights).unwrap();
         debug_assert_none_nan(&attn_weights);
 
-        attn_weights.matmul(&value_states).unwrap()
+        attn_weights.matmul(value_states).unwrap()
     };
 
     debug_assert_none_nan(&attn_output);
