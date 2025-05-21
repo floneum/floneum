@@ -183,8 +183,6 @@ fn test_vision_patch_embed() {
     )
     .unwrap()
     .reshape(&dims)
-    .unwrap()
-    .to_dtype(DType::F16)
     .unwrap();
     let (weight_1, weight_2) = split_frames(&weight).unwrap();
 
