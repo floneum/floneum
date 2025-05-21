@@ -16,7 +16,7 @@ async fn main() {
     let mut response = chat(&(
         MediaChunk::new(
             MediaSource::url(
-                "https://avatars.githubusercontent.com/u/76850177?v=4",
+                "https://preview.redd.it/bgw66bknw32f1.png?width=1080&crop=smart&auto=webp&s=128c68de9c9301e80d73f94cac07cc2970f28f34",
             ),
             MediaType::Image,
         ),

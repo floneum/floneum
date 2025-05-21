@@ -1,5 +1,5 @@
 use candle_core::{Device, IndexOp, Tensor};
-use image::{DynamicImage, Rgb};
+use image::{DynamicImage, GenericImage, Rgb, Rgba};
 
 pub(crate) fn process_image(
     image: &DynamicImage,
@@ -11,9 +11,11 @@ pub(crate) fn process_image(
     image_std: &[f32],
     device: &Device,
 ) -> candle_core::Result<(Tensor, [u32; 3])> {
-    let merge_patch = (patch_size * merge_size) as u32;
+    let patch_size_u32 = patch_size as u32;
+    let merge_size_u32 = merge_size as u32;
+    let merge_patch = patch_size_u32 * merge_size_u32;
     let resized = normalize_image_shape(
-        [merge_patch, merge_patch],
+        [merge_patch; 2],
         // min_pixels.unwrap_or(56 * 56),
         // max_pixels.unwrap_or(14 * 14 * 4 * 1280),
         min_pixels.unwrap_or(256 * 28 * 28),
@@ -56,17 +58,6 @@ pub(crate) fn process_image(
         // patch data
         (3 * patch_size * patch_size * 2) as usize,
     ])?;
-    // println!("normal input");
-    // let vec2 = rgb
-    //     .i((..25, ..25))
-    //     .unwrap()
-    //     .to_dtype(candle_core::DType::F32)
-    //     .unwrap()
-    //     .to_vec2::<f32>()
-    //     .unwrap();
-    // for list in vec2.iter() {
-    //     println!("{:?}", list);
-    // }
     Ok((rgb, [grid_t as u32, grid_h as u32, grid_w as u32]))
 }
 
@@ -79,23 +70,22 @@ fn normalize_image_shape(
     let mut width = image.width();
     let mut height = image.height();
 
-    // Scale up the image while keeping the aspect ratio to at least the minimum pixels
-    if width * height < min_pixels {
-        let scale_up_by = ((width * height) as f32 / min_pixels as f32).sqrt();
-        width = (width as f32 / scale_up_by / patch_size[0] as f32).floor() as u32 * patch_size[0];
-        height =
-            (height as f32 / scale_up_by / patch_size[1] as f32).floor() as u32 * patch_size[1];
-    } else if width * height > max_pixels {
+    // Round to the nearest multiple of the patch size
+    width = (width as f64 / patch_size[0] as f64).ceil() as u32 * patch_size[0];
+    height = (height as f64 / patch_size[1] as f64).ceil() as u32 * patch_size[1];
+
+    if width * height > max_pixels {
         // Scale down the image while keeping the aspect ratio to at most the maximum pixels
-        let scale_down_by = ((width * height) as f32 / max_pixels as f32).sqrt();
+        let scale_down_by = ((width * height) as f64 / max_pixels as f64).sqrt();
         width =
-            (width as f32 / scale_down_by / patch_size[0] as f32).floor() as u32 * patch_size[0];
+            (width as f64 / scale_down_by / patch_size[0] as f64).floor() as u32 * patch_size[0];
         height =
-            (height as f32 / scale_down_by / patch_size[1] as f32).floor() as u32 * patch_size[1];
-    } else {
-        // Round to the nearest multiple of the patch size
-        width = (width as f32 / patch_size[0] as f32).round() as u32 * patch_size[0];
-        height = (height as f32 / patch_size[1] as f32).round() as u32 * patch_size[1];
+            (height as f64 / scale_down_by / patch_size[1] as f64).floor() as u32 * patch_size[1];
+    } else if width * height < min_pixels {
+        // Scale up the image while keeping the aspect ratio to at least the minimum pixels
+        let scale_up_by = (min_pixels as f64 / (width * height) as f64).sqrt();
+        width = (width as f64 * scale_up_by / patch_size[0] as f64).ceil() as u32 * patch_size[0];
+        height = (height as f64 * scale_up_by / patch_size[1] as f64).ceil() as u32 * patch_size[1];
     }
 
     // Finally, resize the image to the new dimensions
@@ -103,23 +93,43 @@ fn normalize_image_shape(
 }
 
 fn image_to_rgb(image: &DynamicImage, device: &Device) -> candle_core::Result<Tensor> {
-    // Save the image to ./img.png
-    image.save("./img.png").unwrap();
-    let rgb = image.to_rgb32f();
-    let grid = rgb.rows().flat_map(|p| {
-        p.flat_map(|pixel| {
-            let [r, g, b] = pixel.0;
-            [r as f32, g as f32, b as f32]
-        })
-    });
+    let height = image.height() as usize;
+    let width = image.width() as usize;
+    let rgb = image.to_rgb8();
+    let data = Tensor::from_vec(rgb.into_raw(), (height, width, 3), device)?;
+    let img = (data.permute((2, 0, 1))?.to_dtype(candle_core::DType::F32)? / 255.0)?;
 
-    let height = rgb.height() as usize;
-    let width = rgb.width() as usize;
-    let img = Tensor::from_iter(grid, device)?
-        .reshape(&[height, width, 3])?
-        .permute([2, 0, 1])?
-        .unsqueeze(0)?;
-    Ok(img)
+    Ok(img.unsqueeze(0)?)
+}
+
+fn save_image_tensor(img: &Tensor) {
+    let width = img.dim(2).unwrap();
+    let height = img.dim(1).unwrap();
+    let flattened_samples = (img * 255.0)
+        .unwrap()
+        .to_dtype(candle_core::DType::U8)
+        .unwrap()
+        .permute([1, 2, 0])
+        .unwrap()
+        .flatten_all()
+        .unwrap()
+        .to_vec1::<u8>()
+        .unwrap();
+    let mut img_from_samples = DynamicImage::new_rgb8(width as u32, height as u32);
+    for (y, row) in flattened_samples.chunks(width * 3).enumerate() {
+        for (x, pixel) in row.chunks(3).enumerate() {
+            let &[r, g, b] = pixel else {
+                panic!("Invalid pixel data");
+            };
+            let pixel = Rgba([r, g, b, 255]);
+            // println!("flattened_samples len: {}", flattened_samples.len());
+            // println!("width: {}, height: {}", width, height);
+            // println!("x {} y {} pixel {:?}", x, y, pixel);
+            img_from_samples.put_pixel(x as u32, y as u32, pixel);
+        }
+    }
+    // Save the image to ./img_from_samples.png
+    img_from_samples.save("./img_from_samples.png").unwrap();
 }
 
 #[cfg(test)]

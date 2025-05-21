@@ -333,17 +333,18 @@ impl QwenVisionTransformer {
         grid_thw: &Vec<[u32; 3]>,
         mut cache: Option<&mut KvCache>,
     ) -> candle_core::Result<Tensor> {
-        // println!("input");
-        // let vec2 = hidden_states
-        //     .i((..25, ..25))
-        //     .unwrap()
-        //     .to_dtype(candle_core::DType::F32)
-        //     .unwrap()
-        //     .to_vec2::<f32>()
-        //     .unwrap();
-        // for list in vec2.iter() {
-        //     println!("{:?}", list);
-        // }
+        println!("input");
+        let vec2 = hidden_states
+            .i((..25, ..))
+            .unwrap()
+            .to_dtype(candle_core::DType::F32)
+            .unwrap()
+            .to_vec2::<f32>()
+            .unwrap();
+        for list in vec2.iter() {
+            println!("{:?}", list);
+        }
+        println!("input shape: {:?}", hidden_states.dims());
         let hidden_states = self.patch_embed.forward(&hidden_states).unwrap();
         // println!("input patch");
         // let vec2 = hidden_states
