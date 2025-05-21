@@ -474,19 +474,18 @@ pub(crate) fn forward_attention_qkv(
 ) -> candle_core::Result<Tensor> {
     let scale = 1. / (head_dim as f64).sqrt();
     let mut attn_output = {
-        let mut attn_weights =
-            (query_states.matmul(&key_states.t().unwrap()).unwrap() * scale).unwrap();
+        let mut attn_weights = (query_states.matmul(&key_states.t()?)? * scale)?;
         debug_assert_none_nan(&attn_weights);
 
         if let Some(attention_mask) = attention_mask {
-            attention_mask.forward(&mut attn_weights).unwrap();
+            attention_mask.forward(&mut attn_weights)?;
             debug_assert_none_nan(&attn_weights);
         }
 
-        attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights).unwrap();
+        attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights)?;
         debug_assert_none_nan(&attn_weights);
 
-        attn_weights.matmul(value_states).unwrap()
+        attn_weights.matmul(value_states)?
     };
 
     debug_assert_none_nan(&attn_output);
@@ -499,11 +498,11 @@ pub(crate) fn forward_attention_qkv(
         )));
     }
 
-    attn_output = attn_output.transpose(1, 2).unwrap();
+    attn_output = attn_output.transpose(1, 2)?;
 
-    attn_output = attn_output.reshape(&[bsz, q_len, hidden_size]).unwrap();
+    attn_output = attn_output.reshape(&[bsz, q_len, hidden_size])?;
 
-    attn_output = attention_wo.forward(&attn_output).unwrap();
+    attn_output = attention_wo.forward(&attn_output)?;
 
     debug_assert_none_nan(&attn_output);
 

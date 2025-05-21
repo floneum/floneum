@@ -14,18 +14,15 @@ fn pad_to(tensor: &Tensor, shape: &[usize], value: impl WithDType) -> candle_cor
 
 #[test]
 fn test_pad() {
-    let tensor = Tensor::arange(0u32, 12, &candle_core::Device::Cpu)
-        .unwrap()
-        .reshape((3, 4))
-        .unwrap();
+    let tensor = Tensor::arange(0u32, 12, &candle_core::Device::Cpu)?.reshape((3, 4))?;
     let value = u32::MAX;
 
-    let padded_tensor = pad_to(&tensor, &[4, 5], value).unwrap();
+    let padded_tensor = pad_to(&tensor, &[4, 5], value)?;
 
     println!("Original Tensor: {:?}", tensor);
     println!("Padded Tensor: {:?}", padded_tensor);
     assert_eq!(
-        padded_tensor.to_vec2::<u32>().unwrap(),
+        padded_tensor.to_vec2::<u32>()?,
         vec![
             vec![0, 1, 2, 3, u32::MAX],
             vec![4, 5, 6, 7, u32::MAX],
@@ -117,10 +114,9 @@ fn test_get_window_index() {
         spatial_merge_unit,
         patch_size,
         &device,
-    )
-    .unwrap();
+    )?;
 
-    let window_index = window_index.to_vec1::<u32>().unwrap();
+    let window_index = window_index.to_vec1::<u32>()?;
     println!("Window Index: {window_index:?}");
     assert_eq!(
         window_index,

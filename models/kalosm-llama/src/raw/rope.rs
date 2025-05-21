@@ -284,8 +284,8 @@ impl RopeCache {
 #[test]
 fn test_rope_cache() {
     let config = LlamaConfig::mock_test();
-    let device = Device::cuda_if_available(0).unwrap();
-    let cache = RopeCache::new(&config, DType::F32, config.rope_theta, &device).unwrap();
+    let device = Device::cuda_if_available(0)?;
+    let cache = RopeCache::new(&config, DType::F32, config.rope_theta, &device)?;
 
     let expected_cos = Tensor::new(
         vec![
@@ -297,8 +297,7 @@ fn test_rope_cache() {
             vec![0.2837f32],
         ],
         &device,
-    )
-    .unwrap();
+    )?;
     let expected_sin = Tensor::new(
         vec![
             vec![0.0000f32],
@@ -309,25 +308,10 @@ fn test_rope_cache() {
             vec![-0.9589f32],
         ],
         &device,
-    )
-    .unwrap();
+    )?;
 
-    let cos_error: f32 = (cache.cos - expected_cos)
-        .unwrap()
-        .abs()
-        .unwrap()
-        .sum_all()
-        .unwrap()
-        .to_scalar()
-        .unwrap();
+    let cos_error: f32 = (cache.cos - expected_cos)?.abs()?.sum_all()?.to_scalar()?;
     assert!(cos_error < 1e-2);
-    let sin_error: f32 = (cache.sin - expected_sin)
-        .unwrap()
-        .abs()
-        .unwrap()
-        .sum_all()
-        .unwrap()
-        .to_scalar()
-        .unwrap();
+    let sin_error: f32 = (cache.sin - expected_sin)?.abs()?.sum_all()?.to_scalar()?;
     assert!(sin_error < 1e-2);
 }

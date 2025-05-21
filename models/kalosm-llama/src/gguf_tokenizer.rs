@@ -184,25 +184,18 @@ impl GGUFPreTokenizerConfig {
             let special_toks = vec![SpecialToken::from((bos_token, bos.to_string()))];
             post_processors.push(
                 TemplateProcessing::builder()
-                    .single(
-                        tokenizers::processors::template::Template::try_from(vec![
-                            format!("{bos}:0"),
-                            "$A:0".to_string(),
-                        ])
-                        .unwrap(),
-                    )
-                    .pair(
-                        tokenizers::processors::template::Template::try_from(vec![
-                            format!("{bos}:0"),
-                            "$A:0".to_string(),
-                            format!("{bos}:1"),
-                            "$B:1".to_string(),
-                        ])
-                        .unwrap(),
-                    )
+                    .single(tokenizers::processors::template::Template::try_from(vec![
+                        format!("{bos}:0"),
+                        "$A:0".to_string(),
+                    ])?)
+                    .pair(tokenizers::processors::template::Template::try_from(vec![
+                        format!("{bos}:0"),
+                        "$A:0".to_string(),
+                        format!("{bos}:1"),
+                        "$B:1".to_string(),
+                    ])?)
                     .special_tokens(special_toks)
-                    .build()
-                    .unwrap()
+                    .build()?
                     .into(),
             );
         }

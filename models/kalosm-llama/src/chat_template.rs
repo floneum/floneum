@@ -133,7 +133,7 @@ fn test_qwen_chat_template() {
     {{- '<|im_start|>assistant\n' }}
 {%- endif %}"#;
 
-    let template = HuggingFaceChatTemplate::create(template).unwrap();
+    let template = HuggingFaceChatTemplate::create(template)?;
 
     let inputs = [
         ChatMessage::new(MessageType::UserMessage, "Hello, how are you?".to_string()),
@@ -147,9 +147,7 @@ fn test_qwen_chat_template() {
         ),
     ];
 
-    let result = template
-        .format("<|endoftext|>", "<|im_end|>", &inputs, false)
-        .unwrap();
+    let result = template.format("<|endoftext|>", "<|im_end|>", &inputs, false)?;
     assert_eq!(
         result,
         r#"<|im_start|>system
@@ -169,7 +167,7 @@ fn test_qwen_vl_chat_template() {
     use kalosm_language_model::{MediaChunk, MediaSource};
 
     let template = "{% set image_count = namespace(value=0) %}{% set video_count = namespace(value=0) %}{% for message in messages %}{% if loop.first and message['role'] != 'system' %}<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n{% endif %}<|im_start|>{{ message['role'] }}\n{% if message['content'] is string %}{{ message['content'] }}<|im_end|>\n{% else %}{% for content in message['content'] %}{% if content['type'] == 'image' or 'image' in content or 'image_url' in content %}{% set image_count.value = image_count.value + 1 %}{% if add_vision_id %}Picture {{ image_count.value }}: {% endif %}<|vision_start|><|image_pad|><|vision_end|>{% elif content['type'] == 'video' or 'video' in content %}{% set video_count.value = video_count.value + 1 %}{% if add_vision_id %}Video {{ video_count.value }}: {% endif %}<|vision_start|><|video_pad|><|vision_end|>{% elif 'text' in content %}{{ content['text'] }}{% endif %}{% endfor %}<|im_end|>\n{% endif %}{% endfor %}{% if add_generation_prompt %}<|im_start|>assistant\n{% endif %}";
-    let template = HuggingFaceChatTemplate::create(template).unwrap();
+    let template = HuggingFaceChatTemplate::create(template)?;
     let inputs = [
         ChatMessage::new(MessageType::UserMessage, "Hello, how are you?".to_string()),
         ChatMessage::new(
@@ -181,9 +179,7 @@ fn test_qwen_vl_chat_template() {
             "I'd like to show off how chat templating works!".to_string(),
         ),
     ];
-    let result = template
-        .format("<|begin_of_text|>", "<|end_of_text|>", &inputs, false)
-        .unwrap();
+    let result = template.format("<|begin_of_text|>", "<|end_of_text|>", &inputs, false)?;
     assert_eq!(
         result,
         r#"<|im_start|>system
@@ -214,9 +210,7 @@ I'd like to show off how chat templating works!<|im_end|>
             ),
         ),
     ];
-    let result = template
-        .format("<|begin_of_text|>", "<|end_of_text|>", &inputs, false)
-        .unwrap();
+    let result = template.format("<|begin_of_text|>", "<|end_of_text|>", &inputs, false)?;
     assert_eq!(
         result,
         r#"<|im_start|>system
@@ -235,7 +229,7 @@ I'd like to show off how chat templating works!<|vision_start|><|image_pad|><|vi
 fn test_llama_chat_template() {
     let template = "{% set loop_messages = messages %}{% for message in loop_messages %}{% set content = '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'+ message['content'] | trim + '<|eot_id|>' %}{% if loop.index0 == 0 %}{% set content = bos_token + content %}{% endif %}{{ content }}{% endfor %}{% if add_generation_prompt %}{{ '<|start_header_id|>assistant<|end_header_id|>\n\n' }}{% endif %}";
 
-    let template = HuggingFaceChatTemplate::create(template).unwrap();
+    let template = HuggingFaceChatTemplate::create(template)?;
 
     let inputs = [
         ChatMessage::new(MessageType::UserMessage, "Hello, how are you?".to_string()),
@@ -249,9 +243,7 @@ fn test_llama_chat_template() {
         ),
     ];
 
-    let result = template
-        .format("<|begin_of_text|>", "<|end_of_text|>", &inputs, false)
-        .unwrap();
+    let result = template.format("<|begin_of_text|>", "<|end_of_text|>", &inputs, false)?;
 
     assert_eq!(
         result,
@@ -269,7 +261,7 @@ I'd like to show off how chat templating works!<|eot_id|>"#
 fn test_mistral_chat_template() {
     let template = "{%- if messages[0]['role'] == 'system' %}\n    {%- set system_message = messages[0]['content'] %}\n    {%- set loop_messages = messages[1:] %}\n{%- else %}\n    {%- set loop_messages = messages %}\n{%- endif %}\n\n{{- bos_token }}\n{%- for message in loop_messages %}\n    {%- if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}\n        {{- raise_exception('After the optional system message, conversation roles must alternate user/assistant/user/assistant/...') }}\n    {%- endif %}\n    {%- if message['role'] == 'user' %}\n        {%- if loop.first and system_message is defined %}\n            {{- ' [INST] ' + system_message + '\\n\\n' + message['content'] + ' [/INST]' }}\n        {%- else %}\n            {{- ' [INST] ' + message['content'] + ' [/INST]' }}\n        {%- endif %}\n    {%- elif message['role'] == 'assistant' %}\n        {{- ' ' + message['content'] + eos_token}}\n    {%- else %}\n        {{- raise_exception('Only user and assistant roles are supported, with the exception of an initial optional system message!') }}\n    {%- endif %}\n{%- endfor %}\n";
 
-    let template = HuggingFaceChatTemplate::create(template).unwrap();
+    let template = HuggingFaceChatTemplate::create(template)?;
 
     let inputs = [
         ChatMessage::new(MessageType::UserMessage, "Hello, how are you?".to_string()),
@@ -283,7 +275,7 @@ fn test_mistral_chat_template() {
         ),
     ];
 
-    let result = template.format("<s>", "</s>", &inputs, false).unwrap();
+    let result = template.format("<s>", "</s>", &inputs, false)?;
     assert_eq!(
         result,
         r#"<s> [INST] Hello, how are you? [/INST] I'm doing great. How can I help you today?</s> [INST] I'd like to show off how chat templating works! [/INST]"#

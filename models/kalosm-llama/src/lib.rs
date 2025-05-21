@@ -13,7 +13,7 @@
 //!
 //! #[tokio::main]
 //! async fn main() {
-//!     let mut model = Llama::new().await.unwrap();
+//!     let mut model = Llama::new().await?;
 //!     let prompt = "The capital of France is ";
 //!     let mut stream = model(prompt);
 //!
