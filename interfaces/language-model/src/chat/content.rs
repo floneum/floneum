@@ -183,9 +183,9 @@ pub enum ImageFetchError {
     DecodeError(#[from] image::ImageError),
 }
 
-impl PartialEq<&str> for MessageContent {
-    fn eq(&self, other: &&str) -> bool {
-        self.as_str().is_some_and(|text| text == *other)
+impl PartialEq<str> for MessageContent {
+    fn eq(&self, other: &str) -> bool {
+        self.as_str().is_some_and(|text| text == other)
     }
 }
 
@@ -519,7 +519,7 @@ where
     Ok(bytes.into())
 }
 
-#[cfg(feature = "remote")]
+#[cfg(any(feature = "openai", feature = "anthropic"))]
 impl MediaChunk {
     /// Create a url from the media chunk by either using the url or encoding the bytes as base64.
     pub fn as_url(&self) -> String {

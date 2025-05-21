@@ -42,7 +42,7 @@ You can use the [`ChatSession::history`] method to get messages that have alread
 let mut llm = Llama::new_chat().await.unwrap();
 let mut chat = llm.chat();
 // Add a message to the session
-chat("Hello, world!").to_std_out().await.unwrap();
+chat(&"Hello, world!").to_std_out().await.unwrap();
 // Get the history of the session
 let history = chat.session().unwrap().history();
 assert_eq!(history.len(), 1);

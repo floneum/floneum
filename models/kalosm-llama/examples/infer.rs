@@ -9,7 +9,7 @@ async fn main() {
         .await
         .unwrap();
 
-    let mut story = model(&"Once upon a time there was a penguin named Peng.");
+    let mut story = model("Once upon a time there was a penguin named Peng.");
 
     story.to_std_out().await.unwrap();
 }

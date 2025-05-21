@@ -38,9 +38,9 @@ tracing-subscriber = "0.3.19"
 
 [features]
 default = ["cache"]
-anthropic = ["dep:serde_json", "dep:reqwest-eventsource"]
-openai = ["dep:serde_json", "dep:reqwest-eventsource"]
-remote = ["anthropic", "openai", "dep:base64"]
+anthropic = ["dep:serde_json", "dep:reqwest-eventsource", "dep:base64"]
+openai = ["dep:serde_json", "dep:reqwest-eventsource", "dep:base64"]
+remote = ["anthropic", "openai"]
 serde = ["dep:serde"]
 cache = ["serde", "dep:lru"]
 sample = ["dep:llm-samplers", "dep:anyhow"]

@@ -575,14 +575,14 @@ impl<'a, M: CreateChatSession, Constraints, Sampler>
     /// let prompt = prompt_input("\n> ").unwrap();
     ///
     /// // You can add the user message to the chat session by calling the chat function
-    /// let mut response_stream = chat(prompt)
+    /// let mut response_stream = chat(&prompt)
     ///     // Then add a new chunk to the current message
     ///     .then(" and then some more");
     /// // And then stream the result to std out
     /// response_stream.to_std_out().await.unwrap();
     /// # }
     /// ```
-    pub fn then<P, Msg: Into<ContentChunk>>(
+    pub fn then<Msg: Into<ContentChunk>>(
         self,
         message: Msg,
     ) -> ChatResponseBuilder<'a, M, Constraints, Sampler> {
