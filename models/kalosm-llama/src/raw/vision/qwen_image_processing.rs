@@ -1,6 +1,7 @@
-use candle_core::{Device, IndexOp, Tensor};
-use image::{DynamicImage, GenericImage, Rgb, Rgba};
+use candle_core::{Device, Tensor};
+use image::DynamicImage;
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn process_image(
     image: &DynamicImage,
     patch_size: usize,
@@ -34,8 +35,8 @@ pub(crate) fn process_image(
         .broadcast_div(&required_rgb_std)?;
 
     let grid_t = 1;
-    let grid_h = resized.height() as usize / patch_size as usize;
-    let grid_w = resized.width() as usize / patch_size as usize;
+    let grid_h = resized.height() as usize / patch_size;
+    let grid_w = resized.width() as usize / patch_size ;
     let rgb = rgb.reshape(&[
         1,                                         // time size
         1,                                         // temporal patch size
@@ -56,7 +57,7 @@ pub(crate) fn process_image(
         // patch count
         grid_h * grid_w,
         // patch data
-        (3 * patch_size * patch_size * 2) as usize,
+        3 * patch_size * patch_size * 2,
     ])?;
     Ok((rgb, [grid_t as u32, grid_h as u32, grid_w as u32]))
 }
@@ -99,12 +100,13 @@ fn image_to_rgb(image: &DynamicImage, device: &Device) -> candle_core::Result<Te
     let data = Tensor::from_vec(rgb.into_raw(), (height, width, 3), device)?;
     let img = (data.permute((2, 0, 1))?.to_dtype(candle_core::DType::F32)? / 255.0)?;
 
-    Ok(img.unsqueeze(0)?)
+    img.unsqueeze(0)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use image::{GenericImage, Rgb, Rgba};
 
     #[tokio::test]
     async fn test_process_image() {

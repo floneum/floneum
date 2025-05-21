@@ -130,6 +130,7 @@ impl QwenVisionTransformer {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn new(
         spacial_merge_size: usize,
         temporal_patch_size: usize,
@@ -374,7 +375,7 @@ impl QwenVisionTransformer {
 
         let cu_seqlens = grid_thw
             .iter()
-            .flat_map(|[t, h, w]| std::iter::repeat_n((*h * *w) as u32, *t as usize))
+            .flat_map(|[t, h, w]| std::iter::repeat_n((*h * *w), *t as usize))
             .map({
                 let mut sum = 0;
                 move |x| {
@@ -396,7 +397,6 @@ impl QwenVisionTransformer {
                     &hidden_states,
                     cu_seqlens_now.as_slice(),
                     &rope_cache,
-                    0,
                     cache.as_deref_mut(),
                 )
                 .unwrap();
@@ -410,6 +410,7 @@ impl QwenVisionTransformer {
     }
 }
 
+#[cfg(test)]
 #[tokio::test]
 async fn test_loading_qwen_vision() {
     use super::qwen_vision_embed::assert_2d_vec_eq;

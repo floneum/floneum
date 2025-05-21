@@ -197,6 +197,7 @@ impl Model {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn from_gguf<R: std::io::Seek + std::io::Read>(
         ct: gguf_file::Content,
         reader: &mut R,
@@ -546,9 +547,9 @@ impl Model {
                         Some(next) if next == image_pad_token => {
                             // Push a pad token for every image token
                             let grid = image_iter.next().ok_or_else(|| {
-                                candle_core::Error::Msg(format!(
-                                    "Image pad token found without matching image."
-                                ))
+                                candle_core::Error::Msg(
+                                    "Image pad token found without matching image.".to_string()
+                                )
                             })?;
                             for _ in 0..grid.iter().product::<u32>()
                                 / (vision.spacial_merge_size as u32).pow(2)

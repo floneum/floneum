@@ -275,7 +275,7 @@ impl RopeCache {
     pub(crate) fn sin(&self) -> &Tensor {
         &self.sin
     }
-    
+
     pub(crate) fn cos(&self) -> &Tensor {
         &self.cos
     }

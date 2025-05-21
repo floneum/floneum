@@ -1,4 +1,4 @@
-use candle_core::{quantized::QMatMul, DType, IndexOp, Result, Tensor, D};
+use candle_core::{quantized::QMatMul, DType, Result, Tensor, D};
 use candle_nn::Module;
 use candle_transformers::{
     quantized_nn::{Linear, RmsNorm},
@@ -69,14 +69,13 @@ impl VisionBlock {
         xs: &Tensor,
         cu_seqlens: &[u32],
         rope_cache: &RopeCache,
-        start_pos: usize,
         cache: Option<&mut KvCache>,
     ) -> Result<Tensor> {
         let xs = xs.to_dtype(DType::F32).unwrap();
         let after_norm = self.norm1.forward(&xs).unwrap();
         let after_attention = self
             .attn
-            .forward(&after_norm, cu_seqlens, rope_cache, start_pos, cache)
+            .forward(&after_norm, cu_seqlens, rope_cache, cache)
             .unwrap();
         let xs = (&xs + after_attention).unwrap();
         &xs + self.mlp.forward(&self.norm2.forward(&xs).unwrap()).unwrap()
@@ -140,7 +139,6 @@ impl VisionAttention {
         xs: &Tensor,
         cu_seqlens: &[u32],
         rope_cache: &RopeCache,
-        start_pos: usize,
         cache: Option<&mut KvCache>,
     ) -> Result<Tensor> {
         let seq_len = xs.dim(0).unwrap();
@@ -163,7 +161,6 @@ impl VisionAttention {
             .unwrap()
             .reshape((seq_len, self.head_count, ()))
             .unwrap();
-
 
         fn apply_rotary_pos_emb_vision(
             rope_cache: &RopeCache,
@@ -228,6 +225,7 @@ impl VisionAttention {
             let [last, next] = pair else { unreachable!() };
             let last = *last as usize;
             let next = *next as usize;
+            #[allow(clippy::needless_range_loop)]
             for i in last..next {
                 for j in last..next {
                     attention_mask[i][j] = 0;

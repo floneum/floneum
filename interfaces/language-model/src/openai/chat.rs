@@ -507,10 +507,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        ops::DerefMut,
-        sync::{Arc, RwLock},
-    };
+    use std::sync::{Arc, RwLock};
 
     use serde::Deserialize;
 

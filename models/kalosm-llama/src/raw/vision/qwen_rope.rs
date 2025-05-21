@@ -39,8 +39,8 @@ impl ImageSize {
     }
 
     fn patch_size(&self, merge_size: usize) -> Self {
-        let width = (self.width + merge_size as u32 - 1) / merge_size as u32;
-        let height = (self.height + merge_size as u32 - 1) / merge_size as u32;
+        let width = self.width.div_ceil(merge_size as u32);
+        let height = self.height.div_ceil(merge_size as u32);
         Self { width, height }
     }
 }
@@ -86,6 +86,7 @@ pub(crate) struct RopeIndex {
 //     will be encoded as:
 //     [RopeIndex { x: 0, y: 0, time: 0 }, RopeIndex { x: 1, y: 1, time: 1 }, RopeIndex { x: 1, y: 2, time: 1 },
 //      RopeIndex { x: 2, y: 1, time: 1 }, RopeIndex { x: 2, y: 2, time: 1 }]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn get_rope_index(
     spatial_merge_size: usize,
     image_token_id: u32,
