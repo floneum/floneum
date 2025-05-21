@@ -147,7 +147,7 @@ mod tests {
             &Device::Cpu,
         )
         .unwrap();
-        println!("RGB shape: {:?}", rgb);
+        println!("RGB shape: {rgb:?}");
         println!("Grid shape: {:?}", [grid_t, grid_h, grid_w]);
         assert_eq!(rgb.dims(), [1944, 1176]);
         assert_eq!([grid_t, grid_h, grid_w], [1, 36, 54]);

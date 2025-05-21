@@ -22,8 +22,8 @@ fn test_pad() {
 
     let padded_tensor = pad_to(&tensor, &[4, 5], value).unwrap();
 
-    println!("Original Tensor: {:?}", tensor);
-    println!("Padded Tensor: {:?}", padded_tensor);
+    println!("Original Tensor: {tensor:?}");
+    println!("Padded Tensor: {padded_tensor:?}");
     assert_eq!(
         padded_tensor.to_vec2::<u32>().unwrap(),
         vec![

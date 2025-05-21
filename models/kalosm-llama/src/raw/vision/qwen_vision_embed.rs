@@ -219,7 +219,7 @@ fn test_vision_patch_embed() {
         .to_dtype(DType::F32)
         .unwrap();
     let output_vec = output.to_vec2::<f32>().unwrap();
-    println!("Output: {:?}", output_vec);
+    println!("Output: {output_vec:?}");
     let expected_output = [[0.3058, 0.6866, -0.7391, -0.6952]];
     assert_2d_vec_eq(output_vec, expected_output, 1e-2);
 }
@@ -244,9 +244,7 @@ pub(crate) fn assert_2d_vec_eq(
         for (a_elem, b_elem) in a_row.iter().zip(b_row.iter()) {
             assert!(
                 (a_elem - b_elem).abs() < tolerance,
-                "Elements are not equal: {} vs {}",
-                a_elem,
-                b_elem
+                "Elements are not equal: {a_elem} vs {b_elem}"
             );
         }
     }

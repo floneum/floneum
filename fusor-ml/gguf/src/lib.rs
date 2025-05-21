@@ -1245,7 +1245,7 @@ async fn test_round_trip_tiny_llama() {
     // Read the tensor bytes
     let mut tensors = HashMap::new();
     for (tensor_name, tensor_info) in metadata.tensor_infos.iter() {
-        println!("{}: {:?}", tensor_name, tensor_info);
+        println!("{tensor_name}: {tensor_info:?}");
         let tensor_bytes = tensor_info
             .read_tensor_bytes(&mut reader, metadata.tensor_data_offset)
             .unwrap();
@@ -1308,7 +1308,7 @@ fn test_round_trip_empty() {
         metadata.write(&mut cursor, []).unwrap();
     }
 
-    println!("{:?}", writer);
+    println!("{writer:?}");
 
     // Read the model from the buffer
     let mut reader = std::io::Cursor::new(writer);
