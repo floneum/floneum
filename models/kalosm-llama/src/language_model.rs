@@ -31,7 +31,7 @@ impl ModelBuilder for LlamaBuilder {
 
     fn requires_download(&self) -> bool {
         let cache = &self.source.cache;
-        !cache.exists(&self.source.model)
+        !self.source.model.iter().all(|m| cache.exists(m))
             || self
                 .source
                 .tokenizer

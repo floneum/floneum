@@ -11,6 +11,7 @@ use attention_layer::GroupedAttention;
 use attention_layer::LlamaFeedForward;
 use attention_layer::PhiFeedForward;
 use attention_layer::SeparateAttention;
+use candle_core::quantized::gguf_file::Value;
 use candle_core::quantized::*;
 use candle_core::IndexOp;
 use candle_core::Module;
@@ -200,8 +201,7 @@ impl Model {
 
     #[allow(clippy::too_many_arguments)]
     pub fn from_gguf<R: std::io::Seek + std::io::Read>(
-        ct: gguf_file::Content,
-        reader: &mut R,
+        source: &mut ShardedGguf<R>,
         vision_ct: Option<gguf_file::Content>,
         vision_file: Option<PathBuf>,
         device: &Device,
@@ -209,30 +209,16 @@ impl Model {
         override_chat_template: Option<String>,
         rope_scaling: Option<RopeScalingConfig>,
     ) -> std::result::Result<Self, LlamaSourceError> {
-        let md_get = |s: &str| {
-            let value = if s.starts_with('.') {
-                ct.metadata
-                    .iter()
-                    .filter(|(k, _)| k.ends_with(s))
-                    .min_by_key(|(k, _)| k.len())
-                    .map(|(_, v)| v)
-            } else {
-                ct.metadata.get(s)
-            };
-            match value {
-                None => candle_core::bail!("cannot find {s} in metadata"),
-                Some(v) => Ok(v),
-            }
-        };
-
         // Get the eos and bos tokens from the metadata
-        let tokens: std::result::Result<Vec<_>, _> = md_get("tokenizer.ggml.tokens")?
+        let tokens: std::result::Result<Vec<_>, _> = source
+            .get("tokenizer.ggml.tokens")?
             .to_vec()?
             .iter()
-            .map(|v| v.to_string())
+            .map(|v| v.to_string().cloned())
             .collect();
         let tokens = tokens?;
-        let start_token = md_get("tokenizer.ggml.bos_token_id")
+        let start_token = source
+            .get("tokenizer.ggml.bos_token_id")
             .ok()
             .and_then(|v| v.to_u32().ok());
         let stop_token = if let Some(override_stop_token_string) = override_stop_token_string {
@@ -241,14 +227,15 @@ impl Model {
                 .position(|v| **v == override_stop_token_string)
                 .unwrap_or(0) as u32
         } else {
-            md_get("tokenizer.ggml.eos_token_id")?.to_u32()?
+            source.get("tokenizer.ggml.eos_token_id")?.to_u32()?
         };
         let start_token_string = start_token
             .map(|v| tokens[v as usize].clone())
             .unwrap_or_else(|| "".to_string());
         let stop_token_string = tokens[stop_token as usize].clone();
         let chat_template = override_chat_template.or_else(|| {
-            md_get("tokenizer.chat_template")
+            source
+                .get("tokenizer.chat_template")
                 .ok()
                 .and_then(|v| v.to_string().ok())
                 .cloned()
@@ -263,41 +250,46 @@ impl Model {
         };
 
         // Parameter extraction from metadata.
-        let architecture = md_get("general.architecture")?.to_string()?.clone();
-        let head_count = md_get(".attention.head_count")?.to_u32()? as usize;
-        let head_count_kv = md_get(".attention.head_count_kv")?.to_u32()? as usize;
-        let block_count = md_get(".block_count")?.to_u32()? as usize;
-        let embedding_length = md_get(".embedding_length")?.to_u32()? as usize;
+        let architecture = source.get("general.architecture")?.to_string()?.clone();
+        let head_count = source.get(".attention.head_count")?.to_u32()? as usize;
+        let head_count_kv = source.get(".attention.head_count_kv")?.to_u32()? as usize;
+        let block_count = source.get(".block_count")?.to_u32()? as usize;
+        let embedding_length = source.get(".embedding_length")?.to_u32()? as usize;
         // Strangely this value is generally 1e-6 in GGUF file but used to be 1e-5 by default.
-        let rms_norm_eps = md_get(".attention.layer_norm_rms_epsilon")?.to_f32()? as f64;
+        let rms_norm_eps = source.get(".attention.layer_norm_rms_epsilon")?.to_f32()? as f64;
 
-        let rope_freq_base = md_get(".rope.freq_base")
+        let rope_freq_base = source
+            .get(".rope.freq_base")
             .and_then(|m| m.to_f32())
             .unwrap_or(DEFAULT_ROPE_FREQUENCY);
-        let sliding_window_size = md_get(".attention.sliding_window")
+        let sliding_window_size = source
+            .get(".attention.sliding_window")
             .and_then(|m| m.to_u32())
             .ok()
             .map(|x| x as usize);
-        let sliding_window_type = md_get(".attention.sliding_window_type")
+        let sliding_window_type = source
+            .get(".attention.sliding_window_type")
             .and_then(|m| m.to_u32())
             .ok()
             .map(|x| x as usize)
             .or_else(|| (architecture == "gemma3").then_some(GEMMA_DEFAULT_SLIDING_WINDOW_TYPE));
 
-        let rope_freq_base_sliding = md_get(".rope.local_freq_base")
+        let rope_freq_base_sliding = source
+            .get(".rope.local_freq_base")
             .and_then(|m| m.to_f32())
             .ok()
             .or_else(|| (architecture == "gemma3").then_some(GEMMA_DEFAULT_ROPE_FREQUENCY_SLIDING));
 
-        let context_length = md_get(".context_length")?.to_u32()? as usize;
-        let head_dim = md_get(".attention.key_length")
+        let context_length = source.get(".context_length")?.to_u32()? as usize;
+        let head_dim = source
+            .get(".attention.key_length")
             .and_then(|v| v.to_u32())
             .ok()
             .map(|x| x as usize)
             .unwrap_or_else(|| embedding_length / head_count);
 
         let config = LlamaConfig {
-            rope_freq_weight: match ct.tensor(reader, "rope_freqs.weight", device).ok() {
+            rope_freq_weight: match source.tensor("rope_freqs.weight", device).ok() {
                 Some(rope_freq_weight) => Some(rope_freq_weight.dequantize(device)?),
                 None => None,
             },
@@ -313,21 +305,22 @@ impl Model {
             rope_scaling,
             vision_start_token: tokens
                 .iter()
-                .position(|v| **v == "<|vision_start|>")
+                .position(|v| *v == "<|vision_start|>")
                 .map(|v| v as u32),
             _vision_end_token: tokens
                 .iter()
-                .position(|v| **v == "<|vision_end|>")
+                .position(|v| *v == "<|vision_end|>")
                 .map(|v| v as u32),
             image_pad_token: tokens
                 .iter()
-                .position(|v| **v == "<|image_pad|>")
+                .position(|v| *v == "<|image_pad|>")
                 .map(|v| v as u32),
             video_pad_token: tokens
                 .iter()
-                .position(|v| **v == "<|video_pad|>")
+                .position(|v| *v == "<|video_pad|>")
                 .map(|v| v as u32),
-            mrope_sections: md_get(".rope.dimension_sections")
+            mrope_sections: source
+                .get(".rope.dimension_sections")
                 .ok()
                 .and_then(|m| {
                     m.to_vec()
@@ -345,7 +338,7 @@ impl Model {
             })
             .transpose()?;
 
-        let tok_embeddings_q = ct.tensor(reader, "token_embd.weight", device)?;
+        let tok_embeddings_q = source.tensor("token_embd.weight", device)?;
         let mut tok_embeddings = tok_embeddings_q.dequantize(device)?;
         // if this is gemma3, scale the tok_embeddings by sqrt(embedding_length)
         if architecture == "gemma3" {
@@ -353,9 +346,9 @@ impl Model {
         }
         let tok_embeddings = Embedding::new(tok_embeddings, embedding_length);
 
-        let norm = ct.tensor(reader, "output_norm.weight", device)?;
+        let norm = source.tensor("output_norm.weight", device)?;
         let norm = decode_norm(norm, rms_norm_eps)?;
-        let output = if let Ok(output) = ct.tensor(reader, "output.weight", device) {
+        let output = if let Ok(output) = source.tensor("output.weight", device) {
             QMatMul::from_qtensor(output)?
         } else {
             // If there is no output layer, assume the word embeddings are tied to the output
@@ -365,28 +358,28 @@ impl Model {
         for layer_idx in 0..block_count {
             let prefix = format!("blk.{layer_idx}");
             let attention_variant =
-                if let Ok(qkv) = ct.tensor(reader, &format!("{prefix}.attn_qkv.weight"), device) {
+                if let Ok(qkv) = source.tensor(&format!("{prefix}.attn_qkv.weight"), device) {
                     AttentionVariant::Grouped(GroupedAttention {
                         attention_qkv: QMatMul::from_qtensor(qkv)?,
                     })
                 } else {
-                    let q = ct.tensor(reader, &format!("{prefix}.attn_q.weight"), device)?;
-                    let k = ct.tensor(reader, &format!("{prefix}.attn_k.weight"), device)?;
-                    let v = ct.tensor(reader, &format!("{prefix}.attn_v.weight"), device)?;
+                    let q = source.tensor(&format!("{prefix}.attn_q.weight"), device)?;
+                    let k = source.tensor(&format!("{prefix}.attn_k.weight"), device)?;
+                    let v = source.tensor(&format!("{prefix}.attn_v.weight"), device)?;
                     let bias = if let (Ok(bias_q), Ok(bias_k), Ok(bias_v)) = (
-                        ct.tensor(reader, &format!("{prefix}.attn_q.bias"), device),
-                        ct.tensor(reader, &format!("{prefix}.attn_k.bias"), device),
-                        ct.tensor(reader, &format!("{prefix}.attn_v.bias"), device),
+                        source.tensor(&format!("{prefix}.attn_q.bias"), device),
+                        source.tensor(&format!("{prefix}.attn_k.bias"), device),
+                        source.tensor(&format!("{prefix}.attn_v.bias"), device),
                     ) {
                         Some(AttentionBias::from_qtensor(&bias_q, &bias_k, &bias_v)?)
                     } else {
                         None
                     };
-                    let q_norm = ct
-                        .tensor(reader, &format!("{prefix}.attn_q_norm.weight"), device)
+                    let q_norm = source
+                        .tensor(&format!("{prefix}.attn_q_norm.weight"), device)
                         .ok();
-                    let k_norm = ct
-                        .tensor(reader, &format!("{prefix}.attn_k_norm.weight"), device)
+                    let k_norm = source
+                        .tensor(&format!("{prefix}.attn_k_norm.weight"), device)
                         .ok();
                     let separate = SeparateAttention {
                         attention_wq: QMatMul::from_qtensor(q)?,
@@ -403,17 +396,15 @@ impl Model {
                     };
                     AttentionVariant::Separate(separate)
                 };
-            let attention_wo =
-                ct.tensor(reader, &format!("{prefix}.attn_output.weight"), device)?;
+            let attention_wo = source.tensor(&format!("{prefix}.attn_output.weight"), device)?;
             // Try to read from the up, down and gate weights
             let feed_forward_variant = if let Ok(ffn_gate) =
-                ct.tensor(reader, &format!("{prefix}.ffn_gate.weight"), device)
+                source.tensor(&format!("{prefix}.ffn_gate.weight"), device)
             {
                 let feed_forward_w1 = ffn_gate;
                 let feed_forward_w2 =
-                    ct.tensor(reader, &format!("{prefix}.ffn_down.weight"), device)?;
-                let feed_forward_w3 =
-                    ct.tensor(reader, &format!("{prefix}.ffn_up.weight"), device)?;
+                    source.tensor(&format!("{prefix}.ffn_down.weight"), device)?;
+                let feed_forward_w3 = source.tensor(&format!("{prefix}.ffn_up.weight"), device)?;
                 FeedForwardVariant::Llama(LlamaFeedForward::new(
                     QMatMul::from_qtensor(feed_forward_w1)?,
                     QMatMul::from_qtensor(feed_forward_w2)?,
@@ -421,10 +412,10 @@ impl Model {
                 ))
             } else {
                 // Otherwise, try to read from the up, and down weights
-                let up = ct.tensor(reader, &format!("{prefix}.ffn_up.weight"), device)?;
+                let up = source.tensor(&format!("{prefix}.ffn_up.weight"), device)?;
                 // Transpose the down tensor
-                let down = ct.tensor(reader, &format!("{prefix}.ffn_down.weight"), device)?;
-                let feed_forward_length = md_get(".feed_forward_length")?.to_u32()? as usize;
+                let down = source.tensor(&format!("{prefix}.ffn_down.weight"), device)?;
+                let feed_forward_length = source.get(".feed_forward_length")?.to_u32()? as usize;
 
                 FeedForwardVariant::Phi(PhiFeedForward {
                     up: QMatMul::from_qtensor(up)?,
@@ -432,18 +423,13 @@ impl Model {
                     feed_forward_length,
                 })
             };
-            let attention_norm =
-                ct.tensor(reader, &format!("{prefix}.attn_norm.weight"), device)?;
-            let post_attention_norm = ct
-                .tensor(
-                    reader,
-                    &format!("{prefix}.post_attention_norm.weight"),
-                    device,
-                )
+            let attention_norm = source.tensor(&format!("{prefix}.attn_norm.weight"), device)?;
+            let post_attention_norm = source
+                .tensor(&format!("{prefix}.post_attention_norm.weight"), device)
                 .ok();
-            let ffn_norm = ct.tensor(reader, &format!("{prefix}.ffn_norm.weight"), device)?;
-            let ffn_post_norm = ct
-                .tensor(reader, &format!("{prefix}.post_ffw_norm.weight"), device)
+            let ffn_norm = source.tensor(&format!("{prefix}.ffn_norm.weight"), device)?;
+            let ffn_post_norm = source
+                .tensor(&format!("{prefix}.post_ffw_norm.weight"), device)
                 .ok();
 
             let mut layer_sliding_window_size = None;
@@ -699,4 +685,44 @@ fn debug_assert_none_nan(#[allow(unused)] tensor: &Tensor) {
                 panic!("Tensor contains NaN values");
             }
         });
+}
+
+pub(crate) struct ShardedGguf<R: std::io::Read + std::io::Seek> {
+    contents: Vec<(gguf_file::Content, R)>,
+}
+
+impl<R: std::io::Read + std::io::Seek> ShardedGguf<R> {
+    pub fn new(contents: Vec<(gguf_file::Content, R)>) -> Self {
+        Self { contents }
+    }
+
+    pub fn get(&self, name: &str) -> Result<&Value> {
+        if name.starts_with('.') {
+            if let Some(value) = self
+                .contents
+                .iter()
+                .flat_map(|(k, _)| k.metadata.iter().filter(|(k, _)| k.ends_with(name)))
+                .min_by_key(|(k, _)| k.len())
+                .map(|(_, v)| v)
+            {
+                return Ok(value);
+            }
+        } else {
+            for (content, _) in &self.contents {
+                if let Some(value) = content.metadata.get(name) {
+                    return Ok(value);
+                }
+            }
+        }
+        candle_core::bail!("cannot find {name} in metadata")
+    }
+
+    pub fn tensor(&mut self, name: &str, device: &Device) -> Result<QTensor> {
+        for (content, r) in &mut self.contents {
+            if let Ok(value) = content.tensor(r, name, device) {
+                return Ok(value);
+            }
+        }
+        candle_core::bail!("cannot find {name} in tensors")
+    }
 }

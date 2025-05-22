@@ -45,7 +45,7 @@ pub(crate) struct LlamaConfigJson {
 /// A source for the Llama model.
 #[derive(Clone, Debug)]
 pub struct LlamaSource {
-    pub(crate) model: FileSource,
+    pub(crate) model: Vec<FileSource>,
     pub(crate) vision_model: Option<FileSource>,
     pub(crate) tokenizer: Option<FileSource>,
     pub(crate) config: Option<FileSource>,
@@ -89,6 +89,20 @@ impl LlamaSource {
     /// Create a new source for the Llama model.
     pub fn new(model: FileSource) -> Self {
         Self {
+            model: vec![model],
+            tokenizer: None,
+            config: None,
+            group_query_attention: 1,
+            cache: Default::default(),
+            override_stop_token_string: None,
+            override_chat_template: None,
+            vision_model: None,
+        }
+    }
+
+    /// Create a new source for the Llama model with multiple files.
+    pub fn new_sharded(model: Vec<FileSource>) -> Self {
+        Self {
             model,
             tokenizer: None,
             config: None,
@@ -101,8 +115,8 @@ impl LlamaSource {
     }
 
     /// Set the model to use for the model
-    pub fn with_model(mut self, model: FileSource) -> Self {
-        self.model = model;
+    pub fn with_model(mut self, model: impl Into<Vec<FileSource>>) -> Self {
+        self.model = model.into();
         self
     }
 
@@ -159,10 +173,13 @@ impl LlamaSource {
 
     pub(crate) async fn model(
         &self,
-        progress: impl FnMut(FileLoadingProgress),
-    ) -> Result<PathBuf, LlamaSourceError> {
-        let path = self.cache.get(&self.model, progress).await?;
-        Ok(path)
+        mut progress: impl FnMut(FileLoadingProgress),
+    ) -> Result<Vec<PathBuf>, LlamaSourceError> {
+        let mut paths = Vec::new();
+        for file in &self.model {
+            paths.push(self.cache.get(file, &mut progress).await?);
+        }
+        Ok(paths)
     }
 
     /// A preset for Mistral7b
@@ -935,11 +952,18 @@ impl LlamaSource {
 
     /// A preset for qwen 2.5 32b VL chat in f16 precision
     pub fn qwen_2_5_32b_vl_chat_f16() -> Self {
-        Self::new(kalosm_model_types::FileSource::HuggingFace {
-            model_id: "ggml-org/Qwen2.5-VL-32B-Instruct-GGUF".into(),
-            revision: "main".into(),
-            file: "Qwen2.5-VL-32B-Instruct-f16.gguf".into(),
-        })
+        Self::new_sharded(vec![
+            kalosm_model_types::FileSource::HuggingFace {
+                model_id: "ggml-org/Qwen2.5-VL-32B-Instruct-GGUF".into(),
+                revision: "main".into(),
+                file: "Qwen2.5-VL-32B-Instruct-f16-00001-of-00002.gguf".into(),
+            },
+            kalosm_model_types::FileSource::HuggingFace {
+                model_id: "ggml-org/Qwen2.5-VL-32B-Instruct-GGUF".into(),
+                revision: "main".into(),
+                file: "Qwen2.5-VL-32B-Instruct-f16-00002-of-00002.gguf".into(),
+            },
+        ])
         .with_vision_model(kalosm_model_types::FileSource::HuggingFace {
             model_id: "ggml-org/Qwen2.5-VL-32B-Instruct-GGUF".into(),
             revision: "main".into(),
