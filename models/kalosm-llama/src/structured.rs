@@ -540,10 +540,6 @@ impl EvaluationTrie {
         }
         let initial_estimate = node.probability;
         if node.evaluated_children.is_empty() {
-            println!(
-                "Token {} has not been visited, but has probability {}",
-                node.token, initial_estimate
-            );
             return initial_estimate;
         }
         let sum_probability_of_children = node
@@ -551,10 +547,6 @@ impl EvaluationTrie {
             .values()
             .map(|child| self.estimated_probability(*child))
             .sum::<f64>();
-        println!(
-            "Token {} has probability {}, with {} children",
-            node.token, initial_estimate, sum_probability_of_children
-        );
         let result = initial_estimate * sum_probability_of_children;
         assert!((0.0..=1.0).contains(&result));
         result

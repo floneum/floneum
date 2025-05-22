@@ -35,6 +35,7 @@ for model in "${models[@]}"; do
          --model "${model}" \
          --grammar "${GRAMMAR}" \
          --task "${TASK}" \
+         --iterations 200 \
          > "results/${model}.txt" 2>&1
     then
       echo "[$model] succeeded on attempt #${attempt}"
