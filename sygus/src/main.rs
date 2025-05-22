@@ -585,8 +585,15 @@ async fn main() {
         })
         .collect::<Vec<_>>();
 
+    let args_str = synth_fun
+        .args
+        .iter()
+        .map(|(name, ty)| format!("({name} {ty})"))
+        .collect::<Vec<_>>()
+        .join(" ");
+
     let parser = synth_fun.parser(recursion_depth);
-    let parser = LiteralParser::new("(define-fun f ((firstname String) (lastname String)) String ")
+    let parser = LiteralParser::new(format!("(define-fun f ({args_str}) String "))
         .ignore_output_then(parser.clone())
         .then_lazy({
             let interpreter = Interpreter::new();
@@ -600,9 +607,9 @@ async fn main() {
                 }
 
                 if valid {
-                    FailParser(std::marker::PhantomData).boxed()
-                } else {
                     SuccessParser(()).boxed()
+                } else {
+                    FailParser(std::marker::PhantomData).boxed()
                 }
             }
         })
@@ -886,7 +893,7 @@ fn built_in_functions()
         let first = args[0].as_string().unwrap();
         let start = args[1].as_int().unwrap();
         let end = args[2].as_int().unwrap();
-        if end < 0 || start < 0 || start > first.len() as _ {
+        if end < 0 || start < 0 || start > end || start > first.len() as _ {
             "".to_string()
         } else {
             first[start as usize..end as usize].to_string()
@@ -895,9 +902,10 @@ fn built_in_functions()
     insert(&mut functions, "str.at", |args: &[SExpr]| {
         let first = args[0].as_string().unwrap();
         let index = args[1].as_int().unwrap();
-        SExpr::Atom(Atom::String(
-            first[index as usize..index as usize + 1].to_string(),
-        ))
+        first
+            .get(index as usize..(index as usize).saturating_add(1))
+            .unwrap_or_default()
+            .to_string()
     });
     insert(&mut functions, "str.to.int", |args: &[SExpr]| {
         let first = args[0].as_string().unwrap();
@@ -907,11 +915,11 @@ fn built_in_functions()
         let first = args[0].as_string().unwrap();
         let second = args[1].as_string().unwrap();
         let offset = args[2].as_int().unwrap();
-        let index = first[offset as usize..]
-            .find(&second)
-            .map(|i| offset + i as i32)
-            .unwrap_or(-1);
-        SExpr::Atom(Atom::String(index.to_string()))
+        first
+            .get(offset as usize..)
+            .and_then(|s| s.find(&second))
+            .and_then(|i| offset.checked_add(i as i32))
+            .unwrap_or(-1)
     });
     insert(&mut functions, "str.replace", |args: &[SExpr]| {
         let first = args[0].as_string().unwrap();
@@ -922,12 +930,12 @@ fn built_in_functions()
     insert(&mut functions, "str.prefixof", |args: &[SExpr]| {
         let first = args[0].as_string().unwrap();
         let second = args[1].as_string().unwrap();
-        SExpr::Atom(Atom::String(first.starts_with(&second).to_string()))
+        SExpr::Atom(Atom::Bool(first.starts_with(&second)))
     });
     insert(&mut functions, "str.suffixof", |args: &[SExpr]| {
         let first = args[0].as_string().unwrap();
         let second = args[1].as_string().unwrap();
-        SExpr::Atom(Atom::String(first.ends_with(&second).to_string()))
+        SExpr::Atom(Atom::Bool(first.ends_with(&second)))
     });
     insert(&mut functions, "str.contains", |args: &[SExpr]| {
         let first = args[0].as_string().unwrap();

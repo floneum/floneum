@@ -211,7 +211,7 @@ pub(crate) fn generate_structured<P: Parser>(
                 continue;
             };
             let result = parser.parse(&parser_state, text.as_bytes());
-            trie.push(token_id, prob, current_token, result.is_ok(), false);
+            trie.push(token_id, prob as f64, current_token, result.is_ok(), false);
             if let Ok(result) = result {
                 let parsed_bytes = match &result {
                     ParseStatus::Finished { remaining, .. } => text.len() - remaining.len(),
@@ -256,8 +256,8 @@ pub(crate) fn generate_structured<P: Parser>(
                         .map(|i| trie.estimated_probability(*i)),
                 };
                 if let Some(estimate) = estimate {
-                    logit.logit = estimate;
-                    logit.prob = estimate;
+                    logit.logit = estimate as f32;
+                    logit.prob = estimate as f32;
                 } else {
                     logit.logit = logit.prob.exp();
                 }
@@ -371,6 +371,7 @@ pub(crate) fn generate_structured<P: Parser>(
             }
             token_id
         };
+        println!("sampled token {token_id} -> {:?}", tokenizer.id_to_token(token_id));
 
         // println!(
         //     "Sampled token {:?} with probability {}",
@@ -461,7 +462,7 @@ impl EvaluationTrie {
     fn push(
         &mut self,
         token: u32,
-        probability: f32,
+        probability: f64,
         parent: Option<usize>,
         in_grammar: bool,
         from_tokenization_constraint: bool,
@@ -509,7 +510,7 @@ impl EvaluationTrie {
     fn create_node(
         &mut self,
         token: u32,
-        probability: f32,
+        probability: f64,
         in_grammar: bool,
         from_tokenization_constraint: bool,
     ) -> usize {
@@ -532,20 +533,28 @@ impl EvaluationTrie {
         id
     }
 
-    fn estimated_probability(&self, node: usize) -> f32 {
+    fn estimated_probability(&self, node: usize) -> f64 {
         let node = &self.nodes[node];
         if !node.in_grammar {
             return 0.0;
         }
         let initial_estimate = node.probability;
         if node.evaluated_children.is_empty() {
+            println!(
+                "Token {} has not been visited, but has probability {}",
+                node.token, initial_estimate
+            );
             return initial_estimate;
         }
         let sum_probability_of_children = node
             .evaluated_children
             .values()
             .map(|child| self.estimated_probability(*child))
-            .sum::<f32>();
+            .sum::<f64>();
+        println!(
+            "Token {} has probability {}, with {} children",
+            node.token, initial_estimate, sum_probability_of_children
+        );
         let result = initial_estimate * sum_probability_of_children;
         assert!((0.0..=1.0).contains(&result));
         result
@@ -641,13 +650,13 @@ impl EvaluationTrie {
     }
 
     /// Calculate the Shannon entropy of the tree
-    pub fn shannon_entropy(&self) -> f32 {
+    pub fn shannon_entropy(&self) -> f64 {
         let mut current_nodes = self
             .roots
             .values()
             .map(|index| (self.estimated_probability(*index), *index))
             .collect::<Vec<_>>();
-        let total_root_prob = current_nodes.iter().map(|(prob, _)| prob).sum::<f32>();
+        let total_root_prob = current_nodes.iter().map(|(prob, _)| prob).sum::<f64>();
         for (prob, _) in &mut current_nodes {
             if *prob > 0.0 {
                 *prob /= total_root_prob;
@@ -666,7 +675,7 @@ impl EvaluationTrie {
                 let total_child_prob = child_probabilities
                     .iter()
                     .map(|(prob, _)| prob)
-                    .sum::<f32>();
+                    .sum::<f64>();
                 current_nodes.extend(child_probabilities.into_iter().map(|(prob, child_id)| {
                     let prob = if prob == 0.0 {
                         prob
@@ -679,9 +688,9 @@ impl EvaluationTrie {
                 leaf_node_probabilities.push(parent_prob);
             }
         }
-        let total_probability: f32 = leaf_node_probabilities.iter().copied().sum();
+        let total_probability: f64 = leaf_node_probabilities.iter().copied().sum();
         assert!(0.9 < total_probability && total_probability < 1.1);
-        let entropy: f32 = leaf_node_probabilities
+        let entropy: f64 = leaf_node_probabilities
             .iter()
             .map(|&prob| {
                 let prob = prob / total_probability;
@@ -699,7 +708,7 @@ impl EvaluationTrie {
 #[derive(Debug)]
 struct EvaluationNode {
     token: u32,
-    probability: f32,
+    probability: f64,
     in_grammar: bool,
     from_tokenization_constraint: bool,
     evaluated_children: FxHashMap<u32, usize>,
