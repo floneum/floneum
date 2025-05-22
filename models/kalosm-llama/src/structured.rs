@@ -371,7 +371,6 @@ pub(crate) fn generate_structured<P: Parser>(
             }
             token_id
         };
-        println!("sampled token {token_id} -> {:?}", tokenizer.id_to_token(token_id));
 
         // println!(
         //     "Sampled token {:?} with probability {}",
