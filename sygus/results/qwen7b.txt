@@ -16,7 +16,7 @@ warning: missing documentation for an associated function
 313 | /     pub fn new(
 314 | |         prompt: impl Into<String>,
 315 | |         session: LlamaSession,
-316 | |         sampler: std::sync::Arc<std::sync::Mutex<dyn l...
+316 | |         sampler: std::sync::Arc<std::sync::Mutex<dyn llm_samplers::prelude::Sampler>>,
 ...   |
 319 | |         seed: Option<u64>,
 320 | |     ) -> Self {
@@ -31,7 +31,7 @@ warning: missing documentation for a method
 warning: missing documentation for a method
    --> models/kalosm-llama/src/language_model.rs:120:5
     |
-120 | /     pub fn generate_structured_with_trie<'a, S, Constr...
+120 | /     pub fn generate_structured_with_trie<'a, S, Constraints>(
 121 | |         &'a mut self,
 122 | |         session: &'a mut LlamaSession,
 123 | |         text: &str,
@@ -52,8 +52,8 @@ warning: missing documentation for a method
 356 | /     pub fn _infer(
 357 | |         &mut self,
 358 | |         settings: InferenceSettings,
-359 | |         mut on_token: Box<dyn FnMut(String) -> Result<...
-360 | |         finished: &tokio::sync::oneshot::Sender<Result...
+359 | |         mut on_token: Box<dyn FnMut(String) -> Result<(), LlamaModelError> + Send + Sync>,
+360 | |         finished: &tokio::sync::oneshot::Sender<Result<(), LlamaModelError>>,
 361 | |     ) -> Result<(), LlamaModelError> {
     | |____________________________________^
 
@@ -82,10 +82,10 @@ warning: missing documentation for a method
     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 warning: `kalosm-llama` (lib) generated 10 warnings
-    Finished `release` profile [optimized] target(s) in 0.64s
+    Finished `release` profile [optimized] target(s) in 0.76s
 warning: the following packages contain code that will be rejected by a future version of Rust: xml5ever v0.16.2
 note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 2`
-     Running `/Users/evanalmloff/Desktop/Github/floneum/target/release/sygus --model qwen7b --grammar ./src/firstname.sl --task ./src/prompt`
+     Running `/Users/evanalmloff/Desktop/Github/floneum/target/release/sygus --model qwen7b --grammar ./src/firstname.sl --task ./src/prompt --iterations 200`
 parsed: [
     SetLogic(
         "SLIA",
@@ -543,373 +543,47 @@ parsed: [
     CheckSynth,
 ]
 Iteration 0
-(define-fun f ((firstname String) (lastname String)) String (str.substr (str.++ name " ") 0 (- 1 1)))
+(define-fun f ((name String)) String (str.substr name 0 
+Skipping sampled token... Token Some("1") is invalid
+probability: 1
 
+Skipping sampled token... Token Some("0") is invalid
+probability: 1
 
-
-
-generation 0:
-List([Atom(Ident("str.substr")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), Atom(Int(0)), List([Atom(Ident("-")), Atom(Int(1)), Atom(Int(1))])])
-Checking constraints for expression: List([Atom(Ident("str.substr")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), Atom(Int(0)), List([Atom(Ident("-")), Atom(Int(1)), Atom(Int(1))])])
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
-entropy diff: -0.899302
-shannon entropy: 0.899302
+Skipping sampled token... Token Some("2") is invalid
+probability: 1
+(str.len name
+Skipping sampled token... Token Some(")") is invalid
+probability: 1
+Error: Sampler error: Sampler returned None
 Iteration 1
-(define-fun f ((firstname String) (lastname String)) String (str.at (str.++ name " ") 0))
-
-
-
-
-generation 1:
-List([Atom(Ident("str.at")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), Atom(Int(0))])
-Checking constraints for expression: List([Atom(Ident("str.at")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), Atom(Int(0))])
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
-entropy diff: -1.5415289
-shannon entropy: 2.440831
+(define-fun f ((name String)) String (str.substr name 0 (str.len name
+Skipping sampled token... Token Some(")") is invalid
+probability: 1
+Error: Sampler error: Sampler returned None
 Iteration 2
-(define-fun f ((firstname String) (lastname String)) String (str.substr (str.replace name " " " ") 0 1))
+(define-fun f ((name String)) String (str.at name 
+Skipping sampled token... Token Some("0") is invalid
+probability: 1
 
+Skipping sampled token... Token Some("1") is invalid
+probability: 1
 
-
-
-generation 2:
-List([Atom(Ident("str.substr")), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(String(" ")), Atom(String(" "))]), Atom(Int(0)), Atom(Int(1))])
-Checking constraints for expression: List([Atom(Ident("str.substr")), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(String(" ")), Atom(String(" "))]), Atom(Int(0)), Atom(Int(1))])
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
-entropy diff: 0.1669085
-shannon entropy: 2.2739224
+Skipping sampled token... Token Some("2") is invalid
+probability: 1
+(- 0 1
+Skipping sampled token... Token Some(")") is invalid
+probability: 1
+Error: Sampler error: Sampler returned None
 Iteration 3
-(define-fun f ((firstname String) (lastname String)) String (str.++ (str.substr name 0 1) (str.substr name 1 1)))
-
-
+(define-fun f ((name String)) String (str.substr name 0 (str.indexof name " " 0)))
 
 
 generation 3:
-List([Atom(Ident("str.++")), List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))]), List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(1)), Atom(Int(1))])])
-Checking constraints for expression: List([Atom(Ident("str.++")), List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))]), List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(1)), Atom(Int(1))])])
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
-entropy diff: -0.5276427
-shannon entropy: 2.8015652
-Iteration 4
-(define-fun f ((firstname String) (lastname String)) String (str.replace (str.++ name " ") name (str.substr name 0 1)))
-
-
-generation 4:
-List([Atom(Ident("str.replace")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), Atom(Ident("name")), List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])])
-Checking constraints for expression: List([Atom(Ident("str.replace")), List([Atom(Ident("str.++")), Atom(Ident("name")), Atom(String(" "))]), Atom(Ident("name")), List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])])
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
-entropy diff: -0.55117345
-shannon entropy: 3.3527386
-Iteration 5
-(define-fun f ((firstname String) (lastname String)) String (str.substr (str.at name 0) 0 1))
-
-
-
-
-generation 5:
-List([Atom(Ident("str.substr")), List([Atom(Ident("str.at")), Atom(Ident("name")), Atom(Int(0))]), Atom(Int(0)), Atom(Int(1))])
-Checking constraints for expression: List([Atom(Ident("str.substr")), List([Atom(Ident("str.at")), Atom(Ident("name")), Atom(Int(0))]), Atom(Int(0)), Atom(Int(1))])
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
-entropy diff: 0.12293053
-shannon entropy: 3.229808
-Iteration 6
-(define-fun f ((firstname String) (lastname String)) String (str.substr (str.replace name " " " ") 0 1))
-
-
-
-
-generation 6:
-List([Atom(Ident("str.substr")), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(String(" ")), Atom(String(" "))]), Atom(Int(0)), Atom(Int(1))])
-Checking constraints for expression: List([Atom(Ident("str.substr")), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(String(" ")), Atom(String(" "))]), Atom(Int(0)), Atom(Int(1))])
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
-entropy diff: 0.06548953
-shannon entropy: 3.1643186
-Iteration 7
-(define-fun f ((firstname String) (lastname String)) String (str.at (str.replace name " " " ") 0))
-
-
-generation 7:
-List([Atom(Ident("str.at")), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(String(" ")), Atom(String(" "))]), Atom(Int(0))])
-Checking constraints for expression: List([Atom(Ident("str.at")), List([Atom(Ident("str.replace")), Atom(Ident("name")), Atom(String(" ")), Atom(String(" "))]), Atom(Int(0))])
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
-entropy diff: 0.13785362
-shannon entropy: 3.026465
-Iteration 8
-(define-fun f ((firstname String) (lastname String)) String (str.substr name 0 1))
-
-
-
-
-generation 8:
-List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-Checking constraints for expression: List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
-entropy diff: -0.39832807
-shannon entropy: 3.424793
-Iteration 9
-(define-fun f ((firstname String) (lastname String)) String (str.substr name 0 1))
-
-
-
-
-generation 9:
-List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-Checking constraints for expression: List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
-entropy diff: 0
-shannon entropy: 3.424793
-Iteration 10
-(define-fun f ((firstname String) (lastname String)) String (str.substr name 0 1))
-
-
-
-
-generation 10:
-List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-Checking constraints for expression: List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
-entropy diff: 0
-shannon entropy: 3.424793
-Iteration 11
-(define-fun f ((firstname String) (lastname String)) String (str.substr name 0 1))
-
-
-
-
-generation 11:
-List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-Checking constraints for expression: List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
-entropy diff: 0
-shannon entropy: 3.424793
-Iteration 12
-(define-fun f ((firstname String) (lastname String)) String (str.substr name 0 1))
-
-
-
-
-generation 12:
-List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-Checking constraints for expression: List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
-entropy diff: 0
-shannon entropy: 3.424793
-Iteration 13
-(define-fun f ((firstname String) (lastname String)) String (str.substr name 0 1))
-
-
-
-
-generation 13:
-List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-Checking constraints for expression: List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
-entropy diff: 0
-shannon entropy: 3.424793
-Iteration 14
-(define-fun f ((firstname String) (lastname String)) String (str.substr name 0 1))
-
-
-
-
-generation 14:
-List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-Checking constraints for expression: List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
-entropy diff: 0
-shannon entropy: 3.424793
-Iteration 15
-(define-fun f ((firstname String) (lastname String)) String (str.substr name 0 1))
-
-
-
-
-generation 15:
-List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-Checking constraints for expression: List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
-entropy diff: 0
-shannon entropy: 3.424793
-Iteration 16
-(define-fun f ((firstname String) (lastname String)) String (str.substr name 0 1))
-
-
-
-
-generation 16:
-List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-Checking constraints for expression: List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
-entropy diff: 0
-shannon entropy: 3.424793
-Iteration 17
-(define-fun f ((firstname String) (lastname String)) String (str.substr name 0 1))
-
-
-
-
-generation 17:
-List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-Checking constraints for expression: List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
-entropy diff: 0
-shannon entropy: 3.424793
-Iteration 18
-(define-fun f ((firstname String) (lastname String)) String (str.substr name 0 1))
-
-
-
-
-generation 18:
-List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-Checking constraints for expression: List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
-entropy diff: 0
-shannon entropy: 3.424793
-Iteration 19
-(define-fun f ((firstname String) (lastname String)) String (str.substr name 0 1))
-
-
-
-
-generation 19:
-List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-Checking constraints for expression: List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
-entropy diff: 0
-shannon entropy: 3.424793
-Iteration 20
-(define-fun f ((firstname String) (lastname String)) String (str.substr name 0 1))
-
-
-
-
-generation 20:
-List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-Checking constraints for expression: List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
-entropy diff: 0
-shannon entropy: 3.424793
-Iteration 21
-(define-fun f ((firstname String) (lastname String)) String (str.substr name 0 1))
-
-
-
-
-generation 21:
-List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-Checking constraints for expression: List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
-entropy diff: 0
-shannon entropy: 3.424793
-Iteration 22
-(define-fun f ((firstname String) (lastname String)) String (str.substr name 0 1))
-
-
-
-
-generation 22:
-List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-Checking constraints for expression: List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
-entropy diff: 0
-shannon entropy: 3.424793
-Iteration 23
-(define-fun f ((firstname String) (lastname String)) String (str.substr name 0 1))
-
-
-
-
-generation 23:
-List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-Checking constraints for expression: List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
-entropy diff: 0
-shannon entropy: 3.424793
-Iteration 24
-(define-fun f ((firstname String) (lastname String)) String (str.substr name 0 1))
-
-
-
-
-generation 24:
-List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-Checking constraints for expression: List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), Atom(Int(1))])
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => false
-  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => false
-entropy diff: 0
-shannon entropy: 3.424793
+List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), List([Atom(Ident("str.indexof")), Atom(Ident("name")), Atom(String(" ")), Atom(Int(0))])])
+Checking constraints for expression: List([Atom(Ident("str.substr")), Atom(Ident("name")), Atom(Int(0)), List([Atom(Ident("str.indexof")), Atom(Ident("name")), Atom(String(" ")), Atom(Int(0))])])
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Nancy FreeHafer"))]), Atom(String("Nancy"))]) => true
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Andrew Cencici"))]), Atom(String("Andrew"))]) => true
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Jan Kotas"))]), Atom(String("Jan"))]) => true
+  List([Atom(Ident("=")), List([Atom(Ident("f")), Atom(String("Mariya Sergienko"))]), Atom(String("Mariya"))]) => true
+Valid solution found!

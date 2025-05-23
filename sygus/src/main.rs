@@ -725,6 +725,7 @@ async fn main() {
             }
             if valid {
                 println!("Valid solution found!");
+                return;
             }
 
             let shannon_entropy = trie.shannon_entropy();

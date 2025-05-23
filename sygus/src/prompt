@@ -5,28 +5,6 @@ a series of constraints when given specific inputs. Write the simplest function
 possible that satisfies the constraints.
 
 Question:
-(set-logic BV)
-(synth-fun inv ((s (BitVec 4)) (t (BitVec 4))) (BitVec 4))
-(declare-var s (BitVec 4))
-(declare-var t (BitVec 4))
-(define-fun udivtotal ((a (BitVec 4)) (b (BitVec 4))) (BitVec 4)
-(ite (= b #x0) #xF (bvudiv a b)))
-(define-fun uremtotal ((a (BitVec 4)) (b (BitVec 4))) (BitVec 4)
-(ite (= b #x0) a (bvurem a b)))
-(define-fun min () (BitVec 4)
-(bvnot (bvlshr (bvnot #x0) #x1)))
-(define-fun max () (BitVec 4)
-(bvnot min))
-(define-fun l ((s (BitVec 4)) (t (BitVec 4))) Bool
-(bvsle (bvlshr s (inv s t)) t))
-(define-fun SC ((s (BitVec 4)) (t (BitVec 4))) Bool
-(or (bvult t min) (bvsge t s)))
-(constraint (=> (SC s t) (l s t)))
-(check-synth)
-Solution:
-(define-fun inv ((s (BitVec 4)) (t (BitVec 4))) (BitVec 4) (bvnot (bvor s #b0111)))
-
-Question:
 (set-logic SLIA)
  
 (synth-fun f ((firstname String) (lastname String)) String
