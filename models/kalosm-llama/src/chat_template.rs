@@ -28,7 +28,14 @@ impl HuggingFaceChatTemplate {
                 format!("The template raised an exception: {err_text}"),
             ))
         };
+        // add the strftime_now function from huggingface templates to the environment
+        let strftime_now = |format: String| -> Result<String, minijinja::Error> {
+            let now = chrono::Local::now();
+            let formatted_time = now.format(&format).to_string();
+            Ok(formatted_time)
+        };
         environment.add_function("raise_exception", raise_exception);
+        environment.add_function("strftime_now", strftime_now);
 
         // compile the template expression in the environment
         environment.add_template_owned("main", chat_template)?;
@@ -287,5 +294,38 @@ fn test_mistral_chat_template() {
     assert_eq!(
         result,
         r#"<s> [INST] Hello, how are you? [/INST] I'm doing great. How can I help you today?</s> [INST] I'd like to show off how chat templating works! [/INST]"#
+    )
+}
+
+#[test]
+fn test_mistral_small_chat_template() {
+    let template = "{%- set today = strftime_now(\"%Y-%m-%d\") %}\n{%- set default_system_message = \"You are Mistral Small 3, a Large Language Model (LLM) created by Mistral AI, a French startup headquartered in Paris.\\nYour knowledge base was last updated on 2023-10-01. The current date is \" + today + \".\\n\\nWhen you're not sure about some information, you say that you don't have the information and don't make up anything.\\nIf the user's question is not clear, ambiguous, or does not provide enough context for you to accurately answer the question, you do not try to answer it right away and you rather ask the user to clarify their request (e.g. \\\"What are some good restaurants around me?\\\" => \\\"Where are you?\\\" or \\\"When is the next flight to Tokyo\\\" => \\\"Where do you travel from?\\\")\" %}\n\n{{- bos_token }}\n\n{%- if messages[0]['role'] == 'system' %}\n    {%- set system_message = messages[0]['content'] %}\n    {%- set loop_messages = messages[1:] %}\n{%- else %}\n    {%- set system_message = default_system_message %}\n    {%- set loop_messages = messages %}\n{%- endif %}\n{{- '[SYSTEM_PROMPT]' + system_message + '[/SYSTEM_PROMPT]' }}\n\n{%- for message in loop_messages %}\n    {%- if message['role'] == 'user' %}\n        {{- '[INST]' + message['content'] + '[/INST]' }}\n    {%- elif message['role'] == 'system' %}\n        {{- '[SYSTEM_PROMPT]' + message['content'] + '[/SYSTEM_PROMPT]' }}\n    {%- elif message['role'] == 'assistant' %}\n        {{- message['content'] + eos_token }}\n    {%- else %}\n        {{- raise_exception('Only user, system and assistant roles are supported!') }}\n    {%- endif %}\n{%- endfor %}";
+
+    let template = HuggingFaceChatTemplate::create(template).unwrap();
+
+    let inputs = [
+        ChatMessage::new(MessageType::UserMessage, "Hello, how are you?".to_string()),
+        ChatMessage::new(
+            MessageType::ModelAnswer,
+            "I'm doing great. How can I help you today?".to_string(),
+        ),
+        ChatMessage::new(
+            MessageType::UserMessage,
+            "I'd like to show off how chat templating works!".to_string(),
+        ),
+    ];
+
+    let result = template.format("<s>", "</s>", &inputs, false).unwrap();
+    println!("{result}");
+    let now = chrono::Local::now().format("%Y-%m-%d").to_string();
+    assert_eq!(
+        result,
+        format!(
+            r#"<s>[SYSTEM_PROMPT]You are Mistral Small 3, a Large Language Model (LLM) created by Mistral AI, a French startup headquartered in Paris.
+Your knowledge base was last updated on 2023-10-01. The current date is {now}.
+
+When you're not sure about some information, you say that you don't have the information and don't make up anything.
+If the user's question is not clear, ambiguous, or does not provide enough context for you to accurately answer the question, you do not try to answer it right away and you rather ask the user to clarify their request (e.g. "What are some good restaurants around me?" => "Where are you?" or "When is the next flight to Tokyo" => "Where do you travel from?")[/SYSTEM_PROMPT][INST]Hello, how are you?[/INST]I'm doing great. How can I help you today?</s>[INST]I'd like to show off how chat templating works![/INST]"#
+        )
     )
 }
