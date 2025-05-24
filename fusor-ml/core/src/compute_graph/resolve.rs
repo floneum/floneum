@@ -3,7 +3,7 @@ use wgpu::CommandEncoder;
 use crate::{
     ElementWiseFunction, ElementWiseFunctions, ElementWiseOperation, PairWiseOperation,
     ReduceOperation,
-    dequantize::UntypedDequantize,
+    dequantize::DequantizeOperation,
     element_wise,
     index_select::IndexSelectOperation,
     matmul::UntypedMatMul,
@@ -327,10 +327,15 @@ impl<'a> Resolver<'a> {
     ) -> Option<TensorData> {
         let operation = &self.graph.nodes.dequantize[&key];
 
-        let mut kernel = UntypedDequantize::new(operation.datatype, operation.matrix.clone());
         let then = element_wise::ElementWiseFunctions::new(then, operation.datatype);
-        kernel.set_post_element_wise(then);
-        let result = kernel.run(&self.graph.device, &mut *self.command_encoder);
+        let mut operation = DequantizeOperation::new(operation.matrix.clone(), operation.datatype);
+        operation.set_post_element_wise(then);
+
+        let result = operation.run(&self.graph, &mut *self.command_encoder);
+
+        let KernelInputValue::Tensor(result) = result else {
+            panic!("Kernel input value is not a tensor");
+        };
 
         Some(result)
     }
@@ -388,7 +393,11 @@ impl<'a> Resolver<'a> {
         };
         let operation = self.graph.nodes.map_layout.get(&key).unwrap();
 
-        let result = operation.run(input);
+        let result = operation.run(&self.graph, &mut *self.command_encoder);
+
+        let KernelInputValue::Tensor(result) = result else {
+            panic!("Kernel input value is not a tensor");
+        };
 
         Some(result)
     }

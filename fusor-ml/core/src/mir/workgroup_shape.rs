@@ -171,16 +171,14 @@ impl WorkgroupShape {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub(crate) struct WorkgroupShapeConstraints {
     shape: [Vec<Constraint>; 3],
 }
 
 impl WorkgroupShapeConstraints {
     pub(crate) fn new() -> Self {
-        Self {
-            shape: [vec![], vec![], vec![]],
-        }
+        Self::default()
     }
 
     pub(crate) fn add_constraint(&mut self, dimension: usize, constraint: Constraint) {

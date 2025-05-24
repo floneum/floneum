@@ -1,7 +1,8 @@
 use std::{fmt::Debug, ops::Range};
 
 use crate::{
-    DataType, Layout, Tensor, TensorData, compute_graph::AnyComputeKey, slice_shape, slice_strides,
+    DataType, Layout, Tensor, TensorData, compute_graph::AnyComputeKey, mir::operation::Operation,
+    slice_shape, slice_strides,
 };
 
 type MapSize = Box<dyn Fn(&[usize]) -> Box<[usize]> + Send + Sync>;
@@ -34,7 +35,7 @@ impl MapLayoutOperation {
         }
     }
 
-    pub fn run(&self, tensor: &TensorData) -> TensorData {
+    pub fn map_tensor(&self, tensor: &TensorData) -> TensorData {
         TensorData::new_from_parts(
             tensor.device(),
             tensor.buffer().clone(),
@@ -46,6 +47,45 @@ impl MapLayoutOperation {
     pub fn map_layout(&self, layout: &Layout) -> Layout {
         let (offset, strides) = (self.map_stride)(layout.offset(), layout.strides());
         Layout::from_parts(offset, (self.map_size)(layout.shape()), strides)
+    }
+}
+
+impl Operation for MapLayoutOperation {
+    fn workgroup_shape_constraints(
+        &self,
+        _: &crate::Device,
+    ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
+        Default::default()
+    }
+
+    fn dispatch_size(
+        &self,
+        _: &crate::mir::workgroup_shape::WorkgroupShape,
+        _: &[crate::mir::inputs::KernelInputValue],
+    ) -> [u32; 3] {
+        [1, 1, 1]
+    }
+
+    fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {
+        f(self.input);
+    }
+
+    fn inputs(
+        &self,
+        nodes: &crate::compute_graph::ComputeGraphInner,
+    ) -> Vec<crate::mir::inputs::KernelInputValue> {
+        vec![nodes.get_result(self.input).unwrap().into()]
+    }
+
+    fn build_kernel(
+        &self,
+        _: &crate::compute_graph::ComputeGraphInner,
+        _: &crate::mir::workgroup_shape::WorkgroupShape,
+        inputs: &[crate::mir::inputs::KernelInputValue],
+        _: &mut crate::mir::kernel::GenericKernel,
+    ) -> crate::mir::inputs::KernelInputValue {
+        let input = inputs[0].as_tensor().unwrap();
+        self.map_tensor(input).into()
     }
 }
 

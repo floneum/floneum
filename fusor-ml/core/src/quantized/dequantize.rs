@@ -1,4 +1,6 @@
 use crate::mir::inputs::KernelInputValue;
+use crate::mir::operation::Operation;
+use crate::mir::workgroup_shape::WorkgroupShapeConstraints;
 use crate::{
     DataType, DataTypeEnum, Device, ElementWiseFunctions, LazyTensorData, Tensor, TensorData,
     TensorInfo, compute_graph::ComputeGraph, mir::kernel::GenericKernel, padded_tensor_size,
@@ -12,11 +14,139 @@ use super::{QMatrix, dequantize_block};
 pub(crate) struct DequantizeOperation {
     pub(crate) matrix: QMatrix,
     pub(crate) datatype: DataTypeEnum,
+    post_dequantize: ElementWiseFunctions,
 }
 
 impl DequantizeOperation {
     pub(crate) fn new(matrix: QMatrix, datatype: DataTypeEnum) -> Self {
-        DequantizeOperation { matrix, datatype }
+        DequantizeOperation {
+            matrix,
+            datatype,
+            post_dequantize: ElementWiseFunctions::empty(datatype),
+        }
+    }
+
+    pub(crate) fn set_post_element_wise(&mut self, post_dequantize: ElementWiseFunctions) {
+        self.post_dequantize = post_dequantize;
+    }
+
+    fn elements_per_block(&self) -> u32 {
+        self.matrix.datatype.block_size() as u32
+    }
+}
+
+impl Operation for DequantizeOperation {
+    fn workgroup_shape_constraints(
+        &self,
+        _: &Device,
+    ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
+        WorkgroupShapeConstraints::new()
+    }
+
+    fn dispatch_size(
+        &self,
+        workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
+        _: &[KernelInputValue],
+    ) -> [u32; 3] {
+        std::array::from_fn(|i| match i.cmp(&(self.matrix.shape.len() - 1)) {
+            std::cmp::Ordering::Less => {
+                let n = self.matrix.shape[i];
+                (n as u32).div_ceil(workgroup_shape.component(i))
+            }
+            std::cmp::Ordering::Equal => {
+                let n = self.matrix.shape[i];
+                (n as u32).div_ceil(workgroup_shape.component(i) * self.elements_per_block())
+            }
+            std::cmp::Ordering::Greater => 1,
+        })
+    }
+
+    fn visit_dependencies(&self, _: &mut dyn FnMut(crate::compute_graph::AnyComputeKey)) {}
+
+    fn inputs(&self, nodes: &crate::compute_graph::ComputeGraphInner) -> Vec<KernelInputValue> {
+        let shape = &self.matrix.shape;
+        let datatype = self.datatype;
+        let output_tensor = TensorData::new_for_shape(&nodes.device, shape, datatype);
+        vec![
+            KernelInputValue::from(self.matrix.clone()),
+            output_tensor.into(),
+        ]
+    }
+
+    fn build_kernel(
+        &self,
+        _: &crate::compute_graph::ComputeGraphInner,
+        _: &crate::mir::workgroup_shape::WorkgroupShape,
+        inputs: &[KernelInputValue],
+        generic_kernel: &mut GenericKernel,
+    ) -> KernelInputValue {
+        let output_tensor = inputs[1].as_tensor().unwrap().clone();
+
+        let mut kernel = String::new();
+
+        let datatype = self.datatype;
+        let rank = self.matrix.shape.len() as u32;
+
+        let input = generic_kernel.add_q_matrix_input(rank, self.matrix.datatype);
+        let output = generic_kernel.add_tensor_input(rank, true, datatype);
+
+        let post_element_wise = self.post_dequantize.add_functions(generic_kernel);
+        let process_output = |input: &str| {
+            post_element_wise
+                .iter()
+                .fold(input.to_string(), |acc, f| f.call(vec![acc]))
+        };
+
+        let global_id = generic_kernel.global_id();
+        let elements_per_block = self.elements_per_block();
+
+        for (dim, axis) in ["x", "y", "z"]
+            .iter()
+            .enumerate()
+            .take(self.matrix.shape.len())
+        {
+            writeln!(&mut kernel, "let index_{dim} = {global_id}.{axis};").unwrap();
+        }
+
+        write!(&mut kernel, "let chunk_index = ").unwrap();
+        input.strided_index(&mut kernel, (0..).map(|i| format!("index_{i}")));
+        writeln!(&mut kernel, ";").unwrap();
+        writeln!(&mut kernel, "let chunk = {input}[chunk_index];").unwrap();
+
+        dequantize_block(
+            &mut kernel,
+            self.matrix.datatype,
+            "chunk".to_string(),
+            datatype,
+            |i, data, kernel| {
+                let indexes: Box<[_]> = (0..rank)
+                    .map(|dim| {
+                        let base = format!("index_{dim}");
+                        if dim == rank - 1 {
+                            format!("{base} * {elements_per_block} + {i}")
+                        } else {
+                            base
+                        }
+                    })
+                    .collect();
+                output.check_bounds(kernel, indexes.clone(), |kernel| {
+                    write!(kernel, "let output_index = ").unwrap();
+                    output.strided_index(kernel, indexes);
+                    writeln!(kernel, ";").unwrap();
+
+                    writeln!(
+                        kernel,
+                        "{output}[output_index] = {};",
+                        process_output(&data)
+                    )
+                    .unwrap();
+                });
+            },
+        );
+
+        generic_kernel.set_body(kernel);
+
+        output_tensor.into()
     }
 }
 
@@ -43,163 +173,6 @@ impl QMatrix {
         );
 
         Tensor::from_parts(data)
-    }
-}
-
-pub(crate) struct UntypedDequantize {
-    kernel: OnceLock<GenericKernel>,
-    post_dequantize: ElementWiseFunctions,
-    datatype: DataTypeEnum,
-    matrix: QMatrix,
-}
-
-impl UntypedDequantize {
-    pub(crate) fn new(datatype: DataTypeEnum, matrix: QMatrix) -> Self {
-        Self {
-            kernel: OnceLock::new(),
-            post_dequantize: ElementWiseFunctions::empty(datatype),
-            datatype,
-            matrix,
-        }
-    }
-
-    pub(crate) fn set_post_element_wise(&mut self, post_dequantize: ElementWiseFunctions) {
-        self.post_dequantize = post_dequantize;
-    }
-
-    fn elements_per_block(&self) -> u32 {
-        self.matrix.datatype.block_size() as u32
-    }
-
-    fn work_group_dispatch(&self) -> [u32; 3] {
-        std::array::from_fn(|i| match i.cmp(&(self.matrix.shape.len() - 1)) {
-            std::cmp::Ordering::Less => {
-                let n = self.matrix.shape[i];
-                (n as u32).div_ceil(self.work_group_size()[i])
-            }
-            std::cmp::Ordering::Equal => {
-                let n = self.matrix.shape[i];
-                (n as u32).div_ceil(self.work_group_size()[i] * self.elements_per_block())
-            }
-            std::cmp::Ordering::Greater => 1,
-        })
-    }
-
-    fn work_group_size(&self) -> [u32; 3] {
-        [1, 1, 1]
-    }
-
-    fn compile(&self) -> &GenericKernel {
-        self.kernel.get_or_init(|| {
-            let mut generic_kernel = GenericKernel::new();
-
-            generic_kernel.set_workgroup_size(self.work_group_size());
-
-            let mut kernel = String::new();
-
-            let datatype = self.datatype;
-            let rank = self.matrix.shape.len() as u32;
-
-            let input = generic_kernel.add_q_matrix_input(rank, self.matrix.datatype);
-            let output = generic_kernel.add_tensor_input(rank, true, datatype);
-
-            let post_element_wise = self.post_dequantize.add_functions(&mut generic_kernel);
-            let process_output = |input: &str| {
-                post_element_wise
-                    .iter()
-                    .fold(input.to_string(), |acc, f| f.call(vec![acc]))
-            };
-
-            let global_id = generic_kernel.global_id();
-            let elements_per_block = self.elements_per_block();
-
-            for (dim, axis) in ["x", "y", "z"]
-                .iter()
-                .enumerate()
-                .take(self.matrix.shape.len())
-            {
-                writeln!(&mut kernel, "let index_{dim} = {global_id}.{axis};").unwrap();
-            }
-
-            write!(&mut kernel, "let chunk_index = ").unwrap();
-            input.strided_index(&mut kernel, (0..).map(|i| format!("index_{i}")));
-            writeln!(&mut kernel, ";").unwrap();
-            writeln!(&mut kernel, "let chunk = {input}[chunk_index];").unwrap();
-
-            dequantize_block(
-                &mut kernel,
-                self.matrix.datatype,
-                "chunk".to_string(),
-                datatype,
-                |i, data, kernel| {
-                    let indexes: Box<[_]> = (0..rank)
-                        .map(|dim| {
-                            let base = format!("index_{dim}");
-                            if dim == rank - 1 {
-                                format!("{base} * {elements_per_block} + {i}")
-                            } else {
-                                base
-                            }
-                        })
-                        .collect();
-                    output.check_bounds(kernel, indexes.clone(), |kernel| {
-                        write!(kernel, "let output_index = ").unwrap();
-                        output.strided_index(kernel, indexes);
-                        writeln!(kernel, ";").unwrap();
-
-                        writeln!(
-                            kernel,
-                            "{output}[output_index] = {};",
-                            process_output(&data)
-                        )
-                        .unwrap();
-                    });
-                },
-            );
-
-            generic_kernel.set_body(kernel);
-
-            generic_kernel
-        })
-    }
-
-    pub fn run(&self, device: &crate::Device, command_encoder: &mut CommandEncoder) -> TensorData {
-        let shape = &self.matrix.shape;
-        let output_buf = device.wgpu_device().create_buffer(&wgpu::BufferDescriptor {
-            label: None,
-            size: padded_tensor_size(
-                (shape.iter().product::<usize>() * self.datatype.element_size()) as u64,
-            ),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-        let output_tensor = TensorData::new_from_buffer(device, output_buf, shape, self.datatype);
-        self.run_and_out_tensor(device, &output_tensor, command_encoder);
-        output_tensor
-    }
-
-    pub fn run_and_out_tensor(
-        &self,
-        device: &Device,
-
-        output_tensor: &TensorData,
-        command_encoder: &mut CommandEncoder,
-    ) {
-        let matrix_shape = &self.matrix.shape;
-        assert_eq!(&**matrix_shape, output_tensor.layout().shape());
-        let module = self.compile();
-
-        let workgroup_dispatch_size = self.work_group_dispatch();
-
-        module.run(
-            device,
-            [
-                KernelInputValue::from(self.matrix.clone()),
-                output_tensor.clone().into(),
-            ],
-            command_encoder,
-            workgroup_dispatch_size,
-        );
     }
 }
 
