@@ -13,7 +13,7 @@ pub(crate) use integer::IntegerInput;
 pub(crate) use qmatrix::QMatrixInput;
 pub(crate) use tensor::TensorInput;
 
-#[derive(Clone, Debug)] 
+#[derive(Clone, Debug)]
 pub(crate) enum KernelInputValue {
     QMatrix(QMatrix),
     Tensor(TensorData),

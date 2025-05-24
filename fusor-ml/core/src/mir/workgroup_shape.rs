@@ -190,7 +190,9 @@ impl WorkgroupShapeConstraints {
 
     fn is_valid(&self, shape: &WorkgroupShape) -> bool {
         self.shape.iter().enumerate().all(|(i, constraints)| {
-            constraints.iter().all(|constraint| constraint.fits(shape.shape[i]))
+            constraints
+                .iter()
+                .all(|constraint| constraint.fits(shape.shape[i]))
         })
     }
 
@@ -316,24 +318,12 @@ impl Constraint {
 
     fn fits(&self, shape: u32) -> bool {
         match self {
-            Constraint::Equals(value) => {
-                shape == *value
-            }
-            Constraint::LessThan(value) => {
-                shape < *value
-            }
-            Constraint::MultipleOf(value) => {
-                shape % value == 0
-            }
-            Constraint::Or(left, right) => {
-                left.fits(shape) || right.fits(shape)
-            }
-            Constraint::And(left, right) => {
-                left.fits(shape) && right.fits(shape)
-            }
-            Constraint::Not(inner) => {
-                !inner.fits(shape)
-            }
+            Constraint::Equals(value) => shape == *value,
+            Constraint::LessThan(value) => shape < *value,
+            Constraint::MultipleOf(value) => shape % value == 0,
+            Constraint::Or(left, right) => left.fits(shape) || right.fits(shape),
+            Constraint::And(left, right) => left.fits(shape) && right.fits(shape),
+            Constraint::Not(inner) => !inner.fits(shape),
         }
     }
 }

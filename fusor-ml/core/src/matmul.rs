@@ -4,7 +4,7 @@ use wgpu::CommandEncoder;
 
 use crate::mir::globals::KernelGlobalSpace;
 use crate::{
-    Device, Tensor, ElementWiseFunctions,
+    Device, ElementWiseFunctions, Tensor,
     compute_graph::AnyComputeKey,
     mir::{function::Function, kernel::GenericKernel},
     tensor::{DataType, DataTypeEnum, TensorData, padded_tensor_size},

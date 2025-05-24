@@ -1,9 +1,4 @@
-use std::{
-    borrow::Cow,
-    fmt::Debug,
-    sync::Arc,
-};
-
+use std::{borrow::Cow, fmt::Debug, sync::Arc};
 
 struct DeviceInner {
     device: wgpu::Device,

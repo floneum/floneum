@@ -1,6 +1,9 @@
 use wgpu::CommandEncoder;
 
-use crate::{compute_graph::{AnyComputeKey, ComputeGraphInner}, Device};
+use crate::{
+    Device,
+    compute_graph::{AnyComputeKey, ComputeGraphInner},
+};
 
 use super::{
     inputs::KernelInputValue,
@@ -34,7 +37,10 @@ pub(crate) trait Operation {
         nodes: &ComputeGraphInner,
         command_encoder: &mut CommandEncoder,
     ) -> KernelInputValue {
-        let workgroup_shape = self.workgroup_shape_constraints(&nodes.device).solve().unwrap();
+        let workgroup_shape = self
+            .workgroup_shape_constraints(&nodes.device)
+            .solve()
+            .unwrap();
         let mut kernel = GenericKernel::new();
         kernel.set_workgroup_size(workgroup_shape);
         let inputs = self.inputs(nodes);

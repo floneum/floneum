@@ -68,7 +68,6 @@ fn matmul(c: &mut Criterion) {
         }
     }
 
-
     {
         let candle_device = candle_core::Device::Cpu;
         bench_candle_with_device(candle_device, "matmul-candle-cpu", c);

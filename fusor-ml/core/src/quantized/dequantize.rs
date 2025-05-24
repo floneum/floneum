@@ -1,8 +1,7 @@
 use crate::mir::inputs::KernelInputValue;
 use crate::{
-    DataType, DataTypeEnum, Device, LazyTensorData, Tensor, TensorData, TensorInfo,
-    ElementWiseFunctions, compute_graph::ComputeGraph, mir::kernel::GenericKernel,
-    padded_tensor_size,
+    DataType, DataTypeEnum, Device, ElementWiseFunctions, LazyTensorData, Tensor, TensorData,
+    TensorInfo, compute_graph::ComputeGraph, mir::kernel::GenericKernel, padded_tensor_size,
 };
 use std::{fmt::Write, sync::OnceLock};
 use wgpu::CommandEncoder;

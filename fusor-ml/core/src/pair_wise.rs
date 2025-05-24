@@ -5,9 +5,15 @@ use std::{
 };
 
 use crate::{
-    compute_graph::{AnyComputeKey, ComputeGraphInner}, layout::TILE_SIZE, mir::{function::Function, kernel::GenericKernel, operation::Operation}, tensor::{DataType, DataTypeEnum, TensorData}, visit_tiled::{
-        build_visit_tiled_kernel, titled_map_dispatch_size, titled_map_workgroup_size_constraints, MaybeQData
-    }, ElementWiseFunction, ElementWiseFunctions, Tensor
+    ElementWiseFunction, ElementWiseFunctions, Tensor,
+    compute_graph::{AnyComputeKey, ComputeGraphInner},
+    layout::TILE_SIZE,
+    mir::{function::Function, kernel::GenericKernel, operation::Operation},
+    tensor::{DataType, DataTypeEnum, TensorData},
+    visit_tiled::{
+        MaybeQData, build_visit_tiled_kernel, titled_map_dispatch_size,
+        titled_map_workgroup_size_constraints,
+    },
 };
 
 #[derive(Clone, Debug)]

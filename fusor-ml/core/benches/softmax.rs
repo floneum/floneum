@@ -54,11 +54,7 @@ fn bench_softmax(c: &mut Criterion) {
 
     {
         let candle_device = candle_core::Device::Cpu;
-        bench_candle_with_device(
-            candle_device,
-            "softmax-candle-cpu",
-            c,
-        );
+        bench_candle_with_device(candle_device, "softmax-candle-cpu", c);
     }
 
     #[cfg(target_os = "macos")]
@@ -73,41 +69,37 @@ fn bench_candle_with_device(candle_device: candle_core::Device, name: &str, c: &
     let group = group.sample_size(20);
     for size in SIZES {
         let candle_device = candle_device.clone();
-        group.bench_with_input(
-            BenchmarkId::new(name, size),
-            &size,
-            move |b, &s| {
-                b.to_async(FuturesExecutor).iter_batched(
-                    {
+        group.bench_with_input(BenchmarkId::new(name, size), &size, move |b, &s| {
+            b.to_async(FuturesExecutor).iter_batched(
+                {
+                    let candle_device = candle_device.clone();
+                    let random_data: Vec<Vec<f32>> = (0..size)
+                        .map(|_| (0..size).map(|_| rand::random()).collect())
+                        .collect();
+                    move || {
+                        candle_core::Tensor::from_iter(
+                            random_data.iter().flat_map(|x| x.iter().copied()),
+                            &candle_device,
+                        )
+                        .unwrap()
+                        .reshape(&[size, size])
+                        .unwrap()
+                    }
+                },
+                {
+                    let candle_device = candle_device.clone();
+                    move |tensor| {
                         let candle_device = candle_device.clone();
-                        let random_data: Vec<Vec<f32>> = (0..size)
-                            .map(|_| (0..size).map(|_| rand::random()).collect())
-                            .collect();
-                        move || {
-                            candle_core::Tensor::from_iter(
-                                random_data.iter().flat_map(|x| x.iter().copied()),
-                                &candle_device,
-                            )
-                            .unwrap()
-                            .reshape(&[size, size])
-                            .unwrap()
+                        async move {
+                            let output = candle_nn::ops::softmax_last_dim(&tensor);
+                            candle_device.synchronize().unwrap();
+                            output
                         }
-                    },
-                    {
-                        let candle_device = candle_device.clone();
-                        move |tensor| {
-                            let candle_device = candle_device.clone();
-                            async move {
-                                let output = candle_nn::ops::softmax_last_dim(&tensor);
-                                candle_device.synchronize().unwrap();
-                                output
-                            }
-                        }
-                    },
-                    BatchSize::LargeInput,
-                );
-            },
-        );
+                    }
+                },
+                BatchSize::LargeInput,
+            );
+        });
     }
 }
 

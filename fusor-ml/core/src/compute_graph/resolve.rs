@@ -1,7 +1,16 @@
 use wgpu::CommandEncoder;
 
 use crate::{
-    dequantize::UntypedDequantize, element_wise, index_select::IndexSelectOperation, matmul::UntypedMatMul, mir::{inputs::KernelInputValue, operation::Operation}, quantized::matmul::UntypedQMatMul, tensor::TensorData, visit_tiled::MaybeQData, ElementWiseFunction, ElementWiseFunctions, ElementWiseOperation, PairWiseOperation, ReduceOperation
+    ElementWiseFunction, ElementWiseFunctions, ElementWiseOperation, PairWiseOperation,
+    ReduceOperation,
+    dequantize::UntypedDequantize,
+    element_wise,
+    index_select::IndexSelectOperation,
+    matmul::UntypedMatMul,
+    mir::{inputs::KernelInputValue, operation::Operation},
+    quantized::matmul::UntypedQMatMul,
+    tensor::TensorData,
+    visit_tiled::MaybeQData,
 };
 
 use super::{
@@ -455,7 +464,7 @@ impl<'a> Resolver<'a> {
             Vec::new()
         };
 
-         let Some(input_tensor) = self.graph.cached_results.get(&input)else  {
+        let Some(input_tensor) = self.graph.cached_results.get(&input) else {
             self.queue.push_back(input);
             return None;
         };
@@ -463,8 +472,14 @@ impl<'a> Resolver<'a> {
             self.queue.push_back(indexes);
             return None;
         };
-        let mut kernel =
-            IndexSelectOperation::new(input, indexes, input_tensor.datatype(), dimension, input_tensor.layout().shape(), indexes_tensor.layout().shape());
+        let mut kernel = IndexSelectOperation::new(
+            input,
+            indexes,
+            input_tensor.datatype(),
+            dimension,
+            input_tensor.layout().shape(),
+            indexes_tensor.layout().shape(),
+        );
         kernel.set_pre_element_wise_input(ElementWiseFunctions::new(
             input_pre_element_wise,
             input_tensor.datatype(),
@@ -479,7 +494,7 @@ impl<'a> Resolver<'a> {
         let KernelInputValue::Tensor(result) = result else {
             panic!("Kernel input value is not a tensor");
         };
-        
+
         Some(result)
     }
 

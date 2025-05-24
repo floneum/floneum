@@ -129,7 +129,7 @@ impl Display for DataTypeEnum {
     }
 }
 
-#[derive(Clone, Debug)] 
+#[derive(Clone, Debug)]
 pub(crate) struct TensorLayoutInfo {
     layout: Layout,
     datatype: DataTypeEnum,
@@ -370,7 +370,7 @@ impl LazyTensorData {
     pub(crate) fn index_select(&self, op: IndexSelectOperation) -> Self {
         let device = self.device.clone();
         let mut info = self.info.clone();
-        info.shape  = op.output_shape();
+        info.shape = op.output_shape();
         let graph = self.graph.clone();
         let key = self.graph.create_index_select(op);
 
@@ -391,7 +391,7 @@ impl LazyTensorData {
     }
 }
 
-#[derive(Clone, Debug)] 
+#[derive(Clone, Debug)]
 pub(crate) struct TensorData {
     device: Device,
     buffer: Arc<wgpu::Buffer>,
@@ -769,13 +769,14 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
                 self.datatype(),
                 self.key(),
                 function.lower_to_element_wise(),
-                self.rank() as _
+                self.rank() as _,
             ));
         }
 
         self.data.graph.merge(&other.data.graph);
         assert_eq!(self.shape(), other.shape());
-        let operation = PairWiseOperation::new(function, self.data.key, other.data.key, self.rank() as _);
+        let operation =
+            PairWiseOperation::new(function, self.data.key, other.data.key, self.rank() as _);
         Self::from_parts(self.data.pair_wise(operation))
     }
 
@@ -825,9 +826,12 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         dim: usize,
     ) -> Tensor<OUT, D> {
         Tensor {
-            data: self
-                .data
-                .reduce(ReduceOperation::new(self.data.key, function, dim, self.rank() as u32)),
+            data: self.data.reduce(ReduceOperation::new(
+                self.data.key,
+                function,
+                dim,
+                self.rank() as u32,
+            )),
             datatype: PhantomData,
         }
     }

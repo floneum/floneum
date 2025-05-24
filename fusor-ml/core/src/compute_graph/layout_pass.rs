@@ -50,8 +50,10 @@ impl LayoutPass {
             self.queue.push_back(key.into());
             return;
         };
-        let output_layout =
-            TensorLayoutInfo::new(input_layout.layout().clone(), operation.functions.out_datatype());
+        let output_layout = TensorLayoutInfo::new(
+            input_layout.layout().clone(),
+            operation.functions.out_datatype(),
+        );
         self.output_layout.insert(key.into(), output_layout);
     }
 

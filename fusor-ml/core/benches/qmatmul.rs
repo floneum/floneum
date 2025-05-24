@@ -113,52 +113,46 @@ fn bench_candle_with_device(
     c: &mut Criterion,
 ) {
     let mut reader = std::io::Cursor::new(&bytes);
-            let candle_metadata =
-                candle_core::quantized::gguf_file::Content::read(&mut reader).unwrap();
-            let candle_q_matrix_metadata = candle_metadata
-                .tensor_infos
-                .get("blk.0.attn_q.weight")
-                .unwrap();
-            let candle_q_tensor = candle_q_matrix_metadata
-                .read(
-                    &mut reader,
-                    candle_metadata.tensor_data_offset,
+    let candle_metadata = candle_core::quantized::gguf_file::Content::read(&mut reader).unwrap();
+    let candle_q_matrix_metadata = candle_metadata
+        .tensor_infos
+        .get("blk.0.attn_q.weight")
+        .unwrap();
+    let candle_q_tensor = candle_q_matrix_metadata
+        .read(
+            &mut reader,
+            candle_metadata.tensor_data_offset,
+            &candle_device,
+        )
+        .unwrap();
+    let candle_q_matrix = candle_core::quantized::QMatMul::from_qtensor(candle_q_tensor).unwrap();
+    let mut group = c.benchmark_group(name);
+    let group = group.sample_size(20);
+
+    group.bench_with_input(BenchmarkId::new(name, size), &size, move |b, &s| {
+        b.to_async(FuturesExecutor).iter_batched(
+            || {
+                let candle_b = candle_core::Tensor::from_iter(
+                    random_data.iter().flat_map(|x| x.iter().copied()),
                     &candle_device,
                 )
+                .unwrap()
+                .reshape(&[size, 576])
                 .unwrap();
-            let candle_q_matrix =
-                candle_core::quantized::QMatMul::from_qtensor(candle_q_tensor).unwrap();
-            let mut group = c.benchmark_group(name);
-            let group = group.sample_size(20);
-
-            group.bench_with_input(
-                BenchmarkId::new(name, size),
-                &size,
-                move |b, &s| {
-                    b.to_async(FuturesExecutor).iter_batched(
-                        || {
-                            let candle_b = candle_core::Tensor::from_iter(
-                                random_data.iter().flat_map(|x| x.iter().copied()),
-                                &candle_device,
-                            )
-                            .unwrap()
-                            .reshape(&[size, 576])
-                            .unwrap();
-                            candle_device.synchronize().unwrap();
-                            (
-                                candle_b.clone(),
-                                candle_q_matrix.clone(),
-                                candle_device.clone(),
-                            )
-                        },
-                        |(tensor_a, tensor_b, candle_device)| async move {
-                            tensor_b.forward(&tensor_a).unwrap();
-                            candle_device.synchronize().unwrap();
-                        },
-                        BatchSize::LargeInput,
-                    );
-                },
-            );
+                candle_device.synchronize().unwrap();
+                (
+                    candle_b.clone(),
+                    candle_q_matrix.clone(),
+                    candle_device.clone(),
+                )
+            },
+            |(tensor_a, tensor_b, candle_device)| async move {
+                tensor_b.forward(&tensor_a).unwrap();
+                candle_device.synchronize().unwrap();
+            },
+            BatchSize::LargeInput,
+        );
+    });
 }
 
 criterion_group!(benches, qmatmul);

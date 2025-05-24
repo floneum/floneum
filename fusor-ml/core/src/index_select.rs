@@ -1,8 +1,10 @@
 use crate::{
-    compute_graph::AnyComputeKey, mir::{kernel::GenericKernel, operation::Operation, workgroup_shape}, padded_tensor_size, DataTypeEnum, ElementWiseFunctions, Tensor, TensorData, TILE_SIZE
+    DataTypeEnum, ElementWiseFunctions, TILE_SIZE, Tensor, TensorData,
+    compute_graph::AnyComputeKey,
+    mir::{kernel::GenericKernel, operation::Operation},
+    padded_tensor_size,
 };
-use std::{fmt::Write, sync::OnceLock};
-use wgpu::CommandEncoder;
+use std::fmt::Write;
 
 #[derive(Debug)]
 pub(crate) struct IndexSelectOperation {
@@ -43,8 +45,7 @@ impl IndexSelectOperation {
         self.value_shape.len()
     }
 
-
-    pub(crate)  fn output_shape(&self) -> Box<[usize]> {
+    pub(crate) fn output_shape(&self) -> Box<[usize]> {
         Self::calc_output_shape(self.dimension, &self.value_shape, &self.indexes_shape)
     }
 
@@ -176,11 +177,13 @@ impl IndexSelectOperation {
 
         kernel_body
     }
-
 }
 
 impl Operation for IndexSelectOperation {
-    fn workgroup_shape_constraints(&self, _: &crate::Device) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
+    fn workgroup_shape_constraints(
+        &self,
+        _: &crate::Device,
+    ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
         let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::new();
         constraints.add_constraint(1, crate::mir::workgroup_shape::Constraint::Equals(1));
         constraints.add_constraint(2, crate::mir::workgroup_shape::Constraint::Equals(1));
@@ -197,27 +200,30 @@ impl Operation for IndexSelectOperation {
         let workgroup_shape_x = workgroup_shape.x();
         let workgroup_shape_y = workgroup_shape.y();
         let workgroup_shape_z = workgroup_shape.z();
-            let workgroup_size_x = output_shape
-                .first()
-                .map(|x| (*x as u32).div_ceil(self.tile_size * workgroup_shape_x))
-                .unwrap_or(1);
-            let workgroup_size_y = output_shape
-                .get(1)
-                .map(|x| (*x as u32).div_ceil(self.tile_size * workgroup_shape_y))
-                .unwrap_or(1);
-            let workgroup_size_z = output_shape
-                .get(2)
-                .map(|x| (*x as u32).div_ceil(self.tile_size * workgroup_shape_z))
-                .unwrap_or(1);
-            [workgroup_size_x, workgroup_size_y, workgroup_size_z]
-        }
+        let workgroup_size_x = output_shape
+            .first()
+            .map(|x| (*x as u32).div_ceil(self.tile_size * workgroup_shape_x))
+            .unwrap_or(1);
+        let workgroup_size_y = output_shape
+            .get(1)
+            .map(|x| (*x as u32).div_ceil(self.tile_size * workgroup_shape_y))
+            .unwrap_or(1);
+        let workgroup_size_z = output_shape
+            .get(2)
+            .map(|x| (*x as u32).div_ceil(self.tile_size * workgroup_shape_z))
+            .unwrap_or(1);
+        [workgroup_size_x, workgroup_size_y, workgroup_size_z]
+    }
 
     fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {
         f(self.input);
         f(self.indexes);
     }
 
-    fn inputs(&self, nodes: &crate::compute_graph::ComputeGraphInner) -> Vec<crate::mir::inputs::KernelInputValue> {
+    fn inputs(
+        &self,
+        nodes: &crate::compute_graph::ComputeGraphInner,
+    ) -> Vec<crate::mir::inputs::KernelInputValue> {
         let value = nodes.get_result(self.input).unwrap();
         let indexes = nodes.get_result(self.indexes).unwrap();
         let device = value.device();
@@ -261,10 +267,10 @@ impl Operation for IndexSelectOperation {
         inputs: &[crate::mir::inputs::KernelInputValue],
         kernel: &mut GenericKernel,
     ) -> crate::mir::inputs::KernelInputValue {
-            let kernel_text = self.build_index_kernel( kernel);
-            kernel.set_body(kernel_text);
-            let output = inputs[2].clone();
-            output
+        let kernel_text = self.build_index_kernel(kernel);
+        kernel.set_body(kernel_text);
+        let output = inputs[2].clone();
+        output
     }
 }
 
