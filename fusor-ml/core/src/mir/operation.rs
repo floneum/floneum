@@ -46,7 +46,6 @@ pub(crate) trait Operation {
         let inputs = self.inputs(nodes);
         let dispatch_size = self.dispatch_size(&workgroup_shape, &inputs);
         let result = self.build_kernel(nodes, &workgroup_shape, &inputs, &mut kernel);
-        println!("dispatch_size: {:?}", dispatch_size);
         kernel.run(&nodes.device, inputs, command_encoder, dispatch_size);
         result
     }
