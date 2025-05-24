@@ -634,7 +634,7 @@ async fn main() {
             revision: "main".to_string(),
             file: "tokenizer.json".to_string(),
         }),
-        Model::Qwen0_5b => LlamaSource::qwen_2_5_1_5b_instruct(),
+        Model::Qwen0_5b => LlamaSource::qwen_2_5_0_5b_instruct(),
         Model::Qwen1_5b => LlamaSource::qwen_2_5_1_5b_instruct(),
         Model::Qwen3b => LlamaSource::qwen_2_5_3b_instruct(),
         Model::Qwen7b => LlamaSource::qwen_2_5_7b_instruct(),
