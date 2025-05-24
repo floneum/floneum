@@ -584,6 +584,10 @@ impl ComputeGraphInner {
         Some(result)
     }
 
+    pub(crate) fn get_result(&self, key: AnyComputeKey) -> Option<TensorData> {
+        self.cached_results.get(&key).cloned()
+    }
+
     #[cfg(feature = "extra_assertions")]
     fn contains_key(&self, key: AnyComputeKey) -> bool {
         if self.cached_results.contains_key(&key) {

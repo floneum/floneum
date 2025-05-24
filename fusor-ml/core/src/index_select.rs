@@ -1,5 +1,5 @@
 use crate::{
-    compute_graph::AnyComputeKey, mir::kernel::GenericKernel, padded_tensor_size, DataTypeEnum, ElementWiseFunctions, Tensor, TensorData, TILE_SIZE
+    compute_graph::AnyComputeKey, mir::{kernel::GenericKernel, operation::Operation, workgroup_shape}, padded_tensor_size, DataTypeEnum, ElementWiseFunctions, Tensor, TensorData, TILE_SIZE
 };
 use std::{fmt::Write, sync::OnceLock};
 use wgpu::CommandEncoder;
@@ -10,7 +10,11 @@ pub(crate) struct IndexSelectOperation {
     pub(crate) indexes: AnyComputeKey,
     pub(crate) datatype: DataTypeEnum,
     pub(crate) dimension: usize,
-    pub(crate) length: usize,
+    pub(crate) tile_size: u32,
+    pub(crate) value_shape: Box<[usize]>,
+    pub(crate) indexes_shape: Box<[usize]>,
+    pub(crate) pre_element_wise_input: ElementWiseFunctions,
+    pub(crate) pre_element_wise_indexes: ElementWiseFunctions,
 }
 
 impl IndexSelectOperation {
@@ -19,18 +23,32 @@ impl IndexSelectOperation {
         indexes: AnyComputeKey,
         datatype: DataTypeEnum,
         dimension: usize,
-        length: usize,
+        value_shape: &[usize],
+        indexes_shape: &[usize],
     ) -> Self {
         Self {
             input,
             indexes,
             datatype,
             dimension,
-            length,
+            tile_size: TILE_SIZE,
+            value_shape: value_shape.to_vec().into_boxed_slice(),
+            indexes_shape: indexes_shape.to_vec().into_boxed_slice(),
+            pre_element_wise_input: ElementWiseFunctions::empty(datatype),
+            pre_element_wise_indexes: ElementWiseFunctions::empty(DataTypeEnum::U32),
         }
     }
 
-    pub(crate) fn output_shape(
+    pub(crate) fn rank(&self) -> usize {
+        self.value_shape.len()
+    }
+
+
+    pub(crate)  fn output_shape(&self) -> Box<[usize]> {
+        Self::calc_output_shape(self.dimension, &self.value_shape, &self.indexes_shape)
+    }
+
+    pub(crate) fn calc_output_shape(
         dimension: usize,
         value_shape: &[usize],
         indexes_shape: &[usize],
@@ -46,30 +64,6 @@ impl IndexSelectOperation {
                 }
             })
             .collect()
-    }
-}
-
-pub(crate) struct UntypedIndexSelectKernel {
-    dimension: usize,
-    datatype: DataTypeEnum,
-    rank: usize,
-    tile_size: u32,
-    pre_element_wise_input: ElementWiseFunctions,
-    pre_element_wise_indexes: ElementWiseFunctions,
-    sparse_kernel: OnceLock<GenericKernel>,
-}
-
-impl UntypedIndexSelectKernel {
-    pub(crate) fn new(dimension: usize, datatype: DataTypeEnum, rank: usize) -> Self {
-        Self {
-            dimension,
-            datatype,
-            rank,
-            tile_size: TILE_SIZE,
-            pre_element_wise_input: ElementWiseFunctions::empty(datatype),
-            pre_element_wise_indexes: ElementWiseFunctions::empty(DataTypeEnum::U32),
-            sparse_kernel: OnceLock::new(),
-        }
     }
 
     pub fn set_pre_element_wise_input(
@@ -88,118 +82,20 @@ impl UntypedIndexSelectKernel {
         self
     }
 
-    pub fn run(
-        &self,
-        value: &TensorData,
-        indexes: &TensorData,
-
-        command_encoder: &mut CommandEncoder,
-    ) -> TensorData {
-        let device = value.device();
-        let value_shape = value.layout().shape();
-        let indexes_shape = indexes.layout().shape();
-        let output_shape: Box<[usize]> =
-            IndexSelectOperation::output_shape(self.dimension, value_shape, indexes_shape);
-        let output_buf = device.wgpu_device().create_buffer(&wgpu::BufferDescriptor {
-            label: None,
-            size: padded_tensor_size(
-                (output_shape.iter().copied().product::<usize>() * value.datatype().element_size())
-                    as u64,
-            ),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-        let output_tensor =
-            TensorData::new_from_buffer(device, output_buf, &output_shape, value.datatype());
-        self.run_and_out_tensor(value, indexes, command_encoder, &output_tensor);
-        output_tensor
-    }
-
-    pub fn run_and_out_tensor(
-        &self,
-        value: &TensorData,
-        indexes: &TensorData,
-
-        command_encoder: &mut CommandEncoder,
-        output_tensor: &TensorData,
-    ) {
-        // Make sure the output tensor has the correct shape
+    fn build_index_kernel(&self, kernel: &mut GenericKernel) -> String {
         assert!(
-            output_tensor
-                .layout()
-                .shape()
-                .iter()
-                .zip(value.layout().shape())
-                .enumerate()
-                .all(|(i, (a, b))| if i == self.dimension {
-                    a == &indexes.layout().shape()[0]
-                } else {
-                    a == b
-                })
-        );
-        let output_layout = output_tensor.layout();
-        let output_shape = output_layout.shape();
-
-        let tensors = [value, indexes, output_tensor];
-        let kernel = self.kernel();
-        let max_blocksize = self.blocksize();
-        let workgroup_dispatch_size = {
-            let workgroup_size_x = output_shape
-                .first()
-                .map(|x| (*x as u32).div_ceil(self.tile_size * max_blocksize))
-                .unwrap_or(1);
-            let workgroup_size_y = output_shape
-                .get(1)
-                .map(|x| (*x as u32).div_ceil(self.tile_size * max_blocksize))
-                .unwrap_or(1);
-            let workgroup_size_z = output_shape
-                .get(2)
-                .map(|x| (*x as u32).div_ceil(self.tile_size * max_blocksize))
-                .unwrap_or(1);
-            [workgroup_size_x, workgroup_size_y, workgroup_size_z]
-        };
-
-        let device = value.device();
-        kernel.run(
-            device,
-            tensors.iter().map(|x| (*x).clone()),
-            command_encoder,
-            workgroup_dispatch_size,
-        );
-    }
-
-    fn kernel(&self) -> &GenericKernel {
-        let create_kernel = || {
-            let mut kernel = GenericKernel::new();
-            let kernel_text = self.build_tiled_map_kernel(&mut kernel);
-            kernel.set_body(kernel_text);
-            let blocksize = self.blocksize();
-            let workgroup_size = std::array::from_fn(|i| if self.rank > i { blocksize } else { 1 });
-            kernel.set_workgroup_size(workgroup_size);
-            kernel
-        };
-        self.sparse_kernel.get_or_init(create_kernel)
-    }
-
-    fn blocksize(&self) -> u32 {
-        // max_blocksize^R = 256
-        (256f64.powf(1. / self.rank as f64)).floor() as u32
-    }
-
-    fn build_tiled_map_kernel(&self, kernel: &mut GenericKernel) -> String {
-        assert!(
-            self.rank <= 3,
+            self.rank() <= 3,
             "IndexSelect only supports up to 3 rank tensors"
         );
 
         let tile_size = self.tile_size;
-        let rank = self.rank;
+        let rank = self.rank();
 
         let mut kernel_body = String::new();
         let global_id = kernel.global_id();
-        let input = kernel.add_tensor_input(self.rank as u32, false, self.datatype);
+        let input = kernel.add_tensor_input(self.rank() as u32, false, self.datatype);
         let indexes = kernel.add_tensor_input(1, false, DataTypeEnum::U32);
-        let output = kernel.add_tensor_input(self.rank as u32, true, self.datatype);
+        let output = kernel.add_tensor_input(self.rank() as u32, true, self.datatype);
 
         let pre_element_wise_value = self.pre_element_wise_input.add_functions(kernel);
         let process_value_input = |input: &str| {
@@ -214,7 +110,7 @@ impl UntypedIndexSelectKernel {
                 .fold(input.to_string(), |acc, f| f.call(vec![acc]))
         };
 
-        for i in 0..self.rank {
+        for i in 0..self.rank() {
             let index = ["x", "y", "z"][i];
             writeln!(
                 &mut kernel_body,
@@ -279,6 +175,96 @@ impl UntypedIndexSelectKernel {
         }
 
         kernel_body
+    }
+
+}
+
+impl Operation for IndexSelectOperation {
+    fn workgroup_shape_constraints(&self, _: &crate::Device) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
+        let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::new();
+        constraints.add_constraint(1, crate::mir::workgroup_shape::Constraint::Equals(1));
+        constraints.add_constraint(2, crate::mir::workgroup_shape::Constraint::Equals(1));
+        constraints
+    }
+
+    fn dispatch_size(
+        &self,
+        workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
+        inputs: &[crate::mir::inputs::KernelInputValue],
+    ) -> [u32; 3] {
+        let output = inputs[2].as_tensor().unwrap();
+        let output_shape = output.layout().shape();
+        let workgroup_shape_x = workgroup_shape.x();
+        let workgroup_shape_y = workgroup_shape.y();
+        let workgroup_shape_z = workgroup_shape.z();
+            let workgroup_size_x = output_shape
+                .first()
+                .map(|x| (*x as u32).div_ceil(self.tile_size * workgroup_shape_x))
+                .unwrap_or(1);
+            let workgroup_size_y = output_shape
+                .get(1)
+                .map(|x| (*x as u32).div_ceil(self.tile_size * workgroup_shape_y))
+                .unwrap_or(1);
+            let workgroup_size_z = output_shape
+                .get(2)
+                .map(|x| (*x as u32).div_ceil(self.tile_size * workgroup_shape_z))
+                .unwrap_or(1);
+            [workgroup_size_x, workgroup_size_y, workgroup_size_z]
+        }
+
+    fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {
+        f(self.input);
+        f(self.indexes);
+    }
+
+    fn inputs(&self, nodes: &crate::compute_graph::ComputeGraphInner) -> Vec<crate::mir::inputs::KernelInputValue> {
+        let value = nodes.get_result(self.input).unwrap();
+        let indexes = nodes.get_result(self.indexes).unwrap();
+        let device = value.device();
+        let value_shape = value.layout().shape();
+        let indexes_shape = indexes.layout().shape();
+        let output_shape: Box<[usize]> =
+            IndexSelectOperation::calc_output_shape(self.dimension, value_shape, indexes_shape);
+        let output_buf = device.wgpu_device().create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: padded_tensor_size(
+                (output_shape.iter().copied().product::<usize>() * value.datatype().element_size())
+                    as u64,
+            ),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let output_tensor =
+            TensorData::new_from_buffer(device, output_buf, &output_shape, value.datatype());
+        // Make sure the output tensor has the correct shape
+        assert!(
+            output_tensor
+                .layout()
+                .shape()
+                .iter()
+                .zip(value.layout().shape())
+                .enumerate()
+                .all(|(i, (a, b))| if i == self.dimension {
+                    a == &indexes.layout().shape()[0]
+                } else {
+                    a == b
+                })
+        );
+
+        vec![value.into(), indexes.into(), output_tensor.into()]
+    }
+
+    fn build_kernel(
+        &self,
+        _: &crate::compute_graph::ComputeGraphInner,
+        _: &crate::mir::workgroup_shape::WorkgroupShape,
+        inputs: &[crate::mir::inputs::KernelInputValue],
+        kernel: &mut GenericKernel,
+    ) -> crate::mir::inputs::KernelInputValue {
+            let kernel_text = self.build_index_kernel( kernel);
+            kernel.set_body(kernel_text);
+            let output = inputs[2].clone();
+            output
     }
 }
 

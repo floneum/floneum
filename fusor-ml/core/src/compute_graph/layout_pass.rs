@@ -225,7 +225,7 @@ impl LayoutPass {
             self.queue.push_back(key.into());
             return;
         };
-        let shape = IndexSelectOperation::output_shape(
+        let shape = IndexSelectOperation::calc_output_shape(
             operation.dimension,
             indexes_shape.shape(),
             input_shape.shape(),
