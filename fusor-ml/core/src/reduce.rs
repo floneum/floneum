@@ -357,7 +357,6 @@ impl Operation for ReduceOperation {
         inputs: &[KernelInputValue],
         kernel: &mut GenericKernel,
     ) -> KernelInputValue {
-        println!("workgroup shape: {:?}", workgroup_shape);
         let output_tensor: TensorData = inputs[1].as_tensor().unwrap().clone();
         let max_blocksize = workgroup_shape.x();
         self.kernel(max_blocksize, kernel);
