@@ -13,7 +13,7 @@ use criterion::{criterion_group, criterion_main};
 
 use criterion::async_executor::FuturesExecutor;
 
-const SIZES: [usize; 2] = [100, 1000];
+const SIZES: [usize; 3] = [100, 1000, 4000];
 
 fn bench_add_const(c: &mut Criterion) {
     {
