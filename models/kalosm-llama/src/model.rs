@@ -206,7 +206,7 @@ impl LlamaModel {
                         Some("gguf") => {
                             let mut contents = Vec::new();
                             for file in &filename {
-                                let mut file = std::fs::File::open(&file).expect(
+                                let mut file = std::fs::File::open(file).expect(
                                     "The path returned by LlamaSource::model should be valid",
                                 );
                                 let model = gguf_file::Content::read(&mut file)?;
@@ -327,7 +327,7 @@ impl LlamaModel {
                             Ok((model, tokenizer))
                         }
                         Some("ggml" | "bin") | Some(_) | None => {
-                            let mut file = std::fs::File::open(&first_file)
+                            let mut file = std::fs::File::open(first_file)
                                 .expect("The path returned by LlamaSource::model should be valid");
                             let model = ggml_file::Content::read(&mut file, &device)?;
                             let tokenizer = tokenizer.ok_or(LlamaSourceError::NoTokenizer)?;

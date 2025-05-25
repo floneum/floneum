@@ -232,7 +232,7 @@ impl Model {
         };
         let start_token_string = start_token
             .map(|v| tokens[v as usize].clone())
-            .unwrap_or_else(|| "".to_string());
+            .unwrap_or_default();
         let stop_token_string = tokens[stop_token as usize].clone();
         let chat_template = override_chat_template.or_else(|| {
             source
