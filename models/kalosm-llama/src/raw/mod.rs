@@ -19,6 +19,7 @@ use candle_core::{DType, Device, Result, Tensor};
 use candle_nn::Embedding;
 use candle_transformers::quantized_nn::Linear;
 use candle_transformers::quantized_nn::RmsNorm;
+use kalosm_common::qmatmul_from_qtensor;
 use kalosm_common::MaskCache;
 
 mod attention_layer;
@@ -140,10 +141,10 @@ impl Model {
         let tok_embeddings_q = ct.remove("tok_embeddings.weight")?;
         let tok_embeddings = tok_embeddings_q.dequantize(device)?;
         let output = if let Ok(output) = ct.remove("output.weight") {
-            QMatMul::from_qtensor(output)?
+            qmatmul_from_qtensor(output)?
         } else {
             // If there is no output layer, assume the word embeddings are tied to the output
-            QMatMul::from_qtensor(tok_embeddings_q)?
+            qmatmul_from_qtensor(tok_embeddings_q)?
         };
         let mut layers = Vec::with_capacity(n_layer);
         for layer_idx in 0..ct.hparams.n_layer {
@@ -158,18 +159,18 @@ impl Model {
             let attention_norm = ct.remove(&format!("{prefix}.attention_norm.weight"))?;
             let ffn_norm = ct.remove(&format!("{prefix}.ffn_norm.weight"))?;
             let attention_variant = AttentionVariant::Separate(SeparateAttention {
-                attention_wq: QMatMul::from_qtensor(attention_wq)?,
+                attention_wq: qmatmul_from_qtensor(attention_wq)?,
                 attention_q_norm: None,
-                attention_wk: QMatMul::from_qtensor(attention_wk)?,
+                attention_wk: qmatmul_from_qtensor(attention_wk)?,
                 attention_k_norm: None,
-                attention_wv: QMatMul::from_qtensor(attention_wv)?,
+                attention_wv: qmatmul_from_qtensor(attention_wv)?,
                 interleaved_rope: true,
                 bias: None,
             });
             let feed_forward_variant = FeedForwardVariant::Llama(LlamaFeedForward::new(
-                QMatMul::from_qtensor(feed_forward_w1)?,
-                QMatMul::from_qtensor(feed_forward_w2)?,
-                QMatMul::from_qtensor(feed_forward_w3)?,
+                qmatmul_from_qtensor(feed_forward_w1)?,
+                qmatmul_from_qtensor(feed_forward_w2)?,
+                qmatmul_from_qtensor(feed_forward_w3)?,
             ));
             layers.push(LlamaAttention {
                 attention_variant,
@@ -349,10 +350,10 @@ impl Model {
         let norm = source.tensor("output_norm.weight", device)?;
         let norm = decode_norm(norm, rms_norm_eps)?;
         let output = if let Ok(output) = source.tensor("output.weight", device) {
-            QMatMul::from_qtensor(output)?
+            qmatmul_from_qtensor(output)?
         } else {
             // If there is no output layer, assume the word embeddings are tied to the output
-            QMatMul::from_qtensor(tok_embeddings_q)?
+            qmatmul_from_qtensor(tok_embeddings_q)?
         };
         let mut layers = Vec::with_capacity(block_count);
         for layer_idx in 0..block_count {
@@ -360,7 +361,7 @@ impl Model {
             let attention_variant =
                 if let Ok(qkv) = source.tensor(&format!("{prefix}.attn_qkv.weight"), device) {
                     AttentionVariant::Grouped(GroupedAttention {
-                        attention_qkv: QMatMul::from_qtensor(qkv)?,
+                        attention_qkv: qmatmul_from_qtensor(qkv)?,
                     })
                 } else {
                     let q = source.tensor(&format!("{prefix}.attn_q.weight"), device)?;
@@ -382,15 +383,15 @@ impl Model {
                         .tensor(&format!("{prefix}.attn_k_norm.weight"), device)
                         .ok();
                     let separate = SeparateAttention {
-                        attention_wq: QMatMul::from_qtensor(q)?,
+                        attention_wq: qmatmul_from_qtensor(q)?,
                         attention_q_norm: q_norm
                             .map(|norm| decode_norm(norm, rms_norm_eps))
                             .transpose()?,
-                        attention_wk: QMatMul::from_qtensor(k)?,
+                        attention_wk: qmatmul_from_qtensor(k)?,
                         attention_k_norm: k_norm
                             .map(|norm| decode_norm(norm, rms_norm_eps))
                             .transpose()?,
-                        attention_wv: QMatMul::from_qtensor(v)?,
+                        attention_wv: qmatmul_from_qtensor(v)?,
                         interleaved_rope: architecture != "qwen2" && architecture != "gemma3",
                         bias,
                     };
@@ -406,9 +407,9 @@ impl Model {
                     source.tensor(&format!("{prefix}.ffn_down.weight"), device)?;
                 let feed_forward_w3 = source.tensor(&format!("{prefix}.ffn_up.weight"), device)?;
                 FeedForwardVariant::Llama(LlamaFeedForward::new(
-                    QMatMul::from_qtensor(feed_forward_w1)?,
-                    QMatMul::from_qtensor(feed_forward_w2)?,
-                    QMatMul::from_qtensor(feed_forward_w3)?,
+                    qmatmul_from_qtensor(feed_forward_w1)?,
+                    qmatmul_from_qtensor(feed_forward_w2)?,
+                    qmatmul_from_qtensor(feed_forward_w3)?,
                 ))
             } else {
                 // Otherwise, try to read from the up, and down weights
@@ -418,8 +419,8 @@ impl Model {
                 let feed_forward_length = source.get(".feed_forward_length")?.to_u32()? as usize;
 
                 FeedForwardVariant::Phi(PhiFeedForward {
-                    up: QMatMul::from_qtensor(up)?,
-                    down: QMatMul::from_qtensor(down)?,
+                    up: qmatmul_from_qtensor(up)?,
+                    down: qmatmul_from_qtensor(down)?,
                     feed_forward_length,
                 })
             };
