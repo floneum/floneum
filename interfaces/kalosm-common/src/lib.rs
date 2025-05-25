@@ -1,6 +1,11 @@
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
-use candle_core::{backend::BackendStorage, utils::*, Device, Storage, Tensor, WithDType};
+use candle_core::{
+    backend::BackendStorage,
+    quantized::{GgmlDType, QMatMul, QTensor},
+    utils::*,
+    Device, Storage, Tensor, WithDType,
+};
 
 mod cache;
 pub use cache::*;
@@ -73,4 +78,22 @@ pub fn copy_tensor_into_vec<T: WithDType>(
         Storage::Cuda(storage) => from_cpu_storage(&storage.to_cpu_storage()?, layout),
         Storage::Metal(storage) => from_cpu_storage(&storage.to_cpu_storage()?, layout),
     }
+}
+
+fn cuda_compatible_dequantize_f16(qtensor: &QTensor) -> candle_core::Result<Tensor> {
+    let device = qtensor.device();
+    qtensor
+        .dequantize(&device)?
+        .to_dtype(candle_core::DType::F16)?
+        .to_device(&device)
+}
+
+/// Convert a QTensor to a QMatMul
+pub fn qmatmul_from_qtensor(qtensor: impl Into<Arc<QTensor>>) -> candle_core::Result<QMatMul> {
+    let qtensor = qtensor.into();
+    Ok(match qtensor.dtype() {
+        GgmlDType::F32 => QMatMul::Tensor(qtensor.dequantize(&qtensor.device())?),
+        GgmlDType::F16 => QMatMul::TensorF16(cuda_compatible_dequantize_f16(&qtensor)?),
+        _ => QMatMul::QTensor(qtensor),
+    })
 }

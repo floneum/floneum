@@ -1,10 +1,10 @@
-use candle_core::{quantized::QMatMul, DType, Result, Tensor, D};
+use candle_core::{DType, Result, Tensor, D};
 use candle_nn::Module;
 use candle_transformers::{
     quantized_nn::{Linear, RmsNorm},
     quantized_var_builder::VarBuilder,
 };
-use kalosm_common::{AttentionMask, KvCache};
+use kalosm_common::{qmatmul_from_qtensor, AttentionMask, KvCache};
 
 use crate::raw::{
     attention_layer::{forward_attention_qkv, LlamaFeedForward},
@@ -31,11 +31,11 @@ impl VisionBlock {
         let norm2 = RmsNorm::new(embed_dim, layer_norm_eps, vb.pp("ln2"))?;
 
         let mlp = LlamaFeedForward::new_with_bias(
-            QMatMul::from_arc(vb.get_no_shape("ffn_gate.weight")?)?,
+            qmatmul_from_qtensor(vb.get_no_shape("ffn_gate.weight")?)?,
             Some(vb.get_no_shape("ffn_gate.bias")?.dequantize(device)?),
-            QMatMul::from_arc(vb.get_no_shape("ffn_down.weight")?)?,
+            qmatmul_from_qtensor(vb.get_no_shape("ffn_down.weight")?)?,
             Some(vb.get_no_shape("ffn_down.bias")?.dequantize(device)?),
-            QMatMul::from_arc(vb.get_no_shape("ffn_up.weight")?)?,
+            qmatmul_from_qtensor(vb.get_no_shape("ffn_up.weight")?)?,
             Some(vb.get_no_shape("ffn_up.bias")?.dequantize(device)?),
         );
 
