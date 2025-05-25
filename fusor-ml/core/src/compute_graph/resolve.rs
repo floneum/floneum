@@ -387,10 +387,10 @@ impl<'a> Resolver<'a> {
 
     fn resolve_map_layout(&mut self, key: MapLayoutComputeNodeKey) -> Option<TensorData> {
         let operation = self.graph.nodes.map_layout.get(&key).unwrap();
-        let Some(input) = self.graph.cached_results.get(&operation.input) else {
+        if !self.graph.cached_results.contains_key(&operation.input) {
             self.queue.push_back(operation.input);
             return None;
-        };
+        }
         let operation = self.graph.nodes.map_layout.get(&key).unwrap();
 
         let result = operation.run(&self.graph, &mut *self.command_encoder);

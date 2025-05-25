@@ -3,10 +3,9 @@ use crate::mir::operation::Operation;
 use crate::mir::workgroup_shape::WorkgroupShapeConstraints;
 use crate::{
     DataType, DataTypeEnum, Device, ElementWiseFunctions, LazyTensorData, Tensor, TensorData,
-    TensorInfo, compute_graph::ComputeGraph, mir::kernel::GenericKernel, padded_tensor_size,
+    TensorInfo, compute_graph::ComputeGraph, mir::kernel::GenericKernel,
 };
-use std::{fmt::Write, sync::OnceLock};
-use wgpu::CommandEncoder;
+use std::fmt::Write;
 
 use super::{QMatrix, dequantize_block};
 
