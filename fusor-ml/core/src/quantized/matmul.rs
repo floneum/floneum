@@ -1,24 +1,31 @@
 use crate::{
-    DataType, DataTypeEnum, Device, Tensor, TensorData, compute_graph::AnyComputeKey,
-    mir::inputs::KernelInputValue, mir::kernel::GenericKernel, padded_tensor_size,
+    DataType, DataTypeEnum, Device, Tensor, TensorData,
+    compute_graph::AnyComputeKey,
+    mir::{inputs::KernelInputValue, kernel::GenericKernel, operation::Operation},
 };
-use std::{fmt::Write, sync::OnceLock};
-use wgpu::CommandEncoder;
+use std::fmt::Write;
 
 use super::{QMatrix, dequantize_block};
 
 #[derive(Debug)]
 pub(crate) struct QMatMulOperation {
+    pub(crate) input_datatype: DataTypeEnum,
     pub(crate) input: AnyComputeKey,
     pub(crate) matrix: QMatrix,
     pub(crate) out_shape: Box<[usize]>,
 }
 
 impl QMatMulOperation {
-    pub(crate) fn new(input_shape: &[usize], input: AnyComputeKey, matrix: QMatrix) -> Self {
+    pub(crate) fn new(
+        input_datatype: DataTypeEnum,
+        input_shape: &[usize],
+        input: AnyComputeKey,
+        matrix: QMatrix,
+    ) -> Self {
         let out_shape = vec![input_shape[0], matrix.shape[0]];
         let out_shape = out_shape.into_boxed_slice();
         QMatMulOperation {
+            input_datatype,
             input,
             matrix,
             out_shape,
@@ -184,168 +191,141 @@ async fn test_fuzz_q_mat_mul_q8_0() {
     }
 }
 
-pub(crate) struct UntypedQMatMul {
-    kernel: OnceLock<GenericKernel>,
-    input_datatype: DataTypeEnum,
-    matrix: QMatrix,
-}
-
-impl UntypedQMatMul {
-    pub(crate) const fn new(datatype: DataTypeEnum, matrix: QMatrix) -> Self {
-        Self {
-            kernel: OnceLock::new(),
-            input_datatype: datatype,
-            matrix,
-        }
-    }
-
+impl QMatMulOperation {
     fn elements_per_block(&self) -> u32 {
         self.matrix.datatype.block_size() as u32
     }
+}
 
-    fn work_group_dispatch(&self, a_shape: &[usize]) -> [u32; 3] {
+impl Operation for QMatMulOperation {
+    // fn work_group_dispatch(&self, a_shape: &[usize]) -> [u32; 3] {
+
+    // }
+
+    // fn work_group_size(&self) -> [u32; 3] {
+    //     [16, 16, 1]
+    // }
+
+    fn workgroup_shape_constraints(
+        &self,
+        _: &Device,
+    ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
+        let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::default();
+        constraints.add_constraint(0, crate::mir::workgroup_shape::Constraint::Equals(16));
+        constraints.add_constraint(1, crate::mir::workgroup_shape::Constraint::Equals(16));
+        constraints.add_constraint(2, crate::mir::workgroup_shape::Constraint::Equals(1));
+        constraints
+    }
+
+    fn dispatch_size(
+        &self,
+        workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
+        inputs: &[KernelInputValue],
+    ) -> [u32; 3] {
+        let input = inputs[0].as_tensor().unwrap();
+        let a_shape = input.layout().shape();
         let m = a_shape[0];
         let n = self.matrix.shape[0];
         [
-            (n as u32).div_ceil(self.work_group_size()[0]),
-            (m as u32).div_ceil(self.work_group_size()[1]),
+            (n as u32).div_ceil(workgroup_shape.x()),
+            (m as u32).div_ceil(workgroup_shape.y()),
             1,
         ]
     }
 
-    fn work_group_size(&self) -> [u32; 3] {
-        [16, 16, 1]
+    fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {
+        f(self.input);
+    }
+
+    fn inputs(&self, nodes: &crate::compute_graph::ComputeGraphInner) -> Vec<KernelInputValue> {
+        let input = nodes.get_result(self.input).unwrap();
+        let q_matrix = self.matrix.clone();
+        let device = input.device();
+        let a_shape = input.layout().shape();
+        let b_shape = &self.matrix.shape;
+        let output_tensor =
+            TensorData::new_for_shape(device, &[a_shape[0], b_shape[0]], input.datatype());
+        vec![input.into(), q_matrix.into(), output_tensor.into()]
     }
 
     // Related files/PRs in llama.cpp for reference:
     // https://github.com/ggml-org/llama.cpp/pull/2290
     // https://github.com/ggml-org/llama.cpp/blob/add2a3aa5a1571211aa5c7303b8e80c8d1824b91/ggml/src/ggml-metal/ggml-metal.metal#L4561
     // https://github.com/ggml-org/llama.cpp/blob/add2a3aa5a1571211aa5c7303b8e80c8d1824b91/ggml/src/ggml-metal/ggml-metal.metal#L5881
-    fn compile(&self) -> &GenericKernel {
-        self.kernel.get_or_init(|| {
-            // based on https://siboehm.com/articles/22/CUDA-MMM
-            let mut generic_kernel = GenericKernel::new();
-
-            generic_kernel.set_workgroup_size(self.work_group_size());
-
-            let mut kernel = String::new();
-
-            let datatype = self.input_datatype;
-            let rank = self.matrix.shape.len() as u32;
-
-            let input_a = generic_kernel.add_tensor_input(rank, false, datatype);
-            let input_b = generic_kernel.add_q_matrix_input(rank, self.matrix.datatype);
-            let output = generic_kernel.add_tensor_input(rank, true, datatype);
-
-            let global_id = generic_kernel.global_id();
-            let elements_per_block = self.elements_per_block();
-
-            let k_size = input_a.shape_binding(1);
-            let m_size = input_a.shape_binding(0);
-            let n_size = input_b.shape_binding(0);
-
-            writeln!(&mut kernel, "let x = {global_id}.x;").unwrap();
-            writeln!(&mut kernel, "let y = {global_id}.y;").unwrap();
-
-            writeln!(&mut kernel, "var acc = 0.0;").unwrap();
-
-            // Calculate one block sized group
-            writeln!(&mut kernel, "if x < {n_size} && y < {m_size} {{").unwrap();
-
-            writeln!(
-                &mut kernel,
-                "for (var k = 0u; k < {k_size} / {elements_per_block}; k += 1u) {{"
-            )
-            .unwrap();
-
-            writeln!(
-                &mut kernel,
-                "let chunk = {input_b}[k + x * {k_size} / {elements_per_block}];"
-            )
-            .unwrap();
-
-            dequantize_block(
-                &mut kernel,
-                self.matrix.datatype,
-                "chunk".to_string(),
-                DataTypeEnum::F32,
-                |i, data, code| {
-                    write!(code, "acc = fma({input_a}[").unwrap();
-                    input_a.strided_index(
-                        code,
-                        ["y".to_string(), format!("k * {elements_per_block} + {i}")],
-                    );
-                    write!(code, "], {data}, acc);").unwrap();
-                },
-            );
-
-            writeln!(&mut kernel, "}}").unwrap();
-
-            writeln!(&mut kernel, "}}").unwrap();
-
-            // Then write the result
-            writeln!(&mut kernel, "if x < {n_size} && y < {m_size} {{").unwrap();
-            write!(&mut kernel, "let output_index = ").unwrap();
-            output.strided_index(&mut kernel, ["y".to_string(), "x".to_string()]);
-            writeln!(&mut kernel, ";").unwrap();
-            writeln!(&mut kernel, "{output}[output_index] = acc;").unwrap();
-            writeln!(&mut kernel, "}}").unwrap();
-
-            generic_kernel.set_body(kernel);
-
-            generic_kernel
-        })
-    }
-
-    pub fn run(&self, input: &TensorData, command_encoder: &mut CommandEncoder) -> TensorData {
-        let device = input.device();
-        let a_shape = input.layout().shape();
-        let b_shape = &self.matrix.shape;
-        let output_buf = device.wgpu_device().create_buffer(&wgpu::BufferDescriptor {
-            label: None,
-            size: padded_tensor_size(
-                (a_shape[0] * b_shape[0] * input.datatype().element_size()) as u64,
-            ),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-        let output_tensor = TensorData::new_from_buffer(
-            device,
-            output_buf,
-            &[a_shape[0], b_shape[0]],
-            input.datatype(),
-        );
-        self.run_and_out_tensor(device, input, &output_tensor, command_encoder);
-        output_tensor
-    }
-
-    pub fn run_and_out_tensor(
+    // based on https://siboehm.com/articles/22/CUDA-MMM
+    fn build_kernel(
         &self,
-        device: &Device,
-        input: &TensorData,
+        _: &crate::compute_graph::ComputeGraphInner,
+        _: &crate::mir::workgroup_shape::WorkgroupShape,
+        inputs: &[KernelInputValue],
+        generic_kernel: &mut GenericKernel,
+    ) -> KernelInputValue {
+        let output_tensor = inputs[2].as_tensor().unwrap().clone();
+        let mut kernel = String::new();
 
-        output_tensor: &TensorData,
-        command_encoder: &mut CommandEncoder,
-    ) {
-        let matrix_shape = &self.matrix.shape;
-        assert_eq!(input.layout().shape()[1], matrix_shape[1]);
-        let module = self.compile();
+        let datatype = self.input_datatype;
+        let rank = self.matrix.shape.len() as u32;
 
-        let a_shape = input.layout().shape();
-        let b_shape = matrix_shape;
-        assert_eq!(*output_tensor.layout().shape(), [a_shape[0], b_shape[0]]);
+        let input_a = generic_kernel.add_tensor_input(rank, false, datatype);
+        let input_b = generic_kernel.add_q_matrix_input(rank, self.matrix.datatype);
+        let output = generic_kernel.add_tensor_input(rank, true, datatype);
 
-        let workgroup_dispatch_size = self.work_group_dispatch(a_shape);
+        let global_id = generic_kernel.global_id();
+        let elements_per_block = self.elements_per_block();
 
-        module.run(
-            device,
-            [
-                KernelInputValue::from(input.clone()),
-                self.matrix.clone().into(),
-                output_tensor.clone().into(),
-            ],
-            command_encoder,
-            workgroup_dispatch_size,
+        let k_size = input_a.shape_binding(1);
+        let m_size = input_a.shape_binding(0);
+        let n_size = input_b.shape_binding(0);
+
+        writeln!(&mut kernel, "let x = {global_id}.x;").unwrap();
+        writeln!(&mut kernel, "let y = {global_id}.y;").unwrap();
+
+        writeln!(&mut kernel, "var acc = 0.0;").unwrap();
+
+        // Calculate one block sized group
+        writeln!(&mut kernel, "if x < {n_size} && y < {m_size} {{").unwrap();
+
+        writeln!(
+            &mut kernel,
+            "for (var k = 0u; k < {k_size} / {elements_per_block}; k += 1u) {{"
+        )
+        .unwrap();
+
+        writeln!(
+            &mut kernel,
+            "let chunk = {input_b}[k + x * {k_size} / {elements_per_block}];"
+        )
+        .unwrap();
+
+        dequantize_block(
+            &mut kernel,
+            self.matrix.datatype,
+            "chunk".to_string(),
+            DataTypeEnum::F32,
+            |i, data, code| {
+                write!(code, "acc = fma({input_a}[").unwrap();
+                input_a.strided_index(
+                    code,
+                    ["y".to_string(), format!("k * {elements_per_block} + {i}")],
+                );
+                write!(code, "], {data}, acc);").unwrap();
+            },
         );
+
+        writeln!(&mut kernel, "}}").unwrap();
+
+        writeln!(&mut kernel, "}}").unwrap();
+
+        // Then write the result
+        writeln!(&mut kernel, "if x < {n_size} && y < {m_size} {{").unwrap();
+        write!(&mut kernel, "let output_index = ").unwrap();
+        output.strided_index(&mut kernel, ["y".to_string(), "x".to_string()]);
+        writeln!(&mut kernel, ";").unwrap();
+        writeln!(&mut kernel, "{output}[output_index] = acc;").unwrap();
+        writeln!(&mut kernel, "}}").unwrap();
+
+        generic_kernel.set_body(kernel);
+
+        output_tensor.into()
     }
 }

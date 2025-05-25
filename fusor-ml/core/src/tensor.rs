@@ -789,7 +789,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
     }
 
     pub(crate) fn add_q_mat_mul(&self, other: &QMatrix) -> Self {
-        let operation = QMatMulOperation::new(self.shape(), self.data.key, other.clone());
+        let operation = QMatMulOperation::new(self.datatype(), self.shape(), self.data.key, other.clone());
 
         Self::from_parts(self.data.q_mat_mul(operation))
     }

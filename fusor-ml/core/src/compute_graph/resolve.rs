@@ -8,7 +8,7 @@ use crate::{
     index_select::IndexSelectOperation,
     matmul::UntypedMatMul,
     mir::{inputs::KernelInputValue, operation::Operation},
-    quantized::matmul::UntypedQMatMul,
+    quantized::matmul::QMatMulOperation,
     tensor::TensorData,
     visit_tiled::MaybeQData,
 };
@@ -305,13 +305,22 @@ impl<'a> Resolver<'a> {
         let input = operation.input;
         let matrix = operation.matrix.clone();
 
-        let Some(input) = self.graph.cached_results.get(&input).cloned() else {
+        let Some(input_tensor) = self.graph.cached_results.get(&input).cloned() else {
             self.queue.push_back(input);
             return None;
         };
-        let kernel = UntypedQMatMul::new(input.datatype(), matrix);
+        let kernel = QMatMulOperation::new(
+            input_tensor.datatype(),
+            input_tensor.layout().shape(),
+            input,
+            matrix,
+        );
 
-        let result = kernel.run(&input, &mut *self.command_encoder);
+        let result = kernel.run(&self.graph, &mut *self.command_encoder);
+
+        let KernelInputValue::Tensor(result) = result else {
+            panic!("Kernel input value is not a tensor");
+        };
 
         Some(result)
     }
