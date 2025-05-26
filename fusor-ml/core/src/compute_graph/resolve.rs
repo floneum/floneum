@@ -1,12 +1,11 @@
 use wgpu::CommandEncoder;
 
 use crate::{
-    ElementWiseFunction, ElementWiseFunctions, ElementWiseOperation, PairWiseOperation,
-    ReduceOperation,
+    ElementWiseFunction, ElementWiseFunctions, ElementWiseOperation, MatMulOperation,
+    PairWiseOperation, ReduceOperation,
     dequantize::DequantizeOperation,
     element_wise,
     index_select::IndexSelectOperation,
-    matmul::UntypedMatMul,
     mir::{inputs::KernelInputValue, operation::Operation},
     quantized::matmul::QMatMulOperation,
     tensor::TensorData,
@@ -281,21 +280,32 @@ impl<'a> Resolver<'a> {
             Vec::new()
         };
 
-        let Some(first) = self.graph.cached_results.get(&first).cloned() else {
+        let Some(first_tensor) = self.graph.cached_results.get(&first).cloned() else {
             self.queue.push_back(first);
             return None;
         };
-        let Some(second) = self.graph.cached_results.get(&second).cloned() else {
+        let Some(second_tensor) = self.graph.cached_results.get(&second).cloned() else {
             self.queue.push_back(second);
             return None;
         };
-        let mut kernel = UntypedMatMul::new(first.datatype(), first.layout().rank() as u32);
-        let first_pre = ElementWiseFunctions::new(first_pre_element_wise, first.datatype());
-        let second_pre = ElementWiseFunctions::new(second_pre_element_wise, second.datatype());
+        let mut kernel = MatMulOperation::new(
+            first_tensor.datatype(),
+            first,
+            second,
+            first_tensor.layout().shape(),
+            second_tensor.layout().shape(),
+        );
+        let first_pre = ElementWiseFunctions::new(first_pre_element_wise, first_tensor.datatype());
+        let second_pre =
+            ElementWiseFunctions::new(second_pre_element_wise, second_tensor.datatype());
         let pre_element_wise_output = first_pre.out_datatype();
         kernel.set_pre_element_wise([first_pre, second_pre]);
         kernel.set_post_element_wise(ElementWiseFunctions::new(then, pre_element_wise_output));
-        let result = kernel.run(&first, &second, &mut *self.command_encoder);
+        let result = kernel.run(&self.graph, &mut *self.command_encoder);
+
+        let KernelInputValue::Tensor(result) = result else {
+            panic!("Kernel input value is not a tensor");
+        };
 
         Some(result)
     }

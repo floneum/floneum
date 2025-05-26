@@ -783,7 +783,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
     pub(crate) fn add_mat_mul(&self, other: &Self) -> Self {
         self.data.graph.merge(&other.data.graph);
         let operation =
-            MatMulOperation::new(self.data.key, other.data.key, self.shape(), other.shape());
+            MatMulOperation::new(self.datatype(), self.data.key, other.data.key, self.shape(), other.shape());
 
         Self::from_parts(self.data.mat_mul(operation))
     }
