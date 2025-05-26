@@ -782,14 +782,20 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
 
     pub(crate) fn add_mat_mul(&self, other: &Self) -> Self {
         self.data.graph.merge(&other.data.graph);
-        let operation =
-            MatMulOperation::new(self.datatype(), self.data.key, other.data.key, self.shape(), other.shape());
+        let operation = MatMulOperation::new(
+            self.datatype(),
+            self.data.key,
+            other.data.key,
+            self.shape(),
+            other.shape(),
+        );
 
         Self::from_parts(self.data.mat_mul(operation))
     }
 
     pub(crate) fn add_q_mat_mul(&self, other: &QMatrix) -> Self {
-        let operation = QMatMulOperation::new(self.datatype(), self.shape(), self.data.key, other.clone());
+        let operation =
+            QMatMulOperation::new(self.datatype(), self.shape(), self.data.key, other.clone());
 
         Self::from_parts(self.data.q_mat_mul(operation))
     }
