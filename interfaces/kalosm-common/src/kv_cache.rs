@@ -96,7 +96,10 @@ impl TensorCache {
     pub fn current_data(&self) -> candle_core::Result<Option<Tensor>> {
         let data = match self.all_data.as_ref() {
             None => None,
-            Some(d) => Some(d.narrow(self.concat_dim, self.start_offset, self.current_seq_len)?.contiguous()?),
+            Some(d) => Some(
+                d.narrow(self.concat_dim, self.start_offset, self.current_seq_len)?
+                    .contiguous()?,
+            ),
         };
         Ok(data)
     }

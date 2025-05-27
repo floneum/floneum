@@ -33,12 +33,16 @@ pub struct PhiFeedForward {
 impl PhiFeedForward {
     pub(crate) fn forward(&self, x: &Tensor) -> candle_core::Result<Tensor> {
         let up_states = x.apply(&self.up).unwrap();
-        let gate = up_states.narrow(D::Minus1, 0, self.feed_forward_length).unwrap();
-        let up_states = up_states.narrow(
-            D::Minus1,
-            self.feed_forward_length,
-            self.feed_forward_length,
-        ).unwrap();
+        let gate = up_states
+            .narrow(D::Minus1, 0, self.feed_forward_length)
+            .unwrap();
+        let up_states = up_states
+            .narrow(
+                D::Minus1,
+                self.feed_forward_length,
+                self.feed_forward_length,
+            )
+            .unwrap();
         let gate = fast_cpu_silu(&gate).unwrap();
         let up_states = (up_states * gate).unwrap();
         up_states.apply(&self.down)
@@ -102,7 +106,9 @@ impl LlamaFeedForward {
                 }
                 let w1 = w1
                     .join()
-                    .map_err(|_| candle_core::Error::Msg("Failed to join thread".to_string())).unwrap().unwrap();
+                    .map_err(|_| candle_core::Error::Msg("Failed to join thread".to_string()))
+                    .unwrap()
+                    .unwrap();
 
                 let mut up = self.down.forward(&(&w1 * w3).unwrap()).unwrap();
 
@@ -199,8 +205,10 @@ impl SeparateAttention {
                         }
 
                         let mut query = query_states
-                            .reshape((b_sz, seq_len, num_heads, head_dim)).unwrap()
-                            .transpose(1, 2).unwrap();
+                            .reshape((b_sz, seq_len, num_heads, head_dim))
+                            .unwrap()
+                            .transpose(1, 2)
+                            .unwrap();
 
                         if let Some(norm) = &self.attention_q_norm {
                             query = norm.forward(&query.contiguous().unwrap()).unwrap();
@@ -217,8 +225,10 @@ impl SeparateAttention {
                         }
 
                         let mut key = key_states
-                            .reshape((b_sz, seq_len, num_key_value_heads, head_dim)).unwrap()
-                            .transpose(1, 2).unwrap();
+                            .reshape((b_sz, seq_len, num_key_value_heads, head_dim))
+                            .unwrap()
+                            .transpose(1, 2)
+                            .unwrap();
 
                         if let Some(norm) = &self.attention_k_norm {
                             key = norm.forward(&key.contiguous().unwrap()).unwrap();
@@ -234,28 +244,37 @@ impl SeparateAttention {
                     }
 
                     value_states
-                        .reshape((b_sz, seq_len, num_key_value_heads, head_dim)).unwrap()
+                        .reshape((b_sz, seq_len, num_key_value_heads, head_dim))
+                        .unwrap()
                         .transpose(1, 2)
                 });
 
-                let query_states = query_states.join().map_err(|_| {
-                    candle_core::Error::Msg("failed to join query states".to_string())
-                }).unwrap().unwrap();
-                let key_states = key_states.join().map_err(|_| {
-                    candle_core::Error::Msg("failed to join key states".to_string())
-                }).unwrap().unwrap();
+                let query_states = query_states
+                    .join()
+                    .map_err(|_| candle_core::Error::Msg("failed to join query states".to_string()))
+                    .unwrap()
+                    .unwrap();
+                let key_states = key_states
+                    .join()
+                    .map_err(|_| candle_core::Error::Msg("failed to join key states".to_string()))
+                    .unwrap()
+                    .unwrap();
 
-                let (query_states, key_states) = rope_cache.forward(
-                    &query_states,
-                    &key_states,
-                    start_pos,
-                    pos_ids,
-                    self.interleaved_rope,
-                ).unwrap();
+                let (query_states, key_states) = rope_cache
+                    .forward(
+                        &query_states,
+                        &key_states,
+                        start_pos,
+                        pos_ids,
+                        self.interleaved_rope,
+                    )
+                    .unwrap();
 
-                let value_states = value_states.join().map_err(|_| {
-                    candle_core::Error::Msg("failed to join value states".to_string())
-                }).unwrap().unwrap();
+                let value_states = value_states
+                    .join()
+                    .map_err(|_| candle_core::Error::Msg("failed to join value states".to_string()))
+                    .unwrap()
+                    .unwrap();
 
                 Ok((query_states, key_states, value_states))
             })
@@ -268,8 +287,10 @@ impl SeparateAttention {
                 }
 
                 let mut query = query_states
-                    .reshape((b_sz, seq_len, num_heads, head_dim)).unwrap()
-                    .transpose(1, 2).unwrap();
+                    .reshape((b_sz, seq_len, num_heads, head_dim))
+                    .unwrap()
+                    .transpose(1, 2)
+                    .unwrap();
 
                 if let Some(norm) = &self.attention_q_norm {
                     query = norm.forward(&query.contiguous().unwrap()).unwrap();
@@ -285,8 +306,10 @@ impl SeparateAttention {
                 }
 
                 let mut key = key_states
-                    .reshape((b_sz, seq_len, num_key_value_heads, head_dim)).unwrap()
-                    .transpose(1, 2).unwrap();
+                    .reshape((b_sz, seq_len, num_key_value_heads, head_dim))
+                    .unwrap()
+                    .transpose(1, 2)
+                    .unwrap();
 
                 if let Some(norm) = &self.attention_k_norm {
                     key = norm.forward(&key.contiguous().unwrap()).unwrap();
@@ -302,17 +325,21 @@ impl SeparateAttention {
                 }
 
                 value_states
-                    .reshape((b_sz, seq_len, num_key_value_heads, head_dim)).unwrap()
-                    .transpose(1, 2).unwrap()
+                    .reshape((b_sz, seq_len, num_key_value_heads, head_dim))
+                    .unwrap()
+                    .transpose(1, 2)
+                    .unwrap()
             };
 
-            let (query_states, key_states) = rope_cache.forward(
-                &query_states,
-                &key_states,
-                start_pos,
-                pos_ids,
-                self.interleaved_rope,
-            ).unwrap();
+            let (query_states, key_states) = rope_cache
+                .forward(
+                    &query_states,
+                    &key_states,
+                    start_pos,
+                    pos_ids,
+                    self.interleaved_rope,
+                )
+                .unwrap();
 
             Ok((query_states, key_states, value_states))
         }
@@ -341,25 +368,36 @@ impl GroupedAttention {
 
         let query_pos = num_heads * head_dim;
         let query_states = qkv.narrow(D::Minus1, 0, query_pos).unwrap();
-        let key_states = qkv.narrow(D::Minus1, query_pos, num_key_value_heads * head_dim).unwrap();
-        let value_states = qkv.narrow(
-            D::Minus1,
-            query_pos + num_key_value_heads * head_dim,
-            num_key_value_heads * head_dim,
-        ).unwrap();
+        let key_states = qkv
+            .narrow(D::Minus1, query_pos, num_key_value_heads * head_dim)
+            .unwrap();
+        let value_states = qkv
+            .narrow(
+                D::Minus1,
+                query_pos + num_key_value_heads * head_dim,
+                num_key_value_heads * head_dim,
+            )
+            .unwrap();
 
         let query_states = query_states
-            .reshape((b_sz, seq_len, num_heads, head_dim)).unwrap()
-            .transpose(1, 2).unwrap();
+            .reshape((b_sz, seq_len, num_heads, head_dim))
+            .unwrap()
+            .transpose(1, 2)
+            .unwrap();
         let key_states = key_states
-            .reshape((b_sz, seq_len, num_key_value_heads, head_dim)).unwrap()
-            .transpose(1, 2).unwrap();
+            .reshape((b_sz, seq_len, num_key_value_heads, head_dim))
+            .unwrap()
+            .transpose(1, 2)
+            .unwrap();
         let value_states = value_states
-            .reshape((b_sz, seq_len, num_key_value_heads, head_dim)).unwrap()
-            .transpose(1, 2).unwrap();
+            .reshape((b_sz, seq_len, num_key_value_heads, head_dim))
+            .unwrap()
+            .transpose(1, 2)
+            .unwrap();
 
-        let (query_states, key_states) =
-            rope_cache.forward(&query_states, &key_states, start_pos, pos_ids, false).unwrap();
+        let (query_states, key_states) = rope_cache
+            .forward(&query_states, &key_states, start_pos, pos_ids, false)
+            .unwrap();
 
         Ok((query_states, key_states, value_states))
     }
@@ -399,24 +437,28 @@ impl LlamaAttention {
         let num_key_value_groups = num_heads / num_key_value_heads;
 
         let (query_states, key_states, value_states) = match self.attention_variant {
-            AttentionVariant::Separate(ref attention) => attention.forward(
-                num_heads,
-                head_dim,
-                num_key_value_heads,
-                hidden_states,
-                &self.rope_cache,
-                start_pos,
-                pos_ids,
-            ).unwrap(),
-            AttentionVariant::Grouped(ref attention) => attention.forward(
-                num_heads,
-                head_dim,
-                num_key_value_heads,
-                hidden_states,
-                &self.rope_cache,
-                start_pos,
-                pos_ids,
-            ).unwrap(),
+            AttentionVariant::Separate(ref attention) => attention
+                .forward(
+                    num_heads,
+                    head_dim,
+                    num_key_value_heads,
+                    hidden_states,
+                    &self.rope_cache,
+                    start_pos,
+                    pos_ids,
+                )
+                .unwrap(),
+            AttentionVariant::Grouped(ref attention) => attention
+                .forward(
+                    num_heads,
+                    head_dim,
+                    num_key_value_heads,
+                    hidden_states,
+                    &self.rope_cache,
+                    start_pos,
+                    pos_ids,
+                )
+                .unwrap(),
         };
         debug_assert_none_nan(&query_states);
         debug_assert_none_nan(&key_states);
@@ -450,12 +492,9 @@ fn repeat_kv(x: Tensor, num_key_value_groups: usize) -> candle_core::Result<Tens
         Ok(x)
     } else {
         let (b_sz, n_kv_head, seq_len, head_dim) = x.dims4().unwrap();
-        Tensor::cat(&vec![&x; num_key_value_groups], 2).unwrap().reshape((
-            b_sz,
-            n_kv_head * num_key_value_groups,
-            seq_len,
-            head_dim,
-        ))
+        Tensor::cat(&vec![&x; num_key_value_groups], 2)
+            .unwrap()
+            .reshape((b_sz, n_kv_head * num_key_value_groups, seq_len, head_dim))
     }
 }
 
@@ -474,7 +513,8 @@ pub(crate) fn forward_attention_qkv(
 ) -> candle_core::Result<Tensor> {
     let scale = 1. / (head_dim as f64).sqrt();
     let mut attn_output = {
-        let mut attn_weights = (query_states.matmul(&key_states.t().unwrap()).unwrap() * scale).unwrap();
+        let mut attn_weights =
+            (query_states.matmul(&key_states.t().unwrap()).unwrap() * scale).unwrap();
         debug_assert_none_nan(&attn_weights);
 
         if let Some(attention_mask) = attention_mask {
