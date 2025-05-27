@@ -646,12 +646,6 @@ async fn main() {
             SamplerSlot::new_static(move || Box::<SampleSeqRepetition>::default()),
         ),
         (
-            "temperature",
-            SamplerSlot::new_static(move || {
-                Box::new(SampleTemperature::default().temperature(0.0))
-            }),
-        ),
-        (
             "greedy",
             SamplerSlot::new_static(move || Box::new(SampleGreedy::default())),
         ),
@@ -728,6 +722,11 @@ async fn main() {
         }
 
         for generation in 0..iterations {
+            let shannon_entropy = trie.shannon_entropy();
+            let entropy_diff = last_entropy - shannon_entropy;
+            println!("entropy diff: {entropy_diff}");
+            println!("shannon entropy: {shannon_entropy}");
+            last_entropy = shannon_entropy;
             println!("Iteration {generation}");
             let generation_start_time = std::time::Instant::now();
             // If we aren't doing multipass generation, reset the trie
@@ -780,17 +779,12 @@ async fn main() {
                 break;
             }
 
-            let shannon_entropy = trie.shannon_entropy();
-            let entropy_diff = last_entropy - shannon_entropy;
-            println!("entropy diff: {entropy_diff}");
-            // if entropy_diff.abs() < 0.00001 {
-            //     println!("looks like entropy is converging, stopping generation");
-            //     break;
-            // }
-            println!("shannon entropy: {shannon_entropy}");
+            if entropy_diff.abs() < 0.0000001 {
+                println!("looks like entropy is converging, stopping generation");
+                break;
+            }
             let elapsed = generation_start_time.elapsed();
             println!("Generation took: {elapsed:?}");
-            last_entropy = shannon_entropy;
         }
         let total_duration = overall_start_time.elapsed();
         println!("Total generation took: {total_duration:?}");

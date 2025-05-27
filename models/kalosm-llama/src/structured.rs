@@ -274,7 +274,7 @@ pub(crate) fn generate_structured<P: Parser>(
                     .ok_or_else(|| {
                         LlamaModelError::SamplerError(Box::new(std::io::Error::new(
                             std::io::ErrorKind::Other,
-                            "Sampler returned None",
+                            format!("Sampler returned None. Failed to sample token from logits: {:?}", sampled_logits),
                         )))
                     })?;
                 // If we are not checking for the fast case, just use the token regardless of whether it has a valid next token within the tokenizer
@@ -652,6 +652,9 @@ impl EvaluationTrie {
 
     /// Calculate the Shannon entropy of the tree
     pub fn shannon_entropy(&self) -> f64 {
+        if self.nodes.is_empty() {
+            return 0.0;
+        }
         let mut current_nodes = self
             .roots
             .values()
