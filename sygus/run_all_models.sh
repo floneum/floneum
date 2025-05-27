@@ -4,7 +4,7 @@ set -euo pipefail
 # Make sure output directory exists
 mkdir -p results
 
-# Maximum number of attempts per model
+# Maximum number of attempts per run
 max_retries=5
 
 # List of model names to run
@@ -21,40 +21,51 @@ models=(
   qwen7b-think
 )
 
+# Flag combinations
+fast_cases=(true false)
+multipasses=(true false)
+
 # Common args
 FEATURES="metal"
 GRAMMAR="./src/firstname.sl"
 TASK="./src/prompt"
+ITERATIONS=200
 
 for model in "${models[@]}"; do
-  echo "=== Running model: $model ==="
-  attempt=1
+  for fast in "${fast_cases[@]}"; do
+    for mp in "${multipasses[@]}"; do
+      combo_tag="fast-${fast}_multipass-${mp}"
+      echo "=== Running model: ${model} (${combo_tag}) ==="
+      attempt=1
 
-  while [ $attempt -le $max_retries ]; do
-    if cargo run --features "${FEATURES}" --release -- \
-         --model "${model}" \
-         --grammar "${GRAMMAR}" \
-         --task "${TASK}" \
-         --iterations 200 \
-         > "results/${model}.txt" 2>&1
-    then
-      echo "[$model] succeeded on attempt #${attempt}"
-      break
-    else
-      echo "[$model] attempt #${attempt} failed"
-      attempt=$((attempt + 1))
-      if [ $attempt -le $max_retries ]; then
-        echo "Retrying (attempt $attempt of $max_retries)…"
-        # sleep 1  # uncomment if you want a pause between retries
+      while [ $attempt -le $max_retries ]; do
+        if cargo run --features "${FEATURES}" --release -- \
+             --model "${model}" \
+             --grammar "${GRAMMAR}" \
+             --task "${TASK}" \
+             --iterations "${ITERATIONS}" \
+             --fast-case "${fast}" \
+             --multipass "${mp}" \
+             > "results/${model}_${combo_tag}.txt" 2>&1
+        then
+          echo "[${model} | ${combo_tag}] succeeded on attempt #${attempt}"
+          break
+        else
+          echo "[${model} | ${combo_tag}] attempt #${attempt} failed"
+          attempt=$((attempt + 1))
+          if [ $attempt -le $max_retries ]; then
+            echo "Retrying (attempt $attempt of $max_retries)…"
+            # sleep 1  # uncomment to pause between retries
+          fi
+        fi
+      done
+
+      if [ $attempt -gt $max_retries ]; then
+        echo "[${model} | ${combo_tag}] failed after ${max_retries} attempts, moving on."
       fi
-    fi
+      echo
+    done
   done
-
-  if [ $attempt -gt $max_retries ]; then
-    echo "[$model] failed after $max_retries attempts, moving on."
-  fi
-
-  echo
 done
 
-echo "All models complete."
+echo "All model runs complete."

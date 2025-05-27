@@ -28,6 +28,7 @@ pub(crate) fn generate_structured<P: Parser>(
     top_k: Option<usize>,
     seed: Option<u64>,
     trie: &mut EvaluationTrie,
+    fast_case: bool,
 ) -> Result<P::Output, LlamaModelError> {
     let eos_token = llm.model.config.stop_token_string.clone();
     let mut on_token = move |tok: String| {
@@ -276,6 +277,10 @@ pub(crate) fn generate_structured<P: Parser>(
                             "Sampler returned None",
                         )))
                     })?;
+                // If we are not checking for the fast case, just use the token regardless of whether it has a valid next token within the tokenizer
+                if !fast_case {
+                    break;
+                }
                 let (result, _) = state_map
                     .get(token_id as usize)
                     .unwrap()
@@ -456,6 +461,11 @@ impl EvaluationTrie {
             roots: Default::default(),
             nodes: Vec::new(),
         }
+    }
+
+    pub fn clear(&mut self) {
+        self.roots.clear();
+        self.nodes.clear();
     }
 
     fn push(

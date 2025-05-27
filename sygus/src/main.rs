@@ -1,13 +1,20 @@
 use std::{
     collections::HashMap,
     fmt::{Debug, Display},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use kalosm::language::*;
 use kalosm_llama::{EvaluationTrie, LlamaModel};
 use kalosm_sample::{
     ArcParser, LazyParser, LiteralParser, Parser, ParserExt, SendCreateParserState,
+};
+use llm_samplers::{
+    configure::{SamplerChainBuilder, SamplerSlot},
+    prelude::{
+        SampleFreqPresence, SampleRepetition, SampleSeqRepetition, SampleTemperature, SampleTopK,
+    },
+    types::Sampler,
 };
 use std::io::Write;
 
@@ -479,6 +486,12 @@ struct Args {
 
     #[arg(long, default_value_t = 25)]
     iterations: usize,
+
+    #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+    multipass: bool,
+
+    #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+    fast_case: bool,
 }
 
 /// Doc comment
@@ -553,6 +566,8 @@ async fn main() {
     let model = args.model;
     let recursion_depth = args.recursion_depth;
     let iterations = args.iterations;
+    let multipass = args.multipass;
+    let fast_case = args.fast_case;
 
     let grammar_text = std::fs::read_to_string(args.grammar).unwrap();
     let prompt = std::fs::read_to_string(args.task).unwrap();
@@ -616,9 +631,32 @@ async fn main() {
         .map_output(|(a, _)| a)
         .boxed();
 
-    let sampler = GenerationParameters::new()
-        .with_repetition_penalty_range(256)
-        .with_top_k(1);
+    let sampler = SamplerChainBuilder::from([
+        (
+            "repetition",
+            SamplerSlot::new_static(move || Box::new(SampleRepetition::default())),
+        ),
+        (
+            "freqpresence",
+            SamplerSlot::new_static(move || Box::new(SampleFreqPresence::default().last_n(64))),
+        ),
+        (
+            "seqrepetition",
+            SamplerSlot::new_static(move || Box::<SampleSeqRepetition>::default()),
+        ),
+        (
+            "temperature",
+            SamplerSlot::new_static(move || {
+                Box::new(SampleTemperature::default().temperature(0.0))
+            }),
+        ),
+        (
+            "top_k",
+            SamplerSlot::new_static(move || Box::new(SampleTopK::default().k(1))),
+        ),
+    ])
+    .into_chain();
+    let sampler = Arc::new(Mutex::new(sampler)) as Arc<Mutex<dyn Sampler>>;
 
     let source = match model {
         Model::SmolLM => LlamaSource::new(
@@ -652,6 +690,7 @@ async fn main() {
     .unwrap();
 
     tokio::task::spawn_blocking(move || {
+        let overall_start_time = std::time::Instant::now();
         let mut trie = EvaluationTrie::new();
         let mut last_entropy = 0.0;
         let task = grammar_text;
@@ -665,6 +704,7 @@ async fn main() {
         };
 
         if model.qwen_think() {
+            let think_start_time = std::time::Instant::now();
             while llm.generate_structured_with_trie(
                 &mut session,
                 &prompt,
@@ -676,15 +716,23 @@ async fn main() {
                     Ok(())
                 }),
                 &mut EvaluationTrie::new(),
+                fast_case
             )
             .is_err() {
                 println!("Initial prompt too long, retrying");
                 session = llm.new_session();
             }
+            let think_duration = think_start_time.elapsed();
+            println!("\nThinking took: {think_duration:?}");
         }
 
         for generation in 0..iterations {
             println!("Iteration {generation}");
+            let generation_start_time = std::time::Instant::now();
+            // If we aren't doing multipass generation, reset the trie
+            if !multipass {
+                trie.clear();
+            }
             if args.vis {
                 println!("{}", trie.graphvis(&llm.tokenizer));
             }
@@ -704,6 +752,7 @@ async fn main() {
                     Ok(())
                 },
                 &mut trie,
+                fast_case
             ) {
                 Ok(output) => output,
                 Err(e) => {
@@ -725,7 +774,7 @@ async fn main() {
             }
             if valid {
                 println!("Valid solution found!");
-                return;
+                break;
             }
 
             let shannon_entropy = trie.shannon_entropy();
@@ -736,8 +785,12 @@ async fn main() {
             //     break;
             // }
             println!("shannon entropy: {shannon_entropy}");
+            let elapsed = generation_start_time.elapsed();
+            println!("Generation took: {elapsed:?}");
             last_entropy = shannon_entropy;
         }
+        let total_duration = overall_start_time.elapsed();
+        println!("Total generation took: {total_duration:?}");
     })
     .await
     .unwrap();

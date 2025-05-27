@@ -7771,6 +7771,7 @@ dependencies = [
  "kalosm",
  "kalosm-llama",
  "kalosm-sample",
+ "llm-samplers",
  "nom 8.0.0",
  "tokio",
  "tracing-subscriber 0.3.19",
