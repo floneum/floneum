@@ -12,7 +12,7 @@ use kalosm_sample::{
 use llm_samplers::{
     configure::{SamplerChainBuilder, SamplerSlot},
     prelude::{
-        SampleFreqPresence, SampleRepetition, SampleSeqRepetition, SampleTemperature, SampleTopK,
+        SampleFreqPresence, SampleGreedy, SampleRepetition, SampleSeqRepetition, SampleTemperature, SampleTopK
     },
     types::Sampler,
 };
@@ -563,6 +563,7 @@ async fn main() {
     tracing_subscriber::fmt().init();
 
     let args = Args::parse();
+    println!("args: {:#?}", args);
     let model = args.model;
     let recursion_depth = args.recursion_depth;
     let iterations = args.iterations;
@@ -651,8 +652,8 @@ async fn main() {
             }),
         ),
         (
-            "top_k",
-            SamplerSlot::new_static(move || Box::new(SampleTopK::default().k(1))),
+            "greedy",
+            SamplerSlot::new_static(move || Box::new(SampleGreedy::default())),
         ),
     ])
     .into_chain();
@@ -757,6 +758,8 @@ async fn main() {
                 Ok(output) => output,
                 Err(e) => {
                     println!("Error: {e}");
+                    let elapsed = generation_start_time.elapsed();
+                    println!("Generation took: {elapsed:?}");
                     continue;
                 }
             };
