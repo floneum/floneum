@@ -67,13 +67,7 @@ fn test_sliding_window() {
     let mask = mask_cache.get_mask(2, 0, Some(2), &device).unwrap().mask;
     let mask = mask.squeeze(0).unwrap().squeeze(0).unwrap();
     assert_eq!(mask.shape().dims(), &[2, 2]);
-    assert_eq!(
-        mask.to_vec2::<u8>().unwrap(),
-        vec![
-            vec![0, 1],
-            vec![0, 0],
-        ]
-    );
+    assert_eq!(mask.to_vec2::<u8>().unwrap(), vec![vec![0, 1], vec![0, 0],]);
 
     let mask = mask_cache.get_mask(4, 0, None, &device).unwrap().mask;
     let mask = mask.squeeze(0).unwrap().squeeze(0).unwrap();
