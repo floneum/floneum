@@ -131,7 +131,8 @@ impl TensorCache {
             tensors.push(v.clone());
             let all_data = Tensor::cat(&tensors, self.concat_dim)?;
             let all_data_len = all_data.dim(self.concat_dim)?;
-            self.all_data = Some(all_data.narrow(self.concat_dim, all_data_len - max_seq_len, max_seq_len)?);
+            self.all_data =
+                Some(all_data.narrow(self.concat_dim, all_data_len - max_seq_len, max_seq_len)?);
             self.current_seq_len = max_seq_len;
             self.allocated_seq_len = self.max_seq_len;
             all_data
