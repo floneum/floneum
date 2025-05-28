@@ -54,12 +54,7 @@ impl KvCache {
 
     /// Append a new key/value pair to the cache.
     pub fn append(&mut self, k: &Tensor, v: &Tensor) -> candle_core::Result<(Tensor, Tensor)> {
-        self.key.append(k)?;
-        self.value.append(v)?;
-        Ok((
-            self.key.current_data()?.unwrap(),
-            self.value.current_data()?.unwrap(),
-        ))
+        Ok((self.key.append(k)?, self.value.append(v)?))
     }
 }
 
@@ -113,7 +108,7 @@ impl TensorCache {
     }
 
     /// Append a new value to the cache.
-    pub fn append(&mut self, v: &Tensor) -> candle_core::Result<()> {
+    pub fn append(&mut self, v: &Tensor) -> candle_core::Result<Tensor> {
         let v = v.contiguous()?;
         let seq_len = v.dim(self.concat_dim)?;
 
@@ -121,27 +116,25 @@ impl TensorCache {
         let size_required_for_append = self.current_seq_len + seq_len;
 
         // If the required size is larger than the max sequence length, cut the start of the cache.
-        if size_required_for_append > self.max_seq_len {
-            const EXTRA: usize = 0;
-            let max_seq_len_without_extra = self.max_seq_len - EXTRA;
-            let new_start = size_required_for_append - max_seq_len_without_extra;
+        let data = if size_required_for_append > self.max_seq_len {
+            let max_seq_len = self.max_seq_len;
+            let new_start = size_required_for_append - max_seq_len;
+            let mut tensors = Vec::new();
             // Cut the start of the cache.
-            let all_data = self.all_data.as_ref().unwrap().narrow(
-                self.concat_dim,
-                new_start,
-                current_allocated_size - new_start,
-            )?;
-            let mut shape = v.shape().dims().to_vec();
-            shape[self.concat_dim] = EXTRA;
-            let empty = Tensor::zeros(shape.as_slice(), v.dtype(), v.device())?;
-            let all_data = Tensor::cat(&[all_data, v.clone(), empty], self.concat_dim)?;
-            assert_eq!(
-                all_data.dim(self.concat_dim)?,
-                max_seq_len_without_extra + EXTRA
-            );
-            self.all_data = Some(all_data);
-            self.current_seq_len = max_seq_len_without_extra;
+            if let Some(all_data) = self.all_data.as_ref() {
+                tensors.push(all_data.narrow(
+                    self.concat_dim,
+                    new_start,
+                    current_allocated_size - new_start,
+                )?);
+            }
+            tensors.push(v.clone());
+            let all_data = Tensor::cat(&tensors, self.concat_dim)?;
+            let all_data_len = all_data.dim(self.concat_dim)?;
+            self.all_data = Some(all_data.narrow(self.concat_dim, all_data_len - max_seq_len, max_seq_len)?);
+            self.current_seq_len = max_seq_len;
             self.allocated_seq_len = self.max_seq_len;
+            all_data
         } else {
             // If adding the new key/value pair would exceed the max sequence length, we need to allocate a new tensor with double the size or the max sequence length whichever is smaller.
             if size_required_for_append > current_allocated_size {
@@ -173,8 +166,8 @@ impl TensorCache {
                 .unwrap()
                 .slice_set(&v, self.concat_dim, self.current_seq_len)?;
             self.current_seq_len += seq_len;
-        }
-
-        Ok(())
+            self.current_data()?.unwrap()
+        };
+        data.contiguous()
     }
 }
