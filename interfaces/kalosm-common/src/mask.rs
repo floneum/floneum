@@ -15,6 +15,13 @@ impl MaskCache {
         sliding_window_size: Option<usize>,
         device: &Device,
     ) -> Result<AttentionMask> {
+        let (seq_len, seqlen_offset) = if let Some(sliding_window_size) = sliding_window_size {
+            // offset + seqlen_offset should not exceed sliding_window_size
+            let offset = seqlen_offset.min(sliding_window_size.saturating_sub(seq_len));
+            (seq_len, offset)
+        } else {
+            (seq_len, seqlen_offset)
+        };
         let mask = if let Some(mask) = {
             let masks = self.masks.read().unwrap();
             masks.get(&(seq_len, sliding_window_size)).cloned()
@@ -98,6 +105,7 @@ pub struct AttentionMask {
 
 impl AttentionMask {
     pub fn new(mask: Tensor) -> Self {
+        println!("Creating AttentionMask with shape: {:?}", mask.shape());
         Self {
             mask,
             on_true: OnceLock::new(),

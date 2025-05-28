@@ -1,6 +1,5 @@
 use candle_core::{Device, Tensor};
-use candle_nn::kv_cache::Cache;
-use kalosm_common::KvCache;
+use kalosm_common::{KvCache, TensorCache};
 use std::collections::HashMap;
 
 use super::LlamaConfig;
@@ -22,7 +21,19 @@ impl LlamaCache {
     pub fn new(config: &LlamaConfig) -> Self {
         let max_seq_len = config.context_length;
         let mut blocks = Vec::with_capacity(config.n_layer);
-        for _ in 0..config.n_layer {
+        for layer_idx in 0..config.n_layer {
+            let max_seq_len = if let (Some(sliding_window_type), Some(sliding_window_size)) =
+                (config.sliding_window_type, config.sliding_window_size)
+            {
+                let is_sliding = (layer_idx + 1) % sliding_window_type != 0;
+                if is_sliding {
+                    sliding_window_size
+                } else {
+                    max_seq_len
+                }
+            } else {
+                max_seq_len
+            };
             blocks.push(KvCache::new(CONCAT_DIMENSION, max_seq_len))
         }
         Self {
@@ -44,7 +55,7 @@ impl LlamaCache {
     pub fn get_tensor_map(&self, device: &Device) -> HashMap<String, Tensor> {
         let mut map = HashMap::with_capacity(self.blocks.len());
         for (i, kv_cache) in self.blocks.iter().enumerate() {
-            if let (Ok(Some(k)), Ok(Some(v))) = (kv_cache.cache().k(), kv_cache.cache().v()) {
+            if let (Ok(Some(k)), Ok(Some(v))) = (kv_cache.k(), kv_cache.v()) {
                 map.insert(
                     format!("llama.cache.blocks.{i}.key"),
                     k.to_device(device).unwrap(),
@@ -100,16 +111,16 @@ impl LlamaCache {
                 if k.ends_with(".key") {
                     match blocks.get_mut(i) {
                         Some(cache) => {
-                            let key_cache = cache.cache_mut().k_cache_mut();
+                            let key_cache = cache.k_cache_mut();
                             let len = v.dim(CONCAT_DIMENSION)?;
-                            *key_cache = Cache::new(CONCAT_DIMENSION, len);
+                            *key_cache = TensorCache::new(CONCAT_DIMENSION, len);
                             key_cache.append(&v)?;
                         }
                         _ => {
                             let mut cache = KvCache::new(CONCAT_DIMENSION, max_seq_len);
-                            let key_cache = cache.cache_mut().k_cache_mut();
+                            let key_cache = cache.k_cache_mut();
                             let len = v.dim(CONCAT_DIMENSION)?;
-                            *key_cache = Cache::new(CONCAT_DIMENSION, len);
+                            *key_cache = TensorCache::new(CONCAT_DIMENSION, len);
                             key_cache.append(&v)?;
                             blocks[i] = cache;
                         }
@@ -117,16 +128,16 @@ impl LlamaCache {
                 } else if k.ends_with(".value") {
                     match blocks.get_mut(i) {
                         Some(cache) => {
-                            let value_cache = cache.cache_mut().v_cache_mut();
+                            let value_cache = cache.v_cache_mut();
                             let len = v.dim(CONCAT_DIMENSION)?;
-                            *value_cache = Cache::new(CONCAT_DIMENSION, len);
+                            *value_cache = TensorCache::new(CONCAT_DIMENSION, len);
                             value_cache.append(&v)?;
                         }
                         _ => {
                             let mut cache = KvCache::new(CONCAT_DIMENSION, max_seq_len);
-                            let value_cache = cache.cache_mut().v_cache_mut();
+                            let value_cache = cache.v_cache_mut();
                             let len = v.dim(CONCAT_DIMENSION)?;
-                            *value_cache = Cache::new(CONCAT_DIMENSION, len);
+                            *value_cache = TensorCache::new(CONCAT_DIMENSION, len);
                             value_cache.append(&v)?;
                             blocks[i] = cache;
                         }

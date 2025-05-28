@@ -53,6 +53,8 @@ pub struct LlamaConfig {
     pub(crate) stop_token_string: String,
     pub(crate) chat_template: Option<HuggingFaceChatTemplate>,
     pub(crate) rope_scaling: Option<RopeScalingConfig>,
+    pub(crate) sliding_window_type: Option<usize>,
+    pub(crate) sliding_window_size: Option<usize>,
     pub(crate) vision_start_token: Option<u32>,
     pub(crate) _vision_end_token: Option<u32>,
     pub(crate) image_pad_token: Option<u32>,
@@ -77,6 +79,8 @@ impl LlamaConfig {
             start_token_string: "<|startoftext|>".to_string(),
             stop_token: 0,
             stop_token_string: "<|endoftext|>".to_string(),
+            sliding_window_type: None,
+            sliding_window_size: None,
             chat_template: None,
             rope_scaling: None,
             vision_start_token: None,
@@ -130,6 +134,8 @@ impl Model {
             stop_token_string,
             chat_template: None,
             rope_scaling,
+            sliding_window_type: None,
+            sliding_window_size: None,
             vision_start_token: None,
             _vision_end_token: None,
             image_pad_token: None,
@@ -304,6 +310,8 @@ impl Model {
             stop_token_string,
             chat_template,
             rope_scaling,
+            sliding_window_type,
+            sliding_window_size,
             vision_start_token: tokens
                 .iter()
                 .position(|v| *v == "<|vision_start|>")
