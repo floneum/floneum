@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     fmt::{Debug, Display},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLock},
 };
 
 use kalosm::language::*;
@@ -12,7 +12,8 @@ use kalosm_sample::{
 use llm_samplers::{
     configure::{SamplerChainBuilder, SamplerSlot},
     prelude::{
-        SampleFreqPresence, SampleGreedy, SampleRepetition, SampleSeqRepetition, SampleTemperature, SampleTopK
+        SampleFreqPresence, SampleGreedy, SampleRepetition, SampleSeqRepetition, SampleTemperature,
+        SampleTopK,
     },
     types::Sampler,
 };
@@ -569,6 +570,7 @@ async fn main() {
     let iterations = args.iterations;
     let multipass = args.multipass;
     let fast_case = args.fast_case;
+    let lazy = false;
 
     let grammar_text = std::fs::read_to_string(args.grammar).unwrap();
     let prompt = std::fs::read_to_string(args.task).unwrap();
@@ -632,25 +634,29 @@ async fn main() {
         .map_output(|(a, _)| a)
         .boxed();
 
-    let sampler = SamplerChainBuilder::from([
-        (
-            "repetition",
-            SamplerSlot::new_static(move || Box::new(SampleRepetition::default())),
-        ),
-        (
-            "freqpresence",
-            SamplerSlot::new_static(move || Box::new(SampleFreqPresence::default().last_n(64))),
-        ),
-        (
-            "seqrepetition",
-            SamplerSlot::new_static(move || Box::<SampleSeqRepetition>::default()),
-        ),
-        (
-            "greedy",
-            SamplerSlot::new_static(move || Box::new(SampleGreedy::default())),
-        ),
-    ])
-    .into_chain();
+    let sampler = if multipass {
+        SamplerChainBuilder::from([
+            (
+                "repetition",
+                SamplerSlot::new_static(move || Box::new(SampleRepetition::default())),
+            ),
+            (
+                "freqpresence",
+                SamplerSlot::new_static(move || Box::new(SampleFreqPresence::default().last_n(64))),
+            ),
+            (
+                "seqrepetition",
+                SamplerSlot::new_static(move || Box::<SampleSeqRepetition>::default()),
+            ),
+            (
+                "greedy",
+                SamplerSlot::new_static(move || Box::new(SampleGreedy::default())),
+            ),
+        ])
+        .into_chain()
+    } else {
+        GenerationParameters::new().sampler()
+    };
     let sampler = Arc::new(Mutex::new(sampler)) as Arc<Mutex<dyn Sampler>>;
 
     let source = match model {
@@ -687,7 +693,7 @@ async fn main() {
     tokio::task::spawn_blocking(move || {
         let overall_start_time = std::time::Instant::now();
         let mut trie = EvaluationTrie::new();
-        let mut last_entropy = 0.0;
+        let mut last_entropy = 1000.0;
         let task = grammar_text;
         let mut session = llm.new_session();
         let prompt = if model.qwen_normal() || model.smol_lm() {
@@ -711,7 +717,8 @@ async fn main() {
                     Ok(())
                 }),
                 &mut EvaluationTrie::new(),
-                fast_case
+                fast_case,
+                lazy
             )
             .is_err() {
                 println!("Initial prompt too long, retrying");
@@ -727,6 +734,10 @@ async fn main() {
             println!("entropy diff: {entropy_diff}");
             println!("shannon entropy: {shannon_entropy}");
             last_entropy = shannon_entropy;
+            if entropy_diff.abs() < 0.0000001 {
+                println!("looks like entropy is converging?");
+                // break;
+            }
             println!("Iteration {generation}");
             let generation_start_time = std::time::Instant::now();
             // If we aren't doing multipass generation, reset the trie
@@ -737,6 +748,7 @@ async fn main() {
                 println!("{}", trie.graphvis(&llm.tokenizer));
             }
             let mut session = session.deep_clone();
+            let all_tokens = Arc::new(RwLock::new(String::new()));
             let output = match llm.generate_structured_with_trie(
                 &mut session,
                 if model.qwen_think() {
@@ -746,16 +758,23 @@ async fn main() {
                 },
                 sampler.clone(),
                 parser.clone(),
-                |token| {
-                    print!("{}", token);
-                    std::io::stdout().flush().unwrap();
-                    Ok(())
+                {
+                    let all_tokens = all_tokens.clone();
+                    move |token| {
+                        print!("{}", token);
+                        all_tokens.write().unwrap().push_str(&token.to_string());
+                        std::io::stdout().flush().unwrap();
+                        Ok(())
+                    }
                 },
                 &mut trie,
-                fast_case
+                fast_case,
+                lazy,
             ) {
                 Ok(output) => output,
                 Err(e) => {
+                    println!("\n\n");
+                    println!("Failed generation {generation}:\n{}", all_tokens.read().unwrap());
                     println!("Error: {e}");
                     let elapsed = generation_start_time.elapsed();
                     println!("Generation took: {elapsed:?}");
@@ -779,10 +798,6 @@ async fn main() {
                 break;
             }
 
-            if entropy_diff.abs() < 0.0000001 {
-                println!("looks like entropy is converging, stopping generation");
-                break;
-            }
             let elapsed = generation_start_time.elapsed();
             println!("Generation took: {elapsed:?}");
         }

@@ -125,7 +125,8 @@ impl LlamaModel {
         parser: Constraints,
         on_token: impl FnMut(String) -> Result<(), LlamaModelError> + Send + Sync + 'static,
         trie: &mut EvaluationTrie,
-        fast_case: bool
+        fast_case: bool,
+        lazy: bool,
     ) -> Result<Constraints::Output, LlamaModelError>
     where
         <Constraints as Parser>::Output: Send,
@@ -151,10 +152,11 @@ impl LlamaModel {
             parser_state,
             sampler,
             on_token,
-            Some(512),
+            None,
             seed,
             trie,
-            fast_case
+            fast_case,
+            lazy
         )
     }
 }
@@ -189,6 +191,7 @@ where
                             parser,
                             on_token,
                             &mut trie,
+                            true,
                             true
                         ));
                     }),

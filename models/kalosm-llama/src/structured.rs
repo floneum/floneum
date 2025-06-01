@@ -29,6 +29,7 @@ pub(crate) fn generate_structured<P: Parser>(
     seed: Option<u64>,
     trie: &mut EvaluationTrie,
     fast_case: bool,
+    lazy: bool,
 ) -> Result<P::Output, LlamaModelError> {
     let eos_token = llm.model.config.stop_token_string.clone();
     let mut on_token = move |tok: String| {
@@ -214,6 +215,20 @@ pub(crate) fn generate_structured<P: Parser>(
             let result = parser.parse(&parser_state, text.as_bytes());
             trie.push(token_id, prob as f64, current_token, result.is_ok(), false);
             if let Ok(result) = result {
+                if fast_case && !lazy {
+                    let valid = check_for_valid_next_token(
+                        &result,
+                        &logits_indexed,
+                        llm,
+                        &token_stream,
+                        &parser,
+                        &parser_state,
+                        token_id,
+                    );
+                    if !valid {
+                        trie.push(token_id, prob as f64, current_token, false, true);
+                    }
+                }
                 let parsed_bytes = match &result {
                     ParseStatus::Finished { remaining, .. } => text.len() - remaining.len(),
                     ParseStatus::Incomplete { .. } => text.len(),
@@ -250,7 +265,9 @@ pub(crate) fn generate_structured<P: Parser>(
                     Some(current) => trie.nodes[current]
                         .evaluated_children
                         .get(&logit.token_id)
-                        .map(|i| trie.estimated_probability(*i)),
+                        .map(|i| {
+                            trie.estimated_probability(*i)
+                        }),
                     None => trie
                         .roots
                         .get(&logit.token_id)
@@ -263,6 +280,15 @@ pub(crate) fn generate_structured<P: Parser>(
                     logit.logit = logit.prob.exp();
                 }
             }
+            println!(
+                "Sum of logits: {}",
+                logits.iter().map(|logit| logit.logit).sum::<f32>()
+            );
+            println!(
+                "Sum of probabilities: {}",
+                logits.iter().map(|logit| logit.prob).sum::<f32>()
+            );
+            logits.retain(|logit| logit.prob > 0.0);
             logits.set_softmax(false);
             logits.ensure_softmax().unwrap();
 
@@ -274,7 +300,10 @@ pub(crate) fn generate_structured<P: Parser>(
                     .ok_or_else(|| {
                         LlamaModelError::SamplerError(Box::new(std::io::Error::new(
                             std::io::ErrorKind::Other,
-                            format!("Sampler returned None. Failed to sample token from logits: {:?}", sampled_logits),
+                            format!(
+                                "Sampler returned None. Failed to sample token from logits: {:?}",
+                                sampled_logits
+                            ),
                         )))
                     })?;
                 // If we are not checking for the fast case, just use the token regardless of whether it has a valid next token within the tokenizer
@@ -286,66 +315,15 @@ pub(crate) fn generate_structured<P: Parser>(
                     .unwrap()
                     .as_ref()
                     .unwrap_or_else(|| panic!("Token {} not found in state map", token_id));
-                let has_valid_next = if let ParseStatus::Incomplete { .. } = result {
-                    #[inline(never)]
-                    fn loop_inner<P: Parser>(
-                        llm: &LlamaModel,
-                        token_stream: &TokenOutputStream,
-                        parser: &P,
-                        parser_state: &P::PartialState,
-                        token_id: u32,
-                        logit: usize,
-                        start_text: &str,
-                    ) -> bool {
-                        let logit = logit as u32;
-                        let pair = [token_id, logit];
-                        let Some(decoded) = token_stream.peek_next_tokens(pair).unwrap() else {
-                            return false;
-                        };
-
-                        // If there isn't any new text, reject the token
-                        if decoded == start_text {
-                            return false;
-                        }
-
-                        // If this would create an invalid merge, reject the token
-                        if llm.merges.contains(&pair) {
-                            // println!(
-                            //     "lookahead skipping tokens {:?} and {:?} should have already merged into {:?}",
-                            //     llm.tokenizer.id_to_token(token_id),
-                            //     llm.tokenizer.id_to_token(logit),
-                            //     llm.tokenizer.decode(&pair, false)
-                            // );
-                            return false;
-                        }
-
-                        // If the token is not in the grammar, reject the token
-                        if parser.parse(parser_state, decoded.as_bytes()).is_err() {
-                            return false;
-                        }
-
-                        // println!(
-                        //     "lookahead token {:?} is valid",
-                        //     decoded
-                        // );
-                        true
-                    }
-                    // If this is incomplete, make sure there is a token that can follow this one that will be valid.
-                    (0..logits_indexed.len()).any(|logit| {
-                        let start_text = token_stream.peek_token(token_id).unwrap().unwrap();
-                        loop_inner(
-                            llm,
-                            &token_stream,
-                            &parser,
-                            &parser_state,
-                            token_id,
-                            logit,
-                            &start_text,
-                        )
-                    })
-                } else {
-                    true
-                };
+                let has_valid_next = check_for_valid_next_token(
+                    result,
+                    &logits_indexed,
+                    llm,
+                    &token_stream,
+                    &parser,
+                    &parser_state,
+                    token_id,
+                );
                 if has_valid_next {
                     break;
                 } else {
@@ -361,16 +339,7 @@ pub(crate) fn generate_structured<P: Parser>(
                             .unwrap()
                             .prob
                     );
-                    let parent_id = match current_token {
-                        Some(current) => *trie.nodes[current]
-                            .evaluated_children
-                            .get(&token_id)
-                            .unwrap(),
-                        None => *trie.roots.get(&token_id).unwrap(),
-                    };
-                    for logit in logits_indexed.as_slice() {
-                        trie.push(logit.token_id, 0., Some(parent_id), false, true);
-                    }
+                    trie.push(token_id, 0., current_token, false, true);
                     logits.retain(|logit| logit.token_id != token_id);
                 }
             }
@@ -394,6 +363,19 @@ pub(crate) fn generate_structured<P: Parser>(
                 .unwrap(),
             None => *trie.roots.get(&token_id).unwrap(),
         });
+        println!(
+            "\nsampled current_token raw: {:?} with prob {}",
+            current_token,
+            logits
+                .iter()
+                .find(|logit| logit.token_id == token_id)
+                .unwrap()
+                .prob
+        );
+        println!(
+            "current_token: {:?}\n",
+            current_token.map(|id| tokenizer.decode(&[trie.nodes[id].token], false))
+        );
 
         // If this and the last token would result in a valid merge, then the probability in the training data should be close
         // to zero
@@ -443,6 +425,77 @@ pub(crate) fn generate_structured<P: Parser>(
     }
 }
 
+fn check_for_valid_next_token<P: Parser>(
+    result: &ParseStatus<P::PartialState, P::Output>,
+    logits_indexed: &[Logit],
+    llm: &LlamaModel,
+    token_stream: &TokenOutputStream,
+    parser: &P,
+    parser_state: &P::PartialState,
+    token_id: u32,
+) -> bool {
+    if let ParseStatus::Incomplete { .. } = result {
+        #[inline(never)]
+        fn loop_inner<P: Parser>(
+            llm: &LlamaModel,
+            token_stream: &TokenOutputStream,
+            parser: &P,
+            parser_state: &P::PartialState,
+            token_id: u32,
+            logit: usize,
+            start_text: &str,
+        ) -> bool {
+            let logit = logit as u32;
+            let pair = [token_id, logit];
+            let Some(decoded) = token_stream.peek_next_tokens(pair).unwrap() else {
+                return false;
+            };
+
+            // If there isn't any new text, reject the token
+            if decoded == start_text {
+                return false;
+            }
+
+            // If this would create an invalid merge, reject the token
+            if llm.merges.contains(&pair) {
+                // println!(
+                //     "lookahead skipping tokens {:?} and {:?} should have already merged into {:?}",
+                //     llm.tokenizer.id_to_token(token_id),
+                //     llm.tokenizer.id_to_token(logit),
+                //     llm.tokenizer.decode(&pair, false)
+                // );
+                return false;
+            }
+
+            // If the token is not in the grammar, reject the token
+            if parser.parse(parser_state, decoded.as_bytes()).is_err() {
+                return false;
+            }
+
+            // println!(
+            //     "lookahead token {:?} is valid",
+            //     decoded
+            // );
+            true
+        }
+        // If this is incomplete, make sure there is a token that can follow this one that will be valid.
+        (0..logits_indexed.len()).any(|logit| {
+            let start_text = token_stream.peek_token(token_id).unwrap().unwrap();
+            loop_inner(
+                llm,
+                &token_stream,
+                &parser,
+                &parser_state,
+                token_id,
+                logit,
+                &start_text,
+            )
+        })
+    } else {
+        true
+    }
+}
+
 #[derive(Debug)]
 pub struct EvaluationTrie {
     roots: FxHashMap<u32, usize>,
@@ -457,6 +510,7 @@ impl Default for EvaluationTrie {
 
 impl EvaluationTrie {
     pub fn new() -> Self {
+        println!("Creating new EvaluationTrie");
         Self {
             roots: Default::default(),
             nodes: Vec::new(),
@@ -464,6 +518,7 @@ impl EvaluationTrie {
     }
 
     pub fn clear(&mut self) {
+        println!("Clearing EvaluationTrie");
         self.roots.clear();
         self.nodes.clear();
     }
@@ -479,8 +534,13 @@ impl EvaluationTrie {
         let id = match parent {
             Some(parent_id) => {
                 let parent = &self.nodes[parent_id];
-                if let Some(id) = parent.evaluated_children.get(&token) {
-                    return *id;
+                if let Some(id) = parent.evaluated_children.get(&token).copied() {
+                    let node = &mut self.nodes[id];
+                    node.token = token;
+                    node.probability = node.probability.min(probability);
+                    node.in_grammar &= in_grammar;
+                    node.from_tokenization_constraint |= from_tokenization_constraint;
+                    return id;
                 }
                 let id =
                     self.create_node(token, probability, in_grammar, from_tokenization_constraint);
@@ -488,8 +548,13 @@ impl EvaluationTrie {
                 id
             }
             None => {
-                if let Some(id) = self.roots.get(&token) {
-                    return *id;
+                if let Some(id) = self.roots.get(&token).copied() {
+                    let node = &mut self.nodes[id];
+                    node.token = token;
+                    node.probability = node.probability.min(probability);
+                    node.in_grammar &= in_grammar;
+                    node.from_tokenization_constraint |= from_tokenization_constraint;
+                    return id;
                 }
                 let id =
                     self.create_node(token, probability, in_grammar, from_tokenization_constraint);
@@ -497,7 +562,7 @@ impl EvaluationTrie {
                 id
             }
         };
-        assert!(!self.check_for_cycle(id, &HashSet::new()));
+        debug_assert!(!self.check_for_cycle(id, &HashSet::new()));
         id
     }
 
@@ -707,6 +772,25 @@ impl EvaluationTrie {
             .sum();
         entropy
     }
+}
+
+#[test]
+fn test_evaluation_trie() {
+    let mut trie = EvaluationTrie::new();
+    let node_1 = trie.push(1, 1.0, None, true, false);
+    let node_2 = trie.push(2, 0.5, Some(node_1), true, false);
+    let node_3 = trie.push(3, 0.5, Some(node_1), true, false);
+    let node_4 = trie.push(4, 0.2, Some(node_2), false, false);
+    let node_5 = trie.push(5, 0.8, Some(node_2), true, false);
+    let node_6 = trie.push(6, 1.0, Some(node_3), false, false);
+
+    assert_eq!(trie.estimated_probability(node_1), 0.4);
+    assert_eq!(trie.estimated_probability(node_2), 0.4);
+    assert_eq!(trie.estimated_probability(node_3), 0.0);
+    assert_eq!(trie.estimated_probability(node_4), 0.0);
+    assert_eq!(trie.estimated_probability(node_5), 0.8);
+    assert_eq!(trie.estimated_probability(node_6), 0.0);
+
 }
 
 #[derive(Debug)]
