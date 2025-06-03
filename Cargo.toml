@@ -28,7 +28,9 @@ members = [
     "interfaces/kalosm-common",
     "interfaces/kalosm-model-types",
     "fusor-ml/core",
-    "fusor-ml/gguf", "sygus",
+    "fusor-ml/gguf",
+    "sygus",
+    "cfg",
 ]
 
 [workspace.dependencies]

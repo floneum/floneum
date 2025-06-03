@@ -1131,6 +1131,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cfg"
+version = "0.1.0"
+dependencies = [
+ "bit-set 0.8.0",
+ "bumpalo",
+ "nom 8.0.0",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
