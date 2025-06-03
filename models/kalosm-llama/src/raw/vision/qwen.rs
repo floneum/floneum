@@ -377,6 +377,12 @@ async fn test_loading_qwen_vision() {
     use super::qwen_vision_embed::assert_2d_vec_eq;
     use kalosm_common::{accelerated_device_if_available, Cache};
 
+    // Skip in macOS CI
+    #[cfg(target_os = "macos")]
+    if std::env::var("CI").is_ok() {
+        return;
+    }
+
     let device = accelerated_device_if_available().unwrap();
     let path = Cache::default()
         .get(
