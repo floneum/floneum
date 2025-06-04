@@ -5,8 +5,6 @@ use crate::parse::Grammar;
 mod cnf;
 mod parse;
 
-struct CykSolutionParser {}
-
 fn main() {
     let input = r#"Start -> ntString
 ntString -> name | '"' ' ' '"' | '(' 'str.++'      ntString ntString ')' | '(' 'str.replace' ntString ntString ntString ')' | '(' 'str.at'      ntString ntInt    ')' | '(' 'int.to.str'  ntInt             ')' | '(' 'str.substr'  ntString ntInt ntInt ')'
@@ -29,6 +27,82 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ntString ntString ')' | '(' 'str
 struct DenseGrammar<'bump> {
     rules: &'bump [DenseRule<'bump>],
     start: usize,
+}
+
+use std::collections::HashMap;
+use std::collections::HashSet;
+
+impl<'bump> DenseGrammar<'bump> {
+    pub fn recognizes(&self, input: &[u8]) -> bool {
+        let n = input.len();
+
+        let mut terminal_map: HashMap<u8, Vec<usize>> = HashMap::new();
+        let mut binary_map: HashMap<(usize, usize), Vec<usize>> = HashMap::new();
+
+        for (lhs, rule) in self.rules.iter().enumerate() {
+            for alt in rule.rhs.iter() {
+                match *alt {
+                    [DenseSymbol::Terminal(lit)] if lit.len() == 1 => {
+                        terminal_map.entry(lit.as_bytes()[0]).or_default().push(lhs);
+                    }
+                    [DenseSymbol::NonTerminal(b), DenseSymbol::NonTerminal(c)] => {
+                        binary_map.entry((*b, *c)).or_default().push(lhs);
+                    }
+                    [DenseSymbol::Epsilon] => {}
+                    _ => unreachable!("{:?}", alt),
+                }
+            }
+        }
+
+        let mut table: Vec<Vec<HashSet<usize>>> = vec![vec![HashSet::new(); n]; n];
+
+        for (idx, &byte) in input.iter().enumerate() {
+            if let Some(vars) = terminal_map.get(&byte) {
+                table[idx][idx].extend(vars);
+            }
+        }
+
+        for span in 2..=n {
+            for i in 0..=n - span {
+                let j = i + span - 1;
+                for k in i..j {
+                    for b in table[i][k].clone() {
+                        for c in table[k + 1][j].clone() {
+                            if let Some(vars) = binary_map.get(&(b, c)) {
+                                table[i][j].extend(vars);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        table[0][n - 1].contains(&self.start)
+    }
+}
+
+#[test]
+fn test_cyk_recognizes() {
+    let grammar = parse::Grammar::parse(
+        r#"Start -> ntString
+        ntString -> 'h' | '(' '+' ntString ntString ')'
+        ntInt -> '0' | '1' | '(' '+' ntInt ntInt ')'
+        ntBool -> 't' | 'f' | '(' 's' ntString ntString ')'
+        "#,
+    )
+    .unwrap();
+
+    let cnf_grammar = grammar.to_cnf().unwrap();
+    let bump = bumpalo::Bump::new();
+    let dense_grammar = cnf_grammar.reallocate(&bump);
+    println!("Dense grammar:\n{}", dense_grammar);
+
+    assert!(dense_grammar.recognizes(b"h"));
+    assert!(dense_grammar.recognizes(b"(+hh)"));
+    assert!(!dense_grammar.recognizes(b"()"));
+    assert!(dense_grammar.recognizes(b"(+hh)"));
+    assert!(dense_grammar.recognizes(b"(+h(+(+hh)(+hh)))"));
+    assert!(!dense_grammar.recognizes(b"(+h0)"));
 }
 
 impl<'bump> Display for DenseGrammar<'bump> {
@@ -63,6 +137,7 @@ impl<'bump> Display for DenseRule<'bump> {
     }
 }
 
+#[derive(Debug)]
 enum DenseSymbol<'bump> {
     NonTerminal(usize),
     Terminal(&'bump str),
@@ -98,15 +173,18 @@ impl Grammar {
                     .rhs
                     .iter()
                     .map(|seq| {
-                        let possibility = seq.iter().map(|symbol| match symbol {
-                            parse::Symbol::NonTerminal(nt) => {
-                                DenseSymbol::NonTerminal(non_terminal_indices[nt])
-                            }
-                            parse::Symbol::Terminal(lit) => {
-                                DenseSymbol::Terminal(bump.alloc_str(lit.as_str()))
-                            }
-                            parse::Symbol::Epsilon => DenseSymbol::Epsilon,
-                        }).collect::<Vec<_>>();
+                        let possibility = seq
+                            .iter()
+                            .map(|symbol| match symbol {
+                                parse::Symbol::NonTerminal(nt) => {
+                                    DenseSymbol::NonTerminal(non_terminal_indices[nt])
+                                }
+                                parse::Symbol::Terminal(lit) => {
+                                    DenseSymbol::Terminal(bump.alloc_str(lit.as_str()))
+                                }
+                                parse::Symbol::Epsilon => DenseSymbol::Epsilon,
+                            })
+                            .collect::<Vec<_>>();
 
                         bump.alloc(possibility).as_slice()
                     })
