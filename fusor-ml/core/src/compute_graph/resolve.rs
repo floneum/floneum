@@ -38,13 +38,14 @@ impl<'a> Resolver<'a> {
         target: AnyComputeKey,
         command_encoder: &'a mut CommandEncoder,
     ) -> Self {
+        let resolved_set = graph.cached_results.keys().cloned().collect();
         Self {
             graph,
             command_encoder,
             target,
             queued_operations: Vec::new(),
             queue: Default::default(),
-            resolved_set: Default::default(),
+            resolved_set,
         }
     }
 
@@ -140,13 +141,15 @@ impl<'a> Resolver<'a> {
         let mut ty = DataTypeEnum::F32;
         let mut shape = Box::new([]) as Box<[usize]>;
         while let AnyComputeKey::ElementWise(key) = current_key {
+            // If the result is already cached, stop collecting element wise ops
+            if let Some(cached) = self.graph.cached_results.get(&current_key) {
+                ty = cached.datatype();
+                shape = cached.layout().shape().into();
+                break;
+            }
             let operation = &self.graph.nodes.element_wise[&key];
             ty = operation.input_datatype();
             shape = operation.shape().into();
-            // If the result is already cached, stop collecting element wise ops
-            if self.resolved_set.contains(&current_key) {
-                break;
-            }
             functions.extend(operation.functions.iter().cloned());
             current_key = operation.value;
         }

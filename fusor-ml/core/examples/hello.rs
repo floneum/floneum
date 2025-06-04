@@ -9,5 +9,5 @@ async fn main() {
     let new = tensor.softmax_last_dim();
     println!("{}", new.graphvis());
     let slice = new.as_slice().await;
-    // println!("{:?}", slice);
+    println!("{:?}", slice);
 }
