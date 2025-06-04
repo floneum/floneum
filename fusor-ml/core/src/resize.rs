@@ -12,7 +12,7 @@ use crate::{
 
 const BLOCKSIZE: u32 = 256;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct ResizeOperation {
     pub(crate) input: AnyComputeKey,
     pub(crate) new_shape: Box<[usize]>,

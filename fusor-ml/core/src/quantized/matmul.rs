@@ -12,6 +12,7 @@ pub(crate) struct QMatMulOperation {
     pub(crate) input_datatype: DataTypeEnum,
     pub(crate) input: AnyComputeKey,
     pub(crate) matrix: QMatrix,
+    pub(crate) in_shape: Box<[usize]>,
     pub(crate) out_shape: Box<[usize]>,
 }
 
@@ -28,6 +29,7 @@ impl QMatMulOperation {
             input_datatype,
             input,
             matrix,
+            in_shape: input_shape.into(),
             out_shape,
         }
     }

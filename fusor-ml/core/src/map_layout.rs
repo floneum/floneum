@@ -1,13 +1,14 @@
-use std::{fmt::Debug, ops::Range};
+use std::{fmt::Debug, ops::Range, sync::Arc};
 
 use crate::{
     DataType, Layout, Tensor, TensorData, compute_graph::AnyComputeKey, mir::operation::Operation,
     slice_shape, slice_strides,
 };
 
-type MapSize = Box<dyn Fn(&[usize]) -> Box<[usize]> + Send + Sync>;
-type MapStride = Box<dyn Fn(usize, &[usize]) -> (usize, Box<[usize]>) + Send + Sync>;
+type MapSize = Arc<dyn Fn(&[usize]) -> Box<[usize]> + Send + Sync>;
+type MapStride = Arc<dyn Fn(usize, &[usize]) -> (usize, Box<[usize]>) + Send + Sync>;
 
+#[derive(Clone)]
 pub(crate) struct MapLayoutOperation {
     pub(crate) input: AnyComputeKey,
     pub(crate) map_size: MapSize,
@@ -30,8 +31,8 @@ impl MapLayoutOperation {
     ) -> Self {
         Self {
             input,
-            map_size: Box::new(map_size),
-            map_stride: Box::new(map_stride),
+            map_size: Arc::new(map_size),
+            map_stride: Arc::new(map_stride),
         }
     }
 

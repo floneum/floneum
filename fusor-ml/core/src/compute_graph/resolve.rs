@@ -1,7 +1,10 @@
+use std::collections::HashSet;
+
+use rustc_hash::FxHashSet;
 use wgpu::CommandEncoder;
 
 use crate::{
-    ElementWiseFunction, ElementWiseFunctions, ElementWiseOperation, MatMulOperation,
+    DataTypeEnum, ElementWiseFunction, ElementWiseFunctions, ElementWiseOperation, MatMulOperation,
     PairWiseOperation, ReduceOperation,
     dequantize::DequantizeOperation,
     element_wise,
@@ -23,8 +26,10 @@ use super::{
 pub(crate) struct Resolver<'a> {
     graph: &'a mut ComputeGraphInner,
     command_encoder: &'a mut CommandEncoder,
+    queued_operations: Vec<(AnyComputeKey, Box<dyn Operation>)>,
     target: AnyComputeKey,
     queue: ComputeQueue,
+    resolved_set: FxHashSet<AnyComputeKey>,
 }
 
 impl<'a> Resolver<'a> {
@@ -37,15 +42,47 @@ impl<'a> Resolver<'a> {
             graph,
             command_encoder,
             target,
+            queued_operations: Vec::new(),
             queue: Default::default(),
+            resolved_set: Default::default(),
         }
     }
 
+    fn is_resolved_or_qmatrix(&self, key: &AnyComputeKey) -> bool {
+        self.resolved_set.contains(key) || matches!(key, AnyComputeKey::Dequantize(_))
+    }
+
     pub(crate) fn run(&mut self) -> TensorData {
+        self.queue_operations();
+        let queued_operations = std::mem::take(&mut self.queued_operations);
+
+        for (node, operation) in queued_operations {
+            let result = operation.run(&self.graph, &mut *self.command_encoder);
+
+            let KernelInputValue::Tensor(resolved) = result else {
+                panic!("Kernel input value is not a tensor");
+            };
+
+            // Cache the result
+            self.graph.cached_results.insert(node, resolved.clone());
+            // Check if that makes any of this nodes dependents dead
+            let mut dependencies = Vec::new();
+            visit_dependencies(&self.graph.nodes, node, |dependent_key| {
+                dependencies.push(dependent_key);
+            });
+            for dependency in dependencies {
+                self.graph.check_life(dependency);
+            }
+        }
+
+        self.graph.cached_results[&self.target].clone()
+    }
+
+    pub(crate) fn queue_operations(&mut self) {
         self.queue.push_back(self.target);
 
         while let Some(node) = self.queue.pop_front() {
-            if self.graph.cached_results.contains_key(&node) {
+            if self.resolved_set.contains(&node) {
                 continue;
             }
 
@@ -62,8 +99,8 @@ impl<'a> Resolver<'a> {
                 AnyComputeKey::Reduce(reduce_compute_node_key) => {
                     self.resolve_reduce(reduce_compute_node_key)
                 }
-                AnyComputeKey::Tensor(tensor_compute_node_key) => {
-                    self.resolve_tensor(tensor_compute_node_key)
+                AnyComputeKey::Tensor(_) => {
+                    continue;
                 }
                 AnyComputeKey::MapLayout(slice_compute_node_key) => {
                     self.resolve_map_layout(slice_compute_node_key)
@@ -90,296 +127,234 @@ impl<'a> Resolver<'a> {
                 self.queue.push_back(node);
                 continue;
             };
-
-            // Cache the result
-            self.graph.cached_results.insert(node, resolved.clone());
-            // Check if that makes any of this nodes dependents dead
-            let mut dependencies = Vec::new();
-            visit_dependencies(&self.graph.nodes, node, |dependent_key| {
-                dependencies.push(dependent_key);
-            });
-            for dependency in dependencies {
-                self.graph.check_life(dependency);
-            }
+            // Mark this node as resolved
+            self.resolved_set.insert(node);
+            self.queued_operations.push((node, resolved));
         }
-
-        self.graph.cached_results[&self.target].clone()
     }
 
-    fn collect_element_wise_ops(
-        &mut self,
-        key: ElementWiseComputeNodeKey,
-    ) -> (Vec<ElementWiseFunction>, AnyComputeKey) {
+    fn collect_element_wise_ops(&mut self, key: ElementWiseComputeNodeKey) -> ElementWiseOperation {
         let mut functions = Vec::new();
         let mut current_key = AnyComputeKey::ElementWise(key);
+        let mut ty = DataTypeEnum::F32;
+        let mut shape = Box::new([]) as Box<[usize]>;
         while let AnyComputeKey::ElementWise(key) = current_key {
+            let operation = &self.graph.nodes.element_wise[&key];
+            ty = operation.input_datatype();
+            shape = operation.shape().into();
             // If the result is already cached, stop collecting element wise ops
-            if self.graph.cached_results.contains_key(&current_key) {
+            if self.resolved_set.contains(&current_key) {
                 break;
             }
-            let operation = &self.graph.nodes.element_wise[&key];
             functions.extend(operation.functions.iter().cloned());
             current_key = operation.value;
         }
-        (functions, current_key)
+        let functions = ElementWiseFunctions::new(functions, ty);
+        ElementWiseOperation::from_element_wise(current_key, functions, shape)
     }
 
-    fn resolve_element_wise(&mut self, key: ElementWiseComputeNodeKey) -> Option<TensorData> {
+    fn resolve_element_wise(
+        &mut self,
+        key: ElementWiseComputeNodeKey,
+    ) -> Option<Box<dyn Operation>> {
         // First collect all element wise ops in this chain
-        let (functions, input) = self.collect_element_wise_ops(key);
-        let input_cached = self.graph.cached_results.contains_key(&input);
+        let functions = self.collect_element_wise_ops(key);
+        let input = functions.value;
+        let input_cached = self.resolved_set.contains(&input);
 
         if !input_cached {
             // Merge into the output of the reduce kernel if possible and it isn't already cached
             if let AnyComputeKey::Reduce(key) = input {
-                return self.resolve_reduce_then(key, functions);
+                return self.resolve_reduce_then(key, Some(functions));
             }
             // Merge into the output of the pair wise kernel if possible and it isn't already cached
             if let AnyComputeKey::PairWise(key) = input {
-                return self.resolve_pair_wise_then(key, functions);
+                return self.resolve_pair_wise_then(key, Some(functions));
             }
             // Merge into the output of the mat mul kernel if possible and it isn't already cached
             if let AnyComputeKey::MatMul(key) = input {
-                return self.resolve_mat_mul_then(key, functions);
+                return self.resolve_mat_mul_then(key, Some(functions));
             }
             // Merge into the output of the dequantize kernel if possible and it isn't already cached
             if let AnyComputeKey::Dequantize(key) = input {
-                return self.resolve_dequantize_then(key, functions);
+                return self.resolve_dequantize_then(key, Some(functions));
             }
-        }
-        // Otherwise, just run the element wise kernel
-        let Some(input_cached) = self.graph.cached_results.get(&input) else {
+            // If the input is not cached, we need to wait for it to be resolved
             self.queue.push_back(input);
             return None;
-        };
-        let functions = ElementWiseFunctions::new(functions, input_cached.datatype());
-        let kernel = ElementWiseOperation::from_element_wise(
-            input.into(),
-            functions,
-            input_cached.layout().rank() as u32,
-        );
+        }
+        let shape: Box<[_]> = functions.shape().into();
+        // Otherwise, just run the element wise kernel
+        let kernel =
+            ElementWiseOperation::from_element_wise(input.into(), functions.functions, shape);
 
-        let result = kernel.run(&self.graph, &mut *self.command_encoder);
-
-        let KernelInputValue::Tensor(result) = result else {
-            panic!("Kernel input value is not a tensor");
-        };
-
-        Some(result)
+        Some(Box::new(kernel))
     }
 
-    fn resolve_pair_wise(&mut self, key: PairWiseComputeNodeKey) -> Option<TensorData> {
-        self.resolve_pair_wise_then(key, Vec::new())
+    fn resolve_pair_wise(&mut self, key: PairWiseComputeNodeKey) -> Option<Box<dyn Operation>> {
+        self.resolve_pair_wise_then(key, None)
     }
 
     fn resolve_pair_wise_then(
         &mut self,
         key: PairWiseComputeNodeKey,
-        then: Vec<ElementWiseFunction>,
-    ) -> Option<TensorData> {
+        then: Option<ElementWiseOperation>,
+    ) -> Option<Box<dyn Operation>> {
         let operation = &self.graph.nodes.pair_wise[&key];
         let function = operation.function.clone();
+        let rank = operation.rank();
 
         let mut first_input = operation.first;
+        let first_pre_element_wise = operation.pre_element_wise[0].clone();
         let mut second_input = operation.second;
+        let second_pre_element_wise = operation.pre_element_wise[1].clone();
         let first_pre_element_wise = if let AnyComputeKey::ElementWise(key) = first_input {
-            let (functions, element_wise_input) = self.collect_element_wise_ops(key);
-            first_input = element_wise_input;
-            functions
+            let functions = self.collect_element_wise_ops(key);
+            first_input = functions.value;
+            functions.functions
         } else {
-            Vec::new()
+            first_pre_element_wise
         };
         let second_pre_element_wise = if let AnyComputeKey::ElementWise(key) = second_input {
-            let (functions, element_wise_input) = self.collect_element_wise_ops(key);
-            second_input = element_wise_input;
-            functions
+            let functions = self.collect_element_wise_ops(key);
+            second_input = functions.value;
+            functions.functions
         } else {
-            Vec::new()
+            second_pre_element_wise
         };
 
-        let first: MaybeQData = if let AnyComputeKey::Dequantize(key) = first_input {
-            self.graph
-                .nodes
-                .dequantize
-                .get(&key)
-                .unwrap()
-                .matrix
-                .clone()
-                .into()
-        } else {
-            let Some(first) = self.graph.cached_results.get(&first_input) else {
-                self.queue.push_back(first_input);
-                return None;
-            };
-            first.clone().into()
-        };
-        let second: MaybeQData = if let AnyComputeKey::Dequantize(key) = second_input {
-            self.graph
-                .nodes
-                .dequantize
-                .get(&key)
-                .unwrap()
-                .matrix
-                .clone()
-                .into()
-        } else {
-            let Some(second) = self.graph.cached_results.get(&second_input) else {
-                self.queue.push_back(second_input);
-                return None;
-            };
-            second.clone().into()
-        };
-        let mut kernel = PairWiseOperation::new(
-            function,
-            first_input,
-            second_input,
-            first.layout().rank() as _,
-        );
-        let first_pre =
-            ElementWiseFunctions::new(first_pre_element_wise, first.dequantized_datatype());
-        let second_pre =
-            ElementWiseFunctions::new(second_pre_element_wise, second.dequantized_datatype());
-        let pre_element_wise_output = first_pre.out_datatype();
+        if !self.is_resolved_or_qmatrix(&first_input) {
+            self.queue.push_back(first_input);
+            return None;
+        }
+        if !self.is_resolved_or_qmatrix(&second_input) {
+            self.queue.push_back(second_input);
+            return None;
+        }
+        let mut kernel =
+            PairWiseOperation::new(function, first_input, second_input, rank);
+        let first_pre = first_pre_element_wise;
+        let second_pre = second_pre_element_wise;
         kernel.set_pre_element_wise([first_pre, second_pre]);
-        kernel.set_post_element_wise(ElementWiseFunctions::new(then, pre_element_wise_output));
+        if let Some(then) = then {
+            kernel.set_post_element_wise(then.functions);
+        }
 
-        let result = kernel.run(&self.graph, &mut *self.command_encoder);
-
-        let KernelInputValue::Tensor(result) = result else {
-            panic!("Kernel input value is not a tensor");
-        };
-
-        Some(result)
+        Some(Box::new(kernel))
     }
 
-    fn resolve_mat_mul(&mut self, key: MatMulComputeNodeKey) -> Option<TensorData> {
-        self.resolve_mat_mul_then(key, Vec::new())
+    fn resolve_mat_mul(&mut self, key: MatMulComputeNodeKey) -> Option<Box<dyn Operation>> {
+        self.resolve_mat_mul_then(key, None)
     }
 
     fn resolve_mat_mul_then(
         &mut self,
         key: MatMulComputeNodeKey,
-        then: Vec<ElementWiseFunction>,
-    ) -> Option<TensorData> {
+        then: Option<ElementWiseOperation>,
+    ) -> Option<Box<dyn Operation>> {
         let operation = &self.graph.nodes.mat_mul[&key];
         let mut first = operation.first;
+        let first_shape = operation.first_shape.clone();
+        let first_pre_element_wise = operation.pre_element_wise[0].clone();
         let mut second = operation.second;
+        let second_shape = operation.second_shape.clone();
+        let second_pre_element_wise = operation.pre_element_wise[1].clone();
 
         let first_pre_element_wise = if let AnyComputeKey::ElementWise(key) = first {
-            let (functions, element_wise_input) = self.collect_element_wise_ops(key);
-            first = element_wise_input;
-            functions
+            let functions = self.collect_element_wise_ops(key);
+            first = functions.value;
+            functions.functions
         } else {
-            Vec::new()
+            first_pre_element_wise
         };
         let second_pre_element_wise = if let AnyComputeKey::ElementWise(key) = second {
-            let (functions, element_wise_input) = self.collect_element_wise_ops(key);
-            second = element_wise_input;
-            functions
+            let functions = self.collect_element_wise_ops(key);
+            second = functions.value;
+            functions.functions
         } else {
-            Vec::new()
+            second_pre_element_wise
         };
 
-        let Some(first_tensor) = self.graph.cached_results.get(&first).cloned() else {
+        if !self.resolved_set.contains(&first) {
             self.queue.push_back(first);
             return None;
         };
-        let Some(second_tensor) = self.graph.cached_results.get(&second).cloned() else {
+        if !self.resolved_set.contains(&second) {
             self.queue.push_back(second);
             return None;
         };
         let mut kernel = MatMulOperation::new(
-            first_tensor.datatype(),
+            first_pre_element_wise.input_datatype(),
             first,
             second,
-            first_tensor.layout().shape(),
-            second_tensor.layout().shape(),
+            &first_shape,
+            &second_shape,
         );
-        let first_pre = ElementWiseFunctions::new(first_pre_element_wise, first_tensor.datatype());
-        let second_pre =
-            ElementWiseFunctions::new(second_pre_element_wise, second_tensor.datatype());
-        let pre_element_wise_output = first_pre.out_datatype();
+        let first_pre = first_pre_element_wise;
+        let second_pre = second_pre_element_wise;
         kernel.set_pre_element_wise([first_pre, second_pre]);
-        kernel.set_post_element_wise(ElementWiseFunctions::new(then, pre_element_wise_output));
-        let result = kernel.run(&self.graph, &mut *self.command_encoder);
+        if let Some(then) = then {
+            kernel.set_post_element_wise(then.functions);
+        }
 
-        let KernelInputValue::Tensor(result) = result else {
-            panic!("Kernel input value is not a tensor");
-        };
-
-        Some(result)
+        Some(Box::new(kernel))
     }
 
-    fn resolve_q_mat_mul(&mut self, key: QMatMulComputeNodeKey) -> Option<TensorData> {
+    fn resolve_q_mat_mul(&mut self, key: QMatMulComputeNodeKey) -> Option<Box<dyn Operation>> {
         let operation = &self.graph.nodes.q_mat_mul[&key];
         let input = operation.input;
         let matrix = operation.matrix.clone();
 
-        let Some(input_tensor) = self.graph.cached_results.get(&input).cloned() else {
+        if !self.resolved_set.contains(&input) {
             self.queue.push_back(input);
             return None;
         };
-        let kernel = QMatMulOperation::new(
-            input_tensor.datatype(),
-            input_tensor.layout().shape(),
-            input,
-            matrix,
-        );
+        let kernel =
+            QMatMulOperation::new(operation.input_datatype, &operation.in_shape, input, matrix);
 
-        let result = kernel.run(&self.graph, &mut *self.command_encoder);
-
-        let KernelInputValue::Tensor(result) = result else {
-            panic!("Kernel input value is not a tensor");
-        };
-
-        Some(result)
+        Some(Box::new(kernel))
     }
 
-    fn resolve_dequantize(&mut self, key: DequantizeComputeKey) -> Option<TensorData> {
-        self.resolve_dequantize_then(key, Vec::new())
+    fn resolve_dequantize(&mut self, key: DequantizeComputeKey) -> Option<Box<dyn Operation>> {
+        self.resolve_dequantize_then(key, None)
     }
 
     fn resolve_dequantize_then(
         &mut self,
         key: DequantizeComputeKey,
-        then: Vec<ElementWiseFunction>,
-    ) -> Option<TensorData> {
+        then: Option<ElementWiseOperation>,
+    ) -> Option<Box<dyn Operation>> {
         let operation = &self.graph.nodes.dequantize[&key];
 
-        let then = element_wise::ElementWiseFunctions::new(then, operation.datatype);
-        let mut operation = DequantizeOperation::new(operation.matrix.clone(), operation.datatype);
-        operation.set_post_element_wise(then);
+        let mut kernel = DequantizeOperation::new(operation.matrix.clone(), operation.datatype);
+        if let Some(then) = then {
+            kernel.set_post_element_wise(then.functions);
+        }
 
-        let result = operation.run(&self.graph, &mut *self.command_encoder);
-
-        let KernelInputValue::Tensor(result) = result else {
-            panic!("Kernel input value is not a tensor");
-        };
-
-        Some(result)
+        Some(Box::new(kernel))
     }
 
-    fn resolve_reduce(&mut self, key: ReduceComputeNodeKey) -> Option<TensorData> {
-        self.resolve_reduce_then(key, Vec::new())
+    fn resolve_reduce(&mut self, key: ReduceComputeNodeKey) -> Option<Box<dyn Operation>> {
+        self.resolve_reduce_then(key, None)
     }
 
     fn resolve_reduce_then(
         &mut self,
         key: ReduceComputeNodeKey,
-        then: Vec<ElementWiseFunction>,
-    ) -> Option<TensorData> {
+        then: Option<ElementWiseOperation>,
+    ) -> Option<Box<dyn Operation>> {
         let operation = self.graph.nodes.reduce[&key].clone();
         let mut input_key = operation.value;
 
         let element_wise_before = if let AnyComputeKey::ElementWise(key) = operation.value {
-            let (functions, element_wise_input) = self.collect_element_wise_ops(key);
-            input_key = element_wise_input;
-            functions
+            let functions = self.collect_element_wise_ops(key);
+            input_key = functions.value;
+            functions.functions
         } else {
-            Vec::new()
+            ElementWiseFunctions::empty(operation.reduce_datatype())
         };
 
-        let Some(input) = self.graph.cached_results.get(&input_key).cloned() else {
+        if !self.resolved_set.contains(&input_key) {
             self.queue.push_back(input_key);
             return None;
         };
@@ -389,144 +364,132 @@ impl<'a> Resolver<'a> {
             operation.axis,
             operation.rank,
         );
-        let element_wise_before =
-            element_wise::ElementWiseFunctions::new(element_wise_before, input.datatype());
-        let element_wise_after =
-            element_wise::ElementWiseFunctions::new(then, element_wise_before.out_datatype());
+        let element_wise_before = element_wise_before;
+        let element_wise_after = then
+            .map(|op| op.functions)
+            .unwrap_or_else(|| ElementWiseFunctions::empty(element_wise_before.out_datatype()));
         kernel.set_post_element_wise(element_wise_after);
         kernel.set_pre_element_wise(element_wise_before);
-        let result = kernel.run(&self.graph, &mut *self.command_encoder);
 
-        let KernelInputValue::Tensor(result) = result else {
-            panic!("Kernel input value is not a tensor");
-        };
-
-        Some(result)
+        Some(Box::new(kernel))
     }
 
-    fn resolve_map_layout(&mut self, key: MapLayoutComputeNodeKey) -> Option<TensorData> {
+    fn resolve_map_layout(&mut self, key: MapLayoutComputeNodeKey) -> Option<Box<dyn Operation>> {
         let operation = self.graph.nodes.map_layout.get(&key).unwrap();
-        if !self.graph.cached_results.contains_key(&operation.input) {
+        if !self.resolved_set.contains(&operation.input) {
             self.queue.push_back(operation.input);
             return None;
         }
-        let operation = self.graph.nodes.map_layout.get(&key).unwrap();
+        let kernel = self.graph.nodes.map_layout.get(&key).unwrap();
 
-        let result = operation.run(&self.graph, &mut *self.command_encoder);
-
-        let KernelInputValue::Tensor(result) = result else {
-            panic!("Kernel input value is not a tensor");
-        };
-
-        Some(result)
+        Some(Box::new(kernel.clone()))
     }
 
-    fn resolve_resize(&mut self, key: ResizeComputeNodeKey) -> Option<TensorData> {
-        let operation = self.graph.nodes.resize.get(&key).unwrap();
-        let input = operation.input;
-        if !self.graph.cached_results.contains_key(&input) {
+    fn resolve_resize(&mut self, key: ResizeComputeNodeKey) -> Option<Box<dyn Operation>> {
+        let kernel = self.graph.nodes.resize.get(&key).unwrap();
+        let input = kernel.input;
+        if !self.resolved_set.contains(&input) {
             self.queue.push_back(input);
             return None;
         }
 
-        let result = operation.run(&self.graph, &mut *self.command_encoder);
-
-        let KernelInputValue::Tensor(result) = result else {
-            panic!("Kernel input value is not a tensor");
-        };
-
-        Some(result)
+        Some(Box::new(kernel.clone()))
     }
 
-    fn resolve_slice_assign(&mut self, key: SliceAssignComputeNodeKey) -> Option<TensorData> {
-        let operation = self.graph.nodes.slice_assign.get(&key).unwrap();
-        let input = operation.input;
-        let value = operation.value;
-        if !self.graph.cached_results.contains_key(&input) {
+    fn resolve_slice_assign(
+        &mut self,
+        key: SliceAssignComputeNodeKey,
+    ) -> Option<Box<dyn Operation>> {
+        let kernel = self.graph.nodes.slice_assign.get(&key).unwrap();
+        let input = kernel.input;
+        let value = kernel.value;
+        if !self.resolved_set.contains(&input) {
             self.queue.push_back(input);
             return None;
         }
-        if !self.graph.cached_results.contains_key(&value) {
+        if !self.resolved_set.contains(&value) {
             self.queue.push_back(value);
             return None;
         }
 
-        let result = operation.run(&self.graph, &mut *self.command_encoder);
-        let KernelInputValue::Tensor(result) = result else {
-            panic!("Kernel input value is not a tensor");
-        };
-
-        Some(result)
+        Some(Box::new(kernel.clone()))
     }
 
-    fn resolve_index_select(&mut self, key: IndexSelectComputeNodeKey) -> Option<TensorData> {
-        self.resolve_index_select_then(key, Vec::new())
+    fn resolve_index_select(
+        &mut self,
+        key: IndexSelectComputeNodeKey,
+    ) -> Option<Box<dyn Operation>> {
+        self.resolve_index_select_then(key, None)
     }
 
     fn resolve_index_select_then(
         &mut self,
         key: IndexSelectComputeNodeKey,
-        then: Vec<ElementWiseFunction>,
-    ) -> Option<TensorData> {
+        then: Option<ElementWiseOperation>,
+    ) -> Option<Box<dyn Operation>> {
         let operation = &self.graph.nodes.index_select[&key];
 
         let dimension = operation.dimension;
         let mut input = operation.input;
+        let input_datatype = operation.input_datatype();
+        let indexes_datatype = operation.indexes_datatype();
         let mut indexes = operation.indexes;
+        let value_shape = operation.value_shape.clone();
+        let indexes_shape = operation.indexes_shape.clone();
         let mut input_pre_element_wise = if let AnyComputeKey::ElementWise(key) = input {
-            let (functions, element_wise_input) = self.collect_element_wise_ops(key);
-            input = element_wise_input;
+            let functions = self.collect_element_wise_ops(key);
+            input = functions.value;
             functions
         } else {
-            Vec::new()
+            ElementWiseOperation::from_element_wise(
+                input,
+                ElementWiseFunctions::empty(input_datatype),
+                value_shape,
+            )
         };
-        // pre and post elementwise are the same since the index select operation doesn't effect element wise values
-        for function in then {
-            input_pre_element_wise.push(function);
+        if let Some(then) = then {
+            // pre and post elementwise are the same since the index select operation doesn't effect element wise values
+            for function in then.functions.iter() {
+                input_pre_element_wise.functions.push(function.clone());
+            }
         }
         let indexes_pre_element_wise = if let AnyComputeKey::ElementWise(key) = indexes {
-            let (functions, element_wise_input) = self.collect_element_wise_ops(key);
-            indexes = element_wise_input;
+            let functions = self.collect_element_wise_ops(key);
+            indexes = functions.value;
             functions
         } else {
-            Vec::new()
+            ElementWiseOperation::from_element_wise(
+                indexes,
+                ElementWiseFunctions::empty(indexes_datatype),
+                indexes_shape,
+            )
         };
 
-        let Some(input_tensor) = self.graph.cached_results.get(&input) else {
+        if !self.resolved_set.contains(&input) {
             self.queue.push_back(input);
             return None;
         };
-        let Some(indexes_tensor) = self.graph.cached_results.get(&indexes) else {
+        if !self.resolved_set.contains(&indexes) {
             self.queue.push_back(indexes);
             return None;
         };
         let mut kernel = IndexSelectOperation::new(
             input,
             indexes,
-            input_tensor.datatype(),
+            input_pre_element_wise.input_datatype(),
             dimension,
-            input_tensor.layout().shape(),
-            indexes_tensor.layout().shape(),
+            input_pre_element_wise.shape(),
+            indexes_pre_element_wise.shape(),
         );
-        kernel.set_pre_element_wise_input(ElementWiseFunctions::new(
-            input_pre_element_wise,
-            input_tensor.datatype(),
-        ));
-        kernel.set_pre_element_wise_indexes(ElementWiseFunctions::new(
-            indexes_pre_element_wise,
-            indexes_tensor.datatype(),
-        ));
+        kernel.set_pre_element_wise_input(input_pre_element_wise.functions);
+        kernel.set_pre_element_wise_indexes(indexes_pre_element_wise.functions);
 
-        let result = kernel.run(&self.graph, &mut *self.command_encoder);
-
-        let KernelInputValue::Tensor(result) = result else {
-            panic!("Kernel input value is not a tensor");
-        };
-
-        Some(result)
+        Some(Box::new(kernel))
     }
 
-    fn resolve_tensor(&mut self, key: TensorComputeNodeKey) -> Option<TensorData> {
-        Some(self.graph.nodes.tensor.get(&key).unwrap().clone())
+    fn resolve_tensor(&mut self, key: TensorComputeNodeKey) {
+        let tensor = self.graph.nodes.tensor.get(&key).unwrap().clone();
+
+        self.graph.cached_results.insert(key.into(), tensor);
     }
 }

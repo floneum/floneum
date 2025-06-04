@@ -20,7 +20,7 @@ use crate::{
 pub(crate) struct PairWiseOperation {
     pub(crate) first: AnyComputeKey,
     pub(crate) second: AnyComputeKey,
-    pre_element_wise: [ElementWiseFunctions; 2],
+    pub(crate) pre_element_wise: [ElementWiseFunctions; 2],
     pub(crate) function: PairWiseFunction,
     post_element_wise: ElementWiseFunctions,
     rank: u32,
@@ -70,6 +70,10 @@ impl PairWiseOperation {
                 )
             }),
         )
+    }
+
+    pub fn rank(&self) -> u32 {
+        self.rank
     }
 
     fn re_used_allocation_index(&self, first: &MaybeQData, second: &MaybeQData) -> Option<usize> {

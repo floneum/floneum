@@ -14,6 +14,8 @@ pub(crate) struct MatMulOperation {
     pub(crate) datatype: DataTypeEnum,
     pub(crate) first: AnyComputeKey,
     pub(crate) second: AnyComputeKey,
+    pub(crate) first_shape: Box<[usize]>,
+    pub(crate) second_shape: Box<[usize]>,
     pub(crate) out_shape: Box<[usize]>,
     pub(crate) pre_element_wise: [ElementWiseFunctions; 2],
     pub(crate) post_element_wise: ElementWiseFunctions,
@@ -45,6 +47,8 @@ impl MatMulOperation {
         Self {
             first,
             second,
+            first_shape: first_shape.into(),
+            second_shape: second_shape.into(),
             out_shape: out_shape.into(),
             datatype,
             pre_element_wise: [

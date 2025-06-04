@@ -41,6 +41,14 @@ impl IndexSelectOperation {
         }
     }
 
+    pub(crate) fn input_datatype(&self) -> DataTypeEnum {
+        self.datatype
+    }
+
+    pub(crate) fn indexes_datatype(&self) -> DataTypeEnum {
+        DataTypeEnum::U32
+    }
+
     pub(crate) fn rank(&self) -> usize {
         self.value_shape.len()
     }

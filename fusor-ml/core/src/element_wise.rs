@@ -59,6 +59,10 @@ impl ElementWiseFunctions {
             .collect()
     }
 
+    pub fn input_datatype(&self) -> DataTypeEnum {
+        self.input_datatype
+    }
+
     pub fn out_datatype(&self) -> DataTypeEnum {
         if let Some(first) = self.functions.first() {
             first.datatype
@@ -70,13 +74,17 @@ impl ElementWiseFunctions {
     pub fn iter(&self) -> impl Iterator<Item = &ElementWiseFunction> {
         self.functions.iter()
     }
+
+    pub fn push(&mut self, function: ElementWiseFunction) {
+        self.functions.push(function);
+    }
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct ElementWiseOperation {
     pub(crate) value: AnyComputeKey,
     pub(crate) functions: ElementWiseFunctions,
-    pub(crate) rank: u32,
+    pub(crate) shape: Box<[usize]>,
 }
 
 impl ElementWiseOperation {
@@ -84,7 +92,7 @@ impl ElementWiseOperation {
         input_datatype: DataTypeEnum,
         value: AnyComputeKey,
         functions: ElementWiseFunction,
-        rank: u32,
+        shape: impl Into<Box<[usize]>>,
     ) -> Self {
         Self {
             value,
@@ -92,20 +100,32 @@ impl ElementWiseOperation {
                 input_datatype,
                 functions: vec![functions],
             },
-            rank,
+            shape: shape.into(),
         }
     }
 
     pub fn from_element_wise(
         value: AnyComputeKey,
         functions: ElementWiseFunctions,
-        rank: u32,
+        shape: impl Into<Box<[usize]>>,
     ) -> Self {
         Self {
             value,
             functions,
-            rank,
+            shape: shape.into(),
         }
+    }
+
+    pub fn input_datatype(&self) -> DataTypeEnum {
+        self.functions.input_datatype
+    }
+
+    pub fn rank(&self) -> u32 {
+        self.shape.len() as u32
+    }
+
+    pub fn shape(&self) -> &[usize] {
+        &self.shape
     }
 
     fn requires_new_tensor(&self, tensor: &MaybeQData) -> bool {
@@ -129,7 +149,7 @@ impl Operation for ElementWiseOperation {
         &self,
         _: &crate::Device,
     ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
-        titled_map_workgroup_size_constraints(self.rank)
+        titled_map_workgroup_size_constraints(self.rank())
     }
 
     fn dispatch_size(
@@ -254,7 +274,7 @@ impl<const R: usize, T: DataType> Add<T> for Tensor<R, T> {
             self.key(),
             ElementWiseFunction::new(format!("let output = input + {};", rhs), T::WGSL_TYPE)
                 .with_name("add_const"),
-            R as u32,
+            self.shape().as_slice(),
         ))
     }
 }
@@ -516,7 +536,7 @@ impl<const R: usize, T: DataType> Sub<T> for Tensor<R, T> {
             self.key(),
             ElementWiseFunction::new(format!("let output = input - {};", rhs), T::WGSL_TYPE)
                 .with_name("subtract_const"),
-            R as u32,
+            self.shape().as_slice(),
         ))
     }
 }
@@ -556,7 +576,7 @@ macro_rules! impl_sub {
                             <$t>::WGSL_TYPE,
                         )
                         .with_name("subtract_const"),
-                        R as u32,
+                        rhs.shape().as_slice(),
                     ))
                 }
             }
@@ -594,7 +614,7 @@ impl<const R: usize, T: DataType> Mul<T> for Tensor<R, T> {
             self.key(),
             ElementWiseFunction::new(format!("let output = input * {};", rhs), T::WGSL_TYPE)
                 .with_name("multiply_const"),
-            R as u32,
+            self.shape().as_slice(),
         ))
     }
 }
@@ -663,7 +683,7 @@ impl<const R: usize, T: DataType> Div<T> for Tensor<R, T> {
             self.key(),
             ElementWiseFunction::new(format!("let output = input / {};", rhs), T::WGSL_TYPE)
                 .with_name("divide_const"),
-            R as u32,
+            self.shape().as_slice(),
         ))
     }
 }
@@ -695,14 +715,6 @@ macro_rules! impl_div {
                 type Output = Tensor<R, $t>;
 
                 fn div(self, rhs: Tensor<R, $t>) -> Self::Output {
-                    // rhs.element_wise(ElementWiseOperation {
-                    //     value: rhs.key(),
-                    //     function: ElementWiseFunction::new(
-                    //         format!("let output = {} / input;", self),
-                    //         <$t>::WGSL_TYPE,
-                    //     )
-                    //     .with_name("divide_const"),
-                    // })
                     rhs.element_wise(ElementWiseOperation::new(
                         rhs.datatype(),
                         rhs.key(),
@@ -711,7 +723,7 @@ macro_rules! impl_div {
                             <$t>::WGSL_TYPE,
                         )
                         .with_name("divide_const"),
-                        R as u32,
+                        rhs.shape().as_slice(),
                     ))
                 }
             }
@@ -749,7 +761,7 @@ impl<const R: usize> Rem<u32> for Tensor<R, u32> {
             self.key(),
             ElementWiseFunction::new(format!("let output = input % {};", rhs), u32::WGSL_TYPE)
                 .with_name("mod_const"),
-            R as u32,
+            self.shape().as_slice(),
         ))
     }
 }
@@ -781,14 +793,6 @@ macro_rules! impl_mod {
                 type Output = Tensor<R, $t>;
 
                 fn rem(self, rhs: Tensor<R, $t>) -> Self::Output {
-                    // rhs.element_wise(ElementWiseOperation {
-                    //     value: rhs.key(),
-                    //     function: ElementWiseFunction::new(
-                    //         format!("let output = {} % input;", self),
-                    //         <$t>::WGSL_TYPE,
-                    //     )
-                    //     .with_name("mod_const"),
-                    // })
                     rhs.element_wise(ElementWiseOperation::new(
                         rhs.datatype(),
                         rhs.key(),
@@ -797,7 +801,7 @@ macro_rules! impl_mod {
                             <$t>::WGSL_TYPE,
                         )
                         .with_name("mod_const"),
-                        R as u32,
+                        rhs.shape().as_slice(),
                     ))
                 }
             }
@@ -838,7 +842,7 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
                 D::WGSL_TYPE,
             )
             .with_name("equal_const"),
-            R as u32,
+            self.shape().as_slice(),
         ))
     }
 }
@@ -889,7 +893,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
             self.datatype(),
             self.key(),
             ElementWiseFunction::new("let output = exp(input);", D::WGSL_TYPE).with_name("exp"),
-            R as u32,
+            self.shape().as_slice(),
         ))
     }
 }
@@ -920,7 +924,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
             self.datatype(),
             self.key(),
             ElementWiseFunction::new("let output = exp2(input);", D::WGSL_TYPE).with_name("exp2"),
-            R as u32,
+            self.shape().as_slice(),
         ))
     }
 }
@@ -951,7 +955,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
             self.datatype(),
             self.key(),
             ElementWiseFunction::new("let output = log(input);", D::WGSL_TYPE).with_name("log"),
-            R as u32,
+            self.shape().as_slice(),
         ))
     }
 }
@@ -982,7 +986,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
             self.datatype(),
             self.key(),
             ElementWiseFunction::new("let output = log2(input);", D::WGSL_TYPE).with_name("log2"),
-            R as u32,
+            self.shape().as_slice(),
         ))
     }
 }
@@ -1013,7 +1017,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
             self.datatype(),
             self.key(),
             ElementWiseFunction::new("let output = sqrt(input);", D::WGSL_TYPE).with_name("sqrt"),
-            R as u32,
+            self.shape().as_slice(),
         ))
     }
 }
@@ -1044,7 +1048,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
             self.datatype(),
             self.key(),
             ElementWiseFunction::new("let output = sin(input);", D::WGSL_TYPE).with_name("sin"),
-            R as u32,
+            self.shape().as_slice(),
         ))
     }
 }
@@ -1075,7 +1079,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
             self.datatype(),
             self.key(),
             ElementWiseFunction::new("let output = cos(input);", D::WGSL_TYPE).with_name("cos"),
-            R as u32,
+            self.shape().as_slice(),
         ))
     }
 }
@@ -1106,7 +1110,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
             self.datatype(),
             self.key(),
             ElementWiseFunction::new("let output = tan(input);", D::WGSL_TYPE).with_name("tan"),
-            R as u32,
+            self.shape().as_slice(),
         ))
     }
 }
@@ -1137,7 +1141,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
             self.datatype(),
             self.key(),
             ElementWiseFunction::new("let output = asin(input);", D::WGSL_TYPE).with_name("asin"),
-            R as u32,
+            self.shape().as_slice(),
         ))
     }
 }
@@ -1172,7 +1176,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
             self.datatype(),
             self.key(),
             ElementWiseFunction::new("let output = acos(input);", D::WGSL_TYPE).with_name("acos"),
-            R as u32,
+            self.shape().as_slice(),
         ))
     }
 }
@@ -1207,7 +1211,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
             self.datatype(),
             self.key(),
             ElementWiseFunction::new("let output = atan(input);", D::WGSL_TYPE).with_name("atan"),
-            R as u32,
+            self.shape().as_slice(),
         ))
     }
 }
@@ -1238,7 +1242,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
             self.datatype(),
             self.key(),
             ElementWiseFunction::new("let output = sinh(input);", D::WGSL_TYPE).with_name("sinh"),
-            R as u32,
+            self.shape().as_slice(),
         ))
     }
 }
@@ -1269,7 +1273,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
             self.datatype(),
             self.key(),
             ElementWiseFunction::new("let output = cosh(input);", D::WGSL_TYPE).with_name("cosh"),
-            R as u32,
+            self.shape().as_slice(),
         ))
     }
 }
@@ -1300,7 +1304,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
             self.datatype(),
             self.key(),
             ElementWiseFunction::new("let output = tanh(input);", D::WGSL_TYPE).with_name("tanh"),
-            R as u32,
+            self.shape().as_slice(),
         ))
     }
 }
@@ -1331,7 +1335,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
             self.datatype(),
             self.key(),
             ElementWiseFunction::new("let output = asinh(input);", D::WGSL_TYPE).with_name("asinh"),
-            R as u32,
+            self.shape().as_slice(),
         ))
     }
 }
@@ -1366,7 +1370,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
             self.datatype(),
             self.key(),
             ElementWiseFunction::new("let output = acosh(input);", D::WGSL_TYPE).with_name("acosh"),
-            R as u32,
+            self.shape().as_slice(),
         ))
     }
 }
@@ -1401,7 +1405,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
             self.datatype(),
             self.key(),
             ElementWiseFunction::new("let output = atanh(input);", D::WGSL_TYPE).with_name("atanh"),
-            R as u32,
+            self.shape().as_slice(),
         ))
     }
 }
@@ -1436,7 +1440,7 @@ impl<const R: usize, D: DataType> Tensor<R, D> {
             self.datatype(),
             self.key(),
             ElementWiseFunction::new("let output = abs(input);", D::WGSL_TYPE).with_name("abs"),
-            R as u32,
+            self.shape().as_slice(),
         ))
     }
 }
@@ -1470,7 +1474,7 @@ impl<const R: usize, D: DataType> Neg for Tensor<R, D> {
             self.datatype(),
             self.key(),
             ElementWiseFunction::new("let output = -input;", D::WGSL_TYPE).with_name("neg"),
-            R as u32,
+            self.shape().as_slice(),
         ))
     }
 }
@@ -1518,17 +1522,12 @@ impl<T> CastTensor<T> for T {
 
 impl CastTensor<half::f16> for f32 {
     fn cast<const R: usize>(tensor: Tensor<R, Self>) -> Tensor<R, half::f16> {
-        // tensor.element_wise(ElementWiseOperation {
-        //     value: tensor.key(),
-        //     function: ElementWiseFunction::new("let output = f16(input);", DataTypeEnum::F16)
-        //         .with_name("cast"),
-        // })
         tensor.element_wise(ElementWiseOperation::new(
             tensor.datatype(),
             tensor.key(),
             ElementWiseFunction::new("let output = f16(input);", DataTypeEnum::F16)
                 .with_name("cast"),
-            R as u32,
+            tensor.shape().as_slice(),
         ))
     }
 }
@@ -1555,17 +1554,12 @@ async fn test_f32_to_f16_cast() {
 
 impl CastTensor<f32> for half::f16 {
     fn cast<const R: usize>(tensor: Tensor<R, Self>) -> Tensor<R, f32> {
-        // tensor.element_wise(ElementWiseOperation {
-        //     value: tensor.key(),
-        //     function: ElementWiseFunction::new("let output = f32(input);", DataTypeEnum::F32)
-        //         .with_name("cast"),
-        // })
         tensor.element_wise(ElementWiseOperation::new(
             tensor.datatype(),
             tensor.key(),
             ElementWiseFunction::new("let output = f32(input);", DataTypeEnum::F32)
                 .with_name("cast"),
-            R as u32,
+            tensor.shape().as_slice(),
         ))
     }
 }

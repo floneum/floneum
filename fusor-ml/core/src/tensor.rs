@@ -769,7 +769,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
                 self.datatype(),
                 self.key(),
                 function.lower_to_element_wise(),
-                self.rank() as _,
+                self.shape().as_slice()
             ));
         }
 

@@ -10,7 +10,7 @@ use crate::{
     },
 };
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct SliceAssignOperation {
     pub(crate) input: AnyComputeKey,
     pub(crate) value: AnyComputeKey,
