@@ -2,7 +2,7 @@ use std::collections::{HashSet, VecDeque};
 
 use super::AnyComputeKey;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub(crate) struct ComputeQueue {
     nodes: VecDeque<AnyComputeKey>,
     set: HashSet<AnyComputeKey>,

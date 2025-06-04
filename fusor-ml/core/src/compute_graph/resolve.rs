@@ -99,7 +99,8 @@ impl<'a> Resolver<'a> {
                 AnyComputeKey::Reduce(reduce_compute_node_key) => {
                     self.resolve_reduce(reduce_compute_node_key)
                 }
-                AnyComputeKey::Tensor(_) => {
+                AnyComputeKey::Tensor(tensor_compute_node_key) => {
+                    self.resolve_tensor(tensor_compute_node_key);
                     continue;
                 }
                 AnyComputeKey::MapLayout(slice_compute_node_key) => {
@@ -231,8 +232,7 @@ impl<'a> Resolver<'a> {
             self.queue.push_back(second_input);
             return None;
         }
-        let mut kernel =
-            PairWiseOperation::new(function, first_input, second_input, rank);
+        let mut kernel = PairWiseOperation::new(function, first_input, second_input, rank);
         let first_pre = first_pre_element_wise;
         let second_pre = second_pre_element_wise;
         kernel.set_pre_element_wise([first_pre, second_pre]);
@@ -491,5 +491,7 @@ impl<'a> Resolver<'a> {
         let tensor = self.graph.nodes.tensor.get(&key).unwrap().clone();
 
         self.graph.cached_results.insert(key.into(), tensor);
+        // Mark this node as resolved
+        self.resolved_set.insert(AnyComputeKey::Tensor(key));
     }
 }
