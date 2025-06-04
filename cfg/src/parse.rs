@@ -1,18 +1,15 @@
 #![warn(missing_docs)]
 
-use std::{
-    collections::HashMap,
-    fmt::{Display, Formatter},
-};
+use std::fmt::{Display, Formatter};
 
 use nom::{
     IResult, Parser,
     branch::alt,
-    bytes::complete::{is_not, tag, take_till, take_while1},
+    bytes::complete::{tag, take_till, take_while1},
     character::complete::{multispace0, multispace1, space0, space1},
     combinator::{map, opt},
     multi::{many0, separated_list1},
-    sequence::{delimited, preceded, separated_pair, terminated, tuple},
+    sequence::{delimited, preceded, separated_pair, terminated},
 };
 
 /// A single grammar symbol.
@@ -86,6 +83,7 @@ impl Grammar {
         Ok(g)
     }
 
+    #[cfg(test)]
     fn rule(&self, lhs: &str) -> Option<&Rule> {
         self.rules.iter().find(|r| r.lhs == lhs)
     }
@@ -107,14 +105,6 @@ where
     F: Parser<&'a str, Output = O, Error = nom::error::Error<&'a str>>,
 {
     delimited(space0, inner, space0)
-}
-
-/// Wrap a parser so that it skips leading & trailing (multi)‑whitespace.
-fn ws_nl<'a, F, O>(inner: F) -> impl Parser<&'a str, Output = O, Error = nom::error::Error<&'a str>>
-where
-    F: Parser<&'a str, Output = O, Error = nom::error::Error<&'a str>>,
-{
-    delimited(multispace0, inner, multispace0)
 }
 
 /// Consume a *single* line comment (`# …\n`). Returned as `()`.
@@ -239,10 +229,6 @@ fn parse_grammar(input: &str) -> IResult<&str, Grammar> {
 
     Ok((input, Grammar { start, rules }))
 }
-
-/*───────────────────────────────────────────────────────────────────────────────
- * Tests
- *──────────────────────────────────────────────────────────────────────────────*/
 
 #[cfg(test)]
 mod tests {

@@ -6,22 +6,36 @@ mod cnf;
 mod parse;
 
 fn main() {
-    let input = r#"Start -> ntString
-ntString -> name | '"' ' ' '"' | '(' 'str.++'      ntString ntString ')' | '(' 'str.replace' ntString ntString ntString ')' | '(' 'str.at'      ntString ntInt    ')' | '(' 'int.to.str'  ntInt             ')' | '(' 'str.substr'  ntString ntInt ntInt ')'
-ntInt -> '0' | '1' | '2' | '(' '+'            ntInt ntInt ')' | '(' '-'            ntInt ntInt ')' | '(' 'str.len'      ntString    ')' | '(' 'str.to.int'   ntString    ')' | '(' 'str.indexof'  ntString ntString ntInt ')'
-ntBool -> 'true' | 'false' | '(' 'str.prefixof' ntString ntString ')' | '(' 'str.suffixof' ntString ntString ')' | '(' 'str.contains' ntString ntString ')'
-"#;
-
-    let grammar = parse::Grammar::parse(input).unwrap();
-    println!("Parsed grammar:\n{}", grammar);
+    let grammar = parse::Grammar::parse(
+        r#"Start -> ntString
+ntString -> 'name' | '" "' | '(' 'str.++' ' ' ntString ' ' ntString ')' | '(' 'str.replace' ' ' ntString ' ' ntString ' ' ntString ')' | '(' 'str.at' ' ' ntString ' ' ntInt ')' | '(' 'int.to.str' ' ' ntInt ')' | '(' 'str.substr' ' ' ntString ' ' ntInt ' ' ntInt ')'
+ntInt -> '0' | '1' | '2' | '(' '+' ' ' ntInt ' ' ntInt ')' | '(' '-' ' ' ntInt ' ' ntInt ')' | '(' 'str.len' ' ' ntString ' ' ')' | '(' 'str.to.int' ' ' ntString ' ' ')' | '(' 'str.indexof' ' ' ntString ' ' ntString ' ' ntInt ')'
+ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | '(' 'str.suffixof' ' ' ntString ' ' ntString ')' | '(' 'str.contains' ' ' ntString ' ' ntString ')'
+"#,
+    )
+    .unwrap();
 
     let cnf_grammar = grammar.to_cnf().unwrap();
-    println!("Converted to CNF:\n{}", cnf_grammar);
-
     let bump = bumpalo::Bump::new();
     let dense_grammar = cnf_grammar.reallocate(&bump);
-    println!("Reallocated grammar:\n{}", dense_grammar);
     println!("dense size: {}", bump.allocated_bytes());
+
+    loop {
+        let mut input = String::new();
+        println!("Enter a string to test (or 'exit' to quit):");
+        std::io::stdin().read_line(&mut input).unwrap();
+        let input = input.trim();
+
+        if input == "exit" {
+            break;
+        }
+
+        if dense_grammar.recognizes(input.as_bytes()) {
+            println!("The grammar recognizes the input: '{}'", input);
+        } else {
+            println!("The grammar does NOT recognize the input: '{}'", input);
+        }
+    }
 }
 
 struct DenseGrammar<'bump> {
