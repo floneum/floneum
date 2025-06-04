@@ -1,49 +1,3 @@
-//! `cfg_parser`: A tiny, dependency‑free* (nom 8 + optional regex‑automata) parser for
-//! context‑free grammars written in an extended BNF notation.
-//!
-//! # Grammar notation
-//! A *production* is written as
-//!
-//! ```text
-//! <lhs> -> <rhs> ( "|" <rhs> )*
-//! ```
-//!
-//! * `<lhs>`  – identifier for a non‑terminal symbol.
-//! * `<rhs>`  – one **sequence** of one or more *symbols* separated by spaces.
-//! * A *symbol* can be
-//!   * an **identifier** (non‑terminal),
-//!   * a **terminal** literal enclosed in single quotes, e.g. `'+'` or `'number'`,
-//!   * the special letter **ε** (U+03B5) meaning the empty string.
-//! * Whitespace & comments (`# …`) are ignored.
-//! * The first rule (or an explicit `start <id>` directive) defines the start symbol.
-//!
-//! Example:
-//!
-//! ```text
-//! # Example: simple arithmetic expressions  
-//! start Expr
-//! Expr  -> Term Expr'               
-//! Expr' -> '+' Term Expr' | ε       
-//! Term  -> Factor Term'             
-//! Term' -> '*' Factor Term' | ε     
-//! Factor-> '(' Expr ')' | 'num'     
-//! ```
-//!
-//! ---
-//!
-//! *The implementation uses **nom 8** for recursive‑descent parsing. The `regex-automata`
-//! crate is **optional** and only used (via the `dfa` feature flag) to recognise
-//! identifiers. Remove the `regex-automata` dependency if you prefer a pure‑nom
-//! solution.*
-//!
-//! ## Public API overview
-//! ```no_run
-//! use cfg_parser::{Grammar, Symbol};
-//! let src = "S -> 'a' S | ε";
-//! let g = Grammar::parse(src).expect("valid grammar");
-//! assert_eq!(g.start(), "S");
-//! ```
-
 #![warn(missing_docs)]
 
 use std::{
@@ -190,10 +144,10 @@ where
 
 /// Parse an **identifier** (non‑terminal).
 fn identifier(input: &str) -> IResult<&str, &str> {
-    take_while1(|c: char| c.is_ascii_alphabetic() || c == '_')(input).and_then(|(rest, first)| {
+    take_while1(|c: char| c.is_ascii_alphabetic() || c == '_')(input).and_then(|(rest, _)| {
         use nom::bytes::complete::take_while;
 
-        let (rest2, tail) =
+        let (rest2, _) =
             take_while(|c: char| c.is_ascii_alphanumeric() || c == '_' || c == '-')(rest)?;
         Ok((rest2, &input[..input.len() - rest2.len()]))
     })

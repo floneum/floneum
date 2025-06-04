@@ -6,11 +6,15 @@ impl Grammar {
     /// Converts the grammar to **Chomsky Normal Form (CNF)** by invoking
     /// each conversion step in sequence.
     pub fn to_cnf(&self) -> Result<Grammar, String> {
+        // Step 0: Split up each literal into single character terminals.
+        let rules_step0 = self.split_terminals();
+
         // Step 1: Add a fresh start symbol.
-        let (rules_step1, mut nonterminals, new_start) = self.add_new_start()?;
+        let (rules_step1, mut nonterminals, new_start) =
+            self.add_new_start(rules_step0, self.start.clone())?;
 
         // Step 2: Eliminate ε-productions.
-        let rules_step2 = self.eliminate_epsilon(rules_step1, &new_start, &nonterminals);
+        let rules_step2 = self.eliminate_epsilon(rules_step1, &new_start);
 
         // Step 3: Eliminate unit productions.
         let rules_step3 = self.eliminate_units(rules_step2, &nonterminals);
@@ -27,24 +31,47 @@ impl Grammar {
         })
     }
 
-    /// Build an index mapping each rule's LHS to its position.
-    fn build_index(rules: &[Rule]) -> HashMap<String, usize> {
-        let mut idx = HashMap::new();
-        for (i, r) in rules.iter().enumerate() {
-            idx.insert(r.lhs.clone(), i);
-        }
-        idx
+    /// Step 0: Split up each literal into single character terminals
+    fn split_terminals(&self) -> Vec<Rule> {
+        self.rules
+            .iter()
+            .map(|rule| {
+                let new_rhs: Vec<Vec<Symbol>> = rule
+                    .rhs
+                    .iter()
+                    .map(|alt| {
+                        alt.iter()
+                            .flat_map(|sym| match sym {
+                                Symbol::Terminal(t) if t.len() > 1 => t
+                                    .chars()
+                                    .map(|c| Symbol::Terminal(c.to_string()))
+                                    .collect::<Vec<_>>(),
+                                _ => vec![sym.clone()],
+                            })
+                            .collect()
+                    })
+                    .collect();
+                Rule {
+                    lhs: rule.lhs.clone(),
+                    rhs: new_rhs,
+                }
+            })
+            .collect()
     }
 
     /// Step 1: Introduce a fresh start symbol `S0 → original_start`.
     ///
     /// Returns a tuple `(new_rules, nonterminals, new_start_symbol)`.
-    fn add_new_start(&self) -> Result<(Vec<Rule>, HashSet<String>, String), String> {
+    fn add_new_start(
+        &self,
+        rules: Vec<Rule>,
+        start: String,
+    ) -> Result<(Vec<Rule>, HashSet<String>, String), String> {
         // Collect all existing non-terminals.
-        let mut nonterminals: HashSet<String> = self.rules.iter().map(|r| r.lhs.clone()).collect();
+        let mut nonterminals: HashSet<String> = rules.iter().map(|r| r.lhs.clone()).collect();
 
         // Generate a fresh start symbol not in `nonterminals`.
-        let mut new_start = format!("{}0", self.start);
+        let mut new_start = format!("{}0", start);
         while nonterminals.contains(&new_start) {
             new_start.push('0');
             if new_start.len() > 50 {
@@ -57,9 +84,9 @@ impl Grammar {
         let mut new_rules = Vec::new();
         new_rules.push(Rule {
             lhs: new_start.clone(),
-            rhs: vec![vec![Symbol::NonTerminal(self.start.clone())]],
+            rhs: vec![vec![Symbol::NonTerminal(start.clone())]],
         });
-        for rule in &self.rules {
+        for rule in &rules {
             new_rules.push(rule.clone());
         }
 
@@ -67,12 +94,7 @@ impl Grammar {
     }
 
     /// Step 2: Eliminate ε-productions (nullable non-terminals), except possibly for the new start symbol.
-    fn eliminate_epsilon(
-        &self,
-        rules: Vec<Rule>,
-        new_start: &String,
-        nonterminals: &HashSet<String>,
-    ) -> Vec<Rule> {
+    fn eliminate_epsilon(&self, rules: Vec<Rule>, new_start: &String) -> Vec<Rule> {
         // (a) Compute the set of nullable non-terminals.
         let mut nullable: HashSet<String> = HashSet::new();
         for r in &rules {
@@ -342,7 +364,8 @@ mod tests {
         //   S -> a
         // Expect a new start S0 → S and original rule preserved.
         let g = Grammar::parse("start S\nS -> 'a'").unwrap();
-        let (new_rules, nonterms, new_start) = g.add_new_start().unwrap();
+        let (new_rules, nonterms, new_start) =
+            g.add_new_start(g.rules.clone(), g.start.clone()).unwrap();
 
         // new_start should start with "S0"
         assert!(new_start.starts_with("S0"));
@@ -373,12 +396,11 @@ mod tests {
         )
         .unwrap();
         let rules = grammar.rules;
-        let nonterms: HashSet<String> = ["S0".into(), "S".into()].iter().cloned().collect();
         let after = Grammar {
             start: "S0".into(),
             rules: vec![],
         }
-        .eliminate_epsilon(rules.clone(), &"S0".into(), &nonterms);
+        .eliminate_epsilon(rules.clone(), &"S0".into());
         println!("After ε-elimination: {:#?}", after);
 
         // No ε-rhs in any rule except possibly in S0.

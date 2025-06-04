@@ -85,10 +85,10 @@ impl<'bump> DenseGrammar<'bump> {
 fn test_cyk_recognizes() {
     let grammar = parse::Grammar::parse(
         r#"Start -> ntString
-        ntString -> 'h' | '(' '+' ntString ntString ')'
-        ntInt -> '0' | '1' | '(' '+' ntInt ntInt ')'
-        ntBool -> 't' | 'f' | '(' 's' ntString ntString ')'
-        "#,
+ntString -> 'name' | '" "' | '(' 'str.++' ' ' ntString ' ' ntString ')' | '(' 'str.replace' ' ' ntString ' ' ntString ' ' ntString ')' | '(' 'str.at' ' ' ntString ' ' ntInt ')' | '(' 'int.to.str' ' ' ntInt ')' | '(' 'str.substr' ' ' ntString ' ' ntInt ' ' ntInt ')'
+ntInt -> '0' | '1' | '2' | '(' '+' ' ' ntInt ' ' ntInt ')' | '(' '-' ' ' ntInt ' ' ntInt ')' | '(' 'str.len' ' ' ntString ' ' ')' | '(' 'str.to.int' ' ' ntString ' ' ')' | '(' 'str.indexof' ' ' ntString ' ' ntString ' ' ntInt ')'
+ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | '(' 'str.suffixof' ' ' ntString ' ' ntString ')' | '(' 'str.contains' ' ' ntString ' ' ntString ')'
+"#,
     )
     .unwrap();
 
@@ -97,12 +97,15 @@ fn test_cyk_recognizes() {
     let dense_grammar = cnf_grammar.reallocate(&bump);
     println!("Dense grammar:\n{}", dense_grammar);
 
-    assert!(dense_grammar.recognizes(b"h"));
-    assert!(dense_grammar.recognizes(b"(+hh)"));
-    assert!(!dense_grammar.recognizes(b"()"));
-    assert!(dense_grammar.recognizes(b"(+hh)"));
-    assert!(dense_grammar.recognizes(b"(+h(+(+hh)(+hh)))"));
-    assert!(!dense_grammar.recognizes(b"(+h0)"));
+    assert!(dense_grammar.recognizes(br#"name"#));
+    assert!(dense_grammar.recognizes(br#"(str.++ name name)"#));
+    assert!(dense_grammar.recognizes(br#"(str.replace name name name)"#));
+    assert!(dense_grammar.recognizes(br#"(str.at name 0)"#));
+    assert!(dense_grammar.recognizes(br#"(int.to.str 0)"#));
+    assert!(dense_grammar.recognizes(br#"(str.substr name 0 1)"#));
+
+    assert!(!dense_grammar.recognizes(br#"(str.substr name name 2)"#));
+    assert!(!dense_grammar.recognizes(br#"invalid_input"#));
 }
 
 impl<'bump> Display for DenseGrammar<'bump> {
