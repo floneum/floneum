@@ -181,6 +181,12 @@ impl WorkgroupShapeConstraints {
         Self::default()
     }
 
+    pub(crate) fn clear(&mut self) {
+        for constraints in &mut self.shape {
+            constraints.clear();
+        }
+    }
+
     pub(crate) fn add_constraint(&mut self, dimension: usize, constraint: Constraint) {
         assert!(dimension < 3, "Dimension must be 0, 1, or 2");
         self.shape[dimension].push(constraint);
@@ -202,16 +208,10 @@ impl WorkgroupShapeConstraints {
         self.possible().max_by_key(|shape| shape.linearized())
     }
 
-    fn possible_all(
-        constraints: impl IntoIterator<Item = Self>,
-    ) -> impl Iterator<Item = WorkgroupShape> {
-        let all = constraints.into_iter().collect::<Vec<_>>();
-        possible_workgroup_shapes()
-            .filter(move |shape| all.iter().all(|constraint| constraint.is_valid(shape)))
-    }
-
-    fn solve_all(constraints: impl IntoIterator<Item = Self>) -> Option<WorkgroupShape> {
-        Self::possible_all(constraints).max_by_key(|shape| shape.linearized())
+    pub(crate) fn merge(&mut self, other: &Self) {
+        for (i, constraints) in other.shape.iter().enumerate() {
+            self.shape[i].extend(constraints.clone());
+        }
     }
 }
 
@@ -260,9 +260,10 @@ fn test_many_workgroup_shape_constraints() {
     constraints2.add_constraint(1, Constraint::Equals(2));
     constraints2.add_constraint(2, Constraint::MultipleOf(8));
 
-    let valid_shapes: Vec<_> =
-        WorkgroupShapeConstraints::possible_all([constraints.clone(), constraints2.clone()])
-            .collect();
+    let mut merged = WorkgroupShapeConstraints::new();
+    merged.merge(&constraints);
+    merged.merge(&constraints2);
+    let valid_shapes: Vec<_> = merged.possible().collect();
     println!("Valid shapes: {:#?}", valid_shapes);
     for shape in valid_shapes {
         assert_eq!(shape.shape[0], 4);
@@ -270,7 +271,7 @@ fn test_many_workgroup_shape_constraints() {
         assert_eq!(shape.shape[2] % 8, 0);
     }
 
-    let valid_shape = WorkgroupShapeConstraints::solve_all([constraints, constraints2]);
+    let valid_shape = merged.solve();
     assert_eq!(valid_shape.unwrap().shape, [4, 2, 32]);
     assert_eq!(valid_shape.unwrap().linearized(), 256);
 }

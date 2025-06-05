@@ -1,18 +1,16 @@
-use std::collections::HashSet;
-
 use rustc_hash::FxHashSet;
 use wgpu::CommandEncoder;
 
 use crate::{
-    DataTypeEnum, ElementWiseFunction, ElementWiseFunctions, ElementWiseOperation, MatMulOperation,
-    PairWiseOperation, ReduceOperation,
+    DataTypeEnum, ElementWiseFunctions, ElementWiseOperation, MatMulOperation, PairWiseOperation,
+    ReduceOperation,
     dequantize::DequantizeOperation,
-    element_wise,
     index_select::IndexSelectOperation,
-    mir::{inputs::KernelInputValue, operation::Operation},
+    mir::{
+        inputs::KernelInputValue, operation::Operation, workgroup_shape::WorkgroupShapeConstraints,
+    },
     quantized::matmul::QMatMulOperation,
     tensor::TensorData,
-    visit_tiled::MaybeQData,
 };
 
 use super::{
@@ -49,15 +47,40 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    fn is_resolved_or_qmatrix(&self, key: &AnyComputeKey) -> bool {
-        self.resolved_set.contains(key) || matches!(key, AnyComputeKey::Dequantize(_))
-    }
-
     pub(crate) fn run(&mut self) -> TensorData {
         self.queue_operations();
         let queued_operations = std::mem::take(&mut self.queued_operations);
 
+        // Find runs of compatible dispatch shapes
+        let mut run_length = 0;
+        let mut current_constraints = WorkgroupShapeConstraints::new();
+
         for (node, operation) in queued_operations {
+            let constraint = operation.workgroup_shape_constraints(&self.graph.device);
+            println!(
+                "solve with just single constraint: {:?}",
+                constraint.solve()
+            );
+            current_constraints.merge(&constraint);
+            println!("constraints: {:?}", current_constraints);
+            let mut best = current_constraints.solve();
+            if best.is_none() {
+                current_constraints.clear();
+                run_length = 0;
+                best = current_constraints.solve();
+            }
+            if let Some(best) = best {
+                println!(
+                    "Dispatching {} operations with workgroup shape {:?}",
+                    run_length + 1,
+                    best
+                );
+                let inputs = operation.inputs(&self.graph);
+                let dispatch_size = operation.dispatch_size(&best, &inputs);
+                println!("dispatch size: {:?}", dispatch_size);
+            }
+            run_length += 1;
+
             let result = operation.run(&self.graph, &mut *self.command_encoder);
 
             let KernelInputValue::Tensor(resolved) = result else {
@@ -123,12 +146,22 @@ impl<'a> Resolver<'a> {
                     self.resolve_dequantize(dequantize_compute_node_key)
                 }
             };
-            let Some(resolved) = resolved else {
+            let mut dependencies = Vec::new();
+            resolved.visit_dependencies(&mut |dependency| {
+                if !self.resolved_set.contains(&dependency) {
+                    dependencies.push(dependency);
+                }
+            });
+            if !dependencies.is_empty() {
+                for dependency in dependencies {
+                    self.queue.push_back(dependency);
+                }
                 // If there are dependencies that are not resolved, push them to the queue then
                 // revisit this node
                 self.queue.push_back(node);
                 continue;
-            };
+            }
+
             // Mark this node as resolved
             self.resolved_set.insert(node);
             self.queued_operations.push((node, resolved));
@@ -157,10 +190,7 @@ impl<'a> Resolver<'a> {
         ElementWiseOperation::from_element_wise(current_key, functions, shape)
     }
 
-    fn resolve_element_wise(
-        &mut self,
-        key: ElementWiseComputeNodeKey,
-    ) -> Option<Box<dyn Operation>> {
+    fn resolve_element_wise(&mut self, key: ElementWiseComputeNodeKey) -> Box<dyn Operation> {
         // First collect all element wise ops in this chain
         let functions = self.collect_element_wise_ops(key);
         let input = functions.value;
@@ -183,19 +213,16 @@ impl<'a> Resolver<'a> {
             if let AnyComputeKey::Dequantize(key) = input {
                 return self.resolve_dequantize_then(key, Some(functions));
             }
-            // If the input is not cached, we need to wait for it to be resolved
-            self.queue.push_back(input);
-            return None;
         }
         let shape: Box<[_]> = functions.shape().into();
         // Otherwise, just run the element wise kernel
         let kernel =
             ElementWiseOperation::from_element_wise(input.into(), functions.functions, shape);
 
-        Some(Box::new(kernel))
+        Box::new(kernel)
     }
 
-    fn resolve_pair_wise(&mut self, key: PairWiseComputeNodeKey) -> Option<Box<dyn Operation>> {
+    fn resolve_pair_wise(&mut self, key: PairWiseComputeNodeKey) -> Box<dyn Operation> {
         self.resolve_pair_wise_then(key, None)
     }
 
@@ -203,7 +230,7 @@ impl<'a> Resolver<'a> {
         &mut self,
         key: PairWiseComputeNodeKey,
         then: Option<ElementWiseOperation>,
-    ) -> Option<Box<dyn Operation>> {
+    ) -> Box<dyn Operation> {
         let operation = &self.graph.nodes.pair_wise[&key];
         let function = operation.function.clone();
         let rank = operation.rank();
@@ -227,14 +254,6 @@ impl<'a> Resolver<'a> {
             second_pre_element_wise
         };
 
-        if !self.is_resolved_or_qmatrix(&first_input) {
-            self.queue.push_back(first_input);
-            return None;
-        }
-        if !self.is_resolved_or_qmatrix(&second_input) {
-            self.queue.push_back(second_input);
-            return None;
-        }
         let mut kernel = PairWiseOperation::new(function, first_input, second_input, rank);
         let first_pre = first_pre_element_wise;
         let second_pre = second_pre_element_wise;
@@ -243,10 +262,10 @@ impl<'a> Resolver<'a> {
             kernel.set_post_element_wise(then.functions);
         }
 
-        Some(Box::new(kernel))
+        Box::new(kernel)
     }
 
-    fn resolve_mat_mul(&mut self, key: MatMulComputeNodeKey) -> Option<Box<dyn Operation>> {
+    fn resolve_mat_mul(&mut self, key: MatMulComputeNodeKey) -> Box<dyn Operation> {
         self.resolve_mat_mul_then(key, None)
     }
 
@@ -254,7 +273,7 @@ impl<'a> Resolver<'a> {
         &mut self,
         key: MatMulComputeNodeKey,
         then: Option<ElementWiseOperation>,
-    ) -> Option<Box<dyn Operation>> {
+    ) -> Box<dyn Operation> {
         let operation = &self.graph.nodes.mat_mul[&key];
         let mut first = operation.first;
         let first_shape = operation.first_shape.clone();
@@ -278,14 +297,6 @@ impl<'a> Resolver<'a> {
             second_pre_element_wise
         };
 
-        if !self.resolved_set.contains(&first) {
-            self.queue.push_back(first);
-            return None;
-        };
-        if !self.resolved_set.contains(&second) {
-            self.queue.push_back(second);
-            return None;
-        };
         let mut kernel = MatMulOperation::new(
             first_pre_element_wise.input_datatype(),
             first,
@@ -300,25 +311,21 @@ impl<'a> Resolver<'a> {
             kernel.set_post_element_wise(then.functions);
         }
 
-        Some(Box::new(kernel))
+        Box::new(kernel)
     }
 
-    fn resolve_q_mat_mul(&mut self, key: QMatMulComputeNodeKey) -> Option<Box<dyn Operation>> {
+    fn resolve_q_mat_mul(&mut self, key: QMatMulComputeNodeKey) -> Box<dyn Operation> {
         let operation = &self.graph.nodes.q_mat_mul[&key];
         let input = operation.input;
         let matrix = operation.matrix.clone();
 
-        if !self.resolved_set.contains(&input) {
-            self.queue.push_back(input);
-            return None;
-        };
         let kernel =
             QMatMulOperation::new(operation.input_datatype, &operation.in_shape, input, matrix);
 
-        Some(Box::new(kernel))
+        Box::new(kernel)
     }
 
-    fn resolve_dequantize(&mut self, key: DequantizeComputeKey) -> Option<Box<dyn Operation>> {
+    fn resolve_dequantize(&mut self, key: DequantizeComputeKey) -> Box<dyn Operation> {
         self.resolve_dequantize_then(key, None)
     }
 
@@ -326,7 +333,7 @@ impl<'a> Resolver<'a> {
         &mut self,
         key: DequantizeComputeKey,
         then: Option<ElementWiseOperation>,
-    ) -> Option<Box<dyn Operation>> {
+    ) -> Box<dyn Operation> {
         let operation = &self.graph.nodes.dequantize[&key];
 
         let mut kernel = DequantizeOperation::new(operation.matrix.clone(), operation.datatype);
@@ -334,10 +341,10 @@ impl<'a> Resolver<'a> {
             kernel.set_post_element_wise(then.functions);
         }
 
-        Some(Box::new(kernel))
+        Box::new(kernel)
     }
 
-    fn resolve_reduce(&mut self, key: ReduceComputeNodeKey) -> Option<Box<dyn Operation>> {
+    fn resolve_reduce(&mut self, key: ReduceComputeNodeKey) -> Box<dyn Operation> {
         self.resolve_reduce_then(key, None)
     }
 
@@ -345,7 +352,7 @@ impl<'a> Resolver<'a> {
         &mut self,
         key: ReduceComputeNodeKey,
         then: Option<ElementWiseOperation>,
-    ) -> Option<Box<dyn Operation>> {
+    ) -> Box<dyn Operation> {
         let operation = self.graph.nodes.reduce[&key].clone();
         let mut input_key = operation.value;
 
@@ -357,10 +364,6 @@ impl<'a> Resolver<'a> {
             ElementWiseFunctions::empty(operation.reduce_datatype())
         };
 
-        if !self.resolved_set.contains(&input_key) {
-            self.queue.push_back(input_key);
-            return None;
-        };
         let mut kernel = ReduceOperation::new(
             input_key,
             operation.function,
@@ -374,54 +377,28 @@ impl<'a> Resolver<'a> {
         kernel.set_post_element_wise(element_wise_after);
         kernel.set_pre_element_wise(element_wise_before);
 
-        Some(Box::new(kernel))
+        Box::new(kernel)
     }
 
-    fn resolve_map_layout(&mut self, key: MapLayoutComputeNodeKey) -> Option<Box<dyn Operation>> {
-        let operation = self.graph.nodes.map_layout.get(&key).unwrap();
-        if !self.resolved_set.contains(&operation.input) {
-            self.queue.push_back(operation.input);
-            return None;
-        }
+    fn resolve_map_layout(&mut self, key: MapLayoutComputeNodeKey) -> Box<dyn Operation> {
         let kernel = self.graph.nodes.map_layout.get(&key).unwrap();
 
-        Some(Box::new(kernel.clone()))
+        Box::new(kernel.clone())
     }
 
-    fn resolve_resize(&mut self, key: ResizeComputeNodeKey) -> Option<Box<dyn Operation>> {
+    fn resolve_resize(&mut self, key: ResizeComputeNodeKey) -> Box<dyn Operation> {
         let kernel = self.graph.nodes.resize.get(&key).unwrap();
-        let input = kernel.input;
-        if !self.resolved_set.contains(&input) {
-            self.queue.push_back(input);
-            return None;
-        }
 
-        Some(Box::new(kernel.clone()))
+        Box::new(kernel.clone())
     }
 
-    fn resolve_slice_assign(
-        &mut self,
-        key: SliceAssignComputeNodeKey,
-    ) -> Option<Box<dyn Operation>> {
+    fn resolve_slice_assign(&mut self, key: SliceAssignComputeNodeKey) -> Box<dyn Operation> {
         let kernel = self.graph.nodes.slice_assign.get(&key).unwrap();
-        let input = kernel.input;
-        let value = kernel.value;
-        if !self.resolved_set.contains(&input) {
-            self.queue.push_back(input);
-            return None;
-        }
-        if !self.resolved_set.contains(&value) {
-            self.queue.push_back(value);
-            return None;
-        }
 
-        Some(Box::new(kernel.clone()))
+        Box::new(kernel.clone())
     }
 
-    fn resolve_index_select(
-        &mut self,
-        key: IndexSelectComputeNodeKey,
-    ) -> Option<Box<dyn Operation>> {
+    fn resolve_index_select(&mut self, key: IndexSelectComputeNodeKey) -> Box<dyn Operation> {
         self.resolve_index_select_then(key, None)
     }
 
@@ -429,7 +406,7 @@ impl<'a> Resolver<'a> {
         &mut self,
         key: IndexSelectComputeNodeKey,
         then: Option<ElementWiseOperation>,
-    ) -> Option<Box<dyn Operation>> {
+    ) -> Box<dyn Operation> {
         let operation = &self.graph.nodes.index_select[&key];
 
         let dimension = operation.dimension;
@@ -468,14 +445,6 @@ impl<'a> Resolver<'a> {
             )
         };
 
-        if !self.resolved_set.contains(&input) {
-            self.queue.push_back(input);
-            return None;
-        };
-        if !self.resolved_set.contains(&indexes) {
-            self.queue.push_back(indexes);
-            return None;
-        };
         let mut kernel = IndexSelectOperation::new(
             input,
             indexes,
@@ -487,7 +456,7 @@ impl<'a> Resolver<'a> {
         kernel.set_pre_element_wise_input(input_pre_element_wise.functions);
         kernel.set_pre_element_wise_indexes(indexes_pre_element_wise.functions);
 
-        Some(Box::new(kernel))
+        Box::new(kernel)
     }
 
     fn resolve_tensor(&mut self, key: TensorComputeNodeKey) {
