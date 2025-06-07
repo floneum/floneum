@@ -60,13 +60,8 @@ impl<'a> Resolver<'a> {
 
         for (node, operation) in queued_operations {
             let constraint = operation.workgroup_shape_constraints(&self.graph.device);
-            println!(
-                "solve with just single constraint: {:?}",
-                constraint.solve()
-            );
             let mut new_merged = current_constraints.clone();
             new_merged.merge(&constraint);
-            println!("constraints: {:?}", current_constraints);
             let new_best = new_merged.solve();
             let old_best = current_constraints.solve().unwrap();
             current_constraints = new_merged;
@@ -93,14 +88,24 @@ impl<'a> Resolver<'a> {
         let mut kernel = GenericKernel::new();
         kernel.set_workgroup_size(workgroup_shape);
         let mut all_inputs = Vec::new();
+        let mut i = 0;
         let mut max_dispatch_size = [0; 3];
         for (key, operation) in queued_operations.drain(..) {
+            // Map layout isn't really a kernel. Resolve it immediately
+            if let AnyComputeKey::MapLayout(key) = key {
+                let map_layout = self.graph.nodes.map_layout[&key].clone();
+                let result = map_layout.run(&mut self.graph);
+                // Cache the result
+                self.graph.cached_results.insert(key.into(), result);
+                continue;
+            }
+
             let inputs = operation.inputs(&self.graph);
             for input in &inputs {
                 input.visit_input_values(|value| {
+                    i += 1;
                     if let Some(index) = all_inputs.iter().position(|x| *x == value) {
                         kernel.pre_register_binding(index as _);
-                        println!("Found duplicate input at index {}", index);
                     } else {
                         kernel.pre_register_binding(all_inputs.len() as _);
                         all_inputs.push(value.clone());
@@ -109,12 +114,11 @@ impl<'a> Resolver<'a> {
             }
             let dispatch_size = operation.dispatch_size(&workgroup_shape, &inputs);
             for (new, max) in dispatch_size.iter().zip(max_dispatch_size.iter_mut()) {
-                if *new > *max {
-                    *max = *new;
-                }
+                *max = (*max).max(*new);
             }
             let result =
                 operation.build_kernel(&self.graph, &workgroup_shape, &inputs, &mut kernel);
+            kernel.push_body("workgroupBarrier();");
             let MirValue::Tensor(resolved) = result else {
                 panic!("Kernel input value is not a tensor");
             };
@@ -129,7 +133,6 @@ impl<'a> Resolver<'a> {
                 self.graph.check_life(dependency);
             }
         }
-        println!("all_inputs {:#?}", all_inputs);
         kernel.run(
             &self.graph.device,
             all_inputs,

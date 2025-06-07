@@ -276,7 +276,7 @@ impl Operation for IndexSelectOperation {
         kernel: &mut GenericKernel,
     ) -> crate::mir::inputs::MirValue {
         let kernel_text = self.build_index_kernel(kernel);
-        kernel.push_body(kernel_text);
+        kernel.push_body(&kernel_text);
         let output = inputs[2].clone();
         output
     }

@@ -411,7 +411,7 @@ impl Operation for MatMulOperation {
         writeln!(&mut kernel, "}}").unwrap();
         writeln!(&mut kernel, "}}").unwrap();
 
-        generic_kernel.push_body(kernel);
+        generic_kernel.push_body(&kernel);
 
         output_tensor.into()
     }

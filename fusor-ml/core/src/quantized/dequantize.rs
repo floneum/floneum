@@ -143,7 +143,7 @@ impl Operation for DequantizeOperation {
             },
         );
 
-        generic_kernel.push_body(kernel);
+        generic_kernel.push_body(&kernel);
 
         output_tensor.into()
     }

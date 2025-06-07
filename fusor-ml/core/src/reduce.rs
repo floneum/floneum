@@ -266,7 +266,7 @@ impl ReduceOperation {
         writeln!(&mut kernel_body, "}}").unwrap();
         writeln!(&mut kernel_body, "}}").unwrap();
 
-        kernel.push_body(kernel_body);
+        kernel.push_body(&kernel_body);
     }
 }
 

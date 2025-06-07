@@ -139,7 +139,7 @@ pub(crate) fn build_visit_tiled_kernel(
     kernel: &mut GenericKernel,
 ) {
     let kernel_text = build_tiled_map_kernel(rank, tile_size, &datatypes, kernel, modify_data);
-    kernel.push_body(kernel_text);
+    kernel.push_body(&kernel_text);
 }
 
 fn build_tiled_map_kernel(

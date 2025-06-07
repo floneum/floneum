@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use crate::{
     compute_graph::{AnyComputeKey, ComputeGraphInner}, Device
 };
@@ -8,7 +10,7 @@ use super::{
     workgroup_shape::{WorkgroupShape, WorkgroupShapeConstraints},
 };
 
-pub(crate) trait Operation {
+pub(crate) trait Operation: Debug {
     fn workgroup_shape_constraints(&self, device: &Device) -> WorkgroupShapeConstraints;
 
     fn dispatch_size(

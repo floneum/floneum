@@ -67,8 +67,8 @@ impl GenericKernel {
         self.registered_bindings.push(binding);
     }
 
-    pub(crate) fn push_body(&mut self, body: String) {
-        self.body.push_str(&body);
+    pub(crate) fn push_body(&mut self, body: &str) {
+        self.body.push_str(body);
     }
 
     pub(crate) fn set_workgroup_size(&mut self, workgroup_size: impl Into<WorkgroupShape>) {
@@ -83,14 +83,16 @@ impl GenericKernel {
     pub(crate) fn take_binding(&mut self, or: impl FnOnce(u32) -> KernelInput) -> u32 {
         let index = self.max_binding as usize;
         self.max_binding += 1;
-        if let Some(binding) = self.registered_bindings.get(index) {
+        let binding = if let Some(binding) = self.registered_bindings.get(index) {
             *binding
         } else {
             self.registered_bindings.push(index as u32);
-            let index = index as u32;
-            self.inputs.push(or(index));
-            index
+            index as u32
+        };
+        if binding >= self.inputs.len() as u32 {
+            self.inputs.push(or(binding));
         }
+        binding
     }
 
     pub(crate) fn add_function(
@@ -359,6 +361,8 @@ impl GenericKernel {
         bind_group_layout: &BindGroupLayout,
         inputs: Vec<KernelInputValue>,
     ) -> wgpu::BindGroup {
+        assert_eq!(self.inputs.len(), inputs.len(), "Input count mismatch");
+
         let mut entries = Vec::new();
         let mut owned_entries = Vec::new();
         fn create_u32_iter_buffer(
@@ -460,12 +464,12 @@ impl GenericKernel {
     pub(crate) fn run(
         &self,
         device: &Device,
-        tensors: Vec<KernelInputValue>,
+        inputs: Vec<KernelInputValue>,
         command_encoder: &mut CommandEncoder,
         workgroup_dispatch_size: [u32; 3],
     ) {
         let bind_group_layout = self.bind_group_layout(device);
-        let bind_group = self.create_bind_group(device, &bind_group_layout, tensors);
+        let bind_group = self.create_bind_group(device, &bind_group_layout, inputs);
         let pipeline = self.compute_pipeline(device, &bind_group_layout);
 
         {

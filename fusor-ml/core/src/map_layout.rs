@@ -49,6 +49,14 @@ impl MapLayoutOperation {
         let (offset, strides) = (self.map_stride)(layout.offset(), layout.strides());
         Layout::from_parts(offset, (self.map_size)(layout.shape()), strides)
     }
+
+    pub fn run(
+        &self,
+        graph: &mut crate::compute_graph::ComputeGraphInner,
+    ) -> TensorData {
+        let input = graph.get_result(self.input).unwrap();
+        self.map_tensor(&input)
+    }
 }
 
 impl Operation for MapLayoutOperation {
