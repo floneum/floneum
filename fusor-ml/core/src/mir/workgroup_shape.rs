@@ -169,6 +169,17 @@ impl WorkgroupShape {
         assert!(i < 3, "Index must be 0, 1, or 2");
         self.shape[i]
     }
+
+    pub(crate) fn linearized_workgroup_index(&self, kernel: &mut GenericKernel) -> String {
+        let mut merged = "0".to_string();
+        let mut product = 1;
+        for (component, real_size) in ["x", "y", "z"].iter().zip(self.shape()) {
+            merged += &format!(" + {}.{} * {}", kernel.workgroup_index(), component, product);
+            product *= real_size;
+        }
+
+        merged
+    }
 }
 
 #[derive(Default, Debug, Clone)]

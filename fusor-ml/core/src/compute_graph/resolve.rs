@@ -65,7 +65,7 @@ impl<'a> Resolver<'a> {
             let new_best = new_merged.solve();
             let old_best = current_constraints.solve().unwrap();
             current_constraints = new_merged;
-            if new_best.is_none() || pending_operations.len() > 1 {
+            if new_best.is_none() {
                 self.flush_operations(&mut pending_operations, old_best);
                 current_constraints.clear();
             }
@@ -86,9 +86,7 @@ impl<'a> Resolver<'a> {
         workgroup_shape: workgroup_shape::WorkgroupShape,
     ) {
         let mut kernel = GenericKernel::new();
-        kernel.set_workgroup_size(workgroup_shape);
         let mut all_inputs = Vec::new();
-        let mut i = 0;
         let mut max_dispatch_size = [0; 3];
         for (key, operation) in queued_operations.drain(..) {
             // Map layout isn't really a kernel. Resolve it immediately
@@ -103,7 +101,6 @@ impl<'a> Resolver<'a> {
             let inputs = operation.inputs(&self.graph);
             for input in &inputs {
                 input.visit_input_values(|value| {
-                    i += 1;
                     if let Some(index) = all_inputs.iter().position(|x| *x == value) {
                         kernel.pre_register_binding(index as _);
                     } else {
@@ -116,9 +113,11 @@ impl<'a> Resolver<'a> {
             for (new, max) in dispatch_size.iter().zip(max_dispatch_size.iter_mut()) {
                 *max = (*max).max(*new);
             }
+            kernel.push_body("{");
             let result =
                 operation.build_kernel(&self.graph, &workgroup_shape, &inputs, &mut kernel);
-            kernel.push_body("workgroupBarrier();");
+            kernel.push_body("}");
+            kernel.push_body("storageBarrier();");
             let MirValue::Tensor(resolved) = result else {
                 panic!("Kernel input value is not a tensor");
             };
@@ -133,6 +132,12 @@ impl<'a> Resolver<'a> {
                 self.graph.check_life(dependency);
             }
         }
+        println!(
+            "dispatch size {:?}",
+            max_dispatch_size
+        );
+        kernel.set_workgroup_size(workgroup_shape);
+        println!("workgroup shape: {:?}", workgroup_shape);
         kernel.run(
             &self.graph.device,
             all_inputs,

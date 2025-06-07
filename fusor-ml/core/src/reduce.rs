@@ -1,12 +1,11 @@
 use std::fmt::{Display, Write};
 
 use crate::{
-    ElementWiseFunctions,
     mir::{
         globals::KernelGlobalSpace,
         operation::Operation,
-        workgroup_shape::{Constraint, WorkgroupShapeConstraints},
-    },
+        workgroup_shape::{Constraint, WorkgroupShape, WorkgroupShapeConstraints},
+    }, ElementWiseFunctions
 };
 use crate::{
     Layout, Tensor,
@@ -73,7 +72,7 @@ impl ReduceOperation {
         self.post_element_wise.out_datatype()
     }
 
-    fn kernel(&self, blocksize: u32, kernel: &mut GenericKernel) {
+    fn kernel(&self, workgroup_shape: &WorkgroupShape, blocksize: u32, kernel: &mut GenericKernel) {
         let dtype = self.function.datatype();
         let out_datatype = self.out_datatype();
         let output_rank = self.rank - 1;
@@ -93,7 +92,6 @@ impl ReduceOperation {
         let reduce = self.add_function(kernel);
         let pre_element_wise = self.add_pre_element_wise_functions(kernel);
         let post_element_wise = self.add_post_element_wise_functions(kernel);
-        let workgroup_index = kernel.workgroup_index();
         let workgroup_local_index = kernel.workgroup_local_index();
         let subgroup_id = kernel.subgroup_index();
         let subgroup_local_id = kernel.subgroup_local_index();
@@ -105,7 +103,8 @@ impl ReduceOperation {
         // start offset of the input and output tensors for each thread group.
         writeln!(
             &mut kernel_body,
-            "var workgroup_index_remainder = {workgroup_index}.x;"
+            "var workgroup_index_remainder = {};",
+            workgroup_shape.linearized_workgroup_index(kernel)
         )
         .unwrap();
         for i in (0..output_rank).rev() {
@@ -359,7 +358,7 @@ impl Operation for ReduceOperation {
     ) -> MirValue {
         let output_tensor: TensorData = inputs[1].as_tensor().unwrap().clone();
         let max_blocksize = workgroup_shape.x();
-        self.kernel(max_blocksize, kernel);
+        self.kernel(workgroup_shape, max_blocksize, kernel);
 
         output_tensor.into()
     }
