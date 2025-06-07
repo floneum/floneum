@@ -65,7 +65,7 @@ impl<'a> Resolver<'a> {
             let new_best = new_merged.solve();
             let old_best = current_constraints.solve().unwrap();
             current_constraints = new_merged;
-            if new_best.is_none() {
+            if new_best.is_none() || true {
                 self.flush_operations(&mut pending_operations, old_best);
                 current_constraints.clear();
             }
@@ -132,12 +132,7 @@ impl<'a> Resolver<'a> {
                 self.graph.check_life(dependency);
             }
         }
-        println!(
-            "dispatch size {:?}",
-            max_dispatch_size
-        );
         kernel.set_workgroup_size(workgroup_shape);
-        println!("workgroup shape: {:?}", workgroup_shape);
         kernel.run(
             &self.graph.device,
             all_inputs,
