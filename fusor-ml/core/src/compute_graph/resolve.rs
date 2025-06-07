@@ -65,7 +65,7 @@ impl<'a> Resolver<'a> {
             let new_best = new_merged.solve();
             let old_best = current_constraints.solve().unwrap();
             current_constraints = new_merged;
-            if new_best.is_none() || true {
+            if new_best.is_none() {
                 self.flush_operations(&mut pending_operations, old_best);
                 current_constraints.clear();
             }
@@ -114,10 +114,10 @@ impl<'a> Resolver<'a> {
                 *max = (*max).max(*new);
             }
             kernel.push_body("{");
-            let result =
-                operation.build_kernel(&self.graph, &workgroup_shape, &inputs, &mut kernel);
+            operation.build_kernel(&self.graph, &workgroup_shape, &inputs, &mut kernel);
             kernel.push_body("}");
             kernel.push_body("storageBarrier();");
+            let result = operation.output(&self.graph, &inputs);
             let MirValue::Tensor(resolved) = result else {
                 panic!("Kernel input value is not a tensor");
             };

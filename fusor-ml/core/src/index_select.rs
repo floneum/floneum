@@ -272,11 +272,14 @@ impl Operation for IndexSelectOperation {
         &self,
         _: &crate::compute_graph::ComputeGraphInner,
         _: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[crate::mir::inputs::MirValue],
+        _: &[crate::mir::inputs::MirValue],
         kernel: &mut GenericKernel,
-    ) -> crate::mir::inputs::MirValue {
+    )  {
         let kernel_text = self.build_index_kernel(kernel);
         kernel.push_body(&kernel_text);
+    }
+
+    fn output(&self, _: &crate::compute_graph::ComputeGraphInner, inputs: &[crate::mir::inputs::MirValue]) -> crate::mir::inputs::MirValue {
         let output = inputs[2].clone();
         output
     }

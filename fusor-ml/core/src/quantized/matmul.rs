@@ -259,10 +259,9 @@ impl Operation for QMatMulOperation {
         &self,
         _: &crate::compute_graph::ComputeGraphInner,
         _: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[MirValue],
+        _: &[MirValue],
         generic_kernel: &mut GenericKernel,
-    ) -> MirValue {
-        let output_tensor = inputs[2].as_tensor().unwrap().clone();
+    ) {
         let mut kernel = String::new();
 
         let datatype = self.input_datatype;
@@ -327,7 +326,14 @@ impl Operation for QMatMulOperation {
         writeln!(&mut kernel, "}}").unwrap();
 
         generic_kernel.push_body(&kernel);
+    }
 
-        output_tensor.into()
+    fn output(
+        &self,
+        _: &crate::compute_graph::ComputeGraphInner,
+        inputs: &[MirValue],
+    ) -> MirValue {
+        let output_tensor = inputs[2].as_tensor().unwrap();
+        output_tensor.clone().into()
     }
 }

@@ -125,13 +125,19 @@ impl Operation for ResizeOperation {
         _: &crate::mir::workgroup_shape::WorkgroupShape,
         inputs: &[crate::mir::inputs::MirValue],
         kernel: &mut GenericKernel,
-    ) -> crate::mir::inputs::MirValue {
+    ) {
         let input = inputs[0].as_tensor().unwrap();
-        let output = inputs[1].as_tensor().unwrap();
         let rank = input.layout().rank() as u32;
         let datatype = input.datatype();
         self.kernel(rank, datatype, TILE_SIZE, kernel);
+    }
 
+    fn output(
+        &self,
+        _: &crate::compute_graph::ComputeGraphInner,
+        inputs: &[crate::mir::inputs::MirValue],
+    ) -> crate::mir::inputs::MirValue {
+        let output = inputs[1].as_tensor().unwrap();
         TensorData::new_from_buffer(
             output.device(),
             output.buffer().clone(),

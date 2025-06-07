@@ -50,10 +50,7 @@ impl MapLayoutOperation {
         Layout::from_parts(offset, (self.map_size)(layout.shape()), strides)
     }
 
-    pub fn run(
-        &self,
-        graph: &mut crate::compute_graph::ComputeGraphInner,
-    ) -> TensorData {
+    pub fn run(&self, graph: &mut crate::compute_graph::ComputeGraphInner) -> TensorData {
         let input = graph.get_result(self.input).unwrap();
         self.map_tensor(&input)
     }
@@ -86,15 +83,22 @@ impl Operation for MapLayoutOperation {
         vec![nodes.get_result(self.input).unwrap().into()]
     }
 
+    fn output(
+        &self,
+        _: &crate::compute_graph::ComputeGraphInner,
+        inputs: &[crate::mir::inputs::MirValue],
+    ) -> crate::mir::inputs::MirValue {
+        let input = inputs[0].as_tensor().unwrap();
+        self.map_tensor(input).into()
+    }
+
     fn build_kernel(
         &self,
         _: &crate::compute_graph::ComputeGraphInner,
         _: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[crate::mir::inputs::MirValue],
+        _: &[crate::mir::inputs::MirValue],
         _: &mut crate::mir::kernel::GenericKernel,
-    ) -> crate::mir::inputs::MirValue {
-        let input = inputs[0].as_tensor().unwrap();
-        self.map_tensor(input).into()
+    ) {
     }
 }
 

@@ -1,11 +1,12 @@
 use std::fmt::{Display, Write};
 
 use crate::{
+    ElementWiseFunctions,
     mir::{
         globals::KernelGlobalSpace,
         operation::Operation,
         workgroup_shape::{Constraint, WorkgroupShape, WorkgroupShapeConstraints},
-    }, ElementWiseFunctions
+    },
 };
 use crate::{
     Layout, Tensor,
@@ -353,13 +354,19 @@ impl Operation for ReduceOperation {
         &self,
         _: &crate::compute_graph::ComputeGraphInner,
         workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[MirValue],
+        _: &[MirValue],
         kernel: &mut GenericKernel,
-    ) -> MirValue {
-        let output_tensor: TensorData = inputs[1].as_tensor().unwrap().clone();
+    ) {
         let max_blocksize = workgroup_shape.x();
         self.kernel(workgroup_shape, max_blocksize, kernel);
+    }
 
+    fn output(
+        &self,
+        _: &crate::compute_graph::ComputeGraphInner,
+        inputs: &[MirValue],
+    ) -> MirValue {
+        let output_tensor: TensorData = inputs[1].as_tensor().unwrap().clone();
         output_tensor.into()
     }
 }

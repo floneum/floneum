@@ -69,11 +69,11 @@ impl Operation for SliceAssignOperation {
 
     fn build_kernel(
         &self,
-        nodes: &ComputeGraphInner,
+        _: &ComputeGraphInner,
         _: &crate::mir::workgroup_shape::WorkgroupShape,
         inputs: &[crate::mir::inputs::MirValue],
         kernel: &mut crate::mir::kernel::GenericKernel,
-    ) -> crate::mir::inputs::MirValue {
+    ) {
         let input: MaybeQData = inputs[0].clone().try_into().unwrap();
         let value: MaybeQData = inputs[1].clone().try_into().unwrap();
         assert_eq!(input.layout().shape(), value.layout().shape());
@@ -94,8 +94,15 @@ impl Operation for SliceAssignOperation {
             },
             kernel,
         );
+    }
 
-        nodes.get_result_or_qmatrix(self.input).unwrap().into()
+    fn output(
+        &self,
+        nodes: &ComputeGraphInner,
+        _: &[crate::mir::inputs::MirValue],
+    ) -> crate::mir::inputs::MirValue {
+        let input: MaybeQData = nodes.get_result_or_qmatrix(self.input).unwrap();
+        input.into()
     }
 }
 

@@ -152,10 +152,9 @@ impl Operation for PairWiseOperation {
         _: &crate::mir::workgroup_shape::WorkgroupShape,
         inputs: &[crate::mir::inputs::MirValue],
         kernel: &mut GenericKernel,
-    ) -> crate::mir::inputs::MirValue {
+    ) {
         let first: MaybeQData = inputs[0].clone().try_into().unwrap();
         let second: MaybeQData = inputs[1].clone().try_into().unwrap();
-        let output: Option<MaybeQData> = inputs.get(2).map(|x| x.clone().try_into().ok()).flatten();
         assert_eq!(first.layout().shape(), second.layout().shape());
 
         let rank = first.layout().rank();
@@ -206,14 +205,18 @@ impl Operation for PairWiseOperation {
             },
             kernel,
         );
-        let mut tensors: Vec<crate::visit_tiled::MaybeQData> = vec![first.clone(), second];
-        if let Some(output_tensor) = output {
-            tensors.push(output_tensor.into());
-        }
-        match tensors[output_tensor_index].clone() {
-            crate::visit_tiled::MaybeQData::Tensor(tensor) => tensor.into(),
-            crate::visit_tiled::MaybeQData::QMatrix(_) => unreachable!(),
-        }
+    }
+
+    fn output(
+        &self,
+        _: &ComputeGraphInner,
+        inputs: &[crate::mir::inputs::MirValue],
+    ) -> crate::mir::inputs::MirValue {
+        let first: MaybeQData = inputs[0].clone().try_into().unwrap();
+        let second: MaybeQData = inputs[1].clone().try_into().unwrap();
+        let re_used_allocation_index = self.re_used_allocation_index(&first, &second);
+        let output_tensor_index = re_used_allocation_index.unwrap_or(2);
+        inputs[output_tensor_index].clone()
     }
 }
 

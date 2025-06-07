@@ -1,7 +1,8 @@
 use std::fmt::Debug;
 
 use crate::{
-    compute_graph::{AnyComputeKey, ComputeGraphInner}, Device
+    Device,
+    compute_graph::{AnyComputeKey, ComputeGraphInner},
 };
 
 use super::{
@@ -13,15 +14,13 @@ use super::{
 pub(crate) trait Operation: Debug {
     fn workgroup_shape_constraints(&self, device: &Device) -> WorkgroupShapeConstraints;
 
-    fn dispatch_size(
-        &self,
-        workgroup_shape: &WorkgroupShape,
-        inputs: &[MirValue],
-    ) -> [u32; 3];
+    fn dispatch_size(&self, workgroup_shape: &WorkgroupShape, inputs: &[MirValue]) -> [u32; 3];
 
     fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey));
 
     fn inputs(&self, nodes: &ComputeGraphInner) -> Vec<MirValue>;
+
+    fn output(&self, nodes: &ComputeGraphInner, inputs: &[MirValue]) -> MirValue;
 
     fn build_kernel(
         &self,
@@ -29,5 +28,5 @@ pub(crate) trait Operation: Debug {
         workgroup_shape: &WorkgroupShape,
         inputs: &[MirValue],
         kernel: &mut GenericKernel,
-    ) -> MirValue;
+    );
 }

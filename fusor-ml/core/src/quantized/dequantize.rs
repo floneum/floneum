@@ -72,15 +72,18 @@ impl Operation for DequantizeOperation {
         ]
     }
 
+    fn output(&self, _: &crate::compute_graph::ComputeGraphInner, inputs: &[MirValue]) -> MirValue {
+        let output_tensor = inputs[1].as_tensor().unwrap().clone();
+        output_tensor.into()
+    }
+
     fn build_kernel(
         &self,
         _: &crate::compute_graph::ComputeGraphInner,
         _: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[MirValue],
+        _: &[MirValue],
         generic_kernel: &mut GenericKernel,
-    ) -> MirValue {
-        let output_tensor = inputs[1].as_tensor().unwrap().clone();
-
+    ) {
         let mut kernel = String::new();
 
         let datatype = self.datatype;
@@ -145,7 +148,7 @@ impl Operation for DequantizeOperation {
 
         generic_kernel.push_body(&kernel);
 
-        output_tensor.into()
+
     }
 }
 

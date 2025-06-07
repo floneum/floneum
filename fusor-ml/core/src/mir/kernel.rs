@@ -341,6 +341,7 @@ impl GenericKernel {
         let module = self.kernel.get_or_init(|| {
             let mut kernel = String::new();
             self.kernel(&mut kernel).unwrap();
+            println!("Kernel WGSL:\n{kernel}");
             device.create_shader_module(kernel)
         });
         device
