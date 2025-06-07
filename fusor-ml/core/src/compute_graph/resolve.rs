@@ -7,7 +7,7 @@ use crate::{
     dequantize::DequantizeOperation,
     index_select::IndexSelectOperation,
     mir::{
-        inputs::KernelInputValue,
+        inputs::MirValue,
         kernel::GenericKernel,
         operation::Operation,
         workgroup_shape::{self, WorkgroupShapeConstraints},
@@ -115,7 +115,7 @@ impl<'a> Resolver<'a> {
             }
             let result =
                 operation.build_kernel(&self.graph, &workgroup_shape, &inputs, &mut kernel);
-            let KernelInputValue::Tensor(resolved) = result else {
+            let MirValue::Tensor(resolved) = result else {
                 panic!("Kernel input value is not a tensor");
             };
             // Cache the result

@@ -95,7 +95,7 @@ impl Operation for MatMulOperation {
     fn dispatch_size(
         &self,
         workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[crate::mir::inputs::KernelInputValue],
+        inputs: &[crate::mir::inputs::MirValue],
     ) -> [u32; 3] {
         let [input_a, input_b, _output] = inputs else {
             panic!("MatMulOperation requires 3 inputs");
@@ -123,7 +123,7 @@ impl Operation for MatMulOperation {
     fn inputs(
         &self,
         nodes: &crate::compute_graph::ComputeGraphInner,
-    ) -> Vec<crate::mir::inputs::KernelInputValue> {
+    ) -> Vec<crate::mir::inputs::MirValue> {
         let a = nodes.get_result(self.first).unwrap();
         let b = nodes.get_result(self.second).unwrap();
         let last_dim = self.rank() as usize - 1;
@@ -143,9 +143,9 @@ impl Operation for MatMulOperation {
         &self,
         _: &crate::compute_graph::ComputeGraphInner,
         _: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[crate::mir::inputs::KernelInputValue],
+        inputs: &[crate::mir::inputs::MirValue],
         generic_kernel: &mut GenericKernel,
-    ) -> crate::mir::inputs::KernelInputValue {
+    ) -> crate::mir::inputs::MirValue {
         // based on https://siboehm.com/articles/22/CUDA-MMM
         let [input_a, input_b, output] = inputs else {
             panic!("MatMulOperation requires 3 inputs");

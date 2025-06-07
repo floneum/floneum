@@ -3,7 +3,7 @@ use crate::{
 };
 
 use super::{
-    inputs::KernelInputValue,
+    inputs::MirValue,
     kernel::GenericKernel,
     workgroup_shape::{WorkgroupShape, WorkgroupShapeConstraints},
 };
@@ -14,18 +14,18 @@ pub(crate) trait Operation {
     fn dispatch_size(
         &self,
         workgroup_shape: &WorkgroupShape,
-        inputs: &[KernelInputValue],
+        inputs: &[MirValue],
     ) -> [u32; 3];
 
     fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey));
 
-    fn inputs(&self, nodes: &ComputeGraphInner) -> Vec<KernelInputValue>;
+    fn inputs(&self, nodes: &ComputeGraphInner) -> Vec<MirValue>;
 
     fn build_kernel(
         &self,
         nodes: &ComputeGraphInner,
         workgroup_shape: &WorkgroupShape,
-        inputs: &[KernelInputValue],
+        inputs: &[MirValue],
         kernel: &mut GenericKernel,
-    ) -> KernelInputValue;
+    ) -> MirValue;
 }

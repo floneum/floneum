@@ -9,7 +9,7 @@ use crate::{
     compute_graph::{AnyComputeKey, ComputeGraphInner},
     layout::TILE_SIZE,
     mir::{
-        function::Function, inputs::KernelInputValue, kernel::GenericKernel, operation::Operation,
+        function::Function, inputs::MirValue, kernel::GenericKernel, operation::Operation,
     },
     tensor::{DataType, DataTypeEnum, TensorData},
     visit_tiled::{
@@ -155,7 +155,7 @@ impl Operation for ElementWiseOperation {
     fn dispatch_size(
         &self,
         workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[crate::mir::inputs::KernelInputValue],
+        inputs: &[crate::mir::inputs::MirValue],
     ) -> [u32; 3] {
         let inputs: Box<[_]> = inputs
             .iter()
@@ -171,7 +171,7 @@ impl Operation for ElementWiseOperation {
         f(self.value);
     }
 
-    fn inputs(&self, nodes: &ComputeGraphInner) -> Vec<crate::mir::inputs::KernelInputValue> {
+    fn inputs(&self, nodes: &ComputeGraphInner) -> Vec<crate::mir::inputs::MirValue> {
         let input = nodes.get_result_or_qmatrix(self.value).unwrap();
         let requires_new_tensor = self.requires_new_tensor(&input);
 
@@ -190,12 +190,12 @@ impl Operation for ElementWiseOperation {
         &self,
         _: &ComputeGraphInner,
         _: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[crate::mir::inputs::KernelInputValue],
+        inputs: &[crate::mir::inputs::MirValue],
         kernel: &mut GenericKernel,
-    ) -> crate::mir::inputs::KernelInputValue {
+    ) -> crate::mir::inputs::MirValue {
         let tensor: MaybeQData = inputs[0].clone().try_into().unwrap();
         let output_tensor = inputs.get(1).map(|input| {
-            let KernelInputValue::Tensor(tensor) = input.clone() else {
+            let MirValue::Tensor(tensor) = input.clone() else {
                 panic!("expected tensor input");
             };
             tensor

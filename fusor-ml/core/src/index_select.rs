@@ -201,7 +201,7 @@ impl Operation for IndexSelectOperation {
     fn dispatch_size(
         &self,
         workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[crate::mir::inputs::KernelInputValue],
+        inputs: &[crate::mir::inputs::MirValue],
     ) -> [u32; 3] {
         let output = inputs[2].as_tensor().unwrap();
         let output_shape = output.layout().shape();
@@ -231,7 +231,7 @@ impl Operation for IndexSelectOperation {
     fn inputs(
         &self,
         nodes: &crate::compute_graph::ComputeGraphInner,
-    ) -> Vec<crate::mir::inputs::KernelInputValue> {
+    ) -> Vec<crate::mir::inputs::MirValue> {
         let value = nodes.get_result(self.input).unwrap();
         let indexes = nodes.get_result(self.indexes).unwrap();
         let device = value.device();
@@ -272,9 +272,9 @@ impl Operation for IndexSelectOperation {
         &self,
         _: &crate::compute_graph::ComputeGraphInner,
         _: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[crate::mir::inputs::KernelInputValue],
+        inputs: &[crate::mir::inputs::MirValue],
         kernel: &mut GenericKernel,
-    ) -> crate::mir::inputs::KernelInputValue {
+    ) -> crate::mir::inputs::MirValue {
         let kernel_text = self.build_index_kernel(kernel);
         kernel.push_body(kernel_text);
         let output = inputs[2].clone();

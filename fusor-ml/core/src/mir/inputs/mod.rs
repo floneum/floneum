@@ -16,7 +16,7 @@ pub(crate) use qmatrix::QMatrixInput;
 pub(crate) use tensor::TensorInput;
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum KernelInputValueItem {
+pub(crate) enum KernelInputValue {
     QBuffer(Arc<wgpu::Buffer>),
     QInfo(Box<[usize]>),
     TensorBuffer(Arc<wgpu::Buffer>),
@@ -26,84 +26,84 @@ pub(crate) enum KernelInputValueItem {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum KernelInputValue {
+pub(crate) enum MirValue {
     QMatrix(QMatrix),
     Tensor(TensorData),
     Integer(u32),
     Float(f32),
 }
 
-impl KernelInputValue {
+impl MirValue {
     pub(crate) fn as_tensor(&self) -> Option<&TensorData> {
         match self {
-            KernelInputValue::Tensor(tensor) => Some(tensor),
+            MirValue::Tensor(tensor) => Some(tensor),
             _ => None,
         }
     }
 
     pub(crate) fn as_qmatrix(&self) -> Option<&QMatrix> {
         match self {
-            KernelInputValue::QMatrix(matrix) => Some(matrix),
+            MirValue::QMatrix(matrix) => Some(matrix),
             _ => None,
         }
     }
 
     pub(crate) fn as_integer(&self) -> Option<u32> {
         match self {
-            KernelInputValue::Integer(integer) => Some(*integer),
+            MirValue::Integer(integer) => Some(*integer),
             _ => None,
         }
     }
 
     pub(crate) fn as_float(&self) -> Option<f32> {
         match self {
-            KernelInputValue::Float(float) => Some(*float),
+            MirValue::Float(float) => Some(*float),
             _ => None,
         }
     }
 
     pub(crate) fn visit_input_values<F>(&self, mut f: F)
     where
-        F: FnMut(KernelInputValueItem),
+        F: FnMut(KernelInputValue),
     {
         match self {
-            KernelInputValue::QMatrix(matrix) => {
-                f(KernelInputValueItem::QBuffer(matrix.buffer().clone()));
-                f(KernelInputValueItem::QInfo(matrix.shape().clone()));
+            MirValue::QMatrix(matrix) => {
+                f(KernelInputValue::QBuffer(matrix.buffer().clone()));
+                f(KernelInputValue::QInfo(matrix.shape().clone()));
             }
-            KernelInputValue::Tensor(tensor) => {
-                f(KernelInputValueItem::TensorBuffer(tensor.buffer().clone()));
-                f(KernelInputValueItem::TensorInfo(tensor.info().clone()));
+            MirValue::Tensor(tensor) => {
+                f(KernelInputValue::TensorBuffer(tensor.buffer().clone()));
+                f(KernelInputValue::TensorInfo(tensor.info().clone()));
             }
-            KernelInputValue::Integer(integer) => {
-                f(KernelInputValueItem::Integer(*integer));
+            MirValue::Integer(integer) => {
+                f(KernelInputValue::Integer(*integer));
             }
-            KernelInputValue::Float(float) => {
-                f(KernelInputValueItem::Float(*float));
+            MirValue::Float(float) => {
+                f(KernelInputValue::Float(*float));
             }
         }
     }
 }
 
-impl From<QMatrix> for KernelInputValue {
+impl From<QMatrix> for MirValue {
     fn from(value: QMatrix) -> Self {
         Self::QMatrix(value)
     }
 }
 
-impl From<TensorData> for KernelInputValue {
+impl From<TensorData> for MirValue {
     fn from(value: TensorData) -> Self {
         Self::Tensor(value)
     }
 }
 
-impl From<u32> for KernelInputValue {
+impl From<u32> for MirValue {
     fn from(value: u32) -> Self {
         Self::Integer(value)
     }
 }
 
-impl From<f32> for KernelInputValue {
+impl From<f32> for MirValue {
     fn from(value: f32) -> Self {
         Self::Float(value)
     }

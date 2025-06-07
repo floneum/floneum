@@ -93,7 +93,7 @@ impl Operation for ResizeOperation {
     fn dispatch_size(
         &self,
         _: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[crate::mir::inputs::KernelInputValue],
+        inputs: &[crate::mir::inputs::MirValue],
     ) -> [u32; 3] {
         let input = inputs[0].as_tensor().unwrap();
         [
@@ -111,7 +111,7 @@ impl Operation for ResizeOperation {
     fn inputs(
         &self,
         nodes: &crate::compute_graph::ComputeGraphInner,
-    ) -> Vec<crate::mir::inputs::KernelInputValue> {
+    ) -> Vec<crate::mir::inputs::MirValue> {
         let input = nodes.cached_results.get(&self.input).unwrap().clone();
         let output = TensorData::new_for_shape(input.device(), &self.new_shape, input.datatype());
         let output_sliced =
@@ -123,9 +123,9 @@ impl Operation for ResizeOperation {
         &self,
         _: &crate::compute_graph::ComputeGraphInner,
         _: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[crate::mir::inputs::KernelInputValue],
+        inputs: &[crate::mir::inputs::MirValue],
         kernel: &mut GenericKernel,
-    ) -> crate::mir::inputs::KernelInputValue {
+    ) -> crate::mir::inputs::MirValue {
         let input = inputs[0].as_tensor().unwrap();
         let output = inputs[1].as_tensor().unwrap();
         let rank = input.layout().rank() as u32;

@@ -5,7 +5,7 @@ use fusor_gguf::GgmlType;
 use crate::{
     DataTypeEnum, Layout, QMatrix, TensorData, dequantize_block,
     mir::{
-        inputs::{KernelInputValue, QMatrixInput, TensorInput},
+        inputs::{MirValue, QMatrixInput, TensorInput},
         kernel::GenericKernel,
         workgroup_shape::{WorkgroupShape, WorkgroupShapeConstraints},
     },
@@ -78,22 +78,22 @@ impl From<&QMatrix> for MaybeQData {
     }
 }
 
-impl From<MaybeQData> for KernelInputValue {
+impl From<MaybeQData> for MirValue {
     fn from(val: MaybeQData) -> Self {
         match val {
-            MaybeQData::Tensor(tensor) => KernelInputValue::Tensor(tensor.clone()),
-            MaybeQData::QMatrix(qmatrix) => KernelInputValue::QMatrix(qmatrix.clone()),
+            MaybeQData::Tensor(tensor) => MirValue::Tensor(tensor.clone()),
+            MaybeQData::QMatrix(qmatrix) => MirValue::QMatrix(qmatrix.clone()),
         }
     }
 }
 
-impl TryFrom<KernelInputValue> for MaybeQData {
+impl TryFrom<MirValue> for MaybeQData {
     type Error = ();
 
-    fn try_from(value: KernelInputValue) -> Result<Self, Self::Error> {
+    fn try_from(value: MirValue) -> Result<Self, Self::Error> {
         match value {
-            KernelInputValue::Tensor(tensor) => Ok(MaybeQData::Tensor(tensor)),
-            KernelInputValue::QMatrix(qmatrix) => Ok(MaybeQData::QMatrix(qmatrix)),
+            MirValue::Tensor(tensor) => Ok(MaybeQData::Tensor(tensor)),
+            MirValue::QMatrix(qmatrix) => Ok(MaybeQData::QMatrix(qmatrix)),
             _ => Err(()),
         }
     }

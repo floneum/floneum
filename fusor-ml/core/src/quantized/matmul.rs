@@ -1,7 +1,7 @@
 use crate::{
     DataType, DataTypeEnum, Device, Tensor, TensorData,
     compute_graph::AnyComputeKey,
-    mir::{inputs::KernelInputValue, kernel::GenericKernel, operation::Operation},
+    mir::{inputs::MirValue, kernel::GenericKernel, operation::Operation},
 };
 use std::fmt::Write;
 
@@ -222,7 +222,7 @@ impl Operation for QMatMulOperation {
     fn dispatch_size(
         &self,
         workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[KernelInputValue],
+        inputs: &[MirValue],
     ) -> [u32; 3] {
         let input = inputs[0].as_tensor().unwrap();
         let a_shape = input.layout().shape();
@@ -239,7 +239,7 @@ impl Operation for QMatMulOperation {
         f(self.input);
     }
 
-    fn inputs(&self, nodes: &crate::compute_graph::ComputeGraphInner) -> Vec<KernelInputValue> {
+    fn inputs(&self, nodes: &crate::compute_graph::ComputeGraphInner) -> Vec<MirValue> {
         let input = nodes.get_result(self.input).unwrap();
         let q_matrix = self.matrix.clone();
         let device = input.device();
@@ -259,9 +259,9 @@ impl Operation for QMatMulOperation {
         &self,
         _: &crate::compute_graph::ComputeGraphInner,
         _: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[KernelInputValue],
+        inputs: &[MirValue],
         generic_kernel: &mut GenericKernel,
-    ) -> KernelInputValue {
+    ) -> MirValue {
         let output_tensor = inputs[2].as_tensor().unwrap().clone();
         let mut kernel = String::new();
 

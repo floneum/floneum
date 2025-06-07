@@ -42,7 +42,7 @@ impl Operation for SliceAssignOperation {
     fn dispatch_size(
         &self,
         workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[crate::mir::inputs::KernelInputValue],
+        inputs: &[crate::mir::inputs::MirValue],
     ) -> [u32; 3] {
         let inputs: Box<[_]> = inputs
             .iter()
@@ -59,7 +59,7 @@ impl Operation for SliceAssignOperation {
         f(self.input);
     }
 
-    fn inputs(&self, nodes: &ComputeGraphInner) -> Vec<crate::mir::inputs::KernelInputValue> {
+    fn inputs(&self, nodes: &ComputeGraphInner) -> Vec<crate::mir::inputs::MirValue> {
         let input = nodes.cached_results.get(&self.input).unwrap();
         let input = input.slice(&self.slices);
         let value = nodes.get_result_or_qmatrix(self.value).unwrap();
@@ -71,9 +71,9 @@ impl Operation for SliceAssignOperation {
         &self,
         nodes: &ComputeGraphInner,
         _: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[crate::mir::inputs::KernelInputValue],
+        inputs: &[crate::mir::inputs::MirValue],
         kernel: &mut crate::mir::kernel::GenericKernel,
-    ) -> crate::mir::inputs::KernelInputValue {
+    ) -> crate::mir::inputs::MirValue {
         let input: MaybeQData = inputs[0].clone().try_into().unwrap();
         let value: MaybeQData = inputs[1].clone().try_into().unwrap();
         assert_eq!(input.layout().shape(), value.layout().shape());

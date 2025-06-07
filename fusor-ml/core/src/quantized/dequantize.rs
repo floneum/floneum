@@ -1,4 +1,4 @@
-use crate::mir::inputs::KernelInputValue;
+use crate::mir::inputs::MirValue;
 use crate::mir::operation::Operation;
 use crate::mir::workgroup_shape::WorkgroupShapeConstraints;
 use crate::{
@@ -45,7 +45,7 @@ impl Operation for DequantizeOperation {
     fn dispatch_size(
         &self,
         workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
-        _: &[KernelInputValue],
+        _: &[MirValue],
     ) -> [u32; 3] {
         std::array::from_fn(|i| match i.cmp(&(self.matrix.shape.len() - 1)) {
             std::cmp::Ordering::Less => {
@@ -62,12 +62,12 @@ impl Operation for DequantizeOperation {
 
     fn visit_dependencies(&self, _: &mut dyn FnMut(crate::compute_graph::AnyComputeKey)) {}
 
-    fn inputs(&self, nodes: &crate::compute_graph::ComputeGraphInner) -> Vec<KernelInputValue> {
+    fn inputs(&self, nodes: &crate::compute_graph::ComputeGraphInner) -> Vec<MirValue> {
         let shape = &self.matrix.shape;
         let datatype = self.datatype;
         let output_tensor = TensorData::new_for_shape(&nodes.device, shape, datatype);
         vec![
-            KernelInputValue::from(self.matrix.clone()),
+            MirValue::from(self.matrix.clone()),
             output_tensor.into(),
         ]
     }
@@ -76,9 +76,9 @@ impl Operation for DequantizeOperation {
         &self,
         _: &crate::compute_graph::ComputeGraphInner,
         _: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[KernelInputValue],
+        inputs: &[MirValue],
         generic_kernel: &mut GenericKernel,
-    ) -> KernelInputValue {
+    ) -> MirValue {
         let output_tensor = inputs[1].as_tensor().unwrap().clone();
 
         let mut kernel = String::new();

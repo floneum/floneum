@@ -62,7 +62,7 @@ impl Operation for MapLayoutOperation {
     fn dispatch_size(
         &self,
         _: &crate::mir::workgroup_shape::WorkgroupShape,
-        _: &[crate::mir::inputs::KernelInputValue],
+        _: &[crate::mir::inputs::MirValue],
     ) -> [u32; 3] {
         [1, 1, 1]
     }
@@ -74,7 +74,7 @@ impl Operation for MapLayoutOperation {
     fn inputs(
         &self,
         nodes: &crate::compute_graph::ComputeGraphInner,
-    ) -> Vec<crate::mir::inputs::KernelInputValue> {
+    ) -> Vec<crate::mir::inputs::MirValue> {
         vec![nodes.get_result(self.input).unwrap().into()]
     }
 
@@ -82,9 +82,9 @@ impl Operation for MapLayoutOperation {
         &self,
         _: &crate::compute_graph::ComputeGraphInner,
         _: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[crate::mir::inputs::KernelInputValue],
+        inputs: &[crate::mir::inputs::MirValue],
         _: &mut crate::mir::kernel::GenericKernel,
-    ) -> crate::mir::inputs::KernelInputValue {
+    ) -> crate::mir::inputs::MirValue {
         let input = inputs[0].as_tensor().unwrap();
         self.map_tensor(input).into()
     }

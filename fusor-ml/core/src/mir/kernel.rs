@@ -4,7 +4,7 @@ use std::fmt::{Debug, Write};
 use std::sync::OnceLock;
 use wgpu::{BindGroupLayout, CommandEncoder, PipelineCompilationOptions, util::DeviceExt};
 
-use crate::mir::inputs::{KernelInputValueItem, QBufferInput, QInfoInput, TensorBufferInput, TensorInfoInput};
+use crate::mir::inputs::{KernelInputValue, QBufferInput, QInfoInput, TensorBufferInput, TensorInfoInput};
 use crate::quantized_types_wgsl::{
     write_q4_0_type, write_q4_k_type, write_q5_0_type, write_q6_k_type, write_q8_0_type,
 };
@@ -357,7 +357,7 @@ impl GenericKernel {
         &self,
         device: &crate::Device,
         bind_group_layout: &BindGroupLayout,
-        inputs: Vec<KernelInputValueItem>,
+        inputs: Vec<KernelInputValue>,
     ) -> wgpu::BindGroup {
         let mut entries = Vec::new();
         let mut owned_entries = Vec::new();
@@ -393,28 +393,28 @@ impl GenericKernel {
         };
         for (input, value) in self.inputs.iter().zip(inputs.iter()) {
             match (&input.ty, value) {
-                (KernelInputType::QBuffer(matrix_input), KernelInputValueItem::QBuffer(matrix)) => {
+                (KernelInputType::QBuffer(matrix_input), KernelInputValue::QBuffer(matrix)) => {
                     // Tensor weight
                     entries.push(wgpu::BindGroupEntry {
                         binding: matrix_input.matrix_binding,
                         resource: matrix.as_entire_binding(),
                     });
                 }
-                (KernelInputType::QInfo(matrix_input), KernelInputValueItem::QInfo(matrix)) => {
+                (KernelInputType::QInfo(matrix_input), KernelInputValue::QInfo(matrix)) => {
                     // Tensor info
                     owned_entries.push((
                         matrix_input.info_binding,
                         create_u32_iter_buffer(device, matrix.iter().map(|x| *x as u32)),
                     ));
                 }
-                (KernelInputType::TensorBuffer(tensor_input), KernelInputValueItem::TensorBuffer(tensor)) => {
+                (KernelInputType::TensorBuffer(tensor_input), KernelInputValue::TensorBuffer(tensor)) => {
                     // Tensor weight
                     entries.push(wgpu::BindGroupEntry {
                         binding: tensor_input.tensor_binding,
                         resource: tensor.as_entire_binding(),
                     });
                 }
-                (KernelInputType::TensorInfo(tensor_input), KernelInputValueItem::TensorInfo(tensor)) => {
+                (KernelInputType::TensorInfo(tensor_input), KernelInputValue::TensorInfo(tensor)) => {
                     // Tensor info
                     owned_entries.push((
                         tensor_input.info_binding,
@@ -431,10 +431,10 @@ impl GenericKernel {
                         ),
                     ));
                 }
-                (KernelInputType::Integer(integer_input), KernelInputValueItem::Integer(value)) => {
+                (KernelInputType::Integer(integer_input), KernelInputValue::Integer(value)) => {
                     owned_entries.push((integer_input.index, create_u32_buffer(device, *value)));
                 }
-                (KernelInputType::Float(float_input), KernelInputValueItem::Float(value)) => {
+                (KernelInputType::Float(float_input), KernelInputValue::Float(value)) => {
                     owned_entries.push((float_input.index, create_f32_buffer(device, *value)));
                 }
                 _ => panic!("cannot bind {input:?} to {value:?}"),
@@ -460,7 +460,7 @@ impl GenericKernel {
     pub(crate) fn run(
         &self,
         device: &Device,
-        tensors: Vec<KernelInputValueItem>,
+        tensors: Vec<KernelInputValue>,
         command_encoder: &mut CommandEncoder,
         workgroup_dispatch_size: [u32; 3],
     ) {

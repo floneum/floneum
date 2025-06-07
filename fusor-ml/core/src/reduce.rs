@@ -11,7 +11,7 @@ use crate::{
 use crate::{
     Layout, Tensor,
     compute_graph::AnyComputeKey,
-    mir::{function::Function, inputs::KernelInputValue, kernel::GenericKernel},
+    mir::{function::Function, inputs::MirValue, kernel::GenericKernel},
     tensor::{DataType, DataTypeEnum, TensorData},
 };
 
@@ -293,7 +293,7 @@ impl Operation for ReduceOperation {
     fn dispatch_size(
         &self,
         _: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[KernelInputValue],
+        inputs: &[MirValue],
     ) -> [u32; 3] {
         let output_tensor: TensorData = inputs[1].as_tensor().unwrap().clone();
         let workgroup_size = output_tensor.layout().shape().iter().product::<usize>() as u32;
@@ -305,7 +305,7 @@ impl Operation for ReduceOperation {
         f(self.value);
     }
 
-    fn inputs(&self, nodes: &crate::compute_graph::ComputeGraphInner) -> Vec<KernelInputValue> {
+    fn inputs(&self, nodes: &crate::compute_graph::ComputeGraphInner) -> Vec<MirValue> {
         let dim = self.axis;
         let tensor = nodes.cached_results.get(&self.value).unwrap();
         let layout = tensor.layout();
@@ -343,10 +343,10 @@ impl Operation for ReduceOperation {
             tensor.datatype(),
         );
         vec![
-            KernelInputValue::Tensor(trimmed_tensor.clone()),
-            KernelInputValue::Tensor(output_tensor.clone()),
-            KernelInputValue::Integer(tensor.layout().shape()[dim] as u32),
-            KernelInputValue::Integer(tensor.layout().strides()[dim] as u32),
+            MirValue::Tensor(trimmed_tensor.clone()),
+            MirValue::Tensor(output_tensor.clone()),
+            MirValue::Integer(tensor.layout().shape()[dim] as u32),
+            MirValue::Integer(tensor.layout().strides()[dim] as u32),
         ]
     }
 
@@ -354,9 +354,9 @@ impl Operation for ReduceOperation {
         &self,
         _: &crate::compute_graph::ComputeGraphInner,
         workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[KernelInputValue],
+        inputs: &[MirValue],
         kernel: &mut GenericKernel,
-    ) -> KernelInputValue {
+    ) -> MirValue {
         let output_tensor: TensorData = inputs[1].as_tensor().unwrap().clone();
         let max_blocksize = workgroup_shape.x();
         self.kernel(max_blocksize, kernel);
