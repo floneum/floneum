@@ -129,7 +129,7 @@ impl Display for DataTypeEnum {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct TensorLayoutInfo {
     layout: Layout,
     datatype: DataTypeEnum,
@@ -159,7 +159,7 @@ impl TensorLayoutInfo {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct TensorInfo {
     shape: Box<[usize]>,
     datatype: DataTypeEnum,
@@ -396,6 +396,12 @@ pub(crate) struct TensorData {
     device: Device,
     buffer: Arc<wgpu::Buffer>,
     info: TensorLayoutInfo,
+}
+
+impl PartialEq for TensorData {
+    fn eq(&self, other: &Self) -> bool {
+        self.info == other.info && self.buffer == other.buffer
+    }
 }
 
 impl TensorData {

@@ -4,6 +4,7 @@ use std::fmt::{Debug, Write};
 use std::sync::OnceLock;
 use wgpu::{BindGroupLayout, CommandEncoder, PipelineCompilationOptions, util::DeviceExt};
 
+use crate::mir::inputs::{KernelInputValueItem, QBufferInput, QInfoInput, TensorBufferInput, TensorInfoInput};
 use crate::quantized_types_wgsl::{
     write_q4_0_type, write_q4_k_type, write_q5_0_type, write_q6_k_type, write_q8_0_type,
 };
@@ -12,7 +13,7 @@ use crate::{DataTypeEnum, Device};
 use super::function::Function;
 use super::globals::{ArrayType, KernelGlobal, KernelGlobalSpace, KernelGlobalType};
 use super::inputs::{
-    FloatInput, IntegerInput, KernelInput, KernelInputType, KernelInputValue, QMatrixInput,
+    FloatInput, IntegerInput, KernelInput, KernelInputType, QMatrixInput,
     TensorInput,
 };
 use super::workgroup_shape::WorkgroupShape;
@@ -32,6 +33,7 @@ pub(crate) enum EnabledBuiltins {
 pub(crate) struct GenericKernel {
     workgroup_size: [u32; 3],
     max_binding: u32,
+    registered_bindings: Vec<u32>,
     max_function_id: u32,
     max_global_id: u32,
     inputs: Vec<KernelInput>,
@@ -49,6 +51,7 @@ impl GenericKernel {
             workgroup_size: [1, 1, 1],
             inputs: Default::default(),
             max_binding: 0,
+            registered_bindings: Vec::new(),
             functions: Default::default(),
             max_function_id: 0,
             globals: Default::default(),
@@ -60,8 +63,12 @@ impl GenericKernel {
         }
     }
 
-    pub(crate) fn set_body(&mut self, body: String) {
-        self.body = body;
+    pub(crate) fn pre_register_binding(&mut self, binding: u32) {
+        self.registered_bindings.push(binding);
+    }
+
+    pub(crate) fn push_body(&mut self, body: String) {
+        self.body.push_str(&body);
     }
 
     pub(crate) fn set_workgroup_size(&mut self, workgroup_size: impl Into<WorkgroupShape>) {
@@ -71,6 +78,19 @@ impl GenericKernel {
             "{workgroup_size:?} product must be <= 256"
         );
         self.workgroup_size = workgroup_size;
+    }
+
+    pub(crate) fn take_binding(&mut self, or: impl FnOnce(u32) -> KernelInput) -> u32 {
+        let index = self.max_binding as usize;
+        self.max_binding += 1;
+        if let Some(binding) = self.registered_bindings.get(index) {
+            *binding
+        } else {
+            self.registered_bindings.push(index as u32);
+            let index = index as u32;
+            self.inputs.push(or(index));
+            index
+        }
     }
 
     pub(crate) fn add_function(
@@ -93,36 +113,45 @@ impl GenericKernel {
         mutable: bool,
         datatype: DataTypeEnum,
     ) -> TensorInput {
-        let start_index = self.max_binding;
-        self.max_binding += 2;
+        let tensor_binding = self.take_binding(|tensor_binding| KernelInput {
+            ty: KernelInputType::TensorBuffer(TensorBufferInput {
+                tensor_binding,
+                mutable,
+                datatype: datatype.clone(),
+            }),
+        });
+        let info_binding = self.take_binding(|info_binding| KernelInput {
+            ty: KernelInputType::TensorInfo(TensorInfoInput { info_binding, rank }),
+        });
 
         let input = TensorInput {
-            start_index,
+            tensor_binding,
+            info_binding,
             rank,
             mutable,
             datatype,
         };
 
-        self.inputs.push(KernelInput {
-            ty: KernelInputType::Tensor(input.clone()),
-        });
-
         input
     }
 
     pub(crate) fn add_q_matrix_input(&mut self, rank: u32, datatype: GgmlType) -> QMatrixInput {
-        let start_index = self.max_binding;
-        self.max_binding += 2;
+        let matrix_binding = self.take_binding(|matrix_binding| KernelInput {
+            ty: KernelInputType::QBuffer(QBufferInput {
+                matrix_binding,
+                datatype: datatype.clone(),
+            }),
+        });
+        let info_binding = self.take_binding(|info_binding| KernelInput {
+            ty: KernelInputType::QInfo(QInfoInput { info_binding, rank }),
+        });
 
         let input = QMatrixInput {
-            start_index,
+            matrix_binding,
+            info_binding,
             datatype,
             rank,
         };
-
-        self.inputs.push(KernelInput {
-            ty: KernelInputType::QMatrix(input.clone()),
-        });
 
         self.quantized_type_definitions |= datatype;
 
@@ -130,28 +159,21 @@ impl GenericKernel {
     }
 
     pub(crate) fn add_integer_input(&mut self) -> IntegerInput {
-        let index = self.max_binding;
-        self.max_binding += 1;
+        let index = self.take_binding(|index| KernelInput {
+            ty: KernelInputType::Integer(IntegerInput { index }),
+        });
 
         let input = IntegerInput { index };
-
-        self.inputs.push(KernelInput {
-            ty: KernelInputType::Integer(input.clone()),
-        });
 
         input
     }
 
-    #[allow(dead_code)]
     pub(crate) fn add_float_input(&mut self) -> FloatInput {
-        let index = self.max_binding;
-        self.max_binding += 1;
+        let index = self.take_binding(|index| KernelInput {
+            ty: KernelInputType::Float(FloatInput { index }),
+        });
 
         let input = FloatInput { index };
-
-        self.inputs.push(KernelInput {
-            ty: KernelInputType::Float(input.clone()),
-        });
 
         input
     }
@@ -212,10 +234,10 @@ impl GenericKernel {
         let mut entries = Vec::new();
         for input in &self.inputs {
             match &input.ty {
-                KernelInputType::QMatrix(matrix) => {
+                KernelInputType::QBuffer(matrix) => {
                     // Matrix bytes
                     entries.push(wgpu::BindGroupLayoutEntry {
-                        binding: matrix.get_matrix_binding(),
+                        binding: matrix.matrix_binding,
                         visibility: wgpu::ShaderStages::COMPUTE,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Storage { read_only: true },
@@ -224,9 +246,11 @@ impl GenericKernel {
                         },
                         count: None,
                     });
+                }
+                KernelInputType::QInfo(matrix) => {
                     // Matrix info
                     entries.push(wgpu::BindGroupLayoutEntry {
-                        binding: matrix.get_info_binding(),
+                        binding: matrix.info_binding,
                         visibility: wgpu::ShaderStages::COMPUTE,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
@@ -236,10 +260,10 @@ impl GenericKernel {
                         count: None,
                     });
                 }
-                KernelInputType::Tensor(tensor_input) => {
+                KernelInputType::TensorBuffer(tensor_input) => {
                     // Tensor weight
                     entries.push(wgpu::BindGroupLayoutEntry {
-                        binding: tensor_input.get_tensor_binding(),
+                        binding: tensor_input.tensor_binding,
                         visibility: wgpu::ShaderStages::COMPUTE,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Storage {
@@ -250,9 +274,11 @@ impl GenericKernel {
                         },
                         count: None,
                     });
+                }
+                KernelInputType::TensorInfo(tensor_input) => {
                     // Tensor info
                     entries.push(wgpu::BindGroupLayoutEntry {
-                        binding: tensor_input.get_info_binding(),
+                        binding: tensor_input.info_binding,
                         visibility: wgpu::ShaderStages::COMPUTE,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
@@ -331,11 +357,10 @@ impl GenericKernel {
         &self,
         device: &crate::Device,
         bind_group_layout: &BindGroupLayout,
-        tensors: impl IntoIterator<Item = impl Into<KernelInputValue>>,
+        inputs: Vec<KernelInputValueItem>,
     ) -> wgpu::BindGroup {
         let mut entries = Vec::new();
         let mut owned_entries = Vec::new();
-        let tensors = tensors.into_iter().map(|x| x.into()).collect::<Vec<_>>();
         fn create_u32_iter_buffer(
             device: &crate::Device,
             data: impl IntoIterator<Item = u32>,
@@ -366,29 +391,33 @@ impl GenericKernel {
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 })
         };
-        for (input, value) in self.inputs.iter().zip(tensors.iter()) {
+        for (input, value) in self.inputs.iter().zip(inputs.iter()) {
             match (&input.ty, value) {
-                (KernelInputType::QMatrix(matrix_input), KernelInputValue::QMatrix(matrix)) => {
+                (KernelInputType::QBuffer(matrix_input), KernelInputValueItem::QBuffer(matrix)) => {
                     // Tensor weight
                     entries.push(wgpu::BindGroupEntry {
-                        binding: matrix_input.get_matrix_binding(),
-                        resource: matrix.buffer().as_entire_binding(),
+                        binding: matrix_input.matrix_binding,
+                        resource: matrix.as_entire_binding(),
                     });
+                }
+                (KernelInputType::QInfo(matrix_input), KernelInputValueItem::QInfo(matrix)) => {
                     // Tensor info
                     owned_entries.push((
-                        matrix_input.get_info_binding(),
-                        create_u32_iter_buffer(device, matrix.shape().iter().map(|x| *x as u32)),
+                        matrix_input.info_binding,
+                        create_u32_iter_buffer(device, matrix.iter().map(|x| *x as u32)),
                     ));
                 }
-                (KernelInputType::Tensor(tensor_input), KernelInputValue::Tensor(tensor)) => {
+                (KernelInputType::TensorBuffer(tensor_input), KernelInputValueItem::TensorBuffer(tensor)) => {
                     // Tensor weight
                     entries.push(wgpu::BindGroupEntry {
-                        binding: tensor_input.get_tensor_binding(),
-                        resource: tensor.buffer().as_entire_binding(),
+                        binding: tensor_input.tensor_binding,
+                        resource: tensor.as_entire_binding(),
                     });
+                }
+                (KernelInputType::TensorInfo(tensor_input), KernelInputValueItem::TensorInfo(tensor)) => {
                     // Tensor info
                     owned_entries.push((
-                        tensor_input.get_info_binding(),
+                        tensor_input.info_binding,
                         create_u32_iter_buffer(
                             device,
                             std::iter::once(tensor.layout().offset() as u32).chain(
@@ -402,10 +431,10 @@ impl GenericKernel {
                         ),
                     ));
                 }
-                (KernelInputType::Integer(integer_input), KernelInputValue::Integer(value)) => {
+                (KernelInputType::Integer(integer_input), KernelInputValueItem::Integer(value)) => {
                     owned_entries.push((integer_input.index, create_u32_buffer(device, *value)));
                 }
-                (KernelInputType::Float(float_input), KernelInputValue::Float(value)) => {
+                (KernelInputType::Float(float_input), KernelInputValueItem::Float(value)) => {
                     owned_entries.push((float_input.index, create_f32_buffer(device, *value)));
                 }
                 _ => panic!("cannot bind {input:?} to {value:?}"),
@@ -431,7 +460,7 @@ impl GenericKernel {
     pub(crate) fn run(
         &self,
         device: &Device,
-        tensors: impl IntoIterator<Item = impl Into<KernelInputValue>>,
+        tensors: Vec<KernelInputValueItem>,
         command_encoder: &mut CommandEncoder,
         workgroup_dispatch_size: [u32; 3],
     ) {

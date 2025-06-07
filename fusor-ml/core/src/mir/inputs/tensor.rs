@@ -5,7 +5,8 @@ use crate::DataTypeEnum;
 
 #[derive(Clone, Debug)]
 pub(crate) struct TensorInput {
-    pub(crate) start_index: u32,
+    pub(crate) tensor_binding: u32,
+    pub(crate) info_binding: u32,
     pub(crate) rank: u32,
     pub(crate) mutable: bool,
     pub(crate) datatype: DataTypeEnum,
@@ -13,11 +14,11 @@ pub(crate) struct TensorInput {
 
 impl TensorInput {
     pub(crate) fn get_tensor_binding(&self) -> u32 {
-        self.start_index
+        self.tensor_binding
     }
 
     pub(crate) fn get_info_binding(&self) -> u32 {
-        self.start_index + 1
+        self.info_binding
     }
 
     fn info_binding(&self) -> String {
@@ -75,6 +76,6 @@ impl TensorInput {
 
 impl Display for TensorInput {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "i_{}", self.start_index)
+        write!(f, "i_{}", self.tensor_binding)
     }
 }

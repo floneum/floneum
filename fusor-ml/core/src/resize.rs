@@ -74,7 +74,7 @@ impl ResizeOperation {
 
             writeln!(&mut kernel_body, "}}").unwrap();
         }
-        kernel.set_body(kernel_body);
+        kernel.push_body(kernel_body);
     }
 }
 

@@ -25,6 +25,12 @@ pub struct QMatrix {
     datatype: GgmlType,
 }
 
+impl PartialEq for QMatrix {
+    fn eq(&self, other: &Self) -> bool {
+        self.shape == other.shape && self.datatype == other.datatype && self.buffer == other.buffer
+    }
+}
+
 impl QMatrix {
     pub fn read_from_file<R: std::io::Read + std::io::Seek>(
         device: &Device,
@@ -106,11 +112,11 @@ impl QMatrix {
         })
     }
 
-    pub(crate) fn buffer(&self) -> &wgpu::Buffer {
+    pub(crate) fn buffer(&self) -> &Arc<wgpu::Buffer> {
         &self.buffer
     }
 
-    pub(crate) fn shape(&self) -> &[usize] {
+    pub(crate) fn shape(&self) -> &Box<[usize]> {
         &self.shape
     }
 

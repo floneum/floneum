@@ -326,7 +326,7 @@ impl Operation for QMatMulOperation {
         writeln!(&mut kernel, "{output}[output_index] = acc;").unwrap();
         writeln!(&mut kernel, "}}").unwrap();
 
-        generic_kernel.set_body(kernel);
+        generic_kernel.push_body(kernel);
 
         output_tensor.into()
     }

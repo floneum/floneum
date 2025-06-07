@@ -1,6 +1,7 @@
 use std::fmt::Display;
+use std::sync::Arc;
 
-use crate::TensorData;
+use crate::{DataTypeEnum, TensorData, TensorLayoutInfo};
 use crate::quantized::QMatrix;
 
 mod float;
@@ -9,11 +10,22 @@ mod qmatrix;
 mod tensor;
 
 pub(crate) use float::FloatInput;
+use fusor_gguf::GgmlType;
 pub(crate) use integer::IntegerInput;
 pub(crate) use qmatrix::QMatrixInput;
 pub(crate) use tensor::TensorInput;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum KernelInputValueItem {
+    QBuffer(Arc<wgpu::Buffer>),
+    QInfo(Box<[usize]>),
+    TensorBuffer(Arc<wgpu::Buffer>),
+    TensorInfo(TensorLayoutInfo),
+    Integer(u32),
+    Float(f32),
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum KernelInputValue {
     QMatrix(QMatrix),
     Tensor(TensorData),
@@ -47,6 +59,28 @@ impl KernelInputValue {
         match self {
             KernelInputValue::Float(float) => Some(*float),
             _ => None,
+        }
+    }
+
+    pub(crate) fn visit_input_values<F>(&self, mut f: F)
+    where
+        F: FnMut(KernelInputValueItem),
+    {
+        match self {
+            KernelInputValue::QMatrix(matrix) => {
+                f(KernelInputValueItem::QBuffer(matrix.buffer().clone()));
+                f(KernelInputValueItem::QInfo(matrix.shape().clone()));
+            }
+            KernelInputValue::Tensor(tensor) => {
+                f(KernelInputValueItem::TensorBuffer(tensor.buffer().clone()));
+                f(KernelInputValueItem::TensorInfo(tensor.info().clone()));
+            }
+            KernelInputValue::Integer(integer) => {
+                f(KernelInputValueItem::Integer(*integer));
+            }
+            KernelInputValue::Float(float) => {
+                f(KernelInputValueItem::Float(*float));
+            }
         }
     }
 }
@@ -83,28 +117,29 @@ pub(crate) struct KernelInput {
 impl Display for KernelInput {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.ty {
-            KernelInputType::QMatrix(matrix) => {
-                let start_index = matrix.start_index;
+            KernelInputType::QBuffer(matrix) => {
+                let start_index = matrix.matrix_binding;
                 let datatype = matrix.datatype;
                 writeln!(
                     f,
                     "@group(0) @binding({start_index}) var<storage, read> i_{start_index}: array<{datatype}>;"
                 )?;
-
-                writeln!(f, "struct Tensor{start_index}Info {{")?;
+            }
+            KernelInputType::QInfo(matrix) => {
+                let info_index = matrix.info_binding;
+                writeln!(f, "struct Tensor{info_index}Info {{")?;
                 for i in 0..matrix.rank {
                     writeln!(f, "    shape_{}: u32,", i)?;
                 }
                 writeln!(f, "}};")?;
 
-                let info_index = matrix.get_info_binding();
                 writeln!(
                     f,
-                    "@group(0) @binding({info_index}) var<uniform> i_{info_index}: Tensor{start_index}Info;"
+                    "@group(0) @binding({info_index}) var<uniform> i_{info_index}: Tensor{info_index}Info;"
                 )?;
             }
-            KernelInputType::Tensor(tensor) => {
-                let start_index = tensor.start_index;
+            KernelInputType::TensorBuffer(tensor) => {
+                let start_index = tensor.tensor_binding;
                 let datatype = tensor.datatype;
                 write!(f, "@group(0) @binding({start_index}) ")?;
 
@@ -115,8 +150,10 @@ impl Display for KernelInput {
                 }
 
                 writeln!(f, "i_{start_index}: array<{datatype}>;")?;
-
-                writeln!(f, "struct Tensor{start_index}Info {{")?;
+            }
+            KernelInputType::TensorInfo(tensor) => {
+                let info_index = tensor.info_binding;
+                writeln!(f, "struct Tensor{info_index}Info {{")?;
                 writeln!(f, "    offset: u32,")?;
                 for i in 0..tensor.rank {
                     writeln!(f, "    stride_{}: u32,", i)?;
@@ -124,10 +161,9 @@ impl Display for KernelInput {
                 }
                 writeln!(f, "}};")?;
 
-                let info_index = tensor.get_info_binding();
                 writeln!(
                     f,
-                    "@group(0) @binding({info_index}) var<uniform> i_{info_index}: Tensor{start_index}Info;"
+                    "@group(0) @binding({info_index}) var<uniform> i_{info_index}: Tensor{info_index}Info;"
                 )?;
             }
             KernelInputType::Integer(integer) => {
@@ -146,8 +182,35 @@ impl Display for KernelInput {
 
 #[derive(Clone, Debug)]
 pub(crate) enum KernelInputType {
-    QMatrix(QMatrixInput),
-    Tensor(TensorInput),
+    QBuffer(QBufferInput),
+    QInfo(QInfoInput),
+    TensorBuffer(TensorBufferInput),
+    TensorInfo(TensorInfoInput),
     Integer(IntegerInput),
     Float(FloatInput),
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct TensorBufferInput {
+    pub(crate) tensor_binding: u32,
+    pub(crate) mutable: bool,
+    pub(crate) datatype: DataTypeEnum,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct TensorInfoInput {
+    pub(crate) info_binding: u32,
+    pub(crate) rank: u32,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct QBufferInput {
+    pub(crate) matrix_binding: u32,
+    pub(crate) datatype: GgmlType,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct QInfoInput {
+    pub(crate) info_binding: u32,
+    pub(crate) rank: u32,
 }

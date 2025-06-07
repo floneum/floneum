@@ -4,18 +4,19 @@ use std::fmt::Write;
 
 #[derive(Clone, Debug)]
 pub(crate) struct QMatrixInput {
-    pub(crate) start_index: u32,
+    pub(crate) matrix_binding: u32,
+    pub(crate) info_binding: u32,
     pub(crate) datatype: GgmlType,
     pub(crate) rank: u32,
 }
 
 impl QMatrixInput {
     pub(crate) fn get_matrix_binding(&self) -> u32 {
-        self.start_index
+        self.matrix_binding
     }
 
     pub(crate) fn get_info_binding(&self) -> u32 {
-        self.start_index + 1
+        self.info_binding
     }
 
     fn info_binding(&self) -> String {
@@ -54,6 +55,6 @@ impl QMatrixInput {
 
 impl Display for QMatrixInput {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "i_{}", self.start_index)
+        write!(f, "i_{}", self.get_matrix_binding())
     }
 }

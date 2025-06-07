@@ -7,7 +7,10 @@ use crate::{
     dequantize::DequantizeOperation,
     index_select::IndexSelectOperation,
     mir::{
-        inputs::KernelInputValue, operation::Operation, workgroup_shape::WorkgroupShapeConstraints,
+        inputs::KernelInputValue,
+        kernel::GenericKernel,
+        operation::Operation,
+        workgroup_shape::{self, WorkgroupShapeConstraints},
     },
     quantized::matmul::QMatMulOperation,
     tensor::TensorData,
@@ -52,8 +55,8 @@ impl<'a> Resolver<'a> {
         let queued_operations = std::mem::take(&mut self.queued_operations);
 
         // Find runs of compatible dispatch shapes
-        let mut run_length = 0;
         let mut current_constraints = WorkgroupShapeConstraints::new();
+        let mut pending_operations = Vec::new();
 
         for (node, operation) in queued_operations {
             let constraint = operation.workgroup_shape_constraints(&self.graph.device);
@@ -61,45 +64,78 @@ impl<'a> Resolver<'a> {
                 "solve with just single constraint: {:?}",
                 constraint.solve()
             );
-            current_constraints.merge(&constraint);
+            let mut new_merged = current_constraints.clone();
+            new_merged.merge(&constraint);
             println!("constraints: {:?}", current_constraints);
-            let mut best = current_constraints.solve();
-            if best.is_none() {
+            let new_best = new_merged.solve();
+            let old_best = current_constraints.solve().unwrap();
+            current_constraints = new_merged;
+            if new_best.is_none() || pending_operations.len() > 1 {
+                self.flush_operations(&mut pending_operations, old_best);
                 current_constraints.clear();
-                run_length = 0;
-                best = current_constraints.solve();
             }
-            if let Some(best) = best {
-                println!(
-                    "Dispatching {} operations with workgroup shape {:?}",
-                    run_length + 1,
-                    best
-                );
-                let inputs = operation.inputs(&self.graph);
-                let dispatch_size = operation.dispatch_size(&best, &inputs);
-                println!("dispatch size: {:?}", dispatch_size);
+            pending_operations.push((node, operation));
+        }
+
+        if !pending_operations.is_empty() {
+            let old_best = current_constraints.solve().unwrap();
+            self.flush_operations(&mut pending_operations, old_best);
+        }
+
+        self.graph.cached_results[&self.target].clone()
+    }
+
+    fn flush_operations(
+        &mut self,
+        queued_operations: &mut Vec<(AnyComputeKey, Box<dyn Operation>)>,
+        workgroup_shape: workgroup_shape::WorkgroupShape,
+    ) {
+        let mut kernel = GenericKernel::new();
+        kernel.set_workgroup_size(workgroup_shape);
+        let mut all_inputs = Vec::new();
+        let mut max_dispatch_size = [0; 3];
+        for (key, operation) in queued_operations.drain(..) {
+            let inputs = operation.inputs(&self.graph);
+            for input in &inputs {
+                input.visit_input_values(|value| {
+                    if let Some(index) = all_inputs.iter().position(|x| *x == value) {
+                        kernel.pre_register_binding(index as _);
+                        println!("Found duplicate input at index {}", index);
+                    } else {
+                        kernel.pre_register_binding(all_inputs.len() as _);
+                        all_inputs.push(value.clone());
+                    }
+                });
             }
-            run_length += 1;
-
-            let result = operation.run(&self.graph, &mut *self.command_encoder);
-
+            let dispatch_size = operation.dispatch_size(&workgroup_shape, &inputs);
+            for (new, max) in dispatch_size.iter().zip(max_dispatch_size.iter_mut()) {
+                if *new > *max {
+                    *max = *new;
+                }
+            }
+            let result =
+                operation.build_kernel(&self.graph, &workgroup_shape, &inputs, &mut kernel);
             let KernelInputValue::Tensor(resolved) = result else {
                 panic!("Kernel input value is not a tensor");
             };
-
             // Cache the result
-            self.graph.cached_results.insert(node, resolved.clone());
+            self.graph.cached_results.insert(key, resolved);
             // Check if that makes any of this nodes dependents dead
             let mut dependencies = Vec::new();
-            visit_dependencies(&self.graph.nodes, node, |dependent_key| {
+            visit_dependencies(&self.graph.nodes, key, |dependent_key| {
                 dependencies.push(dependent_key);
             });
             for dependency in dependencies {
                 self.graph.check_life(dependency);
             }
         }
-
-        self.graph.cached_results[&self.target].clone()
+        println!("all_inputs {:#?}", all_inputs);
+        kernel.run(
+            &self.graph.device,
+            all_inputs,
+            self.command_encoder,
+            max_dispatch_size,
+        );
     }
 
     pub(crate) fn queue_operations(&mut self) {
