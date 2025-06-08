@@ -62,12 +62,15 @@ impl<'a> Resolver<'a> {
         let mut kernel = GenericKernel::new();
 
         for (node, operation) in queued_operations {
+            let new_inputs = operation.inputs(&self.graph);
             let constraint = operation.workgroup_shape_constraints(&self.graph.device);
             let mut new_merged = current_constraints.clone();
             new_merged.merge(&constraint);
             let old_best = current_constraints.solve().unwrap();
+            let mut extend = self.should_extend_kernel(new_inputs.clone(), &inputs);
+            extend &= new_merged.solve().is_some();
             current_constraints = new_merged;
-            if pending_operations.len() > 0 {
+            if !extend {
                 let kernel = std::mem::take(&mut kernel);
                 let inputs = std::mem::take(&mut inputs);
                 let all_input_values = std::mem::take(&mut all_input_values);
@@ -89,6 +92,7 @@ impl<'a> Resolver<'a> {
                 self.graph.cached_results.insert(key.into(), result);
             } else {
                 self.push_operation(
+                    new_inputs,
                     &mut kernel,
                     node,
                     operation,
@@ -101,7 +105,9 @@ impl<'a> Resolver<'a> {
 
         if !pending_operations.is_empty() {
             let old_best = current_constraints.solve().unwrap_or_else(|| {
-                panic!("Failed to find a valid workgroup shape for constraints {current_constraints:?}")
+                panic!(
+                    "Failed to find a valid workgroup shape for constraints {current_constraints:?}"
+                )
             });
             self.flush_operations(
                 kernel,
@@ -115,8 +121,29 @@ impl<'a> Resolver<'a> {
         self.graph.cached_results[&self.target].clone()
     }
 
+    fn should_extend_kernel(
+        &mut self,
+        new_inputs: Vec<MirValue>,
+        inputs: &Vec<Vec<MirValue>>,
+    ) -> bool {
+        for input in &new_inputs {
+            for other in inputs.iter().flatten() {
+                match (input, other) {
+                    (MirValue::Tensor(input_tensor), MirValue::Tensor(other_tensor)) => {
+                        if input_tensor == other_tensor {
+                            return false;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        true
+    }
+
     fn push_operation(
         &mut self,
+        new_inputs: Vec<MirValue>,
         kernel: &mut GenericKernel,
         key: AnyComputeKey,
         operation: Box<dyn Operation>,
@@ -124,7 +151,6 @@ impl<'a> Resolver<'a> {
         all_input_values: &mut Vec<KernelInputValue>,
         queued_operations: &mut Vec<(AnyComputeKey, Box<dyn Operation>)>,
     ) {
-        let new_inputs = operation.inputs(&self.graph);
         for input in &new_inputs {
             input.visit_input_values(|value| {
                 if let Some(index) = all_input_values.iter().position(|x| *x == value) {
@@ -167,7 +193,6 @@ impl<'a> Resolver<'a> {
             kernel.push_body("{");
             operation.build_kernel(&self.graph, &workgroup_shape, &inputs, &mut kernel);
             kernel.push_body("}");
-            kernel.push_body("storageBarrier();");
             // Check if that makes any of this nodes dependents dead
             let mut dependencies = Vec::new();
             visit_dependencies(&self.graph.nodes, key, |dependent_key| {
