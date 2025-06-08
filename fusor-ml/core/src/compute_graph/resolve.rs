@@ -7,7 +7,7 @@ use crate::{
     dequantize::DequantizeOperation,
     index_select::IndexSelectOperation,
     mir::{
-        inputs::MirValue,
+        inputs::{KernelInputValue, MirValue},
         kernel::GenericKernel,
         operation::Operation,
         workgroup_shape::{self, WorkgroupShapeConstraints},
@@ -57,58 +57,109 @@ impl<'a> Resolver<'a> {
         // Find runs of compatible dispatch shapes
         let mut current_constraints = WorkgroupShapeConstraints::new();
         let mut pending_operations = Vec::new();
+        let mut inputs = Vec::new();
+        let mut all_input_values = Vec::new();
+        let mut kernel = GenericKernel::new();
 
         for (node, operation) in queued_operations {
             let constraint = operation.workgroup_shape_constraints(&self.graph.device);
             let mut new_merged = current_constraints.clone();
             new_merged.merge(&constraint);
-            let new_best = new_merged.solve();
             let old_best = current_constraints.solve().unwrap();
             current_constraints = new_merged;
-            if new_best.is_none() {
-                self.flush_operations(&mut pending_operations, old_best);
+            if pending_operations.len() > 0 {
+                let kernel = std::mem::take(&mut kernel);
+                let inputs = std::mem::take(&mut inputs);
+                let all_input_values = std::mem::take(&mut all_input_values);
+                let pending_operations = std::mem::take(&mut pending_operations);
+                self.flush_operations(
+                    kernel,
+                    pending_operations,
+                    inputs,
+                    all_input_values,
+                    old_best,
+                );
                 current_constraints.clear();
             }
-            pending_operations.push((node, operation));
+            // Map layout isn't really a kernel. Resolve it immediately
+            if let AnyComputeKey::MapLayout(key) = node {
+                let map_layout = self.graph.nodes.map_layout[&key].clone();
+                let result = map_layout.run(&mut self.graph);
+                // Cache the result
+                self.graph.cached_results.insert(key.into(), result);
+            } else {
+                self.push_operation(
+                    &mut kernel,
+                    node,
+                    operation,
+                    &mut inputs,
+                    &mut all_input_values,
+                    &mut pending_operations,
+                );
+            }
         }
 
         if !pending_operations.is_empty() {
-            let old_best = current_constraints.solve().unwrap();
-            self.flush_operations(&mut pending_operations, old_best);
+            let old_best = current_constraints.solve().unwrap_or_else(|| {
+                panic!("Failed to find a valid workgroup shape for constraints {current_constraints:?}")
+            });
+            self.flush_operations(
+                kernel,
+                pending_operations,
+                inputs,
+                all_input_values,
+                old_best,
+            );
         }
 
         self.graph.cached_results[&self.target].clone()
     }
 
+    fn push_operation(
+        &mut self,
+        kernel: &mut GenericKernel,
+        key: AnyComputeKey,
+        operation: Box<dyn Operation>,
+        inputs: &mut Vec<Vec<MirValue>>,
+        all_input_values: &mut Vec<KernelInputValue>,
+        queued_operations: &mut Vec<(AnyComputeKey, Box<dyn Operation>)>,
+    ) {
+        let new_inputs = operation.inputs(&self.graph);
+        for input in &new_inputs {
+            input.visit_input_values(|value| {
+                if let Some(index) = all_input_values.iter().position(|x| *x == value) {
+                    kernel.pre_register_binding(index as _);
+                } else {
+                    kernel.pre_register_binding(all_input_values.len() as _);
+                    all_input_values.push(value.clone());
+                }
+            });
+        }
+        let result = operation.output(&self.graph, &new_inputs);
+        let MirValue::Tensor(resolved) = result else {
+            panic!("Kernel input value is not a tensor");
+        };
+        // Cache the result
+        self.graph.cached_results.insert(key, resolved);
+        inputs.push(new_inputs);
+        queued_operations.push((key, operation));
+    }
+
     fn flush_operations(
         &mut self,
-        queued_operations: &mut Vec<(AnyComputeKey, Box<dyn Operation>)>,
+        mut kernel: GenericKernel,
+        queued_operations: Vec<(AnyComputeKey, Box<dyn Operation>)>,
+        inputs: Vec<Vec<MirValue>>,
+        all_input_values: Vec<KernelInputValue>,
         workgroup_shape: workgroup_shape::WorkgroupShape,
     ) {
-        let mut kernel = GenericKernel::new();
-        let mut all_inputs = Vec::new();
         let mut max_dispatch_size = [0; 3];
-        for (key, operation) in queued_operations.drain(..) {
-            // Map layout isn't really a kernel. Resolve it immediately
-            if let AnyComputeKey::MapLayout(key) = key {
-                let map_layout = self.graph.nodes.map_layout[&key].clone();
-                let result = map_layout.run(&mut self.graph);
-                // Cache the result
-                self.graph.cached_results.insert(key.into(), result);
+        for ((key, operation), inputs) in queued_operations.into_iter().zip(inputs) {
+            // Map layout isn't really a kernel. Skip it
+            if matches!(key, AnyComputeKey::MapLayout(_)) {
                 continue;
             }
 
-            let inputs = operation.inputs(&self.graph);
-            for input in &inputs {
-                input.visit_input_values(|value| {
-                    if let Some(index) = all_inputs.iter().position(|x| *x == value) {
-                        kernel.pre_register_binding(index as _);
-                    } else {
-                        kernel.pre_register_binding(all_inputs.len() as _);
-                        all_inputs.push(value.clone());
-                    }
-                });
-            }
             let dispatch_size = operation.dispatch_size(&workgroup_shape, &inputs);
             for (new, max) in dispatch_size.iter().zip(max_dispatch_size.iter_mut()) {
                 *max = (*max).max(*new);
@@ -117,12 +168,6 @@ impl<'a> Resolver<'a> {
             operation.build_kernel(&self.graph, &workgroup_shape, &inputs, &mut kernel);
             kernel.push_body("}");
             kernel.push_body("storageBarrier();");
-            let result = operation.output(&self.graph, &inputs);
-            let MirValue::Tensor(resolved) = result else {
-                panic!("Kernel input value is not a tensor");
-            };
-            // Cache the result
-            self.graph.cached_results.insert(key, resolved);
             // Check if that makes any of this nodes dependents dead
             let mut dependencies = Vec::new();
             visit_dependencies(&self.graph.nodes, key, |dependent_key| {
@@ -135,7 +180,7 @@ impl<'a> Resolver<'a> {
         kernel.set_workgroup_size(workgroup_shape);
         kernel.run(
             &self.graph.device,
-            all_inputs,
+            all_input_values,
             self.command_encoder,
             max_dispatch_size,
         );
