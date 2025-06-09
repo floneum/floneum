@@ -1136,6 +1136,7 @@ version = "0.1.0"
 dependencies = [
  "bit-set 0.8.0",
  "bumpalo",
+ "comfy-table",
  "nom 8.0.0",
 ]
 

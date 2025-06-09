@@ -6,5 +6,6 @@ edition = "2024"
 [dependencies]
 nom = "8.0.0"
 bit-set = "0.8.0"
-bumpalo = "3.17.0"
+bumpalo = { version = "3.17.0", features = ["collections"] }
+comfy-table = "7.1.4"
 

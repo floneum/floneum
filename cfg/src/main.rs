@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+use comfy_table::Table;
+
 use crate::parse::Grammar;
 
 mod cnf;
@@ -44,10 +46,10 @@ struct DenseGrammar<'bump> {
 }
 
 use std::collections::HashMap;
-use std::collections::HashSet;
 
 impl<'bump> DenseGrammar<'bump> {
     pub fn recognizes(&self, input: &[u8]) -> bool {
+        let bump = bumpalo::Bump::new();
         let n = input.len();
 
         let mut terminal_map: HashMap<u8, Vec<usize>> = HashMap::new();
@@ -68,7 +70,12 @@ impl<'bump> DenseGrammar<'bump> {
             }
         }
 
-        let mut table: Vec<Vec<HashSet<usize>>> = vec![vec![HashSet::new(); n]; n];
+        #[cfg(debug_assertions)]
+        for value in terminal_map.values_mut() {
+            assert!(value.is_sorted());
+        }
+
+        let table = bump.alloc_slice_fill_with(n, |_| bump.alloc_slice_fill_with(n, |_| bumpalo::collections::Vec::new_in(&bump)));
 
         for (idx, &byte) in input.iter().enumerate() {
             if let Some(vars) = terminal_map.get(&byte) {
@@ -80,16 +87,49 @@ impl<'bump> DenseGrammar<'bump> {
             for i in 0..=n - span {
                 let j = i + span - 1;
                 for k in i..j {
-                    for b in table[i][k].clone() {
-                        for c in table[k + 1][j].clone() {
+                    for b in bump.alloc_slice_copy(table[i][k].as_slice()).iter().copied() {
+                        for c in bump.alloc_slice_copy(table[k + 1][j].as_slice()).iter().copied() {
                             if let Some(vars) = binary_map.get(&(b, c)) {
-                                table[i][j].extend(vars);
+                                let original = &mut table[i][j];
+                                // Join sorted lists
+                                let mut start_index = 0;
+                                for new in vars {
+                                    match original[start_index..]
+                                        .binary_search(&new)
+                                    {
+                                        Ok(pos) => start_index += pos + 1, // Move past the found element
+                                        Err(pos) => {
+                                            original.insert(pos + start_index, *new);
+                                            start_index += pos + 1; // Move past the inserted element
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
         }
+        println!("CYK table:");
+        let mut pretty_table = Table::new();
+
+        for row in &*table {
+            let row_str = row
+                .iter()
+                .map(|set| {
+                    if set.is_empty() {
+                        "∅".to_string()
+                    } else {
+                        set.iter()
+                            .map(|&x| format!("s{}", x))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    }
+                })
+                .collect::<Vec<_>>();
+            pretty_table.add_row(row_str);
+        }
+        println!("{pretty_table}");
 
         table[0][n - 1].contains(&self.start)
     }
