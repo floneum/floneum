@@ -265,9 +265,7 @@ pub(crate) fn generate_structured<P: Parser>(
                     Some(current) => trie.nodes[current]
                         .evaluated_children
                         .get(&logit.token_id)
-                        .map(|i| {
-                            trie.estimated_probability(*i)
-                        }),
+                        .map(|i| trie.estimated_probability(*i)),
                     None => trie
                         .roots
                         .get(&logit.token_id)
@@ -790,7 +788,6 @@ fn test_evaluation_trie() {
     assert_eq!(trie.estimated_probability(node_4), 0.0);
     assert_eq!(trie.estimated_probability(node_5), 0.8);
     assert_eq!(trie.estimated_probability(node_6), 0.0);
-
 }
 
 #[derive(Debug)]

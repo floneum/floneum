@@ -156,7 +156,7 @@ impl LlamaModel {
             seed,
             trie,
             fast_case,
-            lazy
+            lazy,
         )
     }
 }
@@ -192,7 +192,7 @@ where
                             on_token,
                             &mut trie,
                             true,
-                            true
+                            true,
                         ));
                     }),
                 }))

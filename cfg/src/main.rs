@@ -20,20 +20,22 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
     let dense_grammar = cnf_grammar.reallocate(&bump);
     println!("dense size: {}", bump.allocated_bytes());
 
+    let mut recognizer = Recognizer::new(&dense_grammar, &bump);
+    let mut text = String::new();
     loop {
-        let mut input = String::new();
-        println!("Enter a string to test (or 'exit' to quit):");
-        std::io::stdin().read_line(&mut input).unwrap();
-        let input = input.trim();
-
-        if input == "exit" {
-            break;
-        }
-
-        if dense_grammar.recognizes(input.as_bytes()) {
-            println!("The grammar recognizes the input: '{}'", input);
-        } else {
-            println!("The grammar does NOT recognize the input: '{}'", input);
+        let mut new_text = String::new();
+        std::io::stdin().read_line(&mut new_text).unwrap();
+        let new_text = new_text.trim_end_matches('\n');
+        for byte in new_text.as_bytes() {
+            text.push(*byte as char);
+            if recognizer.push_byte(*byte) || recognizer.finish() {
+                println!("Input {:?} is accepted", text);
+                break;
+            }
+            if !recognizer.could_become_valid() {
+                println!("Input {:?} could never become valid", text);
+                break;
+            }
         }
     }
 }
@@ -48,7 +50,10 @@ impl<'bump> DenseGrammar<'bump> {
         let bump = bumpalo::Bump::new();
         let mut recognizer = Recognizer::new(self, &bump);
 
-        input.iter().any(|&byte| recognizer.push(Some(byte))) || recognizer.push(None)
+        for byte in input {
+            recognizer.push_byte(*byte);
+        }
+        recognizer.finish()
     }
 }
 
@@ -191,9 +196,26 @@ impl<'bump> Recognizer<'bump> {
         }
     }
 
-    pub fn push(&mut self, byte: Option<u8>) -> bool {
+    fn could_become_valid(&self) -> bool {
+        // The position could be valid if the last position is non-empty
+        self.chart.last().map_or(false, |last| !last.is_empty())
+    }
+
+    fn push_byte(&mut self, byte: u8) -> bool {
+        // Push the byte into the chart and process it
+        self.push(Some(byte))
+    }
+
+    fn finish(&mut self) -> bool {
+        // Process the final state with no byte
+        self.push(None)
+    }
+
+    fn push(&mut self, byte: Option<u8>) -> bool {
         let k = self.chart.len() - 1;
-        self.chart.push(Vec::new());
+        if byte.is_some() {
+            self.chart.push(Vec::new());
+        }
 
         // Process each state in the current position
         let mut index = 0;
