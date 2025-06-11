@@ -4,7 +4,9 @@ use std::fmt::{Debug, Write};
 use std::sync::OnceLock;
 use wgpu::{BindGroupLayout, CommandEncoder, PipelineCompilationOptions, util::DeviceExt};
 
-use crate::mir::inputs::{KernelInputValue, QBufferInput, QInfoInput, TensorBufferInput, TensorInfoInput};
+use crate::mir::inputs::{
+    KernelInputValue, QBufferInput, QInfoInput, TensorBufferInput, TensorInfoInput,
+};
 use crate::quantized_types_wgsl::{
     write_q4_0_type, write_q4_k_type, write_q5_0_type, write_q6_k_type, write_q8_0_type,
 };
@@ -13,8 +15,7 @@ use crate::{DataTypeEnum, Device};
 use super::function::Function;
 use super::globals::{ArrayType, KernelGlobal, KernelGlobalSpace, KernelGlobalType};
 use super::inputs::{
-    FloatInput, IntegerInput, KernelInput, KernelInputType, QMatrixInput,
-    TensorInput,
+    FloatInput, IntegerInput, KernelInput, KernelInputType, QMatrixInput, TensorInput,
 };
 use super::workgroup_shape::WorkgroupShape;
 
@@ -356,7 +357,7 @@ impl GenericKernel {
                 layout: Some(&compute_pipeline_layout),
                 module,
                 entry_point: Some("main"),
-                cache: None,
+                cache: device.wgpu_cache(),
                 compilation_options: PipelineCompilationOptions::default(),
             })
     }
@@ -417,14 +418,20 @@ impl GenericKernel {
                         create_u32_iter_buffer(device, matrix.iter().map(|x| *x as u32)),
                     ));
                 }
-                (KernelInputType::TensorBuffer(tensor_input), KernelInputValue::TensorBuffer(tensor)) => {
+                (
+                    KernelInputType::TensorBuffer(tensor_input),
+                    KernelInputValue::TensorBuffer(tensor),
+                ) => {
                     // Tensor weight
                     entries.push(wgpu::BindGroupEntry {
                         binding: tensor_input.tensor_binding,
                         resource: tensor.as_entire_binding(),
                     });
                 }
-                (KernelInputType::TensorInfo(tensor_input), KernelInputValue::TensorInfo(tensor)) => {
+                (
+                    KernelInputType::TensorInfo(tensor_input),
+                    KernelInputValue::TensorInfo(tensor),
+                ) => {
                     // Tensor info
                     owned_entries.push((
                         tensor_input.info_binding,
