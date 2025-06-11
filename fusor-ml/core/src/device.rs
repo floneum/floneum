@@ -1,10 +1,21 @@
-use std::{borrow::Cow, fmt::Debug, path::PathBuf, sync::Arc};
+use std::{borrow::Cow, fmt::Debug, num::NonZeroUsize, path::PathBuf, sync::Arc};
+
+use lru::LruCache;
+use parking_lot::RwLock;
+use rustc_hash::FxBuildHasher;
+use wgpu::{BindGroupLayout, PipelineLayout, ShaderModule};
 
 struct DeviceInner {
     device: wgpu::Device,
     queue: wgpu::Queue,
     cache: Option<wgpu::PipelineCache>,
     cache_file: Option<PathBuf>,
+    bind_group_layout_cache:
+        RwLock<LruCache<Vec<wgpu::BindGroupLayoutEntry>, BindGroupLayout, FxBuildHasher>>,
+    pipeline_layout_cache: RwLock<LruCache<BindGroupLayout, wgpu::PipelineLayout, FxBuildHasher>>,
+    shader_module_cache: RwLock<LruCache<String, wgpu::ShaderModule, FxBuildHasher>>,
+    compute_pipeline_cache:
+        RwLock<LruCache<(PipelineLayout, ShaderModule), wgpu::ComputePipeline, FxBuildHasher>>,
 }
 
 impl Debug for DeviceInner {
@@ -50,12 +61,26 @@ impl Device {
             (None, None)
         };
 
+        let cache_size = const { NonZeroUsize::new(2048).unwrap() };
+        let bind_group_layout_cache =
+            RwLock::new(LruCache::with_hasher(cache_size, Default::default()));
+        let pipeline_layout_cache =
+            RwLock::new(LruCache::with_hasher(cache_size, Default::default()));
+        let shader_module_cache =
+            RwLock::new(LruCache::with_hasher(cache_size, Default::default()));
+        let compute_pipeline_cache =
+            RwLock::new(LruCache::with_hasher(cache_size, Default::default()));
+
         let device = Self {
             inner: Arc::new(DeviceInner {
                 device,
                 queue,
                 cache,
                 cache_file,
+                bind_group_layout_cache,
+                pipeline_layout_cache,
+                shader_module_cache,
+                compute_pipeline_cache,
             }),
         };
 
@@ -101,5 +126,30 @@ impl Device {
 
     pub(crate) fn wgpu_cache_file(&self) -> Option<&PathBuf> {
         self.inner.cache_file.as_ref()
+    }
+
+    pub(crate) fn bind_group_layout_cache(
+        &self,
+    ) -> &RwLock<LruCache<Vec<wgpu::BindGroupLayoutEntry>, BindGroupLayout, FxBuildHasher>> {
+        &self.inner.bind_group_layout_cache
+    }
+
+    pub(crate) fn pipeline_layout_cache(
+        &self,
+    ) -> &RwLock<LruCache<BindGroupLayout, wgpu::PipelineLayout, FxBuildHasher>> {
+        &self.inner.pipeline_layout_cache
+    }
+
+    pub(crate) fn shader_module_cache(
+        &self,
+    ) -> &RwLock<LruCache<String, wgpu::ShaderModule, FxBuildHasher>> {
+        &self.inner.shader_module_cache
+    }
+
+    pub(crate) fn compute_pipeline_cache(
+        &self,
+    ) -> &RwLock<LruCache<(PipelineLayout, ShaderModule), wgpu::ComputePipeline, FxBuildHasher>>
+    {
+        &self.inner.compute_pipeline_cache
     }
 }

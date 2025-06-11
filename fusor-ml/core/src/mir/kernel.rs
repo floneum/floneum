@@ -329,16 +329,7 @@ impl GenericKernel {
             }
         }
 
-        static CACHE: OnceLock<
-            RwLock<LruCache<Vec<wgpu::BindGroupLayoutEntry>, BindGroupLayout, FxBuildHasher>>,
-        > = OnceLock::new();
-        let cache = CACHE.get_or_init(|| {
-            RwLock::new(LruCache::with_hasher(
-                const { NonZeroUsize::new(2048).unwrap() },
-                Default::default(),
-            ))
-        });
-        let mut write = cache.write();
+        let mut write = device.bind_group_layout_cache().write();
         write
             .get_or_insert_ref(&entries, || {
                 device
@@ -357,16 +348,8 @@ impl GenericKernel {
         bind_group_layout: &BindGroupLayout,
     ) -> wgpu::ComputePipeline {
         let compute_pipeline_layout = {
-            static CACHE: OnceLock<
-                RwLock<LruCache<BindGroupLayout, wgpu::PipelineLayout, FxBuildHasher>>,
-            > = OnceLock::new();
-            let cache = CACHE.get_or_init(|| {
-                RwLock::new(LruCache::with_hasher(
-                    const { NonZeroUsize::new(2048).unwrap() },
-                    Default::default(),
-                ))
-            });
-            cache
+            device
+                .pipeline_layout_cache()
                 .write()
                 .get_or_insert_ref(&bind_group_layout, || {
                     device
@@ -382,32 +365,14 @@ impl GenericKernel {
         let module = self.kernel.get_or_init(|| {
             let mut kernel = String::new();
             self.kernel(&mut kernel).unwrap();
-            static CACHE: OnceLock<RwLock<LruCache<String, wgpu::ShaderModule, FxBuildHasher>>> =
-                OnceLock::new();
-            let cache = CACHE.get_or_init(|| {
-                RwLock::new(LruCache::with_hasher(
-                    const { NonZeroUsize::new(2048).unwrap() },
-                    Default::default(),
-                ))
-            });
-            cache
+            device
+                .shader_module_cache()
                 .write()
                 .get_or_insert_ref(&kernel, || device.create_shader_module(&kernel))
                 .clone()
         });
         {
-            static CACHE: OnceLock<
-                RwLock<
-                    LruCache<(PipelineLayout, ShaderModule), wgpu::ComputePipeline, FxBuildHasher>,
-                >,
-            > = OnceLock::new();
-            let cache = CACHE.get_or_init(|| {
-                RwLock::new(LruCache::with_hasher(
-                    const { NonZeroUsize::new(2048).unwrap() },
-                    Default::default(),
-                ))
-            });
-            let mut write = cache.write();
+            let mut write = device.compute_pipeline_cache().write();
             write
                 .get_or_insert((compute_pipeline_layout.clone(), module.clone()), || {
                     device
