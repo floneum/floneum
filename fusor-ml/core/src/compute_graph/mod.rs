@@ -11,7 +11,6 @@ mod dependency_map;
 mod layout_pass;
 mod queue;
 mod resolve;
-mod visit;
 mod visualize;
 
 use crate::{
