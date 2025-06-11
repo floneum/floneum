@@ -1,8 +1,13 @@
 use enumset::{EnumSet, EnumSetType};
 use fusor_gguf::GgmlType;
+use lru::LruCache;
+use parking_lot::RwLock;
+use rustc_hash::{FxBuildHasher, FxHasher};
 use std::fmt::{Debug, Write};
+use std::num::NonZeroUsize;
 use std::sync::OnceLock;
 use wgpu::{BindGroupLayout, CommandEncoder, PipelineCompilationOptions, util::DeviceExt};
+use wgpu::{PipelineLayout, ShaderModule};
 
 use crate::mir::inputs::{
     KernelInputValue, QBufferInput, QInfoInput, TensorBufferInput, TensorInfoInput,
@@ -324,12 +329,26 @@ impl GenericKernel {
             }
         }
 
-        device
-            .wgpu_device()
-            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: None,
-                entries: &entries,
+        static CACHE: OnceLock<
+            RwLock<LruCache<Vec<wgpu::BindGroupLayoutEntry>, BindGroupLayout, FxBuildHasher>>,
+        > = OnceLock::new();
+        let cache = CACHE.get_or_init(|| {
+            RwLock::new(LruCache::with_hasher(
+                const { NonZeroUsize::new(2048).unwrap() },
+                Default::default(),
+            ))
+        });
+        let mut write = cache.write();
+        write
+            .get_or_insert_ref(&entries, || {
+                device
+                    .wgpu_device()
+                    .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                        label: None,
+                        entries: &entries,
+                    })
             })
+            .clone()
     }
 
     fn compute_pipeline(
@@ -337,29 +356,73 @@ impl GenericKernel {
         device: &crate::Device,
         bind_group_layout: &BindGroupLayout,
     ) -> wgpu::ComputePipeline {
-        let compute_pipeline_layout =
-            device
-                .wgpu_device()
-                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: None,
-                    bind_group_layouts: &[bind_group_layout],
-                    push_constant_ranges: &[],
-                });
+        let compute_pipeline_layout = {
+            static CACHE: OnceLock<
+                RwLock<LruCache<BindGroupLayout, wgpu::PipelineLayout, FxBuildHasher>>,
+            > = OnceLock::new();
+            let cache = CACHE.get_or_init(|| {
+                RwLock::new(LruCache::with_hasher(
+                    const { NonZeroUsize::new(2048).unwrap() },
+                    Default::default(),
+                ))
+            });
+            cache
+                .write()
+                .get_or_insert_ref(&bind_group_layout, || {
+                    device
+                        .wgpu_device()
+                        .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                            label: None,
+                            bind_group_layouts: &[bind_group_layout],
+                            push_constant_ranges: &[],
+                        })
+                })
+                .clone()
+        };
         let module = self.kernel.get_or_init(|| {
             let mut kernel = String::new();
             self.kernel(&mut kernel).unwrap();
-            device.create_shader_module(kernel)
+            static CACHE: OnceLock<RwLock<LruCache<String, wgpu::ShaderModule, FxBuildHasher>>> =
+                OnceLock::new();
+            let cache = CACHE.get_or_init(|| {
+                RwLock::new(LruCache::with_hasher(
+                    const { NonZeroUsize::new(2048).unwrap() },
+                    Default::default(),
+                ))
+            });
+            cache
+                .write()
+                .get_or_insert_ref(&kernel, || device.create_shader_module(&kernel))
+                .clone()
         });
-        device
-            .wgpu_device()
-            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: None,
-                layout: Some(&compute_pipeline_layout),
-                module,
-                entry_point: Some("main"),
-                cache: device.wgpu_cache(),
-                compilation_options: PipelineCompilationOptions::default(),
-            })
+        {
+            static CACHE: OnceLock<
+                RwLock<
+                    LruCache<(PipelineLayout, ShaderModule), wgpu::ComputePipeline, FxBuildHasher>,
+                >,
+            > = OnceLock::new();
+            let cache = CACHE.get_or_init(|| {
+                RwLock::new(LruCache::with_hasher(
+                    const { NonZeroUsize::new(2048).unwrap() },
+                    Default::default(),
+                ))
+            });
+            let mut write = cache.write();
+            write
+                .get_or_insert((compute_pipeline_layout.clone(), module.clone()), || {
+                    device
+                        .wgpu_device()
+                        .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                            label: None,
+                            layout: Some(&compute_pipeline_layout),
+                            module,
+                            entry_point: Some("main"),
+                            cache: device.wgpu_cache(),
+                            compilation_options: PipelineCompilationOptions::default(),
+                        })
+                })
+                .clone()
+        }
     }
 
     fn create_bind_group(

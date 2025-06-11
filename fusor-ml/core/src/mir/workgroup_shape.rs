@@ -3,6 +3,11 @@
 // Kernels can be fused if their workgroup shape can be coerced. Coercion can happen if
 // the biggest linearized workgroup shape is a multiple of all smaller workgroup shapes.
 
+use std::{num::NonZeroUsize, sync::OnceLock};
+use lru::LruCache;
+use parking_lot::RwLock;
+use rustc_hash::FxBuildHasher;
+
 use crate::mir::kernel::GenericKernel;
 
 const MAX_WORKGROUP_SIZE: u32 = 256;
@@ -174,7 +179,12 @@ impl WorkgroupShape {
         let mut merged = "0".to_string();
         let mut product = 1;
         for (component, real_size) in ["x", "y", "z"].iter().zip(self.shape()) {
-            merged += &format!(" + {}.{} * {}", kernel.workgroup_index(), component, product);
+            merged += &format!(
+                " + {}.{} * {}",
+                kernel.workgroup_index(),
+                component,
+                product
+            );
             product *= real_size;
         }
 
@@ -182,7 +192,7 @@ impl WorkgroupShape {
     }
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Hash, PartialEq, Eq)]
 pub(crate) struct WorkgroupShapeConstraints {
     shape: [Vec<Constraint>; 3],
 }
@@ -216,7 +226,21 @@ impl WorkgroupShapeConstraints {
     }
 
     pub(crate) fn solve(&self) -> Option<WorkgroupShape> {
-        self.possible().max_by_key(|shape| shape.linearized())
+        static CACHE: OnceLock<
+            RwLock<LruCache<WorkgroupShapeConstraints, Option<WorkgroupShape>, FxBuildHasher>>,
+        > = OnceLock::new();
+        let cache = CACHE.get_or_init(|| {
+            RwLock::new(LruCache::with_hasher(
+                const { NonZeroUsize::new(2048).unwrap() },
+                Default::default(),
+            ))
+        });
+        let mut write = cache.write();
+        write
+            .get_or_insert_ref(self, || {
+                self.possible().max_by_key(|shape| shape.linearized())
+            })
+            .clone()
     }
 
     pub(crate) fn merge(&mut self, other: &Self) {
@@ -287,7 +311,7 @@ fn test_many_workgroup_shape_constraints() {
     assert_eq!(valid_shape.unwrap().linearized(), 256);
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub(crate) enum Constraint {
     Equals(u32),
     LessThan(u32),
