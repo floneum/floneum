@@ -70,7 +70,7 @@ impl<'a> Resolver<'a> {
             let mut extend = self.should_extend_kernel(new_inputs.clone(), &inputs);
             extend &= new_merged.solve().is_some();
             current_constraints = new_merged;
-            if !extend {
+            if !extend || true {
                 let kernel = std::mem::take(&mut kernel);
                 let inputs = std::mem::take(&mut inputs);
                 let all_input_values = std::mem::take(&mut all_input_values);
