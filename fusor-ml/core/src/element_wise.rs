@@ -301,14 +301,16 @@ async fn test_add_const() {
     let tensor = tensor + 1.0;
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
     let result = [
         [[2.0, 3.0], [2.0, 3.0]],
         [[4.0, 5.0], [4.0, 5.0]],
         [[6.0, 7.0], [6.0, 7.0]],
     ];
     let result = Tensor::new(&device, &result);
-    assert_eq!(output, result.as_slice().await.unwrap());
+    let result = result.as_slice().await.unwrap();
+    println!("{:?}", output);
+    println!("{:?}", result);
+    assert_eq!(output, result);
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
@@ -316,6 +318,7 @@ async fn test_add_const() {
     let tensor = tensor + 1.0;
 
     let output = tensor.as_slice().await.unwrap();
+    println!("{:?}", output);
     assert_eq!(output[[0, 0]], 2.);
     assert_eq!(output[[0, 1]], 3.);
     assert_eq!(output[[1, 0]], 4.);

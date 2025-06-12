@@ -295,23 +295,41 @@ fn build_tiled_map_kernel(
             writeln!(&mut kernel_body, "}}").unwrap();
         }
     } else {
+        let subgroup_size = kernel.subgroup_size();
+        let subgroup_local_id = kernel.subgroup_local_index();
         for i in 0..rank as usize {
             let index = &global_indexes[i];
-            writeln!(
-                &mut kernel_body,
-                "let tile_index_{i} = {index} * {tile_size};"
-            )
-            .unwrap();
+            if i == 0 {
+                writeln!(
+                    &mut kernel_body,
+                    "let tile_index_{i} = {subgroup_local_id} + (({index} / {subgroup_size}) * {subgroup_size}) * {tile_size};"
+                )
+                .unwrap();
+            } else {
+                writeln!(
+                    &mut kernel_body,
+                    "let tile_index_{i} = {index} * {tile_size};"
+                )
+                .unwrap();
+            }
         }
         writeln!(&mut kernel_body, "\n").unwrap();
 
         for i in 0..rank {
             writeln!(&mut kernel_body, "for (var local_index_{i} = 0u; local_index_{i} < {tile_size}; local_index_{i}++) {{").unwrap();
-            writeln!(
-                &mut kernel_body,
-                "let merged_index_{i} = tile_index_{i} + local_index_{i};"
-            )
-            .unwrap();
+            if i == 0 {
+                writeln!(
+                    &mut kernel_body,
+                    "let merged_index_{i} = tile_index_{i} + local_index_{i} * {subgroup_size};"
+                )
+                .unwrap();
+            } else {
+                writeln!(
+                    &mut kernel_body,
+                    "let merged_index_{i} = tile_index_{i} + local_index_{i};"
+                )
+                .unwrap();
+            }
         }
 
         first_tensor_input(&tensors).check_bounds(
@@ -346,6 +364,8 @@ fn build_tiled_map_kernel(
             writeln!(&mut kernel_body, "}}").unwrap();
         }
     }
+
+    println!("Generated kernel:\n{kernel_body}");
 
     kernel_body
 }
