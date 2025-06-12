@@ -984,10 +984,13 @@ impl<const R: usize, D: DataType + PartialEq> PartialEq for TensorSlice<R, D> {
         if self_shape != other_shape {
             return false;
         }
+        if R == 0 {
+            return true;
+        }
         let mut index = [0; R];
         loop {
+            index[0] += 1;
             for i in 0..R {
-                index[i] += 1;
                 if index[i] >= self_shape[i] {
                     index[i] = 0;
                     if i == R - 1 {
