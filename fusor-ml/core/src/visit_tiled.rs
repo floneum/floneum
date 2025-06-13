@@ -365,8 +365,6 @@ fn build_tiled_map_kernel(
         }
     }
 
-    println!("Generated kernel:\n{kernel_body}");
-
     kernel_body
 }
 
