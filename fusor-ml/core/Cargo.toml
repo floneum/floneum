@@ -6,7 +6,8 @@ license = "MIT/Apache-2.0"
 edition = "2024"
 
 [dependencies]
-wgpu = "25.0.0"
+# Use stable when https://github.com/gfx-rs/wgpu/issues/7712 is resolved
+wgpu = { git = "https://github.com/ealmloff/wgpu", branch = "yield-now" }
 env_logger = "0.10.1"
 bytemuck = { version = "1.14", features = ["derive"] }
 futures-util = "0.3.31"

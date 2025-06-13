@@ -104,12 +104,16 @@ impl Device {
         &self,
         source: impl Into<Cow<'a, str>>,
     ) -> wgpu::ShaderModule {
-        self.inner
-            .device
-            .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: None,
-                source: wgpu::ShaderSource::Wgsl(source.into()),
-            })
+        // SAFTEY: All kernels don't access memory outside of bounds and don't have unbounded loops
+        unsafe {
+            self.inner.device.create_shader_module_trusted(
+                wgpu::ShaderModuleDescriptor {
+                    label: None,
+                    source: wgpu::ShaderSource::Wgsl(source.into()),
+                },
+                wgpu::ShaderRuntimeChecks::unchecked(),
+            )
+        }
     }
 
     pub fn wgpu_device(&self) -> &wgpu::Device {
