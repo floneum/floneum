@@ -4106,6 +4106,7 @@ dependencies = [
  "futures",
  "half 2.5.0",
  "intel-mkl-src",
+ "kalosm",
  "kalosm-common",
  "kalosm-language-model",
  "kalosm-model-types",
