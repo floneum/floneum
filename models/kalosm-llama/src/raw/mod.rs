@@ -376,7 +376,10 @@ impl Model {
             let x = layer.ffn_norm.forward(&x);
 
             layer_in = layer.feed_forward_variant.forward(&x) + residual;
-            let _ = layer_in.materialize();
+            if i % 2 == 0 {
+                // Materialize the layer output every 2 layers to prevent the compute graph from growing too large
+                let _ = layer_in.materialize();
+            }
         }
         let x = self.norm.forward(&layer_in);
         let [_, hidden_size] = x.shape();
