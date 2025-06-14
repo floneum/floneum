@@ -100,6 +100,10 @@ impl Operation for MapLayoutOperation {
         _: &mut crate::mir::kernel::GenericKernel,
     ) {
     }
+
+    fn name(&self) -> String {
+        "map_layout".to_string()
+    }
 }
 
 impl<const R: usize, T: DataType> Tensor<R, T> {

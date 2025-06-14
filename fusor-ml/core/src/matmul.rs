@@ -145,7 +145,7 @@ impl Operation for MatMulOperation {
         _: &crate::mir::workgroup_shape::WorkgroupShape,
         inputs: &[crate::mir::inputs::MirValue],
         generic_kernel: &mut GenericKernel,
-    )  {
+    ) {
         // based on https://siboehm.com/articles/22/CUDA-MMM
         let [input_a, input_b, _] = inputs else {
             panic!("MatMulOperation requires 3 inputs");
@@ -413,9 +413,30 @@ impl Operation for MatMulOperation {
         generic_kernel.push_body(&kernel);
     }
 
-    fn output(&self, _: &crate::compute_graph::ComputeGraphInner, inputs: &[crate::mir::inputs::MirValue]) -> crate::mir::inputs::MirValue {
+    fn output(
+        &self,
+        _: &crate::compute_graph::ComputeGraphInner,
+        inputs: &[crate::mir::inputs::MirValue],
+    ) -> crate::mir::inputs::MirValue {
         let output_tensor = inputs[2].as_tensor().unwrap().clone();
         output_tensor.into()
+    }
+
+    fn name(&self) -> String {
+        format!(
+            "matmul_{}_{}_by_{}",
+            self.datatype,
+            self.first_shape
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+                .join("x"),
+            self.second_shape
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+                .join("x")
+        )
     }
 }
 

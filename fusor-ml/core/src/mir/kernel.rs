@@ -49,6 +49,7 @@ pub(crate) struct GenericKernel {
     quantized_type_definitions: EnumSet<GgmlType>,
     kernel: OnceLock<wgpu::ShaderModule>,
     body: String,
+    name: String,
 }
 
 impl Default for GenericKernel {
@@ -72,11 +73,16 @@ impl GenericKernel {
             quantized_type_definitions: Default::default(),
             kernel: OnceLock::new(),
             body: String::new(),
+            name: String::new(),
         }
     }
 
     pub(crate) fn pre_register_binding(&mut self, binding: u32) {
         self.registered_bindings.push(binding);
+    }
+
+    pub(crate) fn name_mut(&mut self) -> &mut String {
+        &mut self.name
     }
 
     pub(crate) fn push_body(&mut self, body: &str) {
@@ -335,7 +341,7 @@ impl GenericKernel {
                 device
                     .wgpu_device()
                     .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                        label: None,
+                        label: Some(&self.name),
                         entries: &entries,
                     })
             })
@@ -355,7 +361,7 @@ impl GenericKernel {
                     device
                         .wgpu_device()
                         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                            label: None,
+                            label: Some(&self.name),
                             bind_group_layouts: &[bind_group_layout],
                             push_constant_ranges: &[],
                         })
@@ -378,7 +384,7 @@ impl GenericKernel {
                     device
                         .wgpu_device()
                         .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                            label: None,
+                            label: Some(&self.name),
                             layout: Some(&compute_pipeline_layout),
                             module,
                             entry_point: Some("main"),
@@ -496,7 +502,7 @@ impl GenericKernel {
         device
             .wgpu_device()
             .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: None,
+                label: Some(&self.name),
                 layout: bind_group_layout,
                 entries: &entries,
             })
@@ -515,7 +521,7 @@ impl GenericKernel {
 
         {
             let mut cpass = command_encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: None,
+                label: Some(&self.name),
                 timestamp_writes: None,
             });
             cpass.set_pipeline(&pipeline);

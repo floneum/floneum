@@ -66,10 +66,7 @@ impl Operation for DequantizeOperation {
         let shape = &self.matrix.shape;
         let datatype = self.datatype;
         let output_tensor = TensorData::new_for_shape(&nodes.device, shape, datatype);
-        vec![
-            MirValue::from(self.matrix.clone()),
-            output_tensor.into(),
-        ]
+        vec![MirValue::from(self.matrix.clone()), output_tensor.into()]
     }
 
     fn output(&self, _: &crate::compute_graph::ComputeGraphInner, inputs: &[MirValue]) -> MirValue {
@@ -147,8 +144,10 @@ impl Operation for DequantizeOperation {
         );
 
         generic_kernel.push_body(&kernel);
+    }
 
-
+    fn name(&self) -> String {
+        format!("dequantize_{}_to_{}", self.matrix.datatype, self.datatype)
     }
 }
 

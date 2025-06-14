@@ -369,6 +369,10 @@ impl Operation for ReduceOperation {
         let output_tensor: TensorData = inputs[1].as_tensor().unwrap().clone();
         output_tensor.into()
     }
+
+    fn name(&self) -> String {
+        format!("reduce_{}", self.function.name().to_string())
+    }
 }
 
 #[derive(Clone, Debug)]

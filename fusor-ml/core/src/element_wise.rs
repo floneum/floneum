@@ -244,6 +244,17 @@ impl Operation for ElementWiseOperation {
             kernel,
         );
     }
+
+    fn name(&self) -> String {
+        let functions = self.functions
+            .functions
+            .iter()
+            .map(|f| f.name())
+            .collect::<Vec<_>>()
+            .join("_");
+        let shape = self.shape.iter().map(|s| s.to_string()).collect::<Vec<_>>().join("x");
+        format!("element_wise_{}_{}", functions, shape)
+    }
 }
 
 #[derive(Clone, Debug)]

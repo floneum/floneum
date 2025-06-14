@@ -218,6 +218,31 @@ impl Operation for PairWiseOperation {
         let output_tensor_index = re_used_allocation_index.unwrap_or(2);
         inputs[output_tensor_index].clone()
     }
+
+    fn name(&self) -> String {
+        let functions = self
+            .pre_element_wise
+            .iter()
+            .flat_map(|f| f.iter())
+            .chain(self.post_element_wise.iter())
+            .collect::<Vec<_>>();
+        let mut name = String::new();
+        for function in functions {
+            if !name.is_empty() {
+                name.push('_');
+            }
+            write!(&mut name, "{}", function.name()).unwrap();
+        }
+        if name.is_empty() {
+            name = self.function.name().to_string();
+        } else {
+            name.push('_');
+            name.push_str(self.function.name());
+        }
+        name.push_str("_pair_wise_");
+        name.push_str(&self.rank.to_string());
+        name
+    }
 }
 
 #[derive(Clone, Debug)]

@@ -146,6 +146,13 @@ impl Operation for ResizeOperation {
         )
         .into()
     }
+
+    fn name(&self) -> String {
+        format!("resize_from_{}_to_{}", 
+            self.fill_shape.iter().map(|x| x.to_string()).collect::<Vec<_>>().join("x"),
+            self.new_shape.iter().map(|x| x.to_string()).collect::<Vec<_>>().join("x")
+        )
+    }
 }
 
 impl<const R: usize, T: crate::DataType> Tensor<R, T> {

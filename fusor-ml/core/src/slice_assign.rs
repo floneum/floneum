@@ -104,6 +104,17 @@ impl Operation for SliceAssignOperation {
         let input: MaybeQData = nodes.get_result_or_qmatrix(self.input).unwrap();
         input.into()
     }
+
+    fn name(&self) -> String {
+        format!(
+            "slice_assign_{}",
+            self.slices
+                .iter()
+                .map(|slice| format!("{:?}", slice))
+                .collect::<Vec<_>>()
+                .join("_")
+        )
+    }
 }
 
 impl<const R: usize, T: crate::DataType> Tensor<R, T> {

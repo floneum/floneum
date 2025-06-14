@@ -274,14 +274,36 @@ impl Operation for IndexSelectOperation {
         _: &crate::mir::workgroup_shape::WorkgroupShape,
         _: &[crate::mir::inputs::MirValue],
         kernel: &mut GenericKernel,
-    )  {
+    ) {
         let kernel_text = self.build_index_kernel(kernel);
         kernel.push_body(&kernel_text);
     }
 
-    fn output(&self, _: &crate::compute_graph::ComputeGraphInner, inputs: &[crate::mir::inputs::MirValue]) -> crate::mir::inputs::MirValue {
+    fn output(
+        &self,
+        _: &crate::compute_graph::ComputeGraphInner,
+        inputs: &[crate::mir::inputs::MirValue],
+    ) -> crate::mir::inputs::MirValue {
         let output = inputs[2].clone();
         output
+    }
+
+    fn name(&self) -> String {
+        format!(
+            "index_select_{}_{}_{}_to_{}",
+            self.dimension,
+            self.datatype,
+            self.value_shape
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>()
+                .join("x"),
+            self.indexes_shape
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>()
+                .join("x")
+        )
     }
 }
 

@@ -328,12 +328,27 @@ impl Operation for QMatMulOperation {
         generic_kernel.push_body(&kernel);
     }
 
-    fn output(
-        &self,
-        _: &crate::compute_graph::ComputeGraphInner,
-        inputs: &[MirValue],
-    ) -> MirValue {
+    fn output(&self, _: &crate::compute_graph::ComputeGraphInner, inputs: &[MirValue]) -> MirValue {
         let output_tensor = inputs[2].as_tensor().unwrap();
         output_tensor.clone().into()
+    }
+
+    fn name(&self) -> String {
+        format!(
+            "q_mat_mul_{}_{}_{}_{}",
+            self.input_datatype,
+            self.in_shape
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>()
+                .join("x"),
+            self.matrix.datatype,
+            self.matrix
+                .shape
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>()
+                .join("x")
+        )
     }
 }

@@ -70,7 +70,7 @@ impl<'a> Resolver<'a> {
             let mut extend = self.should_extend_kernel(new_inputs.clone(), &inputs);
             extend &= new_merged.solve().is_some();
             current_constraints = new_merged;
-            if !extend {
+            if !extend || pending_operations.len() > 0 {
                 let kernel = std::mem::take(&mut kernel);
                 let inputs = std::mem::take(&mut inputs);
                 let all_input_values = std::mem::take(&mut all_input_values);
@@ -192,6 +192,11 @@ impl<'a> Resolver<'a> {
             }
             kernel.push_body("{");
             operation.build_kernel(&self.graph, &workgroup_shape, &inputs, &mut kernel);
+            let name = kernel.name_mut();
+            if !name.is_empty() {
+                *name += "->";
+            }
+            *name += &operation.name();
             kernel.push_body("}");
             // Check if that makes any of this nodes dependents dead
             let mut dependencies = Vec::new();

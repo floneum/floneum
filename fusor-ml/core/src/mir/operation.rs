@@ -29,4 +29,6 @@ pub(crate) trait Operation: Debug {
         inputs: &[MirValue],
         kernel: &mut GenericKernel,
     );
+
+    fn name(&self) -> String;
 }
