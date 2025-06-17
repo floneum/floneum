@@ -1,11 +1,14 @@
 use std::fmt::Display;
 
-use crate::parse::Grammar;
+use crate::{parse::Grammar, tokenizer::Tokenizer};
 
+mod tokenizer;
 mod cnf;
 mod parse;
 
 fn main() {
+    let tokenizer = Tokenizer::load_tokenizer("tokenizer.json");
+
     let grammar = parse::Grammar::parse(
         r#"Start -> ntInt
 ntString -> 'name' | '" "' | '(' 'str.++' ' ' ntString ' ' ntString ')' | '(' 'str.replace' ' ' ntString ' ' ntString ' ' ntString ')' | '(' 'str.at' ' ' ntString ' ' ntInt ')' | '(' 'int.to.str' ' ' ntInt ')' | '(' 'str.substr' ' ' ntString ' ' ntInt ' ' ntInt ')'
