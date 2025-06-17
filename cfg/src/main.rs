@@ -2,9 +2,9 @@ use std::fmt::Display;
 
 use crate::{parse::Grammar, tokenizer::Tokenizer};
 
-mod tokenizer;
 mod cnf;
 mod parse;
+mod tokenizer;
 
 fn main() {
     let tokenizer = Tokenizer::load_tokenizer("tokenizer.json");
@@ -58,6 +58,18 @@ impl<'bump> DenseGrammar<'bump> {
         }
         recognizer.finish()
     }
+
+    pub fn replace_bytes(&self, bytes: &[u8]) -> String {
+        let mut result = String::new();
+        for byte in bytes {
+            if let Some(token) = self.rules.get(*byte as usize) {
+                result.push_str(token.to_string().as_str());
+            } else {
+                result.push(*byte as char);
+            }
+        }
+        result
+    }
 }
 
 impl<'bump> Display for DenseGrammar<'bump> {
@@ -71,7 +83,7 @@ impl<'bump> Display for DenseGrammar<'bump> {
 }
 
 struct DenseRule<'bump> {
-    rhs: &'bump [&'bump [DenseSymbol<'bump>]],
+    rhs: &'bump [&'bump [DenseSymbol]],
 }
 
 impl<'bump> Display for DenseRule<'bump> {
@@ -93,13 +105,13 @@ impl<'bump> Display for DenseRule<'bump> {
 }
 
 #[derive(Debug)]
-enum DenseSymbol<'bump> {
+enum DenseSymbol {
     NonTerminal(usize),
-    Terminal(&'bump str),
+    Terminal(u32),
     Epsilon,
 }
 
-impl PartialEq for DenseSymbol<'_> {
+impl PartialEq for DenseSymbol {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (DenseSymbol::NonTerminal(id1), DenseSymbol::NonTerminal(id2)) => id1 == id2,
@@ -110,7 +122,7 @@ impl PartialEq for DenseSymbol<'_> {
     }
 }
 
-impl<'bump> Display for DenseSymbol<'bump> {
+impl Display for DenseSymbol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DenseSymbol::NonTerminal(id) => write!(f, "s{}", id),
@@ -146,7 +158,11 @@ impl Grammar {
                                     DenseSymbol::NonTerminal(non_terminal_indices[nt])
                                 }
                                 parse::Symbol::Terminal(lit) => {
-                                    DenseSymbol::Terminal(bump.alloc_str(lit.as_str()))
+                                    assert!(
+                                        lit.len() == 1,
+                                        "Terminal literals must be single characters"
+                                    );
+                                    DenseSymbol::Terminal(lit.as_bytes()[0] as u32)
                                 }
                                 parse::Symbol::Epsilon => DenseSymbol::Epsilon,
                             })
@@ -251,7 +267,7 @@ impl<'bump> Recognizer<'bump> {
                     }
                     DenseSymbol::Terminal(lit) => {
                         // Scanner: Check if we can match the terminal
-                        if byte == lit.as_bytes().first().copied() {
+                        if byte == Some(*lit as _) {
                             // Add the new state with the terminal matched
                             self.chart[k + 1].push(self.bump.alloc(Position {
                                 parent: *parent,
@@ -305,7 +321,7 @@ struct Position<'bump> {
     parent: Option<&'bump Position<'bump>>,
     non_terminal: usize,
     position: usize,
-    rhs: &'bump [DenseSymbol<'bump>],
+    rhs: &'bump [DenseSymbol],
 }
 
 #[test]
