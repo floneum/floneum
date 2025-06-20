@@ -55,6 +55,10 @@ name = "elementwise"
 harness = false
 
 [[bench]]
+name = "pairwise"
+harness = false
+
+[[bench]]
 name = "fused"
 harness = false
 
