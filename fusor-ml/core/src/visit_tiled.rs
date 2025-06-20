@@ -207,11 +207,17 @@ fn build_tiled_map_kernel(
         .map(|(dim, shape)| (*shape > 1).then_some(dim))
         .collect();
     // If there is only one interesting dimension, just set that to the z index directly.
-    let less_than_two_interesting_extra_dims = shape_dims_after_2_greater_than_1
+    let interesting_extra_dims = shape_dims_after_2_greater_than_1
         .iter()
         .filter(|&x| x.is_some())
-        .count()
-        < 2;
+        .count();
+    let less_than_two_interesting_extra_dims = interesting_extra_dims < 2;
+
+    let effective_dims = shape.iter().take(2).count() + interesting_extra_dims;
+    // scaled_tile_size ^ effective_dims ~ tile_size
+    let scaled_tile_size =
+        ((tile_size as f64).powf(1.0 / effective_dims as f64).round() as u32).max(1);
+
     if less_than_two_interesting_extra_dims {
         for index in &shape_dims_after_2_greater_than_1 {
             if let Some(_) = index {
@@ -236,7 +242,7 @@ fn build_tiled_map_kernel(
             let chunk_size = if i == rank as usize - 1 {
                 quantized_type.block_size() as u32
             } else {
-                tile_size
+                scaled_tile_size
             };
             writeln!(
                 &mut kernel_body,
@@ -247,7 +253,7 @@ fn build_tiled_map_kernel(
         writeln!(&mut kernel_body, "\n").unwrap();
 
         for i in 0..rank - 1 {
-            writeln!(&mut kernel_body, "for (var local_index_{i} = 0u; local_index_{i} < {tile_size}; local_index_{i}++) {{").unwrap();
+            writeln!(&mut kernel_body, "for (var local_index_{i} = 0u; local_index_{i} < {scaled_tile_size}; local_index_{i}++) {{").unwrap();
             writeln!(
                 &mut kernel_body,
                 "let merged_index_{i} = tile_index_{i} + local_index_{i};"
@@ -325,13 +331,13 @@ fn build_tiled_map_kernel(
             if i == 0 {
                 writeln!(
                     &mut kernel_body,
-                    "let tile_index_{i} = {subgroup_local_id} + (({index} / {subgroup_size}) * {subgroup_size}) * {tile_size};"
+                    "let tile_index_{i} = {subgroup_local_id} + (({index} / {subgroup_size}) * {subgroup_size}) * {scaled_tile_size};"
                 )
                 .unwrap();
             } else {
                 writeln!(
                     &mut kernel_body,
-                    "let tile_index_{i} = {index} * {tile_size};"
+                    "let tile_index_{i} = {index} * {scaled_tile_size};"
                 )
                 .unwrap();
             }
@@ -340,8 +346,8 @@ fn build_tiled_map_kernel(
 
         for (i, shape) in shape.iter().enumerate() {
             if *shape > 1 {
-                let tile_size = tile_size.min(*shape as _);
-                writeln!(&mut kernel_body, "for (var local_index_{i} = 0u; local_index_{i} < {tile_size}; local_index_{i}++) {{").unwrap();
+                let local_tile_size = scaled_tile_size.min(*shape as _);
+                writeln!(&mut kernel_body, "for (var local_index_{i} = 0u; local_index_{i} < {local_tile_size}; local_index_{i}++) {{").unwrap();
                 if i == 0 {
                     writeln!(
                         &mut kernel_body,

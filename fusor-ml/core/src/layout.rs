@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-pub(crate) const TILE_SIZE: u32 = 8;
+pub(crate) const TILE_SIZE: u32 = 16;
 
 fn continuous_strides(shape: &[usize]) -> Box<[usize]> {
     let mut acc = 1;
