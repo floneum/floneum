@@ -23,7 +23,7 @@ pub(crate) struct PairWiseOperation {
     pub(crate) pre_element_wise: [ElementWiseFunctions; 2],
     pub(crate) function: PairWiseFunction,
     post_element_wise: ElementWiseFunctions,
-    rank: u32,
+    shape: Box<[usize]>,
 }
 
 impl PairWiseOperation {
@@ -31,7 +31,7 @@ impl PairWiseOperation {
         function: PairWiseFunction,
         first: AnyComputeKey,
         second: AnyComputeKey,
-        rank: u32,
+        shape: &[usize],
     ) -> Self {
         let datatype = function.datatype;
         Self {
@@ -43,7 +43,7 @@ impl PairWiseOperation {
             post_element_wise: ElementWiseFunctions::empty(datatype),
             first,
             second,
-            rank,
+            shape: shape.into(),
         }
     }
 
@@ -73,7 +73,11 @@ impl PairWiseOperation {
     }
 
     pub fn rank(&self) -> u32 {
-        self.rank
+        self.shape.len() as u32
+    }
+
+    pub fn shape(&self) -> &[usize] {
+        &self.shape
     }
 
     fn re_used_allocation_index(&self, first: &MaybeQData, second: &MaybeQData) -> Option<usize> {
@@ -98,7 +102,7 @@ impl Operation for PairWiseOperation {
         &self,
         _: &crate::Device,
     ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
-        titled_map_workgroup_size_constraints(self.rank)
+        titled_map_workgroup_size_constraints(self.rank())
     }
 
     fn dispatch_size(
@@ -240,7 +244,7 @@ impl Operation for PairWiseOperation {
             name.push_str(self.function.name());
         }
         name.push_str("_pair_wise_");
-        name.push_str(&self.rank.to_string());
+        name.push_str(&self.shape.iter().map(|x| x.to_string()).collect::<Vec<_>>().join("x"));
         name
     }
 }

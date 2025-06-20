@@ -347,7 +347,7 @@ impl<'a> Resolver<'a> {
     ) -> Box<dyn Operation> {
         let operation = &self.graph.nodes.pair_wise[&key];
         let function = operation.function.clone();
-        let rank = operation.rank();
+        let shape: Box<[usize]> = operation.shape().into();
 
         let mut first_input = operation.first;
         let first_pre_element_wise = operation.pre_element_wise[0].clone();
@@ -368,7 +368,7 @@ impl<'a> Resolver<'a> {
             second_pre_element_wise
         };
 
-        let mut kernel = PairWiseOperation::new(function, first_input, second_input, rank);
+        let mut kernel = PairWiseOperation::new(function, first_input, second_input, &shape);
         let first_pre = first_pre_element_wise;
         let second_pre = second_pre_element_wise;
         kernel.set_pre_element_wise([first_pre, second_pre]);

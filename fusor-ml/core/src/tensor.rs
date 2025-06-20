@@ -783,7 +783,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         self.data.graph.merge(&other.data.graph);
         assert_eq!(self.shape(), other.shape());
         let operation =
-            PairWiseOperation::new(function, self.data.key, other.data.key, self.rank() as _);
+            PairWiseOperation::new(function, self.data.key, other.data.key, self.shape());
         Self::from_parts(self.data.pair_wise(operation))
     }
 
