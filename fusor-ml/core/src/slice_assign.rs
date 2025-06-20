@@ -77,13 +77,12 @@ impl Operation for SliceAssignOperation {
         let input: MaybeQData = inputs[0].clone().try_into().unwrap();
         let value: MaybeQData = inputs[1].clone().try_into().unwrap();
         assert_eq!(input.layout().shape(), value.layout().shape());
-        let rank = input.layout().rank();
         let datatype = input.datatype();
 
         let datatypes = vec![datatype.into(); 2];
 
         build_visit_tiled_kernel(
-            rank as u32,
+            input.layout().shape(),
             TILE_SIZE,
             datatypes,
             |_, indexes, tensors, values| {

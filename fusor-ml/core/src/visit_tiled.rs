@@ -132,18 +132,18 @@ impl Display for MaybeQTensorInput {
 }
 
 pub(crate) fn build_visit_tiled_kernel(
-    rank: u32,
+    shape: &[usize],
     tile_size: u32,
     datatypes: Vec<VisitTiledInputType>,
     modify_data: impl FnMut(&mut GenericKernel, &[String], &[MaybeQTensorInput], &[String]) -> String,
     kernel: &mut GenericKernel,
 ) {
-    let kernel_text = build_tiled_map_kernel(rank, tile_size, &datatypes, kernel, modify_data);
+    let kernel_text = build_tiled_map_kernel(shape, tile_size, &datatypes, kernel, modify_data);
     kernel.push_body(&kernel_text);
 }
 
 fn build_tiled_map_kernel(
-    rank: u32,
+    shape: &[usize],
     tile_size: u32,
     datatypes: &[VisitTiledInputType],
     kernel: &mut GenericKernel,
@@ -156,6 +156,7 @@ fn build_tiled_map_kernel(
 ) -> String {
     let mut kernel_body = String::new();
     let global_id = kernel.global_id();
+    let rank = shape.len() as u32;
     let tensors = datatypes
         .iter()
         .map(|ty| match ty {
@@ -197,14 +198,36 @@ fn build_tiled_map_kernel(
     for index in ["x", "y"].iter().take(rank as usize) {
         global_indexes.push(format!("{global_id}.{index}"));
     }
-    if rank > 2 {
+    // Handle the z dimension if the rank is greater than 2. We only need to handle
+    // the dimensions that are greater than 1.
+    let shape_dims_after_2_greater_than_1: Box<[_]> = shape
+        .iter()
+        .enumerate()
+        .skip(2)
+        .map(|(dim, shape)| (*shape > 1).then_some(dim))
+        .collect();
+    // If there is only one interesting dimension, just set that to the z index directly.
+    let less_than_two_interesting_extra_dims = shape_dims_after_2_greater_than_1
+        .iter()
+        .filter(|&x| x.is_some())
+        .count()
+        < 2;
+    if less_than_two_interesting_extra_dims {
+        for index in &shape_dims_after_2_greater_than_1 {
+            if let Some(_) = index {
+                global_indexes.push(format!("{global_id}.z"));
+            } else {
+                global_indexes.push("0u".to_string());
+            }
+        }
+    } else {
         writeln!(&mut kernel_body, "var remaining_z = {global_id}.z;").unwrap();
-    }
-    for index in (0..rank).skip(2) {
-        let size = first.shape_binding(index);
-        writeln!(&mut kernel_body, "let z_{index} = remaining_z % {size};").unwrap();
-        writeln!(&mut kernel_body, "remaining_z = remaining_z / {size};").unwrap();
-        global_indexes.push(format!("z_{index}"));
+        for index in (0..rank).skip(2) {
+            let size = first.shape_binding(index);
+            writeln!(&mut kernel_body, "let z_{index} = remaining_z % {size};").unwrap();
+            writeln!(&mut kernel_body, "remaining_z = remaining_z / {size};").unwrap();
+            global_indexes.push(format!("z_{index}"));
+        }
     }
 
     if let Some((quantized_type, quantized_input)) = quantized_block {
@@ -315,20 +338,25 @@ fn build_tiled_map_kernel(
         }
         writeln!(&mut kernel_body, "\n").unwrap();
 
-        for i in 0..rank {
-            writeln!(&mut kernel_body, "for (var local_index_{i} = 0u; local_index_{i} < {tile_size}; local_index_{i}++) {{").unwrap();
-            if i == 0 {
-                writeln!(
-                    &mut kernel_body,
-                    "let merged_index_{i} = tile_index_{i} + local_index_{i} * {subgroup_size};"
-                )
-                .unwrap();
+        for (i, shape) in shape.iter().enumerate() {
+            if *shape > 1 {
+                let tile_size = tile_size.min(*shape as _);
+                writeln!(&mut kernel_body, "for (var local_index_{i} = 0u; local_index_{i} < {tile_size}; local_index_{i}++) {{").unwrap();
+                if i == 0 {
+                    writeln!(
+                        &mut kernel_body,
+                        "let merged_index_{i} = tile_index_{i} + local_index_{i} * {subgroup_size};"
+                    )
+                    .unwrap();
+                } else {
+                    writeln!(
+                        &mut kernel_body,
+                        "let merged_index_{i} = tile_index_{i} + local_index_{i};"
+                    )
+                    .unwrap();
+                }
             } else {
-                writeln!(
-                    &mut kernel_body,
-                    "let merged_index_{i} = tile_index_{i} + local_index_{i};"
-                )
-                .unwrap();
+                writeln!(&mut kernel_body, "let merged_index_{i} = tile_index_{i};").unwrap();
             }
         }
 
@@ -360,8 +388,10 @@ fn build_tiled_map_kernel(
             },
         );
 
-        for _ in 0..rank {
-            writeln!(&mut kernel_body, "}}").unwrap();
+        for shape in shape {
+            if *shape > 1 {
+                writeln!(&mut kernel_body, "}}").unwrap();
+            }
         }
     }
 

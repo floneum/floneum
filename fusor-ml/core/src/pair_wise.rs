@@ -161,7 +161,8 @@ impl Operation for PairWiseOperation {
         let second: MaybeQData = inputs[1].clone().try_into().unwrap();
         assert_eq!(first.layout().shape(), second.layout().shape());
 
-        let rank = first.layout().rank();
+        let first_layout = first.layout();
+        let shape = first_layout.shape();
         let re_used_allocation_index = self.re_used_allocation_index(&first, &second);
         let output_tensor_index = re_used_allocation_index.unwrap_or(2);
         let requires_new_tensor = re_used_allocation_index.is_none();
@@ -176,7 +177,7 @@ impl Operation for PairWiseOperation {
         }
 
         build_visit_tiled_kernel(
-            rank as u32,
+            shape,
             TILE_SIZE,
             datatypes,
             |kernel, indexes, tensors, values| {
@@ -244,7 +245,14 @@ impl Operation for PairWiseOperation {
             name.push_str(self.function.name());
         }
         name.push_str("_pair_wise_");
-        name.push_str(&self.shape.iter().map(|x| x.to_string()).collect::<Vec<_>>().join("x"));
+        name.push_str(
+            &self
+                .shape
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>()
+                .join("x"),
+        );
         name
     }
 }

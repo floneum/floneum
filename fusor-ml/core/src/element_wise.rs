@@ -212,7 +212,8 @@ impl Operation for ElementWiseOperation {
             };
             tensor
         });
-        let rank = tensor.layout().rank();
+        let layout = tensor.layout();
+        let shape = layout.shape();
         let output_type = self.functions.out_datatype();
 
         let functions = OnceLock::new();
@@ -221,7 +222,7 @@ impl Operation for ElementWiseOperation {
             datatypes.push(output_type.into());
         }
         build_visit_tiled_kernel(
-            rank as u32,
+            shape,
             TILE_SIZE,
             datatypes,
             |kernel, indexes, tensors, values| match (indexes, tensors, values) {
@@ -246,13 +247,19 @@ impl Operation for ElementWiseOperation {
     }
 
     fn name(&self) -> String {
-        let functions = self.functions
+        let functions = self
+            .functions
             .functions
             .iter()
             .map(|f| f.name())
             .collect::<Vec<_>>()
             .join("_");
-        let shape = self.shape.iter().map(|s| s.to_string()).collect::<Vec<_>>().join("x");
+        let shape = self
+            .shape
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+            .join("x");
         format!("element_wise_{}_{}", functions, shape)
     }
 }

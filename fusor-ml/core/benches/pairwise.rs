@@ -73,9 +73,10 @@ fn bench_mul(c: &mut Criterion) {
                         let mut sum = Duration::ZERO;
                         while sum.is_zero() {
                             for _ in 0..iters {
-                                let tensor = Tensor::new(&device, &vec![vec![1.; size]; size]);
-                                _ = tensor.as_slice().await.unwrap();
-                                let new = &tensor * &tensor;
+                                let tensor1 = Tensor::new(&device, &vec![vec![1.; size]; size]);
+                                let tensor2 = Tensor::new(&device, &vec![vec![1.; size]; size]);
+                                _ = tensor2.as_slice().await.unwrap();
+                                let new = &tensor1 * &tensor2;
                                 let start = std::time::Instant::now();
                                 new.materialize().await;
                                 sum += start.elapsed();
@@ -95,10 +96,13 @@ fn bench_mul(c: &mut Criterion) {
                     let mut sum = Duration::ZERO;
                     while sum.is_zero() {
                         for _ in 0..iters {
-                            let tensor =
-                                Tensor::new(&device, &vec![vec![vec![vec![1.; 9]; 11]; 32]]);
-                            _ = tensor.as_slice().await.unwrap();
-                            let new = &tensor * &tensor;
+                            let tensor1 =
+                                Tensor::new(&device, &vec![vec![vec![vec![1.]; 32]; 11]; 9]);
+                            let tensor2 =
+                                Tensor::new(&device, &vec![vec![vec![vec![1.]; 32]; 11]; 9]);
+                            _ = tensor1.materialize().await;
+                            _ = tensor2.materialize().await;
+                            let new = &tensor1 * &tensor2;
                             let start = std::time::Instant::now();
                             new.materialize().await;
                             sum += start.elapsed();
