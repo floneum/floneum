@@ -99,7 +99,13 @@ impl SoftmaxOperation {
         self.datatype
     }
 
-    fn kernel(&self, workgroup_shape: &WorkgroupShape, blocksize: u32, kernel: &mut GenericKernel) {
+    fn kernel(
+        &self,
+        workgroup_shape: &WorkgroupShape,
+        blocksize: u32,
+        kernel: &mut GenericKernel,
+        device: &crate::Device,
+    ) {
         let dtype = self.datatype;
         let out_datatype = self.out_datatype();
         let output_rank = self.rank - 1;
@@ -202,39 +208,44 @@ impl SoftmaxOperation {
         writeln!(&mut kernel_body, "}}").unwrap();
         writeln!(&mut kernel_body).unwrap();
 
-        // Next merge within each subgroup with shuffle down
-        writeln!(
-            &mut kernel_body,
-            "for (var offset = {subgroup_size} / 2u; offset > 0u; offset /= 2u) {{"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel_body,
-            "let m_peer = subgroupShuffleDown(m_lane, offset);"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel_body,
-            "let d_peer = subgroupShuffleDown(d_lane, offset);"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel_body,
-            "let updated = {};",
-            combine_fn.call(
-                [
-                    "m_lane".into(),
-                    "d_lane".into(),
-                    "m_peer".into(),
-                    "d_peer".into(),
-                ]
-                .into()
+        let limits = device.wgpu_device().limits();
+        let max_subgroup_size = (limits.max_subgroup_size as u32).max(32);
+
+        // Optimized subgroup reduction with unrolled shuffle operations
+        let mut offset = max_subgroup_size;
+        while offset > 1 {
+            writeln!(&mut kernel_body, "if {subgroup_size} >= {offset}u {{").unwrap();
+            offset /= 2;
+            writeln!(
+                &mut kernel_body,
+                "let m_peer = subgroupShuffleDown(m_lane, {}u);",
+                offset
             )
-        )
-        .unwrap();
-        writeln!(&mut kernel_body, "m_lane = updated.x;").unwrap();
-        writeln!(&mut kernel_body, "d_lane = updated.y;").unwrap();
-        writeln!(&mut kernel_body, "}}").unwrap();
+            .unwrap();
+            writeln!(
+                &mut kernel_body,
+                "let d_peer = subgroupShuffleDown(d_lane, {}u);",
+                offset
+            )
+            .unwrap();
+            writeln!(
+                &mut kernel_body,
+                "let updated = {};",
+                combine_fn.call(
+                    [
+                        "m_lane".into(),
+                        "d_lane".into(),
+                        "m_peer".into(),
+                        "d_peer".into(),
+                    ]
+                    .into()
+                )
+            )
+            .unwrap();
+            writeln!(&mut kernel_body, "m_lane = updated.x;").unwrap();
+            writeln!(&mut kernel_body, "d_lane = updated.y;").unwrap();
+            writeln!(&mut kernel_body, "}}").unwrap();
+        }
         writeln!(&mut kernel_body).unwrap();
 
         // Write the output to the workgroup memory if this is the first thread in the subgroup
@@ -269,38 +280,42 @@ impl SoftmaxOperation {
         writeln!(&mut kernel_body, "m_lane = {dtype}(-3.40282e+38);").unwrap();
         writeln!(&mut kernel_body, "d_lane = {dtype}(0.0);").unwrap();
         writeln!(&mut kernel_body, "}}").unwrap();
-        writeln!(
-            &mut kernel_body,
-            "for (var offset = {subgroup_size} / 2u; offset > 0u; offset /= 2u) {{"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel_body,
-            "let m_peer = subgroupShuffleDown(m_lane, offset);"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel_body,
-            "let d_peer = subgroupShuffleDown(d_lane, offset);"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel_body,
-            "let updated = {};",
-            combine_fn.call(
-                [
-                    "m_lane".into(),
-                    "d_lane".into(),
-                    "m_peer".into(),
-                    "d_peer".into(),
-                ]
-                .into()
+
+        // Optimized final subgroup reduction with unrolled operations
+        let mut offset = max_subgroup_size;
+        while offset > 1 {
+            writeln!(&mut kernel_body, "if {subgroup_size} >= {offset}u {{").unwrap();
+            offset /= 2;
+            writeln!(
+                &mut kernel_body,
+                "let m_peer = subgroupShuffleDown(m_lane, {}u);",
+                offset
             )
-        )
-        .unwrap();
-        writeln!(&mut kernel_body, "m_lane = updated.x;").unwrap();
-        writeln!(&mut kernel_body, "d_lane = updated.y;").unwrap();
-        writeln!(&mut kernel_body, "}}").unwrap();
+            .unwrap();
+            writeln!(
+                &mut kernel_body,
+                "let d_peer = subgroupShuffleDown(d_lane, {}u);",
+                offset
+            )
+            .unwrap();
+            writeln!(
+                &mut kernel_body,
+                "let updated = {};",
+                combine_fn.call(
+                    [
+                        "m_lane".into(),
+                        "d_lane".into(),
+                        "m_peer".into(),
+                        "d_peer".into(),
+                    ]
+                    .into()
+                )
+            )
+            .unwrap();
+            writeln!(&mut kernel_body, "m_lane = updated.x;").unwrap();
+            writeln!(&mut kernel_body, "d_lane = updated.y;").unwrap();
+            writeln!(&mut kernel_body, "}}").unwrap();
+        }
 
         // Write the output to the output tensor if this is the first thread in the workgroup
         writeln!(&mut kernel_body, "if {workgroup_local_index} == 0u {{").unwrap();
@@ -425,13 +440,13 @@ impl Operation for SoftmaxOperation {
 
     fn build_kernel(
         &self,
-        _: &crate::compute_graph::ComputeGraphInner,
+        graph: &crate::compute_graph::ComputeGraphInner,
         workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
         _: &[MirValue],
         kernel: &mut GenericKernel,
     ) {
         let max_blocksize = workgroup_shape.x();
-        self.kernel(workgroup_shape, max_blocksize, kernel);
+        self.kernel(workgroup_shape, max_blocksize, kernel, &graph.device);
     }
 
     fn output(&self, _: &crate::compute_graph::ComputeGraphInner, inputs: &[MirValue]) -> MirValue {
