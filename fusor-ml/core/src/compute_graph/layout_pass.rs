@@ -34,6 +34,7 @@ impl LayoutPass {
                 AnyComputeKey::Tensor(key) => self.visit_tensor(graph, key),
                 AnyComputeKey::Dequantize(key) => self.visit_dequantize(graph, key),
                 AnyComputeKey::IndexSelect(key) => self.visit_index_select(graph, key),
+                AnyComputeKey::Custom(_) => todo!(),
             }
         }
     }

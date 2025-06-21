@@ -34,7 +34,7 @@ impl DependencyMap {
 pub(crate) fn visit_dependencies(
     graph: &ComputeGraphNodes,
     key: AnyComputeKey,
-    f: impl FnMut(AnyComputeKey),
+    mut f: impl FnMut(AnyComputeKey),
 ) {
     fn add_dependents_generic<const N: usize, T: Into<AnyComputeKey> + Copy>(
         graph: &ComputeGraphNodes,
@@ -90,6 +90,10 @@ pub(crate) fn visit_dependencies(
         }
         AnyComputeKey::Dequantize(_) => {}
         AnyComputeKey::Tensor(_) => {}
+        AnyComputeKey::Custom(custom) => {
+            let operation = graph.custom.get(&custom).unwrap();
+            operation.visit_dependencies(&mut f);
+        }
     }
 }
 

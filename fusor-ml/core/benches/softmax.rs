@@ -53,6 +53,39 @@ fn bench_softmax(c: &mut Criterion) {
     }
 
     {
+        let mut group = c.benchmark_group("softmax-wgpu-custom");
+        let group = group.sample_size(20);
+        for size in SIZES {
+            let device = block_on(Device::new()).unwrap();
+
+            let random_data: Vec<Vec<f32>> = (0..size)
+                .map(|_| (0..size).map(|_| rand::random()).collect())
+                .collect();
+            group.bench_with_input(
+                BenchmarkId::new("softmax-wgpu-custom", size),
+                &size,
+                move |b, &s| {
+                    let device = device.clone();
+                    b.to_async(FuturesExecutor).iter_custom(async |iters| {
+                        let mut sum = Duration::ZERO;
+                        while sum.is_zero() {
+                            for _ in 0..iters {
+                                let tensor = Tensor::new(&device, &random_data);
+                                _ = tensor.as_slice().await.unwrap();
+                                let new = tensor.softmax_fast_last_dim();
+                                let start = std::time::Instant::now();
+                                new.materialize().await;
+                                sum += start.elapsed();
+                            }
+                        }
+                        sum
+                    })
+                },
+            );
+        }
+    }
+
+    {
         let candle_device = candle_core::Device::Cpu;
         bench_candle_with_device(candle_device, "softmax-candle-cpu", c);
     }

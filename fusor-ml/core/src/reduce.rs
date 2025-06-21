@@ -279,7 +279,7 @@ impl Operation for ReduceOperation {
         let limits = device.wgpu_device().limits();
         constraints.add_constraint(
             0,
-            Constraint::less_than(limits.max_compute_workgroup_size_x),
+            Constraint::less_than(limits.max_compute_workgroup_size_x + 1),
         );
         constraints.add_constraint(
             0,

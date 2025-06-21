@@ -16,8 +16,9 @@ mod visualize;
 use crate::{
     DataTypeEnum, Device, ElementWiseOperation, MatMulOperation, PairWiseOperation, QMatrix,
     ReduceOperation, dequantize::DequantizeOperation, index_select::IndexSelectOperation,
-    map_layout::MapLayoutOperation, quantized::matmul::QMatMulOperation, resize::ResizeOperation,
-    slice_assign::SliceAssignOperation, tensor::TensorData, visit_tiled::MaybeQData,
+    map_layout::MapLayoutOperation, mir::operation::Operation, quantized::matmul::QMatMulOperation,
+    resize::ResizeOperation, slice_assign::SliceAssignOperation, tensor::TensorData,
+    visit_tiled::MaybeQData,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -111,6 +112,15 @@ impl DequantizeComputeKey {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub(crate) struct CustomComputeKey(usize);
+impl CustomComputeKey {
+    pub(crate) fn new() -> Self {
+        static COUNT: AtomicUsize = AtomicUsize::new(0);
+        Self(COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst))
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub(crate) struct QMatMulComputeNodeKey(usize);
 impl QMatMulComputeNodeKey {
     fn new() -> Self {
@@ -132,6 +142,7 @@ pub(crate) enum AnyComputeKey {
     Tensor(TensorComputeNodeKey),
     QMatMul(QMatMulComputeNodeKey),
     Dequantize(DequantizeComputeKey),
+    Custom(CustomComputeKey),
 }
 
 impl From<ElementWiseComputeNodeKey> for AnyComputeKey {
@@ -197,6 +208,12 @@ impl From<QMatMulComputeNodeKey> for AnyComputeKey {
 impl From<DequantizeComputeKey> for AnyComputeKey {
     fn from(value: DequantizeComputeKey) -> Self {
         Self::Dequantize(value)
+    }
+}
+
+impl From<CustomComputeKey> for AnyComputeKey {
+    fn from(value: CustomComputeKey) -> Self {
+        Self::Custom(value)
     }
 }
 
@@ -386,6 +403,18 @@ impl ComputeGraph {
         id
     }
 
+    pub(crate) fn create_custom(
+        &self,
+        operation: Arc<dyn Operation>,
+    ) -> CustomComputeKey {
+        let id = CustomComputeKey::new();
+        self.with_mut(|inner| {
+            inner.nodes.custom.insert(id, operation);
+            inner.add_reference(id.into());
+        });
+        id
+    }
+
     pub(crate) fn resolve(&self, key: AnyComputeKey, device: &Device) -> TensorData {
         let mut encoder = device
             .wgpu_device()
@@ -394,7 +423,9 @@ impl ComputeGraph {
         device.wgpu_queue().submit(Some(encoder.finish()));
 
         // Flush the cache to a file
-        if let (Some(pipeline_cache), Some(cache_file)) = (device.wgpu_cache(), device.wgpu_cache_file()) {
+        if let (Some(pipeline_cache), Some(cache_file)) =
+            (device.wgpu_cache(), device.wgpu_cache_file())
+        {
             let data = pipeline_cache.get_data();
             if let Some(data) = data {
                 let temp_file = cache_file.with_extension("temp");
@@ -436,6 +467,7 @@ pub(crate) struct ComputeGraphNodes {
     pub(crate) tensor: FxHashMap<TensorComputeNodeKey, TensorData>,
     pub(crate) q_mat_mul: FxHashMap<QMatMulComputeNodeKey, QMatMulOperation>,
     pub(crate) dequantize: FxHashMap<DequantizeComputeKey, DequantizeOperation>,
+    pub(crate) custom: FxHashMap<CustomComputeKey, Arc<dyn Operation>>,
 }
 
 impl ComputeGraphNodes {
@@ -583,6 +615,9 @@ impl ComputeGraphInner {
             }
             AnyComputeKey::Dequantize(dequantize_compute_key) => {
                 self.nodes.dequantize.remove(&dequantize_compute_key);
+            }
+            AnyComputeKey::Custom(custom_compute_key) => {
+                self.nodes.custom.remove(&custom_compute_key);
             }
         }
     }

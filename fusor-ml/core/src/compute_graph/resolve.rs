@@ -1,9 +1,12 @@
+use std::sync::Arc;
+
 use rustc_hash::FxHashSet;
 use wgpu::CommandEncoder;
 
 use crate::{
     DataTypeEnum, ElementWiseFunctions, ElementWiseOperation, MatMulOperation, PairWiseOperation,
     ReduceOperation,
+    compute_graph::CustomComputeKey,
     dequantize::DequantizeOperation,
     index_select::IndexSelectOperation,
     mir::{
@@ -27,7 +30,7 @@ use super::{
 pub(crate) struct Resolver<'a> {
     graph: &'a mut ComputeGraphInner,
     command_encoder: &'a mut CommandEncoder,
-    queued_operations: Vec<(AnyComputeKey, Box<dyn Operation>)>,
+    queued_operations: Vec<(AnyComputeKey, Arc<dyn Operation>)>,
     target: AnyComputeKey,
     queue: ComputeQueue,
     resolved_set: FxHashSet<AnyComputeKey>,
@@ -146,10 +149,10 @@ impl<'a> Resolver<'a> {
         new_inputs: Vec<MirValue>,
         kernel: &mut GenericKernel,
         key: AnyComputeKey,
-        operation: Box<dyn Operation>,
+        operation: Arc<dyn Operation>,
         inputs: &mut Vec<Vec<MirValue>>,
         all_input_values: &mut Vec<KernelInputValue>,
-        queued_operations: &mut Vec<(AnyComputeKey, Box<dyn Operation>)>,
+        queued_operations: &mut Vec<(AnyComputeKey, Arc<dyn Operation>)>,
     ) {
         for input in &new_inputs {
             input.visit_input_values(|value| {
@@ -174,7 +177,7 @@ impl<'a> Resolver<'a> {
     fn flush_operations(
         &mut self,
         mut kernel: GenericKernel,
-        queued_operations: Vec<(AnyComputeKey, Box<dyn Operation>)>,
+        queued_operations: Vec<(AnyComputeKey, Arc<dyn Operation>)>,
         inputs: Vec<Vec<MirValue>>,
         all_input_values: Vec<KernelInputValue>,
         workgroup_shape: workgroup_shape::WorkgroupShape,
@@ -259,6 +262,9 @@ impl<'a> Resolver<'a> {
                 AnyComputeKey::Dequantize(dequantize_compute_node_key) => {
                     self.resolve_dequantize(dequantize_compute_node_key)
                 }
+                AnyComputeKey::Custom(custom_compute_key) => {
+                    self.resolve_custom(custom_compute_key)
+                }
             };
             let mut dependencies = Vec::new();
             resolved.visit_dependencies(&mut |dependency| {
@@ -304,7 +310,7 @@ impl<'a> Resolver<'a> {
         ElementWiseOperation::from_element_wise(current_key, functions, shape)
     }
 
-    fn resolve_element_wise(&mut self, key: ElementWiseComputeNodeKey) -> Box<dyn Operation> {
+    fn resolve_element_wise(&mut self, key: ElementWiseComputeNodeKey) -> Arc<dyn Operation> {
         // First collect all element wise ops in this chain
         let functions = self.collect_element_wise_ops(key);
         let input = functions.value;
@@ -333,10 +339,10 @@ impl<'a> Resolver<'a> {
         let kernel =
             ElementWiseOperation::from_element_wise(input.into(), functions.functions, shape);
 
-        Box::new(kernel)
+        Arc::new(kernel)
     }
 
-    fn resolve_pair_wise(&mut self, key: PairWiseComputeNodeKey) -> Box<dyn Operation> {
+    fn resolve_pair_wise(&mut self, key: PairWiseComputeNodeKey) -> Arc<dyn Operation> {
         self.resolve_pair_wise_then(key, None)
     }
 
@@ -344,7 +350,7 @@ impl<'a> Resolver<'a> {
         &mut self,
         key: PairWiseComputeNodeKey,
         then: Option<ElementWiseOperation>,
-    ) -> Box<dyn Operation> {
+    ) -> Arc<dyn Operation> {
         let operation = &self.graph.nodes.pair_wise[&key];
         let function = operation.function.clone();
         let shape: Box<[usize]> = operation.shape().into();
@@ -376,10 +382,10 @@ impl<'a> Resolver<'a> {
             kernel.set_post_element_wise(then.functions);
         }
 
-        Box::new(kernel)
+        Arc::new(kernel)
     }
 
-    fn resolve_mat_mul(&mut self, key: MatMulComputeNodeKey) -> Box<dyn Operation> {
+    fn resolve_mat_mul(&mut self, key: MatMulComputeNodeKey) -> Arc<dyn Operation> {
         self.resolve_mat_mul_then(key, None)
     }
 
@@ -387,7 +393,7 @@ impl<'a> Resolver<'a> {
         &mut self,
         key: MatMulComputeNodeKey,
         then: Option<ElementWiseOperation>,
-    ) -> Box<dyn Operation> {
+    ) -> Arc<dyn Operation> {
         let operation = &self.graph.nodes.mat_mul[&key];
         let mut first = operation.first;
         let first_shape = operation.first_shape.clone();
@@ -425,10 +431,10 @@ impl<'a> Resolver<'a> {
             kernel.set_post_element_wise(then.functions);
         }
 
-        Box::new(kernel)
+        Arc::new(kernel)
     }
 
-    fn resolve_q_mat_mul(&mut self, key: QMatMulComputeNodeKey) -> Box<dyn Operation> {
+    fn resolve_q_mat_mul(&mut self, key: QMatMulComputeNodeKey) -> Arc<dyn Operation> {
         let operation = &self.graph.nodes.q_mat_mul[&key];
         let input = operation.input;
         let matrix = operation.matrix.clone();
@@ -436,10 +442,10 @@ impl<'a> Resolver<'a> {
         let kernel =
             QMatMulOperation::new(operation.input_datatype, &operation.in_shape, input, matrix);
 
-        Box::new(kernel)
+        Arc::new(kernel)
     }
 
-    fn resolve_dequantize(&mut self, key: DequantizeComputeKey) -> Box<dyn Operation> {
+    fn resolve_dequantize(&mut self, key: DequantizeComputeKey) -> Arc<dyn Operation> {
         self.resolve_dequantize_then(key, None)
     }
 
@@ -447,7 +453,7 @@ impl<'a> Resolver<'a> {
         &mut self,
         key: DequantizeComputeKey,
         then: Option<ElementWiseOperation>,
-    ) -> Box<dyn Operation> {
+    ) -> Arc<dyn Operation> {
         let operation = &self.graph.nodes.dequantize[&key];
 
         let mut kernel = DequantizeOperation::new(operation.matrix.clone(), operation.datatype);
@@ -455,10 +461,10 @@ impl<'a> Resolver<'a> {
             kernel.set_post_element_wise(then.functions);
         }
 
-        Box::new(kernel)
+        Arc::new(kernel)
     }
 
-    fn resolve_reduce(&mut self, key: ReduceComputeNodeKey) -> Box<dyn Operation> {
+    fn resolve_reduce(&mut self, key: ReduceComputeNodeKey) -> Arc<dyn Operation> {
         self.resolve_reduce_then(key, None)
     }
 
@@ -466,7 +472,7 @@ impl<'a> Resolver<'a> {
         &mut self,
         key: ReduceComputeNodeKey,
         then: Option<ElementWiseOperation>,
-    ) -> Box<dyn Operation> {
+    ) -> Arc<dyn Operation> {
         let operation = self.graph.nodes.reduce[&key].clone();
         let mut input_key = operation.value;
 
@@ -491,28 +497,28 @@ impl<'a> Resolver<'a> {
         kernel.set_post_element_wise(element_wise_after);
         kernel.set_pre_element_wise(element_wise_before);
 
-        Box::new(kernel)
+        Arc::new(kernel)
     }
 
-    fn resolve_map_layout(&mut self, key: MapLayoutComputeNodeKey) -> Box<dyn Operation> {
+    fn resolve_map_layout(&mut self, key: MapLayoutComputeNodeKey) -> Arc<dyn Operation> {
         let kernel = self.graph.nodes.map_layout.get(&key).unwrap();
 
-        Box::new(kernel.clone())
+        Arc::new(kernel.clone())
     }
 
-    fn resolve_resize(&mut self, key: ResizeComputeNodeKey) -> Box<dyn Operation> {
+    fn resolve_resize(&mut self, key: ResizeComputeNodeKey) -> Arc<dyn Operation> {
         let kernel = self.graph.nodes.resize.get(&key).unwrap();
 
-        Box::new(kernel.clone())
+        Arc::new(kernel.clone())
     }
 
-    fn resolve_slice_assign(&mut self, key: SliceAssignComputeNodeKey) -> Box<dyn Operation> {
+    fn resolve_slice_assign(&mut self, key: SliceAssignComputeNodeKey) -> Arc<dyn Operation> {
         let kernel = self.graph.nodes.slice_assign.get(&key).unwrap();
 
-        Box::new(kernel.clone())
+        Arc::new(kernel.clone())
     }
 
-    fn resolve_index_select(&mut self, key: IndexSelectComputeNodeKey) -> Box<dyn Operation> {
+    fn resolve_index_select(&mut self, key: IndexSelectComputeNodeKey) -> Arc<dyn Operation> {
         self.resolve_index_select_then(key, None)
     }
 
@@ -520,7 +526,7 @@ impl<'a> Resolver<'a> {
         &mut self,
         key: IndexSelectComputeNodeKey,
         then: Option<ElementWiseOperation>,
-    ) -> Box<dyn Operation> {
+    ) -> Arc<dyn Operation> {
         let operation = &self.graph.nodes.index_select[&key];
 
         let dimension = operation.dimension;
@@ -570,7 +576,7 @@ impl<'a> Resolver<'a> {
         kernel.set_pre_element_wise_input(input_pre_element_wise.functions);
         kernel.set_pre_element_wise_indexes(indexes_pre_element_wise.functions);
 
-        Box::new(kernel)
+        Arc::new(kernel)
     }
 
     fn resolve_tensor(&mut self, key: TensorComputeNodeKey) {
@@ -579,5 +585,9 @@ impl<'a> Resolver<'a> {
         self.graph.cached_results.insert(key.into(), tensor);
         // Mark this node as resolved
         self.resolved_set.insert(AnyComputeKey::Tensor(key));
+    }
+
+    fn resolve_custom(&mut self, key: CustomComputeKey) -> Arc<dyn Operation> {
+        Arc::clone(&self.graph.nodes.custom[&key])
     }
 }

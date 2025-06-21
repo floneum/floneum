@@ -13,15 +13,7 @@ use wgpu::{
 };
 
 use crate::{
-    Device, ElementWiseOperation, MatMulOperation, PairWiseFunction, PairWiseOperation,
-    ReduceFunction, ReduceOperation,
-    compute_graph::{AnyComputeKey, ComputeGraph},
-    index_select::IndexSelectOperation,
-    layout::Layout,
-    map_layout::MapLayoutOperation,
-    quantized::{QMatrix, matmul::QMatMulOperation},
-    resize::ResizeOperation,
-    slice_assign::SliceAssignOperation,
+    compute_graph::{AnyComputeKey, ComputeGraph}, index_select::IndexSelectOperation, layout::Layout, map_layout::MapLayoutOperation, mir::operation::Operation, quantized::{matmul::QMatMulOperation, QMatrix}, resize::ResizeOperation, slice_assign::SliceAssignOperation, Device, ElementWiseOperation, MatMulOperation, PairWiseFunction, PairWiseOperation, ReduceFunction, ReduceOperation
 };
 
 pub trait DataType:
@@ -240,6 +232,20 @@ impl LazyTensorData {
             info,
             graph,
             key,
+        }
+    }
+
+    pub(crate) fn custom(&self, custom: Arc<dyn Operation>) -> Self {
+        let graph = self.graph.clone();
+        let device = self.device.clone();
+        let info = self.info.clone();
+        let key = graph.create_custom(custom);
+
+        Self {
+            device,
+            info,
+            graph,
+            key: key.into(),
         }
     }
 
@@ -881,6 +887,10 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
 
     pub fn graphvis(&self) -> Graph {
         self.data.graphvis()
+    }
+
+    pub fn data(&self) -> &LazyTensorData {
+        &self.data
     }
 }
 

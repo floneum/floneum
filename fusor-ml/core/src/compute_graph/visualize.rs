@@ -1,5 +1,7 @@
 use rustc_hash::FxHashMap;
 
+use crate::compute_graph::CustomComputeKey;
+
 use super::dependency_map::visit_dependencies;
 use super::queue::ComputeQueue;
 use super::{
@@ -216,6 +218,24 @@ impl GraphVisPass {
         });
         self.identities.insert(key.into(), id.clone());
     }
+
+    fn visit_custom(&mut self, key: CustomComputeKey, graph: &ComputeGraphNodes) {
+        let operation = graph.custom.get(&key).unwrap();
+        let output_layout = self.layout_pass.output_layout.get(&key.into()).unwrap();
+        let id = Identity::quoted(format!("custom ({}) #{}", output_layout, key.0));
+        self.statements.push(Stmt::Node {
+            id: id.clone(),
+            port: None,
+            attr: None,
+        });
+        operation.visit_dependencies(&mut |dep| {
+            let id = self.identities.get(&dep).unwrap();
+            self.statements.push(Stmt::Edge(
+                Edge::head_node(id.clone(), None).arrow_to_node(id.clone(), None),
+            ));
+        });
+        self.identities.insert(key.into(), id.clone());
+    }
 }
 
 impl ComputeGraphInner {
@@ -268,6 +288,7 @@ impl ComputeGraphInner {
                 AnyComputeKey::Tensor(key) => graph_vis_pass.visit_tensor(key, nodes),
                 AnyComputeKey::Dequantize(key) => graph_vis_pass.visit_dequantize(key, nodes),
                 AnyComputeKey::IndexSelect(key) => graph_vis_pass.visit_index_select(key, nodes),
+                AnyComputeKey::Custom(key) => graph_vis_pass.visit_custom(key, nodes),
             }
         }
 

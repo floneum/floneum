@@ -1,8 +1,7 @@
 use std::fmt::Debug;
 
 use crate::{
-    Device,
-    compute_graph::{AnyComputeKey, ComputeGraphInner},
+    compute_graph::{AnyComputeKey, ComputeGraphInner}, Device
 };
 
 use super::{

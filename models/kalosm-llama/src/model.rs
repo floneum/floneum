@@ -100,6 +100,15 @@ impl LlamaModel {
                 logits_vec.push(logit);
             }
         });
+        static DELAY: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let delay = DELAY.get_or_init(|| {
+            std::env::var("KALOSM_DELAY_MODEL_FORWARD")
+                .map(|v| v == "1")
+                .unwrap_or(true)
+        });
+        if *delay {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
 
         Ok(())
     }

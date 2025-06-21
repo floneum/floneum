@@ -215,6 +215,22 @@ impl GenericKernel {
         global
     }
 
+     pub(crate) fn add_global_value(
+        &mut self,
+        space: KernelGlobalSpace,
+        ty: DataTypeEnum,
+    ) -> KernelGlobal {
+        let index = self.max_global_id;
+        self.max_global_id += 1;
+        let global = KernelGlobal::new(
+            index,
+            space,
+            KernelGlobalType::Value(ty.clone()),
+        );
+        self.globals.push(global.clone());
+        global
+    }
+
     pub(crate) fn subgroup_size(&mut self) -> String {
         self.enabled_builtins |= EnabledBuiltins::SubgroupSize;
         "subgroup_size".to_string()

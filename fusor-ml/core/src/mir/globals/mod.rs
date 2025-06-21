@@ -35,6 +35,10 @@ impl KernelGlobal {
                 let space = &self.space;
                 format!("var<{space}> {self}: array<{dtype}, {size}>;\n")
             }
+            KernelGlobalType::Value(ty) => {
+                let space = &self.space;
+                format!("var<{space}> {self}: {ty};\n")
+            }
         }
     }
 }
@@ -48,6 +52,7 @@ impl Display for KernelGlobal {
 #[derive(Clone, Debug)]
 pub enum KernelGlobalType {
     Array(ArrayType),
+    Value(DataTypeEnum),
 }
 
 #[derive(Clone, Debug)]
