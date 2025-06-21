@@ -24,7 +24,7 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
     let cnf_grammar = grammar.to_cnf().unwrap();
     let bump = bumpalo::Bump::new();
     let cnf_grammar = cnf_grammar.replace_tokenizer_terminals(&tokenizer);
-    let cnf_grammar = cnf_grammar.shortcut_merge(&Merge {
+    let mut cnf_grammar = cnf_grammar.shortcut_merge(&Merge {
         rank: 0,
         pair: [
             tokenizer.bytes[b's' as usize],
@@ -32,6 +32,7 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
         ],
         new_token: 10_000,
     });
+    cnf_grammar.garbage_collect_non_terminals();
     println!("CNF grammar:\n{}", cnf_grammar);
     let dense_grammar = cnf_grammar.reallocate(&bump);
     println!("dense size: {}", bump.allocated_bytes());
@@ -185,6 +186,33 @@ impl Grammar {
         }
 
         myself
+    }
+}
+
+impl<T> Grammar<T> {
+    fn garbage_collect_non_terminals(&mut self) {
+        // Remove any non-terminals that are not used in any rules
+        let mut used_non_terminals = std::collections::HashSet::new();
+        let mut queue = vec![self.start.clone()];
+        while let Some(nt) = queue.pop() {
+            if used_non_terminals.insert(nt.clone()) {
+                for rule in &self.rules {
+                    if rule.lhs == nt {
+                        for rhs in &rule.rhs {
+                            for symbol in rhs {
+                                if let parse::Symbol::NonTerminal(non_terminal) = symbol {
+                                    if !used_non_terminals.contains(non_terminal) {
+                                        queue.push(non_terminal.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        self.rules.retain(|rule| used_non_terminals.contains(&rule.lhs));
     }
 }
 
