@@ -18,7 +18,7 @@ where
     Tensor<R, D>: Max<Output = Tensor<R2, D>>,
     Tensor<R, D>: Sum<Output = Tensor<R2, D>>,
 {
-    pub fn softmax(&self, dim: usize) -> Self {
+    pub fn softmax_slow(&self, dim: usize) -> Self {
         let size = *self.shape();
         let max = self.max(dim);
         let normalized = self - &max.broadcast(size);
@@ -27,11 +27,11 @@ where
         exp / sum.broadcast(size)
     }
 
-    pub fn softmax_last_dim(&self) -> Self {
-        self.softmax(self.rank() - 1)
+    pub fn softmax_slow_last_dim(&self) -> Self {
+        self.softmax_slow(self.rank() - 1)
     }
 
-    pub fn softmax_fast(&self, axis: usize) -> Self {
+    pub fn softmax(&self, axis: usize) -> Self {
         let operation =
             SoftmaxOperation::new(self.key(), self.datatype(), axis, self.rank() as u32);
         let data = self.data();
@@ -39,8 +39,8 @@ where
         Self::from_parts(data.custom(Arc::new(operation)))
     }
 
-    pub fn softmax_fast_last_dim(&self) -> Self {
-        self.softmax_fast(self.rank() - 1)
+    pub fn softmax_last_dim(&self) -> Self {
+        self.softmax(self.rank() - 1)
     }
 }
 
@@ -169,7 +169,7 @@ impl SoftmaxOperation {
         // Round up
         writeln!(
             &mut kernel_body,
-            "let bucket_size = {reduce_size} / {blocksize}u + u32(({reduce_size} % {blocksize}u) != 0u);"
+            "let bucket_size = ({reduce_size} + {blocksize}u - 1) / {blocksize}u;"
         )
         .unwrap();
         // Then loop over this thread's portion of the column and merge the values
@@ -446,6 +446,34 @@ impl Operation for SoftmaxOperation {
 
 #[cfg(test)]
 #[tokio::test]
+async fn test_softmax_slow() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    let data = [1f32, -2., -3., 4., 5., -6.];
+    let max = data.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    let diff: [f32; 6] = std::array::from_fn(|i| data[i] - max);
+    let exp: [f32; 6] = std::array::from_fn(|i| diff[i].exp());
+    let sum = exp.iter().sum::<f32>();
+    let softmax_array: [f32; 6] = std::array::from_fn(|i| exp[i] / sum);
+
+    println!("{:?}", softmax_array);
+
+    let tensor = Tensor::new(&device, &data);
+    let tensor = tensor.softmax_slow(0);
+    let output = tensor.as_slice().await.unwrap();
+    println!("{:?}", output);
+    assert!((output[[0]] - softmax_array[0]).abs() < 0.001);
+    assert!((output[[1]] - softmax_array[1]).abs() < 0.001);
+    assert!((output[[2]] - softmax_array[2]).abs() < 0.001);
+    assert!((output[[3]] - softmax_array[3]).abs() < 0.001);
+    assert!((output[[4]] - softmax_array[4]).abs() < 0.001);
+    assert!((output[[5]] - softmax_array[5]).abs() < 0.001);
+}
+
+#[cfg(test)]
+#[tokio::test]
 async fn test_softmax() {
     use crate::Device;
 
@@ -462,34 +490,6 @@ async fn test_softmax() {
 
     let tensor = Tensor::new(&device, &data);
     let tensor = tensor.softmax(0);
-    let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
-    assert!((output[[0]] - softmax_array[0]).abs() < 0.001);
-    assert!((output[[1]] - softmax_array[1]).abs() < 0.001);
-    assert!((output[[2]] - softmax_array[2]).abs() < 0.001);
-    assert!((output[[3]] - softmax_array[3]).abs() < 0.001);
-    assert!((output[[4]] - softmax_array[4]).abs() < 0.001);
-    assert!((output[[5]] - softmax_array[5]).abs() < 0.001);
-}
-
-#[cfg(test)]
-#[tokio::test]
-async fn test_softmax_fast() {
-    use crate::Device;
-
-    let device = Device::new().await.unwrap();
-
-    let data = [1f32, -2., -3., 4., 5., -6.];
-    let max = data.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-    let diff: [f32; 6] = std::array::from_fn(|i| data[i] - max);
-    let exp: [f32; 6] = std::array::from_fn(|i| diff[i].exp());
-    let sum = exp.iter().sum::<f32>();
-    let softmax_array: [f32; 6] = std::array::from_fn(|i| exp[i] / sum);
-
-    println!("{:?}", softmax_array);
-
-    let tensor = Tensor::new(&device, &data);
-    let tensor = tensor.softmax_fast(0);
     let output = tensor.as_slice().await.unwrap();
     println!("output: {:?}", output);
     println!("expect: {:?}", softmax_array);

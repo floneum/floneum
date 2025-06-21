@@ -140,7 +140,7 @@ impl ReduceOperation {
         // Round up
         writeln!(
             &mut kernel_body,
-            "let bucket_size = {reduce_size} / {blocksize}u + u32(({reduce_size} % {blocksize}u) != 0u);"
+            "let bucket_size = ({reduce_size} + {blocksize}u - 1) / {blocksize}u;"
         )
         .unwrap();
         // Then loop over this thread's portion of the column and merge the values
