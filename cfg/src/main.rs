@@ -1,6 +1,9 @@
 use std::fmt::Display;
 
-use crate::{parse::Grammar, tokenizer::Tokenizer};
+use crate::{
+    parse::Grammar,
+    tokenizer::{Merge, Tokenizer},
+};
 
 mod cnf;
 mod parse;
@@ -20,6 +23,16 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
 
     let cnf_grammar = grammar.to_cnf().unwrap();
     let bump = bumpalo::Bump::new();
+    let cnf_grammar = cnf_grammar.replace_tokenizer_terminals(&tokenizer);
+    let cnf_grammar = cnf_grammar.shortcut_merge(&Merge {
+        rank: 0,
+        pair: [
+            tokenizer.bytes[b's' as usize],
+            tokenizer.bytes[b'.' as usize],
+        ],
+        new_token: 10_000,
+    });
+    println!("CNF grammar:\n{}", cnf_grammar);
     let dense_grammar = cnf_grammar.reallocate(&bump);
     println!("dense size: {}", bump.allocated_bytes());
 
@@ -30,8 +43,10 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
         std::io::stdin().read_line(&mut new_text).unwrap();
         let new_text = new_text.trim_end_matches('\n');
         for byte in new_text.as_bytes() {
+            // map the byte to the tokenizer's vocabulary
+            let token = tokenizer.bytes[*byte as usize];
             text.push(*byte as char);
-            if recognizer.push_byte(*byte) || recognizer.finish() {
+            if recognizer.push_byte(token) || recognizer.finish() {
                 println!("Input {:?} is accepted", text);
                 break;
             }
@@ -49,12 +64,12 @@ struct DenseGrammar<'bump> {
 }
 
 impl<'bump> DenseGrammar<'bump> {
-    pub fn recognizes(&self, input: &[u8]) -> bool {
+    pub fn recognizes(&self, input: &[u8], tokenizer: &Tokenizer) -> bool {
         let bump = bumpalo::Bump::new();
         let mut recognizer = Recognizer::new(self, &bump);
 
         for byte in input {
-            recognizer.push_byte(*byte);
+            recognizer.push_byte(tokenizer.bytes[*byte as usize]);
         }
         recognizer.finish()
     }
@@ -133,6 +148,288 @@ impl Display for DenseSymbol {
 }
 
 impl Grammar {
+    pub fn replace_tokenizer_terminals(&self, tokenizer: &Tokenizer) -> Grammar<u32> {
+        let mut myself = Grammar {
+            start: self.start.clone(),
+            rules: Vec::new(),
+        };
+        for rule in &*self.rules {
+            let mut new_rhs = Vec::new();
+            for rhs in &*rule.rhs {
+                let mut new_sequence = Vec::new();
+                for symbol in &**rhs {
+                    match symbol {
+                        parse::Symbol::Terminal(lit) => {
+                            let lit = lit.as_bytes()[0] as usize;
+                            if let Some(token) = tokenizer.bytes.get(lit) {
+                                // Replace the terminal with the corresponding token from the tokenizer
+                                new_sequence.push(parse::Symbol::Terminal(*token));
+                            } else {
+                                panic!("Token {:?} not found in tokenizer vocabulary", lit);
+                            }
+                        }
+                        parse::Symbol::NonTerminal(nt) => {
+                            new_sequence.push(parse::Symbol::NonTerminal(nt.clone()));
+                        }
+                        parse::Symbol::Epsilon => {
+                            new_sequence.push(parse::Symbol::Epsilon);
+                        }
+                    }
+                }
+                new_rhs.push(new_sequence);
+            }
+            myself.rules.push(parse::Rule {
+                lhs: rule.lhs.clone(),
+                rhs: new_rhs,
+            });
+        }
+
+        myself
+    }
+}
+
+impl Grammar<u32> {
+    // pub struct Merge {
+    //     rank: u32,
+    //     pair: [u32; 2],
+    //     new_token: u32,
+    // }
+    pub fn shortcut_merge(&self, merge: &Merge) -> Grammar<u32> {
+        // Since our grammar is in CNF, we can only need to handle two cases:
+        // Q1 -> T - this is handles by `replace_tokenizer_terminals`
+        // Q2 -> Q1 Q2 - this is handled by the loop below
+        // First split every Q2 into two rules:
+        // Q2beforetoken1 -> Q1 Q2
+        // Q2aftertoken1 -> Q1 Q2
+
+        let mut new_rules = Vec::new();
+
+        #[derive(Debug)]
+        struct NewRule {
+            after_first_token_incoming: bool,
+            after_first_token_outgoing: bool,
+            lhs: String,
+            rhs: Vec<Vec<parse::Symbol<u32>>>,
+        }
+
+        for rule in &*self.rules {
+            for after_first_token_incoming in [false, true] {
+                for after_first_token_outgoing in [false, true] {
+                    let mut new_rule = NewRule {
+                        after_first_token_incoming,
+                        after_first_token_outgoing,
+                        lhs: rule.lhs.clone(),
+                        rhs: Vec::new(),
+                    };
+                    let mut new_rhs = Vec::new();
+                    for rhs in &*rule.rhs {
+                        let mut new_sequence = Vec::new();
+                        for symbol in &**rhs {
+                            match symbol {
+                                parse::Symbol::Terminal(lit) => {
+                                    // If this is a terminal that matches the first token, the output must have the first token true
+                                    if *lit == merge.pair[0] {
+                                        if new_rule.after_first_token_outgoing {
+                                            new_sequence.push(parse::Symbol::Terminal(*lit));
+                                        }
+                                    } else if *lit == merge.pair[1] {
+                                        // If this is a terminal that matches the second token, and we are after the first token,
+                                        // the first token must be false next
+                                        if !new_rule.after_first_token_outgoing {
+                                            // If we are already after the second token, we just push the terminal
+                                            new_sequence.push(parse::Symbol::Terminal(*lit));
+                                        }
+                                    } else {
+                                        if !new_rule.after_first_token_outgoing {
+                                            // After the first token must be false
+                                            new_sequence.push(parse::Symbol::Terminal(*lit));
+                                        }
+                                    }
+                                }
+                                parse::Symbol::NonTerminal(nt) => {
+                                    new_sequence.push(parse::Symbol::NonTerminal(nt.clone()));
+                                }
+                                parse::Symbol::Epsilon => {
+                                    new_sequence.push(parse::Symbol::Epsilon);
+                                }
+                            }
+                        }
+                        new_rhs.push(new_sequence);
+                    }
+                    new_rule.rhs = new_rhs;
+                    new_rules.push(new_rule);
+                }
+            }
+        }
+
+        // Then run through each new rule and eliminate impossible states. Keep going until there are no changes.
+        let mut changed = true;
+        while changed {
+            changed = false;
+            println!("iteration with {} rules", new_rules.len());
+            let mut index = 0;
+            while index < new_rules.len() {
+                let rule = &new_rules[index];
+                let after_first_token_incoming = rule.after_first_token_incoming;
+                let after_first_token_outgoing = rule.after_first_token_outgoing;
+                // Filter out any invalid right-hand sides
+                let mut rhs_index = 0;
+                while rhs_index < new_rules[index].rhs.len() {
+                    let sequence = new_rules[index].rhs[rhs_index].clone();
+                    match sequence.as_slice() {
+                        // Since we are in CNF, we can only have two symbols in the sequence
+                        [
+                            parse::Symbol::NonTerminal(first_nt),
+                            parse::Symbol::NonTerminal(second_nt),
+                        ] => {
+                            // Find the non-terminals with a matching after_first_token_incoming
+                            // and keep track of what the intermediate_after_first_token_states state should be
+                            let valid_intermediate_after_first_token_states = new_rules
+                                .iter()
+                                .filter_map(|r| {
+                                    (r.lhs == *first_nt
+                                        && r.after_first_token_incoming
+                                            == after_first_token_incoming)
+                                        .then(|| r.after_first_token_outgoing)
+                                })
+                                .collect::<Vec<_>>();
+                            if valid_intermediate_after_first_token_states.is_empty() {
+                                // If there are no valid states for the first non-terminal, remove this rule
+                                new_rules[index].rhs.remove(rhs_index);
+                                changed = true;
+                                continue;
+                            }
+                            // Find the non-terminals with a matching intermediate_after_first_token_states and
+                            // matching after_first_token_outgoing
+                            let has_valid_second_non_terminal = new_rules.iter().any(|r| {
+                                r.lhs == *second_nt
+                                    && valid_intermediate_after_first_token_states
+                                        .contains(&r.after_first_token_incoming)
+                                    && r.after_first_token_outgoing == after_first_token_outgoing
+                            });
+                            if !has_valid_second_non_terminal {
+                                // If there are no valid states for the second non-terminal, remove this rule
+                                new_rules[index].rhs.remove(rhs_index);
+                                changed = true;
+                                continue;
+                            }
+                        }
+                        [] => {
+                            // Remove empty sequences
+                            new_rules[index].rhs.remove(rhs_index);
+                            changed = true;
+                            continue;
+                        }
+                        // Or one terminal or epsilon which are always valid or removed above
+                        [parse::Symbol::Terminal(_)] | [parse::Symbol::Epsilon] => {}
+                        _ => unreachable!("Unexpected sequence in CNF: {:?}", sequence),
+                    }
+                    rhs_index += 1;
+                }
+
+                // If there are no valid right-hand sides left, remove the rule
+                let rhs = &new_rules[index].rhs;
+                if rhs.is_empty() {
+                    new_rules.remove(index);
+                    changed = true;
+                } else {
+                    index += 1; // Move to the next rule
+                }
+            }
+        }
+
+        println!("New rules after merge:\n{:#?}", new_rules);
+
+        // Finally, split up all of the rules into a new grammar
+        let mut new_grammar_rules = Vec::new();
+
+        fn format_new_rule(rule: &NewRule) -> String {
+            let NewRule {
+                after_first_token_incoming,
+                after_first_token_outgoing,
+                lhs,
+                ..
+            } = rule;
+            format!(
+                "{}_{}_{}",
+                after_first_token_incoming, lhs, after_first_token_outgoing
+            )
+        }
+
+        for rule in &new_rules {
+            let NewRule {
+                after_first_token_incoming,
+                after_first_token_outgoing,
+                rhs,
+                ..
+            } = rule;
+            let new_lhs = format_new_rule(rule);
+            let mut new_rhs = Vec::new();
+
+            for rhs in rhs {
+                // Split up the right-hand sides into all possible combinations
+                match rhs.as_slice() {
+                    // Since we are in CNF, we can only have two symbols in the sequence
+                    [
+                        parse::Symbol::NonTerminal(first_nt),
+                        parse::Symbol::NonTerminal(second_nt),
+                    ] => {
+                        // Find the non-terminals with a matching after_first_token_incoming
+                        // and keep track of what the intermediate_after_first_token_states state should be
+                        for valid_first_token in new_rules.iter().filter(|r| {
+                            r.lhs == *first_nt
+                                && r.after_first_token_incoming == *after_first_token_incoming
+                        }) {
+                            for valid_second_token in new_rules.iter().filter(|r| {
+                                r.lhs == *second_nt
+                                    && valid_first_token.after_first_token_outgoing
+                                        == r.after_first_token_incoming
+                                    && r.after_first_token_outgoing == *after_first_token_outgoing
+                            }) {
+                                // Create a new right-hand side with the valid non-terminals
+                                let new_sequence = vec![
+                                    parse::Symbol::NonTerminal(format_new_rule(valid_first_token)),
+                                    parse::Symbol::NonTerminal(format_new_rule(valid_second_token)),
+                                ];
+                                new_rhs.push(new_sequence);
+                            }
+                        }
+                    }
+                    // Just push other valid sequences as they are
+                    [parse::Symbol::Terminal(_)] | [parse::Symbol::Epsilon] => {
+                        // Valid sequences with one terminal or epsilon are always valid
+                        new_rhs.push(rhs.clone());
+                    }
+                    _ => unreachable!("Unexpected sequence in CNF: {:?}", rhs),
+                }
+            }
+
+            // Add the new rule to the grammar
+            new_grammar_rules.push(parse::Rule {
+                lhs: new_lhs,
+                rhs: new_rhs,
+            });
+        }
+
+        // Create a new start rule
+        let start_lhs: Vec<_> = new_rules.iter().filter(|r| r.lhs == self.start).collect();
+        let new_start_lhs = "Start".to_string();
+        let new_start = parse::Rule {
+            lhs: new_start_lhs.clone(),
+            rhs: start_lhs
+                .iter()
+                .map(|r| vec![parse::Symbol::NonTerminal(format_new_rule(r))])
+                .collect(),
+        };
+
+        new_grammar_rules.push(new_start);
+
+        Grammar {
+            start: new_start_lhs,
+            rules: new_grammar_rules,
+        }
+    }
+
     fn reallocate<'bump>(&self, bump: &'bump bumpalo::Bump) -> DenseGrammar<'bump> {
         // Create a mapping from non-terminal names to indices.
         let non_terminal_indices = self
@@ -157,13 +454,7 @@ impl Grammar {
                                 parse::Symbol::NonTerminal(nt) => {
                                     DenseSymbol::NonTerminal(non_terminal_indices[nt])
                                 }
-                                parse::Symbol::Terminal(lit) => {
-                                    assert!(
-                                        lit.len() == 1,
-                                        "Terminal literals must be single characters"
-                                    );
-                                    DenseSymbol::Terminal(lit.as_bytes()[0] as u32)
-                                }
+                                parse::Symbol::Terminal(lit) => DenseSymbol::Terminal(*lit),
                                 parse::Symbol::Epsilon => DenseSymbol::Epsilon,
                             })
                             .collect::<Vec<_>>();
@@ -173,7 +464,7 @@ impl Grammar {
                     .collect();
 
                 DenseRule {
-                    rhs: bump.alloc(rhs),
+                    rhs: bump.alloc(rhs).as_slice(),
                 }
             })
             .collect();
@@ -182,7 +473,7 @@ impl Grammar {
         let start_index = non_terminal_indices[&self.start];
 
         DenseGrammar {
-            rules: bump.alloc(rules),
+            rules: &*bump.alloc(rules),
             start: start_index,
         }
     }
@@ -199,7 +490,7 @@ impl<'bump> Recognizer<'bump> {
         let mut chart: Vec<Vec<&'bump Position<'bump>>> = vec![Vec::new()];
 
         let start = grammar.start;
-        for rhs in grammar.rules[start].rhs {
+        for rhs in &*grammar.rules[start].rhs {
             chart[0].push(bump.alloc(Position {
                 parent: None, // No parent for the initial state
                 non_terminal: start,
@@ -220,7 +511,7 @@ impl<'bump> Recognizer<'bump> {
         self.chart.last().map_or(false, |last| !last.is_empty())
     }
 
-    fn push_byte(&mut self, byte: u8) -> bool {
+    fn push_byte(&mut self, byte: u32) -> bool {
         // Push the byte into the chart and process it
         self.push(Some(byte))
     }
@@ -230,7 +521,7 @@ impl<'bump> Recognizer<'bump> {
         self.push(None)
     }
 
-    fn push(&mut self, byte: Option<u8>) -> bool {
+    fn push(&mut self, byte: Option<u32>) -> bool {
         let k = self.chart.len() - 1;
         if byte.is_some() {
             self.chart.push(Vec::new());
@@ -337,16 +628,18 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
 
     let cnf_grammar = grammar.to_cnf().unwrap();
     let bump = bumpalo::Bump::new();
+    let tokenizer = Tokenizer::load_tokenizer("tokenizer.json");
+    let cnf_grammar = cnf_grammar.replace_tokenizer_terminals(&tokenizer);
     let dense_grammar = cnf_grammar.reallocate(&bump);
     println!("Dense grammar:\n{}", dense_grammar);
 
-    assert!(dense_grammar.recognizes(br#"name"#));
-    assert!(dense_grammar.recognizes(br#"(str.++ name name)"#));
-    assert!(dense_grammar.recognizes(br#"(str.replace name name name)"#));
-    assert!(dense_grammar.recognizes(br#"(str.at name 0)"#));
-    assert!(dense_grammar.recognizes(br#"(int.to.str 0)"#));
-    assert!(dense_grammar.recognizes(br#"(str.substr name 0 1)"#));
+    assert!(dense_grammar.recognizes(br#"name"#, &tokenizer));
+    assert!(dense_grammar.recognizes(br#"(str.++ name name)"#, &tokenizer));
+    assert!(dense_grammar.recognizes(br#"(str.replace name name name)"#, &tokenizer));
+    assert!(dense_grammar.recognizes(br#"(str.at name 0)"#, &tokenizer));
+    assert!(dense_grammar.recognizes(br#"(int.to.str 0)"#, &tokenizer));
+    assert!(dense_grammar.recognizes(br#"(str.substr name 0 1)"#, &tokenizer));
 
-    assert!(!dense_grammar.recognizes(br#"(str.substr name name 2)"#));
-    assert!(!dense_grammar.recognizes(br#"invalid_input"#));
+    assert!(!dense_grammar.recognizes(br#"(str.substr name name 2)"#, &tokenizer));
+    assert!(!dense_grammar.recognizes(br#"invalid_input"#, &tokenizer));
 }

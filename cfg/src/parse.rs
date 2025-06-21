@@ -14,16 +14,16 @@ use nom::{
 
 /// A single grammar symbol.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Symbol {
+pub enum Symbol<T = String> {
     /// A non‑terminal `A`.
     NonTerminal(String),
     /// A terminal literal `'+'`.
-    Terminal(String),
+    Terminal(T),
     /// The empty string `ε`.
     Epsilon,
 }
 
-impl Display for Symbol {
+impl<T: Display> Display for Symbol<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Symbol::NonTerminal(id) => write!(f, "{}", id),
@@ -35,14 +35,14 @@ impl Display for Symbol {
 
 /// One production rule: *lhs → rhs1 | rhs2 | …*
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Rule {
+pub struct Rule<T = String> {
     /// The left‑hand non‑terminal.
     pub lhs: String,
     /// Alternative right‑hand sides, each a vector of symbols composing a *sequence*.
-    pub rhs: Vec<Vec<Symbol>>, // sequence list
+    pub rhs: Vec<Vec<Symbol<T>>>, // sequence list
 }
 
-impl Display for Rule {
+impl<T: Display> Display for Rule<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -63,10 +63,10 @@ impl Display for Rule {
 
 /// A parsed context‑free grammar.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Grammar {
+pub struct Grammar<T = String> {
     pub start: String,
     /// Map `lhs → rule` (keeps original order via `Vec`).
-    pub rules: Vec<Rule>,
+    pub rules: Vec<Rule<T>>,
 }
 
 impl Grammar {
@@ -89,7 +89,7 @@ impl Grammar {
     }
 }
 
-impl Display for Grammar {
+impl<T: Display> Display for Grammar<T> {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         writeln!(f, "start: {}", self.start)?;
         for rule in &self.rules {

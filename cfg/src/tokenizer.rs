@@ -6,9 +6,9 @@ use serde_json::Value;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Merge {
-    rank: u32,
-    pair: [u32; 2],
-    new_token: u32,
+    pub(crate) rank: u32,
+    pub(crate) pair: [u32; 2],
+    pub(crate) new_token: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -48,10 +48,10 @@ fn normalize_token(token: &str) -> String {
 
 #[derive(Debug, Clone)]
 pub(crate) struct Tokenizer {
-    vocab: HashMap<Vec<u8>, u32>,
-    merges: Vec<Merge>,
-    bytes: [u32; 256],
-    regex: Regex,
+    pub(crate) vocab: HashMap<Vec<u8>, u32>,
+    pub(crate) merges: Vec<Merge>,
+    pub(crate) bytes: [u32; 256],
+    pub(crate) regex: Regex,
 }
 
 impl Tokenizer {
