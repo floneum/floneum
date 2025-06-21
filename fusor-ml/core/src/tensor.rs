@@ -740,13 +740,13 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         Ok(TensorSlice::new(downloaded, tensor.layout().clone()))
     }
 
-    pub fn materialize(&self) -> impl Future<Output = ()> + '_ {
+    pub fn materialize(&self) -> impl Future<Output = ()> + 'static {
         self.data.materialize();
+        let (sender, receiver) = futures_channel::oneshot::channel();
+        self.device().wgpu_queue().on_submitted_work_done(|| {
+            _ = sender.send(());
+        });
         async move {
-            let (sender, receiver) = futures_channel::oneshot::channel();
-            self.device().wgpu_queue().on_submitted_work_done(|| {
-                _ = sender.send(());
-            });
             let _ = receiver.await;
         }
     }
