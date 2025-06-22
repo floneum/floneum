@@ -96,7 +96,7 @@ impl QMatrix {
         };
         let buffer = Arc::new(device.wgpu_device().create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
-                label: None,
+                label: Some("QMatrix Buffer"),
                 contents: &bytes,
                 usage: wgpu::BufferUsages::STORAGE
                     | wgpu::BufferUsages::COPY_SRC

@@ -240,7 +240,10 @@ impl Operation for IndexSelectOperation {
         let output_shape: Box<[usize]> =
             IndexSelectOperation::calc_output_shape(self.dimension, value_shape, indexes_shape);
         let output_buf = device.wgpu_device().create_buffer(&wgpu::BufferDescriptor {
-            label: None,
+            label: Some(&format!(
+                "IndexSelectOperation output buffer for {}",
+                self.name()
+            )),
             size: padded_tensor_size(
                 (output_shape.iter().copied().product::<usize>() * value.datatype().element_size())
                     as u64,

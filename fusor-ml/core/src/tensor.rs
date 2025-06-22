@@ -438,7 +438,7 @@ impl TensorData {
         let size =
             padded_tensor_size((datatype.element_size() * shape.iter().product::<usize>()) as u64);
         let buffer = device.wgpu_device().create_buffer(&wgpu::BufferDescriptor {
-            label: None,
+            label: Some("Tensor Buffer"),
             size,
             usage: wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_SRC
@@ -453,7 +453,7 @@ impl TensorData {
         let buffer = device
             .wgpu_device()
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: None,
+                label: Some("Splat Tensor Buffer"),
                 contents: bytemuck::bytes_of(&data),
                 usage: wgpu::BufferUsages::STORAGE
                     | wgpu::BufferUsages::COPY_SRC
@@ -480,7 +480,7 @@ impl TensorData {
             let padded_size = padded_tensor_size(size);
 
             let wgt_descriptor = BufferDescriptor {
-                label: None,
+                label: Some("Tensor Buffer"),
                 size: padded_size,
                 usage: wgpu::BufferUsages::STORAGE
                     | wgpu::BufferUsages::COPY_SRC
@@ -891,6 +891,10 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
 
     pub fn data(&self) -> &LazyTensorData {
         &self.data
+    }
+
+    pub fn graph(&self) -> &ComputeGraph {
+        &self.data.graph
     }
 }
 

@@ -52,7 +52,7 @@ impl Device {
             let pipeline_cache = unsafe {
                 device.create_pipeline_cache(&PipelineCacheDescriptor {
                     data: cache_data.as_deref(),
-                    label: None,
+                    label: Some("Fusor ML Pipeline Cache"),
                     fallback: true,
                 })
             };
@@ -108,7 +108,7 @@ impl Device {
         unsafe {
             self.inner.device.create_shader_module_trusted(
                 wgpu::ShaderModuleDescriptor {
-                    label: None,
+                    label: Some("Fusor ML Shader Module"),
                     source: wgpu::ShaderSource::Wgsl(source.into()),
                 },
                 wgpu::ShaderRuntimeChecks::unchecked(),

@@ -429,7 +429,7 @@ impl GenericKernel {
             device
                 .wgpu_device()
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: None,
+                    label: Some("u32_iter_buffer"),
                     contents: bytemuck::cast_slice(&data.into_iter().collect::<Vec<_>>()),
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 })
@@ -438,7 +438,7 @@ impl GenericKernel {
             device
                 .wgpu_device()
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: None,
+                    label: Some("u32_buffer"),
                     contents: bytemuck::bytes_of(&data),
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 })
@@ -447,7 +447,7 @@ impl GenericKernel {
             device
                 .wgpu_device()
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: None,
+                    label: Some("f32_buffer"),
                     contents: bytemuck::bytes_of(&data),
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 })
