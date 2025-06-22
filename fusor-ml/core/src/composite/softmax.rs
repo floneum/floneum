@@ -46,8 +46,11 @@ where
 }
 
 fn online_update(f: &mut String, m: impl Display, d: impl Display, x: impl Display) {
+    writeln!(f, "{{").unwrap();
+    writeln!(f, "let original_m = {m};").unwrap();
     writeln!(f, "{m} = max({m}, {x});").unwrap();
-    writeln!(f, "{d} = {d} * exp({d} - {m}) + exp({x} - {m});").unwrap();
+    writeln!(f, "{d} = {d} * exp(original_m - {m}) + exp({x} - {m});").unwrap();
+    writeln!(f, "}}").unwrap();
 }
 
 fn combine(
@@ -550,6 +553,10 @@ async fn test_softmax_large() {
     println!("output: {:?}", output);
     println!("expect: {:?}", softmax_array);
     for i in 0..1024 {
-        assert!((output[[i]] - softmax_array[i]).abs() < 0.001, "Mismatch at index {}", i);
+        assert!(
+            (output[[i]] - softmax_array[i]).abs() < 0.001,
+            "Mismatch at index {}",
+            i
+        );
     }
 }

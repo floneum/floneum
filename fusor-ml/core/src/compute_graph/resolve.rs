@@ -488,7 +488,7 @@ impl<'a> Resolver<'a> {
             input_key,
             operation.function,
             operation.axis,
-            operation.rank,
+            &operation.shape,
         );
         let element_wise_before = element_wise_before;
         let element_wise_after = then

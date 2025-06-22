@@ -22,11 +22,16 @@ pub(crate) struct ReduceOperation {
     pub(crate) function: ReduceFunction,
     post_element_wise: ElementWiseFunctions,
     pub(crate) axis: usize,
-    pub(crate) rank: u32,
+    pub(crate) shape: Box<[usize]>,
 }
 
 impl ReduceOperation {
-    pub fn new(value: AnyComputeKey, function: ReduceFunction, axis: usize, rank: u32) -> Self {
+    pub fn new(
+        value: AnyComputeKey,
+        function: ReduceFunction,
+        axis: usize,
+        shape: &[usize],
+    ) -> Self {
         let datatype = function.datatype();
         Self {
             value,
@@ -34,7 +39,7 @@ impl ReduceOperation {
             function,
             post_element_wise: ElementWiseFunctions::empty(datatype),
             axis,
-            rank,
+            shape: shape.into(),
         }
     }
 
@@ -73,6 +78,10 @@ impl ReduceOperation {
         self.post_element_wise.out_datatype()
     }
 
+    fn rank(&self) -> u32 {
+        self.shape.len() as _
+    }
+
     fn kernel(
         &self,
         workgroup_shape: &WorkgroupShape,
@@ -82,7 +91,9 @@ impl ReduceOperation {
     ) {
         let dtype = self.function.datatype();
         let out_datatype = self.out_datatype();
-        let output_rank = self.rank - 1;
+        let output_rank = self.rank() - 1;
+        let large_reduction = self.shape[self.axis] > 256;
+
         // Based on v7 of https://developer.download.nvidia.com/assets/cuda/files/reduction.pdf
         // And the mlx implementation https://github.com/ml-explore/mlx/blob/b05bcfd27f5f1293401b74dce02e38c8fd7ef66a/mlx/backend/metal/kernels/arg_reduce.metal
         // We can't query the warp size in WGSL, but we can use subgroup operations
@@ -150,7 +161,6 @@ impl ReduceOperation {
         )
         .unwrap();
         // Then loop over this thread's portion of the column and merge the values
-        // First load in groups of 4
         writeln!(
             &mut kernel_body,
             "let base_axis_index = {workgroup_local_index} * bucket_size;"
@@ -163,72 +173,70 @@ impl ReduceOperation {
         .unwrap();
         writeln!(&mut kernel_body, "var index = base_axis_index;").unwrap();
 
-        // Process elements in groups of 4 with optimized tree reduction
-        writeln!(&mut kernel_body, "while (index + 4u <= end_axis_index) {{").unwrap();
-        // Load the chunk of 4 elements at once
-        write!(&mut kernel_body, "let data = vec4<{dtype}>(").unwrap();
-        for i in 0..4 {
-            if i > 0 {
-                write!(&mut kernel_body, ", ").unwrap();
+        // Process elements in groups of 4 with optimized tree reduction if this is a large tensor
+        if large_reduction {
+            writeln!(&mut kernel_body, "while (index + 4u <= end_axis_index) {{").unwrap();
+            // Load the chunk of 4 elements at once
+            write!(&mut kernel_body, "let data = vec4<{dtype}>(").unwrap();
+            for i in 0..4 {
+                if i > 0 {
+                    write!(&mut kernel_body, ", ").unwrap();
+                }
+                write!(
+                    &mut kernel_body,
+                    "{input_tensor}[in_start_offset + (index + {i}u) * {reduce_stride}]"
+                )
+                .unwrap();
             }
-            write!(
-                &mut kernel_body,
-                "{input_tensor}[in_start_offset + (index + {i}u) * {reduce_stride}]"
-            )
-            .unwrap();
-        }
-        writeln!(&mut kernel_body, ");").unwrap();
+            writeln!(&mut kernel_body, ");").unwrap();
 
-        // Apply pre-element-wise functions to the data
-        let components = ["data.x", "data.y", "data.z", "data.w"];
-        write!(&mut kernel_body, "let after_element_wise = vec4<{dtype}>(").unwrap();
-        for (i, component) in components.iter().enumerate() {
-            if i > 0 {
-                write!(&mut kernel_body, ", ").unwrap();
+            // Apply pre-element-wise functions to the data
+            let components = ["data.x", "data.y", "data.z", "data.w"];
+            write!(&mut kernel_body, "let after_element_wise = vec4<{dtype}>(").unwrap();
+            for (i, component) in components.iter().enumerate() {
+                if i > 0 {
+                    write!(&mut kernel_body, ", ").unwrap();
+                }
+                write!(
+                    &mut kernel_body,
+                    "{}",
+                    pre_element_wise
+                        .iter()
+                        .fold(component.to_string(), |acc, f| f.call(vec![acc]))
+                )
+                .unwrap();
             }
-            write!(
-                &mut kernel_body,
-                "{}",
-                pre_element_wise
-                    .iter()
-                    .fold(component.to_string(), |acc, f| f.call(vec![acc]))
-            )
-            .unwrap();
-        }
-        writeln!(&mut kernel_body, ");").unwrap();
+            writeln!(&mut kernel_body, ");").unwrap();
 
-        // Optimized tree reduction for vec4
-        writeln!(
-            &mut kernel_body,
-            "let vec4_reduced = {};",
-            reduce.call(vec![
+            // Optimized tree reduction for vec4
+            writeln!(
+                &mut kernel_body,
+                "let vec4_reduced = {};",
                 reduce.call(vec![
-                    "after_element_wise.x".to_string(),
-                    "after_element_wise.y".to_string()
-                ]),
-                reduce.call(vec![
-                    "after_element_wise.z".to_string(),
-                    "after_element_wise.w".to_string()
+                    reduce.call(vec![
+                        "after_element_wise.x".to_string(),
+                        "after_element_wise.y".to_string()
+                    ]),
+                    reduce.call(vec![
+                        "after_element_wise.z".to_string(),
+                        "after_element_wise.w".to_string()
+                    ])
                 ])
-            ])
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel_body,
-            "merged = {};",
-            reduce.call(vec!["vec4_reduced".to_string(), "merged".to_string()])
-        )
-        .unwrap();
-        writeln!(&mut kernel_body, "index += 4u;").unwrap();
-        writeln!(&mut kernel_body, "}}").unwrap();
-        writeln!(&mut kernel_body).unwrap();
+            )
+            .unwrap();
+            writeln!(
+                &mut kernel_body,
+                "merged = {};",
+                reduce.call(vec!["vec4_reduced".to_string(), "merged".to_string()])
+            )
+            .unwrap();
+            writeln!(&mut kernel_body, "index += 4u;").unwrap();
+            writeln!(&mut kernel_body, "}}").unwrap();
+            writeln!(&mut kernel_body).unwrap();
+        }
 
         // Merge the < 4 remaining elements if the bucket size is not a multiple of 4
-        writeln!(
-            &mut kernel_body,
-            "for (; index < end_axis_index; index += 1u) {{"
-        )
-        .unwrap();
+        writeln!(&mut kernel_body, "while (index < end_axis_index) {{").unwrap();
         // Load a single element
         writeln!(
             &mut kernel_body,
@@ -251,6 +259,7 @@ impl ReduceOperation {
             reduce.call(vec!["after_element_wise".to_string(), "merged".to_string()])
         )
         .unwrap();
+        writeln!(&mut kernel_body, "index += 1u;").unwrap();
         writeln!(&mut kernel_body, "}}").unwrap();
 
         let limits = device.wgpu_device().limits();
@@ -556,6 +565,31 @@ async fn test_reduce_sum() {
     assert_eq!(output[[0]], 3.);
     assert_eq!(output[[1]], 7.);
     assert_eq!(output[[2]], 11.);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_reduce_sum_large() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    let data: [f32; 1024] = std::array::from_fn(|_| rand::random::<f32>() * 10.0 - 5.0);
+    let tensor = Tensor::new(&device, &data);
+
+    let output = tensor.sum(0);
+
+    let output = output.as_slice().await.unwrap();
+    println!("{:?}", output);
+
+    let expected: f32 = data.iter().sum();
+    println!("Expected sum: {}", expected);
+
+    assert!(
+        (output[[]] - expected).abs() < 1e-4,
+        "Expected sum to be close to {}",
+        expected
+    );
 }
 
 #[cfg(test)]

@@ -849,7 +849,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
                 self.data.key,
                 function,
                 dim,
-                self.rank() as u32,
+                self.shape(),
             )),
             datatype: PhantomData,
         }
