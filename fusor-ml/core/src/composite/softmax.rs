@@ -1,10 +1,12 @@
-use std::{fmt::Write, sync::Arc};
+use std::{
+    fmt::{Display, Write},
+    sync::Arc,
+};
 
 use crate::{
     DataType, DataTypeEnum, Layout, Max, Sum, Tensor, TensorData,
     compute_graph::AnyComputeKey,
     mir::{
-        function::Function,
         globals::KernelGlobalSpace,
         inputs::MirValue,
         kernel::GenericKernel,
@@ -32,8 +34,7 @@ where
     }
 
     pub fn softmax(&self, axis: usize) -> Self {
-        let operation =
-            SoftmaxOperation::new(self.key(), self.datatype(), axis, self.rank() as u32);
+        let operation = SoftmaxOperation::new(self.key(), self.datatype(), axis, self.shape());
         let data = self.data();
 
         Self::from_parts(data.custom(Arc::new(operation)))
@@ -44,49 +45,41 @@ where
     }
 }
 
-fn online_update(generic_kernel: &mut GenericKernel, dtype: DataTypeEnum) -> Function {
-    generic_kernel.add_function(
-        format!("vec2<{dtype}>"),
-        "let m = max(old_m, x);
-    let d = old_d * exp(old_m - m) + exp(x - m);
-    let output = vec2<f32>(m, d);",
-        [
-            ("old_m".into(), dtype.to_string()),
-            ("old_d".into(), dtype.to_string()),
-            ("x".into(), dtype.to_string()),
-        ],
-    )
+fn online_update(f: &mut String, m: impl Display, d: impl Display, x: impl Display) {
+    writeln!(f, "{m} = max({m}, {x});").unwrap();
+    writeln!(f, "{d} = {d} * exp({d} - {m}) + exp({x} - {m});").unwrap();
 }
 
-fn combine(generic_kernel: &mut GenericKernel, dtype: DataTypeEnum) -> Function {
-    generic_kernel.add_function(
-        format!("vec2<{dtype}>"),
-        "let m = max(ma, mb);
-    let d = da * exp(ma - m) + db * exp(mb - m);
-    let output = vec2<f32>(m, d);",
-        [
-            ("ma".into(), dtype.to_string()),
-            ("da".into(), dtype.to_string()),
-            ("mb".into(), dtype.to_string()),
-            ("db".into(), dtype.to_string()),
-        ],
+fn combine(
+    f: &mut String,
+    m: impl Display,
+    d: impl Display,
+    m_peer: impl Display,
+    d_peer: impl Display,
+) {
+    writeln!(f, "let original_m = {m};").unwrap();
+    writeln!(f, "{m} = max(original_m, {m_peer});").unwrap();
+    writeln!(
+        f,
+        "{d} = {d} * exp(original_m - {m}) + {d_peer} * exp({m_peer} - {m});"
     )
+    .unwrap();
 }
 
 #[derive(Debug, Clone)]
 struct SoftmaxOperation {
     pub(crate) value: AnyComputeKey,
     pub(crate) axis: usize,
-    pub(crate) rank: u32,
+    pub(crate) shape: Box<[usize]>,
     pub(crate) datatype: DataTypeEnum,
 }
 
 impl SoftmaxOperation {
-    pub fn new(value: AnyComputeKey, datatype: DataTypeEnum, axis: usize, rank: u32) -> Self {
+    pub fn new(value: AnyComputeKey, datatype: DataTypeEnum, axis: usize, shape: &[usize]) -> Self {
         Self {
             value,
             axis,
-            rank,
+            shape: shape.into(),
             datatype,
         }
     }
@@ -99,6 +92,10 @@ impl SoftmaxOperation {
         self.datatype
     }
 
+    fn rank(&self) -> u32 {
+        self.shape.len() as _
+    }
+
     fn kernel(
         &self,
         workgroup_shape: &WorkgroupShape,
@@ -108,10 +105,8 @@ impl SoftmaxOperation {
     ) {
         let dtype = self.datatype;
         let out_datatype = self.out_datatype();
-        let output_rank = self.rank - 1;
-
-        let online_update_fn = online_update(kernel, dtype);
-        let combine_fn = combine(kernel, dtype);
+        let output_rank = self.rank() - 1;
+        let large_reduction = self.shape[self.axis] > 256;
 
         // Based on v7 of https://developer.download.nvidia.com/assets/cuda/files/reduction.pdf
         // And the mlx implementation https://github.com/ml-explore/mlx/blob/b05bcfd27f5f1293401b74dce02e38c8fd7ef66a/mlx/backend/metal/kernels/arg_reduce.metal
@@ -192,60 +187,36 @@ impl SoftmaxOperation {
         .unwrap();
         writeln!(&mut kernel_body, "var index = base_axis_index;").unwrap();
 
-        // Process elements in groups of 4 with optimized tree reduction
-        writeln!(&mut kernel_body, "while (index + 4u <= end_axis_index) {{").unwrap();
-        // Load the chunk of 4 elements at once
-        write!(&mut kernel_body, "let data = vec4<{dtype}>(").unwrap();
-        for i in 0..4 {
-            if i > 0 {
-                write!(&mut kernel_body, ", ").unwrap();
+        // If this is a large reduction, process elements in groups of 4
+        if large_reduction {
+            writeln!(&mut kernel_body, "while (index + 4u <= end_axis_index) {{").unwrap();
+            // Load the chunk of 4 elements at once
+            write!(&mut kernel_body, "let data = vec4<{dtype}>(").unwrap();
+            for i in 0..4 {
+                if i > 0 {
+                    write!(&mut kernel_body, ", ").unwrap();
+                }
+                write!(
+                    &mut kernel_body,
+                    "{input_tensor}[in_start_offset + (index + {i}u) * {reduce_stride}]"
+                )
+                .unwrap();
             }
-            write!(
-                &mut kernel_body,
-                "{input_tensor}[in_start_offset + (index + {i}u) * {reduce_stride}]"
-            )
-            .unwrap();
-        }
-        writeln!(&mut kernel_body, ");").unwrap();
+            writeln!(&mut kernel_body, ");").unwrap();
 
-        // Apply tree reduction to the 4 elements first
-        let components = ["data.x", "data.y", "data.z", "data.w"];
-        writeln!(
-            &mut kernel_body,
-            "let update1 = {};",
-            online_update_fn.call(["m_lane".into(), "d_lane".into(), components[0].into()].into())
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel_body,
-            "let update2 = {};",
-            online_update_fn.call(["update1.x".into(), "update1.y".into(), components[1].into()].into())
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel_body,
-            "let update3 = {};",
-            online_update_fn.call(["update2.x".into(), "update2.y".into(), components[2].into()].into())
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel_body,
-            "let updated = {};",
-            online_update_fn.call(["update3.x".into(), "update3.y".into(), components[3].into()].into())
-        )
-        .unwrap();
-        writeln!(&mut kernel_body, "m_lane = updated.x;").unwrap();
-        writeln!(&mut kernel_body, "d_lane = updated.y;").unwrap();
-        writeln!(&mut kernel_body, "index += 4u;").unwrap();
-        writeln!(&mut kernel_body, "}}").unwrap();
-        writeln!(&mut kernel_body).unwrap();
+            // Apply reduction to the 4 elements
+            let components = ["data.x", "data.y", "data.z", "data.w"];
+            for component in components {
+                online_update(&mut kernel_body, "m_lane", "d_lane", component);
+            }
+
+            writeln!(&mut kernel_body, "index += 4u;").unwrap();
+            writeln!(&mut kernel_body, "}}").unwrap();
+            writeln!(&mut kernel_body).unwrap();
+        }
 
         // Merge the < 4 remaining elements if the bucket size is not a multiple of 4
-        writeln!(
-            &mut kernel_body,
-            "for (; index < end_axis_index; index += 1u) {{"
-        )
-        .unwrap();
+        writeln!(&mut kernel_body, "while (index < end_axis_index) {{").unwrap();
         // Load a single element
         writeln!(
             &mut kernel_body,
@@ -253,14 +224,8 @@ impl SoftmaxOperation {
         )
         .unwrap();
         // Apply the online update function to merge the single element
-        writeln!(
-            &mut kernel_body,
-            "let updated = {};",
-            online_update_fn.call(["m_lane".into(), "d_lane".into(), "data".into()].into())
-        )
-        .unwrap();
-        writeln!(&mut kernel_body, "m_lane = updated.x;").unwrap();
-        writeln!(&mut kernel_body, "d_lane = updated.y;").unwrap();
+        online_update(&mut kernel_body, "m_lane", "d_lane", "data");
+        writeln!(&mut kernel_body, "index += 1u;").unwrap();
         writeln!(&mut kernel_body, "}}").unwrap();
         writeln!(&mut kernel_body).unwrap();
 
@@ -284,22 +249,7 @@ impl SoftmaxOperation {
                 offset
             )
             .unwrap();
-            writeln!(
-                &mut kernel_body,
-                "let updated = {};",
-                combine_fn.call(
-                    [
-                        "m_lane".into(),
-                        "d_lane".into(),
-                        "m_peer".into(),
-                        "d_peer".into(),
-                    ]
-                    .into()
-                )
-            )
-            .unwrap();
-            writeln!(&mut kernel_body, "m_lane = updated.x;").unwrap();
-            writeln!(&mut kernel_body, "d_lane = updated.y;").unwrap();
+            combine(&mut kernel_body, "m_lane", "d_lane", "m_peer", "d_peer");
             writeln!(&mut kernel_body, "}}").unwrap();
         }
         writeln!(&mut kernel_body).unwrap();
@@ -354,22 +304,7 @@ impl SoftmaxOperation {
                 offset
             )
             .unwrap();
-            writeln!(
-                &mut kernel_body,
-                "let updated = {};",
-                combine_fn.call(
-                    [
-                        "m_lane".into(),
-                        "d_lane".into(),
-                        "m_peer".into(),
-                        "d_peer".into(),
-                    ]
-                    .into()
-                )
-            )
-            .unwrap();
-            writeln!(&mut kernel_body, "m_lane = updated.x;").unwrap();
-            writeln!(&mut kernel_body, "d_lane = updated.y;").unwrap();
+            combine(&mut kernel_body, "m_lane", "d_lane", "m_peer", "d_peer");
             writeln!(&mut kernel_body, "}}").unwrap();
         }
 
@@ -387,41 +322,43 @@ impl SoftmaxOperation {
         writeln!(&mut kernel_body, "let d_all = {global_d_final};").unwrap();
         writeln!(&mut kernel_body, "var out_index = base_axis_index;").unwrap();
 
-        // Process output elements in groups of 4
-        writeln!(&mut kernel_body, "while (out_index + 4u <= end_axis_index) {{").unwrap();
-        // Load the chunk of 4 elements at once
-        write!(&mut kernel_body, "let data = vec4<{dtype}>(").unwrap();
-        for i in 0..4 {
-            if i > 0 {
-                write!(&mut kernel_body, ", ").unwrap();
-            }
-            write!(
+        // If this is a large reduction, process elements in groups of 4
+        if large_reduction {
+            writeln!(
                 &mut kernel_body,
-                "{input_tensor}[in_start_offset + (out_index + {i}u) * {reduce_stride}]"
+                "while (out_index + 4u <= end_axis_index) {{"
             )
             .unwrap();
-        }
-        writeln!(&mut kernel_body, ");").unwrap();
+            // Load the chunk of 4 elements at once
+            write!(&mut kernel_body, "let data = vec4<{dtype}>(").unwrap();
+            for i in 0..4 {
+                if i > 0 {
+                    write!(&mut kernel_body, ", ").unwrap();
+                }
+                write!(
+                    &mut kernel_body,
+                    "{input_tensor}[in_start_offset + (out_index + {i}u) * {reduce_stride}]"
+                )
+                .unwrap();
+            }
+            writeln!(&mut kernel_body, ");").unwrap();
 
-        // Apply the softmax function to each component
-        let components = ["data.x", "data.y", "data.z", "data.w"];
-        for (i, component) in components.iter().enumerate() {
-            writeln!(
+            // Apply the softmax function to each component
+            let components = ["data.x", "data.y", "data.z", "data.w"];
+            for (i, component) in components.iter().enumerate() {
+                writeln!(
                 &mut kernel_body,
                 "{output_tensor}[out_start_offset + (out_index + {i}u) * {reduce_stride}] = exp({component} - m_all) / d_all;"
             )
             .unwrap();
+            }
+            writeln!(&mut kernel_body, "out_index += 4u;").unwrap();
+            writeln!(&mut kernel_body, "}}").unwrap();
+            writeln!(&mut kernel_body).unwrap();
         }
-        writeln!(&mut kernel_body, "out_index += 4u;").unwrap();
-        writeln!(&mut kernel_body, "}}").unwrap();
-        writeln!(&mut kernel_body).unwrap();
 
         // Handle the < 4 remaining elements
-        writeln!(
-            &mut kernel_body,
-            "for (; out_index < end_axis_index; out_index += 1u) {{"
-        )
-        .unwrap();
+        writeln!(&mut kernel_body, "while (out_index < end_axis_index) {{").unwrap();
         writeln!(
             &mut kernel_body,
             "let data = {input_tensor}[in_start_offset + out_index * {reduce_stride}];"
@@ -432,6 +369,7 @@ impl SoftmaxOperation {
             "{output_tensor}[out_start_offset + out_index * {reduce_stride}] = exp(data - m_all) / d_all;"
         )
         .unwrap();
+        writeln!(&mut kernel_body, "out_index += 1u;").unwrap();
         writeln!(&mut kernel_body, "}}").unwrap();
 
         kernel.push_body(&kernel_body);
@@ -479,8 +417,7 @@ impl Operation for SoftmaxOperation {
         let layout = tensor.layout();
         let shape = layout.shape();
         let output_type = self.out_datatype();
-        let output_tensor =
-            TensorData::new_for_shape(tensor.device(), &shape, output_type);
+        let output_tensor = TensorData::new_for_shape(tensor.device(), &shape, output_type);
 
         let trimmed_tensor_layout = Layout::from_parts(
             tensor.layout().offset(),
@@ -530,7 +467,7 @@ impl Operation for SoftmaxOperation {
     }
 
     fn name(&self) -> String {
-        format!("softmax_{}_{}", self.rank, self.datatype)
+        format!("softmax_{}_{}", self.rank(), self.datatype)
     }
 }
 
@@ -589,4 +526,30 @@ async fn test_softmax() {
     assert!((output[[3]] - softmax_array[3]).abs() < 0.001);
     assert!((output[[4]] - softmax_array[4]).abs() < 0.001);
     assert!((output[[5]] - softmax_array[5]).abs() < 0.001);
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_softmax_large() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    let data: [f32; 1024] = std::array::from_fn(|_| rand::random::<f32>() * 10.0 - 5.0);
+    let max = data.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    let diff: [f32; 1024] = std::array::from_fn(|i| data[i] - max);
+    let exp: [f32; 1024] = std::array::from_fn(|i| diff[i].exp());
+    let sum = exp.iter().sum::<f32>();
+    let softmax_array: [f32; 1024] = std::array::from_fn(|i| exp[i] / sum);
+
+    println!("{:?}", softmax_array);
+
+    let tensor = Tensor::new(&device, &data);
+    let tensor = tensor.softmax(0);
+    let output = tensor.as_slice().await.unwrap();
+    println!("output: {:?}", output);
+    println!("expect: {:?}", softmax_array);
+    for i in 0..1024 {
+        assert!((output[[i]] - softmax_array[i]).abs() < 0.001, "Mismatch at index {}", i);
+    }
 }
