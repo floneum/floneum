@@ -405,7 +405,7 @@ impl ComputeGraph {
 
     pub(crate) fn create_custom(
         &self,
-        operation: Arc<dyn Operation>,
+        operation: Arc<dyn Operation + Send + Sync>,
     ) -> CustomComputeKey {
         let id = CustomComputeKey::new();
         self.with_mut(|inner| {
@@ -467,7 +467,7 @@ pub(crate) struct ComputeGraphNodes {
     pub(crate) tensor: FxHashMap<TensorComputeNodeKey, TensorData>,
     pub(crate) q_mat_mul: FxHashMap<QMatMulComputeNodeKey, QMatMulOperation>,
     pub(crate) dequantize: FxHashMap<DequantizeComputeKey, DequantizeOperation>,
-    pub(crate) custom: FxHashMap<CustomComputeKey, Arc<dyn Operation>>,
+    pub(crate) custom: FxHashMap<CustomComputeKey, Arc<dyn Operation + Send + Sync>>,
 }
 
 impl ComputeGraphNodes {

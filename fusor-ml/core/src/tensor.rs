@@ -235,7 +235,7 @@ impl LazyTensorData {
         }
     }
 
-    pub(crate) fn custom(&self, custom: Arc<dyn Operation>) -> Self {
+    pub(crate) fn custom(&self, custom: Arc<dyn Operation + Send + Sync>) -> Self {
         let graph = self.graph.clone();
         let device = self.device.clone();
         let info = self.info.clone();

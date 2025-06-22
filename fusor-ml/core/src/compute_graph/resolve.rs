@@ -587,7 +587,7 @@ impl<'a> Resolver<'a> {
         self.resolved_set.insert(AnyComputeKey::Tensor(key));
     }
 
-    fn resolve_custom(&mut self, key: CustomComputeKey) -> Arc<dyn Operation> {
+    fn resolve_custom(&mut self, key: CustomComputeKey) -> Arc<dyn Operation + Send + Sync> {
         Arc::clone(&self.graph.nodes.custom[&key])
     }
 }
