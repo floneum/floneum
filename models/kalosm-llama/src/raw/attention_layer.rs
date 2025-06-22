@@ -61,9 +61,9 @@ pub enum AttentionVariant {
 }
 
 pub struct AttentionBias {
-    pub bias_q: QMatrix,
-    pub bias_k: QMatrix,
-    pub bias_v: QMatrix,
+    pub bias_q: Tensor<2, f32>,
+    pub bias_k: Tensor<2, f32>,
+    pub bias_v: Tensor<2, f32>,
 }
 
 pub struct SeparateAttention {
@@ -90,7 +90,7 @@ impl SeparateAttention {
             let mut query_states = hidden_states.q_mat_mul(&self.attention_wq);
 
             if let Some(bias) = &self.bias {
-                query_states = &query_states + &bias.bias_q.dequantize();
+                query_states = &query_states + &bias.bias_q;
             }
 
             query_states
@@ -101,7 +101,7 @@ impl SeparateAttention {
             let mut key_states = hidden_states.q_mat_mul(&self.attention_wk);
 
             if let Some(bias) = &self.bias {
-                key_states = &key_states + &bias.bias_k.dequantize();
+                key_states = &key_states + &bias.bias_k;
             }
 
             key_states
@@ -112,7 +112,7 @@ impl SeparateAttention {
             let mut value_states = hidden_states.q_mat_mul(&self.attention_wv);
 
             if let Some(bias) = &self.bias {
-                value_states = &value_states + &bias.bias_v.dequantize();
+                value_states = &value_states + &bias.bias_v;
             }
 
             value_states

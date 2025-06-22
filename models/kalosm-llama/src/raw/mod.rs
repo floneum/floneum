@@ -252,9 +252,9 @@ impl Model {
                     QMatrix::read_from_file(device, ct, reader, &format!("{prefix}.attn_v.bias"))?,
                 ) {
                     Some(AttentionBias {
-                        bias_q,
-                        bias_k,
-                        bias_v,
+                        bias_q: bias_q.dequantize(),
+                        bias_k: bias_k.dequantize(),
+                        bias_v: bias_v.dequantize(),
                     })
                 } else {
                     None
