@@ -1,7 +1,9 @@
 use std::fmt::Debug;
 
+use rustc_hash::FxHashMap;
+
 use crate::{
-    compute_graph::{AnyComputeKey, ComputeGraphInner}, Device
+    compute_graph::{AnyComputeKey, ComputeGraphInner}, Device, TensorLayoutInfo
 };
 
 use super::{
@@ -30,4 +32,8 @@ pub(crate) trait Operation: Debug {
     );
 
     fn name(&self) -> String;
+
+    fn output_layout(&self, _: &FxHashMap<AnyComputeKey, TensorLayoutInfo>) -> TensorLayoutInfo {
+        todo!()
+    }
 }

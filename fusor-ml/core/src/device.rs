@@ -38,6 +38,7 @@ impl Device {
         let adapter = instance.request_adapter(&Default::default()).await.unwrap();
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
+                label: Some("Fusor ML Device"),
                 required_features: wgpu::Features::SUBGROUP | wgpu::Features::SHADER_F16,
                 ..Default::default()
             })

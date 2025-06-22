@@ -472,6 +472,14 @@ impl Operation for SoftmaxOperation {
     fn name(&self) -> String {
         format!("softmax_{}_{}", self.rank(), self.datatype)
     }
+
+    fn output_layout(
+        &self,
+        map: &rustc_hash::FxHashMap<AnyComputeKey, crate::TensorLayoutInfo>,
+    ) -> crate::TensorLayoutInfo {
+        let input_layout = map.get(&self.value).unwrap();
+        input_layout.clone()
+    }
 }
 
 #[cfg(test)]

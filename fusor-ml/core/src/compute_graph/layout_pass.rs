@@ -34,7 +34,7 @@ impl LayoutPass {
                 AnyComputeKey::Tensor(key) => self.visit_tensor(graph, key),
                 AnyComputeKey::Dequantize(key) => self.visit_dequantize(graph, key),
                 AnyComputeKey::IndexSelect(key) => self.visit_index_select(graph, key),
-                AnyComputeKey::Custom(_) => todo!(),
+                AnyComputeKey::Custom(key) => self.visit_custom(graph, key),
             }
         }
     }
@@ -237,6 +237,30 @@ impl LayoutPass {
         self.output_layout.insert(
             key.into(),
             TensorLayoutInfo::new(new_layout, operation.datatype),
+        );
+    }
+
+    fn visit_custom(
+        &mut self,
+        graph: &super::ComputeGraphInner,
+        key: super::CustomComputeKey,
+    ) {
+        let operation = graph.nodes.custom.get(&key).unwrap();
+        let mut dependencies = Vec::new();
+        operation.visit_dependencies(&mut |dep| {
+            dependencies.push(dep);
+        });
+
+        for dependency in dependencies {
+            if !self.output_layout.contains_key(&dependency) {
+                self.queue.push_back(dependency);
+                self.queue.push_back(key.into());
+                return;
+            }
+        }
+        self.output_layout.insert(
+            key.into(),
+            operation.output_layout(&self.output_layout),
         );
     }
 }

@@ -6,6 +6,7 @@ use parking_lot::RwLock;
 use resolve::Resolver;
 use rustc_hash::FxHashMap;
 use tabbycat::Graph;
+use wgpu::CommandEncoderDescriptor;
 
 mod dependency_map;
 mod layout_pass;
@@ -418,7 +419,9 @@ impl ComputeGraph {
     pub(crate) fn resolve(&self, key: AnyComputeKey, device: &Device) -> TensorData {
         let mut encoder = device
             .wgpu_device()
-            .create_command_encoder(&Default::default());
+            .create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("ComputeGraph Encoder"),
+            });
         let data = self.with_mut(|inner| Resolver::new(inner, key, &mut encoder).run());
         device.wgpu_queue().submit(Some(encoder.finish()));
 

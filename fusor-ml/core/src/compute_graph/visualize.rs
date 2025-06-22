@@ -249,6 +249,16 @@ impl ComputeGraphInner {
             if graph_vis_pass.identities.contains_key(&node) {
                 continue;
             }
+            if let Some(data) = self.cached_results.get(&node) {
+                let id = Identity::quoted(format!("cached ({}) #{:?}", data.info(), node));
+                graph_vis_pass.statements.push(Stmt::Node {
+                    id: id.clone(),
+                    port: None,
+                    attr: None,
+                });
+                graph_vis_pass.identities.insert(node, id.clone());
+                continue;
+            }
 
             let mut dependencies = Vec::new();
             visit_dependencies(&self.nodes, node, |dependent_key| {
@@ -262,17 +272,6 @@ impl ComputeGraphInner {
                     graph_vis_pass.queued.push_back(dependency);
                 }
                 graph_vis_pass.queued.push_back(node);
-                continue;
-            }
-
-            if let Some(data) = self.cached_results.get(&node) {
-                let id = Identity::quoted(format!("cached ({}) #{:?}", data.info(), node));
-                graph_vis_pass.statements.push(Stmt::Node {
-                    id: id.clone(),
-                    port: None,
-                    attr: None,
-                });
-                graph_vis_pass.identities.insert(node, id.clone());
                 continue;
             }
             let nodes = &self.nodes;
