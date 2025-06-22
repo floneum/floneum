@@ -179,32 +179,88 @@ impl SoftmaxOperation {
         )
         .unwrap();
         // Then loop over this thread's portion of the column and merge the values
+        // First load in groups of 4
         writeln!(
             &mut kernel_body,
-            "for (var index = 0u; index < bucket_size; index += 1u) {{"
+            "let base_axis_index = {workgroup_local_index} * bucket_size;"
         )
         .unwrap();
         writeln!(
             &mut kernel_body,
-            "let axis_index = {workgroup_local_index} * bucket_size + index;"
+            "let end_axis_index = min({workgroup_local_index} * bucket_size + bucket_size, {reduce_size});"
         )
         .unwrap();
-        writeln!(&mut kernel_body, "if axis_index < {reduce_size} {{").unwrap();
+        writeln!(&mut kernel_body, "var index = base_axis_index;").unwrap();
+
+        // Process elements in groups of 4 with optimized tree reduction
+        writeln!(&mut kernel_body, "while (index + 4u <= end_axis_index) {{").unwrap();
+        // Load the chunk of 4 elements at once
+        write!(&mut kernel_body, "let data = vec4<{dtype}>(").unwrap();
+        for i in 0..4 {
+            if i > 0 {
+                write!(&mut kernel_body, ", ").unwrap();
+            }
+            write!(
+                &mut kernel_body,
+                "{input_tensor}[in_start_offset + (index + {i}u) * {reduce_stride}]"
+            )
+            .unwrap();
+        }
+        writeln!(&mut kernel_body, ");").unwrap();
+
+        // Apply tree reduction to the 4 elements first
+        let components = ["data.x", "data.y", "data.z", "data.w"];
         writeln!(
             &mut kernel_body,
-            "let in_index = in_start_offset + axis_index * {reduce_stride};"
+            "let update1 = {};",
+            online_update_fn.call(["m_lane".into(), "d_lane".into(), components[0].into()].into())
         )
         .unwrap();
-        writeln!(&mut kernel_body, "let data = {input_tensor}[in_index];",).unwrap();
+        writeln!(
+            &mut kernel_body,
+            "let update2 = {};",
+            online_update_fn.call(["update1.x".into(), "update1.y".into(), components[1].into()].into())
+        )
+        .unwrap();
+        writeln!(
+            &mut kernel_body,
+            "let update3 = {};",
+            online_update_fn.call(["update2.x".into(), "update2.y".into(), components[2].into()].into())
+        )
+        .unwrap();
         writeln!(
             &mut kernel_body,
             "let updated = {};",
-            online_update_fn.call(["m_lane".into(), "d_lane".into(), "data".into(),].into())
+            online_update_fn.call(["update3.x".into(), "update3.y".into(), components[3].into()].into())
         )
         .unwrap();
         writeln!(&mut kernel_body, "m_lane = updated.x;").unwrap();
         writeln!(&mut kernel_body, "d_lane = updated.y;").unwrap();
+        writeln!(&mut kernel_body, "index += 4u;").unwrap();
         writeln!(&mut kernel_body, "}}").unwrap();
+        writeln!(&mut kernel_body).unwrap();
+
+        // Merge the < 4 remaining elements if the bucket size is not a multiple of 4
+        writeln!(
+            &mut kernel_body,
+            "for (; index < end_axis_index; index += 1u) {{"
+        )
+        .unwrap();
+        // Load a single element
+        writeln!(
+            &mut kernel_body,
+            "let data = {input_tensor}[in_start_offset + index * {reduce_stride}];"
+        )
+        .unwrap();
+        // Apply the online update function to merge the single element
+        writeln!(
+            &mut kernel_body,
+            "let updated = {};",
+            online_update_fn.call(["m_lane".into(), "d_lane".into(), "data".into()].into())
+        )
+        .unwrap();
+        writeln!(&mut kernel_body, "m_lane = updated.x;").unwrap();
+        writeln!(&mut kernel_body, "d_lane = updated.y;").unwrap();
         writeln!(&mut kernel_body, "}}").unwrap();
         writeln!(&mut kernel_body).unwrap();
 
@@ -329,34 +385,53 @@ impl SoftmaxOperation {
         // Finally, write the normalized output to the output tensor
         writeln!(&mut kernel_body, "let m_all = {global_m_final};").unwrap();
         writeln!(&mut kernel_body, "let d_all = {global_d_final};").unwrap();
-        writeln!(
-            &mut kernel_body,
-            "for (var i = 0u; i < bucket_size; i += 1u) {{"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel_body,
-            "let axis_index = {workgroup_local_index} * bucket_size + i;"
-        )
-        .unwrap();
-        writeln!(&mut kernel_body, "if axis_index < {reduce_size} {{").unwrap();
-        writeln!(
-            &mut kernel_body,
-            "let in_index = in_start_offset + axis_index * {reduce_stride};"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel_body,
-            "let out_index = out_start_offset + axis_index * {reduce_stride};"
-        )
-        .unwrap();
-        writeln!(&mut kernel_body, "let data = {input_tensor}[in_index];",).unwrap();
-        writeln!(
-            &mut kernel_body,
-            "{output_tensor}[out_index] = exp(data - m_all) / d_all;"
-        )
-        .unwrap();
+        writeln!(&mut kernel_body, "var out_index = base_axis_index;").unwrap();
+
+        // Process output elements in groups of 4
+        writeln!(&mut kernel_body, "while (out_index + 4u <= end_axis_index) {{").unwrap();
+        // Load the chunk of 4 elements at once
+        write!(&mut kernel_body, "let data = vec4<{dtype}>(").unwrap();
+        for i in 0..4 {
+            if i > 0 {
+                write!(&mut kernel_body, ", ").unwrap();
+            }
+            write!(
+                &mut kernel_body,
+                "{input_tensor}[in_start_offset + (out_index + {i}u) * {reduce_stride}]"
+            )
+            .unwrap();
+        }
+        writeln!(&mut kernel_body, ");").unwrap();
+
+        // Apply the softmax function to each component
+        let components = ["data.x", "data.y", "data.z", "data.w"];
+        for (i, component) in components.iter().enumerate() {
+            writeln!(
+                &mut kernel_body,
+                "{output_tensor}[out_start_offset + (out_index + {i}u) * {reduce_stride}] = exp({component} - m_all) / d_all;"
+            )
+            .unwrap();
+        }
+        writeln!(&mut kernel_body, "out_index += 4u;").unwrap();
         writeln!(&mut kernel_body, "}}").unwrap();
+        writeln!(&mut kernel_body).unwrap();
+
+        // Handle the < 4 remaining elements
+        writeln!(
+            &mut kernel_body,
+            "for (; out_index < end_axis_index; out_index += 1u) {{"
+        )
+        .unwrap();
+        writeln!(
+            &mut kernel_body,
+            "let data = {input_tensor}[in_start_offset + out_index * {reduce_stride}];"
+        )
+        .unwrap();
+        writeln!(
+            &mut kernel_body,
+            "{output_tensor}[out_start_offset + out_index * {reduce_stride}] = exp(data - m_all) / d_all;"
+        )
+        .unwrap();
         writeln!(&mut kernel_body, "}}").unwrap();
 
         kernel.push_body(&kernel_body);
