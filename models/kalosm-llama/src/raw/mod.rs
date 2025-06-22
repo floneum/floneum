@@ -47,12 +47,13 @@ impl Embedding {
 }
 
 struct RmsNorm {
-    weights: QMatrix,
+    weights: Tensor<1, f32>,
     eps: f32,
 }
 
 impl RmsNorm {
     fn from_qtensor(weights: QMatrix, eps: f32) -> Result<Self> {
+        let weights = weights.dequantize();
         Ok(Self { weights, eps })
     }
 
@@ -65,7 +66,7 @@ impl RmsNorm {
         // Divide the input tensor by the sqrt of the sum plus the epsilon
         let x = x.clone() / (norm + self.eps).sqrt().broadcast(shape);
         // Finally, multiply the result by the weights
-        x * self.weights.dequantize::<1, _>().broadcast(shape)
+        x * self.weights.broadcast(shape)
     }
 }
 
