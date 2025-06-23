@@ -28,7 +28,7 @@ fn qmatmul(c: &mut Criterion) {
         .unwrap()
         .block_on(async move { reqwest::get(url).await.unwrap().bytes().await.unwrap() });
 
-    for size in [576, 576 * 4] {
+    for size in [1, 512] {
         let random_data: Vec<Vec<f32>> = (0..size)
             .map(|_| (0..576).map(|_| rand::random()).collect())
             .collect();
@@ -40,7 +40,8 @@ fn qmatmul(c: &mut Criterion) {
 
             let mut reader = std::io::Cursor::new(&bytes);
             let metadata = GgufMetadata::read(&mut reader).unwrap();
-            let q_matrix_metadata = metadata.tensor_infos.get("blk.0.attn_q.weight").unwrap();
+            let q_matrix_metadata = metadata.tensor_infos.get("token_embd.weight").unwrap();
+            println!("Q matrix metadata: {:?}", q_matrix_metadata);
 
             let q_matrix = QMatrix::read(
                 &device,
@@ -116,7 +117,7 @@ fn bench_candle_with_device(
     let candle_metadata = candle_core::quantized::gguf_file::Content::read(&mut reader).unwrap();
     let candle_q_matrix_metadata = candle_metadata
         .tensor_infos
-        .get("blk.0.attn_q.weight")
+        .get("token_embd.weight")
         .unwrap();
     let candle_q_tensor = candle_q_matrix_metadata
         .read(
