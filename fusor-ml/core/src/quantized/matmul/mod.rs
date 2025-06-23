@@ -1,11 +1,12 @@
 use crate::{
-    DataType, DataTypeEnum, Device, Tensor, TensorData,
-    compute_graph::AnyComputeKey,
-    mir::{inputs::MirValue, kernel::GenericKernel, operation::Operation},
+    compute_graph::AnyComputeKey, mir::{inputs::{MirValue, QMatrixInput, TensorInput}, kernel::GenericKernel, operation::Operation}, DataType, DataTypeEnum, Device, Tensor, TensorData
 };
 use std::fmt::Write;
 
 use super::{QMatrix, dequantize_block};
+
+mod sgemm;
+mod sgemv;
 
 #[derive(Debug)]
 pub(crate) struct QMatMulOperation {
@@ -32,6 +33,10 @@ impl QMatMulOperation {
             in_shape: input_shape.into(),
             out_shape,
         }
+    }
+
+    fn elements_per_block(&self) -> u32 {
+        self.matrix.datatype.block_size() as u32
     }
 }
 
@@ -105,6 +110,84 @@ async fn test_fuzz_q_mat_mul() {
 
         for x in 0..576 {
             for y in 0..576 {
+                let expected = candle_result[x][y];
+                let actual = result[[x, y]];
+                if (expected - actual).abs() > 3. {
+                    println!("Expected: {:?}", candle_result);
+                    println!("Actual: {:?}", result);
+                    panic!("expected: {}, actual: {}", expected, actual);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_fuzz_q_mat_mul_sgemv() {
+    use crate::Device;
+    use crate::Tensor;
+    use candle_core::Module;
+    use fusor_gguf::GgufMetadata;
+
+    let device = Device::new().await.unwrap();
+
+    let url = "https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf";
+    let bytes = reqwest::get(url).await.unwrap().bytes().await.unwrap();
+    let mut reader = std::io::Cursor::new(&bytes);
+    let metadata = GgufMetadata::read(&mut reader).unwrap();
+    let mut reader = std::io::Cursor::new(&bytes);
+    let candle_metadata = candle_core::quantized::gguf_file::Content::read(&mut reader).unwrap();
+    let candle_q_matrix_metadata = candle_metadata
+        .tensor_infos
+        .get("token_embd.weight")
+        .unwrap();
+    let candle_q_tensor = candle_q_matrix_metadata
+        .read(
+            &mut reader,
+            candle_metadata.tensor_data_offset,
+            &candle_core::Device::Cpu,
+        )
+        .unwrap();
+    let candle_q_matrix = candle_core::quantized::QMatMul::from_qtensor(candle_q_tensor).unwrap();
+
+    let q_matrix_metadata = metadata.tensor_infos.get("token_embd.weight").unwrap();
+
+    let q_matrix = QMatrix::read(
+        &device,
+        q_matrix_metadata,
+        &mut reader,
+        metadata.tensor_data_offset,
+    )
+    .unwrap();
+
+    for _ in 0..10 {
+        let size = 576;
+        let embed_dim = 49152;
+        let random_data: Vec<Vec<f32>> = (0..1)
+            .map(|_| (0..size).map(|_| rand::random()).collect())
+            .collect();
+        let tensor = Tensor::<2, f32>::new(&device, &random_data);
+
+        let result = tensor.q_mat_mul(&q_matrix);
+        let fusor_shape = result.shape();
+        let result = result.as_slice().await.unwrap();
+
+        let candle_b = candle_core::Tensor::from_iter(
+            random_data.iter().flat_map(|x| x.iter().copied()),
+            &candle_core::Device::Cpu,
+        )
+        .unwrap()
+        .reshape(&[1, size])
+        .unwrap();
+        let candle_result = candle_q_matrix.forward(&candle_b).unwrap();
+        assert_eq!(candle_result.shape().dims(), &[1, embed_dim]);
+        let candle_result = candle_result.to_vec2::<f32>().unwrap();
+
+        assert_eq!(fusor_shape, &[1, embed_dim]);
+
+        for x in 0..1 {
+            for y in 0..embed_dim {
                 let expected = candle_result[x][y];
                 let actual = result[[x, y]];
                 if (expected - actual).abs() > 3. {
@@ -193,21 +276,7 @@ async fn test_fuzz_q_mat_mul_q8_0() {
     }
 }
 
-impl QMatMulOperation {
-    fn elements_per_block(&self) -> u32 {
-        self.matrix.datatype.block_size() as u32
-    }
-}
-
 impl Operation for QMatMulOperation {
-    // fn work_group_dispatch(&self, a_shape: &[usize]) -> [u32; 3] {
-
-    // }
-
-    // fn work_group_size(&self) -> [u32; 3] {
-    //     [16, 16, 1]
-    // }
-
     fn workgroup_shape_constraints(
         &self,
         _: &Device,
@@ -226,8 +295,8 @@ impl Operation for QMatMulOperation {
     ) -> [u32; 3] {
         let input = inputs[0].as_tensor().unwrap();
         let a_shape = input.layout().shape();
-        let m = a_shape[0];
         let n = self.matrix.shape[0];
+        let m = a_shape[0];
         [
             (n as u32).div_ceil(workgroup_shape.x()),
             (m as u32).div_ceil(workgroup_shape.y()),
@@ -278,52 +347,25 @@ impl Operation for QMatMulOperation {
         let m_size = input_a.shape_binding(0);
         let n_size = input_b.shape_binding(0);
 
-        writeln!(&mut kernel, "let x = {global_id}.x;").unwrap();
-        writeln!(&mut kernel, "let y = {global_id}.y;").unwrap();
+        // Check if this is a sgemv or sgemm operation
+        let algo = if self.in_shape[0] == 1 {
+            sgemv::sgemv
+        } else {
+            sgemm::sgemm
+        };
 
-        writeln!(&mut kernel, "var acc = 0.0;").unwrap();
-
-        // Calculate one block sized group
-        writeln!(&mut kernel, "if x < {n_size} && y < {m_size} {{").unwrap();
-
-        writeln!(
+        algo(
+            self,
             &mut kernel,
-            "for (var k = 0u; k < {k_size} / {elements_per_block}; k += 1u) {{"
-        )
-        .unwrap();
-
-        writeln!(
-            &mut kernel,
-            "let chunk = {input_b}[k + x * {k_size} / {elements_per_block}];"
-        )
-        .unwrap();
-
-        dequantize_block(
-            &mut kernel,
-            self.matrix.datatype,
-            "chunk".to_string(),
-            DataTypeEnum::F32,
-            |i, data, code| {
-                write!(code, "acc = fma({input_a}[").unwrap();
-                input_a.strided_index(
-                    code,
-                    ["y".to_string(), format!("k * {elements_per_block} + {i}")],
-                );
-                write!(code, "], {data}, acc);").unwrap();
-            },
+            &input_a,
+            &input_b,
+            &output,
+            &global_id,
+            &n_size,
+            &m_size,
+            &k_size,
+            elements_per_block,
         );
-
-        writeln!(&mut kernel, "}}").unwrap();
-
-        writeln!(&mut kernel, "}}").unwrap();
-
-        // Then write the result
-        writeln!(&mut kernel, "if x < {n_size} && y < {m_size} {{").unwrap();
-        write!(&mut kernel, "let output_index = ").unwrap();
-        output.strided_index(&mut kernel, ["y".to_string(), "x".to_string()]);
-        writeln!(&mut kernel, ";").unwrap();
-        writeln!(&mut kernel, "{output}[output_index] = acc;").unwrap();
-        writeln!(&mut kernel, "}}").unwrap();
 
         generic_kernel.push_body(&kernel);
     }
