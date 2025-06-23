@@ -15,7 +15,7 @@ fn main() {
     let grammar = parse::Grammar::parse(
         r#"Start -> ntInt
 ntString -> 'name' | '" "' | '(' 'str.++' ' ' ntString ' ' ntString ')' | '(' 'str.replace' ' ' ntString ' ' ntString ' ' ntString ')' | '(' 'str.at' ' ' ntString ' ' ntInt ')' | '(' 'int.to.str' ' ' ntInt ')' | '(' 'str.substr' ' ' ntString ' ' ntInt ' ' ntInt ')'
-ntInt -> '0' | '1' | '2' | '(' '+' ' ' ntInt ' ' ntInt ')' | '(' '-' ' ' ntInt ' ' ntInt ')' | '(' 'str.len' ' ' ntString ' ' ')' | '(' 'str.to.int' ' ' ntString ' ' ')' | '(' 'str.indexof' ' ' ntString ' ' ntString ' ' ntInt ')'
+ntInt -> '0' | '1' | '2' | '(' '+' ' ' ntInt ' ' ntInt ')' | '(' '-' ' ' ntInt ' ' ntInt ')' | '(' 'str.len' ' ' ntString ')' | '(' 'str.to.int' ' ' ntString ')' | '(' 'str.indexof' ' ' ntString ' ' ntString ' ' ntInt ')'
 ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | '(' 'str.suffixof' ' ' ntString ' ' ntString ')' | '(' 'str.contains' ' ' ntString ' ' ntString ')'
 "#,
     )
@@ -27,8 +27,8 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
     let mut cnf_grammar = cnf_grammar.shortcut_merge(&Merge {
         rank: 0,
         pair: [
-            tokenizer.bytes[b's' as usize],
-            tokenizer.bytes[b'.' as usize],
+            tokenizer.bytes[b't' as usize],
+            tokenizer.bytes[b'o' as usize],
         ],
         new_token: 10_000,
     });
@@ -36,6 +36,14 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
     println!("CNF grammar:\n{}", cnf_grammar);
     let dense_grammar = cnf_grammar.reallocate(&bump);
     println!("dense size: {}", bump.allocated_bytes());
+
+    assert!(dense_grammar.recognizes(b"0", &tokenizer));
+    assert!(dense_grammar.recognizes(b"1", &tokenizer));
+    assert!(dense_grammar.recognizes(b"2", &tokenizer));
+    assert!(dense_grammar.recognizes(b"(+ 1 2)", &tokenizer));
+    assert!(dense_grammar.recognizes(b"(- 2 1)", &tokenizer));
+    assert!(dense_grammar.recognizes(b"(str.len name)", &tokenizer));
+    assert!(!dense_grammar.recognizes(b"(str.to.int name)", &tokenizer));
 
     let mut recognizer = Recognizer::new(&dense_grammar, &bump);
     let mut text = String::new();
@@ -212,7 +220,8 @@ impl<T> Grammar<T> {
             }
         }
 
-        self.rules.retain(|rule| used_non_terminals.contains(&rule.lhs));
+        self.rules
+            .retain(|rule| used_non_terminals.contains(&rule.lhs));
     }
 }
 
@@ -265,7 +274,8 @@ impl Grammar<u32> {
                                         // the first token must be false next
                                         if !new_rule.after_first_token_outgoing {
                                             // If we are already after the second token, we just push the terminal
-                                            new_sequence.push(parse::Symbol::Terminal(*lit));
+                                            // TODO: This is where we need to create the shortcut rule from the last terminal to this rule
+                                            // new_sequence.push(parse::Symbol::Terminal(*lit));
                                         }
                                     } else {
                                         if !new_rule.after_first_token_outgoing {
@@ -617,10 +627,6 @@ impl<'bump> Recognizer<'bump> {
                         rhs: parent_state.rhs,
                     }));
                 } else {
-                    println!(
-                        "Reached a completed state without a parent, non-terminal: {}, position: {}, rhs: {:?}",
-                        non_terminal, position, rhs
-                    );
                     // If there's no parent, this is a completed state
                     if *non_terminal == self.grammar.start && *position == rhs.len() {
                         // If we reached the start rule and the dot is at the end
@@ -648,7 +654,7 @@ fn test_cyk_recognizes() {
     let grammar = parse::Grammar::parse(
         r#"Start -> ntString
 ntString -> 'name' | '" "' | '(' 'str.++' ' ' ntString ' ' ntString ')' | '(' 'str.replace' ' ' ntString ' ' ntString ' ' ntString ')' | '(' 'str.at' ' ' ntString ' ' ntInt ')' | '(' 'int.to.str' ' ' ntInt ')' | '(' 'str.substr' ' ' ntString ' ' ntInt ' ' ntInt ')'
-ntInt -> '0' | '1' | '2' | '(' '+' ' ' ntInt ' ' ntInt ')' | '(' '-' ' ' ntInt ' ' ntInt ')' | '(' 'str.len' ' ' ntString ' ' ')' | '(' 'str.to.int' ' ' ntString ' ' ')' | '(' 'str.indexof' ' ' ntString ' ' ntString ' ' ntInt ')'
+ntInt -> '0' | '1' | '2' | '(' '+' ' ' ntInt ' ' ntInt ')' | '(' '-' ' ' ntInt ' ' ntInt ')' | '(' 'str.len' ' ' ntString ')' | '(' 'str.to.int' ' ' ntString ')' | '(' 'str.indexof' ' ' ntString ' ' ntString ' ' ntInt ')'
 ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | '(' 'str.suffixof' ' ' ntString ' ' ntString ')' | '(' 'str.contains' ' ' ntString ' ' ntString ')'
 "#,
     )
