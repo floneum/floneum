@@ -1,18 +1,16 @@
 use crate::{
-    DataType, DataTypeEnum, Device, Tensor, TensorData,
-    compute_graph::AnyComputeKey,
+    DataTypeEnum,
     mir::{
         globals::KernelGlobalSpace,
-        inputs::{MirValue, QMatrixInput, TensorInput},
+        inputs::{QMatrixInput, TensorInput},
         kernel::GenericKernel,
-        operation::Operation,
         workgroup_shape::WorkgroupShape,
     },
     quantized::matmul::QMatMulOperation,
 };
 use std::fmt::Write;
 
-use super::{QMatrix, dequantize_block};
+use super::dequantize_block;
 
 pub(crate) fn sgemv(
     op: &QMatMulOperation,
@@ -26,7 +24,6 @@ pub(crate) fn sgemv(
     _m_size: &str,
     k_size: &str,
 ) {
-    let device = op.matrix.device();
     let blocksize = workgroup_size.x();
     let dtype = op.input_datatype;
     let local_data =
@@ -36,7 +33,6 @@ pub(crate) fn sgemv(
     let subgroup_id = generic_kernel.subgroup_index();
     let subgroup_local_id = generic_kernel.subgroup_local_index();
     let subgroups_per_workgroup = generic_kernel.subgroups_per_workgroup();
-    let subgroup_size = generic_kernel.subgroup_size();
     let elements_per_block = op.elements_per_block();
     let mut kernel = String::new();
 

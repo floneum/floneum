@@ -1,11 +1,8 @@
 use crate::{
-    compute_graph::AnyComputeKey, mir::{
-        inputs::{MirValue, QMatrixInput, TensorInput},
-        kernel::GenericKernel,
-        operation::Operation, workgroup_shape::WorkgroupShapeConstraints,
-    }, DataType, DataTypeEnum, Device, Tensor, TensorData
+    DataType, DataTypeEnum, Device, Tensor, TensorData,
+    compute_graph::AnyComputeKey,
+    mir::{inputs::MirValue, kernel::GenericKernel, operation::Operation},
 };
-use std::fmt::Write;
 
 use super::{QMatrix, dequantize_block};
 
@@ -294,11 +291,15 @@ impl Operation for QMatMulOperation {
             let limits = device.wgpu_device().limits();
             constraints.add_constraint(
                 0,
-                crate::mir::workgroup_shape::Constraint::less_than(limits.max_compute_workgroup_size_x + 1),
+                crate::mir::workgroup_shape::Constraint::less_than(
+                    limits.max_compute_workgroup_size_x + 1,
+                ),
             );
             constraints.add_constraint(
                 0,
-                crate::mir::workgroup_shape::Constraint::more_than_or_equals(limits.min_subgroup_size.max(32)),
+                crate::mir::workgroup_shape::Constraint::more_than_or_equals(
+                    limits.min_subgroup_size.max(32),
+                ),
             );
         } else {
             constraints.add_constraint(0, crate::mir::workgroup_shape::Constraint::Equals(1));
@@ -318,11 +319,7 @@ impl Operation for QMatMulOperation {
         let n = self.matrix.shape[0];
         let m = a_shape[0];
         if self.sgemv() {
-            [
-                n as u32,
-                1,
-                1,
-            ]
+            [n as u32, 1, 1]
         } else {
             [
                 (n as u32).div_ceil(workgroup_shape.x()),

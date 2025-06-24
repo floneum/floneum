@@ -1,13 +1,15 @@
 use crate::{
-    compute_graph::AnyComputeKey, mir::{
-        inputs::{MirValue, QMatrixInput, TensorInput},
+    DataTypeEnum,
+    mir::{
+        inputs::{QMatrixInput, TensorInput},
         kernel::GenericKernel,
-        operation::Operation, workgroup_shape::WorkgroupShape,
-    }, quantized::matmul::QMatMulOperation, DataType, DataTypeEnum, Device, Tensor, TensorData
+        workgroup_shape::WorkgroupShape,
+    },
+    quantized::matmul::QMatMulOperation,
 };
 use std::fmt::Write;
 
-use super::{QMatrix, dequantize_block};
+use super::dequantize_block;
 
 pub(crate) fn sgemm(
     op: &QMatMulOperation,
