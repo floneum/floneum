@@ -21,7 +21,7 @@ pub(crate) fn sgemv(
     input_a: &TensorInput,
     input_b: &QMatrixInput,
     output: &TensorInput,
-    n_size: &str,
+    _n_size: &str,
     // m size is always 1 for sgemv
     _m_size: &str,
     k_size: &str,
@@ -112,25 +112,8 @@ pub(crate) fn sgemv(
 
     writeln!(&mut kernel, "}}").unwrap();
 
-    let limits = device.wgpu_device().limits();
-    let max_subgroup_size = (limits.max_subgroup_size as u32).max(32);
-
-    // Optimized subgroup reduction with unrolled shuffle operations
-    let mut offset = max_subgroup_size;
-    while offset > 1 {
-        writeln!(&mut kernel, "if {subgroup_size} >= {offset}u {{").unwrap();
-        {
-            offset /= 2;
-            writeln!(
-                &mut kernel,
-                "let neighbor = subgroupShuffleDown(acc, {}u);",
-                offset
-            )
-            .unwrap();
-            writeln!(&mut kernel, "acc += neighbor;").unwrap();
-        }
-        writeln!(&mut kernel, "}}").unwrap();
-    }
+    // Get the sum among all threads in the subgroup
+    writeln!(&mut kernel, "acc = subgroupAdd(acc);").unwrap();
 
     // Write the output to the workgroup memory if this is the first thread in the subgroup
     writeln!(&mut kernel, "if {subgroup_local_id} == 0u {{").unwrap();
@@ -161,22 +144,8 @@ pub(crate) fn sgemv(
         }
         writeln!(&mut kernel, "}}").unwrap();
 
-        // Final unrolled subgroup reduction
-        offset = max_subgroup_size;
-        while offset > 1 {
-            writeln!(&mut kernel, "if {subgroup_size} >= {offset}u {{").unwrap();
-            {
-                offset /= 2;
-                writeln!(
-                    &mut kernel,
-                    "let neighbor = subgroupShuffleDown(acc, {}u);",
-                    offset
-                )
-                .unwrap();
-                writeln!(&mut kernel, "acc += neighbor;").unwrap();
-            }
-            writeln!(&mut kernel, "}}").unwrap();
-        }
+        // Finally get the final sum across all threads in the workgroup
+        writeln!(&mut kernel, "acc = subgroupAdd(acc);").unwrap();
 
         // Write the output to the output tensor if this is the first thread in the workgroup
         writeln!(&mut kernel, "if {workgroup_local_index} == 0u {{").unwrap();
