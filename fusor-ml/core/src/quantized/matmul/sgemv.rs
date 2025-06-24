@@ -2,9 +2,11 @@ use crate::{
     DataType, DataTypeEnum, Device, Tensor, TensorData,
     compute_graph::AnyComputeKey,
     mir::{
+        globals::KernelGlobalSpace,
         inputs::{MirValue, QMatrixInput, TensorInput},
         kernel::GenericKernel,
         operation::Operation,
+        workgroup_shape::WorkgroupShape,
     },
     quantized::matmul::QMatMulOperation,
 };
@@ -14,60 +16,163 @@ use super::{QMatrix, dequantize_block};
 
 pub(crate) fn sgemv(
     op: &QMatMulOperation,
-    kernel: &mut String,
+    generic_kernel: &mut GenericKernel,
+    workgroup_size: &WorkgroupShape,
     input_a: &TensorInput,
     input_b: &QMatrixInput,
     output: &TensorInput,
-    global_id: &str,
     n_size: &str,
     // m size is always 1 for sgemv
     _m_size: &str,
     k_size: &str,
-    elements_per_block: u32,
 ) {
-    writeln!(kernel, "let x = {global_id}.x;").unwrap();
+    let device = op.matrix.device();
+    let blocksize = workgroup_size.x();
+    let dtype = op.input_datatype;
+    let local_data =
+        generic_kernel.add_global_array(KernelGlobalSpace::Workgroup, dtype, blocksize.to_string());
+    let workgroup_index = generic_kernel.workgroup_index();
+    let workgroup_local_index = generic_kernel.workgroup_local_index();
+    let subgroup_id = generic_kernel.subgroup_index();
+    let subgroup_local_id = generic_kernel.subgroup_local_index();
+    let subgroups_per_workgroup = generic_kernel.subgroups_per_workgroup();
+    let subgroup_size = generic_kernel.subgroup_size();
+    let elements_per_block = op.elements_per_block();
+    let mut kernel = String::new();
 
-    writeln!(kernel, "var acc = 0.0;").unwrap();
+    // In index of the single element in the vector we are multiplying against
+    writeln!(&mut kernel, "let workgroup_offset = {workgroup_index}.x;").unwrap();
 
-    // Calculate one block sized group
-    writeln!(kernel, "if x < {n_size} {{").unwrap();
+    writeln!(&mut kernel, "var acc = {dtype}(0.0);").unwrap();
 
+    // First merge values on each thread individually. We divide the column allocated to the thread group into equal sized buckets
+    // Round up
     writeln!(
-        kernel,
-        "for (var k = 0u; k < {k_size} / {elements_per_block}; k += 1u) {{"
+        &mut kernel,
+        "let bucket_size = ({k_size} + {blocksize}u - 1) / {blocksize}u;"
     )
     .unwrap();
 
+    // Round the bucket size to the nearest multiple of elements per block
     writeln!(
-        kernel,
-        "let chunk = {input_b}[k + x * {k_size} / {elements_per_block}];"
+        &mut kernel,
+        "let bucket_block_size = (bucket_size + {elements_per_block} - 1) / {elements_per_block};"
+    )
+    .unwrap();
+
+    // Find the reduce size in blocks rounded up
+    writeln!(
+        &mut kernel,
+        "let k_block_size = ({k_size} + {elements_per_block} - 1) / {elements_per_block};"
+    )
+    .unwrap();
+
+    // Find this threads position in the workgroup
+    writeln!(
+        &mut kernel,
+        "let base_axis_index = {workgroup_local_index} * bucket_block_size;"
+    )
+    .unwrap();
+    writeln!(
+        &mut kernel,
+        "let end_axis_index = min({workgroup_local_index} * bucket_block_size + bucket_block_size, k_block_size);"
+    )
+    .unwrap();
+    writeln!(&mut kernel, "var index = base_axis_index;").unwrap();
+
+    // Loop over all of the blocks this thread is responsible for
+    writeln!(&mut kernel, "while (index < end_axis_index) {{").unwrap();
+
+    writeln!(
+        &mut kernel,
+        "let chunk = {input_b}[workgroup_offset + index];"
     )
     .unwrap();
 
     dequantize_block(
-        kernel,
+        &mut kernel,
         op.matrix.datatype,
         "chunk".to_string(),
         DataTypeEnum::F32,
-        |i, data, code| {
+        |_, data, code| {
             write!(code, "acc = fma({input_a}[").unwrap();
-            input_a.strided_index(
-                code,
-                ["0".to_string(), format!("k * {elements_per_block} + {i}")],
-            );
+            input_a.strided_index(code, ["0".to_string(), "workgroup_offset".to_string()]);
             write!(code, "], {data}, acc);").unwrap();
         },
     );
 
-    writeln!(kernel, "}}").unwrap();
+    writeln!(&mut kernel, "index += 1;").unwrap();
 
-    writeln!(kernel, "}}").unwrap();
+    writeln!(&mut kernel, "}}").unwrap();
 
-    // Then write the result
-    writeln!(kernel, "if x < {n_size} {{").unwrap();
-    write!(kernel, "let output_index = ").unwrap();
-    output.strided_index(kernel, ["0".to_string(), "x".to_string()]);
-    writeln!(kernel, ";").unwrap();
-    writeln!(kernel, "{output}[output_index] = acc;").unwrap();
-    writeln!(kernel, "}}").unwrap();
+    writeln!(&mut kernel, "}}").unwrap();
+
+    let limits = device.wgpu_device().limits();
+    let max_subgroup_size = (limits.max_subgroup_size as u32).max(32);
+
+    // Optimized subgroup reduction with unrolled shuffle operations
+    let mut offset = max_subgroup_size;
+    while offset > 1 {
+        writeln!(&mut kernel, "if {subgroup_size} >= {offset}u {{").unwrap();
+        offset /= 2;
+        writeln!(
+            &mut kernel,
+            "let neighbor = subgroupShuffleDown(merged, {}u);",
+            offset
+        )
+        .unwrap();
+        writeln!(&mut kernel, "acc += neighbor;").unwrap();
+        writeln!(&mut kernel, "}}").unwrap();
+    }
+
+    // Write the output to the workgroup memory if this is the first thread in the subgroup
+    writeln!(&mut kernel, "if {subgroup_local_id} == 0u {{").unwrap();
+    writeln!(&mut kernel, "{local_data}[{subgroup_id}] = merged;").unwrap();
+    writeln!(&mut kernel, "}}").unwrap();
+
+    // Wait until all threads have written to the workgroup shared memory
+    writeln!(&mut kernel, "workgroupBarrier();").unwrap();
+
+    // Then if this is the first subgroup, do one final shuffle down reduction
+    writeln!(&mut kernel, "if {subgroup_id} == 0u {{").unwrap();
+    // Copy over the best value from each subgroup from the workgroup shared memory to the merged variable
+    writeln!(
+        &mut kernel,
+        "if {subgroup_local_id} < {subgroups_per_workgroup} {{"
+    )
+    .unwrap();
+    writeln!(&mut kernel, "acc = {local_data}[{subgroup_local_id}];").unwrap();
+    writeln!(&mut kernel, "}}").unwrap();
+    writeln!(&mut kernel, "else {{").unwrap();
+    writeln!(&mut kernel, "acc = {dtype}(0.0);",).unwrap();
+    writeln!(&mut kernel, "}}").unwrap();
+
+    // Final unrolled subgroup reduction
+    offset = max_subgroup_size;
+    while offset > 1 {
+        writeln!(&mut kernel, "if {subgroup_size} >= {offset}u {{").unwrap();
+        offset /= 2;
+        writeln!(
+            &mut kernel,
+            "let neighbor = subgroupShuffleDown(acc, {}u);",
+            offset
+        )
+        .unwrap();
+        writeln!(&mut kernel, "acc += neighbor;").unwrap();
+        writeln!(&mut kernel, "}}").unwrap();
+    }
+
+    // Write the output to the output tensor if this is the first thread in the workgroup
+    writeln!(&mut kernel, "if {workgroup_local_index} == 0u {{").unwrap();
+    writeln!(&mut kernel, "var out_start_offset = ",).unwrap();
+    output.strided_index(
+        &mut kernel,
+        ["0".to_string(), "workgroup_offset".to_string()],
+    );
+    writeln!(&mut kernel, ";").unwrap();
+    writeln!(&mut kernel, "{output}[out_start_offset] = acc;").unwrap();
+    writeln!(&mut kernel, "}}").unwrap();
+    writeln!(&mut kernel, "}}").unwrap();
+
+    generic_kernel.push_body(&kernel);
 }

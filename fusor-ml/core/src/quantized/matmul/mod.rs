@@ -1,5 +1,11 @@
 use crate::{
-    compute_graph::AnyComputeKey, mir::{inputs::{MirValue, QMatrixInput, TensorInput}, kernel::GenericKernel, operation::Operation}, DataType, DataTypeEnum, Device, Tensor, TensorData
+    DataType, DataTypeEnum, Device, Tensor, TensorData,
+    compute_graph::AnyComputeKey,
+    mir::{
+        inputs::{MirValue, QMatrixInput, TensorInput},
+        kernel::GenericKernel,
+        operation::Operation,
+    },
 };
 use std::fmt::Write;
 
@@ -37,6 +43,10 @@ impl QMatMulOperation {
 
     fn elements_per_block(&self) -> u32 {
         self.matrix.datatype.block_size() as u32
+    }
+
+    fn sgemv(&self) -> bool {
+        self.in_shape[0] == 1
     }
 }
 
@@ -282,8 +292,8 @@ impl Operation for QMatMulOperation {
         _: &Device,
     ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
         let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::default();
-        constraints.add_constraint(0, crate::mir::workgroup_shape::Constraint::Equals(16));
-        constraints.add_constraint(1, crate::mir::workgroup_shape::Constraint::Equals(16));
+        constraints.add_constraint(0, crate::mir::workgroup_shape::Constraint::Equals(1));
+        constraints.add_constraint(1, crate::mir::workgroup_shape::Constraint::Equals(1));
         constraints.add_constraint(2, crate::mir::workgroup_shape::Constraint::Equals(1));
         constraints
     }
@@ -327,12 +337,10 @@ impl Operation for QMatMulOperation {
     fn build_kernel(
         &self,
         _: &crate::compute_graph::ComputeGraphInner,
-        _: &crate::mir::workgroup_shape::WorkgroupShape,
+        workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
         _: &[MirValue],
         generic_kernel: &mut GenericKernel,
     ) {
-        let mut kernel = String::new();
-
         let datatype = self.input_datatype;
         let rank = self.matrix.shape.len() as u32;
 
@@ -340,15 +348,12 @@ impl Operation for QMatMulOperation {
         let input_b = generic_kernel.add_q_matrix_input(rank, self.matrix.datatype);
         let output = generic_kernel.add_tensor_input(rank, true, datatype);
 
-        let global_id = generic_kernel.global_id();
-        let elements_per_block = self.elements_per_block();
-
         let k_size = input_a.shape_binding(1);
         let m_size = input_a.shape_binding(0);
         let n_size = input_b.shape_binding(0);
 
         // Check if this is a sgemv or sgemm operation
-        let algo = if self.in_shape[0] == 1 {
+        let algo = if self.sgemv() {
             sgemv::sgemv
         } else {
             sgemm::sgemm
@@ -356,18 +361,15 @@ impl Operation for QMatMulOperation {
 
         algo(
             self,
-            &mut kernel,
+            generic_kernel,
+            &workgroup_shape,
             &input_a,
             &input_b,
             &output,
-            &global_id,
             &n_size,
             &m_size,
             &k_size,
-            elements_per_block,
         );
-
-        generic_kernel.push_body(&kernel);
     }
 
     fn output(&self, _: &crate::compute_graph::ComputeGraphInner, inputs: &[MirValue]) -> MirValue {
