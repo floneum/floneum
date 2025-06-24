@@ -1,11 +1,9 @@
 use crate::{
-    DataType, DataTypeEnum, Device, Tensor, TensorData,
-    compute_graph::AnyComputeKey,
-    mir::{
+    compute_graph::AnyComputeKey, mir::{
         inputs::{MirValue, QMatrixInput, TensorInput},
         kernel::GenericKernel,
-        operation::Operation,
-    },
+        operation::Operation, workgroup_shape::WorkgroupShapeConstraints,
+    }, DataType, DataTypeEnum, Device, Tensor, TensorData
 };
 use std::fmt::Write;
 
@@ -289,10 +287,22 @@ async fn test_fuzz_q_mat_mul_q8_0() {
 impl Operation for QMatMulOperation {
     fn workgroup_shape_constraints(
         &self,
-        _: &Device,
+        device: &Device,
     ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
         let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::default();
-        constraints.add_constraint(0, crate::mir::workgroup_shape::Constraint::Equals(1));
+        if self.sgemv() {
+            let limits = device.wgpu_device().limits();
+            constraints.add_constraint(
+                0,
+                crate::mir::workgroup_shape::Constraint::less_than(limits.max_compute_workgroup_size_x + 1),
+            );
+            constraints.add_constraint(
+                0,
+                crate::mir::workgroup_shape::Constraint::more_than_or_equals(limits.min_subgroup_size.max(32)),
+            );
+        } else {
+            constraints.add_constraint(0, crate::mir::workgroup_shape::Constraint::Equals(1));
+        }
         constraints.add_constraint(1, crate::mir::workgroup_shape::Constraint::Equals(1));
         constraints.add_constraint(2, crate::mir::workgroup_shape::Constraint::Equals(1));
         constraints

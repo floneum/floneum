@@ -21,7 +21,7 @@ pub(crate) fn sgemv(
     input_a: &TensorInput,
     input_b: &QMatrixInput,
     output: &TensorInput,
-    n_size: &str,
+    _n_size: &str,
     // m size is always 1 for sgemv
     _m_size: &str,
     k_size: &str,
@@ -82,28 +82,27 @@ pub(crate) fn sgemv(
 
     // Loop over all of the blocks this thread is responsible for
     writeln!(&mut kernel, "while (index < end_axis_index) {{").unwrap();
+    {
+        writeln!(
+            &mut kernel,
+            "let chunk = {input_b}[workgroup_offset + index];"
+        )
+        .unwrap();
 
-    writeln!(
-        &mut kernel,
-        "let chunk = {input_b}[workgroup_offset + index];"
-    )
-    .unwrap();
+        dequantize_block(
+            &mut kernel,
+            op.matrix.datatype,
+            "chunk".to_string(),
+            DataTypeEnum::F32,
+            |_, data, code| {
+                write!(code, "acc = fma({input_a}[").unwrap();
+                input_a.strided_index(code, ["0".to_string(), "workgroup_offset".to_string()]);
+                write!(code, "], {data}, acc);").unwrap();
+            },
+        );
 
-    dequantize_block(
-        &mut kernel,
-        op.matrix.datatype,
-        "chunk".to_string(),
-        DataTypeEnum::F32,
-        |_, data, code| {
-            write!(code, "acc = fma({input_a}[").unwrap();
-            input_a.strided_index(code, ["0".to_string(), "workgroup_offset".to_string()]);
-            write!(code, "], {data}, acc);").unwrap();
-        },
-    );
-
-    writeln!(&mut kernel, "index += 1;").unwrap();
-
-    writeln!(&mut kernel, "}}").unwrap();
+        writeln!(&mut kernel, "index += 1;").unwrap();
+    }
 
     writeln!(&mut kernel, "}}").unwrap();
 
@@ -114,20 +113,24 @@ pub(crate) fn sgemv(
     let mut offset = max_subgroup_size;
     while offset > 1 {
         writeln!(&mut kernel, "if {subgroup_size} >= {offset}u {{").unwrap();
-        offset /= 2;
-        writeln!(
-            &mut kernel,
-            "let neighbor = subgroupShuffleDown(merged, {}u);",
-            offset
-        )
-        .unwrap();
-        writeln!(&mut kernel, "acc += neighbor;").unwrap();
+        {
+            offset /= 2;
+            writeln!(
+                &mut kernel,
+                "let neighbor = subgroupShuffleDown(acc, {}u);",
+                offset
+            )
+            .unwrap();
+            writeln!(&mut kernel, "acc += neighbor;").unwrap();
+        }
         writeln!(&mut kernel, "}}").unwrap();
     }
 
     // Write the output to the workgroup memory if this is the first thread in the subgroup
     writeln!(&mut kernel, "if {subgroup_local_id} == 0u {{").unwrap();
-    writeln!(&mut kernel, "{local_data}[{subgroup_id}] = merged;").unwrap();
+    {
+        writeln!(&mut kernel, "{local_data}[{subgroup_id}] = acc;").unwrap();
+    }
     writeln!(&mut kernel, "}}").unwrap();
 
     // Wait until all threads have written to the workgroup shared memory
@@ -135,44 +138,56 @@ pub(crate) fn sgemv(
 
     // Then if this is the first subgroup, do one final shuffle down reduction
     writeln!(&mut kernel, "if {subgroup_id} == 0u {{").unwrap();
-    // Copy over the best value from each subgroup from the workgroup shared memory to the merged variable
-    writeln!(
-        &mut kernel,
-        "if {subgroup_local_id} < {subgroups_per_workgroup} {{"
-    )
-    .unwrap();
-    writeln!(&mut kernel, "acc = {local_data}[{subgroup_local_id}];").unwrap();
-    writeln!(&mut kernel, "}}").unwrap();
-    writeln!(&mut kernel, "else {{").unwrap();
-    writeln!(&mut kernel, "acc = {dtype}(0.0);",).unwrap();
-    writeln!(&mut kernel, "}}").unwrap();
-
-    // Final unrolled subgroup reduction
-    offset = max_subgroup_size;
-    while offset > 1 {
-        writeln!(&mut kernel, "if {subgroup_size} >= {offset}u {{").unwrap();
-        offset /= 2;
+    {
+        // Copy over the final value from each subgroup from the workgroup shared memory to the acc variable
         writeln!(
             &mut kernel,
-            "let neighbor = subgroupShuffleDown(acc, {}u);",
-            offset
+            "if {subgroup_local_id} < {subgroups_per_workgroup} {{"
         )
         .unwrap();
-        writeln!(&mut kernel, "acc += neighbor;").unwrap();
+        {
+            writeln!(&mut kernel, "acc = {local_data}[{subgroup_local_id}];").unwrap();
+        }
+        writeln!(&mut kernel, "}}").unwrap();
+        writeln!(&mut kernel, "else {{").unwrap();
+        {
+            writeln!(&mut kernel, "acc = {dtype}(0.0);",).unwrap();
+        }
+        writeln!(&mut kernel, "}}").unwrap();
+
+        // Final unrolled subgroup reduction
+        offset = max_subgroup_size;
+        while offset > 1 {
+            writeln!(&mut kernel, "if {subgroup_size} >= {offset}u {{").unwrap();
+            {
+                offset /= 2;
+                writeln!(
+                    &mut kernel,
+                    "let neighbor = subgroupShuffleDown(acc, {}u);",
+                    offset
+                )
+                .unwrap();
+                writeln!(&mut kernel, "acc += neighbor;").unwrap();
+            }
+            writeln!(&mut kernel, "}}").unwrap();
+        }
+
+        // Write the output to the output tensor if this is the first thread in the workgroup
+        writeln!(&mut kernel, "if {workgroup_local_index} == 0u {{").unwrap();
+        {
+            writeln!(&mut kernel, "var out_start_offset = ",).unwrap();
+            output.strided_index(
+                &mut kernel,
+                ["0".to_string(), "workgroup_offset".to_string()],
+            );
+            writeln!(&mut kernel, ";").unwrap();
+            writeln!(&mut kernel, "{output}[out_start_offset] = acc;").unwrap();
+        }
         writeln!(&mut kernel, "}}").unwrap();
     }
+    writeln!(&mut kernel, "}}").unwrap();
 
-    // Write the output to the output tensor if this is the first thread in the workgroup
-    writeln!(&mut kernel, "if {workgroup_local_index} == 0u {{").unwrap();
-    writeln!(&mut kernel, "var out_start_offset = ",).unwrap();
-    output.strided_index(
-        &mut kernel,
-        ["0".to_string(), "workgroup_offset".to_string()],
-    );
-    writeln!(&mut kernel, ";").unwrap();
-    writeln!(&mut kernel, "{output}[out_start_offset] = acc;").unwrap();
-    writeln!(&mut kernel, "}}").unwrap();
-    writeln!(&mut kernel, "}}").unwrap();
+    println!("SGEMV Kernel:\n{kernel}");
 
     generic_kernel.push_body(&kernel);
 }
