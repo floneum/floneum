@@ -21,7 +21,7 @@ pub(crate) fn sgemv(
     input_a: &TensorInput,
     input_b: &QMatrixInput,
     output: &TensorInput,
-    _n_size: &str,
+    n_size: &str,
     // m size is always 1 for sgemv
     _m_size: &str,
     k_size: &str,
@@ -85,7 +85,7 @@ pub(crate) fn sgemv(
     {
         writeln!(
             &mut kernel,
-            "let chunk = {input_b}[workgroup_offset + index];"
+            "let chunk = {input_b}[workgroup_offset * k_block_size + index];"
         )
         .unwrap();
 
@@ -98,7 +98,10 @@ pub(crate) fn sgemv(
                 write!(code, "acc = fma({input_a}[").unwrap();
                 input_a.strided_index(
                     code,
-                    ["0".to_string(), format!("index * {elements_per_block} + {index}")],
+                    [
+                        "0".to_string(),
+                        format!("index * {elements_per_block} + {index}"),
+                    ],
                 );
                 writeln!(code, "], {data}, acc);").unwrap();
             },
@@ -189,8 +192,6 @@ pub(crate) fn sgemv(
         writeln!(&mut kernel, "}}").unwrap();
     }
     writeln!(&mut kernel, "}}").unwrap();
-
-    println!("SGEMV Kernel:\n{kernel}");
 
     generic_kernel.push_body(&kernel);
 }
