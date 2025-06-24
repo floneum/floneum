@@ -94,10 +94,13 @@ pub(crate) fn sgemv(
             op.matrix.datatype,
             "chunk".to_string(),
             DataTypeEnum::F32,
-            |_, data, code| {
+            |index, data, code| {
                 write!(code, "acc = fma({input_a}[").unwrap();
-                input_a.strided_index(code, ["0".to_string(), "workgroup_offset".to_string()]);
-                write!(code, "], {data}, acc);").unwrap();
+                input_a.strided_index(
+                    code,
+                    ["0".to_string(), format!("index * {elements_per_block} + {index}")],
+                );
+                writeln!(code, "], {data}, acc);").unwrap();
             },
         );
 

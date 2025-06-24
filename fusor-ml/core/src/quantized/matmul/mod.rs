@@ -317,11 +317,19 @@ impl Operation for QMatMulOperation {
         let a_shape = input.layout().shape();
         let n = self.matrix.shape[0];
         let m = a_shape[0];
-        [
-            (n as u32).div_ceil(workgroup_shape.x()),
-            (m as u32).div_ceil(workgroup_shape.y()),
-            1,
-        ]
+        if self.sgemv() {
+            [
+                n as u32,
+                1,
+                1,
+            ]
+        } else {
+            [
+                (n as u32).div_ceil(workgroup_shape.x()),
+                (m as u32).div_ceil(workgroup_shape.y()),
+                1,
+            ]
+        }
     }
 
     fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {
