@@ -2,6 +2,7 @@ use crate::{
     DataType, DataTypeEnum, Device, Tensor, TensorData,
     compute_graph::AnyComputeKey,
     mir::{inputs::MirValue, kernel::GenericKernel, operation::Operation},
+    quantized::matmul::sgemv::SGEMV_CHUNK_SIZE,
 };
 
 use super::{QMatrix, dequantize_block};
@@ -42,6 +43,18 @@ impl QMatMulOperation {
 
     fn sgemv(&self) -> bool {
         self.in_shape[0] == 1
+    }
+
+    fn k_size(&self) -> u32 {
+        self.in_shape[1] as u32
+    }
+
+    fn m_size(&self) -> u32 {
+        self.in_shape[0] as u32
+    }
+
+    fn n_size(&self) -> u32 {
+        self.matrix.shape[0] as u32
     }
 }
 
@@ -297,7 +310,7 @@ impl Operation for QMatMulOperation {
             );
             constraints.add_constraint(
                 0,
-                crate::mir::workgroup_shape::Constraint::more_than_or_equals(
+                crate::mir::workgroup_shape::Constraint::equals(
                     limits.min_subgroup_size.max(32),
                 ),
             );
@@ -319,7 +332,7 @@ impl Operation for QMatMulOperation {
         let n = self.matrix.shape[0];
         let m = a_shape[0];
         if self.sgemv() {
-            [n as u32, 1, 1]
+            [(n as u32).div_ceil(SGEMV_CHUNK_SIZE), 1, 1]
         } else {
             [
                 (n as u32).div_ceil(workgroup_shape.x()),

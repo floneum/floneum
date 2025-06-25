@@ -201,7 +201,7 @@ impl GenericKernel {
     pub(crate) fn add_global_array(
         &mut self,
         space: KernelGlobalSpace,
-        array_type: DataTypeEnum,
+        array_type: impl Into<KernelGlobalType>,
         size: String,
     ) -> KernelGlobal {
         let index = self.max_global_id;
@@ -209,7 +209,7 @@ impl GenericKernel {
         let global = KernelGlobal::new(
             index,
             space,
-            KernelGlobalType::Array(ArrayType::new(size, array_type)),
+            KernelGlobalType::Array(ArrayType::new(size, array_type.into())),
         );
         self.globals.push(global.clone());
         global
