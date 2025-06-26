@@ -325,12 +325,10 @@ impl Operation for QMatMulOperation {
     fn dispatch_size(
         &self,
         workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
-        inputs: &[MirValue],
+        _: &[MirValue],
     ) -> [u32; 3] {
-        let input = inputs[0].as_tensor().unwrap();
-        let a_shape = input.layout().shape();
-        let n = self.matrix.shape[0];
-        let m = a_shape[0];
+        let n = self.n_size();
+        let m = self.m_size();
         if self.sgemv() {
             [(n as u32).div_ceil(SGEMV_CHUNK_SIZE), 1, 1]
         } else {

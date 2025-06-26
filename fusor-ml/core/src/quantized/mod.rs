@@ -152,6 +152,29 @@ pub(crate) fn dequantize_block(
     *kernel += &out;
 }
 
+pub(crate) fn unrolled_dequantize_block(
+    kernel: &mut String,
+    ty: GgmlType,
+    chunk: String,
+    datatype: DataTypeEnum,
+    mut process_element: impl FnMut(u32, String, &mut String),
+) {
+    let out = match ty {
+        GgmlType::Q4_0 => BlockQ4_0::unrolled_dequantize_block(chunk, datatype, process_element),
+        GgmlType::Q5_0 => BlockQ5_0::unrolled_dequantize_block(chunk, datatype, process_element),
+        GgmlType::Q8_0 => BlockQ8_0::unrolled_dequantize_block(chunk, datatype, process_element),
+        GgmlType::Q4K => BlockQ4K::unrolled_dequantize_block(chunk, datatype, process_element),
+        GgmlType::Q6K => BlockQ6K::unrolled_dequantize_block(chunk, datatype, process_element),
+        GgmlType::F16 | GgmlType::F32 => {
+            let mut body = String::new();
+            process_element(0, format!("{datatype}({chunk})"), &mut body);
+            body
+        }
+        _ => todo!(),
+    };
+    *kernel += &out;
+}
+
 trait WgslQuantizedType: GgufBlock {
     const GGML_TYPE: GgmlType;
 
@@ -159,6 +182,12 @@ trait WgslQuantizedType: GgufBlock {
         chunk: String,
         datatype: DataTypeEnum,
         process_element: impl FnMut(String, String, &mut String),
+    ) -> String;
+
+    fn unrolled_dequantize_block(
+        chunk: String,
+        datatype: DataTypeEnum,
+        process_element: impl FnMut(u32, String, &mut String),
     ) -> String;
 
     // This is used in the fuzzing test
@@ -242,6 +271,66 @@ impl WgslQuantizedType for BlockQ4_0 {
         code
     }
 
+    fn unrolled_dequantize_block(
+        chunk: String,
+        datatype: DataTypeEnum,
+        mut process_element: impl FnMut(u32, String, &mut String),
+    ) -> String {
+        const CENTER: u8 = center_of_bit_space(4);
+        const RIGHT_SHIFT_4_SCALE: f32 = shift_right_scale(4);
+
+        let half_block_size = BlockQ4_0::BLOCK_SIZE as u8 / 2;
+        let weights_size_u32 = BlockQ4_0::WEIGHTS_SIZE as u8 / 4;
+        let mut code = String::new();
+        writeln!(
+            &mut code,
+            "const SHIFT_SCALES = vec2({datatype}(1.0), {datatype}({RIGHT_SHIFT_4_SCALE}));"
+        )
+        .unwrap();
+        writeln!(&mut code, "const CENTER = vec2({datatype}({CENTER}));").unwrap();
+
+        writeln!(&mut code, "let scale = {datatype}({chunk}.scale);").unwrap();
+        let mut output_index = 0;
+        for i in 0..weights_size_u32 {
+            writeln!(
+                &mut code,
+                "let weight_chunk_bytes_{i} = unpack4xU8({chunk}.data[{i}]);"
+            )
+            .unwrap();
+            for offset in 0..4 {
+                writeln!(
+                    &mut code,
+                    "let byte_{offset}_{i} = weight_chunk_bytes_{i}[{}];",
+                    offset
+                )
+                .unwrap();
+                writeln!(
+                    &mut code,
+                    "let data_{offset}_{i} = vec2(byte_{offset}_{i} & 0x0F, byte_{offset}_{i} & 0xF0);"
+                )
+                .unwrap();
+                writeln!(
+                    &mut code,
+                    "let data_float_{offset}_{i} = ((vec2<{datatype}>(data_{offset}_{i}) * SHIFT_SCALES) - CENTER) * scale;"
+                )
+                .unwrap();
+                process_element(
+                    output_index,
+                    format!("data_float_{offset}_{i}.x"),
+                    &mut code,
+                );
+                process_element(
+                    output_index + half_block_size as u32,
+                    format!("data_float_{offset}_{i}.y"),
+                    &mut code,
+                );
+                output_index += 1;
+            }
+        }
+
+        code
+    }
+
     fn write_type<W: Write>(f: &mut W) -> std::fmt::Result {
         write_q4_0_type(f)
     }
@@ -315,6 +404,66 @@ impl WgslQuantizedType for BlockQ5_0 {
         code
     }
 
+    fn unrolled_dequantize_block(
+        chunk: String,
+        datatype: DataTypeEnum,
+        mut process_element: impl FnMut(u32, String, &mut String),
+    ) -> String {
+        const CENTER: u8 = center_of_bit_space(5);
+        const FIFTH_BIT: u8 = 0x10;
+
+        let half_block_size = BlockQ5_0::BLOCK_SIZE as u8 / 2;
+        let low_weights_size_u32 = BlockQ5_0::WEIGHTS_LOW_BITS_SIZE as u8 / 4;
+        let mut code = String::new();
+        writeln!(&mut code, "const CENTER = vec2({datatype}({CENTER}));").unwrap();
+
+        writeln!(&mut code, "let scale = {datatype}({chunk}.scale);").unwrap();
+        writeln!(&mut code, "let high_bits = {chunk}.data_high_bits[0];").unwrap();
+        let mut output_index = 0;
+        for i in 0..low_weights_size_u32 {
+            writeln!(
+                &mut code,
+                "let low_weight_chunk_{i} = {chunk}.data_low_bits[{i}];"
+            )
+            .unwrap();
+            writeln!(
+                &mut code,
+                "let low_weight_chunk_bytes_{i} = unpack4xU8(low_weight_chunk_{i});"
+            )
+            .unwrap();
+            for offset in 0..4 {
+                writeln!(
+                    &mut code,
+                    "let byte_{offset}_{i} = low_weight_chunk_bytes_{i}[{offset}];"
+                )
+                .unwrap();
+                writeln!(
+                &mut code,
+                "let data_{offset}_{i} = vec2((byte_{offset}_{i} & 0x0F) | ((high_bits >> ({i}*4 + {offset})) << 4) & {FIFTH_BIT}, (byte_{offset}_{i} >> 4) | (high_bits >> ({i}*4 + {offset} + 12)) & {FIFTH_BIT});"
+            )
+            .unwrap();
+                writeln!(
+                &mut code,
+                "let data_float_{offset}_{i} = (vec2<{datatype}>(data_{offset}_{i}) - CENTER) * scale;"
+            )
+            .unwrap();
+                process_element(
+                    output_index,
+                    format!("data_float_{offset}_{i}.x"),
+                    &mut code,
+                );
+                process_element(
+                    output_index + half_block_size as u32,
+                    format!("data_float_{offset}_{i}.y"),
+                    &mut code,
+                );
+                output_index += 1;
+            }
+        }
+
+        code
+    }
+
     fn write_type<W: Write>(f: &mut W) -> std::fmt::Result {
         write_q5_0_type(f)
     }
@@ -368,10 +517,54 @@ impl WgslQuantizedType for BlockQ8_0 {
         code
     }
 
+    fn unrolled_dequantize_block(
+        chunk: String,
+        datatype: DataTypeEnum,
+        mut process_element: impl FnMut(u32, String, &mut String),
+    ) -> String {
+        let weights_size_u32 = BlockQ8_0::WEIGHTS_SIZE as u8 / 4;
+        let mut code = String::new();
+
+        writeln!(&mut code, "let scale = {datatype}({chunk}.scale);").unwrap();
+        let mut output_index = 0;
+        for i in 0..weights_size_u32 {
+            writeln!(&mut code, "let weight_chunk_{i} = {chunk}.data[{i}];").unwrap();
+            writeln!(
+                &mut code,
+                "let weight_chunk_bytes_{i} = unpack4xI8(weight_chunk_{i});"
+            )
+            .unwrap();
+            for offset in 0..4 {
+                writeln!(
+                    &mut code,
+                    "let data_{offset}_{i} = weight_chunk_bytes_{i}[{}];",
+                    offset
+                )
+                .unwrap();
+                writeln!(
+                    &mut code,
+                    "let data_float_{offset}_{i} = {datatype}(data_{offset}_{i}) * scale;"
+                )
+                .unwrap();
+                process_element(output_index, format!("data_float_{offset}_{i}"), &mut code);
+                output_index += 1;
+            }
+        }
+
+        code
+    }
+
     fn write_type<W: Write>(f: &mut W) -> std::fmt::Result {
         write_q8_0_type(f)
     }
 }
+
+const SIX_BITS_MASK: u32 = 0b0011_1111_0011_1111_0011_1111_0011_1111;
+const MSB_TWO_BITS_MASK: u32 = 0b1100_0000_1100_0000_1100_0000_1100_0000;
+const LOW_FOUR_BITS: u32 = 0b0000_1111_0000_1111_0000_1111_0000_1111;
+const HIGH_FOUR_BITS: u32 = 0b1111_0000_1111_0000_1111_0000_1111_0000;
+const MSB_SCALES_MASK: u32 = LOW_FOUR_BITS;
+const MSB_OFFSET_MASK: u32 = HIGH_FOUR_BITS;
 
 impl WgslQuantizedType for BlockQ4K {
     const GGML_TYPE: GgmlType = GgmlType::Q4K;
@@ -381,13 +574,6 @@ impl WgslQuantizedType for BlockQ4K {
         datatype: DataTypeEnum,
         mut process_element: impl FnMut(String, String, &mut String),
     ) -> String {
-        const SIX_BITS_MASK: u32 = 0b0011_1111_0011_1111_0011_1111_0011_1111;
-        const MSB_TWO_BITS_MASK: u32 = 0b1100_0000_1100_0000_1100_0000_1100_0000;
-        const LOW_FOUR_BITS: u32 = 0b0000_1111_0000_1111_0000_1111_0000_1111;
-        const HIGH_FOUR_BITS: u32 = 0b1111_0000_1111_0000_1111_0000_1111_0000;
-        const MSB_SCALES_MASK: u32 = LOW_FOUR_BITS;
-        const MSB_OFFSET_MASK: u32 = HIGH_FOUR_BITS;
-
         let mut code = String::new();
 
         writeln!(
@@ -513,9 +699,169 @@ impl WgslQuantizedType for BlockQ4K {
         code
     }
 
+    fn unrolled_dequantize_block(
+        chunk: String,
+        datatype: DataTypeEnum,
+        mut process_element: impl FnMut(u32, String, &mut String),
+    ) -> String {
+        let mut code = String::new();
+
+        writeln!(
+            &mut code,
+            "let super_block_scale = {datatype}({chunk}.scale);"
+        )
+        .unwrap();
+        writeln!(&mut code, "let super_block_min = {datatype}({chunk}.min);").unwrap();
+
+        writeln!(&mut code, "let first_four_bytes = {chunk}.scales[0];").unwrap();
+        writeln!(&mut code, "let middle_four_bytes = {chunk}.scales[1];").unwrap();
+        writeln!(&mut code, "let last_four_bytes = {chunk}.scales[2];").unwrap();
+
+        // Extracts this bit pattern. The first 6 bits of the first
+        // 4 bytes are the scales. The first 6 bits of the second 4
+        // bytes are the offsets.
+        //
+        // dddddddd dddddddd dddddddd dddddddd mmmmmmmm mmmmmmmm
+        // __000000|__111111|__222222|__333333|__000000|__111111
+        //
+        // mmmmmmmm mmmmmmmm mmmmdddd mmmmdddd mmmmdddd mmmmdddd
+        // __222222|__333333|________|________|________|________
+        writeln!(
+            &mut code,
+            "let first_scales = first_four_bytes & {SIX_BITS_MASK};"
+        )
+        .unwrap();
+        writeln!(
+            &mut code,
+            "let first_offsets = middle_four_bytes & {SIX_BITS_MASK};"
+        )
+        .unwrap();
+
+        // Extracts this bit pattern. The first 2 bits of the first
+        // 4 bytes are the scales. The first 2 bits of the second 4
+        // bytes are the offsets.
+        // The first 4 bits of the last 4 bytes are the lower 4 bits
+        // of the scales. The second 4 bits of the last 4 bytes are
+        // the lower 4 bits of the offsets.
+        //
+        // dddddddd dddddddd dddddddd dddddddd mmmmmmmm mmmmmmmm
+        // 44______|55______|66______|77______|44______|55______
+        //
+        // mmmmmmmm mmmmmmmm mmmmdddd mmmmdddd mmmmdddd mmmmdddd
+        // 66______|77______|44444444|55555555|66666666|77777777
+        writeln!(
+            &mut code,
+            "let msb_scales = (first_four_bytes & {MSB_TWO_BITS_MASK}) >> 2;"
+        )
+        .unwrap();
+        writeln!(
+            &mut code,
+            "let lsb_scales = last_four_bytes & {MSB_SCALES_MASK};"
+        )
+        .unwrap();
+        writeln!(&mut code, "let second_scales = msb_scales | lsb_scales;").unwrap();
+        writeln!(
+            &mut code,
+            "let msb_offsets = (middle_four_bytes & {MSB_TWO_BITS_MASK}) >> 2;"
+        )
+        .unwrap();
+        writeln!(
+            &mut code,
+            "let lsb_offsets = (last_four_bytes & {MSB_OFFSET_MASK}) >> 4;"
+        )
+        .unwrap();
+        writeln!(&mut code, "let second_offsets = msb_offsets | lsb_offsets;").unwrap();
+
+        let mut weight_index = 0;
+        let mut output_index = 0;
+
+        let mut run_chunk = |scales: &str,
+                             offsets: &str,
+                             suffix: &str,
+                             output_index: &mut u32,
+                             weight_index: &mut u32| {
+            writeln!(
+                code,
+                "let scales_{suffix} = vec4<{datatype}>(unpack4xU8({scales})) * super_block_scale;"
+            )
+            .unwrap();
+            writeln!(code, "let low_scales_{suffix} = scales_{suffix}.xz;").unwrap();
+            writeln!(
+                code,
+                "let high_scales_{suffix} = scales_{suffix}.yw * {};",
+                shift_right_scale(4)
+            )
+            .unwrap();
+            writeln!(
+                code,
+                "let offsets_{suffix} = vec4<{datatype}>(unpack4xU8({offsets})) * super_block_min;"
+            )
+            .unwrap();
+            writeln!(code, "let low_offsets_{suffix} = offsets_{suffix}.xz;").unwrap();
+            writeln!(code, "let high_offsets_{suffix} = offsets_{suffix}.yw;").unwrap();
+            
+            for local_suffix in ["x", "y"] {
+                for index in (0..32).step_by(4) {
+                    writeln!(
+                        code,
+                        "let weight_chunk_{local_suffix}_{suffix}_{index} = {chunk}.data[{weight_index}];"
+                    )
+                    .unwrap();
+                    writeln!(code, "let weight_chunk_low_{local_suffix}_{suffix}_{index} = vec4<{datatype}>(unpack4xU8(weight_chunk_{local_suffix}_{suffix}_{index} & {LOW_FOUR_BITS}));").unwrap();
+                    writeln!(code, "let weight_chunk_high_{local_suffix}_{suffix}_{index} = vec4<{datatype}>(unpack4xU8(weight_chunk_{local_suffix}_{suffix}_{index} & {HIGH_FOUR_BITS}));").unwrap();
+                    writeln!(code, "let low_result_{local_suffix}_{suffix}_{index} = weight_chunk_low_{local_suffix}_{suffix}_{index} * low_scales_{suffix}.{local_suffix} - low_offsets_{suffix}.{local_suffix};").unwrap();
+                    writeln!(code, "let high_result_{local_suffix}_{suffix}_{index} = weight_chunk_high_{local_suffix}_{suffix}_{index} * high_scales_{suffix}.{local_suffix} - high_offsets_{suffix}.{local_suffix};").unwrap();
+                    for i in 0..4 {
+                        process_element(
+                            *output_index + i + index,
+                            format!("low_result_{local_suffix}_{suffix}_{index}[{i}]"),
+                            &mut code,
+                        );
+                        process_element(
+                            *output_index + i + index + 32,
+                            format!("high_result_{local_suffix}_{suffix}_{index}[{i}]"),
+                            &mut code,
+                        );
+                    }
+                    *weight_index += 1;
+                }
+                *output_index += 64;
+            }
+        };
+
+        run_chunk(
+            "first_scales",
+            "first_offsets",
+            "first",
+            &mut output_index,
+            &mut weight_index,
+        );
+        run_chunk(
+            "second_scales",
+            "second_offsets",
+            "second",
+            &mut output_index,
+            &mut weight_index,
+        );
+
+        code
+    }
+
     fn write_type<W: Write>(f: &mut W) -> std::fmt::Result {
         write_q4_k_type(f)
     }
+}
+
+const CENTER_SIX_BIT: i8 = center_of_bit_space(6) as i8;
+const TWO_BITS: u8 = 0b11;
+const FOUR_BITS: u8 = 0b1111;
+
+fn index_signed_bytes(u32_array: impl Display, byte_index: impl Display) -> String {
+    format!("unpack4xI8({u32_array}[({byte_index}) / 4u])[({byte_index}) % 4]")
+}
+
+fn index_bytes(u32_array: impl Display, byte_index: impl Display) -> String {
+    format!("unpack4xU8({u32_array}[({byte_index}) / 4u])[({byte_index}) % 4]")
 }
 
 impl WgslQuantizedType for BlockQ6K {
@@ -526,19 +872,7 @@ impl WgslQuantizedType for BlockQ6K {
         datatype: DataTypeEnum,
         mut process_element: impl FnMut(String, String, &mut String),
     ) -> String {
-        const CENTER_SIX_BIT: i8 = center_of_bit_space(6) as i8;
-        const TWO_BITS: u8 = 0b11;
-        const FOUR_BITS: u8 = 0b1111;
-
         // This implementation is very unoptimized because of the byte u32 indexing
-        fn index_signed_bytes(u32_array: impl Display, byte_index: impl Display) -> String {
-            format!("unpack4xI8({u32_array}[({byte_index}) / 4u])[({byte_index}) % 4]")
-        }
-
-        fn index_bytes(u32_array: impl Display, byte_index: impl Display) -> String {
-            format!("unpack4xU8({u32_array}[({byte_index}) / 4u])[({byte_index}) % 4]")
-        }
-
         let mut code = String::new();
 
         writeln!(code, "let scale = {datatype}({chunk}.scale);").unwrap();
@@ -652,6 +986,111 @@ impl WgslQuantizedType for BlockQ6K {
         code
     }
 
+    fn unrolled_dequantize_block(
+        chunk: String,
+        datatype: DataTypeEnum,
+        mut process_element: impl FnMut(u32, String, &mut String),
+    ) -> String {
+        let mut code = String::new();
+
+        writeln!(code, "let scale = {datatype}({chunk}.scale);").unwrap();
+
+        for chunk_index in 0..2 {
+            let output_index = chunk_index * 128;
+            let lower_index = chunk_index * 64;
+            let high_index = chunk_index * 32;
+            let scale_index = chunk_index * 8;
+            for high_byte_index in 0..32 {
+                let scale_index = scale_index + high_byte_index / 16;
+                writeln!(
+                    code,
+                    "let high_byte_{chunk_index}_{high_byte_index} = {};",
+                    index_bytes(
+                        format!("{chunk}.data_high_bits"),
+                        high_index + high_byte_index
+                    )
+                )
+                .unwrap();
+                writeln!(
+                    code,
+                    "let first_low_byte_{chunk_index}_{high_byte_index} = {};",
+                    index_bytes(
+                        format!("{chunk}.data_low_bits"),
+                        lower_index + high_byte_index
+                    )
+                )
+                .unwrap();
+                writeln!(
+                    code,
+                    "let second_low_byte_{chunk_index}_{high_byte_index} = {};",
+                    index_bytes(
+                        format!("{chunk}.data_low_bits"),
+                        lower_index + high_byte_index + 32
+                    )
+                )
+                .unwrap();
+
+                writeln!(code, "let first_two_bits_{chunk_index}_{high_byte_index} = high_byte_{chunk_index}_{high_byte_index} & {TWO_BITS};").unwrap();
+                writeln!(
+            code,
+            "let first_high_nibble_{chunk_index}_{high_byte_index} = first_low_byte_{chunk_index}_{high_byte_index} & {FOUR_BITS};"
+        )
+        .unwrap();
+                writeln!(code, "let first_merged_{chunk_index}_{high_byte_index} = {datatype}((first_two_bits_{chunk_index}_{high_byte_index} << 4) | first_high_nibble_{chunk_index}_{high_byte_index}) - {datatype}({CENTER_SIX_BIT});").unwrap();
+                process_element(
+                    output_index + high_byte_index,
+                    format!(
+                        "scale * {datatype}({}) * first_merged_{chunk_index}_{high_byte_index}",
+                        index_signed_bytes(format!("{chunk}.scales"), scale_index)
+                    ),
+                    &mut code,
+                );
+
+                writeln!(code, "let second_two_bits_{chunk_index}_{high_byte_index} = (high_byte_{chunk_index}_{high_byte_index} >> 2) & {TWO_BITS};").unwrap();
+                writeln!(
+            code,
+            "let second_high_nibble_{chunk_index}_{high_byte_index} = second_low_byte_{chunk_index}_{high_byte_index} & {FOUR_BITS};"
+        )
+        .unwrap();
+                writeln!(code, "let second_merged_{chunk_index}_{high_byte_index} = {datatype}((second_two_bits_{chunk_index}_{high_byte_index} << 4) | second_high_nibble_{chunk_index}_{high_byte_index}) - {datatype}({CENTER_SIX_BIT});").unwrap();
+                process_element(
+                    output_index + high_byte_index + 32,
+                    format!(
+                        "scale * {datatype}({}) * second_merged_{chunk_index}_{high_byte_index}",
+                        index_signed_bytes(format!("{chunk}.scales"), scale_index + 2)
+                    ),
+                    &mut code,
+                );
+
+                writeln!(code, "let third_two_bits_{chunk_index}_{high_byte_index} = (high_byte_{chunk_index}_{high_byte_index} >> 4) & {TWO_BITS};").unwrap();
+                writeln!(code, "let third_high_nibble_{chunk_index}_{high_byte_index} = first_low_byte_{chunk_index}_{high_byte_index} >> 4;").unwrap();
+                writeln!(code, "let third_merged_{chunk_index}_{high_byte_index} = {datatype}((third_two_bits_{chunk_index}_{high_byte_index} << 4) | third_high_nibble_{chunk_index}_{high_byte_index}) - {datatype}({CENTER_SIX_BIT});").unwrap();
+                process_element(
+                    output_index + high_byte_index + 64,
+                    format!(
+                        "scale * {datatype}({}) * third_merged_{chunk_index}_{high_byte_index}",
+                        index_signed_bytes(format!("{chunk}.scales"), scale_index + 4)
+                    ),
+                    &mut code,
+                );
+
+                writeln!(code, "let fourth_two_bits_{chunk_index}_{high_byte_index} = (high_byte_{chunk_index}_{high_byte_index} >> 6) & {TWO_BITS};").unwrap();
+                writeln!(code, "let fourth_high_nibble_{chunk_index}_{high_byte_index} = second_low_byte_{chunk_index}_{high_byte_index} >> 4;").unwrap();
+                writeln!(code, "let fourth_merged_{chunk_index}_{high_byte_index} = {datatype}((fourth_two_bits_{chunk_index}_{high_byte_index} << 4) | fourth_high_nibble_{chunk_index}_{high_byte_index}) - {datatype}({CENTER_SIX_BIT});").unwrap();
+                process_element(
+                    output_index + high_byte_index + 96,
+                    format!(
+                        "scale * {datatype}({}) * fourth_merged_{chunk_index}_{high_byte_index}",
+                        index_signed_bytes(format!("{chunk}.scales"), scale_index + 6)
+                    ),
+                    &mut code,
+                );
+            }
+        }
+
+        code
+    }
+
     fn write_type<W: Write>(f: &mut W) -> std::fmt::Result {
         write_q6_k_type(f)
     }
@@ -698,22 +1137,31 @@ where
 
     use crate::FloatDataType;
 
-    println!("testing f32...");
-    test_fuzz_de_quantize_block_inner::<B, f32>().await;
+    println!("testing f32 compact...");
+    test_fuzz_de_quantize_block_inner::<B, f32>(false).await;
+    println!("testing f32 unrolled...");
+    test_fuzz_de_quantize_block_inner::<B, f32>(true).await;
 
     async fn test_fuzz_de_quantize_block_inner<
         B: WgslQuantizedType + PartialEq + std::fmt::Debug,
         T: FloatDataType,
-    >()
-    where
+    >(
+        unrolled: bool,
+    ) where
         rand::distr::StandardUniform:
             rand::prelude::Distribution<<B as fusor_gguf::GgufBlock>::AsBytes>,
     {
         let dtype = T::WGSL_TYPE;
         let device = crate::Device::new().await.unwrap();
-        let kernel_body = B::dequantize_block("block".to_string(), dtype, |i, data, code| {
-            writeln!(code, "output[{i}] = {data};",).unwrap();
-        });
+        let kernel_body = if unrolled {
+            B::unrolled_dequantize_block("block".to_string(), dtype, |i, data, code| {
+                writeln!(code, "output[{i}] = {data};",).unwrap();
+            })
+        } else {
+            B::dequantize_block("block".to_string(), dtype, |i, data, code| {
+                writeln!(code, "output[{i}] = {data};",).unwrap();
+            })
+        };
         let mut kernel = String::new();
         writeln!(&mut kernel, "enable f16;").unwrap();
         B::write_type(&mut kernel).unwrap();
