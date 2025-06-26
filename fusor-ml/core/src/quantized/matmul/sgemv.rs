@@ -12,7 +12,7 @@ use std::fmt::Write;
 
 use super::dequantize_block;
 
-pub(crate) const SGEMV_CHUNK_SIZE: u32 = 2; // This is the size of the chunk we will dequantize at a time
+pub(crate) const SGEMV_CHUNK_SIZE: u32 = 4; // This is the size of the chunk we will dequantize at a time
 
 pub(crate) fn sgemv(
     op: &QMatMulOperation,
