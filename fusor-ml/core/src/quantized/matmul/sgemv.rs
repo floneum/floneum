@@ -85,27 +85,45 @@ pub(crate) fn sgemv(
     .unwrap();
     writeln!(&mut kernel, "var index = base_axis_index;").unwrap();
 
+    let chunk_blocks = elements_per_block / SGEMV_CHUNK_SIZE;
+    debug_assert!(elements_per_block % SGEMV_CHUNK_SIZE == 0);
+    writeln!(
+        &mut kernel,
+        "var dequantized: array<vec{SGEMV_CHUNK_SIZE}<{dtype}>, {chunk_blocks}>;"
+    )
+    .unwrap();
+    writeln!(
+        &mut kernel,
+        "var a_cache = array<vec{SGEMV_CHUNK_SIZE}<{dtype}>, {chunk_blocks}>();"
+    )
+    .unwrap();
+
     // Loop over all of the blocks this thread is responsible for
     writeln!(&mut kernel, "while (index < end_axis_index) {{").unwrap();
     {
         // Load all elements of a into a cache first
         writeln!(
             &mut kernel,
-            "var a_cache = array<{dtype}, {elements_per_block}>();"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel,
-            "for (var i = 0u; i < {elements_per_block}; i += 1u) {{"
+            "for (var i = 0u; i < {chunk_blocks}; i += 1u) {{"
         )
         .unwrap();
         {
-            write!(&mut kernel, "a_cache[i] = {input_a}[").unwrap();
-            input_a.strided_index(
-                &mut kernel,
-                ["0".to_string(), format!("index * {elements_per_block} + i")],
-            );
-            writeln!(&mut kernel, "];").unwrap();
+            write!(&mut kernel, "a_cache[i] = vec{SGEMV_CHUNK_SIZE}(").unwrap();
+            for i in 0..SGEMV_CHUNK_SIZE {
+                if i > 0 {
+                    write!(&mut kernel, ", ").unwrap();
+                }
+                write!(&mut kernel, "{input_a}[").unwrap();
+                input_a.strided_index(
+                    &mut kernel,
+                    [
+                        "0".to_string(),
+                        format!("index * {elements_per_block} + i * {SGEMV_CHUNK_SIZE} + {i}"),
+                    ],
+                );
+                write!(&mut kernel, "]").unwrap();
+            }
+            writeln!(&mut kernel, ");").unwrap();
         }
         writeln!(&mut kernel, "}}").unwrap();
 
@@ -126,13 +144,17 @@ pub(crate) fn sgemv(
             "chunk".to_string(),
             DataTypeEnum::F32,
             |index, data, code| {
-                writeln!(
-                    code,
-                    "acc[offset] = fma(a_cache[{index}], {data}, acc[offset]);"
-                )
-                .unwrap();
+                writeln!(code, "dequantized[{index} / {SGEMV_CHUNK_SIZE}][{index} % {SGEMV_CHUNK_SIZE}] = {data};").unwrap();
             },
         );
+
+        for i in 0..chunk_blocks {
+            write!(
+                &mut kernel,
+                "acc[offset] += dot(a_cache[{i}], dequantized[{i}]);"
+            )
+            .unwrap();
+        }
         writeln!(&mut kernel, "}}").unwrap();
 
         writeln!(&mut kernel, "index += 1;").unwrap();
@@ -176,18 +198,14 @@ pub(crate) fn sgemv(
         writeln!(&mut kernel, "acc = subgroupAdd(acc);").unwrap();
 
         // Write the output to the output tensor if this is the first thread in the workgroup
-        writeln!(&mut kernel, "if {workgroup_local_index} == 0u {{").unwrap();
-        {
-            for offset in 0..SGEMV_CHUNK_SIZE {
-                write!(&mut kernel, "{output}[").unwrap();
-                output.strided_index(
-                    &mut kernel,
-                    ["0".to_string(), format!("workgroup_offset + {offset}")],
-                );
-                writeln!(&mut kernel, "] = acc[{offset}];").unwrap();
-            }
+        for offset in 0..SGEMV_CHUNK_SIZE {
+            write!(&mut kernel, "{output}[").unwrap();
+            output.strided_index(
+                &mut kernel,
+                ["0".to_string(), format!("workgroup_offset + {offset}")],
+            );
+            writeln!(&mut kernel, "] = acc[{offset}];").unwrap();
         }
-        writeln!(&mut kernel, "}}").unwrap();
     }
     writeln!(&mut kernel, "}}").unwrap();
 
