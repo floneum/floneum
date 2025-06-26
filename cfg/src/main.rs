@@ -43,7 +43,16 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
     assert!(dense_grammar.recognizes(b"(+ 1 2)", &tokenizer));
     assert!(dense_grammar.recognizes(b"(- 2 1)", &tokenizer));
     assert!(dense_grammar.recognizes(b"(str.len name)", &tokenizer));
+    // The unmerged text should no longer be recognized
     assert!(!dense_grammar.recognizes(b"(str.to.int name)", &tokenizer));
+    // But if you merge the `t` and `o` tokens, it should be recognized
+    let mut tokens = b"(str."
+        .iter()
+        .map(|b| tokenizer.bytes[*b as usize])
+        .collect::<Vec<_>>();
+    tokens.push(10_000); // The merged token
+    tokens.extend(b".int name)".iter().map(|b| tokenizer.bytes[*b as usize]));
+    assert!(dense_grammar.recognizes_tokens(&tokens));
 
     let mut recognizer = Recognizer::new(&dense_grammar, &bump);
     let mut text = String::new();
@@ -79,6 +88,16 @@ impl<'bump> DenseGrammar<'bump> {
 
         for byte in input {
             recognizer.push_byte(tokenizer.bytes[*byte as usize]);
+        }
+        recognizer.finish()
+    }
+
+    pub fn recognizes_tokens(&self, input: &[u32]) -> bool {
+        let bump = bumpalo::Bump::new();
+        let mut recognizer = Recognizer::new(self, &bump);
+
+        for token in input {
+            recognizer.push_byte(*token);
         }
         recognizer.finish()
     }
@@ -245,6 +264,8 @@ impl Grammar<u32> {
         struct NewRule {
             after_first_token_incoming: bool,
             after_first_token_outgoing: bool,
+            after_merged_token_incoming: bool,
+            after_merged_token_outgoing: bool,
             lhs: String,
             rhs: Vec<Vec<parse::Symbol<u32>>>,
         }
@@ -252,50 +273,80 @@ impl Grammar<u32> {
         for rule in &*self.rules {
             for after_first_token_incoming in [false, true] {
                 for after_first_token_outgoing in [false, true] {
-                    let mut new_rule = NewRule {
-                        after_first_token_incoming,
-                        after_first_token_outgoing,
-                        lhs: rule.lhs.clone(),
-                        rhs: Vec::new(),
-                    };
-                    let mut new_rhs = Vec::new();
-                    for rhs in &*rule.rhs {
-                        let mut new_sequence = Vec::new();
-                        for symbol in &**rhs {
-                            match symbol {
-                                parse::Symbol::Terminal(lit) => {
-                                    // If this is a terminal that matches the first token, the output must have the first token true
-                                    if *lit == merge.pair[0] {
-                                        if new_rule.after_first_token_outgoing {
-                                            new_sequence.push(parse::Symbol::Terminal(*lit));
+                    for after_merged_token_incoming in [false, true] {
+                        for after_merged_token_outgoing in [false, true] {
+                            let mut new_rule = NewRule {
+                                after_first_token_incoming,
+                                after_first_token_outgoing,
+                                after_merged_token_incoming,
+                                after_merged_token_outgoing,
+                                lhs: rule.lhs.clone(),
+                                rhs: Vec::new(),
+                            };
+                            let mut new_rhs = Vec::new();
+                            for rhs in &*rule.rhs {
+                                let mut new_sequence = Vec::new();
+                                for symbol in &**rhs {
+                                    match symbol {
+                                        parse::Symbol::Terminal(lit) => {
+                                            // If this is a terminal that matches the first token, the output must have the first token true
+                                            if *lit == merge.pair[0] {
+                                                if new_rule.after_first_token_outgoing {
+                                                    // replace the first token with the merged token in one variant
+                                                    if new_rule.after_merged_token_outgoing {
+                                                        new_sequence.push(parse::Symbol::Terminal(
+                                                            merge.new_token,
+                                                        ));
+                                                    }
+                                                    // keep it as the first token in the other variant
+                                                    else {
+                                                        new_sequence
+                                                            .push(parse::Symbol::Terminal(*lit));
+                                                    }
+                                                }
+                                            } else if *lit == merge.pair[1] {
+                                                if new_rule.after_first_token_outgoing {
+                                                    // If we are directly after the first token and this is the second token, this must be the merged token
+                                                    if new_rule.after_first_token_incoming {
+                                                        if new_rule.after_merged_token_incoming
+                                                            && !new_rule.after_merged_token_outgoing
+                                                        {
+                                                            new_sequence
+                                                                .push(parse::Symbol::Epsilon);
+                                                        }
+                                                    }
+                                                    // If this is a terminal that matches the second token, and we are after the first token,
+                                                    // the first token must be false next
+                                                    else {
+                                                        new_sequence
+                                                            .push(parse::Symbol::Terminal(*lit));
+                                                    }
+                                                }
+                                            } else {
+                                                // After the first token must be false
+                                                if !new_rule.after_first_token_outgoing
+                                                    && !new_rule.after_merged_token_outgoing
+                                                {
+                                                    new_sequence
+                                                        .push(parse::Symbol::Terminal(*lit));
+                                                }
+                                            }
                                         }
-                                    } else if *lit == merge.pair[1] {
-                                        // If this is a terminal that matches the second token, and we are after the first token,
-                                        // the first token must be false next
-                                        if !new_rule.after_first_token_outgoing {
-                                            // If we are already after the second token, we just push the terminal
-                                            // TODO: This is where we need to create the shortcut rule from the last terminal to this rule
-                                            // new_sequence.push(parse::Symbol::Terminal(*lit));
+                                        parse::Symbol::NonTerminal(nt) => {
+                                            new_sequence
+                                                .push(parse::Symbol::NonTerminal(nt.clone()));
                                         }
-                                    } else {
-                                        if !new_rule.after_first_token_outgoing {
-                                            // After the first token must be false
-                                            new_sequence.push(parse::Symbol::Terminal(*lit));
+                                        parse::Symbol::Epsilon => {
+                                            new_sequence.push(parse::Symbol::Epsilon);
                                         }
                                     }
                                 }
-                                parse::Symbol::NonTerminal(nt) => {
-                                    new_sequence.push(parse::Symbol::NonTerminal(nt.clone()));
-                                }
-                                parse::Symbol::Epsilon => {
-                                    new_sequence.push(parse::Symbol::Epsilon);
-                                }
+                                new_rhs.push(new_sequence);
                             }
+                            new_rule.rhs = new_rhs;
+                            new_rules.push(new_rule);
                         }
-                        new_rhs.push(new_sequence);
                     }
-                    new_rule.rhs = new_rhs;
-                    new_rules.push(new_rule);
                 }
             }
         }
@@ -310,6 +361,8 @@ impl Grammar<u32> {
                 let rule = &new_rules[index];
                 let after_first_token_incoming = rule.after_first_token_incoming;
                 let after_first_token_outgoing = rule.after_first_token_outgoing;
+                let after_merged_token_incoming = rule.after_merged_token_incoming;
+                let after_merged_token_outgoing = rule.after_merged_token_outgoing;
                 // Filter out any invalid right-hand sides
                 let mut rhs_index = 0;
                 while rhs_index < new_rules[index].rhs.len() {
@@ -320,30 +373,47 @@ impl Grammar<u32> {
                             parse::Symbol::NonTerminal(first_nt),
                             parse::Symbol::NonTerminal(second_nt),
                         ] => {
-                            // Find the non-terminals with a matching after_first_token_incoming
-                            // and keep track of what the intermediate_after_first_token_states state should be
-                            let valid_intermediate_after_first_token_states = new_rules
+                            // Find the non-terminals with a matching after_first_token_incoming and after_merged_token_incoming
+                            // and keep track of what the intermediate_after_first_token_states and intermediate_after_merged_token_states states should be
+                            let valid_intermediate_states = new_rules
                                 .iter()
                                 .filter_map(|r| {
                                     (r.lhs == *first_nt
                                         && r.after_first_token_incoming
-                                            == after_first_token_incoming)
-                                        .then(|| r.after_first_token_outgoing)
+                                            == after_first_token_incoming
+                                        && r.after_merged_token_incoming
+                                            == after_merged_token_incoming)
+                                        .then(|| {
+                                            (
+                                                r.after_first_token_outgoing,
+                                                r.after_merged_token_outgoing,
+                                            )
+                                        })
                                 })
                                 .collect::<Vec<_>>();
-                            if valid_intermediate_after_first_token_states.is_empty() {
+                            if valid_intermediate_states.is_empty() {
                                 // If there are no valid states for the first non-terminal, remove this rule
                                 new_rules[index].rhs.remove(rhs_index);
                                 changed = true;
                                 continue;
                             }
-                            // Find the non-terminals with a matching intermediate_after_first_token_states and
-                            // matching after_first_token_outgoing
+                            // Find the non-terminals with a matching intermediate_states and
+                            // matching after_first_token_outgoing and after_merged_token_outgoing states
                             let has_valid_second_non_terminal = new_rules.iter().any(|r| {
                                 r.lhs == *second_nt
-                                    && valid_intermediate_after_first_token_states
-                                        .contains(&r.after_first_token_incoming)
+                                    && valid_intermediate_states.iter().any(
+                                        |(
+                                            after_first_token_outgoing,
+                                            after_merged_token_outgoing,
+                                        )| {
+                                            r.after_first_token_incoming
+                                                == *after_first_token_outgoing
+                                                && r.after_merged_token_incoming
+                                                    == *after_merged_token_outgoing
+                                        },
+                                    )
                                     && r.after_first_token_outgoing == after_first_token_outgoing
+                                    && r.after_merged_token_outgoing == after_merged_token_outgoing
                             });
                             if !has_valid_second_non_terminal {
                                 // If there are no valid states for the second non-terminal, remove this rule
@@ -385,12 +455,18 @@ impl Grammar<u32> {
             let NewRule {
                 after_first_token_incoming,
                 after_first_token_outgoing,
+                after_merged_token_incoming,
+                after_merged_token_outgoing,
                 lhs,
                 ..
             } = rule;
             format!(
-                "{}_{}_{}",
-                after_first_token_incoming, lhs, after_first_token_outgoing
+                "{}_{}_{}_{}_{}",
+                after_first_token_incoming,
+                after_merged_token_incoming,
+                lhs,
+                after_first_token_outgoing,
+                after_merged_token_outgoing
             )
         }
 
@@ -398,6 +474,8 @@ impl Grammar<u32> {
             let NewRule {
                 after_first_token_incoming,
                 after_first_token_outgoing,
+                after_merged_token_incoming,
+                after_merged_token_outgoing,
                 rhs,
                 ..
             } = rule;
@@ -417,12 +495,16 @@ impl Grammar<u32> {
                         for valid_first_token in new_rules.iter().filter(|r| {
                             r.lhs == *first_nt
                                 && r.after_first_token_incoming == *after_first_token_incoming
+                                && r.after_merged_token_incoming == *after_merged_token_incoming
                         }) {
                             for valid_second_token in new_rules.iter().filter(|r| {
                                 r.lhs == *second_nt
                                     && valid_first_token.after_first_token_outgoing
                                         == r.after_first_token_incoming
+                                    && valid_first_token.after_merged_token_outgoing
+                                        == r.after_merged_token_incoming
                                     && r.after_first_token_outgoing == *after_first_token_outgoing
+                                    && r.after_merged_token_outgoing == *after_merged_token_outgoing
                             }) {
                                 // Create a new right-hand side with the valid non-terminals
                                 let new_sequence = vec![
