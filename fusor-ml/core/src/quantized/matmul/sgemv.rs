@@ -1,12 +1,10 @@
 use crate::{
-    DataTypeEnum,
     mir::{
         globals::{KernelGlobalSpace, KernelGlobalType, VectorType},
         inputs::{QMatrixInput, TensorInput},
         kernel::GenericKernel,
         workgroup_shape::WorkgroupShape,
-    },
-    quantized::matmul::QMatMulOperation,
+    }, quantized::matmul::QMatMulOperation, unrolled_dequantize_block, DataTypeEnum
 };
 use std::fmt::Write;
 
@@ -89,11 +87,6 @@ pub(crate) fn sgemv(
     debug_assert!(elements_per_block % SGEMV_CHUNK_SIZE == 0);
     writeln!(
         &mut kernel,
-        "var dequantized: array<vec{SGEMV_CHUNK_SIZE}<{dtype}>, {chunk_blocks}>;"
-    )
-    .unwrap();
-    writeln!(
-        &mut kernel,
         "var a_cache = array<vec{SGEMV_CHUNK_SIZE}<{dtype}>, {chunk_blocks}>();"
     )
     .unwrap();
@@ -138,20 +131,37 @@ pub(crate) fn sgemv(
         )
         .unwrap();
 
-        dequantize_block(
+        unrolled_dequantize_block(
             &mut kernel,
             op.matrix.datatype,
             "chunk".to_string(),
             DataTypeEnum::F32,
             |index, data, code| {
-                writeln!(code, "dequantized[{index} / {SGEMV_CHUNK_SIZE}][{index} % {SGEMV_CHUNK_SIZE}] = {data};").unwrap();
+                writeln!(code, "let dequantized_{index} = {data};").unwrap();
             },
         );
+
+        // Pack the individual dequantized values into vectors
+        for i in 0..chunk_blocks {
+            write!(&mut kernel, "let dequantized_vec_{i} = vec{SGEMV_CHUNK_SIZE}<{dtype}>(").unwrap();
+            for j in 0..SGEMV_CHUNK_SIZE {
+                if j > 0 {
+                    write!(&mut kernel, ", ").unwrap();
+                }
+                let index = i * SGEMV_CHUNK_SIZE + j;
+                write!(
+                    &mut kernel,
+                    "dequantized_{index}"
+                )
+                .unwrap();
+            }
+            writeln!(&mut kernel, ");").unwrap();
+        }
 
         for i in 0..chunk_blocks {
             write!(
                 &mut kernel,
-                "acc[offset] += dot(a_cache[{i}], dequantized[{i}]);"
+                "acc[offset] += dot(a_cache[{i}], dequantized_vec_{i});"
             )
             .unwrap();
         }
