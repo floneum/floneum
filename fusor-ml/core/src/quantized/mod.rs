@@ -222,7 +222,7 @@ trait WgslQuantizedType: GgufBlock {
             },
         ));
 
-        let chunk_blocks = Self::GGML_TYPE.block_allocation_size() / 4;
+        let chunk_blocks = Self::GGML_TYPE.block_size() / 4;
 
         // Pack the individual dequantized values into vectors
         for i in 0..chunk_blocks {
@@ -1190,15 +1190,18 @@ where
     use crate::FloatDataType;
 
     println!("testing f32 compact...");
-    test_fuzz_de_quantize_block_inner::<B, f32>(false).await;
+    test_fuzz_de_quantize_block_inner::<B, f32>(false, false).await;
+    println!("testing f32 vec4...");
+    test_fuzz_de_quantize_block_inner::<B, f32>(false, true).await;
     println!("testing f32 unrolled...");
-    test_fuzz_de_quantize_block_inner::<B, f32>(true).await;
+    test_fuzz_de_quantize_block_inner::<B, f32>(true, false).await;
 
     async fn test_fuzz_de_quantize_block_inner<
         B: WgslQuantizedType + PartialEq + std::fmt::Debug,
         T: FloatDataType,
     >(
         unrolled: bool,
+        vec4: bool,
     ) where
         rand::distr::StandardUniform:
             rand::prelude::Distribution<<B as fusor_gguf::GgufBlock>::AsBytes>,
@@ -1208,6 +1211,12 @@ where
         let kernel_body = if unrolled {
             B::unrolled_dequantize_block("block".to_string(), dtype, |i, data, code| {
                 writeln!(code, "output[{i}] = {data};",).unwrap();
+            })
+        } else if vec4 {
+            B::dequantize_vec4_block("block".to_string(), dtype, |i, data, code| {
+                for v in 0..4 {
+                    writeln!(code, "output[{i}*4 + {v}] = {data}[{v}];",).unwrap();
+                }
             })
         } else {
             B::dequantize_block("block".to_string(), dtype, |i, data, code| {
