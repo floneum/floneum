@@ -1,16 +1,18 @@
 use crate::{
+    DataTypeEnum,
     mir::{
         globals::{KernelGlobalSpace, KernelGlobalType, VectorType},
         inputs::{QMatrixInput, TensorInput},
         kernel::GenericKernel,
         workgroup_shape::WorkgroupShape,
-    }, quantized::matmul::QMatMulOperation, unrolled_dequantize_block, DataTypeEnum
+    },
+    quantized::matmul::QMatMulOperation,
+    unrolled_dequantize_block,
 };
 use std::fmt::Write;
 
-use super::dequantize_block;
-
-pub(crate) const SGEMV_CHUNK_SIZE: u32 = 4; // This is the size of the chunk we will dequantize at a time
+pub(crate) const SGEMV_CHUNK_SIZE: u32 = 2; // This is the size of the chunk each thread will process at a time
+pub(crate) const SGEMV_VECTOR_SIZE: u32 = 4; // This is the size of the chunk we will dot at a time
 
 pub(crate) fn sgemv(
     op: &QMatMulOperation,
@@ -83,11 +85,11 @@ pub(crate) fn sgemv(
     .unwrap();
     writeln!(&mut kernel, "var index = base_axis_index;").unwrap();
 
-    let chunk_blocks = elements_per_block / SGEMV_CHUNK_SIZE;
-    debug_assert!(elements_per_block % SGEMV_CHUNK_SIZE == 0);
+    let chunk_blocks = elements_per_block / SGEMV_VECTOR_SIZE;
+    debug_assert!(elements_per_block % SGEMV_VECTOR_SIZE == 0);
     writeln!(
         &mut kernel,
-        "var a_cache = array<vec{SGEMV_CHUNK_SIZE}<{dtype}>, {chunk_blocks}>();"
+        "var a_cache = array<vec{SGEMV_VECTOR_SIZE}<{dtype}>, {chunk_blocks}>();"
     )
     .unwrap();
 
@@ -101,8 +103,8 @@ pub(crate) fn sgemv(
         )
         .unwrap();
         {
-            write!(&mut kernel, "a_cache[i] = vec{SGEMV_CHUNK_SIZE}(").unwrap();
-            for i in 0..SGEMV_CHUNK_SIZE {
+            write!(&mut kernel, "a_cache[i] = vec{SGEMV_VECTOR_SIZE}(").unwrap();
+            for i in 0..SGEMV_VECTOR_SIZE {
                 if i > 0 {
                     write!(&mut kernel, ", ").unwrap();
                 }
@@ -111,7 +113,7 @@ pub(crate) fn sgemv(
                     &mut kernel,
                     [
                         "0".to_string(),
-                        format!("index * {elements_per_block} + i * {SGEMV_CHUNK_SIZE} + {i}"),
+                        format!("index * {elements_per_block} + i * {SGEMV_VECTOR_SIZE} + {i}"),
                     ],
                 );
                 write!(&mut kernel, "]").unwrap();
@@ -143,23 +145,21 @@ pub(crate) fn sgemv(
 
         // Pack the individual dequantized values into vectors
         for i in 0..chunk_blocks {
-            write!(&mut kernel, "let dequantized_vec_{i} = vec{SGEMV_CHUNK_SIZE}<{dtype}>(").unwrap();
-            for j in 0..SGEMV_CHUNK_SIZE {
+            write!(
+                &mut kernel,
+                "let dequantized_vec_{i} = vec{SGEMV_VECTOR_SIZE}<{dtype}>("
+            )
+            .unwrap();
+            for j in 0..SGEMV_VECTOR_SIZE {
                 if j > 0 {
                     write!(&mut kernel, ", ").unwrap();
                 }
-                let index = i * SGEMV_CHUNK_SIZE + j;
-                write!(
-                    &mut kernel,
-                    "dequantized_{index}"
-                )
-                .unwrap();
+                let index = i * SGEMV_VECTOR_SIZE + j;
+                write!(&mut kernel, "dequantized_{index}").unwrap();
             }
             writeln!(&mut kernel, ");").unwrap();
-        }
 
-        for i in 0..chunk_blocks {
-            write!(
+            writeln!(
                 &mut kernel,
                 "acc[offset] += dot(a_cache[{i}], dequantized_vec_{i});"
             )
@@ -218,6 +218,8 @@ pub(crate) fn sgemv(
         }
     }
     writeln!(&mut kernel, "}}").unwrap();
+
+    println!("SGEMV kernel:\n{kernel}");
 
     generic_kernel.push_body(&kernel);
 }
