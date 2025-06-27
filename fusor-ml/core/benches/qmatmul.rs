@@ -29,78 +29,83 @@ fn qmatmul(c: &mut Criterion) {
         .block_on(async move { reqwest::get(url).await.unwrap().bytes().await.unwrap() });
 
     for size in [1, 512] {
-        let random_data: Vec<Vec<f32>> = (0..size)
-            .map(|_| (0..576).map(|_| rand::random()).collect())
-            .collect();
+        for (width, name) in [(1536, "blk.0.ffn_down.weight"), (576, "token_embd.weight")] {
+            let random_data: Vec<Vec<f32>> = (0..size)
+                .map(|_| (0..width).map(|_| rand::random()).collect())
+                .collect();
 
-        {
-            let mut group = c.benchmark_group("qmatmul-wgpu");
+            {
+                let mut group = c.benchmark_group(&format!("qmatmul-wgpu-{width}"));
 
-            let device = block_on(Device::new()).unwrap();
+                let device = block_on(Device::new()).unwrap();
 
-            let mut reader = std::io::Cursor::new(&bytes);
-            let metadata = GgufMetadata::read(&mut reader).unwrap();
-            let q_matrix_metadata = metadata.tensor_infos.get("token_embd.weight").unwrap();
-            println!("Q matrix metadata: {:?}", q_matrix_metadata);
+                let mut reader = std::io::Cursor::new(&bytes);
+                let metadata = GgufMetadata::read(&mut reader).unwrap();
+                let q_matrix_metadata = metadata.tensor_infos.get(name).unwrap();
+                println!("Q matrix metadata: {:?}", q_matrix_metadata);
 
-            let q_matrix = QMatrix::read(
-                &device,
-                q_matrix_metadata,
-                &mut reader,
-                metadata.tensor_data_offset,
-            )
-            .unwrap();
+                let q_matrix = QMatrix::read(
+                    &device,
+                    q_matrix_metadata,
+                    &mut reader,
+                    metadata.tensor_data_offset,
+                )
+                .unwrap();
+                let device = device.clone();
+                let random_data = random_data.clone();
+                group.bench_with_input(
+                    BenchmarkId::new("qmatmul-wgpu", size),
+                    &size,
+                    move |b, &s| {
+                        let device = device.clone();
+                        let random_data = random_data.clone();
+                        b.to_async(FuturesExecutor).iter_custom(async |iters| {
+                            let mut sum = Duration::ZERO;
+                            while sum.is_zero() {
+                                for _ in 0..iters {
+                                    let tensor = Tensor::new(&device, &random_data);
+                                    _ = tensor.as_slice().await.unwrap();
 
-            let device = device.clone();
-            let random_data = random_data.clone();
-            group.bench_with_input(
-                BenchmarkId::new("qmatmul-wgpu", size),
-                &size,
-                move |b, &s| {
-                    let device = device.clone();
-                    let random_data = random_data.clone();
-                    b.to_async(FuturesExecutor).iter_custom(async |iters| {
-                        let mut sum = Duration::ZERO;
-                        while sum.is_zero() {
-                            for _ in 0..iters {
-                                let tensor = Tensor::new(&device, &random_data);
-                                _ = tensor.as_slice().await.unwrap();
-
-                                let new = tensor.q_mat_mul(&q_matrix);
-                                let start = std::time::Instant::now();
-                                new.materialize().await;
-                                sum += start.elapsed();
+                                    let new = tensor.q_mat_mul(&q_matrix);
+                                    let start = std::time::Instant::now();
+                                    new.materialize().await;
+                                    sum += start.elapsed();
+                                }
                             }
-                        }
-                        sum
-                    });
-                },
-            );
-        }
+                            sum
+                        });
+                    },
+                );
+            }
 
-        {
-            let candle_device = candle_core::Device::Cpu;
-            bench_candle_with_device(
-                &bytes,
-                size,
-                random_data.clone(),
-                candle_device,
-                "qmatmul-candle-cpu",
-                c,
-            );
-        }
+            #[cfg(target_os = "macos")]
+            {
+                let candle_device = candle_core::Device::Metal(MetalDevice::new(0).unwrap());
+                bench_candle_with_device(
+                    &bytes,
+                    size,
+                    random_data.clone(),
+                    candle_device,
+                    "qmatmul-candle-metal",
+                    name,
+                    width,
+                    c,
+                );
+            }
 
-        #[cfg(target_os = "macos")]
-        {
-            let candle_device = candle_core::Device::Metal(MetalDevice::new(0).unwrap());
-            bench_candle_with_device(
-                &bytes,
-                size,
-                random_data.clone(),
-                candle_device,
-                "qmatmul-candle-metal",
-                c,
-            );
+            {
+                let candle_device = candle_core::Device::Cpu;
+                bench_candle_with_device(
+                    &bytes,
+                    size,
+                    random_data.clone(),
+                    candle_device,
+                    "qmatmul-candle-cpu",
+                    name,
+                    width,
+                    c,
+                );
+            }
         }
     }
 }
@@ -111,14 +116,13 @@ fn bench_candle_with_device(
     random_data: Vec<Vec<f32>>,
     candle_device: candle_core::Device,
     name: &str,
+    matrix_name: &str,
+    width: usize,
     c: &mut Criterion,
 ) {
     let mut reader = std::io::Cursor::new(&bytes);
     let candle_metadata = candle_core::quantized::gguf_file::Content::read(&mut reader).unwrap();
-    let candle_q_matrix_metadata = candle_metadata
-        .tensor_infos
-        .get("token_embd.weight")
-        .unwrap();
+    let candle_q_matrix_metadata = candle_metadata.tensor_infos.get(matrix_name).unwrap();
     let candle_q_tensor = candle_q_matrix_metadata
         .read(
             &mut reader,
@@ -127,7 +131,7 @@ fn bench_candle_with_device(
         )
         .unwrap();
     let candle_q_matrix = candle_core::quantized::QMatMul::from_qtensor(candle_q_tensor).unwrap();
-    let mut group = c.benchmark_group(name);
+    let mut group = c.benchmark_group(format!("{name}-{width}"));
     let group = group.sample_size(20);
 
     group.bench_with_input(BenchmarkId::new(name, size), &size, move |b, &s| {
@@ -138,7 +142,7 @@ fn bench_candle_with_device(
                     &candle_device,
                 )
                 .unwrap()
-                .reshape(&[size, 576])
+                .reshape(&[size, width])
                 .unwrap();
                 candle_device.synchronize().unwrap();
                 (
