@@ -1,13 +1,10 @@
 use crate::{
-    DataTypeEnum,
-    mir::{
+    dequantize_vec4_block, mir::{
         globals::{KernelGlobalSpace, KernelGlobalType, VectorType},
         inputs::{QMatrixInput, TensorInput},
         kernel::GenericKernel,
         workgroup_shape::WorkgroupShape,
-    },
-    quantized::matmul::QMatMulOperation,
-    unrolled_dequantize_block,
+    }, quantized::matmul::QMatMulOperation, DataTypeEnum
 };
 use std::fmt::Write;
 
@@ -143,38 +140,20 @@ pub(crate) fn sgemv(
         )
         .unwrap();
 
-        unrolled_dequantize_block(
+        dequantize_vec4_block(
             &mut kernel,
             op.matrix.datatype,
             "chunk".to_string(),
             DataTypeEnum::F32,
             |index, data, code| {
-                writeln!(code, "let dequantized_{index} = {data};").unwrap();
+                writeln!(
+                    code,
+                    "acc[offset] += dot(a_cache[{index}], {data});"
+                )
+                .unwrap();
             },
         );
 
-        // Pack the individual dequantized values into vectors
-        for i in 0..chunk_blocks {
-            write!(
-                &mut kernel,
-                "let dequantized_vec_{i} = vec{SGEMV_VECTOR_SIZE}<{dtype}>("
-            )
-            .unwrap();
-            for j in 0..SGEMV_VECTOR_SIZE {
-                if j > 0 {
-                    write!(&mut kernel, ", ").unwrap();
-                }
-                let index = i * SGEMV_VECTOR_SIZE + j;
-                write!(&mut kernel, "dequantized_{index}").unwrap();
-            }
-            writeln!(&mut kernel, ");").unwrap();
-
-            writeln!(
-                &mut kernel,
-                "acc[offset] += dot(a_cache[{i}], dequantized_vec_{i});"
-            )
-            .unwrap();
-        }
         writeln!(&mut kernel, "}}").unwrap();
 
         writeln!(&mut kernel, "index += 1;").unwrap();

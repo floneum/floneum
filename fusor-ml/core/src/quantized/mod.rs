@@ -175,6 +175,24 @@ pub(crate) fn unrolled_dequantize_block(
     *kernel += &out;
 }
 
+pub(crate) fn dequantize_vec4_block(
+    kernel: &mut String,
+    ty: GgmlType,
+    chunk: String,
+    datatype: DataTypeEnum,
+    process_element: impl FnMut(String, String, &mut String),
+) {
+    let out = match ty {
+        GgmlType::Q4_0 => BlockQ4_0::dequantize_vec4_block(chunk, datatype, process_element),
+        GgmlType::Q5_0 => BlockQ5_0::dequantize_vec4_block(chunk, datatype, process_element),
+        GgmlType::Q8_0 => BlockQ8_0::dequantize_vec4_block(chunk, datatype, process_element),
+        GgmlType::Q4K => BlockQ4K::dequantize_vec4_block(chunk, datatype, process_element),
+        GgmlType::Q6K => BlockQ6K::dequantize_vec4_block(chunk, datatype, process_element),
+        _ => todo!(),
+    };
+    *kernel += &out;
+}
+
 trait WgslQuantizedType: GgufBlock {
     const GGML_TYPE: GgmlType;
 
@@ -189,6 +207,40 @@ trait WgslQuantizedType: GgufBlock {
         datatype: DataTypeEnum,
         process_element: impl FnMut(u32, String, &mut String),
     ) -> String;
+
+    fn dequantize_vec4_block(
+        chunk: String,
+        datatype: DataTypeEnum,
+        mut process_element: impl FnMut(String, String, &mut String),
+    ) -> String {
+        let mut kernel: String = String::new();
+        kernel.push_str(&Self::unrolled_dequantize_block(
+            chunk,
+            datatype,
+            |index, data, code| {
+                writeln!(code, "let dequantized_{index} = {data};").unwrap();
+            },
+        ));
+
+        let chunk_blocks = Self::GGML_TYPE.block_allocation_size() / 4;
+
+        // Pack the individual dequantized values into vectors
+        for i in 0..chunk_blocks {
+            write!(&mut kernel, "let dequantized_vec_{i} = vec4<{datatype}>(").unwrap();
+            for j in 0..4 {
+                if j > 0 {
+                    write!(&mut kernel, ", ").unwrap();
+                }
+                let index = i * 4 + j;
+                write!(&mut kernel, "dequantized_{index}").unwrap();
+            }
+            writeln!(&mut kernel, ");").unwrap();
+
+            process_element(i.to_string(), format!("dequantized_vec_{i}"), &mut kernel);
+        }
+
+        kernel
+    }
 
     // This is used in the fuzzing test
     #[allow(unused)]
@@ -799,7 +851,7 @@ impl WgslQuantizedType for BlockQ4K {
             .unwrap();
             writeln!(code, "let low_offsets_{suffix} = offsets_{suffix}.xz;").unwrap();
             writeln!(code, "let high_offsets_{suffix} = offsets_{suffix}.yw;").unwrap();
-            
+
             for local_suffix in ["x", "y"] {
                 for index in (0..32).step_by(4) {
                     writeln!(
