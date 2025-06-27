@@ -219,7 +219,5 @@ pub(crate) fn sgemv(
     }
     writeln!(&mut kernel, "}}").unwrap();
 
-    println!("SGEMV kernel:\n{kernel}");
-
     generic_kernel.push_body(&kernel);
 }

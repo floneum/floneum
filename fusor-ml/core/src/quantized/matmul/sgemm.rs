@@ -6,10 +6,11 @@ use crate::{
         workgroup_shape::WorkgroupShape,
     },
     quantized::matmul::QMatMulOperation,
+    unrolled_dequantize_block,
 };
 use std::fmt::Write;
 
-use super::dequantize_block;
+pub(crate) const SGEMM_VECTOR_SIZE: u32 = 4; // This is the size of the chunk we will dot at a time
 
 pub(crate) fn sgemm(
     op: &QMatMulOperation,
@@ -24,6 +25,9 @@ pub(crate) fn sgemm(
 ) {
     let global_id = generic_kernel.global_id();
     let elements_per_block = op.elements_per_block();
+    let chunk_blocks = elements_per_block / SGEMM_VECTOR_SIZE;
+    let dtype = op.input_datatype;
+
     let mut kernel = String::new();
 
     writeln!(&mut kernel, "let x = {global_id}.x;").unwrap();
@@ -46,20 +50,58 @@ pub(crate) fn sgemm(
     )
     .unwrap();
 
-    dequantize_block(
+    unrolled_dequantize_block(
         &mut kernel,
         op.matrix.datatype,
         "chunk".to_string(),
         DataTypeEnum::F32,
-        |i, data, code| {
-            write!(code, "acc = fma({input_a}[").unwrap();
-            input_a.strided_index(
-                code,
-                ["y".to_string(), format!("k * {elements_per_block} + {i}")],
-            );
-            write!(code, "], {data}, acc);").unwrap();
+        |index, data, code| {
+            write!(code, "let dequantized_{index} = {data};").unwrap();
         },
     );
+
+    // Pack the individual dequantized values into vectors
+    for i in 0..chunk_blocks {
+        write!(
+            &mut kernel,
+            "let dequantized_vec_{i} = vec{SGEMM_VECTOR_SIZE}<{dtype}>("
+        )
+        .unwrap();
+        for j in 0..SGEMM_VECTOR_SIZE {
+            if j > 0 {
+                write!(&mut kernel, ", ").unwrap();
+            }
+            let index = i * SGEMM_VECTOR_SIZE + j;
+            write!(&mut kernel, "dequantized_{index}").unwrap();
+        }
+        writeln!(&mut kernel, ");").unwrap();
+        write!(
+            &mut kernel,
+            "let a_values_{i} = vec{SGEMM_VECTOR_SIZE}<{dtype}>(",
+        )
+        .unwrap();
+        for local in 0..SGEMM_VECTOR_SIZE {
+            if local > 0 {
+                write!(&mut kernel, ", ").unwrap();
+            }
+            write!(&mut kernel, "{input_a}[").unwrap();
+            input_a.strided_index(
+                &mut kernel,
+                [
+                    "y".to_string(),
+                    format!("k * {elements_per_block} + {i}*{SGEMM_VECTOR_SIZE} + {local}"),
+                ],
+            );
+            write!(&mut kernel, "]").unwrap();
+        }
+        writeln!(&mut kernel, ");").unwrap();
+
+        writeln!(
+            &mut kernel,
+            "acc += dot(a_values_{i}, dequantized_vec_{i});"
+        )
+        .unwrap();
+    }
 
     writeln!(&mut kernel, "}}").unwrap();
 
