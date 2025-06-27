@@ -28,17 +28,27 @@ pub(crate) fn sgemv(
 ) {
     let blocksize = workgroup_size.x();
     let dtype = op.input_datatype;
-    let local_data = generic_kernel.add_global_array(
-        KernelGlobalSpace::Workgroup,
-        KernelGlobalType::Vector(VectorType::new(SGEMV_CHUNK_SIZE.to_string(), dtype)),
-        blocksize.to_string(),
-    );
     let workgroup_index = generic_kernel.workgroup_index();
     let workgroup_local_index = generic_kernel.workgroup_local_index();
-    let subgroup_id = generic_kernel.subgroup_index();
-    let subgroup_local_id = generic_kernel.subgroup_local_index();
-    let subgroups_per_workgroup = generic_kernel.subgroups_per_workgroup();
     let elements_per_block = op.elements_per_block();
+    // We don't need to synchronize between the whole workgroup if there is only one subgroup
+    let workgroup_sync_data = (blocksize > 32).then(|| {
+        let local_data = generic_kernel.add_global_array(
+            KernelGlobalSpace::Workgroup,
+            KernelGlobalType::Vector(VectorType::new(SGEMV_CHUNK_SIZE.to_string(), dtype)),
+            blocksize.to_string(),
+        );
+        let subgroup_id = generic_kernel.subgroup_index();
+        let subgroup_local_id = generic_kernel.subgroup_local_index();
+        let subgroups_per_workgroup = generic_kernel.subgroups_per_workgroup();
+        (
+            local_data,
+            subgroup_id,
+            subgroup_local_id,
+            subgroups_per_workgroup,
+        )
+    });
+
     let mut kernel = String::new();
 
     // In index of the single element in the vector we are multiplying against
@@ -175,19 +185,21 @@ pub(crate) fn sgemv(
     // Get the sum among all threads in the subgroup
     writeln!(&mut kernel, "acc = subgroupAdd(acc);").unwrap();
 
-    // Write the output to the workgroup memory if this is the first thread in the subgroup
-    writeln!(&mut kernel, "if {subgroup_local_id} == 0u {{").unwrap();
+    if let Some((local_data, subgroup_id, subgroup_local_id, subgroups_per_workgroup)) =
+        workgroup_sync_data
     {
-        writeln!(&mut kernel, "{local_data}[{subgroup_id}] = acc;").unwrap();
-    }
-    writeln!(&mut kernel, "}}").unwrap();
+        // Write the output to the workgroup memory if this is the first thread in the subgroup
+        writeln!(&mut kernel, "if {subgroup_local_id} == 0u {{").unwrap();
+        {
+            writeln!(&mut kernel, "{local_data}[{subgroup_id}] = acc;").unwrap();
+        }
+        writeln!(&mut kernel, "}}").unwrap();
 
-    // Wait until all threads have written to the workgroup shared memory
-    writeln!(&mut kernel, "workgroupBarrier();").unwrap();
+        // Wait until all threads have written to the workgroup shared memory
+        writeln!(&mut kernel, "workgroupBarrier();").unwrap();
 
-    // Then if this is the first subgroup, do one final shuffle down reduction
-    writeln!(&mut kernel, "if {subgroup_id} == 0u {{").unwrap();
-    {
+        // Then if this is the first subgroup, do one final shuffle down reduction
+        writeln!(&mut kernel, "if {subgroup_id} != 0u {{ return; }}").unwrap();
         // Copy over the final value from each subgroup from the workgroup shared memory to the acc variable
         writeln!(
             &mut kernel,
@@ -206,18 +218,17 @@ pub(crate) fn sgemv(
 
         // Finally get the final sum across all threads in the workgroup
         writeln!(&mut kernel, "acc = subgroupAdd(acc);").unwrap();
-
-        // Write the output to the output tensor if this is the first thread in the workgroup
-        for offset in 0..SGEMV_CHUNK_SIZE {
-            write!(&mut kernel, "{output}[").unwrap();
-            output.strided_index(
-                &mut kernel,
-                ["0".to_string(), format!("workgroup_offset + {offset}")],
-            );
-            writeln!(&mut kernel, "] = acc[{offset}];").unwrap();
-        }
     }
-    writeln!(&mut kernel, "}}").unwrap();
+
+    // Write the output to the output tensor if this is the first thread in the workgroup
+    for offset in 0..SGEMV_CHUNK_SIZE {
+        write!(&mut kernel, "{output}[").unwrap();
+        output.strided_index(
+            &mut kernel,
+            ["0".to_string(), format!("workgroup_offset + {offset}")],
+        );
+        writeln!(&mut kernel, "] = acc[{offset}];").unwrap();
+    }
 
     generic_kernel.push_body(&kernel);
 }
