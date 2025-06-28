@@ -202,8 +202,12 @@ async fn test_fuzz_q_mat_mul_q8_0() {
 
     let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("token_embd.weight").await;
 
-    for _ in 0..100 {
-        let width = rand::random_range(1..=64);
+    // Always test the edge cases
+    let mut widths = vec![1, 256];
+    // Then test a bunch of other random widths
+    widths.extend((2..100).map(|_| rand::random_range(1..=64)));
+
+    for width in widths {
         let random_data: Vec<Vec<f32>> = (0..width)
             .map(|_| (0..576).map(|_| rand::random()).collect())
             .collect();
@@ -248,8 +252,12 @@ async fn test_fuzz_q_mat_mul_q6k() {
 
     let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("blk.0.ffn_down.weight").await;
 
-    for _ in 0..100 {
-        let width = rand::random_range(1..=64);
+    // Always test the edge cases
+    let mut widths = vec![1, 256];
+    // Then test a bunch of other random widths
+    widths.extend((2..100).map(|_| rand::random_range(1..=64)));
+
+    for width in widths {
         let random_data: Vec<Vec<f32>> = (0..width)
             .map(|_| (0..1536).map(|_| rand::random()).collect())
             .collect();

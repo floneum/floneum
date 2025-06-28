@@ -1,10 +1,12 @@
 use crate::{
-    dequantize_vec4_block, mir::{
+    DataTypeEnum, dequantize_vec4_block,
+    mir::{
         globals::{KernelGlobalSpace, KernelGlobalType, VectorType},
         inputs::{QMatrixInput, TensorInput},
         kernel::GenericKernel,
         workgroup_shape::WorkgroupShape,
-    }, quantized::matmul::QMatMulOperation, DataTypeEnum
+    },
+    quantized::matmul::QMatMulOperation,
 };
 use std::fmt::Write;
 
@@ -110,20 +112,20 @@ pub(crate) fn sgemv(
         )
         .unwrap();
         {
+            // Get the values first
+            for i in 0..SGEMV_VECTOR_SIZE {
+                writeln!(&mut kernel, "let input_a_{i}_index = index * {elements_per_block} + i * {SGEMV_VECTOR_SIZE} + {i};").unwrap();
+                write!(&mut kernel, "let input_a_{i} = {input_a}[").unwrap();
+                input_a.strided_index(&mut kernel, ["0".to_string(), format!("input_a_{i}_index")]);
+                writeln!(&mut kernel, "];").unwrap();
+            }
+            // The pack them into a vector and write to the cache
             write!(&mut kernel, "a_cache[i] = vec{SGEMV_VECTOR_SIZE}(").unwrap();
             for i in 0..SGEMV_VECTOR_SIZE {
                 if i > 0 {
                     write!(&mut kernel, ", ").unwrap();
                 }
-                write!(&mut kernel, "{input_a}[").unwrap();
-                input_a.strided_index(
-                    &mut kernel,
-                    [
-                        "0".to_string(),
-                        format!("index * {elements_per_block} + i * {SGEMV_VECTOR_SIZE} + {i}"),
-                    ],
-                );
-                write!(&mut kernel, "]").unwrap();
+                write!(&mut kernel, "input_a_{i}").unwrap();
             }
             writeln!(&mut kernel, ");").unwrap();
         }
@@ -146,11 +148,7 @@ pub(crate) fn sgemv(
             "chunk".to_string(),
             DataTypeEnum::F32,
             |index, data, code| {
-                writeln!(
-                    code,
-                    "acc[offset] += dot(a_cache[{index}], {data});"
-                )
-                .unwrap();
+                writeln!(code, "acc[offset] += dot(a_cache[{index}], {data});").unwrap();
             },
         );
 
@@ -200,14 +198,18 @@ pub(crate) fn sgemv(
     }
 
     // Write the output to the output tensor if this is the first thread in the workgroup
-    for offset in 0..SGEMV_CHUNK_SIZE {
+    writeln!(
+        &mut kernel,
+        "for (var offset = 0u; offset < {SGEMV_CHUNK_SIZE}; offset += 1u) {{"
+    )
+    .unwrap();
+    {
+        writeln!(&mut kernel, "let index = workgroup_offset + offset;").unwrap();
         write!(&mut kernel, "{output}[").unwrap();
-        output.strided_index(
-            &mut kernel,
-            ["0".to_string(), format!("workgroup_offset + {offset}")],
-        );
-        writeln!(&mut kernel, "] = acc[{offset}];").unwrap();
+        output.strided_index(&mut kernel, ["0".to_string(), "index".to_string()]);
+        writeln!(&mut kernel, "] = acc[offset];").unwrap();
     }
+    writeln!(&mut kernel, "}}").unwrap();
 
     generic_kernel.push_body(&kernel);
 }

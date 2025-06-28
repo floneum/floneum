@@ -1242,16 +1242,16 @@ impl WgslQuantizedType for BlockQ6K {
                     .unwrap();
                 }
                 // Group the results into a vec4
-                writeln!(code, "let scaled = vec4<{datatype}>(").unwrap();
+                write!(code, "let scaled = vec4<{datatype}>(").unwrap();
                 for offset in 0..4 {
                     if offset > 0 {
-                        writeln!(code, ", ").unwrap();
+                        write!(code, ", ").unwrap();
                     }
-                    writeln!(code, "scaled_{offset}").unwrap();
+                    write!(code, "scaled_{offset}").unwrap();
                 }
                 writeln!(code, ");").unwrap();
                 process_element(
-                    "raw_chunk_index * 16u + vec4_index".to_string(),
+                    "raw_chunk_index * 4u + vec4_index".to_string(),
                     "scaled".to_string(),
                     &mut code,
                 );

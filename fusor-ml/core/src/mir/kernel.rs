@@ -1,13 +1,8 @@
 use enumset::{EnumSet, EnumSetType};
 use fusor_gguf::GgmlType;
-use lru::LruCache;
-use parking_lot::RwLock;
-use rustc_hash::{FxBuildHasher, FxHasher};
 use std::fmt::{Debug, Write};
-use std::num::NonZeroUsize;
 use std::sync::OnceLock;
 use wgpu::{BindGroupLayout, CommandEncoder, PipelineCompilationOptions, util::DeviceExt};
-use wgpu::{PipelineLayout, ShaderModule};
 
 use crate::mir::inputs::{
     KernelInputValue, QBufferInput, QInfoInput, TensorBufferInput, TensorInfoInput,
