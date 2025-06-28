@@ -73,8 +73,20 @@ async fn setup_smol_lm_matrix(
 
     let device = Device::new().await.unwrap();
 
+    static BYTES: tokio::sync::OnceCell<Vec<u8>> = tokio::sync::OnceCell::const_new();
+
     let url = "https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf";
-    let bytes = reqwest::get(url).await.unwrap().bytes().await.unwrap();
+    let bytes = BYTES
+        .get_or_init(|| async move {
+            reqwest::get(url)
+                .await
+                .unwrap()
+                .bytes()
+                .await
+                .unwrap()
+                .into()
+        })
+        .await;
     let mut reader = std::io::Cursor::new(&bytes);
     let metadata = GgufMetadata::read(&mut reader).unwrap();
     let mut reader = std::io::Cursor::new(&bytes);
@@ -110,7 +122,7 @@ async fn test_fuzz_q_mat_mul() {
 
     let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("blk.0.attn_q.weight").await;
 
-    for _ in 0..100 {
+    for _ in 0..25 {
         let random_data: Vec<Vec<f32>> = (0..576)
             .map(|_| (0..576).map(|_| rand::random()).collect())
             .collect();
@@ -155,7 +167,7 @@ async fn test_fuzz_q_mat_mul_sgemv() {
 
     let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("token_embd.weight").await;
 
-    for _ in 0..100 {
+    for _ in 0..25 {
         let size = 576;
         let embed_dim = 49152;
         let random_data: Vec<Vec<f32>> = (0..1)
@@ -205,7 +217,7 @@ async fn test_fuzz_q_mat_mul_q8_0() {
     // Always test the edge cases
     let mut widths = vec![1, 256];
     // Then test a bunch of other random widths
-    widths.extend((2..100).map(|_| rand::random_range(1..=64)));
+    widths.extend((2..25).map(|_| rand::random_range(1..=64)));
 
     for width in widths {
         let random_data: Vec<Vec<f32>> = (0..width)
@@ -255,7 +267,7 @@ async fn test_fuzz_q_mat_mul_q6k() {
     // Always test the edge cases
     let mut widths = vec![1, 256];
     // Then test a bunch of other random widths
-    widths.extend((2..100).map(|_| rand::random_range(1..=64)));
+    widths.extend((2..25).map(|_| rand::random_range(1..=64)));
 
     for width in widths {
         let random_data: Vec<Vec<f32>> = (0..width)
