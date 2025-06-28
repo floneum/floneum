@@ -323,7 +323,7 @@ impl Operation for QMatMulOperation {
             );
             constraints.add_constraint(
                 0,
-                crate::mir::workgroup_shape::Constraint::equals(limits.min_subgroup_size.max(32)),
+                crate::mir::workgroup_shape::Constraint::equals(limits.min_subgroup_size.max(16)),
             );
         } else {
             constraints.add_constraint(0, crate::mir::workgroup_shape::Constraint::Equals(1));

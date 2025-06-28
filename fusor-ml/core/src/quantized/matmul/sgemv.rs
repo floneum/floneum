@@ -123,12 +123,12 @@ pub(crate) fn sgemv(
     // Find this threads position in the workgroup
     writeln!(
         &mut kernel,
-        "let base_axis_index = {workgroup_local_index} * bucket_block_size;"
+        "let base_axis_index = ({workgroup_local_index} % {blocksize}u) * bucket_block_size;"
     )
     .unwrap();
     writeln!(
         &mut kernel,
-        "let end_axis_index = min({workgroup_local_index} * bucket_block_size + bucket_block_size, k_block_size);"
+        "let end_axis_index = k_block_size;"
     )
     .unwrap();
     writeln!(&mut kernel, "var index = base_axis_index;").unwrap();
@@ -203,7 +203,7 @@ pub(crate) fn sgemv(
             writeln!(&mut kernel, "}}").unwrap();
         }
 
-        writeln!(&mut kernel, "index += 1;").unwrap();
+        writeln!(&mut kernel, "index += {blocksize}u;").unwrap();
     }
 
     writeln!(&mut kernel, "}}").unwrap();
@@ -255,6 +255,9 @@ pub(crate) fn sgemv(
         )
         .unwrap();
     }
+
+    // If this is not the first simd thread in the workgroup, we can return early
+    writeln!(&mut kernel, "if {workgroup_local_index} != 0u {{ return; }}").unwrap();
 
     // Write the output to the output tensor if this is the first thread in the workgroup
     if SGEMV_CHUNK_SIZE > 1 {
