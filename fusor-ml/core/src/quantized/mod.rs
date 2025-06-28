@@ -1335,7 +1335,7 @@ where
         } else if vec4 {
             B::dequantize_vec4_block("block".to_string(), dtype, |i, data, code| {
                 for v in 0..4 {
-                    writeln!(code, "output[{i}*4 + {v}] = {data}[{v}];",).unwrap();
+                    writeln!(code, "output[({i})*4u + {v}] = {data}[{v}];",).unwrap();
                 }
             })
         } else {
@@ -1498,7 +1498,7 @@ where
                 .iter()
                 .map(|x| T::from_f32(*x))
                 .collect::<Vec<_>>();
-            assert_eq!(ouptut_as_floats, expected_result);
+            assert_eq!(ouptut_as_floats, expected_result, "Block: {block:?}, Output: {ouptut_as_floats:?}, Expected: {expected_result:?}, kernel: {kernel_body}");
         }
     }
 }
