@@ -5,7 +5,7 @@ use crate::{
     quantized::matmul::sgemv::SGEMV_CHUNK_SIZE,
 };
 
-use super::{QMatrix, dequantize_block};
+use super::QMatrix;
 
 mod sgemm;
 mod sgemv;
@@ -65,11 +65,10 @@ impl<T: DataType> Tensor<2, T> {
 }
 
 #[cfg(test)]
-#[tokio::test]
-async fn test_fuzz_q_mat_mul() {
+async fn setup_smol_lm_matrix(
+    name: &str,
+) -> (crate::Device, QMatrix, candle_core::quantized::QMatMul) {
     use crate::Device;
-    use crate::Tensor;
-    use candle_core::Module;
     use fusor_gguf::GgufMetadata;
 
     let device = Device::new().await.unwrap();
@@ -80,10 +79,7 @@ async fn test_fuzz_q_mat_mul() {
     let metadata = GgufMetadata::read(&mut reader).unwrap();
     let mut reader = std::io::Cursor::new(&bytes);
     let candle_metadata = candle_core::quantized::gguf_file::Content::read(&mut reader).unwrap();
-    let candle_q_matrix_metadata = candle_metadata
-        .tensor_infos
-        .get("blk.0.attn_q.weight")
-        .unwrap();
+    let candle_q_matrix_metadata = candle_metadata.tensor_infos.get(name).unwrap();
     let candle_q_tensor = candle_q_matrix_metadata
         .read(
             &mut reader,
@@ -93,7 +89,7 @@ async fn test_fuzz_q_mat_mul() {
         .unwrap();
     let candle_q_matrix = candle_core::quantized::QMatMul::from_qtensor(candle_q_tensor).unwrap();
 
-    let q_matrix_metadata = metadata.tensor_infos.get("blk.0.attn_q.weight").unwrap();
+    let q_matrix_metadata = metadata.tensor_infos.get(name).unwrap();
 
     let q_matrix = QMatrix::read(
         &device,
@@ -102,6 +98,17 @@ async fn test_fuzz_q_mat_mul() {
         metadata.tensor_data_offset,
     )
     .unwrap();
+
+    (device, q_matrix, candle_q_matrix)
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_fuzz_q_mat_mul() {
+    use crate::Tensor;
+    use candle_core::Module;
+
+    let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("blk.0.attn_q.weight").await;
 
     for _ in 0..10 {
         let random_data: Vec<Vec<f32>> = (0..576)
@@ -143,41 +150,10 @@ async fn test_fuzz_q_mat_mul() {
 #[cfg(test)]
 #[tokio::test]
 async fn test_fuzz_q_mat_mul_sgemv() {
-    use crate::Device;
     use crate::Tensor;
     use candle_core::Module;
-    use fusor_gguf::GgufMetadata;
 
-    let device = Device::new().await.unwrap();
-
-    let url = "https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf";
-    let bytes = reqwest::get(url).await.unwrap().bytes().await.unwrap();
-    let mut reader = std::io::Cursor::new(&bytes);
-    let metadata = GgufMetadata::read(&mut reader).unwrap();
-    let mut reader = std::io::Cursor::new(&bytes);
-    let candle_metadata = candle_core::quantized::gguf_file::Content::read(&mut reader).unwrap();
-    let candle_q_matrix_metadata = candle_metadata
-        .tensor_infos
-        .get("token_embd.weight")
-        .unwrap();
-    let candle_q_tensor = candle_q_matrix_metadata
-        .read(
-            &mut reader,
-            candle_metadata.tensor_data_offset,
-            &candle_core::Device::Cpu,
-        )
-        .unwrap();
-    let candle_q_matrix = candle_core::quantized::QMatMul::from_qtensor(candle_q_tensor).unwrap();
-
-    let q_matrix_metadata = metadata.tensor_infos.get("token_embd.weight").unwrap();
-
-    let q_matrix = QMatrix::read(
-        &device,
-        q_matrix_metadata,
-        &mut reader,
-        metadata.tensor_data_offset,
-    )
-    .unwrap();
+    let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("token_embd.weight").await;
 
     for _ in 0..10 {
         let size = 576;
@@ -221,44 +197,14 @@ async fn test_fuzz_q_mat_mul_sgemv() {
 #[cfg(test)]
 #[tokio::test]
 async fn test_fuzz_q_mat_mul_q8_0() {
-    use crate::Device;
     use crate::Tensor;
     use candle_core::Module;
-    use fusor_gguf::GgufMetadata;
 
-    let device = Device::new().await.unwrap();
-
-    let url = "https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf";
-    let bytes = reqwest::get(url).await.unwrap().bytes().await.unwrap();
-    let mut reader = std::io::Cursor::new(&bytes);
-    let metadata = GgufMetadata::read(&mut reader).unwrap();
-    let mut reader = std::io::Cursor::new(&bytes);
-    let candle_metadata = candle_core::quantized::gguf_file::Content::read(&mut reader).unwrap();
-    let candle_q_matrix_metadata = candle_metadata
-        .tensor_infos
-        .get("token_embd.weight")
-        .unwrap();
-    let candle_q_tensor = candle_q_matrix_metadata
-        .read(
-            &mut reader,
-            candle_metadata.tensor_data_offset,
-            &candle_core::Device::Cpu,
-        )
-        .unwrap();
-    let candle_q_matrix = candle_core::quantized::QMatMul::from_qtensor(candle_q_tensor).unwrap();
-
-    let q_matrix_metadata = metadata.tensor_infos.get("token_embd.weight").unwrap();
-
-    let q_matrix = QMatrix::read(
-        &device,
-        q_matrix_metadata,
-        &mut reader,
-        metadata.tensor_data_offset,
-    )
-    .unwrap();
+    let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("token_embd.weight").await;
 
     for _ in 0..10 {
-        let random_data: Vec<Vec<f32>> = (0..1)
+        let width = rand::random_range(1..=64);
+        let random_data: Vec<Vec<f32>> = (0..width)
             .map(|_| (0..576).map(|_| rand::random()).collect())
             .collect();
         let tensor = Tensor::<2, f32>::new(&device, &random_data);
@@ -272,16 +218,62 @@ async fn test_fuzz_q_mat_mul_q8_0() {
             &candle_core::Device::Cpu,
         )
         .unwrap()
-        .reshape(&[1, 576])
+        .reshape(&[width, 576])
         .unwrap();
         let candle_result = candle_q_matrix.forward(&candle_b).unwrap();
-        assert_eq!(candle_result.shape().dims(), &[1, 49152]);
+        assert_eq!(candle_result.shape().dims(), &[width, 49152]);
         let candle_result = candle_result.to_vec2::<f32>().unwrap();
 
-        assert_eq!(fusor_shape, &[1, 49152]);
+        assert_eq!(fusor_shape, &[width, 49152]);
 
-        for x in 0..1 {
+        for x in 0..width {
             for y in 0..49152 {
+                let expected = candle_result[x][y];
+                let actual = result[[x, y]];
+                if (expected - actual).abs() > 3. {
+                    println!("Expected: {:?}", candle_result);
+                    println!("Actual: {:?}", result);
+                    panic!("expected: {}, actual: {}", expected, actual);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_fuzz_q_mat_mul_q6k() {
+    use crate::Tensor;
+    use candle_core::Module;
+
+    let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("blk.0.ffn_down.weight").await;
+
+    for _ in 0..10 {
+        let width = rand::random_range(1..=64);
+        let random_data: Vec<Vec<f32>> = (0..width)
+            .map(|_| (0..1536).map(|_| rand::random()).collect())
+            .collect();
+        let tensor = Tensor::<2, f32>::new(&device, &random_data);
+
+        let result = tensor.q_mat_mul(&q_matrix);
+        let fusor_shape = result.shape();
+        let result = result.as_slice().await.unwrap();
+
+        let candle_b = candle_core::Tensor::from_iter(
+            random_data.iter().flat_map(|x| x.iter().copied()),
+            &candle_core::Device::Cpu,
+        )
+        .unwrap()
+        .reshape(&[width, 1536])
+        .unwrap();
+        let candle_result = candle_q_matrix.forward(&candle_b).unwrap();
+        assert_eq!(candle_result.shape().dims(), &[width, 576]);
+        let candle_result = candle_result.to_vec2::<f32>().unwrap();
+
+        assert_eq!(fusor_shape, &[width, 576]);
+
+        for x in 0..width {
+            for y in 0..576 {
                 let expected = candle_result[x][y];
                 let actual = result[[x, y]];
                 if (expected - actual).abs() > 3. {
@@ -310,9 +302,7 @@ impl Operation for QMatMulOperation {
             );
             constraints.add_constraint(
                 0,
-                crate::mir::workgroup_shape::Constraint::equals(
-                    limits.min_subgroup_size.max(32),
-                ),
+                crate::mir::workgroup_shape::Constraint::equals(limits.min_subgroup_size.max(32)),
             );
         } else {
             constraints.add_constraint(0, crate::mir::workgroup_shape::Constraint::Equals(1));

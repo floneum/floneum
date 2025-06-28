@@ -13,7 +13,16 @@ use wgpu::{
 };
 
 use crate::{
-    compute_graph::{AnyComputeKey, ComputeGraph}, index_select::IndexSelectOperation, layout::Layout, map_layout::MapLayoutOperation, mir::operation::Operation, quantized::{matmul::QMatMulOperation, QMatrix}, resize::ResizeOperation, slice_assign::SliceAssignOperation, Device, ElementWiseOperation, MatMulOperation, PairWiseFunction, PairWiseOperation, ReduceFunction, ReduceOperation
+    Device, ElementWiseOperation, MatMulOperation, PairWiseFunction, PairWiseOperation,
+    ReduceFunction, ReduceOperation,
+    compute_graph::{AnyComputeKey, ComputeGraph},
+    index_select::IndexSelectOperation,
+    layout::Layout,
+    map_layout::MapLayoutOperation,
+    mir::operation::Operation,
+    quantized::{QMatrix, matmul::QMatMulOperation},
+    resize::ResizeOperation,
+    slice_assign::SliceAssignOperation,
 };
 
 pub trait DataType:
@@ -746,14 +755,42 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         Ok(TensorSlice::new(downloaded, tensor.layout().clone()))
     }
 
+    #[track_caller]
     pub fn materialize(&self) -> impl Future<Output = ()> + 'static {
-        self.data.materialize();
+        #[allow(unused)]
+        let data = self.data.materialize();
+        #[cfg(feature = "extra_assertions")]
+        let caller = std::panic::Location::caller();
         let (sender, receiver) = futures_channel::oneshot::channel();
         self.device().wgpu_queue().on_submitted_work_done(|| {
             _ = sender.send(());
         });
         async move {
             let _ = receiver.await;
+            #[cfg(feature = "extra_assertions")]
+            {
+                let mut contains_non_finite = false;
+                if D::WGSL_TYPE == DataTypeEnum::F32 {
+                    let data: TensorSlice<R, f32> =
+                        Tensor::as_slice_from_tensor_data(&data).await.unwrap();
+                    data.visit_items(|item| {
+                        contains_non_finite |= !item.is_finite();
+                    });
+                } else if D::WGSL_TYPE == DataTypeEnum::F16 {
+                    let data: TensorSlice<R, half::f16> =
+                        Tensor::as_slice_from_tensor_data(&data).await.unwrap();
+                    data.visit_items(|item| {
+                        contains_non_finite |= !item.is_finite();
+                    });
+                }
+
+                if contains_non_finite {
+                    tracing::warn!(
+                        "Tensor materialized at {} contains non-finite values. This may lead to unexpected behavior.",
+                        caller
+                    );
+                }
+            }
         }
     }
 
@@ -782,7 +819,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
                 self.datatype(),
                 self.key(),
                 function.lower_to_element_wise(),
-                self.shape().as_slice()
+                self.shape().as_slice(),
             ));
         }
 
@@ -1002,6 +1039,17 @@ impl<const R: usize, D: DataType + PartialEq> PartialEq for TensorSlice<R, D> {
         if R == 0 {
             return true;
         }
+        let mut matches = true;
+        self.visit_indexes(|index| {
+            matches &= self.get(index) == other.get(index);
+        });
+        matches
+    }
+}
+
+impl<const R: usize, D: DataType> TensorSlice<R, D> {
+    fn visit_indexes(&self, mut visitor: impl FnMut([usize; R])) {
+        let self_shape = self.layout.shape();
         let mut index = [0; R];
         loop {
             index[0] += 1;
@@ -1009,17 +1057,22 @@ impl<const R: usize, D: DataType + PartialEq> PartialEq for TensorSlice<R, D> {
                 if index[i] >= self_shape[i] {
                     index[i] = 0;
                     if i == R - 1 {
-                        return true;
+                        return;
                     }
                     index[i + 1] += 1;
                 } else {
                     break;
                 }
             }
-            if self.get(index) != other.get(index) {
-                return false;
-            }
+            visitor(index);
         }
+    }
+
+    #[cfg(feature = "extra_assertions")]
+    fn visit_items(&self, mut visitor: impl FnMut(&D)) {
+        self.visit_indexes(|index| {
+            visitor(self.get(index).unwrap());
+        });
     }
 }
 

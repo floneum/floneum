@@ -656,6 +656,7 @@ impl ComputeGraphInner {
             AnyComputeKey::Tensor(key) => self.nodes.tensor.contains_key(&key),
             AnyComputeKey::QMatMul(key) => self.nodes.q_mat_mul.contains_key(&key),
             AnyComputeKey::Dequantize(key) => self.nodes.dequantize.contains_key(&key),
+            AnyComputeKey::Custom(key) => self.nodes.custom.contains_key(&key),
         }
     }
 
