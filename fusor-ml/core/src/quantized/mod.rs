@@ -899,6 +899,135 @@ impl WgslQuantizedType for BlockQ4K {
         code
     }
 
+    fn dequantize_vec4_block(
+        chunk: String,
+        datatype: DataTypeEnum,
+        mut process_element: impl FnMut(String, String, &mut String),
+    ) -> String {
+        let mut code = String::new();
+
+        writeln!(
+            &mut code,
+            "let super_block_scale = {datatype}({chunk}.scale);"
+        )
+        .unwrap();
+        writeln!(&mut code, "let super_block_min = {datatype}({chunk}.min);").unwrap();
+
+        writeln!(&mut code, "let first_four_bytes = {chunk}.scales[0];").unwrap();
+        writeln!(&mut code, "let middle_four_bytes = {chunk}.scales[1];").unwrap();
+        writeln!(&mut code, "let last_four_bytes = {chunk}.scales[2];").unwrap();
+
+        // Extracts this bit pattern. The first 6 bits of the first
+        // 4 bytes are the scales. The first 6 bits of the second 4
+        // bytes are the offsets.
+        //
+        // dddddddd dddddddd dddddddd dddddddd mmmmmmmm mmmmmmmm
+        // __000000|__111111|__222222|__333333|__000000|__111111
+        //
+        // mmmmmmmm mmmmmmmm mmmmdddd mmmmdddd mmmmdddd mmmmdddd
+        // __222222|__333333|________|________|________|________
+        writeln!(
+            &mut code,
+            "let first_scales = first_four_bytes & {SIX_BITS_MASK};"
+        )
+        .unwrap();
+        writeln!(
+            &mut code,
+            "let first_offsets = middle_four_bytes & {SIX_BITS_MASK};"
+        )
+        .unwrap();
+
+        // Extracts this bit pattern. The first 2 bits of the first
+        // 4 bytes are the scales. The first 2 bits of the second 4
+        // bytes are the offsets.
+        // The first 4 bits of the last 4 bytes are the lower 4 bits
+        // of the scales. The second 4 bits of the last 4 bytes are
+        // the lower 4 bits of the offsets.
+        //
+        // dddddddd dddddddd dddddddd dddddddd mmmmmmmm mmmmmmmm
+        // 44______|55______|66______|77______|44______|55______
+        //
+        // mmmmmmmm mmmmmmmm mmmmdddd mmmmdddd mmmmdddd mmmmdddd
+        // 66______|77______|44444444|55555555|66666666|77777777
+        writeln!(
+            &mut code,
+            "let msb_scales = (first_four_bytes & {MSB_TWO_BITS_MASK}) >> 2u;"
+        )
+        .unwrap();
+        writeln!(
+            &mut code,
+            "let lsb_scales = last_four_bytes & {MSB_SCALES_MASK};"
+        )
+        .unwrap();
+        writeln!(&mut code, "let second_scales = msb_scales | lsb_scales;").unwrap();
+        writeln!(
+            &mut code,
+            "let msb_offsets = (middle_four_bytes & {MSB_TWO_BITS_MASK}) >> 2u;"
+        )
+        .unwrap();
+        writeln!(
+            &mut code,
+            "let lsb_offsets = (last_four_bytes & {MSB_OFFSET_MASK}) >> 4u;"
+        )
+        .unwrap();
+        writeln!(&mut code, "let second_offsets = msb_offsets | lsb_offsets;").unwrap();
+
+        writeln!(code, "var weight_index = 0u;").unwrap();
+        writeln!(code, "var output_index = 0u;").unwrap();
+
+        let mut run_chunk = |scales: &str, offsets: &str| {
+            writeln!(code, "{{").unwrap();
+            writeln!(
+                code,
+                "let scales = vec4<{datatype}>(unpack4xU8({scales})) * super_block_scale;"
+            )
+            .unwrap();
+            writeln!(code, "let low_scales = scales.xz;").unwrap();
+            writeln!(
+                code,
+                "let high_scales = scales.yw * {};",
+                shift_right_scale(4)
+            )
+            .unwrap();
+            writeln!(
+                code,
+                "let offsets = vec4<{datatype}>(unpack4xU8({offsets})) * super_block_min;"
+            )
+            .unwrap();
+            writeln!(code, "let low_offsets = offsets.xz;").unwrap();
+            writeln!(code, "let high_offsets = offsets.yw;").unwrap();
+
+            for suffix in ["x", "y"] {
+                writeln!(code, "for (var i = 0u; i < 8u; i += 1u) {{").unwrap();
+                writeln!(code, "let weight_chunk = {chunk}.data[weight_index];").unwrap();
+                writeln!(code, "let weight_chunk_low = vec4<{datatype}>(unpack4xU8(weight_chunk & {LOW_FOUR_BITS}));").unwrap();
+                writeln!(code, "let weight_chunk_high = vec4<{datatype}>(unpack4xU8(weight_chunk & {HIGH_FOUR_BITS}));").unwrap();
+                writeln!(code, "let low_result = weight_chunk_low * low_scales.{suffix} - low_offsets.{suffix};").unwrap();
+                writeln!(code, "let high_result = weight_chunk_high * high_scales.{suffix} - high_offsets.{suffix};").unwrap();
+                process_element(
+                    "output_index + i".to_string(),
+                    "low_result".to_string(),
+                    &mut code,
+                );
+                process_element(
+                    "output_index + i + 8u".to_string(),
+                    "high_result".to_string(),
+                    &mut code,
+                );
+
+                writeln!(code, "weight_index += 1u;").unwrap();
+                writeln!(code, "}}").unwrap();
+                writeln!(code, "output_index += 16u;").unwrap();
+            }
+            writeln!(code, "}}").unwrap();
+        };
+
+        run_chunk("first_scales", "first_offsets");
+        run_chunk("second_scales", "second_offsets");
+
+        code
+    }
+
     fn write_type<W: Write>(f: &mut W) -> std::fmt::Result {
         write_q4_k_type(f)
     }
@@ -1498,7 +1627,10 @@ where
                 .iter()
                 .map(|x| T::from_f32(*x))
                 .collect::<Vec<_>>();
-            assert_eq!(ouptut_as_floats, expected_result, "Block: {block:?}, Output: {ouptut_as_floats:?}, Expected: {expected_result:?}, kernel: {kernel_body}");
+            assert_eq!(
+                ouptut_as_floats, expected_result,
+                "Block: {block:?}, Output: {ouptut_as_floats:?}, Expected: {expected_result:?}, kernel: {kernel_body}"
+            );
         }
     }
 }

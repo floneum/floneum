@@ -29,20 +29,26 @@ fn qmatmul(c: &mut Criterion) {
         .block_on(async move { reqwest::get(url).await.unwrap().bytes().await.unwrap() });
 
     for size in [1, 512] {
-        for (width, name) in [(1536, "blk.0.ffn_down.weight"), (576, "token_embd.weight")] {
+        for (width, name) in [
+            (1536, "blk.3.ffn_down.weight"),
+            (1536, "blk.0.ffn_down.weight"),
+            (576, "token_embd.weight"),
+        ] {
             let random_data: Vec<Vec<f32>> = (0..size)
                 .map(|_| (0..width).map(|_| rand::random()).collect())
                 .collect();
 
             {
-                let mut group = c.benchmark_group(&format!("qmatmul-wgpu-{width}"));
-
-                let device = block_on(Device::new()).unwrap();
-
                 let mut reader = std::io::Cursor::new(&bytes);
                 let metadata = GgufMetadata::read(&mut reader).unwrap();
                 let q_matrix_metadata = metadata.tensor_infos.get(name).unwrap();
                 println!("Q matrix metadata: {:?}", q_matrix_metadata);
+                let quantization = q_matrix_metadata.ty;
+
+                let mut group = c.benchmark_group(&format!("qmatmul-wgpu-{width}-{quantization}"));
+
+                let device = block_on(Device::new()).unwrap();
+
 
                 let q_matrix = QMatrix::read(
                     &device,
@@ -123,6 +129,7 @@ fn bench_candle_with_device(
     let mut reader = std::io::Cursor::new(&bytes);
     let candle_metadata = candle_core::quantized::gguf_file::Content::read(&mut reader).unwrap();
     let candle_q_matrix_metadata = candle_metadata.tensor_infos.get(matrix_name).unwrap();
+    let quantization = candle_q_matrix_metadata.ggml_dtype;
     let candle_q_tensor = candle_q_matrix_metadata
         .read(
             &mut reader,
@@ -131,7 +138,7 @@ fn bench_candle_with_device(
         )
         .unwrap();
     let candle_q_matrix = candle_core::quantized::QMatMul::from_qtensor(candle_q_tensor).unwrap();
-    let mut group = c.benchmark_group(format!("{name}-{width}"));
+    let mut group = c.benchmark_group(format!("{name}-{width}-{quantization:?}"));
     let group = group.sample_size(20);
 
     group.bench_with_input(BenchmarkId::new(name, size), &size, move |b, &s| {
