@@ -912,7 +912,7 @@ fn index_signed_bytes(u32_array: impl Display, byte_index: impl Display) -> Stri
     format!("unpack4xI8({u32_array}[({byte_index}) / 4u])[({byte_index}) % 4]")
 }
 
-fn index_bytes(u32_array: impl Display, byte_index: impl Display) -> String {
+fn index_unsigned_bytes(u32_array: impl Display, byte_index: impl Display) -> String {
     format!("unpack4xU8({u32_array}[({byte_index}) / 4u])[({byte_index}) % 4]")
 }
 
@@ -924,6 +924,14 @@ impl WgslQuantizedType for BlockQ6K {
         datatype: DataTypeEnum,
         mut process_element: impl FnMut(String, String, &mut String),
     ) -> String {
+        const FIRST_TWO_BITS: u8 = 0b11000000;
+        const SECOND_TWO_BITS: u8 = 0b00110000;
+        const THIRD_TWO_BITS: u8 = 0b00001100;
+        const FOURTH_TWO_BITS: u8 = 0b00000011;
+
+        const FIRST_HALF_BITS: u8 = 0b11110000;
+        const SECOND_HALF_BITS: u8 = 0b00001111;
+
         // This implementation is very unoptimized because of the byte u32 indexing
         let mut code = String::new();
 
@@ -931,109 +939,110 @@ impl WgslQuantizedType for BlockQ6K {
 
         writeln!(
             code,
-            "for (var chunk_index = 0u; chunk_index < 2u; chunk_index += 1u) {{",
+            "for (var raw_chunk_index = 0u; raw_chunk_index < 16u; raw_chunk_index += 1u) {{",
         )
         .unwrap();
-        writeln!(code, "let output_index = chunk_index * 128u;").unwrap();
-        writeln!(code, "let lower_index = chunk_index * 64u;").unwrap();
-        writeln!(code, "let high_index = chunk_index * 32u;").unwrap();
-        writeln!(code, "let scale_index = chunk_index * 8u;").unwrap();
-        writeln!(
-            code,
-            "for (var high_byte_index = 0u; high_byte_index < 32u; high_byte_index += 1u) {{"
-        )
-        .unwrap();
-        writeln!(
-            code,
-            "let scale_index = scale_index + high_byte_index / 16u;"
-        )
-        .unwrap();
-        writeln!(
-            code,
-            "let high_byte = {};",
-            index_bytes(
-                format!("{chunk}.data_high_bits"),
-                "high_index + high_byte_index"
+        {
+            writeln!(code, "let low_index = (raw_chunk_index / 8u) * 16u + ((raw_chunk_index / 2u) & 1u) * 8u + (raw_chunk_index & 1u) * 4u;").unwrap();
+            writeln!(
+                code,
+                "let high_index = (raw_chunk_index / 8u) * 8u + (raw_chunk_index & 1u) * 4u;"
             )
-        )
-        .unwrap();
-        writeln!(
-            code,
-            "let first_low_byte = {};",
-            index_bytes(
-                format!("{chunk}.data_low_bits"),
-                "lower_index + high_byte_index"
+            .unwrap();
+            writeln!(
+                code,
+                "let scale_index = (raw_chunk_index % 2u) + (raw_chunk_index / 2u) * 2u;"
             )
-        )
-        .unwrap();
-        writeln!(
-            code,
-            "let second_low_byte = {};",
-            index_bytes(
-                format!("{chunk}.data_low_bits"),
-                "lower_index + high_byte_index + 32"
+            .unwrap();
+            writeln!(
+                code,
+                "let chunk_index = (raw_chunk_index / 2u) & {FOURTH_TWO_BITS}u;"
             )
-        )
-        .unwrap();
+            .unwrap();
 
-        writeln!(code, "let first_two_bits = high_byte & {TWO_BITS};").unwrap();
-        writeln!(
-            code,
-            "let first_high_nibble = first_low_byte & {FOUR_BITS};"
-        )
-        .unwrap();
-        writeln!(code, "let first_merged = {datatype}((first_two_bits << 4) | first_high_nibble) - {datatype}({CENTER_SIX_BIT});").unwrap();
-        process_element(
-            "output_index + high_byte_index".to_string(),
-            format!(
-                "scale * {datatype}({}) * first_merged",
+            writeln!(
+                code,
+                "let chunk_raw_scale = {datatype}({});",
                 index_signed_bytes(format!("{chunk}.scales"), "scale_index")
-            ),
-            &mut code,
-        );
+            )
+            .unwrap();
+            writeln!(code, "let high_mask = select(select({FOURTH_TWO_BITS}u, {THIRD_TWO_BITS}u, chunk_index > 0u), select({SECOND_TWO_BITS}u, {FIRST_TWO_BITS}u, chunk_index > 2u), chunk_index > 1u);").unwrap();
+            writeln!(
+                code,
+                "let low_mask = select({SECOND_HALF_BITS}u, {FIRST_HALF_BITS}u, chunk_index > 1u);"
+            )
+            .unwrap();
+            let shift_4 = shift_right_scale(4);
+            writeln!(code, "let coefficient = select({datatype}(1.0), {datatype}({shift_4}), chunk_index > 1u);").unwrap();
 
-        writeln!(code, "let second_two_bits = (high_byte >> 2) & {TWO_BITS};").unwrap();
-        writeln!(
-            code,
-            "let second_high_nibble = second_low_byte & {FOUR_BITS};"
-        )
-        .unwrap();
-        writeln!(code, "let second_merged = {datatype}((second_two_bits << 4) | second_high_nibble) - {datatype}({CENTER_SIX_BIT});").unwrap();
-        process_element(
-            "output_index + high_byte_index + 32".to_string(),
-            format!(
-                "scale * {datatype}({}) * second_merged",
-                index_signed_bytes(format!("{chunk}.scales"), "scale_index + 2")
-            ),
-            &mut code,
-        );
+            writeln!(
+                code,
+                "let chunk_midpoint = scale * chunk_raw_scale * {datatype}({CENTER_SIX_BIT});"
+            )
+            .unwrap();
+            writeln!(
+                code,
+                "let chunk_scale = scale * chunk_raw_scale * coefficient;"
+            )
+            .unwrap();
 
-        writeln!(code, "let third_two_bits = (high_byte >> 4) & {TWO_BITS};").unwrap();
-        writeln!(code, "let third_high_nibble = first_low_byte >> 4;").unwrap();
-        writeln!(code, "let third_merged = {datatype}((third_two_bits << 4) | third_high_nibble) - {datatype}({CENTER_SIX_BIT});").unwrap();
-        process_element(
-            "output_index + high_byte_index + 64".to_string(),
-            format!(
-                "scale * {datatype}({}) * third_merged",
-                index_signed_bytes(format!("{chunk}.scales"), "scale_index + 4")
-            ),
-            &mut code,
-        );
+            writeln!(
+                code,
+                "for (var vec4_index = 0u; vec4_index < 4u; vec4_index += 1u) {{"
+            )
+            .unwrap();
+            {
+                writeln!(
+                    code,
+                    "let low_chunk = unpack4xU8({chunk}.data_low_bits[low_index + vec4_index]);",
+                )
+                .unwrap();
+                writeln!(
+                    code,
+                    "let high_chunk = unpack4xU8({chunk}.data_high_bits[high_index + vec4_index]);",
+                )
+                .unwrap();
 
-        writeln!(code, "let fourth_two_bits = (high_byte >> 6) & {TWO_BITS};").unwrap();
-        writeln!(code, "let fourth_high_nibble = second_low_byte >> 4;").unwrap();
-        writeln!(code, "let fourth_merged = {datatype}((fourth_two_bits << 4) | fourth_high_nibble) - {datatype}({CENTER_SIX_BIT});").unwrap();
-        process_element(
-            "output_index + high_byte_index + 96".to_string(),
-            format!(
-                "scale * {datatype}({}) * fourth_merged",
-                index_signed_bytes(format!("{chunk}.scales"), "scale_index + 6")
-            ),
-            &mut code,
-        );
+                for offset in 0..4 {
+                    writeln!(
+                        code,
+                        "let low_byte_{offset} = low_chunk[{offset}] & low_mask;",
+                    )
+                    .unwrap();
+                    writeln!(
+                        code,
+                        "let high_byte_{offset} = high_chunk[{offset}] & high_mask;",
+                    )
+                    .unwrap();
+
+                    writeln!(
+                        code,
+                        "let merged_{offset} = select(
+                        {datatype}(low_byte_{offset} | (high_byte_{offset} << 4)),
+                        {datatype}(low_byte_{offset} | (high_byte_{offset} << 2)),
+                    (chunk_index & 1u) == 1u
+                );",
+                    )
+                    .unwrap();
+
+                    writeln!(
+                        code,
+                        "let scaled_{offset} = {datatype}(chunk_scale * merged_{offset} - chunk_midpoint);"
+                    )
+                    .unwrap();
+
+                    process_element(
+                        format!("raw_chunk_index * 16u + vec4_index * 4u + {offset}"),
+                        format!("scaled_{offset}"),
+                        &mut code,
+                    );
+                }
+            }
+            writeln!(code, "}}").unwrap();
+        }
         writeln!(code, "}}").unwrap();
 
-        writeln!(code, "}}").unwrap();
+        println!("rolled Q6K dequantization code:\n{code}");
 
         code
     }
@@ -1057,7 +1066,7 @@ impl WgslQuantizedType for BlockQ6K {
                 writeln!(
                     code,
                     "let high_byte_{chunk_index}_{high_byte_index} = {};",
-                    index_bytes(
+                    index_unsigned_bytes(
                         format!("{chunk}.data_high_bits"),
                         high_index + high_byte_index
                     )
@@ -1066,7 +1075,7 @@ impl WgslQuantizedType for BlockQ6K {
                 writeln!(
                     code,
                     "let first_low_byte_{chunk_index}_{high_byte_index} = {};",
-                    index_bytes(
+                    index_unsigned_bytes(
                         format!("{chunk}.data_low_bits"),
                         lower_index + high_byte_index
                     )
@@ -1075,7 +1084,7 @@ impl WgslQuantizedType for BlockQ6K {
                 writeln!(
                     code,
                     "let second_low_byte_{chunk_index}_{high_byte_index} = {};",
-                    index_bytes(
+                    index_unsigned_bytes(
                         format!("{chunk}.data_low_bits"),
                         lower_index + high_byte_index + 32
                     )
