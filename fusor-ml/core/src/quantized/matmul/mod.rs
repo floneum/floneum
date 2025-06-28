@@ -110,7 +110,7 @@ async fn test_fuzz_q_mat_mul() {
 
     let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("blk.0.attn_q.weight").await;
 
-    for _ in 0..10 {
+    for _ in 0..100 {
         let random_data: Vec<Vec<f32>> = (0..576)
             .map(|_| (0..576).map(|_| rand::random()).collect())
             .collect();
@@ -155,7 +155,7 @@ async fn test_fuzz_q_mat_mul_sgemv() {
 
     let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("token_embd.weight").await;
 
-    for _ in 0..10 {
+    for _ in 0..100 {
         let size = 576;
         let embed_dim = 49152;
         let random_data: Vec<Vec<f32>> = (0..1)
@@ -202,7 +202,7 @@ async fn test_fuzz_q_mat_mul_q8_0() {
 
     let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("token_embd.weight").await;
 
-    for _ in 0..10 {
+    for _ in 0..100 {
         let width = rand::random_range(1..=64);
         let random_data: Vec<Vec<f32>> = (0..width)
             .map(|_| (0..576).map(|_| rand::random()).collect())
@@ -248,7 +248,7 @@ async fn test_fuzz_q_mat_mul_q6k() {
 
     let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("blk.0.ffn_down.weight").await;
 
-    for _ in 0..10 {
+    for _ in 0..100 {
         let width = rand::random_range(1..=64);
         let random_data: Vec<Vec<f32>> = (0..width)
             .map(|_| (0..1536).map(|_| rand::random()).collect())
@@ -277,6 +277,7 @@ async fn test_fuzz_q_mat_mul_q6k() {
                 let expected = candle_result[x][y];
                 let actual = result[[x, y]];
                 if (expected - actual).abs() > 3. {
+                    println!("width: {}", width);
                     println!("Expected: {:?}", candle_result);
                     println!("Actual: {:?}", result);
                     panic!("expected: {}, actual: {}", expected, actual);
