@@ -905,15 +905,16 @@ impl WgslQuantizedType for BlockQ4K {
 }
 
 const CENTER_SIX_BIT: i8 = center_of_bit_space(6) as i8;
-const TWO_BITS: u8 = 0b11;
-const FOUR_BITS: u8 = 0b1111;
+const FIRST_TWO_BITS: u8 = 0b11000000;
+const SECOND_TWO_BITS: u8 = 0b00110000;
+const THIRD_TWO_BITS: u8 = 0b00001100;
+const FOURTH_TWO_BITS: u8 = 0b00000011;
+
+const FIRST_HALF_BITS: u8 = 0b11110000;
+const SECOND_HALF_BITS: u8 = 0b00001111;
 
 fn index_signed_bytes(u32_array: impl Display, byte_index: impl Display) -> String {
     format!("unpack4xI8({u32_array}[({byte_index}) / 4u])[({byte_index}) % 4]")
-}
-
-fn index_unsigned_bytes(u32_array: impl Display, byte_index: impl Display) -> String {
-    format!("unpack4xU8({u32_array}[({byte_index}) / 4u])[({byte_index}) % 4]")
 }
 
 impl WgslQuantizedType for BlockQ6K {
@@ -924,15 +925,6 @@ impl WgslQuantizedType for BlockQ6K {
         datatype: DataTypeEnum,
         mut process_element: impl FnMut(String, String, &mut String),
     ) -> String {
-        const FIRST_TWO_BITS: u8 = 0b11000000;
-        const SECOND_TWO_BITS: u8 = 0b00110000;
-        const THIRD_TWO_BITS: u8 = 0b00001100;
-        const FOURTH_TWO_BITS: u8 = 0b00000011;
-
-        const FIRST_HALF_BITS: u8 = 0b11110000;
-        const SECOND_HALF_BITS: u8 = 0b00001111;
-
-        // This implementation is very unoptimized because of the byte u32 indexing
         let mut code = String::new();
 
         writeln!(code, "let scale = {datatype}({chunk}.scale);").unwrap();
@@ -1042,8 +1034,6 @@ impl WgslQuantizedType for BlockQ6K {
         }
         writeln!(code, "}}").unwrap();
 
-        println!("rolled Q6K dequantization code:\n{code}");
-
         code
     }
 
@@ -1056,96 +1046,92 @@ impl WgslQuantizedType for BlockQ6K {
 
         writeln!(code, "let scale = {datatype}({chunk}.scale);").unwrap();
 
-        for chunk_index in 0..2 {
-            let output_index = chunk_index * 128;
-            let lower_index = chunk_index * 64;
-            let high_index = chunk_index * 32;
-            let scale_index = chunk_index * 8;
-            for high_byte_index in 0..32 {
-                let scale_index = scale_index + high_byte_index / 16;
+        for raw_chunk_index in 0..16 {
+            let low_index = (raw_chunk_index / 8) * 16
+                + ((raw_chunk_index / 2) & 1) * 8
+                + (raw_chunk_index & 1) * 4;
+            let high_index = (raw_chunk_index / 8) * 8 + (raw_chunk_index & 1) * 4;
+            let scale_index = (raw_chunk_index % 2) + (raw_chunk_index / 2) * 2;
+            let chunk_index = (raw_chunk_index / 2) & FOURTH_TWO_BITS as u32;
+
+            writeln!(
+                code,
+                "let chunk_raw_scale_{raw_chunk_index} = {datatype}({});",
+                index_signed_bytes(format!("{chunk}.scales"), scale_index)
+            )
+            .unwrap();
+            let high_mask = match chunk_index {
+                0 => FOURTH_TWO_BITS,
+                1 => THIRD_TWO_BITS,
+                2 => SECOND_TWO_BITS,
+                _ => FIRST_TWO_BITS,
+            };
+            let low_mask = if chunk_index > 1 {
+                FIRST_HALF_BITS
+            } else {
+                SECOND_HALF_BITS
+            };
+            let coefficient = if chunk_index > 1 {
+                shift_right_scale(4)
+            } else {
+                1.0
+            };
+
+            writeln!(
+                code,
+                "let chunk_midpoint_{raw_chunk_index} = scale * chunk_raw_scale_{raw_chunk_index} * {datatype}({CENTER_SIX_BIT});"
+            )
+            .unwrap();
+            writeln!(
+                code,
+                "let chunk_scale_{raw_chunk_index} = scale * chunk_raw_scale_{raw_chunk_index} * {coefficient};"
+            )
+            .unwrap();
+
+            for vec4_index in 0..4 {
                 writeln!(
                     code,
-                    "let high_byte_{chunk_index}_{high_byte_index} = {};",
-                    index_unsigned_bytes(
-                        format!("{chunk}.data_high_bits"),
-                        high_index + high_byte_index
-                    )
+                    "let low_chunk_{raw_chunk_index}_{vec4_index} = unpack4xU8({chunk}.data_low_bits[{low_index} + {vec4_index}]);",
                 )
                 .unwrap();
                 writeln!(
                     code,
-                    "let first_low_byte_{chunk_index}_{high_byte_index} = {};",
-                    index_unsigned_bytes(
-                        format!("{chunk}.data_low_bits"),
-                        lower_index + high_byte_index
-                    )
-                )
-                .unwrap();
-                writeln!(
-                    code,
-                    "let second_low_byte_{chunk_index}_{high_byte_index} = {};",
-                    index_unsigned_bytes(
-                        format!("{chunk}.data_low_bits"),
-                        lower_index + high_byte_index + 32
-                    )
+                    "let high_chunk_{raw_chunk_index}_{vec4_index} = unpack4xU8({chunk}.data_high_bits[{high_index} + {vec4_index}]);",
                 )
                 .unwrap();
 
-                writeln!(code, "let first_two_bits_{chunk_index}_{high_byte_index} = high_byte_{chunk_index}_{high_byte_index} & {TWO_BITS};").unwrap();
-                writeln!(
-            code,
-            "let first_high_nibble_{chunk_index}_{high_byte_index} = first_low_byte_{chunk_index}_{high_byte_index} & {FOUR_BITS};"
-        )
-        .unwrap();
-                writeln!(code, "let first_merged_{chunk_index}_{high_byte_index} = {datatype}((first_two_bits_{chunk_index}_{high_byte_index} << 4) | first_high_nibble_{chunk_index}_{high_byte_index}) - {datatype}({CENTER_SIX_BIT});").unwrap();
-                process_element(
-                    output_index + high_byte_index,
-                    format!(
-                        "scale * {datatype}({}) * first_merged_{chunk_index}_{high_byte_index}",
-                        index_signed_bytes(format!("{chunk}.scales"), scale_index)
-                    ),
-                    &mut code,
-                );
+                for offset in 0..4 {
+                    writeln!(
+                        code,
+                        "let low_byte_{raw_chunk_index}_{vec4_index}_{offset} = low_chunk_{raw_chunk_index}_{vec4_index}[{offset}] & {low_mask};",
+                    )
+                    .unwrap();
+                    writeln!(
+                        code,
+                        "let high_byte_{raw_chunk_index}_{vec4_index}_{offset} = high_chunk_{raw_chunk_index}_{vec4_index}[{offset}] & {high_mask};",
+                    )
+                    .unwrap();
 
-                writeln!(code, "let second_two_bits_{chunk_index}_{high_byte_index} = (high_byte_{chunk_index}_{high_byte_index} >> 2) & {TWO_BITS};").unwrap();
-                writeln!(
-            code,
-            "let second_high_nibble_{chunk_index}_{high_byte_index} = second_low_byte_{chunk_index}_{high_byte_index} & {FOUR_BITS};"
-        )
-        .unwrap();
-                writeln!(code, "let second_merged_{chunk_index}_{high_byte_index} = {datatype}((second_two_bits_{chunk_index}_{high_byte_index} << 4) | second_high_nibble_{chunk_index}_{high_byte_index}) - {datatype}({CENTER_SIX_BIT});").unwrap();
-                process_element(
-                    output_index + high_byte_index + 32,
-                    format!(
-                        "scale * {datatype}({}) * second_merged_{chunk_index}_{high_byte_index}",
-                        index_signed_bytes(format!("{chunk}.scales"), scale_index + 2)
-                    ),
-                    &mut code,
-                );
+                    let shift = if chunk_index & 1 == 1 { 2 } else { 4 };
 
-                writeln!(code, "let third_two_bits_{chunk_index}_{high_byte_index} = (high_byte_{chunk_index}_{high_byte_index} >> 4) & {TWO_BITS};").unwrap();
-                writeln!(code, "let third_high_nibble_{chunk_index}_{high_byte_index} = first_low_byte_{chunk_index}_{high_byte_index} >> 4;").unwrap();
-                writeln!(code, "let third_merged_{chunk_index}_{high_byte_index} = {datatype}((third_two_bits_{chunk_index}_{high_byte_index} << 4) | third_high_nibble_{chunk_index}_{high_byte_index}) - {datatype}({CENTER_SIX_BIT});").unwrap();
-                process_element(
-                    output_index + high_byte_index + 64,
-                    format!(
-                        "scale * {datatype}({}) * third_merged_{chunk_index}_{high_byte_index}",
-                        index_signed_bytes(format!("{chunk}.scales"), scale_index + 4)
-                    ),
-                    &mut code,
-                );
+                    writeln!(
+                        code,
+                        "let merged_{raw_chunk_index}_{vec4_index}_{offset} = {datatype}(low_byte_{raw_chunk_index}_{vec4_index}_{offset} | (high_byte_{raw_chunk_index}_{vec4_index}_{offset} << {shift}));",
+                    )
+                    .unwrap();
 
-                writeln!(code, "let fourth_two_bits_{chunk_index}_{high_byte_index} = (high_byte_{chunk_index}_{high_byte_index} >> 6) & {TWO_BITS};").unwrap();
-                writeln!(code, "let fourth_high_nibble_{chunk_index}_{high_byte_index} = second_low_byte_{chunk_index}_{high_byte_index} >> 4;").unwrap();
-                writeln!(code, "let fourth_merged_{chunk_index}_{high_byte_index} = {datatype}((fourth_two_bits_{chunk_index}_{high_byte_index} << 4) | fourth_high_nibble_{chunk_index}_{high_byte_index}) - {datatype}({CENTER_SIX_BIT});").unwrap();
-                process_element(
-                    output_index + high_byte_index + 96,
-                    format!(
-                        "scale * {datatype}({}) * fourth_merged_{chunk_index}_{high_byte_index}",
-                        index_signed_bytes(format!("{chunk}.scales"), scale_index + 6)
-                    ),
-                    &mut code,
-                );
+                    writeln!(
+                        code,
+                        "let scaled_{raw_chunk_index}_{vec4_index}_{offset} = {datatype}(chunk_scale_{raw_chunk_index} * merged_{raw_chunk_index}_{vec4_index}_{offset} - chunk_midpoint_{raw_chunk_index});"
+                    )
+                    .unwrap();
+
+                    process_element(
+                        raw_chunk_index * 16 + vec4_index * 4 + offset,
+                        format!("scaled_{raw_chunk_index}_{vec4_index}_{offset}"),
+                        &mut code,
+                    );
+                }
             }
         }
 
