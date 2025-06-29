@@ -98,21 +98,6 @@ pub(crate) fn sgemv(
 
     writeln!(&mut kernel, "var acc = {storage_type}();").unwrap();
 
-    // First merge values on each thread individually. We divide the column allocated to the thread group into equal sized buckets
-    // Round up
-    writeln!(
-        &mut kernel,
-        "let bucket_size = ({k_size} + {blocksize}u - 1) / {blocksize}u;"
-    )
-    .unwrap();
-
-    // Round the bucket size to the nearest multiple of elements per block
-    writeln!(
-        &mut kernel,
-        "let bucket_block_size = (bucket_size + {elements_per_block} - 1) / {elements_per_block};"
-    )
-    .unwrap();
-
     // Find the reduce size in blocks rounded up
     writeln!(
         &mut kernel,
@@ -123,7 +108,7 @@ pub(crate) fn sgemv(
     // Find this threads position in the workgroup
     writeln!(
         &mut kernel,
-        "let base_axis_index = ({workgroup_local_index} % {blocksize}u) * bucket_block_size;"
+        "let base_axis_index = {workgroup_local_index};"
     )
     .unwrap();
     writeln!(
