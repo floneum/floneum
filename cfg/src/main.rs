@@ -4,6 +4,8 @@ use std::{
     hash::Hash,
 };
 
+use rustc_hash::{FxHashMap, FxHashSet};
+
 use crate::{
     parse::Grammar,
     tokenizer::{Merge, Tokenizer},
@@ -30,6 +32,7 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
     let bump = bumpalo::Bump::new();
     let mut cnf_grammar = cnf_grammar.replace_tokenizer_terminals(&tokenizer);
     let merges = &tokenizer.merges;
+    let mut last_size = cnf_grammar.rules.len();
     for (i, merge) in merges.iter().enumerate() {
         println!("Applying merge {i}: {:?}", merge);
         cnf_grammar = cnf_grammar.shortcut_merge(merge);
@@ -41,6 +44,11 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
         cnf_grammar.garbage_collect_non_terminals();
         println!("Time to garbage collect: {:?}", start.elapsed());
         println!("size after garbage collection: {}", cnf_grammar.rules.len());
+        println!(
+            "grew by a factor of {:.2}",
+            cnf_grammar.rules.len() as f64 / last_size as f64
+        );
+        last_size = cnf_grammar.rules.len();
     }
     let dense_grammar = cnf_grammar.reallocate(&bump);
     println!("dense size: {}", bump.allocated_bytes());
@@ -264,7 +272,7 @@ impl Grammar {
 impl<T: Clone + Eq + Hash> Grammar<T> {
     fn garbage_collect_non_terminals(&mut self) {
         // Remove any non-terminals that are not used in any rules
-        let mut used_non_terminals = std::collections::HashSet::new();
+        let mut used_non_terminals = FxHashSet::default();
         let mut queue = vec![self.start.clone()];
         while let Some(nt) = queue.pop() {
             if used_non_terminals.insert(nt.clone()) {
@@ -412,7 +420,7 @@ impl Grammar<u32> {
         let mut changed = true;
         while changed {
             // A map of lhs, incoming -> outgoing
-            let mut state_map: HashMap<(u32, State), u32> = HashMap::new();
+            let mut state_map: FxHashMap<(u32, State), u32> = FxHashMap::default();
             for rule in &new_rules {
                 // Create a unique key for the rule
                 let key = (rule.lhs.clone(), rule.incoming.clone());
@@ -420,7 +428,7 @@ impl Grammar<u32> {
             }
 
             // A map of lhs, incoming, outgoing -> index
-            let mut outgoing_map: HashSet<(u32, State, State)> = HashSet::new();
+            let mut outgoing_map: FxHashSet<(u32, State, State)> = FxHashSet::default();
             for rule in &new_rules {
                 // Create a unique key for the rule
                 let key = (
@@ -502,8 +510,8 @@ impl Grammar<u32> {
         // Finally, split up all of the rules into a new grammar
         let mut new_grammar_rules = Vec::new();
 
-        let mut new_lhs_mapping = HashMap::new();
-        let format_new_rule = |new_lhs_mapping: &mut HashMap<(u32, u8, u8), u32>,
+        let mut new_lhs_mapping = FxHashMap::default();
+        let format_new_rule = |new_lhs_mapping: &mut FxHashMap<(u32, u8, u8), u32>,
                                rule: &NewRule| {
             let key = (rule.lhs, rule.incoming as u8, rule.outgoing as u8);
             if let Some(&existing_id) = new_lhs_mapping.get(&key) {
@@ -518,7 +526,7 @@ impl Grammar<u32> {
 
         let start_time = std::time::Instant::now();
         // A map of lhs, incoming -> Vec<index>
-        let mut state_map: HashMap<(u32, State), Vec<usize>> = HashMap::new();
+        let mut state_map: FxHashMap<(u32, State), Vec<usize>> = FxHashMap::default();
         for (index, rule) in new_rules.iter().enumerate() {
             // Create a unique key for the rule
             let key = (rule.lhs.clone(), rule.incoming.clone());
@@ -526,7 +534,7 @@ impl Grammar<u32> {
         }
 
         // A map of lhs, incoming, outgoing -> Vec<index>
-        let mut outgoing_map: HashMap<(u32, State, State), Vec<usize>> = HashMap::new();
+        let mut outgoing_map: FxHashMap<(u32, State, State), Vec<usize>> = FxHashMap::default();
         for (index, rule) in new_rules.iter().enumerate() {
             // Create a unique key for the rule
             let key = (
