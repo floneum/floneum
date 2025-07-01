@@ -1,4 +1,7 @@
-use std::fmt::Display;
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+};
 
 use crate::{
     parse::Grammar,
@@ -26,9 +29,13 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
     let bump = bumpalo::Bump::new();
     let mut cnf_grammar = cnf_grammar.replace_tokenizer_terminals(&tokenizer);
     let merges = &tokenizer.merges;
-    for merge in merges {
+    for (i, merge) in merges.iter().enumerate() {
+        println!("Applying merge {i}: {:?}", merge);
         cnf_grammar = cnf_grammar.shortcut_merge(merge);
-        println!("size before garbage collection: {}", cnf_grammar.rules.len());
+        println!(
+            "size before garbage collection: {}",
+            cnf_grammar.rules.len()
+        );
         cnf_grammar.garbage_collect_non_terminals();
         println!("size after garbage collection: {}", cnf_grammar.rules.len());
         cnf_grammar = cnf_grammar.to_cnf().unwrap();
@@ -285,7 +292,7 @@ impl Grammar<u32> {
 
         let mut new_rules = Vec::new();
 
-        #[derive(Clone, Copy, Debug, PartialEq)]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
         #[repr(u8)]
         enum State {
             // Before seeing the first token or the merged token
@@ -316,9 +323,14 @@ impl Grammar<u32> {
             rhs: Vec<Vec<parse::Symbol<u32>>>,
         }
 
+        let start_time = std::time::Instant::now();
         for rule in &*self.rules {
             for incoming in State::ALL {
                 for outgoing in State::ALL {
+                    // The start rule always starts at the start state
+                    if rule.lhs == self.start && !incoming.is_start() {
+                        continue;
+                    }
                     let mut new_rule = NewRule {
                         incoming,
                         outgoing,
@@ -385,10 +397,32 @@ impl Grammar<u32> {
                 }
             }
         }
+        println!("Time to create new rules: {:?}", start_time.elapsed());
 
         // Then run through each new rule and eliminate impossible states. Keep going until there are no changes.
+        let start_time = std::time::Instant::now();
         let mut changed = true;
         while changed {
+            // A map of lhs, incoming -> outgoing
+            let mut state_map: HashMap<(String, State), u32> = HashMap::new();
+            for rule in &new_rules {
+                // Create a unique key for the rule
+                let key = (rule.lhs.clone(), rule.incoming.clone());
+                *state_map.entry(key).or_default() |= 1 << rule.outgoing as u32;
+            }
+
+            // A map of lhs, incoming, outgoing -> index
+            let mut outgoing_map: HashSet<(String, State, State)> = HashSet::new();
+            for rule in &new_rules {
+                // Create a unique key for the rule
+                let key = (
+                    rule.lhs.clone(),
+                    rule.incoming.clone(),
+                    rule.outgoing.clone(),
+                );
+                outgoing_map.insert(key);
+            }
+
             changed = false;
             println!("iteration with {} rules", new_rules.len());
             let mut index = 0;
@@ -406,29 +440,21 @@ impl Grammar<u32> {
                             parse::Symbol::NonTerminal(first_nt),
                             parse::Symbol::NonTerminal(second_nt),
                         ] => {
-                            // Find the non-terminals with a matching after_first_token_incoming and after_merged_token_incoming
-                            // and keep track of what the intermediate_after_first_token_states and intermediate_after_merged_token_states states should be
-                            let valid_intermediate_states = new_rules
-                                .iter()
-                                .filter_map(|r| {
-                                    (r.lhs == *first_nt && r.incoming == incoming)
-                                        .then(|| r.outgoing)
-                                })
-                                .collect::<Vec<_>>();
-                            if valid_intermediate_states.is_empty() {
+                            let valid_intermediate_states = state_map
+                                .get(&(first_nt.clone(), incoming))
+                                .copied()
+                                .unwrap_or_default();
+                            if valid_intermediate_states == 0 {
                                 // If there are no valid states for the first non-terminal, remove this rule
                                 new_rules[index].rhs.remove(rhs_index);
                                 changed = true;
                                 continue;
                             }
-                            // Find the non-terminals with a matching intermediate_states and
-                            // matching after_first_token_outgoing and after_merged_token_outgoing states
-                            let has_valid_second_non_terminal = new_rules.iter().any(|r| {
-                                r.lhs == *second_nt
-                                    && valid_intermediate_states
-                                        .iter()
-                                        .any(|outgoing| r.incoming == *outgoing)
-                                    && r.outgoing == outgoing
+                            let mut states = State::ALL
+                                .iter()
+                                .filter(|&&s| valid_intermediate_states & (1 << s as u32) != 0);
+                            let has_valid_second_non_terminal = states.any(|state| {
+                                outgoing_map.contains(&(second_nt.clone(), *state, outgoing))
                             });
                             if !has_valid_second_non_terminal {
                                 // If there are no valid states for the second non-terminal, remove this rule
@@ -460,6 +486,10 @@ impl Grammar<u32> {
                 }
             }
         }
+        println!(
+            "Time to eliminate impossible states: {:?}",
+            start_time.elapsed()
+        );
 
         // Finally, split up all of the rules into a new grammar
         let mut new_grammar_rules = Vec::new();
@@ -474,6 +504,26 @@ impl Grammar<u32> {
             format!("{}_{}_{}", *incoming as u8, lhs, *outgoing as u8)
         }
 
+        let start_time = std::time::Instant::now();
+        // A map of lhs, incoming -> Vec<index>
+        let mut state_map: HashMap<(String, State), Vec<usize>> = HashMap::new();
+        for (index, rule) in new_rules.iter().enumerate() {
+            // Create a unique key for the rule
+            let key = (rule.lhs.clone(), rule.incoming.clone());
+            state_map.entry(key).or_default().push(index);
+        }
+
+        // A map of lhs, incoming, outgoing -> Vec<index>
+        let mut outgoing_map: HashMap<(String, State, State), Vec<usize>> = HashMap::new();
+        for (index, rule) in new_rules.iter().enumerate() {
+            // Create a unique key for the rule
+            let key = (
+                rule.lhs.clone(),
+                rule.incoming.clone(),
+                rule.outgoing.clone(),
+            );
+            outgoing_map.entry(key).or_default().push(index);
+        }
         for rule in &new_rules {
             let NewRule {
                 incoming,
@@ -494,15 +544,18 @@ impl Grammar<u32> {
                     ] => {
                         // Find the non-terminals with a matching after_first_token_incoming
                         // and keep track of what the intermediate_after_first_token_states state should be
-                        for valid_first_token in new_rules
-                            .iter()
-                            .filter(|r| r.lhs == *first_nt && r.incoming == *incoming)
-                        {
-                            for valid_second_token in new_rules.iter().filter(|r| {
-                                r.lhs == *second_nt
-                                    && valid_first_token.outgoing == r.incoming
-                                    && r.outgoing == *outgoing
-                            }) {
+                        let valid = state_map
+                            .get(&(first_nt.clone(), *incoming))
+                            .map(|v| v.as_slice())
+                            .unwrap_or_default();
+                        for &valid_first_token in valid {
+                            let valid_first_token = &new_rules[valid_first_token];
+                            let valid_second = outgoing_map
+                                .get(&(second_nt.clone(), valid_first_token.outgoing, *outgoing))
+                                .map(|v| v.as_slice())
+                                .unwrap_or_default();
+                            for &valid_second_token in valid_second {
+                                let valid_second_token = &new_rules[valid_second_token];
                                 // Create a new right-hand side with the valid non-terminals
                                 let new_sequence = vec![
                                     parse::Symbol::NonTerminal(format_new_rule(valid_first_token)),
@@ -540,6 +593,8 @@ impl Grammar<u32> {
         };
 
         new_grammar_rules.push(new_start);
+
+        println!("Time to create new grammar: {:?}", start_time.elapsed());
 
         Grammar {
             start: new_start_lhs,
