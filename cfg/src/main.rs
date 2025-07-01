@@ -607,18 +607,15 @@ impl Grammar<u32> {
             });
         }
 
-        // Find the start rules
-        let start_rules = State::ALL
-            .iter()
-            .filter_map(|end| new_lhs_mapping.get(&(self.start, State::Start as u8, *end as u8)))
-            .collect::<Vec<_>>();
-
-        println!("start_rules: {:?}", start_rules);
-
-        // If there is exactly one start rule, use it as the new start rule
-        let new_start_lhs = match start_rules.as_slice() {
-            [start] => **start,
-            _ => todo!(),
+        // Create a new start rule
+        let start_lhs: Vec<_> = new_rules.iter().filter(|r| r.lhs == self.start).collect();
+        println!("start_lhs: {:?}", start_lhs);
+        let new_start_lhs = match start_lhs.as_slice() {
+            [first] => {
+                // If there is only one start rule, use it directly
+                format_new_rule(&mut new_lhs_mapping, first)
+            }
+            _ => unreachable!(),
         };
 
         println!("Time to create new grammar: {:?}", start_time.elapsed());
