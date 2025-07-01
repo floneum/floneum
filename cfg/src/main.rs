@@ -28,9 +28,11 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
     let merges = &tokenizer.merges;
     for merge in merges {
         cnf_grammar = cnf_grammar.shortcut_merge(merge);
+        println!("size before garbage collection: {}", cnf_grammar.rules.len());
         cnf_grammar.garbage_collect_non_terminals();
-        println!("CNF grammar:\n{}", cnf_grammar);
+        println!("size after garbage collection: {}", cnf_grammar.rules.len());
         cnf_grammar = cnf_grammar.to_cnf().unwrap();
+        println!("size after CNF conversion: {}", cnf_grammar.rules.len());
     }
     let dense_grammar = cnf_grammar.reallocate(&bump);
     println!("dense size: {}", bump.allocated_bytes());
