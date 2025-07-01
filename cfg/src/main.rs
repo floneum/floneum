@@ -21,6 +21,7 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
     )
     .unwrap();
 
+    let grammar = grammar.split_terminals();
     let cnf_grammar = grammar.to_cnf().unwrap();
     let bump = bumpalo::Bump::new();
     let mut cnf_grammar = cnf_grammar.replace_tokenizer_terminals(&tokenizer);
@@ -29,6 +30,7 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
         cnf_grammar = cnf_grammar.shortcut_merge(merge);
         cnf_grammar.garbage_collect_non_terminals();
         println!("CNF grammar:\n{}", cnf_grammar);
+        cnf_grammar = cnf_grammar.to_cnf().unwrap();
     }
     let dense_grammar = cnf_grammar.reallocate(&bump);
     println!("dense size: {}", bump.allocated_bytes());
@@ -67,6 +69,7 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
     )
     .unwrap();
 
+    let grammar = grammar.split_terminals();
     let cnf_grammar = grammar.to_cnf().unwrap();
     let bump = bumpalo::Bump::new();
     let cnf_grammar = cnf_grammar.replace_tokenizer_terminals(&tokenizer);
@@ -734,6 +737,7 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
     )
     .unwrap();
 
+    let grammar = grammar.split_terminals();
     let cnf_grammar = grammar.to_cnf().unwrap();
     let bump = bumpalo::Bump::new();
     let tokenizer = Tokenizer::load_tokenizer("tokenizer.json");

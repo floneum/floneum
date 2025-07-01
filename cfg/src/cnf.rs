@@ -1,39 +1,12 @@
-use std::collections::{HashMap, HashSet};
+use std::{collections::{HashMap, HashSet}, fmt::Display, hash::Hash};
 
 use crate::parse::{Grammar, Rule, Symbol};
 
 impl Grammar {
-    /// Converts the grammar to **Chomsky Normal Form (CNF)** by invoking
-    /// each conversion step in sequence.
-    pub fn to_cnf(&self) -> Result<Grammar, String> {
-        // Step 0: Split up each literal into single character terminals.
-        let rules_step0 = self.split_terminals();
-
-        // Step 1: Add a fresh start symbol.
-        let (rules_step1, mut nonterminals, new_start) =
-            self.add_new_start(rules_step0, self.start.clone())?;
-
-        // Step 2: Eliminate ε-productions.
-        let rules_step2 = self.eliminate_epsilon(rules_step1, &new_start);
-
-        // Step 3: Eliminate unit productions.
-        let rules_step3 = self.eliminate_units(rules_step2, &nonterminals);
-
-        // Step 4: Replace terminals in RHS of length > 1.
-        let rules_step4 = self.replace_terminals(rules_step3, &mut nonterminals);
-
-        // Step 5: Binarize productions with RHS length > 2.
-        let rules_step5 = self.binarize(rules_step4, &mut nonterminals);
-
-        Ok(Grammar {
-            start: new_start,
-            rules: rules_step5,
-        })
-    }
-
     /// Step 0: Split up each literal into single character terminals
-    fn split_terminals(&self) -> Vec<Rule> {
-        self.rules
+    pub fn split_terminals(self) -> Self {
+        let rules = self
+            .rules
             .iter()
             .map(|rule| {
                 let new_rhs: Vec<Vec<Symbol>> = rule
@@ -56,7 +29,41 @@ impl Grammar {
                     rhs: new_rhs,
                 }
             })
-            .collect()
+            .collect();
+
+        Grammar {
+            start: self.start.clone(),
+            rules,
+        }
+    }
+}
+
+impl<T: Clone + Eq + Hash + Display> Grammar<T> {
+    /// Converts the grammar to **Chomsky Normal Form (CNF)** by invoking
+    /// each conversion step in sequence.
+    pub fn to_cnf(&self) -> Result<Grammar<T>, String> {
+        let rules = self.rules.clone();
+
+        // Step 1: Add a fresh start symbol.
+        let (rules_step1, mut nonterminals, new_start) =
+            self.add_new_start(rules, self.start.clone())?;
+
+        // Step 2: Eliminate ε-productions.
+        let rules_step2 = self.eliminate_epsilon(rules_step1, &new_start);
+
+        // Step 3: Eliminate unit productions.
+        let rules_step3 = self.eliminate_units(rules_step2, &nonterminals);
+
+        // Step 4: Replace terminals in RHS of length > 1.
+        let rules_step4 = self.replace_terminals(rules_step3, &mut nonterminals);
+
+        // Step 5: Binarize productions with RHS length > 2.
+        let rules_step5 = self.binarize(rules_step4, &mut nonterminals);
+
+        Ok(Grammar {
+            start: new_start,
+            rules: rules_step5,
+        })
     }
 
     /// Step 1: Introduce a fresh start symbol `S0 → original_start`.
@@ -64,9 +71,9 @@ impl Grammar {
     /// Returns a tuple `(new_rules, nonterminals, new_start_symbol)`.
     fn add_new_start(
         &self,
-        rules: Vec<Rule>,
+        rules: Vec<Rule<T>>,
         start: String,
-    ) -> Result<(Vec<Rule>, HashSet<String>, String), String> {
+    ) -> Result<(Vec<Rule<T>>, HashSet<String>, String), String> {
         // Collect all existing non-terminals.
         let mut nonterminals: HashSet<String> = rules.iter().map(|r| r.lhs.clone()).collect();
 
@@ -94,7 +101,7 @@ impl Grammar {
     }
 
     /// Step 2: Eliminate ε-productions (nullable non-terminals), except possibly for the new start symbol.
-    fn eliminate_epsilon(&self, rules: Vec<Rule>, new_start: &String) -> Vec<Rule> {
+    fn eliminate_epsilon(&self, rules: Vec<Rule<T>>, new_start: &String) -> Vec<Rule<T>> {
         // (a) Compute the set of nullable non-terminals.
         let mut nullable: HashSet<String> = HashSet::new();
         for r in &rules {
@@ -126,9 +133,9 @@ impl Grammar {
         }
 
         // (b) Rebuild each rule’s RHS by dropping nullable symbols in all combinations.
-        let mut after_eps_elim: Vec<Rule> = Vec::new();
+        let mut after_eps_elim: Vec<Rule<T>> = Vec::new();
         for r in &rules {
-            let mut new_alternatives: HashSet<Vec<Symbol>> = HashSet::new();
+            let mut new_alternatives: HashSet<Vec<Symbol<T>>> = HashSet::new();
             for alt in &r.rhs {
                 // Collect positions of nullable non-terminals within this alt.
                 let nullable_positions: Vec<usize> = alt
@@ -142,7 +149,7 @@ impl Grammar {
                 // There are 2^(#nullable_positions) ways to drop or keep each nullable symbol.
                 let subsets = 1 << nullable_positions.len();
                 for mask in 0..subsets {
-                    let mut new_rhs: Vec<Symbol> = Vec::with_capacity(alt.len());
+                    let mut new_rhs: Vec<Symbol<T>> = Vec::with_capacity(alt.len());
                     for (i, sym) in alt.iter().enumerate() {
                         if let Some(idx_pos) = nullable_positions.iter().position(|&p| p == i) {
                             if (mask & (1 << idx_pos)) != 0 {
@@ -174,7 +181,7 @@ impl Grammar {
     }
 
     /// Step 3: Eliminate unit productions (A → B where B is a non-terminal).
-    fn eliminate_units(&self, rules: Vec<Rule>, nonterminals: &HashSet<String>) -> Vec<Rule> {
+    fn eliminate_units(&self, rules: Vec<Rule<T>>, nonterminals: &HashSet<String>) -> Vec<Rule<T>> {
         // (a) Build a graph of unit edges A → B.
         let mut unit_graph: HashMap<String, HashSet<String>> = HashMap::new();
         for r in &rules {
@@ -209,9 +216,9 @@ impl Grammar {
         }
 
         // (c) Gather all non-unit productions.
-        let mut nonunit_rules: Vec<Rule> = Vec::new();
+        let mut nonunit_rules: Vec<Rule<T>> = Vec::new();
         for r in &rules {
-            let filtered: Vec<Vec<Symbol>> = r
+            let filtered: Vec<Vec<Symbol<T>>> = r
                 .rhs
                 .iter()
                 .filter(|alt| !(alt.len() == 1 && matches!(&alt[0], Symbol::NonTerminal(_))))
@@ -226,9 +233,9 @@ impl Grammar {
         }
 
         // (d) For each non-terminal A, gather all non-unit productions of any B in closure(A).
-        let mut expanded: HashMap<String, HashSet<Vec<Symbol>>> = HashMap::new();
+        let mut expanded: HashMap<String, HashSet<Vec<Symbol<T>>>> = HashMap::new();
         for nt in nonterminals {
-            let mut rhs_set: HashSet<Vec<Symbol>> = HashSet::new();
+            let mut rhs_set: HashSet<Vec<Symbol<T>>> = HashSet::new();
             if let Some(closure_set) = unit_closure.get(nt) {
                 for b in closure_set {
                     for r in &rules {
@@ -248,7 +255,7 @@ impl Grammar {
         }
 
         // (e) Build the set of rules after unit-elimination.
-        let mut after_unit: Vec<Rule> = Vec::new();
+        let mut after_unit: Vec<Rule<T>> = Vec::new();
         for (nt, prods) in expanded {
             after_unit.push(Rule {
                 lhs: nt.clone(),
@@ -259,16 +266,16 @@ impl Grammar {
     }
 
     /// Step 4: Replace terminals in any RHS of length > 1 with fresh non-terminals.
-    fn replace_terminals(&self, rules: Vec<Rule>, nonterminals: &mut HashSet<String>) -> Vec<Rule> {
-        let mut terminal_map: HashMap<String, String> = HashMap::new();
-        let mut replaced: Vec<Rule> = Vec::new();
+    fn replace_terminals(&self, rules: Vec<Rule<T>>, nonterminals: &mut HashSet<String>) -> Vec<Rule<T>> {
+        let mut terminal_map: HashMap<T, String> = HashMap::new();
+        let mut replaced: Vec<Rule<T>> = Vec::new();
 
         for r in &rules {
-            let mut new_alts: Vec<Vec<Symbol>> = Vec::new();
+            let mut new_alts: Vec<Vec<Symbol<T>>> = Vec::new();
             for alt in &r.rhs {
                 if alt.len() > 1 {
                     // Replace each terminal in a long alt with a fresh non-terminal.
-                    let mut new_alt: Vec<Symbol> = Vec::with_capacity(alt.len());
+                    let mut new_alt: Vec<Symbol<T>> = Vec::with_capacity(alt.len());
                     for sym in alt {
                         match sym {
                             Symbol::Terminal(t) => {
@@ -317,12 +324,12 @@ impl Grammar {
     }
 
     /// Step 5: Binarize any production whose RHS has length > 2 by introducing intermediate non-terminals.
-    fn binarize(&self, rules: Vec<Rule>, nonterminals: &mut HashSet<String>) -> Vec<Rule> {
-        let mut cnf_rules: Vec<Rule> = Vec::new();
+    fn binarize(&self, rules: Vec<Rule<T>>, nonterminals: &mut HashSet<String>) -> Vec<Rule<T>> {
+        let mut cnf_rules: Vec<Rule<T>> = Vec::new();
         let mut intermediate_counter = 0;
 
         for r in &rules {
-            let mut new_alts: Vec<Vec<Symbol>> = Vec::new();
+            let mut new_alts: Vec<Vec<Symbol<T>>> = Vec::new();
             for alt in &r.rhs {
                 let mut remaining = alt.clone();
                 while remaining.len() > 2 {
@@ -497,7 +504,7 @@ mod tests {
         .unwrap();
         let rules = grammar.rules;
         let mut nonterms: HashSet<String> = ["S".into(), "B".into()].iter().cloned().collect();
-        let after = Grammar {
+        let after: Vec<Rule> = Grammar::<String> {
             start: "S".into(),
             rules: vec![],
         }
@@ -545,7 +552,7 @@ mod tests {
                 .iter()
                 .cloned()
                 .collect();
-        let after = Grammar {
+        let after = Grammar::<String> {
             start: "S".into(),
             rules: vec![],
         }
