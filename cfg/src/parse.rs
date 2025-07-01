@@ -89,6 +89,37 @@ impl Grammar {
     }
 }
 
+impl<T> Grammar<T> {
+    pub fn map<U>(
+        self,
+        mut terminals: impl FnMut(T) -> U,
+        mut non_terminals: impl FnMut(T) -> U,
+    ) -> Grammar<U> {
+        let start = non_terminals(self.start);
+        let rules = self
+            .rules
+            .into_iter()
+            .map(|rule| Rule {
+                lhs: non_terminals(rule.lhs),
+                rhs: rule
+                    .rhs
+                    .into_iter()
+                    .map(|seq| {
+                        seq.into_iter()
+                            .map(|sym| match sym {
+                                Symbol::NonTerminal(nt) => Symbol::NonTerminal(non_terminals(nt)),
+                                Symbol::Terminal(t) => Symbol::Terminal(terminals(t)),
+                                Symbol::Epsilon => Symbol::Epsilon,
+                            })
+                            .collect()
+                    })
+                    .collect(),
+            })
+            .collect();
+        Grammar { start, rules }
+    }
+}
+
 impl<T: Display> Display for Grammar<T> {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         writeln!(f, "start: {}", self.start)?;

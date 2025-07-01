@@ -44,6 +44,21 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
         cnf_grammar.garbage_collect_non_terminals();
         println!("Time to garbage collect: {:?}", start.elapsed());
         println!("size after garbage collection: {}", cnf_grammar.rules.len());
+        let start = std::time::Instant::now();
+        let as_string = cnf_grammar.map(|t| t.to_string(), |t| t.to_string());
+        println!("Time to convert to string: {:?}", start.elapsed());
+        let start = std::time::Instant::now();
+        let as_string = as_string.to_cnf().unwrap();
+        println!("Time to convert to CNF: {:?}", start.elapsed());
+        // Convert back to tokens
+        let mut token_map = FxHashMap::default();
+        cnf_grammar = as_string.map(
+            |t| t.parse().unwrap(),
+            |t| {
+                let len = token_map.len() as u32;
+                *token_map.entry(t).or_insert_with(|| len)
+            },
+        );
         println!(
             "grew by a factor of {:.2}",
             cnf_grammar.rules.len() as f64 / last_size as f64
