@@ -16,7 +16,7 @@ use nom::{
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Symbol<T = String> {
     /// A non‑terminal `A`.
-    NonTerminal(String),
+    NonTerminal(T),
     /// A terminal literal `'+'`.
     Terminal(T),
     /// The empty string `ε`.
@@ -37,7 +37,7 @@ impl<T: Display> Display for Symbol<T> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rule<T = String> {
     /// The left‑hand non‑terminal.
-    pub lhs: String,
+    pub lhs: T,
     /// Alternative right‑hand sides, each a vector of symbols composing a *sequence*.
     pub rhs: Vec<Vec<Symbol<T>>>, // sequence list
 }
@@ -64,7 +64,7 @@ impl<T: Display> Display for Rule<T> {
 /// A parsed context‑free grammar.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Grammar<T = String> {
-    pub start: String,
+    pub start: T,
     /// Map `lhs → rule` (keeps original order via `Vec`).
     pub rules: Vec<Rule<T>>,
 }

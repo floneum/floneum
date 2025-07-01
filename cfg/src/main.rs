@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt::Display,
+    hash::Hash,
 };
 
 use crate::{
@@ -36,10 +37,10 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
             "size before garbage collection: {}",
             cnf_grammar.rules.len()
         );
+        let start = std::time::Instant::now();
         cnf_grammar.garbage_collect_non_terminals();
+        println!("Time to garbage collect: {:?}", start.elapsed());
         println!("size after garbage collection: {}", cnf_grammar.rules.len());
-        cnf_grammar = cnf_grammar.to_cnf().unwrap();
-        println!("size after CNF conversion: {}", cnf_grammar.rules.len());
     }
     let dense_grammar = cnf_grammar.reallocate(&bump);
     println!("dense size: {}", bump.allocated_bytes());
@@ -214,10 +215,17 @@ impl Display for DenseSymbol {
 
 impl Grammar {
     pub fn replace_tokenizer_terminals(&self, tokenizer: &Tokenizer) -> Grammar<u32> {
+        let mut lhs_to_u32_map = HashMap::new();
+        let mut lhs_to_u32 = |lhs: &str| {
+            let len = lhs_to_u32_map.len() as u32;
+            *lhs_to_u32_map.entry(lhs.to_string()).or_insert_with(|| len)
+        };
+
         let mut myself = Grammar {
-            start: self.start.clone(),
+            start: lhs_to_u32(&self.start),
             rules: Vec::new(),
         };
+
         for rule in &*self.rules {
             let mut new_rhs = Vec::new();
             for rhs in &*rule.rhs {
@@ -234,7 +242,7 @@ impl Grammar {
                             }
                         }
                         parse::Symbol::NonTerminal(nt) => {
-                            new_sequence.push(parse::Symbol::NonTerminal(nt.clone()));
+                            new_sequence.push(parse::Symbol::NonTerminal(lhs_to_u32(nt)));
                         }
                         parse::Symbol::Epsilon => {
                             new_sequence.push(parse::Symbol::Epsilon);
@@ -244,7 +252,7 @@ impl Grammar {
                 new_rhs.push(new_sequence);
             }
             myself.rules.push(parse::Rule {
-                lhs: rule.lhs.clone(),
+                lhs: lhs_to_u32(&rule.lhs),
                 rhs: new_rhs,
             });
         }
@@ -253,7 +261,7 @@ impl Grammar {
     }
 }
 
-impl<T> Grammar<T> {
+impl<T: Clone + Eq + Hash> Grammar<T> {
     fn garbage_collect_non_terminals(&mut self) {
         // Remove any non-terminals that are not used in any rules
         let mut used_non_terminals = std::collections::HashSet::new();
@@ -319,7 +327,7 @@ impl Grammar<u32> {
         struct NewRule {
             incoming: State,
             outgoing: State,
-            lhs: String,
+            lhs: u32,
             rhs: Vec<Vec<parse::Symbol<u32>>>,
         }
 
@@ -334,7 +342,7 @@ impl Grammar<u32> {
                     let mut new_rule = NewRule {
                         incoming,
                         outgoing,
-                        lhs: rule.lhs.clone(),
+                        lhs: rule.lhs,
                         rhs: Vec::new(),
                     };
                     let mut new_rhs = Vec::new();
@@ -404,7 +412,7 @@ impl Grammar<u32> {
         let mut changed = true;
         while changed {
             // A map of lhs, incoming -> outgoing
-            let mut state_map: HashMap<(String, State), u32> = HashMap::new();
+            let mut state_map: HashMap<(u32, State), u32> = HashMap::new();
             for rule in &new_rules {
                 // Create a unique key for the rule
                 let key = (rule.lhs.clone(), rule.incoming.clone());
@@ -412,7 +420,7 @@ impl Grammar<u32> {
             }
 
             // A map of lhs, incoming, outgoing -> index
-            let mut outgoing_map: HashSet<(String, State, State)> = HashSet::new();
+            let mut outgoing_map: HashSet<(u32, State, State)> = HashSet::new();
             for rule in &new_rules {
                 // Create a unique key for the rule
                 let key = (
@@ -494,19 +502,23 @@ impl Grammar<u32> {
         // Finally, split up all of the rules into a new grammar
         let mut new_grammar_rules = Vec::new();
 
-        fn format_new_rule(rule: &NewRule) -> String {
-            let NewRule {
-                incoming,
-                outgoing,
-                lhs,
-                ..
-            } = rule;
-            format!("{}_{}_{}", *incoming as u8, lhs, *outgoing as u8)
-        }
+        let mut new_lhs_mapping = HashMap::new();
+        let format_new_rule = |new_lhs_mapping: &mut HashMap<(u32, u8, u8), u32>,
+                               rule: &NewRule| {
+            let key = (rule.lhs, rule.incoming as u8, rule.outgoing as u8);
+            if let Some(&existing_id) = new_lhs_mapping.get(&key) {
+                existing_id
+            } else {
+                // Use the next available u32 for the lhs
+                let next_id = new_lhs_mapping.len() as u32;
+                new_lhs_mapping.insert(key, next_id);
+                next_id
+            }
+        };
 
         let start_time = std::time::Instant::now();
         // A map of lhs, incoming -> Vec<index>
-        let mut state_map: HashMap<(String, State), Vec<usize>> = HashMap::new();
+        let mut state_map: HashMap<(u32, State), Vec<usize>> = HashMap::new();
         for (index, rule) in new_rules.iter().enumerate() {
             // Create a unique key for the rule
             let key = (rule.lhs.clone(), rule.incoming.clone());
@@ -514,7 +526,7 @@ impl Grammar<u32> {
         }
 
         // A map of lhs, incoming, outgoing -> Vec<index>
-        let mut outgoing_map: HashMap<(String, State, State), Vec<usize>> = HashMap::new();
+        let mut outgoing_map: HashMap<(u32, State, State), Vec<usize>> = HashMap::new();
         for (index, rule) in new_rules.iter().enumerate() {
             // Create a unique key for the rule
             let key = (
@@ -531,7 +543,7 @@ impl Grammar<u32> {
                 rhs,
                 ..
             } = rule;
-            let new_lhs = format_new_rule(rule);
+            let new_lhs = format_new_rule(&mut new_lhs_mapping, rule);
             let mut new_rhs = Vec::new();
 
             for rhs in rhs {
@@ -558,8 +570,14 @@ impl Grammar<u32> {
                                 let valid_second_token = &new_rules[valid_second_token];
                                 // Create a new right-hand side with the valid non-terminals
                                 let new_sequence = vec![
-                                    parse::Symbol::NonTerminal(format_new_rule(valid_first_token)),
-                                    parse::Symbol::NonTerminal(format_new_rule(valid_second_token)),
+                                    parse::Symbol::NonTerminal(format_new_rule(
+                                        &mut new_lhs_mapping,
+                                        valid_first_token,
+                                    )),
+                                    parse::Symbol::NonTerminal(format_new_rule(
+                                        &mut new_lhs_mapping,
+                                        valid_second_token,
+                                    )),
                                 ];
                                 new_rhs.push(new_sequence);
                             }
@@ -581,18 +599,19 @@ impl Grammar<u32> {
             });
         }
 
-        // Create a new start rule
-        let start_lhs: Vec<_> = new_rules.iter().filter(|r| r.lhs == self.start).collect();
-        let new_start_lhs = "Start".to_string();
-        let new_start = parse::Rule {
-            lhs: new_start_lhs.clone(),
-            rhs: start_lhs
-                .iter()
-                .map(|r| vec![parse::Symbol::NonTerminal(format_new_rule(r))])
-                .collect(),
-        };
+        // Find the start rules
+        let start_rules = State::ALL
+            .iter()
+            .filter_map(|end| new_lhs_mapping.get(&(self.start, State::Start as u8, *end as u8)))
+            .collect::<Vec<_>>();
 
-        new_grammar_rules.push(new_start);
+        println!("start_rules: {:?}", start_rules);
+
+        // If there is exactly one start rule, use it as the new start rule
+        let new_start_lhs = match start_rules.as_slice() {
+            [start] => **start,
+            _ => todo!(),
+        };
 
         println!("Time to create new grammar: {:?}", start_time.elapsed());
 
