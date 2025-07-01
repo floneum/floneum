@@ -625,13 +625,21 @@ impl Grammar<u32> {
         // Create a new start rule
         let start_lhs: Vec<_> = new_rules.iter().filter(|r| r.lhs == self.start).collect();
         println!("start_lhs: {:?}", start_lhs);
-        let new_start_lhs = match start_lhs.as_slice() {
-            [first] => {
-                // If there is only one start rule, use it directly
-                format_new_rule(&mut new_lhs_mapping, first)
-            }
-            _ => unreachable!(),
+        let new_start_lhs = new_lhs_mapping.len() as u32;
+        let new_rhs = start_lhs
+            .iter()
+            .map(|r| {
+                vec![parse::Symbol::NonTerminal(format_new_rule(
+                    &mut new_lhs_mapping,
+                    r,
+                ))]
+            })
+            .collect();
+        let new_rule = parse::Rule {
+            lhs: new_start_lhs,
+            rhs: new_rhs,
         };
+        new_grammar_rules.push(new_rule);
 
         println!("Time to create new grammar: {:?}", start_time.elapsed());
 
