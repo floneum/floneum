@@ -1138,11 +1138,7 @@ impl WgslQuantizedType for BlockQ6K {
 
                     writeln!(
                         code,
-                        "let merged_{offset} = select(
-                        {datatype}(low_byte_{offset} | (high_byte_{offset} << 4)),
-                        {datatype}(low_byte_{offset} | (high_byte_{offset} << 2)),
-                    (chunk_index & 1u) == 1u
-                );",
+                        "let merged_{offset} = {datatype}(low_byte_{offset} | select(high_byte_{offset} << 4, high_byte_{offset} << 2, (chunk_index & 1u) == 1u));",
                     )
                     .unwrap();
 
@@ -1356,11 +1352,7 @@ impl WgslQuantizedType for BlockQ6K {
 
                     writeln!(
                         code,
-                        "let merged_{offset} = select(
-                        {datatype}(low_byte_{offset} | (high_byte_{offset} << 4)),
-                        {datatype}(low_byte_{offset} | (high_byte_{offset} << 2)),
-                    (chunk_index & 1u) == 1u
-                );",
+                        "let merged_{offset} = {datatype}(low_byte_{offset} | select(high_byte_{offset} << 4, high_byte_{offset} << 2, (chunk_index & 1u) == 1u));",
                     )
                     .unwrap();
 
