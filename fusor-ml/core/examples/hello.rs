@@ -17,7 +17,7 @@ async fn main() {
 
     let mut reader = std::io::Cursor::new(&bytes);
     let metadata = GgufMetadata::read(&mut reader).unwrap();
-    let q_matrix_metadata = metadata.tensor_infos.get("blk.3.ffn_down.weight").unwrap();
+    let q_matrix_metadata = metadata.tensor_infos.get("blk.0.ffn_down.weight").unwrap();
     println!("Q matrix metadata: {:?}", q_matrix_metadata);
 
     let q_matrix = QMatrix::read(

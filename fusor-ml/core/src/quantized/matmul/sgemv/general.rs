@@ -1,56 +1,22 @@
 use crate::{
     DataTypeEnum, dequantize_vec4_block,
     mir::{
-        globals::{ArrayType, KernelGlobalSpace, KernelGlobalType, VectorType},
+        globals::KernelGlobalSpace,
         inputs::{QMatrixInput, TensorInput},
         kernel::GenericKernel,
         workgroup_shape::WorkgroupShape,
     },
-    quantized::matmul::QMatMulOperation,
+    quantized::matmul::{
+        QMatMulOperation,
+        sgemv::{
+            SGEMV_CHUNK_SIZE, SGEMV_VECTOR_SIZE, maybe_vec_storage_index,
+            maybe_vec_storage_subgroup_add, maybe_vec_storage_type, maybe_vec_storage_type_enum,
+        },
+    },
 };
-use std::fmt::{Display, Write};
+use std::fmt::Write;
 
-pub(crate) const SGEMV_CHUNK_SIZE: u32 = 2; // This is the size of the chunk each thread will process at a time
-pub(crate) const SGEMV_VECTOR_SIZE: u32 = 4; // This is the size of the chunk we will dot at a time
-
-fn maybe_vec_storage_type(size: u32, dtype: DataTypeEnum) -> String {
-    match size {
-        1 => format!("{dtype}"),
-        2..4 => format!("vec{size}<{dtype}>"),
-        _ => format!("array<{size}u, {dtype}>"),
-    }
-}
-
-fn maybe_vec_storage_type_enum(size: u32, dtype: DataTypeEnum) -> KernelGlobalType {
-    match size {
-        1 => KernelGlobalType::Value(dtype),
-        2..4 => KernelGlobalType::Vector(VectorType::new(size.to_string(), dtype)),
-        _ => KernelGlobalType::Array(ArrayType::new(size.to_string(), dtype)),
-    }
-}
-
-fn maybe_vec_storage_subgroup_add(size: u32, value: impl Display) -> String {
-    match size {
-        1..4 => format!("subgroupAdd({value})"),
-        _ => format!(
-            "array({})",
-            (0..size)
-                .map(|i| { format!("subgroupAdd({value}[{i}])") })
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-    }
-}
-
-fn maybe_vec_storage_index(size: u32, value: impl Display, index: impl Display) -> String {
-    match size {
-        0 => unreachable!(),
-        1 => format!("{value}"),
-        2.. => format!("{value}[{index}]"),
-    }
-}
-
-pub(crate) fn sgemv(
+pub(crate) fn general_sgemv(
     op: &QMatMulOperation,
     generic_kernel: &mut GenericKernel,
     workgroup_size: &WorkgroupShape,
@@ -111,11 +77,7 @@ pub(crate) fn sgemv(
         "let base_axis_index = {workgroup_local_index};"
     )
     .unwrap();
-    writeln!(
-        &mut kernel,
-        "let end_axis_index = k_block_size;"
-    )
-    .unwrap();
+    writeln!(&mut kernel, "let end_axis_index = k_block_size;").unwrap();
     writeln!(&mut kernel, "var index = base_axis_index;").unwrap();
 
     let chunk_blocks = elements_per_block / SGEMV_VECTOR_SIZE;
@@ -242,7 +204,11 @@ pub(crate) fn sgemv(
     }
 
     // If this is not the first simd thread in the workgroup, we can return early
-    writeln!(&mut kernel, "if {workgroup_local_index} != 0u {{ return; }}").unwrap();
+    writeln!(
+        &mut kernel,
+        "if {workgroup_local_index} != 0u {{ return; }}"
+    )
+    .unwrap();
 
     // Write the output to the output tensor if this is the first thread in the workgroup
     if SGEMV_CHUNK_SIZE > 1 {

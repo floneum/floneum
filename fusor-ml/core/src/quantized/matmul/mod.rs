@@ -1,8 +1,7 @@
+use fusor_gguf::GgmlType;
+
 use crate::{
-    DataType, DataTypeEnum, Device, Tensor, TensorData,
-    compute_graph::AnyComputeKey,
-    mir::{inputs::MirValue, kernel::GenericKernel, operation::Operation},
-    quantized::matmul::sgemv::SGEMV_CHUNK_SIZE,
+    compute_graph::AnyComputeKey, mir::{inputs::MirValue, kernel::GenericKernel, operation::Operation}, quantized::{matmul::sgemv::SGEMV_CHUNK_SIZE}, DataType, DataTypeEnum, Device, Tensor, TensorData
 };
 
 use super::QMatrix;
@@ -321,10 +320,17 @@ impl Operation for QMatMulOperation {
                     limits.max_compute_workgroup_size_x + 1,
                 ),
             );
-            constraints.add_constraint(
-                0,
-                crate::mir::workgroup_shape::Constraint::equals(limits.min_subgroup_size.max(16)),
-            );
+            if self.matrix.datatype == GgmlType::Q6K {
+                constraints.add_constraint(
+                    0,
+                    crate::mir::workgroup_shape::Constraint::equals(limits.min_subgroup_size.max(64)),
+                );
+            } else {
+                constraints.add_constraint(
+                    0,
+                    crate::mir::workgroup_shape::Constraint::equals(limits.min_subgroup_size.max(16)),
+                );
+            }
         } else {
             constraints.add_constraint(0, crate::mir::workgroup_shape::Constraint::Equals(1));
         }
@@ -341,6 +347,14 @@ impl Operation for QMatMulOperation {
         let n = self.n_size();
         let m = self.m_size();
         if self.sgemv() {
+            if self.matrix.datatype == GgmlType::Q6K {
+                // For Q6K sgemv, every thread only processes a single section of a row
+                return [
+                    n as u32,
+                    1,
+                    1,
+                ];
+            }
             [(n as u32).div_ceil(SGEMV_CHUNK_SIZE), 1, 1]
         } else {
             [
