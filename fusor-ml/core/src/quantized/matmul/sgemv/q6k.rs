@@ -168,7 +168,5 @@ pub(crate) fn q6k_sgemv(
     output.strided_index(&mut kernel, ["0".to_string(), "row".to_string()]);
     writeln!(&mut kernel, "] = sum;",).unwrap();
 
-    println!("SGEMV kernel:\n{kernel}");
-
     generic_kernel.push_body(&kernel);
 }
