@@ -265,17 +265,16 @@ impl SlabGrammar {
                                     possible_rules = possible_rules
                                         .into_iter()
                                         .flat_map(|(state, symbols)| {
-                                            let mut new = Vec::new();
-                                            for next in State::ALL {
-                                                if let Some(nt) =
-                                                    transition_map.get(&(*next_nt, state, next))
-                                                {
-                                                    let mut new_symbols = symbols.clone();
-                                                    new_symbols.push(Symbol::NonTerminal(*nt));
-                                                    new.push((next, new_symbols));
-                                                }
-                                            }
-                                            new
+                                            let transition_map = &transition_map;
+                                            State::ALL.iter().filter_map(move |next| {
+                                                transition_map.get(&(*next_nt, state, *next)).map(
+                                                    |nt| {
+                                                        let mut new_symbols = symbols.clone();
+                                                        new_symbols.push(Symbol::NonTerminal(*nt));
+                                                        (*next, new_symbols)
+                                                    },
+                                                )
+                                            })
                                         })
                                         .collect();
                                 }
