@@ -2,6 +2,7 @@
 
 use std::fmt::{Display, Formatter};
 
+use beef::Cow;
 use nom::{
     IResult, Parser,
     branch::alt,
@@ -35,14 +36,14 @@ impl<T: Display> Display for Symbol<T> {
 
 /// One production rule: *lhs → rhs1 | rhs2 | …*
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Rule<T = String> {
+pub struct Rule<T: Clone + 'static = String> {
     /// The left‑hand non‑terminal.
     pub lhs: T,
     /// Alternative right‑hand sides, each a vector of symbols composing a *sequence*.
-    pub rhs: Vec<Vec<Symbol<T>>>, // sequence list
+    pub rhs: Vec<Cow<'static, [Symbol<T>]>>, // sequence list
 }
 
-impl<T: Display> Display for Rule<T> {
+impl<T: Clone + Display + 'static> Display for Rule<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -63,7 +64,7 @@ impl<T: Display> Display for Rule<T> {
 
 /// A parsed context‑free grammar.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Grammar<T = String> {
+pub struct Grammar<T: Clone + 'static = String> {
     pub start: T,
     /// Map `lhs → rule` (keeps original order via `Vec`).
     pub rules: Vec<Rule<T>>,
@@ -89,8 +90,8 @@ impl Grammar {
     }
 }
 
-impl<T> Grammar<T> {
-    pub fn map<U>(
+impl<T: Clone + 'static> Grammar<T> {
+    pub fn map<U: Clone + 'static>(
         self,
         mut terminals: impl FnMut(T) -> U,
         mut non_terminals: impl FnMut(T) -> U,
@@ -107,11 +108,14 @@ impl<T> Grammar<T> {
                     .map(|seq| {
                         seq.into_iter()
                             .map(|sym| match sym {
-                                Symbol::NonTerminal(nt) => Symbol::NonTerminal(non_terminals(nt)),
-                                Symbol::Terminal(t) => Symbol::Terminal(terminals(t)),
+                                Symbol::NonTerminal(nt) => {
+                                    Symbol::NonTerminal(non_terminals(nt.clone()))
+                                }
+                                Symbol::Terminal(t) => Symbol::Terminal(terminals(t.clone())),
                                 Symbol::Epsilon => Symbol::Epsilon,
                             })
-                            .collect()
+                            .collect::<Vec<_>>()
+                            .into()
                     })
                     .collect(),
             })
@@ -120,7 +124,7 @@ impl<T> Grammar<T> {
     }
 }
 
-impl<T: Display> Display for Grammar<T> {
+impl<T: Clone + Display + 'static> Display for Grammar<T> {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         writeln!(f, "start: {}", self.start)?;
         for rule in &self.rules {
@@ -227,7 +231,10 @@ fn rule(input: &str) -> IResult<&str, Rule> {
         )),
         |(lhs, rhs)| Rule {
             lhs: lhs.to_string(),
-            rhs,
+            rhs: rhs
+                .into_iter()
+                .map(|seq| seq.into())
+                .collect(),
         },
     )
     .parse(input)
@@ -287,7 +294,7 @@ mod tests {
     fn epsilon_only() {
         let src = "S -> ε";
         let g = Grammar::parse(src).unwrap();
-        let alt = &g.rule("S").unwrap().rhs[0];
+        let alt = &*g.rule("S").unwrap().rhs[0];
         assert_eq!(alt, &[Symbol::Epsilon]);
     }
 }

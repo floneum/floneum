@@ -1,4 +1,6 @@
-use std::{collections::{HashMap, HashSet}};
+use std::collections::{HashMap, HashSet};
+
+use beef::Cow;
 
 use crate::parse::{Grammar, Rule, Symbol};
 
@@ -9,7 +11,7 @@ impl Grammar {
             .rules
             .iter()
             .map(|rule| {
-                let new_rhs: Vec<Vec<Symbol>> = rule
+                let new_rhs: Vec<Cow<[Symbol]>> = rule
                     .rhs
                     .iter()
                     .map(|alt| {
@@ -21,7 +23,8 @@ impl Grammar {
                                     .collect::<Vec<_>>(),
                                 _ => vec![sym.clone()],
                             })
-                            .collect()
+                            .collect::<Vec<_>>()
+                            .into()
                     })
                     .collect();
                 Rule {
@@ -72,7 +75,7 @@ impl Grammar<String> {
     fn add_new_start(
         &self,
         rules: Vec<Rule<String>>,
-        start: String
+        start: String,
     ) -> Result<(Vec<Rule<String>>, HashSet<String>, String), String> {
         // Collect all existing non-terminals.
         let mut nonterminals: HashSet<String> = rules.iter().map(|r| r.lhs.clone()).collect();
@@ -91,7 +94,7 @@ impl Grammar<String> {
         let mut new_rules = Vec::new();
         new_rules.push(Rule {
             lhs: new_start.clone(),
-            rhs: vec![vec![Symbol::NonTerminal(start.clone())]],
+            rhs: vec![vec![Symbol::NonTerminal(start.clone())].into()],
         });
         for rule in &rules {
             new_rules.push(rule.clone());
@@ -106,7 +109,7 @@ impl Grammar<String> {
         let mut nullable: HashSet<String> = HashSet::new();
         for r in &rules {
             for alt in &r.rhs {
-                if alt == &[Symbol::Epsilon] {
+                if &**alt == &[Symbol::Epsilon] {
                     nullable.insert(r.lhs.clone());
                 }
             }
@@ -135,7 +138,7 @@ impl Grammar<String> {
         // (b) Rebuild each rule’s RHS by dropping nullable symbols in all combinations.
         let mut after_eps_elim: Vec<Rule<String>> = Vec::new();
         for r in &rules {
-            let mut new_alternatives: HashSet<Vec<Symbol<String>>> = HashSet::new();
+            let mut new_alternatives: HashSet<Cow<[Symbol<String>]>> = HashSet::new();
             for alt in &r.rhs {
                 // Collect positions of nullable non-terminals within this alt.
                 let nullable_positions: Vec<usize> = alt
@@ -161,27 +164,31 @@ impl Grammar<String> {
                     if new_rhs.is_empty() {
                         // If everything was dropped, we get ε. Only keep that if r.lhs == new_start.
                         if r.lhs == *new_start {
-                            new_alternatives.insert(vec![Symbol::Epsilon]);
+                            new_alternatives.insert(vec![Symbol::Epsilon].into());
                         }
                     } else {
-                        new_alternatives.insert(new_rhs);
+                        new_alternatives.insert(new_rhs.into());
                     }
                 }
             }
             // If this rule’s head is not the new_start, remove the ε alternative entirely.
             if r.lhs != *new_start {
-                new_alternatives.remove(&vec![Symbol::Epsilon]);
+                new_alternatives.remove(&Cow::owned(vec![Symbol::Epsilon]));
             }
             after_eps_elim.push(Rule {
                 lhs: r.lhs.clone(),
-                rhs: new_alternatives.into_iter().collect(),
+                rhs: new_alternatives.into_iter().collect::<Vec<_>>().into(),
             });
         }
         after_eps_elim
     }
 
     /// Step 3: Eliminate unit productions (A → B where B is a non-terminal).
-    fn eliminate_units(&self, rules: Vec<Rule<String>>, nonterminals: &HashSet<String>) -> Vec<Rule<String>> {
+    fn eliminate_units(
+        &self,
+        rules: Vec<Rule<String>>,
+        nonterminals: &HashSet<String>,
+    ) -> Vec<Rule<String>> {
         // (a) Build a graph of unit edges A → B.
         let mut unit_graph: HashMap<String, HashSet<String>> = HashMap::new();
         for r in &rules {
@@ -218,7 +225,7 @@ impl Grammar<String> {
         // (c) Gather all non-unit productions.
         let mut nonunit_rules: Vec<Rule<String>> = Vec::new();
         for r in &rules {
-            let filtered: Vec<Vec<Symbol<String>>> = r
+            let filtered: Vec<Cow<[Symbol<String>]>> = r
                 .rhs
                 .iter()
                 .filter(|alt| !(alt.len() == 1 && matches!(&alt[0], Symbol::NonTerminal(_))))
@@ -233,9 +240,9 @@ impl Grammar<String> {
         }
 
         // (d) For each non-terminal A, gather all non-unit productions of any B in closure(A).
-        let mut expanded: HashMap<String, HashSet<Vec<Symbol<String>>>> = HashMap::new();
+        let mut expanded: HashMap<String, HashSet<Cow<[Symbol<String>]>>> = HashMap::new();
         for nt in nonterminals {
-            let mut rhs_set: HashSet<Vec<Symbol<String>>> = HashSet::new();
+            let mut rhs_set: HashSet<Cow<[Symbol<String>]>> = HashSet::new();
             if let Some(closure_set) = unit_closure.get(nt) {
                 for b in closure_set {
                     for r in &rules {
@@ -266,17 +273,21 @@ impl Grammar<String> {
     }
 
     /// Step 4: Replace terminals in any RHS of length > 1 with fresh non-terminals.
-    fn replace_terminals(&self, rules: Vec<Rule<String>>, nonterminals: &mut HashSet<String>) -> Vec<Rule<String>> {
+    fn replace_terminals(
+        &self,
+        rules: Vec<Rule<String>>,
+        nonterminals: &mut HashSet<String>,
+    ) -> Vec<Rule<String>> {
         let mut terminal_map: HashMap<String, String> = HashMap::new();
         let mut replaced: Vec<Rule<String>> = Vec::new();
 
         for r in &rules {
-            let mut new_alts: Vec<Vec<Symbol<String>>> = Vec::new();
+            let mut new_alts: Vec<Cow<[Symbol<String>]>> = Vec::new();
             for alt in &r.rhs {
                 if alt.len() > 1 {
                     // Replace each terminal in a long alt with a fresh non-terminal.
                     let mut new_alt: Vec<Symbol<String>> = Vec::with_capacity(alt.len());
-                    for sym in alt {
+                    for sym in &**alt {
                         match sym {
                             Symbol::Terminal(t) => {
                                 if !terminal_map.contains_key(t) {
@@ -300,7 +311,7 @@ impl Grammar<String> {
                             _ => new_alt.push(sym.clone()),
                         }
                     }
-                    new_alts.push(new_alt);
+                    new_alts.push(new_alt.into());
                 } else {
                     // length ≤ 1 or length == 2: leave as-is
                     new_alts.push(alt.clone());
@@ -316,7 +327,7 @@ impl Grammar<String> {
         for (t, nt) in &terminal_map {
             replaced.push(Rule {
                 lhs: nt.clone(),
-                rhs: vec![vec![Symbol::Terminal(t.clone())]],
+                rhs: vec![vec![Symbol::Terminal(t.clone())].into()],
             });
         }
 
@@ -324,14 +335,18 @@ impl Grammar<String> {
     }
 
     /// Step 5: Binarize any production whose RHS has length > 2 by introducing intermediate non-terminals.
-    fn binarize(&self, rules: Vec<Rule<String>>, nonterminals: &mut HashSet<String>) -> Vec<Rule<String>> {
+    fn binarize(
+        &self,
+        rules: Vec<Rule<String>>,
+        nonterminals: &mut HashSet<String>,
+    ) -> Vec<Rule<String>> {
         let mut cnf_rules: Vec<Rule<String>> = Vec::new();
         let mut intermediate_counter = 0;
 
         for r in &rules {
-            let mut new_alts: Vec<Vec<Symbol<String>>> = Vec::new();
+            let mut new_alts: Vec<Cow<[Symbol<String>]>> = Vec::new();
             for alt in &r.rhs {
-                let mut remaining = alt.clone();
+                let mut remaining = alt.to_vec();
                 while remaining.len() > 2 {
                     // Pop off the last two symbols and create a new intermediate non-terminal.
                     let right = remaining.pop().unwrap();
@@ -341,12 +356,12 @@ impl Grammar<String> {
                     nonterminals.insert(new_symbol.clone());
                     cnf_rules.push(Rule {
                         lhs: new_symbol.clone(),
-                        rhs: vec![vec![left, right]],
+                        rhs: vec![vec![left, right].into()],
                     });
                     // Push the new symbol back to remaining for the next iteration.
                     remaining.push(Symbol::NonTerminal(new_symbol));
                 }
-                new_alts.push(remaining);
+                new_alts.push(remaining.into());
             }
 
             if !new_alts.is_empty() {
@@ -428,15 +443,15 @@ mod tests {
             }
         }
         // Check presence of expected expansions.
-        assert!(s_alts.contains(&vec![
+        assert!(s_alts.contains(&Cow::owned(vec![
             Symbol::Terminal("a".into()),
             Symbol::NonTerminal("S".into()),
             Symbol::Terminal("b".into())
-        ]));
-        assert!(s_alts.contains(&vec![
+        ])));
+        assert!(s_alts.contains(&Cow::owned(vec![
             Symbol::Terminal("a".into()),
             Symbol::Terminal("b".into())
-        ]));
+        ])));
     }
 
     #[test]
@@ -516,18 +531,18 @@ mod tests {
             [
                 Rule {
                     lhs: "S".into(),
-                    rhs: vec![vec![
+                    rhs: vec![Cow::owned(vec![
                         Symbol::NonTerminal("T_a".into()),
                         Symbol::NonTerminal("B".into()),
-                    ]],
+                    ])],
                 },
                 Rule {
                     lhs: "B".into(),
-                    rhs: vec![vec![Symbol::Terminal("b".into())]],
+                    rhs: vec![Cow::owned(vec![Symbol::Terminal("b".into())])],
                 },
                 Rule {
                     lhs: "T_a".into(),
-                    rhs: vec![vec![Symbol::Terminal("a".into())]],
+                    rhs: vec![Cow::owned(vec![Symbol::Terminal("a".into())])],
                 },
             ]
         )

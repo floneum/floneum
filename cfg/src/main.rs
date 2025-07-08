@@ -227,7 +227,7 @@ impl Grammar {
                         }
                     }
                 }
-                new_rhs.push(new_sequence);
+                new_rhs.push(new_sequence.into());
             }
             myself.rules.push(parse::Rule {
                 lhs: lhs_to_u32(&rule.lhs),
