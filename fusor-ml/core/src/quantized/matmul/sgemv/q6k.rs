@@ -8,6 +8,7 @@ use crate::{
 };
 use std::fmt::Write;
 
+// https://github.com/ggml-org/llama.cpp/blob/6efcd65945a98cf6883cdd9de4c8ccd8c79d219a/ggml/src/ggml-metal/ggml-metal.metal#L5564
 pub(crate) fn q6k_sgemv(
     op: &QMatMulOperation,
     generic_kernel: &mut GenericKernel,
