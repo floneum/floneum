@@ -162,6 +162,7 @@ impl WhisperInner {
         &mut self,
         pcm_data: Vec<f32>,
         word_level_time_stamps: bool,
+        language: Option<WhisperLanguage>,
         result: UnboundedSender<Segment>,
     ) {
         let mel = audio::pcm_to_mel(&self.config, &pcm_data, &self.mel_filters);
@@ -172,6 +173,14 @@ impl WhisperInner {
             &self.device,
         )
         .unwrap();
+
+        if let Some(language) = language {
+            if let Err(err) = self.decoder.set_language_token(language) {
+                // Log error or send error message to result channel
+                // Continue with default language
+                tracing::error!("Error updating language token: {err}");
+            }
+        }
 
         if let Err(err) = self.decoder.run(
             &mel,
@@ -270,6 +279,14 @@ impl Decoder {
             || token == self.eot_token
             || Some(token) == self.language_token
             || token == self.no_speech_token
+    }
+
+    fn set_language_token(&mut self, language: WhisperLanguage) -> Result<(), WhisperLoadingError>{
+        match token_id(&self.tokenizer, &format!("<|{language}|>")) {
+            Ok(token_id) => self.language_token = Some(token_id),
+            Err(_) => return Err(WhisperLoadingError::UnsupportedLanguage(language)),
+        }
+        Ok(())
     }
 
     fn is_timestamp_or_eot(&self, token: u32) -> bool {

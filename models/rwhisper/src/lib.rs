@@ -207,6 +207,7 @@ where
             stream: self,
             whisper: model,
             current_segment_task: None,
+            language: Some(WhisperLanguage::English),
         }
     }
 }
@@ -217,12 +218,22 @@ pub struct ChunkedTranscriptionTask<S> {
     stream: S,
     whisper: Whisper,
     current_segment_task: Option<TranscriptionTask>,
+    language: Option<WhisperLanguage>,
 }
 
 impl<S> ChunkedTranscriptionTask<S> {
     /// Include word level timestamps in the transcription.
     pub fn timestamped(mut self) -> Self {
         self.word_level_time_stamps = true;
+        self
+    }
+
+    /// Set the language to be used.
+    pub fn with_language<L>(mut self, language: L) -> Self 
+    where
+        L: Into<WhisperLanguage>,
+    {
+        self.language = Some(language.into());
         self
     }
 }
@@ -261,6 +272,11 @@ where
                     if myself.word_level_time_stamps {
                         task = task.timestamped();
                     }
+
+                    if let Some(language) = myself.language {
+                        task = task.with_language(language);
+                    }
+
                     myself.current_segment_task = Some(task);
                 }
                 std::task::Poll::Ready(None) => return std::task::Poll::Ready(None),
@@ -531,8 +547,8 @@ impl WhisperBuilder {
             while let Ok(message) = tx.recv() {
                 match message {
                     WhisperMessage::Kill => return,
-                    WhisperMessage::Transcribe(input, word_level_time_stamps, result) => {
-                        model.transcribe(input, word_level_time_stamps, result);
+                    WhisperMessage::Transcribe(input, word_level_time_stamps, language, result) => {
+                        model.transcribe(input, word_level_time_stamps, language, result);
                     }
                 }
             }
@@ -940,6 +956,7 @@ impl Whisper {
             audio: pcm_data,
             sender: self.inner.sender.clone(),
             receiver: Default::default(),
+            language: Some(WhisperLanguage::English),
         }
     }
 }
@@ -950,12 +967,21 @@ pub struct TranscriptionTask {
     audio: Vec<f32>,
     sender: std::sync::mpsc::Sender<WhisperMessage>,
     receiver: RwLock<Option<UnboundedReceiver<Segment>>>,
+    language: Option<WhisperLanguage>,
 }
 
 impl TranscriptionTask {
     /// Include word level timestamps in the transcription.
     pub fn timestamped(mut self) -> Self {
         self.word_level_time_stamps = true;
+        self
+    }
+
+    /// Set language
+    pub fn with_language<L>(mut self, language: L) -> Self 
+    where L: Into<WhisperLanguage>
+    {
+        self.language = Some(language.into());
         self
     }
 }
@@ -976,6 +1002,7 @@ impl Stream for TranscriptionTask {
             _ = myself.sender.send(WhisperMessage::Transcribe(
                 pcm_data,
                 myself.word_level_time_stamps,
+                myself.language,
                 sender,
             ));
 
@@ -988,7 +1015,7 @@ impl Stream for TranscriptionTask {
 
 enum WhisperMessage {
     Kill,
-    Transcribe(Vec<f32>, bool, UnboundedSender<Segment>),
+    Transcribe(Vec<f32>, bool, Option<WhisperLanguage>, UnboundedSender<Segment>),
 }
 
 pub(crate) fn normalize_audio<S: Source>(input: S) -> Vec<f32>
