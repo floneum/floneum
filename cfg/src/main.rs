@@ -41,6 +41,7 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
         ],
         new_token: 10_000,
     });
+    println!("size before garbage collection: {}", cnf_grammar.rules.len());
     cnf_grammar.garbage_collect_non_terminals();
     let cnf_grammar = cnf_grammar.to_grammar();
     println!("CNF grammar:\n{}", cnf_grammar);

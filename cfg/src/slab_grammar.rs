@@ -244,6 +244,11 @@ impl SlabGrammar {
                 |mut acc, ((start, nt), end_bitset)| {
                     if *end_bitset != 0 {
                         acc.entry(*nt).or_default().push((*start, *end_bitset));
+                    } else {
+                        println!(
+                            "No reachable states for non-terminal {} from start state {:?}",
+                            nt, start
+                        );
                     }
                     acc
                 },
@@ -295,23 +300,27 @@ impl SlabGrammar {
                             Symbol::NonTerminal(next_nt) => {
                                 if i == 0 {
                                     let bitset = reachable_states[&(start, *next_nt)];
+                                    let transition_map = &transition_map;
                                     possible_rules = State::from_bitset(bitset)
                                         .into_iter()
-                                        .map(move |next| {
-                                            (next, vec![Symbol::NonTerminal(*next_nt)])
+                                        .map(|next| {
+                                            let next_id = transition_map[&(*next_nt, start, next)];
+                                            (next, vec![Symbol::NonTerminal(next_id)])
                                         })
                                         .collect::<Vec<_>>();
                                 } else {
                                     let reachable_states = &reachable_states;
+                                    let transition_map = &transition_map;
                                     possible_rules = possible_rules
                                         .into_iter()
                                         .flat_map(|(start, symbols)| {
                                             let bitset = reachable_states[&(start, *next_nt)];
                                             State::from_bitset(bitset)
                                                 .into_iter()
-                                                .map(move |next| {
+                                                .map(|next| {
                                                     let mut new_symbols = symbols.clone();
-                                                    new_symbols.push(Symbol::NonTerminal(*next_nt));
+                                                    let next_id = transition_map[&(*next_nt, start, next)];
+                                                    new_symbols.push(Symbol::NonTerminal(next_id));
                                                     (next, new_symbols)
                                                 })
                                                 .collect::<Vec<_>>()
