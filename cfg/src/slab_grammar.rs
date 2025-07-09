@@ -238,14 +238,16 @@ impl SlabGrammar {
         }
 
         // First transpose the map into nt -> Vec<(State, u8)>
-        let non_terminal_to_states: FxHashMap<u32, SmallVec<[(State, u8); 3]>> = reachable_states
-            .into_iter()
-            .fold(FxHashMap::default(), |mut acc, ((start, nt), end_bitset)| {
-                if end_bitset != 0 {
-                    acc.entry(nt).or_default().push((start, end_bitset));
-                }
-                acc
-            });
+        let non_terminal_to_states: FxHashMap<u32, SmallVec<[(State, u8); 3]>> =
+            reachable_states.iter().fold(
+                FxHashMap::default(),
+                |mut acc, ((start, nt), end_bitset)| {
+                    if *end_bitset != 0 {
+                        acc.entry(*nt).or_default().push((*start, *end_bitset));
+                    }
+                    acc
+                },
+            );
 
         let mut transition_map: FxHashMap<(u32, State, State), u32> = FxHashMap::default();
 
@@ -292,31 +294,27 @@ impl SlabGrammar {
                         match symbol {
                             Symbol::NonTerminal(next_nt) => {
                                 if i == 0 {
-                                    for next in State::ALL {
-                                        if let Some(nt) =
-                                            transition_map.get(&(*next_nt, start, next))
-                                        {
-                                            possible_rules
-                                                .push((start, vec![Symbol::NonTerminal(*nt)]));
-                                        }
-                                    }
+                                    let bitset = reachable_states[&(start, *next_nt)];
+                                    possible_rules = State::from_bitset(bitset)
+                                        .into_iter()
+                                        .map(move |next| {
+                                            (next, vec![Symbol::NonTerminal(*next_nt)])
+                                        })
+                                        .collect::<Vec<_>>();
                                 } else {
+                                    let reachable_states = &reachable_states;
                                     possible_rules = possible_rules
                                         .into_iter()
                                         .flat_map(|(start, symbols)| {
-                                            let transition_map = &transition_map;
-                                            State::ALL.into_iter().filter_map(
-                                                move |next| {
-                                                    transition_map
-                                                        .get(&(*next_nt, start, next))
-                                                        .map(|nt| {
-                                                            let mut new_symbols = symbols.clone();
-                                                            new_symbols
-                                                                .push(Symbol::NonTerminal(*nt));
-                                                            (next, new_symbols)
-                                                        })
-                                                },
-                                            )
+                                            let bitset = reachable_states[&(start, *next_nt)];
+                                            State::from_bitset(bitset)
+                                                .into_iter()
+                                                .map(move |next| {
+                                                    let mut new_symbols = symbols.clone();
+                                                    new_symbols.push(Symbol::NonTerminal(*next_nt));
+                                                    (next, new_symbols)
+                                                })
+                                                .collect::<Vec<_>>()
                                         })
                                         .collect();
                                 }
@@ -357,6 +355,7 @@ impl SlabGrammar {
                             Symbol::Epsilon => {}
                         }
                     }
+                    println!("Possible rules for {nt} -> {rules:?}: {possible_rules:?}");
                     new_options.extend(
                         possible_rules
                             .into_iter()
@@ -365,7 +364,7 @@ impl SlabGrammar {
                 }
                 let id = transition_map[&(*nt, start, end)];
                 if new_options.is_empty() {
-                    println!("rule is empty");
+                    panic!("transition {nt} -> {start:?} -> {end:?} is empty!");
                 }
                 self.rules[id as usize].rhs = new_options;
             }
