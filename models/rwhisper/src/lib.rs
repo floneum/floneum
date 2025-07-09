@@ -229,7 +229,7 @@ impl<S> ChunkedTranscriptionTask<S> {
     }
 
     /// Set the language to be used.
-    pub fn with_language<L>(mut self, language: L) -> Self 
+    pub fn with_language<L>(mut self, language: L) -> Self
     where
         L: Into<WhisperLanguage>,
     {
@@ -978,8 +978,9 @@ impl TranscriptionTask {
     }
 
     /// Set language
-    pub fn with_language<L>(mut self, language: L) -> Self 
-    where L: Into<WhisperLanguage>
+    pub fn with_language<L>(mut self, language: L) -> Self
+    where
+        L: Into<WhisperLanguage>,
     {
         self.language = Some(language.into());
         self
@@ -1015,7 +1016,12 @@ impl Stream for TranscriptionTask {
 
 enum WhisperMessage {
     Kill,
-    Transcribe(Vec<f32>, bool, Option<WhisperLanguage>, UnboundedSender<Segment>),
+    Transcribe(
+        Vec<f32>,
+        bool,
+        Option<WhisperLanguage>,
+        UnboundedSender<Segment>,
+    ),
 }
 
 pub(crate) fn normalize_audio<S: Source>(input: S) -> Vec<f32>

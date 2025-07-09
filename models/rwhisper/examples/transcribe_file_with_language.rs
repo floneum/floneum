@@ -16,7 +16,9 @@ async fn main() -> Result<(), anyhow::Error> {
     let audio = Decoder::new(std::io::Cursor::new(contents.clone())).unwrap();
 
     // Transcribe the source audio into text
-    let mut text = model.transcribe(audio).with_language(WhisperLanguage::Spanish);
+    let mut text = model
+        .transcribe(audio)
+        .with_language(WhisperLanguage::Spanish);
 
     text.to_std_out().await?;
     Ok(())

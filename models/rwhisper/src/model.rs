@@ -281,7 +281,7 @@ impl Decoder {
             || token == self.no_speech_token
     }
 
-    fn set_language_token(&mut self, language: WhisperLanguage) -> Result<(), WhisperLoadingError>{
+    fn set_language_token(&mut self, language: WhisperLanguage) -> Result<(), WhisperLoadingError> {
         match token_id(&self.tokenizer, &format!("<|{language}|>")) {
             Ok(token_id) => self.language_token = Some(token_id),
             Err(_) => return Err(WhisperLoadingError::UnsupportedLanguage(language)),

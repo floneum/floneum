@@ -15,7 +15,9 @@ async fn main() -> Result<(), anyhow::Error> {
         .await?;
 
     // Transcribe the audio.
-    let mut text = model.transcribe(audio).with_language(WhisperLanguage::Hindi);
+    let mut text = model
+        .transcribe(audio)
+        .with_language(WhisperLanguage::Hindi);
 
     // As the model transcribes the audio, print the text to the console.
     text.to_std_out().await?;
