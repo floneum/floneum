@@ -115,10 +115,7 @@ impl SlabGrammar {
     // b -> b1 | c | 2
     // c -> b
     pub fn shortcut_merge(&mut self, merge: &Merge) {
-        println!(
-            "merging {} and {} into {}",
-            merge.pair[0], merge.pair[1], merge.new_token
-        );
+       
         let mut queued = VecDeque::new();
         queued.push_back((self.start, 0));
         let mut depth = FxHashMap::default();
@@ -213,21 +210,12 @@ impl SlabGrammar {
                         }
                         final_possible_states |= current_states;
                     }
-                    println!(
-                        "Possible start state: {:?} for non-terminal {}: {:03b}\n{options:?}",
-                        possible_start_state, nt, final_possible_states
-                    );
                     let key = (possible_start_state, nt);
                     reachable_states.insert(key, final_possible_states);
                 }
             }
             let new_reachable_states = count_reachable_states(&reachable_states);
-            println!(
-                "reachable states: {}->{}",
-                prev_reachable_states, new_reachable_states
-            );
             let new_start_states = count_start_states(&start_states);
-            println!("start states: {}->{}", prev_start_states, new_start_states);
             if new_reachable_states == prev_reachable_states
                 && new_start_states == prev_start_states
             {
@@ -244,11 +232,6 @@ impl SlabGrammar {
                 |mut acc, ((start, nt), end_bitset)| {
                     if *end_bitset != 0 {
                         acc.entry(*nt).or_default().push((*start, *end_bitset));
-                    } else {
-                        println!(
-                            "No reachable states for non-terminal {} from start state {:?}",
-                            nt, start
-                        );
                     }
                     acc
                 },
@@ -290,7 +273,6 @@ impl SlabGrammar {
                 .collect();
 
             for (start, end) in transitions {
-                println!("Transition: {nt} = {:?} -> {:?}", start, end);
                 let options = &self.rules[*nt as usize].rhs;
                 let mut new_options: Vec<Cow<[Symbol<u32>]>> = vec![];
                 for rules in options {
@@ -364,7 +346,6 @@ impl SlabGrammar {
                             Symbol::Epsilon => {}
                         }
                     }
-                    println!("Possible rules for {nt} -> {rules:?}: {possible_rules:?}");
                     new_options.extend(
                         possible_rules
                             .into_iter()
