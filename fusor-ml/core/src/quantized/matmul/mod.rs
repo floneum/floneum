@@ -1,7 +1,7 @@
 use fusor_gguf::GgmlType;
 
 use crate::{
-    compute_graph::AnyComputeKey, mir::{inputs::MirValue, kernel::GenericKernel, operation::Operation}, quantized::{matmul::sgemv::SGEMV_CHUNK_SIZE}, DataType, DataTypeEnum, Device, Tensor, TensorData
+    compute_graph::AnyComputeKey, mir::{inputs::MirValue, kernel::GenericKernel, operation::Operation}, quantized::matmul::sgemv::{q6k::Q6K_SGEMV_CHUNK_SIZE, SGEMV_CHUNK_SIZE}, DataType, DataTypeEnum, Device, Tensor, TensorData
 };
 
 use super::QMatrix;
@@ -350,7 +350,7 @@ impl Operation for QMatMulOperation {
             if self.matrix.datatype == GgmlType::Q6K {
                 // For Q6K sgemv, every thread only processes a single section of a row
                 return [
-                    n as u32,
+                    (n as u32).div_ceil(Q6K_SGEMV_CHUNK_SIZE),
                     1,
                     1,
                 ];

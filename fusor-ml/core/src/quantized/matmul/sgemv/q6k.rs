@@ -4,9 +4,14 @@ use crate::{
         kernel::GenericKernel,
         workgroup_shape::WorkgroupShape,
     },
-    quantized::matmul::QMatMulOperation,
+    quantized::matmul::{
+        QMatMulOperation,
+        sgemv::{maybe_vec_storage_index, maybe_vec_storage_subgroup_add, maybe_vec_storage_type},
+    },
 };
 use std::fmt::Write;
+
+pub(crate) const Q6K_SGEMV_CHUNK_SIZE: u32 = 1; // This is the size of the chunk each thread will process at a time
 
 // https://github.com/ggml-org/llama.cpp/blob/6efcd65945a98cf6883cdd9de4c8ccd8c79d219a/ggml/src/ggml-metal/ggml-metal.metal#L5564
 pub(crate) fn q6k_sgemv(
@@ -40,7 +45,7 @@ pub(crate) fn q6k_sgemv(
     writeln!(&mut kernel, "let workgroup_offset = {workgroup_index}.x;").unwrap();
     writeln!(
         &mut kernel,
-        "let row = 2 * workgroup_offset + {subgroup_index};"
+        "let row = (2 * workgroup_offset + {subgroup_index}) * {Q6K_SGEMV_CHUNK_SIZE};"
     )
     .unwrap();
 
@@ -87,7 +92,10 @@ pub(crate) fn q6k_sgemv(
     )
     .unwrap();
 
-    writeln!(&mut kernel, "var sum = 0.0;").unwrap();
+    let sum_storage_type = maybe_vec_storage_type(Q6K_SGEMV_CHUNK_SIZE, dtype);
+    writeln!(&mut kernel, "var sum = {sum_storage_type}();",).unwrap();
+
+    writeln!(&mut kernel, "var cached_a_values = array<{dtype}, 16>();",).unwrap();
 
     // Loop over all of the blocks this thread is responsible for
     writeln!(
@@ -96,78 +104,135 @@ pub(crate) fn q6k_sgemv(
     )
     .unwrap();
     {
-        writeln!(&mut kernel, "let local_block_offset = i + block_offset;").unwrap();
-        writeln!(&mut kernel, "let low_offset_1 = q_offset_l;").unwrap();
-        writeln!(
-            &mut kernel,
-            "let low_bytes_1 = unpack4xU8({input_b}[local_block_offset].data_low_bits[low_offset_1]);"
-        )
-        .unwrap();
-        writeln!(&mut kernel, "let low_offset_2 = q_offset_l + 8;").unwrap();
-        writeln!(&mut kernel, "let low_bytes_2 = unpack4xU8({input_b}[local_block_offset].data_low_bits[low_offset_2]);").unwrap();
-        writeln!(&mut kernel, "let high_offset = q_offset_h;").unwrap();
-        writeln!(
-            &mut kernel,
-            "let high_bytes = unpack4xU8({input_b}[local_block_offset].data_high_bits[high_offset]);"
-        )
-        .unwrap();
-        writeln!(&mut kernel, "let scale_offset = scale_index_offset;").unwrap();
-        writeln!(
-            &mut kernel,
-            "let scale_chunk_1 = unpack4xI8({input_b}[local_block_offset].scales[scale_offset]);"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel,
-            "let scale_chunk_2 = unpack4xI8({input_b}[local_block_offset].scales[scale_offset + 1]);"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel,
-            "let scales = vec4({dtype}(scale_chunk_1[scale_pair_offset]), {dtype}(scale_chunk_1[2 + scale_pair_offset]), {dtype}(scale_chunk_2[scale_pair_offset]), {dtype}(scale_chunk_2[2 + scale_pair_offset]));"
-        )
-        .unwrap();
-
+        // First load the values of a into cached_a_values
         writeln!(
             &mut kernel,
             "let vector_offset = i * {elements_per_block} + y_offset;"
         )
         .unwrap();
-
-        writeln!(
-            &mut kernel,
-            "let scale = {dtype}({input_b}[local_block_offset].scale);"
-        )
-        .unwrap();
-
-        writeln!(&mut kernel, "var sums = vec4f();").unwrap();
-        writeln!(&mut kernel, "for (var j = 0u; j < 4u; j += 1u) {{").unwrap();
-        {
-            let first_four_bytes = 0b00001111u8;
-            let first_two_bytes = 0b00000011u8;
-            let second_two_bytes = 0b00001100u8;
-            let third_two_bytes = 0b00110000u8;
-            let fourth_two_bytes = 0b11000000u8;
-            writeln!(&mut kernel, "sums[0] += {input_a}[j + vector_offset +  0] * {dtype}(i32((low_bytes_1[j] & {first_four_bytes}) | ((high_bytes[j] & {first_two_bytes})  << 4)) - 32);").unwrap();
-            writeln!(&mut kernel, "sums[1] += {input_a}[j + vector_offset + 32] * {dtype}(i32((low_bytes_2[j] & {first_four_bytes}) | ((high_bytes[j] & {second_two_bytes}) << 2)) - 32);").unwrap();
-            writeln!(&mut kernel, "sums[2] += {input_a}[j + vector_offset + 64] * {dtype}(i32((low_bytes_1[j]                 >> 4) | ((high_bytes[j] & {third_two_bytes})  << 0)) - 32);").unwrap();
-            writeln!(&mut kernel, "sums[3] += {input_a}[j + vector_offset + 96] * {dtype}(i32((low_bytes_2[j]                 >> 4) | ((high_bytes[j] & {fourth_two_bytes}) >> 2)) - 32);").unwrap();
+        writeln!(&mut kernel, "for (var j = 0u; j < 4; j += 1u) {{").unwrap();
+        for offset in 0..4 {
+            writeln!(
+                &mut kernel,
+                "cached_a_values[j*4u + {offset}] = {input_a}[j + vector_offset + {}];",
+                offset * 32
+            )
+            .unwrap();
         }
         writeln!(&mut kernel, "}}").unwrap();
-        writeln!(&mut kernel, "sum += scale * dot(sums, scales);").unwrap();
+
+        if Q6K_SGEMV_CHUNK_SIZE > 1 {
+            writeln!(
+                &mut kernel,
+                "for (var offset = 0u; offset < {Q6K_SGEMV_CHUNK_SIZE}; offset += 1u) {{"
+            )
+            .unwrap();
+        }
+        {
+            if Q6K_SGEMV_CHUNK_SIZE > 1 {
+                writeln!(
+                    &mut kernel,
+                    "let local_block_offset = i + block_offset + offset * k_block_size;"
+                )
+                .unwrap();
+            } else {
+                writeln!(&mut kernel, "let local_block_offset = i + block_offset;").unwrap();
+            }
+            writeln!(&mut kernel, "let low_offset_1 = q_offset_l;").unwrap();
+            writeln!(
+                &mut kernel,
+                "let low_bytes_1 = unpack4xU8({input_b}[local_block_offset].data_low_bits[low_offset_1]);"
+            )
+            .unwrap();
+            writeln!(&mut kernel, "let low_offset_2 = q_offset_l + 8;").unwrap();
+            writeln!(&mut kernel, "let low_bytes_2 = unpack4xU8({input_b}[local_block_offset].data_low_bits[low_offset_2]);").unwrap();
+            writeln!(&mut kernel, "let high_offset = q_offset_h;").unwrap();
+            writeln!(
+                &mut kernel,
+                "let high_bytes = unpack4xU8({input_b}[local_block_offset].data_high_bits[high_offset]);"
+            )
+            .unwrap();
+            writeln!(&mut kernel, "let scale_offset = scale_index_offset;").unwrap();
+            writeln!(
+                &mut kernel,
+                "let scale_chunk_1 = unpack4xI8({input_b}[local_block_offset].scales[scale_offset]);"
+            )
+            .unwrap();
+            writeln!(
+                &mut kernel,
+                "let scale_chunk_2 = unpack4xI8({input_b}[local_block_offset].scales[scale_offset + 1]);"
+            )
+            .unwrap();
+            writeln!(
+                &mut kernel,
+                "let scales = vec4({dtype}(scale_chunk_1[scale_pair_offset]), {dtype}(scale_chunk_1[2 + scale_pair_offset]), {dtype}(scale_chunk_2[scale_pair_offset]), {dtype}(scale_chunk_2[2 + scale_pair_offset]));"
+            )
+            .unwrap();
+
+            writeln!(
+                &mut kernel,
+                "let scale = {dtype}({input_b}[local_block_offset].scale);"
+            )
+            .unwrap();
+
+            writeln!(&mut kernel, "var sums = vec4f();").unwrap();
+            writeln!(&mut kernel, "for (var j = 0u; j < 4u; j += 1u) {{").unwrap();
+            {
+                let first_four_bytes = 0b00001111u8;
+                let first_two_bytes = 0b00000011u8;
+                let second_two_bytes = 0b00001100u8;
+                let third_two_bytes = 0b00110000u8;
+                let fourth_two_bytes = 0b11000000u8;
+                writeln!(&mut kernel, "sums[0] += cached_a_values[j*4 + 0] * {dtype}(i32((low_bytes_1[j] & {first_four_bytes}) | ((high_bytes[j] & {first_two_bytes})  << 4)) - 32);").unwrap();
+                writeln!(&mut kernel, "sums[1] += cached_a_values[j*4 + 1] * {dtype}(i32((low_bytes_2[j] & {first_four_bytes}) | ((high_bytes[j] & {second_two_bytes}) << 2)) - 32);").unwrap();
+                writeln!(&mut kernel, "sums[2] += cached_a_values[j*4 + 2] * {dtype}(i32((low_bytes_1[j]                 >> 4) | ((high_bytes[j] & {third_two_bytes})  << 0)) - 32);").unwrap();
+                writeln!(&mut kernel, "sums[3] += cached_a_values[j*4 + 3] * {dtype}(i32((low_bytes_2[j]                 >> 4) | ((high_bytes[j] & {fourth_two_bytes}) >> 2)) - 32);").unwrap();
+            }
+            writeln!(&mut kernel, "}}").unwrap();
+            let indexed = maybe_vec_storage_index(Q6K_SGEMV_CHUNK_SIZE, "sum", "offset");
+            writeln!(&mut kernel, "{indexed} += scale * dot(sums, scales);").unwrap();
+        }
+        if Q6K_SGEMV_CHUNK_SIZE > 1 {
+            writeln!(&mut kernel, "}}").unwrap();
+        }
     }
     writeln!(&mut kernel, "}}").unwrap();
 
     // Get the sum among all threads in the subgroup
-    writeln!(&mut kernel, "sum = subgroupAdd(sum);").unwrap();
+    writeln!(
+        &mut kernel,
+        "sum = {};",
+        maybe_vec_storage_subgroup_add(Q6K_SGEMV_CHUNK_SIZE, "sum")
+    )
+    .unwrap();
 
     // If this is not the first simd thread in the workgroup, we can return early
     writeln!(&mut kernel, "if {subgroup_local_index} != 0u {{ return; }}").unwrap();
 
-    // Write the output to the output tensor if this is the first thread in the workgroup
-    write!(&mut kernel, "{output}[").unwrap();
-    output.strided_index(&mut kernel, ["0".to_string(), "row".to_string()]);
-    writeln!(&mut kernel, "] = sum;",).unwrap();
+    if Q6K_SGEMV_CHUNK_SIZE > 1 {
+        writeln!(
+            &mut kernel,
+            "for (var offset = 0u; offset < {Q6K_SGEMV_CHUNK_SIZE}; offset += 1u) {{"
+        )
+        .unwrap();
+    }
+    {
+        // Write the output to the output tensor if this is the first thread in the workgroup
+        write!(&mut kernel, "{output}[").unwrap();
+        let index = if Q6K_SGEMV_CHUNK_SIZE > 1 {
+            "row + offset".to_string()
+        } else {
+            "row".to_string()
+        };
+        output.strided_index(&mut kernel, ["0".to_string(), index]);
+        let indexed = maybe_vec_storage_index(Q6K_SGEMV_CHUNK_SIZE, "sum", "offset");
+        writeln!(&mut kernel, "] = {indexed};").unwrap();
+    }
+    if Q6K_SGEMV_CHUNK_SIZE > 1 {
+        writeln!(&mut kernel, "}}").unwrap();
+    }
+
+    // println!("Generated q6k sgemv kernel:\n{}", kernel);
 
     generic_kernel.push_body(&kernel);
 }
