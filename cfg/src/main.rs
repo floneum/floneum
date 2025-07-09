@@ -31,64 +31,39 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
     let cnf_grammar = grammar.to_cnf().unwrap();
     let bump = bumpalo::Bump::new();
     let cnf_grammar = cnf_grammar.replace_tokenizer_terminals(&tokenizer);
+    println!("start rule count: {}", cnf_grammar.rules.len());
     let mut cnf_grammar = SlabGrammar::new(&cnf_grammar);
-    let merges = &tokenizer.merges;
-    let mut last_size = cnf_grammar.rules.len();
-    for (i, merge) in merges.iter().enumerate() {
-        println!("Applying merge {i}: {:?}", merge);
-        cnf_grammar.shortcut_merge(merge);
-        println!(
-            "size before garbage collection: {}",
-            cnf_grammar.rules.len()
-        );
-        let start = std::time::Instant::now();
-        cnf_grammar.garbage_collect_non_terminals();
-        println!("Time to garbage collect: {:?}", start.elapsed());
-        println!("size after garbage collection: {}", cnf_grammar.rules.len());
-        // let start = std::time::Instant::now();
-        // let as_string = cnf_grammar.map(|t| t.to_string(), |t| t.to_string());
-        // println!("Time to convert to string: {:?}", start.elapsed());
-        // let start = std::time::Instant::now();
-        // let as_string = as_string.to_cnf().unwrap();
-        // println!("Time to convert to CNF: {:?}", start.elapsed());
-        // // Convert back to tokens
-        // let mut token_map = FxHashMap::default();
-        // cnf_grammar = as_string.map(
-        //     |t| t.parse().unwrap(),
-        //     |t| {
-        //         let len = token_map.len() as u32;
-        //         *token_map.entry(t).or_insert_with(|| len)
-        //     },
-        // );
-        println!(
-            "grew by a factor of {:.2}",
-            cnf_grammar.rules.len() as f64 / last_size as f64
-        );
-        last_size = cnf_grammar.rules.len();
-    }
+    cnf_grammar.shortcut_merge(&Merge {
+        rank: 0,
+        pair: [
+            tokenizer.bytes[b't' as usize],
+            tokenizer.bytes[b'o' as usize],
+        ],
+        new_token: 10_000,
+    });
+    cnf_grammar.garbage_collect_non_terminals();
     let cnf_grammar = cnf_grammar.to_grammar();
+    println!("CNF grammar:\n{}", cnf_grammar);
     let dense_grammar = cnf_grammar.reallocate(&bump);
     println!("dense size: {}", bump.allocated_bytes());
-    let mut recognizer = Recognizer::new(&dense_grammar, &bump);
-    let mut text = String::new();
-    loop {
-        let mut new_text = String::new();
-        std::io::stdin().read_line(&mut new_text).unwrap();
-        let new_text = new_text.trim_end_matches('\n');
-        for byte in new_text.as_bytes() {
-            // map the byte to the tokenizer's vocabulary
-            let token = tokenizer.bytes[*byte as usize];
-            text.push(*byte as char);
-            if recognizer.push_byte(token) || recognizer.finish() {
-                println!("Input {:?} is accepted", text);
-                break;
-            }
-            if !recognizer.could_become_valid() {
-                println!("Input {:?} could never become valid", text);
-                break;
-            }
-        }
-    }
+    println!("after shortcut merge rule count: {}", cnf_grammar.rules.len());
+
+    assert!(dense_grammar.recognizes(b"0", &tokenizer));
+    assert!(dense_grammar.recognizes(b"1", &tokenizer));
+    assert!(dense_grammar.recognizes(b"2", &tokenizer));
+    assert!(dense_grammar.recognizes(b"(+ 1 2)", &tokenizer));
+    assert!(dense_grammar.recognizes(b"(- 2 1)", &tokenizer));
+    assert!(dense_grammar.recognizes(b"(str.len name)", &tokenizer));
+    // The unmerged text should no longer be recognized
+    assert!(!dense_grammar.recognizes(b"(str.to.int name)", &tokenizer));
+    // But if you merge the `t` and `o` tokens, it should be recognized
+    let mut tokens = b"(str."
+        .iter()
+        .map(|b| tokenizer.bytes[*b as usize])
+        .collect::<Vec<_>>();
+    tokens.push(10_000); // The merged token
+    tokens.extend(b".int name)".iter().map(|b| tokenizer.bytes[*b as usize]));
+    assert!(dense_grammar.recognizes_tokens(&tokens));
 }
 
 

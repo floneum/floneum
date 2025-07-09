@@ -28,6 +28,7 @@ impl State {
     ];
 
     const ALL_BITSET: u8 = 0b111;
+    const NONE_BITSET: u8 = 0b000;
 
     fn is_start(&self) -> bool {
         matches!(self, State::Start)
@@ -88,7 +89,7 @@ impl SlabGrammar {
         }
         let mut rules = slab::Slab::new();
 
-        let mapped_non_terminals = grammar.clone().map(|x| map[&x], |x| x);
+        let mapped_non_terminals = grammar.clone().map(|x| x, |x| map[&x]);
 
         let start = mapped_non_terminals.start;
 
@@ -114,6 +115,10 @@ impl SlabGrammar {
     // b -> b1 | c | 2
     // c -> b
     pub fn shortcut_merge(&mut self, merge: &Merge) {
+        println!(
+            "merging {} and {} into {}",
+            merge.pair[0], merge.pair[1], merge.new_token
+        );
         let mut queued = VecDeque::new();
         queued.push_back((self.start, 0));
         let mut depth = FxHashMap::default();
@@ -137,6 +142,12 @@ impl SlabGrammar {
         rules_sorted.sort_unstable_by_key(|&nt| depth[&nt]);
 
         let mut reachable_states: FxHashMap<(State, u32), u8> = FxHashMap::default();
+        let mut start_states: FxHashMap<u32, u8> = FxHashMap::default();
+        // Insert all start states for each non-terminal
+        for nt in rules_sorted.iter() {
+            start_states.insert(*nt, 0);
+        }
+        start_states.insert(self.start, State::Start.to_bitset());
 
         fn count_reachable_states(reachable_states: &FxHashMap<(State, u32), u8>) -> u32 {
             reachable_states
@@ -145,34 +156,45 @@ impl SlabGrammar {
                 .map(|s| s.count_ones())
                 .sum()
         }
+        fn count_start_states(start_states: &FxHashMap<u32, u8>) -> u32 {
+            start_states.values().copied().map(|s| s.count_ones()).sum()
+        }
 
         let mut prev_reachable_states = count_reachable_states(&reachable_states);
+        let mut prev_start_states = count_start_states(&start_states);
 
         loop {
-            for nt in rules_sorted.iter().rev().copied() {
+            for nt in rules_sorted.iter().copied() {
                 let options = &self.rules[nt as usize].rhs;
-                for rules in options {
-                    for possible_start_state in State::ALL {
-                        // The start state only ever starts from the start state
-                        if nt == self.start && !possible_start_state.is_start() {
-                            continue;
-                        }
+                let possible_start_states = State::from_bitset(start_states[&nt]);
+                for possible_start_state in possible_start_states {
+                    let mut final_possible_states = 0;
+                    for rules in options {
                         let mut current_states = possible_start_state.to_bitset();
                         for symbol in rules.iter() {
                             let mut new_states = 0;
                             match symbol {
                                 Symbol::NonTerminal(next_nt) => {
-                                    for current_state in State::from_bitset(current_states) {
-                                        let bitset = reachable_states
+                                    let states = State::from_bitset(current_states);
+                                    *start_states.get_mut(next_nt).unwrap() |= current_states;
+                                    for current_state in states {
+                                        match reachable_states
                                             .get(&(current_state, *next_nt))
                                             .copied()
-                                            .unwrap_or(State::ALL_BITSET);
-                                        new_states |= bitset;
+                                        {
+                                            Some(bitset) => {
+                                                new_states |= bitset;
+                                            }
+                                            None => {
+                                                continue;
+                                            }
+                                        }
                                     }
                                     current_states = new_states;
                                 }
                                 Symbol::Terminal(token) => {
-                                    for current_state in State::from_bitset(current_states) {
+                                    let states = State::from_bitset(current_states);
+                                    for current_state in states {
                                         current_state.reachable_states(
                                             merge,
                                             *token,
@@ -185,9 +207,18 @@ impl SlabGrammar {
                                 }
                                 Symbol::Epsilon => {}
                             }
+                            if current_states == 0 {
+                                break;
+                            }
                         }
-                        reachable_states.insert((possible_start_state, nt), current_states);
+                        final_possible_states |= current_states;
                     }
+                    println!(
+                        "Possible start state: {:?} for non-terminal {}: {:03b}\n{options:?}",
+                        possible_start_state, nt, final_possible_states
+                    );
+                    let key = (possible_start_state, nt);
+                    reachable_states.insert(key, final_possible_states);
                 }
             }
             let new_reachable_states = count_reachable_states(&reachable_states);
@@ -195,17 +226,24 @@ impl SlabGrammar {
                 "reachable states: {}->{}",
                 prev_reachable_states, new_reachable_states
             );
-            if new_reachable_states == prev_reachable_states {
+            let new_start_states = count_start_states(&start_states);
+            println!("start states: {}->{}", prev_start_states, new_start_states);
+            if new_reachable_states == prev_reachable_states
+                && new_start_states == prev_start_states
+            {
                 break;
             }
             prev_reachable_states = new_reachable_states;
+            prev_start_states = new_start_states;
         }
 
         // First transpose the map into nt -> Vec<(State, u8)>
         let non_terminal_to_states: FxHashMap<u32, SmallVec<[(State, u8); 3]>> = reachable_states
             .into_iter()
-            .fold(FxHashMap::default(), |mut acc, ((state, nt), bitset)| {
-                acc.entry(nt).or_default().push((state, bitset));
+            .fold(FxHashMap::default(), |mut acc, ((start, nt), end_bitset)| {
+                if end_bitset != 0 {
+                    acc.entry(nt).or_default().push((start, end_bitset));
+                }
                 acc
             });
 
@@ -215,10 +253,10 @@ impl SlabGrammar {
         for (nt, new_states) in &non_terminal_to_states {
             let transitions: SmallVec<[(State, State); 9]> = new_states
                 .iter()
-                .flat_map(|(state, bitset)| {
-                    State::from_bitset(*bitset)
+                .flat_map(|(start, end_bitset)| {
+                    State::from_bitset(*end_bitset)
                         .into_iter()
-                        .map(move |s| (s, *state))
+                        .map(move |s| (*start, s))
                 })
                 .collect();
 
@@ -237,22 +275,23 @@ impl SlabGrammar {
         for (nt, new_states) in &non_terminal_to_states {
             let transitions: SmallVec<[(State, State); 9]> = new_states
                 .iter()
-                .flat_map(|(state, bitset)| {
-                    State::from_bitset(*bitset)
+                .flat_map(|(start, end_bitset)| {
+                    State::from_bitset(*end_bitset)
                         .into_iter()
-                        .map(move |s| (s, *state))
+                        .map(move |s| (*start, s))
                 })
                 .collect();
 
             for (start, end) in transitions {
+                println!("Transition: {nt} = {:?} -> {:?}", start, end);
                 let options = &self.rules[*nt as usize].rhs;
                 let mut new_options: Vec<Cow<[Symbol<u32>]>> = vec![];
                 for rules in options {
                     let mut possible_rules = vec![];
-                    for symbol in rules.iter() {
+                    for (i, symbol) in rules.iter().enumerate() {
                         match symbol {
                             Symbol::NonTerminal(next_nt) => {
-                                if possible_rules.is_empty() {
+                                if i == 0 {
                                     for next in State::ALL {
                                         if let Some(nt) =
                                             transition_map.get(&(*next_nt, start, next))
@@ -264,36 +303,48 @@ impl SlabGrammar {
                                 } else {
                                     possible_rules = possible_rules
                                         .into_iter()
-                                        .flat_map(|(state, symbols)| {
+                                        .flat_map(|(start, symbols)| {
                                             let transition_map = &transition_map;
-                                            State::ALL.iter().filter_map(move |next| {
-                                                transition_map.get(&(*next_nt, state, *next)).map(
-                                                    |nt| {
-                                                        let mut new_symbols = symbols.clone();
-                                                        new_symbols.push(Symbol::NonTerminal(*nt));
-                                                        (*next, new_symbols)
-                                                    },
-                                                )
-                                            })
+                                            State::ALL.into_iter().filter_map(
+                                                move |next| {
+                                                    transition_map
+                                                        .get(&(*next_nt, start, next))
+                                                        .map(|nt| {
+                                                            let mut new_symbols = symbols.clone();
+                                                            new_symbols
+                                                                .push(Symbol::NonTerminal(*nt));
+                                                            (next, new_symbols)
+                                                        })
+                                                },
+                                            )
                                         })
                                         .collect();
                                 }
                             }
                             Symbol::Terminal(token) => {
-                                if possible_rules.is_empty() {
-                                    possible_rules.push((start, vec![Symbol::Terminal(*token)]));
+                                if i == 0 {
+                                    start.reachable_states(merge, *token, |next_state, token| {
+                                        let new_symbols = if let Some(token) = token {
+                                            vec![Symbol::Terminal(token)]
+                                        } else {
+                                            vec![Symbol::Epsilon]
+                                        };
+                                        possible_rules.push((next_state, new_symbols));
+                                    });
                                 } else {
                                     possible_rules = possible_rules
                                         .into_iter()
-                                        .flat_map(|(state, symbols)| {
+                                        .flat_map(|(start, symbols)| {
                                             let mut new = Vec::new();
-                                            state.reachable_states(
+                                            start.reachable_states(
                                                 merge,
                                                 *token,
                                                 |next_state, token| {
                                                     let mut new_symbols = symbols.clone();
                                                     if let Some(token) = token {
                                                         new_symbols.push(Symbol::Terminal(token));
+                                                    } else {
+                                                        new_symbols.push(Symbol::Epsilon);
                                                     }
                                                     new.push((next_state, new_symbols));
                                                 },
@@ -313,6 +364,9 @@ impl SlabGrammar {
                     );
                 }
                 let id = transition_map[&(*nt, start, end)];
+                if new_options.is_empty() {
+                    println!("rule is empty");
+                }
                 self.rules[id as usize].rhs = new_options;
             }
         }
@@ -373,6 +427,7 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
     let cnf_grammar = grammar.to_cnf().unwrap();
     let bump = bumpalo::Bump::new();
     let cnf_grammar = cnf_grammar.replace_tokenizer_terminals(&tokenizer);
+    println!("start rule count: {}", cnf_grammar.rules.len());
     let mut cnf_grammar = SlabGrammar::new(&cnf_grammar);
     cnf_grammar.shortcut_merge(&Merge {
         rank: 0,
@@ -404,4 +459,37 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
     tokens.push(10_000); // The merged token
     tokens.extend(b".int name)".iter().map(|b| tokenizer.bytes[*b as usize]));
     assert!(dense_grammar.recognizes_tokens(&tokens));
+}
+
+#[test]
+fn test_slab_grammar() {
+    let tokenizer = Tokenizer::load_tokenizer("tokenizer.json");
+
+    let grammar = parse::Grammar::parse(
+        r#"Start -> ntInt
+ntString -> 'name' | '" "' | '(' 'str.++' ' ' ntString ' ' ntString ')' | '(' 'str.replace' ' ' ntString ' ' ntString ' ' ntString ')' | '(' 'str.at' ' ' ntString ' ' ntInt ')' | '(' 'int.to.str' ' ' ntInt ')' | '(' 'str.substr' ' ' ntString ' ' ntInt ' ' ntInt ')'
+ntInt -> '0' | '1' | '2' | '(' '+' ' ' ntInt ' ' ntInt ')' | '(' '-' ' ' ntInt ' ' ntInt ')' | '(' 'str.len' ' ' ntString ')' | '(' 'str.to.int' ' ' ntString ')' | '(' 'str.indexof' ' ' ntString ' ' ntString ' ' ntInt ')'
+ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | '(' 'str.suffixof' ' ' ntString ' ' ntString ')' | '(' 'str.contains' ' ' ntString ' ' ntString ')'
+"#,
+    )
+    .unwrap();
+
+    let grammar = grammar.split_terminals();
+    let cnf_grammar = grammar.to_cnf().unwrap();
+    let bump = bumpalo::Bump::new();
+    let cnf_grammar = cnf_grammar.replace_tokenizer_terminals(&tokenizer);
+    let cnf_grammar = SlabGrammar::new(&cnf_grammar);
+    let cnf_grammar = cnf_grammar.to_grammar();
+    println!("CNF grammar:\n{}", cnf_grammar);
+    let dense_grammar = cnf_grammar.reallocate(&bump);
+    println!("dense size: {}", bump.allocated_bytes());
+
+    assert!(dense_grammar.recognizes(b"0", &tokenizer));
+    assert!(dense_grammar.recognizes(b"1", &tokenizer));
+    assert!(dense_grammar.recognizes(b"2", &tokenizer));
+    assert!(dense_grammar.recognizes(b"(+ 1 2)", &tokenizer));
+    assert!(dense_grammar.recognizes(b"(- 2 1)", &tokenizer));
+    assert!(dense_grammar.recognizes(b"(str.len name)", &tokenizer));
+    // The unmerged text should no longer be recognized
+    assert!(dense_grammar.recognizes(b"(str.to.int name)", &tokenizer));
 }
