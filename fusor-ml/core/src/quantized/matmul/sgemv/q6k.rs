@@ -11,7 +11,8 @@ use crate::{
 };
 use std::fmt::Write;
 
-pub(crate) const Q6K_SGEMV_CHUNK_SIZE: u32 = 1; // This is the size of the chunk each thread will process at a time
+pub(crate) const Q6K_SGEMV_CHUNK_SIZE: u32 = 2; // This is the size of the chunk each thread will process at a time
+const PRELOAD: bool = false;
 
 // https://github.com/ggml-org/llama.cpp/blob/6efcd65945a98cf6883cdd9de4c8ccd8c79d219a/ggml/src/ggml-metal/ggml-metal.metal#L5564
 pub(crate) fn q6k_sgemv(
@@ -95,7 +96,9 @@ pub(crate) fn q6k_sgemv(
     let sum_storage_type = maybe_vec_storage_type(Q6K_SGEMV_CHUNK_SIZE, dtype);
     writeln!(&mut kernel, "var sum = {sum_storage_type}();",).unwrap();
 
-    writeln!(&mut kernel, "var cached_a_values = array<{dtype}, 16>();",).unwrap();
+    if PRELOAD {
+        writeln!(&mut kernel, "var cached_a_values = array<{dtype}, 16>();",).unwrap();
+    }
 
     // Loop over all of the blocks this thread is responsible for
     writeln!(
@@ -110,16 +113,18 @@ pub(crate) fn q6k_sgemv(
             "let vector_offset = i * {elements_per_block} + y_offset;"
         )
         .unwrap();
-        writeln!(&mut kernel, "for (var j = 0u; j < 4; j += 1u) {{").unwrap();
-        for offset in 0..4 {
-            writeln!(
-                &mut kernel,
-                "cached_a_values[j*4u + {offset}] = {input_a}[j + vector_offset + {}];",
-                offset * 32
-            )
-            .unwrap();
+        let load_value = |kernel: &mut String, j: &str, offset: u32| {
+            write!(kernel, "{input_a}[{j} + vector_offset + {}]", offset * 32).unwrap();
+        };
+        if PRELOAD {
+            writeln!(&mut kernel, "for (var j = 0u; j < 4; j += 1u) {{").unwrap();
+            for offset in 0..4 {
+                write!(&mut kernel, "cached_a_values[j*4u + {offset}] = ",).unwrap();
+                load_value(&mut kernel, "j", offset);
+                writeln!(&mut kernel, ";").unwrap();
+            }
+            writeln!(&mut kernel, "}}").unwrap();
         }
-        writeln!(&mut kernel, "}}").unwrap();
 
         if Q6K_SGEMV_CHUNK_SIZE > 1 {
             writeln!(
@@ -183,10 +188,25 @@ pub(crate) fn q6k_sgemv(
                 let second_two_bytes = 0b00001100u8;
                 let third_two_bytes = 0b00110000u8;
                 let fourth_two_bytes = 0b11000000u8;
-                writeln!(&mut kernel, "sums[0] += cached_a_values[j*4 + 0] * {dtype}(i32((low_bytes_1[j] & {first_four_bytes}) | ((high_bytes[j] & {first_two_bytes})  << 4)) - 32);").unwrap();
-                writeln!(&mut kernel, "sums[1] += cached_a_values[j*4 + 1] * {dtype}(i32((low_bytes_2[j] & {first_four_bytes}) | ((high_bytes[j] & {second_two_bytes}) << 2)) - 32);").unwrap();
-                writeln!(&mut kernel, "sums[2] += cached_a_values[j*4 + 2] * {dtype}(i32((low_bytes_1[j]                 >> 4) | ((high_bytes[j] & {third_two_bytes})  << 0)) - 32);").unwrap();
-                writeln!(&mut kernel, "sums[3] += cached_a_values[j*4 + 3] * {dtype}(i32((low_bytes_2[j]                 >> 4) | ((high_bytes[j] & {fourth_two_bytes}) >> 2)) - 32);").unwrap();
+                let get_value = |kernel: &mut String, j: &str, offset: u32| {
+                    if PRELOAD {
+                        write!(kernel, "cached_a_values[{j} + {offset}]").unwrap();
+                    } else {
+                        load_value(kernel, j, offset);
+                    }
+                };
+                write!(&mut kernel, "sums[0] += ").unwrap();
+                get_value(&mut kernel, "j", 0);
+                writeln!(&mut kernel,"* {dtype}(i32((low_bytes_1[j] & {first_four_bytes}) | ((high_bytes[j] & {first_two_bytes})  << 4)) - 32);").unwrap();
+                write!(&mut kernel, "sums[1] += ").unwrap();
+                get_value(&mut kernel, "j", 1);
+                writeln!(&mut kernel,"* {dtype}(i32((low_bytes_2[j] & {first_four_bytes}) | ((high_bytes[j] & {second_two_bytes}) << 2)) - 32);").unwrap();
+                write!(&mut kernel, "sums[2] += ").unwrap();
+                get_value(&mut kernel, "j", 2);
+                writeln!(&mut kernel,"* {dtype}(i32((low_bytes_1[j]                 >> 4) | ((high_bytes[j] & {third_two_bytes})  << 0)) - 32);").unwrap();
+                write!(&mut kernel, "sums[3] += ").unwrap();
+                get_value(&mut kernel, "j", 3);
+                writeln!(&mut kernel,"* {dtype}(i32((low_bytes_2[j]                 >> 4) | ((high_bytes[j] & {fourth_two_bytes}) >> 2)) - 32);").unwrap();
             }
             writeln!(&mut kernel, "}}").unwrap();
             let indexed = maybe_vec_storage_index(Q6K_SGEMV_CHUNK_SIZE, "sum", "offset");
