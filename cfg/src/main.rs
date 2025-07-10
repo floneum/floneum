@@ -40,12 +40,7 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
         let start = std::time::Instant::now();
         grammar.shortcut_merge(merge);
         println!("Time to merge: {:?}", start.elapsed());
-        println!(
-            "size before garbage collection: {}",
-            grammar.rules.len()
-        );
-        println!("size after garbage collection: {}", grammar.rules.len());
-        // Convert back to tokens
+        println!("size: {}", grammar.rules.len());
         println!(
             "grew by a factor of {:.10}",
             grammar.rules.len() as f64 / last_size as f64
