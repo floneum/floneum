@@ -7,13 +7,15 @@ use std::{
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
-    parse::Grammar, slab_grammar::SlabGrammar, tokenizer::{Merge, Tokenizer}
+    parse::Grammar,
+    slab_grammar::SlabGrammar,
+    tokenizer::{Merge, Tokenizer},
 };
 
 mod cnf;
 mod parse;
-mod tokenizer;
 mod slab_grammar;
+mod tokenizer;
 
 fn main() {
     let tokenizer = Tokenizer::load_tokenizer("tokenizer.json");
@@ -36,7 +38,12 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
     let merges = &tokenizer.merges;
     let mut last_size = grammar.rules.len();
     for (i, merge) in merges.iter().enumerate() {
-        println!("Applying merge {i}: {:?}", merge);
+        println!(
+            "Applying merge {i}: {:?} + {:?} = {:?}",
+            String::from_utf8_lossy(&tokenizer.inverse_vocab[&merge.pair[0]]),
+            String::from_utf8_lossy(&tokenizer.inverse_vocab[&merge.pair[1]]),
+            String::from_utf8_lossy(&tokenizer.inverse_vocab[&merge.new_token])
+        );
         let start = std::time::Instant::now();
         grammar.shortcut_merge(merge);
         println!("Time to merge: {:?}", start.elapsed());
@@ -46,6 +53,26 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
             grammar.rules.len() as f64 / last_size as f64
         );
         last_size = grammar.rules.len();
+        {
+            let grammar = grammar.to_grammar();
+            println!(
+                "grammar:\n{}",
+                grammar.clone().map(
+                    |r| String::from_utf8_lossy(&tokenizer.inverse_vocab[&r]).to_string(),
+                    |r| r.to_string()
+                )
+            );
+            let dense_grammar = grammar.reallocate(&bump);
+            println!("dense size: {}", bump.allocated_bytes());
+            println!("after shortcut merge rule count: {}", grammar.rules.len());
+
+            assert!(dense_grammar.recognizes(b"0", &tokenizer));
+            assert!(dense_grammar.recognizes(b"1", &tokenizer));
+            assert!(dense_grammar.recognizes(b"2", &tokenizer));
+            assert!(dense_grammar.recognizes(b"(+ 1 2)", &tokenizer));
+            assert!(dense_grammar.recognizes(b"(- 2 1)", &tokenizer));
+            assert!(dense_grammar.recognizes(b"(str.len name)", &tokenizer));
+        }
     }
     let grammar = grammar.to_grammar();
     let dense_grammar = grammar.reallocate(&bump);
@@ -69,7 +96,6 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
     tokens.extend(b".int name)".iter().map(|b| tokenizer.bytes[*b as usize]));
     assert!(dense_grammar.recognizes_tokens(&tokens));
 }
-
 
 struct DenseGrammar<'bump> {
     rules: &'bump [DenseRule<'bump>],

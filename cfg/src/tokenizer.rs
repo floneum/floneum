@@ -49,6 +49,7 @@ fn normalize_token(token: &str) -> String {
 #[derive(Debug, Clone)]
 pub(crate) struct Tokenizer {
     pub(crate) vocab: HashMap<Vec<u8>, u32>,
+    pub(crate) inverse_vocab: HashMap<u32, Vec<u8>>,
     pub(crate) merges: Vec<Merge>,
     pub(crate) bytes: [u32; 256],
     pub(crate) regex: Regex,
@@ -111,10 +112,16 @@ impl Tokenizer {
             }
         }
 
+        let mut inverse_vocab = HashMap::new();
+        for (token, index) in &vocab {
+            inverse_vocab.insert(*index, token.clone());
+        }
+
         Self {
             vocab,
             merges,
             bytes,
+            inverse_vocab,
             regex,
         }
     }
