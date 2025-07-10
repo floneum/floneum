@@ -115,7 +115,6 @@ impl SlabGrammar {
     // b -> b1 | c | 2
     // c -> b
     pub fn shortcut_merge(&mut self, merge: &Merge) {
-       
         let mut queued = VecDeque::new();
         queued.push_back((self.start, 0));
         let mut depth = FxHashMap::default();
@@ -211,6 +210,10 @@ impl SlabGrammar {
                         final_possible_states |= current_states;
                     }
                     let key = (possible_start_state, nt);
+                    // The start state cannot end after the merged token
+                    if nt == self.start {
+                        final_possible_states &= !State::AfterMergedToken.to_bitset();
+                    }
                     reachable_states.insert(key, final_possible_states);
                 }
             }
@@ -251,9 +254,10 @@ impl SlabGrammar {
                 .collect();
 
             let last_index = transitions.len() - 1;
+            let add_new_root = *nt == self.start && transitions.len() > 1;
             for (i, (start, end)) in transitions.iter().enumerate() {
                 let key = (*nt, *start, *end);
-                if i == last_index {
+                if i == last_index && (!add_new_root) {
                     transition_map.insert(key, *nt);
                 } else {
                     transition_map.insert(key, self.insert(Vec::new()));
@@ -272,7 +276,7 @@ impl SlabGrammar {
                 })
                 .collect();
 
-            for (start, end) in transitions {
+            for (start, end) in transitions.iter().copied() {
                 let options = &self.rules[*nt as usize].rhs;
                 let mut new_options: Vec<Cow<[Symbol<u32>]>> = vec![];
                 for rules in options {
@@ -281,7 +285,13 @@ impl SlabGrammar {
                         match symbol {
                             Symbol::NonTerminal(next_nt) => {
                                 if possible_rules.is_empty() {
-                                    let bitset = reachable_states[&(start, *next_nt)];
+                                    let bitset = reachable_states
+                                        .get(&(start, *next_nt))
+                                        .copied()
+                                        .unwrap_or_else(|| {
+                                            // panic!("No reachable states for ({start:?}, {next_nt})")
+                                            State::NONE_BITSET
+                                        });
                                     let transition_map = &transition_map;
                                     possible_rules = State::from_bitset(bitset)
                                         .into_iter()
@@ -296,12 +306,18 @@ impl SlabGrammar {
                                     possible_rules = possible_rules
                                         .into_iter()
                                         .flat_map(|(start, symbols)| {
-                                            let bitset = reachable_states[&(start, *next_nt)];
+                                            let bitset = reachable_states.get(&(start, *next_nt))
+                                                .copied()
+                                                .unwrap_or_else(|| {
+                                                    // panic!("No reachable states for ({start:?}, {next_nt})")
+                                                    State::NONE_BITSET
+                                                });
                                             State::from_bitset(bitset)
                                                 .into_iter()
                                                 .map(|next| {
                                                     let mut new_symbols = symbols.clone();
-                                                    let next_id = transition_map[&(*next_nt, start, next)];
+                                                    let next_id =
+                                                        transition_map[&(*next_nt, start, next)];
                                                     new_symbols.push(Symbol::NonTerminal(next_id));
                                                     (next, new_symbols)
                                                 })
@@ -354,9 +370,24 @@ impl SlabGrammar {
                 }
                 let id = transition_map[&(*nt, start, end)];
                 if new_options.is_empty() {
-                    panic!("transition {nt} -> {start:?} -> {end:?} is empty!");
+                    eprintln!("transition {nt} -> {start:?} -> {end:?} is empty!");
                 }
                 self.rules[id as usize].rhs = new_options;
+            }
+
+            let add_new_root = *nt == self.start && transitions.len() > 1;
+            if add_new_root {
+                // If this is the start non-terminal, we need to add a new root rule
+                let rhs = transitions
+                    .into_iter()
+                    .map(|(_, end)| {
+                        vec![Symbol::NonTerminal(
+                            transition_map[&(*nt, State::Start, end)],
+                        )]
+                        .into()
+                    })
+                    .collect();
+                self.rules[self.start as usize].rhs = rhs;
             }
         }
     }

@@ -18,6 +18,9 @@ mod slab_grammar;
 mod tokenizer;
 
 fn main() {
+    let verbose = std::env::var("VERBOSE").is_ok();
+    let test = std::env::var("TEST").is_ok();
+
     let tokenizer = Tokenizer::load_tokenizer("tokenizer.json");
 
     let grammar = parse::Grammar::parse(
@@ -50,6 +53,16 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
         processed_merges.push(merge.clone());
         println!("Time to merge: {:?}", start.elapsed());
         println!("size: {}", grammar.rules.len());
+        if verbose {
+            let grammar = grammar.to_grammar();
+            println!(
+                "grammar before gc:\n{}",
+                grammar.clone().map(
+                    |r| String::from_utf8_lossy(&tokenizer.inverse_vocab[&r]).to_string(),
+                    |r| r.to_string()
+                )
+            );
+        }
         let start = std::time::Instant::now();
         grammar.garbage_collect_non_terminals();
         println!("Time to garbage collect: {:?}", start.elapsed());
@@ -59,7 +72,7 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
             grammar.rules.len() as f64 / last_size as f64
         );
         last_size = grammar.rules.len();
-        {
+        if test {
             let grammar = grammar.to_grammar();
             println!(
                 "grammar:\n{}",
@@ -102,7 +115,8 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
                     dense_grammar.recognizes_tokens(&tokenized),
                     "Failed to recognize input: {:?} after tokenizing into {:?}",
                     input,
-                    tokenized.iter()
+                    tokenized
+                        .iter()
                         .map(|b| String::from_utf8_lossy(&tokenizer.inverse_vocab[b]).to_string())
                         .collect::<Vec<_>>()
                 );
