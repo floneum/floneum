@@ -115,6 +115,7 @@ impl SlabGrammar {
     // b -> b1 | c | 2
     // c -> b
     pub fn shortcut_merge(&mut self, merge: &Merge) {
+        let start_time = std::time::Instant::now();
         let mut queued = VecDeque::new();
         queued.push_back((self.start, 0));
         let mut depth = FxHashMap::default();
@@ -228,6 +229,13 @@ impl SlabGrammar {
             prev_start_states = new_start_states;
         }
 
+        println!(
+            "Time to compute reachable states: {:?}",
+            start_time.elapsed()
+        );
+
+        let start_time = std::time::Instant::now();
+
         // First transpose the map into nt -> Vec<(State, u8)>
         let non_terminal_to_states: FxHashMap<u32, SmallVec<[(State, u8); 3]>> =
             reachable_states.iter().fold(
@@ -306,7 +314,8 @@ impl SlabGrammar {
                                     possible_rules = possible_rules
                                         .into_iter()
                                         .flat_map(|(start, symbols)| {
-                                            let bitset = reachable_states.get(&(start, *next_nt))
+                                            let bitset = reachable_states
+                                                .get(&(start, *next_nt))
                                                 .copied()
                                                 .unwrap_or_else(|| {
                                                     // panic!("No reachable states for ({start:?}, {next_nt})")
@@ -390,6 +399,8 @@ impl SlabGrammar {
                 self.rules[self.start as usize].rhs = rhs;
             }
         }
+
+        println!("Time to compute transitions: {:?}", start_time.elapsed());
     }
 
     pub fn garbage_collect_non_terminals(&mut self) {
