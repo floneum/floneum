@@ -28,37 +28,37 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
     .unwrap();
 
     let grammar = grammar.split_terminals();
-    let cnf_grammar = grammar.to_cnf().unwrap();
+    let grammar = grammar.to_cnf().unwrap();
     let bump = bumpalo::Bump::new();
-    let cnf_grammar = cnf_grammar.replace_tokenizer_terminals(&tokenizer);
-    println!("start rule count: {}", cnf_grammar.rules.len());
-    let mut cnf_grammar = SlabGrammar::new(&cnf_grammar);
+    let grammar = grammar.replace_tokenizer_terminals(&tokenizer);
+    println!("start rule count: {}", grammar.rules.len());
+    let mut grammar = SlabGrammar::new(&grammar);
     let merges = &tokenizer.merges;
-    let mut last_size = cnf_grammar.rules.len();
+    let mut last_size = grammar.rules.len();
     for (i, merge) in merges.iter().enumerate() {
         println!("Applying merge {i}: {:?}", merge);
         let start = std::time::Instant::now();
-        cnf_grammar.shortcut_merge(merge);
+        grammar.shortcut_merge(merge);
         println!("Time to merge: {:?}", start.elapsed());
         println!(
             "size before garbage collection: {}",
-            cnf_grammar.rules.len()
+            grammar.rules.len()
         );
         let start = std::time::Instant::now();
-        cnf_grammar.garbage_collect_non_terminals();
+        grammar.garbage_collect_non_terminals();
         println!("Time to garbage collect: {:?}", start.elapsed());
-        println!("size after garbage collection: {}", cnf_grammar.rules.len());
+        println!("size after garbage collection: {}", grammar.rules.len());
         // Convert back to tokens
         println!(
             "grew by a factor of {:.2}",
-            cnf_grammar.rules.len() as f64 / last_size as f64
+            grammar.rules.len() as f64 / last_size as f64
         );
-        last_size = cnf_grammar.rules.len();
+        last_size = grammar.rules.len();
     }
-    let cnf_grammar = cnf_grammar.to_grammar();
-    let dense_grammar = cnf_grammar.reallocate(&bump);
+    let grammar = grammar.to_grammar();
+    let dense_grammar = grammar.reallocate(&bump);
     println!("dense size: {}", bump.allocated_bytes());
-    println!("after shortcut merge rule count: {}", cnf_grammar.rules.len());
+    println!("after shortcut merge rule count: {}", grammar.rules.len());
 
     assert!(dense_grammar.recognizes(b"0", &tokenizer));
     assert!(dense_grammar.recognizes(b"1", &tokenizer));

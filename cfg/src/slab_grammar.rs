@@ -413,12 +413,11 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
     .unwrap();
 
     let grammar = grammar.split_terminals();
-    let cnf_grammar = grammar.to_cnf().unwrap();
     let bump = bumpalo::Bump::new();
-    let cnf_grammar = cnf_grammar.replace_tokenizer_terminals(&tokenizer);
-    println!("start rule count: {}", cnf_grammar.rules.len());
-    let mut cnf_grammar = SlabGrammar::new(&cnf_grammar);
-    cnf_grammar.shortcut_merge(&Merge {
+    let grammar = grammar.replace_tokenizer_terminals(&tokenizer);
+    println!("start rule count: {}", grammar.rules.len());
+    let mut grammar = SlabGrammar::new(&grammar);
+    grammar.shortcut_merge(&Merge {
         rank: 0,
         pair: [
             tokenizer.bytes[b't' as usize],
@@ -426,10 +425,10 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
         ],
         new_token: 10_000,
     });
-    cnf_grammar.garbage_collect_non_terminals();
-    let cnf_grammar = cnf_grammar.to_grammar();
-    println!("CNF grammar:\n{}", cnf_grammar);
-    let dense_grammar = cnf_grammar.reallocate(&bump);
+    grammar.garbage_collect_non_terminals();
+    let grammar = grammar.to_grammar();
+    println!("CNF grammar:\n{}", grammar);
+    let dense_grammar = grammar.reallocate(&bump);
     println!("dense size: {}", bump.allocated_bytes());
 
     assert!(dense_grammar.recognizes(b"0", &tokenizer));
