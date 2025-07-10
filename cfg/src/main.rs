@@ -98,7 +98,14 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
                         i += 1;
                     }
                 }
-                assert!(dense_grammar.recognizes_tokens(&tokenized));
+                assert!(
+                    dense_grammar.recognizes_tokens(&tokenized),
+                    "Failed to recognize input: {:?} after tokenizing into {:?}",
+                    input,
+                    tokenized.iter()
+                        .map(|b| String::from_utf8_lossy(&tokenizer.inverse_vocab[b]).to_string())
+                        .collect::<Vec<_>>()
+                );
                 if tokenized != bytes {
                     assert!(!dense_grammar.recognizes_tokens(&bytes));
                 }

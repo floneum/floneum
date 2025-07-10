@@ -277,10 +277,10 @@ impl SlabGrammar {
                 let mut new_options: Vec<Cow<[Symbol<u32>]>> = vec![];
                 for rules in options {
                     let mut possible_rules = vec![];
-                    for (i, symbol) in rules.iter().enumerate() {
+                    for symbol in &**rules {
                         match symbol {
                             Symbol::NonTerminal(next_nt) => {
-                                if i == 0 {
+                                if possible_rules.is_empty() {
                                     let bitset = reachable_states[&(start, *next_nt)];
                                     let transition_map = &transition_map;
                                     possible_rules = State::from_bitset(bitset)
@@ -311,7 +311,7 @@ impl SlabGrammar {
                                 }
                             }
                             Symbol::Terminal(token) => {
-                                if i == 0 {
+                                if possible_rules.is_empty() {
                                     start.reachable_states(merge, *token, |next_state, token| {
                                         let new_symbols = if let Some(token) = token {
                                             vec![Symbol::Terminal(token)]
@@ -354,7 +354,7 @@ impl SlabGrammar {
                 }
                 let id = transition_map[&(*nt, start, end)];
                 if new_options.is_empty() {
-                    eprintln!("transition {nt} -> {start:?} -> {end:?} is empty!");
+                    panic!("transition {nt} -> {start:?} -> {end:?} is empty!");
                 }
                 self.rules[id as usize].rhs = new_options;
             }
