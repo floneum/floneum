@@ -28,11 +28,11 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
     .unwrap();
 
     let grammar = grammar.split_terminals();
-    let grammar = grammar.to_cnf().unwrap();
     let bump = bumpalo::Bump::new();
     let grammar = grammar.replace_tokenizer_terminals(&tokenizer);
-    println!("start rule count: {}", grammar.rules.len());
     let mut grammar = SlabGrammar::new(&grammar);
+    grammar.garbage_collect_non_terminals();
+    println!("start rule count: {}", grammar.rules.len());
     let merges = &tokenizer.merges;
     let mut last_size = grammar.rules.len();
     for (i, merge) in merges.iter().enumerate() {
@@ -44,13 +44,10 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
             "size before garbage collection: {}",
             grammar.rules.len()
         );
-        let start = std::time::Instant::now();
-        grammar.garbage_collect_non_terminals();
-        println!("Time to garbage collect: {:?}", start.elapsed());
         println!("size after garbage collection: {}", grammar.rules.len());
         // Convert back to tokens
         println!(
-            "grew by a factor of {:.2}",
+            "grew by a factor of {:.10}",
             grammar.rules.len() as f64 / last_size as f64
         );
         last_size = grammar.rules.len();
