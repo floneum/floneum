@@ -354,7 +354,7 @@ impl SlabGrammar {
                 }
                 let id = transition_map[&(*nt, start, end)];
                 if new_options.is_empty() {
-                    panic!("transition {nt} -> {start:?} -> {end:?} is empty!");
+                    eprintln!("transition {nt} -> {start:?} -> {end:?} is empty!");
                 }
                 self.rules[id as usize].rhs = new_options;
             }
