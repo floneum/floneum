@@ -956,7 +956,7 @@ impl Whisper {
             audio: pcm_data,
             sender: self.inner.sender.clone(),
             receiver: Default::default(),
-            language: Some(WhisperLanguage::English),
+            language: None,
         }
     }
 }
@@ -977,7 +977,8 @@ impl TranscriptionTask {
         self
     }
 
-    /// Set language
+    /// Set the language whisper should output the transcription in. Multi-lingual whisper models can do
+    /// translation to the target language.
     pub fn with_language<L>(mut self, language: L) -> Self
     where
         L: Into<WhisperLanguage>,

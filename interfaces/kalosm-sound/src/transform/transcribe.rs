@@ -20,8 +20,8 @@ pub trait AsyncSourceTranscribeExt: AsyncSource + Unpin + Send + Sized + 'static
     ///     let mic = MicInput::default();
     ///     let stream = mic.stream();
     ///
-    ///     // Transcribe the audio into text in chunks based on voice activity and speaker's language
-    ///     // By calling `.with_language(WhisperLanguage::German)`, the default language (English) defined at the model level is overridden, enabling stream-level language control.
+    ///     // Transcribe the audio into text in chunks based on voice activity. You can overwrite
+    ///     // the transcription language by calling `with_language`
     ///     let mut text_stream = stream.transcribe(model).with_language(WhisperLanguage::German);
     ///
     ///     // Finally, print the text to the console
