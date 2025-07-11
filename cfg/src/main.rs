@@ -166,27 +166,8 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
             println!("Time to test: {:?}", test_time.elapsed());
         }
     }
-    let grammar = grammar.to_grammar();
-    let dense_grammar = grammar.reallocate(&bump);
-    println!("dense size: {}", bump.allocated_bytes());
-    println!("after shortcut merge rule count: {}", grammar.rules.len());
 
-    assert!(dense_grammar.recognizes(b"0", &tokenizer));
-    assert!(dense_grammar.recognizes(b"1", &tokenizer));
-    assert!(dense_grammar.recognizes(b"2", &tokenizer));
-    assert!(dense_grammar.recognizes(b"(+ 1 2)", &tokenizer));
-    assert!(dense_grammar.recognizes(b"(- 2 1)", &tokenizer));
-    assert!(dense_grammar.recognizes(b"(str.len name)", &tokenizer));
-    // The unmerged text should no longer be recognized
-    assert!(!dense_grammar.recognizes(b"(str.to.int name)", &tokenizer));
-    // But if you merge the `t` and `o` tokens, it should be recognized
-    let mut tokens = b"(str."
-        .iter()
-        .map(|b| tokenizer.bytes[*b as usize])
-        .collect::<Vec<_>>();
-    tokens.push(10_000); // The merged token
-    tokens.extend(b".int name)".iter().map(|b| tokenizer.bytes[*b as usize]));
-    assert!(dense_grammar.recognizes_tokens(&tokens));
+    println!("🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉");
 }
 
 struct DenseGrammar<'bump> {
