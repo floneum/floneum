@@ -74,13 +74,15 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
         last_size = grammar.rules.len();
         if test {
             let grammar = grammar.to_grammar();
-            println!(
-                "grammar:\n{}",
-                grammar.clone().map(
-                    |r| String::from_utf8_lossy(&tokenizer.inverse_vocab[&r]).to_string(),
-                    |r| r.to_string()
-                )
-            );
+            if verbose {
+                println!(
+                    "grammar:\n{}",
+                    grammar.clone().map(
+                        |r| String::from_utf8_lossy(&tokenizer.inverse_vocab[&r]).to_string(),
+                        |r| r.to_string()
+                    )
+                );
+            }
             let dense_grammar = grammar.reallocate(&bump);
             println!("dense size: {}", bump.allocated_bytes());
             println!("after shortcut merge rule count: {}", grammar.rules.len());

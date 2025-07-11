@@ -368,7 +368,11 @@ impl SlabGrammar {
                                         .collect();
                                 }
                             }
-                            Symbol::Epsilon => {}
+                            Symbol::Epsilon => {
+                                if possible_rules.is_empty() {
+                                    possible_rules.push((start, vec![Symbol::Epsilon]));
+                                }
+                            }
                         }
                     }
                     new_options.extend(
@@ -379,7 +383,7 @@ impl SlabGrammar {
                 }
                 let id = transition_map[&(*nt, start, end)];
                 if new_options.is_empty() {
-                    eprintln!("transition {nt} -> {start:?} -> {end:?} is empty!");
+                    eprintln!("transition {nt} -> {start:?} -> {end:?} {options:?} is empty!");
                 }
                 self.rules[id as usize].rhs = new_options;
             }
