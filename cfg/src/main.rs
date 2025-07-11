@@ -68,8 +68,10 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
         let start = std::time::Instant::now();
         let changed = grammar.shortcut_merge(merge);
         processed_merges.push(merge.clone());
-        println!("Time to merge: {:?}", start.elapsed());
-        println!("size: {}", grammar.rules.len());
+        if changed {
+            println!("Time to merge: {:?}", start.elapsed());
+            println!("size: {}", grammar.rules.len());
+        }
         if verbose {
             let grammar = grammar.to_grammar();
             println!(
@@ -85,12 +87,12 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
             grammar.garbage_collect_non_terminals();
             grammar.deduplicate_non_terminals();
             println!("Time to garbage collect: {:?}", start.elapsed());
+            println!("after merge rule count: {}", grammar.rules.len());
+            println!(
+                "grew by a factor of {:.10}",
+                grammar.rules.len() as f64 / last_size as f64
+            );
         }
-        println!("after merge rule count: {}", grammar.rules.len());
-        println!(
-            "grew by a factor of {:.10}",
-            grammar.rules.len() as f64 / last_size as f64
-        );
         if let Some(log_every_n) = log_every_n {
             if i % log_every_n == 0 {
                 let grammar = grammar.to_grammar();
