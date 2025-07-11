@@ -103,15 +103,22 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
                 }
                 let mut tokenized = bytes.clone();
                 for merge in &processed_merges {
+                    let mut new = tokenized.clone();
                     let mut i = 0;
                     while i < tokenized.len() - 1 {
                         // Replace the pair of tokens with the new token if they match the merge
-                        if tokenized[i] == merge.pair[0] && tokenized[i + 1] == merge.pair[1] {
-                            tokenized[i] = merge.new_token;
-                            tokenized.remove(i + 1);
+                        if new[i] == merge.pair[0] && new[i + 1] == merge.pair[1] {
+                            new[i] = merge.new_token;
+                            new.remove(i + 1);
                         }
                         i += 1;
                     }
+                    if new != tokenized {
+                        // If the new tokenized version is different, we have a merge
+                        // Make sure the incorrectly tokenized version is not recognized
+                        assert!(!dense_grammar.recognizes_tokens(&tokenized));
+                    }
+                    tokenized = new;
                 }
                 assert!(
                     dense_grammar.recognizes_tokens(&tokenized),
@@ -122,9 +129,6 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
                         .map(|b| String::from_utf8_lossy(&tokenizer.inverse_vocab[b]).to_string())
                         .collect::<Vec<_>>()
                 );
-                if tokenized != bytes {
-                    assert!(!dense_grammar.recognizes_tokens(&bytes));
-                }
             }
         }
     }
