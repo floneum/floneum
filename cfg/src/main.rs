@@ -18,6 +18,9 @@ mod slab_grammar;
 mod tokenizer;
 
 fn main() {
+    let log_every_n = std::env::var("LOG_EVERY_N")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok());
     let verbose = std::env::var("VERBOSE").is_ok();
     let test = std::env::var("TEST").is_ok();
 
@@ -48,6 +51,18 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
             String::from_utf8_lossy(&tokenizer.inverse_vocab[&merge.pair[1]]),
             String::from_utf8_lossy(&tokenizer.inverse_vocab[&merge.new_token])
         );
+        if let Some(log_every_n) = log_every_n {
+            if i % log_every_n == 0 {
+                let grammar = grammar.to_grammar();
+                println!(
+                    "grammar before:\n{}",
+                    grammar.clone().map(
+                        |r| String::from_utf8_lossy(&tokenizer.inverse_vocab[&r]).to_string(),
+                        |r| r.to_string()
+                    )
+                );
+            }
+        }
         let start = std::time::Instant::now();
         grammar.shortcut_merge(merge);
         processed_merges.push(merge.clone());
@@ -71,6 +86,18 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
             "grew by a factor of {:.10}",
             grammar.rules.len() as f64 / last_size as f64
         );
+        if let Some(log_every_n) = log_every_n {
+            if i % log_every_n == 0 {
+                let grammar = grammar.to_grammar();
+                println!(
+                    "grammar after:\n{}",
+                    grammar.clone().map(
+                        |r| String::from_utf8_lossy(&tokenizer.inverse_vocab[&r]).to_string(),
+                        |r| r.to_string()
+                    )
+                );
+            }
+        }
         last_size = grammar.rules.len();
         if test {
             let grammar = grammar.to_grammar();
