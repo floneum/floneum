@@ -24,6 +24,7 @@ fn main() {
     let verbose = std::env::var("VERBOSE").is_ok();
     let test = std::env::var("TEST").is_ok();
     let force_test = std::env::var("FORCE_TEST").is_ok();
+    let without_cnf = std::env::var("WITHOUT_CNF").is_ok();
 
     let tokenizer = Tokenizer::load_tokenizer("tokenizer.json");
 
@@ -36,8 +37,11 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
     )
     .unwrap();
 
-    let grammar = grammar.split_terminals();
-    let grammar = grammar.to_cnf().unwrap();
+    let mut grammar = grammar.split_terminals();
+    if !without_cnf {
+        println!("Converting grammar to CNF...");
+        grammar = grammar.to_cnf().unwrap();
+    }
     let bump = bumpalo::Bump::new();
     let grammar = grammar.replace_tokenizer_terminals(&tokenizer);
     let mut grammar = SlabGrammar::new(&grammar);
