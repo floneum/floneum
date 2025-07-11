@@ -79,6 +79,7 @@ struct ReachabilityCache {
 pub struct SlabGrammar {
     pub start: u32,
     pub rules: slab::Slab<Rule<u32>>,
+    pub terminals_present: FxHashSet<u32>,
 }
 
 impl SlabGrammar {
@@ -97,7 +98,24 @@ impl SlabGrammar {
             rules.insert(rule);
         }
 
-        Self { start, rules }
+        let mut terminals_present = FxHashSet::default();
+
+        // Collect all terminals present in the grammar
+        for (_, rule) in rules.iter() {
+            for rhs in &rule.rhs {
+                for symbol in &**rhs {
+                    if let Symbol::Terminal(token) = symbol {
+                        terminals_present.insert(*token);
+                    }
+                }
+            }
+        }
+
+        Self {
+            start,
+            rules,
+            terminals_present,
+        }
     }
 
     fn remove(&mut self, id: u32) {
@@ -114,7 +132,15 @@ impl SlabGrammar {
     // a -> b
     // b -> b1 | c | 2
     // c -> b
-    pub fn shortcut_merge(&mut self, merge: &Merge) {
+    pub fn shortcut_merge(&mut self, merge: &Merge) -> bool {
+        // If neither of the pair tokens are present in the grammar, we can skip the merge
+        if !self.terminals_present.contains(&merge.pair[0])
+            || !self.terminals_present.contains(&merge.pair[1])
+        {
+            println!("No tokens to merge, skipping merge");
+            return false;
+        }
+
         let start_time = std::time::Instant::now();
         let mut queued = VecDeque::new();
         queued.push_back((self.start, 0));
@@ -405,6 +431,8 @@ impl SlabGrammar {
         }
 
         println!("Time to compute transitions: {:?}", start_time.elapsed());
+
+        true
     }
 
     pub fn garbage_collect_non_terminals(&mut self) {
@@ -431,6 +459,58 @@ impl SlabGrammar {
 
         self.rules
             .retain(|_, rule| used_non_terminals.contains(&rule.lhs));
+    }
+
+    pub fn deduplicate_non_terminals(&mut self) {
+        // Remove any duplicate non-terminals
+        let mut rhs_to_lhs: FxHashMap<Vec<Cow<[Symbol<u32>]>>, Vec<u32>> = FxHashMap::default();
+        for (_, rule) in &self.rules {
+            rhs_to_lhs
+                .entry(rule.rhs.clone())
+                .or_default()
+                .push(rule.lhs);
+        }
+
+        // Keep only the first occurrence of each RHS
+        let canonical_nt_map: FxHashMap<u32, u32> = rhs_to_lhs
+            .iter()
+            .flat_map(|(_, lhs_list)| {
+                let first_lhs = lhs_list[0];
+                lhs_list.iter().map(move |&lhs| (lhs, first_lhs))
+            })
+            .collect();
+
+        // As we update also recalculate terminals_present
+        self.terminals_present.clear();
+
+        // Map all rules to their canonical non-terminal
+        for (_, rule) in self.rules.iter_mut() {
+            for rhs in &mut rule.rhs {
+                let mut new_rhs = Vec::with_capacity(rhs.len());
+                for symbol in &**rhs {
+                    match symbol {
+                        Symbol::NonTerminal(nt) => {
+                            new_rhs.push(Symbol::NonTerminal(canonical_nt_map[nt]));
+                        }
+                        Symbol::Terminal(token) => {
+                            self.terminals_present.insert(*token);
+                            new_rhs.push(Symbol::Terminal(*token));
+                        }
+                        Symbol::Epsilon => {
+                            new_rhs.push(Symbol::Epsilon);
+                        }
+                    }
+                }
+                *rhs = new_rhs.into();
+            }
+        }
+
+        // Remove any non-canonical non-terminals
+        self.rules.retain(|id, _| {
+            let id = id as u32;
+            let canonical_lhs = canonical_nt_map[&id];
+            canonical_lhs == id
+        });
     }
 
     pub fn to_grammar(&self) -> Grammar<u32> {

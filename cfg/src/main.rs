@@ -23,6 +23,7 @@ fn main() {
         .and_then(|s| s.parse::<usize>().ok());
     let verbose = std::env::var("VERBOSE").is_ok();
     let test = std::env::var("TEST").is_ok();
+    let force_test = std::env::var("FORCE_TEST").is_ok();
 
     let tokenizer = Tokenizer::load_tokenizer("tokenizer.json");
 
@@ -36,6 +37,7 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
     .unwrap();
 
     let grammar = grammar.split_terminals();
+    let grammar = grammar.to_cnf().unwrap();
     let bump = bumpalo::Bump::new();
     let grammar = grammar.replace_tokenizer_terminals(&tokenizer);
     let mut grammar = SlabGrammar::new(&grammar);
@@ -64,7 +66,7 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
             }
         }
         let start = std::time::Instant::now();
-        grammar.shortcut_merge(merge);
+        let changed = grammar.shortcut_merge(merge);
         processed_merges.push(merge.clone());
         println!("Time to merge: {:?}", start.elapsed());
         println!("size: {}", grammar.rules.len());
@@ -78,9 +80,12 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
                 )
             );
         }
-        let start = std::time::Instant::now();
-        grammar.garbage_collect_non_terminals();
-        println!("Time to garbage collect: {:?}", start.elapsed());
+        if changed {
+            let start = std::time::Instant::now();
+            grammar.garbage_collect_non_terminals();
+            grammar.deduplicate_non_terminals();
+            println!("Time to garbage collect: {:?}", start.elapsed());
+        }
         println!("after merge rule count: {}", grammar.rules.len());
         println!(
             "grew by a factor of {:.10}",
@@ -99,7 +104,8 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
             }
         }
         last_size = grammar.rules.len();
-        if test {
+        if (test && changed) || force_test {
+            let test_time = std::time::Instant::now();
             let grammar = grammar.to_grammar();
             if verbose {
                 println!(
@@ -157,6 +163,7 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
                         .collect::<Vec<_>>()
                 );
             }
+            println!("Time to test: {:?}", test_time.elapsed());
         }
     }
     let grammar = grammar.to_grammar();
