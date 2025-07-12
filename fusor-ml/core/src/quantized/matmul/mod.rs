@@ -1,7 +1,12 @@
 use fusor_gguf::GgmlType;
 
 use crate::{
-    compute_graph::AnyComputeKey, mir::{inputs::MirValue, kernel::GenericKernel, operation::Operation}, quantized::matmul::sgemv::{q6k::Q6K_SGEMV_CHUNK_SIZE, SGEMV_CHUNK_SIZE}, DataType, DataTypeEnum, Device, Tensor, TensorData
+    DataType, DataTypeEnum, Device, Tensor, TensorData,
+    compute_graph::AnyComputeKey,
+    mir::{inputs::MirValue, kernel::GenericKernel, operation::Operation},
+    quantized::matmul::sgemv::{
+        SGEMV_CHUNK_SIZE, q4k::Q4K_SGEMV_CHUNK_SIZE, q6k::Q6K_SGEMV_CHUNK_SIZE,
+    },
 };
 
 use super::QMatrix;
@@ -306,6 +311,58 @@ async fn test_fuzz_q_mat_mul_q6k() {
     }
 }
 
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_fuzz_q_mat_mul_q4k() {
+    use crate::Tensor;
+    use candle_core::Module;
+
+    let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("blk.3.ffn_down.weight").await;
+
+    // Always test the edge cases
+    let mut widths = vec![1, 256];
+    // Then test a bunch of other random widths
+    widths.extend((2..25).map(|_| rand::random_range(1..=64)));
+
+    for width in widths {
+        let random_data: Vec<Vec<f32>> = (0..width)
+            .map(|_| (0..1536).map(|_| rand::random()).collect())
+            .collect();
+        let tensor = Tensor::<2, f32>::new(&device, &random_data);
+
+        let result = tensor.q_mat_mul(&q_matrix);
+        let fusor_shape = result.shape();
+        let result = result.as_slice().await.unwrap();
+
+        let candle_b = candle_core::Tensor::from_iter(
+            random_data.iter().flat_map(|x| x.iter().copied()),
+            &candle_core::Device::Cpu,
+        )
+        .unwrap()
+        .reshape(&[width, 1536])
+        .unwrap();
+        let candle_result = candle_q_matrix.forward(&candle_b).unwrap();
+        assert_eq!(candle_result.shape().dims(), &[width, 576]);
+        let candle_result = candle_result.to_vec2::<f32>().unwrap();
+
+        assert_eq!(fusor_shape, &[width, 576]);
+
+        for x in 0..width {
+            for y in 0..576 {
+                let expected = candle_result[x][y];
+                let actual = result[[x, y]];
+                if (expected - actual).abs() > 3. {
+                    println!("width: {}", width);
+                    println!("Expected: {:?}", candle_result);
+                    println!("Actual: {:?}", result);
+                    panic!("expected: {}, actual: {}", expected, actual);
+                }
+            }
+        }
+    }
+}
+
 impl Operation for QMatMulOperation {
     fn workgroup_shape_constraints(
         &self,
@@ -320,15 +377,19 @@ impl Operation for QMatMulOperation {
                     limits.max_compute_workgroup_size_x + 1,
                 ),
             );
-            if self.matrix.datatype == GgmlType::Q6K {
+            if self.matrix.datatype == GgmlType::Q6K || self.matrix.datatype == GgmlType::Q4K {
                 constraints.add_constraint(
                     0,
-                    crate::mir::workgroup_shape::Constraint::equals(limits.min_subgroup_size.max(64)),
+                    crate::mir::workgroup_shape::Constraint::equals(
+                        limits.min_subgroup_size.max(64),
+                    ),
                 );
             } else {
                 constraints.add_constraint(
                     0,
-                    crate::mir::workgroup_shape::Constraint::equals(limits.min_subgroup_size.max(16)),
+                    crate::mir::workgroup_shape::Constraint::equals(
+                        limits.min_subgroup_size.max(16),
+                    ),
                 );
             }
         } else {
@@ -348,12 +409,10 @@ impl Operation for QMatMulOperation {
         let m = self.m_size();
         if self.sgemv() {
             if self.matrix.datatype == GgmlType::Q6K {
-                // For Q6K sgemv, every thread only processes a single section of a row
-                return [
-                    (n as u32).div_ceil(Q6K_SGEMV_CHUNK_SIZE),
-                    1,
-                    1,
-                ];
+                return [(n as u32).div_ceil(Q6K_SGEMV_CHUNK_SIZE), 1, 1];
+            }
+            if self.matrix.datatype == GgmlType::Q4K {
+                return [(n as u32).div_ceil(Q4K_SGEMV_CHUNK_SIZE), 1, 1];
             }
             [(n as u32).div_ceil(SGEMV_CHUNK_SIZE), 1, 1]
         } else {

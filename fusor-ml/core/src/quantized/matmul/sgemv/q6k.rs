@@ -252,7 +252,5 @@ pub(crate) fn q6k_sgemv(
         writeln!(&mut kernel, "}}").unwrap();
     }
 
-    // println!("Generated q6k sgemv kernel:\n{}", kernel);
-
     generic_kernel.push_body(&kernel);
 }

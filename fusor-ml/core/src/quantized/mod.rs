@@ -251,7 +251,7 @@ const fn center_of_bit_space(bits: u8) -> u8 {
     1 << (bits - 1)
 }
 
-const fn shift_right_scale(shift_bits: u8) -> f32 {
+pub(crate) const fn shift_right_scale(shift_bits: u8) -> f32 {
     1.0 / (1 << shift_bits) as f32
 }
 
