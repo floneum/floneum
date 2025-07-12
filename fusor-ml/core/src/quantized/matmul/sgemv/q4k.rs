@@ -251,10 +251,10 @@ pub(crate) fn q4k_sgemv(
             writeln!(
                 &mut kernel,
                 r#"let first_values = array(
-                    bitcast<i32>(first_values_first_chunk & 0x0000FFFFu),
-                    bitcast<i32>(first_values_first_chunk >> 16),
-                    bitcast<i32>(first_values_second_chunk & 0x0000FFFFu),
-                    bitcast<i32>(first_values_second_chunk >> 16)
+                    first_values_first_chunk & 0x0000FFFFu,
+                    first_values_first_chunk >> 16,
+                    first_values_second_chunk & 0x0000FFFFu,
+                    first_values_second_chunk >> 16
                 );"#
             )
             .unwrap();
@@ -272,10 +272,10 @@ pub(crate) fn q4k_sgemv(
             writeln!(
                 &mut kernel,
                 r#"let second_values = array(
-                    bitcast<i32>(second_values_first_chunk & 0x0000FFFFu),
-                    bitcast<i32>(second_values_first_chunk >> 16),
-                    bitcast<i32>(second_values_second_chunk & 0x0000FFFFu),
-                    bitcast<i32>(second_values_second_chunk >> 16)
+                    second_values_first_chunk & 0x0000FFFFu,
+                    second_values_first_chunk >> 16,
+                    second_values_second_chunk & 0x0000FFFFu,
+                    second_values_second_chunk >> 16
                 );"#
             )
             .unwrap();
