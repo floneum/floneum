@@ -84,7 +84,6 @@ pub(crate) fn q4k_sgemv(
         "var cached_a_high_values = array<{dtype}, 16>();",
     )
     .unwrap();
-    writeln!(&mut kernel, "var cached_scales = array<{dtype}, 8>();",).unwrap();
 
     // Loop over all of the blocks this thread is responsible for
     writeln!(
@@ -174,22 +173,7 @@ pub(crate) fn q4k_sgemv(
             .unwrap();
             writeln!(
                 &mut kernel,
-                "cached_scales[0] = {dtype}(first_two_scales & 0xFF);"
-            )
-            .unwrap();
-            writeln!(
-                &mut kernel,
-                "cached_scales[1] = {dtype}(first_two_scales >> 8);"
-            )
-            .unwrap();
-            writeln!(
-                &mut kernel,
-                "cached_scales[2] = {dtype}(second_two_scales & 0xFF);"
-            )
-            .unwrap();
-            writeln!(
-                &mut kernel,
-                "cached_scales[3] = {dtype}(second_two_scales >> 8);"
+                "let first_half_scales_unpacked = vec4<{dtype}>(unpack4xU8(first_two_scales | (second_two_scales << 16)));"
             )
             .unwrap();
 
@@ -197,22 +181,7 @@ pub(crate) fn q4k_sgemv(
             writeln!(&mut kernel, "let fourth_two_scales = ((third_32_scale_bits >> 4) & {MASK2}) | ((second_32_scale_bits & {MASK3}) >> 2);").unwrap();
             writeln!(
                 &mut kernel,
-                "cached_scales[4] = {dtype}(third_two_scales & 0xFF);"
-            )
-            .unwrap();
-            writeln!(
-                &mut kernel,
-                "cached_scales[5] = {dtype}(third_two_scales >> 8);"
-            )
-            .unwrap();
-            writeln!(
-                &mut kernel,
-                "cached_scales[6] = {dtype}(fourth_two_scales & 0xFF);"
-            )
-            .unwrap();
-            writeln!(
-                &mut kernel,
-                "cached_scales[7] = {dtype}(fourth_two_scales >> 8);"
+                "let second_half_scales_unpacked = vec4<{dtype}>(unpack4xU8(third_two_scales | (fourth_two_scales << 16)));"
             )
             .unwrap();
 
@@ -231,10 +200,8 @@ pub(crate) fn q4k_sgemv(
             writeln!(
                 &mut kernel,
                 r#"let first_values = array(
-                    first_values_first_chunk & 0x0000FFFFu,
-                    first_values_first_chunk >> 16,
-                    first_values_second_chunk & 0x0000FFFFu,
-                    first_values_second_chunk >> 16
+                    first_values_first_chunk,
+                    first_values_second_chunk,
                 );"#
             )
             .unwrap();
@@ -252,10 +219,8 @@ pub(crate) fn q4k_sgemv(
             writeln!(
                 &mut kernel,
                 r#"let second_values = array(
-                    second_values_first_chunk & 0x0000FFFFu,
-                    second_values_first_chunk >> 16,
-                    second_values_second_chunk & 0x0000FFFFu,
-                    second_values_second_chunk >> 16
+                    second_values_first_chunk,
+                    second_values_second_chunk
                 );"#
             )
             .unwrap();
@@ -265,7 +230,7 @@ pub(crate) fn q4k_sgemv(
             writeln!(&mut kernel, "var second_sums = vec4<{dtype}>();").unwrap();
 
             // Perform the dot product of the values and scales
-            writeln!(&mut kernel, "for (var j = 0u; j < 4u; j += 1u) {{").unwrap();
+            writeln!(&mut kernel, "for (var j = 0u; j < 2u; j += 1u) {{").unwrap();
             {
                 for (sum, cache, values) in [
                     ("first_sums", "cached_a_low_values", "first_values"),
@@ -278,22 +243,43 @@ pub(crate) fn q4k_sgemv(
                     // bit shifts.
                     writeln!(
                         &mut kernel,
-                        "{sum}[0] += {cache}[j*2 + 0] * {dtype}({values}[j] & 0x000F);"
+                        "{sum}[0] += {cache}[j*4 + 0] * {dtype}({values}[j] & 0x000F);"
                     )
                     .unwrap();
                     writeln!(
                         &mut kernel,
-                        "{sum}[1] += {cache}[j*2 + 1] * {dtype}({values}[j] & 0x0F00);"
+                        "{sum}[1] += {cache}[j*4 + 1] * {dtype}({values}[j] & 0x0F00);"
                     )
                     .unwrap();
                     writeln!(
                         &mut kernel,
-                        "{sum}[2] += {cache}[j*2 + 8] * {dtype}({values}[j] & 0x00F0);"
+                        "{sum}[2] += {cache}[j*4 + 8] * {dtype}({values}[j] & 0x00F0);"
                     )
                     .unwrap();
                     writeln!(
                         &mut kernel,
-                        "{sum}[3] += {cache}[j*2 + 9] * {dtype}({values}[j] & 0xF000);"
+                        "{sum}[3] += {cache}[j*4 + 9] * {dtype}({values}[j] & 0xF000);"
+                    )
+                    .unwrap();
+                    let shift_right_16 = shift_right_scale(16);
+                    writeln!(
+                        &mut kernel,
+                        "{sum}[0] += {cache}[j*4 + 2] * {dtype}({values}[j] & 0x000F0000) * {shift_right_16};"
+                    )
+                    .unwrap();
+                    writeln!(
+                        &mut kernel,
+                        "{sum}[1] += {cache}[j*4 + 3] * {dtype}({values}[j] & 0x0F000000) * {shift_right_16};"
+                    )
+                    .unwrap();
+                    writeln!(
+                        &mut kernel,
+                        "{sum}[2] += {cache}[j*4 + 10] * {dtype}({values}[j] & 0x00F00000) * {shift_right_16};"
+                    )
+                    .unwrap();
+                    writeln!(
+                        &mut kernel,
+                        "{sum}[3] += {cache}[j*4 + 11] * {dtype}({values}[j] & 0xF0000000) * {shift_right_16};"
                     )
                     .unwrap();
                 }
@@ -322,11 +308,11 @@ pub(crate) fn q4k_sgemv(
             let shift_right_4 = shift_right_scale(4);
             writeln!(
                 &mut kernel,
-                r#"{indexed_sum} += {dtype}(block_scale) * ((first_sums[0] + {shift_right_8} * first_sums[1]) * cached_scales[0] + 
-                    (first_sums[2] + {shift_right_8} * first_sums[3]) * cached_scales[1] * {shift_right_4} +
-                    (second_sums[0] + {shift_right_8} * second_sums[1]) * cached_scales[4] +
-                    (second_sums[2] + {shift_right_8} * second_sums[3]) * cached_scales[5] * {shift_right_4}) -
-                    {dtype}(block_min) * (vector_sum[0] * cached_scales[2] + vector_sum[1] * cached_scales[3] + vector_sum[2] * cached_scales[6] + vector_sum[3] * cached_scales[7]);"#
+                r#"{indexed_sum} += {dtype}(block_scale) * ((first_sums[0] + {shift_right_8} * first_sums[1]) * first_half_scales_unpacked[0] + 
+                    (first_sums[2] + {shift_right_8} * first_sums[3]) * first_half_scales_unpacked[1] * {shift_right_4} +
+                    (second_sums[0] + {shift_right_8} * second_sums[1]) * second_half_scales_unpacked[0] +
+                    (second_sums[2] + {shift_right_8} * second_sums[3]) * second_half_scales_unpacked[1] * {shift_right_4}) -
+                    {dtype}(block_min) * (vector_sum[0] * first_half_scales_unpacked[2] + vector_sum[1] * first_half_scales_unpacked[3] + vector_sum[2] * second_half_scales_unpacked[2] + vector_sum[3] * second_half_scales_unpacked[3]);"#
             )
             .unwrap();
         }
@@ -350,9 +336,6 @@ pub(crate) fn q4k_sgemv(
     )
     .unwrap();
 
-    // If this is not the first simd thread in the workgroup, we can return early
-    writeln!(&mut kernel, "if {subgroup_local_index} != 0u {{ return; }}").unwrap();
-
     if Q4K_SGEMV_CHUNK_SIZE > 1 {
         writeln!(
             &mut kernel,
@@ -360,6 +343,8 @@ pub(crate) fn q4k_sgemv(
         )
         .unwrap();
     }
+    // If this is not the first simd thread in the workgroup, we can return early
+    writeln!(&mut kernel, "if {subgroup_local_index} == 0u {{").unwrap();
     {
         // Write the output to the output tensor if this is the first thread in the workgroup
         write!(&mut kernel, "{output}[").unwrap();
@@ -372,9 +357,12 @@ pub(crate) fn q4k_sgemv(
         let indexed = maybe_vec_storage_index(Q4K_SGEMV_CHUNK_SIZE, "sum", "offset");
         writeln!(&mut kernel, "] = {indexed};").unwrap();
     }
+    writeln!(&mut kernel, "}}").unwrap();
     if Q4K_SGEMV_CHUNK_SIZE > 1 {
         writeln!(&mut kernel, "}}").unwrap();
     }
+
+    // println!("Generated q4k sgemv kernel:\n{}", kernel);
 
     generic_kernel.push_body(&kernel);
 }

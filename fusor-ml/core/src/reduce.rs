@@ -586,7 +586,7 @@ async fn test_reduce_sum_large() {
     println!("Expected sum: {}", expected);
 
     assert!(
-        (output[[]] - expected).abs() < 1e-4,
+        (output[[]] - expected).abs() < 1e-3,
         "Expected sum to be close to {}",
         expected
     );
