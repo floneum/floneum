@@ -147,17 +147,17 @@ pub(crate) fn q4k_sgemv(
             // Load 8 scales into a cache
             writeln!(
                 &mut kernel,
-                "let first_32_scale_bits = {input_b}[local_block_offset].scales[scale_offset + 0];"
+                "let first_32_scale_bits = {input_b}[local_block_offset].scales[0] >> (16 * scale_offset);"
             )
             .unwrap();
             writeln!(
                 &mut kernel,
-                "let second_32_scale_bits = {input_b}[local_block_offset].scales[scale_offset + 1];"
+                "let second_32_scale_bits = {input_b}[local_block_offset].scales[1] >> (16 * scale_offset);"
             )
             .unwrap();
             writeln!(
                 &mut kernel,
-                "let third_32_scale_bits = {input_b}[local_block_offset].scales[scale_offset + 2];"
+                "let third_32_scale_bits = {input_b}[local_block_offset].scales[2] >> (16 * scale_offset);"
             )
             .unwrap();
 
