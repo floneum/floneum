@@ -376,7 +376,5 @@ pub(crate) fn q4k_sgemv(
         writeln!(&mut kernel, "}}").unwrap();
     }
 
-    println!("Generated q4k sgemv kernel:\n{}", kernel);
-
     generic_kernel.push_body(&kernel);
 }
