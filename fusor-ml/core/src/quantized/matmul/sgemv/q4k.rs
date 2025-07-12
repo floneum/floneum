@@ -51,7 +51,7 @@ pub(crate) fn q4k_sgemv(
     writeln!(&mut kernel, "let workgroup_offset = {workgroup_index}.x;").unwrap();
     writeln!(
         &mut kernel,
-        "let row = ({SUBGROUP_COUNT} * workgroup_offset + {subgroup_index}) * {Q4K_SGEMV_CHUNK_SIZE};"
+        "let row = (workgroup_offset * {SUBGROUP_COUNT} + {subgroup_index}) * {Q4K_SGEMV_CHUNK_SIZE};"
     )
     .unwrap();
 
@@ -174,32 +174,22 @@ pub(crate) fn q4k_sgemv(
             .unwrap();
             writeln!(
                 &mut kernel,
-                "let first_4_scales_packed = first_two_scales | (second_two_scales << 16);"
+                "cached_scales[0] = {dtype}(first_two_scales & 0xFF);"
             )
             .unwrap();
             writeln!(
                 &mut kernel,
-                "let first_4_scales_unpacked = unpack4xU8(first_4_scales_packed);"
+                "cached_scales[1] = {dtype}(first_two_scales >> 8);"
             )
             .unwrap();
             writeln!(
                 &mut kernel,
-                "cached_scales[0] = {dtype}(first_4_scales_unpacked[0]);"
+                "cached_scales[2] = {dtype}(second_two_scales & 0xFF);"
             )
             .unwrap();
             writeln!(
                 &mut kernel,
-                "cached_scales[1] = {dtype}(first_4_scales_unpacked[1]);"
-            )
-            .unwrap();
-            writeln!(
-                &mut kernel,
-                "cached_scales[2] = {dtype}(first_4_scales_unpacked[2]);"
-            )
-            .unwrap();
-            writeln!(
-                &mut kernel,
-                "cached_scales[3] = {dtype}(first_4_scales_unpacked[3]);"
+                "cached_scales[3] = {dtype}(second_two_scales >> 8);"
             )
             .unwrap();
 
@@ -207,32 +197,22 @@ pub(crate) fn q4k_sgemv(
             writeln!(&mut kernel, "let fourth_two_scales = ((third_32_scale_bits >> 4) & {MASK2}) | ((second_32_scale_bits & {MASK3}) >> 2);").unwrap();
             writeln!(
                 &mut kernel,
-                "let second_4_scales_packed = third_two_scales | (fourth_two_scales << 16);"
+                "cached_scales[4] = {dtype}(third_two_scales & 0xFF);"
             )
             .unwrap();
             writeln!(
                 &mut kernel,
-                "let second_4_scales_unpacked = unpack4xU8(second_4_scales_packed);"
+                "cached_scales[5] = {dtype}(third_two_scales >> 8);"
             )
             .unwrap();
             writeln!(
                 &mut kernel,
-                "cached_scales[4] = {dtype}(second_4_scales_unpacked[0]);"
+                "cached_scales[6] = {dtype}(fourth_two_scales & 0xFF);"
             )
             .unwrap();
             writeln!(
                 &mut kernel,
-                "cached_scales[5] = {dtype}(second_4_scales_unpacked[1]);"
-            )
-            .unwrap();
-            writeln!(
-                &mut kernel,
-                "cached_scales[6] = {dtype}(second_4_scales_unpacked[2]);"
-            )
-            .unwrap();
-            writeln!(
-                &mut kernel,
-                "cached_scales[7] = {dtype}(second_4_scales_unpacked[3]);"
+                "cached_scales[7] = {dtype}(fourth_two_scales >> 8);"
             )
             .unwrap();
 
