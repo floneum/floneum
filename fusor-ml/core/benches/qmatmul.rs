@@ -33,6 +33,7 @@ fn qmatmul(c: &mut Criterion) {
             (1536, "blk.3.ffn_down.weight"),
             (1536, "blk.0.ffn_down.weight"),
             (576, "token_embd.weight"),
+            (576, "blk.0.ffn_up.weight")
         ] {
             let random_data: Vec<Vec<f32>> = (0..size)
                 .map(|_| (0..width).map(|_| rand::random()).collect())

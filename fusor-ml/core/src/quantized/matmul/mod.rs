@@ -5,7 +5,8 @@ use crate::{
     compute_graph::AnyComputeKey,
     mir::{inputs::MirValue, kernel::GenericKernel, operation::Operation},
     quantized::matmul::sgemv::{
-        SGEMV_CHUNK_SIZE, q4k::Q4K_SGEMV_CHUNK_SIZE, q6k::Q6K_SGEMV_CHUNK_SIZE,
+        SGEMV_CHUNK_SIZE, q_n::Q_N_SGEMV_CHUNK_SIZE, q4k::Q4K_SGEMV_CHUNK_SIZE,
+        q6k::Q6K_SGEMV_CHUNK_SIZE,
     },
 };
 
@@ -72,6 +73,16 @@ impl<T: DataType> Tensor<2, T> {
 async fn setup_smol_lm_matrix(
     name: &str,
 ) -> (crate::Device, QMatrix, candle_core::quantized::QMatMul) {
+    let url = "https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf";
+
+    setup_smol_lm_matrix_with_source(name, url).await
+}
+
+#[cfg(test)]
+async fn setup_smol_lm_matrix_with_source(
+    name: &str,
+    url: &str,
+) -> (crate::Device, QMatrix, candle_core::quantized::QMatMul) {
     use crate::Device;
     use fusor_gguf::GgufMetadata;
 
@@ -79,7 +90,6 @@ async fn setup_smol_lm_matrix(
 
     static BYTES: tokio::sync::OnceCell<Vec<u8>> = tokio::sync::OnceCell::const_new();
 
-    let url = "https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf";
     let bytes = BYTES
         .get_or_init(|| async move {
             reqwest::get(url)
@@ -262,6 +272,56 @@ async fn test_fuzz_q_mat_mul_q8_0() {
 
 #[cfg(test)]
 #[tokio::test]
+async fn test_fuzz_q_mat_mul_q4_0() {
+    use crate::Tensor;
+    use candle_core::Module;
+
+    let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix_with_source("blk.0.ffn_gate.weight", "https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_0.gguf").await;
+
+    // Always test the edge cases
+    let mut widths = vec![1, 256];
+    // Then test a bunch of other random widths
+    widths.extend((2..25).map(|_| rand::random_range(1..=64)));
+
+    for width in widths {
+        let random_data: Vec<Vec<f32>> = (0..width)
+            .map(|_| (0..576).map(|_| rand::random()).collect())
+            .collect();
+        let tensor = Tensor::<2, f32>::new(&device, &random_data);
+
+        let result = tensor.q_mat_mul(&q_matrix);
+        let fusor_shape = result.shape();
+        let result = result.as_slice().await.unwrap();
+
+        let candle_b = candle_core::Tensor::from_iter(
+            random_data.iter().flat_map(|x| x.iter().copied()),
+            &candle_core::Device::Cpu,
+        )
+        .unwrap()
+        .reshape(&[width, 576])
+        .unwrap();
+        let candle_result = candle_q_matrix.forward(&candle_b).unwrap();
+        assert_eq!(candle_result.shape().dims(), &[width, 1536]);
+        let candle_result = candle_result.to_vec2::<f32>().unwrap();
+
+        assert_eq!(fusor_shape, &[width, 1536]);
+
+        for x in 0..width {
+            for y in 0..1536 {
+                let expected = candle_result[x][y];
+                let actual = result[[x, y]];
+                if (expected - actual).abs() > 3. {
+                    println!("Expected: {:?}", candle_result);
+                    println!("Actual: {:?}", result);
+                    panic!("expected: {}, actual: {}", expected, actual);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+#[tokio::test]
 async fn test_fuzz_q_mat_mul_q6k() {
     use crate::Tensor;
     use candle_core::Module;
@@ -310,7 +370,6 @@ async fn test_fuzz_q_mat_mul_q6k() {
         }
     }
 }
-
 
 #[cfg(test)]
 #[tokio::test]
@@ -377,7 +436,10 @@ impl Operation for QMatMulOperation {
                     limits.max_compute_workgroup_size_x + 1,
                 ),
             );
-            if self.matrix.datatype == GgmlType::Q6K || self.matrix.datatype == GgmlType::Q4K {
+            if self.matrix.datatype == GgmlType::Q6K
+                || self.matrix.datatype == GgmlType::Q4K
+                || self.matrix.datatype == GgmlType::Q4_0
+            {
                 constraints.add_constraint(
                     0,
                     crate::mir::workgroup_shape::Constraint::equals(
@@ -413,6 +475,9 @@ impl Operation for QMatMulOperation {
             }
             if self.matrix.datatype == GgmlType::Q4K {
                 return [(n as u32).div_ceil(Q4K_SGEMV_CHUNK_SIZE), 1, 1];
+            }
+            if self.matrix.datatype == GgmlType::Q4_0 {
+                return [(n as u32).div_ceil(Q_N_SGEMV_CHUNK_SIZE), 1, 1];
             }
             [(n as u32).div_ceil(SGEMV_CHUNK_SIZE), 1, 1]
         } else {
