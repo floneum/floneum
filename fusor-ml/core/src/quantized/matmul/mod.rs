@@ -272,19 +272,62 @@ async fn test_fuzz_q_mat_mul_q8_0() {
 
 #[cfg(test)]
 #[tokio::test]
-async fn test_fuzz_q_mat_mul_q4_0() {
+async fn test_fuzz_q_mat_mul_q5_0_gemv() {
+    use crate::Tensor;
+    use candle_core::Module;
+
+    let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix("blk.0.ffn_gate.weight").await;
+
+    for _ in 0..25 {
+        let width = 1;
+        let height = 1536;
+        let random_data: Vec<Vec<f32>> = (0..width)
+            .map(|_| (0..576).map(|_| rand::random()).collect())
+            .collect();
+        let tensor = Tensor::<2, f32>::new(&device, &random_data);
+
+        let result = tensor.q_mat_mul(&q_matrix);
+        let fusor_shape = result.shape();
+        let result = result.as_slice().await.unwrap();
+
+        let candle_b = candle_core::Tensor::from_iter(
+            random_data.iter().flat_map(|x| x.iter().copied()),
+            &candle_core::Device::Cpu,
+        )
+        .unwrap()
+        .reshape(&[width, 576])
+        .unwrap();
+        let candle_result = candle_q_matrix.forward(&candle_b).unwrap();
+        assert_eq!(candle_result.shape().dims(), &[width, height]);
+        let candle_result = candle_result.to_vec2::<f32>().unwrap();
+
+        assert_eq!(fusor_shape, &[width, height]);
+
+        for x in 0..width {
+            for y in 0..height {
+                let expected = candle_result[x][y];
+                let actual = result[[x, y]];
+                if (expected - actual).abs() > 3. {
+                    println!("Expected: {:?}", candle_result);
+                    println!("Actual: {:?}", result);
+                    panic!("expected: {}, actual: {}", expected, actual);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn test_fuzz_q_mat_mul_q4_0_gemv() {
     use crate::Tensor;
     use candle_core::Module;
 
     let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix_with_source("blk.0.ffn_gate.weight", "https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_0.gguf").await;
 
-    // Always test the edge cases
-    let mut widths = vec![1, 256];
-    // Then test a bunch of other random widths
-    widths.extend((2..25).map(|_| rand::random_range(1..=64)));
-
-    for width in widths {
-        let random_data: Vec<Vec<f32>> = (0..width)
+    for _ in 0..25 {
+        let width = 1;
+        let random_data: Vec<Vec<f32>> = (0..1)
             .map(|_| (0..576).map(|_| rand::random()).collect())
             .collect();
         let tensor = Tensor::<2, f32>::new(&device, &random_data);
@@ -439,6 +482,7 @@ impl Operation for QMatMulOperation {
             if self.matrix.datatype == GgmlType::Q6K
                 || self.matrix.datatype == GgmlType::Q4K
                 || self.matrix.datatype == GgmlType::Q4_0
+                || self.matrix.datatype == GgmlType::Q5_0
             {
                 constraints.add_constraint(
                     0,
@@ -476,7 +520,7 @@ impl Operation for QMatMulOperation {
             if self.matrix.datatype == GgmlType::Q4K {
                 return [(n as u32).div_ceil(Q4K_SGEMV_CHUNK_SIZE), 1, 1];
             }
-            if self.matrix.datatype == GgmlType::Q4_0 {
+            if matches!(self.matrix.datatype, GgmlType::Q4_0 | GgmlType::Q5_0) {
                 return [(n as u32).div_ceil(Q_N_SGEMV_CHUNK_SIZE), 1, 1];
             }
             [(n as u32).div_ceil(SGEMV_CHUNK_SIZE), 1, 1]

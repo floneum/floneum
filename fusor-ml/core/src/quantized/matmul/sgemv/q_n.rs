@@ -196,7 +196,7 @@ fn block_dot(kernel: &mut String, op: &QMatMulOperation, input_b: &QMatrixInput)
         fusor_gguf::GgmlType::F16 => todo!(),
         fusor_gguf::GgmlType::Q4_0 => block_dot_q4_0(kernel, op, input_b),
         fusor_gguf::GgmlType::Q4_1 => todo!(),
-        fusor_gguf::GgmlType::Q5_0 => todo!(),
+        fusor_gguf::GgmlType::Q5_0 => block_dot_q5_0(kernel, op, input_b),
         fusor_gguf::GgmlType::Q5_1 => todo!(),
         fusor_gguf::GgmlType::Q8_0 => todo!(),
         fusor_gguf::GgmlType::Q8_1 => todo!(),
@@ -260,4 +260,64 @@ fn block_dot_q4_0(kernel: &mut String, op: &QMatMulOperation, input_b: &QMatrixI
     writeln!(kernel, "}}").unwrap();
 
     writeln!(kernel, "let product = {dtype}({input_b}[block_offset].scale) * (chunk_sum.x + chunk_sum.y + chunk_sum.z + chunk_sum.w + vector_total * -8.0);").unwrap();
+}
+
+fn block_dot_q5_0(kernel: &mut String, op: &QMatMulOperation, input_b: &QMatrixInput) {
+    let dtype = op.input_datatype;
+    let elements_per_block = op.elements_per_block();
+    writeln!(kernel, "var chunk_sum = vec4<{dtype}>();").unwrap();
+
+    writeln!(
+        kernel,
+        "let first_low_u32 = {input_b}[block_offset].data_low_bits[lane_index / 4 + 0];"
+    )
+    .unwrap();
+    writeln!(
+        kernel,
+        "let second_low_u32 = {input_b}[block_offset].data_low_bits[lane_index / 4 + 1];"
+    )
+    .unwrap();
+    writeln!(
+        kernel,
+        "let packed = vec4<u32>(
+        first_low_u32 & 0x0000FFFF,
+        first_low_u32 >> 16,
+        second_low_u32 & 0x0000FFFF,
+        second_low_u32 >> 16
+    );"
+    )
+    .unwrap();
+
+    writeln!(
+        kernel,
+        "let high_u32 = {input_b}[block_offset].data_high_bits[0];"
+    )
+    .unwrap();
+
+    writeln!(kernel, "for (var j = 0u; j < 8u; j += 2u) {{").unwrap();
+    {
+        writeln!(
+            kernel,
+            "chunk_sum[0] += cached_a_values[j + 0] * {dtype}((packed[j / 2u] & 0x000F) | ((high_u32 >> (j + 0 + lane_index) << 4) & 0x00010));"
+        )
+        .unwrap();
+        writeln!(
+            kernel,
+            "chunk_sum[1] += cached_a_values[j + 1] * {dtype}((packed[j / 2u] & 0x0F00) | ((high_u32 >> (j + 1 + lane_index) << 12) & 0x01000));"
+        )
+        .unwrap();
+        writeln!(
+            kernel,
+            "chunk_sum[2] += cached_a_values[j + 8] * {dtype}((packed[j / 2u] & 0x00F0) | ((high_u32 >> (j + 0 + lane_index + {elements_per_block}/2) << 8) & 0x00100));"
+        )
+        .unwrap();
+        writeln!(
+            kernel,
+            "chunk_sum[3] += cached_a_values[j + 9] * {dtype}((packed[j / 2u] & 0xF000) | ((high_u32 >> (j + 1 + lane_index + {elements_per_block}/2) << 16) & 0x10000));"
+        )
+        .unwrap();
+    }
+    writeln!(kernel, "}}").unwrap();
+
+    writeln!(kernel, "let product = {dtype}({input_b}[block_offset].scale) * (chunk_sum.x + chunk_sum.y + chunk_sum.z + chunk_sum.w + vector_total * -16.0);").unwrap();
 }

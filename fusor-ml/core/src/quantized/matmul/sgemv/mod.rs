@@ -1,14 +1,17 @@
 use fusor_gguf::GgmlType;
 
 use crate::{
+    DataTypeEnum,
     mir::{
         globals::{ArrayType, KernelGlobalType, VectorType},
         inputs::{QMatrixInput, TensorInput},
         kernel::GenericKernel,
         workgroup_shape::WorkgroupShape,
-    }, quantized::matmul::{
-        sgemv::{general::general_sgemv, q4k::q4k_sgemv, q6k::q6k_sgemv, q_n::q_n_sgemv}, QMatMulOperation
-    }, DataTypeEnum
+    },
+    quantized::matmul::{
+        QMatMulOperation,
+        sgemv::{general::general_sgemv, q_n::q_n_sgemv, q4k::q4k_sgemv, q6k::q6k_sgemv},
+    },
 };
 use std::fmt::Display;
 
@@ -92,7 +95,7 @@ pub(crate) fn sgemv(
             _m_size,
             k_size,
         ),
-        GgmlType::Q4_0 => q_n_sgemv(
+        GgmlType::Q4_0 | GgmlType::Q5_0 => q_n_sgemv(
             op,
             generic_kernel,
             workgroup_size,
