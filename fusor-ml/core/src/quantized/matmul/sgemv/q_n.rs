@@ -16,7 +16,7 @@ pub(crate) const Q_N_SGEMV_CHUNK_SIZE: u32 = 4; // This is the size of the chunk
 const SUBGROUP_COUNT: u32 = 2;
 const SUBGROUP_SIZE: u32 = 32;
 
-// https://github.com/ggml-org/llama.cpp/blob/6efcd65945a98cf6883cdd9de4c8ccd8c79d219a/ggml/src/ggml-metal/ggml-metal.metal#L5564
+// https://github.com/ggml-org/llama.cpp/blob/6efcd65945a98cf6883cdd9de4c8ccd8c79d219a/ggml/src/ggml-metal/ggml-metal.metal#L2329
 pub(crate) fn q_n_sgemv(
     op: &QMatMulOperation,
     generic_kernel: &mut GenericKernel,
