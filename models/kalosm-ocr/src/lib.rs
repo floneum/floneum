@@ -70,12 +70,19 @@ impl OcrBuilder {
 pub struct OcrSource {
     model: FileSource,
     config: FileSource,
+    tokenizer: FileSource,
 }
 
 impl OcrSource {
     /// Creates a new [`OcrSource`].
     pub fn new(model: FileSource, config: FileSource) -> Self {
-        Self { model, config }
+        Self { model, config, tokenizer: FileSource::huggingface("ToluClassics/candle-trocr-tokenizer", "main", "tokenizer.json") }
+    }
+
+    /// Set the tokenizer source.
+    pub fn with_tokenizer(mut self, tokenizer: FileSource) -> Self {
+        self.tokenizer = tokenizer;
+        self
     }
 
     /// Create the base model source.
@@ -183,6 +190,19 @@ impl OcrSource {
 
         Ok((encoder_config, decoder_config))
     }
+
+    async fn tokenizer(
+        &self,
+        mut handler: impl FnMut(ModelLoadingProgress) + Send + Sync,
+    ) -> Result<Tokenizer, LoadOcrError> {
+        let source = format!("Tokenizer ({})", self.tokenizer);
+        let mut create_progress = ModelLoadingProgress::downloading_progress(source);
+        let cache = Cache::default();
+        let tokenizer_filename = cache
+            .get(&self.tokenizer, |progress| handler(create_progress(progress)))
+            .await?;
+        Tokenizer::from_file(&tokenizer_filename).map_err(LoadOcrError::LoadTokenizer)
+    }
 }
 
 impl Default for OcrSource {
@@ -253,15 +273,7 @@ impl Ocr {
         mut handler: impl FnMut(ModelLoadingProgress) + Send + Sync + 'static,
     ) -> Result<Self, LoadOcrError> {
         let OcrBuilder { source } = settings;
-        let tokenizer_dec = {
-            let tokenizer = Api::new()
-                .map_err(CacheError::HuggingFaceApi)?
-                .model(String::from("ToluClassics/candle-trocr-tokenizer"))
-                .get("tokenizer.json")
-                .map_err(CacheError::HuggingFaceApi)?;
-
-            Tokenizer::from_file(&tokenizer).map_err(LoadOcrError::LoadTokenizer)?
-        };
+        let tokenizer_dec = source.tokenizer(&mut handler).await?;
         let device = accelerated_device_if_available()?;
 
         let vb = source.varbuilder(&device, &mut handler).await?;
