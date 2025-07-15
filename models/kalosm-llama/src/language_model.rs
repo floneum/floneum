@@ -1,3 +1,4 @@
+use cfg::DenseGrammar;
 use kalosm_language_model::{
     CreateDefaultChatConstraintsForType, CreateDefaultCompletionConstraintsForType,
     CreateTextCompletionSession, GenerationParameters, ModelBuilder, StructuredTextCompletionModel,
@@ -117,23 +118,18 @@ impl LlamaModel {
         LlamaSession::new(config)
     }
 
-    pub fn generate_structured_with_trie<'a, S, Constraints>(
+    pub fn generate_structured_with_trie<'a, S>(
         &'a mut self,
         session: &'a mut LlamaSession,
         text: &str,
         sampler: S,
-        parser: Constraints,
+        parser: &DenseGrammar,
         on_token: impl FnMut(String) -> Result<(), LlamaModelError> + Send + Sync + 'static,
         trie: &mut EvaluationTrie,
-        fast_case: bool,
-        lazy: bool,
-    ) -> Result<Constraints::Output, LlamaModelError>
+    ) -> Result<(), LlamaModelError>
     where
-        <Constraints as Parser>::Output: Send,
-        Constraints: CreateParserState + Send + 'static,
         S: Sampler + 'static,
     {
-        let parser_state = parser.create_parser_state();
         let cache = session.cache.read().unwrap().clone();
         let mut session = LlamaSession {
             cache: Arc::new(RwLock::new(cache)),
@@ -148,15 +144,12 @@ impl LlamaModel {
             text,
             self,
             &mut session,
-            &parser,
-            parser_state,
+            parser,
             sampler,
             on_token,
             None,
             seed,
             trie,
-            fast_case,
-            lazy,
         )
     }
 }
@@ -178,29 +171,30 @@ where
         let text = text.to_string();
         let mut session = session.clone();
         async {
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            let on_token = Box::new(on_token);
-            self.task_sender
-                .send(Task::StructuredGeneration(StructuredGenerationTask {
-                    runner: Box::new(move |model| {
-                        let mut trie = EvaluationTrie::new();
-                        _ = tx.send(model.generate_structured_with_trie(
-                            &mut session,
-                            &text,
-                            sampler,
-                            parser,
-                            on_token,
-                            &mut trie,
-                            true,
-                            true,
-                        ));
-                    }),
-                }))
-                .map_err(|_| LlamaModelError::ModelStopped)?;
+            // let (tx, rx) = tokio::sync::oneshot::channel();
+            // let on_token = Box::new(on_token);
+            // self.task_sender
+            //     .send(Task::StructuredGeneration(StructuredGenerationTask {
+            //         runner: Box::new(move |model| {
+            //             let mut trie = EvaluationTrie::new();
+            //             _ = tx.send(model.generate_structured_with_trie(
+            //                 &mut session,
+            //                 &text,
+            //                 sampler,
+            //                 parser,
+            //                 on_token,
+            //                 &mut trie,
+            //                 true,
+            //                 true,
+            //             ));
+            //         }),
+            //     }))
+            //     .map_err(|_| LlamaModelError::ModelStopped)?;
 
-            let result = rx.await.map_err(|_| LlamaModelError::ModelStopped)??;
+            // let result = rx.await.map_err(|_| LlamaModelError::ModelStopped)??;
 
-            Ok(result)
+            // Ok(result)
+            todo!()
         }
     }
 }

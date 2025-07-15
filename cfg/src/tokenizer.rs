@@ -6,9 +6,9 @@ use serde_json::Value;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Merge {
-    pub(crate) rank: u32,
-    pub(crate) pair: [u32; 2],
-    pub(crate) new_token: u32,
+    pub rank: u32,
+    pub pair: [u32; 2],
+    pub new_token: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -47,16 +47,16 @@ fn normalize_token(token: &str) -> String {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct Tokenizer {
-    pub(crate) vocab: HashMap<Vec<u8>, u32>,
-    pub(crate) inverse_vocab: HashMap<u32, Vec<u8>>,
-    pub(crate) merges: Vec<Merge>,
-    pub(crate) bytes: [u32; 256],
-    pub(crate) regex: Regex,
+pub struct Tokenizer {
+    pub vocab: HashMap<Vec<u8>, u32>,
+    pub inverse_vocab: HashMap<u32, Vec<u8>>,
+    pub merges: Vec<Merge>,
+    pub bytes: [u32; 256],
+    pub regex: Regex,
 }
 
 impl Tokenizer {
-    pub(crate) fn load_tokenizer(path: impl AsRef<Path>) -> Self {
+    pub fn load_tokenizer(path: impl AsRef<Path>) -> Self {
         let bytes = std::fs::read(path).expect("Failed to read tokenizer file");
         let json = serde_json::from_slice::<Value>(&bytes).unwrap();
         let pretokenizer = json["pre_tokenizer"].clone();

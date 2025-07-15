@@ -1,3 +1,4 @@
+use cfg::{DenseGrammar, Recognizer};
 use kalosm_sample::CreateParserState;
 use kalosm_sample::{LiteralParser, ParseStatus, Parser, ParserExt};
 use llm_samplers::prelude::{Logit, Logits};
@@ -17,20 +18,17 @@ use crate::token_stream::TokenOutputStream;
 use crate::{LlamaModel, LlamaSession};
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn generate_structured<P: Parser>(
+pub(crate) fn generate_structured(
     prompt: impl Display,
     llm: &LlamaModel,
     session: &mut LlamaSession,
-    parser: P,
-    parser_state: P::PartialState,
+    cfg: &DenseGrammar,
     mut sampler: Arc<Mutex<dyn Sampler>>,
     mut on_token: impl FnMut(String) -> Result<(), LlamaModelError>,
     top_k: Option<usize>,
     seed: Option<u64>,
     trie: &mut EvaluationTrie,
-    fast_case: bool,
-    lazy: bool,
-) -> Result<P::Output, LlamaModelError> {
+) -> Result<(), LlamaModelError> {
     let eos_token = llm.model.config.stop_token_string.clone();
     let mut on_token = move |tok: String| {
         if tok == eos_token {
@@ -81,21 +79,22 @@ pub(crate) fn generate_structured<P: Parser>(
         .flatten()
         .unwrap_or_default();
 
-    let parser = LiteralParser::new(remaining_prompt_text.clone())
-        .ignore_output_then(parser.with_initial_state(move || parser_state.clone()));
-    {
-        let mut parser_state = parser.create_parser_state();
-        for c in remaining_prompt_text.chars() {
-            let str = c.to_string();
-            let bytes = str.as_bytes();
-            let (parser_state_new, _) = parser
-                .parse(&parser_state, bytes)
-                .unwrap()
-                .unwrap_incomplete();
-            parser_state = parser_state_new;
-        }
-    }
-    let mut parser_state = parser.create_parser_state();
+    // let parser = LiteralParser::new(remaining_prompt_text.clone())
+    //     .ignore_output_then(parser.with_initial_state(move || parser_state.clone()));
+    // {
+    //     let mut parser_state = parser.create_parser_state();
+    //     for c in remaining_prompt_text.chars() {
+    //         let str = c.to_string();
+    //         let bytes = str.as_bytes();
+    //         let (parser_state_new, _) = parser
+    //             .parse(&parser_state, bytes)
+    //             .unwrap()
+    //             .unwrap_incomplete();
+    //         parser_state = parser_state_new;
+    //     }
+    // }
+    let bump = bumpalo::Bump::new();
+    let mut parser_state = Recognizer::new(cfg, &bump);
     let mut strip_required_next = true;
 
     let mut rng = if let Some(seed) = seed {
@@ -105,7 +104,7 @@ pub(crate) fn generate_structured<P: Parser>(
     };
     let mut state_map = vec![];
     let mut logits_indexed = Logits::default();
-    let mut token_cache = DetokenizationCache::new();
+    // let mut token_cache = DetokenizationCache::new();
     let mut logits = Logits::default();
     let mut logit_probs = Vec::new();
 
@@ -127,7 +126,7 @@ pub(crate) fn generate_structured<P: Parser>(
         };
 
         // fill the state map with None for each token
-        token_cache.clear(logit_probs.len());
+        // token_cache.clear(logit_probs.len());
         state_map.clear();
         logits_indexed.clear();
         logits.clear();
@@ -144,13 +143,13 @@ pub(crate) fn generate_structured<P: Parser>(
 
         let mut valid_tokens = false;
 
-        // If we don't have a top k, then we can just cache the entire detokenization
-        if top_k.is_none() {
-            token_cache.expand(
-                &(0..logit_probs.len() as u32).collect::<Vec<_>>(),
-                &token_stream,
-            );
-        }
+        // // If we don't have a top k, then we can just cache the entire detokenization
+        // if top_k.is_none() {
+        //     token_cache.expand(
+        //         &(0..logit_probs.len() as u32).collect::<Vec<_>>(),
+        //         &token_stream,
+        //     );
+        // }
 
         const DETOKENIZATION_INITIAL_BATCH_SIZE: usize = 64;
 
@@ -179,10 +178,10 @@ pub(crate) fn generate_structured<P: Parser>(
                     logits_indexed[i..=new_partitioned_index].sort_unstable_by(cmp_logits);
                     // Expand the cache to include the new logits
                     partitioned_logits_index = Some(new_partitioned_index);
-                    token_cache.expand_with_logits(
-                        &logits_indexed[i..=new_partitioned_index],
-                        &token_stream,
-                    );
+                    // token_cache.expand_with_logits(
+                    //     &logits_indexed[i..=new_partitioned_index],
+                    //     &token_stream,
+                    // );
 
                     // Double the batch size for next time
                     detokenization_batch_size = detokenization_batch_size.saturating_mul(4);
@@ -209,32 +208,41 @@ pub(crate) fn generate_structured<P: Parser>(
                 }
             }
 
-            let Some(text) = token_cache.get(token_id as usize) else {
-                continue;
-            };
-            let result = parser.parse(&parser_state, text.as_bytes());
-            trie.push(token_id, prob as f64, current_token, result.is_ok(), false);
-            if let Ok(result) = result {
-                if fast_case && !lazy {
-                    let valid = check_for_valid_next_token(
-                        &result,
-                        &logits_indexed,
-                        llm,
-                        &token_stream,
-                        &parser,
-                        &parser_state,
-                        token_id,
-                    );
-                    if !valid {
-                        trie.push(token_id, prob as f64, current_token, false, true);
-                    }
-                }
-                let parsed_bytes = match &result {
-                    ParseStatus::Finished { remaining, .. } => text.len() - remaining.len(),
-                    ParseStatus::Incomplete { .. } => text.len(),
-                };
-                let result = result.without_remaining();
-                state_map[token_id as usize] = Some((result, parsed_bytes));
+            // let Some(text) = token_cache.get(token_id as usize) else {
+            //     continue;
+            // };
+            let mut new_parser_state = parser_state.clone();
+            new_parser_state.push(Some(token_id));
+            let could_become_valid = new_parser_state.could_become_valid();
+            trie.push(
+                token_id,
+                prob as f64,
+                current_token,
+                could_become_valid,
+                false,
+            );
+            if could_become_valid {
+                // if fast_case && !lazy {
+                //     let valid = check_for_valid_next_token(
+                //         &result,
+                //         &logits_indexed,
+                //         llm,
+                //         &token_stream,
+                //         &parser,
+                //         &parser_state,
+                //         token_id,
+                //     );
+                //     if !valid {
+                //         trie.push(token_id, prob as f64, current_token, false, true);
+                //     }
+                // }
+                // let parsed_bytes = match &result {
+                //     ParseStatus::Finished { remaining, .. } => text.len() - remaining.len(),
+                //     ParseStatus::Incomplete { .. } => text.len(),
+                // };
+                // let result = result.without_remaining();
+                // state_map[token_id as usize] = Some((result, parsed_bytes));
+                state_map[token_id as usize] = Some(new_parser_state);
                 valid_tokens = true;
                 logits.push(Logit {
                     token_id,
@@ -290,57 +298,53 @@ pub(crate) fn generate_structured<P: Parser>(
             logits.set_softmax(false);
             logits.ensure_softmax().unwrap();
 
-            loop {
-                let mut sampled_logits = logits.clone();
-                token_id = sampler
-                    .sample_token(resources, &mut sampled_logits)
-                    .map_err(|err| LlamaModelError::SamplerError(err.into()))?
-                    .ok_or_else(|| {
-                        LlamaModelError::SamplerError(Box::new(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            format!(
-                                "Sampler returned None. Failed to sample token from logits: {:?}",
-                                sampled_logits
-                            ),
-                        )))
-                    })?;
-                // If we are not checking for the fast case, just use the token regardless of whether it has a valid next token within the tokenizer
-                if !fast_case {
-                    break;
-                }
-                let (result, _) = state_map
-                    .get(token_id as usize)
-                    .unwrap()
-                    .as_ref()
-                    .unwrap_or_else(|| panic!("Token {} not found in state map", token_id));
-                let has_valid_next = check_for_valid_next_token(
-                    result,
-                    &logits_indexed,
-                    llm,
-                    &token_stream,
-                    &parser,
-                    &parser_state,
-                    token_id,
-                );
-                if has_valid_next {
-                    break;
-                } else {
-                    println!(
-                        "\nSkipping sampled token... Token {:?} is invalid",
-                        tokenizer.id_to_token(token_id)
-                    );
-                    println!(
-                        "probability: {}",
-                        sampled_logits
-                            .iter()
-                            .find(|logit| logit.token_id == token_id)
-                            .unwrap()
-                            .prob
-                    );
-                    trie.push(token_id, 0., current_token, false, true);
-                    logits.retain(|logit| logit.token_id != token_id);
-                }
-            }
+            // loop {
+            let mut sampled_logits = logits.clone();
+            token_id = sampler
+                .sample_token(resources, &mut sampled_logits)
+                .map_err(|err| LlamaModelError::SamplerError(err.into()))?
+                .ok_or_else(|| {
+                    LlamaModelError::SamplerError(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!(
+                            "Sampler returned None. Failed to sample token from logits: {:?}",
+                            sampled_logits
+                        ),
+                    )))
+                })?;
+            // let result = state_map
+            //     .get(token_id as usize)
+            //     .unwrap()
+            //     .as_ref()
+            //     .unwrap_or_else(|| panic!("Token {} not found in state map", token_id));
+            // let has_valid_next = check_for_valid_next_token(
+            //     result,
+            //     &logits_indexed,
+            //     llm,
+            //     &token_stream,
+            //     &parser,
+            //     &parser_state,
+            //     token_id,
+            // );
+            // if has_valid_next {
+            //     break;
+            // } else {
+            //     println!(
+            //         "\nSkipping sampled token... Token {:?} is invalid",
+            //         tokenizer.id_to_token(token_id)
+            //     );
+            //     println!(
+            //         "probability: {}",
+            //         sampled_logits
+            //             .iter()
+            //             .find(|logit| logit.token_id == token_id)
+            //             .unwrap()
+            //             .prob
+            //     );
+            //     trie.push(token_id, 0., current_token, false, true);
+            //     logits.retain(|logit| logit.token_id != token_id);
+            // }
+            // }
             token_id
         };
 
@@ -390,7 +394,7 @@ pub(crate) fn generate_structured<P: Parser>(
         }
 
         unprocessed_token_count = 1;
-        let (result, parsed_bytes) = state_map
+        let result = state_map
             .get_mut(token_id as usize)
             .unwrap()
             .take()
@@ -399,7 +403,6 @@ pub(crate) fn generate_structured<P: Parser>(
             .next_token(token_id)
             .map_err(LlamaModelError::TokenOutputStreamError)?
             .unwrap();
-        token.truncate(parsed_bytes);
         // If we are still loading the initial prompt, don't send that part of the text
         if strip_required_next {
             if let Some(stripped) = token.strip_prefix(&remaining_prompt_text) {
@@ -409,88 +412,22 @@ pub(crate) fn generate_structured<P: Parser>(
         }
         on_token(token)?;
 
-        if let Some(result) = update_state(
-            &parser,
-            &mut parser_state,
-            result,
-            tokenizer,
-            &mut token_stream,
-            &mut on_token,
-            &mut unprocessed_token_count,
-        )? {
-            return Ok(result);
+        parser_state = result.clone();
+        if parser_state.finish() {
+            return Ok(());
         }
-    }
-}
 
-fn check_for_valid_next_token<P: Parser>(
-    result: &ParseStatus<P::PartialState, P::Output>,
-    logits_indexed: &[Logit],
-    llm: &LlamaModel,
-    token_stream: &TokenOutputStream,
-    parser: &P,
-    parser_state: &P::PartialState,
-    token_id: u32,
-) -> bool {
-    if let ParseStatus::Incomplete { .. } = result {
-        #[inline(never)]
-        fn loop_inner<P: Parser>(
-            llm: &LlamaModel,
-            token_stream: &TokenOutputStream,
-            parser: &P,
-            parser_state: &P::PartialState,
-            token_id: u32,
-            logit: usize,
-            start_text: &str,
-        ) -> bool {
-            let logit = logit as u32;
-            let pair = [token_id, logit];
-            let Some(decoded) = token_stream.peek_next_tokens(pair).unwrap() else {
-                return false;
-            };
-
-            // If there isn't any new text, reject the token
-            if decoded == start_text {
-                return false;
-            }
-
-            // If this would create an invalid merge, reject the token
-            if llm.merges.contains(&pair) {
-                // println!(
-                //     "lookahead skipping tokens {:?} and {:?} should have already merged into {:?}",
-                //     llm.tokenizer.id_to_token(token_id),
-                //     llm.tokenizer.id_to_token(logit),
-                //     llm.tokenizer.decode(&pair, false)
-                // );
-                return false;
-            }
-
-            // If the token is not in the grammar, reject the token
-            if parser.parse(parser_state, decoded.as_bytes()).is_err() {
-                return false;
-            }
-
-            // println!(
-            //     "lookahead token {:?} is valid",
-            //     decoded
-            // );
-            true
-        }
-        // If this is incomplete, make sure there is a token that can follow this one that will be valid.
-        (0..logits_indexed.len()).any(|logit| {
-            let start_text = token_stream.peek_token(token_id).unwrap().unwrap();
-            loop_inner(
-                llm,
-                &token_stream,
-                &parser,
-                &parser_state,
-                token_id,
-                logit,
-                &start_text,
-            )
-        })
-    } else {
-        true
+        // if let Some(result) = update_state(
+        //     &parser,
+        //     &mut parser_state,
+        //     result,
+        //     tokenizer,
+        //     &mut token_stream,
+        //     &mut on_token,
+        //     &mut unprocessed_token_count,
+        // )? {
+        //     return Ok(result);
+        // }
     }
 }
 
@@ -803,75 +740,75 @@ fn cmp_logits(a: &Logit, b: &Logit) -> std::cmp::Ordering {
     f32::total_cmp(&b.logit, &a.logit)
 }
 
-#[allow(unused, clippy::all)]
-fn update_state<P: Parser>(
-    parser: &P,
-    parser_state: &mut P::PartialState,
-    result: ParseStatus<P::PartialState, P::Output>,
-    tokenizer: &Tokenizer,
-    token_stream: &mut TokenOutputStream,
-    on_token: &mut impl FnMut(String) -> Result<(), LlamaModelError>,
-    unprocessed_token_count: &mut usize,
-) -> Result<Option<P::Output>, LlamaModelError> {
-    match result {
-        kalosm_sample::ParseStatus::Incomplete {
-            new_state,
-            required_next,
-        } => {
-            *parser_state = new_state;
-            if required_next.is_empty() {
-                Ok(None)
-            } else {
-                // The token may decode to a string that is a valid prefix of the required next token, but in a way that doesn't let us decode the required next tokens
-                let Some(mut extra_tokens) = token_stream
-                    .encode_after(&required_next)
-                    .map_err(|err| LlamaModelError::TokenOutputStreamError(err))?
-                else {
-                    return Ok(None);
-                };
-                // Remove the last token to avoid influencing the next token
-                extra_tokens.pop();
-                // If there are no new tokens, continue generating tokens normally
-                if extra_tokens.is_empty() {
-                    return Ok(None);
-                }
+// #[allow(unused, clippy::all)]
+// fn update_state<P: Parser>(
+//     parser: &P,
+//     parser_state: &mut P::PartialState,
+//     result: ParseStatus<P::PartialState, P::Output>,
+//     tokenizer: &Tokenizer,
+//     token_stream: &mut TokenOutputStream,
+//     on_token: &mut impl FnMut(String) -> Result<(), LlamaModelError>,
+//     unprocessed_token_count: &mut usize,
+// ) -> Result<Option<P::Output>, LlamaModelError> {
+//     match result {
+//         kalosm_sample::ParseStatus::Incomplete {
+//             new_state,
+//             required_next,
+//         } => {
+//             *parser_state = new_state;
+//             if required_next.is_empty() {
+//                 Ok(None)
+//             } else {
+//                 // The token may decode to a string that is a valid prefix of the required next token, but in a way that doesn't let us decode the required next tokens
+//                 let Some(mut extra_tokens) = token_stream
+//                     .encode_after(&required_next)
+//                     .map_err(|err| LlamaModelError::TokenOutputStreamError(err))?
+//                 else {
+//                     return Ok(None);
+//                 };
+//                 // Remove the last token to avoid influencing the next token
+//                 extra_tokens.pop();
+//                 // If there are no new tokens, continue generating tokens normally
+//                 if extra_tokens.is_empty() {
+//                     return Ok(None);
+//                 }
 
-                let mut all_required_next = String::new();
-                if let Some(next) = token_stream
-                    .peek_next_tokens(extra_tokens.iter().copied())
-                    .map_err(|err| LlamaModelError::TokenOutputStreamError(err))?
-                {
-                    all_required_next = next;
-                }
-                // The token may decode to a string that is a valid prefix of the required next token, but in a way that doesn't encode the same way.
-                // Make sure the final text we are adding is actually valid
-                if !required_next.starts_with(&all_required_next) {
-                    return Ok(None);
-                }
-                token_stream
-                    .next_tokens(&extra_tokens)
-                    .map_err(|err| LlamaModelError::TokenOutputStreamError(err))?;
-                *unprocessed_token_count += extra_tokens.len();
-                on_token(all_required_next.clone())?;
-                let mut result = parser
-                    .parse(parser_state, all_required_next.as_bytes())
-                    .unwrap_or_else(|_| {
-                        unreachable!("Required next should always be valid attempted to add {:?} but got error", all_required_next)
-                });
-                update_state(
-                    parser,
-                    parser_state,
-                    result,
-                    tokenizer,
-                    token_stream,
-                    on_token,
-                    unprocessed_token_count,
-                )
-            }
-        }
-        kalosm_sample::ParseStatus::Finished { result, .. } => Ok(Some(result)),
-    }
-}
+//                 let mut all_required_next = String::new();
+//                 if let Some(next) = token_stream
+//                     .peek_next_tokens(extra_tokens.iter().copied())
+//                     .map_err(|err| LlamaModelError::TokenOutputStreamError(err))?
+//                 {
+//                     all_required_next = next;
+//                 }
+//                 // The token may decode to a string that is a valid prefix of the required next token, but in a way that doesn't encode the same way.
+//                 // Make sure the final text we are adding is actually valid
+//                 if !required_next.starts_with(&all_required_next) {
+//                     return Ok(None);
+//                 }
+//                 token_stream
+//                     .next_tokens(&extra_tokens)
+//                     .map_err(|err| LlamaModelError::TokenOutputStreamError(err))?;
+//                 *unprocessed_token_count += extra_tokens.len();
+//                 on_token(all_required_next.clone())?;
+//                 let mut result = parser
+//                     .parse(parser_state, all_required_next.as_bytes())
+//                     .unwrap_or_else(|_| {
+//                         unreachable!("Required next should always be valid attempted to add {:?} but got error", all_required_next)
+//                 });
+//                 update_state(
+//                     parser,
+//                     parser_state,
+//                     result,
+//                     tokenizer,
+//                     token_stream,
+//                     on_token,
+//                     unprocessed_token_count,
+//                 )
+//             }
+//         }
+//         kalosm_sample::ParseStatus::Finished { result, .. } => Ok(Some(result)),
+//     }
+// }
 
 struct SamplerResources<'a, 'b, R: rand::Rng> {
     rng: &'a mut R,
