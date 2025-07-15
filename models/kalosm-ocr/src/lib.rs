@@ -76,7 +76,15 @@ pub struct OcrSource {
 impl OcrSource {
     /// Creates a new [`OcrSource`].
     pub fn new(model: FileSource, config: FileSource) -> Self {
-        Self { model, config, tokenizer: FileSource::huggingface("ToluClassics/candle-trocr-tokenizer", "main", "tokenizer.json") }
+        Self {
+            model,
+            config,
+            tokenizer: FileSource::huggingface(
+                "ToluClassics/candle-trocr-tokenizer",
+                "main",
+                "tokenizer.json",
+            ),
+        }
     }
 
     /// Set the tokenizer source.
@@ -199,7 +207,9 @@ impl OcrSource {
         let mut create_progress = ModelLoadingProgress::downloading_progress(source);
         let cache = Cache::default();
         let tokenizer_filename = cache
-            .get(&self.tokenizer, |progress| handler(create_progress(progress)))
+            .get(&self.tokenizer, |progress| {
+                handler(create_progress(progress))
+            })
             .await?;
         Tokenizer::from_file(&tokenizer_filename).map_err(LoadOcrError::LoadTokenizer)
     }
