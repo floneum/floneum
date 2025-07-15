@@ -1,7 +1,4 @@
 use cfg::{parse::Grammar, slab_grammar::SlabGrammar, tokenizer::Tokenizer, *};
-use std::{
-    collections::HashMap, fmt::{Debug, Display}, path::Path, sync::{Arc, Mutex, RwLock}
-};
 use kalosm::language::*;
 use kalosm_llama::{Cache, EvaluationTrie, LlamaModel};
 use kalosm_sample::{
@@ -16,6 +13,12 @@ use llm_samplers::{
     types::Sampler,
 };
 use std::io::Write;
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Display},
+    path::Path,
+    sync::{Arc, Mutex, RwLock},
+};
 
 use clap::Parser as _;
 use nom::{
@@ -599,16 +602,18 @@ async fn main() {
         })
         .collect::<Vec<_>>();
 
-    let args_str = synth_fun
-        .args
-        .iter()
-        .map(|(name, ty)| format!("({name} {ty})"))
-        .collect::<Vec<_>>()
-        .join(" ");
+    // let args_str = synth_fun
+    //     .args
+    //     .iter()
+    //     .map(|(name, ty)| format!("({name} {ty})"))
+    //     .collect::<Vec<_>>()
+    //     .join(" ");
 
     let parser = synth_fun.parser(recursion_depth);
-    let parser = LiteralParser::new(format!("(define-fun f ({args_str}) String "))
-        .ignore_output_then(parser.clone())
+    // let parser = LiteralParser::new(format!("(define-fun f ({args_str}) String "))
+    //     .ignore_output_then(parser.clone())
+    let parser = parser
+        .clone()
         .then_lazy({
             let interpreter = Interpreter::new();
             let constraints = constraints.clone();
@@ -785,16 +790,18 @@ async fn main() {
             let all_tokens = all_tokens.read().unwrap().clone();
             println!("generation {generation}:\n{all_tokens}");
 
-            let output = parser.parse(
+            let Ok(ParseStatus::Finished { result, remaining }) = parser.parse(
                 &parser.create_parser_state(),
                 all_tokens.as_bytes(),
-            ).unwrap().unwrap_finished();
+            ) else {
+                continue;
+            };
 
             let interpreter = Interpreter::new();
             let mut valid = true;
-            println!("Checking constraints for expression: {output:?}");
+            println!("Checking constraints for expression: {result:?}");
             for constraint in &constraints {
-                let result = interpreter.check(constraint, vars.clone(), &output);
+                let result = interpreter.check(constraint, vars.clone(), &result);
                 println!("  {constraint:?} => {result}");
                 valid = valid && result;
             }
@@ -1128,7 +1135,6 @@ impl<T: Clone> Parser for SuccessParser<T> {
 impl<T: Clone> CreateParserState for SuccessParser<T> {
     fn create_parser_state(&self) -> Self::PartialState {}
 }
-
 
 fn create_grammar(path: &Path) -> Grammar<u32> {
     let tokenizer = Tokenizer::load_tokenizer(path);

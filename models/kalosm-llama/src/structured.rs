@@ -195,24 +195,24 @@ pub(crate) fn generate_structured(
                 ..
             } = logits_indexed[i];
 
-            if let Some(&last) = token_stream.tokens().last() {
-                let pair = [last, token_id];
-                if llm.merges.contains(&pair) {
-                    // println!(
-                    //     "Skipping tokens {:?} and {:?} should have already merged into {:?}",
-                    //     tokenizer.id_to_token(last),
-                    //     tokenizer.id_to_token(token_id),
-                    //     tokenizer.decode(&pair, false)
-                    // );
-                    continue;
-                }
-            }
+            // if let Some(&last) = token_stream.tokens().last() {
+            //     let pair = [last, token_id];
+            //     if llm.merges.contains(&pair) {
+            //         println!(
+            //             "Skipping tokens {:?} and {:?} should have already merged into {:?}",
+            //             tokenizer.id_to_token(last),
+            //             tokenizer.id_to_token(token_id),
+            //             tokenizer.decode(&pair, false)
+            //         );
+            //         continue;
+            //     }
+            // }
 
             // let Some(text) = token_cache.get(token_id as usize) else {
             //     continue;
             // };
             let mut new_parser_state = parser_state.clone();
-            new_parser_state.push(Some(token_id));
+            new_parser_state.push_byte(token_id);
             let could_become_valid = new_parser_state.could_become_valid();
             trie.push(
                 token_id,
@@ -222,6 +222,11 @@ pub(crate) fn generate_structured(
                 false,
             );
             if could_become_valid {
+                println!(
+                    "Token {:?} with probability {} could become valid",
+                    tokenizer.id_to_token(token_id),
+                    prob
+                );
                 // if fast_case && !lazy {
                 //     let valid = check_for_valid_next_token(
                 //         &result,
