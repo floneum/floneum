@@ -1,9 +1,9 @@
+use cfg::{parse::Grammar, slab_grammar::SlabGrammar, tokenizer::Tokenizer, *};
 use std::{
     collections::HashMap,
     fmt::{Debug, Display},
     sync::{Arc, Mutex, RwLock},
 };
-
 use kalosm::language::*;
 use kalosm_llama::{EvaluationTrie, LlamaModel};
 use kalosm_sample::{
@@ -563,14 +563,14 @@ impl Model {
 async fn main() {
     tracing_subscriber::fmt().init();
 
+    let grammar = create_grammar();
+
     let args = Args::parse();
     println!("args: {:#?}", args);
     let model = args.model;
     let recursion_depth = args.recursion_depth;
     let iterations = args.iterations;
     let multipass = args.multipass;
-    let fast_case = args.fast_case;
-    let lazy = false;
 
     let grammar_text = std::fs::read_to_string(args.grammar).unwrap();
     let prompt = std::fs::read_to_string(args.task).unwrap();
@@ -696,6 +696,8 @@ async fn main() {
         let mut last_entropy = 1000.0;
         let task = grammar_text;
         let mut session = llm.new_session();
+        let bump = bumpalo::Bump::new();
+        let grammar = grammar.reallocate(&bump);
         let prompt = if model.qwen_normal() || model.smol_lm() {
             format!("<|im_start|>system\n{prompt}<|im_end|>\n<|im_start|>user\nQuestion:\n{task}<|im_end|>\n<|im_start|>assistant\n")
         } else if model.llama() {
@@ -710,15 +712,13 @@ async fn main() {
                 &mut session,
                 &prompt,
                 sampler.clone(),
-                MaxLengthParser::new(StopOn::new("</think>"), 8192),
+                &grammar,
                 Box::new(|token| {
                     print!("{}", token);
                     std::io::stdout().flush().unwrap();
                     Ok(())
                 }),
                 &mut EvaluationTrie::new(),
-                fast_case,
-                lazy
             )
             .is_err() {
                 println!("Initial prompt too long, retrying");
@@ -749,7 +749,7 @@ async fn main() {
             }
             let mut session = session.deep_clone();
             let all_tokens = Arc::new(RwLock::new(String::new()));
-            let output = match llm.generate_structured_with_trie(
+            match llm.generate_structured_with_trie(
                 &mut session,
                 if model.qwen_think() {
                     "\n"
@@ -757,7 +757,7 @@ async fn main() {
                     &prompt
                 },
                 sampler.clone(),
-                parser.clone(),
+                &grammar,
                 {
                     let all_tokens = all_tokens.clone();
                     move |token| {
@@ -768,8 +768,6 @@ async fn main() {
                     }
                 },
                 &mut trie,
-                fast_case,
-                lazy,
             ) {
                 Ok(output) => output,
                 Err(e) => {
@@ -783,7 +781,13 @@ async fn main() {
             };
             println!("\n\n");
 
-            println!("generation {generation}:\n{output:?}");
+            let all_tokens = all_tokens.read().unwrap().clone();
+            println!("generation {generation}:\n{all_tokens}");
+
+            let output = parser.parse(
+                &parser.create_parser_state(),
+                all_tokens.as_bytes(),
+            ).unwrap().unwrap_finished();
 
             let interpreter = Interpreter::new();
             let mut valid = true;
@@ -1122,4 +1126,50 @@ impl<T: Clone> Parser for SuccessParser<T> {
 }
 impl<T: Clone> CreateParserState for SuccessParser<T> {
     fn create_parser_state(&self) -> Self::PartialState {}
+}
+
+
+fn create_grammar() -> Grammar<u32> {
+    let tokenizer = Tokenizer::load_tokenizer("tokenizer.json");
+
+    let grammar = parse::Grammar::parse(
+        r#"Start -> ntString
+ntString -> 'name' | '" "' | '(' 'str.++' ' ' ntString ' ' ntString ')' | '(' 'str.replace' ' ' ntString ' ' ntString ' ' ntString ')' | '(' 'str.at' ' ' ntString ' ' ntInt ')' | '(' 'int.to.str' ' ' ntInt ')' | '(' 'str.substr' ' ' ntString ' ' ntInt ' ' ntInt ')'
+ntInt -> '0' | '1' | '2' | '(' '+' ' ' ntInt ' ' ntInt ')' | '(' '-' ' ' ntInt ' ' ntInt ')' | '(' 'str.len' ' ' ntString ')' | '(' 'str.to.int' ' ' ntString ')' | '(' 'str.indexof' ' ' ntString ' ' ntString ' ' ntInt ')'
+ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | '(' 'str.suffixof' ' ' ntString ' ' ntString ')' | '(' 'str.contains' ' ' ntString ' ' ntString ')'
+"#,
+    )
+    .unwrap();
+
+    let mut grammar = grammar.split_terminals();
+    println!("Converting grammar to CNF...");
+    grammar = grammar.to_cnf().unwrap();
+    let grammar = grammar.replace_tokenizer_terminals(&tokenizer);
+    let mut grammar = SlabGrammar::new(&grammar);
+    grammar.garbage_collect_non_terminals();
+    println!("start rule count: {}", grammar.rules.len());
+    let merges = &tokenizer.merges;
+    let mut processed_merges = Vec::new();
+    for (i, merge) in merges.iter().enumerate() {
+        println!(
+            "Applying merge {i}: {:?} + {:?} = {:?}",
+            String::from_utf8_lossy(&tokenizer.inverse_vocab[&merge.pair[0]]),
+            String::from_utf8_lossy(&tokenizer.inverse_vocab[&merge.pair[1]]),
+            String::from_utf8_lossy(&tokenizer.inverse_vocab[&merge.new_token])
+        );
+        grammar.shortcut_merge(merge);
+        processed_merges.push(merge.clone());
+    }
+
+    let grammar = grammar.to_grammar();
+    println!(
+        "grammar:\n{}",
+        grammar.clone().map(
+            |r| String::from_utf8_lossy(&tokenizer.inverse_vocab[&r]).to_string(),
+            |r| r.to_string()
+        )
+    );
+    println!("🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉");
+
+    grammar
 }

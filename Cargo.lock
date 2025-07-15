@@ -7790,6 +7790,8 @@ dependencies = [
 name = "sygus"
 version = "0.1.0"
 dependencies = [
+ "bumpalo",
+ "cfg",
  "clap 4.5.37",
  "kalosm",
  "kalosm-llama",
