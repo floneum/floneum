@@ -52,7 +52,7 @@ pub struct Tokenizer {
     pub inverse_vocab: HashMap<u32, Vec<u8>>,
     pub merges: Vec<Merge>,
     pub bytes: [u32; 256],
-    pub regex: Regex,
+    // pub regex: Regex,
 }
 
 impl Tokenizer {
@@ -62,7 +62,7 @@ impl Tokenizer {
         let pretokenizer = json["pre_tokenizer"].clone();
         let sequence = pretokenizer["pretokenizers"][0].clone();
         let pattern = sequence["pattern"]["Regex"].as_str().unwrap();
-        let regex = Regex::new(pattern).unwrap();
+        // let regex = Regex::new(pattern).unwrap();
         let model = json["model"].clone();
         let deserialized = serde_json::from_value::<SerializedModel>(model).unwrap();
 
@@ -122,7 +122,7 @@ impl Tokenizer {
             merges,
             bytes,
             inverse_vocab,
-            regex,
+            // regex,
         }
     }
 }

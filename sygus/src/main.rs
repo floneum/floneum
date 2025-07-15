@@ -1,11 +1,9 @@
 use cfg::{parse::Grammar, slab_grammar::SlabGrammar, tokenizer::Tokenizer, *};
 use std::{
-    collections::HashMap,
-    fmt::{Debug, Display},
-    sync::{Arc, Mutex, RwLock},
+    collections::HashMap, fmt::{Debug, Display}, path::Path, sync::{Arc, Mutex, RwLock}
 };
 use kalosm::language::*;
-use kalosm_llama::{EvaluationTrie, LlamaModel};
+use kalosm_llama::{Cache, EvaluationTrie, LlamaModel};
 use kalosm_sample::{
     ArcParser, LazyParser, LiteralParser, Parser, ParserExt, SendCreateParserState,
 };
@@ -563,8 +561,6 @@ impl Model {
 async fn main() {
     tracing_subscriber::fmt().init();
 
-    let grammar = create_grammar();
-
     let args = Args::parse();
     println!("args: {:#?}", args);
     let model = args.model;
@@ -683,6 +679,11 @@ async fn main() {
         Model::Llama3b => LlamaSource::llama_3_2_3b_chat(),
         Model::Llama8b => LlamaSource::llama_3_1_8b_chat(),
     };
+
+    let tokenizer = source.tokenizer.clone().unwrap();
+    let cache = Cache::default();
+    let tokenizer_path = cache.get(&tokenizer, |_| {}).await.unwrap();
+    let grammar = create_grammar(&tokenizer_path);
     let mut llm = LlamaModel::from_builder(
         Llama::builder().with_source(source),
         ModelLoadingProgress::multi_bar_loading_indicator(),
@@ -1129,8 +1130,8 @@ impl<T: Clone> CreateParserState for SuccessParser<T> {
 }
 
 
-fn create_grammar() -> Grammar<u32> {
-    let tokenizer = Tokenizer::load_tokenizer("tokenizer.json");
+fn create_grammar(path: &Path) -> Grammar<u32> {
+    let tokenizer = Tokenizer::load_tokenizer(path);
 
     let grammar = parse::Grammar::parse(
         r#"Start -> ntString

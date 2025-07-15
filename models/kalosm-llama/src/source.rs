@@ -46,7 +46,7 @@ pub(crate) struct LlamaConfigJson {
 #[derive(Clone, Debug)]
 pub struct LlamaSource {
     pub(crate) model: FileSource,
-    pub(crate) tokenizer: Option<FileSource>,
+    pub tokenizer: Option<FileSource>,
     pub(crate) config: Option<FileSource>,
     pub(crate) group_query_attention: u8,
     pub(crate) cache: kalosm_common::Cache,
