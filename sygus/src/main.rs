@@ -704,6 +704,16 @@ async fn main() {
         let mut session = llm.new_session();
         let bump = bumpalo::Bump::new();
         let grammar = grammar.reallocate(&bump);
+        let should_recognize: &[&str] = &[
+            "name",
+            "(str.++ name name)",
+        ];
+        for pattern in should_recognize {
+            let tokens = llm.tokenizer.encode_fast(*pattern, false).unwrap();
+            println!("Checking pattern: {pattern}");
+            println!("Tokens: {:?}", tokens);
+            assert!(grammar.recognizes_tokens(tokens.get_ids()));
+        }
         let prompt = if model.qwen_normal() || model.smol_lm() {
             format!("<|im_start|>system\n{prompt}<|im_end|>\n<|im_start|>user\nQuestion:\n{task}<|im_end|>\n<|im_start|>assistant\n")
         } else if model.llama() {
@@ -1137,14 +1147,14 @@ impl<T: Clone> CreateParserState for SuccessParser<T> {
 }
 
 fn create_grammar(path: &Path) -> Grammar<u32> {
+    println!("path: {}", path.display());
     let tokenizer = Tokenizer::load_tokenizer(path);
 
     let grammar = parse::Grammar::parse(
         r#"Start -> ntString
 ntString -> 'name' | '" "' | '(' 'str.++' ' ' ntString ' ' ntString ')' | '(' 'str.replace' ' ' ntString ' ' ntString ' ' ntString ')' | '(' 'str.at' ' ' ntString ' ' ntInt ')' | '(' 'int.to.str' ' ' ntInt ')' | '(' 'str.substr' ' ' ntString ' ' ntInt ' ' ntInt ')'
 ntInt -> '0' | '1' | '2' | '(' '+' ' ' ntInt ' ' ntInt ')' | '(' '-' ' ' ntInt ' ' ntInt ')' | '(' 'str.len' ' ' ntString ')' | '(' 'str.to.int' ' ' ntString ')' | '(' 'str.indexof' ' ' ntString ' ' ntString ' ' ntInt ')'
-ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | '(' 'str.suffixof' ' ' ntString ' ' ntString ')' | '(' 'str.contains' ' ' ntString ' ' ntString ')'
-"#,
+ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | '(' 'str.suffixof' ' ' ntString ' ' ntString ')' | '(' 'str.contains' ' ' ntString ' ' ntString ')'"#,
     )
     .unwrap();
 
@@ -1164,7 +1174,11 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
             String::from_utf8_lossy(&tokenizer.inverse_vocab[&merge.pair[1]]),
             String::from_utf8_lossy(&tokenizer.inverse_vocab[&merge.new_token])
         );
-        grammar.shortcut_merge(merge);
+        let changed = grammar.shortcut_merge(merge);
+        if changed {
+            grammar.garbage_collect_non_terminals();
+            grammar.deduplicate_non_terminals();
+        }
         processed_merges.push(merge.clone());
     }
 

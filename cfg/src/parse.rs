@@ -231,10 +231,7 @@ fn rule(input: &str) -> IResult<&str, Rule> {
         )),
         |(lhs, rhs)| Rule {
             lhs: lhs.to_string(),
-            rhs: rhs
-                .into_iter()
-                .map(|seq| seq.into())
-                .collect(),
+            rhs: rhs.into_iter().map(|seq| seq.into()).collect(),
         },
     )
     .parse(input)
