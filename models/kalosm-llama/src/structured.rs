@@ -93,8 +93,7 @@ pub(crate) fn generate_structured(
     //         parser_state = parser_state_new;
     //     }
     // }
-    let bump = bumpalo::Bump::new();
-    let mut parser_state = Recognizer::new(cfg, &bump);
+    let mut parser_state = Recognizer::new(cfg);
     let mut strip_required_next = true;
 
     let mut rng = if let Some(seed) = seed {

@@ -5,6 +5,7 @@ use std::{
 };
 
 use rustc_hash::{FxHashMap, FxHashSet};
+use slab::Slab;
 
 use crate::{
     parse::Grammar,
@@ -25,7 +26,7 @@ pub struct DenseGrammar<'bump> {
 impl<'bump> DenseGrammar<'bump> {
     pub fn recognizes(&self, input: &[u8], tokenizer: &Tokenizer) -> bool {
         let bump = bumpalo::Bump::new();
-        let mut recognizer = Recognizer::new(self, &bump);
+        let mut recognizer = Recognizer::new(self);
 
         for byte in input {
             recognizer.push_byte(tokenizer.bytes[*byte as usize]);
@@ -35,7 +36,7 @@ impl<'bump> DenseGrammar<'bump> {
 
     pub fn recognizes_tokens(&self, input: &[u32]) -> bool {
         let bump = bumpalo::Bump::new();
-        let mut recognizer = Recognizer::new(self, &bump);
+        let mut recognizer = Recognizer::new(self);
 
         for token in input {
             recognizer.push_byte(*token);
@@ -88,7 +89,7 @@ impl<'bump> Display for DenseRule<'bump> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, Eq, Hash)]
 enum DenseSymbol {
     NonTerminal(usize),
     Terminal(u32),
@@ -215,31 +216,29 @@ impl Grammar<u32> {
 }
 
 #[derive(Clone)]
-pub struct Recognizer<'bump> {
-    grammar: &'bump DenseGrammar<'bump>,
-    chart: Vec<Vec<&'bump Position<'bump>>>,
-    bump: &'bump bumpalo::Bump,
+pub struct Recognizer<'a> {
+    grammar: &'a DenseGrammar<'a>,
+    chart: Vec<Vec<u32>>,
+    positions: Slab<Position>,
 }
 
 impl<'bump> Recognizer<'bump> {
-    pub fn new(grammar: &'bump DenseGrammar<'bump>, bump: &'bump bumpalo::Bump) -> Self {
-        let mut chart: Vec<Vec<&'bump Position<'bump>>> = vec![Vec::new()];
+    pub fn new(grammar: &'bump DenseGrammar<'bump>) -> Self {
+        let chart: Vec<Vec<u32>> = vec![Vec::new()];
 
         let start = grammar.start;
-        for rhs in &*grammar.rules[start].rhs {
-            chart[0].push(bump.alloc(Position {
-                parent: None, // No parent for the initial state
-                non_terminal: start,
-                position: 0,
-                rhs,
-            }));
-        }
-
-        Recognizer {
+        let mut myself = Self {
             grammar,
             chart,
-            bump,
+            positions: Slab::new(),
+        };
+
+        for rhs in &*grammar.rules[start].rhs {
+            let pos = myself.new_position(None, start, 0, *rhs);
+            myself.chart[0].push(pos);
         }
+
+        myself
     }
 
     pub fn could_become_valid(&self) -> bool {
@@ -272,22 +271,22 @@ impl<'bump> Recognizer<'bump> {
                 non_terminal,
                 position,
                 rhs,
-            } = current;
+            } = self.positions[current as usize].clone();
             index += 1;
 
             // If the dot is not at the end of the rule, we can either predict or scan
-            if let Some(symbol) = rhs.get(*position) {
+            if let Some(symbol) = rhs.get(position) {
                 match symbol {
                     DenseSymbol::NonTerminal(next_non_terminal) => {
                         // Predictor: Add new states for the non-terminal
                         if self.grammar.rules[*next_non_terminal].rhs.len() > 0 {
                             for next_rhs in self.grammar.rules[*next_non_terminal].rhs {
-                                let new = self.bump.alloc(Position {
-                                    parent: Some(current),
-                                    non_terminal: *next_non_terminal,
-                                    position: 0,
-                                    rhs: next_rhs,
-                                });
+                                let new = self.new_position(
+                                    Some(current),
+                                    *next_non_terminal,
+                                    0,
+                                    *next_rhs,
+                                );
                                 self.chart[k].push(new);
                             }
                         }
@@ -296,37 +295,41 @@ impl<'bump> Recognizer<'bump> {
                         // Scanner: Check if we can match the terminal
                         if byte == Some(*lit as _) {
                             // Add the new state with the terminal matched
-                            self.chart[k + 1].push(self.bump.alloc(Position {
-                                parent: *parent,
-                                non_terminal: *non_terminal,
-                                position: position + 1,
+                            let pos = self.new_position(
+                                parent,
+                                non_terminal,
+                                position + 1,
                                 rhs,
-                            }));
+                            );
+                            self.chart[k + 1].push(pos);
                         }
                     }
                     DenseSymbol::Epsilon => {
                         // Epsilon transition, just move the dot forward
-                        self.chart[k].push(self.bump.alloc(Position {
-                            parent: *parent,
-                            non_terminal: *non_terminal,
-                            position: position + 1,
+                        let pos = self.new_position(
+                            parent,
+                            non_terminal,
+                            position + 1,
                             rhs,
-                        }));
+                        );
+                        self.chart[k].push(pos);
                     }
                 }
             } else {
                 // Pop this state and move forward in the parent chain
-                if let Some(parent_state) = *parent {
+                if let Some(parent_state) = parent {
+                    let parent_state = self.positions[parent_state as usize].clone();
                     // Completer: If we reach the end of a rule, we can complete it
-                    self.chart[k].push(self.bump.alloc(Position {
-                        parent: parent_state.parent,
-                        non_terminal: parent_state.non_terminal,
-                        position: parent_state.position + 1,
-                        rhs: parent_state.rhs,
-                    }));
+                    let pos = self.new_position(
+                        parent_state.parent,
+                        parent_state.non_terminal,
+                        parent_state.position + 1,
+                        parent_state.rhs,
+                    );
+                    self.chart[k].push(pos);
                 } else {
                     // If there's no parent, this is a completed state
-                    if *non_terminal == self.grammar.start && *position == rhs.len() {
+                    if non_terminal == self.grammar.start && position == rhs.len() {
                         // If we reached the start rule and the dot is at the end
                         return true; // Input recognized
                     }
@@ -337,14 +340,30 @@ impl<'bump> Recognizer<'bump> {
         // If we reach here, the input was not recognized
         false
     }
+
+    fn new_position(
+        &mut self,
+        parent: Option<u32>,
+        non_terminal: usize,
+        position: usize,
+        rhs: impl Into<Box<[DenseSymbol]>>,
+    ) -> u32 {
+        let pos = Position {
+            parent,
+            non_terminal,
+            position,
+            rhs: rhs.into(),
+        };
+        self.positions.insert(pos) as u32
+    }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct Position<'bump> {
-    parent: Option<&'bump Position<'bump>>,
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+struct Position {
+    parent: Option<u32>,
     non_terminal: usize,
     position: usize,
-    rhs: &'bump [DenseSymbol],
+    rhs: Box<[DenseSymbol]>,
 }
 
 #[test]
