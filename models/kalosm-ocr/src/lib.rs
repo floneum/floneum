@@ -33,7 +33,6 @@ use candle_core::{Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::models::trocr;
 use candle_transformers::models::vit;
-use hf_hub::api::sync::Api;
 use image::{GenericImage, GenericImageView, ImageBuffer, Rgba};
 use kalosm_common::*;
 use kalosm_model_types::{FileSource, ModelLoadingProgress};
