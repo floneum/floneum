@@ -73,34 +73,32 @@ impl<T: DataType> Tensor<2, T> {
 async fn setup_smol_lm_matrix(
     name: &str,
 ) -> (crate::Device, QMatrix, candle_core::quantized::QMatMul) {
-    let url = "https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf";
 
-    setup_smol_lm_matrix_with_source(name, url).await
+    use kalosm_model_types::FileSource;
+    let source = FileSource::HuggingFace {
+        model_id: "unsloth/SmolLM2-135M-Instruct-GGUF".to_string(),
+        revision: "main".to_string(),
+        file: "SmolLM2-135M-Instruct-Q4_K_M.gguf".to_string(),
+    };
+
+    setup_smol_lm_matrix_with_source(name, source).await
 }
 
 #[cfg(test)]
 async fn setup_smol_lm_matrix_with_source(
     name: &str,
-    url: &str,
+    source: kalosm_model_types::FileSource,
 ) -> (crate::Device, QMatrix, candle_core::quantized::QMatMul) {
     use crate::Device;
     use fusor_gguf::GgufMetadata;
+    use kalosm_common::Cache;
 
     let device = Device::new().await.unwrap();
 
-    static BYTES: tokio::sync::OnceCell<Vec<u8>> = tokio::sync::OnceCell::const_new();
+    let cache = Cache::default();
+    let path = cache.get(&source, |_| {}).await.unwrap();
+    let bytes = tokio::fs::read(&path).await.unwrap();
 
-    let bytes = BYTES
-        .get_or_init(|| async move {
-            reqwest::get(url)
-                .await
-                .unwrap()
-                .bytes()
-                .await
-                .unwrap()
-                .into()
-        })
-        .await;
     let mut reader = std::io::Cursor::new(&bytes);
     let metadata = GgufMetadata::read(&mut reader).unwrap();
     let mut reader = std::io::Cursor::new(&bytes);
@@ -322,8 +320,14 @@ async fn test_fuzz_q_mat_mul_q5_0_gemv() {
 async fn test_fuzz_q_mat_mul_q4_0_gemv() {
     use crate::Tensor;
     use candle_core::Module;
+    use kalosm_model_types::FileSource;
 
-    let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix_with_source("blk.0.ffn_gate.weight", "https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_0.gguf").await;
+    let source = FileSource::HuggingFace {
+        model_id: "bartowski/SmolLM2-135M-Instruct-GGUF".to_string(),
+        revision: "main".to_string(),
+        file: "SmolLM2-135M-Instruct-Q4_0.gguf".to_string(),
+    };
+    let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix_with_source("blk.0.ffn_gate.weight", source).await;
 
     for _ in 0..25 {
         let width = 1;
