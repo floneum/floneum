@@ -14,6 +14,8 @@ use criterion::Criterion;
 use criterion::{criterion_group, criterion_main};
 
 use criterion::async_executor::FuturesExecutor;
+use kalosm_common::Cache;
+use kalosm_model_types::FileSource;
 
 fn qmatmul(c: &mut Criterion) {
     use crate::Device;
@@ -21,19 +23,27 @@ fn qmatmul(c: &mut Criterion) {
     use candle_core::Module;
     use fusor_gguf::GgufMetadata;
 
-    let url = "https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf";
+    let source = FileSource::HuggingFace {
+        model_id: "unsloth/SmolLM2-135M-Instruct-GGUF".to_string(),
+        revision: "main".to_string(),
+        file: "SmolLM2-135M-Instruct-Q4_K_M.gguf".to_string(),
+    };
     let bytes = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap()
-        .block_on(async move { reqwest::get(url).await.unwrap().bytes().await.unwrap() });
+        .block_on(async move {
+            let cache = Cache::default();
+            let path = cache.get(&source, |_| {}).await.unwrap();
+            tokio::fs::read(&path).await.unwrap()
+        });
 
     for size in [1, 512] {
         for (width, name) in [
             (1536, "blk.3.ffn_down.weight"),
             (1536, "blk.0.ffn_down.weight"),
             (576, "token_embd.weight"),
-            (576, "blk.0.ffn_up.weight")
+            (576, "blk.0.ffn_up.weight"),
         ] {
             let random_data: Vec<Vec<f32>> = (0..size)
                 .map(|_| (0..width).map(|_| rand::random()).collect())
@@ -49,7 +59,6 @@ fn qmatmul(c: &mut Criterion) {
                 let mut group = c.benchmark_group(&format!("qmatmul-wgpu-{width}-{quantization}"));
 
                 let device = block_on(Device::new()).unwrap();
-
 
                 let q_matrix = QMatrix::read(
                     &device,
