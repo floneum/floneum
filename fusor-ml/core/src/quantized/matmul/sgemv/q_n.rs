@@ -213,47 +213,52 @@ fn block_dot_q4_0(kernel: &mut String, op: &QMatMulOperation, input_b: &QMatrixI
     let dtype = op.input_datatype;
     writeln!(kernel, "var chunk_sum = vec4<{dtype}>();").unwrap();
 
-    writeln!(
-        kernel,
-        "let first_u32 = {input_b}[block_offset].data[lane_index / 4 + 0];"
-    )
-    .unwrap();
-    writeln!(
-        kernel,
-        "let second_u32 = {input_b}[block_offset].data[lane_index / 4 + 1];"
-    )
-    .unwrap();
-    writeln!(
-        kernel,
-        "let packed = vec4<u32>(
-        first_u32 & 0x0000FFFF,
-        first_u32 >> 16,
-        second_u32 & 0x0000FFFF,
-        second_u32 >> 16
-    );"
-    )
-    .unwrap();
-
-    writeln!(kernel, "for (var j = 0u; j < 8u; j += 2u) {{").unwrap();
+    writeln!(kernel, "for (var j = 0u; j < 8u; j += 4u) {{").unwrap();
     {
         writeln!(
             kernel,
-            "chunk_sum[0] += cached_a_values[j + 0] * {dtype}(packed[j / 2u] & 0x000F);"
+            "var data_u32 = {input_b}[block_offset].data[lane_index / 4 + j / 4];"
         )
         .unwrap();
         writeln!(
             kernel,
-            "chunk_sum[1] += cached_a_values[j + 1] * {dtype}(packed[j / 2u] & 0x0F00);"
+            "chunk_sum[0] += cached_a_values[j + 0] * {dtype}(data_u32 & 0x000F);"
         )
         .unwrap();
         writeln!(
             kernel,
-            "chunk_sum[2] += cached_a_values[j + 8] * {dtype}(packed[j / 2u] & 0x00F0);"
+            "chunk_sum[1] += cached_a_values[j + 1] * {dtype}(data_u32 & 0x0F00);"
         )
         .unwrap();
         writeln!(
             kernel,
-            "chunk_sum[3] += cached_a_values[j + 9] * {dtype}(packed[j / 2u] & 0xF000);"
+            "chunk_sum[2] += cached_a_values[j + 8] * {dtype}(data_u32 & 0x00F0);"
+        )
+        .unwrap();
+        writeln!(
+            kernel,
+            "chunk_sum[3] += cached_a_values[j + 9] * {dtype}(data_u32 & 0xF000);"
+        )
+        .unwrap();
+        writeln!(kernel, "data_u32 >>= 16u;").unwrap();
+        writeln!(
+            kernel,
+            "chunk_sum[0] += cached_a_values[j + 2] * {dtype}(data_u32 & 0x000F);"
+        )
+        .unwrap();
+        writeln!(
+            kernel,
+            "chunk_sum[1] += cached_a_values[j + 3] * {dtype}(data_u32 & 0x0F00);"
+        )
+        .unwrap();
+        writeln!(
+            kernel,
+            "chunk_sum[2] += cached_a_values[j + 10] * {dtype}(data_u32 & 0x00F0);"
+        )
+        .unwrap();
+        writeln!(
+            kernel,
+            "chunk_sum[3] += cached_a_values[j + 11] * {dtype}(data_u32 & 0xF000);"
         )
         .unwrap();
     }
@@ -269,51 +274,56 @@ fn block_dot_q5_0(kernel: &mut String, op: &QMatMulOperation, input_b: &QMatrixI
 
     writeln!(
         kernel,
-        "let first_low_u32 = {input_b}[block_offset].data_low_bits[lane_index / 4 + 0];"
-    )
-    .unwrap();
-    writeln!(
-        kernel,
-        "let second_low_u32 = {input_b}[block_offset].data_low_bits[lane_index / 4 + 1];"
-    )
-    .unwrap();
-    writeln!(
-        kernel,
-        "let packed = vec4<u32>(
-        first_low_u32 & 0x0000FFFF,
-        first_low_u32 >> 16,
-        second_low_u32 & 0x0000FFFF,
-        second_low_u32 >> 16
-    );"
-    )
-    .unwrap();
-
-    writeln!(
-        kernel,
         "let high_u32 = {input_b}[block_offset].data_high_bits[0];"
     )
     .unwrap();
 
-    writeln!(kernel, "for (var j = 0u; j < 8u; j += 2u) {{").unwrap();
+    writeln!(kernel, "for (var j = 0u; j < 8u; j += 4u) {{").unwrap();
     {
         writeln!(
             kernel,
-            "chunk_sum[0] += cached_a_values[j + 0] * {dtype}((packed[j / 2u] & 0x000F) | ((high_u32 >> (j + 0 + lane_index) << 4) & 0x00010));"
+            "var low_u32 = {input_b}[block_offset].data_low_bits[lane_index / 4 + j / 4];"
         )
         .unwrap();
         writeln!(
             kernel,
-            "chunk_sum[1] += cached_a_values[j + 1] * {dtype}((packed[j / 2u] & 0x0F00) | ((high_u32 >> (j + 1 + lane_index) << 12) & 0x01000));"
+            "chunk_sum[0] += cached_a_values[j + 0] * {dtype}((low_u32 & 0x000F) | ((high_u32 >> (j + 0 + lane_index) << 4) & 0x00010));"
         )
         .unwrap();
         writeln!(
             kernel,
-            "chunk_sum[2] += cached_a_values[j + 8] * {dtype}((packed[j / 2u] & 0x00F0) | ((high_u32 >> (j + 0 + lane_index + {elements_per_block}/2) << 8) & 0x00100));"
+            "chunk_sum[1] += cached_a_values[j + 1] * {dtype}((low_u32 & 0x0F00) | ((high_u32 >> (j + 1 + lane_index) << 12) & 0x01000));"
         )
         .unwrap();
         writeln!(
             kernel,
-            "chunk_sum[3] += cached_a_values[j + 9] * {dtype}((packed[j / 2u] & 0xF000) | ((high_u32 >> (j + 1 + lane_index + {elements_per_block}/2) << 16) & 0x10000));"
+            "chunk_sum[2] += cached_a_values[j + 8] * {dtype}((low_u32 & 0x00F0) | ((high_u32 >> (j + 0 + lane_index + {elements_per_block}/2) << 8) & 0x00100));"
+        )
+        .unwrap();
+        writeln!(
+            kernel,
+            "chunk_sum[3] += cached_a_values[j + 9] * {dtype}((low_u32 & 0xF000) | ((high_u32 >> (j + 1 + lane_index + {elements_per_block}/2) << 16) & 0x10000));"
+        )
+        .unwrap();
+        writeln!(kernel, "low_u32 >>= 16u;").unwrap();
+        writeln!(
+            kernel,
+            "chunk_sum[0] += cached_a_values[j + 2] * {dtype}((low_u32 & 0x000F) | ((high_u32 >> (j + 2 + lane_index) << 4) & 0x00010));"
+        )
+        .unwrap();
+        writeln!(
+            kernel,
+            "chunk_sum[1] += cached_a_values[j + 3] * {dtype}((low_u32 & 0x0F00) | ((high_u32 >> (j + 3 + lane_index) << 12) & 0x01000));"
+        )
+        .unwrap();
+        writeln!(
+            kernel,
+            "chunk_sum[2] += cached_a_values[j + 10] * {dtype}((low_u32 & 0x00F0) | ((high_u32 >> (j + 2 + lane_index + {elements_per_block}/2) << 8) & 0x00100));"
+        )
+        .unwrap();
+        writeln!(
+            kernel,
+            "chunk_sum[3] += cached_a_values[j + 11] * {dtype}((low_u32 & 0xF000) | ((high_u32 >> (j + 3 + lane_index + {elements_per_block}/2) << 16) & 0x10000));"
         )
         .unwrap();
     }
