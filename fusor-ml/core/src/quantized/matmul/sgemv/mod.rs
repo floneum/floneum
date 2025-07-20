@@ -1,23 +1,21 @@
 use fusor_gguf::GgmlType;
 
 use crate::{
-    DataTypeEnum,
     mir::{
         globals::{ArrayType, KernelGlobalType, VectorType},
         inputs::{QMatrixInput, TensorInput},
         kernel::GenericKernel,
         workgroup_shape::WorkgroupShape,
-    },
-    quantized::matmul::{
-        QMatMulOperation,
-        sgemv::{general::general_sgemv, q_n::q_n_sgemv, q4k::q4k_sgemv, q6k::q6k_sgemv},
-    },
+    }, quantized::matmul::{
+        sgemv::{general::general_sgemv, q4k::q4k_sgemv, q6k::q6k_sgemv, q_8_0::q_8_0_sgemv, q_n::q_n_sgemv}, QMatMulOperation
+    }, DataTypeEnum
 };
 use std::fmt::Display;
 
 mod general;
 pub mod q4k;
 pub mod q6k;
+pub mod q_8_0;
 pub mod q_n;
 
 pub(crate) const SGEMV_CHUNK_SIZE: u32 = 2; // This is the size of the chunk each thread will process at a time
@@ -96,6 +94,17 @@ pub(crate) fn sgemv(
             k_size,
         ),
         GgmlType::Q4_0 | GgmlType::Q5_0 => q_n_sgemv(
+            op,
+            generic_kernel,
+            workgroup_size,
+            input_a,
+            input_b,
+            output,
+            _n_size,
+            _m_size,
+            k_size,
+        ),
+        GgmlType::Q8_0 => q_8_0_sgemv(
             op,
             generic_kernel,
             workgroup_size,

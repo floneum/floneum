@@ -1,13 +1,9 @@
 use fusor_gguf::GgmlType;
 
 use crate::{
-    DataType, DataTypeEnum, Device, Tensor, TensorData,
-    compute_graph::AnyComputeKey,
-    mir::{inputs::MirValue, kernel::GenericKernel, operation::Operation},
-    quantized::matmul::sgemv::{
-        SGEMV_CHUNK_SIZE, q_n::Q_N_SGEMV_CHUNK_SIZE, q4k::Q4K_SGEMV_CHUNK_SIZE,
-        q6k::Q6K_SGEMV_CHUNK_SIZE,
-    },
+    compute_graph::AnyComputeKey, mir::{inputs::MirValue, kernel::GenericKernel, operation::Operation}, quantized::matmul::sgemv::{
+        q4k::Q4K_SGEMV_CHUNK_SIZE, q6k::Q6K_SGEMV_CHUNK_SIZE, q_8_0::Q_8_0_SGEMV_CHUNK_SIZE, q_n::Q_N_SGEMV_CHUNK_SIZE, SGEMV_CHUNK_SIZE
+    }, DataType, DataTypeEnum, Device, Tensor, TensorData
 };
 
 use super::QMatrix;
@@ -487,6 +483,7 @@ impl Operation for QMatMulOperation {
                 || self.matrix.datatype == GgmlType::Q4K
                 || self.matrix.datatype == GgmlType::Q4_0
                 || self.matrix.datatype == GgmlType::Q5_0
+                || self.matrix.datatype == GgmlType::Q8_0
             {
                 constraints.add_constraint(
                     0,
@@ -526,6 +523,9 @@ impl Operation for QMatMulOperation {
             }
             if matches!(self.matrix.datatype, GgmlType::Q4_0 | GgmlType::Q5_0) {
                 return [(n as u32).div_ceil(Q_N_SGEMV_CHUNK_SIZE), 1, 1];
+            }
+            if matches!(self.matrix.datatype, GgmlType::Q8_0) {
+                return [(n as u32).div_ceil(Q_8_0_SGEMV_CHUNK_SIZE), 1, 1];
             }
             [(n as u32).div_ceil(SGEMV_CHUNK_SIZE), 1, 1]
         } else {
