@@ -1,4 +1,4 @@
-use cfg::{DenseGrammar, Recognizer};
+use cfg::{DenseGrammar, Recognizer, RecognizerState};
 use kalosm_sample::CreateParserState;
 use kalosm_sample::{LiteralParser, ParseStatus, Parser, ParserExt};
 use llm_samplers::prelude::{Logit, Logits};
@@ -210,9 +210,8 @@ pub(crate) fn generate_structured(
             // let Some(text) = token_cache.get(token_id as usize) else {
             //     continue;
             // };
-            let mut new_parser_state = parser_state.clone();
-            new_parser_state.push_byte(token_id);
-            let could_become_valid = new_parser_state.could_become_valid();
+            let state_after_push = parser_state.push(token_id);
+            let could_become_valid = state_after_push == RecognizerState::Valid;
             trie.push(
                 token_id,
                 prob as f64,
@@ -246,7 +245,7 @@ pub(crate) fn generate_structured(
                 // };
                 // let result = result.without_remaining();
                 // state_map[token_id as usize] = Some((result, parsed_bytes));
-                state_map[token_id as usize] = Some(new_parser_state);
+                state_map[token_id as usize] = Some((state_after_push, parser_state.clone()));
                 valid_tokens = true;
                 logits.push(Logit {
                     token_id,
@@ -260,6 +259,7 @@ pub(crate) fn generate_structured(
                     }
                 }
             }
+            parser_state.pop();
         }
 
         // If there are no valid tokens, return an error
@@ -398,7 +398,7 @@ pub(crate) fn generate_structured(
         }
 
         unprocessed_token_count = 1;
-        let result = state_map
+        let (state, result) = state_map
             .get_mut(token_id as usize)
             .unwrap()
             .take()
@@ -417,7 +417,7 @@ pub(crate) fn generate_structured(
         on_token(token)?;
 
         parser_state = result.clone();
-        if parser_state.finish() {
+        if state == RecognizerState::Valid {
             return Ok(());
         }
 

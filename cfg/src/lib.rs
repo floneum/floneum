@@ -2,6 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::Display,
     hash::Hash,
+    ops::ControlFlow,
 };
 
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -25,23 +26,21 @@ pub struct DenseGrammar<'bump> {
 
 impl<'bump> DenseGrammar<'bump> {
     pub fn recognizes(&self, input: &[u8], tokenizer: &Tokenizer) -> bool {
-        let bump = bumpalo::Bump::new();
-        let mut recognizer = Recognizer::new(self);
-
-        for byte in input {
-            recognizer.push_byte(tokenizer.bytes[*byte as usize]);
-        }
-        recognizer.finish()
+        self.recognizes_tokens(input.iter().map(|&byte| tokenizer.bytes[byte as usize]))
     }
 
-    pub fn recognizes_tokens(&self, input: &[u32]) -> bool {
-        let bump = bumpalo::Bump::new();
+    pub fn recognizes_tokens(&self, input: impl IntoIterator<Item = u32>) -> bool {
         let mut recognizer = Recognizer::new(self);
 
-        for token in input {
-            recognizer.push_byte(*token);
-        }
-        recognizer.finish()
+        input
+            .into_iter()
+            .try_fold((), |_, token| match recognizer.push(token) {
+                RecognizerState::Valid => ControlFlow::Break(true),
+                RecognizerState::Invalid => ControlFlow::Break(false),
+                RecognizerState::Incomplete => ControlFlow::Continue(()),
+            })
+            .break_value()
+            .unwrap_or(false)
     }
 
     pub fn replace_bytes(&self, bytes: &[u8]) -> String {
@@ -238,6 +237,8 @@ impl<'bump> Recognizer<'bump> {
             myself.chart[0].push(pos);
         }
 
+        myself.prep_states();
+
         myself
     }
 
@@ -246,21 +247,8 @@ impl<'bump> Recognizer<'bump> {
         self.chart.last().map_or(false, |last| !last.is_empty())
     }
 
-    pub fn push_byte(&mut self, byte: u32) -> bool {
-        // Push the byte into the chart and process it
-        self.push(Some(byte))
-    }
-
-    pub fn finish(&mut self) -> bool {
-        // Process the final state with no byte
-        self.push(None)
-    }
-
-    pub fn push(&mut self, byte: Option<u32>) -> bool {
+    pub fn prep_states(&mut self) -> RecognizerState {
         let k = self.chart.len() - 1;
-        if byte.is_some() {
-            self.chart.push(Vec::new());
-        }
 
         // Process each state in the current position
         let mut index = 0;
@@ -291,27 +279,10 @@ impl<'bump> Recognizer<'bump> {
                             }
                         }
                     }
-                    DenseSymbol::Terminal(lit) => {
-                        // Scanner: Check if we can match the terminal
-                        if byte == Some(*lit as _) {
-                            // Add the new state with the terminal matched
-                            let pos = self.new_position(
-                                parent,
-                                non_terminal,
-                                position + 1,
-                                rhs,
-                            );
-                            self.chart[k + 1].push(pos);
-                        }
-                    }
+                    DenseSymbol::Terminal(_) => {}
                     DenseSymbol::Epsilon => {
                         // Epsilon transition, just move the dot forward
-                        let pos = self.new_position(
-                            parent,
-                            non_terminal,
-                            position + 1,
-                            rhs,
-                        );
+                        let pos = self.new_position(parent, non_terminal, position + 1, rhs);
                         self.chart[k].push(pos);
                     }
                 }
@@ -331,14 +302,89 @@ impl<'bump> Recognizer<'bump> {
                     // If there's no parent, this is a completed state
                     if non_terminal == self.grammar.start && position == rhs.len() {
                         // If we reached the start rule and the dot is at the end
-                        return true; // Input recognized
+                        return RecognizerState::Valid;
                     }
                 }
             }
         }
 
+        // println!("Chart after pre-processing at position {}", k);
+        // for (i, states) in self.chart.iter().enumerate() {
+        //     println!(
+        //         "{}: {:?}",
+        //         i,
+        //         states
+        //             .iter()
+        //             .map(|&s| self.positions[s as usize].clone())
+        //             .collect::<Vec<_>>()
+        //     );
+        // }
+
         // If we reach here, the input was not recognized
-        false
+        self.chart.last().map_or(RecognizerState::Invalid, |last| {
+            if last.is_empty() {
+                RecognizerState::Invalid
+            } else {
+                RecognizerState::Incomplete
+            }
+        })
+    }
+
+    pub fn push(&mut self, byte: u32) -> RecognizerState {
+        let k = self.chart.len() - 1;
+        self.chart.push(Vec::new());
+
+        // Process each state in the current position
+        let mut index = 0;
+        while index < self.chart[k].len() {
+            let current = self.chart[k][index];
+            let Position {
+                parent,
+                non_terminal,
+                position,
+                rhs,
+            } = self.positions[current as usize].clone();
+            index += 1;
+
+            // If the dot is not at the end of the rule, we can either predict or scan
+            if let Some(symbol) = rhs.get(position) {
+                match symbol {
+                    DenseSymbol::Terminal(lit) => {
+                        // Scanner: Check if we can match the terminal
+                        if byte == *lit {
+                            // Add the new state with the terminal matched
+                            let pos = self.new_position(parent, non_terminal, position + 1, rhs);
+                            self.chart[k + 1].push(pos);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // println!("Chart after processing byte {:?} at position {}", byte, k);
+        // for (i, states) in self.chart.iter().enumerate() {
+        //     println!(
+        //         "{}: {:?}",
+        //         i,
+        //         states
+        //             .iter()
+        //             .map(|&s| self.positions[s as usize].clone())
+        //             .collect::<Vec<_>>()
+        //     );
+        // }
+
+        self.prep_states()
+    }
+
+    pub fn pop(&mut self) {
+        // Pop the last position from the chart
+        if let Some(last) = self.chart.pop() {
+            // Remove all positions that were created in this step
+            for pos in last {
+                self.positions.remove(pos as usize);
+            }
+        }
     }
 
     fn new_position(
@@ -356,6 +402,13 @@ impl<'bump> Recognizer<'bump> {
         };
         self.positions.insert(pos) as u32
     }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub enum RecognizerState {
+    Incomplete,
+    Invalid,
+    Valid,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]

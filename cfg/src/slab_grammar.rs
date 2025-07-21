@@ -572,7 +572,7 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
         .collect::<Vec<_>>();
     tokens.push(10_000); // The merged token
     tokens.extend(b".int name)".iter().map(|b| tokenizer.bytes[*b as usize]));
-    assert!(dense_grammar.recognizes_tokens(&tokens));
+    assert!(dense_grammar.recognizes_tokens(tokens));
 }
 
 #[test]

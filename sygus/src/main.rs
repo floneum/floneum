@@ -712,7 +712,7 @@ async fn main() {
             let tokens = llm.tokenizer.encode_fast(*pattern, false).unwrap();
             println!("Checking pattern: {pattern}");
             println!("Tokens: {:?}", tokens);
-            assert!(grammar.recognizes_tokens(tokens.get_ids()));
+            assert!(grammar.recognizes_tokens(tokens.get_ids().iter().copied()));
         }
         let prompt = if model.qwen_normal() || model.smol_lm() {
             format!("<|im_start|>system\n{prompt}<|im_end|>\n<|im_start|>user\nQuestion:\n{task}<|im_end|>\n<|im_start|>assistant\n")
