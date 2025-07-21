@@ -12,6 +12,7 @@ use crate::{
 use std::fmt::Write;
 
 pub(crate) const Q_8_0_SGEMV_CHUNK_SIZE: u32 = 4; // This is the size of the chunk each thread will process at a time
+const STEP_SIZE: u32 = 8;
 const SUBGROUP_COUNT: u32 = 2;
 const SUBGROUP_SIZE: u32 = 32;
 
@@ -60,7 +61,7 @@ pub(crate) fn q_8_0_sgemv(
     )
     .unwrap();
 
-    writeln!(&mut kernel, "let lane_index = thread_local_id * 8;").unwrap();
+    writeln!(&mut kernel, "let lane_index = thread_local_id * {STEP_SIZE};").unwrap();
 
     writeln!(
         &mut kernel,
@@ -71,7 +72,7 @@ pub(crate) fn q_8_0_sgemv(
     let sum_storage_type = maybe_vec_storage_type(Q_8_0_SGEMV_CHUNK_SIZE, dtype);
     writeln!(&mut kernel, "var sum = {sum_storage_type}();",).unwrap();
 
-    writeln!(&mut kernel, "var cached_a_values = array<{dtype}, 16>();",).unwrap();
+    writeln!(&mut kernel, "var cached_a_values = array<{dtype}, {STEP_SIZE}>();",).unwrap();
 
     // Loop over all of the blocks this thread is responsible for
     writeln!(
@@ -81,13 +82,9 @@ pub(crate) fn q_8_0_sgemv(
     .unwrap();
     {
         // First load the values of a into cached_a_values
-        writeln!(&mut kernel, "for (var j = 0u; j < 8; j += 1u) {{").unwrap();
+        writeln!(&mut kernel, "for (var j = 0u; j < {STEP_SIZE}; j += 1u) {{").unwrap();
         {
-            writeln!(
-                &mut kernel,
-                "cached_a_values[j] = {input_a}[j + y_offset];"
-            )
-            .unwrap();
+            writeln!(&mut kernel, "cached_a_values[j] = {input_a}[y_offset + j];").unwrap();
         }
         writeln!(&mut kernel, "}}").unwrap();
 
@@ -101,11 +98,15 @@ pub(crate) fn q_8_0_sgemv(
         }
         {
             writeln!(&mut kernel, "var local_sum = {dtype}();").unwrap();
-            writeln!(&mut kernel, "for (var data_offset = 0u; data_offset < 8u; data_offset += 4u) {{").unwrap();
+            writeln!(
+                &mut kernel,
+                "for (var data_offset = 0u; data_offset < {STEP_SIZE}u/4u; data_offset += 1u) {{"
+            )
+            .unwrap();
             {
-                writeln!(&mut kernel, "let block = unpack4xI8({input_b}[block_offset].data[lane_index / 4u + data_offset / 4u]);").unwrap();
+                writeln!(&mut kernel, "let block = vec4<{dtype}>(unpack4xI8({input_b}[block_offset].data[thread_local_id * 2u + data_offset]));").unwrap();
                 for i in 0..4 {
-                    writeln!(&mut kernel, "local_sum += {dtype}(block[{i}]) * {input_a}[y_offset + data_offset + {i}];").unwrap();
+                    writeln!(&mut kernel, "local_sum += block[{i}] * cached_a_values[data_offset * 4u + {i}];").unwrap();
                 }
             }
             writeln!(&mut kernel, "}}").unwrap();
@@ -117,7 +118,7 @@ pub(crate) fn q_8_0_sgemv(
             writeln!(&mut kernel, "}}").unwrap();
         }
 
-        writeln!(&mut kernel, "y_offset += {elements_per_block} * 8u;").unwrap();
+        writeln!(&mut kernel, "y_offset += {elements_per_block} * {STEP_SIZE};").unwrap();
     }
     writeln!(&mut kernel, "}}").unwrap();
 
@@ -129,8 +130,6 @@ pub(crate) fn q_8_0_sgemv(
     )
     .unwrap();
 
-    // If this is not the first simd thread in the workgroup, we can return early
-
     if Q_8_0_SGEMV_CHUNK_SIZE > 1 {
         writeln!(
             &mut kernel,
@@ -139,6 +138,7 @@ pub(crate) fn q_8_0_sgemv(
         .unwrap();
     }
     {
+        // If this is not the first simd thread in the workgroup, we can return early
         writeln!(&mut kernel, "if {subgroup_local_index} == 0u {{").unwrap();
         {
             // Write the output to the output tensor if this is the first thread in the workgroup

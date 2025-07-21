@@ -1,9 +1,13 @@
 use fusor_gguf::GgmlType;
 
 use crate::{
-    compute_graph::AnyComputeKey, mir::{inputs::MirValue, kernel::GenericKernel, operation::Operation}, quantized::matmul::sgemv::{
-        q4k::Q4K_SGEMV_CHUNK_SIZE, q6k::Q6K_SGEMV_CHUNK_SIZE, q_8_0::Q_8_0_SGEMV_CHUNK_SIZE, q_n::Q_N_SGEMV_CHUNK_SIZE, SGEMV_CHUNK_SIZE
-    }, DataType, DataTypeEnum, Device, Tensor, TensorData
+    DataType, DataTypeEnum, Device, Tensor, TensorData,
+    compute_graph::AnyComputeKey,
+    mir::{inputs::MirValue, kernel::GenericKernel, operation::Operation},
+    quantized::matmul::sgemv::{
+        SGEMV_CHUNK_SIZE, q_8_0::Q_8_0_SGEMV_CHUNK_SIZE, q_n::Q_N_SGEMV_CHUNK_SIZE,
+        q4k::Q4K_SGEMV_CHUNK_SIZE, q6k::Q6K_SGEMV_CHUNK_SIZE,
+    },
 };
 
 use super::QMatrix;
@@ -69,7 +73,6 @@ impl<T: DataType> Tensor<2, T> {
 async fn setup_smol_lm_matrix(
     name: &str,
 ) -> (crate::Device, QMatrix, candle_core::quantized::QMatMul) {
-
     use kalosm_model_types::FileSource;
     let source = FileSource::HuggingFace {
         model_id: "unsloth/SmolLM2-135M-Instruct-GGUF".to_string(),
@@ -323,7 +326,8 @@ async fn test_fuzz_q_mat_mul_q4_0_gemv() {
         revision: "main".to_string(),
         file: "SmolLM2-135M-Instruct-Q4_0.gguf".to_string(),
     };
-    let (device, q_matrix, candle_q_matrix) = setup_smol_lm_matrix_with_source("blk.0.ffn_gate.weight", source).await;
+    let (device, q_matrix, candle_q_matrix) =
+        setup_smol_lm_matrix_with_source("blk.0.ffn_gate.weight", source).await;
 
     for _ in 0..25 {
         let width = 1;
@@ -473,12 +477,6 @@ impl Operation for QMatMulOperation {
         let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::default();
         if self.sgemv() {
             let limits = device.wgpu_device().limits();
-            constraints.add_constraint(
-                0,
-                crate::mir::workgroup_shape::Constraint::less_than(
-                    limits.max_compute_workgroup_size_x + 1,
-                ),
-            );
             if self.matrix.datatype == GgmlType::Q6K
                 || self.matrix.datatype == GgmlType::Q4K
                 || self.matrix.datatype == GgmlType::Q4_0
@@ -492,6 +490,12 @@ impl Operation for QMatMulOperation {
                     ),
                 );
             } else {
+                constraints.add_constraint(
+                    0,
+                    crate::mir::workgroup_shape::Constraint::less_than(
+                        limits.max_compute_workgroup_size_x + 1,
+                    ),
+                );
                 constraints.add_constraint(
                     0,
                     crate::mir::workgroup_shape::Constraint::equals(
@@ -516,16 +520,16 @@ impl Operation for QMatMulOperation {
         let m = self.m_size();
         if self.sgemv() {
             if self.matrix.datatype == GgmlType::Q6K {
-                return [(n as u32).div_ceil(Q6K_SGEMV_CHUNK_SIZE), 1, 1];
+                return [(n as u32).div_ceil(Q6K_SGEMV_CHUNK_SIZE) * 2, 1, 1];
             }
             if self.matrix.datatype == GgmlType::Q4K {
-                return [(n as u32).div_ceil(Q4K_SGEMV_CHUNK_SIZE), 1, 1];
+                return [(n as u32).div_ceil(Q4K_SGEMV_CHUNK_SIZE) * 2, 1, 1];
             }
             if matches!(self.matrix.datatype, GgmlType::Q4_0 | GgmlType::Q5_0) {
-                return [(n as u32).div_ceil(Q_N_SGEMV_CHUNK_SIZE), 1, 1];
+                return [(n as u32).div_ceil(Q_N_SGEMV_CHUNK_SIZE) * 2, 1, 1];
             }
             if matches!(self.matrix.datatype, GgmlType::Q8_0) {
-                return [(n as u32).div_ceil(Q_8_0_SGEMV_CHUNK_SIZE), 1, 1];
+                return [(n as u32).div_ceil(Q_8_0_SGEMV_CHUNK_SIZE * 2), 1, 1];
             }
             [(n as u32).div_ceil(SGEMV_CHUNK_SIZE), 1, 1]
         } else {
