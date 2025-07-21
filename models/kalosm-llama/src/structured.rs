@@ -211,7 +211,7 @@ pub(crate) fn generate_structured(
             //     continue;
             // };
             let state_after_push = parser_state.push(token_id);
-            let could_become_valid = state_after_push == RecognizerState::Valid;
+            let could_become_valid = state_after_push.could_become_valid();
             trie.push(
                 token_id,
                 prob as f64,

@@ -430,6 +430,24 @@ pub enum RecognizerState {
     Valid,
 }
 
+impl RecognizerState {
+    pub fn is_valid(&self) -> bool {
+        matches!(self, RecognizerState::Valid)
+    }
+
+    pub fn is_invalid(&self) -> bool {
+        matches!(self, RecognizerState::Invalid)
+    }
+
+    pub fn is_incomplete(&self) -> bool {
+        matches!(self, RecognizerState::Incomplete)
+    }
+
+    pub fn could_become_valid(&self) -> bool {
+        matches!(self, RecognizerState::Incomplete | RecognizerState::Valid)
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 struct Position {
     parent: Option<u32>,
