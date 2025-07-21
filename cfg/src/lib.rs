@@ -247,6 +247,25 @@ impl<'bump> Recognizer<'bump> {
         self.chart.last().map_or(false, |last| !last.is_empty())
     }
 
+    pub fn push_tokens(&mut self, tokens: impl IntoIterator<Item = u32>) -> RecognizerState {
+        let result =
+            tokens
+                .into_iter()
+                .try_fold(RecognizerState::Incomplete, |_, token| {
+                    match self.push(token) {
+                        RecognizerState::Valid => ControlFlow::Break(RecognizerState::Valid),
+                        RecognizerState::Invalid => ControlFlow::Break(RecognizerState::Invalid),
+                        RecognizerState::Incomplete => {
+                            ControlFlow::Continue(RecognizerState::Incomplete)
+                        }
+                    }
+                });
+        match result {
+            ControlFlow::Break(state) => state,
+            ControlFlow::Continue(state) => state,
+        }
+    }
+
     pub fn prep_states(&mut self) -> RecognizerState {
         let k = self.chart.len() - 1;
 
@@ -447,4 +466,72 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
 
     assert!(!dense_grammar.recognizes(br#"(str.substr name name 2)"#, &tokenizer));
     assert!(!dense_grammar.recognizes(br#"invalid_input"#, &tokenizer));
+}
+
+#[test]
+fn test_cyk_pop() {
+    let grammar = parse::Grammar::parse(
+        r#"Start -> ntString
+ntString -> 'name' | '" "' | '(' 'str.++' ' ' ntString ' ' ntString ')' | '(' 'str.replace' ' ' ntString ' ' ntString ' ' ntString ')' | '(' 'str.at' ' ' ntString ' ' ntInt ')' | '(' 'int.to.str' ' ' ntInt ')' | '(' 'str.substr' ' ' ntString ' ' ntInt ' ' ntInt ')'
+ntInt -> '0' | '1' | '2' | '(' '+' ' ' ntInt ' ' ntInt ')' | '(' '-' ' ' ntInt ' ' ntInt ')' | '(' 'str.len' ' ' ntString ')' | '(' 'str.to.int' ' ' ntString ')' | '(' 'str.indexof' ' ' ntString ' ' ntString ' ' ntInt ')'
+ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | '(' 'str.suffixof' ' ' ntString ' ' ntString ')' | '(' 'str.contains' ' ' ntString ' ' ntString ')'
+"#,
+    )
+    .unwrap();
+
+    let grammar = grammar.split_terminals();
+    let cnf_grammar = grammar.to_cnf().unwrap();
+    let bump = bumpalo::Bump::new();
+    let tokenizer = Tokenizer::load_tokenizer("tokenizer.json");
+    let cnf_grammar = cnf_grammar.replace_tokenizer_terminals(&tokenizer);
+    let dense_grammar = cnf_grammar.reallocate(&bump);
+    println!("Dense grammar:\n{}", dense_grammar);
+
+    let sequences: [(bool, &'static [u8]); 8] = [
+        (true, br#"name"#),
+        (true, br#"(str.++ name name)"#),
+        (true, br#"(str.replace name name name)"#),
+        (true, br#"(str.at name 0)"#),
+        (true, br#"(int.to.str 0)"#),
+        (true, br#"(str.substr name 0 1)"#),
+        (false, br#"(str.substr name name 2)"#),
+        (false, br#"invalid_input"#),
+    ];
+
+    for _ in 0..100 {
+        for sequence in &sequences {
+            let (expected, input) = *sequence;
+            let mut recognizer = Recognizer::new(&dense_grammar);
+
+            let mut position = 0;
+            let mut state = RecognizerState::Incomplete;
+            while position < input.len() {
+                let len = rand::random::<u32>() % 10;
+                for _ in 0..len {
+                    let byte = rand::random::<u8>();
+                    let token = tokenizer.bytes.get(byte as usize).cloned().unwrap_or(0);
+                    recognizer.push(token);
+                }
+                for _ in 0..len {
+                    recognizer.pop();
+                }
+                let token = input[position] as u32;
+                let token = tokenizer.bytes[token as usize];
+                state = recognizer.push(token);
+                position += 1;
+            }
+
+            match state {
+                RecognizerState::Valid => {
+                    assert!(expected, "Expected valid for input: {:?}", input)
+                }
+                RecognizerState::Invalid => {
+                    assert!(!expected, "Expected invalid for input: {:?}", input)
+                }
+                RecognizerState::Incomplete => {
+                    panic!("Unexpected incomplete state for input: {:?}", input)
+                }
+            }
+        }
+    }
 }
