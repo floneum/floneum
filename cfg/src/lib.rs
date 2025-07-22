@@ -277,7 +277,7 @@ impl<'bump> Recognizer<'bump> {
                 parent,
                 non_terminal,
                 rhs,
-            } = self.positions[current as usize].clone();
+            } = &self.positions[current as usize];
             index += 1;
 
             // If the dot is not at the end of the rule, we can either predict or scan
@@ -299,14 +299,14 @@ impl<'bump> Recognizer<'bump> {
                     DenseSymbol::Terminal(_) => {}
                     DenseSymbol::Epsilon => {
                         // Epsilon transition, just move the dot forward
-                        let pos = self.new_position(parent, non_terminal, remaining);
+                        let pos = self.new_position(*parent, *non_terminal, remaining);
                         self.chart[k].push(pos);
                     }
                 }
             } else {
                 // Pop this state and move forward in the parent chain
                 if let Some(parent_state) = parent {
-                    let parent_state = self.positions[parent_state as usize].clone();
+                    let parent_state = &self.positions[*parent_state as usize];
                     // Completer: If we reach the end of a rule, we can complete it
                     let pos = self.new_position(
                         parent_state.parent,
@@ -316,7 +316,7 @@ impl<'bump> Recognizer<'bump> {
                     self.chart[k].push(pos);
                 } else {
                     // If there's no parent, this is a completed state
-                    if non_terminal == self.grammar.start && rhs.is_empty() {
+                    if *non_terminal == self.grammar.start && rhs.is_empty() {
                         // If we reached the start rule and the dot is at the end
                         return RecognizerState::Valid;
                     }
