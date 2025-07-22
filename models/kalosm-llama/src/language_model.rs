@@ -124,7 +124,7 @@ impl LlamaModel {
         text: &str,
         sampler: S,
         parser: &DenseGrammar,
-        on_token: impl FnMut(String) -> Result<(), LlamaModelError> + Send + Sync + 'static,
+        on_token: impl FnMut(String, u32) -> Result<(), LlamaModelError> + Send + Sync + 'static,
         trie: &mut EvaluationTrie,
     ) -> Result<(), LlamaModelError>
     where

@@ -483,7 +483,7 @@ struct Args {
     #[arg(long)]
     vis: bool,
 
-    #[arg(long, default_value_t = 3)]
+    #[arg(long, default_value_t = 10)]
     recursion_depth: usize,
 
     #[arg(long, default_value_t = 25)]
@@ -613,26 +613,26 @@ async fn main() {
     // let parser = LiteralParser::new(format!("(define-fun f ({args_str}) String "))
     //     .ignore_output_then(parser.clone())
     let parser = parser
-        .clone()
-        .then_lazy({
-            let interpreter = Interpreter::new();
-            let constraints = constraints.clone();
-            let vars = vars.clone();
-            move |result| {
-                let mut valid = true;
-                for constraint in &constraints {
-                    let result = interpreter.check(constraint, vars.clone(), &result);
-                    valid = valid && result;
-                }
+        // .clone()
+        // .then_lazy({
+        //     let interpreter = Interpreter::new();
+        //     let constraints = constraints.clone();
+        //     let vars = vars.clone();
+        //     move |result| {
+        //         let mut valid = true;
+        //         for constraint in &constraints {
+        //             let result = interpreter.check(constraint, vars.clone(), &result);
+        //             valid = valid && result;
+        //         }
 
-                if valid {
-                    SuccessParser(()).boxed()
-                } else {
-                    FailParser(std::marker::PhantomData).boxed()
-                }
-            }
-        })
-        .map_output(|(a, _)| a)
+        //         if valid {
+        //             SuccessParser(()).boxed()
+        //         } else {
+        //             FailParser(std::marker::PhantomData).boxed()
+        //         }
+        //     }
+        // })
+        // .map_output(|(a, _)| a)
         .boxed();
 
     let sampler = if multipass {
@@ -729,7 +729,7 @@ async fn main() {
                 &prompt,
                 sampler.clone(),
                 &grammar,
-                Box::new(|token| {
+                Box::new(|token, _| {
                     print!("{}", token);
                     std::io::stdout().flush().unwrap();
                     Ok(())
@@ -765,6 +765,7 @@ async fn main() {
             }
             let mut session = session.deep_clone();
             let all_tokens = Arc::new(RwLock::new(String::new()));
+            let all_token_ids = Arc::new(RwLock::new(Vec::new()));
             match llm.generate_structured_with_trie(
                 &mut session,
                 if model.qwen_think() {
@@ -776,9 +777,11 @@ async fn main() {
                 &grammar,
                 {
                     let all_tokens = all_tokens.clone();
-                    move |token| {
+                    let all_token_ids = all_token_ids.clone();
+                    move |token, id| {
                         print!("{}", token);
                         all_tokens.write().unwrap().push_str(&token.to_string());
+                        all_token_ids.write().unwrap().push(id);
                         std::io::stdout().flush().unwrap();
                         Ok(())
                     }
@@ -804,6 +807,7 @@ async fn main() {
                 &parser.create_parser_state(),
                 all_tokens.as_bytes(),
             ) else {
+                eprintln!("Failed to parse generated expression with parser");
                 continue;
             };
 
@@ -818,6 +822,9 @@ async fn main() {
             if valid {
                 println!("Valid solution found!");
                 break;
+            } else {
+                let all_token_ids = all_token_ids.read().unwrap();
+                trie.make_sequence_impossible(&all_token_ids);
             }
 
             let elapsed = generation_start_time.elapsed();
@@ -981,7 +988,7 @@ fn built_in_functions()
         let first = args[0].as_string().unwrap();
         let start = args[1].as_int().unwrap();
         let end = args[2].as_int().unwrap();
-        if end < 0 || start < 0 || start > end || start > first.len() as _ {
+        if end < 0 || start < 0 || start > end || end >= first.len() as _ {
             "".to_string()
         } else {
             first[start as usize..end as usize].to_string()

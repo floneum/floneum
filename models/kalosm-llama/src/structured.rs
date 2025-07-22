@@ -24,17 +24,17 @@ pub(crate) fn generate_structured(
     session: &mut LlamaSession,
     cfg: &DenseGrammar,
     mut sampler: Arc<Mutex<dyn Sampler>>,
-    mut on_token: impl FnMut(String) -> Result<(), LlamaModelError>,
+    mut on_token: impl FnMut(String, u32) -> Result<(), LlamaModelError>,
     top_k: Option<usize>,
     seed: Option<u64>,
     trie: &mut EvaluationTrie,
 ) -> Result<(), LlamaModelError> {
     let eos_token = llm.model.config.stop_token_string.clone();
-    let mut on_token = move |tok: String| {
+    let mut on_token = move |tok: String, token_id: u32| {
         if tok == eos_token {
             return Ok(());
         }
-        on_token(tok)
+        on_token(tok, token_id)
     };
     let mut session = session
         .cache
@@ -267,8 +267,6 @@ pub(crate) fn generate_structured(
             return Err(LlamaModelError::NoValidTokens);
         }
         let token_id = {
-            let mut token_id;
-
             // softmax logits
             logits.set_softmax(false);
             logits.ensure_softmax().unwrap();
@@ -304,7 +302,7 @@ pub(crate) fn generate_structured(
 
             // loop {
             let mut sampled_logits = logits.clone();
-            token_id = sampler
+            let token_id = sampler
                 .sample_token(resources, &mut sampled_logits)
                 .map_err(|err| LlamaModelError::SamplerError(err.into()))?
                 .ok_or_else(|| {
@@ -414,7 +412,7 @@ pub(crate) fn generate_structured(
             }
             strip_required_next = false;
         }
-        on_token(token)?;
+        on_token(token, token_id)?;
 
         parser_state = result.clone();
         if state == RecognizerState::Valid {
@@ -460,6 +458,37 @@ impl EvaluationTrie {
         println!("Clearing EvaluationTrie");
         self.roots.clear();
         self.nodes.clear();
+    }
+
+    // Make a sequence impossible
+    pub fn make_sequence_impossible(&mut self, tokens: &[u32]) {
+        let mut position = None;
+        for &token in tokens {
+            match position {
+                Some(pos) => {
+                    let node: &mut EvaluationNode = &mut self.nodes[pos];
+                    if let Some(&child_id) = node.evaluated_children.get(&token) {
+                        position = Some(child_id);
+                    } else {
+                        position = None;
+                    }
+                }
+                None => {
+                    if let Some(&child_id) = self.roots.get(&token) {
+                        position = Some(child_id);
+                    } else {
+                        position = None;
+                    }
+                }
+            }
+        }
+
+        if let Some(pos) = position {
+            let node = &mut self.nodes[pos];
+            node.in_grammar = false;
+            node.probability = 0.0;
+            node.from_tokenization_constraint = true;
+        }
     }
 
     fn push(
