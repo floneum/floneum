@@ -232,8 +232,8 @@ impl<'bump> Recognizer<'bump> {
             positions: Slab::new(),
         };
 
-        for rhs in &*grammar.rules[start].rhs {
-            let pos = myself.new_position(None, start, 0, *rhs);
+        for rhs in 0..grammar.rules[start].rhs.len() {
+            let pos = myself.new_position(None, start, 0, [start, rhs]);
             myself.chart[0].push(pos);
         }
 
@@ -278,21 +278,24 @@ impl<'bump> Recognizer<'bump> {
                 non_terminal,
                 position,
                 rhs,
-            } = self.positions[current as usize].clone();
+            } = &self.positions[current as usize];
             index += 1;
 
+            let [rule, index] = rhs;
+            let rhs_symbols = self.grammar.rules[*rule].rhs[*index];
+
             // If the dot is not at the end of the rule, we can either predict or scan
-            if let Some(symbol) = rhs.get(position) {
+            if let Some(symbol) = rhs_symbols.get(*position) {
                 match symbol {
                     DenseSymbol::NonTerminal(next_non_terminal) => {
                         // Predictor: Add new states for the non-terminal
                         if self.grammar.rules[*next_non_terminal].rhs.len() > 0 {
-                            for next_rhs in self.grammar.rules[*next_non_terminal].rhs {
+                            for index in 0..self.grammar.rules[*next_non_terminal].rhs.len() {
                                 let new = self.new_position(
                                     Some(current),
                                     *next_non_terminal,
                                     0,
-                                    *next_rhs,
+                                    [*next_non_terminal, index],
                                 );
                                 self.chart[k].push(new);
                             }
@@ -301,14 +304,14 @@ impl<'bump> Recognizer<'bump> {
                     DenseSymbol::Terminal(_) => {}
                     DenseSymbol::Epsilon => {
                         // Epsilon transition, just move the dot forward
-                        let pos = self.new_position(parent, non_terminal, position + 1, rhs);
+                        let pos = self.new_position(*parent, *non_terminal, position + 1, *rhs);
                         self.chart[k].push(pos);
                     }
                 }
             } else {
                 // Pop this state and move forward in the parent chain
                 if let Some(parent_state) = parent {
-                    let parent_state = self.positions[parent_state as usize].clone();
+                    let parent_state = self.positions[*parent_state as usize].clone();
                     // Completer: If we reach the end of a rule, we can complete it
                     let pos = self.new_position(
                         parent_state.parent,
@@ -319,7 +322,7 @@ impl<'bump> Recognizer<'bump> {
                     self.chart[k].push(pos);
                 } else {
                     // If there's no parent, this is a completed state
-                    if non_terminal == self.grammar.start && position == rhs.len() {
+                    if *non_terminal == self.grammar.start && *position == rhs.len() {
                         // If we reached the start rule and the dot is at the end
                         return RecognizerState::Valid;
                     }
@@ -351,7 +354,7 @@ impl<'bump> Recognizer<'bump> {
 
     pub fn push(&mut self, byte: u32) -> RecognizerState {
         let k = self.chart.len() - 1;
-        self.chart.push(Vec::new());
+        let mut new_positions = Vec::new();
 
         // Process each state in the current position
         let mut index = 0;
@@ -362,24 +365,29 @@ impl<'bump> Recognizer<'bump> {
                 non_terminal,
                 position,
                 rhs,
-            } = self.positions[current as usize].clone();
+            } = &self.positions[current as usize];
             index += 1;
 
+            let [rule, index] = rhs;
+
             // If the dot is not at the end of the rule, we can either predict or scan
-            if let Some(symbol) = rhs.get(position) {
+            let rhs_symbols = self.grammar.rules[*rule].rhs[*index];
+            if let Some(symbol) = rhs_symbols.get(*position) {
                 match symbol {
                     DenseSymbol::Terminal(lit) => {
                         // Scanner: Check if we can match the terminal
                         if byte == *lit {
                             // Add the new state with the terminal matched
-                            let pos = self.new_position(parent, non_terminal, position + 1, rhs);
-                            self.chart[k + 1].push(pos);
+                            let pos = self.new_position(*parent, *non_terminal, position + 1, *rhs);
+                            new_positions.push(pos);
                         }
                     }
                     _ => {}
                 }
             }
         }
+
+        self.chart.push(new_positions);
 
         // println!("Chart after processing byte {:?} at position {}", byte, k);
         // for (i, states) in self.chart.iter().enumerate() {
@@ -411,13 +419,13 @@ impl<'bump> Recognizer<'bump> {
         parent: Option<u32>,
         non_terminal: usize,
         position: usize,
-        rhs: impl Into<Box<[DenseSymbol]>>,
+        rhs: [usize; 2],
     ) -> u32 {
         let pos = Position {
             parent,
             non_terminal,
             position,
-            rhs: rhs.into(),
+            rhs,
         };
         self.positions.insert(pos) as u32
     }
@@ -453,7 +461,7 @@ struct Position {
     parent: Option<u32>,
     non_terminal: usize,
     position: usize,
-    rhs: Box<[DenseSymbol]>,
+    rhs: [usize; 2],
 }
 
 #[test]
