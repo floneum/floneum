@@ -435,21 +435,18 @@ impl SlabGrammar {
         true
     }
 
-    pub fn garbage_collect_non_terminals(&mut self) {
+    pub fn garbage_collect_non_terminals(&mut self) -> bool {
         // Remove any non-terminals that are not used in any rules
         let mut used_non_terminals = FxHashSet::default();
         let mut queue = vec![self.start.clone()];
         while let Some(nt) = queue.pop() {
-            if used_non_terminals.insert(nt.clone()) {
-                for (_, rule) in &self.rules {
-                    if rule.lhs == nt {
-                        for rhs in &rule.rhs {
-                            for symbol in &**rhs {
-                                if let parse::Symbol::NonTerminal(non_terminal) = symbol {
-                                    if !used_non_terminals.contains(non_terminal) {
-                                        queue.push(non_terminal.clone());
-                                    }
-                                }
+            if used_non_terminals.insert(nt) {
+                let rule = &self.rules[nt as usize];
+                for rhs in &rule.rhs {
+                    for symbol in &**rhs {
+                        if let parse::Symbol::NonTerminal(non_terminal) = symbol {
+                            if !used_non_terminals.contains(non_terminal) {
+                                queue.push(non_terminal.clone());
                             }
                         }
                     }
@@ -457,11 +454,16 @@ impl SlabGrammar {
             }
         }
 
-        self.rules
-            .retain(|_, rule| used_non_terminals.contains(&rule.lhs));
+        let mut changed = false;
+        self.rules.retain(|_, rule| {
+            let used = used_non_terminals.contains(&rule.lhs);
+            changed |= !used;
+            used
+        });
+        changed
     }
 
-    pub fn deduplicate_non_terminals(&mut self) {
+    pub fn deduplicate_non_terminals(&mut self) -> bool {
         // Remove any duplicate non-terminals
         let mut rhs_to_lhs: FxHashMap<Vec<Cow<[Symbol<u32>]>>, Vec<u32>> = FxHashMap::default();
         for (_, rule) in &self.rules {
@@ -505,16 +507,21 @@ impl SlabGrammar {
             }
         }
 
+        let mut changed = false;
         // Remove any non-canonical non-terminals
         self.rules.retain(|id, _| {
             let id = id as u32;
             let canonical_lhs = canonical_nt_map[&id];
-            canonical_lhs == id
+            let retain = canonical_lhs == id;
+            changed |= !retain;
+            retain
         });
+        changed
     }
 
-    fn inline_single_use_non_terminals(&mut self) {
+    fn inline_single_use_non_terminals(&mut self) -> bool {
         let mut changed = true;
+        let mut changed_overall = false;
         while changed {
             changed = false;
             let mut non_terminal_uses: FxHashMap<u32, Vec<(u32, usize)>> = FxHashMap::default();
@@ -542,7 +549,6 @@ impl SlabGrammar {
                 if self.rules[*nt as usize].rhs.len() != 1 {
                     continue;
                 }
-                println!("Inlining non-terminal {nt} used in rule {parent} at index {index}");
                 let rule = self.rules.remove(*nt as usize);
                 let rhs = &rule.rhs[0];
                 let mut new_rhs = Vec::new();
@@ -559,9 +565,11 @@ impl SlabGrammar {
                 }
                 *old_rhs = new_rhs.into();
                 changed = true;
+                changed_overall |= true;
                 break;
             }
         }
+        changed_overall
     }
 
     fn inline_simple(&mut self) -> bool {
@@ -596,7 +604,6 @@ impl SlabGrammar {
                                 new_rhs.push(symbol.clone());
                             }
                             changed = true;
-                            println!("Inlining non-terminal {n} to terminal {symbol:?}");
                             continue;
                         }
                     }
@@ -610,10 +617,14 @@ impl SlabGrammar {
     }
 
     pub fn inline_optimize(&mut self) {
-        let mut changed = true;
-        while changed {
-            self.inline_single_use_non_terminals();
-            changed = self.inline_simple();
+        loop {
+            let mut changed = self.inline_single_use_non_terminals();
+            changed |= self.inline_simple();
+            changed |= self.garbage_collect_non_terminals();
+            changed |= self.deduplicate_non_terminals();
+            if !changed {
+                break;
+            }
         }
     }
 
