@@ -4,6 +4,7 @@ use crate::raw::Model;
 use crate::token_stream::TokenOutputStream;
 use crate::token_stream::TokenOutputStreamError;
 use crate::LlamaConfigJson;
+use crate::LlamaSession;
 use kalosm_common::*;
 use kalosm_model_types::ModelLoadingProgress;
 use llm_samplers::types::Logits;
@@ -356,18 +357,41 @@ impl LlamaModel {
     pub fn _infer(
         &mut self,
         settings: InferenceSettings,
-        mut on_token: Box<dyn FnMut(String) -> Result<(), LlamaModelError> + Send + Sync>,
+        on_token: Box<dyn FnMut(String) -> Result<(), LlamaModelError> + Send + Sync>,
         finished: &tokio::sync::oneshot::Sender<Result<(), LlamaModelError>>,
     ) -> Result<(), LlamaModelError> {
         let InferenceSettings {
             prompt,
             stop_on,
-            mut sampler,
-            session,
+            sampler,
+            mut session,
             max_tokens,
             seed,
         } = settings;
 
+        self._infer_inner(
+            prompt,
+            stop_on,
+            sampler,
+            &mut session,
+            max_tokens,
+            seed,
+            on_token,
+            finished,
+        )
+    }
+
+    pub fn _infer_inner(
+        &mut self,
+        prompt: String,
+        stop_on: Option<String>,
+        mut sampler: std::sync::Arc<std::sync::Mutex<dyn llm_samplers::prelude::Sampler>>,
+        session: &mut LlamaSession,
+        max_tokens: u32,
+        seed: Option<u64>,
+        mut on_token: Box<dyn FnMut(String) -> Result<(), LlamaModelError> + Send + Sync>,
+        finished: &tokio::sync::oneshot::Sender<Result<(), LlamaModelError>>,
+    ) -> Result<(), LlamaModelError> {
         let mut session = session
             .cache
             .write()

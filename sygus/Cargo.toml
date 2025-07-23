@@ -17,3 +17,6 @@ cfg = { version = "0.1.0", path = "../cfg" }
 
 [features]
 metal = ["kalosm-llama/metal", "kalosm/metal"]
+
+[profile.dev.package."*"]
+opt-level = 3

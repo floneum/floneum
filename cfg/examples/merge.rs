@@ -1,6 +1,5 @@
 use cfg::{slab_grammar::SlabGrammar, tokenizer::Tokenizer, *};
 
-
 fn main() {
     let log_every_n = std::env::var("LOG_EVERY_N")
         .ok()

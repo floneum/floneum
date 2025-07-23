@@ -1,3 +1,6 @@
+// usage:
+// cargo run --features metal -- --model qwen0.5b --grammar src/firstname.sl --task src/prompt
+
 use cfg::{parse::Grammar, slab_grammar::SlabGrammar, tokenizer::Tokenizer, *};
 use kalosm::language::*;
 use kalosm_llama::{Cache, EvaluationTrie, LlamaModel};
@@ -6,10 +9,7 @@ use kalosm_sample::{
 };
 use llm_samplers::{
     configure::{SamplerChainBuilder, SamplerSlot},
-    prelude::{
-        SampleFreqPresence, SampleGreedy, SampleRepetition, SampleSeqRepetition, SampleTemperature,
-        SampleTopK,
-    },
+    prelude::{SampleFreqPresence, SampleGreedy, SampleRepetition, SampleSeqRepetition},
     types::Sampler,
 };
 use std::io::Write;
@@ -563,7 +563,10 @@ impl Model {
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt().init();
+    run().await;
+}
 
+async fn run() {
     let args = Args::parse();
     println!("args: {:#?}", args);
     let model = args.model;
@@ -610,29 +613,26 @@ async fn main() {
     //     .join(" ");
 
     let parser = synth_fun.parser(recursion_depth);
-    // let parser = LiteralParser::new(format!("(define-fun f ({args_str}) String "))
-    //     .ignore_output_then(parser.clone())
     let parser = parser
-        // .clone()
-        // .then_lazy({
-        //     let interpreter = Interpreter::new();
-        //     let constraints = constraints.clone();
-        //     let vars = vars.clone();
-        //     move |result| {
-        //         let mut valid = true;
-        //         for constraint in &constraints {
-        //             let result = interpreter.check(constraint, vars.clone(), &result);
-        //             valid = valid && result;
-        //         }
-
-        //         if valid {
-        //             SuccessParser(()).boxed()
-        //         } else {
-        //             FailParser(std::marker::PhantomData).boxed()
-        //         }
-        //     }
-        // })
-        // .map_output(|(a, _)| a)
+        .clone()
+        .then_lazy({
+            let interpreter = Interpreter::new();
+            let constraints = constraints.clone();
+            let vars = vars.clone();
+            move |result| {
+                let mut valid = true;
+                for constraint in &constraints {
+                    let result = interpreter.check(constraint, vars.clone(), &result);
+                    valid = valid && result;
+                }
+                if valid {
+                    SuccessParser(()).boxed()
+                } else {
+                    FailParser(std::marker::PhantomData).boxed()
+                }
+            }
+        })
+        .map_output(|(a, _)| a)
         .boxed();
 
     let sampler = if multipass {
@@ -678,8 +678,8 @@ async fn main() {
         Model::Qwen1_5b => LlamaSource::qwen_2_5_1_5b_instruct(),
         Model::Qwen3b => LlamaSource::qwen_2_5_3b_instruct(),
         Model::Qwen7b => LlamaSource::qwen_2_5_7b_instruct(),
-        Model::Qwen1_5bThink => LlamaSource::qwen_2_5_1_5b_instruct(),
-        Model::Qwen7bThink => LlamaSource::qwen_2_5_7b_instruct(),
+        Model::Qwen1_5bThink => LlamaSource::deepseek_r1_distill_qwen_1_5b(),
+        Model::Qwen7bThink => LlamaSource::deepseek_r1_distill_qwen_7b(),
         Model::Llama1b => LlamaSource::llama_3_2_1b_chat(),
         Model::Llama3b => LlamaSource::llama_3_2_3b_chat(),
         Model::Llama8b => LlamaSource::llama_3_1_8b_chat(),
@@ -722,26 +722,47 @@ async fn main() {
             format!("<｜begin▁of▁sentence｜>{prompt}<｜User｜>Solve this problem:\n{task}<｜Assistant｜><think>\n")
         };
 
-        if model.qwen_think() {
-            let think_start_time = std::time::Instant::now();
-            while llm.generate_structured_with_trie(
-                &mut session,
-                &prompt,
-                sampler.clone(),
-                &grammar,
-                Box::new(|token, _| {
-                    print!("{}", token);
-                    std::io::stdout().flush().unwrap();
-                    Ok(())
-                }),
-                &mut EvaluationTrie::new(),
-            )
-            .is_err() {
-                println!("Initial prompt too long, retrying");
-                session = llm.new_session();
+        {
+            let (tx, _rx) = tokio::sync::oneshot::channel();
+            print!("{prompt}");
+            if model.qwen_think() {
+                let think_start_time = std::time::Instant::now();
+                while llm._infer_inner(
+                    prompt.clone(),
+                    Some("</think>".to_string()),
+                    sampler.clone(),
+                    &mut session,
+                    2048,
+                    None,
+                    Box::new(|token| {
+                        print!("{}", token);
+                        std::io::stdout().flush().unwrap();
+                        Ok(())
+                    }),
+                    &tx
+                )
+                .is_err() {
+                    println!("Initial prompt too long, retrying");
+                    session = llm.new_session();
+                }
+                let think_duration = think_start_time.elapsed();
+                println!("\nThinking took: {think_duration:?}");
+            } else {
+                llm._infer_inner(
+                    prompt.clone(),
+                    None,
+                    sampler.clone(),
+                    &mut session,
+                    0,
+                    None,
+                    Box::new(|token| {
+                        print!("{}", token);
+                        std::io::stdout().flush().unwrap();
+                        Ok(())
+                    }),
+                    &tx
+                ).unwrap();
             }
-            let think_duration = think_start_time.elapsed();
-            println!("\nThinking took: {think_duration:?}");
         }
 
         for generation in 0..iterations {
@@ -768,11 +789,7 @@ async fn main() {
             let all_token_ids = Arc::new(RwLock::new(Vec::new()));
             match llm.generate_structured_with_trie(
                 &mut session,
-                if model.qwen_think() {
-                    "\n"
-                } else {
-                    &prompt
-                },
+                "(define-fun f ({args_str}) String ",
                 sampler.clone(),
                 &grammar,
                 {
@@ -803,7 +820,7 @@ async fn main() {
             let all_tokens = all_tokens.read().unwrap().clone();
             println!("generation {generation}:\n{all_tokens}");
 
-            let Ok(ParseStatus::Finished { result, remaining }) = parser.parse(
+            let Ok(ParseStatus::Finished { result, .. }) = parser.parse(
                 &parser.create_parser_state(),
                 all_tokens.as_bytes(),
             ) else {

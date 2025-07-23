@@ -287,11 +287,8 @@ impl<'bump> Recognizer<'bump> {
                         // Predictor: Add new states for the non-terminal
                         if self.grammar.rules[*next_non_terminal].rhs.len() > 0 {
                             for next_rhs in self.grammar.rules[*next_non_terminal].rhs {
-                                let new = self.new_position(
-                                    Some(current),
-                                    *next_non_terminal,
-                                    *next_rhs,
-                                );
+                                let new =
+                                    self.new_position(Some(current), *next_non_terminal, *next_rhs);
                                 self.chart[k].push(new);
                             }
                         }
