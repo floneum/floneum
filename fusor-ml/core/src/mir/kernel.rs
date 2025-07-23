@@ -400,7 +400,10 @@ impl GenericKernel {
                             module,
                             entry_point: Some("main"),
                             cache: device.wgpu_cache(),
-                            compilation_options: PipelineCompilationOptions::default(),
+                            compilation_options: PipelineCompilationOptions {
+                                zero_initialize_workgroup_memory: false,
+                                ..Default::default()
+                            },
                         })
                 })
                 .clone()
