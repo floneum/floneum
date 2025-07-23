@@ -1,4 +1,9 @@
-use cfg::{slab_grammar::SlabGrammar, tokenizer::Tokenizer, *};
+use cfg::{
+    parse::Grammar,
+    slab_grammar::SlabGrammar,
+    tokenizer::{Merge, Tokenizer},
+    *,
+};
 
 fn main() {
     let log_every_n = std::env::var("LOG_EVERY_N")
@@ -94,7 +99,6 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
         }
         last_size = grammar.rules.len();
         if (test && changed) || force_test {
-            let test_time = std::time::Instant::now();
             let grammar = grammar.to_grammar();
             if verbose {
                 println!(
@@ -105,57 +109,11 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
                     )
                 );
             }
-            let dense_grammar = grammar.reallocate(&bump);
-            println!("dense size: {}", bump.allocated_bytes());
-            println!("after shortcut merge rule count: {}", grammar.rules.len());
-
-            let should_recognize: [&'static [u8]; 7] = [
-                b"0",
-                b"1",
-                b"2",
-                b"(+ 1 2)",
-                b"(- 2 1)",
-                b"(str.len name)",
-                b"(str.to.int name)",
-            ];
-            for input in should_recognize {
-                let mut bytes = Vec::new();
-                for byte in input {
-                    bytes.push(tokenizer.bytes[*byte as usize]);
-                }
-                let mut tokenized = bytes.clone();
-                for merge in &processed_merges {
-                    let mut new = tokenized.clone();
-                    let mut i = 0;
-                    while i < tokenized.len() - 1 {
-                        // Replace the pair of tokens with the new token if they match the merge
-                        if new[i] == merge.pair[0] && new[i + 1] == merge.pair[1] {
-                            new[i] = merge.new_token;
-                            new.remove(i + 1);
-                        }
-                        i += 1;
-                    }
-                    if new != tokenized {
-                        // If the new tokenized version is different, we have a merge
-                        // Make sure the incorrectly tokenized version is not recognized
-                        assert!(!dense_grammar.recognizes_tokens(&tokenized));
-                    }
-                    tokenized = new;
-                }
-                assert!(
-                    dense_grammar.recognizes_tokens(&tokenized),
-                    "Failed to recognize input: {:?} after tokenizing into {:?}",
-                    input,
-                    tokenized
-                        .iter()
-                        .map(|b| String::from_utf8_lossy(&tokenizer.inverse_vocab[b]).to_string())
-                        .collect::<Vec<_>>()
-                );
-            }
-            println!("Time to test: {:?}", test_time.elapsed());
+            run_test(grammar, &tokenizer, &processed_merges, &bump);
         }
     }
 
+    grammar.inline_optimize();
     let grammar = grammar.to_grammar();
     println!(
         "grammar:\n{}",
@@ -165,4 +123,62 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
         )
     );
     println!("🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉");
+    run_test(grammar, &tokenizer, &processed_merges, &bump);
+}
+
+fn run_test(
+    grammar: Grammar<u32>,
+    tokenizer: &Tokenizer,
+    processed_merges: &[Merge],
+    bump: &bumpalo::Bump,
+) {
+    let test_time = std::time::Instant::now();
+    let dense_grammar = grammar.reallocate(&bump);
+    println!("dense size: {}", bump.allocated_bytes());
+    println!("after shortcut merge rule count: {}", grammar.rules.len());
+
+    let should_recognize: [&'static [u8]; 7] = [
+        b"0",
+        b"1",
+        b"2",
+        b"(+ 1 2)",
+        b"(- 2 1)",
+        b"(str.len name)",
+        b"(str.to.int name)",
+    ];
+    for input in should_recognize {
+        let mut bytes = Vec::new();
+        for byte in input {
+            bytes.push(tokenizer.bytes[*byte as usize]);
+        }
+        let mut tokenized = bytes.clone();
+        for merge in processed_merges {
+            let mut new = tokenized.clone();
+            let mut i = 0;
+            while i < tokenized.len() - 1 {
+                // Replace the pair of tokens with the new token if they match the merge
+                if new[i] == merge.pair[0] && new[i + 1] == merge.pair[1] {
+                    new[i] = merge.new_token;
+                    new.remove(i + 1);
+                }
+                i += 1;
+            }
+            if new != tokenized {
+                // If the new tokenized version is different, we have a merge
+                // Make sure the incorrectly tokenized version is not recognized
+                assert!(!dense_grammar.recognizes_tokens(tokenized.iter().copied()));
+            }
+            tokenized = new;
+        }
+        assert!(
+            dense_grammar.recognizes_tokens(tokenized.iter().copied()),
+            "Failed to recognize input: {:?} after tokenizing into {:?}",
+            input,
+            tokenized
+                .iter()
+                .map(|b| String::from_utf8_lossy(&tokenizer.inverse_vocab[b]).to_string())
+                .collect::<Vec<_>>()
+        );
+    }
+    println!("Time to test: {:?}", test_time.elapsed());
 }

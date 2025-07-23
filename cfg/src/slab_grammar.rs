@@ -513,6 +513,110 @@ impl SlabGrammar {
         });
     }
 
+    fn inline_single_use_non_terminals(&mut self) {
+        let mut changed = true;
+        while changed {
+            changed = false;
+            let mut non_terminal_uses: FxHashMap<u32, Vec<(u32, usize)>> = FxHashMap::default();
+            for (_, rule) in &self.rules {
+                if rule.lhs == self.start {
+                    continue;
+                }
+                for (i, rhs) in rule.rhs.iter().enumerate() {
+                    for symbol in rhs.iter() {
+                        if let Symbol::NonTerminal(nt) = symbol {
+                            non_terminal_uses
+                                .entry(*nt)
+                                .or_default()
+                                .push((rule.lhs, i));
+                        }
+                    }
+                }
+            }
+
+            // Inline any non-terminals that are only used once
+            for (nt, uses) in &non_terminal_uses {
+                let &[(parent, index)] = uses.as_slice() else {
+                    continue;
+                };
+                if self.rules[*nt as usize].rhs.len() != 1 {
+                    continue;
+                }
+                println!("Inlining non-terminal {nt} used in rule {parent} at index {index}");
+                let rule = self.rules.remove(*nt as usize);
+                let rhs = &rule.rhs[0];
+                let mut new_rhs = Vec::new();
+                let old_rhs = &mut self.rules[parent as usize].rhs[index];
+                for symbol in &**old_rhs {
+                    match symbol {
+                        Symbol::NonTerminal(n) if *n == *nt => {
+                            new_rhs.extend(rhs.iter().cloned());
+                        }
+                        _ => {
+                            new_rhs.push(symbol.clone());
+                        }
+                    }
+                }
+                *old_rhs = new_rhs.into();
+                changed = true;
+                break;
+            }
+        }
+    }
+
+    fn inline_simple(&mut self) -> bool {
+        let mut changed = false;
+        let mut nt_to_token: FxHashMap<u32, Symbol<u32>> = FxHashMap::default();
+        self.rules.retain(|_, rule| {
+            if let [rhs] = rule.rhs.as_slice() {
+                match rhs.as_ref() {
+                    [symbol] => {
+                        nt_to_token.insert(rule.lhs, symbol.clone());
+                        return false;
+                    }
+                    _ => {}
+                }
+            }
+            true
+        });
+
+        // Update all rules to replace the non-terminal with the terminal
+        for (_, rule) in self.rules.iter_mut() {
+            for rhs in &mut rule.rhs {
+                let mut new_rhs = Vec::new();
+                for symbol in rhs.iter() {
+                    if let Symbol::NonTerminal(n) = symbol {
+                        if let Some(symbol) = nt_to_token.get(n) {
+                            let symbol = if let Symbol::NonTerminal(nt) = symbol {
+                                nt_to_token.get(nt).cloned().unwrap_or(symbol.clone())
+                            } else {
+                                symbol.clone()
+                            };
+                            if symbol != Symbol::Epsilon {
+                                new_rhs.push(symbol.clone());
+                            }
+                            changed = true;
+                            println!("Inlining non-terminal {n} to terminal {symbol:?}");
+                            continue;
+                        }
+                    }
+                    new_rhs.push(symbol.clone());
+                }
+                *rhs = new_rhs.into();
+            }
+        }
+
+        changed
+    }
+
+    pub fn inline_optimize(&mut self) {
+        let mut changed = true;
+        while changed {
+            self.inline_single_use_non_terminals();
+            changed = self.inline_simple();
+        }
+    }
+
     pub fn to_grammar(&self) -> Grammar<u32> {
         let mut rules = Vec::new();
         for (_, rule) in &self.rules {

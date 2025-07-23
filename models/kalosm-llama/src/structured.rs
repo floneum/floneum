@@ -281,7 +281,6 @@ where
             logits.set_softmax(false);
             logits.ensure_softmax().unwrap();
 
-            // loop {
             let mut sampled_logits = logits.clone();
             let token_id = sampler
                 .sample_token(resources, &mut sampled_logits)
@@ -335,7 +334,7 @@ where
         }
 
         unprocessed_token_count = 1;
-        let (state, result, extra_state, bytes) = state_map
+        let (_, result, extra_state, _) = state_map
             .get_mut(token_id as usize)
             .unwrap()
             .take()
@@ -362,18 +361,6 @@ where
                 extra_parser_state = new_state.clone();
             }
         }
-
-        // if let Some(result) = update_state(
-        //     &parser,
-        //     &mut parser_state,
-        //     result,
-        //     tokenizer,
-        //     &mut token_stream,
-        //     &mut on_token,
-        //     &mut unprocessed_token_count,
-        // )? {
-        //     return Ok(result);
-        // }
     }
 }
 
@@ -717,75 +704,6 @@ fn cmp_logits(a: &Logit, b: &Logit) -> std::cmp::Ordering {
     f32::total_cmp(&b.logit, &a.logit)
 }
 
-// #[allow(unused, clippy::all)]
-// fn update_state<P: Parser>(
-//     parser: &P,
-//     parser_state: &mut P::PartialState,
-//     result: ParseStatus<P::PartialState, P::Output>,
-//     tokenizer: &Tokenizer,
-//     token_stream: &mut TokenOutputStream,
-//     on_token: &mut impl FnMut(String) -> Result<(), LlamaModelError>,
-//     unprocessed_token_count: &mut usize,
-// ) -> Result<Option<P::Output>, LlamaModelError> {
-//     match result {
-//         kalosm_sample::ParseStatus::Incomplete {
-//             new_state,
-//             required_next,
-//         } => {
-//             *parser_state = new_state;
-//             if required_next.is_empty() {
-//                 Ok(None)
-//             } else {
-//                 // The token may decode to a string that is a valid prefix of the required next token, but in a way that doesn't let us decode the required next tokens
-//                 let Some(mut extra_tokens) = token_stream
-//                     .encode_after(&required_next)
-//                     .map_err(|err| LlamaModelError::TokenOutputStreamError(err))?
-//                 else {
-//                     return Ok(None);
-//                 };
-//                 // Remove the last token to avoid influencing the next token
-//                 extra_tokens.pop();
-//                 // If there are no new tokens, continue generating tokens normally
-//                 if extra_tokens.is_empty() {
-//                     return Ok(None);
-//                 }
-
-//                 let mut all_required_next = String::new();
-//                 if let Some(next) = token_stream
-//                     .peek_next_tokens(extra_tokens.iter().copied())
-//                     .map_err(|err| LlamaModelError::TokenOutputStreamError(err))?
-//                 {
-//                     all_required_next = next;
-//                 }
-//                 // The token may decode to a string that is a valid prefix of the required next token, but in a way that doesn't encode the same way.
-//                 // Make sure the final text we are adding is actually valid
-//                 if !required_next.starts_with(&all_required_next) {
-//                     return Ok(None);
-//                 }
-//                 token_stream
-//                     .next_tokens(&extra_tokens)
-//                     .map_err(|err| LlamaModelError::TokenOutputStreamError(err))?;
-//                 *unprocessed_token_count += extra_tokens.len();
-//                 on_token(all_required_next.clone())?;
-//                 let mut result = parser
-//                     .parse(parser_state, all_required_next.as_bytes())
-//                     .unwrap_or_else(|_| {
-//                         unreachable!("Required next should always be valid attempted to add {:?} but got error", all_required_next)
-//                 });
-//                 update_state(
-//                     parser,
-//                     parser_state,
-//                     result,
-//                     tokenizer,
-//                     token_stream,
-//                     on_token,
-//                     unprocessed_token_count,
-//                 )
-//             }
-//         }
-//         kalosm_sample::ParseStatus::Finished { result, .. } => Ok(Some(result)),
-//     }
-// }
 
 struct SamplerResources<'a, 'b, R: rand::Rng> {
     rng: &'a mut R,

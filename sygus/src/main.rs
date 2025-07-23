@@ -621,9 +621,11 @@ async fn run() {
             let vars = vars.clone();
             move |result| {
                 let mut valid = true;
+                println!("Checking constraints for expression: {result:?}");
                 for constraint in &constraints {
                     let result = interpreter.check(constraint, vars.clone(), &result);
-                    valid = valid && result;
+                    println!("  {constraint:?} => {result}");
+                    valid &= result;
                 }
                 if valid {
                     SuccessParser(()).boxed()
@@ -1201,6 +1203,8 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
         processed_merges.push(merge.clone());
     }
 
+    grammar.inline_optimize();
+    
     let grammar = grammar.to_grammar();
     println!(
         "grammar:\n{}",
