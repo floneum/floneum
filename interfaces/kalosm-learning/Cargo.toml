@@ -14,7 +14,7 @@ kalosm-learning-macro.workspace = true
 candle-core.workspace = true
 candle-nn.workspace = true
 half = "2.3.1"
-rand = "0.8.5"
+rand = "0.9"
 kalosm-common = { workspace = true, features = ["candle"] }
 
 [dev-dependencies]

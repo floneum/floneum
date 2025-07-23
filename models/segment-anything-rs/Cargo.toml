@@ -12,7 +12,7 @@ keywords = ["ai", "segment-anything", "segmentation", "computer-vision"]
 candle-core.workspace = true
 candle-nn.workspace = true
 candle-transformers.workspace = true
-hf-hub = "0.3.0"
+hf-hub = { version = "0.4.0", default-features = false }
 thiserror.workspace = true
 
 accelerate-src = { version = "0.3.2", optional = true }

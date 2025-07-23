@@ -12,7 +12,7 @@ keywords = ["ai", "llm", "llama", "mistral", "nlp"]
 futures-util = "0.3.28"
 futures-channel = "0.3.31"
 llm-samplers = { workspace = true, optional = true }
-rand = "0.8.5"
+rand = "0.9"
 serde = { version = "1.0.163", features = ["derive"], optional = true }
 tracing = "0.1.37"
 kalosm-sample = { workspace = true }

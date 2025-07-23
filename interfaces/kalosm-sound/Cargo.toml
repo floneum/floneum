@@ -10,7 +10,7 @@ keywords = ["ai", "whisper"]
 
 [dependencies]
 cpal = "0.15.3"
-rand = "0.8.5"
+rand = "0.9"
 candle-core.workspace = true
 candle-nn.workspace = true
 candle-transformers.workspace = true
