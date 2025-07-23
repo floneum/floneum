@@ -258,7 +258,7 @@ fn integer_parser() {
         as_string += &cap_string;
         let mut bytes = as_string.as_bytes().to_vec();
         loop {
-            let take_count = rand::random::<usize>() % bytes.len();
+            let take_count = rand::random::<u32>() as usize % bytes.len();
             let taken = bytes.drain(..take_count).collect::<Vec<_>>();
             match parser.parse(&state, &taken) {
                 Ok(result) => match result {

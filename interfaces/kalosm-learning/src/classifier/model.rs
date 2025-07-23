@@ -163,7 +163,7 @@ impl<C: Class> ClassificationDatasetBuilder<C> {
     /// ```
     pub fn build(mut self, dev: &Device) -> Result<ClassificationDataset> {
         // split into train and test
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         // We want to try to maintain a balance of classes in the test and train sets
         let mut class_counts: HashMap<u32, usize> = HashMap::new();
@@ -184,7 +184,7 @@ impl<C: Class> ClassificationDatasetBuilder<C> {
         let mut inputs: Vec<f32> = Vec::with_capacity(self.inputs.len() - test_len);
         let mut classes: Vec<u32> = Vec::with_capacity(self.classes.len() - test_len);
         while !self.classes.is_empty() {
-            let index = rng.gen_range(0..self.classes.len());
+            let index = rng.random_range(0..self.classes.len());
             let input = self.inputs.remove(index);
             let class = self.classes.remove(index);
 
@@ -381,7 +381,7 @@ impl<C: Class> Classifier<C> {
         let test_votes = m.test_inputs.to_device(&self.device)?;
         let test_results = m.test_classes.to_device(&self.device)?;
         let mut final_accuracy: f32 = 0.0;
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut batch = 0;
         for epoch in 1..epochs + 1 {
             // create a random batch of indices
