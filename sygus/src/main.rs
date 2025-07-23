@@ -605,12 +605,12 @@ async fn run() {
         })
         .collect::<Vec<_>>();
 
-    // let args_str = synth_fun
-    //     .args
-    //     .iter()
-    //     .map(|(name, ty)| format!("({name} {ty})"))
-    //     .collect::<Vec<_>>()
-    //     .join(" ");
+    let args_str = synth_fun
+        .args
+        .iter()
+        .map(|(name, ty)| format!("({name} {ty})"))
+        .collect::<Vec<_>>()
+        .join(" ");
 
     let parser = synth_fun.parser(recursion_depth);
     let parser = parser
@@ -787,11 +787,12 @@ async fn run() {
             let mut session = session.deep_clone();
             let all_tokens = Arc::new(RwLock::new(String::new()));
             let all_token_ids = Arc::new(RwLock::new(Vec::new()));
-            match llm.generate_structured_with_trie(
+            let result = match llm.generate_structured_with_trie(
                 &mut session,
-                "(define-fun f ({args_str}) String ",
+                &format!("(define-fun f ({args_str}) String "),
                 sampler.clone(),
                 &grammar,
+                &parser,
                 {
                     let all_tokens = all_tokens.clone();
                     let all_token_ids = all_token_ids.clone();
@@ -820,14 +821,6 @@ async fn run() {
             let all_tokens = all_tokens.read().unwrap().clone();
             println!("generation {generation}:\n{all_tokens}");
 
-            let Ok(ParseStatus::Finished { result, .. }) = parser.parse(
-                &parser.create_parser_state(),
-                all_tokens.as_bytes(),
-            ) else {
-                eprintln!("Failed to parse generated expression with parser");
-                continue;
-            };
-
             let interpreter = Interpreter::new();
             let mut valid = true;
             println!("Checking constraints for expression: {result:?}");
@@ -836,11 +829,15 @@ async fn run() {
                 println!("  {constraint:?} => {result}");
                 valid = valid && result;
             }
+            let all_token_ids = all_token_ids.read().unwrap();
+            let retokenized = llm.tokenizer.encode_fast(all_tokens.as_str(), false).unwrap();
+            if retokenized.get_ids() != all_token_ids.as_slice() {
+                println!("Retokenization mismatch: {:?} != {:?}", retokenized.get_ids(), all_token_ids);
+            }
             if valid {
                 println!("Valid solution found!");
                 break;
             } else {
-                let all_token_ids = all_token_ids.read().unwrap();
                 trie.make_sequence_impossible(&all_token_ids);
             }
 

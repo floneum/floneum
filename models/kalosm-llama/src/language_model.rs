@@ -118,17 +118,19 @@ impl LlamaModel {
         LlamaSession::new(config)
     }
 
-    pub fn generate_structured_with_trie<'a, S>(
+    pub fn generate_structured_with_trie<'a, S, P>(
         &'a mut self,
         session: &'a mut LlamaSession,
         text: &str,
         sampler: S,
         parser: &DenseGrammar,
+        extra_parser: &P,
         on_token: impl FnMut(String, u32) -> Result<(), LlamaModelError> + Send + Sync + 'static,
         trie: &mut EvaluationTrie,
-    ) -> Result<(), LlamaModelError>
+    ) -> Result<P::Output, LlamaModelError>
     where
         S: Sampler + 'static,
+        P: CreateParserState + 'static,
     {
         let cache = session.cache.read().unwrap().clone();
         let mut session = LlamaSession {
@@ -145,6 +147,7 @@ impl LlamaModel {
             self,
             &mut session,
             parser,
+            extra_parser,
             sampler,
             on_token,
             None,

@@ -18,17 +18,21 @@ use crate::token_stream::TokenOutputStream;
 use crate::{LlamaModel, LlamaSession};
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn generate_structured(
+pub(crate) fn generate_structured<P>(
     prompt: impl Display,
     llm: &LlamaModel,
     session: &mut LlamaSession,
     cfg: &DenseGrammar,
+    parser: &P,
     mut sampler: Arc<Mutex<dyn Sampler>>,
     mut on_token: impl FnMut(String, u32) -> Result<(), LlamaModelError>,
     top_k: Option<usize>,
     seed: Option<u64>,
     trie: &mut EvaluationTrie,
-) -> Result<(), LlamaModelError> {
+) -> Result<P::Output, LlamaModelError>
+where
+    P: CreateParserState + 'static,
+{
     let eos_token = llm.model.config.stop_token_string.clone();
     let mut on_token = move |tok: String, token_id: u32| {
         if tok == eos_token {
@@ -79,21 +83,8 @@ pub(crate) fn generate_structured(
         .flatten()
         .unwrap_or_default();
 
-    // let parser = LiteralParser::new(remaining_prompt_text.clone())
-    //     .ignore_output_then(parser.with_initial_state(move || parser_state.clone()));
-    // {
-    //     let mut parser_state = parser.create_parser_state();
-    //     for c in remaining_prompt_text.chars() {
-    //         let str = c.to_string();
-    //         let bytes = str.as_bytes();
-    //         let (parser_state_new, _) = parser
-    //             .parse(&parser_state, bytes)
-    //             .unwrap()
-    //             .unwrap_incomplete();
-    //         parser_state = parser_state_new;
-    //     }
-    // }
     let mut parser_state = Recognizer::new(cfg);
+    let mut extra_parser_state = parser.create_parser_state();
     let mut strip_required_next = true;
 
     let mut rng = if let Some(seed) = seed {
@@ -103,7 +94,7 @@ pub(crate) fn generate_structured(
     };
     let mut state_map = vec![];
     let mut logits_indexed = Logits::default();
-    // let mut token_cache = DetokenizationCache::new();
+    let mut token_cache = DetokenizationCache::new();
     let mut logits = Logits::default();
     let mut logit_probs = Vec::new();
 
@@ -125,7 +116,7 @@ pub(crate) fn generate_structured(
         };
 
         // fill the state map with None for each token
-        // token_cache.clear(logit_probs.len());
+        token_cache.clear(logit_probs.len());
         state_map.clear();
         logits_indexed.clear();
         logits.clear();
@@ -142,13 +133,13 @@ pub(crate) fn generate_structured(
 
         let mut valid_tokens = false;
 
-        // // If we don't have a top k, then we can just cache the entire detokenization
-        // if top_k.is_none() {
-        //     token_cache.expand(
-        //         &(0..logit_probs.len() as u32).collect::<Vec<_>>(),
-        //         &token_stream,
-        //     );
-        // }
+        // If we don't have a top k, then we can just cache the entire detokenization
+        if top_k.is_none() {
+            token_cache.expand(
+                &(0..logit_probs.len() as u32).collect::<Vec<_>>(),
+                &token_stream,
+            );
+        }
 
         const DETOKENIZATION_INITIAL_BATCH_SIZE: usize = 64;
 
@@ -177,10 +168,10 @@ pub(crate) fn generate_structured(
                     logits_indexed[i..=new_partitioned_index].sort_unstable_by(cmp_logits);
                     // Expand the cache to include the new logits
                     partitioned_logits_index = Some(new_partitioned_index);
-                    // token_cache.expand_with_logits(
-                    //     &logits_indexed[i..=new_partitioned_index],
-                    //     &token_stream,
-                    // );
+                    token_cache.expand_with_logits(
+                        &logits_indexed[i..=new_partitioned_index],
+                        &token_stream,
+                    );
 
                     // Double the batch size for next time
                     detokenization_batch_size = detokenization_batch_size.saturating_mul(4);
@@ -207,9 +198,9 @@ pub(crate) fn generate_structured(
             //     }
             // }
 
-            // let Some(text) = token_cache.get(token_id as usize) else {
-            //     continue;
-            // };
+            let Some(text) = token_cache.get(token_id as usize) else {
+                continue;
+            };
             let state_after_push = parser_state.push(token_id);
             let could_become_valid = state_after_push.could_become_valid();
             trie.push(
@@ -220,42 +211,32 @@ pub(crate) fn generate_structured(
                 false,
             );
             if could_become_valid {
-                println!(
-                    "Token {:?} with probability {} could become valid",
-                    tokenizer.id_to_token(token_id),
-                    prob
-                );
-                // if fast_case && !lazy {
-                //     let valid = check_for_valid_next_token(
-                //         &result,
-                //         &logits_indexed,
-                //         llm,
-                //         &token_stream,
-                //         &parser,
-                //         &parser_state,
-                //         token_id,
-                //     );
-                //     if !valid {
-                //         trie.push(token_id, prob as f64, current_token, false, true);
-                //     }
-                // }
-                // let parsed_bytes = match &result {
-                //     ParseStatus::Finished { remaining, .. } => text.len() - remaining.len(),
-                //     ParseStatus::Incomplete { .. } => text.len(),
-                // };
-                // let result = result.without_remaining();
-                // state_map[token_id as usize] = Some((result, parsed_bytes));
-                state_map[token_id as usize] = Some((state_after_push, parser_state.clone()));
-                valid_tokens = true;
-                logits.push(Logit {
-                    token_id,
-                    logit,
-                    prob: 0f32,
-                });
-                // If we only need to keep the top k logits, then we can quit early once we have enough
-                if let Some(top_k) = top_k {
-                    if logits.len() >= top_k {
-                        break;
+                let result = parser.parse(&extra_parser_state, text.as_bytes());
+                if let Ok(result) = result {
+                    println!(
+                        "Token {:?} with probability {} could become valid",
+                        tokenizer.id_to_token(token_id),
+                        prob
+                    );
+
+                    let parsed_bytes = match &result {
+                        ParseStatus::Finished { remaining, .. } => text.len() - remaining.len(),
+                        ParseStatus::Incomplete { .. } => text.len(),
+                    };
+                    let result = result.without_remaining();
+                    state_map[token_id as usize] =
+                        Some((state_after_push, parser_state.clone(), result, parsed_bytes));
+                    valid_tokens = true;
+                    logits.push(Logit {
+                        token_id,
+                        logit,
+                        prob: 0f32,
+                    });
+                    // If we only need to keep the top k logits, then we can quit early once we have enough
+                    if let Some(top_k) = top_k {
+                        if logits.len() >= top_k {
+                            break;
+                        }
                     }
                 }
             }
@@ -314,51 +295,9 @@ pub(crate) fn generate_structured(
                         ),
                     )))
                 })?;
-            // let result = state_map
-            //     .get(token_id as usize)
-            //     .unwrap()
-            //     .as_ref()
-            //     .unwrap_or_else(|| panic!("Token {} not found in state map", token_id));
-            // let has_valid_next = check_for_valid_next_token(
-            //     result,
-            //     &logits_indexed,
-            //     llm,
-            //     &token_stream,
-            //     &parser,
-            //     &parser_state,
-            //     token_id,
-            // );
-            // if has_valid_next {
-            //     break;
-            // } else {
-            //     println!(
-            //         "\nSkipping sampled token... Token {:?} is invalid",
-            //         tokenizer.id_to_token(token_id)
-            //     );
-            //     println!(
-            //         "probability: {}",
-            //         sampled_logits
-            //             .iter()
-            //             .find(|logit| logit.token_id == token_id)
-            //             .unwrap()
-            //             .prob
-            //     );
-            //     trie.push(token_id, 0., current_token, false, true);
-            //     logits.retain(|logit| logit.token_id != token_id);
-            // }
-            // }
+
             token_id
         };
-
-        // println!(
-        //     "Sampled token {:?} with probability {}",
-        //     tokenizer.id_to_token(token_id),
-        //     logits
-        //         .iter()
-        //         .find(|logit| logit.token_id == token_id)
-        //         .unwrap()
-        //         .prob
-        // );
 
         current_token = Some(match current_token {
             Some(current) => *trie.nodes[current]
@@ -396,7 +335,7 @@ pub(crate) fn generate_structured(
         }
 
         unprocessed_token_count = 1;
-        let (state, result) = state_map
+        let (state, result, extra_state, bytes) = state_map
             .get_mut(token_id as usize)
             .unwrap()
             .take()
@@ -415,8 +354,13 @@ pub(crate) fn generate_structured(
         on_token(token, token_id)?;
 
         parser_state = result.clone();
-        if state == RecognizerState::Valid {
-            return Ok(());
+        match extra_state {
+            ParseStatus::Finished { result, .. } => {
+                return Ok(result);
+            }
+            ParseStatus::Incomplete { new_state, .. } => {
+                extra_parser_state = new_state.clone();
+            }
         }
 
         // if let Some(result) = update_state(
