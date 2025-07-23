@@ -837,8 +837,6 @@ async fn run() {
             if valid {
                 println!("Valid solution found!");
                 break;
-            } else {
-                trie.make_sequence_impossible(&all_token_ids);
             }
 
             let elapsed = generation_start_time.elapsed();
