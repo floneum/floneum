@@ -1529,7 +1529,10 @@ where
                     module: &module,
                     entry_point: Some("main"),
                     cache: None,
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    compilation_options: wgpu::PipelineCompilationOptions {
+                        zero_initialize_workgroup_memory: false,
+                        ..Default::default()
+                    },
                 });
         for _ in 0..200 {
             let block_bytes: B::AsBytes = rand::random();
