@@ -210,18 +210,14 @@ impl GenericKernel {
         global
     }
 
-     pub(crate) fn add_global_value(
+    pub(crate) fn add_global_value(
         &mut self,
         space: KernelGlobalSpace,
         ty: DataTypeEnum,
     ) -> KernelGlobal {
         let index = self.max_global_id;
         self.max_global_id += 1;
-        let global = KernelGlobal::new(
-            index,
-            space,
-            KernelGlobalType::Value(ty.clone()),
-        );
+        let global = KernelGlobal::new(index, space, KernelGlobalType::Value(ty.clone()));
         self.globals.push(global.clone());
         global
     }

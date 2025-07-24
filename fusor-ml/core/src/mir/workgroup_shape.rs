@@ -3,10 +3,10 @@
 // Kernels can be fused if their workgroup shape can be coerced. Coercion can happen if
 // the biggest linearized workgroup shape is a multiple of all smaller workgroup shapes.
 
-use std::{num::NonZeroUsize, sync::OnceLock};
 use lru::LruCache;
 use parking_lot::RwLock;
 use rustc_hash::FxBuildHasher;
+use std::{num::NonZeroUsize, sync::OnceLock};
 
 use crate::mir::kernel::GenericKernel;
 

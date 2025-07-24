@@ -100,28 +100,14 @@ pub(crate) fn q4k_sgemv(
         {
             writeln!(
                 &mut kernel,
-                "cached_a_low_values[j + 0] = {input_a}[vector_offset + j + 0];"
+                "let vec = vec4({input_a}[vector_offset + j + 0], {input_a}[vector_offset + j + 32], {input_a}[vector_offset + j + 128], {input_a}[vector_offset + j + 160]);"
             )
             .unwrap();
-            writeln!(&mut kernel, "vector_sum[0] += cached_a_low_values[j + 0];").unwrap();
-            writeln!(
-                &mut kernel,
-                "cached_a_low_values[j + 8] = {input_a}[vector_offset + j + 32];"
-            )
-            .unwrap();
-            writeln!(&mut kernel, "vector_sum[1] += cached_a_low_values[j + 8];").unwrap();
-            writeln!(
-                &mut kernel,
-                "cached_a_high_values[j + 0] = {input_a}[vector_offset + j + 128];"
-            )
-            .unwrap();
-            writeln!(&mut kernel, "vector_sum[2] += cached_a_high_values[j + 0];").unwrap();
-            writeln!(
-                &mut kernel,
-                "cached_a_high_values[j + 8] = {input_a}[vector_offset + j + 160];"
-            )
-            .unwrap();
-            writeln!(&mut kernel, "vector_sum[3] += cached_a_high_values[j + 8];").unwrap();
+            writeln!(&mut kernel, "vector_sum += vec;").unwrap();
+            writeln!(&mut kernel, "cached_a_low_values[j + 0] = vec.x;").unwrap();
+            writeln!(&mut kernel, "cached_a_low_values[j + 8] = vec.y;").unwrap();
+            writeln!(&mut kernel, "cached_a_high_values[j + 0] = vec.z;").unwrap();
+            writeln!(&mut kernel, "cached_a_high_values[j + 8] = vec.w;").unwrap();
         }
         writeln!(&mut kernel, "}}").unwrap();
 
@@ -188,40 +174,12 @@ pub(crate) fn q4k_sgemv(
             // Fetch and unpack the two sets of values from the cache
             writeln!(
                 &mut kernel,
-                "let first_values_first_chunk = {input_b}[local_block_offset].data[data_offset + 0];"
+                "let first_values_offset = data_offset;"
             )
             .unwrap();
             writeln!(
                 &mut kernel,
-                "let first_values_second_chunk = {input_b}[local_block_offset].data[data_offset + 1u];"
-            )
-            .unwrap();
-            // Pack into 4 i16 values
-            writeln!(
-                &mut kernel,
-                r#"let first_values = array(
-                    first_values_first_chunk,
-                    first_values_second_chunk,
-                );"#
-            )
-            .unwrap();
-            writeln!(
-                &mut kernel,
-                "let second_values_first_chunk = {input_b}[local_block_offset].data[data_offset + 16u];"
-            )
-            .unwrap();
-            writeln!(
-                &mut kernel,
-                "let second_values_second_chunk = {input_b}[local_block_offset].data[data_offset + 16u + 1u];"
-            )
-            .unwrap();
-            // Pack into 4 i16 values
-            writeln!(
-                &mut kernel,
-                r#"let second_values = array(
-                    second_values_first_chunk,
-                    second_values_second_chunk
-                );"#
+                "let second_values_offset = data_offset + 16u;"
             )
             .unwrap();
 
@@ -233,53 +191,34 @@ pub(crate) fn q4k_sgemv(
             writeln!(&mut kernel, "for (var j = 0u; j < 2u; j += 1u) {{").unwrap();
             {
                 for (sum, cache, values) in [
-                    ("first_sums", "cached_a_low_values", "first_values"),
-                    ("second_sums", "cached_a_high_values", "second_values"),
+                    ("first_sums", "cached_a_low_values", "first_values_offset"),
+                    ("second_sums", "cached_a_high_values", "second_values_offset"),
                 ] {
                     // Note: We add the values with a mask **without** shifting them
                     // this means the sums in the first_sums and second_sums
                     // will be scaled by different values. We correct this below
                     // by multiplying by the floating point values that correspond to the
                     // bit shifts.
+                    writeln!(&mut kernel, "let value_u32_{values} = {input_b}[local_block_offset].data[{values} + j];").unwrap();
                     writeln!(
                         &mut kernel,
-                        "{sum}[0] += {cache}[j*4 + 0] * {dtype}({values}[j] & 0x000F);"
+                        "let first_four_values_{values} = vec4({cache}[j*4 + 0], {cache}[j*4 + 1], {cache}[j*4 + 2], {cache}[j*4 + 3]);"
                     )
                     .unwrap();
                     writeln!(
                         &mut kernel,
-                        "{sum}[1] += {cache}[j*4 + 1] * {dtype}({values}[j] & 0x0F00);"
+                        "let second_four_values_{values} = vec4({cache}[j*4 + 8], {cache}[j*4 + 9], {cache}[j*4 + 10], {cache}[j*4 + 11]);"
                     )
                     .unwrap();
                     writeln!(
                         &mut kernel,
-                        "{sum}[2] += {cache}[j*4 + 8] * {dtype}({values}[j] & 0x00F0);"
-                    )
-                    .unwrap();
-                    writeln!(
-                        &mut kernel,
-                        "{sum}[3] += {cache}[j*4 + 9] * {dtype}({values}[j] & 0xF000);"
+                        "{sum} += vec4<{dtype}>(first_four_values_{values}.x * {dtype}(value_u32_{values} & 0x000F), first_four_values_{values}.y * {dtype}(value_u32_{values} & 0x0F00), second_four_values_{values}.x * {dtype}(value_u32_{values} & 0x00F0), second_four_values_{values}.y * {dtype}(value_u32_{values} & 0xF000));"
                     )
                     .unwrap();
                     let shift_right_16 = shift_right_scale(16);
                     writeln!(
                         &mut kernel,
-                        "{sum}[0] += {cache}[j*4 + 2] * {dtype}({values}[j] & 0x000F0000) * {shift_right_16};"
-                    )
-                    .unwrap();
-                    writeln!(
-                        &mut kernel,
-                        "{sum}[1] += {cache}[j*4 + 3] * {dtype}({values}[j] & 0x0F000000) * {shift_right_16};"
-                    )
-                    .unwrap();
-                    writeln!(
-                        &mut kernel,
-                        "{sum}[2] += {cache}[j*4 + 10] * {dtype}({values}[j] & 0x00F00000) * {shift_right_16};"
-                    )
-                    .unwrap();
-                    writeln!(
-                        &mut kernel,
-                        "{sum}[3] += {cache}[j*4 + 11] * {dtype}({values}[j] & 0xF0000000) * {shift_right_16};"
+                        "{sum} += vec4<{dtype}>(first_four_values_{values}.z * {dtype}(value_u32_{values} & 0x000F0000), first_four_values_{values}.w * {dtype}(value_u32_{values} & 0x0F000000), second_four_values_{values}.z * {dtype}(value_u32_{values} & 0x00F00000), second_four_values_{values}.w * {dtype}(value_u32_{values} & 0xF0000000)) * {shift_right_16};"
                     )
                     .unwrap();
                 }
@@ -308,11 +247,14 @@ pub(crate) fn q4k_sgemv(
             let shift_right_4 = shift_right_scale(4);
             writeln!(
                 &mut kernel,
-                r#"{indexed_sum} += {dtype}(block_scale) * ((first_sums[0] + {shift_right_8} * first_sums[1]) * first_half_scales_unpacked[0] + 
-                    (first_sums[2] + {shift_right_8} * first_sums[3]) * first_half_scales_unpacked[1] * {shift_right_4} +
-                    (second_sums[0] + {shift_right_8} * second_sums[1]) * second_half_scales_unpacked[0] +
-                    (second_sums[2] + {shift_right_8} * second_sums[3]) * second_half_scales_unpacked[1] * {shift_right_4}) -
-                    {dtype}(block_min) * (vector_sum[0] * first_half_scales_unpacked[2] + vector_sum[1] * first_half_scales_unpacked[3] + vector_sum[2] * second_half_scales_unpacked[2] + vector_sum[3] * second_half_scales_unpacked[3]);"#
+                r#"{indexed_sum} += {dtype}(block_scale) * ((first_sums[0]  + {shift_right_8} * first_sums[1])  * first_half_scales_unpacked[0]  + 
+                                                            (first_sums[2]  + {shift_right_8} * first_sums[3])  * first_half_scales_unpacked[1]  * {shift_right_4} +
+                                                            (second_sums[0] + {shift_right_8} * second_sums[1]) * second_half_scales_unpacked[0] +
+                                                            (second_sums[2] + {shift_right_8} * second_sums[3]) * second_half_scales_unpacked[1] * {shift_right_4}) -
+                                                            {dtype}(block_min) * (vector_sum[0] * first_half_scales_unpacked[2] +
+                                                                                  vector_sum[1] * first_half_scales_unpacked[3] +
+                                                                                  vector_sum[2] * second_half_scales_unpacked[2] +
+                                                                                  vector_sum[3] * second_half_scales_unpacked[3]);"#
             )
             .unwrap();
         }

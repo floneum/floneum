@@ -1,8 +1,8 @@
 use std::fmt::Display;
 use std::sync::Arc;
 
-use crate::{DataTypeEnum, TensorData, TensorLayoutInfo};
 use crate::quantized::QMatrix;
+use crate::{DataTypeEnum, TensorData, TensorLayoutInfo};
 
 mod float;
 mod integer;

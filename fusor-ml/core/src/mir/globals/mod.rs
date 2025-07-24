@@ -101,7 +101,6 @@ impl ArrayType {
     }
 }
 
-
 #[derive(Clone, Debug)]
 pub struct VectorType {
     size: String,

@@ -3,7 +3,8 @@ use std::fmt::Debug;
 use rustc_hash::FxHashMap;
 
 use crate::{
-    compute_graph::{AnyComputeKey, ComputeGraphInner}, Device, TensorLayoutInfo
+    Device, TensorLayoutInfo,
+    compute_graph::{AnyComputeKey, ComputeGraphInner},
 };
 
 use super::{

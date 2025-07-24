@@ -61,7 +61,11 @@ pub(crate) fn q_8_0_sgemv(
     )
     .unwrap();
 
-    writeln!(&mut kernel, "let lane_index = thread_local_id * {STEP_SIZE};").unwrap();
+    writeln!(
+        &mut kernel,
+        "let lane_index = thread_local_id * {STEP_SIZE};"
+    )
+    .unwrap();
 
     writeln!(
         &mut kernel,
@@ -72,7 +76,11 @@ pub(crate) fn q_8_0_sgemv(
     let sum_storage_type = maybe_vec_storage_type(Q_8_0_SGEMV_CHUNK_SIZE, dtype);
     writeln!(&mut kernel, "var sum = {sum_storage_type}();",).unwrap();
 
-    writeln!(&mut kernel, "var cached_a_values = array<{dtype}, {STEP_SIZE}>();",).unwrap();
+    writeln!(
+        &mut kernel,
+        "var cached_a_values = array<{dtype}, {STEP_SIZE}>();",
+    )
+    .unwrap();
 
     // Loop over all of the blocks this thread is responsible for
     writeln!(
@@ -106,19 +114,31 @@ pub(crate) fn q_8_0_sgemv(
             {
                 writeln!(&mut kernel, "let block = vec4<{dtype}>(unpack4xI8({input_b}[block_offset].data[thread_local_id * 2u + data_offset]));").unwrap();
                 for i in 0..4 {
-                    writeln!(&mut kernel, "local_sum += block[{i}] * cached_a_values[data_offset * 4u + {i}];").unwrap();
+                    writeln!(
+                        &mut kernel,
+                        "local_sum += block[{i}] * cached_a_values[data_offset * 4u + {i}];"
+                    )
+                    .unwrap();
                 }
             }
             writeln!(&mut kernel, "}}").unwrap();
             let indexed = maybe_vec_storage_index(Q_8_0_SGEMV_CHUNK_SIZE, "sum", "offset");
-            writeln!(&mut kernel, "{indexed} += local_sum * {dtype}({input_b}[block_offset].scale);").unwrap();
+            writeln!(
+                &mut kernel,
+                "{indexed} += local_sum * {dtype}({input_b}[block_offset].scale);"
+            )
+            .unwrap();
         }
         if Q_8_0_SGEMV_CHUNK_SIZE > 1 {
             writeln!(&mut kernel, "block_offset += k_block_size;").unwrap();
             writeln!(&mut kernel, "}}").unwrap();
         }
 
-        writeln!(&mut kernel, "y_offset += {elements_per_block} * {STEP_SIZE};").unwrap();
+        writeln!(
+            &mut kernel,
+            "y_offset += {elements_per_block} * {STEP_SIZE};"
+        )
+        .unwrap();
     }
     writeln!(&mut kernel, "}}").unwrap();
 

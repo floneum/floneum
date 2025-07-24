@@ -240,11 +240,7 @@ impl LayoutPass {
         );
     }
 
-    fn visit_custom(
-        &mut self,
-        graph: &super::ComputeGraphInner,
-        key: super::CustomComputeKey,
-    ) {
+    fn visit_custom(&mut self, graph: &super::ComputeGraphInner, key: super::CustomComputeKey) {
         let operation = graph.nodes.custom.get(&key).unwrap();
         let mut dependencies = Vec::new();
         operation.visit_dependencies(&mut |dep| {
@@ -258,9 +254,7 @@ impl LayoutPass {
                 return;
             }
         }
-        self.output_layout.insert(
-            key.into(),
-            operation.output_layout(&self.output_layout),
-        );
+        self.output_layout
+            .insert(key.into(), operation.output_layout(&self.output_layout));
     }
 }

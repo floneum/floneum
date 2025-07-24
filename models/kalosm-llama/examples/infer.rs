@@ -1,5 +1,5 @@
-use std::io::Write;
 use kalosm_llama::prelude::*;
+use std::io::Write;
 
 #[tokio::main]
 async fn main() {
