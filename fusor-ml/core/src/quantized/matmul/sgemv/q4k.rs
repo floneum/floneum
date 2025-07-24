@@ -129,59 +129,9 @@ pub(crate) fn q4k_sgemv(
             .unwrap();
         }
         {
-            // Load 8 scales into a cache
-            writeln!(
-                &mut kernel,
-                "let first_32_scale_bits = {input_b}[local_block_offset].scales[0] >> (16 * scale_offset);"
-            )
-            .unwrap();
-            writeln!(
-                &mut kernel,
-                "let second_32_scale_bits = {input_b}[local_block_offset].scales[1] >> (16 * scale_offset);"
-            )
-            .unwrap();
-            writeln!(
-                &mut kernel,
-                "let third_32_scale_bits = {input_b}[local_block_offset].scales[2] >> (16 * scale_offset);"
-            )
-            .unwrap();
-
-            // Extract the scales from the bits into cached_scales
-            writeln!(
-                &mut kernel,
-                "let first_two_scales = first_32_scale_bits & {MASK1};"
-            )
-            .unwrap();
-            writeln!(
-                &mut kernel,
-                "let second_two_scales = second_32_scale_bits & {MASK1};"
-            )
-            .unwrap();
-            writeln!(
-                &mut kernel,
-                "let first_half_scales_unpacked = vec4<{dtype}>(unpack4xU8(first_two_scales | (second_two_scales << 16)));"
-            )
-            .unwrap();
-
-            writeln!(&mut kernel, "let third_two_scales = ((third_32_scale_bits >> 0) & {MASK2}) | ((first_32_scale_bits & {MASK3}) >> 2);").unwrap();
-            writeln!(&mut kernel, "let fourth_two_scales = ((third_32_scale_bits >> 4) & {MASK2}) | ((second_32_scale_bits & {MASK3}) >> 2);").unwrap();
-            writeln!(
-                &mut kernel,
-                "let second_half_scales_unpacked = vec4<{dtype}>(unpack4xU8(third_two_scales | (fourth_two_scales << 16)));"
-            )
-            .unwrap();
-
             // Fetch and unpack the two sets of values from the cache
-            writeln!(
-                &mut kernel,
-                "let first_values_offset = data_offset;"
-            )
-            .unwrap();
-            writeln!(
-                &mut kernel,
-                "let second_values_offset = data_offset + 16u;"
-            )
-            .unwrap();
+            writeln!(&mut kernel, "let first_values_offset = data_offset;").unwrap();
+            writeln!(&mut kernel, "let second_values_offset = data_offset + 16u;").unwrap();
 
             // Keep track of the sum of each chunk
             writeln!(&mut kernel, "var first_sums = vec4<{dtype}>();").unwrap();
@@ -192,14 +142,22 @@ pub(crate) fn q4k_sgemv(
             {
                 for (sum, cache, values) in [
                     ("first_sums", "cached_a_low_values", "first_values_offset"),
-                    ("second_sums", "cached_a_high_values", "second_values_offset"),
+                    (
+                        "second_sums",
+                        "cached_a_high_values",
+                        "second_values_offset",
+                    ),
                 ] {
                     // Note: We add the values with a mask **without** shifting them
                     // this means the sums in the first_sums and second_sums
                     // will be scaled by different values. We correct this below
                     // by multiplying by the floating point values that correspond to the
                     // bit shifts.
-                    writeln!(&mut kernel, "let value_u32_{values} = {input_b}[local_block_offset].data[{values} + j];").unwrap();
+                    writeln!(
+                        &mut kernel,
+                        "let value_u32_{values} = {input_b}[local_block_offset].data[{values} + j];"
+                    )
+                    .unwrap();
                     writeln!(
                         &mut kernel,
                         "let first_four_values_{values} = vec4({cache}[j*4 + 0], {cache}[j*4 + 1], {cache}[j*4 + 2], {cache}[j*4 + 3]);"
@@ -236,6 +194,47 @@ pub(crate) fn q4k_sgemv(
                 "let block_min = {input_b}[local_block_offset].min;"
             )
             .unwrap();
+            // Load 8 scales into a cache
+            writeln!(
+                &mut kernel,
+                "let first_32_scale_bits = {input_b}[local_block_offset].scales[0] >> (16 * scale_offset);"
+            )
+            .unwrap();
+            writeln!(
+                &mut kernel,
+                "let second_32_scale_bits = {input_b}[local_block_offset].scales[1] >> (16 * scale_offset);"
+            )
+            .unwrap();
+            writeln!(
+                &mut kernel,
+                "let third_32_scale_bits = {input_b}[local_block_offset].scales[2] >> (16 * scale_offset);"
+            )
+            .unwrap();
+            // Extract the scales from the bits into cached_scales
+            writeln!(
+                &mut kernel,
+                "let first_two_scales = first_32_scale_bits & {MASK1};"
+            )
+            .unwrap();
+            writeln!(
+                &mut kernel,
+                "let second_two_scales = second_32_scale_bits & {MASK1};"
+            )
+            .unwrap();
+
+            writeln!(&mut kernel, "let third_two_scales = ((third_32_scale_bits >> 0) & {MASK2}) | ((first_32_scale_bits & {MASK3}) >> 2);").unwrap();
+            writeln!(&mut kernel, "let fourth_two_scales = ((third_32_scale_bits >> 4) & {MASK2}) | ((second_32_scale_bits & {MASK3}) >> 2);").unwrap();
+
+            writeln!(
+                &mut kernel,
+                "let odd_scales_unpacked = vec4<{dtype}>(unpack4xU8(first_two_scales | (third_two_scales << 16)));"
+            )
+            .unwrap();
+            writeln!(
+                &mut kernel,
+                "let even_scales_unpacked = vec4<{dtype}>(unpack4xU8(second_two_scales | (fourth_two_scales << 16)));"
+            )
+            .unwrap();
 
             // Add the sums to the total sum
             let indexed_sum = maybe_vec_storage_index(Q4K_SGEMV_CHUNK_SIZE, "sum", "offset");
@@ -247,14 +246,19 @@ pub(crate) fn q4k_sgemv(
             let shift_right_4 = shift_right_scale(4);
             writeln!(
                 &mut kernel,
-                r#"{indexed_sum} += {dtype}(block_scale) * ((first_sums[0]  + {shift_right_8} * first_sums[1])  * first_half_scales_unpacked[0]  + 
-                                                            (first_sums[2]  + {shift_right_8} * first_sums[3])  * first_half_scales_unpacked[1]  * {shift_right_4} +
-                                                            (second_sums[0] + {shift_right_8} * second_sums[1]) * second_half_scales_unpacked[0] +
-                                                            (second_sums[2] + {shift_right_8} * second_sums[3]) * second_half_scales_unpacked[1] * {shift_right_4}) -
-                                                            {dtype}(block_min) * (vector_sum[0] * first_half_scales_unpacked[2] +
-                                                                                  vector_sum[1] * first_half_scales_unpacked[3] +
-                                                                                  vector_sum[2] * second_half_scales_unpacked[2] +
-                                                                                  vector_sum[3] * second_half_scales_unpacked[3]);"#
+                "let small_shift_sums = vec4(first_sums[0], first_sums[2], second_sums[0], second_sums[2]);"
+            )
+            .unwrap();
+            writeln!(
+                &mut kernel,
+                "let large_shift_sums = vec4(first_sums[1], first_sums[3], second_sums[1], second_sums[3]);"
+            )
+            .unwrap();
+            writeln!(&mut kernel, "let shift_4 = vec4(1, {shift_right_4}, 1, {shift_right_4});").unwrap();
+            writeln!(
+                &mut kernel,
+                r#"{indexed_sum} += {dtype}(block_scale) * dot((small_shift_sums + {shift_right_8} * large_shift_sums) * odd_scales_unpacked, shift_4) -
+                                                            {dtype}(block_min) * dot(vector_sum, even_scales_unpacked);"#
             )
             .unwrap();
         }
