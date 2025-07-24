@@ -1,6 +1,6 @@
-use cfg::{DenseGrammar, Recognizer, RecognizerState};
+use cfg::{DenseGrammar, Recognizer};
 use kalosm_sample::CreateParserState;
-use kalosm_sample::{LiteralParser, ParseStatus, Parser, ParserExt};
+use kalosm_sample::ParseStatus;
 use llm_samplers::prelude::{Logit, Logits};
 use llm_samplers::types::{HasSamplerResources, Sampler, SamplerError};
 use rand::SeedableRng;
@@ -185,33 +185,15 @@ where
                 ..
             } = logits_indexed[i];
 
-            // if let Some(&last) = token_stream.tokens().last() {
-            //     let pair = [last, token_id];
-            //     if llm.merges.contains(&pair) {
-            //         println!(
-            //             "Skipping tokens {:?} and {:?} should have already merged into {:?}",
-            //             tokenizer.id_to_token(last),
-            //             tokenizer.id_to_token(token_id),
-            //             tokenizer.decode(&pair, false)
-            //         );
-            //         continue;
-            //     }
-            // }
-
             let Some(text) = token_cache.get(token_id as usize) else {
                 continue;
             };
             let state_after_push = parser_state.push(token_id);
             let could_become_valid = state_after_push.could_become_valid();
-            trie.push(
-                token_id,
-                prob as f64,
-                current_token,
-                could_become_valid,
-                false,
-            );
+
             if could_become_valid {
                 let result = parser.parse(&extra_parser_state, text.as_bytes());
+                trie.push(token_id, prob as f64, current_token, result.is_ok(), false);
                 if let Ok(result) = result {
                     println!(
                         "Token {:?} with probability {} could become valid",
@@ -239,6 +221,14 @@ where
                         }
                     }
                 }
+            } else {
+                // trie.push(
+                //     token_id,
+                //     prob as f64,
+                //     current_token,
+                //     false,
+                //     false,
+                // );
             }
             parser_state.pop();
         }
@@ -334,7 +324,7 @@ where
         }
 
         unprocessed_token_count = 1;
-        let (_, result, extra_state, _) = state_map
+        let (_, mut result, mut extra_state, _) = state_map
             .get_mut(token_id as usize)
             .unwrap()
             .take()
@@ -351,6 +341,46 @@ where
             strip_required_next = false;
         }
         on_token(token, token_id)?;
+
+        let mut possible_next = result.possible_next_terminals();
+        while possible_next.len() == 1 {
+            let token_id = *possible_next.iter().next().unwrap();
+            let mut token = token_stream
+                .next_token(token_id)
+                .map_err(LlamaModelError::TokenOutputStreamError)?
+                .unwrap();
+            unprocessed_token_count += 1;
+            // If we are still loading the initial prompt, don't send that part of the text
+            if strip_required_next {
+                if let Some(stripped) = token.strip_prefix(&remaining_prompt_text) {
+                    token = stripped.to_string();
+                }
+                strip_required_next = false;
+            }
+            println!("skipping forward with token: {}", token);
+            on_token(token, token_id)?;
+            result.push(token_id);
+            possible_next = result.possible_next_terminals();
+            let as_str = tokenizer
+                .decode(&[token_id], false)
+                .map_err(LlamaModelError::Tokenizer)?;
+            let (new_state, _) = extra_state.unwrap_incomplete();
+            let result = parser.parse(&new_state, as_str.as_bytes());
+            // add the token to the trie
+            current_token =
+                Some(trie.push(token_id as u32, 1.0, current_token, result.is_ok(), true));
+            match result {
+                Ok(new_state) => extra_state = new_state.without_remaining(),
+                Err(_) => {
+                    return Err(LlamaModelError::SamplerError(Box::new(
+                        std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            format!("No valid next token for {:?}", as_str,),
+                        ),
+                    )))
+                }
+            }
+        }
 
         parser_state = result.clone();
         match extra_state {
@@ -703,7 +733,6 @@ struct EvaluationNode {
 fn cmp_logits(a: &Logit, b: &Logit) -> std::cmp::Ordering {
     f32::total_cmp(&b.logit, &a.logit)
 }
-
 
 struct SamplerResources<'a, 'b, R: rand::Rng> {
     rng: &'a mut R,

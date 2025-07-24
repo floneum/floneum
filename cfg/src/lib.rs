@@ -321,18 +321,6 @@ impl<'bump> Recognizer<'bump> {
             }
         }
 
-        // println!("Chart after pre-processing at position {}", k);
-        // for (i, states) in self.chart.iter().enumerate() {
-        //     println!(
-        //         "{}: {:?}",
-        //         i,
-        //         states
-        //             .iter()
-        //             .map(|&s| self.positions[s as usize].clone())
-        //             .collect::<Vec<_>>()
-        //     );
-        // }
-
         // If we reach here, the input was not recognized
         self.chart.last().map_or(RecognizerState::Invalid, |last| {
             if last.is_empty() {
@@ -376,19 +364,32 @@ impl<'bump> Recognizer<'bump> {
 
         self.chart.push(new_positions);
 
-        // println!("Chart after processing byte {:?} at position {}", byte, k);
-        // for (i, states) in self.chart.iter().enumerate() {
-        //     println!(
-        //         "{}: {:?}",
-        //         i,
-        //         states
-        //             .iter()
-        //             .map(|&s| self.positions[s as usize].clone())
-        //             .collect::<Vec<_>>()
-        //     );
-        // }
-
         self.prep_states()
+    }
+
+    pub fn possible_next_terminals(&self) -> FxHashSet<u32> {
+        let k = self.chart.len() - 1;
+        let mut possible_terminals = FxHashSet::default();
+
+        // Process each state in the current position
+        let mut index = 0;
+        while index < self.chart[k].len() {
+            let current = self.chart[k][index];
+            let Position { rhs, .. } = &self.positions[current as usize];
+            index += 1;
+
+            // If the dot is not at the end of the rule, we can either predict or scan
+            if let [symbol, ..] = rhs {
+                match symbol {
+                    DenseSymbol::Terminal(lit) => {
+                        possible_terminals.insert(*lit);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        possible_terminals
     }
 
     pub fn pop(&mut self) {
