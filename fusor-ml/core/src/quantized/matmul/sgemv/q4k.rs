@@ -55,16 +55,16 @@ pub(crate) fn q4k_sgemv(
     )
     .unwrap();
 
-    writeln!(&mut kernel, "let thread_id = {subgroup_local_index} / 8;").unwrap();
+    writeln!(&mut kernel, "let thread_id = {subgroup_local_index} >> 3;").unwrap();
     writeln!(
         &mut kernel,
-        "let thread_local_id = {subgroup_local_index} % 8;"
+        "let thread_local_id = {subgroup_local_index} & 7;"
     )
     .unwrap();
-    writeln!(&mut kernel, "let half_subgroup_id = thread_local_id / 4;").unwrap();
+    writeln!(&mut kernel, "let half_subgroup_id = thread_local_id >> 2;").unwrap();
     writeln!(
         &mut kernel,
-        "let half_subgroup_local_id = thread_local_id % 4;"
+        "let half_subgroup_local_id = thread_local_id & 3;"
     )
     .unwrap();
 
@@ -96,20 +96,18 @@ pub(crate) fn q4k_sgemv(
         writeln!(&mut kernel, "var vector_sum = vec4<{dtype}>();").unwrap();
 
         // First load the values of a into the cache
-        writeln!(&mut kernel, "for (var j = 0u; j < 8; j += 1u) {{").unwrap();
-        {
+        for j in 0..8 {
             writeln!(
                 &mut kernel,
-                "let vec = vec4({input_a}[vector_offset + j + 0], {input_a}[vector_offset + j + 32], {input_a}[vector_offset + j + 128], {input_a}[vector_offset + j + 160]);"
+                "let vec_{j} = vec4({input_a}[vector_offset + {j} + 0], {input_a}[vector_offset + {j} + 32], {input_a}[vector_offset + {j} + 128], {input_a}[vector_offset + {j} + 160]);"
             )
             .unwrap();
-            writeln!(&mut kernel, "vector_sum += vec;").unwrap();
-            writeln!(&mut kernel, "cached_a_low_values[j + 0] = vec.x;").unwrap();
-            writeln!(&mut kernel, "cached_a_low_values[j + 8] = vec.y;").unwrap();
-            writeln!(&mut kernel, "cached_a_high_values[j + 0] = vec.z;").unwrap();
-            writeln!(&mut kernel, "cached_a_high_values[j + 8] = vec.w;").unwrap();
+            writeln!(&mut kernel, "vector_sum += vec_{j};").unwrap();
+            writeln!(&mut kernel, "cached_a_low_values[{j} + 0] = vec_{j}.x;").unwrap();
+            writeln!(&mut kernel, "cached_a_low_values[{j} + 8] = vec_{j}.y;").unwrap();
+            writeln!(&mut kernel, "cached_a_high_values[{j} + 0] = vec_{j}.z;").unwrap();
+            writeln!(&mut kernel, "cached_a_high_values[{j} + 8] = vec_{j}.w;").unwrap();
         }
-        writeln!(&mut kernel, "}}").unwrap();
 
         // Find the block value offsets
         writeln!(&mut kernel, "let scale_offset = half_subgroup_id;").unwrap();
@@ -121,14 +119,8 @@ pub(crate) fn q4k_sgemv(
 
         writeln!(&mut kernel, "var local_block_offset = block_offset + i;").unwrap();
 
-        if Q4K_SGEMV_CHUNK_SIZE > 1 {
-            writeln!(
-                &mut kernel,
-                "for (var offset = 0u; offset < {Q4K_SGEMV_CHUNK_SIZE}; offset += 1u) {{"
-            )
-            .unwrap();
-        }
-        {
+        for offset in 0..Q4K_SGEMV_CHUNK_SIZE {
+            writeln!(&mut kernel, "{{").unwrap();
             // Fetch and unpack the two sets of values from the cache
             writeln!(&mut kernel, "let first_values_offset = data_offset;").unwrap();
             writeln!(&mut kernel, "let second_values_offset = data_offset + 16u;").unwrap();
@@ -138,8 +130,7 @@ pub(crate) fn q4k_sgemv(
             writeln!(&mut kernel, "var second_sums = vec4<{dtype}>();").unwrap();
 
             // Perform the dot product of the values and scales
-            writeln!(&mut kernel, "for (var j = 0u; j < 2u; j += 1u) {{").unwrap();
-            {
+            for j in 0..2 {
                 for (sum, cache, values) in [
                     ("first_sums", "cached_a_low_values", "first_values_offset"),
                     (
@@ -155,33 +146,32 @@ pub(crate) fn q4k_sgemv(
                     // bit shifts.
                     writeln!(
                         &mut kernel,
-                        "let value_u32_{values} = {input_b}[local_block_offset].data[{values} + j];"
+                        "let value_u32_{values}_{j} = {input_b}[local_block_offset].data[{values} + {j}];"
                     )
                     .unwrap();
                     writeln!(
                         &mut kernel,
-                        "let first_four_values_{values} = vec4({cache}[j*4 + 0], {cache}[j*4 + 1], {cache}[j*4 + 2], {cache}[j*4 + 3]);"
+                        "let first_four_values_{values}_{j} = vec4({cache}[{j}*4 + 0], {cache}[{j}*4 + 1], {cache}[{j}*4 + 2], {cache}[{j}*4 + 3]);"
                     )
                     .unwrap();
                     writeln!(
                         &mut kernel,
-                        "let second_four_values_{values} = vec4({cache}[j*4 + 8], {cache}[j*4 + 9], {cache}[j*4 + 10], {cache}[j*4 + 11]);"
+                        "let second_four_values_{values}_{j} = vec4({cache}[{j}*4 + 8], {cache}[{j}*4 + 9], {cache}[{j}*4 + 10], {cache}[{j}*4 + 11]);"
                     )
                     .unwrap();
                     writeln!(
                         &mut kernel,
-                        "{sum} += vec4<{dtype}>(first_four_values_{values}.x * {dtype}(value_u32_{values} & 0x000F), first_four_values_{values}.y * {dtype}(value_u32_{values} & 0x0F00), second_four_values_{values}.x * {dtype}(value_u32_{values} & 0x00F0), second_four_values_{values}.y * {dtype}(value_u32_{values} & 0xF000));"
+                        "{sum} += vec4<{dtype}>(first_four_values_{values}_{j}.x * {dtype}(value_u32_{values}_{j} & 0x000F), first_four_values_{values}_{j}.y * {dtype}(value_u32_{values}_{j} & 0x0F00), second_four_values_{values}_{j}.x * {dtype}(value_u32_{values}_{j} & 0x00F0), second_four_values_{values}_{j}.y * {dtype}(value_u32_{values}_{j} & 0xF000));"
                     )
                     .unwrap();
                     let shift_right_16 = shift_right_scale(16);
                     writeln!(
                         &mut kernel,
-                        "{sum} += vec4<{dtype}>(first_four_values_{values}.z * {dtype}(value_u32_{values} & 0x000F0000), first_four_values_{values}.w * {dtype}(value_u32_{values} & 0x0F000000), second_four_values_{values}.z * {dtype}(value_u32_{values} & 0x00F00000), second_four_values_{values}.w * {dtype}(value_u32_{values} & 0xF0000000)) * {shift_right_16};"
+                        "{sum} += vec4<{dtype}>(first_four_values_{values}_{j}.z * {dtype}(value_u32_{values}_{j} & 0x000F0000), first_four_values_{values}_{j}.w * {dtype}(value_u32_{values}_{j} & 0x0F000000), second_four_values_{values}_{j}.z * {dtype}(value_u32_{values}_{j} & 0x00F00000), second_four_values_{values}_{j}.w * {dtype}(value_u32_{values}_{j} & 0xF0000000)) * {shift_right_16};"
                     )
                     .unwrap();
                 }
             }
-            writeln!(&mut kernel, "}}").unwrap();
 
             // Load the block scale and min
             writeln!(
@@ -237,7 +227,7 @@ pub(crate) fn q4k_sgemv(
             .unwrap();
 
             // Add the sums to the total sum
-            let indexed_sum = maybe_vec_storage_index(Q4K_SGEMV_CHUNK_SIZE, "sum", "offset");
+            let indexed_sum = maybe_vec_storage_index(Q4K_SGEMV_CHUNK_SIZE, "sum", offset);
             // *_sums[0] needs to be shifted by 0 bits
             // *_sums[1] needs to be shifted by 8 bits
             // *_sums[2] needs to be shifted by 4 bits
@@ -254,18 +244,19 @@ pub(crate) fn q4k_sgemv(
                 "let large_shift_sums = vec4(first_sums[1], first_sums[3], second_sums[1], second_sums[3]);"
             )
             .unwrap();
-            writeln!(&mut kernel, "let shift_4 = vec4(1, {shift_right_4}, 1, {shift_right_4});").unwrap();
+            writeln!(
+                &mut kernel,
+                "let shift_4 = vec4(1, {shift_right_4}, 1, {shift_right_4});"
+            )
+            .unwrap();
             writeln!(
                 &mut kernel,
                 r#"{indexed_sum} += {dtype}(block_scale) * dot((small_shift_sums + {shift_right_8} * large_shift_sums) * odd_scales_unpacked, shift_4) -
                                                             {dtype}(block_min) * dot(vector_sum, even_scales_unpacked);"#
             )
             .unwrap();
-        }
-        if Q4K_SGEMV_CHUNK_SIZE > 1 {
             // Move forward the block offset by one row
             writeln!(&mut kernel, "local_block_offset += k_block_size;").unwrap();
-
             writeln!(&mut kernel, "}}").unwrap();
         }
 
@@ -282,29 +273,17 @@ pub(crate) fn q4k_sgemv(
     )
     .unwrap();
 
-    if Q4K_SGEMV_CHUNK_SIZE > 1 {
-        writeln!(
-            &mut kernel,
-            "for (var offset = 0u; offset < {Q4K_SGEMV_CHUNK_SIZE}; offset += 1u) {{"
-        )
-        .unwrap();
-    }
-    // If this is not the first simd thread in the workgroup, we can return early
-    writeln!(&mut kernel, "if {subgroup_local_index} == 0u {{").unwrap();
-    {
-        // Write the output to the output tensor if this is the first thread in the workgroup
-        write!(&mut kernel, "{output}[").unwrap();
-        let index = if Q4K_SGEMV_CHUNK_SIZE > 1 {
-            "row + offset".to_string()
-        } else {
-            "row".to_string()
-        };
-        output.strided_index(&mut kernel, ["0".to_string(), index]);
-        let indexed = maybe_vec_storage_index(Q4K_SGEMV_CHUNK_SIZE, "sum", "offset");
-        writeln!(&mut kernel, "] = {indexed};").unwrap();
-    }
-    writeln!(&mut kernel, "}}").unwrap();
-    if Q4K_SGEMV_CHUNK_SIZE > 1 {
+    for offset in 0..Q4K_SGEMV_CHUNK_SIZE {
+        // If this is not the first simd thread in the workgroup, we can return early
+        writeln!(&mut kernel, "if {subgroup_local_index} == 0u {{").unwrap();
+        {
+            // Write the output to the output tensor if this is the first thread in the workgroup
+            write!(&mut kernel, "{output}[").unwrap();
+            let index = format!("row + {offset}");
+            output.strided_index(&mut kernel, ["0".to_string(), index]);
+            let indexed = maybe_vec_storage_index(Q4K_SGEMV_CHUNK_SIZE, "sum", offset);
+            writeln!(&mut kernel, "] = {indexed};").unwrap();
+        }
         writeln!(&mut kernel, "}}").unwrap();
     }
 
