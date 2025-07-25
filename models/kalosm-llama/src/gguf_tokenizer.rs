@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use ahash::AHashMap;
 use tokenizers::{
     decoders::byte_level::ByteLevel,
     models::bpe::BpeBuilder,
@@ -156,7 +157,7 @@ impl GGUFPreTokenizerConfig {
             .collect();
         let bos_token = vocab[bos];
         let bpe_tokenizer = BpeBuilder::new()
-            .vocab_and_merges(vocab, merges)
+            .vocab_and_merges(vocab.into_iter().collect::<AHashMap<_, _>>(), merges)
             .ignore_merges(self.ignore_merges)
             .build()?;
 

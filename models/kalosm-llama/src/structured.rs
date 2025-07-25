@@ -96,7 +96,7 @@ pub(crate) fn generate_structured<P: Parser>(
     let mut rng = if let Some(seed) = seed {
         rand::rngs::StdRng::seed_from_u64(seed)
     } else {
-        rand::rngs::StdRng::from_entropy()
+        rand::rngs::StdRng::from_os_rng()
     };
     let mut state_map = vec![];
     let mut logits_indexed = Vec::new();
