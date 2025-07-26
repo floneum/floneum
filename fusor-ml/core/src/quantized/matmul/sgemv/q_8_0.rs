@@ -90,46 +90,38 @@ pub(crate) fn q_8_0_sgemv(
     .unwrap();
     {
         // First load the values of a into cached_a_values
-        writeln!(&mut kernel, "for (var j = 0u; j < {STEP_SIZE}; j += 1u) {{").unwrap();
-        {
-            writeln!(&mut kernel, "cached_a_values[j] = {input_a}[y_offset + j];").unwrap();
-        }
-        writeln!(&mut kernel, "}}").unwrap();
+        for j in 0..STEP_SIZE {
+            writeln!(&mut kernel, "{{").unwrap();
 
-        writeln!(&mut kernel, "var block_offset = row_block_offset + i;").unwrap();
-        if Q_8_0_SGEMV_CHUNK_SIZE > 1 {
             writeln!(
                 &mut kernel,
-                "for (var offset = 0u; offset < {Q_8_0_SGEMV_CHUNK_SIZE}u; offset += 1u) {{"
+                "cached_a_values[{j}] = {input_a}[y_offset + {j}];"
             )
             .unwrap();
-        }
-        {
-            writeln!(&mut kernel, "var local_sum = {dtype}();").unwrap();
-            writeln!(
-                &mut kernel,
-                "for (var data_offset = 0u; data_offset < {STEP_SIZE}u/4u; data_offset += 1u) {{"
-            )
-            .unwrap();
-            {
-                writeln!(&mut kernel, "let block = vec4<{dtype}>(unpack4xI8({input_b}[block_offset].data[thread_local_id * 2u + data_offset]));").unwrap();
-                for i in 0..4 {
-                    writeln!(
-                        &mut kernel,
-                        "local_sum += block[{i}] * cached_a_values[data_offset * 4u + {i}];"
-                    )
-                    .unwrap();
-                }
-            }
+
             writeln!(&mut kernel, "}}").unwrap();
-            let indexed = maybe_vec_storage_index(Q_8_0_SGEMV_CHUNK_SIZE, "sum", "offset");
+        }
+        writeln!(&mut kernel, "var block_offset = row_block_offset + i;").unwrap();
+        for offset in 0..Q_8_0_SGEMV_CHUNK_SIZE {
+            writeln!(&mut kernel, "{{").unwrap();
+
+            writeln!(&mut kernel, "var local_sum = {dtype}();").unwrap();
+            for data_offset in 0..(STEP_SIZE / 4) {
+                writeln!(&mut kernel, "{{").unwrap();
+
+                writeln!(&mut kernel, "let block = vec4<{dtype}>(unpack4xI8({input_b}[block_offset].data[thread_local_id * 2u + {data_offset}]));").unwrap();
+                writeln!(&mut kernel, "let float_block = vec4<{dtype}>(cached_a_values[{data_offset} * 4u + 0], cached_a_values[{data_offset} * 4u + 1], cached_a_values[{data_offset} * 4u + 2], cached_a_values[{data_offset} * 4u + 3]);").unwrap();
+                writeln!(&mut kernel, "local_sum += dot(block, float_block);").unwrap();
+
+                writeln!(&mut kernel, "}}").unwrap();
+            }
+            let indexed = maybe_vec_storage_index(Q_8_0_SGEMV_CHUNK_SIZE, "sum", offset);
             writeln!(
                 &mut kernel,
                 "{indexed} += local_sum * {dtype}({input_b}[block_offset].scale);"
             )
             .unwrap();
-        }
-        if Q_8_0_SGEMV_CHUNK_SIZE > 1 {
+
             writeln!(&mut kernel, "block_offset += k_block_size;").unwrap();
             writeln!(&mut kernel, "}}").unwrap();
         }
@@ -150,33 +142,22 @@ pub(crate) fn q_8_0_sgemv(
     )
     .unwrap();
 
-    if Q_8_0_SGEMV_CHUNK_SIZE > 1 {
-        writeln!(
-            &mut kernel,
-            "for (var offset = 0u; offset < {Q_8_0_SGEMV_CHUNK_SIZE}; offset += 1u) {{"
-        )
-        .unwrap();
-    }
-    {
+    for offset in 0..Q_8_0_SGEMV_CHUNK_SIZE {
+        writeln!(&mut kernel, "{{").unwrap();
+
         // If this is not the first simd thread in the workgroup, we can return early
         writeln!(&mut kernel, "if {subgroup_local_index} == 0u {{").unwrap();
         {
             // Write the output to the output tensor if this is the first thread in the workgroup
             write!(&mut kernel, "{output}[").unwrap();
-            let index = if Q_8_0_SGEMV_CHUNK_SIZE > 1 {
-                "row + offset".to_string()
-            } else {
-                "row".to_string()
-            };
+            let index = format!("row + {offset}");
             output.strided_index(&mut kernel, ["0".to_string(), index]);
-            let indexed = maybe_vec_storage_index(Q_8_0_SGEMV_CHUNK_SIZE, "sum", "offset");
+            let indexed = maybe_vec_storage_index(Q_8_0_SGEMV_CHUNK_SIZE, "sum", offset);
             writeln!(&mut kernel, "] = {indexed};").unwrap();
         }
         writeln!(&mut kernel, "}}").unwrap();
-    }
-    if Q_8_0_SGEMV_CHUNK_SIZE > 1 {
+
         writeln!(&mut kernel, "}}").unwrap();
     }
-
     generic_kernel.push_body(&kernel);
 }

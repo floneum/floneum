@@ -76,14 +76,13 @@ fn qmatmul(c: &mut Criterion) {
                         let device = device.clone();
                         let random_data = random_data.clone();
                         b.to_async(FuturesExecutor).iter_custom(async |iters| {
+                            let tensor = Tensor::new(&device, &random_data);
+                            tensor.materialize().await;
                             let mut sum = Duration::ZERO;
                             while sum.is_zero() {
                                 for _ in 0..iters {
-                                    let tensor = Tensor::new(&device, &random_data);
-                                    _ = tensor.as_slice().await.unwrap();
-
-                                    let new = tensor.q_mat_mul(&q_matrix);
                                     let start = std::time::Instant::now();
+                                    let new = tensor.q_mat_mul(&q_matrix);
                                     new.materialize().await;
                                     sum += start.elapsed();
                                 }
