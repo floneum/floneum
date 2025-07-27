@@ -474,41 +474,15 @@ impl Operation for QMatMulOperation {
         &self,
         device: &Device,
     ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
-        let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::default();
         if self.sgemv() {
-            let limits = device.wgpu_device().limits();
-            if self.matrix.datatype == GgmlType::Q6K
-                || self.matrix.datatype == GgmlType::Q4K
-                || self.matrix.datatype == GgmlType::Q4_0
-                || self.matrix.datatype == GgmlType::Q5_0
-                || self.matrix.datatype == GgmlType::Q8_0
-            {
-                constraints.add_constraint(
-                    0,
-                    crate::mir::workgroup_shape::Constraint::equals(
-                        limits.min_subgroup_size.max(64),
-                    ),
-                );
-            } else {
-                constraints.add_constraint(
-                    0,
-                    crate::mir::workgroup_shape::Constraint::less_than(
-                        limits.max_compute_workgroup_size_x + 1,
-                    ),
-                );
-                constraints.add_constraint(
-                    0,
-                    crate::mir::workgroup_shape::Constraint::equals(
-                        limits.min_subgroup_size.max(16),
-                    ),
-                );
-            }
+            return sgemv::workgroup_shape_constraints(&self.matrix, device);
         } else {
+            let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::default();
             constraints.add_constraint(0, crate::mir::workgroup_shape::Constraint::Equals(1));
+            constraints.add_constraint(1, crate::mir::workgroup_shape::Constraint::Equals(1));
+            constraints.add_constraint(2, crate::mir::workgroup_shape::Constraint::Equals(1));
+            constraints
         }
-        constraints.add_constraint(1, crate::mir::workgroup_shape::Constraint::Equals(1));
-        constraints.add_constraint(2, crate::mir::workgroup_shape::Constraint::Equals(1));
-        constraints
     }
 
     fn dispatch_size(
@@ -519,19 +493,7 @@ impl Operation for QMatMulOperation {
         let n = self.n_size();
         let m = self.m_size();
         if self.sgemv() {
-            if self.matrix.datatype == GgmlType::Q6K {
-                return [(n as u32).div_ceil(Q6K_SGEMV_CHUNK_SIZE * 2), 1, 1];
-            }
-            if self.matrix.datatype == GgmlType::Q4K {
-                return [(n as u32).div_ceil(Q4K_SGEMV_CHUNK_SIZE * 2), 1, 1];
-            }
-            if matches!(self.matrix.datatype, GgmlType::Q4_0 | GgmlType::Q5_0) {
-                return [(n as u32).div_ceil(Q_N_SGEMV_CHUNK_SIZE * 2), 1, 1];
-            }
-            if matches!(self.matrix.datatype, GgmlType::Q8_0) {
-                return [(n as u32).div_ceil(Q_8_0_SGEMV_CHUNK_SIZE * 2), 1, 1];
-            }
-            [(n as u32).div_ceil(SGEMV_CHUNK_SIZE), 1, 1]
+            sgemv::dispatch_size(&self.matrix, n, m)
         } else {
             [
                 (n as u32).div_ceil(workgroup_shape.x()),

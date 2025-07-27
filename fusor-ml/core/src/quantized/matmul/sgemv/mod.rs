@@ -1,20 +1,23 @@
 use fusor_gguf::GgmlType;
 
 use crate::{
-    DataTypeEnum,
     mir::{
         globals::{ArrayType, KernelGlobalType, VectorType},
         inputs::{QMatrixInput, TensorInput},
         kernel::GenericKernel,
         workgroup_shape::WorkgroupShape,
-    },
-    quantized::matmul::{
-        QMatMulOperation,
+    }, quantized::matmul::{
         sgemv::{
-            general::general_sgemv, q_8_0::q_8_0_sgemv, q_n::q_n_sgemv, q4k::q4k_sgemv,
-            q6k::q6k_sgemv,
+            general::general_sgemv, q4k::q4k_sgemv, q6k::q6k_sgemv, q_8_0::q_8_0_sgemv, q_n::q_n_sgemv
+        }, QMatMulOperation
+    }, DataTypeEnum, Device
+};
+use crate::{
+    quantized::matmul::{
+        sgemv::{
+            q4k::Q4K_SGEMV_CHUNK_SIZE, q6k::Q6K_SGEMV_CHUNK_SIZE, q_8_0::Q_8_0_SGEMV_CHUNK_SIZE, q_n::Q_N_SGEMV_CHUNK_SIZE, 
         },
-    },
+    }, QMatrix,
 };
 use std::fmt::Display;
 
@@ -133,4 +136,58 @@ pub(crate) fn sgemv(
             k_size,
         ),
     }
+}
+
+
+
+
+pub(crate) fn dispatch_size(matrix: &QMatrix, n: u32, _m: u32) -> [u32; 3] {
+    if matrix.datatype == GgmlType::Q6K {
+        return [(n as u32).div_ceil(Q6K_SGEMV_CHUNK_SIZE * 2), 1, 1];
+    }
+    if matrix.datatype == GgmlType::Q4K {
+        return [(n as u32).div_ceil(Q4K_SGEMV_CHUNK_SIZE * 2), 1, 1];
+    }
+    if matches!(matrix.datatype, GgmlType::Q4_0 | GgmlType::Q5_0) {
+        return [(n as u32).div_ceil(Q_N_SGEMV_CHUNK_SIZE * 2), 1, 1];
+    }
+    if matches!(matrix.datatype, GgmlType::Q8_0) {
+        return [(n as u32).div_ceil(Q_8_0_SGEMV_CHUNK_SIZE * 2), 1, 1];
+    }
+    [(n as u32).div_ceil(SGEMV_CHUNK_SIZE * 2), 1, 1]
+}
+
+
+
+pub(crate)fn workgroup_shape_constraints(
+    matrix: &QMatrix,
+    device: &Device,
+) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
+    let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::default();
+    let limits = device.wgpu_device().limits();
+    if matrix.datatype == GgmlType::Q6K
+        || matrix.datatype == GgmlType::Q4K
+        || matrix.datatype == GgmlType::Q4_0
+        || matrix.datatype == GgmlType::Q5_0
+        || matrix.datatype == GgmlType::Q8_0
+    {
+        constraints.add_constraint(
+            0,
+            crate::mir::workgroup_shape::Constraint::equals(limits.min_subgroup_size.max(64)),
+        );
+    } else {
+        constraints.add_constraint(
+            0,
+            crate::mir::workgroup_shape::Constraint::less_than(
+                limits.max_compute_workgroup_size_x + 1,
+            ),
+        );
+        constraints.add_constraint(
+            0,
+            crate::mir::workgroup_shape::Constraint::equals(limits.min_subgroup_size.max(16)),
+        );
+    }
+    constraints.add_constraint(1, crate::mir::workgroup_shape::Constraint::Equals(1));
+    constraints.add_constraint(2, crate::mir::workgroup_shape::Constraint::Equals(1));
+    constraints
 }
