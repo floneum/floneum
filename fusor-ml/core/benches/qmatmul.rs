@@ -53,10 +53,10 @@ fn qmatmul(c: &mut Criterion) {
                 let mut reader = std::io::Cursor::new(&bytes);
                 let metadata = GgufMetadata::read(&mut reader).unwrap();
                 let q_matrix_metadata = metadata.tensor_infos.get(name).unwrap();
-                println!("Q matrix metadata: {:?}", q_matrix_metadata);
+                println!("Q matrix metadata: {q_matrix_metadata:?}");
                 let quantization = q_matrix_metadata.ty;
 
-                let mut group = c.benchmark_group(&format!("qmatmul-wgpu-{width}-{quantization}"));
+                let mut group = c.benchmark_group(format!("qmatmul-wgpu-{width}-{quantization}"));
 
                 let device = block_on(Device::new()).unwrap();
 
@@ -125,6 +125,7 @@ fn qmatmul(c: &mut Criterion) {
     }
 }
 
+#[allow(clippy::to_many_arguments)]
 fn bench_candle_with_device(
     bytes: &[u8],
     size: usize,

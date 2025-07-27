@@ -483,7 +483,7 @@ async fn test_matmul_fused() {
     let tensor_b = Tensor::new(&device, &data_b);
     let tensor = tensor_a.mat_mul(&tensor_b) / 4.;
     let as_slice = tensor.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
 
     assert_eq!(as_slice[[0, 0]], 1. / 2.);
     assert_eq!(as_slice[[0, 1]], 2. / 2.);
@@ -502,7 +502,7 @@ async fn test_transposed_matmul() {
     let tensor_b = Tensor::new(&device, &data_b).t();
     let tensor = tensor_a.mat_mul(&tensor_b);
     let as_slice = tensor.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
 
     assert_eq!(as_slice[[0, 0]], 7.);
 }
@@ -518,7 +518,7 @@ async fn test_batched_matmul() {
     let tensor_b = Tensor::new(&device, &data_b);
     let tensor = tensor_a.mat_mul(&tensor_b);
     let as_slice = tensor.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
 
     assert_eq!(as_slice[[0, 0, 0]], 1.);
     assert_eq!(as_slice[[0, 0, 1]], 2.);
@@ -605,8 +605,7 @@ async fn fuzz_matmul() {
                         dot[[i, j]]
                     );
                     panic!(
-                        "fuzz failed with size ({}x{})*({}x{})",
-                        size1, size2, size2, size3
+                        "fuzz failed with size ({size1}x{size2})*({size2}x{size3})"
                     );
                 }
             }
@@ -693,8 +692,7 @@ async fn fuzz_batched_matmul() {
                             dot[batch][[i, j]]
                         );
                         panic!(
-                            "fuzz failed with size ({}x{})*({}x{})",
-                            size1, size2, size2, size3
+                            "fuzz failed with size ({size1}x{size2})*({size2}x{size3})"
                         );
                     }
                 }

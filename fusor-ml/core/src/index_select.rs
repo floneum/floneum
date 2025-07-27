@@ -287,7 +287,6 @@ impl Operation for IndexSelectOperation {
         _: &crate::compute_graph::ComputeGraphInner,
         inputs: &[crate::mir::inputs::MirValue],
     ) -> crate::mir::inputs::MirValue {
-        
         inputs[2].clone()
     }
 
@@ -329,7 +328,7 @@ async fn test_index_select_dim_0() {
     let indexes = Tensor::new(&device, &[1, 0]);
     let tensor = tensor.index_select(0, &indexes);
     let as_slice = tensor.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
     let expected_data = [[4., 5., 6.], [1., 2., 3.]];
     let expected_tensor = Tensor::new(&device, &expected_data);
     let expected_as_slice = expected_tensor.as_slice().await.unwrap();
@@ -355,7 +354,7 @@ async fn test_index_select_large_dim_0() {
     let indexes = Tensor::new(&device, &indexes_array);
     let tensor = tensor.index_select(0, &indexes);
     let as_slice = tensor.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
     let expected_data: [[f32; SIZE_1]; SIZE_0] = std::array::from_fn(|i| {
         let index = indexes_array[i];
         data[index as usize]
@@ -377,7 +376,7 @@ async fn test_index_select_dim_1() {
     let indexes = Tensor::new(&device, &[1, 2, 0]);
     let tensor = tensor.index_select(1, &indexes);
     let as_slice = tensor.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
     let expected_data = [[2., 3., 1.], [5., 6., 4.]];
     let expected_tensor = Tensor::new(&device, &expected_data);
     let expected_as_slice = expected_tensor.as_slice().await.unwrap();
@@ -403,7 +402,7 @@ async fn test_index_select_large_dim_1() {
     let indexes = Tensor::new(&device, &indexes_array);
     let tensor = tensor.index_select(1, &indexes);
     let as_slice = tensor.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
     let expected_data: [[f32; SIZE_1]; SIZE_0] = std::array::from_fn(|i| {
         std::array::from_fn(|j| {
             let index = indexes_array[j];
@@ -427,7 +426,7 @@ async fn test_index_select_fused() {
     let indexes = Tensor::new(&device, &[1, 0]);
     let tensor = (tensor * 3.).index_select(1, &(indexes * 2u32)) * 2.0;
     let as_slice = tensor.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
     let expected_data = [[3. * 3. * 2., 1. * 3. * 2.], [6. * 3. * 2., 4. * 3. * 2.]];
     let expected_tensor = Tensor::new(&device, &expected_data);
     let expected_as_slice = expected_tensor.as_slice().await.unwrap();

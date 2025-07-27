@@ -383,7 +383,7 @@ impl Operation for ReduceOperation {
     ) -> [u32; 3] {
         let output_tensor: TensorData = inputs[1].as_tensor().unwrap().clone();
         let workgroup_size = output_tensor.layout().shape().iter().product::<usize>() as u32;
-        
+
         [workgroup_size, 1, 1]
     }
 
@@ -578,15 +578,14 @@ async fn test_reduce_sum_large() {
     let output = tensor.sum(0);
 
     let output = output.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
 
     let expected: f32 = data.iter().sum();
-    println!("Expected sum: {}", expected);
+    println!("Expected sum: {expected}");
 
     assert!(
         (output[[]] - expected).abs() < 1e-3,
-        "Expected sum to be close to {}",
-        expected
+        "Expected sum to be close to {expected}"
     );
 }
 

@@ -1,4 +1,3 @@
-
 use crate::{
     Device, QMatrix,
     mir::{
@@ -6,10 +5,7 @@ use crate::{
         kernel::GenericKernel,
         workgroup_shape::WorkgroupShape,
     },
-    quantized::matmul::{
-        QMatMulOperation,
-        sgemm::general::general_sgemm,
-    },
+    quantized::matmul::{QMatMulOperation, sgemm::general::general_sgemm},
 };
 
 mod general;

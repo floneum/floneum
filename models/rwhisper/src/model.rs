@@ -4,7 +4,10 @@ use candle_transformers::models::whisper::{self as m, audio, Config};
 use flate2::{write::ZlibEncoder, Compression};
 use futures_channel::mpsc::UnboundedSender;
 use kalosm_common::{accelerated_device_if_available, CacheError, TensorCache};
-use rand::{ distr::{weighted::WeightedIndex, Distribution}, SeedableRng};
+use rand::{
+    distr::{weighted::WeightedIndex, Distribution},
+    SeedableRng,
+};
 use std::{
     io::Write,
     num::NonZeroUsize,

@@ -326,8 +326,8 @@ async fn test_add_const() {
     ];
     let result = Tensor::new(&device, &result);
     let result = result.as_slice().await.unwrap();
-    println!("{:?}", output);
-    println!("{:?}", result);
+    println!("{output:?}");
+    println!("{result:?}");
     assert_eq!(output, result);
 
     let data = [[1., 2.], [3., 4.], [5., 6.]];
@@ -336,7 +336,7 @@ async fn test_add_const() {
     let tensor = tensor + 1.0;
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0, 0]], 2.);
     assert_eq!(output[[0, 1]], 3.);
     assert_eq!(output[[1, 0]], 4.);
@@ -376,7 +376,7 @@ async fn test_add_const_4_dim() {
     let tensor = tensor + 1.0;
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     let result = [
         [
             [[2.0, 3.0], [2.0, 3.0]],
@@ -529,7 +529,7 @@ async fn test_add_const_large() {
     let tensor = tensor + 1.0;
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     for i in 0..BUF_SIZE {
         assert_eq!(output[[i]], 11.0);
     }
@@ -805,7 +805,7 @@ async fn test_mod_const() {
     let tensor = tensor % 2;
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0, 0]], 1);
     assert_eq!(output[[0, 1]], 0);
     assert_eq!(output[[1, 0]], 1);
@@ -849,7 +849,7 @@ async fn test_mod_const_reversed() {
     let tensor = 6 % tensor;
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0, 0]], 6 % data[0][0]);
     assert_eq!(output[[0, 1]], 6 % data[0][1]);
     assert_eq!(output[[1, 0]], 6 % data[1][0]);
@@ -886,7 +886,7 @@ async fn test_eq_const() {
     let tensor: Tensor<2, f32> = tensor.eq(1.0);
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0, 0]], 1.);
     assert_eq!(output[[0, 1]], 0.);
     assert_eq!(output[[1, 0]], 0.);
@@ -906,7 +906,7 @@ async fn test_eq_const_cast() {
     let tensor: Tensor<2, u32> = tensor.eq(1.0);
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0, 0]], 1);
     assert_eq!(output[[0, 1]], 0);
     assert_eq!(output[[1, 0]], 0);

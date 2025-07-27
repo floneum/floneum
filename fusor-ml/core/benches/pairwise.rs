@@ -198,7 +198,7 @@ fn bench_candle_with_device(candle_device: candle_core::Device, name: &str, c: &
         }
     }
     {
-        let random_data: Vec<f32> = (0..9 * 11 * 32 * 1).map(|_| 1.).collect();
+        let random_data: Vec<f32> = (0..9 * 11 * 32).map(|_| 1.).collect();
         c.bench_function(&format!("{name}-9x11x32x1"), move |b| {
             b.to_async(FuturesExecutor).iter_batched(
                 || {

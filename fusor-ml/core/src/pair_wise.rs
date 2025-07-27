@@ -382,7 +382,7 @@ async fn test_pair_wise_add_u32() {
 
     let tensor = &tensor_a + &tensor_b;
     let as_slice = tensor.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
 
     assert_eq!(as_slice[[0, 0]], 1 + 1);
     assert_eq!(as_slice[[0, 1]], 2 + 2);

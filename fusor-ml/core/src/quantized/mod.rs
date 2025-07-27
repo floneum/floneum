@@ -1496,7 +1496,7 @@ where
         .unwrap();
         writeln!(&mut kernel, "@compute @workgroup_size(1, 1, 1)").unwrap();
         writeln!(&mut kernel, "fn main() {{").unwrap();
-        writeln!(&mut kernel, "{}", kernel_body).unwrap();
+        writeln!(&mut kernel, "{kernel_body}").unwrap();
         writeln!(&mut kernel, "}}").unwrap();
         let bind_group_layout =
             device

@@ -402,7 +402,7 @@ impl Operation for SoftmaxOperation {
     ) -> [u32; 3] {
         let trimmed_tensor: TensorData = inputs[0].as_tensor().unwrap().clone();
         let workgroup_size = trimmed_tensor.layout().shape().iter().product::<usize>() as u32;
-        
+
         [workgroup_size, 1, 1]
     }
 
@@ -492,12 +492,12 @@ async fn test_softmax_slow() {
     let sum = exp.iter().sum::<f32>();
     let softmax_array: [f32; 6] = std::array::from_fn(|i| exp[i] / sum);
 
-    println!("{:?}", softmax_array);
+    println!("{softmax_array:?}");
 
     let tensor = Tensor::new(&device, &data);
     let tensor = tensor.softmax_slow(0);
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert!((output[[0]] - softmax_array[0]).abs() < 0.001);
     assert!((output[[1]] - softmax_array[1]).abs() < 0.001);
     assert!((output[[2]] - softmax_array[2]).abs() < 0.001);
@@ -520,13 +520,13 @@ async fn test_softmax() {
     let sum = exp.iter().sum::<f32>();
     let softmax_array: [f32; 6] = std::array::from_fn(|i| exp[i] / sum);
 
-    println!("{:?}", softmax_array);
+    println!("{softmax_array:?}");
 
     let tensor = Tensor::new(&device, &data);
     let tensor = tensor.softmax(0);
     let output = tensor.as_slice().await.unwrap();
-    println!("output: {:?}", output);
-    println!("expect: {:?}", softmax_array);
+    println!("output: {output:?}");
+    println!("expect: {softmax_array:?}");
     assert!((output[[0]] - softmax_array[0]).abs() < 0.001);
     assert!((output[[1]] - softmax_array[1]).abs() < 0.001);
     assert!((output[[2]] - softmax_array[2]).abs() < 0.001);
@@ -549,18 +549,17 @@ async fn test_softmax_large() {
     let sum = exp.iter().sum::<f32>();
     let softmax_array: [f32; 1024] = std::array::from_fn(|i| exp[i] / sum);
 
-    println!("{:?}", softmax_array);
+    println!("{softmax_array:?}");
 
     let tensor = Tensor::new(&device, &data);
     let tensor = tensor.softmax(0);
     let output = tensor.as_slice().await.unwrap();
-    println!("output: {:?}", output);
-    println!("expect: {:?}", softmax_array);
+    println!("output: {output:?}");
+    println!("expect: {softmax_array:?}");
     for i in 0..1024 {
         assert!(
             (output[[i]] - softmax_array[i]).abs() < 0.001,
-            "Mismatch at index {}",
-            i
+            "Mismatch at index {i}"
         );
     }
 }

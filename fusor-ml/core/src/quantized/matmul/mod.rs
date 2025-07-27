@@ -1,4 +1,3 @@
-
 use crate::{
     DataType, DataTypeEnum, Device, Tensor, TensorData,
     compute_graph::AnyComputeKey,
@@ -156,9 +155,9 @@ async fn test_fuzz_q_mat_mul() {
                 let expected = candle_result[x][y];
                 let actual = result[[x, y]];
                 if (expected - actual).abs() > 3. {
-                    println!("Expected: {:?}", candle_result);
-                    println!("Actual: {:?}", result);
-                    panic!("expected: {}, actual: {}", expected, actual);
+                    println!("Expected: {candle_result:?}");
+                    println!("Actual: {result:?}");
+                    panic!("expected: {expected}, actual: {actual}");
                 }
             }
         }
@@ -203,9 +202,9 @@ async fn test_fuzz_q_mat_mul_sgemv() {
                 let expected = candle_result[x][y];
                 let actual = result[[x, y]];
                 if (expected - actual).abs() > 3. {
-                    println!("Expected: {:?}", candle_result);
-                    println!("Actual: {:?}", result);
-                    panic!("expected: {}, actual: {}", expected, actual);
+                    println!("Expected: {candle_result:?}");
+                    println!("Actual: {result:?}");
+                    panic!("expected: {expected}, actual: {actual}");
                 }
             }
         }
@@ -253,9 +252,9 @@ async fn test_fuzz_q_mat_mul_q8_0() {
                 let expected = candle_result[x][y];
                 let actual = result[[x, y]];
                 if (expected - actual).abs() > 3. {
-                    println!("Expected: {:?}", candle_result);
-                    println!("Actual: {:?}", result);
-                    panic!("expected: {}, actual: {}", expected, actual);
+                    println!("Expected: {candle_result:?}");
+                    println!("Actual: {result:?}");
+                    panic!("expected: {expected}, actual: {actual}");
                 }
             }
         }
@@ -300,9 +299,9 @@ async fn test_fuzz_q_mat_mul_q5_0_gemv() {
                 let expected = candle_result[x][y];
                 let actual = result[[x, y]];
                 if (expected - actual).abs() > 3. {
-                    println!("Expected: {:?}", candle_result);
-                    println!("Actual: {:?}", result);
-                    panic!("expected: {}, actual: {}", expected, actual);
+                    println!("Expected: {candle_result:?}");
+                    println!("Actual: {result:?}");
+                    panic!("expected: {expected}, actual: {actual}");
                 }
             }
         }
@@ -353,9 +352,9 @@ async fn test_fuzz_q_mat_mul_q4_0_gemv() {
                 let expected = candle_result[x][y];
                 let actual = result[[x, y]];
                 if (expected - actual).abs() > 3. {
-                    println!("Expected: {:?}", candle_result);
-                    println!("Actual: {:?}", result);
-                    panic!("expected: {}, actual: {}", expected, actual);
+                    println!("Expected: {candle_result:?}");
+                    println!("Actual: {result:?}");
+                    panic!("expected: {expected}, actual: {actual}");
                 }
             }
         }
@@ -403,10 +402,10 @@ async fn test_fuzz_q_mat_mul_q6k() {
                 let expected = candle_result[x][y];
                 let actual = result[[x, y]];
                 if (expected - actual).abs() > 3. {
-                    println!("width: {}", width);
-                    println!("Expected: {:?}", candle_result);
-                    println!("Actual: {:?}", result);
-                    panic!("expected: {}, actual: {}", expected, actual);
+                    println!("width: {width}");
+                    println!("Expected: {candle_result:?}");
+                    println!("Actual: {result:?}");
+                    panic!("expected: {expected}, actual: {actual}");
                 }
             }
         }
@@ -454,10 +453,10 @@ async fn test_fuzz_q_mat_mul_q4k() {
                 let expected = candle_result[x][y];
                 let actual = result[[x, y]];
                 if (expected - actual).abs() > 3. {
-                    println!("width: {}", width);
-                    println!("Expected: {:?}", candle_result);
-                    println!("Actual: {:?}", result);
-                    panic!("expected: {}, actual: {}", expected, actual);
+                    println!("width: {width}");
+                    println!("Expected: {candle_result:?}");
+                    println!("Actual: {result:?}");
+                    panic!("expected: {expected}, actual: {actual}");
                 }
             }
         }

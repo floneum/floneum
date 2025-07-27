@@ -132,14 +132,12 @@ impl GenericKernel {
             ty: KernelInputType::TensorBuffer(TensorBufferInput {
                 tensor_binding,
                 mutable,
-                datatype: datatype,
+                datatype,
             }),
         });
         let info_binding = self.take_binding(|info_binding| KernelInput {
             ty: KernelInputType::TensorInfo(TensorInfoInput { info_binding, rank }),
         });
-
-        
 
         TensorInput {
             tensor_binding,
@@ -154,7 +152,7 @@ impl GenericKernel {
         let matrix_binding = self.take_binding(|matrix_binding| KernelInput {
             ty: KernelInputType::QBuffer(QBufferInput {
                 matrix_binding,
-                datatype: datatype,
+                datatype,
             }),
         });
         let info_binding = self.take_binding(|info_binding| KernelInput {
@@ -178,8 +176,6 @@ impl GenericKernel {
             ty: KernelInputType::Integer(IntegerInput { index }),
         });
 
-        
-
         IntegerInput { index }
     }
 
@@ -187,8 +183,6 @@ impl GenericKernel {
         let index = self.take_binding(|index| KernelInput {
             ty: KernelInputType::Float(FloatInput { index }),
         });
-
-        
 
         FloatInput { index }
     }

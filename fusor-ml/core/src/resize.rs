@@ -258,7 +258,7 @@ async fn test_transposed_reshape() {
     let tensor = tensor.t();
     let tensor = tensor.reshape([2, 3]);
     let as_slice = tensor.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
     assert_eq!(as_slice[[0, 0]], 1.);
     assert_eq!(as_slice[[0, 1]], 3.);
     assert_eq!(as_slice[[0, 2]], 5.);

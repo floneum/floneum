@@ -131,7 +131,9 @@ impl<'a> Resolver<'a> {
     ) -> bool {
         for input in &new_inputs {
             for other in inputs.iter().flatten() {
-                if let (MirValue::Tensor(input_tensor), MirValue::Tensor(other_tensor)) = (input, other) {
+                if let (MirValue::Tensor(input_tensor), MirValue::Tensor(other_tensor)) =
+                    (input, other)
+                {
                     if input_tensor == other_tensor {
                         return false;
                     }
@@ -333,8 +335,7 @@ impl<'a> Resolver<'a> {
         }
         let shape: Box<[_]> = functions.shape().into();
         // Otherwise, just run the element wise kernel
-        let kernel =
-            ElementWiseOperation::from_element_wise(input, functions.functions, shape);
+        let kernel = ElementWiseOperation::from_element_wise(input, functions.functions, shape);
 
         Arc::new(kernel)
     }

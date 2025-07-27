@@ -236,10 +236,9 @@ impl WorkgroupShapeConstraints {
             ))
         });
         let mut write = cache.write();
-        *write
-            .get_or_insert_ref(self, || {
-                self.possible().max_by_key(|shape| shape.linearized())
-            })
+        *write.get_or_insert_ref(self, || {
+            self.possible().max_by_key(|shape| shape.linearized())
+        })
     }
 
     pub(crate) fn merge(&mut self, other: &Self) {
@@ -270,7 +269,7 @@ fn test_workgroup_shape_constraints() {
     constraints.add_constraint(2, Constraint::MultipleOf(2));
 
     let valid_shapes: Vec<_> = constraints.possible().collect();
-    println!("Valid shapes: {:#?}", valid_shapes);
+    println!("Valid shapes: {valid_shapes:#?}");
     for shape in valid_shapes {
         assert_eq!(shape.shape[0], 4);
         assert!(shape.shape[1] < 3);
@@ -298,7 +297,7 @@ fn test_many_workgroup_shape_constraints() {
     merged.merge(&constraints);
     merged.merge(&constraints2);
     let valid_shapes: Vec<_> = merged.possible().collect();
-    println!("Valid shapes: {:#?}", valid_shapes);
+    println!("Valid shapes: {valid_shapes:#?}");
     for shape in valid_shapes {
         assert_eq!(shape.shape[0], 4);
         assert!(shape.shape[1] < 3);

@@ -195,7 +195,7 @@ async fn test_dequantize_smol_lm() {
 
     for (name, candle_q_matrix_metadata) in candle_metadata.tensor_infos {
         let tensor = metadata.tensor_infos.get(&*name).unwrap();
-        println!("{}: {:?}", name, tensor);
+        println!("{name}: {tensor:?}");
 
         let candle_q_tensor = candle_q_matrix_metadata
             .read(

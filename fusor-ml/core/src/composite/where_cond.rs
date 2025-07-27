@@ -193,7 +193,7 @@ async fn test_where_cond() {
     let data_where_even = even.where_cond(data, zero);
 
     let result = data_where_even.as_slice().await.unwrap();
-    println!("result: {:?}", result);
+    println!("result: {result:?}");
 
     assert_eq!(result[[0]], 0.);
     assert_eq!(result[[1]], 1.);
