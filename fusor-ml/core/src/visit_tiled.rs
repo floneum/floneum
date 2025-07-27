@@ -220,7 +220,7 @@ fn build_tiled_map_kernel(
 
     if less_than_two_interesting_extra_dims {
         for index in &shape_dims_after_2_greater_than_1 {
-            if let Some(_) = index {
+            if index.is_some() {
                 global_indexes.push(format!("{global_id}.z"));
             } else {
                 global_indexes.push("0u".to_string());

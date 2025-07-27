@@ -263,7 +263,7 @@ impl ReduceOperation {
         writeln!(&mut kernel_body, "}}").unwrap();
 
         let limits = device.wgpu_device().limits();
-        let max_subgroup_size = (limits.max_subgroup_size as u32).max(32);
+        let max_subgroup_size = limits.max_subgroup_size.max(32);
 
         // Optimized subgroup reduction with unrolled shuffle operations
         let mut offset = max_subgroup_size;
@@ -272,8 +272,7 @@ impl ReduceOperation {
             offset /= 2;
             writeln!(
                 &mut kernel_body,
-                "let neighbor = subgroupShuffleDown(merged, {}u);",
-                offset
+                "let neighbor = subgroupShuffleDown(merged, {offset}u);"
             )
             .unwrap();
             writeln!(
@@ -323,8 +322,7 @@ impl ReduceOperation {
             offset /= 2;
             writeln!(
                 &mut kernel_body,
-                "let neighbor = subgroupShuffleDown(merged, {}u);",
-                offset
+                "let neighbor = subgroupShuffleDown(merged, {offset}u);"
             )
             .unwrap();
             writeln!(
@@ -385,8 +383,8 @@ impl Operation for ReduceOperation {
     ) -> [u32; 3] {
         let output_tensor: TensorData = inputs[1].as_tensor().unwrap().clone();
         let workgroup_size = output_tensor.layout().shape().iter().product::<usize>() as u32;
-        let workgroup_dispatch_size = [workgroup_size, 1, 1];
-        workgroup_dispatch_size
+        
+        [workgroup_size, 1, 1]
     }
 
     fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {
@@ -455,7 +453,7 @@ impl Operation for ReduceOperation {
     }
 
     fn name(&self) -> String {
-        format!("reduce_{}", self.function.name().to_string())
+        format!("reduce_{}", self.function.name())
     }
 }
 

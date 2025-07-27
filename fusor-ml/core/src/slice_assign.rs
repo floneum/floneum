@@ -79,7 +79,7 @@ impl Operation for SliceAssignOperation {
         assert_eq!(input.layout().shape(), value.layout().shape());
         let datatype = input.datatype();
 
-        let datatypes = vec![datatype.into(); 2];
+        let datatypes = vec![datatype; 2];
 
         build_visit_tiled_kernel(
             input.layout().shape(),
@@ -109,7 +109,7 @@ impl Operation for SliceAssignOperation {
             "slice_assign_{}",
             self.slices
                 .iter()
-                .map(|slice| format!("{:?}", slice))
+                .map(|slice| format!("{slice:?}"))
                 .collect::<Vec<_>>()
                 .join("_")
         )

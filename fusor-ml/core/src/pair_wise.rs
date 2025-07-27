@@ -122,10 +122,10 @@ impl Operation for PairWiseOperation {
 
     fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {
         if !matches!(self.first, AnyComputeKey::Dequantize(_)) {
-            f(self.first.clone());
+            f(self.first);
         }
         if !matches!(self.second, AnyComputeKey::Dequantize(_)) {
-            f(self.second.clone());
+            f(self.second);
         }
     }
 

@@ -65,7 +65,7 @@ impl<'a> Resolver<'a> {
         let mut kernel = GenericKernel::new();
 
         for (node, operation) in queued_operations {
-            let new_inputs = operation.inputs(&self.graph);
+            let new_inputs = operation.inputs(self.graph);
             let constraint = operation.workgroup_shape_constraints(&self.graph.device);
             let mut new_merged = current_constraints.clone();
             new_merged.merge(&constraint);
@@ -90,7 +90,7 @@ impl<'a> Resolver<'a> {
             // Map layout isn't really a kernel. Resolve it immediately
             if let AnyComputeKey::MapLayout(key) = node {
                 let map_layout = self.graph.nodes.map_layout[&key].clone();
-                let result = map_layout.run(&mut self.graph);
+                let result = map_layout.run(self.graph);
                 // Cache the result
                 self.graph.cached_results.insert(key.into(), result);
             } else {
@@ -131,13 +131,10 @@ impl<'a> Resolver<'a> {
     ) -> bool {
         for input in &new_inputs {
             for other in inputs.iter().flatten() {
-                match (input, other) {
-                    (MirValue::Tensor(input_tensor), MirValue::Tensor(other_tensor)) => {
-                        if input_tensor == other_tensor {
-                            return false;
-                        }
+                if let (MirValue::Tensor(input_tensor), MirValue::Tensor(other_tensor)) = (input, other) {
+                    if input_tensor == other_tensor {
+                        return false;
                     }
-                    _ => {}
                 }
             }
         }
@@ -164,7 +161,7 @@ impl<'a> Resolver<'a> {
                 }
             });
         }
-        let result = operation.output(&self.graph, &new_inputs);
+        let result = operation.output(self.graph, &new_inputs);
         let MirValue::Tensor(resolved) = result else {
             panic!("Kernel input value is not a tensor");
         };
@@ -194,7 +191,7 @@ impl<'a> Resolver<'a> {
                 *max = (*max).max(*new);
             }
             kernel.push_body("{");
-            operation.build_kernel(&self.graph, &workgroup_shape, &inputs, &mut kernel);
+            operation.build_kernel(self.graph, &workgroup_shape, &inputs, &mut kernel);
             let name = kernel.name_mut();
             if !name.is_empty() {
                 *name += "->";
@@ -337,7 +334,7 @@ impl<'a> Resolver<'a> {
         let shape: Box<[_]> = functions.shape().into();
         // Otherwise, just run the element wise kernel
         let kernel =
-            ElementWiseOperation::from_element_wise(input.into(), functions.functions, shape);
+            ElementWiseOperation::from_element_wise(input, functions.functions, shape);
 
         Arc::new(kernel)
     }

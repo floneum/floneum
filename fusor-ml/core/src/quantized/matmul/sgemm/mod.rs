@@ -1,4 +1,3 @@
-use fusor_gguf::GgmlType;
 
 use crate::{
     Device, QMatrix,
@@ -10,10 +9,6 @@ use crate::{
     quantized::matmul::{
         QMatMulOperation,
         sgemm::general::general_sgemm,
-        sgemv::{
-            SGEMV_CHUNK_SIZE, q_8_0::Q_8_0_SGEMV_CHUNK_SIZE, q_n::Q_N_SGEMV_CHUNK_SIZE,
-            q4k::Q4K_SGEMV_CHUNK_SIZE, q6k::Q6K_SGEMV_CHUNK_SIZE,
-        },
     },
 };
 
@@ -31,19 +26,17 @@ pub(crate) fn sgemm(
     _m_size: &str,
     k_size: &str,
 ) {
-    match op.matrix.datatype {
-        _ => general_sgemm(
-            op,
-            generic_kernel,
-            workgroup_size,
-            input_a,
-            input_b,
-            output,
-            _n_size,
-            _m_size,
-            k_size,
-        ),
-    }
+    general_sgemm(
+        op,
+        generic_kernel,
+        workgroup_size,
+        input_a,
+        input_b,
+        output,
+        _n_size,
+        _m_size,
+        k_size,
+    )
 }
 
 pub(crate) fn dispatch_size(
@@ -53,8 +46,8 @@ pub(crate) fn dispatch_size(
     m: u32,
 ) -> [u32; 3] {
     [
-        (n as u32).div_ceil(workgroup_shape.x()),
-        (m as u32).div_ceil(workgroup_shape.y()),
+        n.div_ceil(workgroup_shape.x()),
+        m.div_ceil(workgroup_shape.y()),
         1,
     ]
 }

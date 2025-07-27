@@ -287,8 +287,8 @@ impl Operation for IndexSelectOperation {
         _: &crate::compute_graph::ComputeGraphInner,
         inputs: &[crate::mir::inputs::MirValue],
     ) -> crate::mir::inputs::MirValue {
-        let output = inputs[2].clone();
-        output
+        
+        inputs[2].clone()
     }
 
     fn name(&self) -> String {

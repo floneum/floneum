@@ -132,29 +132,29 @@ impl GenericKernel {
             ty: KernelInputType::TensorBuffer(TensorBufferInput {
                 tensor_binding,
                 mutable,
-                datatype: datatype.clone(),
+                datatype: datatype,
             }),
         });
         let info_binding = self.take_binding(|info_binding| KernelInput {
             ty: KernelInputType::TensorInfo(TensorInfoInput { info_binding, rank }),
         });
 
-        let input = TensorInput {
+        
+
+        TensorInput {
             tensor_binding,
             info_binding,
             rank,
             mutable,
             datatype,
-        };
-
-        input
+        }
     }
 
     pub(crate) fn add_q_matrix_input(&mut self, rank: u32, datatype: GgmlType) -> QMatrixInput {
         let matrix_binding = self.take_binding(|matrix_binding| KernelInput {
             ty: KernelInputType::QBuffer(QBufferInput {
                 matrix_binding,
-                datatype: datatype.clone(),
+                datatype: datatype,
             }),
         });
         let info_binding = self.take_binding(|info_binding| KernelInput {
@@ -178,9 +178,9 @@ impl GenericKernel {
             ty: KernelInputType::Integer(IntegerInput { index }),
         });
 
-        let input = IntegerInput { index };
+        
 
-        input
+        IntegerInput { index }
     }
 
     pub(crate) fn add_float_input(&mut self) -> FloatInput {
@@ -188,9 +188,9 @@ impl GenericKernel {
             ty: KernelInputType::Float(FloatInput { index }),
         });
 
-        let input = FloatInput { index };
+        
 
-        input
+        FloatInput { index }
     }
 
     pub(crate) fn add_global_array(
@@ -217,7 +217,7 @@ impl GenericKernel {
     ) -> KernelGlobal {
         let index = self.max_global_id;
         self.max_global_id += 1;
-        let global = KernelGlobal::new(index, space, KernelGlobalType::Value(ty.clone()));
+        let global = KernelGlobal::new(index, space, KernelGlobalType::Value(ty));
         self.globals.push(global.clone());
         global
     }
@@ -364,7 +364,7 @@ impl GenericKernel {
             device
                 .pipeline_layout_cache()
                 .write()
-                .get_or_insert_ref(&bind_group_layout, || {
+                .get_or_insert_ref(bind_group_layout, || {
                     device
                         .wgpu_device()
                         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {

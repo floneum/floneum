@@ -433,7 +433,7 @@ impl ComputeGraph {
             if let Some(data) = data {
                 let temp_file = cache_file.with_extension("temp");
                 std::fs::write(&temp_file, &data).unwrap();
-                std::fs::rename(&temp_file, &cache_file).unwrap();
+                std::fs::rename(&temp_file, cache_file).unwrap();
             }
         }
 

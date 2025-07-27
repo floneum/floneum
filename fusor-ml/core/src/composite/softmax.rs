@@ -127,8 +127,8 @@ impl SoftmaxOperation {
         let local_d_data =
             kernel.add_global_array(KernelGlobalSpace::Workgroup, dtype, blocksize.to_string());
 
-        let global_m_final = kernel.add_global_value(KernelGlobalSpace::Workgroup, dtype.clone());
-        let global_d_final = kernel.add_global_value(KernelGlobalSpace::Workgroup, dtype.clone());
+        let global_m_final = kernel.add_global_value(KernelGlobalSpace::Workgroup, dtype);
+        let global_d_final = kernel.add_global_value(KernelGlobalSpace::Workgroup, dtype);
 
         let workgroup_local_index = kernel.workgroup_local_index();
         let subgroup_id = kernel.subgroup_index();
@@ -233,7 +233,7 @@ impl SoftmaxOperation {
         writeln!(&mut kernel_body).unwrap();
 
         let limits = device.wgpu_device().limits();
-        let max_subgroup_size = (limits.max_subgroup_size as u32).max(32);
+        let max_subgroup_size = limits.max_subgroup_size.max(32);
 
         // Optimized subgroup reduction with unrolled shuffle operations
         let mut offset = max_subgroup_size;
@@ -242,14 +242,12 @@ impl SoftmaxOperation {
             offset /= 2;
             writeln!(
                 &mut kernel_body,
-                "let m_peer = subgroupShuffleDown(m_lane, {}u);",
-                offset
+                "let m_peer = subgroupShuffleDown(m_lane, {offset}u);"
             )
             .unwrap();
             writeln!(
                 &mut kernel_body,
-                "let d_peer = subgroupShuffleDown(d_lane, {}u);",
-                offset
+                "let d_peer = subgroupShuffleDown(d_lane, {offset}u);"
             )
             .unwrap();
             combine(&mut kernel_body, "m_lane", "d_lane", "m_peer", "d_peer");
@@ -297,14 +295,12 @@ impl SoftmaxOperation {
             offset /= 2;
             writeln!(
                 &mut kernel_body,
-                "let m_peer = subgroupShuffleDown(m_lane, {}u);",
-                offset
+                "let m_peer = subgroupShuffleDown(m_lane, {offset}u);"
             )
             .unwrap();
             writeln!(
                 &mut kernel_body,
-                "let d_peer = subgroupShuffleDown(d_lane, {}u);",
-                offset
+                "let d_peer = subgroupShuffleDown(d_lane, {offset}u);"
             )
             .unwrap();
             combine(&mut kernel_body, "m_lane", "d_lane", "m_peer", "d_peer");
@@ -406,8 +402,8 @@ impl Operation for SoftmaxOperation {
     ) -> [u32; 3] {
         let trimmed_tensor: TensorData = inputs[0].as_tensor().unwrap().clone();
         let workgroup_size = trimmed_tensor.layout().shape().iter().product::<usize>() as u32;
-        let workgroup_dispatch_size = [workgroup_size, 1, 1];
-        workgroup_dispatch_size
+        
+        [workgroup_size, 1, 1]
     }
 
     fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {
@@ -420,7 +416,7 @@ impl Operation for SoftmaxOperation {
         let layout = tensor.layout();
         let shape = layout.shape();
         let output_type = self.out_datatype();
-        let output_tensor = TensorData::new_for_shape(tensor.device(), &shape, output_type);
+        let output_tensor = TensorData::new_for_shape(tensor.device(), shape, output_type);
 
         let trimmed_tensor_layout = Layout::from_parts(
             tensor.layout().offset(),

@@ -1,4 +1,3 @@
-use fusor_gguf::GgmlType;
 
 use crate::{
     DataTypeEnum, dequantize_vec4_block,
@@ -13,8 +12,6 @@ use crate::{
         sgemv::{
             SGEMV_CHUNK_SIZE, SGEMV_VECTOR_SIZE, maybe_vec_storage_index,
             maybe_vec_storage_subgroup_add, maybe_vec_storage_type, maybe_vec_storage_type_enum,
-            q_8_0::Q_8_0_SGEMV_CHUNK_SIZE, q_n::Q_N_SGEMV_CHUNK_SIZE, q4k::Q4K_SGEMV_CHUNK_SIZE,
-            q6k::Q6K_SGEMV_CHUNK_SIZE,
         },
     },
 };

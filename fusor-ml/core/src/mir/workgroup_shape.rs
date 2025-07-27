@@ -236,11 +236,10 @@ impl WorkgroupShapeConstraints {
             ))
         });
         let mut write = cache.write();
-        write
+        *write
             .get_or_insert_ref(self, || {
                 self.possible().max_by_key(|shape| shape.linearized())
             })
-            .clone()
     }
 
     pub(crate) fn merge(&mut self, other: &Self) {

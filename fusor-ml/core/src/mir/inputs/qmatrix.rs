@@ -35,7 +35,7 @@ impl QMatrixInput {
             if i == self.rank - 1 {
                 write!(&mut shape, " / {}", self.datatype.block_size()).unwrap();
             }
-            let new = format!("{} * {}", product, shape);
+            let new = format!("{product} * {shape}");
             strides.push(product);
             product = new;
         }

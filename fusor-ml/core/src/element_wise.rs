@@ -260,7 +260,7 @@ impl Operation for ElementWiseOperation {
             .map(|s| s.to_string())
             .collect::<Vec<_>>()
             .join("x");
-        format!("element_wise_{}_{}", functions, shape)
+        format!("element_wise_{functions}_{shape}")
     }
 }
 
@@ -297,7 +297,7 @@ impl<const R: usize, T: DataType> Add<T> for Tensor<R, T> {
         self.element_wise(ElementWiseOperation::new(
             self.datatype(),
             self.key(),
-            ElementWiseFunction::new(format!("let output = input + {};", rhs), T::WGSL_TYPE)
+            ElementWiseFunction::new(format!("let output = input + {rhs};"), T::WGSL_TYPE)
                 .with_name("add_const"),
             self.shape().as_slice(),
         ))
@@ -562,7 +562,7 @@ impl<const R: usize, T: DataType> Sub<T> for Tensor<R, T> {
         self.element_wise(ElementWiseOperation::new(
             self.datatype(),
             self.key(),
-            ElementWiseFunction::new(format!("let output = input - {};", rhs), T::WGSL_TYPE)
+            ElementWiseFunction::new(format!("let output = input - {rhs};"), T::WGSL_TYPE)
                 .with_name("subtract_const"),
             self.shape().as_slice(),
         ))
@@ -640,7 +640,7 @@ impl<const R: usize, T: DataType> Mul<T> for Tensor<R, T> {
         self.element_wise(ElementWiseOperation::new(
             self.datatype(),
             self.key(),
-            ElementWiseFunction::new(format!("let output = input * {};", rhs), T::WGSL_TYPE)
+            ElementWiseFunction::new(format!("let output = input * {rhs};"), T::WGSL_TYPE)
                 .with_name("multiply_const"),
             self.shape().as_slice(),
         ))
@@ -709,7 +709,7 @@ impl<const R: usize, T: DataType> Div<T> for Tensor<R, T> {
         self.element_wise(ElementWiseOperation::new(
             self.datatype(),
             self.key(),
-            ElementWiseFunction::new(format!("let output = input / {};", rhs), T::WGSL_TYPE)
+            ElementWiseFunction::new(format!("let output = input / {rhs};"), T::WGSL_TYPE)
                 .with_name("divide_const"),
             self.shape().as_slice(),
         ))
@@ -787,7 +787,7 @@ impl<const R: usize> Rem<u32> for Tensor<R, u32> {
         self.element_wise(ElementWiseOperation::new(
             self.datatype(),
             self.key(),
-            ElementWiseFunction::new(format!("let output = input % {};", rhs), u32::WGSL_TYPE)
+            ElementWiseFunction::new(format!("let output = input % {rhs};"), u32::WGSL_TYPE)
                 .with_name("mod_const"),
             self.shape().as_slice(),
         ))
@@ -866,7 +866,7 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
             self.datatype(),
             self.key(),
             ElementWiseFunction::new(
-                format!("let output = {datatype}(input == {});", rhs),
+                format!("let output = {datatype}(input == {rhs});"),
                 D::WGSL_TYPE,
             )
             .with_name("equal_const"),

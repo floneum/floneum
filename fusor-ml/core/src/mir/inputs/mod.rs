@@ -129,7 +129,7 @@ impl Display for KernelInput {
                 let info_index = matrix.info_binding;
                 writeln!(f, "struct Tensor{info_index}Info {{")?;
                 for i in 0..matrix.rank {
-                    writeln!(f, "    shape_{}: u32,", i)?;
+                    writeln!(f, "    shape_{i}: u32,")?;
                 }
                 writeln!(f, "}};")?;
 
@@ -156,8 +156,8 @@ impl Display for KernelInput {
                 writeln!(f, "struct Tensor{info_index}Info {{")?;
                 writeln!(f, "    offset: u32,")?;
                 for i in 0..tensor.rank {
-                    writeln!(f, "    stride_{}: u32,", i)?;
-                    writeln!(f, "    shape_{}: u32,", i)?;
+                    writeln!(f, "    stride_{i}: u32,")?;
+                    writeln!(f, "    shape_{i}: u32,")?;
                 }
                 writeln!(f, "}};")?;
 

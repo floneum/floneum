@@ -144,18 +144,18 @@ pub(crate) fn sgemv(
 
 pub(crate) fn dispatch_size(matrix: &QMatrix, n: u32, _m: u32) -> [u32; 3] {
     if matrix.datatype == GgmlType::Q6K {
-        return [(n as u32).div_ceil(Q6K_SGEMV_CHUNK_SIZE * 2), 1, 1];
+        return [n.div_ceil(Q6K_SGEMV_CHUNK_SIZE * 2), 1, 1];
     }
     if matrix.datatype == GgmlType::Q4K {
-        return [(n as u32).div_ceil(Q4K_SGEMV_CHUNK_SIZE * 2), 1, 1];
+        return [n.div_ceil(Q4K_SGEMV_CHUNK_SIZE * 2), 1, 1];
     }
     if matches!(matrix.datatype, GgmlType::Q4_0 | GgmlType::Q5_0) {
-        return [(n as u32).div_ceil(Q_N_SGEMV_CHUNK_SIZE * 2), 1, 1];
+        return [n.div_ceil(Q_N_SGEMV_CHUNK_SIZE * 2), 1, 1];
     }
     if matches!(matrix.datatype, GgmlType::Q8_0) {
-        return [(n as u32).div_ceil(Q_8_0_SGEMV_CHUNK_SIZE * 2), 1, 1];
+        return [n.div_ceil(Q_8_0_SGEMV_CHUNK_SIZE * 2), 1, 1];
     }
-    [(n as u32).div_ceil(SGEMV_CHUNK_SIZE * 2), 1, 1]
+    [n.div_ceil(SGEMV_CHUNK_SIZE * 2), 1, 1]
 }
 
 pub(crate) fn workgroup_shape_constraints(
