@@ -21,7 +21,7 @@ anyhow = "1.0.71"
 parking_lot = { workspace = true }
 tracing = "0.1.37"
 headless_chrome = { version = "1.0", features = ["fetch"]}
-heed = "0.20.0-alpha.9"
+heed = "0.22"
 floneumite = { path = "../floneumite" }
 kalosm = { workspace = true, features = ["language", "surrealdb", "scrape"] }
 kalosm-common = { workspace = true, features = ["candle"] }
