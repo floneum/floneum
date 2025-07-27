@@ -606,6 +606,26 @@ impl WgslQuantizedType for BlockQ8_0 {
         code
     }
 
+    fn dequantize_vec4_block(
+        chunk: String,
+        datatype: DataTypeEnum,
+        mut process_element: impl FnMut(String, String, &mut String),
+    ) -> String {
+        let weights_size_u32 = BlockQ8_0::WEIGHTS_SIZE as u8 / 4;
+        let mut code = String::new();
+
+        writeln!(&mut code, "let scale = {datatype}({chunk}.scale);").unwrap();
+        for i in 0..weights_size_u32 {
+            writeln!(
+            &mut code,
+            "let weight_chunk_bytes_{i} = vec4<{datatype}>(unpack4xI8({chunk}.data[{i}])) * scale;"
+        )
+        .unwrap();
+            process_element(i.to_string(), format!("weight_chunk_bytes_{i}"), &mut code);
+        }
+        code
+    }
+
     fn write_type<W: Write>(f: &mut W) -> std::fmt::Result {
         write_q8_0_type(f)
     }

@@ -475,13 +475,9 @@ impl Operation for QMatMulOperation {
         device: &Device,
     ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
         if self.sgemv() {
-            return sgemv::workgroup_shape_constraints(&self.matrix, device);
+            sgemv::workgroup_shape_constraints(&self.matrix, device)
         } else {
-            let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::default();
-            constraints.add_constraint(0, crate::mir::workgroup_shape::Constraint::Equals(1));
-            constraints.add_constraint(1, crate::mir::workgroup_shape::Constraint::Equals(1));
-            constraints.add_constraint(2, crate::mir::workgroup_shape::Constraint::Equals(1));
-            constraints
+            sgemm::workgroup_shape_constraints(&self.matrix, device)
         }
     }
 
@@ -495,11 +491,7 @@ impl Operation for QMatMulOperation {
         if self.sgemv() {
             sgemv::dispatch_size(&self.matrix, n, m)
         } else {
-            [
-                (n as u32).div_ceil(workgroup_shape.x()),
-                (m as u32).div_ceil(workgroup_shape.y()),
-                1,
-            ]
+            sgemm::dispatch_size(workgroup_shape, &self.matrix, n, m)
         }
     }
 

@@ -1,12 +1,11 @@
 use crate::{
-    DataTypeEnum,
+    DataTypeEnum, dequantize_vec4_block,
     mir::{
         inputs::{QMatrixInput, TensorInput},
         kernel::GenericKernel,
         workgroup_shape::WorkgroupShape,
     },
     quantized::matmul::QMatMulOperation,
-    unrolled_dequantize_block,
 };
 use std::fmt::Write;
 
@@ -25,7 +24,6 @@ pub(crate) fn general_sgemm(
 ) {
     let global_id = generic_kernel.global_id();
     let elements_per_block = op.elements_per_block();
-    let chunk_blocks = elements_per_block / SGEMM_VECTOR_SIZE;
     let dtype = op.input_datatype;
 
     let mut kernel = String::new();
@@ -35,73 +33,57 @@ pub(crate) fn general_sgemm(
 
     writeln!(&mut kernel, "var acc = 0.0;").unwrap();
 
+    writeln!(
+        &mut kernel,
+        "let k_block_size = ({k_size} + {elements_per_block} - 1u) / {elements_per_block};"
+    )
+    .unwrap();
+    writeln!(&mut kernel, "var a_index_offset = 0u;").unwrap();
+
     // Calculate one block sized group
     writeln!(&mut kernel, "if x < {n_size} && y < {m_size} {{").unwrap();
 
     writeln!(
         &mut kernel,
-        "for (var k = 0u; k < {k_size} / {elements_per_block}; k += 1u) {{"
+        "for (var k = 0u; k < k_block_size; k += 1u) {{"
     )
     .unwrap();
 
-    writeln!(
-        &mut kernel,
-        "let chunk = {input_b}[k + x * {k_size} / {elements_per_block}];"
-    )
-    .unwrap();
+    // Pack the individual dequantized values into vectors
+    writeln!(&mut kernel, "let chunk = {input_b}[k + x * k_block_size];").unwrap();
 
-    unrolled_dequantize_block(
+    dequantize_vec4_block(
         &mut kernel,
         op.matrix.datatype,
         "chunk".to_string(),
         DataTypeEnum::F32,
         |index, data, code| {
-            write!(code, "let dequantized_{index} = {data};").unwrap();
+            writeln!(code, "{{",).unwrap();
+            writeln!(
+                code,
+                "let a_index_local_offset = a_index_offset + ({index})*{SGEMM_VECTOR_SIZE};"
+            )
+            .unwrap();
+            write!(code, "let a_values = vec{SGEMM_VECTOR_SIZE}<{dtype}>(",).unwrap();
+            for local in 0..SGEMM_VECTOR_SIZE {
+                if local > 0 {
+                    write!(code, ", ").unwrap();
+                }
+                write!(code, "{input_a}[").unwrap();
+                input_a.strided_index(
+                    code,
+                    ["y".to_string(), format!("a_index_local_offset + {local}")],
+                );
+                write!(code, "]").unwrap();
+            }
+            writeln!(code, ");").unwrap();
+
+            writeln!(code, "acc += dot(a_values, {data});").unwrap();
+            writeln!(code, "}}").unwrap();
         },
     );
 
-    // Pack the individual dequantized values into vectors
-    for i in 0..chunk_blocks {
-        write!(
-            &mut kernel,
-            "let dequantized_vec_{i} = vec{SGEMM_VECTOR_SIZE}<{dtype}>("
-        )
-        .unwrap();
-        for j in 0..SGEMM_VECTOR_SIZE {
-            if j > 0 {
-                write!(&mut kernel, ", ").unwrap();
-            }
-            let index = i * SGEMM_VECTOR_SIZE + j;
-            write!(&mut kernel, "dequantized_{index}").unwrap();
-        }
-        writeln!(&mut kernel, ");").unwrap();
-        write!(
-            &mut kernel,
-            "let a_values_{i} = vec{SGEMM_VECTOR_SIZE}<{dtype}>(",
-        )
-        .unwrap();
-        for local in 0..SGEMM_VECTOR_SIZE {
-            if local > 0 {
-                write!(&mut kernel, ", ").unwrap();
-            }
-            write!(&mut kernel, "{input_a}[").unwrap();
-            input_a.strided_index(
-                &mut kernel,
-                [
-                    "y".to_string(),
-                    format!("k * {elements_per_block} + {i}*{SGEMM_VECTOR_SIZE} + {local}"),
-                ],
-            );
-            write!(&mut kernel, "]").unwrap();
-        }
-        writeln!(&mut kernel, ");").unwrap();
-
-        writeln!(
-            &mut kernel,
-            "acc += dot(a_values_{i}, dequantized_vec_{i});"
-        )
-        .unwrap();
-    }
+    writeln!(&mut kernel, "a_index_offset += {elements_per_block};").unwrap();
 
     writeln!(&mut kernel, "}}").unwrap();
 

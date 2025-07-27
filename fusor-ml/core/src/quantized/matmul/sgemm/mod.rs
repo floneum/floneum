@@ -1,15 +1,20 @@
 use fusor_gguf::GgmlType;
 
 use crate::{
+    Device, QMatrix,
     mir::{
         inputs::{QMatrixInput, TensorInput},
         kernel::GenericKernel,
         workgroup_shape::WorkgroupShape,
-    }, quantized::matmul::{
-        sgemm::general::general_sgemm, sgemv::{
-            q4k::Q4K_SGEMV_CHUNK_SIZE, q6k::Q6K_SGEMV_CHUNK_SIZE, q_8_0::Q_8_0_SGEMV_CHUNK_SIZE, q_n::Q_N_SGEMV_CHUNK_SIZE, SGEMV_CHUNK_SIZE
-        }, QMatMulOperation
-    }, Device, QMatrix
+    },
+    quantized::matmul::{
+        QMatMulOperation,
+        sgemm::general::general_sgemm,
+        sgemv::{
+            SGEMV_CHUNK_SIZE, q_8_0::Q_8_0_SGEMV_CHUNK_SIZE, q_n::Q_N_SGEMV_CHUNK_SIZE,
+            q4k::Q4K_SGEMV_CHUNK_SIZE, q6k::Q6K_SGEMV_CHUNK_SIZE,
+        },
+    },
 };
 
 mod general;
@@ -39,4 +44,29 @@ pub(crate) fn sgemm(
             k_size,
         ),
     }
+}
+
+pub(crate) fn dispatch_size(
+    workgroup_shape: &WorkgroupShape,
+    matrix: &QMatrix,
+    n: u32,
+    m: u32,
+) -> [u32; 3] {
+    [
+        (n as u32).div_ceil(workgroup_shape.x()),
+        (m as u32).div_ceil(workgroup_shape.y()),
+        1,
+    ]
+}
+
+pub(crate) fn workgroup_shape_constraints(
+    matrix: &QMatrix,
+    device: &Device,
+) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
+    let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::default();
+
+    constraints.add_constraint(0, crate::mir::workgroup_shape::Constraint::Equals(1));
+    constraints.add_constraint(1, crate::mir::workgroup_shape::Constraint::Equals(1));
+    constraints.add_constraint(2, crate::mir::workgroup_shape::Constraint::Equals(1));
+    constraints
 }
