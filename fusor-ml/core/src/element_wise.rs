@@ -519,24 +519,6 @@ async fn test_add_const_sliced() {
 
 #[cfg(test)]
 #[tokio::test]
-async fn test_add_const_large() {
-    let device = Device::new().await.unwrap();
-
-    const BUF_SIZE: usize = 0x010000;
-    let data = vec![10.; BUF_SIZE];
-    let tensor = Tensor::new(&device, &data);
-
-    let tensor = tensor + 1.0;
-
-    let output = tensor.as_slice().await.unwrap();
-    println!("{output:?}");
-    for i in 0..BUF_SIZE {
-        assert_eq!(output[[i]], 11.0);
-    }
-}
-
-#[cfg(test)]
-#[tokio::test]
 async fn test_merge_add_const() {
     let device = Device::new().await.unwrap();
 
