@@ -11,6 +11,7 @@ use std::fmt::Write;
 
 pub(crate) const SGEMM_VECTOR_SIZE: u32 = 4; // This is the size of the chunk we will dot at a time
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn general_sgemm(
     op: &QMatMulOperation,
     generic_kernel: &mut GenericKernel,

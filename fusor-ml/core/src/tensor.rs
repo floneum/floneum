@@ -794,7 +794,6 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         }
     }
 
-    #[must_use]
     pub async fn as_slice(&self) -> Result<TensorSlice<R, D>, wgpu::BufferAsyncError> {
         let start_time = std::time::Instant::now();
         let tensor = self.data.materialize();
@@ -926,11 +925,11 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         self.data.graphvis()
     }
 
-    pub fn data(&self) -> &LazyTensorData {
+    pub(crate) fn data(&self) -> &LazyTensorData {
         &self.data
     }
 
-    pub fn graph(&self) -> &ComputeGraph {
+    pub(crate) fn graph(&self) -> &ComputeGraph {
         &self.data.graph
     }
 }

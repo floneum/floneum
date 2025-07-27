@@ -242,8 +242,10 @@ impl ComputeGraphInner {
     pub(crate) fn graphvis(&self, root: AnyComputeKey) -> Graph {
         let mut layout_pass = layout_pass::LayoutPass::default();
         layout_pass.visit(self, root);
-        let mut graph_vis_pass = GraphVisPass::default();
-        graph_vis_pass.layout_pass = layout_pass;
+        let mut graph_vis_pass = GraphVisPass {
+            layout_pass,
+            ..Default::default()
+        };
         graph_vis_pass.queued.push_back(root);
         while let Some(node) = graph_vis_pass.queued.pop_front() {
             if graph_vis_pass.identities.contains_key(&node) {

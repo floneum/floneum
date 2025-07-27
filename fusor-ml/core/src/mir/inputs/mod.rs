@@ -41,27 +41,6 @@ impl MirValue {
         }
     }
 
-    pub(crate) fn as_qmatrix(&self) -> Option<&QMatrix> {
-        match self {
-            MirValue::QMatrix(matrix) => Some(matrix),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn as_integer(&self) -> Option<u32> {
-        match self {
-            MirValue::Integer(integer) => Some(*integer),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn as_float(&self) -> Option<f32> {
-        match self {
-            MirValue::Float(float) => Some(*float),
-            _ => None,
-        }
-    }
-
     pub(crate) fn visit_input_values<F>(&self, mut f: F)
     where
         F: FnMut(KernelInputValue),
@@ -69,7 +48,7 @@ impl MirValue {
         match self {
             MirValue::QMatrix(matrix) => {
                 f(KernelInputValue::QBuffer(matrix.buffer().clone()));
-                f(KernelInputValue::QInfo(matrix.shape().clone()));
+                f(KernelInputValue::QInfo(matrix.shape().into()));
             }
             MirValue::Tensor(tensor) => {
                 f(KernelInputValue::TensorBuffer(tensor.buffer().clone()));

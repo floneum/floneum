@@ -143,8 +143,6 @@ impl GenericKernel {
             tensor_binding,
             info_binding,
             rank,
-            mutable,
-            datatype,
         }
     }
 
@@ -179,6 +177,7 @@ impl GenericKernel {
         IntegerInput { index }
     }
 
+    #[allow(unused)]
     pub(crate) fn add_float_input(&mut self) -> FloatInput {
         let index = self.take_binding(|index| KernelInput {
             ty: KernelInputType::Float(FloatInput { index }),

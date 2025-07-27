@@ -1,22 +1,14 @@
 use std::fmt::Display;
 use std::fmt::Write;
 
-use crate::DataTypeEnum;
-
 #[derive(Clone, Debug)]
 pub(crate) struct TensorInput {
     pub(crate) tensor_binding: u32,
     pub(crate) info_binding: u32,
     pub(crate) rank: u32,
-    pub(crate) mutable: bool,
-    pub(crate) datatype: DataTypeEnum,
 }
 
 impl TensorInput {
-    pub(crate) fn get_tensor_binding(&self) -> u32 {
-        self.tensor_binding
-    }
-
     pub(crate) fn get_info_binding(&self) -> u32 {
         self.info_binding
     }

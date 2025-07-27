@@ -32,13 +32,6 @@ impl MaybeQData {
         }
     }
 
-    pub(crate) fn dequantized_datatype(&self) -> DataTypeEnum {
-        match self {
-            MaybeQData::Tensor(tensor) => tensor.datatype(),
-            MaybeQData::QMatrix(_) => DataTypeEnum::F32,
-        }
-    }
-
     pub(crate) fn datatype(&self) -> VisitTiledInputType {
         match self {
             MaybeQData::Tensor(tensor) => VisitTiledInputType::Dequantized(tensor.datatype()),
@@ -237,8 +230,7 @@ fn build_tiled_map_kernel(
     }
 
     if let Some((quantized_type, quantized_input)) = quantized_block {
-        for i in 0..rank as usize {
-            let index = &global_indexes[i];
+        for (i, index) in global_indexes.iter().enumerate() {
             let chunk_size = if i == rank as usize - 1 {
                 quantized_type.block_size() as u32
             } else {
@@ -326,8 +318,7 @@ fn build_tiled_map_kernel(
     } else {
         let subgroup_size = kernel.subgroup_size();
         let subgroup_local_id = kernel.subgroup_local_index();
-        for i in 0..rank as usize {
-            let index = &global_indexes[i];
+        for (i, index) in global_indexes.iter().enumerate() {
             if i == 0 {
                 writeln!(
                     &mut kernel_body,

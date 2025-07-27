@@ -10,6 +10,7 @@ use crate::{
 
 mod general;
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn sgemm(
     op: &QMatMulOperation,
     generic_kernel: &mut GenericKernel,
@@ -37,7 +38,7 @@ pub(crate) fn sgemm(
 
 pub(crate) fn dispatch_size(
     workgroup_shape: &WorkgroupShape,
-    matrix: &QMatrix,
+    _matrix: &QMatrix,
     n: u32,
     m: u32,
 ) -> [u32; 3] {
@@ -49,8 +50,8 @@ pub(crate) fn dispatch_size(
 }
 
 pub(crate) fn workgroup_shape_constraints(
-    matrix: &QMatrix,
-    device: &Device,
+    _matrix: &QMatrix,
+    _device: &Device,
 ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
     let mut constraints = crate::mir::workgroup_shape::WorkgroupShapeConstraints::default();
 

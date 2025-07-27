@@ -71,6 +71,7 @@ fn maybe_vec_storage_index(size: u32, value: impl Display, index: impl Display) 
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn sgemv(
     op: &QMatMulOperation,
     generic_kernel: &mut GenericKernel,

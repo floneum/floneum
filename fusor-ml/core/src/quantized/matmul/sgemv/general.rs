@@ -16,6 +16,7 @@ use crate::{
 };
 use std::fmt::Write;
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn general_sgemv(
     op: &QMatMulOperation,
     generic_kernel: &mut GenericKernel,

@@ -127,22 +127,22 @@ impl<'a> Resolver<'a> {
     fn should_extend_kernel(
         &mut self,
         new_inputs: Vec<MirValue>,
-        inputs: &Vec<Vec<MirValue>>,
+        inputs: &[Vec<MirValue>],
     ) -> bool {
         for input in &new_inputs {
             for other in inputs.iter().flatten() {
                 if let (MirValue::Tensor(input_tensor), MirValue::Tensor(other_tensor)) =
                     (input, other)
+                    && input_tensor == other_tensor
                 {
-                    if input_tensor == other_tensor {
-                        return false;
-                    }
+                    return false;
                 }
             }
         }
         true
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn push_operation(
         &mut self,
         new_inputs: Vec<MirValue>,
@@ -488,7 +488,6 @@ impl<'a> Resolver<'a> {
             operation.axis,
             &operation.shape,
         );
-        let element_wise_before = element_wise_before;
         let element_wise_after = then
             .map(|op| op.functions)
             .unwrap_or_else(|| ElementWiseFunctions::empty(element_wise_before.out_datatype()));

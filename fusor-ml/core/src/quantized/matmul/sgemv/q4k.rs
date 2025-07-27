@@ -20,6 +20,7 @@ const MASK2: u32 = 0b0000111100001111;
 const MASK3: u32 = 0b1100000011000000;
 
 // https://github.com/ggml-org/llama.cpp/blob/6efcd65945a98cf6883cdd9de4c8ccd8c79d219a/ggml/src/ggml-metal/ggml-metal.metal#L5311
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn q4k_sgemv(
     op: &QMatMulOperation,
     generic_kernel: &mut GenericKernel,

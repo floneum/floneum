@@ -44,10 +44,6 @@ impl QMatMulOperation {
         self.in_shape[0] == 1
     }
 
-    fn k_size(&self) -> u32 {
-        self.in_shape[1] as u32
-    }
-
     fn m_size(&self) -> u32 {
         self.in_shape[0] as u32
     }

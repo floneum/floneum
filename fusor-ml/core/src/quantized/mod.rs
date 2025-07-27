@@ -116,7 +116,7 @@ impl QMatrix {
         &self.buffer
     }
 
-    pub(crate) fn shape(&self) -> &Box<[usize]> {
+    pub(crate) fn shape(&self) -> &[usize] {
         &self.shape
     }
 
@@ -152,6 +152,7 @@ pub(crate) fn dequantize_block(
     *kernel += &out;
 }
 
+#[allow(unused)]
 pub(crate) fn unrolled_dequantize_block(
     kernel: &mut String,
     ty: GgmlType,

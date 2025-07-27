@@ -12,120 +12,6 @@ use crate::mir::kernel::GenericKernel;
 
 const MAX_WORKGROUP_SIZE: u32 = 256;
 
-struct RealWorkgroupShape {
-    size: WorkgroupShape,
-}
-
-struct MappedWorkgroupShape {
-    real_size: RealWorkgroupShape,
-    virtual_size: WorkgroupShape,
-}
-
-impl MappedWorkgroupShape {
-    fn new(real_size: RealWorkgroupShape, virtual_size: WorkgroupShape) -> Option<Self> {
-        // The virtual size must be a multiple of the real size
-        (real_size.size.linearized() % virtual_size.linearized() == 0).then_some(Self {
-            real_size,
-            virtual_size,
-        })
-    }
-
-    fn workgroup_scale(&self) -> u32 {
-        self.real_size.size.linearized() / self.virtual_size.linearized()
-    }
-
-    fn component_linearized(&self, i: usize) -> bool {
-        self.real_size.size.shape[i] != self.virtual_size.shape[i] * self.workgroup_scale()
-    }
-
-    fn linearized_components(&self) -> [bool; 3] {
-        std::array::from_fn(|i| self.component_linearized(i))
-    }
-
-    fn linearized_component(&self, kernel: &mut GenericKernel) -> String {
-        let mut merged = "0".to_string();
-        let mut product = 1;
-        for ((component, real_size), linearized) in ["x", "y", "z"]
-            .iter()
-            .zip(self.real_size.size.shape)
-            .zip(self.linearized_components())
-        {
-            if linearized {
-                merged += &format!(" + {}.{} * {}", kernel.global_id(), component, product);
-            }
-            product *= real_size;
-        }
-
-        merged
-    }
-
-    fn get_global_id(&self, kernel: &mut GenericKernel, linearized: &str, i: usize) -> String {
-        if self.component_linearized(i) {
-            format!(
-                "({linearized} / {}) % {}",
-                self.virtual_size.shape[..i].iter().product::<u32>(),
-                self.virtual_size.shape[i]
-            )
-        } else {
-            let global_id = kernel.global_id();
-            let component = ["x", "y", "z"][i];
-            format!(
-                "{global_id}.{component} % {}",
-                self.real_size.size.shape[i] / self.virtual_size.shape[i]
-            )
-        }
-    }
-}
-
-#[test]
-fn test_one_to_one_mapped_work_groups() {
-    let real_size = RealWorkgroupShape {
-        size: WorkgroupShape::new(4, 2, 8),
-    };
-    assert_eq!(real_size.size.linearized(), 64);
-    let virtual_size = WorkgroupShape::new(16, 2, 2);
-    assert_eq!(virtual_size.linearized(), 64);
-    let mapped_size = MappedWorkgroupShape::new(real_size, virtual_size).unwrap();
-
-    assert_eq!(mapped_size.linearized_components(), [true, false, true]);
-    let linearized = mapped_size.linearized_component(&mut GenericKernel::new());
-    assert_eq!(linearized, "0 + global_id.x * 1 + global_id.z * 8");
-
-    let x_index = mapped_size.get_global_id(&mut GenericKernel::new(), "linearized", 0);
-    assert_eq!(x_index, "(linearized / 1) % 16");
-
-    let y_index = mapped_size.get_global_id(&mut GenericKernel::new(), "linearized", 1);
-    assert_eq!(y_index, "global_id.y % 1");
-
-    let z_index = mapped_size.get_global_id(&mut GenericKernel::new(), "linearized", 2);
-    assert_eq!(z_index, "(linearized / 32) % 2");
-}
-
-#[test]
-fn test_many_to_one_mapped_work_groups() {
-    let real_size = RealWorkgroupShape {
-        size: WorkgroupShape::new(4, 2, 8),
-    };
-    assert_eq!(real_size.size.linearized(), 64);
-    let virtual_size = WorkgroupShape::new(8, 2, 2);
-    assert_eq!(virtual_size.linearized(), 32);
-    let mapped_size = MappedWorkgroupShape::new(real_size, virtual_size).unwrap();
-
-    assert_eq!(mapped_size.linearized_components(), [true, true, true]);
-    let linearized = mapped_size.linearized_component(&mut GenericKernel::new());
-    assert_eq!(
-        linearized,
-        "0 + global_id.x * 1 + global_id.y * 4 + global_id.z * 8"
-    );
-
-    let x_index = mapped_size.get_global_id(&mut GenericKernel::new(), "linearized", 0);
-    assert_eq!(x_index, "(linearized / 1) % 8");
-    let y_index = mapped_size.get_global_id(&mut GenericKernel::new(), "linearized", 1);
-    assert_eq!(y_index, "(linearized / 8) % 2");
-    let z_index = mapped_size.get_global_id(&mut GenericKernel::new(), "linearized", 2);
-    assert_eq!(z_index, "(linearized / 16) % 2");
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct WorkgroupShape {
     shape: [u32; 3],
@@ -266,14 +152,12 @@ fn test_workgroup_shape_constraints() {
     let mut constraints = WorkgroupShapeConstraints::new();
     constraints.add_constraint(0, Constraint::Equals(4));
     constraints.add_constraint(1, Constraint::LessThan(3));
-    constraints.add_constraint(2, Constraint::MultipleOf(2));
 
     let valid_shapes: Vec<_> = constraints.possible().collect();
     println!("Valid shapes: {valid_shapes:#?}");
     for shape in valid_shapes {
         assert_eq!(shape.shape[0], 4);
         assert!(shape.shape[1] < 3);
-        assert_eq!(shape.shape[2] % 2, 0);
     }
 
     let valid_shape = constraints.solve();
@@ -286,12 +170,9 @@ fn test_many_workgroup_shape_constraints() {
     let mut constraints = WorkgroupShapeConstraints::new();
     constraints.add_constraint(0, Constraint::Equals(4));
     constraints.add_constraint(1, Constraint::LessThan(3));
-    constraints.add_constraint(2, Constraint::MultipleOf(2));
 
     let mut constraints2 = WorkgroupShapeConstraints::new();
-    constraints2.add_constraint(0, Constraint::MultipleOf(2));
     constraints2.add_constraint(1, Constraint::Equals(2));
-    constraints2.add_constraint(2, Constraint::MultipleOf(8));
 
     let mut merged = WorkgroupShapeConstraints::new();
     merged.merge(&constraints);
@@ -301,7 +182,6 @@ fn test_many_workgroup_shape_constraints() {
     for shape in valid_shapes {
         assert_eq!(shape.shape[0], 4);
         assert!(shape.shape[1] < 3);
-        assert_eq!(shape.shape[2] % 8, 0);
     }
 
     let valid_shape = merged.solve();
@@ -313,9 +193,6 @@ fn test_many_workgroup_shape_constraints() {
 pub(crate) enum Constraint {
     Equals(u32),
     LessThan(u32),
-    MultipleOf(u32),
-    Or(Box<Constraint>, Box<Constraint>),
-    And(Box<Constraint>, Box<Constraint>),
     Not(Box<Constraint>),
 }
 
@@ -332,29 +209,10 @@ impl Constraint {
         Constraint::Not(Box::new(Constraint::LessThan(value)))
     }
 
-    pub(crate) fn multiple_of(value: u32) -> Self {
-        Constraint::MultipleOf(value)
-    }
-
-    pub(crate) fn or(left: Constraint, right: Constraint) -> Self {
-        Constraint::Or(Box::new(left), Box::new(right))
-    }
-
-    pub(crate) fn and(left: Constraint, right: Constraint) -> Self {
-        Constraint::And(Box::new(left), Box::new(right))
-    }
-
-    pub(crate) fn not(inner: Constraint) -> Self {
-        Constraint::Not(Box::new(inner))
-    }
-
     fn fits(&self, shape: u32) -> bool {
         match self {
             Constraint::Equals(value) => shape == *value,
             Constraint::LessThan(value) => shape < *value,
-            Constraint::MultipleOf(value) => shape % value == 0,
-            Constraint::Or(left, right) => left.fits(shape) || right.fits(shape),
-            Constraint::And(left, right) => left.fits(shape) && right.fits(shape),
             Constraint::Not(inner) => !inner.fits(shape),
         }
     }

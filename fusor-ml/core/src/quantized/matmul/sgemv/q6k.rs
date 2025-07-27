@@ -15,6 +15,7 @@ pub(crate) const Q6K_SGEMV_CHUNK_SIZE: u32 = 2; // This is the size of the chunk
 const PRELOAD: bool = false;
 
 // https://github.com/ggml-org/llama.cpp/blob/6efcd65945a98cf6883cdd9de4c8ccd8c79d219a/ggml/src/ggml-metal/ggml-metal.metal#L5564
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn q6k_sgemv(
     op: &QMatMulOperation,
     generic_kernel: &mut GenericKernel,

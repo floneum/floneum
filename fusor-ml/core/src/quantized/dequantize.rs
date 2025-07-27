@@ -169,7 +169,7 @@ impl QMatrix {
         let data = LazyTensorData::from_parts(
             device,
             graph,
-            TensorInfo::new(self.shape().clone(), T::WGSL_TYPE),
+            TensorInfo::new(self.shape().into(), T::WGSL_TYPE),
             key.into(),
         );
 
@@ -219,7 +219,7 @@ async fn test_dequantize_smol_lm() {
             metadata.tensor_data_offset,
         )
         .unwrap();
-        assert_eq!(candle_result.shape().dims(), &**q_matrix.shape());
+        assert_eq!(candle_result.shape().dims(), q_matrix.shape());
 
         match candle_result.rank() {
             1 => {
