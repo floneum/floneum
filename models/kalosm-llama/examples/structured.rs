@@ -48,7 +48,7 @@ async fn main() {
     println!("\n\n# without constraints");
 
     let task = llm.task("You generate realistic JSON placeholders");
-    let stream = task(prompt);
+    let stream = task(&prompt);
 
     time_stream(stream).await;
 }
@@ -64,10 +64,7 @@ async fn time_stream(mut stream: impl TextStream + Unpin) {
         std::io::stdout().flush().unwrap();
     }
     let elapsed = start_time.elapsed();
-    println!(
-        "\n\nGenerated {} tokens ({} characters) in {:?}",
-        tokens, string_length, elapsed
-    );
+    println!("\n\nGenerated {tokens} tokens ({string_length} characters) in {elapsed:?}");
     println!(
         "Tokens per second: {:.2}",
         tokens as f64 / elapsed.as_secs_f64()

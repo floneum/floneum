@@ -1,7 +1,7 @@
 use kalosm_language_model::{
-    CreateDefaultChatConstraintsForType, CreateDefaultCompletionConstraintsForType,
-    CreateTextCompletionSession, GenerationParameters, ModelBuilder, StructuredTextCompletionModel,
-    TextCompletionModel,
+    ContentChunk, CreateDefaultChatConstraintsForType, CreateDefaultCompletionConstraintsForType,
+    CreateTextCompletionSession, GenerationParameters, MessageContent, ModelBuilder,
+    StructuredTextCompletionModel, TextCompletionModel,
 };
 use kalosm_model_types::ModelLoadingProgress;
 use kalosm_sample::{ArcParser, CreateParserState, Parse, Parser, ParserExt};
@@ -31,7 +31,7 @@ impl ModelBuilder for LlamaBuilder {
 
     fn requires_download(&self) -> bool {
         let cache = &self.source.cache;
-        !cache.exists(&self.source.model)
+        !self.source.model.iter().all(|m| cache.exists(m))
             || self
                 .source
                 .tokenizer
@@ -51,46 +51,55 @@ impl CreateTextCompletionSession for Llama {
 }
 
 impl<S: Sampler + 'static> TextCompletionModel<S> for Llama {
-    fn stream_text_with_callback<'a>(
+    async fn stream_text_with_callback<'a>(
         &'a self,
         session: &'a mut Self::Session,
-        text: &str,
+        msg: MessageContent,
         sampler: S,
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a {
-        let text = text.to_string();
-        async move {
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            let (max_tokens, stop_on, seed) =
-                match (&sampler as &dyn Any).downcast_ref::<GenerationParameters>() {
-                    Some(sampler) => (
-                        sampler.max_length(),
-                        sampler.stop_on().map(|s| s.to_string()),
-                        sampler.seed(),
-                    ),
-                    None => (u32::MAX, None, None),
-                };
-            let sampler = std::sync::Arc::new(std::sync::Mutex::new(sampler));
-            let on_token = Box::new(on_token);
-            self.task_sender
-                .send(Task::UnstructuredGeneration(UnstructuredGenerationTask {
-                    settings: InferenceSettings::new(
-                        text,
-                        session.clone(),
-                        sampler,
-                        max_tokens,
-                        stop_on,
-                        seed,
-                    ),
-                    on_token,
-                    finished: tx,
-                }))
-                .map_err(|_| LlamaModelError::ModelStopped)?;
-
-            rx.await.map_err(|_| LlamaModelError::ModelStopped)??;
-
-            Ok(())
+    ) -> Result<(), Self::Error> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let (max_tokens, stop_on, seed) =
+            match (&sampler as &dyn Any).downcast_ref::<GenerationParameters>() {
+                Some(sampler) => (
+                    sampler.max_length(),
+                    sampler.stop_on().map(|s| s.to_string()),
+                    sampler.seed(),
+                ),
+                None => (u32::MAX, None, None),
+            };
+        let sampler = std::sync::Arc::new(std::sync::Mutex::new(sampler));
+        let on_token = Box::new(on_token);
+        let text = msg.text();
+        let msg = msg.resolve_media_sources().await?;
+        let mut images = Vec::new();
+        for chunk in msg.chunks() {
+            if let ContentChunk::Media(media) = chunk {
+                if let Some(bytes) = &media.source().as_bytes() {
+                    // Decode the image from the bytes
+                    images.push((image::load_from_memory(bytes)?, media.hints().clone()))
+                }
+            }
         }
+        self.task_sender
+            .send(Task::UnstructuredGeneration(UnstructuredGenerationTask {
+                settings: InferenceSettings::new(
+                    text,
+                    images,
+                    session.clone(),
+                    sampler,
+                    max_tokens,
+                    stop_on,
+                    seed,
+                ),
+                on_token,
+                finished: tx,
+            }))
+            .map_err(|_| LlamaModelError::ModelStopped)?;
+
+        rx.await.map_err(|_| LlamaModelError::ModelStopped)??;
+
+        Ok(())
     }
 }
 
@@ -119,14 +128,13 @@ where
     fn stream_text_with_callback_and_parser<'a>(
         &'a self,
         session: &'a mut Self::Session,
-        text: &str,
+        text: MessageContent,
         sampler: S,
         parser: Constraints,
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
     ) -> impl Future<Output = Result<Constraints::Output, Self::Error>> + Send + 'a {
-        let text = text.to_string();
         let mut session = session.clone();
-        async {
+        async move {
             let (tx, rx) = tokio::sync::oneshot::channel();
             let seed = match (&sampler as &dyn Any).downcast_ref::<GenerationParameters>() {
                 Some(sampler) => sampler.seed(),
@@ -134,12 +142,13 @@ where
             };
             let sampler = std::sync::Arc::new(std::sync::Mutex::new(sampler));
             let on_token = Box::new(on_token);
+            let resolved_message = text.resolve_media_sources().await?;
             self.task_sender
                 .send(Task::StructuredGeneration(StructuredGenerationTask {
                     runner: Box::new(move |model| {
                         let parser_state = parser.create_parser_state();
                         let result = generate_structured(
-                            text,
+                            resolved_message,
                             model,
                             &mut session,
                             parser,

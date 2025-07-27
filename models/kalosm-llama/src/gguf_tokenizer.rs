@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use ahash::AHashMap;
 use tokenizers::{
     decoders::byte_level::ByteLevel,
     models::bpe::BpeBuilder,
@@ -156,8 +155,9 @@ impl GGUFPreTokenizerConfig {
             })
             .collect();
         let bos_token = vocab[bos];
+        let vocab = ahash::AHashMap::from_iter(vocab);
         let bpe_tokenizer = BpeBuilder::new()
-            .vocab_and_merges(vocab.into_iter().collect::<AHashMap<_, _>>(), merges)
+            .vocab_and_merges(vocab, merges)
             .ignore_merges(self.ignore_merges)
             .build()?;
 
@@ -185,25 +185,18 @@ impl GGUFPreTokenizerConfig {
             let special_toks = vec![SpecialToken::from((bos_token, bos.to_string()))];
             post_processors.push(
                 TemplateProcessing::builder()
-                    .single(
-                        tokenizers::processors::template::Template::try_from(vec![
-                            format!("{bos}:0"),
-                            "$A:0".to_string(),
-                        ])
-                        .unwrap(),
-                    )
-                    .pair(
-                        tokenizers::processors::template::Template::try_from(vec![
-                            format!("{bos}:0"),
-                            "$A:0".to_string(),
-                            format!("{bos}:1"),
-                            "$B:1".to_string(),
-                        ])
-                        .unwrap(),
-                    )
+                    .single(tokenizers::processors::template::Template::try_from(vec![
+                        format!("{bos}:0"),
+                        "$A:0".to_string(),
+                    ])?)
+                    .pair(tokenizers::processors::template::Template::try_from(vec![
+                        format!("{bos}:0"),
+                        "$A:0".to_string(),
+                        format!("{bos}:1"),
+                        "$B:1".to_string(),
+                    ])?)
                     .special_tokens(special_toks)
-                    .build()
-                    .unwrap()
+                    .build()?
                     .into(),
             );
         }

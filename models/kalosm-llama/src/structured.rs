@@ -1,3 +1,4 @@
+use kalosm_language_model::{ContentChunk, MessageContent};
 use kalosm_sample::CreateParserState;
 use kalosm_sample::{LiteralParser, ParseStatus, Parser, ParserExt};
 use llm_samplers::prelude::{Logit, Logits};
@@ -5,7 +6,7 @@ use llm_samplers::types::{HasSamplerResources, Sampler, SamplerError};
 use rand::SeedableRng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::{
-    fmt::{Debug, Display, Formatter},
+    fmt::{Debug, Formatter},
     sync::{Arc, Mutex},
 };
 use tokenizers::tokenizer::Tokenizer;
@@ -16,7 +17,7 @@ use crate::{LlamaModel, LlamaSession};
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn generate_structured<P: Parser>(
-    prompt: impl Display,
+    prompt: MessageContent,
     llm: &LlamaModel,
     session: &mut LlamaSession,
     parser: P,
@@ -39,7 +40,20 @@ pub(crate) fn generate_structured<P: Parser>(
         .map_err(|err| LlamaModelError::Session(err.to_string()))?;
     let tokenizer = &llm.tokenizer;
 
-    let prompt_text = prompt.to_string();
+    let prompt_text = prompt.text();
+    let images = prompt
+        .chunks()
+        .iter()
+        .filter_map(|chunk| {
+            if let ContentChunk::Media(media) = chunk {
+                media.source().as_bytes().as_ref().map(|bytes| {
+                    image::load_from_memory(bytes).map(|img| (img, media.hints().clone()))
+                })
+            } else {
+                None
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     let prompt_tokens = tokenizer
         .encode_fast(prompt_text, false)
         .map_err(LlamaModelError::Tokenizer)?;
@@ -96,7 +110,7 @@ pub(crate) fn generate_structured<P: Parser>(
     let mut rng = if let Some(seed) = seed {
         rand::rngs::StdRng::seed_from_u64(seed)
     } else {
-        rand::rngs::StdRng::from_os_rng()
+        rand::rngs::StdRng::from_entropy()
     };
     let mut state_map = vec![];
     let mut logits_indexed = Vec::new();
@@ -110,6 +124,7 @@ pub(crate) fn generate_structured<P: Parser>(
             &llm.model,
             &llm.device,
             &tokens[tokens.len() - unprocessed_token_count..],
+            &images,
             Some(&mut *session),
             &mut logit_probs,
             &llm.tokenizer,
@@ -221,7 +236,7 @@ pub(crate) fn generate_structured<P: Parser>(
             .get_mut(token_id as usize)
             .unwrap()
             .take()
-            .unwrap_or_else(|| panic!("Token {} not found in state map", token_id));
+            .unwrap_or_else(|| panic!("Token {token_id} not found in state map"));
         let mut token = token_stream
             .next_token(token_id)
             .map_err(LlamaModelError::TokenOutputStreamError)?
@@ -384,7 +399,7 @@ impl DetokenizationCache {
 
     fn get(&self, index: usize) -> Option<&str> {
         match &self.cache[index] {
-            TokenCacheStatus::Empty => panic!("cache for token {} is empty", index),
+            TokenCacheStatus::Empty => panic!("cache for token {index} is empty"),
             TokenCacheStatus::Invalid => None,
             TokenCacheStatus::Valid(token) => Some(token),
         }

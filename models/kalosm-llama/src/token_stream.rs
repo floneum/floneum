@@ -94,7 +94,7 @@ impl TokenOutputStream {
         let mut rng = if let Some(seed) = seed {
             rand::rngs::StdRng::seed_from_u64(seed)
         } else {
-            rand::rngs::StdRng::from_os_rng()
+            rand::rngs::StdRng::from_entropy()
         };
         let tokenizer = &self.tokenizer;
         let previous_tokens = &self.tokens;

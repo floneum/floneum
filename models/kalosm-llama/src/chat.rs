@@ -4,9 +4,11 @@ use std::{
 };
 
 use crate::{model::LlamaModelError, session::LlamaSessionLoadingError, Llama, LlamaSession};
+use kalosm_common::accelerated_device_if_available;
 use kalosm_language_model::{
-    ChatMessage, ChatModel, ChatSession, CreateChatSession, CreateTextCompletionSession,
-    MessageType, StructuredChatModel, StructuredTextCompletionModel, TextCompletionModel,
+    ChatMessage, ChatModel, ChatSession, ContentChunk, CreateChatSession,
+    CreateTextCompletionSession, MessageContent, MessageType, StructuredChatModel,
+    StructuredTextCompletionModel, TextCompletionModel,
 };
 use kalosm_sample::{CreateParserState, Parser};
 use llm_samplers::types::Sampler;
@@ -68,6 +70,14 @@ impl<S: Sampler + 'static> ChatModel<S> for Llama {
         mut on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a {
         let new_text = get_new_tokens(messages, session, self);
+        let mut content = MessageContent::new();
+        for message in messages {
+            for chunk in message.content().chunks() {
+                if matches!(chunk, ContentChunk::Media(_)) {
+                    content.push(chunk.clone());
+                }
+            }
+        }
         async move {
             let new_text = new_text?;
             let model_response = Arc::new(RwLock::new(String::new()));
@@ -79,7 +89,9 @@ impl<S: Sampler + 'static> ChatModel<S> for Llama {
                     on_token(token)
                 }
             };
-            self.stream_text_with_callback(&mut session.session, &new_text, sampler, on_token)
+            content.push(new_text);
+
+            self.stream_text_with_callback(&mut session.session, content, sampler, on_token)
                 .await?;
             session.history.push(ChatMessage::new(
                 MessageType::ModelAnswer,
@@ -110,6 +122,14 @@ where
         >,
     > + Send
            + 'a {
+        let mut content = MessageContent::new();
+        for message in messages {
+            for chunk in message.content().chunks() {
+                if matches!(chunk, ContentChunk::Media(_)) {
+                    content.push(chunk.clone());
+                }
+            }
+        }
         let new_text = get_new_tokens(messages, session, self);
         async move {
             let new_text = new_text?;
@@ -122,10 +142,11 @@ where
                     on_token(token)
                 }
             };
+            content.push(new_text);
             let result = self
                 .stream_text_with_callback_and_parser(
                     &mut session.session,
-                    &new_text,
+                    content,
                     sampler,
                     constraints,
                     on_token,
@@ -151,84 +172,93 @@ impl ChatSession for LlamaChatSession {
     type Error = LlamaSessionLoadingError;
 
     fn write_to(&self, into: &mut Vec<u8>) -> Result<(), Self::Error> {
-        // let device = accelerated_device_if_available()?;
+        let device = accelerated_device_if_available()?;
 
-        // let history_items = self.history.len() as u32;
-        // let mut all_bytes = Vec::new();
-        // all_bytes.extend_from_slice(&history_items.to_le_bytes());
-        // for item in &self.history {
-        //     let ty = match item.role() {
-        //         MessageType::UserMessage => 0u8,
-        //         MessageType::ModelAnswer => 1,
-        //         MessageType::SystemPrompt => 2,
-        //     };
-        //     all_bytes.extend_from_slice(&ty.to_le_bytes());
-        //     let content_bytes = item.content().as_bytes();
-        //     let content_bytes_len = content_bytes.len() as u32;
-        //     all_bytes.extend_from_slice(&content_bytes_len.to_le_bytes());
-        //     all_bytes.extend_from_slice(content_bytes);
-        // }
+        let history_items = self.history.len() as u32;
+        let mut all_bytes = Vec::new();
+        all_bytes.extend_from_slice(&history_items.to_le_bytes());
+        for item in &self.history {
+            let ty = match item.role() {
+                MessageType::UserMessage => 0u8,
+                MessageType::ModelAnswer => 1,
+                MessageType::SystemPrompt => 2,
+            };
+            all_bytes.extend_from_slice(&ty.to_le_bytes());
+            let text_content = item
+                .content()
+                .chunks()
+                .iter()
+                .fold(String::new(), |acc, chunk| {
+                    let content = match chunk {
+                        ContentChunk::Text(text) => text,
+                        ContentChunk::Media(_) => return acc,
+                    };
+                    acc + content
+                });
+            let content_bytes = text_content.as_bytes();
+            let content_bytes_len = content_bytes.len() as u32;
+            all_bytes.extend_from_slice(&content_bytes_len.to_le_bytes());
+            all_bytes.extend_from_slice(content_bytes);
+        }
 
-        // let tensors = self.session.get_tensor_map(&device);
-        // let bytes = safetensors::serialize(&tensors, &None)?;
-        // all_bytes.extend_from_slice(&bytes);
+        let tensors = self.session.get_tensor_map(&device);
+        let bytes = safetensors::serialize(&tensors, &None)?;
+        all_bytes.extend_from_slice(&bytes);
 
-        // into.extend_from_slice(&all_bytes);
+        into.extend_from_slice(&all_bytes);
 
-        // Ok(())
-        todo!()
+        Ok(())
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, Self::Error>
     where
         Self: std::marker::Sized,
     {
-        // let mut history_items = Vec::new();
-        // let mut cursor_pos = 0;
-        // let history_item_count = u32::from_le_bytes(
-        //     bytes
-        //         .get(..4)
-        //         .ok_or(LlamaSessionLoadingError::InvalidChatMessages)?
-        //         .try_into()
-        //         .map_err(|_| LlamaSessionLoadingError::InvalidChatMessages)?,
-        // );
-        // cursor_pos += 4;
-        // history_items.reserve(history_item_count as usize);
-        // for _ in 0..history_item_count {
-        //     let ty = bytes[cursor_pos];
-        //     let ty = match ty {
-        //         0 => MessageType::UserMessage,
-        //         1 => MessageType::ModelAnswer,
-        //         2 => MessageType::SystemPrompt,
-        //         _ => return Err(LlamaSessionLoadingError::InvalidChatMessages),
-        //     };
-        //     cursor_pos += 1;
-        //     let content_bytes_len = u32::from_le_bytes(
-        //         bytes[cursor_pos..cursor_pos + 4]
-        //             .try_into()
-        //             .map_err(|_| LlamaSessionLoadingError::InvalidChatMessages)?,
-        //     );
-        //     cursor_pos += 4;
-        //     let content_bytes = &bytes[cursor_pos..cursor_pos + content_bytes_len as usize];
-        //     cursor_pos += content_bytes_len as usize;
-        //     let item = ChatMessage::new(
-        //         ty,
-        //         String::from_utf8(content_bytes.to_vec())
-        //             .map_err(|_| LlamaSessionLoadingError::InvalidChatMessages)?,
-        //     );
-        //     history_items.push(item);
-        // }
+        let mut history_items = Vec::new();
+        let mut cursor_pos = 0;
+        let history_item_count = u32::from_le_bytes(
+            bytes
+                .get(..4)
+                .ok_or(LlamaSessionLoadingError::InvalidChatMessages)?
+                .try_into()
+                .map_err(|_| LlamaSessionLoadingError::InvalidChatMessages)?,
+        );
+        cursor_pos += 4;
+        history_items.reserve(history_item_count as usize);
+        for _ in 0..history_item_count {
+            let ty = bytes[cursor_pos];
+            let ty = match ty {
+                0 => MessageType::UserMessage,
+                1 => MessageType::ModelAnswer,
+                2 => MessageType::SystemPrompt,
+                _ => return Err(LlamaSessionLoadingError::InvalidChatMessages),
+            };
+            cursor_pos += 1;
+            let content_bytes_len = u32::from_le_bytes(
+                bytes[cursor_pos..cursor_pos + 4]
+                    .try_into()
+                    .map_err(|_| LlamaSessionLoadingError::InvalidChatMessages)?,
+            );
+            cursor_pos += 4;
+            let content_bytes = &bytes[cursor_pos..cursor_pos + content_bytes_len as usize];
+            cursor_pos += content_bytes_len as usize;
+            let item = ChatMessage::new(
+                ty,
+                String::from_utf8(content_bytes.to_vec())
+                    .map_err(|_| LlamaSessionLoadingError::InvalidChatMessages)?,
+            );
+            history_items.push(item);
+        }
 
-        // let device = Device::new().await?;
-        // let tensors = fusor_core::safetensors::load_buffer(&bytes[cursor_pos..], &device)?;
+        let device = accelerated_device_if_available()?;
+        let tensors = candle_core::safetensors::load_buffer(&bytes[cursor_pos..], &device)?;
 
-        // let session = LlamaSession::from_tensor_map(tensors)?;
+        let session = LlamaSession::from_tensor_map(tensors)?;
 
-        // Ok(Self {
-        //     history: history_items,
-        //     session,
-        // })
-        todo!()
+        Ok(Self {
+            history: history_items,
+            session,
+        })
     }
 
     fn history(&self) -> Vec<ChatMessage> {
