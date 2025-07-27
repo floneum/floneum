@@ -1,23 +1,27 @@
 use fusor_gguf::GgmlType;
 
 use crate::{
+    DataTypeEnum, Device,
     mir::{
         globals::{ArrayType, KernelGlobalType, VectorType},
         inputs::{QMatrixInput, TensorInput},
         kernel::GenericKernel,
         workgroup_shape::WorkgroupShape,
-    }, quantized::matmul::{
+    },
+    quantized::matmul::{
+        QMatMulOperation,
         sgemv::{
-            general::general_sgemv, q4k::q4k_sgemv, q6k::q6k_sgemv, q_8_0::q_8_0_sgemv, q_n::q_n_sgemv
-        }, QMatMulOperation
-    }, DataTypeEnum, Device
+            general::general_sgemv, q_8_0::q_8_0_sgemv, q_n::q_n_sgemv, q4k::q4k_sgemv,
+            q6k::q6k_sgemv,
+        },
+    },
 };
 use crate::{
-    quantized::matmul::{
-        sgemv::{
-            q4k::Q4K_SGEMV_CHUNK_SIZE, q6k::Q6K_SGEMV_CHUNK_SIZE, q_8_0::Q_8_0_SGEMV_CHUNK_SIZE, q_n::Q_N_SGEMV_CHUNK_SIZE, 
-        },
-    }, QMatrix,
+    QMatrix,
+    quantized::matmul::sgemv::{
+        q_8_0::Q_8_0_SGEMV_CHUNK_SIZE, q_n::Q_N_SGEMV_CHUNK_SIZE, q4k::Q4K_SGEMV_CHUNK_SIZE,
+        q6k::Q6K_SGEMV_CHUNK_SIZE,
+    },
 };
 use std::fmt::Display;
 
@@ -138,9 +142,6 @@ pub(crate) fn sgemv(
     }
 }
 
-
-
-
 pub(crate) fn dispatch_size(matrix: &QMatrix, n: u32, _m: u32) -> [u32; 3] {
     if matrix.datatype == GgmlType::Q6K {
         return [(n as u32).div_ceil(Q6K_SGEMV_CHUNK_SIZE * 2), 1, 1];
@@ -157,9 +158,7 @@ pub(crate) fn dispatch_size(matrix: &QMatrix, n: u32, _m: u32) -> [u32; 3] {
     [(n as u32).div_ceil(SGEMV_CHUNK_SIZE * 2), 1, 1]
 }
 
-
-
-pub(crate)fn workgroup_shape_constraints(
+pub(crate) fn workgroup_shape_constraints(
     matrix: &QMatrix,
     device: &Device,
 ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {

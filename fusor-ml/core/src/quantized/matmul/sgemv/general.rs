@@ -1,16 +1,22 @@
 use fusor_gguf::GgmlType;
 
 use crate::{
-    dequantize_vec4_block, mir::{
+    DataTypeEnum, dequantize_vec4_block,
+    mir::{
         globals::KernelGlobalSpace,
         inputs::{QMatrixInput, TensorInput},
         kernel::GenericKernel,
         workgroup_shape::WorkgroupShape,
-    }, quantized::matmul::{
+    },
+    quantized::matmul::{
+        QMatMulOperation,
         sgemv::{
-            maybe_vec_storage_index, maybe_vec_storage_subgroup_add, maybe_vec_storage_type, maybe_vec_storage_type_enum, q4k::Q4K_SGEMV_CHUNK_SIZE, q6k::Q6K_SGEMV_CHUNK_SIZE, q_8_0::Q_8_0_SGEMV_CHUNK_SIZE, q_n::Q_N_SGEMV_CHUNK_SIZE, SGEMV_CHUNK_SIZE, SGEMV_VECTOR_SIZE
-        }, QMatMulOperation
-    }, DataTypeEnum
+            SGEMV_CHUNK_SIZE, SGEMV_VECTOR_SIZE, maybe_vec_storage_index,
+            maybe_vec_storage_subgroup_add, maybe_vec_storage_type, maybe_vec_storage_type_enum,
+            q_8_0::Q_8_0_SGEMV_CHUNK_SIZE, q_n::Q_N_SGEMV_CHUNK_SIZE, q4k::Q4K_SGEMV_CHUNK_SIZE,
+            q6k::Q6K_SGEMV_CHUNK_SIZE,
+        },
+    },
 };
 use std::fmt::Write;
 
@@ -237,4 +243,3 @@ pub(crate) fn general_sgemv(
 
     generic_kernel.push_body(&kernel);
 }
-
