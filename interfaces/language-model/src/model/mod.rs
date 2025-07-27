@@ -8,6 +8,8 @@ pub use ext::*;
 mod boxed;
 pub use boxed::*;
 
+use crate::MessageContent;
+
 #[doc = include_str!("../../docs/completion_session.md")]
 pub trait TextCompletionSession {
     /// The type of error the session may return during operations.
@@ -33,7 +35,7 @@ pub trait TextCompletionSession {
     ///     // Feed some text into the session
     ///     llm.stream_text_with_callback(
     ///         &mut session,
-    ///         "The capital of France is ",
+    ///         "The capital of France is ".into(),
     ///         GenerationParameters::new().with_max_length(0),
     ///         |_| Ok(()),
     ///     )
@@ -72,7 +74,7 @@ pub trait TextCompletionSession {
     ///     // Feed some more text into the session
     ///     llm.stream_text_with_callback(
     ///         &mut session,
-    ///         "The capital of France is ",
+    ///         "The capital of France is ".into(),
     ///         GenerationParameters::new(),
     ///         |token| {
     ///             println!("{token}");
@@ -103,7 +105,7 @@ pub trait TextCompletionSession {
     ///     // Feed some text into the session
     ///     llm.stream_text_with_callback(
     ///         &mut session,
-    ///         "The capital of France is ",
+    ///         "The capital of France is ".into(),
     ///         GenerationParameters::new().with_max_length(0),
     ///         |_| Ok(()),
     ///     )
@@ -116,7 +118,7 @@ pub trait TextCompletionSession {
     ///     // Feed some more text into the cloned session
     ///     llm.stream_text_with_callback(
     ///         &mut session,
-    ///         "The capital of France is ",
+    ///         "The capital of France is ".into(),
     ///         GenerationParameters::new(),
     ///         |token| {
     ///             println!("{token}");
@@ -229,7 +231,7 @@ pub trait CreateDefaultCompletionConstraintsForType<T>:
 ///     // Create a new session for the model
 ///     let mut session = llm.new_session().unwrap();
 ///     // Feed some text into the session using the raw text completion api that accepts a session, prompt, sampler, and on token callback
-///     llm.stream_text_with_callback(&mut session, "The capital of France is ", GenerationParameters::new(), |token| {println!("{token}"); Ok(())}).await.unwrap();
+///     llm.stream_text_with_callback(&mut session, "The capital of France is ".into(), GenerationParameters::new(), |token| {println!("{token}"); Ok(())}).await.unwrap();
 /// }
 /// ```
 pub trait TextCompletionModel<Sampler = GenerationParameters>: CreateTextCompletionSession {
@@ -239,7 +241,7 @@ pub trait TextCompletionModel<Sampler = GenerationParameters>: CreateTextComplet
     fn stream_text_with_callback<'a>(
         &'a self,
         session: &'a mut Self::Session,
-        text: &str,
+        text: MessageContent,
         sampler: Sampler,
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a;
@@ -264,7 +266,7 @@ pub trait TextCompletionModel<Sampler = GenerationParameters>: CreateTextComplet
 ///     // any parsers that implements the `Parse` trait.
 ///     let parser = i32::new_parser();
 ///     // Feed some text into the session using the raw structured text completion api that accepts a session, prompt, sampler, and on token callback
-///     llm.stream_text_with_callback_and_parser(&mut session, "5 * 5 = ", GenerationParameters::new(), parser, |token| {println!("{token}"); Ok(())}).await.unwrap();
+///     llm.stream_text_with_callback_and_parser(&mut session, "5 * 5 = ".into(), GenerationParameters::new(), parser, |token| {println!("{token}"); Ok(())}).await.unwrap();
 /// }
 /// ```
 pub trait StructuredTextCompletionModel<
@@ -278,7 +280,7 @@ pub trait StructuredTextCompletionModel<
     fn stream_text_with_callback_and_parser<'a>(
         &'a self,
         session: &'a mut Self::Session,
-        text: &str,
+        text: MessageContent,
         sampler: Sampler,
         parser: Constraints,
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,

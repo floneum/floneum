@@ -241,7 +241,7 @@ impl<I: Display> std::fmt::Display for EvaluationResult<'_, I> {
             Cell::new(format!("{:.2}", self.quantile_score(0.75))),
         ]);
 
-        writeln!(f, "{}", statistics)?;
+        writeln!(f, "{statistics}")?;
 
         let mut table = Table::new();
         table.set_header(vec!["Expected Output", "Actual Output", "Score"]);
@@ -253,11 +253,11 @@ impl<I: Display> std::fmt::Display for EvaluationResult<'_, I> {
 
         fn create_cell(score: f64, quantile: f64) -> Cell {
             if quantile <= 0.1 {
-                Cell::new(format!("{:.2} (low outlier)", score))
+                Cell::new(format!("{score:.2} (low outlier)"))
             } else if quantile <= 0.9 {
-                Cell::new(format!("{:.2}", score))
+                Cell::new(format!("{score:.2}"))
             } else {
-                Cell::new(format!("{:.2} (high outlier)", score))
+                Cell::new(format!("{score:.2} (high outlier)"))
             }
         }
 
@@ -294,7 +294,7 @@ impl<I: Display> std::fmt::Display for EvaluationResult<'_, I> {
                     }
                     if remaining_matching_tests > 0 {
                         let mut row = Row::new();
-                        row.add_cell(Cell::new(format!("... {} more", remaining_matching_tests)))
+                        row.add_cell(Cell::new(format!("... {remaining_matching_tests} more")))
                             .add_cell(Cell::new(""))
                             .add_cell(
                                 Cell::new(format!(
@@ -310,7 +310,7 @@ impl<I: Display> std::fmt::Display for EvaluationResult<'_, I> {
             }
         }
 
-        writeln!(f, "{}", table)?;
+        writeln!(f, "{table}")?;
 
         let mut buckets = [0; 10];
 

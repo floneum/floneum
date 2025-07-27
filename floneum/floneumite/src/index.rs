@@ -1,5 +1,6 @@
 use crate::OCTOCRAB;
 use crate::{package, packages_path, Config, PackageStructure};
+use http_body_util::BodyExt;
 use octocrab::models::repos::RepoCommit;
 use octocrab::Page;
 use semver::{Version, VersionReq};
@@ -90,7 +91,7 @@ impl FloneumPackageIndex {
                     .raw_file(last_commit.sha.clone(), "dist/floneum.toml")
                     .await?;
                 let body = file.into_body();
-                let bytes = hyper::body::to_bytes(body).await;
+                let bytes = body.collect().await.map(|b| b.to_bytes());
                 if let core::result::Result::Ok(as_str) = std::str::from_utf8(&bytes.unwrap()) {
                     if let std::result::Result::Ok(package) = toml::from_str::<Config>(as_str) {
                         log::trace!("found package: {:#?}", package);
@@ -229,7 +230,7 @@ impl RepoId {
         if let Some(last_commit) = commits.items.first() {
             let file = repo_handle.raw_file(last_commit.sha.clone(), path).await?;
             let body = file.into_body();
-            let bytes = hyper::body::to_bytes(body).await?;
+            let bytes = body.collect().await?.to_bytes();
             if bytes.len() < 5000usize {
                 log::error!("fetched file is suspiciously small");
                 log::error!("File contents: {:?}", bytes);
@@ -255,7 +256,7 @@ impl RepoId {
                 .raw_file(last_commit.sha.clone(), repo_path)
                 .await?;
             let body = file.into_body();
-            if let std::result::Result::Ok(bytes) = hyper::body::to_bytes(body).await {
+            if let std::result::Result::Ok(bytes) = body.collect().await.map(|b| b.to_bytes()) {
                 let package_path = packages_path()?.join(name).join(version);
                 tokio::fs::create_dir_all(&package_path).await?;
                 let wasm_path = package_path.join("package.wasm");

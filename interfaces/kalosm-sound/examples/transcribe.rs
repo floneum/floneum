@@ -5,7 +5,7 @@ use kalosm_streams::text_stream::TextStream;
 async fn main() -> Result<(), anyhow::Error> {
     // Create a new whisper model.
     let model = WhisperBuilder::default()
-        .with_source(WhisperSource::DistilLargeV3)
+        .with_source(WhisperSource::QuantizedLargeV3Turbo)
         .build()
         .await?;
 

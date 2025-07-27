@@ -1,6 +1,7 @@
 use super::{AnthropicCompatibleClient, NoAnthropicAPIKeyError};
 use crate::{
-    ChatMessage, ChatModel, ChatSession, CreateChatSession, GenerationParameters, ModelBuilder,
+    ChatMessage, ChatModel, ChatSession, ContentChunk, CreateChatSession, GenerationParameters,
+    ModelBuilder,
 };
 use futures_util::StreamExt;
 use kalosm_model_types::ModelLoadingProgress;
@@ -326,13 +327,14 @@ impl ChatModel<GenerationParameters> for AnthropicCompatibleChatModel {
             .iter()
             .filter(|message| {
                 if let crate::MessageType::SystemPrompt = message.role() {
-                    system_prompt = Some(message.content().to_string());
+                    system_prompt = message.content().as_str().map(ToString::to_string);
                     false
                 } else {
                     true
                 }
             })
             .collect();
+        let messages = format_messages(&messages);
         let myself = &*self.inner;
         let mut json = serde_json::json!({
             "model": myself.model,
@@ -412,6 +414,47 @@ impl ChatModel<GenerationParameters> for AnthropicCompatibleChatModel {
     }
 }
 
+fn format_messages(messages: &[&crate::ChatMessage]) -> serde_json::Value {
+    messages
+        .iter()
+        .map(|m| {
+            let content = m.content();
+            let content: serde_json::Value = if let Some(string) = content.as_str() {
+                string.into()
+            } else {
+                content
+                    .chunks()
+                    .iter()
+                    .map(|chunk| match chunk {
+                        ContentChunk::Text(text) => {
+                            serde_json::json!({
+                                "type": "text",
+                                "text": text
+                            })
+                        }
+                        ContentChunk::Media(image) => {
+                            serde_json::json!({
+                                "type": "image",
+                                "source": {
+                                    "type": "url",
+                                    "url": image.as_url(),
+                                }
+                            })
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .into()
+            };
+
+            serde_json::json!({
+                "role": m.role(),
+                "content": content,
+            })
+        })
+        .collect::<Vec<_>>()
+        .into()
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, RwLock};
@@ -433,7 +476,15 @@ mod tests {
                 crate::MessageType::SystemPrompt,
                 "Respond like a pirate.".to_string(),
             ),
-            crate::ChatMessage::new(crate::MessageType::UserMessage, "Hello, world!".to_string()),
+            crate::ChatMessage::new(
+                crate::MessageType::UserMessage,
+                (
+                    crate::MediaSource::url(
+                        "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg",
+                    ),
+                    "Describe this image".to_string(),
+                ),
+            ),
         ];
         let all_text = Arc::new(RwLock::new(String::new()));
         model

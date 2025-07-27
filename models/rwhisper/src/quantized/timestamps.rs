@@ -15,7 +15,7 @@ pub(super) fn extract_timestamps(
     cross_attentions: &[Tensor],
     filter_width: NonZeroUsize,
     n_frames: usize,
-    n_start_tokens: usize,
+    mask: Vec<Vec<bool>>,
 ) -> candle_core::Result<Vec<Vec<f32>>> {
     // Select relevant cross-attention heads
     let weights = Tensor::stack(
@@ -29,6 +29,11 @@ pub(super) fn extract_timestamps(
     .permute((1, 0, 2, 3))?
     .narrow(3, 0, n_frames.min(N_FRAMES) / 2)?;
 
+    if weights.dims().contains(&0) {
+        // No tokens to be aligned
+        return Ok(Vec::new());
+    }
+
     // Normalize
     let weights = softmax_last_dim(&weights.contiguous()?)?;
 
@@ -40,26 +45,25 @@ pub(super) fn extract_timestamps(
             .broadcast_div(&weights.var_keepdim(D::Minus2)?.sqrt()?)?,
     )?;
 
-    // Exclude start tokens
-    let cost = weights.mean(1)?.narrow(
-        D::Minus2,
-        n_start_tokens,
-        weights.dim(D::Minus2)? - n_start_tokens - 1,
-    )?;
-
-    if cost.dim(D::Minus2)? == 0 {
-        // No tokens to be aligned
-        return Ok(Default::default());
-    }
+    let cost = weights.mean(1)?;
 
     // Do the timewarp
     ((0..weights.dim(0)?).map(|batch_idx| {
-        let (text_indices, time_indices) = dynamic_time_warp(
-            cost.neg()?
-                .i(batch_idx)?
-                .to_dtype(candle_core::DType::F32)?
-                .to_vec2::<f32>()?,
-        )?;
+        // Exclude any tokens in the mask
+        let batch_index_cost = cost
+            .neg()?
+            .i(batch_idx)?
+            .to_dtype(candle_core::DType::F32)?;
+        let batch_index_cost = batch_index_cost.to_vec2::<f32>()?;
+        let batch_index_cost = batch_index_cost
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, v)| if mask[batch_idx][i] { Some(v) } else { None })
+            .collect::<Vec<_>>();
+        if batch_index_cost.is_empty() || batch_index_cost[0].is_empty() {
+            return Ok(Vec::new());
+        }
+        let (text_indices, time_indices) = dynamic_time_warp(batch_index_cost)?;
 
         let jumps = std::iter::once(true)
             .chain(

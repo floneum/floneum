@@ -22,7 +22,7 @@ async fn test_sqr() {
     println!("{}", tensor.graphvis());
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert!((output[[0, 0]] - 1. * 1.) < 0.001);
     assert!((output[[0, 1]] - 4. * 4.) < 0.001);
     assert!((output[[1, 0]] - 9. * 9.) < 0.001);

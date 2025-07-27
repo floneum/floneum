@@ -263,12 +263,14 @@ impl AudioEncoder {
             stride: 1,
             groups: 1,
             dilation: 1,
+            cudnn_fwd_algo: None,
         };
         let cfg2 = Conv1dConfig {
             padding: 1,
             stride: 2,
             groups: 1,
             dilation: 1,
+            cudnn_fwd_algo: None,
         };
         let conv1 = conv1d(cfg.num_mel_bins, n_state, 3, cfg1, vb.pp("conv1"))?;
         let conv2 = conv1d(n_state, n_state, 3, cfg2, vb.pp("conv2"))?;
@@ -381,7 +383,7 @@ impl TextDecoder {
             candle_core::bail!("exceeded max sequence length")
         }
         let device = audio_features.device();
-        let mask = self.mask_cache.get_mask(seq_len, index_pos, device)?;
+        let mask = self.mask_cache.get_mask(seq_len, index_pos, None, device)?;
         let x = Tensor::new(tokens, device)?;
         // The model expects a batch dim but this inference loop does not handle
         // it so we add it at this point.
@@ -447,7 +449,7 @@ impl Whisper {
         attention_heads: Option<&'static [[usize; 2]]>,
         filter_width: NonZeroUsize,
         n_frames: usize,
-        n_start_tokens: usize,
+        mask: Vec<Vec<bool>>,
         attention_output: &[TensorCache],
     ) -> Result<Vec<Vec<f32>>> {
         let Some(attention_heads) = attention_heads else {
@@ -458,7 +460,7 @@ impl Whisper {
 
         let mut attention_output_tensor = Vec::new();
         for attn in attention_output {
-            attention_output_tensor.push(attn.all_data().clone().unwrap());
+            attention_output_tensor.push(attn.current_data()?.clone().unwrap());
         }
 
         extract_timestamps(
@@ -466,7 +468,7 @@ impl Whisper {
             &attention_output_tensor,
             filter_width,
             n_frames,
-            n_start_tokens,
+            mask,
         )
     }
 }

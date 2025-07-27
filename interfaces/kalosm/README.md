@@ -129,7 +129,7 @@ async fn main() {
         .with_constraints(Arc::new(Response::new_parser()));
 
     // Finally, run the task
-    let response = task("The Kalosm library lets you create structured data from natural language inputs").await.unwrap();
+    let response = task(&"The Kalosm library lets you create structured data from natural language inputs").await.unwrap();
     println!("{:?}", response);
 }
 ```
@@ -153,7 +153,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut chat = llm.chat();
 
-    chat("What is the capital of France?").to_std_out().await?;
+    chat(&"What is the capital of France?").to_std_out().await?;
 
     Ok(())
 }

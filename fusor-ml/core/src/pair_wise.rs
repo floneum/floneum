@@ -326,7 +326,7 @@ async fn test_pair_wise_add() {
 
     let tensor = &tensor_a + &tensor_b;
     let as_slice = tensor.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
 
     assert_eq!(as_slice[[0, 0]], 1. + 1.);
     assert_eq!(as_slice[[0, 1]], 2. + 2.);
@@ -358,7 +358,7 @@ async fn test_pair_wise_add_f16() {
 
     let tensor = &tensor_a + &tensor_b;
     let as_slice = tensor.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
 
     assert_eq!(as_slice[[0, 0]], half::f16::from_f32(1. + 1.));
     assert_eq!(as_slice[[0, 1]], half::f16::from_f32(2. + 2.));
@@ -406,7 +406,7 @@ async fn test_pair_wise_add_const_mul_const_add_fused() {
 
     let tensor = &(tensor_a + 1.) + &(tensor_b * 2.);
     let as_slice = tensor.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
 
     assert_eq!(as_slice[[0, 0]], (1. + 1.) + (1. * 2.));
     assert_eq!(as_slice[[0, 1]], (2. + 1.) + (2. * 2.));
@@ -430,7 +430,7 @@ async fn test_pair_wise_add_sub_const_fused() {
 
     let tensor = (&tensor_a + &tensor_b) - 1.;
     let as_slice = tensor.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
 
     assert_eq!(as_slice[[0, 0]], 1. + 1. - 1.);
     assert_eq!(as_slice[[0, 1]], 2. + 2. - 1.);
@@ -456,7 +456,7 @@ async fn test_pair_wise_add_sparse() {
 
     let tensor = &tensor_a + &tensor_b;
     let as_slice = tensor.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
 
     assert_eq!(as_slice[[0, 0]], 1. + 1.);
     assert_eq!(as_slice[[1, 0]], 3. + 3.);
@@ -496,7 +496,7 @@ async fn test_pair_wise_sub() {
 
     let tensor = &tensor_a - &tensor_b;
     let as_slice = tensor.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
 
     assert_eq!(as_slice[[0, 0]], 1. - 1.);
     assert_eq!(as_slice[[0, 1]], 2. - 2.);
@@ -539,7 +539,7 @@ async fn test_pair_wise_mul() {
 
     let tensor = &tensor_a * &tensor_b;
     let as_slice = tensor.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
 
     assert_eq!(as_slice[[0, 0]], 1. * 1.);
     assert_eq!(as_slice[[0, 1]], 2. * 2.);
@@ -582,7 +582,7 @@ async fn test_pair_wise_div() {
 
     let tensor = &tensor_a / &tensor_b;
     let as_slice = tensor.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
 
     assert_eq!(as_slice[[0, 0]], 1. / 1.);
     assert_eq!(as_slice[[0, 1]], 4. / 2.);
@@ -616,7 +616,7 @@ async fn test_pair_wise_pow() {
 
     let tensor = &tensor_a.pow(&tensor_b);
     let as_slice = tensor.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
 
     assert!((as_slice[[0, 0]] - 1_f32.powf(1.)) < 0.001);
     assert!((as_slice[[0, 1]] - 2_f32.powf(2.)) < 0.001);

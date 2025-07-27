@@ -117,7 +117,7 @@ impl Cache {
                         return Ok(complete_download);
                     }
                 }
-                let incomplete_download = path.join(format!("{}.partial", file));
+                let incomplete_download = path.join(format!("{file}.partial"));
 
                 tracing::trace!("Downloading into {:?}", incomplete_download);
 
@@ -250,7 +250,7 @@ async fn downloads_work() {
     let url = "https://httpbin.org/range/102400?duration=2";
     let file = PathBuf::from("download.bin");
     let progress = |p| {
-        println!("Progress: {:?}", p);
+        println!("Progress: {p:?}");
     };
     let client = reqwest::Client::new();
     let response = client.head(url).send().await.unwrap();

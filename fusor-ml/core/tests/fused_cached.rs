@@ -24,8 +24,8 @@ async fn test_fused_cached_results() {
         tensor_plus_one_times_two.as_slice().await.unwrap();
     let fused_tensor_plus_one_times_three_result =
         tensor_plus_one_times_three.as_slice().await.unwrap();
-    println!("{:?}", fused_tensor_plus_one_times_two_result);
-    println!("{:?}", fused_tensor_plus_one_times_three_result);
+    println!("{fused_tensor_plus_one_times_two_result:?}");
+    println!("{fused_tensor_plus_one_times_three_result:?}");
     println!();
     println!();
     println!();
@@ -41,8 +41,8 @@ async fn test_fused_cached_results() {
     let tensor_plus_one_times_three = tensor_plus_one.clone() * 3.0;
     let tensor_plus_one_times_two_result = tensor_plus_one_times_two.as_slice().await.unwrap();
     let tensor_plus_one_times_three_result = tensor_plus_one_times_three.as_slice().await.unwrap();
-    println!("{:?}", tensor_plus_one_times_two_result);
-    println!("{:?}", tensor_plus_one_times_three_result);
+    println!("{tensor_plus_one_times_two_result:?}");
+    println!("{tensor_plus_one_times_three_result:?}");
 
     assert_eq!(
         fused_tensor_plus_one_times_two_result,

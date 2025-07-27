@@ -41,6 +41,7 @@ kalosm = { workspace = true, features = ["sound"], default-features = true }
 anyhow.workspace = true
 tracing-subscriber = "0.3.19"
 tokio = { version = "1.32.0", features = ["full"] }
+reqwest = "0.12.15"
 
 [features]
 accelerate = ["dep:accelerate-src", "candle-core/accelerate", "candle-nn/accelerate", "candle-transformers/accelerate"]

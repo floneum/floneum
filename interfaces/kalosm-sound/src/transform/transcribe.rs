@@ -20,8 +20,11 @@ pub trait AsyncSourceTranscribeExt: AsyncSource + Unpin + Send + Sized + 'static
     ///     let mic = MicInput::default();
     ///     let stream = mic.stream();
     ///
-    ///     // Transcribe the audio into text in chunks based on voice activity.
-    ///     let mut text_stream = stream.transcribe(model);
+    ///     // Transcribe the audio into text in chunks based on voice activity. You can overwrite
+    ///     // the transcription language by calling `with_language`
+    ///     let mut text_stream = stream
+    ///         .transcribe(model)
+    ///         .with_language(WhisperLanguage::German);
     ///
     ///     // Finally, print the text to the console
     ///     text_stream.to_std_out().await.unwrap();

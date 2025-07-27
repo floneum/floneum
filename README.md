@@ -21,10 +21,11 @@
   </a>
 </div>
 
-Floneum makes it easy to develop applications that use local pre-trained AI models. There are two main projects in this monorepo:
+Floneum is an ecosystem of crates that make it easy to develop applications that use local or remote AI models. There are three main projects in this repo:
 
 - [Kalosm](./interfaces/kalosm): A simple interface for pre-trained models in rust
 - [Floneum Editor (preview)](./floneum/floneum): A graphical editor for local AI workflows. See the [user documentation](https://floneum.com/docs/user/) or [plugin documentation](https://floneum.com/docs/developer/) for more information.
+- [Fusor](./fusor-ml/core): A runtime for quantized ML inference. Fusor uses WGPU to run models on any accelerator natively or in the browser
 
 ## Kalosm
 
@@ -91,7 +92,7 @@ async fn main() {
     let task = model.task("You generate realistic JSON placeholders for characters")
         .typed();
     // Finally, run the task
-    let mut stream = task("Create a list of random characters", &model);
+    let mut stream = task(&"Create a list of random characters", &model);
     stream.to_std_out().await.unwrap();
     let characters: [Character; 10] = stream.await.unwrap();
     println!("{characters:?}");
@@ -150,6 +151,17 @@ cargo run --release
 ```
 
 [chat bot demo](https://github.com/floneum/floneum/assets/66571940/e4e76efb-6387-4fcd-aa3c-aa556e840334)
+
+## Fusor
+
+⚠️ Fusor is still early in development and is not ready for production use. Fusor will serve as the backend for Kalosm and Floneum in the 0.5 release to enable web and AMD support
+
+[Fusor](./fusor-ml/core) is a WGPU runtime for quantized ML inference. Fusor works with the gguf file format to load quantized models. It targets uses WebGpu to target many different accelerators including Nvidia GPUs, AMD GPUs, and Metal. Most ML frameworks contain hand optimized kernels that perform a series of operations together. Fusor uses a kernel fusion compiler to make merge custom operation chains into an optimized kernel without dropping down to the shader code. This compiles to a single kernel:
+```rust, ignore
+fn exp_add_one(tensor: Tensor<2, f32>) -> Tensor<2, f32> {
+  1. + (-tensor).exp()
+}
+```
 
 ## Community
 

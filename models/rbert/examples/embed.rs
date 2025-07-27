@@ -9,7 +9,7 @@ async fn main() -> anyhow::Result<()> {
         "The quick brown fox jumps over the lazy dog",
     ];
     let embeddings = bert.embed_batch(sentences).await?;
-    println!("embeddings {:?}", embeddings);
+    println!("embeddings {embeddings:?}");
 
     // Find the cosine similarity between the first two sentences
     let mut similarities = vec![];

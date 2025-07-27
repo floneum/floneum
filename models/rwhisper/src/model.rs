@@ -162,6 +162,7 @@ impl WhisperInner {
         &mut self,
         pcm_data: Vec<f32>,
         word_level_time_stamps: bool,
+        language: Option<WhisperLanguage>,
         result: UnboundedSender<Segment>,
     ) {
         let mel = audio::pcm_to_mel(&self.config, &pcm_data, &self.mel_filters);
@@ -172,6 +173,14 @@ impl WhisperInner {
             &self.device,
         )
         .unwrap();
+
+        if let Some(language) = language {
+            if let Err(err) = self.decoder.set_language_token(language) {
+                // Log error or send error message to result channel
+                // Continue with default language
+                tracing::error!("Error updating language token: {err}");
+            }
+        }
 
         if let Err(err) = self.decoder.run(
             &mel,
@@ -268,6 +277,16 @@ impl Decoder {
             || token == self.translate_token
             || token == self.no_timestamps_token
             || token == self.eot_token
+            || Some(token) == self.language_token
+            || token == self.no_speech_token
+    }
+
+    fn set_language_token(&mut self, language: WhisperLanguage) -> Result<(), WhisperLoadingError> {
+        match token_id(&self.tokenizer, &format!("<|{language}|>")) {
+            Ok(token_id) => self.language_token = Some(token_id),
+            Err(_) => return Err(WhisperLoadingError::UnsupportedLanguage(language)),
+        }
+        Ok(())
     }
 
     fn is_timestamp_or_eot(&self, token: u32) -> bool {
@@ -315,16 +334,16 @@ impl Decoder {
             tokens.push(*self.timestamp_token_range.start());
         }
         tokens.extend(previous_tokens);
+        let mut token_mask = vec![false; tokens.len()];
         // The tokens that are queued for decoding
-        let n_start_tokens = tokens.len();
         let mut queued_tokens = tokens.clone();
         let mut cache = TextDecoderCache::new();
         let mut attention_output = None;
         for i in 0..sample_len {
             let ys = match &mut self.model {
                 ModelType::Quantized(model) => {
-                    if task.word_level_time_stamps {
-                        attention_output.get_or_insert_with(|| {
+                    if task.word_level_time_stamps && i == 0 {
+                        attention_output = Some({
                             let mut outputs = Vec::new();
                             for _ in 0..model.decoder.block_count() {
                                 outputs.push(TensorCache::new(2, usize::MAX));
@@ -421,6 +440,7 @@ impl Decoder {
                     .map(|(i, _)| i as u32)
                     .unwrap()
             };
+            token_mask.push(!self.is_special(next_token));
             // After the final pass if word level timestamps are requested, we stop decoding
             if task.word_level_time_stamps && tokens.last() == Some(&self.eot_token) {
                 break;
@@ -445,14 +465,13 @@ impl Decoder {
                 self.attention_heads,
                 const { NonZeroUsize::new(7).unwrap() },
                 n_frames,
-                n_start_tokens,
+                vec![token_mask],
                 attention_output,
             )
             .unwrap();
-            let [timestamps] = result.as_slice() else {
-                panic!("The timestamps should be a single vector when the batch size is 1");
-            };
-            token_timestamps = Some(timestamps.clone());
+            if let [timestamps] = result.as_slice() {
+                token_timestamps = Some(timestamps.clone());
+            }
         }
 
         let (text, chunks) = {
@@ -484,7 +503,9 @@ impl Decoder {
                 {
                     let timestamp = token_timestamps.as_ref().map(|timestamps| {
                         let start = timestamp_start.unwrap();
-                        let end = timestamps[index];
+                        let end = timestamps.get(index).copied().unwrap_or_else(|| {
+                            n_frames as f32 * m::HOP_LENGTH as f32 / m::SAMPLE_RATE as f32
+                        });
                         timestamp_start = Some(end);
                         start..end
                     });
@@ -618,27 +639,27 @@ impl Decoder {
 
             for (audio_features, range) in split.iter().zip(chunk_indices.iter()) {
                 let segment_size = range.end - range.start;
+                let start = range.start;
                 let end = range.end;
+                let start_time_offset = (start * m::HOP_LENGTH) as f64 / m::SAMPLE_RATE as f64;
                 let time_offset = (end * m::HOP_LENGTH) as f64 / m::SAMPLE_RATE as f64;
 
                 let segment_duration =
                     (segment_size * m::HOP_LENGTH) as f64 / m::SAMPLE_RATE as f64;
-                let total_frames = (audio_frames as f64 / m::HOP_LENGTH as f64).round() as usize;
-                let n_frames = segment_size.min(
-                    total_frames
-                        .checked_sub(seek)
-                        .or_else(|| {
-                            seek.checked_sub(m::N_FRAMES)
-                                .and_then(|seek| total_frames.checked_sub(seek))
-                        })
-                        .unwrap_or_default(),
-                );
-                let dr = self.decode_with_fallback(
+
+                let mut dr = self.decode_with_fallback(
                     audio_features,
                     task,
                     &tokens_in_sentence_fragment,
-                    n_frames,
+                    segment_size,
                 )?;
+                for chunk in dr.chunks.iter_mut() {
+                    // Change to iter_mut() to allow mutable access
+                    if let Some(timestamp) = &mut chunk.timestamp {
+                        timestamp.start += start_time_offset as f32;
+                        timestamp.end += start_time_offset as f32;
+                    }
+                }
                 tokens_in_sentence_fragment.clear();
                 if dr.no_speech_prob > m::NO_SPEECH_THRESHOLD
                     && dr.avg_logprob < m::LOGPROB_THRESHOLD

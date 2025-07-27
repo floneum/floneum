@@ -1,6 +1,6 @@
 use super::{NoOpenAIAPIKeyError, OpenAICompatibleClient};
 use crate::{
-    ChatModel, ChatSession, CreateChatSession, CreateDefaultChatConstraintsForType,
+    ChatModel, ChatSession, ContentChunk, CreateChatSession, CreateDefaultChatConstraintsForType,
     GenerationParameters, ModelBuilder, ModelConstraints, StructuredChatModel,
 };
 use futures_util::StreamExt;
@@ -222,6 +222,7 @@ impl ChatModel<GenerationParameters> for OpenAICompatibleChatModel {
         mut on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a {
         let myself = &*self.inner;
+        let messages = format_messages(messages);
         let mut json = serde_json::json!({
             "messages": messages,
             "model": myself.model,
@@ -248,7 +249,7 @@ impl ChatModel<GenerationParameters> for OpenAICompatibleChatModel {
                 .reqwest_client
                 .post(format!("{}/chat/completions", myself.client.base_url()))
                 .header("Content-Type", "application/json")
-                .header("Authorization", format!("Bearer {}", api_key))
+                .header("Authorization", format!("Bearer {api_key}"))
                 .json(&json)
                 .eventsource()
                 .unwrap();
@@ -402,6 +403,7 @@ where
 
         let myself = &*self.inner;
         let json = schema.map(|schema| {
+            let messages = format_messages(messages);
             let mut json = serde_json::json!({
                 "messages": messages,
                 "model": myself.model,
@@ -439,7 +441,7 @@ where
                 .reqwest_client
                 .post(format!("{}/chat/completions", myself.client.base_url()))
                 .header("Content-Type", "application/json")
-                .header("Authorization", format!("Bearer {}", api_key))
+                .header("Authorization", format!("Bearer {api_key}"))
                 .json(&json)
                 .eventsource()
                 .unwrap();
@@ -505,6 +507,46 @@ where
     }
 }
 
+fn format_messages(messages: &[crate::ChatMessage]) -> serde_json::Value {
+    messages
+        .iter()
+        .map(|m| {
+            let content = m.content();
+            let content: serde_json::Value = if let Some(string) = content.as_str() {
+                string.into()
+            } else {
+                content
+                    .chunks()
+                    .iter()
+                    .map(|chunk| match chunk {
+                        ContentChunk::Text(text) => {
+                            serde_json::json!({
+                                "type": "text",
+                                "text": text
+                            })
+                        }
+                        ContentChunk::Media(image) => {
+                            serde_json::json!({
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": image.as_url()
+                                }
+                            })
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .into()
+            };
+
+            serde_json::json!({
+                "role": m.role(),
+                "content": content,
+            })
+        })
+        .collect::<Vec<_>>()
+        .into()
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, RwLock};
@@ -528,7 +570,12 @@ mod tests {
 
         let messages = vec![crate::ChatMessage::new(
             crate::MessageType::UserMessage,
-            "Hello, world!".to_string(),
+            (
+                crate::MediaSource::url(
+                    "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg",
+                ),
+                "Describe this image like a pirate.".to_string(),
+            ),
         )];
         let all_text = Arc::new(RwLock::new(String::new()));
         model
@@ -800,10 +847,11 @@ mod tests {
             )
             .build();
         let mut generate_character = llm.chat();
-        let res =
-            generate_character("Candice is the CEO of a fortune 500 company. She is 30 years old.")
-                .await
-                .unwrap();
+        let res = generate_character(
+            &"Candice is the CEO of a fortune 500 company. She is 30 years old.",
+        )
+        .await
+        .unwrap();
         println!("{res}");
     }
 }

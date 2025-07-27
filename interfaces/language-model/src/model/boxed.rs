@@ -1,3 +1,5 @@
+use crate::MessageContent;
+
 use super::{
     CreateDefaultCompletionConstraintsForType, CreateTextCompletionSession, ModelConstraints,
     StructuredTextCompletionModel, TextCompletionModel, TextCompletionSession,
@@ -42,7 +44,7 @@ impl TextCompletionModel for BoxedTextCompletionModel {
     fn stream_text_with_callback<'a>(
         &'a self,
         session: &'a mut Self::Session,
-        text: &str,
+        text: MessageContent,
         sampler: super::GenerationParameters,
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a {
@@ -93,7 +95,7 @@ impl<T> TextCompletionModel for BoxedStructuredTextCompletionModel<T> {
     fn stream_text_with_callback<'a>(
         &'a self,
         session: &'a mut Self::Session,
-        text: &str,
+        text: MessageContent,
         sampler: super::GenerationParameters,
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'a {
@@ -108,7 +110,7 @@ impl<T> StructuredTextCompletionModel<BoxedCompletionConstraintsForType<T>>
     fn stream_text_with_callback_and_parser<'a>(
         &'a self,
         session: &'a mut Self::Session,
-        text: &str,
+        text: MessageContent,
         sampler: super::GenerationParameters,
         parser: BoxedCompletionConstraintsForType<T>,
         on_token: impl FnMut(String) -> Result<(), Self::Error> + Send + Sync + 'static,
@@ -282,7 +284,7 @@ trait DynTextCompletionModel: DynCreateTextCompletionSession {
     fn add_messages_with_callback_boxed<'a>(
         &'a self,
         session: &'a mut BoxedTextCompletionSession,
-        text: &str,
+        text: MessageContent,
         sampler: crate::GenerationParameters,
         on_token: BoxedTokenClosure,
     ) -> BoxedMaybeFuture<'a>;
@@ -302,7 +304,7 @@ where
     fn add_messages_with_callback_boxed<'a>(
         &'a self,
         session: &'a mut BoxedTextCompletionSession,
-        text: &str,
+        text: MessageContent,
         sampler: crate::GenerationParameters,
         mut on_token: BoxedTokenClosure,
     ) -> BoxedMaybeFuture<'a> {
@@ -343,7 +345,7 @@ trait DynStructuredTextCompletionModel<T>: DynTextCompletionModel {
     fn add_messages_with_callback_and_parser_boxed<'a>(
         &'a self,
         session: &'a mut BoxedTextCompletionSession,
-        text: &str,
+        text: MessageContent,
         sampler: crate::GenerationParameters,
         constraints: BoxedCompletionConstraintsForType<T>,
         on_token: BoxedTokenClosure,
@@ -366,7 +368,7 @@ where
     fn add_messages_with_callback_and_parser_boxed<'a>(
         &'a self,
         session: &'a mut BoxedTextCompletionSession,
-        text: &str,
+        text: MessageContent,
         sampler: crate::GenerationParameters,
         _: BoxedCompletionConstraintsForType<T>,
         mut on_token: BoxedTokenClosure,

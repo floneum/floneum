@@ -433,8 +433,7 @@ impl<C: Class> Classifier<C> {
                     accuracy: test_accuracy,
                 });
                 println!(
-                    "Epoch: {epoch:5} Test accuracy: {:5.5}% ({}/{})",
-                    final_accuracy, test_cases_passed, test_cases,
+                    "Epoch: {epoch:5} Test accuracy: {final_accuracy:5.5}% ({test_cases_passed}/{test_cases})",
                 );
                 Ok::<_, candle_core::Error>(())
             })?;

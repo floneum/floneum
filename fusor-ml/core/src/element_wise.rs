@@ -424,7 +424,7 @@ async fn test_add_const_reversed() {
     let tensor = 1.0 + tensor;
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     let result = [
         [[2.0, 3.0], [2.0, 3.0]],
         [[4.0, 5.0], [4.0, 5.0]],
@@ -480,7 +480,7 @@ async fn test_add_const_f16() {
     let tensor = tensor + half::f16::from_f32(1.0);
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     let result = [
         [
             [half::f16::from_f32(2.0), half::f16::from_f32(3.0)],
@@ -511,7 +511,7 @@ async fn test_add_const_sliced() {
     let sliced = sliced + 1.0;
 
     let output = sliced.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0, 0]], 2.);
     assert_eq!(output[[1, 0]], 4.);
     assert_eq!(output[[2, 0]], 6.);
@@ -546,7 +546,7 @@ async fn test_merge_add_const() {
     let tensor = (tensor + 1.0) * 2.0;
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0, 0]], 4.);
     assert_eq!(output[[0, 1]], 6.);
     assert_eq!(output[[1, 0]], 8.);
@@ -580,7 +580,7 @@ async fn test_sub_const() {
     let tensor = tensor - 1.0;
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0, 0]], 0.);
     assert_eq!(output[[0, 1]], 1.);
     assert_eq!(output[[1, 0]], 2.);
@@ -624,7 +624,7 @@ async fn test_sub_const_reversed() {
     let tensor = 6.0 - tensor;
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0, 0]], 5.);
     assert_eq!(output[[0, 1]], 4.);
     assert_eq!(output[[1, 0]], 3.);
@@ -658,7 +658,7 @@ async fn test_mul_const() {
     let tensor = tensor * 2.0;
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0, 0]], 2.);
     assert_eq!(output[[0, 1]], 4.);
     assert_eq!(output[[1, 0]], 6.);
@@ -693,7 +693,7 @@ async fn test_mul_const_reversed() {
     let tensor = 2.0 * tensor;
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0, 0]], 2.);
     assert_eq!(output[[0, 1]], 4.);
     assert_eq!(output[[1, 0]], 6.);
@@ -727,7 +727,7 @@ async fn test_div_const() {
     let tensor = tensor / 2.0;
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0, 0]], 0.5);
     assert_eq!(output[[0, 1]], 1.);
     assert_eq!(output[[1, 0]], 1.5);
@@ -771,7 +771,7 @@ async fn test_div_const_reversed() {
     let tensor = 6.0 / tensor;
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0, 0]], 6.0 / data[0][0]);
     assert_eq!(output[[0, 1]], 6.0 / data[0][1]);
     assert_eq!(output[[1, 0]], 6.0 / data[1][0]);
@@ -937,7 +937,7 @@ async fn test_exp() {
     let tensor = tensor.exp();
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert!((output[[0, 0]] - data[0][0].exp()).abs() < 0.001);
     assert!((output[[0, 1]] - data[0][1].exp()).abs() < 0.001);
     assert!((output[[1, 0]] - data[1][0].exp()).abs() < 0.001);
@@ -968,7 +968,7 @@ async fn test_exp2() {
     let tensor = tensor.exp2();
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert!((output[[0, 0]] - data[0][0].exp2()).abs() < 0.001);
     assert!((output[[0, 1]] - data[0][1].exp2()).abs() < 0.001);
     assert!((output[[1, 0]] - data[1][0].exp2()).abs() < 0.001);
@@ -999,7 +999,7 @@ async fn test_log() {
     let tensor = tensor.log();
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert!((output[[0, 0]] - data[0][0].ln()).abs() < 0.001);
     assert!((output[[0, 1]] - data[0][1].ln()).abs() < 0.001);
     assert!((output[[1, 0]] - data[1][0].ln()).abs() < 0.001);
@@ -1030,7 +1030,7 @@ async fn test_log2() {
     let tensor = tensor.log2();
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert!((output[[0, 0]] - data[0][0].log2()).abs() < 0.001);
     assert!((output[[0, 1]] - data[0][1].log2()).abs() < 0.001);
     assert!((output[[1, 0]] - data[1][0].log2()).abs() < 0.001);
@@ -1061,7 +1061,7 @@ async fn test_sqrt() {
     let tensor = tensor.sqrt();
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert!((output[[0, 0]] - data[0][0].sqrt()).abs() < 0.001);
     assert!((output[[0, 1]] - data[0][1].sqrt()).abs() < 0.001);
     assert!((output[[1, 0]] - data[1][0].sqrt()).abs() < 0.001);
@@ -1092,7 +1092,7 @@ async fn test_sin() {
     let tensor = tensor.sin();
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert!((output[[0, 0]] - data[0][0].sin()).abs() < 0.001);
     assert!((output[[0, 1]] - data[0][1].sin()).abs() < 0.001);
     assert!((output[[1, 0]] - data[1][0].sin()).abs() < 0.001);
@@ -1123,7 +1123,7 @@ async fn test_cos() {
     let tensor = tensor.cos();
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert!((output[[0, 0]] - data[0][0].cos()).abs() < 0.001);
     assert!((output[[0, 1]] - data[0][1].cos()).abs() < 0.001);
     assert!((output[[1, 0]] - data[1][0].cos()).abs() < 0.001);
@@ -1154,7 +1154,7 @@ async fn test_tan() {
     let tensor = tensor.tan();
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert!((output[[0, 0]] - data[0][0].tan()).abs() < 0.001);
     assert!((output[[0, 1]] - data[0][1].tan()).abs() < 0.001);
     assert!((output[[1, 0]] - data[1][0].tan()).abs() < 0.001);
@@ -1189,7 +1189,7 @@ async fn test_asin() {
     let tensor = tensor.asin();
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert!((output[[0, 0]] - data[0][0].asin()).abs() < 0.001);
     assert!((output[[0, 1]] - data[0][1].asin()).abs() < 0.001);
     assert!((output[[1, 0]] - data[1][0].asin()).abs() < 0.001);
@@ -1224,7 +1224,7 @@ async fn test_acos() {
     let tensor = tensor.acos();
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert!((output[[0, 0]] - data[0][0].acos()).abs() < 0.001);
     assert!((output[[0, 1]] - data[0][1].acos()).abs() < 0.001);
     assert!((output[[1, 0]] - data[1][0].acos()).abs() < 0.001);
@@ -1255,7 +1255,7 @@ async fn test_atan() {
     let tensor = tensor.atan();
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert!((output[[0, 0]] - data[0][0].atan()).abs() < 0.001);
     assert!((output[[0, 1]] - data[0][1].atan()).abs() < 0.001);
     assert!((output[[1, 0]] - data[1][0].atan()).abs() < 0.001);
@@ -1286,7 +1286,7 @@ async fn test_sinh() {
     let tensor = tensor.sinh();
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert!((output[[0, 0]] - data[0][0].sinh()).abs() < 0.001);
     assert!((output[[0, 1]] - data[0][1].sinh()).abs() < 0.001);
     assert!((output[[1, 0]] - data[1][0].sinh()).abs() < 0.001);
@@ -1317,7 +1317,7 @@ async fn test_cosh() {
     let tensor = tensor.cosh();
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert!((output[[0, 0]] - data[0][0].cosh()).abs() < 0.001);
     assert!((output[[0, 1]] - data[0][1].cosh()).abs() < 0.001);
     assert!((output[[1, 0]] - data[1][0].cosh()).abs() < 0.001);
@@ -1348,7 +1348,7 @@ async fn test_tanh() {
     let tensor = tensor.tanh();
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert!((output[[0, 0]] - data[0][0].tanh()).abs() < 0.001);
     assert!((output[[0, 1]] - data[0][1].tanh()).abs() < 0.001);
     assert!((output[[1, 0]] - data[1][0].tanh()).abs() < 0.001);
@@ -1383,7 +1383,7 @@ async fn test_asinh() {
     let tensor = tensor.asinh();
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert!((output[[0, 0]] - data[0][0].asinh()).abs() < 0.001);
     assert!((output[[0, 1]] - data[0][1].asinh()).abs() < 0.001);
     assert!((output[[1, 0]] - data[1][0].asinh()).abs() < 0.001);
@@ -1418,7 +1418,7 @@ async fn test_acosh() {
     let tensor = tensor.acosh();
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert!((output[[0, 0]] - data[0][0].acosh()).abs() < 0.001);
     assert!((output[[0, 1]] - data[0][1].acosh()).abs() < 0.001);
     assert!((output[[1, 0]] - data[1][0].acosh()).abs() < 0.001);
@@ -1453,7 +1453,7 @@ async fn test_atanh() {
     let tensor = tensor.atanh();
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert!((output[[0, 0]] - data[0][0].atanh()).abs() < 0.001);
     assert!((output[[0, 1]] - data[0][1].atanh()).abs() < 0.001);
     assert!((output[[1, 0]] - data[1][0].atanh()).abs() < 0.001);
@@ -1485,7 +1485,7 @@ async fn test_abs() {
     let tensor = tensor.abs();
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert!((output[[0, 0]] - data[0][0].abs()).abs() < 0.001);
     assert!((output[[0, 1]] - data[0][1].abs()).abs() < 0.001);
     assert!((output[[1, 0]] - data[1][0].abs()).abs() < 0.001);
@@ -1519,7 +1519,7 @@ async fn test_neg() {
     let tensor = -tensor;
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert!((output[[0, 0]] + data[0][0]).abs() < 0.001);
     assert!((output[[0, 1]] + data[0][1]).abs() < 0.001);
     assert!((output[[1, 0]] + data[1][0]).abs() < 0.001);
@@ -1571,7 +1571,7 @@ async fn test_f32_to_f16_cast() {
     let tensor: Tensor<2, half::f16> = tensor.cast();
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0, 0]], half::f16::from_f32(data[0][0]));
     assert_eq!(output[[0, 1]], half::f16::from_f32(data[0][1]));
     assert_eq!(output[[1, 0]], half::f16::from_f32(data[1][0]));
@@ -1607,7 +1607,7 @@ async fn test_f16_to_f32_cast() {
     let tensor: Tensor<2, f32> = tensor.cast();
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0, 0]], data[0][0].to_f32());
     assert_eq!(output[[0, 1]], data[0][1].to_f32());
     assert_eq!(output[[1, 0]], data[1][0].to_f32());

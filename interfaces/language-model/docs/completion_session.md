@@ -16,7 +16,7 @@ async fn main() {
     let mut session = llm.new_session().unwrap();
 
     // Feed some text into the session
-    llm.stream_text_with_callback(&mut session, "The capital of France is ", GenerationParameters::new().with_max_length(0), |_| Ok(())).await.unwrap();
+    llm.stream_text_with_callback(&mut session, "The capital of France is ".into(), GenerationParameters::new().with_max_length(0), |_| Ok(())).await.unwrap();
 
     // Save the session to bytes
     let session_as_bytes = session.to_bytes().unwrap();
@@ -25,7 +25,7 @@ async fn main() {
     let mut session = LlamaSession::from_bytes(&session_as_bytes).unwrap();
 
     // Feed some more text into the session
-    llm.stream_text_with_callback(&mut session, "The capital of France is ", GenerationParameters::new(), |token| {println!("{token}"); Ok(())}).await.unwrap();
+    llm.stream_text_with_callback(&mut session, "The capital of France is ".into(), GenerationParameters::new(), |token| {println!("{token}"); Ok(())}).await.unwrap();
 }
 ```
 
@@ -43,12 +43,12 @@ async fn main() {
     let mut session = llm.new_session().unwrap();
 
     // Feed some text into the session
-    llm.stream_text_with_callback(&mut session, "The capital of France is ", GenerationParameters::new().with_max_length(0), |_| Ok(())).await.unwrap();
+    llm.stream_text_with_callback(&mut session, "The capital of France is ".into(), GenerationParameters::new().with_max_length(0), |_| Ok(())).await.unwrap();
 
     // Clone the session
     let cloned_session = session.try_clone().unwrap();
 
     // Feed some more text into the cloned session
-    llm.stream_text_with_callback(&mut session, "The capital of France is ", GenerationParameters::new(), |token| {println!("{token}"); Ok(())}).await.unwrap();
+    llm.stream_text_with_callback(&mut session, "The capital of France is ".into(), GenerationParameters::new(), |token| {println!("{token}"); Ok(())}).await.unwrap();
 }
 ```

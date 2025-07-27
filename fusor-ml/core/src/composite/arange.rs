@@ -31,7 +31,7 @@ async fn test_arange() {
     let device = Device::new().await.unwrap();
     let data = Tensor::arange(&device, 0., 10.);
     let as_slice = data.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
     assert_eq!(as_slice, [0f32, 1., 2., 3., 4., 5., 6., 7., 8., 9.]);
 }
 
@@ -43,6 +43,6 @@ async fn test_arange_step() {
     let device = Device::new().await.unwrap();
     let data = Tensor::arange_step(&device, 0., 10., 2.);
     let as_slice = data.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
     assert_eq!(as_slice, [0f32, 2., 4., 6., 8.]);
 }

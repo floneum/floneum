@@ -6,7 +6,7 @@ async fn main() {
     let prompt = "Five US states in central US are ";
 
     println!("# with constraints");
-    print!("{}", prompt);
+    print!("{prompt}");
     let states = [
         "Alabama",
         "Alaska",
@@ -82,7 +82,7 @@ async fn main() {
     );
 
     println!("\n\n# without constraints");
-    print!("{}", prompt);
+    print!("{prompt}");
 
     let mut stream = llm(prompt);
     stream.to_std_out().await.unwrap();

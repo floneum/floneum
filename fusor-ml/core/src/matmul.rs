@@ -464,7 +464,7 @@ async fn test_matmul() {
     let tensor_b = Tensor::new(&device, &data_b);
     let tensor = tensor_a.mat_mul(&tensor_b);
     let as_slice = tensor.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
 
     assert_eq!(as_slice[[0, 0]], 1.);
     assert_eq!(as_slice[[0, 1]], 2.);
@@ -543,7 +543,7 @@ async fn test_matmul_f16() {
 
     let tensor = tensor_a.mat_mul(&tensor_b);
     let as_slice = tensor.as_slice().await.unwrap();
-    println!("{:?}", as_slice);
+    println!("{as_slice:?}");
 
     assert_eq!(as_slice[[0, 0]], half::f16::from_f32(1.));
     assert_eq!(as_slice[[0, 1]], half::f16::from_f32(2.));

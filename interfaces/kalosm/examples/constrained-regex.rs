@@ -6,7 +6,7 @@ async fn main() {
     let prompt = "Five prime numbers: 2, ";
 
     println!("# with constraints");
-    print!("{}", prompt);
+    print!("{prompt}");
 
     let validator = RegexParser::new(r"(\d, ){4}\d").unwrap();
     let mut stream = llm(prompt).with_constraints(validator);
@@ -14,7 +14,7 @@ async fn main() {
     stream.to_std_out().await.unwrap();
 
     println!("\n\n# without constraints");
-    print!("{}", prompt);
+    print!("{prompt}");
 
     let mut stream = llm(prompt);
     stream.to_std_out().await.unwrap();

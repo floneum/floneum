@@ -57,7 +57,7 @@ async fn test_cat() {
     assert_eq!(*tensor.shape(), [3, 4]);
 
     let output = tensor.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0, 0]], 1.);
     assert_eq!(output[[0, 1]], -2.);
     assert_eq!(output[[0, 2]], 1.);

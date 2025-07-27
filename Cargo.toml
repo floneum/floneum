@@ -29,12 +29,13 @@ members = [
     "interfaces/kalosm-model-types",
     "fusor-ml/core",
     "fusor-ml/gguf",
+    "fusor-ml/cli",
 ]
 
 [workspace.dependencies]
-candle-core = { version = "0.8.2" }
-candle-nn = { version = "0.8.2" }
-candle-transformers = { version = "0.8.2" }
+candle-core = { version = "0.9.0" }
+candle-nn = { version = "0.9.0" }
+candle-transformers = { version = "0.9.0" }
 kalosm = { path = "./interfaces/kalosm", version = "0.4.0" }
 kalosm-sample = { path = "./interfaces/kalosm-sample", version = "0.4.0" }
 kalosm-parse-macro = { path = "./interfaces/kalosm-parse-macro", version = "0.4.0" }

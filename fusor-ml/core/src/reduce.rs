@@ -554,14 +554,14 @@ async fn test_reduce_sum() {
     let output = tensor.sum(0);
 
     let output = output.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0]], 9.);
     assert_eq!(output[[1]], 12.);
 
     let output = tensor.sum(1);
 
     let output = output.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0]], 3.);
     assert_eq!(output[[1]], 7.);
     assert_eq!(output[[2]], 11.);
@@ -609,14 +609,14 @@ async fn test_reduce_sum_f16() {
     let output = tensor.sum(0);
 
     let output = output.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0]], half::f16::from_f32(9.));
     assert_eq!(output[[1]], half::f16::from_f32(12.));
 
     let output = tensor.sum(1);
 
     let output = output.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0]], half::f16::from_f32(3.));
     assert_eq!(output[[1]], half::f16::from_f32(7.));
     assert_eq!(output[[2]], half::f16::from_f32(11.));
@@ -636,13 +636,13 @@ async fn test_reduce_sliced_sum() {
     let output = tensor.sum(0);
 
     let output = output.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0]], 9.);
 
     let output = tensor.sum(1);
 
     let output = output.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0]], 1.);
     assert_eq!(output[[1]], 3.);
     assert_eq!(output[[2]], 5.);
@@ -661,7 +661,7 @@ async fn test_reduce_const_add_then_sum_fused() {
     let output = (tensor.clone() + 1.).sum(0);
 
     let output = output.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0]], 3. + 9.);
     assert_eq!(output[[1]], 3. + 12.);
 
@@ -671,7 +671,7 @@ async fn test_reduce_const_add_then_sum_fused() {
     let output = (tensor + 1.).sum(1);
 
     let output = output.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0]], 2. + 3.);
     assert_eq!(output[[1]], 2. + 7.);
     assert_eq!(output[[2]], 2. + 11.);
@@ -690,14 +690,14 @@ async fn test_reduce_const_sum_then_add_fused() {
     let output = tensor.sum(0) + 1.;
 
     let output = output.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0]], 1. + 9.);
     assert_eq!(output[[1]], 1. + 12.);
 
     let output = tensor.sum(1) + 1.;
 
     let output = output.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0]], 1. + 3.);
     assert_eq!(output[[1]], 1. + 7.);
     assert_eq!(output[[2]], 1. + 11.);
@@ -758,14 +758,14 @@ async fn test_reduce_max() {
     let output = tensor.max(0);
 
     let output = output.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0]], 5.);
     assert_eq!(output[[1]], 6.);
 
     let output = tensor.max(1);
 
     let output = output.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0]], 2.);
     assert_eq!(output[[1]], 4.);
     assert_eq!(output[[2]], 6.);
@@ -826,14 +826,14 @@ async fn test_reduce_min() {
     let output = tensor.min(0);
 
     let output = output.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0]], 1.);
     assert_eq!(output[[1]], 2.);
 
     let output = tensor.min(1);
 
     let output = output.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0]], 1.);
     assert_eq!(output[[1]], 3.);
     assert_eq!(output[[2]], 5.);
@@ -890,14 +890,14 @@ async fn test_reduce_product() {
     let output = tensor.product(0);
 
     let output = output.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0]], 15.);
     assert_eq!(output[[1]], 48.);
 
     let output = tensor.product(1);
 
     let output = output.as_slice().await.unwrap();
-    println!("{:?}", output);
+    println!("{output:?}");
     assert_eq!(output[[0]], 2.);
     assert_eq!(output[[1]], 12.);
     assert_eq!(output[[2]], 30.);
