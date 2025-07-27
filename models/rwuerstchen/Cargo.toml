@@ -25,7 +25,7 @@ kalosm-model-types.workspace = true
 
 futures-util = "0.3.28"
 futures-channel = "0.3.31"
-image = "0.24.7"
+image.workspace = true
 tracing = "0.1.37"
 
 [dev-dependencies]

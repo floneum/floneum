@@ -15,7 +15,7 @@ kalosm-parse-macro = { workspace = true }
 [dev-dependencies]
 tracing-subscriber = "0.3.18"
 criterion = "0.5.1"
-rand = "0.9"
+rand.workspace = true
 pretty_assertions = "1.4.0"
 
 [[bench]]

@@ -23,7 +23,7 @@ cudarc = { version = "0.9.14", features = ["f16"], optional = true }
 half = { version = "2.3.1" }
 
 tracing = "0.1.37"
-rand = "0.8.5"
+rand.workspace = true
 tokio = { version = "1.32.0", features = ["rt"] }
 rayon = { version = "1.8.0" }
 llm-samplers.workspace = true
@@ -38,7 +38,7 @@ minijinja-contrib = { version = "2.5.0", features = ["pycompat"] }
 chrono = "0.4.41"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0.139"
-image = "0.25.6"
+image.workspace = true
 
 [dev-dependencies]
 tracing-subscriber = "0.3.18"

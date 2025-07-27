@@ -60,6 +60,8 @@ llm-samplers = { git = "https://github.com/ealmloff/llm-samplers" }
 tokenizers = { version = "0.21.0", default-features = false }
 thiserror = "2.0.7"
 anyhow = "1.0.94"
+image = "0.25"
+rand = "0.9"
 
 [profile.dist]
 inherits = "release"

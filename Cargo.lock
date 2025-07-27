@@ -314,22 +314,24 @@ checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 
 [[package]]
 name = "arroy"
-version = "0.5.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dfc5f272f38fa063bbff0a7ab5219404e221493de005e2b4078c62d626ef567e"
+checksum = "08e6111f351d004bd13e95ab540721272136fd3218b39d3ec95a2ea1c4e6a0a6"
 dependencies = [
  "bytemuck",
  "byteorder",
+ "enum-iterator",
  "heed",
- "log",
  "memmap2",
  "nohash",
  "ordered-float 4.6.0",
+ "page_size",
  "rand 0.8.5",
  "rayon",
  "roaring",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
+ "tracing",
 ]
 
 [[package]]
@@ -2403,6 +2405,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "enum-iterator"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c280b9e6b3ae19e152d8e31cf47f18389781e119d4013a2a2bb0180e5facc635"
+dependencies = [
+ "enum-iterator-derive",
+]
+
+[[package]]
+name = "enum-iterator-derive"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a1ab991c1362ac86c61ab6f556cff143daa22e5a15e4e189df818b2fd19fe65b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.104",
+]
+
+[[package]]
 name = "enumset"
 version = "1.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3488,9 +3510,9 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "heed"
-version = "0.20.5"
+version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d4f449bab7320c56003d37732a917e18798e2f1709d80263face2b4f9436ddb"
+checksum = "6a56c94661ddfb51aa9cdfbf102cfcc340aa69267f95ebccc4af08d7c530d393"
 dependencies = [
  "bitflags 2.9.1",
  "byteorder",
@@ -3513,9 +3535,9 @@ checksum = "eb3130048d404c57ce5a1ac61a903696e8fcde7e8c2991e9fcfc1f27c3ef74ff"
 
 [[package]]
 name = "heed-types"
-version = "0.20.1"
+version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d3f528b053a6d700b2734eabcd0fd49cb8230647aa72958467527b0b7917114"
+checksum = "13c255bdf46e07fb840d120a36dcc81f385140d7191c76a7391672675c01a55d"
 dependencies = [
  "bincode",
  "byteorder",
@@ -4281,7 +4303,7 @@ dependencies = [
  "futures-util",
  "hdrhistogram",
  "heed",
- "image 0.24.9",
+ "image 0.25.6",
  "kalosm",
  "kalosm-common",
  "kalosm-language",
@@ -4339,7 +4361,7 @@ dependencies = [
  "kalosm-streams",
  "lopdf",
  "pulldown-cmark",
- "rand 0.9.2",
+ "rand 0.8.5",
  "rbert",
  "readability",
  "reqwest 0.11.27",
@@ -4439,7 +4461,7 @@ dependencies = [
  "minijinja",
  "minijinja-contrib",
  "pretty_assertions",
- "rand 0.8.5",
+ "rand 0.9.2",
  "rayon",
  "reqwest 0.12.22",
  "safetensors",
@@ -4470,7 +4492,7 @@ dependencies = [
  "cudarc 0.9.15",
  "half 2.6.0",
  "hf-hub 0.3.2",
- "image 0.24.9",
+ "image 0.25.6",
  "intel-mkl-src",
  "kalosm-common",
  "kalosm-model-types",
@@ -4550,7 +4572,7 @@ name = "kalosm-vision"
 version = "0.4.0"
 dependencies = [
  "futures-util",
- "image 0.24.9",
+ "image 0.25.6",
  "kalosm",
  "kalosm-ocr",
  "rwuerstchen",
@@ -7295,7 +7317,7 @@ dependencies = [
  "futures-util",
  "half 2.6.0",
  "hf-hub 0.4.3",
- "image 0.24.9",
+ "image 0.25.6",
  "intel-mkl-src",
  "kalosm-common",
  "kalosm-language-model",
@@ -7446,7 +7468,7 @@ dependencies = [
  "cudarc 0.9.15",
  "half 2.6.0",
  "hf-hub 0.4.3",
- "image 0.24.9",
+ "image 0.25.6",
  "intel-mkl-src",
  "thiserror 2.0.12",
  "tracing",
