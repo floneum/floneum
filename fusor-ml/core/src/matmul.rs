@@ -604,9 +604,7 @@ async fn fuzz_matmul() {
                         as_slice[[i, j]],
                         dot[[i, j]]
                     );
-                    panic!(
-                        "fuzz failed with size ({size1}x{size2})*({size2}x{size3})"
-                    );
+                    panic!("fuzz failed with size ({size1}x{size2})*({size2}x{size3})");
                 }
             }
         }
@@ -691,9 +689,7 @@ async fn fuzz_batched_matmul() {
                             as_slice[[batch, i, j]],
                             dot[batch][[i, j]]
                         );
-                        panic!(
-                            "fuzz failed with size ({size1}x{size2})*({size2}x{size3})"
-                        );
+                        panic!("fuzz failed with size ({size1}x{size2})*({size2}x{size3})");
                     }
                 }
             }
