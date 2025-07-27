@@ -7,15 +7,20 @@ use std::{
 
 use bytemuck::{AnyBitPattern, NoUninit};
 use tabbycat::Graph;
-use wgpu::{BufferDescriptor, COPY_BUFFER_ALIGNMENT, util::DownloadBuffer};
+use wgpu::{
+    BufferDescriptor, COPY_BUFFER_ALIGNMENT,
+    util::{DeviceExt, DownloadBuffer},
+};
 
 use crate::{
     Device, ElementWiseOperation, MatMulOperation, PairWiseFunction, PairWiseOperation,
-    QueryResults, ReduceFunction, ReduceOperation,
+    ReduceFunction, ReduceOperation,
     compute_graph::{AnyComputeKey, ComputeGraph},
+    index_select::IndexSelectOperation,
     layout::Layout,
     map_layout::MapLayoutOperation,
-    quantized::{QMatMulOperation, QMatrix},
+    mir::operation::Operation,
+    quantized::{QMatrix, matmul::QMatMulOperation},
     resize::ResizeOperation,
     slice_assign::SliceAssignOperation,
 };
@@ -39,6 +44,9 @@ pub trait DataType:
 
     fn zero() -> Self;
     fn one() -> Self;
+}
+
+pub trait FloatDataType: DataType {
     fn from_f32(value: f32) -> Self;
 }
 
@@ -52,7 +60,9 @@ impl DataType for f32 {
     fn one() -> Self {
         1.
     }
+}
 
+impl FloatDataType for f32 {
     fn from_f32(value: f32) -> Self {
         value
     }
@@ -68,9 +78,23 @@ impl DataType for half::f16 {
     fn one() -> Self {
         half::f16::from_f32(1.)
     }
+}
 
+impl FloatDataType for half::f16 {
     fn from_f32(value: f32) -> Self {
         half::f16::from_f32(value)
+    }
+}
+
+impl DataType for u32 {
+    const WGSL_TYPE: DataTypeEnum = DataTypeEnum::U32;
+
+    fn zero() -> Self {
+        0
+    }
+
+    fn one() -> Self {
+        1
     }
 }
 
@@ -79,6 +103,7 @@ impl DataType for half::f16 {
 pub enum DataTypeEnum {
     F32,
     F16,
+    U32,
 }
 
 impl DataTypeEnum {
@@ -86,6 +111,7 @@ impl DataTypeEnum {
         match self {
             DataTypeEnum::F32 => "f32",
             DataTypeEnum::F16 => "f16",
+            DataTypeEnum::U32 => "u32",
         }
     }
 
@@ -93,6 +119,7 @@ impl DataTypeEnum {
         match self {
             DataTypeEnum::F32 => size_of::<f32>(),
             DataTypeEnum::F16 => size_of::<half::f16>(),
+            DataTypeEnum::U32 => size_of::<u32>(),
         }
     }
 }
@@ -103,7 +130,7 @@ impl Display for DataTypeEnum {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct TensorLayoutInfo {
     layout: Layout,
     datatype: DataTypeEnum,
@@ -133,7 +160,7 @@ impl TensorLayoutInfo {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct TensorInfo {
     shape: Box<[usize]>,
     datatype: DataTypeEnum,
@@ -190,8 +217,8 @@ impl Drop for LazyTensorData {
 
 impl LazyTensorData {
     pub(crate) fn new(data: TensorData) -> Self {
-        let graph = ComputeGraph::new();
         let device = data.device.clone();
+        let graph = ComputeGraph::new(device.clone());
         let info = data.info.clone();
         let key = graph.create_tensor(data);
 
@@ -203,10 +230,39 @@ impl LazyTensorData {
         }
     }
 
-    pub(crate) fn element_wise(&self, function: ElementWiseOperation) -> Self {
+    pub(crate) fn from_parts(
+        device: Device,
+        graph: ComputeGraph,
+        info: TensorInfo,
+        key: AnyComputeKey,
+    ) -> Self {
+        Self {
+            device,
+            info,
+            graph,
+            key,
+        }
+    }
+
+    pub(crate) fn custom(&self, custom: Arc<dyn Operation + Send + Sync>) -> Self {
         let graph = self.graph.clone();
         let device = self.device.clone();
         let info = self.info.clone();
+        let key = graph.create_custom(custom);
+
+        Self {
+            device,
+            info,
+            graph,
+            key: key.into(),
+        }
+    }
+
+    pub(crate) fn element_wise(&self, function: ElementWiseOperation) -> Self {
+        let graph = self.graph.clone();
+        let device = self.device.clone();
+        let mut info = self.info.clone();
+        info.datatype = function.functions.out_datatype();
         let key = graph.create_element_wise(function);
 
         Self {
@@ -234,7 +290,8 @@ impl LazyTensorData {
     pub(crate) fn mat_mul(&self, function: MatMulOperation) -> Self {
         let graph = self.graph.clone();
         let device = self.device.clone();
-        let info = self.info.clone();
+        let mut info = self.info.clone();
+        info.shape = function.out_shape.clone();
         let key = graph.create_mat_mul(function);
 
         Self {
@@ -248,7 +305,8 @@ impl LazyTensorData {
     pub(crate) fn q_mat_mul(&self, function: QMatMulOperation) -> Self {
         let graph = self.graph.clone();
         let device = self.device.clone();
-        let info = self.info.clone();
+        let mut info = self.info.clone();
+        info.shape = function.out_shape.clone();
         let key = graph.create_q_mat_mul(function);
 
         Self {
@@ -324,13 +382,23 @@ impl LazyTensorData {
         }
     }
 
-    pub(crate) fn materialize(&self) -> TensorData {
-        self.graph.resolve(self.key, &self.device)
+    pub(crate) fn index_select(&self, op: IndexSelectOperation) -> Self {
+        let device = self.device.clone();
+        let mut info = self.info.clone();
+        info.shape = op.output_shape();
+        let graph = self.graph.clone();
+        let key = self.graph.create_index_select(op);
+
+        Self {
+            device,
+            info,
+            graph,
+            key: key.into(),
+        }
     }
 
-    pub(crate) async fn all_timing_information(&self) -> Vec<QueryResults> {
-        self.materialize();
-        self.graph.all_timing_information().await
+    pub(crate) fn materialize(&self) -> TensorData {
+        self.graph.resolve(self.key, &self.device)
     }
 
     pub fn graphvis(&self) -> Graph {
@@ -338,11 +406,17 @@ impl LazyTensorData {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct TensorData {
     device: Device,
     buffer: Arc<wgpu::Buffer>,
     info: TensorLayoutInfo,
+}
+
+impl PartialEq for TensorData {
+    fn eq(&self, other: &Self) -> bool {
+        self.info == other.info && self.buffer == other.buffer
+    }
 }
 
 impl TensorData {
@@ -373,7 +447,7 @@ impl TensorData {
         let size =
             padded_tensor_size((datatype.element_size() * shape.iter().product::<usize>()) as u64);
         let buffer = device.wgpu_device().create_buffer(&wgpu::BufferDescriptor {
-            label: None,
+            label: Some("Tensor Buffer"),
             size,
             usage: wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_SRC
@@ -381,6 +455,22 @@ impl TensorData {
             mapped_at_creation: false,
         });
         Self::new_from_buffer(device, buffer, shape, datatype)
+    }
+
+    pub(crate) fn new_splat<D: DataType>(device: &Device, shape: &[usize], data: D) -> Self {
+        let datatype = D::WGSL_TYPE;
+        let buffer = device
+            .wgpu_device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Splat Tensor Buffer"),
+                contents: bytemuck::bytes_of(&data),
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_SRC
+                    | wgpu::BufferUsages::COPY_DST,
+            });
+        let strides = (0..shape.len()).map(|_| 0).collect();
+        let layout = Layout::from_parts(0, shape.into(), strides);
+        Self::new_from_parts(device, buffer, layout, datatype)
     }
 
     fn new_inner<'a, D: DataType, I: Iterator<Item = &'a D>>(
@@ -399,7 +489,7 @@ impl TensorData {
             let padded_size = padded_tensor_size(size);
 
             let wgt_descriptor = BufferDescriptor {
-                label: None,
+                label: Some("Tensor Buffer"),
                 size: padded_size,
                 usage: wgpu::BufferUsages::STORAGE
                     | wgpu::BufferUsages::COPY_SRC
@@ -459,6 +549,12 @@ impl TensorData {
 pub struct Tensor<const R: usize, D> {
     data: LazyTensorData,
     datatype: PhantomData<D>,
+}
+
+impl<const R: usize, D: DataType> Debug for Tensor<R, D> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Tensor({} x {:?})", self.datatype(), self.shape())
+    }
 }
 
 impl<const R: usize, D: DataType> From<TensorData> for Tensor<R, D> {
@@ -555,9 +651,80 @@ where
     }
 }
 
+impl<'a, I, I2, I3, I4, D: DataType> IntoTensor<4, D> for I
+where
+    I: IntoIterator<Item = I2, IntoIter: ExactSizeIterator>,
+    I2: IntoIterator<Item = I3, IntoIter: ExactSizeIterator>,
+    I3: IntoIterator<Item = I4, IntoIter: ExactSizeIterator>,
+    I4: IntoIterator<Item = &'a D, IntoIter: ExactSizeIterator>,
+{
+    fn into_tensor(self, device: &Device) -> Tensor<4, D> {
+        let mut iter = self
+            .into_iter()
+            .map(|i| {
+                i.into_iter()
+                    .map(|i| i.into_iter().map(IntoIterator::into_iter).peekable())
+                    .peekable()
+            })
+            .peekable();
+        let mut shape = [iter.len(), 0, 0, 0];
+        if let Some(iter) = iter.peek_mut() {
+            let size = iter.len();
+            shape[1] = size;
+            if let Some(iter) = iter.peek_mut() {
+                let size = iter.len();
+                shape[2] = size;
+                if let Some(iter) = iter.peek() {
+                    let size = iter.len();
+                    shape[3] = size;
+                }
+            }
+        }
+
+        let iter = iter.flat_map(|i| {
+            let size = i.len();
+            let required_size = shape[1];
+            if size != required_size {
+                panic!("expected a rectangular matrix. The first inner iterator size was {required_size}, but another inner iterator size was {size}");
+            }
+            i.flat_map(|i| {
+                let size = i.len();
+                let required_size = shape[2];
+                if size != required_size {
+                    panic!("expected a rectangular matrix. The first inner inner iterator size was {required_size}, but another inner inner iterator size was {size}");
+                }
+                i.flat_map(|i| {
+                    let size = i.len();
+                    let required_size = shape[3];
+                    if size != required_size {
+                        panic!("expected a rectangular matrix. The first inner inner inner iterator size was {required_size}, but another inner inner inner iterator size was {size}");
+                    }
+                    i
+                })
+            })
+        });
+
+        Tensor::new_inner(device, iter, shape)
+    }
+}
+
 impl<D: DataType, const R: usize> Tensor<R, D> {
     pub fn new(device: &Device, data: impl IntoTensor<R, D>) -> Self {
         data.into_tensor(device)
+    }
+
+    pub fn splat(device: &Device, value: D, shape: [usize; R]) -> Self {
+        Self::from_parts(LazyTensorData::new(TensorData::new_splat(
+            device, &shape, value,
+        )))
+    }
+
+    pub(crate) fn from_parts(data: LazyTensorData) -> Self {
+        debug_assert_eq!(D::WGSL_TYPE, data.info.datatype());
+        Self {
+            data,
+            datatype: PhantomData,
+        }
     }
 
     fn new_inner<'a, I: Iterator<Item = &'a D>>(
@@ -565,10 +732,9 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         data: I,
         shape: [usize; R],
     ) -> Self {
-        Self {
-            data: LazyTensorData::new(TensorData::new_inner(device, data, &shape)),
-            datatype: PhantomData,
-        }
+        Self::from_parts(LazyTensorData::new(TensorData::new_inner(
+            device, data, &shape,
+        )))
     }
 
     async fn as_slice_from_tensor_data(
@@ -589,59 +755,98 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         Ok(TensorSlice::new(downloaded, tensor.layout().clone()))
     }
 
-    pub async fn as_slice(&self) -> Result<TensorSlice<R, D>, wgpu::BufferAsyncError> {
-        let tensor = self.data.materialize();
-        Self::as_slice_from_tensor_data(&tensor).await
+    #[track_caller]
+    pub fn materialize(&self) -> impl Future<Output = ()> + 'static {
+        #[allow(unused)]
+        let data = self.data.materialize();
+        #[cfg(feature = "extra_assertions")]
+        let caller = std::panic::Location::caller();
+        let (sender, receiver) = futures_channel::oneshot::channel();
+        self.device().wgpu_queue().on_submitted_work_done(|| {
+            _ = sender.send(());
+        });
+        async move {
+            let _ = receiver.await;
+            #[cfg(feature = "extra_assertions")]
+            {
+                let mut contains_non_finite = false;
+                if D::WGSL_TYPE == DataTypeEnum::F32 {
+                    let data: TensorSlice<R, f32> =
+                        Tensor::as_slice_from_tensor_data(&data).await.unwrap();
+                    data.visit_items(|item| {
+                        contains_non_finite |= !item.is_finite();
+                    });
+                } else if D::WGSL_TYPE == DataTypeEnum::F16 {
+                    let data: TensorSlice<R, half::f16> =
+                        Tensor::as_slice_from_tensor_data(&data).await.unwrap();
+                    data.visit_items(|item| {
+                        contains_non_finite |= !item.is_finite();
+                    });
+                }
+
+                if contains_non_finite {
+                    tracing::warn!(
+                        "Tensor materialized at {} contains non-finite values. This may lead to unexpected behavior.",
+                        caller
+                    );
+                }
+            }
+        }
     }
 
-    pub async fn all_timing_information(&self) -> Vec<QueryResults> {
-        self.data.all_timing_information().await
+    pub async fn as_slice(&self) -> Result<TensorSlice<R, D>, wgpu::BufferAsyncError> {
+        let start_time = std::time::Instant::now();
+        let tensor = self.data.materialize();
+        tracing::trace!("Materialized tensor in {:?}", start_time.elapsed());
+        let start_time = std::time::Instant::now();
+        let out = Self::as_slice_from_tensor_data(&tensor).await;
+        tracing::trace!("Downloaded tensor in {:?}", start_time.elapsed());
+        out
     }
 
     pub(crate) fn element_wise<D2: DataType>(
         &self,
         function: ElementWiseOperation,
     ) -> Tensor<R, D2> {
-        Tensor {
-            data: self.data.element_wise(function),
-            datatype: PhantomData,
-        }
+        Tensor::from_parts(self.data.element_wise(function))
     }
 
     pub(crate) fn pair_wise(&self, other: &Self, function: PairWiseFunction) -> Self {
         // If the two tensors are the same, we can lower this to a cheaper element wise operation
         if self.data.key == other.data.key {
             return self.element_wise(ElementWiseOperation::new(
+                self.datatype(),
                 self.key(),
                 function.lower_to_element_wise(),
+                self.shape().as_slice(),
             ));
         }
 
         self.data.graph.merge(&other.data.graph);
-        let operation = PairWiseOperation::new(function, self.data.key, other.data.key);
-        Self {
-            data: self.data.pair_wise(operation),
-            datatype: PhantomData,
-        }
+        assert_eq!(self.shape(), other.shape());
+        let operation =
+            PairWiseOperation::new(function, self.data.key, other.data.key, self.shape());
+        Self::from_parts(self.data.pair_wise(operation))
     }
 
     pub(crate) fn add_mat_mul(&self, other: &Self) -> Self {
         self.data.graph.merge(&other.data.graph);
-        let operation = MatMulOperation::new(self.data.key, other.data.key);
+        let operation = MatMulOperation::new(
+            self.datatype(),
+            self.data.key,
+            other.data.key,
+            self.shape(),
+            other.shape(),
+        );
 
-        Self {
-            data: self.data.mat_mul(operation),
-            datatype: PhantomData,
-        }
+        Self::from_parts(self.data.mat_mul(operation))
     }
 
     pub(crate) fn add_q_mat_mul(&self, other: &QMatrix) -> Self {
-        let operation = QMatMulOperation::new(self.data.key, other.clone());
+        let operation =
+            QMatMulOperation::new(self.datatype(), self.shape(), self.data.key, other.clone());
 
-        Self {
-            data: self.data.q_mat_mul(operation),
-            datatype: PhantomData,
-        }
+        Self::from_parts(self.data.q_mat_mul(operation))
     }
 
     pub(crate) fn add_resize<const R2: usize>(&self, op: ResizeOperation) -> Tensor<R2, D> {
@@ -654,10 +859,20 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
     pub(crate) fn add_slice_assign(&self, other: &Self, slices: [Range<usize>; R]) -> Self {
         self.data.graph.merge(&other.data.graph);
         let op = SliceAssignOperation::new(self.data.key, other.data.key, slices.into());
-        Self {
-            data: self.data.slice_assign(op),
-            datatype: PhantomData,
-        }
+        Self::from_parts(self.data.slice_assign(op))
+    }
+
+    pub(crate) fn add_index_select(&self, dimension: usize, indexes: &Tensor<1, u32>) -> Self {
+        self.data.graph.merge(&indexes.data.graph);
+        let op = IndexSelectOperation::new(
+            self.data.key,
+            indexes.data.key,
+            self.datatype(),
+            dimension,
+            self.shape(),
+            indexes.shape(),
+        );
+        Self::from_parts(self.data.index_select(op))
     }
 
     pub(crate) fn reduce<const OUT: usize>(
@@ -666,18 +881,18 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         dim: usize,
     ) -> Tensor<OUT, D> {
         Tensor {
-            data: self
-                .data
-                .reduce(ReduceOperation::new(self.data.key, function, dim)),
+            data: self.data.reduce(ReduceOperation::new(
+                self.data.key,
+                function,
+                dim,
+                self.shape(),
+            )),
             datatype: PhantomData,
         }
     }
 
     pub(crate) fn add_map_layout<const R2: usize>(&self, op: MapLayoutOperation) -> Tensor<R2, D> {
-        Tensor {
-            data: self.data.map_layout(op),
-            datatype: PhantomData,
-        }
+        Tensor::from_parts(self.data.map_layout(op))
     }
 
     pub(crate) fn key(&self) -> AnyComputeKey {
@@ -685,7 +900,13 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
     }
 
     pub fn shape(&self) -> &[usize; R] {
-        self.data.info.shape().try_into().unwrap()
+        let shape = self.data.info.shape();
+        match shape.try_into() {
+            Ok(shape) => shape,
+            Err(_) => {
+                panic!("Internal error. Expected a tensor of rank {R}, found shape: {shape:?}")
+            }
+        }
     }
 
     pub fn rank(&self) -> usize {
@@ -696,8 +917,20 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
         self.data.info.datatype()
     }
 
+    pub fn device(&self) -> &Device {
+        &self.data.device
+    }
+
     pub fn graphvis(&self) -> Graph {
         self.data.graphvis()
+    }
+
+    pub(crate) fn data(&self) -> &LazyTensorData {
+        &self.data
+    }
+
+    pub(crate) fn graph(&self) -> &ComputeGraph {
+        &self.data.graph
     }
 }
 
@@ -705,12 +938,7 @@ impl<D: DataType, const R: usize> Tensor<R, D> {
 #[tokio::test]
 async fn test_tensor_slice() {
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
 
@@ -778,6 +1006,28 @@ impl<D: DataType + Debug> Debug for TensorSlice<3, D> {
     }
 }
 
+impl<D: DataType + Debug> Debug for TensorSlice<4, D> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let shape = self.layout.shape();
+        let vec = (0..shape[0])
+            .map(|i| {
+                (0..shape[1])
+                    .map(|j| {
+                        (0..shape[2])
+                            .map(|k| {
+                                (0..shape[3])
+                                    .map(|l| self.get([i, j, k, l]).unwrap())
+                                    .collect::<Vec<_>>()
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        vec.fmt(f)
+    }
+}
+
 impl<const R: usize, D: DataType + PartialEq> PartialEq for TensorSlice<R, D> {
     fn eq(&self, other: &Self) -> bool {
         let self_shape = self.layout.shape();
@@ -785,24 +1035,43 @@ impl<const R: usize, D: DataType + PartialEq> PartialEq for TensorSlice<R, D> {
         if self_shape != other_shape {
             return false;
         }
+        if R == 0 {
+            return true;
+        }
+        let mut matches = true;
+        self.visit_indexes(|index| {
+            matches &= self.get(index) == other.get(index);
+        });
+        matches
+    }
+}
+
+impl<const R: usize, D: DataType> TensorSlice<R, D> {
+    fn visit_indexes(&self, mut visitor: impl FnMut([usize; R])) {
+        let self_shape = self.layout.shape();
         let mut index = [0; R];
         loop {
+            index[0] += 1;
             for i in 0..R {
-                index[i] += 1;
                 if index[i] >= self_shape[i] {
                     index[i] = 0;
                     if i == R - 1 {
-                        return true;
+                        return;
                     }
                     index[i + 1] += 1;
                 } else {
                     break;
                 }
             }
-            if self.get(index) != other.get(index) {
-                return false;
-            }
+            visitor(index);
         }
+    }
+
+    #[cfg(feature = "extra_assertions")]
+    fn visit_items(&self, mut visitor: impl FnMut(&D)) {
+        self.visit_indexes(|index| {
+            visitor(self.get(index).unwrap());
+        });
     }
 }
 
@@ -844,12 +1113,7 @@ pub(crate) fn padded_tensor_size(size: u64) -> u64 {
 #[tokio::test]
 async fn test_tensor_compare() {
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+
     let data = [
         [[1., 2.], [1., 2.]],
         [[3., 4.], [3., 4.]],
@@ -916,12 +1180,7 @@ impl<D: DataType, const R: usize> Index<[usize; R]> for TensorSlice<R, D> {
 #[tokio::test]
 async fn test_tensor() {
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
     let as_slice = tensor.as_slice().await.unwrap();

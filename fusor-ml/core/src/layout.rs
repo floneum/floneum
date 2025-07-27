@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-pub(crate) const TILE_SIZE: u32 = 8;
+pub(crate) const TILE_SIZE: u32 = 16;
 
 fn continuous_strides(shape: &[usize]) -> Box<[usize]> {
     let mut acc = 1;
@@ -30,7 +30,7 @@ pub(crate) fn slice_shape(slices: &[Range<usize>], _shape: &[usize]) -> Box<[usi
     slices.iter().map(|range| range.len()).collect()
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Layout {
     offset: usize,
     shape: Box<[usize]>,

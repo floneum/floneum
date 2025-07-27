@@ -1,23 +1,25 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock, atomic::AtomicUsize},
-};
+use std::sync::{Arc, Weak, atomic::AtomicUsize};
 
-use arc_swap::ArcSwap;
+use arc_swap::{ArcSwap, ArcSwapAny};
 use dependency_map::{DependencyMap, visit_dependencies};
+use parking_lot::RwLock;
 use resolve::Resolver;
+use rustc_hash::FxHashMap;
 use tabbycat::Graph;
+use wgpu::CommandEncoderDescriptor;
 
 mod dependency_map;
 mod layout_pass;
+mod queue;
 mod resolve;
-mod visit;
 mod visualize;
 
 use crate::{
-    Device, ElementWiseOperation, MatMulOperation, PairWiseOperation, PerformanceQueries,
-    QueryResults, ReduceOperation, map_layout::MapLayoutOperation, quantized::QMatMulOperation,
+    DataTypeEnum, Device, ElementWiseOperation, MatMulOperation, PairWiseOperation, QMatrix,
+    ReduceOperation, dequantize::DequantizeOperation, index_select::IndexSelectOperation,
+    map_layout::MapLayoutOperation, mir::operation::Operation, quantized::matmul::QMatMulOperation,
     resize::ResizeOperation, slice_assign::SliceAssignOperation, tensor::TensorData,
+    visit_tiled::MaybeQData,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -84,9 +86,36 @@ impl SliceAssignComputeNodeKey {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub(crate) struct IndexSelectComputeNodeKey(usize);
+impl IndexSelectComputeNodeKey {
+    fn new() -> Self {
+        static COUNT: AtomicUsize = AtomicUsize::new(0);
+        Self(COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst))
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub(crate) struct TensorComputeNodeKey(usize);
 impl TensorComputeNodeKey {
     fn new() -> Self {
+        static COUNT: AtomicUsize = AtomicUsize::new(0);
+        Self(COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst))
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub(crate) struct DequantizeComputeKey(usize);
+impl DequantizeComputeKey {
+    fn new() -> Self {
+        static COUNT: AtomicUsize = AtomicUsize::new(0);
+        Self(COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst))
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub(crate) struct CustomComputeKey(usize);
+impl CustomComputeKey {
+    pub(crate) fn new() -> Self {
         static COUNT: AtomicUsize = AtomicUsize::new(0);
         Self(COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst))
     }
@@ -110,8 +139,11 @@ pub(crate) enum AnyComputeKey {
     MapLayout(MapLayoutComputeNodeKey),
     Resize(ResizeComputeNodeKey),
     SliceAssign(SliceAssignComputeNodeKey),
+    IndexSelect(IndexSelectComputeNodeKey),
     Tensor(TensorComputeNodeKey),
     QMatMul(QMatMulComputeNodeKey),
+    Dequantize(DequantizeComputeKey),
+    Custom(CustomComputeKey),
 }
 
 impl From<ElementWiseComputeNodeKey> for AnyComputeKey {
@@ -162,78 +194,103 @@ impl From<SliceAssignComputeNodeKey> for AnyComputeKey {
     }
 }
 
+impl From<IndexSelectComputeNodeKey> for AnyComputeKey {
+    fn from(value: IndexSelectComputeNodeKey) -> Self {
+        Self::IndexSelect(value)
+    }
+}
+
 impl From<QMatMulComputeNodeKey> for AnyComputeKey {
     fn from(value: QMatMulComputeNodeKey) -> Self {
         Self::QMatMul(value)
     }
 }
 
-#[derive(Clone, Default)]
+impl From<DequantizeComputeKey> for AnyComputeKey {
+    fn from(value: DequantizeComputeKey) -> Self {
+        Self::Dequantize(value)
+    }
+}
+
+impl From<CustomComputeKey> for AnyComputeKey {
+    fn from(value: CustomComputeKey) -> Self {
+        Self::Custom(value)
+    }
+}
+
+#[derive(Clone)]
 pub(crate) struct ComputeGraph {
     inner: Arc<ArcSwap<RwLock<ComputeGraphInner>>>,
 }
 
 impl ComputeGraph {
-    pub(crate) fn new() -> Self {
-        Self::default()
+    pub(crate) fn new(device: Device) -> Self {
+        let myself = Self {
+            inner: Arc::new(ArcSwap::new(Arc::new(RwLock::new(ComputeGraphInner::new(
+                device,
+            ))))),
+        };
+
+        let weak = Arc::downgrade(&myself.inner);
+        myself.with_mut(|inner| {
+            inner.pointed_to_by.push(weak);
+        });
+        myself
     }
 
     fn with_mut<R, F: FnOnce(&mut ComputeGraphInner) -> R>(&self, f: F) -> R {
         let write = self.inner.load();
-        let mut inner = write.write().unwrap();
-        f(&mut inner)
+        let mut inner = write.write();
+        let result = f(&mut inner);
+        #[cfg(feature = "extra_assertions")]
+        {
+            inner.verify_integrity()
+        }
+        result
     }
 
     pub(crate) fn merge(&self, other: &Self) {
-        if Arc::ptr_eq(&self.inner, &other.inner) {
+        if Arc::ptr_eq(&self.inner.load(), &other.inner.load()) {
             return;
         }
         self.with_mut(|inner| {
             other.with_mut(|other_inner| {
-                inner
-                    .nodes
-                    .element_wise
-                    .extend(other_inner.nodes.element_wise.drain());
-                inner
-                    .nodes
-                    .pair_wise
-                    .extend(other_inner.nodes.pair_wise.drain());
-                inner
-                    .nodes
-                    .mat_mul
-                    .extend(other_inner.nodes.mat_mul.drain());
-                inner.nodes.reduce.extend(other_inner.nodes.reduce.drain());
-                inner
-                    .nodes
-                    .map_layout
-                    .extend(other_inner.nodes.map_layout.drain());
-                inner.nodes.resize.extend(other_inner.nodes.resize.drain());
-                inner
-                    .nodes
-                    .slice_assign
-                    .extend(other_inner.nodes.slice_assign.drain());
-                inner.nodes.tensor.extend(other_inner.nodes.tensor.drain());
-                inner
-                    .nodes
-                    .q_mat_mul
-                    .extend(other_inner.nodes.q_mat_mul.drain());
-                inner
-                    .timing_information
-                    .extend(other_inner.timing_information.drain());
+                inner.nodes.merge(&mut other_inner.nodes);
+
                 inner
                     .cached_results
                     .extend(other_inner.cached_results.drain());
-                inner
-                    .dependency_map
-                    .reference_count
-                    .extend(other_inner.dependency_map.reference_count.drain());
-                inner
-                    .dependency_map
-                    .dependant_map
-                    .extend(other_inner.dependency_map.dependant_map.drain());
+                inner.dependency_map.merge(&mut other_inner.dependency_map);
             })
         });
-        other.inner.store(self.inner.load_full());
+
+        other.point_to(self);
+    }
+
+    fn point_to(&self, target: &Self) {
+        {
+            if Arc::ptr_eq(&self.inner.load(), &target.inner.load()) {
+                return;
+            }
+        }
+
+        let pointed_to_by = self.with_mut(|inner| std::mem::take(&mut inner.pointed_to_by));
+
+        for pointed_to in pointed_to_by {
+            if let Some(pointed_to) = pointed_to.upgrade() {
+                if Arc::ptr_eq(&pointed_to, &target.inner) {
+                    continue;
+                }
+                let pointed_to = Self { inner: pointed_to };
+                pointed_to.point_to(target);
+            }
+        }
+
+        target.with_mut(|inner| {
+            inner.pointed_to_by.push(Arc::downgrade(&self.inner));
+        });
+        let target = target.inner.load_full();
+        self.inner.store(target);
     }
 
     pub(crate) fn create_element_wise(
@@ -314,6 +371,18 @@ impl ComputeGraph {
         id
     }
 
+    pub(crate) fn create_index_select(
+        &self,
+        op: IndexSelectOperation,
+    ) -> IndexSelectComputeNodeKey {
+        let id = IndexSelectComputeNodeKey::new();
+        self.with_mut(|inner| {
+            inner.nodes.index_select.insert(id, op);
+            inner.add_reference(id.into());
+        });
+        id
+    }
+
     pub(crate) fn create_tensor(&self, info: TensorData) -> TensorComputeNodeKey {
         let id = TensorComputeNodeKey::new();
         self.with_mut(|inner| {
@@ -323,17 +392,56 @@ impl ComputeGraph {
         id
     }
 
+    pub(crate) fn dequantize(&self, matrix: QMatrix, ty: DataTypeEnum) -> DequantizeComputeKey {
+        let id = DequantizeComputeKey::new();
+        self.with_mut(|inner| {
+            inner
+                .nodes
+                .dequantize
+                .insert(id, DequantizeOperation::new(matrix, ty));
+            inner.add_reference(id.into());
+        });
+        id
+    }
+
+    pub(crate) fn create_custom(
+        &self,
+        operation: Arc<dyn Operation + Send + Sync>,
+    ) -> CustomComputeKey {
+        let id = CustomComputeKey::new();
+        self.with_mut(|inner| {
+            inner.nodes.custom.insert(id, operation);
+            inner.add_reference(id.into());
+        });
+        id
+    }
+
     pub(crate) fn resolve(&self, key: AnyComputeKey, device: &Device) -> TensorData {
         let mut encoder = device
             .wgpu_device()
-            .create_command_encoder(&Default::default());
+            .create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("ComputeGraph Encoder"),
+            });
         let data = self.with_mut(|inner| Resolver::new(inner, key, &mut encoder).run());
         device.wgpu_queue().submit(Some(encoder.finish()));
+
+        // Flush the cache to a file
+        if let (Some(pipeline_cache), Some(cache_file)) =
+            (device.wgpu_cache(), device.wgpu_cache_file())
+        {
+            let data = pipeline_cache.get_data();
+            if let Some(data) = data {
+                let temp_file = cache_file.with_extension("temp");
+                std::fs::write(&temp_file, &data).unwrap();
+                std::fs::rename(&temp_file, cache_file).unwrap();
+            }
+        }
+
         data
     }
 
     pub(crate) fn graphvis(&self, key: AnyComputeKey) -> Graph {
-        self.with_mut(|inner| inner.nodes.graphvis(key))
+        self.with_mut(|inner| inner.graphvis(key))
     }
 
     pub(crate) fn remove_reference(&self, key: AnyComputeKey) {
@@ -347,43 +455,62 @@ impl ComputeGraph {
             inner.add_reference(key);
         });
     }
-
-    #[allow(clippy::await_holding_lock)]
-    pub(crate) async fn all_timing_information(&self) -> Vec<QueryResults> {
-        let myself = self.inner.load();
-        let myself = myself.read().unwrap();
-        let mut output = Vec::new();
-        for timing_information in myself.timing_information.values() {
-            output.push(timing_information.wait_for_results().await);
-        }
-        output
-    }
 }
 
 #[derive(Default)]
 pub(crate) struct ComputeGraphNodes {
-    element_wise: HashMap<ElementWiseComputeNodeKey, ElementWiseOperation>,
-    pair_wise: HashMap<PairWiseComputeNodeKey, PairWiseOperation>,
-    mat_mul: HashMap<MatMulComputeNodeKey, MatMulOperation>,
-    reduce: HashMap<ReduceComputeNodeKey, ReduceOperation>,
-    map_layout: HashMap<MapLayoutComputeNodeKey, MapLayoutOperation>,
-    resize: HashMap<ResizeComputeNodeKey, ResizeOperation>,
-    slice_assign: HashMap<SliceAssignComputeNodeKey, SliceAssignOperation>,
-    tensor: HashMap<TensorComputeNodeKey, TensorData>,
-    q_mat_mul: HashMap<QMatMulComputeNodeKey, QMatMulOperation>,
+    pub(crate) element_wise: FxHashMap<ElementWiseComputeNodeKey, ElementWiseOperation>,
+    pub(crate) pair_wise: FxHashMap<PairWiseComputeNodeKey, PairWiseOperation>,
+    pub(crate) mat_mul: FxHashMap<MatMulComputeNodeKey, MatMulOperation>,
+    pub(crate) reduce: FxHashMap<ReduceComputeNodeKey, ReduceOperation>,
+    pub(crate) map_layout: FxHashMap<MapLayoutComputeNodeKey, MapLayoutOperation>,
+    pub(crate) resize: FxHashMap<ResizeComputeNodeKey, ResizeOperation>,
+    pub(crate) slice_assign: FxHashMap<SliceAssignComputeNodeKey, SliceAssignOperation>,
+    pub(crate) index_select: FxHashMap<IndexSelectComputeNodeKey, IndexSelectOperation>,
+    pub(crate) tensor: FxHashMap<TensorComputeNodeKey, TensorData>,
+    pub(crate) q_mat_mul: FxHashMap<QMatMulComputeNodeKey, QMatMulOperation>,
+    pub(crate) dequantize: FxHashMap<DequantizeComputeKey, DequantizeOperation>,
+    pub(crate) custom: FxHashMap<CustomComputeKey, Arc<dyn Operation + Send + Sync>>,
 }
 
-#[derive(Default)]
-struct ComputeGraphInner {
-    nodes: ComputeGraphNodes,
+impl ComputeGraphNodes {
+    pub(crate) fn merge(&mut self, other: &mut Self) {
+        self.element_wise.extend(other.element_wise.drain());
+        self.pair_wise.extend(other.pair_wise.drain());
+        self.mat_mul.extend(other.mat_mul.drain());
+        self.reduce.extend(other.reduce.drain());
+        self.map_layout.extend(other.map_layout.drain());
+        self.resize.extend(other.resize.drain());
+        self.slice_assign.extend(other.slice_assign.drain());
+        self.index_select.extend(other.index_select.drain());
+        self.tensor.extend(other.tensor.drain());
+        self.q_mat_mul.extend(other.q_mat_mul.drain());
+        self.dequantize.extend(other.dequantize.drain());
+    }
+}
 
-    timing_information: HashMap<AnyComputeKey, PerformanceQueries>,
-    cached_results: HashMap<AnyComputeKey, TensorData>,
+pub(crate) struct ComputeGraphInner {
+    pub(crate) device: Device,
+    pub(crate) nodes: ComputeGraphNodes,
+
+    pub(crate) cached_results: FxHashMap<AnyComputeKey, TensorData>,
 
     dependency_map: DependencyMap,
+
+    pointed_to_by: Vec<Weak<ArcSwapAny<Arc<RwLock<ComputeGraphInner>>>>>,
 }
 
 impl ComputeGraphInner {
+    fn new(device: Device) -> Self {
+        Self {
+            device,
+            nodes: ComputeGraphNodes::default(),
+            cached_results: Default::default(),
+            dependency_map: DependencyMap::default(),
+            pointed_to_by: Vec::new(),
+        }
+    }
+
     fn add_reference(&mut self, key: AnyComputeKey) {
         match self.dependency_map.reference_count.get_mut(&key) {
             Some(count) => {
@@ -444,6 +571,12 @@ impl ComputeGraphInner {
 
     fn remove_key(&mut self, key: AnyComputeKey) {
         // Remove the cached result if it exists
+        visit_dependencies(&self.nodes, key, |dependency| {
+            if let Some(map) = self.dependency_map.dependant_map.get_mut(&dependency) {
+                map.remove(&key);
+            }
+        });
+        self.dependency_map.dependant_map.remove(&key);
         self.cached_results.remove(&key);
         self.dependency_map.reference_count.remove(&key);
         match key {
@@ -472,12 +605,143 @@ impl ComputeGraphInner {
                     .slice_assign
                     .remove(&slice_assign_compute_node_key);
             }
+            AnyComputeKey::IndexSelect(index_select_compute_node_key) => {
+                self.nodes
+                    .index_select
+                    .remove(&index_select_compute_node_key);
+            }
             AnyComputeKey::QMatMul(q_mat_mul_compute_node_key) => {
                 self.nodes.q_mat_mul.remove(&q_mat_mul_compute_node_key);
             }
             AnyComputeKey::Tensor(tensor_compute_node_key) => {
                 self.nodes.tensor.remove(&tensor_compute_node_key);
             }
+            AnyComputeKey::Dequantize(dequantize_compute_key) => {
+                self.nodes.dequantize.remove(&dequantize_compute_key);
+            }
+            AnyComputeKey::Custom(custom_compute_key) => {
+                self.nodes.custom.remove(&custom_compute_key);
+            }
+        }
+    }
+
+    pub(crate) fn get_result_or_qmatrix(&self, key: AnyComputeKey) -> Option<MaybeQData> {
+        let result = if let AnyComputeKey::Dequantize(key) = key {
+            let tensor = &self.nodes.dequantize.get(&key)?;
+            tensor.matrix.clone().into()
+        } else {
+            self.cached_results.get(&key)?.clone().into()
+        };
+        Some(result)
+    }
+
+    pub(crate) fn get_result(&self, key: AnyComputeKey) -> Option<TensorData> {
+        self.cached_results.get(&key).cloned()
+    }
+
+    #[cfg(feature = "extra_assertions")]
+    fn contains_key(&self, key: AnyComputeKey) -> bool {
+        if self.cached_results.contains_key(&key) {
+            return true;
+        }
+        match key {
+            AnyComputeKey::ElementWise(key) => self.nodes.element_wise.contains_key(&key),
+            AnyComputeKey::PairWise(key) => self.nodes.pair_wise.contains_key(&key),
+            AnyComputeKey::MatMul(key) => self.nodes.mat_mul.contains_key(&key),
+            AnyComputeKey::Reduce(key) => self.nodes.reduce.contains_key(&key),
+            AnyComputeKey::MapLayout(key) => self.nodes.map_layout.contains_key(&key),
+            AnyComputeKey::Resize(key) => self.nodes.resize.contains_key(&key),
+            AnyComputeKey::SliceAssign(key) => self.nodes.slice_assign.contains_key(&key),
+            AnyComputeKey::IndexSelect(key) => self.nodes.index_select.contains_key(&key),
+            AnyComputeKey::Tensor(key) => self.nodes.tensor.contains_key(&key),
+            AnyComputeKey::QMatMul(key) => self.nodes.q_mat_mul.contains_key(&key),
+            AnyComputeKey::Dequantize(key) => self.nodes.dequantize.contains_key(&key),
+            AnyComputeKey::Custom(key) => self.nodes.custom.contains_key(&key),
+        }
+    }
+
+    #[cfg(feature = "extra_assertions")]
+    fn verify_integrity(&self) {
+        // Check that all node references exist in the graph
+        for key in self.dependency_map.reference_count.keys() {
+            assert!(
+                self.contains_key(*key),
+                "{key:?} does not exist in the reference map"
+            );
+        }
+        for (key, dependants) in self.dependency_map.dependant_map.iter() {
+            assert!(
+                self.contains_key(*key),
+                "{key:?} is in the dependant map, but it doesn't exist"
+            );
+            for dependant in dependants {
+                assert!(
+                    self.contains_key(*dependant),
+                    "the dependant {dependant:?} of {key:?} does not exist"
+                );
+            }
+        }
+
+        let keys = self
+            .nodes
+            .element_wise
+            .keys()
+            .copied()
+            .map(AnyComputeKey::from)
+            .chain(
+                self.nodes
+                    .pair_wise
+                    .keys()
+                    .copied()
+                    .map(AnyComputeKey::from),
+            )
+            .chain(self.nodes.mat_mul.keys().copied().map(AnyComputeKey::from))
+            .chain(self.nodes.reduce.keys().copied().map(AnyComputeKey::from))
+            .chain(
+                self.nodes
+                    .map_layout
+                    .keys()
+                    .copied()
+                    .map(AnyComputeKey::from),
+            )
+            .chain(self.nodes.resize.keys().copied().map(AnyComputeKey::from))
+            .chain(
+                self.nodes
+                    .slice_assign
+                    .keys()
+                    .copied()
+                    .map(AnyComputeKey::from),
+            )
+            .chain(
+                self.nodes
+                    .index_select
+                    .keys()
+                    .copied()
+                    .map(AnyComputeKey::from),
+            )
+            .chain(self.nodes.tensor.keys().copied().map(AnyComputeKey::from))
+            .chain(
+                self.nodes
+                    .q_mat_mul
+                    .keys()
+                    .copied()
+                    .map(AnyComputeKey::from),
+            )
+            .chain(
+                self.nodes
+                    .dequantize
+                    .keys()
+                    .copied()
+                    .map(AnyComputeKey::from),
+            );
+
+        for key in keys {
+            if self.cached_results.contains_key(&key) {
+                continue;
+            }
+            visit_dependencies(&self.nodes, key, |dependency| {
+                assert!(self.contains_key(dependency));
+            });
         }
     }
 }

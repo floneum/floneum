@@ -1,25 +1,39 @@
-use std::time::Duration;
-
-use fusor_ml_core::*;
+use fusor_core::*;
 
 #[tokio::main]
 async fn main() {
-    let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+    tracing_subscriber::fmt().init();
+    use crate::Device;
+    use fusor_gguf::GgufMetadata;
 
-    let tensor = Tensor::new(&device, &vec![vec![[1.; 20]; 10]; 10]);
-    let new = tensor.sum(0).sum(0).softmax().sum(0);
-    let graph = new.graphvis();
-    println!("{graph}");
-    let timing = new.all_timing_information().await;
-    println!(
-        "segment time: {:?}",
-        timing.iter().map(|x| x.elapsed()).collect::<Vec<_>>()
-    );
-    println!("{:?}", timing.iter().map(|x| x.elapsed()).sum::<Duration>());
+    let url = "https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf";
+    let bytes = reqwest::get(url).await.unwrap().bytes().await.unwrap();
+
+    let random_data: Vec<Vec<f32>> = (0..1)
+        .map(|_| (0..1536).map(|_| rand::random()).collect())
+        .collect();
+
+    let device = Device::new().await.unwrap();
+
+    let mut reader = std::io::Cursor::new(&bytes);
+    let metadata = GgufMetadata::read(&mut reader).unwrap();
+    let q_matrix_metadata = metadata.tensor_infos.get("blk.3.ffn_down.weight").unwrap();
+    println!("Q matrix metadata: {q_matrix_metadata:?}");
+
+    let q_matrix = QMatrix::read(
+        &device,
+        q_matrix_metadata,
+        &mut reader,
+        metadata.tensor_data_offset,
+    )
+    .unwrap();
+
+    let device = device.clone();
+    let random_data = random_data.clone();
+    let tensor = Tensor::new(&device, &random_data);
+    _ = tensor.as_slice().await.unwrap();
+    for _ in 0..1 {
+        let new = tensor.q_mat_mul(&q_matrix);
+        new.materialize().await;
+    }
 }

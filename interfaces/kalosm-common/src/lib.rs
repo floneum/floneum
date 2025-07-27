@@ -1,5 +1,7 @@
+#[cfg(feature = "candle")]
 use std::sync::{Arc, OnceLock};
 
+#[cfg(feature = "candle")]
 use candle_core::{
     backend::BackendStorage,
     quantized::{GgmlDType, QMatMul, QTensor},
@@ -9,11 +11,16 @@ use candle_core::{
 
 mod cache;
 pub use cache::*;
+#[cfg(feature = "candle")]
 mod kv_cache;
+#[cfg(feature = "candle")]
 pub use kv_cache::*;
+#[cfg(feature = "candle")]
 mod mask;
+#[cfg(feature = "candle")]
 pub use mask::*;
 
+#[cfg(feature = "candle")]
 /// Create a candle device that uses any available accelerator.
 pub fn accelerated_device_if_available() -> candle_core::Result<Device> {
     static DEVICE: OnceLock<Device> = OnceLock::new();
@@ -39,6 +46,7 @@ pub fn accelerated_device_if_available() -> candle_core::Result<Device> {
     Ok(device)
 }
 
+#[cfg(feature = "candle")]
 /// Wrap a closure in a release pool if the metal feature is enabled
 pub fn maybe_autoreleasepool<T>(f: impl FnOnce() -> T) -> T {
     #[cfg(feature = "metal")]
@@ -52,6 +60,7 @@ pub fn maybe_autoreleasepool<T>(f: impl FnOnce() -> T) -> T {
     }
 }
 
+#[cfg(feature = "candle")]
 /// Clear a `Vec<T>` and copy the contents of a tensor into it.
 pub fn copy_tensor_into_vec<T: WithDType>(
     tensor: &Tensor,
@@ -80,6 +89,7 @@ pub fn copy_tensor_into_vec<T: WithDType>(
     }
 }
 
+#[cfg(feature = "candle")]
 fn cuda_compatible_dequantize_f16(qtensor: &QTensor) -> candle_core::Result<Tensor> {
     let device = qtensor.device();
     qtensor
@@ -89,6 +99,7 @@ fn cuda_compatible_dequantize_f16(qtensor: &QTensor) -> candle_core::Result<Tens
 }
 
 /// Convert a QTensor to a QMatMul
+#[cfg(feature = "candle")]
 pub fn qmatmul_from_qtensor(qtensor: impl Into<Arc<QTensor>>) -> candle_core::Result<QMatMul> {
     let qtensor = qtensor.into();
     Ok(match qtensor.dtype() {

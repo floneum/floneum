@@ -4,7 +4,10 @@ use candle_transformers::models::whisper::{self as m, audio, Config};
 use flate2::{write::ZlibEncoder, Compression};
 use futures_channel::mpsc::UnboundedSender;
 use kalosm_common::{accelerated_device_if_available, CacheError, TensorCache};
-use rand::{distributions::Distribution, SeedableRng};
+use rand::{
+    distr::{weighted::WeightedIndex, Distribution},
+    SeedableRng,
+};
 use std::{
     io::Write,
     num::NonZeroUsize,
@@ -425,7 +428,7 @@ impl Decoder {
                 let logits_v: Vec<f32> =
                     self.apply_timestamp_rules(prs, &tokens, task.without_timestamps)?;
                 // Weights may be NaN if decoding fails
-                let distr = rand::distributions::WeightedIndex::new(&logits_v).map_err(|_| {
+                let distr = WeightedIndex::new(&logits_v).map_err(|_| {
                     candle_core::Error::Msg("Weights were invalid distribution".into())
                 })?;
                 distr.sample(&mut self.rng) as u32

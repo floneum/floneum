@@ -6,11 +6,11 @@ fn unchecked_unsqueeze<const R1: usize, const R2: usize, D: DataType>(
 ) -> Tensor<R2, D> {
     let shape = tensor.shape();
     assert!(axis < R1);
-    tensor.reshape(dbg!(std::array::from_fn(|i| match i.cmp(&axis) {
+    tensor.reshape(std::array::from_fn(|i| match i.cmp(&axis) {
         std::cmp::Ordering::Less => shape[i],
         std::cmp::Ordering::Equal => 1,
         std::cmp::Ordering::Greater => shape[i - 1],
-    })))
+    }))
 }
 
 pub trait Unsqueeze {
@@ -58,12 +58,7 @@ async fn test_unsqueeze() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
     let unsqueezed = tensor.unsqueeze(0);

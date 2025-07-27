@@ -10,11 +10,11 @@ repository = "https://github.com/floneum/floneum"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-candle-core.workspace = true
-candle-nn.workspace = true
-hf-hub = { version = "0.3.0" }
+candle-core = { workspace = true, optional = true }
+candle-nn = { workspace = true, optional = true }
+hf-hub = { version = "0.4.0", features = ["tokio"], default-features = false }
+tokio = { version = "1", features = ["fs"] }
 reqwest = "0.11.24"
-tokio = { version = "1.36.0", features = ["fs"] }
 dirs = "5.0.1"
 tracing = "0.1.40"
 httpdate = "1.0.3"
@@ -27,3 +27,4 @@ tokio = { version = "1.36.0", features = ["full"] }
 
 [features]
 metal = ["dep:metal"]
+candle = ["dep:candle-core", "dep:candle-nn"]

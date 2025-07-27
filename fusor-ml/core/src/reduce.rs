@@ -1,59 +1,53 @@
-use std::{
-    fmt::{Display, Write},
-    sync::OnceLock,
-};
-
-use wgpu::CommandEncoder;
+use std::fmt::{Display, Write};
 
 use crate::{
-    Layout, Tensor, UntypedElementWiseKernel,
+    ElementWiseFunctions,
+    mir::{
+        globals::KernelGlobalSpace,
+        operation::Operation,
+        workgroup_shape::{Constraint, WorkgroupShape, WorkgroupShapeConstraints},
+    },
+};
+use crate::{
+    Layout, Tensor,
     compute_graph::AnyComputeKey,
-    kernel::{Function, GenericKernel, KernelGlobalSpace, KernelInputValue},
-    query::PerformanceQueries,
-    tensor::{DataType, DataTypeEnum, TensorData, padded_tensor_size},
+    mir::{function::Function, inputs::MirValue, kernel::GenericKernel},
+    tensor::{DataType, DataTypeEnum, TensorData},
 };
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct ReduceOperation {
     pub(crate) value: AnyComputeKey,
+    pre_element_wise: ElementWiseFunctions,
     pub(crate) function: ReduceFunction,
+    post_element_wise: ElementWiseFunctions,
     pub(crate) axis: usize,
+    pub(crate) shape: Box<[usize]>,
 }
 
 impl ReduceOperation {
-    pub fn new(value: AnyComputeKey, function: ReduceFunction, axis: usize) -> Self {
+    pub fn new(
+        value: AnyComputeKey,
+        function: ReduceFunction,
+        axis: usize,
+        shape: &[usize],
+    ) -> Self {
+        let datatype = function.datatype();
         Self {
             value,
+            pre_element_wise: ElementWiseFunctions::empty(datatype),
             function,
+            post_element_wise: ElementWiseFunctions::empty(datatype),
             axis,
-        }
-    }
-}
-
-pub(crate) struct UntypedReduceKernel {
-    pre_element_wise: UntypedElementWiseKernel,
-    reduce: ReduceFunction,
-    post_element_wise: UntypedElementWiseKernel,
-    kernel: OnceLock<GenericKernel>,
-    datatype: DataTypeEnum,
-}
-
-impl UntypedReduceKernel {
-    pub fn new(reduce: ReduceFunction, datatype: DataTypeEnum) -> Self {
-        Self {
-            pre_element_wise: UntypedElementWiseKernel::empty(datatype),
-            reduce,
-            post_element_wise: UntypedElementWiseKernel::empty(datatype),
-            kernel: OnceLock::new(),
-            datatype,
+            shape: shape.into(),
         }
     }
 
-    pub fn set_post_element_wise(&mut self, kernel: UntypedElementWiseKernel) {
+    pub fn set_post_element_wise(&mut self, kernel: ElementWiseFunctions) {
         self.post_element_wise = kernel;
     }
 
-    pub fn set_pre_element_wise(&mut self, kernel: UntypedElementWiseKernel) {
+    pub fn set_pre_element_wise(&mut self, kernel: ElementWiseFunctions) {
         self.pre_element_wise = kernel;
     }
 
@@ -67,24 +61,39 @@ impl UntypedReduceKernel {
 
     pub fn add_function(&self, kernel: &mut GenericKernel) -> Function {
         kernel.add_function(
-            self.reduce.datatype(),
-            self.reduce.operation.clone(),
+            self.function.datatype(),
+            self.function.operation.clone(),
             [
-                ("a".to_string(), self.reduce.datatype().to_string()),
-                ("b".to_string(), self.reduce.datatype().to_string()),
+                ("a".to_string(), self.function.datatype().to_string()),
+                ("b".to_string(), self.function.datatype().to_string()),
             ],
         )
+    }
+
+    pub fn reduce_datatype(&self) -> DataTypeEnum {
+        self.pre_element_wise.out_datatype()
     }
 
     pub fn out_datatype(&self) -> DataTypeEnum {
         self.post_element_wise.out_datatype()
     }
 
-    fn tiled_map(&self, blocksize: u32, input_rank: u32) -> GenericKernel {
-        let dtype = self.reduce.datatype();
+    fn rank(&self) -> u32 {
+        self.shape.len() as _
+    }
+
+    fn kernel(
+        &self,
+        workgroup_shape: &WorkgroupShape,
+        blocksize: u32,
+        kernel: &mut GenericKernel,
+        device: &crate::Device,
+    ) {
+        let dtype = self.function.datatype();
         let out_datatype = self.out_datatype();
-        let mut kernel = GenericKernel::new();
-        let output_rank = input_rank - 1;
+        let output_rank = self.rank() - 1;
+        let large_reduction = self.shape[self.axis] > 256;
+
         // Based on v7 of https://developer.download.nvidia.com/assets/cuda/files/reduction.pdf
         // And the mlx implementation https://github.com/ml-explore/mlx/blob/b05bcfd27f5f1293401b74dce02e38c8fd7ef66a/mlx/backend/metal/kernels/arg_reduce.metal
         // We can't query the warp size in WGSL, but we can use subgroup operations
@@ -92,16 +101,15 @@ impl UntypedReduceKernel {
         // We also can't synchronize among workgroups without atomics. storageBarrier() is a barrier for
         // the storage memory only inside the workgroup.
         // This kernel just uses one workgroup per reduction unit like the MLX kernel
-        let input_tensor = kernel.add_tensor_input(output_rank, false, self.datatype);
+        let input_tensor = kernel.add_tensor_input(output_rank, false, self.reduce_datatype());
         let output_tensor = kernel.add_tensor_input(output_rank, true, out_datatype);
         let reduce_size = kernel.add_integer_input();
         let reduce_stride = kernel.add_integer_input();
         let local_data =
             kernel.add_global_array(KernelGlobalSpace::Workgroup, dtype, blocksize.to_string());
-        let reduce = self.add_function(&mut kernel);
-        let pre_element_wise = self.add_pre_element_wise_functions(&mut kernel);
-        let post_element_wise = self.add_post_element_wise_functions(&mut kernel);
-        let workgroup_index = kernel.workgroup_index();
+        let reduce = self.add_function(kernel);
+        let pre_element_wise = self.add_pre_element_wise_functions(kernel);
+        let post_element_wise = self.add_post_element_wise_functions(kernel);
         let workgroup_local_index = kernel.workgroup_local_index();
         let subgroup_id = kernel.subgroup_index();
         let subgroup_local_id = kernel.subgroup_local_index();
@@ -113,7 +121,8 @@ impl UntypedReduceKernel {
         // start offset of the input and output tensors for each thread group.
         writeln!(
             &mut kernel_body,
-            "var workgroup_index_remainder = {workgroup_index}.x;"
+            "var workgroup_index_remainder = {};",
+            workgroup_shape.linearized_workgroup_index(kernel)
         )
         .unwrap();
         for i in (0..output_rank).rev() {
@@ -140,7 +149,7 @@ impl UntypedReduceKernel {
         writeln!(
             &mut kernel_body,
             "var merged = {dtype}({});",
-            self.reduce.initial_value
+            self.function.initial_value
         )
         .unwrap();
 
@@ -148,64 +157,132 @@ impl UntypedReduceKernel {
         // Round up
         writeln!(
             &mut kernel_body,
-            "let bucket_size = {reduce_size} / {blocksize}u + u32(({reduce_size} % {blocksize}u) != 0u);"
+            "let bucket_size = ({reduce_size} + {blocksize}u - 1) / {blocksize}u;"
         )
         .unwrap();
         // Then loop over this thread's portion of the column and merge the values
         writeln!(
             &mut kernel_body,
-            "for (var index = 0u; index < bucket_size; index += 1u) {{"
+            "let base_axis_index = {workgroup_local_index} * bucket_size;"
         )
         .unwrap();
         writeln!(
             &mut kernel_body,
-            "let axis_index = {workgroup_local_index} * bucket_size + index;"
+            "let end_axis_index = min({workgroup_local_index} * bucket_size + bucket_size, {reduce_size});"
         )
         .unwrap();
-        writeln!(&mut kernel_body, "if axis_index < {reduce_size} {{").unwrap();
+        writeln!(&mut kernel_body, "var index = base_axis_index;").unwrap();
+
+        // Process elements in groups of 4 with optimized tree reduction if this is a large tensor
+        if large_reduction {
+            writeln!(&mut kernel_body, "while (index + 4u <= end_axis_index) {{").unwrap();
+            // Load the chunk of 4 elements at once
+            write!(&mut kernel_body, "let data = vec4<{dtype}>(").unwrap();
+            for i in 0..4 {
+                if i > 0 {
+                    write!(&mut kernel_body, ", ").unwrap();
+                }
+                write!(
+                    &mut kernel_body,
+                    "{input_tensor}[in_start_offset + (index + {i}u) * {reduce_stride}]"
+                )
+                .unwrap();
+            }
+            writeln!(&mut kernel_body, ");").unwrap();
+
+            // Apply pre-element-wise functions to the data
+            let components = ["data.x", "data.y", "data.z", "data.w"];
+            write!(&mut kernel_body, "let after_element_wise = vec4<{dtype}>(").unwrap();
+            for (i, component) in components.iter().enumerate() {
+                if i > 0 {
+                    write!(&mut kernel_body, ", ").unwrap();
+                }
+                write!(
+                    &mut kernel_body,
+                    "{}",
+                    pre_element_wise
+                        .iter()
+                        .fold(component.to_string(), |acc, f| f.call(vec![acc]))
+                )
+                .unwrap();
+            }
+            writeln!(&mut kernel_body, ");").unwrap();
+
+            // Optimized tree reduction for vec4
+            writeln!(
+                &mut kernel_body,
+                "let vec4_reduced = {};",
+                reduce.call(vec![
+                    reduce.call(vec![
+                        "after_element_wise.x".to_string(),
+                        "after_element_wise.y".to_string()
+                    ]),
+                    reduce.call(vec![
+                        "after_element_wise.z".to_string(),
+                        "after_element_wise.w".to_string()
+                    ])
+                ])
+            )
+            .unwrap();
+            writeln!(
+                &mut kernel_body,
+                "merged = {};",
+                reduce.call(vec!["vec4_reduced".to_string(), "merged".to_string()])
+            )
+            .unwrap();
+            writeln!(&mut kernel_body, "index += 4u;").unwrap();
+            writeln!(&mut kernel_body, "}}").unwrap();
+            writeln!(&mut kernel_body).unwrap();
+        }
+
+        // Merge the < 4 remaining elements if the bucket size is not a multiple of 4
+        writeln!(&mut kernel_body, "while (index < end_axis_index) {{").unwrap();
+        // Load a single element
         writeln!(
             &mut kernel_body,
-            "let in_index = in_start_offset + axis_index * {reduce_stride};"
+            "let data = {input_tensor}[in_start_offset + index * {reduce_stride}];"
         )
         .unwrap();
+        // Apply the pre-element-wise functions to the data
         writeln!(
             &mut kernel_body,
-            "let data = {};",
+            "let after_element_wise = {};",
             pre_element_wise
                 .iter()
-                .fold(format!("{input_tensor}[in_index]"), |acc, f| f
-                    .call(vec![acc]))
+                .fold("data".to_string(), |acc, f| f.call(vec![acc]))
         )
         .unwrap();
+        // Merge the result into the merged variable
         writeln!(
             &mut kernel_body,
-            "merged = {};",
-            reduce.call(vec!["data".to_string(), "merged".to_string()])
+            "merged = {}; ",
+            reduce.call(vec!["after_element_wise".to_string(), "merged".to_string()])
         )
         .unwrap();
+        writeln!(&mut kernel_body, "index += 1u;").unwrap();
         writeln!(&mut kernel_body, "}}").unwrap();
-        writeln!(&mut kernel_body, "}}").unwrap();
-        writeln!(&mut kernel_body).unwrap();
 
-        // Next merge within each subgroup with shuffle down
-        writeln!(
-            &mut kernel_body,
-            "for (var offset = {subgroup_size} / 2u; offset > 0u; offset /= 2u) {{"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel_body,
-            "let neighbor = subgroupShuffleDown(merged, offset);"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel_body,
-            "merged = {};",
-            reduce.call(vec!["neighbor".to_string(), "merged".to_string()])
-        )
-        .unwrap();
-        writeln!(&mut kernel_body, "}}").unwrap();
-        writeln!(&mut kernel_body).unwrap();
+        let limits = device.wgpu_device().limits();
+        let max_subgroup_size = limits.max_subgroup_size.max(32);
+
+        // Optimized subgroup reduction with unrolled shuffle operations
+        let mut offset = max_subgroup_size;
+        while offset > 1 {
+            writeln!(&mut kernel_body, "if {subgroup_size} >= {offset}u {{").unwrap();
+            offset /= 2;
+            writeln!(
+                &mut kernel_body,
+                "let neighbor = subgroupShuffleDown(merged, {offset}u);"
+            )
+            .unwrap();
+            writeln!(
+                &mut kernel_body,
+                "merged = {};",
+                reduce.call(vec!["neighbor".to_string(), "merged".to_string()])
+            )
+            .unwrap();
+            writeln!(&mut kernel_body, "}}").unwrap();
+        }
 
         // Write the output to the workgroup memory if this is the first thread in the subgroup
         writeln!(&mut kernel_body, "if {subgroup_local_id} == 0u {{").unwrap();
@@ -232,29 +309,30 @@ impl UntypedReduceKernel {
         writeln!(&mut kernel_body, "else {{").unwrap();
         writeln!(
             &mut kernel_body,
-            "merged = {dtype}({});\n",
-            self.reduce.initial_value,
+            "merged = {dtype}({});",
+            self.function.initial_value,
         )
         .unwrap();
         writeln!(&mut kernel_body, "}}").unwrap();
-        writeln!(
-            &mut kernel_body,
-            "for (var offset = {subgroup_size} / 2u; offset > 0u; offset /= 2u) {{"
-        )
-        .unwrap();
-        writeln!(
-            &mut kernel_body,
-            "let neighbor = subgroupShuffleDown(merged, offset);"
-        )
-        .unwrap();
-        writeln!(&mut kernel_body, "var data = neighbor;").unwrap();
-        writeln!(
-            &mut kernel_body,
-            "merged = {};",
-            reduce.call(vec!["neighbor".to_string(), "merged".to_string()])
-        )
-        .unwrap();
-        writeln!(&mut kernel_body, "}}").unwrap();
+
+        // Final unrolled subgroup reduction
+        offset = max_subgroup_size;
+        while offset > 1 {
+            writeln!(&mut kernel_body, "if {subgroup_size} >= {offset}u {{").unwrap();
+            offset /= 2;
+            writeln!(
+                &mut kernel_body,
+                "let neighbor = subgroupShuffleDown(merged, {offset}u);"
+            )
+            .unwrap();
+            writeln!(
+                &mut kernel_body,
+                "merged = {};",
+                reduce.call(vec!["neighbor".to_string(), "merged".to_string()])
+            )
+            .unwrap();
+            writeln!(&mut kernel_body, "}}").unwrap();
+        }
 
         // Write the output to the output tensor if this is the first thread in the workgroup
         writeln!(&mut kernel_body, "if {workgroup_local_index} == 0u {{").unwrap();
@@ -274,82 +352,61 @@ impl UntypedReduceKernel {
         writeln!(&mut kernel_body, "}}").unwrap();
         writeln!(&mut kernel_body, "}}").unwrap();
 
-        kernel.set_body(kernel_body);
-        kernel.set_workgroup_size([blocksize, 1, 1]);
+        kernel.push_body(&kernel_body);
+    }
+}
 
-        kernel
+impl Operation for ReduceOperation {
+    fn workgroup_shape_constraints(
+        &self,
+        device: &crate::Device,
+    ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
+        let mut constraints = WorkgroupShapeConstraints::new();
+        let limits = device.wgpu_device().limits();
+        constraints.add_constraint(
+            0,
+            Constraint::less_than(limits.max_compute_workgroup_size_x + 1),
+        );
+        constraints.add_constraint(
+            0,
+            Constraint::more_than_or_equals(limits.min_subgroup_size.max(32)),
+        );
+        constraints.add_constraint(1, Constraint::equals(1));
+        constraints.add_constraint(2, Constraint::equals(1));
+        constraints
     }
 
-    pub fn run_with_query(
+    fn dispatch_size(
         &self,
-        tensor: &TensorData,
-        dim: usize,
-        query: Option<&PerformanceQueries>,
-        command_encoder: &mut CommandEncoder,
-    ) -> TensorData {
-        let shape = tensor.layout().shape();
+        _: &crate::mir::workgroup_shape::WorkgroupShape,
+        inputs: &[MirValue],
+    ) -> [u32; 3] {
+        let output_tensor: TensorData = inputs[1].as_tensor().unwrap().clone();
+        let workgroup_size = output_tensor.layout().shape().iter().product::<usize>() as u32;
+
+        [workgroup_size, 1, 1]
+    }
+
+    fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {
+        f(self.value);
+    }
+
+    fn inputs(&self, nodes: &crate::compute_graph::ComputeGraphInner) -> Vec<MirValue> {
+        let dim = self.axis;
+        let tensor = nodes.cached_results.get(&self.value).unwrap();
+        let layout = tensor.layout();
+        let shape = layout.shape();
         let new_tensor_shape = shape
             .iter()
             .enumerate()
             .filter_map(|(i, x)| (i != dim).then_some(*x))
             .collect::<Vec<_>>();
         let output_type = self.out_datatype();
-        let output_buf = tensor
-            .device()
-            .wgpu_device()
-            .create_buffer(&wgpu::BufferDescriptor {
-                label: None,
-                size: padded_tensor_size(
-                    (new_tensor_shape.iter().product::<usize>() * output_type.element_size())
-                        as u64,
-                ),
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-                mapped_at_creation: false,
-            });
-        let output_tensor = TensorData::new_from_buffer(
-            tensor.device(),
-            output_buf,
-            &new_tensor_shape,
-            output_type,
-        );
+        let output_tensor =
+            TensorData::new_for_shape(tensor.device(), &new_tensor_shape, output_type);
 
-        self.run_with_query_and_out_tensor(tensor, dim, query, &output_tensor, command_encoder);
-
-        output_tensor
-    }
-
-    pub fn run_with_query_and_out_tensor(
-        &self,
-        tensor: &TensorData,
-        dim: usize,
-        query: Option<&PerformanceQueries>,
-        output_tensor: &TensorData,
-        command_encoder: &mut CommandEncoder,
-    ) {
-        // assert_eq!(
-        //     *output_tensor.layout().shape(),
-        //     [tensor
-        //         .layout()
-        //         .shape()
-        //         .iter()
-        //         .enumerate()
-        //         .filter_map(|(i, x)| { (i != dim).then_some(*x as u32) })
-        //         .product::<u32>() as usize]
-        // );
-
-        let limits = tensor.device().wgpu_device().limits();
-        let max_blocksize = (tensor.layout().shape()[dim] as u32)
-            .min(limits.max_compute_workgroup_size_x)
-            .max(limits.min_subgroup_size)
-            .max(32);
-        let kernel = self
-            .kernel
-            .get_or_init(|| self.tiled_map(max_blocksize, tensor.layout().rank() as u32));
-
-        let workgroup_size = output_tensor.layout().shape().iter().product::<usize>() as u32;
-        let workgroup_dispatch_size = [workgroup_size, 1, 1];
         let trimmed_tensor_layout = Layout::from_parts(
-            0,
+            tensor.layout().offset(),
             tensor
                 .layout()
                 .shape()
@@ -371,22 +428,36 @@ impl UntypedReduceKernel {
             trimmed_tensor_layout,
             tensor.datatype(),
         );
-        kernel.run_with_query(
-            tensor.device(),
-            [
-                KernelInputValue::Tensor(trimmed_tensor.clone()),
-                KernelInputValue::Tensor(output_tensor.clone()),
-                KernelInputValue::Integer(tensor.layout().shape()[dim] as u32),
-                KernelInputValue::Integer(tensor.layout().strides()[dim] as u32),
-            ],
-            query,
-            command_encoder,
-            workgroup_dispatch_size,
-        );
+        vec![
+            MirValue::Tensor(trimmed_tensor.clone()),
+            MirValue::Tensor(output_tensor.clone()),
+            MirValue::Integer(tensor.layout().shape()[dim] as u32),
+            MirValue::Integer(tensor.layout().strides()[dim] as u32),
+        ]
+    }
+
+    fn build_kernel(
+        &self,
+        graph: &crate::compute_graph::ComputeGraphInner,
+        workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
+        _: &[MirValue],
+        kernel: &mut GenericKernel,
+    ) {
+        let max_blocksize = workgroup_shape.x();
+        self.kernel(workgroup_shape, max_blocksize, kernel, &graph.device);
+    }
+
+    fn output(&self, _: &crate::compute_graph::ComputeGraphInner, inputs: &[MirValue]) -> MirValue {
+        let output_tensor: TensorData = inputs[1].as_tensor().unwrap().clone();
+        output_tensor.into()
+    }
+
+    fn name(&self) -> String {
+        format!("reduce_{}", self.function.name())
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ReduceFunction {
     name: Option<String>,
     operation: String,
@@ -474,12 +545,7 @@ async fn test_reduce_sum() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
 
@@ -501,16 +567,35 @@ async fn test_reduce_sum() {
 
 #[cfg(test)]
 #[tokio::test]
+async fn test_reduce_sum_large() {
+    use crate::Device;
+
+    let device = Device::new().await.unwrap();
+
+    let data: [f32; 1024] = std::array::from_fn(|_| rand::random::<f32>() * 10.0 - 5.0);
+    let tensor = Tensor::new(&device, &data);
+
+    let output = tensor.sum(0);
+
+    let output = output.as_slice().await.unwrap();
+    println!("{output:?}");
+
+    let expected: f32 = data.iter().sum();
+    println!("Expected sum: {expected}");
+
+    assert!(
+        (output[[]] - expected).abs() < 1e-3,
+        "Expected sum to be close to {expected}"
+    );
+}
+
+#[cfg(test)]
+#[tokio::test]
 async fn test_reduce_sum_f16() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+
     let data = [
         [half::f16::from_f32(1.), half::f16::from_f32(2.)],
         [half::f16::from_f32(3.), half::f16::from_f32(4.)],
@@ -540,12 +625,7 @@ async fn test_reduce_sliced_sum() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
     let tensor = tensor.slice([0..3, 0..1]);
@@ -571,12 +651,7 @@ async fn test_reduce_const_add_then_sum_fused() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
 
@@ -605,12 +680,7 @@ async fn test_reduce_const_sum_then_add_fused() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
 
@@ -678,12 +748,7 @@ async fn test_reduce_max() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
 
@@ -751,12 +816,7 @@ async fn test_reduce_min() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
 
@@ -820,12 +880,7 @@ async fn test_reduce_product() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
 

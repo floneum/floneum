@@ -12,7 +12,7 @@ keywords = ["ai", "segment-anything", "segmentation", "computer-vision"]
 candle-core.workspace = true
 candle-nn.workspace = true
 candle-transformers.workspace = true
-hf-hub = "0.3.0"
+hf-hub = { version = "0.4.0" }
 thiserror.workspace = true
 
 accelerate-src = { version = "0.3.2", optional = true }
@@ -21,7 +21,7 @@ cudarc = { version = "0.9.14", features = ["f16"], optional = true }
 half = { version = "2.3.1", features = ["num-traits", "use-intrinsics", "rand_distr"], optional = true }
 
 tracing = "0.1.37"
-image = "0.24.7"
+image.workspace = true
 
 [features]
 flash = ["candle-transformers/flash-attn"]

@@ -12,7 +12,7 @@ keywords = ["ai", "ocr", "transformers"]
 candle-core.workspace = true
 candle-nn.workspace = true
 candle-transformers.workspace = true
-tokenizers = { workspace = true }
+tokenizers = { workspace = true, features = ["onig"] }
 hf-hub = "0.3.0"
 
 accelerate-src = { version = "0.3.2", optional = true }
@@ -22,7 +22,7 @@ half = { version = "2.3.1", features = ["num-traits", "use-intrinsics", "rand_di
 thiserror.workspace = true
 
 tracing = "0.1.37"
-image = "0.24.7"
+image.workspace = true
 serde = "1.0.193"
 serde_json = "1.0"
 kalosm-common.workspace = true

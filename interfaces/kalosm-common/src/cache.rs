@@ -14,7 +14,7 @@ use tokio::io::AsyncWriteExt;
 #[derive(Debug, thiserror::Error)]
 pub enum CacheError {
     #[error("Hugging Face API error: {0}")]
-    HuggingFaceApi(#[from] hf_hub::api::sync::ApiError),
+    HuggingFaceApi(#[from] hf_hub::api::tokio::ApiError),
     #[error("Unable to get file metadata for {0}: {1}")]
     UnableToGetFileMetadata(PathBuf, #[source] tokio::io::Error),
     #[error("IO error: {0}")]
@@ -86,7 +86,7 @@ impl Cache {
                     RepoType::Model,
                     revision.to_string(),
                 );
-                let api = hf_hub::api::sync::Api::new()?.repo(repo);
+                let api = hf_hub::api::tokio::Api::new()?.repo(repo);
                 let url = api.url(file);
                 let client = reqwest::Client::new();
                 tracing::trace!("Fetching metadata for {file} from {url}");

@@ -1,12 +1,16 @@
-use std::{ops::Range, sync::OnceLock};
-
-use wgpu::CommandEncoder;
+use std::ops::Range;
 
 use crate::{
-    PerformanceQueries, TILE_SIZE, Tensor, TensorData, compute_graph::AnyComputeKey,
-    visit_tiled::VisitTiledKernel,
+    TILE_SIZE, Tensor,
+    compute_graph::{AnyComputeKey, ComputeGraphInner},
+    mir::operation::Operation,
+    visit_tiled::{
+        MaybeQData, build_visit_tiled_kernel, titled_map_dispatch_size,
+        titled_map_workgroup_size_constraints,
+    },
 };
 
+#[derive(Clone, Debug)]
 pub(crate) struct SliceAssignOperation {
     pub(crate) input: AnyComputeKey,
     pub(crate) value: AnyComputeKey,
@@ -21,55 +25,94 @@ impl SliceAssignOperation {
             slices,
         }
     }
+
+    pub fn rank(&self) -> usize {
+        self.slices.len()
+    }
 }
 
-pub(crate) struct UntypedSliceAssignKernel {
-    slices: Box<[Range<usize>]>,
-    sparse_kernel: OnceLock<VisitTiledKernel>,
-}
-
-impl UntypedSliceAssignKernel {
-    pub(crate) fn new(slices: &[Range<usize>]) -> Self {
-        Self {
-            slices: slices.into(),
-            sparse_kernel: OnceLock::new(),
-        }
+impl Operation for SliceAssignOperation {
+    fn workgroup_shape_constraints(
+        &self,
+        _: &crate::Device,
+    ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
+        titled_map_workgroup_size_constraints(self.rank() as _)
     }
 
-    pub fn run_with_query(
+    fn dispatch_size(
         &self,
-        target: &TensorData,
-        value: &TensorData,
-        query: Option<&PerformanceQueries>,
-        command_encoder: &mut CommandEncoder,
-    ) -> TensorData {
-        let rank = target.layout().rank();
-        let datatype = target.datatype();
+        workgroup_shape: &crate::mir::workgroup_shape::WorkgroupShape,
+        inputs: &[crate::mir::inputs::MirValue],
+    ) -> [u32; 3] {
+        let inputs: Box<[_]> = inputs
+            .iter()
+            .map(|input| {
+                let tensor: MaybeQData = input.clone().try_into().unwrap();
+                tensor
+            })
+            .collect();
+        titled_map_dispatch_size(TILE_SIZE, *workgroup_shape, &inputs)
+    }
 
-        let create_kernel = || {
-            let datatypes = vec![datatype; 2];
+    fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {
+        f(self.value);
+        f(self.input);
+    }
 
-            VisitTiledKernel::new(
-                rank as u32,
-                TILE_SIZE,
-                false,
-                datatypes,
-                |_, indexes, tensors| {
-                    let target_index = &indexes[0];
-                    let value_index = &indexes[1];
-                    let target_tensor = &tensors[0];
-                    let value_tensor = &tensors[1];
-                    format!("{target_tensor}[{target_index}] = {value_tensor}[{value_index}];")
-                },
-            )
-        };
-        let kernel = self.sparse_kernel.get_or_init(create_kernel);
+    fn inputs(&self, nodes: &ComputeGraphInner) -> Vec<crate::mir::inputs::MirValue> {
+        let input = nodes.cached_results.get(&self.input).unwrap();
+        let input = input.slice(&self.slices);
+        let value = nodes.get_result_or_qmatrix(self.value).unwrap();
 
-        let sliced = target.slice(&self.slices);
-        assert_eq!(sliced.layout().shape(), value.layout().shape());
-        let tensors = vec![&sliced, value];
-        kernel.run_with_query(tensors, query, command_encoder);
-        target.clone()
+        vec![input.into(), value.into()]
+    }
+
+    fn build_kernel(
+        &self,
+        _: &ComputeGraphInner,
+        _: &crate::mir::workgroup_shape::WorkgroupShape,
+        inputs: &[crate::mir::inputs::MirValue],
+        kernel: &mut crate::mir::kernel::GenericKernel,
+    ) {
+        let input: MaybeQData = inputs[0].clone().try_into().unwrap();
+        let value: MaybeQData = inputs[1].clone().try_into().unwrap();
+        assert_eq!(input.layout().shape(), value.layout().shape());
+        let datatype = input.datatype();
+
+        let datatypes = vec![datatype; 2];
+
+        build_visit_tiled_kernel(
+            input.layout().shape(),
+            TILE_SIZE,
+            datatypes,
+            |_, indexes, tensors, values| {
+                let target_index = &indexes[0];
+                let target_tensor = &tensors[0];
+                let value = &values[1];
+                format!("{target_tensor}[{target_index}] = {value};")
+            },
+            kernel,
+        );
+    }
+
+    fn output(
+        &self,
+        nodes: &ComputeGraphInner,
+        _: &[crate::mir::inputs::MirValue],
+    ) -> crate::mir::inputs::MirValue {
+        let input: MaybeQData = nodes.get_result_or_qmatrix(self.input).unwrap();
+        input.into()
+    }
+
+    fn name(&self) -> String {
+        format!(
+            "slice_assign_{}",
+            self.slices
+                .iter()
+                .map(|slice| format!("{slice:?}"))
+                .collect::<Vec<_>>()
+                .join("_")
+        )
     }
 }
 
@@ -85,12 +128,7 @@ async fn test_slice_assign() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
     let value_tensor = Tensor::new(&device, &[[10., 20.], [30., 40.]]);

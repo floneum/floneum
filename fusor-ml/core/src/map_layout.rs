@@ -1,32 +1,42 @@
-use std::ops::Range;
+use std::{fmt::Debug, ops::Range, sync::Arc};
 
 use crate::{
-    DataType, Layout, Tensor, TensorData, compute_graph::AnyComputeKey, slice_shape, slice_strides,
+    DataType, Layout, Tensor, TensorData, compute_graph::AnyComputeKey, mir::operation::Operation,
+    slice_shape, slice_strides,
 };
 
-type MapSize = Box<dyn Fn(&[usize]) -> Box<[usize]>>;
-type MapStride = Box<dyn Fn(usize, &[usize]) -> (usize, Box<[usize]>)>;
+type MapSize = Arc<dyn Fn(&[usize]) -> Box<[usize]> + Send + Sync>;
+type MapStride = Arc<dyn Fn(usize, &[usize]) -> (usize, Box<[usize]>) + Send + Sync>;
 
+#[derive(Clone)]
 pub(crate) struct MapLayoutOperation {
     pub(crate) input: AnyComputeKey,
     pub(crate) map_size: MapSize,
     pub(crate) map_stride: MapStride,
 }
 
+impl Debug for MapLayoutOperation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MapLayoutOperation")
+            .field("input", &self.input)
+            .finish()
+    }
+}
+
 impl MapLayoutOperation {
     pub fn new(
         input: AnyComputeKey,
-        map_size: impl Fn(&[usize]) -> Box<[usize]> + 'static,
-        map_stride: impl Fn(usize, &[usize]) -> (usize, Box<[usize]>) + 'static,
+        map_size: impl Fn(&[usize]) -> Box<[usize]> + Send + Sync + 'static,
+        map_stride: impl Fn(usize, &[usize]) -> (usize, Box<[usize]>) + Send + Sync + 'static,
     ) -> Self {
         Self {
             input,
-            map_size: Box::new(map_size),
-            map_stride: Box::new(map_stride),
+            map_size: Arc::new(map_size),
+            map_stride: Arc::new(map_stride),
         }
     }
 
-    pub fn run(&self, tensor: &TensorData) -> TensorData {
+    pub fn map_tensor(&self, tensor: &TensorData) -> TensorData {
         TensorData::new_from_parts(
             tensor.device(),
             tensor.buffer().clone(),
@@ -38,6 +48,61 @@ impl MapLayoutOperation {
     pub fn map_layout(&self, layout: &Layout) -> Layout {
         let (offset, strides) = (self.map_stride)(layout.offset(), layout.strides());
         Layout::from_parts(offset, (self.map_size)(layout.shape()), strides)
+    }
+
+    pub fn run(&self, graph: &mut crate::compute_graph::ComputeGraphInner) -> TensorData {
+        let input = graph.get_result(self.input).unwrap();
+        self.map_tensor(&input)
+    }
+}
+
+impl Operation for MapLayoutOperation {
+    fn workgroup_shape_constraints(
+        &self,
+        _: &crate::Device,
+    ) -> crate::mir::workgroup_shape::WorkgroupShapeConstraints {
+        Default::default()
+    }
+
+    fn dispatch_size(
+        &self,
+        _: &crate::mir::workgroup_shape::WorkgroupShape,
+        _: &[crate::mir::inputs::MirValue],
+    ) -> [u32; 3] {
+        [1, 1, 1]
+    }
+
+    fn visit_dependencies(&self, f: &mut dyn FnMut(AnyComputeKey)) {
+        f(self.input);
+    }
+
+    fn inputs(
+        &self,
+        nodes: &crate::compute_graph::ComputeGraphInner,
+    ) -> Vec<crate::mir::inputs::MirValue> {
+        vec![nodes.get_result(self.input).unwrap().into()]
+    }
+
+    fn output(
+        &self,
+        _: &crate::compute_graph::ComputeGraphInner,
+        inputs: &[crate::mir::inputs::MirValue],
+    ) -> crate::mir::inputs::MirValue {
+        let input = inputs[0].as_tensor().unwrap();
+        self.map_tensor(input).into()
+    }
+
+    fn build_kernel(
+        &self,
+        _: &crate::compute_graph::ComputeGraphInner,
+        _: &crate::mir::workgroup_shape::WorkgroupShape,
+        _: &[crate::mir::inputs::MirValue],
+        _: &mut crate::mir::kernel::GenericKernel,
+    ) {
+    }
+
+    fn name(&self) -> String {
+        "map_layout".to_string()
     }
 }
 
@@ -54,6 +119,8 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
     }
 
     pub fn transpose(&self, first_axis: usize, second_axis: usize) -> Tensor<R, T> {
+        assert!(first_axis < self.rank());
+        assert!(second_axis < self.rank());
         self.add_map_layout(MapLayoutOperation::new(
             self.key(),
             move |shape| {
@@ -69,8 +136,25 @@ impl<const R: usize, T: DataType> Tensor<R, T> {
         ))
     }
 
+    pub fn t(&self) -> Tensor<R, T> {
+        const {
+            assert!(
+                R >= 2,
+                "The tensor must have at least 2 dimensions to transpose"
+            )
+        };
+        let last_dim = self.rank() - 1;
+        let second_last_dim = self.rank() - 2;
+        self.transpose(last_dim, second_last_dim)
+    }
+
     pub fn broadcast<const R2: usize>(&self, out_shape: [usize; R2]) -> Tensor<R2, T> {
-        const { assert!(R2 == R + 1) };
+        const {
+            assert!(
+                R2 == R + 1,
+                "The output dimension must be one more than the input dimension"
+            )
+        };
 
         let new_dim = self
             .shape()
@@ -107,12 +191,7 @@ async fn test_transpose() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+
     let data = [[1., 2.], [3., 4.], [5., 6.]];
     let tensor = Tensor::new(&device, &data);
     let transposed = tensor.transpose(0, 1);
@@ -132,12 +211,7 @@ async fn test_broadcast() {
     use crate::Device;
 
     let device = Device::new().await.unwrap();
-    std::thread::spawn({
-        let device = device.clone();
-        move || loop {
-            device.wgpu_device().poll(wgpu::PollType::Wait).unwrap();
-        }
-    });
+
     let data = [[1., 2.], [3., 4.]];
     let tensor = Tensor::new(&device, &data);
     let broadcasted = tensor.broadcast([2, 2, 3]);
