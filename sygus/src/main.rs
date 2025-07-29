@@ -636,6 +636,7 @@ async fn run() {
         })
         .map_output(|(a, _)| a)
         .boxed();
+    let parser = LiteralParser::new("(define-fun f ((name String)) String ").ignore_output_then(parser);
 
     let sampler = if multipass {
         SamplerChainBuilder::from([
@@ -707,8 +708,8 @@ async fn run() {
         let bump = bumpalo::Bump::new();
         let grammar = grammar.reallocate(&bump);
         let should_recognize: &[&str] = &[
-            "name",
-            "(str.++ name name)",
+            "(define-fun f ((name String)) String name",
+            "(define-fun f ((name String)) String (str.++ name name)",
         ];
         for pattern in should_recognize {
             let tokens = llm.tokenizer.encode_fast(*pattern, false).unwrap();
@@ -717,15 +718,22 @@ async fn run() {
             assert!(grammar.recognizes_tokens(tokens.get_ids().iter().copied()));
         }
         let prompt = if model.qwen_normal() || model.smol_lm() {
-            format!("<|im_start|>system\n{prompt}<|im_end|>\n<|im_start|>user\nQuestion:\n{task}<|im_end|>\n<|im_start|>assistant\n")
+            format!("<|im_start|>system\n{prompt}<|im_end|>\n<|im_start|>user\nQuestion:\n{task}<|im_end|>\n")
         } else if model.llama() {
-            format!("<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{task}<|eot_id|><|start_header_id|>assistant<|end_header_id|>")
+            format!("<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{task}<|eot_id|>")
         } else {
             format!("<｜begin▁of▁sentence｜>{prompt}<｜User｜>Solve this problem:\n{task}<｜Assistant｜><think>\n")
         };
+        let end = if model.qwen_normal() || model.smol_lm() {
+            format!("<|im_start|>assistant\n")
+        } else if model.llama() {
+            format!("<|start_header_id|>assistant<|end_header_id|>")
+        } else {
+            format!("")
+        };
 
+        let (tx, _rx) = tokio::sync::oneshot::channel();
         {
-            let (tx, _rx) = tokio::sync::oneshot::channel();
             print!("{prompt}");
             if model.qwen_think() {
                 let think_start_time = std::time::Instant::now();
@@ -789,9 +797,10 @@ async fn run() {
             let mut session = session.deep_clone();
             let all_tokens = Arc::new(RwLock::new(String::new()));
             let all_token_ids = Arc::new(RwLock::new(Vec::new()));
+            let new_text =end.clone();
             let result = match llm.generate_structured_with_trie(
                 &mut session,
-                &format!("(define-fun f ({args_str}) String "),
+                &new_text,
                 sampler.clone(),
                 &grammar,
                 &parser,
@@ -1172,7 +1181,8 @@ fn create_grammar(path: &Path) -> Grammar<u32> {
     let tokenizer = Tokenizer::load_tokenizer(path);
 
     let grammar = parse::Grammar::parse(
-        r#"Start -> ntString
+        r#"Start -> starty
+starty -> '(define-fun f ((name String)) String ' ntString
 ntString -> 'name' | '" "' | '(' 'str.++' ' ' ntString ' ' ntString ')' | '(' 'str.replace' ' ' ntString ' ' ntString ' ' ntString ')' | '(' 'str.at' ' ' ntString ' ' ntInt ')' | '(' 'int.to.str' ' ' ntInt ')' | '(' 'str.substr' ' ' ntString ' ' ntInt ' ' ntInt ')'
 ntInt -> '0' | '1' | '2' | '(' '+' ' ' ntInt ' ' ntInt ')' | '(' '-' ' ' ntInt ' ' ntInt ')' | '(' 'str.len' ' ' ntString ')' | '(' 'str.to.int' ' ' ntString ')' | '(' 'str.indexof' ' ' ntString ' ' ntString ' ' ntInt ')'
 ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | '(' 'str.suffixof' ' ' ntString ' ' ntString ')' | '(' 'str.contains' ' ' ntString ' ' ntString ')'"#,
@@ -1204,7 +1214,7 @@ ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | 
     }
 
     grammar.inline_optimize();
-    
+
     let grammar = grammar.to_grammar();
     println!(
         "grammar:\n{}",

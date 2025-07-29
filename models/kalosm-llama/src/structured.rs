@@ -195,11 +195,11 @@ where
                 let result = parser.parse(&extra_parser_state, text.as_bytes());
                 trie.push(token_id, prob as f64, current_token, result.is_ok(), false);
                 if let Ok(result) = result {
-                    println!(
-                        "Token {:?} with probability {} could become valid",
-                        tokenizer.id_to_token(token_id),
-                        prob
-                    );
+                    // println!(
+                    //     "Token {:?} with probability {} could become valid",
+                    //     tokenizer.id_to_token(token_id),
+                    //     prob
+                    // );
 
                     let parsed_bytes = match &result {
                         ParseStatus::Finished { remaining, .. } => text.len() - remaining.len(),
@@ -240,7 +240,9 @@ where
         let token_id = {
             // softmax logits
             logits.set_softmax(false);
+            logits.set_sorted(false);
             logits.ensure_softmax().unwrap();
+            logits.ensure_sorted().unwrap();
             for logit in &mut *logits {
                 let estimate = match current_token {
                     Some(current) => trie.nodes[current]
@@ -259,14 +261,14 @@ where
                     logit.logit = logit.prob.exp();
                 }
             }
-            println!(
-                "Sum of logits: {}",
-                logits.iter().map(|logit| logit.logit).sum::<f32>()
-            );
-            println!(
-                "Sum of probabilities: {}",
-                logits.iter().map(|logit| logit.prob).sum::<f32>()
-            );
+            // println!(
+            //     "Sum of logits: {}",
+            //     logits.iter().map(|logit| logit.logit).sum::<f32>()
+            // );
+            // println!(
+            //     "Sum of probabilities: {}",
+            //     logits.iter().map(|logit| logit.prob).sum::<f32>()
+            // );
             logits.retain(|logit| logit.prob > 0.0);
             logits.set_softmax(false);
             logits.ensure_softmax().unwrap();
@@ -295,19 +297,19 @@ where
                 .unwrap(),
             None => *trie.roots.get(&token_id).unwrap(),
         });
-        println!(
-            "\nsampled current_token raw: {:?} with prob {}",
-            current_token,
-            logits
-                .iter()
-                .find(|logit| logit.token_id == token_id)
-                .unwrap()
-                .prob
-        );
-        println!(
-            "current_token: {:?}\n",
-            current_token.map(|id| tokenizer.decode(&[trie.nodes[id].token], false))
-        );
+        // println!(
+        //     "\nsampled current_token raw: {:?} with prob {}",
+        //     current_token,
+        //     logits
+        //         .iter()
+        //         .find(|logit| logit.token_id == token_id)
+        //         .unwrap()
+        //         .prob
+        // );
+        // println!(
+        //     "current_token: {:?}\n",
+        //     current_token.map(|id| tokenizer.decode(&[trie.nodes[id].token], false))
+        // );
 
         // If this and the last token would result in a valid merge, then the probability in the training data should be close
         // to zero
@@ -357,7 +359,7 @@ where
                 }
                 strip_required_next = false;
             }
-            println!("skipping forward with token: {}", token);
+            // println!("skipping forward with token: {}", token);
             on_token(token, token_id)?;
             result.push(token_id);
             possible_next = result.possible_next_terminals();
