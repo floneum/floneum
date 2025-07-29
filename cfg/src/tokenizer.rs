@@ -59,10 +59,6 @@ impl Tokenizer {
     pub fn load_tokenizer(path: impl AsRef<Path>) -> Self {
         let bytes = std::fs::read(path).expect("Failed to read tokenizer file");
         let json = serde_json::from_slice::<Value>(&bytes).unwrap();
-        let pretokenizer = json["pre_tokenizer"].clone();
-        let sequence = pretokenizer["pretokenizers"][0].clone();
-        let pattern = sequence["pattern"]["Regex"].as_str().unwrap();
-        // let regex = Regex::new(pattern).unwrap();
         let model = json["model"].clone();
         let deserialized = serde_json::from_value::<SerializedModel>(model).unwrap();
 
