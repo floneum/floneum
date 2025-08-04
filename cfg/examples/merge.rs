@@ -17,11 +17,11 @@ fn main() {
     let tokenizer = Tokenizer::load_tokenizer("tokenizer.json");
 
     let grammar = parse::Grammar::parse(
-        r#"Start -> ntInt
+        r#"Start -> starty
+starty -> '(define-fun f ((name String)) String ' ntString
 ntString -> 'name' | '" "' | '(' 'str.++' ' ' ntString ' ' ntString ')' | '(' 'str.replace' ' ' ntString ' ' ntString ' ' ntString ')' | '(' 'str.at' ' ' ntString ' ' ntInt ')' | '(' 'int.to.str' ' ' ntInt ')' | '(' 'str.substr' ' ' ntString ' ' ntInt ' ' ntInt ')'
 ntInt -> '0' | '1' | '2' | '(' '+' ' ' ntInt ' ' ntInt ')' | '(' '-' ' ' ntInt ' ' ntInt ')' | '(' 'str.len' ' ' ntString ')' | '(' 'str.to.int' ' ' ntString ')' | '(' 'str.indexof' ' ' ntString ' ' ntString ' ' ntInt ')'
-ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | '(' 'str.suffixof' ' ' ntString ' ' ntString ')' | '(' 'str.contains' ' ' ntString ' ' ntString ')'
-"#,
+ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | '(' 'str.suffixof' ' ' ntString ' ' ntString ')' | '(' 'str.contains' ' ' ntString ' ' ntString ')'"#,
     )
     .unwrap();
 
@@ -137,31 +137,31 @@ fn run_test(
     println!("dense size: {}", bump.allocated_bytes());
     println!("after shortcut merge rule count: {}", grammar.rules.len());
 
-    let should_recognize: [&'static [u8]; 7] = [
-        b"0",
-        b"1",
-        b"2",
-        b"(+ 1 2)",
-        b"(- 2 1)",
-        b"(str.len name)",
-        b"(str.to.int name)",
+    let should_recognize: &[&'static [u8]] = &[
+        br#"(define-fun f ((name String)) String name"#,
+        br#"(define-fun f ((name String)) String " ""#,
+        br#"(define-fun f ((name String)) String (str.++ name " ")"#,
+        br#"(define-fun f ((name String)) String (str.replace name name " ")"#,
+        br#"(define-fun f ((name String)) String (int.to.str 0)"#,
+        br#"(define-fun f ((name String)) String (str.++ (str.++ name " ") (str.substr name 0 (str.to.int name)))"#
     ];
     for input in should_recognize {
         let mut bytes = Vec::new();
-        for byte in input {
+        for byte in *input {
             bytes.push(tokenizer.bytes[*byte as usize]);
         }
         let mut tokenized = bytes.clone();
         for merge in processed_merges {
             let mut new = tokenized.clone();
             let mut i = 0;
-            while i < tokenized.len() - 1 {
+            while i < new.len() - 1 {
                 // Replace the pair of tokens with the new token if they match the merge
-                if new[i] == merge.pair[0] && new[i + 1] == merge.pair[1] {
+                if new[i] == merge.pair[0] && new.get(i + 1) == Some(&merge.pair[1]) {
                     new[i] = merge.new_token;
                     new.remove(i + 1);
+                } else {
+                    i += 1;
                 }
-                i += 1;
             }
             if new != tokenized {
                 // If the new tokenized version is different, we have a merge
