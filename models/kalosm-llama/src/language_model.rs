@@ -123,7 +123,7 @@ impl LlamaModel {
         session: &'a mut LlamaSession,
         text: &str,
         sampler: S,
-        parser: &DenseGrammar,
+        parser: Option<&DenseGrammar>,
         extra_parser: &P,
         on_token: impl FnMut(String, u32) -> Result<(), LlamaModelError> + Send + Sync + 'static,
         trie: &mut EvaluationTrie,

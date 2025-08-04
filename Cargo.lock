@@ -4134,7 +4134,7 @@ dependencies = [
  "kalosm-model-types",
  "kalosm-sample",
  "llm-samplers",
- "lru",
+ "lru 0.12.5",
  "postcard",
  "pretty_assertions",
  "rand 0.8.5",
@@ -4538,6 +4538,15 @@ name = "lru"
 version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "234cf4f4a04dc1f57e24b96cc0cd600cf2af460d4161ac5ecdd0af8e1f3b2a38"
+dependencies = [
+ "hashbrown 0.15.2",
+]
+
+[[package]]
+name = "lru"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86ea4e65087ff52f3862caff188d489f1fab49a0cb09e01b2e3f1a617b10aaed"
 dependencies = [
  "hashbrown 0.15.2",
 ]
@@ -7778,7 +7787,7 @@ dependencies = [
  "crc32fast",
  "futures",
  "getrandom 0.2.15",
- "lru",
+ "lru 0.12.5",
  "parking_lot",
  "quick_cache 0.6.12",
  "revision 0.10.0",
@@ -7798,6 +7807,7 @@ dependencies = [
  "kalosm-llama",
  "kalosm-sample",
  "llm-samplers",
+ "lru 0.16.0",
  "nom 8.0.0",
  "tokio",
  "tracing-subscriber 0.3.19",

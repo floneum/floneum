@@ -12,13 +12,14 @@ use llm_samplers::{
     prelude::{SampleFreqPresence, SampleGreedy, SampleRepetition, SampleSeqRepetition},
     types::Sampler,
 };
-use std::io::Write;
+use lru::LruCache;
 use std::{
     collections::HashMap,
     fmt::{Debug, Display},
     path::Path,
     sync::{Arc, Mutex, RwLock},
 };
+use std::{io::Write, num::NonZeroUsize};
 
 use clap::Parser as _;
 use nom::{
@@ -250,7 +251,7 @@ fn to_command(expr: SExpr) -> Option<Command> {
 }
 
 /// Minimal S-expression AST
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub enum SExpr {
     Atom(Atom),
     List(Vec<SExpr>),
@@ -318,7 +319,7 @@ impl From<&str> for SExpr {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub enum Atom {
     String(String),
     Int(i32),
@@ -619,14 +620,24 @@ async fn run() {
             let interpreter = Interpreter::new();
             let constraints = constraints.clone();
             let vars = vars.clone();
+            let cache: RwLock<LruCache<SExpr, bool>> =
+                RwLock::new(LruCache::new(NonZeroUsize::new(1024).unwrap()));
             move |result| {
-                let mut valid = true;
-                println!("Checking constraints for expression: {result:?}");
-                for constraint in &constraints {
-                    let result = interpreter.check(constraint, vars.clone(), &result);
-                    println!("  {constraint:?} => {result}");
-                    valid &= result;
-                }
+                let mut cache = cache.write().unwrap();
+                let valid = if let Some(cached) = cache.get(&result) {
+                    *cached
+                } else {
+                    let mut valid = true;
+                    println!("Checking constraints for expression: {result:?}");
+                    for constraint in &constraints {
+                        let result = interpreter.check(constraint, vars.clone(), &result);
+                        println!("  {constraint:?} => {result}");
+                        valid &= result;
+                    }
+                    cache.put(result.clone(), valid);
+                    valid
+                };
+
                 if valid {
                     SuccessParser(()).boxed()
                 } else {
@@ -636,7 +647,8 @@ async fn run() {
         })
         .map_output(|(a, _)| a)
         .boxed();
-    let parser = LiteralParser::new("(define-fun f ((name String)) String ").ignore_output_then(parser);
+    let parser =
+        LiteralParser::new("(define-fun f ((name String)) String ").ignore_output_then(parser);
 
     let sampler = if multipass {
         SamplerChainBuilder::from([
@@ -798,11 +810,11 @@ async fn run() {
             let all_tokens = Arc::new(RwLock::new(String::new()));
             let all_token_ids = Arc::new(RwLock::new(Vec::new()));
             let new_text =end.clone();
-            let result = match llm.generate_structured_with_trie(
+            let result =  llm.generate_structured_with_trie(
                 &mut session,
                 &new_text,
                 sampler.clone(),
-                &grammar,
+                args.fast_case.then_some(&grammar),
                 &parser,
                 {
                     let all_tokens = all_tokens.clone();
@@ -816,11 +828,19 @@ async fn run() {
                     }
                 },
                 &mut trie,
-            ) {
+            ) ;
+            let all_tokens = all_tokens.read().unwrap().clone();
+
+            println!("generation {generation}:\n{all_tokens}");
+            let all_token_ids = all_token_ids.read().unwrap();
+            let retokenized = llm.tokenizer.encode_fast(all_tokens.as_str(), false).unwrap();
+            if retokenized.get_ids() != all_token_ids.as_slice() {
+                println!("Retokenization mismatch: {:?} != {:?}", retokenized.get_ids(), all_token_ids);
+            }
+            let result =match result{
                 Ok(output) => output,
                 Err(e) => {
                     println!("\n\n");
-                    println!("Failed generation {generation}:\n{}", all_tokens.read().unwrap());
                     println!("Error: {e}");
                     let elapsed = generation_start_time.elapsed();
                     println!("Generation took: {elapsed:?}");
@@ -829,8 +849,7 @@ async fn run() {
             };
             println!("\n\n");
 
-            let all_tokens = all_tokens.read().unwrap().clone();
-            println!("generation {generation}:\n{all_tokens}");
+            
 
             let interpreter = Interpreter::new();
             let mut valid = true;
@@ -839,11 +858,6 @@ async fn run() {
                 let result = interpreter.check(constraint, vars.clone(), &result);
                 println!("  {constraint:?} => {result}");
                 valid = valid && result;
-            }
-            let all_token_ids = all_token_ids.read().unwrap();
-            let retokenized = llm.tokenizer.encode_fast(all_tokens.as_str(), false).unwrap();
-            if retokenized.get_ids() != all_token_ids.as_slice() {
-                println!("Retokenization mismatch: {:?} != {:?}", retokenized.get_ids(), all_token_ids);
             }
             if valid {
                 println!("Valid solution found!");
