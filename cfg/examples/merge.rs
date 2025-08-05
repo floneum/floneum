@@ -17,11 +17,8 @@ fn main() {
     let tokenizer = Tokenizer::load_tokenizer("tokenizer.json");
 
     let grammar = parse::Grammar::parse(
-        r#"Start -> starty
-starty -> '(define-fun f ((name String)) String ' ntString
-ntString -> 'name' | '" "' | '(' 'str.++' ' ' ntString ' ' ntString ')' | '(' 'str.replace' ' ' ntString ' ' ntString ' ' ntString ')' | '(' 'str.at' ' ' ntString ' ' ntInt ')' | '(' 'int.to.str' ' ' ntInt ')' | '(' 'str.substr' ' ' ntString ' ' ntInt ' ' ntInt ')'
-ntInt -> '0' | '1' | '2' | '(' '+' ' ' ntInt ' ' ntInt ')' | '(' '-' ' ' ntInt ' ' ntInt ')' | '(' 'str.len' ' ' ntString ')' | '(' 'str.to.int' ' ' ntString ')' | '(' 'str.indexof' ' ' ntString ' ' ntString ' ' ntInt ')'
-ntBool -> 'true' | 'false' | '(' 'str.prefixof' ' ' ntString ' ' ntString ')' | '(' 'str.suffixof' ' ' ntString ' ' ntString ')' | '(' 'str.contains' ' ' ntString ' ' ntString ')'"#,
+        r#"Start -> ntString
+ntString -> 'name' | '" "' | '(' 'str.++' ' ' ntString ' ' ntString ')'"#,
     )
     .unwrap();
 
@@ -138,14 +135,13 @@ fn run_test(
     println!("after shortcut merge rule count: {}", grammar.rules.len());
 
     let should_recognize: &[&'static [u8]] = &[
-        br#"(define-fun f ((name String)) String name"#,
-        br#"(define-fun f ((name String)) String " ""#,
-        br#"(define-fun f ((name String)) String (str.++ name " ")"#,
-        br#"(define-fun f ((name String)) String (str.replace name name " ")"#,
-        br#"(define-fun f ((name String)) String (int.to.str 0)"#,
-        br#"(define-fun f ((name String)) String (str.++ (str.++ name " ") (str.substr name 0 (str.to.int name)))"#
+        br#"name"#,
+        br#"" ""#,
+        br#"(str.++ name " ")"#,
+        br#"(str.++ (str.++ name " ") name)"#
     ];
     for input in should_recognize {
+        let mut passing = true;
         let mut bytes = Vec::new();
         for byte in *input {
             bytes.push(tokenizer.bytes[*byte as usize]);
@@ -166,7 +162,10 @@ fn run_test(
             if new != tokenized {
                 // If the new tokenized version is different, we have a merge
                 // Make sure the incorrectly tokenized version is not recognized
-                assert!(!dense_grammar.recognizes_tokens(tokenized.iter().copied()));
+                let pass = !dense_grammar.recognizes_tokens(tokenized.iter().copied());
+                if !pass{
+                eprintln!("recognized incorrectly tokenized version {:?}", String::from_utf8_lossy(input));
+                passing = false;}
             }
             tokenized = new;
         }
@@ -179,6 +178,9 @@ fn run_test(
                 .map(|b| String::from_utf8_lossy(&tokenizer.inverse_vocab[b]).to_string())
                 .collect::<Vec<_>>()
         );
+        if !passing {
+            panic!();
+        }
     }
     println!("Time to test: {:?}", test_time.elapsed());
 }

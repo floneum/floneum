@@ -291,7 +291,7 @@ impl SlabGrammar {
             let add_new_root = *nt == self.start && transitions.len() > 1;
             for (i, (start, end)) in transitions.iter().enumerate() {
                 let key = (*nt, *start, *end);
-                if i == last_index && (!add_new_root) {
+                if i == last_index && !add_new_root {
                     transition_map.insert(key, *nt);
                 } else {
                     transition_map.insert(key, self.insert(Vec::new()));
