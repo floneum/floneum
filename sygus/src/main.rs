@@ -835,7 +835,10 @@ async fn run() {
             let all_token_ids = all_token_ids.read().unwrap();
             let retokenized = llm.tokenizer.encode_fast(all_tokens.as_str(), false).unwrap();
             if retokenized.get_ids() != all_token_ids.as_slice() {
+                let retokenized_ids_as_str = retokenized.get_ids().iter().map(|id| llm.tokenizer.decode(&[*id], false)).collect::<Vec<_>>();
+                let all_token_ids_as_str = all_token_ids.iter().map(|id| llm.tokenizer.decode(&[*id], false)).collect::<Vec<_>>();
                 println!("Retokenization mismatch: {:?} != {:?}", retokenized.get_ids(), all_token_ids);
+                println!("Retokenization mismatch: {:?} != {:?}", retokenized_ids_as_str, all_token_ids_as_str);
             }
             let result =match result{
                 Ok(output) => output,

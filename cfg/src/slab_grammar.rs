@@ -46,7 +46,12 @@ impl State {
             }
             State::AfterFirstToken => {
                 if token != merge.pair[1] {
-                    f(State::Start, Some(token));
+                    if token == merge.pair[0] {
+                        f(State::AfterFirstToken, Some(token));
+                        f(State::AfterMergedToken, Some(merge.new_token));
+                    } else {
+                        f(State::Start, Some(token));
+                    }
                 }
             }
             State::AfterMergedToken => {
